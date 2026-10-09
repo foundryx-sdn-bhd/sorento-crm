@@ -687,3 +687,50 @@ def test_the_sweep_isolates_one_bad_turn(session_factory, monkeypatch):
     have = {r.turn_id for r in fact_rows(session_factory, contact_respond_id=cid)}
     assert have == {good_a, good_b}
     assert bad not in have
+
+
+# --------------------------------------------------------------------------- contact type
+
+
+def _forbid_ai(session_factory, contact_id: str) -> None:
+    from sqlalchemy import text
+
+    db = session_factory()
+    db.execute(text("UPDATE respond_contacts SET chatbot_allowed = false WHERE id = :id"), {"id": contact_id})
+    db.commit()
+
+
+def _contact_type(session_factory, cid: str) -> str:
+    turn_id = seed_turn(session_factory, cid)
+    _record(session_factory, turn_id)
+    return fact_rows(session_factory, turn_id=turn_id)[0].contact_type
+
+
+def test_a_linked_user_is_office_even_with_a_customer_link(session_factory):
+    cid = _cid("ct-office-user")
+    seed_contact(session_factory, cid, customer=True, staff=True)
+    assert _contact_type(session_factory, cid) == "office"
+
+
+def test_a_customer_link_is_a_dealer_even_when_ai_is_not_allowed(session_factory):
+    cid = _cid("ct-dealer")
+    who = seed_contact(session_factory, cid, customer=True)
+    _forbid_ai(session_factory, who["contact_id"])
+    assert _contact_type(session_factory, cid) == "dealer"
+
+
+def test_an_unlinked_contact_whose_ai_is_off_is_not_allowed(session_factory):
+    cid = _cid("ct-blocked")
+    who = seed_contact(session_factory, cid)
+    _forbid_ai(session_factory, who["contact_id"])
+    assert _contact_type(session_factory, cid) == "not_allowed"
+
+
+def test_an_unlinked_contact_with_ai_on_is_office(session_factory):
+    cid = _cid("ct-office")
+    seed_contact(session_factory, cid)
+    assert _contact_type(session_factory, cid) == "office"
+
+
+def test_a_turn_with_no_contact_row_is_unknown(session_factory):
+    assert _contact_type(session_factory, _cid("ct-none")) == "unknown"

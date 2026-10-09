@@ -54,6 +54,7 @@ def upgrade() -> None:
         sa.Column("customer_id", postgresql.UUID(as_uuid=False), nullable=True),
         sa.Column("company_id", sa.Text(), nullable=True),
         sa.Column("audience", sa.Text(), nullable=False),
+        sa.Column("contact_type", sa.Text(), nullable=False),
         sa.Column("asked_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("channel", sa.Text(), nullable=False, server_default=sa.text("'whatsapp'")),
         sa.Column("domain", sa.Text(), nullable=True),

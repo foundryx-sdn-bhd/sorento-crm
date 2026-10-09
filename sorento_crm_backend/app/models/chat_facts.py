@@ -73,6 +73,10 @@ class ChatAskFact(Base):
     company_id = Column(Text, nullable=True)
     # dealer | staff | unknown
     audience = Column(Text, nullable=False)
+    # dealer | office | not_allowed | unknown: who the contact is to the business, snapshotted
+    # when the ask is recorded (first match: a linked user or an unlinked contact with AI on is
+    # office; any customer link is dealer; AI switched off is not_allowed).
+    contact_type = Column(Text, nullable=False)
 
     asked_at = Column(DateTime(timezone=True), nullable=False)
     channel = Column(Text, nullable=False, server_default=text("'whatsapp'"), default="whatsapp")

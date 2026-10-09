@@ -14,8 +14,11 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
 - **CA1-05** A manual Retry (attempt 2 of the same respond message) replaces attempt 1's row; an
   older attempt never replaces a newer one.
 - **CA1-06** Audience is `staff` when a user is linked to the contact, else `dealer` when the
-  contact has a customer link, else `unknown`. `customer_id` and `company_id` are the primary
-  link at the time the turn closed.
+  contact has a customer link, else `unknown`. Contact type, snapshotted when the turn is
+  recorded, is the first match of: `office` when a user is linked; `dealer` when the contact has
+  any customer link; `not_allowed` when the contact's AI switch is off; `office` otherwise;
+  `unknown` when there is no contact row. `customer_id` and `company_id` are the primary link
+  at the time the turn closed.
 - **CA1-07** A named product or brand is stored as an item only when its catalogue code equals a
   product or brand code exactly (case-insensitive). Unmatched words are never stored. A product
   shown in the reply's result set is stored as role `shown`.
@@ -27,8 +30,11 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
 
 - **CA1-10** `status = failed` is `technical` (failed).
 - **CA1-11** `low_signal` is `noise`, excluded from counts by default.
-- **CA1-12** The escalation lane (`out_of_scope`) is `handover`; when escalation was barred it is
-  `refused_policy`.
+- **CA1-12** When escalation was barred the turn is `refused_policy`. Otherwise the escalation
+  lane (`out_of_scope`) is `handover` when the customer asked for a person (an escalation
+  confirmation, an escalation message type, an accepted offer, or a named team) or the ask names
+  a business (a domain hint, a planned domain or an intent), and `off_topic` when neither. Off
+  topic is counted as an ask, is not noise and is not a failure.
 - **CA1-13** Access refusals, ungranted domains and denied-without-fetch plans are
   `refused_policy`.
 - **CA1-14** `not_supported` is `cannot_do` (failed).
@@ -60,10 +66,13 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
   `chatbot.analytics.view`; without it the report is absent and its routes answer 403. The
   permission is granted to every role that holds `system.chat_history.view`.
 - **CA1-25** It opens on a summary of outcome by week (Malaysia time), measures Asks and Failed,
-  from 5 Sep 2026 to today, staff and noise excluded by default. Failed counts only technical,
+  from 5 Sep 2026 to today, the office (contact type) and noise excluded by default. Failed counts only technical,
   cannot do and missed.
 - **CA1-26** Count by Products switches to one row per ask and product, measures Named and Shown,
   product shown by its code.
-- **CA1-27** Labels read as words (Answered, Cannot do, Dealer), never raw codes or ids.
+- **CA1-27** Labels read as words (Answered, Off topic, Cannot do, Dealer, Not allowed), never raw
+  codes or ids, in the summary and in the detail table. The filter is Contact type (Dealer,
+  Office, Not allowed, Unknown), and it also applies to Count by Products; audience is shown as a
+  column only.
 - **CA1-28** The report note says the data comes from bot traces from 5 Sep 2026 and that topics
   arrive with CA-2.

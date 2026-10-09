@@ -12,7 +12,7 @@ fails with `ModuleNotFoundError` or "not registered".
 
 NAMES THE PLAN LEAVES OPEN AND THESE TESTS PIN (the coder must use them, or ask the captain
 to change the tests):
-* params: `date_basis` (basis key `asked_at`), `period`, `audience` (multi select, default
+* params: `date_basis` (basis key `asked_at`), `period`, `contact_type` (multi select, default
   dealer + unknown, so staff are out), `count_by` (single select; `asks` default, `products`).
 * ask dataset: dimensions `outcome`, `week`; measures `asks` (every ask) and `failed`
   (technical + cannot_do + missed). `week` is the Malaysia-clock Monday week.
@@ -61,7 +61,7 @@ def _dec(value) -> Decimal:
 # --------------------------------------------------------------------------- seeding
 
 
-def _fact(db, *, outcome: str, when: datetime, audience: str = "dealer", **extra):
+def _fact(db, *, outcome: str, when: datetime, contact_type: str = "dealer", audience: str = "dealer", **extra):
     from app.models.chat_facts import ChatAskFact
 
     row = ChatAskFact(
@@ -71,6 +71,7 @@ def _fact(db, *, outcome: str, when: datetime, audience: str = "dealer", **extra
         ask_seq=1,
         contact_respond_id=f"ZZT-ov-{_uid()[:8]}",
         audience=audience,
+        contact_type=contact_type,
         asked_at=when,
         channel="whatsapp",
         outcome=outcome,
@@ -91,11 +92,11 @@ def _seed_overview(db):
     """Week 1 = Mon 7 Sep, week 2 = Mon 14 Sep (Malaysia clock)."""
     # week 1
     _fact(db, outcome="answered", when=_day(9, 8))
-    _fact(db, outcome="answered", when=_day(9, 9), audience="unknown")
+    _fact(db, outcome="answered", when=_day(9, 9), audience="unknown", contact_type="unknown")
     _fact(db, outcome="technical", when=_day(9, 10), failure_reason="technical")
     _fact(db, outcome="refused_policy", when=_day(9, 11))
     _fact(db, outcome="noise", when=_day(9, 11, 4))  # excluded: noise
-    _fact(db, outcome="answered", when=_day(9, 12), audience="staff")  # excluded by default: staff
+    _fact(db, outcome="answered", when=_day(9, 12), audience="staff", contact_type="office")  # excluded by default: office
     # week 2
     _fact(db, outcome="cannot_do", when=_day(9, 15), failure_reason="cannot_do")
     _fact(db, outcome="missed", when=_day(9, 16), failure_reason="missed")
@@ -158,11 +159,13 @@ def test_the_dataset_follows_the_count_by_param(db):
     assert ask_ds is not item_ds
 
 
-def test_the_audience_filter_defaults_to_everyone_but_staff(db):
+def test_the_contact_type_filter_defaults_to_everyone_but_the_office(db):
     definition = _definition()
-    param = next(p for p in definition.params if p.key == "audience")
-    assert set(param.default) == {"dealer", "unknown"}
-    assert {value for value, _label in param.options(db)} >= {"dealer", "staff", "unknown"}
+    param = next(p for p in definition.params if p.key == "contact_type")
+    assert set(param.default) == {"dealer", "not_allowed", "unknown"}
+    assert {value for value, _label in param.options(db)} == {"dealer", "office", "not_allowed", "unknown"}
+    assert dict(param.options(db))["not_allowed"] == "Not allowed"
+    assert all(p.key != "audience" for p in definition.params), "audience is a dimension only"
 
 
 def test_the_date_basis_is_when_the_customer_asked(db):
@@ -237,8 +240,8 @@ def test_staff_are_excluded_by_default_and_included_when_chosen(db):
     _seed_overview(db)
 
     default = _run(db).layouts.summary
-    staff_only = _run(db, {"audience": ["staff"]}).layouts.summary
-    everyone = _run(db, {"audience": ["dealer", "staff", "unknown"]}).layouts.summary
+    staff_only = _run(db, {"contact_type": ["office"]}).layouts.summary
+    everyone = _run(db, {"contact_type": ["dealer", "office", "not_allowed", "unknown"]}).layouts.summary
 
     assert _dec(default.grand_total["asks"]) == 11
     assert _dec(staff_only.grand_total["asks"]) == 1
@@ -251,22 +254,33 @@ def test_the_default_period_opens_on_the_first_day_of_the_traces(db):
 
 
 def test_the_pivot_rows_and_the_detail_cells_read_words_not_codes(db):
-    _fact(db, outcome="technical", when=_day(9, 10), failure_reason="technical", audience="dealer", branch_kind="not_supported")
-    _fact(db, outcome="refused_policy", when=_day(9, 11), audience="unknown", branch_kind="access_denied")
+    _fact(db, outcome="technical", when=_day(9, 10), failure_reason="technical", audience="dealer", contact_type="dealer", branch_kind="not_supported")
+    _fact(db, outcome="refused_policy", when=_day(9, 11), audience="unknown", contact_type="not_allowed", branch_kind="access_denied")
 
     result = _run(db)
 
     assert set(result.layouts.summary.row_values) == {"Technical failure", "Refused by policy"}
     detail = result.layouts.detail
     keys = {c.key for c in detail.columns}
-    assert {"outcome", "audience", "failure_reason", "branch_kind"} <= keys
+    assert {"outcome", "audience", "contact_type", "failure_reason", "branch_kind"} <= keys
     by_outcome = {row["outcome"]: row for row in detail.rows}
     technical = by_outcome["Technical failure"]
     assert technical["audience"] == "Dealers"
+    assert technical["contact_type"] == "Dealer"
     assert technical["failure_reason"] == "Technical failure"
     assert technical["branch_kind"] == "Not supported"
     assert by_outcome["Refused by policy"]["audience"] == "Unknown contacts"
+    assert by_outcome["Refused by policy"]["contact_type"] == "Not allowed"
     assert by_outcome["Refused by policy"]["branch_kind"] == "Access refused"
+
+
+def test_off_topic_counts_as_an_ask_and_not_as_failed(db):
+    _fact(db, outcome="off_topic", when=_day(9, 10))
+
+    summary = _run(db).layouts.summary
+
+    assert _dec(summary.row_totals["Off topic"]["asks"]) == 1
+    assert _dec(summary.row_totals["Off topic"].get("failed")) == 0
 
 
 def test_the_detail_carries_rows_offered_reply_seconds_and_tools(db):
@@ -358,7 +372,7 @@ def _seed_items(db):
     _item(db, f2, "product", b, "shown")
     f3 = _fact(db, outcome="answered", when=_day(9, 16))
     _item(db, f3, "product", a, "shown")
-    f_staff = _fact(db, outcome="answered", when=_day(9, 10), audience="staff")
+    f_staff = _fact(db, outcome="answered", when=_day(9, 10), audience="staff", contact_type="office")
     _item(db, f_staff, "product", a, "named")
     f_noise = _fact(db, outcome="noise", when=_day(9, 11))
     _item(db, f_noise, "product", b, "named")
@@ -383,12 +397,12 @@ def test_count_by_products_counts_named_and_shown_per_product_code(db):
     assert (_dec(b.get("named")), _dec(b.get("shown"))) == (0, 1)
 
 
-def test_the_item_grain_applies_the_audience_and_noise_filters_through_the_ask(db):
+def test_the_item_grain_applies_the_contact_type_and_noise_filters_through_the_ask(db):
     _seed_items(db)
 
     default = _by_code(_run(db, {"count_by": ["products"]}, PRODUCT_VIEW).layouts.summary)
     staff = _by_code(
-        _run(db, {"count_by": ["products"], "audience": ["staff"]}, PRODUCT_VIEW).layouts.summary
+        _run(db, {"count_by": ["products"], "contact_type": ["office"]}, PRODUCT_VIEW).layouts.summary
     )
 
     # The staff ask names A once; the noise ask names B once. Neither shows by default.

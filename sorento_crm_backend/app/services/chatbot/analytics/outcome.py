@@ -77,6 +77,26 @@ def _looked_up_facts(turn: dict[str, Any]) -> dict[str, Any] | None:
     return None if record is None else _dict(record.get("facts"))
 
 
+def _asked_for_a_person(turn: dict[str, Any]) -> bool:
+    """The customer confirmed, offered or named a team, or accepted the bot's offer to hand
+    over. All structured: the parser's escalation fields, its message type, and the APPLY
+    rule that read an accepted offer (`answer_pending_accept`)."""
+    escalation = _dict(_verdict(turn).get("escalation"))
+    return bool(
+        escalation.get("is_escalation_confirmation") is True
+        or _verdict(turn).get("message_type") == "escalation"
+        or "answer_pending_accept" in (_apply(turn).get("rules_fired") or [])
+        or escalation.get("named_teams")
+    )
+
+
+def _names_a_business(turn: dict[str, Any]) -> bool:
+    """The ask points at something the CRM knows: a domain the parser hinted or the plan
+    acted on, or an intent."""
+    verdict = _verdict(turn)
+    return bool(verdict.get("domain_hint") or _plan(turn).get("domains") or verdict.get("intent_hint"))
+
+
 def _still_asking(turn: dict[str, Any]) -> bool:
     """A `required_ask` event that actually asked this turn. The low-stock and report lanes
     write `done: False` while they still need a slot filled (and `done: True` once settled);
@@ -106,7 +126,12 @@ def turn_outcome(turn: dict[str, Any]) -> tuple[str, str | None]:
     if plan.get("lane") == "escalation_barred":
         return "refused_policy", None
     if branch == "out_of_scope":
-        return "handover", None
+        # The lane always hands the thread to staff, but only some customers ASKED for that.
+        # One who asked for no person and named no business ("hello can you help me?") got
+        # a handover nobody wanted: off topic, which is not a failure of the bot's.
+        if _asked_for_a_person(turn) or _names_a_business(turn):
+            return "handover", None
+        return "off_topic", None
 
     if (
         branch in _DENIAL_BRANCHES

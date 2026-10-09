@@ -89,8 +89,55 @@ def test_escalation_barred_lane_alone_is_refused_policy():
 # ------------------------------------------------------------------ rule 4: handover
 
 
-def test_out_of_scope_is_handover():
-    assert _outcome(turn_dict(apply_event(lane="escalation"), branch_kind="out_of_scope")) == ("handover", None)
+def _escalating(*, message_type=None, confirmation=False, teams=None, rules_fired=(), **kwargs):
+    """An `apply` event the way the engine persists it: the verdict carries `message_type` and
+    `escalation`, the event carries `rules_fired`."""
+    record = apply_event(lane="escalation", **kwargs)
+    record["verdict"]["message_type"] = message_type
+    record["verdict"]["escalation"] = {"is_escalation_confirmation": confirmation, "named_teams": teams or []}
+    record["rules_fired"] = list(rules_fired)
+    return record
+
+
+def test_an_escalation_confirmation_is_handover():
+    turn = turn_dict(_escalating(confirmation=True), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("handover", None)
+
+
+def test_an_escalation_message_type_is_handover():
+    turn = turn_dict(_escalating(message_type="escalation"), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("handover", None)
+
+
+def test_an_accepted_offer_is_handover():
+    turn = turn_dict(_escalating(rules_fired=["answer_pending_accept"]), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("handover", None)
+
+
+def test_a_named_team_is_handover():
+    turn = turn_dict(_escalating(teams=["accounts"]), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("handover", None)
+
+
+def test_a_help_request_that_names_a_business_is_handover():
+    for kwargs in ({"domain_hint": "inventory"}, {"domains": ["inventory"]}, {"intent_hint": "stock"}):
+        turn = turn_dict(_escalating(message_type="request_for_help", **kwargs), branch_kind="out_of_scope")
+        assert _outcome(turn) == ("handover", None), kwargs
+
+
+def test_a_help_request_that_asks_for_no_person_and_names_no_business_is_off_topic():
+    turn = turn_dict(_escalating(message_type="request_for_help"), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("off_topic", None)
+
+
+def test_off_topic_is_not_a_failure_and_not_noise():
+    assert "off_topic" not in outcome_mod().FAILED_OUTCOMES
+    assert _outcome(turn_dict(_escalating(message_type="request_for_help"), branch_kind="out_of_scope"))[1] is None
+
+
+def test_the_barred_escalation_lane_still_beats_off_topic():
+    turn = turn_dict(apply_event(lane="escalation_barred"), branch_kind="out_of_scope")
+    assert _outcome(turn) == ("refused_policy", None)
 
 
 # ------------------------------------------------------------------ rule 5: refused_policy

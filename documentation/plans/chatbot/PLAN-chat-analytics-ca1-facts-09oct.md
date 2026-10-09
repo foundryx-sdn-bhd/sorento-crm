@@ -20,7 +20,8 @@ existing Reports screen.
 - `id` uuid pk; `source` text not null (`trace`); `turn_id` uuid not null; `ask_seq` smallint
   not null default 1; unique (`turn_id`, `ask_seq`).
 - `contact_respond_id` text not null; `contact_id` text null; `customer_id` uuid null;
-  `company_id` text null; `audience` text not null (`dealer` / `staff` / `unknown`).
+  `company_id` text null; `audience` text not null (`dealer` / `staff` / `unknown`); `contact_type` text not null
+  (`dealer` / `office` / `not_allowed` / `unknown`, snapshot, rules under "Edge rules").
 - `asked_at` timestamptz not null; `channel` text not null default `whatsapp`.
 - `domain` text null; `intent` text null; `outcome` text not null; `failure_reason` text null;
   `branch_kind` text null; `tools` text[] not null default `{}`; `rows_offered` int null;
@@ -86,7 +87,12 @@ No column holds customer words, an episode summary or `last_user_message`.
 1. `technical` (failed): turn `status = failed`.
 2. `noise`: `branch_kind = low_signal`.
 3. `refused_policy`: plan lane `escalation_barred`.
-4. `handover`: `branch_kind = out_of_scope`.
+4. `handover` / `off_topic`: `branch_kind = out_of_scope`. The lane always hands the thread to
+   staff, so the split is on structured fields only. `handover` when the customer asked for a
+   person (`verdict.escalation.is_escalation_confirmation`, `verdict.message_type = escalation`,
+   `answer_pending_accept` in the apply event's `rules_fired`, or `escalation.named_teams`) or
+   the ask names a business (`verdict.domain_hint`, `plan.domains` or `verdict.intent_hint`).
+   Otherwise `off_topic`: counted as an ask, not noise, not failed.
 5. `refused_policy`: branch `access_denied` / `ai_not_allowed` / `stock_denied`; or a
    `domain_grant` event with `skipped = not_granted`; or `plan.denied` non-empty with no
    `plan.fetch`.
@@ -107,6 +113,11 @@ No column holds customer words, an episode summary or `last_user_message`.
 - Items: a named entity becomes an item only when its `canonical_code` equals a product code
   (`products.code`) or brand code exactly (case-insensitive equality); shown rows from
   `replied.raw.reply.result_set[].code` the same way. No match, no row.
+- Contact type, first match: `office` when a user is linked; `dealer` when the contact has any
+  `respond_contact_customers` link; `not_allowed` when `respond_contacts.chatbot_allowed` is
+  false; `office` otherwise; `unknown` when there is no `respond_contacts` row. The report
+  filters on it (default: dealer, not allowed, unknown) and shows it as a dimension; audience
+  stays as a dimension only.
 - Audience: `staff` when a user is linked (`users.respond_contact_id`), else `dealer` when the
   contact has a customer link, else `unknown`.
 

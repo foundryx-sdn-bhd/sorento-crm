@@ -14,10 +14,10 @@ refuses a dataset that says nothing about scope).
 phone or contact name to select, and the catalog adds none: `customer` is the linked
 ACCOUNT's name from `customers`, a business, not a person. No UUID is a column either.
 
-**Codes are shown as words, in the dataset.** Outcome, audience, failure reason and branch
+**Codes are shown as words, in the dataset.** Outcome, contact type, audience, failure reason and branch
 are CASE expressions that map the stored code to its plain words (the same device as
 `sponsorship_forms._STATUS_LABEL`), so the pivot's row labels and the detail table read the
-same and no code reaches the screen. The filters (`outcome`, `audience`) compare the raw
+same and no code reaches the screen. The filters (`outcome`, `contact_type`) compare the raw
 columns, never the words. A pivot row dimension prints only the values present, which is why
 this is not `fixed_values`: that would print an empty row for every outcome, noise included,
 and would still leave the detail table in codes. The rows therefore sort alphabetically by
@@ -67,6 +67,7 @@ OUTCOME_LABELS: Tuple[Tuple[str, str], ...] = (
     ("clarified", "Asked back"),
     ("refused_policy", "Refused by policy"),
     ("handover", "Handed over"),
+    ("off_topic", "Off topic"),
     ("cannot_do", "Cannot do"),
     ("missed", "Missed"),
     ("technical", "Technical failure"),
@@ -100,8 +101,17 @@ AUDIENCE_LABELS: Tuple[Tuple[str, str], ...] = (
     ("unknown", "Unknown contacts"),
 )
 
-#: Staff testing the bot are not customers, so the report opens without them.
-DEFAULT_AUDIENCES: Tuple[str, ...] = ("dealer", "unknown")
+#: Who the contact is to the business (`facts._who`). Office is people inside the company, and
+#: anyone the bot answers who is linked to no customer.
+CONTACT_TYPE_LABELS: Tuple[Tuple[str, str], ...] = (
+    ("dealer", "Dealer"),
+    ("office", "Office"),
+    ("not_allowed", "Not allowed"),
+    ("unknown", "Unknown"),
+)
+
+#: Office is out by default: staff testing the bot are not customers.
+DEFAULT_CONTACT_TYPES: Tuple[str, ...] = ("dealer", "not_allowed", "unknown")
 
 
 def default_period() -> dict:
@@ -142,6 +152,7 @@ def _words(column: Any, pairs: Tuple[Tuple[str, str], ...]) -> Any:
 
 _OUTCOME = _words(ASKS.c.outcome, OUTCOME_LABELS)
 _AUDIENCE = _words(ASKS.c.audience, AUDIENCE_LABELS)
+_CONTACT_TYPE = _words(ASKS.c.contact_type, CONTACT_TYPE_LABELS)
 _FAILURE_REASON = _words(ASKS.c.failure_reason, OUTCOME_LABELS)
 _BRANCH = _words(ASKS.c.branch_kind, BRANCH_WORDS)
 _REPLY_SECONDS = sa.func.round(ASKS.c.reply_ms / sa.literal(1000.0))
@@ -162,12 +173,12 @@ def outcome_condition(ctx, values: List[str]) -> Any:
     return ASKS.c.outcome.in_(values)
 
 
-def audience_options(db) -> Sequence[Tuple[str, str]]:
-    return list(AUDIENCE_LABELS)
+def contact_type_options(db) -> Sequence[Tuple[str, str]]:
+    return list(CONTACT_TYPE_LABELS)
 
 
-def audience_condition(ctx, values: List[str]) -> Any:
-    return ASKS.c.audience.in_(values)
+def contact_type_condition(ctx, values: List[str]) -> Any:
+    return ASKS.c.contact_type.in_(values)
 
 
 # ---------------------------------------------------------------------- the catalog
@@ -181,6 +192,7 @@ def ask_dimensions() -> Tuple[reg.Column, ...]:
         reg.Column("week", "Week", "text", "dimension", week, size=100, value_label=week_label),
         reg.Column("month", "Month", "text", "dimension", month, size=110, period_months=True, value_label=month_label),
         reg.Column("domain", "Domain", "text", "dimension", lambda c: ASKS.c.domain, size=120),
+        reg.Column("contact_type", "Contact type", "text", "dimension", lambda c: _CONTACT_TYPE, size=120),
         reg.Column("audience", "Audience", "text", "dimension", lambda c: _AUDIENCE, size=110),
         reg.Column("customer", "Customer", "text", "dimension", lambda c: _CUSTOMER, size=200),
     )

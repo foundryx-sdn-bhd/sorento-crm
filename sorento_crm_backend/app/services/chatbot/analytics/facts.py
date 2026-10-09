@@ -90,20 +90,32 @@ def _eligible(row: ChatbotTurn | None) -> bool:
 
 
 def _who(db: Session, contact_respond_id: str) -> dict[str, Any]:
-    """The contact's identity as a fact records it: audience and the primary customer.
+    """The contact's identity as a fact records it: audience, contact type and the primary
+    customer.
 
-    `staff` when a user is linked to the contact, else `dealer` when it has a customer
-    link, else `unknown`. The customer is the PRIMARY link (a person can be the contact
-    for two accounts; the partial unique index allows one primary), else the first by id.
+    `audience` (the design column): `staff` when a user is linked to the contact, else
+    `dealer` when it has a customer link, else `unknown`.
+
+    `contact_type` (what the owner reads), first match: `office` when a user is linked,
+    `dealer` when the contact has any customer link, `not_allowed` when the contact's AI
+    switch is off, `office` otherwise (an unlinked contact the bot answers is someone inside),
+    and `unknown` when there is no contact row at all.
+
+    The customer is the PRIMARY link (a person can be the contact for two accounts; the
+    partial unique index allows one primary), else the first by id.
     """
-    contact_id = db.execute(
-        select(_CONTACTS.c.id)
+    contact = db.execute(
+        select(_CONTACTS.c.id, _CONTACTS.c.chatbot_allowed)
         .where(_CONTACTS.c.respond_io_id == contact_respond_id)
         .order_by(_CONTACTS.c.created_at.asc(), _CONTACTS.c.id.asc())
         .limit(1)
-    ).scalar()
-    if contact_id is None:
-        return {"contact_id": None, "customer_id": None, "company_id": None, "audience": "unknown"}
+    ).first()
+    if contact is None:
+        return {
+            "contact_id": None, "customer_id": None, "company_id": None,
+            "audience": "unknown", "contact_type": "unknown",
+        }
+    contact_id = contact.id
 
     link = db.execute(
         select(_LINKS.c.customer_id, _LINKS.c.company_id)
@@ -115,16 +127,18 @@ def _who(db: Session, contact_respond_id: str) -> dict[str, Any]:
         select(_USERS.c.id).where(_USERS.c.respond_contact_id == contact_id).limit(1)
     ).first()
     if is_staff is not None:
-        audience = "staff"
+        audience, contact_type = "staff", "office"
     elif link is not None:
-        audience = "dealer"
+        audience, contact_type = "dealer", "dealer"
     else:
         audience = "unknown"
+        contact_type = "office" if contact.chatbot_allowed else "not_allowed"
     return {
         "contact_id": str(contact_id),
         "customer_id": str(link.customer_id) if link is not None else None,
         "company_id": str(link.company_id) if link is not None and link.company_id else None,
         "audience": audience,
+        "contact_type": contact_type,
     }
 
 
@@ -259,6 +273,7 @@ def _write(db: Session, row: ChatbotTurn) -> int:
             customer_id=who["customer_id"],
             company_id=who["company_id"],
             audience=who["audience"],
+            contact_type=who["contact_type"],
             asked_at=row.created_at,
             channel="whatsapp",
             domain=flat["domain"],

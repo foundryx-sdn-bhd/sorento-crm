@@ -5,7 +5,7 @@ this file plus two datasets: no route, no schema and no page of its own.
 
 - Opens on outcome by week, counting asks and the ones that failed (technical, cannot do,
   missed), as a line chart.
-- Staff are out by default (a salesman testing the bot is not a customer), and so is noise (a
+- The office is out by default (a salesman testing the bot is not a customer), and so is noise (a
   greeting is not an ask); both are filters, so either can be brought back.
 - "Count by" swaps the row set: asks (one row per ask) or products (one row per product an
   ask named or was shown), the report's one dataset switch, like the Yearly comparison's basis.
@@ -30,6 +30,7 @@ COUNT_BY: tuple = (("asks", "Asks"), ("products", "Products"))
 DEFAULT_DETAIL_COLUMNS = [
     "asked_at",
     "outcome",
+    "contact_type",
     "audience",
     "domain",
     "customer",
@@ -55,12 +56,12 @@ REPORT = reg.register(
             reg.DateBasisParam(key="date_basis", label="Date basis", default="asked_at"),
             reg.PeriodParam(key="period", label="Period", default=ds.default_period),
             reg.SelectParam(
-                key="audience",
-                label="Audience",
+                key="contact_type",
+                label="Contact type",
                 multi=True,
-                default=ds.DEFAULT_AUDIENCES,
-                options=ds.audience_options,
-                condition=ds.audience_condition,
+                default=ds.DEFAULT_CONTACT_TYPES,  # everyone but the office
+                options=ds.contact_type_options,
+                condition=ds.contact_type_condition,
             ),
             reg.SelectParam(
                 key="outcome",
@@ -85,7 +86,7 @@ REPORT = reg.register(
         default_view={
             "params": {
                 "date_basis": "asked_at",
-                "audience": list(ds.DEFAULT_AUDIENCES),
+                "contact_type": list(ds.DEFAULT_CONTACT_TYPES),
                 "outcome": list(ds.DEFAULT_OUTCOMES),
                 "count_by": [COUNT_BY[0][0]],
             },

@@ -161,8 +161,8 @@ def _insert_ask(db, *, turn_id=None, seq=1) -> str:
     db.execute(
         text(
             f'INSERT INTO "{schema}".chat_ask_facts '
-            "(id, source, turn_id, ask_seq, contact_respond_id, audience, asked_at, outcome) "
-            "VALUES (:id, 'trace', :t, :s, 'ZZT-mig', 'dealer', now(), 'answered')"
+            "(id, source, turn_id, ask_seq, contact_respond_id, audience, contact_type, asked_at, outcome) "
+            "VALUES (:id, 'trace', :t, :s, 'ZZT-mig', 'dealer', 'dealer', now(), 'answered')"
         ),
         {"id": ask_id, "t": turn_id or str(uuid.uuid4()), "s": seq},
     )
