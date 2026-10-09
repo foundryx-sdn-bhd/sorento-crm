@@ -14,7 +14,7 @@ import { getGrant, listGrants } from './claudeConnectorService';
 
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 const fail = (status: number, body: unknown) =>
-  ({ ok: false, status, json: async () => body, text: async () => JSON.stringify(body) }) as Response;
+  ({ ok: false, status, headers: new Headers({ 'content-type': 'application/json' }), json: async () => body, text: async () => JSON.stringify(body) }) as Response;
 
 beforeEach(() => apiFetch.mockReset());
 

@@ -14,7 +14,7 @@ import { approveConsent, denyConsent, getConsent } from './consentService';
 
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 const fail = (status: number, detail: string) =>
-  ({ ok: false, status, json: async () => ({ detail }), text: async () => JSON.stringify({ detail }) }) as Response;
+  ({ ok: false, status, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ detail }), text: async () => JSON.stringify({ detail }) }) as Response;
 
 beforeEach(() => apiFetch.mockReset());
 
