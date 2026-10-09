@@ -99,3 +99,50 @@ owner's own case:
   inquiry only first. Rec (a).
 - Q5 attachments in comments: (a) none in v1, the Attachments section stays the place; (b) allow.
   Rec (a).
+
+## Contract (Phase 2; built on the recommendations, adjusted on owner answers)
+
+Backend
+- Migration `fcom_0001_conv_author_contact` (down_revision = main's head at build time):
+  `entity_conversation_messages.author_contact_id` Text NULL, FK `respond_contacts.id` ON DELETE
+  SET NULL. Model gains the column. Additive only.
+- `app/services/form_comment_service.py`:
+  - `FORM_COMMENT_SCOPE = "form_comment"`;
+    `FORM_COMMENT_KINDS = ("complaint", "stock_inquiry", "purchase_request", "sponsorship_form")`.
+  - `FormCommentService(db)`: `list_comments(kind, entity_id)`,
+    `add_staff_comment(kind, entity_id, user, body)`,
+    `add_contact_comment(kind, entity_id, contact_id, space_id, body)`.
+  - A comment serializes as `{id, body, author_name, author_kind: "staff"|"submitter", created_at}`.
+  - Body is plain text, stripped, 1..4000 chars, else 422. Stored as-is in `body_html` (the FE
+    renders it as text, never as HTML).
+  - Add on a `draft` row -> 422; on a voided row -> 422. Listing works in any state.
+  - Staff add: row committed FIRST, then the WhatsApp is enqueued on `respond_io`
+    (`app.tasks.respond_io_tasks.send_form_comment_message`, which calls `_send_and_log` with
+    `use_case=kind`). Identifier from `respond_inbox_url` (`resolve_send_identifier`). Text:
+    `There is a new comment on your <kind label lower> <number>:\n<body>\n\n<portal_url>`;
+    extra vars `update=<body>`, `portal_url`. No identifier -> comment still saved, response
+    `delivery = "no_whatsapp"`; else `delivery = "queued"`. An enqueue error is logged, comment
+    stays, `delivery = "failed"`.
+  - Contact add: row committed first, then one email (Notification `single_email_to_all`,
+    `notifications` queue, template `form_comment_from_submitter`). Recipients: CRM users whose
+    `respond_user_id == row.last_responded_by`, the SLA tracker's `handled_by_id`, and authors of
+    earlier staff comments on the thread; when that set is empty and kind is `stock_inquiry`, the
+    purchasing team (`lead_time_enquiries` / `purchasing`). No recipient -> logged, comment kept,
+    `delivery = "no_recipients"`.
+- Routes:
+  - Staff: `GET|POST /api/v1/form-comments/{kind}/{entity_id}`; GET and POST need the kind's view
+    slug (`complaint_management.complaints.view`, `procurement.stock_inquiries.view`,
+    `procurement.purchase_requests.view`, `procurement.sponsorship_forms.view`); POST is staff
+    session only (no API key). Unknown kind -> 422, unknown row -> 404.
+  - Portal: `GET|POST /api/v1/public/portal/submissions/{kind}/{submission_id}/comments`, portal
+    token, same ownership filter as `PortalService.get_submission` (contact_id + space_id, and
+    request_type for PR/sponsorship); someone else's submission -> 404.
+  - POST returns `{comment, delivery}`; GET returns `{items: [...]}` oldest first.
+
+Frontend
+- `components/common/CommentThread.tsx`: presentational thread extracted from `IdeaComments`
+  (same header, composer, empty state); `IdeaComments` reuses it.
+- CRM: `FormComments` (kind, entityId, readOnly) on StockInquiryDetail, ComplaintDetail,
+  PurchaseRequestDetail (covers sponsorship), after Attachments, before Audit trail.
+- Portal: the same thread in `SubmissionForm` after Attachments, before the button row, hidden
+  for drafts, composer hidden when voided.
