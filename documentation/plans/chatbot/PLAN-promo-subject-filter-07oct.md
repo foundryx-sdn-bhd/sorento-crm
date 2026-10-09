@@ -1,9 +1,16 @@
 # PLAN: promotion asks filter by subject; unresolved subject asks back; tier menu always stamped (PROMO-SUBJECT-FILTER)
 
-Status: BUILDING (7 Oct 2026). Track: full M (chatbot behaviour + backend/MCP param; no
-migration, no auth change, no UI). LEAD pattern: tester red first, coder green, reviewer.
-Card: `promo-subject-filter-behaviour-card.md`. UAC: `promo-subject-filter-acceptance-criteria.md`.
-Q5 (a) by the owner 7 Oct: R6 brand echo IN. Q4a (a) + Q4b (a) by the owner 7 Oct: R5 promotion kinds IN (AC-19..22), built red-first after R1-R4.
+Status: BUILDING round 3 (9 Oct 2026). Owner hand test #1527 round 2 FAILED (detection inconsistent);
+rulings Q1 (a) brand = linked products, Q2 (b) expired-only level stamps "- has promotion", Q3 (b) "flyer" = A3 Flyer
+kind decided by the parser. UAC AC-29..35. Round 3 red 7a28b4b58, fix e164ae544, AC-31 test moves 37fe8173d, main
+4ee6f643d merged, pushed aa90dc192. Reviewer NOT READY aa90dc192 (Product types line lists classes, not the 43
+product_type values; prompt example "toilet seat" off-list; confident:false brand "sorentoo" skips the ask-back and the
+tier_gate substring fallback still runs on promo asks). Red c87e33d89 (3 red). Opus coder fixing (turn_runtime.py,
+tier_gate.py edited, uncommitted). NEXT: commit fix, regenerate crew/state/migrations/PROMO-SUBJECT-FILTER.sql from the
+code constant (crew applies; dev copy needs a new unlabelled version), reviewer re-verify, live owner turns A-D 3x on
+the new version ("Sorneto grab bar promotion", "sorento grab bar promotion", "Promotion flyer", "sorento promotion
+flyer"; Sorneto/sorento/SORENTO identical), crew-note, script 1527.md, crew report --handtest. Private test DB
+sorento_psf_ci (drop after merge). Track: full M. Earlier rounds: card answers Q1-Q5, R1-R6, AC-1..28 (see UAC).
 
 ## Journey
 
