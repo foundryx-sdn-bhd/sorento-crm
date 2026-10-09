@@ -1,8 +1,9 @@
 # PLAN: short-link page opens a sheet as a full-screen Excel viewer (LINK-XLSX-VIEWER)
 
-Status: building (owner approved mock v2 + crew answers Q1-Q5, 10 Oct 2026). Track: M, lead
-pattern (tester -> coder -> reviewer + security-reviewer, public page parsing untrusted files).
-No migration, no permission change.
+Status: in review, PR #1555 (10 Oct 2026): reviewer READY at 67f3ebe3f, security-reviewer PASS,
+browser pass PASS 375/1280; owner hand test next. Track: M, lead pattern (tester -> coder ->
+reviewer + security-reviewer, public page parsing untrusted files). No migration, no permission
+change.
 UAC: `link-xlsx-viewer-10oct-acceptance-criteria.md` (same folder)
 Mock: `documentation/mockups/LINK-XLSX-VIEWER/index.html` (v2, invented figures)
 Parent: `CARD-photo-send-links-09oct.md` (#1541, the `/f/{code}` page and its public routes).
@@ -113,3 +114,17 @@ expired + error unchanged. Download uses `?download=1`. Footnote when truncated:
 - exceljs bundle (~256 KB gz) loads only inside the worker chunk on this public page.
 - Vertical merges across virtualised rows: the merged cell draws from its top row; when the top
   row is scrolled out the covered rows show blank (accepted).
+
+## 5. Built differently from section 2 (found in review / browser pass)
+
+- Content download: idle limit, 30 s without bytes (page.tsx readBody), not a total limit; the
+  fetch carries an AbortSignal aborted on unmount. Cause: the Next dev `/api/v1` rewrite sometimes
+  drops a large body's tail; without a limit the spinner stayed forever.
+- Colours: ARGB alpha is ignored as Excel does (openpyxl writes `00RRGGBB`).
+- Excel mode cell metrics `px-1 text-xs leading-6` so columns sized in Excel fit their content;
+  centre/right text sits in an inline-block truncating span (clips at the end only).
+- Hidden rows skipped with real sheet row numbers (`rowNumbers`); merges capped at 10,000; `.xls`
+  / `.csv` bounds from cells with text (`firstRowNumber`, `firstColIndex`).
+- Named triggers, not built: zip-bomb pre-check of declared uncompressed sizes (trigger: a real
+  file crashing a viewer tab); server HEAD before download for the 413 (trigger: a real sheet
+  link over 50 MB).
