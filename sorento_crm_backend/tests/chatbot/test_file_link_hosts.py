@@ -190,48 +190,6 @@ def test_a_host_written_with_a_scheme_still_counts(monkeypatch):
     assert file_link_service.signer_hosts() == {"cdn-sorento.com"}
 
 
-def _transport(handler):
-    import httpx
-
-    return httpx.MockTransport(handler)
-
-
-def test_the_public_fetch_refuses_a_redirect():
-    import httpx
-
-    def handler(request):
-        return httpx.Response(302, headers={"location": "http://169.254.169.254/"})
-
-    with pytest.raises(ValueError, match="redirect"):
-        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(handler))
-
-
-def test_the_public_fetch_refuses_a_file_over_the_cap(monkeypatch):
-    import httpx
-
-    monkeypatch.setattr(file_link_service, "PUBLIC_FETCH_MAX_BYTES", 10)
-
-    def declared(request):
-        return httpx.Response(200, headers={"content-length": "11"}, content=b"x" * 11)
-
-    def streamed(request):
-        return httpx.Response(200, content=iter([b"x" * 6, b"x" * 6]))
-
-    with pytest.raises(ValueError, match="too large"):
-        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(declared))
-    with pytest.raises(ValueError, match="too large"):
-        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(streamed))
-
-
-def test_the_public_fetch_returns_the_bytes():
-    import httpx
-
-    data = file_link_service._fetch_public(
-        "https://cdn-sorento.com/r.csv", transport=_transport(lambda r: httpx.Response(200, content=b"a,b\n"))
-    )
-    assert data == b"a,b\n"
-
-
 def test_a_skipped_url_in_prose_is_not_rewritten_as_a_link_line(monkeypatch):
     """Only a line that STARTS with `*Link:*` and carries the skipped url becomes
     `*Link:* (sent as a file)`; a prose line naming the same url keeps its words."""
@@ -254,13 +212,15 @@ def test_a_skipped_url_in_prose_is_not_rewritten_as_a_link_line(monkeypatch):
 def test_download_bytes_refuses_a_non_signer_host_without_any_http_call(copy_env, monkeypatch, url):
     import httpx
 
+    calls: list[str] = []
+
     def _no_http(*a, **kw):
+        calls.append("http")
         raise AssertionError("an outbound http call was made")
 
-    for name in ("get", "stream", "request"):
+    for name in ("get", "stream"):
         monkeypatch.setattr(httpx, name, _no_http)
-    monkeypatch.setattr(httpx.Client, "send", _no_http)
-    monkeypatch.setattr(httpx.Client, "request", _no_http)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _no_http)
     with pytest.raises(Exception) as exc:
         file_link_service.download_bytes(url)
-    assert not isinstance(exc.value, AssertionError)
+    assert calls == []

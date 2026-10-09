@@ -236,16 +236,21 @@ def test_a_non_signer_host_sheet_is_refused_and_never_fetched(env, monkeypatch):
     client, db, _ = env
     monkeypatch.setattr("app.api.v1.public.file_links.download_bytes", file_link_service.download_bytes)
 
+    calls: list[str] = []
+
     def _no_http(*a, **kw):
+        calls.append("http")
         raise AssertionError("an outbound http call was made")
 
+    # The TestClient drives the app through its own transport, so only the real network
+    # entry points are guarded here.
     monkeypatch.setattr(httpx, "get", _no_http)
     monkeypatch.setattr(httpx, "stream", _no_http)
-    monkeypatch.setattr(httpx.Client, "send", _no_http)
-    monkeypatch.setattr(httpx.Client, "request", _no_http)
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _no_http)
     _link(db, "SHEET00000000003", "https://cdn-sorento.com/reports/r.csv", "r.csv")
     resp = client.get(f"{BASE}/SHEET00000000003/content")
     assert resp.status_code == 502
+    assert calls == []
 
 
 def test_a_stored_url_off_the_list_is_never_handed_out(env, monkeypatch):
