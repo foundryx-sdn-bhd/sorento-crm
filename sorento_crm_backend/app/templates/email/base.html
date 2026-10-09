@@ -9,7 +9,7 @@
 <meta name="supported-color-schemes" content="light">
 <title>{{ subject }}</title>
 <style>
-  /* Only what inline styles cannot say: the phone breakpoint. Every other rule is inline. */
+  /* Only what inline styles cannot say: the phone breakpoint and print. Every other rule is inline. */
   @media only screen and (max-width: {{ breakpoint }}px) {
     .em-outer { padding: 0 !important; }
     .em-card { width: 100% !important; border-radius: 0 !important; border-left: 0 !important; border-right: 0 !important; }
@@ -18,6 +18,18 @@
     .em-btn-link { display: block !important; }
     .em-facts td { display: block !important; width: 100% !important; }
     .em-facts td.em-fact-label { padding-bottom: 0 !important; }
+  }
+  /* Printing (OI-EMAIL-PRINT): A4 portrait, the card fills the sheet, a long table repeats
+     its header row on every page. Rows that must not split say so inline; a rule on every
+     `tr` here would also hold the shell's own block rows together and push a whole table
+     onto the next page. Clients that ignore this still get a card that fits, when the
+     document is on the `print` width. */
+  @page { size: A4 portrait; margin: 10mm; }
+  @media print {
+    body { background-color: #ffffff !important; }
+    .em-outer { padding: 0 !important; }
+    .em-card { width: 100% !important; max-width: 100% !important; border: 0 !important; border-radius: 0 !important; }
+    thead { display: table-header-group; }
   }
 </style>
 </head>

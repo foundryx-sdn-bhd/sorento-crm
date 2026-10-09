@@ -122,4 +122,16 @@ describe('EmailTemplateDetailPage', () => {
     await waitFor(() => expect(updateMut.mutateAsync).toHaveBeenCalledTimes(1));
     expect(updateMut.mutateAsync.mock.calls[0][0].layout_json.width).toBe('wide');
   });
+
+  it('choosing Print sends layout_json.width print (OI-EMAIL-PRINT)', async () => {
+    render(<EmailTemplateDetailPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    fireEvent.click(screen.getByLabelText('Width'));
+    fireEvent.click(screen.getByRole('option', { name: 'Print, A4 portrait (672px)' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(updateMut.mutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateMut.mutateAsync.mock.calls[0][0].layout_json.width).toBe('print');
+  });
 });
