@@ -102,3 +102,9 @@ def test_needs_judge_only_when_pass_and_note():
     assert g(ex(judge_note="be polite"), "hello").needs_judge
     assert not g(ex(must=[{"code": "TESTCODE-1"}]), "TESTCODE-1 here").needs_judge
     assert not g(ex(judge_note="be polite", must=[{"code": "ZZ"}]), "hello").needs_judge
+
+
+def test_must_near_key_ignored_number_still_checked():
+    e = ex(must=[{"number": 130, "near": "BRW"}])
+    assert g(e, "BRW: 130").label == "correct"
+    assert g(e, "BRW: 131").label == "wrong"
