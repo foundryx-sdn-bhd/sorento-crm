@@ -211,14 +211,16 @@ def test_handover_remark_raised_rows_use_the_verb_label():
     assert "SPO-2026/08-0061" in order_back
 
 
-def test_handover_remark_appends_a_cs_note_after_the_verb():
-    """AC-H2: "`note` appended after ' - ' when present" (PLAN 3.3)."""
+def test_handover_remark_never_appends_the_row_note():
+    """AC-H2 as OI-EMAIL-PRINT (owner, 9 Oct) restated it: the row's note is an internal
+    stamp bag and stays in the CRM; REMARK is the verb alone
+    (`PLAN-oi-email-print-09oct.md` rule 1, AC-P1/AC-P2)."""
     from app.services.project_order_inquiry_service import handover_remark
 
     remark = handover_remark(
         "raised", _row(verb=IV_ORDER, note="Confirmed by WhatsApp"), None
     )
-    assert remark == "ORDER - Confirmed by WhatsApp"
+    assert remark == "ORDER"
 
 
 @pytest.mark.parametrize(
