@@ -57,9 +57,9 @@ class ChatAskFact(Base):
     __audit_skip__ = "derived analytics fact, rebuilt from chatbot.turns by the sweep"
     __table_args__ = (
         UniqueConstraint("turn_id", "ask_seq", name="uq_chat_ask_facts_turn_seq"),
-        UniqueConstraint("history_message_id", "ask_seq", name="uq_chat_ask_facts_history_seq"),
+        UniqueConstraint("history_id", "ask_seq", name="uq_chat_ask_facts_history_seq"),
         CheckConstraint(
-            "(turn_id IS NULL) <> (history_message_id IS NULL)", name="ck_chat_ask_facts_one_source"
+            "(turn_id IS NULL) <> (history_id IS NULL)", name="ck_chat_ask_facts_one_source"
         ),
         Index("ix_chat_ask_facts_asked_at", "asked_at"),
         Index("ix_chat_ask_facts_contact", "contact_respond_id"),
@@ -74,7 +74,7 @@ class ChatAskFact(Base):
     turn_id = Column(UUID(as_uuid=False), nullable=True)
     # The incoming `chat_histories.id` of a backfilled message (CA-4). Exactly one of this and
     # `turn_id` is set. Not an FK, for the same reason.
-    history_message_id = Column(BigInteger, nullable=True)
+    history_id = Column(BigInteger, nullable=True)
     ask_seq = Column(SmallInteger, nullable=False, server_default=text("1"), default=1)
 
     contact_respond_id = Column(Text, nullable=False)

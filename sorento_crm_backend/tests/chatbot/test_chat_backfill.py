@@ -25,7 +25,6 @@ from tests.chatbot._chat_facts_helpers import (
     seed_contact,
     seed_turn,
 )
-from tests.chatbot.test_chat_topic_labeller import ask, seed_taxonomy
 
 
 def backfill():
@@ -34,6 +33,40 @@ def backfill():
 
 def labeller():
     return importlib.import_module("app.services.chatbot.analytics.labeller")
+
+
+#: The taxonomy every test seeds: subjects at v1, leaves at v2 (as the CA-2 labeller tests).
+SUBJECTS = ("inventory", "incoming", "master_products", "general")
+LEAVES = (
+    ("inventory.availability", "inventory", "Availability"),
+    ("inventory.other", "inventory", "Other stock"),
+    ("incoming.product_eta", "incoming", "Product ETA"),
+    ("incoming.other", "incoming", "Other incoming"),
+    ("master_products.price", "master_products", "Price"),
+    ("master_products.other", "master_products", "Other product"),
+    ("general.noise", "general", "Noise"),
+    ("general.other", "general", "Other"),
+)
+
+
+def seed_taxonomy(session_factory) -> None:
+    models = models_mod()
+    db = session_factory()
+    for order, code in enumerate(SUBJECTS):
+        db.add(models.ChatTopic(code=code, label=code.title(), definition=code, version=1, sort_order=order))
+    db.flush()
+    for order, (code, parent, label) in enumerate(LEAVES):
+        db.add(models.ChatTopic(code=code, parent_code=parent, label=label, definition=label, version=2, sort_order=order))
+    db.commit()
+
+
+def ask(subject: str, leaf: str, *, confidence: float = 0.9, products=()) -> dict:
+    return {
+        "subject": subject,
+        "leaf": leaf,
+        "confidence": confidence,
+        "product_words": [{"word": w, "confidence": c} for w, c in products],
+    }
 
 
 #: Inside era A (UTC, naive, as `chat_histories.sent_at` is stored).
@@ -132,8 +165,8 @@ def facts(session_factory, history_id=None):
     models = models_mod()
     q = session_factory().query(models.ChatAskFact).filter(models.ChatAskFact.source == "history_backfill")
     if history_id is not None:
-        q = q.filter(models.ChatAskFact.history_message_id == history_id)
-    return q.order_by(models.ChatAskFact.history_message_id, models.ChatAskFact.ask_seq).all()
+        q = q.filter(models.ChatAskFact.history_id == history_id)
+    return q.order_by(models.ChatAskFact.history_id, models.ChatAskFact.ask_seq).all()
 
 
 def runs(session_factory):
@@ -384,7 +417,7 @@ def test_a_fact_row_records_the_message_and_the_label_audit(session_factory, tax
     fact = facts(session_factory, h)[0]
     assert fact.source == "history_backfill"
     assert fact.turn_id is None
-    assert fact.history_message_id == h
+    assert fact.history_id == h
     assert fact.ask_seq == 1
     assert fact.contact_respond_id == c
     assert fact.audience == "dealer" and fact.contact_type == "dealer"
@@ -430,7 +463,7 @@ def test_a_second_ask_in_the_message_is_its_own_row(session_factory, taxonomy):
         (1, "inventory", "inventory.availability"),
         (2, "master_products", "master_products.price"),
     ]
-    assert rows[1].history_message_id == h and rows[1].turn_id is None
+    assert rows[1].history_id == h and rows[1].turn_id is None
     assert rows[1].outcome == rows[0].outcome
 
 
@@ -586,7 +619,7 @@ def test_relabel_rereads_messages_labelled_under_an_older_taxonomy(session_facto
     run(session_factory, answered())
     db = session_factory()
     models = models_mod()
-    db.query(models.ChatAskFact).filter_by(history_message_id=h).update({"taxonomy_version": 1})
+    db.query(models.ChatAskFact).filter_by(history_id=h).update({"taxonomy_version": 1})
     db.commit()
     assert backfill().pending(session_factory(), "A") == []
     assert backfill().pending(session_factory(), "A", relabel=True) == [h]

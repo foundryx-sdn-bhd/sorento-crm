@@ -142,7 +142,7 @@ def _eligible(era: str):
 
 def _has_fact(*, stale_below: int | None = None):
     """A fact exists for the message (optionally: one labelled under the current version)."""
-    query = select(_FACTS.c.id).where(_FACTS.c.history_message_id == _H.c.id, _FACTS.c.ask_seq == 1)
+    query = select(_FACTS.c.id).where(_FACTS.c.history_id == _H.c.id, _FACTS.c.ask_seq == 1)
     if stale_below is not None:
         query = query.where(_FACTS.c.taxonomy_version >= stale_below)
     return query.exists()
@@ -406,12 +406,12 @@ def _write(
 ) -> int:
     """The message's fact rows (one per ask) and items. Replaces an older label of the same
     message (`--relabel`). Returns the asks written. Does not commit."""
-    db.execute(_FACTS.delete().where(_FACTS.c.history_message_id == m.id))
+    db.execute(_FACTS.delete().where(_FACTS.c.history_id == m.id))
     who = facts_mod._who(db, m.contact)
     common = {
         "source": "history_backfill",
         "turn_id": None,
-        "history_message_id": m.id,
+        "history_id": m.id,
         "contact_respond_id": m.contact,
         "contact_id": who["contact_id"],
         "customer_id": who["customer_id"],

@@ -5,8 +5,8 @@ Plan: `PLAN-chat-analytics-ca4-backfill-09oct.md`. Every criterion is tested on 
 
 ## Storage
 - AC-1 A fact can name a `chat_histories` row instead of a turn: exactly one of `turn_id`,
-  `history_message_id` is set (the database refuses both or neither).
-- AC-2 One fact per (`history_message_id`, `ask_seq`); a second write of the same message adds
+  `history_id` is set (the database refuses both or neither).
+- AC-2 One fact per (`history_id`, `ask_seq`); a second write of the same message adds
   nothing.
 - AC-3 `chatbot.chat_backfill_runs` records era, status, eligible count, messages read, asks
   written, calls, failed calls, tokens in / out / cached, model, prompt and taxonomy version,

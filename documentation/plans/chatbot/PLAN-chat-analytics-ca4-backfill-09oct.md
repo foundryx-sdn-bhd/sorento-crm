@@ -60,8 +60,8 @@ output in the trace (D:231). D:37's "to 7 Sep" is about the saved parser column;
 - B6 Items: named = CA-2 resolver pass; shown = reply `result` items with `entity_type =
   product` whose `uuid` is a `products.id` (`resolved_by = history_result`).
 - B7 Identity: CA-1 `_who`.
-- B8 Storage: `turn_id` nullable, `history_message_id bigint`, exactly one of the two, unique
-  (`history_message_id`, `ask_seq`), `source = history_backfill`; run table
+- B8 Storage: `turn_id` nullable, `history_id bigint`, exactly one of the two, unique
+  (`history_id`, `ask_seq`), `source = history_backfill`; run table
   `chatbot.chat_backfill_runs`. No text column.
 - B9 Run: `scripts/chat_backfill.py --era A|B|C|D [--estimate] [--limit N]`. Batches of 40,
   grouped by contact then time, one commit per batch with the run's progress. Re-run writes

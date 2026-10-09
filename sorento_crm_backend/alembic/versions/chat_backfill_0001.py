@@ -2,7 +2,7 @@
 
 Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca4-backfill-09oct.md, rule B8.
 
-- `chatbot.chat_ask_facts.turn_id` becomes nullable and `history_message_id bigint` is added: a
+- `chatbot.chat_ask_facts.turn_id` becomes nullable and `history_id bigint` is added: a
   backfilled fact names the incoming `chat_histories` row it came from instead of a turn.
   Exactly one of the two is set (CHECK), and a message has one row per ask (unique with
   `ask_seq`, as a turn has). No FK, like `turn_id`: the fact outlives its source row.
@@ -41,16 +41,16 @@ def _schema(bind) -> str:
 def upgrade() -> None:
     facts = f'"{_schema(op.get_bind())}".chat_ask_facts'
     op.execute(f"ALTER TABLE {facts} ALTER COLUMN turn_id DROP NOT NULL")
-    op.execute(f"ALTER TABLE {facts} ADD COLUMN IF NOT EXISTS history_message_id BIGINT")
+    op.execute(f"ALTER TABLE {facts} ADD COLUMN IF NOT EXISTS history_id BIGINT")
     op.execute(f"ALTER TABLE {facts} DROP CONSTRAINT IF EXISTS ck_chat_ask_facts_one_source")
     op.execute(
         f"ALTER TABLE {facts} ADD CONSTRAINT ck_chat_ask_facts_one_source "
-        "CHECK ((turn_id IS NULL) <> (history_message_id IS NULL))"
+        "CHECK ((turn_id IS NULL) <> (history_id IS NULL))"
     )
     op.execute(f"ALTER TABLE {facts} DROP CONSTRAINT IF EXISTS uq_chat_ask_facts_history_seq")
     op.execute(
         f"ALTER TABLE {facts} ADD CONSTRAINT uq_chat_ask_facts_history_seq "
-        "UNIQUE (history_message_id, ask_seq)"
+        "UNIQUE (history_id, ask_seq)"
     )
 
     op.create_table(
@@ -86,5 +86,5 @@ def downgrade() -> None:
     op.execute(f"DELETE FROM {facts} WHERE turn_id IS NULL")
     op.execute(f"ALTER TABLE {facts} DROP CONSTRAINT IF EXISTS uq_chat_ask_facts_history_seq")
     op.execute(f"ALTER TABLE {facts} DROP CONSTRAINT IF EXISTS ck_chat_ask_facts_one_source")
-    op.execute(f"ALTER TABLE {facts} DROP COLUMN IF EXISTS history_message_id")
+    op.execute(f"ALTER TABLE {facts} DROP COLUMN IF EXISTS history_id")
     op.execute(f"ALTER TABLE {facts} ALTER COLUMN turn_id SET NOT NULL")

@@ -2,8 +2,8 @@
 (chat analytics CA-4, tester-first RED).
 
 Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca4-backfill-09oct.md, rule B8; UAC AC-1
-to AC-3. `chat_ask_facts.turn_id` becomes nullable, `history_message_id bigint` is added,
-exactly one of the two is set, one fact per (`history_message_id`, `ask_seq`), and
+to AC-3. `chat_ask_facts.turn_id` becomes nullable, `history_id bigint` is added,
+exactly one of the two is set, one fact per (`history_id`, `ask_seq`), and
 `chatbot.chat_backfill_runs` records a run with no column for anyone's words.
 
 Run: pytest tests/chatbot/test_migration_chat_backfill_0001.py -q
@@ -68,7 +68,7 @@ def db():
         session.execute(
             text(f'ALTER TABLE "{s}".chat_ask_facts DROP CONSTRAINT IF EXISTS uq_chat_ask_facts_history_seq')
         )
-        session.execute(text(f'ALTER TABLE "{s}".chat_ask_facts DROP COLUMN IF EXISTS history_message_id'))
+        session.execute(text(f'ALTER TABLE "{s}".chat_ask_facts DROP COLUMN IF EXISTS history_id'))
         session.execute(text(f'ALTER TABLE "{s}".chat_ask_facts ALTER COLUMN turn_id SET NOT NULL'))
         yield session
 
@@ -90,7 +90,7 @@ def _fact(db, *, turn_id=None, history_id=None, seq: int = 1) -> None:
     db.execute(
         text(
             f'INSERT INTO "{_schema()}".chat_ask_facts '
-            "(id, source, turn_id, history_message_id, ask_seq, contact_respond_id, audience, "
+            "(id, source, turn_id, history_id, ask_seq, contact_respond_id, audience, "
             "contact_type, asked_at, outcome, tools) "
             "VALUES (:id, 'history_backfill', :turn, :hid, :seq, 'ZZT-mig', 'unknown', 'unknown', "
             "now(), 'answered', '{}')"
@@ -103,8 +103,8 @@ def test_a_fact_can_name_a_history_row_instead_of_a_turn(db):
     _run(db)
     columns = _columns(db, "chat_ask_facts")
     assert columns["turn_id"].is_nullable == "YES"
-    assert columns["history_message_id"].data_type == "bigint"
-    assert columns["history_message_id"].is_nullable == "YES"
+    assert columns["history_id"].data_type == "bigint"
+    assert columns["history_id"].is_nullable == "YES"
     _fact(db, history_id=101)
 
 
@@ -149,4 +149,4 @@ def test_no_run_column_can_hold_what_a_customer_wrote(db):
 
 def test_upgrade_twice_is_harmless(db):
     _run(db, twice=True)
-    assert "history_message_id" in _columns(db, "chat_ask_facts")
+    assert "history_id" in _columns(db, "chat_ask_facts")
