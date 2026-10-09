@@ -2014,6 +2014,7 @@ jobs:
         changes,
         validate-backend,
         validate-mcp,
+        validate-analytics-mcp,
         test-backend-scm,
         test-backend,
         test-backend-changed,

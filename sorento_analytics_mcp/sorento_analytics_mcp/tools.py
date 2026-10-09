@@ -1,4 +1,4 @@
-"""Tool registration: the 40 reused catalog tools and the five chat tools (card section 4)."""
+"""Tool registration: the 34 reused catalog tools and the five chat tools (card section 4)."""
 from __future__ import annotations
 
 import functools
@@ -8,6 +8,7 @@ import time
 from typing import Any, Optional
 
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from sorento_crm_mcp.catalog import CATALOG
 from sorento_crm_mcp.module_loader import merged_catalog
@@ -20,32 +21,40 @@ logger = logging.getLogger(__name__)
 BE = "/api/v1/analytics-connector"
 
 # Card 4.2. A static list on purpose: a catalog edit can never widen what the connector exposes.
+# Removed in the security round (card 4.2 table): crm_low_stock_report, crm_report_ask,
+# crm_sales_analysis, crm_complaints_list, crm_resource_attachments_current_stock_list,
+# crm_sla_conversation_tracking_list.
 ANALYTICS_REUSED_TOOLS: frozenset[str] = frozenset({
     # Master data
     "crm_master_products_list", "crm_master_brands_list", "crm_master_product_categories_list",
     "crm_master_units_of_measure_list", "crm_master_product_attachments_list", "crm_certificates_list",
     "crm_master_customers_list", "crm_lookup_resolve",
     # Stock / incoming
-    "crm_inventory_stock_balance_list", "crm_inventory_warehouses_list", "crm_low_stock_report",
+    "crm_inventory_stock_balance_list", "crm_inventory_warehouses_list",
     "crm_incoming_stock_by_product", "crm_incoming_stock_shipments", "crm_incoming_stock_list",
     # Sales / orders
     "crm_order_management_orders_list", "crm_order_management_orders_by_product_list",
-    "crm_outstanding_report", "crm_sales_report", "crm_report_ask", "crm_top_selling_report",
-    "crm_sales_analysis",
+    "crm_outstanding_report", "crm_sales_report", "crm_top_selling_report",
     # Procurement
     "crm_procurement_po_placed_list", "crm_procurement_spo_allocations_last_receipt_list",
     "crm_procurement_po_last_cost_list",
     # Marketing / resources
     "crm_marketing_promotions_list", "crm_marketing_promotion_products_list",
     "crm_marketing_promotion_attachments_list", "crm_resource_attachments_list",
-    "crm_resource_attachments_catalogue", "crm_resource_attachments_current_stock_list",
+    "crm_resource_attachments_catalogue",
     # Projects
     "crm_projects_list", "crm_project_detail", "crm_project_quotations_list", "crm_project_forecast",
     # Complaints / forms / SLA
-    "crm_complaints_list", "crm_complaint_analytics", "crm_forms_management_forms_list",
-    "crm_sla_conversation_tracking_dashboard", "crm_sla_conversation_tracking_list",
-    "crm_sla_conversation_event_logs_list",
+    "crm_complaint_analytics", "crm_forms_management_forms_list",
+    "crm_sla_conversation_tracking_dashboard", "crm_sla_conversation_event_logs_list",
 })
+
+# Presigned URLs are credentials (owner ruling R2): this argument is never forwarded.
+_DROPPED_ARGS = ("resolve_signed_urls",)
+
+# The backend's dataset keys (app/services/analytics_connector/datasets.py). A key outside this set
+# never reaches the backend, so a tool argument cannot steer the request path.
+DATASET_KEYS: frozenset[str] = frozenset({"messages", "contacts", "bot_turns", "episodes"})
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
 
@@ -64,11 +73,14 @@ def _is_error(text: str) -> bool:
 
 
 def _wrap_reused(impl, name: str):
-    """Cap the answer, then audit the call after it returned (card 6). The audit never fails the call."""
+    """Cap the answer, then audit the call (card 6). Fail closed: no audit row, no data."""
 
     @functools.wraps(impl)
     async def wrapper(*args: Any, **kwargs: Any) -> str:
         ctx = kwargs.get("ctx")
+        for arg in _DROPPED_ARGS:
+            if arg in kwargs:
+                kwargs[arg] = None
         started = time.perf_counter()
         status = "ok"
         try:
@@ -80,17 +92,19 @@ def _wrap_reused(impl, name: str):
         text = cap_text(text)
         if _is_error(text):
             status = "error"
-        await _audit(ctx, name, kwargs, status, started, count_rows(text), len(text))
+        if not await _audit(ctx, name, kwargs, status, started, count_rows(text), len(text)):
+            raise ToolError("audit_unavailable: the call was not recorded, so no data is returned. Try again later.")
         return text
 
     return wrapper
 
 
 async def _audit(ctx: Optional[Context], tool: str, kwargs: dict, status: str, started: float,
-                 rows: Optional[int], chars: int) -> None:
+                 rows: Optional[int], chars: int) -> bool:
+    """POST the audit row; True only when the backend accepted it."""
     try:
         client = ctx.request_context.lifespan_context["client"]  # type: ignore[union-attr]
-        await client.post(f"{BE}/audit", body={
+        resp = await client.post(f"{BE}/audit", body={
             "tool": tool,
             "args": {k: v for k, v in kwargs.items() if k != "ctx" and v is not None},
             "status": status,
@@ -98,8 +112,25 @@ async def _audit(ctx: Optional[Context], tool: str, kwargs: dict, status: str, s
             "rows": rows,
             "chars": chars,
         })
-    except Exception as exc:  # noqa: BLE001 - audit must not break the answer
+    except Exception as exc:  # noqa: BLE001 - reported to the caller as a failed audit
         logger.warning("analytics audit post failed: %s", type(exc).__name__)
+        return False
+    # The route answers 204 (empty body). Every CRMClient failure (HTTP >= 400, transport error,
+    # oversize, bad encoding) is a JSON object with an "error" key.
+    if _has_error_key(resp):
+        logger.warning("analytics audit post refused")
+        return False
+    return True
+
+
+def _has_error_key(text: Any) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(obj, dict) and bool(obj.get("error"))
 
 
 def register_reused_tools(mcp: FastMCP) -> int:
@@ -132,6 +163,8 @@ def register_chat_tools(mcp: FastMCP) -> None:
         return cap_text(await _client(ctx).get(f"{BE}/datasets", tool_name="chat_list_datasets"))
 
     async def chat_describe_dataset(ctx: Context, dataset: str) -> str:
+        if dataset not in DATASET_KEYS:
+            raise ToolError(f"unknown dataset; use one of: {', '.join(sorted(DATASET_KEYS))}")
         return cap_text(await _client(ctx).get(
             f"{BE}/datasets/{{dataset}}", path_params={"dataset": dataset}, tool_name="chat_describe_dataset"))
 

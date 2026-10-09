@@ -10,7 +10,7 @@ well-known documents and `/analytics/healthz`.
 
 Every `/analytics/mcp` request is first checked with `GET /api/v1/analytics-connector/me` using the
 caller's bearer and the internal key; anything but 200 is a 401 with `WWW-Authenticate`. Tools then call
-the backend AS that user. The 40 reused catalog tools are the static `ANALYTICS_REUSED_TOOLS`; the five
+the backend AS that user. The 34 reused catalog tools are the static `ANALYTICS_REUSED_TOOLS`; the five
 `chat_*` tools map to `/api/v1/analytics-connector/*`. Output is capped at 120,000 characters, and every
 reused tool call is audited through `POST /api/v1/analytics-connector/audit`.
 

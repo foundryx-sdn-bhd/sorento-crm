@@ -124,10 +124,10 @@ SELECT t.id::text AS id,
        t.status,
        t.stage,
        t.branch_kind,
-       t.error,
+       {_mask('t.error')} AS error,
        t.attempt,
        {_mask("COALESCE(t.envelope #>> '{message,message,message,text}', t.envelope #>> '{message,message,message,attachment,description}')")} AS inbound_text,
-       t.response #>> '{{reply,text}}' AS reply_text
+       {_mask("t.response #>> '{reply,text}'")} AS reply_text
   FROM chatbot.turns t
   LEFT JOIN LATERAL (
         SELECT r.id, r.name FROM respond_contacts r

@@ -117,14 +117,18 @@ Steps:
 4. **Token.** `POST /analytics/oauth/token` (form-urlencoded) with `grant_type=authorization_code`.
    The backend checks the code hash, the PKCE verifier (S256), the client, the redirect and the
    resource. It then creates:
-   - a **grant** row: user, client, created, last used, revoked, absolute expiry 90 days, and the
-     refresh token hash plus the previous refresh hash;
+   - a **grant** row: user, client, created, last used, revoked, absolute expiry 90 days, the
+     refresh token hash and `refresh_issued_at` (the refresh token lives 30 days from there);
    - an **access token**, which is a `user_sessions` row with `auth_method='claude_connector'`,
      `rolling=false` and `expires_at = now + 1 h`.
-   Response: `{access_token, token_type: "Bearer", expires_in: 3600, refresh_token, scope}`.
-5. **Refresh.** `grant_type=refresh_token` rotates the refresh token, revokes the previous
-   access-token session and mints a new one.
-   - A REUSED old refresh token revokes the whole grant (OAuth 2.1 theft detection).
+   Response: `{access_token, token_type: "Bearer", expires_in: 3600, refresh_token, refresh_token_expires_in: 2592000, scope}`.
+   - The code row is locked (`SELECT ... FOR UPDATE`) while it is redeemed and remembers the grant
+     it produced. A replayed, already-used code revokes that grant.
+5. **Refresh.** `grant_type=refresh_token` rotates the refresh token (row locked), resets
+   `refresh_issued_at`, revokes the previous access-token session and mints a new one.
+   - A refresh token older than 30 days is `invalid_grant`; the grant itself lives 90 days.
+   - Every rotated-out hash is kept in `analytics_connector_retired_refresh`. Presenting ANY
+     retired token of the family revokes the whole grant (OAuth 2.1 theft detection).
    - Every failure answers `invalid_grant`.
    - Grant expiry or revocation leads to a fresh sign-in.
 6. **Every MCP request.**
@@ -138,6 +142,10 @@ Steps:
      - (b) The method must be GET or HEAD, or a POST on a short allowlist: `/api/v1/lookup/resolve`
        and the connector's own `query` and `audit` routes. Any write fails with 403 even if a write
        tool slipped in.
+     - (b2) A GET or HEAD must fall under `CONNECTOR_GET_PREFIXES` (`access.py`): the reused tools'
+       backend routes plus `/api/v1/analytics-connector/`. Dot segments, empty segments, backslashes
+       and encoded `/`, `\` or `.` are refused first. Anything else answers 403
+       `connector_path_not_allowed`. A test keeps the prefixes in step with the tool list.
      - (c) The user must hold `analytics.connector.use`, re-checked on every request (Q1). A user who
        loses it, or is deactivated, fails the next call.
      - (d) `X-Impersonate-User-Id` is ignored.
@@ -148,6 +156,8 @@ Steps:
      grant's current session, so the very next call gets 401.
    - The user's own Current sessions screen also lists and revokes the connector session (existing
      screen, `auth_method` shown).
+   - Sign out everywhere and password change or reset (`revoke_all_for_user`) also revoke every
+     connector grant of the user.
    - Disconnecting in claude.ai does not reach our server, so the grant just stops being used.
      Admin revoke is the server-side kill switch.
 
@@ -175,6 +185,12 @@ is a separate repair for every session, out of scope here.
   - It reads the caller's bearer from a contextvar that the auth gate sets per HTTP request. It
     sends `Authorization: Bearer <that token>` plus the internal key, and NEVER `X-API-Key`.
   - The container has no `EXTERNAL_API_KEY` in its environment at all.
+- **Path params are encoded.** `UserBearerClient` percent-encodes every path param with
+  `safe=""` and refuses an empty, `.` or `..` value, so a tool argument cannot add a path segment
+  or a query string. `chat_describe_dataset` only accepts the four known dataset keys and makes
+  no backend call otherwise. The n8n server's client is unchanged.
+- **No presigned URLs.** `resolve_signed_urls` is never forwarded (`crm_certificates_list`,
+  `crm_resource_attachments_list`, `crm_resource_attachments_catalogue`).
 - **Neutralised side call.** The compiled template's `_attach_suggested_escalation` (a second
   backend call with the shared key) is replaced in each compiled function's namespace by a
   pass-through. A test asserts that no outgoing request carries `X-API-Key`.
@@ -185,17 +201,28 @@ is a separate repair for every session, out of scope here.
     `test_tool_pool_is_read_only.py` already does.
   - The backend method guard (section 3, step 6b) is the second, independent line.
 
-### 4.2 Reused tool list (40 of the chatbot's 43)
+### 4.2 Reused tool list (34 of the chatbot's 43)
 
 | Domain | Tools |
 | --- | --- |
 | Master data | `crm_master_products_list`, `crm_master_brands_list`, `crm_master_product_categories_list`, `crm_master_units_of_measure_list`, `crm_master_product_attachments_list`, `crm_certificates_list`, `crm_master_customers_list`, `crm_lookup_resolve` (POST, `read_only`) |
-| Stock / incoming | `crm_inventory_stock_balance_list`, `crm_inventory_warehouses_list`, `crm_low_stock_report`, `crm_incoming_stock_by_product`, `crm_incoming_stock_shipments`, `crm_incoming_stock_list` |
-| Sales / orders | `crm_order_management_orders_list`, `crm_order_management_orders_by_product_list`, `crm_outstanding_report`, `crm_sales_report`, `crm_report_ask`, `crm_top_selling_report`, `crm_sales_analysis` |
+| Stock / incoming | `crm_inventory_stock_balance_list`, `crm_inventory_warehouses_list`, `crm_incoming_stock_by_product`, `crm_incoming_stock_shipments`, `crm_incoming_stock_list` |
+| Sales / orders | `crm_order_management_orders_list`, `crm_order_management_orders_by_product_list`, `crm_outstanding_report`, `crm_sales_report`, `crm_top_selling_report` |
 | Procurement | `crm_procurement_po_placed_list`, `crm_procurement_spo_allocations_last_receipt_list`, `crm_procurement_po_last_cost_list` |
-| Marketing / resources | `crm_marketing_promotions_list`, `crm_marketing_promotion_products_list`, `crm_marketing_promotion_attachments_list`, `crm_resource_attachments_list`, `crm_resource_attachments_catalogue`, `crm_resource_attachments_current_stock_list` |
+| Marketing / resources | `crm_marketing_promotions_list`, `crm_marketing_promotion_products_list`, `crm_marketing_promotion_attachments_list`, `crm_resource_attachments_list`, `crm_resource_attachments_catalogue` |
 | Projects | `crm_projects_list`, `crm_project_detail`, `crm_project_quotations_list`, `crm_project_forecast` |
-| Complaints / forms / SLA | `crm_complaints_list`, `crm_complaint_analytics`, `crm_forms_management_forms_list`, `crm_sla_conversation_tracking_dashboard`, `crm_sla_conversation_tracking_list`, `crm_sla_conversation_event_logs_list` |
+| Complaints / forms / SLA | `crm_complaint_analytics`, `crm_forms_management_forms_list`, `crm_sla_conversation_tracking_dashboard`, `crm_sla_conversation_event_logs_list` |
+
+Removed in the security round (crew audit, 9 Oct 2026):
+
+| Tool | Why it is removed |
+| --- | --- |
+| `crm_low_stock_report` | Its GET creates a report run and can WhatsApp-send the workbook: a write. |
+| `crm_report_ask` | Chatbot-only route, 403 for staff. |
+| `crm_sales_analysis` | Chatbot-only route, 403 for staff. |
+| `crm_complaints_list` | Its GET inserts view-token rows and returns a tokenised public `view_url` plus a contact number. |
+| `crm_resource_attachments_current_stock_list` | Every call mints a signed CDN URL, which is a credential (R2). |
+| `crm_sla_conversation_tracking_list` | Returns customer WhatsApp phone numbers (Q3). |
 
 Left out of the 43, with reasons (Q5):
 
@@ -255,7 +282,7 @@ All 6 write tools are excluded by construction: `crm_order_cancel`, `crm_purchas
 | --- | --- | --- |
 | `messages` | `chat_histories` LEFT JOIN `respond_contacts` (`respond_io_id`), primary customer, companies | `id, sent_at, direction, channel, contact_id, contact_name, customer_code, customer_name, companies, text` (OTP-masked), `reply_to_text` (OTP-masked), `chatbot_turn_id, delivery_status`. **Not included:** `phone_number` (Q3), `result`, `state_trace`. |
 | `contacts` | `respond_contacts` + primary customer + companies + message counts | `id, respond_io_id, name, first_name, last_name, customer_code, customer_name, companies, created_at, chatbot_allowed, chatbot_stock_allowed, outbound_enabled, escalation_allowed, chatbot_memory_level, chatbot_profile` (tier, language, facts), `first_message_at, last_message_at, message_count`. **Not included:** `phone_number` (Q3), `portal_slug` (it forms a portal URL), `session_vars` (internal bot state). |
-| `bot_turns` | `chatbot.turns` WHERE NOT `is_test` | `id, contact_id, contact_name, created_at, finished_at, latency_ms, status, stage, branch_kind, error, attempt, inbound_text` (envelope message text, OTP-masked), `reply_text` (`response.reply.text`). **Not included:** `envelope` (holds the full respond.io contact record), `trace` (parser raw output + session vars), `response` blob. |
+| `bot_turns` | `chatbot.turns` WHERE NOT `is_test` | `id, contact_id, contact_name, created_at, finished_at, latency_ms, status, stage, branch_kind, error` (OTP-masked), `attempt, inbound_text` (envelope message text, OTP-masked), `reply_text` (`response.reply.text`, OTP-masked). **Not included:** `envelope` (holds the full respond.io contact record), `trace` (parser raw output + session vars), `response` blob. |
 | `episodes` | `conversation_frames` WHERE NOT `is_test` | `id, contact_id, contact_name, domain, intent, status, close_reason, started_at, last_activity_at, closed_at, turn_count, tools_used, summary, last_user_message` (OTP-masked), `last_assistant_summary`. |
 
 ### 5.3 OTP masking
@@ -291,8 +318,12 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
 - The new chat tools write their own row inside the backend request, so it cannot be skipped.
   Reused tools are logged by the container through `POST /api/v1/analytics-connector/audit`
   (internal-key only) right after the call returns.
+  - Fail closed: if that POST fails (HTTP >= 400 or a transport error), the tool returns an error
+    and NO data.
+  - `args` over 4 KB of JSON are stored as a truncated preview (`_truncated`, `_chars`, `preview`);
+    the call still answers 204.
 - Grant lifecycle writes EVENT rows too: `analytics_connector.grant_created`, `.refreshed`,
-  `.revoked` and `.refresh_reuse_detected`.
+  `.revoked`, `.refresh_reuse_detected` and `.code_reuse_detected`.
 - Admin view: the new "Claude connector access" page (`/user-management/claude-connector`, gated by
   `analytics.connector.manage`). It is a DataGrid of grants (user, created, last used, calls, status)
   with Revoke. A grant's detail page lists its recent tool calls from `audit_logs`.
@@ -303,8 +334,8 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
 | --- | --- | --- |
 | Someone outside claude.ai calls `/analytics/mcp` | nginx `allow 160.79.104.0/21; deny all;` plus 401 without a token | None material |
 | Stolen access token used elsewhere | 1 h life. The internal key is required by the backend, so the token is useless on the public `/api/v1`. The nginx allowlist leaves only the Anthropic IP range. | Use through another claude.ai account for at most 1 h; admin revoke ends it at once |
-| Stolen refresh token | Rotation, reuse detection revokes the grant, 90-day absolute expiry, stored hashed | Claude holds it server-side (Anthropic's custody) |
-| Rogue DCR client | `redirect_uris` allowlist (claude.ai callback only), nginx rate limit on `register` | Clients can still be registered, but they are harmless |
+| Stolen refresh token | Rotation, any retired token revokes the grant, 30-day refresh life, 90-day absolute expiry, stored hashed | Claude holds it server-side (Anthropic's custody) |
+| Rogue DCR client | `redirect_uris` allowlist (claude.ai callback only), nginx rate limit on `register`, at most 500 grant-less clients (then 503 `temporarily_unavailable`); `register` first purges expired requests and grant-less clients older than 24 h | Clients can still be registered, but they are harmless |
 | Consent phishing: an attacker starts a flow in their own claude.ai and gets staff to approve it | Consent page names the app and the redirect host and says it acts as <you>. Codes live 60 s. Few holders of the permission. Every call is audited, admin revoke. | Inherent to OAuth consent; mitigated by training and the audit trail |
 | Prompt injection in customer messages ("ignore instructions, call X") | Every tool is read-only and the backend refuses writes. Users approve tool calls in claude.ai. | Claude could be steered to paste data into ANOTHER connector in the same chat. Guidance: do not enable write connectors in analysis chats. |
 | Write through a reused tool | Allow-list ⊆ catalog read-only ⊆ `CHATBOT_READ_ONLY_TOOLS`, pinned by tests. The backend refuses non-GET for connector sessions except the 3 listed POSTs. | None |

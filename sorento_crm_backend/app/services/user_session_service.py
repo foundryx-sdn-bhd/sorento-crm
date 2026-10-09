@@ -167,6 +167,10 @@ def revoke_all_for_user(
         q = q.filter(UserSession.id != except_session_id)
     now = _utcnow()
     count = q.update({UserSession.revoked_at: now}, synchronize_session=False)
+    # The claude.ai connector's grants too, or its refresh token would mint a new session.
+    from app.services.analytics_connector.oauth import revoke_user_grants
+
+    revoke_user_grants(db, user_id)
     db.commit()
     return count
 

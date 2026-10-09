@@ -6,7 +6,7 @@ Create Date: 2026-10-09 00:00:00.000000
 
 CLAUDE-CONNECTOR S1 (card documentation/plans/analytics/CARD-claude-connector-09oct.md).
 
-1. Three OAuth tables (clients, pending requests / code store, grants).
+1. Four OAuth tables (clients, pending requests / code store, grants, retired refresh hashes).
 2. `analytics.connector.use` and `analytics.connector.manage`, granted to NO role (owner
    ruling Q1 (a): not even admins; the connector guard checks role grants directly).
 3. `user_sessions.auth_method` accepts `claude_connector`.
@@ -68,6 +68,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.String(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
         sa.Column("code_hash", sa.String(64), nullable=True),
         sa.Column("code_expires_at", sa.DateTime(), nullable=True),
+        sa.Column("grant_id", sa.String(64), nullable=True),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
@@ -78,7 +79,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.String(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("client_id", sa.String(64), sa.ForeignKey("analytics_oauth_clients.id", ondelete="CASCADE"), nullable=False),
         sa.Column("refresh_token_hash", sa.String(64), nullable=False),
-        sa.Column("previous_refresh_hash", sa.String(64), nullable=True),
+        sa.Column("refresh_issued_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("current_session_id", sa.String(36), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("last_used_at", sa.DateTime(), nullable=True),
@@ -87,7 +88,15 @@ def upgrade() -> None:
     )
     op.create_index("ix_analytics_connector_grants_user_id", "analytics_connector_grants", ["user_id"])
     op.create_index("ix_analytics_connector_grants_refresh_token_hash", "analytics_connector_grants", ["refresh_token_hash"])
-    op.create_index("ix_analytics_connector_grants_previous_refresh_hash", "analytics_connector_grants", ["previous_refresh_hash"])
+    op.create_table(
+        "analytics_connector_retired_refresh",
+        sa.Column("token_hash", sa.String(64), primary_key=True),
+        sa.Column("grant_id", sa.String(64), sa.ForeignKey("analytics_connector_grants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("retired_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+    )
+    op.create_index(
+        "ix_analytics_connector_retired_refresh_grant_id", "analytics_connector_retired_refresh", ["grant_id"]
+    )
 
     bind = op.get_bind()
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -123,6 +132,7 @@ def downgrade() -> None:
         "DELETE FROM user_permissions WHERE slug IN "
         "('analytics.connector.use', 'analytics.connector.manage')"
     )
+    op.drop_table("analytics_connector_retired_refresh")
     op.drop_table("analytics_connector_grants")
     op.drop_table("analytics_oauth_requests")
     op.drop_table("analytics_oauth_clients")

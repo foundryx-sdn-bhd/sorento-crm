@@ -177,9 +177,21 @@ def create_analytics_connector() -> None:
     # Tables too, so this is safe alone on a database bootstrapped before the connector existed.
     Base.metadata.create_all(
         engine,
-        tables=[m.AnalyticsOAuthClient.__table__, m.AnalyticsOAuthRequest.__table__, m.AnalyticsConnectorGrant.__table__],
+        tables=[
+            m.AnalyticsOAuthClient.__table__,
+            m.AnalyticsOAuthRequest.__table__,
+            m.AnalyticsConnectorGrant.__table__,
+            m.AnalyticsConnectorRetiredRefresh.__table__,
+        ],
     )
     with engine.begin() as conn:
+        # Columns added after the first cut of the connector tables (create_all skips existing tables).
+        conn.execute(text("ALTER TABLE analytics_oauth_requests ADD COLUMN IF NOT EXISTS grant_id VARCHAR(64)"))
+        conn.execute(text(
+            "ALTER TABLE analytics_connector_grants "
+            "ADD COLUMN IF NOT EXISTS refresh_issued_at TIMESTAMP NOT NULL DEFAULT now()"
+        ))
+        conn.execute(text("ALTER TABLE analytics_connector_grants DROP COLUMN IF EXISTS previous_refresh_hash"))
         views.ensure_views(conn)
         conn.execute(text("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method"))
         conn.execute(text(

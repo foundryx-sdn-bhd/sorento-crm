@@ -1,7 +1,8 @@
 """OAuth state for the claude.ai analytics connector (CLAUDE-CONNECTOR, card section 3).
 
-Three small tables: the dynamically registered clients, the pending authorize requests (they
-double as the single-use code store), and the grants that hold the rotating refresh token.
+Four small tables: the dynamically registered clients, the pending authorize requests (they
+double as the single-use code store), the grants that hold the rotating refresh token, and the
+retired refresh-token hashes of each grant (so ANY rotated-out token revokes its family).
 Codes and refresh tokens are kept as SHA-256 hashes only. The access token is an ordinary
 ``user_sessions`` row (``auth_method='claude_connector'``), referenced by ``current_session_id``.
 
@@ -47,6 +48,8 @@ class AnalyticsOAuthRequest(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     code_hash = Column(String(64), nullable=True, index=True)
     code_expires_at = Column(DateTime(timezone=False), nullable=True)
+    # The grant this code produced, so a replayed code can revoke it.
+    grant_id = Column(String(64), nullable=True)
     expires_at = Column(DateTime(timezone=False), nullable=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
@@ -59,7 +62,8 @@ class AnalyticsConnectorGrant(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     client_id = Column(String(64), ForeignKey("analytics_oauth_clients.id", ondelete="CASCADE"), nullable=False)
     refresh_token_hash = Column(String(64), nullable=False, index=True)
-    previous_refresh_hash = Column(String(64), nullable=True, index=True)
+    # When the live refresh token was issued; it lives 30 days from here (reset on rotation).
+    refresh_issued_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     # The grant's live access token. Not a foreign key: user_sessions.id is a varchar column.
     current_session_id = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
@@ -68,3 +72,15 @@ class AnalyticsConnectorGrant(Base):
     expires_at = Column(DateTime(timezone=False), nullable=False)
 
     __table_args__ = (Index("ix_analytics_connector_grants_user_id", "user_id"),)
+
+
+class AnalyticsConnectorRetiredRefresh(Base):
+    """One row per rotated-out refresh token. A table, not an array on the grant: a grant refreshes
+    about hourly for 90 days, and a row per token keeps the lookup indexed with no growing row rewrite."""
+
+    __tablename__ = "analytics_connector_retired_refresh"
+    __audit_skip__ = "hash history of rotated refresh tokens; reuse is audited on the grant"
+
+    token_hash = Column(String(64), primary_key=True)
+    grant_id = Column(String(64), ForeignKey("analytics_connector_grants.id", ondelete="CASCADE"), nullable=False, index=True)
+    retired_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
