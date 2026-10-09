@@ -114,7 +114,7 @@ d9f8321b; a new catalog key, so the stored `translation_memory` row for the old 
 | `last_receipt` | 最后一次进库 / last in | the same new endpoint's `last_receipt` {date, qty}: the newest approved GRN for the product, all time | no | `purchase_orders.placed` | `Last received: 18/09/2026 (300)` / `最后一次进库: 18/09/2026（300）` |
 | `supplier` | 供应商 / supplier | `crm_procurement_po_last_cost_list top_n=1`, the newest row across locations (Q3) | no | `purchase_orders.supplier` | `Supplier: ABC SDN BHD (PO-2026-0412, 03/06/2026)` |
 | `last_cost` | 采购价 / purchase price | the same row as `supplier` (one call serves both) | no | `purchase_orders.cost` | `Last cost: RM 45.00 / unit (PO-2026-0412, 03/06/2026)` / `采购价: RM 45.00 / 件（PO-2026-0412，03/06/2026）` |
-| `sold_total` | 总共卖了多少 / total sold | `crm_report_ask` no `group_by`, `measure=qty`, `basis`, `product_ids` (never `product_code`, a PREFIX filter) | yes, required | `sales_orders.sales_report` | `Sold 2026 (delivered): 860` / `2026 总共卖出（已出货）: 860` |
+| `sold_total` | 总共卖了多少 / total sold | `crm_report_ask` no `group_by` (asked beside a `sold_by` of the same period and basis: that grouped call's own `total`, ONE call, since the route is rate limited per contact), `measure=qty`, `basis`, `product_ids` (never `product_code`, a PREFIX filter) | yes, required | `sales_orders.sales_report` | `Sold 2026 (delivered): 860` / `2026 总共卖出（已出货）: 860` |
 | `sold_by` | 每位业务员 / per salesman / per customer | `crm_report_ask group_by=<axis> measure=qty top_n=1000` | yes, required | `sales_orders.sales_report` | header line, then `1. Ali: 300` per row |
 | `other` | anything else | none | - | - | `<asker's words>: not available yet` |
 
@@ -283,8 +283,11 @@ the default; `mode` must not be `availability`). Field reveals on the contact's 
    mode `pick`, picked [1]; `全部` / `all of them` -> pick [2] (or mode `all`).
 3. `已出货` / `delivered`, replying to the basis question -> mode `pick`, picked [1] (an item
    naming the option code `delivered` is read the same); `下单` / `ordered` -> picked [2].
-4. `Srt38ss last in date and quantity` -> ONE sub-ask (`last_receipt`) or `sub_asks: null`.
-5. `Incoming and stock for 7445` -> two sub-asks, `incoming` and `stock`.
+4. `Srt38ss last in date and quantity` -> `sub_asks: null` (the date and quantity of one event
+   is ONE ask), so today's last-in path answers, the same way every run.
+5. `Incoming and stock for 7445` -> `sub_asks` [incoming, stock] OR null; either way the reply
+   is today's multi-domain answer (`asks[]` carries the second domain), since neither is a
+   runner-only measure.
 6. `stock 7445` -> `sub_asks: null` (single-ask path untouched).
 7. `SRTWT7445 系列 2026 卖了多少，按已出货` -> `sub_asks: null` (ONE ask: today's sales path, by
    the one-ask rule), `family: true`. The two-ask form `SRTWT7445 系列 2026 卖了多少，按已出货，
