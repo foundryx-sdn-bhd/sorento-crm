@@ -120,14 +120,14 @@ total = distinct over the whole set.
 **Reply** (MCP presenter for `dataset == "chat"`), one fact per line, no " · ":
 
 ```
+Topics labelled: 17% of asks (taxonomy v1). From bot traces, 5 Sep 2026 on.
 Top 5 topics by asks
 Period: 1 Sep 2026 to 30 Sep 2026
 1. Availability: 124 asks
 2. Product ETA: 85 asks
 and 12 more
 Total: 399 asks
-Topics labelled: 17% of asks (taxonomy v1). From bot traces, 5 Sep 2026 on.
 ```
 
-Coverage line first when percent < 80. Failure rate rows: `1. 2026-09-14: 1.2% (14 of 1,215 turns)`.
+Coverage line LAST when percent >= 80, FIRST when < 80 (the example is 17%, so first). Failure rate rows: `1. 2026-09-14: 1.2% (14 of 1,215 turns)`.
 No asks: `No asks in that period. Chat data starts 5 Sep 2026.`
