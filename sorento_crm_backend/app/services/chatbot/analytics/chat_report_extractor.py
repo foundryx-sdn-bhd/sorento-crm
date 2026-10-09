@@ -33,11 +33,25 @@ KEYS = ("group_by", "measure", "subject", "top_n", "date_from", "date_to")
 MAX_TOP_N = 1000
 
 
-def _domain_names(db: Session) -> list[str]:
+def _domains(db: Session) -> list[tuple[str, str, list[str]]]:
+    """(code, label, switch words) of every routing domain a subject can name."""
     from app.models.chatbot_policy import ChatbotDomain
 
-    rows = db.query(ChatbotDomain.name).order_by(ChatbotDomain.sort_order, ChatbotDomain.name).all()
-    return [r[0] for r in rows if r[0] and r[0] != "chat_analytics"]
+    rows = (
+        db.query(ChatbotDomain.name, ChatbotDomain.label, ChatbotDomain.switch_words)
+        .order_by(ChatbotDomain.sort_order, ChatbotDomain.name)
+        .all()
+    )
+    return [(r[0], r[1] or "", [w for w in (r[2] or []) if w]) for r in rows if r[0] and r[0] != "chat_analytics"]
+
+
+def _describe(domain: tuple[str, str, list[str]]) -> str:
+    """`code (label; words: w1, w2)`, the words part left out when there are none."""
+    code, label, words = domain
+    parts = [label] if label else []
+    if words:
+        parts.append("words: " + ", ".join(words))
+    return f"{code} ({'; '.join(parts)})" if parts else code
 
 
 def _schema(domains: list[str]) -> dict[str, Any]:
@@ -98,9 +112,10 @@ def extract_chat_report(db: Session, message_text: str, *, today: date) -> dict[
         if not api_key:
             logger.warning("chat_report_extractor: no api key; no reading")
             return None
-        domains = _domain_names(db)
+        domains = _domains(db)
+        codes = [d[0] for d in domains]
         system, _version = ai_prompt_registry.render(db, PROMPT_KEY)
-        system = system.replace("{today}", today.isoformat()).replace("{domains}", ", ".join(domains))
+        system = system.replace("{today}", today.isoformat()).replace("{domains}", "; ".join(_describe(d) for d in domains))
         provider = get_provider(provider_name, api_key, model=model)
         result = provider.chat(
             [{"role": "system", "content": system}, {"role": "user", "content": raw}],
@@ -108,10 +123,10 @@ def extract_chat_report(db: Session, message_text: str, *, today: date) -> dict[
             model=model,
             max_tokens=256,
             timeout=llm_call.ATTEMPT_TIMEOUT_SECONDS,
-            json_schema=_schema(domains),
+            json_schema=_schema(codes),
             json_schema_name=SCHEMA_NAME,
         )
-        out = _checked(json.loads((result.content or "").strip() or "{}"), domains)
+        out = _checked(json.loads((result.content or "").strip() or "{}"), codes)
     except Exception:  # noqa: BLE001 - any failure is "no reading", never a broken turn
         logger.warning("chat_report_extractor: call failed; no reading", exc_info=True)
         return None

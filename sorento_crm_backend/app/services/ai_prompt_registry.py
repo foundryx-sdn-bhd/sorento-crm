@@ -137,7 +137,7 @@ def _chat_report_extractor_fallback() -> str:
         "answer; failure_rate = share that failed; contacts = number of distinct people/dealers "
         "who chatted.\n"
         "- subject: only when the message limits the questions to one business area, using these "
-        "codes: {domains}. Otherwise null. Products, customers, failures are never a subject.\n"
+        "codes (the label and words say what each covers): {domains}. Otherwise null. Products, customers, failures are never a subject.\n"
         "- top_n: the count asked for (\"top 5\", \"前3\", \"5 teratas\"), else null. A "
         "superlative with no number (\"most asked\", \"最多人问\", \"paling banyak\") is "
         "null, never 1.\n"
