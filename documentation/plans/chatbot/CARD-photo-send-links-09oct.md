@@ -1,9 +1,41 @@
 # CARD - send files as short links, A/B per contact (PHOTO-SEND-CAP round 2)
 
-Status: Plan. Behaviour card posted to the owner (crew-ask on PR #1541); no further code
-before the owner answers Q1-Q5. Track: L (migration: a link table and one contact column;
-a new PUBLIC route, so security-reviewer joins; customer-visible wording). Supersedes the
-round 1 cap card `CARD-photo-send-cap-09oct.md` (cap Q1-Q5 parked by the owner, 9 Oct).
+Status: Build. Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
+a link table, one contact column, one settings column; a new PUBLIC route, so
+security-reviewer joins; customer-visible wording). Supersedes the round 1 cap card
+`CARD-photo-send-cap-09oct.md` (cap Q1-Q5 parked by the owner, 9 Oct).
+
+## Owner answers (9 Oct 2026)
+
+| Q | Ruling | What it means in the build |
+| --- | --- | --- |
+| Q1 | Configurable | New system setting `chatbot_file_link_expiry_days` (null = never, else 1..3650 days), on the System Settings page. The owner sets NO expiry for now, so the default is null (never). A link's `expires_at` is stamped when it is minted. |
+| Q2 | (a) | No sign-in. Anyone holding a link opens it until it expires. |
+| Q3 | (a) | `{frontend_base_url}/f/{code}` on our CRM domain. |
+| Q4 | (a) | `respond_contacts.chatbot_files_as_links` default false for every contact; staff switch contacts by hand. |
+| Q5 | (a) | One image shared by several products: one code, the same link repeats under each product. |
+
+## Build contract (crew, from the approved card)
+
+- `PUT /api/v1/user-management/contacts/{id}/chatbot` takes `chatbot_files_as_links: bool | None`
+  (absent = leave alone); the contact dict and `RespondContactResponse` carry
+  `chatbot_files_as_links: bool`.
+- `GET|PUT /api/v1/user-management/settings` carry `chatbot_file_link_expiry_days: int | null`
+  (1..3650; null = never).
+- `GET /api/v1/public/file-links/{code}` (no auth, per-IP rate limit) answers
+  `{filename, mime_type, kind: "sheet" | "file", url}`: `url` is a 1 h signed CDN url for
+  `file`, null for `sheet`. Counts one click. Unknown or expired: 404 `{"detail": "This link
+  has expired."}`.
+- `GET /api/v1/public/file-links/{code}/content`: the bytes, only for `sheet`, same 404.
+- Frontend `/f/[code]` (public, no login): `file` redirects to `url`; `sheet` opens
+  read-only in the browser through `AttachmentPreviewModal` with a plain fetch of `/content`,
+  with Download. Expired: "This link has expired. Ask us on WhatsApp for a new one."
+- Engine, link mode: no `send_attachments` action. Each file row gets `*Link:* <short url>`
+  under it; a file no row names (an Excel report) gets its own `*File:*` / `*Link:*` block at
+  the end. If minting fails, the turn falls back to attachment mode (never stuck).
+- Trace: the `replied` stage facts carry `file_mode` (`attachments` | `links`) and `files`.
+- Product photo rows group by product in both modes (rule 1, round 1): one numbered block
+  per product, its files under it.
 
 Already on the branch from round 1 and kept: one file per image, deduped by `file_hash`
 (commit 08c46748: `app/schemas/product.py` `AttachmentSimple.file_hash`,
