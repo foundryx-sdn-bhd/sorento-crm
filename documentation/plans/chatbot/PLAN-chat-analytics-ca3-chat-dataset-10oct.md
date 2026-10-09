@@ -1,6 +1,6 @@
 # PLAN: CA-3 chat dataset in the bot (10 Oct 2026)
 
-Status: BUILDING (Phase 2 red tests). Behaviour card ruled 10 Oct (Q1 b, Q2 b, Q3 a, Q4 a, Q5 a). Track: full pipeline,
+Status: HAND TEST (PR #1553; build, review rounds and live checks done 10 Oct 2026; full pipeline track). Behaviour card ruled 10 Oct (Q1 b, Q2 b, Q3 a, Q4 a, Q5 a). Track: full pipeline,
 size M, LEAD pattern (tester -> coder -> reviewer + security-reviewer: the lane adds a grant).
 Base: CA-2 #1551 (open) on main 096e4665d; rebase onto main once #1551 merges.
 
