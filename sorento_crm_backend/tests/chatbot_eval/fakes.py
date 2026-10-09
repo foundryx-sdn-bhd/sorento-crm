@@ -112,3 +112,22 @@ class KwEngine(RecordingEngine):
     def __init__(self, **kw):
         super().__init__()
         KwEngine.SEEN.append(kw)
+
+
+class LiveSecondEngine(RecordingEngine):
+    """Second turn ever returns dry_run False (aborts a run)."""
+
+    def turn(self, case, text, state, run_id):
+        out = super().turn(case, text, state, run_id)
+        if self.n == 2:
+            out.dry_run = False
+        return out
+
+
+class ExplodingEngine(RecordingEngine):
+    """Raises RuntimeError for the case whose id is 'boom'."""
+
+    def turn(self, case, text, state, run_id):
+        if case.id == "boom":
+            raise RuntimeError("kaboom")
+        return super().turn(case, text, state, run_id)
