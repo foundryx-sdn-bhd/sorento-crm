@@ -984,3 +984,99 @@ def test_the_last_receipt_measure_is_the_spo_delivery_date_not_grn():
     text = " ".join(SUB_ASKS_ADDENDUM[SUB_ASKS_ADDENDUM.index(line) :].split("\n")[:3]).lower()
     assert "spo" in text and "delivery date" in text
     assert "grn" not in text
+
+
+# ---------------------------------------------------------------- R-LASTIN round 2 (reviewer)
+
+
+def _empty_spo(c, monkeypatch):
+    def empty(client, name, args):
+        c.tools.calls.append((name, args))
+        return json.dumps({"data": [], "pagination": {"total": 0, "page": 1, "limit": 0}, "empty": True})
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", empty)
+
+
+def _bar_escalation(session_factory):
+    from sqlalchemy import text as sql
+
+    from tests.chatbot.test_engine import CONTACT_ID
+
+    db = session_factory()
+    db.execute(
+        sql("UPDATE respond_contacts SET escalation_allowed = false WHERE respond_io_id = :c"),
+        {"c": str(CONTACT_ID)},
+    )
+    db.commit()
+    db.close()
+
+
+def test_a_dealer_lone_last_in_none_keeps_the_escalate_offer(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009550", staff=False)
+    _empty_spo(c, monkeypatch)
+    text = c.say("ELP3754 last in", _lone())
+    assert text.startswith("Last in: none on record"), text
+    assert text.splitlines()[-1].endswith("Would you like me to escalate to customer service team?"), text
+    assert "matched these" not in text
+
+
+def test_a_barred_contact_lone_last_in_none_ends_with_the_refer_sentence(session_factory, monkeypatch, stub_access):
+    from app.services.chatbot.turn import refer
+
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009551", staff=False)
+    _bar_escalation(session_factory)
+    _empty_spo(c, monkeypatch)
+    text = c.say("ELP3754 last in", _lone())
+    assert text.startswith("Last in: none on record"), text
+    assert text.endswith(refer.sentence()), text
+    assert "escalate" not in text.lower()
+
+
+def test_a_warehouse_scoped_last_in_none_keeps_its_scope(session_factory, monkeypatch, stub_access):
+    from sqlalchemy import text as sql
+
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009552")
+    db = session_factory()
+    db.execute(
+        sql(
+            "INSERT INTO warehouses (id, warehouse_code, warehouse_name, is_active, company_id) "
+            "VALUES (gen_random_uuid(), 'ZZTKL', 'ZZT KL', true, :co)"
+        ),
+        {"co": str(DEFAULT_COMPANY_ID)},
+    )
+    db.commit()
+    db.close()
+    _empty_spo(c, monkeypatch)
+    v = verdict(
+        domain_hint="spo_allocation",
+        intent_hint="check_spo",
+        entities=[entity("ELP3754", hint="product"), entity("ZZTKL", hint="warehouse")],
+        sub_asks=None,
+        family=None,
+    )
+    text = c.say("ELP3754 last in at ZZTKL", v)
+    assert [a for a in c.tools.args(SPO_TOOL) if a.get("warehouse_ids")], "the warehouse filter must reach the tool"
+    assert text != "Last in: none on record", "the warehouse scope was dropped"
+    assert "ZZTKL" in text, text
+
+
+def test_an_unresolved_second_code_is_still_named_beside_last_in_none(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009553")
+    _empty_spo(c, monkeypatch)
+    v = verdict(
+        domain_hint="spo_allocation",
+        intent_hint="check_spo",
+        entities=[entity("ELP3754", hint="product"), entity("FOO999", hint="product")],
+        sub_asks=None,
+        family=None,
+    )
+    text = c.say("last in ELP3754 and FOO999", v)
+    assert "Couldn't find: FOO999" in text, text
+
+
+# (c) multi-company " - checked in A, B" is not covered: it needs the two-company seeded chain of
+# test_engine_company_scope.py, too costly for this harness; the coder keeps build_breakdown_msg for it.
