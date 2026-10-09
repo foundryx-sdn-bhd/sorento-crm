@@ -2347,3 +2347,27 @@ register(
         label="Delete comment",
     )
 )
+
+
+# CLAUDE-CONNECTOR S3: an admin ends a staff member's claude.ai connection. Reversible window: the
+# grant, its refresh token and its live access session die together when the window lapses.
+def _revoke_connector_grant(db: Session, payload: dict):
+    from app.models.analytics_connector import AnalyticsConnectorGrant
+    from app.services.analytics_connector import oauth
+
+    grant = db.get(AnalyticsConnectorGrant, _entity_id(payload))
+    if grant is None or grant.revoked_at is not None:
+        return None
+    return oauth.revoke_grant(db, grant, "revoked", by_user_id=payload.get("requested_by_id"))
+
+
+register(
+    FormAction(
+        key="analytics_connector_grant.revoke",
+        entity_types=("analytics_connector_grant",),
+        execute=_revoke_connector_grant,
+        window=WINDOW_REVERSIBLE,
+        permission="analytics.connector.manage",
+        label="Revoke Claude connector access",
+    )
+)

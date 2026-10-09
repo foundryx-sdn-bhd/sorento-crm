@@ -11,11 +11,13 @@ from __future__ import annotations
 import json
 import time
 from datetime import date, datetime, timezone
+from datetime import timedelta
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,6 +25,7 @@ from app.dependencies import get_current_user
 from app.services.analytics_connector import datasets, oauth
 from app.services.analytics_connector.access import (
     CHAT_VIEW,
+    MANAGE,
     USE,
     current_grant,
     has_connector_permission,
@@ -264,3 +267,120 @@ def audit_tool_call(body: ToolCallIn, request: Request, _u: dict = Depends(conne
         rows=body.rows, chars=body.chars, ms=body.ms,
     )
     return Response(status_code=204)
+
+
+# ------------------------------------------------------------------ admin: grants (S3)
+
+
+def _manager(user: dict = Depends(_staff_user), db: Session = Depends(get_db)) -> dict:
+    if not UserPermissionService(db).check_user_has_permission(user["id"], MANAGE):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=f"Permission required: {MANAGE}")
+    return user
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _status(g, now: datetime) -> str:
+    if g.revoked_at is not None:
+        return "Revoked"
+    return "Expired" if g.expires_at < now else "Active"
+
+
+def _iso(value: Optional[datetime]) -> Optional[str]:
+    return value.isoformat() if value else None
+
+
+@router.get("/grants")
+def list_grants(
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=200),
+    sort: Literal["user_name", "created_at", "last_used_at", "calls_30d"] = "created_at",
+    dir: Literal["asc", "desc"] = "desc",
+    query: Optional[str] = None,
+    status_: Optional[Literal["Active", "Revoked", "Expired"]] = Query(None, alias="status"),
+    _u: dict = Depends(_manager),
+    db: Session = Depends(get_db),
+):
+    from app.models.analytics_connector import AnalyticsConnectorGrant as G
+    from app.models.audit import AuditLog
+    from app.models.user import User
+
+    now = _now()
+    calls = (
+        db.query(AuditLog.entity_id.label("gid"), func.count().label("n"))
+        .filter(
+            AuditLog.entity_type == oauth.GRANT_ENTITY,
+            AuditLog.event == "analytics_connector.tool_call",
+            AuditLog.changed_at >= now - timedelta(days=30),
+        )
+        .group_by(AuditLog.entity_id)
+        .subquery()
+    )
+    n_calls = func.coalesce(calls.c.n, 0)
+    q = (
+        db.query(G, User.name, n_calls)
+        .join(User, User.id == G.user_id)
+        .outerjoin(calls, calls.c.gid == G.id)
+    )
+    if query:
+        q = q.filter(User.name.ilike(f"%{query}%"))
+    if status_ == "Revoked":
+        q = q.filter(G.revoked_at.isnot(None))
+    elif status_ == "Expired":
+        q = q.filter(G.revoked_at.is_(None), G.expires_at < now)
+    elif status_ == "Active":
+        q = q.filter(G.revoked_at.is_(None), G.expires_at >= now)
+    total = q.count()
+    key = {"user_name": User.name, "created_at": G.created_at, "last_used_at": G.last_used_at, "calls_30d": n_calls}[sort]
+    q = q.order_by(key.desc().nullslast() if dir == "desc" else key.asc().nullsfirst(), G.id)
+    rows = q.offset((page - 1) * limit).limit(limit).all()
+    return {
+        "data": [
+            {"id": g.id, "user_id": g.user_id, "user_name": name, "created_at": _iso(g.created_at),
+             "last_used_at": _iso(g.last_used_at), "calls_30d": int(n), "status": _status(g, now)}
+            for g, name, n in rows
+        ],
+        "pagination": {"total": total, "page": page, "limit": limit},
+    }
+
+
+@router.get("/grants/{grant_id}")
+def get_grant(grant_id: str, _u: dict = Depends(_manager), db: Session = Depends(get_db)):
+    from app.models.analytics_connector import AnalyticsConnectorGrant as G
+    from app.models.analytics_connector import AnalyticsOAuthClient
+    from app.models.audit import AuditLog
+    from app.models.user import User
+
+    g = db.get(G, grant_id[:64])
+    if g is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="grant not found")
+    user = db.get(User, g.user_id)
+    client = db.get(AnalyticsOAuthClient, g.client_id)
+    calls = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.entity_type == oauth.GRANT_ENTITY,
+            AuditLog.entity_id == g.id,
+            AuditLog.event == "analytics_connector.tool_call",
+        )
+        .order_by(AuditLog.changed_at.desc())
+        .limit(50)
+        .all()
+    )
+    return {
+        "id": g.id,
+        "user_id": g.user_id,
+        "user_name": user.name if user else None,
+        "client_name": (client.client_name if client else None) or "Claude",
+        "created_at": _iso(g.created_at),
+        "last_used_at": _iso(g.last_used_at),
+        "expires_at": _iso(g.expires_at),
+        "status": _status(g, _now()),
+        "recent_calls": [
+            {"time": _iso(c.changed_at), "tool": (c.new_values or {}).get("tool"), "rows": (c.new_values or {}).get("rows"),
+             "ms": (c.new_values or {}).get("ms"), "status": (c.new_values or {}).get("status")}
+            for c in calls
+        ],
+    }

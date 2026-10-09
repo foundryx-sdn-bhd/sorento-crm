@@ -216,7 +216,6 @@ def _issue_access(db: Session, grant: AnalyticsConnectorGrant) -> str:
         revoke_session(db, session_id=grant.current_session_id)
     session = mint_session(db, grant.user_id, auth_method="claude_connector", ttl=ACCESS_TTL, rolling=False)
     grant.current_session_id = str(session.id)
-    grant.last_used_at = _now()
     return session.token
 
 
@@ -230,12 +229,14 @@ def _token_response(access_token: str, refresh_token: str) -> dict:
     }
 
 
-def _audit(db: Session, grant: AnalyticsConnectorGrant, event: str, new_values: Optional[dict] = None) -> None:
+def _audit(db: Session, grant: AnalyticsConnectorGrant, event: str, new_values: Optional[dict] = None,
+           by_user_id: Optional[str] = None) -> None:
+    """``by_user_id`` names the admin who revoked; otherwise the grant's own user acted."""
     actor = AuditActor(
         actor_type="user",
-        user_id=grant.user_id,
-        real_user_id=grant.user_id,
-        auth_method="claude_connector",
+        user_id=by_user_id or grant.user_id,
+        real_user_id=by_user_id or grant.user_id,
+        auth_method=None if by_user_id else "claude_connector",
         session_id=grant.current_session_id,
     )
     with actor_scope(actor, db=db):
@@ -318,10 +319,11 @@ def refresh_tokens(db: Session, form: dict) -> dict:
     return _token_response(access, new_refresh)
 
 
-def revoke_grant(db: Session, grant: AnalyticsConnectorGrant, event: str = "revoked", new_values: Optional[dict] = None) -> None:
+def revoke_grant(db: Session, grant: AnalyticsConnectorGrant, event: str = "revoked", new_values: Optional[dict] = None,
+                 by_user_id: Optional[str] = None) -> None:
     """End a grant and its live access token at once."""
     grant.revoked_at = _now()
     if grant.current_session_id:
         revoke_session(db, session_id=grant.current_session_id)
-    _audit(db, grant, event, new_values)
+    _audit(db, grant, event, new_values, by_user_id)
     db.commit()
