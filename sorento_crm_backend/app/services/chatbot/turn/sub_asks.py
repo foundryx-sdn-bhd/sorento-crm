@@ -8,18 +8,23 @@ order) each run ONE aggregate query, and the reply is one `Label: value` line pe
 nothing unasked (owner Q1), in the asker's language.
 
 Owner rulings this file carries (card: documentation/plans/chatbot/CARD-multi-ask-plan-09oct.md):
-* Q2: a typed code with variants and no `family` said asks back once (`sub_ask_scope`);
-  the reply is an ordinary numbered pick (1 = the exact code, 2 = all of them).
+* Q2: a typed code with variants and no `family` said asks back once (`sub_ask_scope`),
+  before EITHER path answers (round 6, G1): `scope_question` here, asked by the engine
+  for a one-ask turn as much as for a multi-ask one. An exact code with variants is
+  "just X, or all N?"; a code that is only a prefix lists its codes after "all N". The
+  reply re-runs the original verdict with the scope settled (`scope_reply`).
 * Q3: supplier = the supplier of the LAST PO line, labelled with that PO.
 * Q4: a sold ask with no basis asks once (`sub_ask_basis`) at the end of the answered
-  lines; only the sold lines wait on it.
+  lines; only the sold lines wait on it. A sold ask with no period asks that first
+  (`sub_ask_period`, round 6, G3), the same way.
 * Q1/Q5: no row cap; the engine packs the text into the fewest WhatsApp messages
   (`engine.pack_parts`).
 
-Runs only for a staff contact and only when the parser named TWO OR MORE asks with at
-least one the domain fan-out cannot answer (`RUNNER_MEASURES`); every other turn is
-today's path, byte for byte. A code with no exact hit is today's path too (the which-one
-picker steers).
+Runs only for a staff contact and only when the parser named TWO OR MORE asks (round 6,
+G2: every such message, stock and incoming included); every other turn is today's path.
+A customer, brand or sales agent the resolver placed narrows the sold lines (their ids
+ride `crm_report_ask`); one it could not place is today's path, never an answer over
+every customer.
 
 Every line reads the raw tool JSON (no `view=render`), so a field gated on a grant is
 gated here, from the contact's own grants (`ctx.access.attributes`), the same keys the
@@ -41,14 +46,12 @@ SCOPE_KIND = "sub_ask_scope"
 OPTION_JUST = "just this code"
 OPTION_ALL = "all variants"
 BASIS_KIND = "sub_ask_basis"
-KINDS = frozenset({SCOPE_KIND, BASIS_KIND})
-
-#: The measures only this runner answers. A message whose asks are all outside it ("stock
-#: and incoming") is the existing domain fan-out's, which already answers it.
-RUNNER_MEASURES = frozenset(
-    {"received_qty", "last_receipt", "supplier", "last_cost", "sold_total", "sold_by", "other"}
-)
+PERIOD_KIND = "sub_ask_period"
+KINDS = frozenset({SCOPE_KIND, BASIS_KIND, PERIOD_KIND})
 SOLD = frozenset({"sold_total", "sold_by"})
+#: The non-product entity kinds a sold line can be narrowed by, and the `crm_report_ask`
+#: param each one's resolved ids ride (`catalog.py`: ids, never names).
+FILTER_PARAMS = {"customer": "customer_ids", "brand": "brand_ids", "sales_agent": "sales_agent_ids"}
 
 GRN_TOOL = "crm_procurement_grn_summary"
 #: "Last in" is the last SPO line's delivery date everywhere (owner ruling R-LASTIN, 9 Oct 2026).
@@ -62,6 +65,9 @@ STOCK_LIMIT = 5000
 #: A family larger than this is today's path (review R3): its ids would ride every GET and
 #: the stored question. Far above any real family (the owner's code has 8).
 FAMILY_MAX = 200
+#: A prefix-only code lists its codes after "all N" up to this many; past it the question
+#: offers "all N" and asks for the full code.
+PICK_MAX = 20
 #: `crm_report_ask`'s own ceiling (`sales_report_service.TOP_SELLING_N_CEILING`): every row,
 #: no cap (owner Q1).
 REPORT_TOP_N = 1000
@@ -106,12 +112,15 @@ NOT_AVAILABLE = "not available yet"
 NONE_ON_RECORD = "none on record"
 CHECK_FAILED = "couldn't check right now"
 TOO_MANY_REPORTS = "too many sales reports just now, try again in a few minutes"
-WHICH_PERIOD = "which period?"
 VARIANT_QUESTION = "{code} has {n} variants. Just {code}, or all {n}?"
 JUST_CODE = "Just {code}"
 ALL_N = "All {n}"
 FAMILY_HEADER = "{code} (all {n} variants)"
+PREFIX_QUESTION = "{code} has {n} variants. Which one?"
+TYPE_FULL_CODE = "Or type the full code."
 BASIS_QUESTION = "Sold as delivered or as ordered?"
+PERIOD_QUESTION = "Sold over which period?"
+WHAT_ABOUT = "What would you like to know about {name}? Stock, incoming, cost or sales?"
 AS_DELIVERED = "As delivered"
 AS_ORDERED = "As ordered"
 SUPPLIER_VALUE = "{supplier} ({po}, {date})"
@@ -132,12 +141,15 @@ CATALOG_KEYS = frozenset(
         NONE_ON_RECORD,
         CHECK_FAILED,
         TOO_MANY_REPORTS,
-        WHICH_PERIOD,
         VARIANT_QUESTION,
         JUST_CODE,
         ALL_N,
         FAMILY_HEADER,
+        PREFIX_QUESTION,
+        TYPE_FULL_CODE,
         BASIS_QUESTION,
+        PERIOD_QUESTION,
+        WHAT_ABOUT,
         AS_DELIVERED,
         AS_ORDERED,
         SUPPLIER_VALUE,
@@ -150,24 +162,29 @@ CATALOG_KEYS = frozenset(
 
 @dataclass
 class Product:
-    """One typed code: the exact product and the family the resolver placed for it."""
+    """One typed code: the exact product (None when the code is only a prefix, round 6
+    G1) and the family the resolver placed for it."""
 
     code: str
-    exact: dict[str, str]
+    exact: dict[str, str] | None
     family: list[dict[str, str]] = field(default_factory=list)
 
     def ids(self, family: bool) -> list[str]:
-        rows = self.family if family and self.family else [self.exact]
-        return [r["uuid"] for r in rows]
+        rows = self.family if (family or self.exact is None) and self.family else [self.exact]
+        return [r["uuid"] for r in rows if r]
 
     def to_wire(self) -> dict[str, Any]:
         return {"code": self.code, "exact": self.exact, "family": self.family}
 
     @classmethod
     def from_wire(cls, raw: Any) -> "Product | None":
-        if not isinstance(raw, dict) or not isinstance(raw.get("exact"), dict):
+        if not isinstance(raw, dict):
             return None
-        return cls(code=str(raw.get("code") or ""), exact=raw["exact"], family=list(raw.get("family") or []))
+        exact = raw.get("exact") if isinstance(raw.get("exact"), dict) else None
+        family = [r for r in raw.get("family") or [] if isinstance(r, dict)]
+        if exact is None and not family:
+            return None
+        return cls(code=str(raw.get("code") or ""), exact=exact, family=family)
 
 
 @dataclass
@@ -209,10 +226,7 @@ def resumes(verdict: Any, pending: Any) -> bool:
 
 def wants(verdict: Any, pending: Any) -> bool:
     """Is this turn the runner's? A fresh multi-ask, or the reply to one of its questions."""
-    if _resumed(verdict, pending) is not None:
-        return True
-    asks = _sub_asks(verdict)
-    return len(asks) >= 2 and any(a["measure"] in RUNNER_MEASURES for a in asks)
+    return _resumed(verdict, pending) is not None or len(_sub_asks(verdict)) >= 2
 
 
 def answer(
@@ -221,8 +235,14 @@ def answer(
     verdict: dict[str, Any],
     pending: Any,
     candidates: list[dict[str, Any]],
+    compatible: list[dict[str, Any]] | None = None,
+    settled: bool = True,
 ) -> Result | None:
-    """The reply, or None when the turn is not the runner's (today's path answers it)."""
+    """The reply, or None when the turn is not the runner's (today's path answers it).
+
+    `compatible` is the resolver's placed entities, the source of the customer, brand
+    and sales agent ids a sold line is narrowed by; `settled` is False when the resolver
+    is still asking which one (its picker answers, never a sum over every match)."""
     resumed = _resumed(verdict, pending)
     if resumed is not None:
         kind, position, payload = resumed
@@ -230,40 +250,160 @@ def answer(
         asks = [a for a in payload.get("sub_asks") or [] if isinstance(a, dict)]
         if not products or not asks:
             return None
-        if kind == SCOPE_KIND:
+        filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+        family = bool(payload.get("family"))
+        if kind == PERIOD_KIND:
+            start, end = payload["window"]
+            asks = [a if _window(a) else {**a, "date_from": start, "date_to": end} for a in asks]
             basis = payload.get("basis") if payload.get("basis") in BASIS_WORD else None
-            return _answer(run, products, asks, family=position == 2, basis=basis)
+            return _answer(run, products, asks, family=family, basis=basis, filters=filters, header_only_sold=True)
         return _answer(
             run,
             products,
             asks,
-            family=bool(payload.get("family")),
+            family=family,
             basis="ordered" if position == 2 else "delivered",
+            filters=filters,
             header_only_sold=True,
         )
 
     asks = _sub_asks(verdict)
-    if not (len(asks) >= 2 and any(a["measure"] in RUNNER_MEASURES for a in asks)):
+    if len(asks) < 2:
         return None
-    if _has_other_filters(verdict):
+    filters = _filters(verdict, compatible or [], settled=settled)
+    if filters is None:
         return None
-    products = _products(verdict, candidates)
+    products = _scoped_products(run, verdict, candidates)
     if not products:
         return None
-    if run.family_of is not None:
-        for p in products:
-            whole = run.family_of(p.code)
-            if len(whole) > FAMILY_MAX:
-                return None
-            if len(whole) > len(p.family):
-                p.family = whole
-    family = verdict.get("family")
     top_basis = verdict.get("basis") if verdict.get("basis") in BASIS_WORD else None
-    if family is None:
-        ambiguous = next((p for p in products if len(p.family) > 1), None)
-        if ambiguous is not None:
-            return _ask_scope(run, ambiguous, products, asks, domain=verdict.get("domain_hint"), basis=top_basis)
-    return _answer(run, products, asks, family=bool(family), basis=top_basis)
+    # A `family` the parser left null with variants present was asked before this ran
+    # (`scope_question`), so null here is a code with no variants: the exact code.
+    return _answer(run, products, asks, family=bool(verdict.get("family")), basis=top_basis, filters=filters)
+
+
+def scope_question(
+    run: Run,
+    *,
+    verdict: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    replay: dict[str, Any],
+) -> Result | None:
+    """Round 6 G1: the ONE "which of them?" question, asked before either path answers,
+    when the parser left `family` null and a code typed this message maps to two or more
+    products. `replay` is the verdict the reply re-runs with the scope settled
+    (`scope_reply`), so a one-ask turn and a multi-ask one resume the same way. None when
+    nothing needs asking."""
+    if verdict.get("family") is not None:
+        return None
+    products = _scoped_products(run, verdict, candidates, typed_only=True)
+    ambiguous = next((p for p in products or [] if len(p.family) > 1), None)
+    if ambiguous is None:
+        return None
+    loc = run.localizer
+    n = str(len(ambiguous.family))
+    all_n = loc.fill(ALL_N, n=n)
+    if ambiguous.exact is not None:
+        text = loc.fill(VARIANT_QUESTION, code=ambiguous.code, n=n)
+        # The option CODE is what the parser matches a reply against (`turn/question._options`
+        # shows it, with the printed label beside it): a meaning, never the label's wording,
+        # so "只要这个" or "all of them" read as a pick (crew live check 3).
+        options = [
+            {"code": OPTION_JUST, "label": loc.fill(JUST_CODE, code=ambiguous.code), "position": 1},
+            {"code": OPTION_ALL, "label": all_n, "position": 2},
+        ]
+    else:
+        # A code that is only a prefix has no "just this one": "all N" first, then every
+        # code by number, so a reply naming one is a pick of that code.
+        options = [{"code": OPTION_ALL, "label": all_n, "position": 1}]
+        lines = [loc.fill(PREFIX_QUESTION, code=ambiguous.code, n=n), f"1. {all_n}"]
+        if len(ambiguous.family) <= PICK_MAX:
+            for i, row in enumerate(ambiguous.family, 2):
+                options.append({"code": row["code"], "label": row["code"], "position": i})
+                lines.append(f"{i}. {row['code']}")
+        else:
+            lines.append(loc.fill(TYPE_FULL_CODE))
+        text = "\n".join(lines)
+    question = turn_pending.ask(
+        SCOPE_KIND,
+        options,
+        asked_at_turn=run.asked_at_turn,
+        expects="pick",
+        # `domain` (review S7): the domain the reply goes back to, so a bare "just this
+        # one" is read under the ask's domain like any other pick (`turn/apply`).
+        payload={
+            "asked": ambiguous.to_wire(),
+            "verdict": replay,
+            "domain": verdict.get("domain_hint") or "purchase_cost",
+        },
+    )
+    return Result(text=text, question=question, trace={"asked": SCOPE_KIND, "variants": len(ambiguous.family)})
+
+
+def scope_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
+    """The verdict a reply to the scope question re-runs: the asked turn's own, with
+    `family` settled and, for a picked code, that code typed in place of the prefix. The
+    reply is read only as the parser read it (`_answered_position`). None when the turn
+    is not that reply."""
+    if getattr(pending, "kind", None) != SCOPE_KIND or not isinstance(verdict, dict):
+        return None
+    payload = dict(getattr(pending, "payload", None) or {})
+    replay, asked = payload.get("verdict"), Product.from_wire(payload.get("asked"))
+    reply = verdict.get("open_question_answer")
+    if not isinstance(replay, dict) or asked is None or not isinstance(reply, dict):
+        return None
+    options = getattr(pending, "options", None) or []
+    position = _answered_position(reply, SCOPE_KIND, options)
+    if position is None:
+        return None
+    if asked.exact is not None:
+        return {**replay, "family": position == 2, "open_question_answer": None}
+    if position == 1:
+        return {**replay, "family": True, "open_question_answer": None}
+    picked = next((o.get("code") for o in options if isinstance(o, dict) and o.get("position") == position), None)
+    if not picked:
+        return None
+    key = turn_state.token_key(asked.code)
+    entities = [
+        {**e, "raw": picked, "canonical_code": picked}
+        if isinstance(e, dict)
+        and e.get("hint") in (None, "", "product")
+        and turn_state.token_key(str(e.get("canonical_code") or e.get("raw") or "")) == key
+        else e
+        for e in replay.get("entities") or []
+    ]
+    return {**replay, "entities": entities, "family": False, "open_question_answer": None}
+
+
+def vague_token(verdict: Any, focus_products: list[Any]) -> str | None:
+    """Round 6 G4: the product word a message names with nothing asked about it, or None.
+
+    The parser named no domain, no intent, no ask and no sub-ask, and every entity it
+    read is a product typed this message that it is not sure of (`confident: false`) and
+    the conversation is not already about. Such a message does not inherit the last
+    turn's domain; the reply asks what is wanted. Reads the parser's fields only."""
+    if not isinstance(verdict, dict):
+        return None
+    if verdict.get("domain_hint") or verdict.get("intent_hint") or verdict.get("asks") or _sub_asks(verdict):
+        return None
+    entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
+    if not entities:
+        return None
+    known = {
+        turn_state.token_key(str(p.get(k) or ""))
+        for p in focus_products or []
+        if isinstance(p, dict)
+        for k in ("canonical_code", "raw")
+        if p.get(k)
+    }
+    for e in entities:
+        if e.get("hint") not in (None, "", "product") or e.get("current_message") is False:
+            return None
+        if e.get("confident") is not False:
+            return None
+        if turn_state.token_key(str(e.get("canonical_code") or e.get("raw") or "")) in known:
+            return None
+    return ", ".join(str(e.get("raw") or e.get("canonical_code") or "").strip() for e in entities)
 
 
 # --------------------------------------------------------------------------- #
@@ -278,15 +418,23 @@ def _sub_asks(verdict: Any) -> list[dict[str, Any]]:
 
 def _resumed(verdict: Any, pending: Any) -> tuple[str, int, dict[str, Any]] | None:
     kind = getattr(pending, "kind", None)
-    if kind not in KINDS or not isinstance(verdict, dict):
+    if kind not in (BASIS_KIND, PERIOD_KIND) or not isinstance(verdict, dict):
         return None
+    payload = dict(getattr(pending, "payload", None) or {})
+    if kind == PERIOD_KIND:
+        # The answer to "which period?" is the window the parser read off the reply; a
+        # reply naming its own subject or asks is a new message (G4b), not the answer.
+        window = _window({"date_from": verdict.get("date_filter_start"), "date_to": verdict.get("date_filter_end")})
+        if window is None or verdict.get("entities") or _sub_asks(verdict):
+            return None
+        return kind, 0, {**payload, "window": window}
     reply = verdict.get("open_question_answer")
     if not isinstance(reply, dict):
         return None
     position = _answered_position(reply, kind, getattr(pending, "options", None) or [])
     if position is None:
         return None
-    return kind, position, dict(getattr(pending, "payload", None) or {})
+    return kind, position, payload
 
 
 def _answered_position(reply: dict[str, Any], kind: str, options: list[Any]) -> int | None:
@@ -294,39 +442,75 @@ def _answered_position(reply: dict[str, Any], kind: str, options: list[Any]) -> 
     question came back as an item naming the option, not a `pick`). Every reading is the
     parser's own: a pick of one position, one item naming a position or an option's code,
     or "all" to the variant question. This reads no word of the message."""
+    offered = {
+        o["position"]: o for o in options if isinstance(o, dict) and isinstance(o.get("position"), int)
+    }
     picked = [p for p in reply.get("picked") or [] if isinstance(p, int) and not isinstance(p, bool)]
-    if reply.get("mode") == "pick" and len(picked) == 1 and picked[0] in (1, 2):
+    if reply.get("mode") == "pick" and len(picked) == 1 and picked[0] in offered:
         return picked[0]
     if reply.get("mode") == "all" and kind == SCOPE_KIND:
-        return 2
+        return next((p for p, o in offered.items() if o.get("code") == OPTION_ALL), None)
     items = [i for i in reply.get("items") or [] if isinstance(i, dict)]
     # A reply the parser read as no answer, a cancel or a no never resumes (review N2).
     if len(items) == 1 and reply.get("mode") not in (None, "cancel", "no"):
         item = items[0]
-        if item.get("position") in (1, 2):
+        if item.get("position") in offered:
             return int(item["position"])
         code = str(item.get("code") or "").strip().casefold()
-        for option in options:
-            if isinstance(option, dict) and str(option.get("code") or "").casefold() == code and code:
-                position = option.get("position")
-                return position if position in (1, 2) else None
+        for position, option in offered.items():
+            if code and str(option.get("code") or "").casefold() == code:
+                return position
     return None
 
 
-def _has_other_filters(verdict: dict[str, Any]) -> bool:
-    """A customer, brand, agent, warehouse or any other non-product entity narrows what
-    is asked ("sold to ABC Trading"). The runner's queries are product-only, so such a
-    message is today's path rather than an answer over every customer (review S1)."""
-    return any(
-        isinstance(e, dict) and e.get("hint") not in (None, "", "product")
-        for e in verdict.get("entities") or []
-    )
+def _filters(verdict: dict[str, Any], compatible: list[dict[str, Any]], *, settled: bool) -> dict[str, list[str]] | None:
+    """The customer, brand and sales agent ids the resolver placed for this message's
+    non-product entities, by the `crm_report_ask` param each rides (G2: "sold to ABC
+    Trading" is ABC's sales). None, today's path, when any such entity is of another
+    kind, was not placed, or is still being asked about: the runner never answers over
+    every customer (review S1)."""
+    out: dict[str, list[str]] = {}
+    for e in verdict.get("entities") or []:
+        if not isinstance(e, dict) or e.get("hint") in (None, "", "product"):
+            continue
+        param = FILTER_PARAMS.get(str(e.get("hint")))
+        if param is None or not settled:
+            return None
+        ids = sorted(
+            {str(c["uuid"]) for c in compatible if isinstance(c, dict) and c.get("entity_type") == e["hint"] and c.get("uuid")}
+        )
+        if not ids:
+            return None
+        out[param] = ids
+    return out
 
 
-def _products(verdict: dict[str, Any], candidates: list[dict[str, Any]]) -> list[Product]:
+def _scoped_products(
+    run: Run, verdict: dict[str, Any], candidates: list[dict[str, Any]], *, typed_only: bool = False
+) -> list[Product] | None:
+    """`_products`, each family widened to the whole catalogue family (`run.family_of`).
+    None when a family is past `FAMILY_MAX` (review R3: today's path)."""
+    products = _products(verdict, candidates, run.family_of, typed_only=typed_only)
+    if run.family_of is not None:
+        for p in products:
+            whole = run.family_of(p.code)
+            if len(whole) > FAMILY_MAX:
+                return None
+            if len(whole) > len(p.family):
+                p.family = whole
+    return products
+
+
+def _products(
+    verdict: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    family_of: Callable[[str], list[dict[str, str]]] | None = None,
+    *,
+    typed_only: bool = False,
+) -> list[Product]:
     """Each typed product code, with the resolver's exact hit and the family of codes it
-    is the prefix of, in typed order. A code with no exact hit stops the runner: the
-    which-one picker is today's (card R3)."""
+    is the prefix of, in typed order. A code with no exact hit is its prefix family
+    (round 6 G1: the scope question lists it); one that is neither stops the runner."""
 
     def fold(value: Any) -> str:
         return turn_state.token_key(str(value or ""))
@@ -337,6 +521,8 @@ def _products(verdict: dict[str, Any], candidates: list[dict[str, Any]]) -> list
     for e in verdict.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "", "product"):
             continue
+        if typed_only and e.get("current_message") is False:
+            continue
         typed = str(e.get("canonical_code") or e.get("raw") or "").strip()
         key = fold(typed)
         if not key or key in seen:
@@ -344,14 +530,19 @@ def _products(verdict: dict[str, Any], candidates: list[dict[str, Any]]) -> list
         seen.add(key)
         code_of = lambda c: fold(c.get("canonical_code") or c.get("code"))  # noqa: E731
         exact = [c for c in rows if code_of(c) == key]
-        if not exact:
+        family = [_ref(c) for c in rows if code_of(c).startswith(key)]
+        if not exact and not family and family_of is not None:
+            family = family_of(typed)
+        if not exact and not family:
             return []
-        family = [c for c in rows if code_of(c).startswith(key)]
+        if not exact and len(family) == 1:
+            out.append(Product(code=family[0]["code"], exact=family[0], family=family))
+            continue
         out.append(
             Product(
-                code=str(exact[0].get("canonical_code") or exact[0].get("code") or typed),
-                exact=_ref(exact[0]),
-                family=[_ref(c) for c in family],
+                code=str(exact[0].get("canonical_code") or exact[0].get("code") or typed) if exact else typed,
+                exact=_ref(exact[0]) if exact else None,
+                family=family,
             )
         )
     return out
@@ -362,64 +553,37 @@ def _ref(c: dict[str, Any]) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# The two questions
+# The sold questions
 # --------------------------------------------------------------------------- #
 
 
-def _ask_scope(
+def _sold_question(
     run: Run,
-    product: Product,
+    kind: str,
     products: list[Product],
     asks: list[dict[str, Any]],
     *,
-    domain: Any = None,
-    basis: str | None = None,
-) -> Result:
+    family: bool,
+    basis: str | None,
+    filters: dict[str, list[str]],
+) -> tuple[str, Any]:
+    """The period question (G3) or the basis one (Q4), the last line of the reply."""
     loc = run.localizer
-    n = str(len(product.family))
-    text = loc.fill(VARIANT_QUESTION, code=product.code, n=n)
-    # The option CODE is what the parser matches a reply against (`turn/question._options`
-    # shows it, with the printed label beside it): a meaning, never the label's wording,
-    # so "只要这个" or "all of them" read as a pick (crew live check 3).
-    options = [
-        {"code": OPTION_JUST, "label": loc.fill(JUST_CODE, code=product.code), "position": 1},
-        {"code": OPTION_ALL, "label": loc.fill(ALL_N, n=n), "position": 2},
-    ]
-    question = turn_pending.ask(
-        SCOPE_KIND,
-        options,
-        asked_at_turn=run.asked_at_turn,
-        expects="pick",
-        # `domain` (review S7): the domain the reply goes back to, so a bare "just this
-        # one" is read under the ask's domain like any other pick (`turn/apply`).
-        payload={
-            "products": [p.to_wire() for p in products],
-            "sub_asks": asks,
-            "basis": basis,
-            "domain": domain or "purchase_cost",
-        },
-    )
-    return Result(text=text, question=question, trace={"asked": SCOPE_KIND, "variants": len(product.family)})
-
-
-def _basis_question(run: Run, products: list[Product], asks: list[dict[str, Any]], family: bool) -> tuple[str, Any]:
-    loc = run.localizer
+    payload = {
+        "products": [p.to_wire() for p in products],
+        "sub_asks": asks,
+        "family": family,
+        "basis": basis,
+        "filters": filters,
+        "domain": "sales",
+    }
+    if kind == PERIOD_KIND:
+        return loc.fill(PERIOD_QUESTION), turn_pending.ask(PERIOD_KIND, [], asked_at_turn=run.asked_at_turn, payload=payload)
     options = [
         {"code": "delivered", "label": loc.fill(AS_DELIVERED), "position": 1},
         {"code": "ordered", "label": loc.fill(AS_ORDERED), "position": 2},
     ]
-    question = turn_pending.ask(
-        BASIS_KIND,
-        options,
-        asked_at_turn=run.asked_at_turn,
-        expects="pick",
-        payload={
-            "products": [p.to_wire() for p in products],
-            "sub_asks": asks,
-            "family": family,
-            "domain": "sales",
-        },
-    )
+    question = turn_pending.ask(BASIS_KIND, options, asked_at_turn=run.asked_at_turn, expects="pick", payload=payload)
     return loc.fill(BASIS_QUESTION), question
 
 
@@ -435,21 +599,26 @@ def _answer(
     *,
     family: bool,
     basis: str | None,
+    filters: dict[str, list[str]] | None = None,
     header_only_sold: bool = False,
 ) -> Result:
+    filters = filters or {}
     if header_only_sold:
         asks = [a for a in asks if a.get("measure") in SOLD]
-    # A sold ask that still has no basis waits for the one question (Q4), unless the
-    # contact may not see sales at all (then it is refused on its line, no question).
-    sold_waiting = [
+    # A sold ask with no period, then one with no basis, waits for its one question
+    # (G3, then Q4), unless the contact may not see sales at all (then it is refused on
+    # its line, no question) or its axis is one no query answers.
+    answerable = [
         a
         for a in asks
         if a.get("measure") in SOLD
-        and not (a.get("basis") in BASIS_WORD or basis)
         and GRANT[a["measure"]] in run.grants
-        and _window(a)
+        and not (a.get("group_by") and a.get("group_by") not in AXIS)
     ]
-    calls = _Calls(run)
+    no_period = [a for a in answerable if not _window(a)]
+    no_basis = [a for a in answerable if _window(a) and not (a.get("basis") in BASIS_WORD or basis)]
+    waiting = no_period + no_basis
+    calls = _Calls(run, filters)
     for a in asks:
         if a.get("measure") == "sold_by" and a.get("group_by") in AXIS:
             key = (_window(a), a.get("basis") if a.get("basis") in BASIS_WORD else basis)
@@ -459,27 +628,29 @@ def _answer(
         ids = product.ids(family)
         head = (
             run.localizer.fill(FAMILY_HEADER, code=product.code, n=str(len(ids)))
-            if family and len(ids) > 1
+            if (family or product.exact is None) and len(ids) > 1
             else product.code
         )
         lines = [head]
         for ask in asks:
-            if ask in sold_waiting:
+            if ask in waiting:
                 continue
             lines.extend(_lines(run, calls, ask, ids, basis))
         blocks.append("\n".join(lines))
     text = "\n\n".join(blocks)
     question = None
-    if sold_waiting:
-        line, question = _basis_question(run, products, sold_waiting, family)
+    if waiting:
+        kind = PERIOD_KIND if no_period else BASIS_KIND
+        line, question = _sold_question(run, kind, products, waiting, family=family, basis=basis, filters=filters)
         text = text + "\n" + line
-    answered = [r for p in products for r in (p.family if family and p.family else [p.exact])]
+    answered = [r for p in products for r in (p.family if (family or p.exact is None) and p.family else [p.exact])]
     return Result(
         text=text,
         question=question,
         trace={
             "family": family,
             "basis": basis,
+            "filters": sorted(filters),
             "calls": [name for name, _ in calls.made],
             "failed": calls.failures,
         },
@@ -500,8 +671,6 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
     need = GRANT.get(measure)
     if (need and need not in run.grants) or (measure == "stock" and not run.stock_allowed):
         return [f"{label}: {loc.fill(NOT_SHARED)}"]
-    if measure in SOLD and window is None:
-        return [f"{_own_label(ask)}: {loc.fill(WHICH_PERIOD)}"]
     try:
         if measure == "received_qty":
             rows = calls.rows(GRN_TOOL, {"product_ids": ids, **_dates(window)})
@@ -566,6 +735,7 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
         # sold_total / sold_by
         args = {
             "product_ids": ids,
+            **calls.filters,
             **_dates(window),
             "basis": ask_basis,
             "measure": "qty",
@@ -677,8 +847,10 @@ class _CallFailed(Exception):
 
 
 class _Calls:
-    def __init__(self, run: Run) -> None:
+    def __init__(self, run: Run, filters: dict[str, list[str]] | None = None) -> None:
         self.run = run
+        #: The customer / brand / sales agent ids every sold line is narrowed by (G2).
+        self.filters = dict(filters or {})
         self.made: list[tuple[str, dict[str, Any]]] = []
         #: (window, basis) -> the group_by of a sold_by ask with that window and basis.
         #: A sold_total asked beside it reads the grouped call's own `total` (the whole

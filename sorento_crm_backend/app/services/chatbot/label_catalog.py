@@ -664,7 +664,6 @@ LABELS.update(
             "ms": "terlalu banyak laporan jualan sebentar tadi, cuba lagi dalam beberapa minit",
             "zh": "销售报表查询太频繁，请几分钟后再试",
         },
-        "which period?": {"ms": "tempoh bila?", "zh": "哪个时间段？"},
         "{code} has {n} variants. Just {code}, or all {n}?": {
             "ms": "{code} ada {n} jenis. Hanya {code}, atau semua {n}?",
             "zh": "{code} 有 {n} 个款式。只要 {code}，还是全部 {n} 款？",
@@ -675,6 +674,15 @@ LABELS.update(
         "Sold as delivered or as ordered?": {
             "ms": "Terjual mengikut yang dihantar atau yang ditempah?",
             "zh": "卖出按已出货还是按下单算？",
+        },
+        # Round 6 (owner hand test, 9 Oct 2026): the prefix-only scope question, the sold
+        # period question and the "what about it?" reply to a vague message.
+        "{code} has {n} variants. Which one?": {"ms": "{code} ada {n} jenis. Yang mana?", "zh": "{code} 有 {n} 个款式，要哪个？"},
+        "Or type the full code.": {"ms": "Atau taip kod penuh.", "zh": "或者输入完整的代码。"},
+        "Sold over which period?": {"ms": "Jualan untuk tempoh bila?", "zh": "卖出要算哪个时间段？"},
+        "What would you like to know about {name}? Stock, incoming, cost or sales?": {
+            "ms": "Apa yang anda ingin tahu tentang {name}? Stok, barang masuk, kos atau jualan?",
+            "zh": "你想了解 {name} 的什么？库存、到货、采购价，还是销售？",
         },
         "As delivered": {"ms": "Yang dihantar", "zh": "按已出货"},
         "As ordered": {"ms": "Yang ditempah", "zh": "按下单"},
@@ -696,10 +704,12 @@ _SUB_ASK_KEYS = frozenset(
         "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
         "per customer", "per product", "per brand", "per category", "per location",
         "per channel", "per month", "delivered", "ordered", "not shared with you",
-        "not available yet", "none on record", "couldn't check right now", "which period?",
+        "not available yet", "none on record", "couldn't check right now",
         "too many sales reports just now, try again in a few minutes",
         "{code} has {n} variants. Just {code}, or all {n}?", "Just {code}", "All {n}",
         "{code} (all {n} variants)", "Sold as delivered or as ordered?", "As delivered",
+        "{code} has {n} variants. Which one?", "Or type the full code.", "Sold over which period?",
+        "What would you like to know about {name}? Stock, incoming, cost or sales?",
         "As ordered", "{supplier} ({po}, {date})", "{currency} {cost} / unit ({po}, {date})",
         "{date} ({qty}, {spo})", "{qty}, ETA {date}",
     }
