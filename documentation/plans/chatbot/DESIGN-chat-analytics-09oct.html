@@ -53,8 +53,9 @@ th{background:var(--muted);font-weight:600}
 <nav><b>Contents</b><ol><li><a href="#0-the-short-version-read-this-if-nothing-else">0. The short version (read this if nothing else)</a></li><li><a href="#1-problem-statement">1. Problem statement</a></li><li><a href="#2-measurement-model-plain-language-first">2. Measurement model (plain language first)</a></li><li><a href="#3-engineering-data-pipeline">3. Engineering: data pipeline</a></li><li><a href="#4-engineering-report-engine-generalisation">4. Engineering: report engine generalisation</a></li><li><a href="#5-access-control-and-pii">5. Access control and PII</a></li><li><a href="#6-later-phase-ai-assistant-becomes-a-chatbot-console">6. Later phase: AI assistant becomes a chatbot console</a></li><li><a href="#7-evaluation">7. Evaluation</a></li><li><a href="#8-phased-plan">8. Phased plan</a></li></ol></nav>
 <main>
 <h1>DESIGN: Chat analytics, methodology and engineering (9 Oct 2026)</h1>
-<p>Status: DRAFT for owner review (design only; no code, no migrations in this lane). Lane
-CHAT-ANALYTICS-DESIGN. Track once built: full pipeline (migrations + new grant), see section 8.</p>
+<p>Status: APPROVED by the owner, 9 Oct 2026 ("okay can"). All 8 open questions ruled as recommended
+(section 8, "Owner rulings"). Design only; no code, no migrations in this lane (CHAT-ANALYTICS-DESIGN).
+Build starts with CA-1 as its own lane. Track once built: full pipeline (migrations + new grant).</p>
 <p>Twin files: <code>DESIGN-chat-analytics-09oct.md</code> and <code>DESIGN-chat-analytics-09oct.html</code> carry the same content; the HTML draws the diagrams.</p>
 <p>Sources: code at <code>origin/main</code> 4ee6f643d (cited <code>file:line</code>); numbers are AGGREGATES from the prod
 snapshot <code>sorento_ai_automation_20261006</code> taken by the crew scout. This repo is public: there are no
@@ -1170,25 +1171,62 @@ analytics is proven, because it touches auth and the engine's ingress contract.<
 </tr>
 </tbody>
 </table></div>
-<h3>Open questions (each with a recommendation)</h3>
-<ol>
-<li><strong>Taxonomy owner</strong>: who approves v1 and later bumps? <em>Recommend</em>: the owner for v1, then a
-   named delegate monthly.</li>
-<li><strong>"Resolved" proxy acceptable?</strong> <em>Recommend</em>: yes for now, labelled "(estimate)"; add an
-   optional thumbs-up quick reply later only if the proxy proves misleading.</li>
-<li><strong>Who gets <code>chatbot.analytics</code>?</strong> <em>Recommend</em>: managers + admins; salesmen get it scoped to
-   their customers; dealers get the self-view only.</li>
-<li><strong>Backfill model</strong>: same small model as the parser or a larger one? <em>Recommend</em>: the parser's
-   model, plus the 10% audit on a larger one; switch only if the audit misses targets.</li>
-<li><strong>Staff replies</strong>: are staff messages reliably in <code>chat_histories</code>? <em>Recommend</em>: measure in CA-1
-   (count outgoing rows without <code>chatbot_turn_id</code> during human-intervened spans) before promising
-   staff metrics.</li>
-<li><strong>Stop trimming episodes instead of snapshotting?</strong> <em>Recommend</em>: keep the trim (it bounds
-   memory) and snapshot; the snapshot is analytic fields only.</li>
-<li><strong>Step 3 at all?</strong> <em>Recommend</em>: decide after CA-3 has run a month, from the fall-through log.</li>
-<li><strong>Language / sentiment</strong>: add them to the labeller? <em>Recommend</em>: language yes (free in the same
-   call, useful for staffing); sentiment no until a question needs it.</li>
-</ol>
+<h3>Owner rulings (9 Oct 2026)</h3>
+<p>The owner approved the design and ruled every open question as recommended. They are recorded
+here as decisions; a change needs a new ruling.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>Ruling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Who approves the taxonomy (v1 and later bumps)?</td>
+<td>The owner approves v1; after that a named delegate reviews proposals monthly and approves version bumps.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Is the "resolved" proxy acceptable?</td>
+<td>Yes, shown labelled "(estimate)". An optional thumbs-up quick reply is added later only if the proxy proves misleading.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Who gets <code>chatbot.analytics</code>?</td>
+<td>Managers and admins in full; salesmen scoped to their own customers; dealers get the self-view only.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Which model runs the backfill?</td>
+<td>The parser's model, plus the 10% audit on a larger model; switch only if the audit misses its targets (section 7).</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Are staff replies reliably in <code>chat_histories</code>?</td>
+<td>Measure it in CA-1 (outgoing rows without <code>chatbot_turn_id</code> during human-intervened spans) before any staff metric is promised.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Stop trimming episodes instead of snapshotting?</td>
+<td>Keep the 20-episode trim; snapshot analytic fields only (no summary text) in the same transaction as the close.</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Build step 3 (guarded SQL) at all?</td>
+<td>Decide after CA-3 has run for a month, from the fall-through log.</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Language / sentiment in the labeller?</td>
+<td>Language yes (same call); sentiment no until a question needs it.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Also settled with the approval: CA-1 ships first and alone (facts from traces + "Chat overview",
+no topics), as a separate lane; topics follow in CA-2 once taxonomy v1 is approved.</p>
 </main>
 </div>
 </body>

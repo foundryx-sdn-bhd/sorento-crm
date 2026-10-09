@@ -1,7 +1,8 @@
 # DESIGN: Chat analytics, methodology and engineering (9 Oct 2026)
 
-Status: DRAFT for owner review (design only; no code, no migrations in this lane). Lane
-CHAT-ANALYTICS-DESIGN. Track once built: full pipeline (migrations + new grant), see section 8.
+Status: APPROVED by the owner, 9 Oct 2026 ("okay can"). All 8 open questions ruled as recommended
+(section 8, "Owner rulings"). Design only; no code, no migrations in this lane (CHAT-ANALYTICS-DESIGN).
+Build starts with CA-1 as its own lane. Track once built: full pipeline (migrations + new grant).
 
 Twin files: `DESIGN-chat-analytics-09oct.md` and `DESIGN-chat-analytics-09oct.html` carry the same content; the HTML draws the diagrams.
 
@@ -614,21 +615,21 @@ CA-4 can run in parallel with CA-3. Each lane: one branch, one PR.
 | Step-3 SQL wrong or slow | gated by evidence, read-only role, 5 s, row cap, "(computed)" marker |
 | Episode trim loses history | snapshot in the same transaction as the close (CA-1) |
 
-### Open questions (each with a recommendation)
+### Owner rulings (9 Oct 2026)
 
-1. **Taxonomy owner**: who approves v1 and later bumps? *Recommend*: the owner for v1, then a
-   named delegate monthly.
-2. **"Resolved" proxy acceptable?** *Recommend*: yes for now, labelled "(estimate)"; add an
-   optional thumbs-up quick reply later only if the proxy proves misleading.
-3. **Who gets `chatbot.analytics`?** *Recommend*: managers + admins; salesmen get it scoped to
-   their customers; dealers get the self-view only.
-4. **Backfill model**: same small model as the parser or a larger one? *Recommend*: the parser's
-   model, plus the 10% audit on a larger one; switch only if the audit misses targets.
-5. **Staff replies**: are staff messages reliably in `chat_histories`? *Recommend*: measure in CA-1
-   (count outgoing rows without `chatbot_turn_id` during human-intervened spans) before promising
-   staff metrics.
-6. **Stop trimming episodes instead of snapshotting?** *Recommend*: keep the trim (it bounds
-   memory) and snapshot; the snapshot is analytic fields only.
-7. **Step 3 at all?** *Recommend*: decide after CA-3 has run a month, from the fall-through log.
-8. **Language / sentiment**: add them to the labeller? *Recommend*: language yes (free in the same
-   call, useful for staffing); sentiment no until a question needs it.
+The owner approved the design and ruled every open question as recommended. They are recorded
+here as decisions; a change needs a new ruling.
+
+| # | Question | Ruling |
+|---|---|---|
+| 1 | Who approves the taxonomy (v1 and later bumps)? | The owner approves v1; after that a named delegate reviews proposals monthly and approves version bumps. |
+| 2 | Is the "resolved" proxy acceptable? | Yes, shown labelled "(estimate)". An optional thumbs-up quick reply is added later only if the proxy proves misleading. |
+| 3 | Who gets `chatbot.analytics`? | Managers and admins in full; salesmen scoped to their own customers; dealers get the self-view only. |
+| 4 | Which model runs the backfill? | The parser's model, plus the 10% audit on a larger model; switch only if the audit misses its targets (section 7). |
+| 5 | Are staff replies reliably in `chat_histories`? | Measure it in CA-1 (outgoing rows without `chatbot_turn_id` during human-intervened spans) before any staff metric is promised. |
+| 6 | Stop trimming episodes instead of snapshotting? | Keep the 20-episode trim; snapshot analytic fields only (no summary text) in the same transaction as the close. |
+| 7 | Build step 3 (guarded SQL) at all? | Decide after CA-3 has run for a month, from the fall-through log. |
+| 8 | Language / sentiment in the labeller? | Language yes (same call); sentiment no until a question needs it. |
+
+Also settled with the approval: CA-1 ships first and alone (facts from traces + "Chat overview",
+no topics), as a separate lane; topics follow in CA-2 once taxonomy v1 is approved.
