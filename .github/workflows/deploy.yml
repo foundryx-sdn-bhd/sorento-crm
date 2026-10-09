@@ -386,6 +386,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       mcp: ${{ steps.filter.outputs.mcp }}
+      analytics: ${{ steps.filter.outputs.analytics }}
       scm: ${{ steps.filter.outputs.scm }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
       # The import-based selection when the PR changes backend code (step
@@ -500,7 +501,7 @@ jobs:
           # unless a pull_request's own file list reaches the flags below:
           # off a PR the full shards run and the changed-files job must not.
           if [ "$docs_only" = "true" ]; then
-            for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+            for area in backend frontend mcp scm analytics; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "docs-only change: no service area counts as changed"
             exit 0
@@ -509,7 +510,7 @@ jobs:
           # build and the deploy, which gate on the event rather than on the
           # areas.
           if [ "$EVENT" = "workflow_dispatch" ] && [ "$SKIP_TESTS" = "true" ]; then
-            for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+            for area in backend frontend mcp scm analytics; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "release with skip_tests=true: no test job runs"
             exit 0
@@ -517,7 +518,7 @@ jobs:
           # A nightly on a head the last green nightly already tested: no
           # test job runs (see the `schedule` case above).
           if [ "${nightly_done:-false}" = "true" ]; then
-            for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+            for area in backend frontend mcp scm analytics; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "$why: no test job runs"
             exit 0
@@ -530,7 +531,7 @@ jobs:
           # red); a swallowed failure must never turn into an all-flags-false
           # green run.
           if [ "$EVENT" != "pull_request" ] || [ "$LABEL" = "ci-full" ] || [ -n "$why" ]; then
-            for area in backend frontend mcp scm; do echo "$area=true"; done | tee -a "$GITHUB_OUTPUT"
+            for area in backend frontend mcp scm analytics; do echo "$area=true"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             if [ -z "$why" ] && [ "$LABEL" = "ci-full" ]; then why="ci-full label, the merge gate"; fi
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
@@ -554,6 +555,7 @@ jobs:
             flag backend  '^(sorento_crm_backend/|\.github/workflows/deploy\.yml$)'
             flag frontend '^(sorento_crm_frontend/|\.github/workflows/deploy\.yml$)'
             flag mcp      '^(sorento_crm_mcp/|\.github/workflows/deploy\.yml$)'
+            flag analytics '^(sorento_analytics_mcp/|sorento_crm_mcp/|\.github/workflows/deploy\.yml$)'
             flag scm      "$SCM_RE"
           } | tee -a "$GITHUB_OUTPUT"
           # BACKEND_TESTS_RE: the backend test files this PR changes, for
@@ -774,6 +776,61 @@ jobs:
             -e CRM_BASE_URL=http://localhost:8000 \
             -e EXTERNAL_API_KEY=ci-dummy \
             sorento-mcp:ci \
+            sh -c "pip install --no-cache-dir -q 'pytest>=8.0' 'pytest-asyncio>=0.24' && \
+                   python -m pytest /app/tests -q -p no:cacheprovider"
+
+  # CLAUDE-CONNECTOR S2: the claude.ai analytics container. Validation only; it is NOT in the
+  # build-images matrix or any release job (the release wiring is a separate owner-approved step).
+  validate-analytics-mcp:
+    name: Validate analytics MCP
+    needs: [changes]
+    if: needs.changes.outputs.analytics == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The image installs sorento_crm_mcp as a library, so the build context is the repo root.
+      - name: Build analytics MCP image (no push, fresh dependency resolution)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./sorento_analytics_mcp/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          no-cache: true
+          tags: sorento-analytics-mcp:ci
+
+      - name: Smoke the real entrypoint imports
+        run: |
+          docker run --rm \
+            -e CRM_BASE_URL=http://localhost:8000 \
+            -e ANALYTICS_CONNECTOR_INTERNAL_KEY=ci-dummy \
+            -e ANALYTICS_CONNECTOR_PUBLIC_BASE_URL=https://crm.example.com/analytics \
+            sorento-analytics-mcp:ci \
+            python -c "
+          from importlib.metadata import version
+          from sorento_analytics_mcp.app import create_app
+          create_app()
+          print('mcp', version('mcp'), 'analytics entrypoint ok')
+          "
+
+      - name: Run analytics MCP test suite (executing gate)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/sorento_analytics_mcp/tests:/app/tests:ro \
+            sorento-analytics-mcp:ci \
             sh -c "pip install --no-cache-dir -q 'pytest>=8.0' 'pytest-asyncio>=0.24' && \
                    python -m pytest /app/tests -q -p no:cacheprovider"
 
