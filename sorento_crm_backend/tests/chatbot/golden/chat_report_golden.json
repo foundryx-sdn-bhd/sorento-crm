@@ -320,6 +320,70 @@
         "top_n": 5,
         "has_period": true
       }
+    },
+    {
+      "id": "zd_zh_this_month_most_asked",
+      "language": "zh",
+      "message": "这个月经销商最多问的是什么问题",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_most_asked_product_sept",
+      "language": "zh",
+      "message": "九月份被问最多的产品",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "product",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_most_failed_reason",
+      "language": "zh",
+      "message": "上个月机器人失败最多的原因",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "failure_reason",
+          "measure": "failed",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_top3_with_most",
+      "language": "zh",
+      "message": "这个星期最多人问的前3个问题",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 3,
+        "has_period": true
+      }
     }
   ]
 }

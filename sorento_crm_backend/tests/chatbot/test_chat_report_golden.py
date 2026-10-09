@@ -81,3 +81,21 @@ def test_the_golden_file_is_synthetic_and_dash_free() -> None:
     assert chr(0x2014) not in text and chr(0x2013) not in text
     assert not re.search(r"\+?\d[\d\s-]{8,}\d", text), "no phone-like numbers in a public repo"
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", text), "no ids"
+
+
+def test_zh_most_with_no_number_reads_top_n_null_never_one() -> None:
+    import re as _re
+
+    seen = 0
+    for case in _cases():
+        msg = case["message"]
+        if "最多" not in msg:
+            continue
+        if _re.search(r"前\s*\d", msg):
+            assert case["expect"]["top_n"] is not None, case
+        elif not _re.search(r"\d", msg):
+            seen += 1
+            assert case["expect"]["top_n"] is None, case
+    assert seen >= 4, "the 最多 cases are pinned in the data"
+    top3 = next(c for c in _cases() if c["id"] == "zd_zh_top3_with_most")
+    assert top3["expect"]["top_n"] == 3
