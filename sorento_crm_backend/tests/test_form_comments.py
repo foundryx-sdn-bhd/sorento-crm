@@ -36,7 +36,7 @@ SPACE = "zzt-fcom-space"
 # A ':' in the last segment passes straight through resolve_send_identifier (no contact row needed).
 INBOX_URL = "https://app.respond.io/space/364817/inbox/id:60123"
 SCOPE = "form_comment"
-SERIALIZED_KEYS = {"id", "body", "author_name", "author_kind", "created_at", "attachments"}
+SERIALIZED_KEYS = {"id", "body", "author_name", "author_kind", "posted_by_name", "created_at", "attachments"}
 ATTACHMENT_KEYS = {"attachment_id", "filename", "size", "content_type"}
 
 
@@ -927,32 +927,149 @@ def test_portal_post_is_429_when_the_bucket_is_full(portal, db, monkeypatch):
     assert db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).count() == 0
 
 
-def test_portal_post_is_403_for_an_impersonation_token(db, enqueued):
+def _impersonation(db, monkeypatch, *, contact_id, ended=False, admin_roles=frozenset({"admin"})):
+    """A persisted impersonation portal token + session for a fresh admin; returns (token, admin)."""
+    from datetime import datetime as _dt
+
     from app.api.v1.public.portal import get_portal_token
     from app.database import get_db
+    from app.models.impersonation import ContactImpersonationSession
     from app.models.portal import PortalToken
     from app.services.company_scope_resolver import apply_company_scope
+    from app.services.user_service import UserPermissionService
 
-    owner = _contact(db, "Owner")
-    inquiry = _inquiry(db, contact_id=owner)
+    admin = _user(db, "Admin")
+    token = PortalToken(
+        token=f"zzt-{uuid.uuid4().hex}",
+        contact_id=contact_id,
+        space_id=SPACE,
+        expires_at=_dt.utcnow() + timedelta(hours=1),
+        verified_at=_dt.utcnow(),
+        is_impersonation=True,
+    )
+    db.add(token)
+    db.flush()
+    db.add(
+        ContactImpersonationSession(
+            admin_user_id=admin.id,
+            target_contact_id=contact_id,
+            space_id=SPACE,
+            portal_token_id=token.id,
+            ended_at=_dt.utcnow() if ended else None,
+        )
+    )
+    db.commit()
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: set(admin_roles))
 
     async def _scope():
         return frozenset({SORENTO})
 
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[apply_company_scope] = _scope
-    app.dependency_overrides[get_portal_token] = lambda: PortalToken(
-        id=_uid(), contact_id=owner, space_id=SPACE, is_impersonation=True
-    )
+    app.dependency_overrides[get_portal_token] = lambda: token
+    return token, admin
+
+
+def _comment_rows(db):
+    return db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).all()
+
+
+def test_impersonating_admin_comments_on_behalf_of_the_contact(db, enqueued, storage, monkeypatch):
+    from app.models.resources import Attachment
+
+    owner = _contact(db, "Owner")
+    handler = _user(db, "Handler")
+    inquiry = _inquiry(db, contact_id=owner)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    _, admin = _impersonation(db, monkeypatch, contact_id=owner)
+    url = f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments"
     try:
         client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post(
+        resp = client.post(url, data={"body": "on their behalf"}, files=[("files", PDF)])
+        assert resp.status_code == 201, resp.text
+        comment = resp.json()["comment"]
+        assert set(comment) == SERIALIZED_KEYS
+        assert (comment["author_kind"], comment["author_name"]) == ("submitter", f"{MARKER} Owner")
+        assert comment["posted_by_name"] == admin.name
+        row = _comment_rows(db)[0]
+        assert (row.author_contact_id, row.author_user_id) == (owner, admin.id)
+        att = db.query(Attachment).filter(Attachment.id == comment["attachments"][0]["attachment_id"]).one()
+        assert (att.uploader_kind, att.uploaded_by_contact_id, att.uploaded_by) == ("contact", owner, admin.id)
+        assert _by_queue(enqueued, "respond_io") == []
+        assert _recipients(db) == [handler.email]
+        notif = db.query(Notification).one()
+        assert f"Posted by {admin.name} on behalf of {MARKER} Owner." in (notif.body or "")
+        listed = client.get(url).json()["items"][0]
+        assert (listed["author_kind"], listed["posted_by_name"]) == ("submitter", admin.name)
+    finally:
+        app.dependency_overrides.clear()
+    assert "author_user_id" not in str(listed)
+
+
+def test_impersonating_admin_comment_reads_the_same_on_the_staff_side(staff_client, db, monkeypatch):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    admin = _user(db, "Admin")
+    svc = _svc(db)
+    svc.add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "behalf", acting_user_id=admin.id)
+    staff_client.granted.add("procurement.stock_inquiries.view")
+    item = staff_client.get(f"/api/v1/form-comments/stock_inquiry/{inquiry.id}").json()["items"][0]
+    assert (item["author_kind"], item["author_name"], item["posted_by_name"]) == (
+        "submitter", f"{MARKER} Owner", admin.name,
+    )
+
+
+def test_acting_admin_without_a_name_reads_sorento_team(db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    admin = _user(db, "Admin")
+    admin.name = " "
+    db.commit()
+    comment, _ = _unpack(
+        _svc(db).add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "x", acting_user_id=admin.id)
+    )
+    assert comment["posted_by_name"] == "Sorento team"
+
+
+@pytest.mark.parametrize("case", ["ended", "lost_role"])
+def test_impersonation_post_is_403_and_saves_nothing_when_no_longer_allowed(db, enqueued, monkeypatch, case):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    _impersonation(
+        db, monkeypatch, contact_id=owner, ended=(case == "ended"),
+        admin_roles=frozenset() if case == "lost_role" else frozenset({"admin"}),
+    )
+    try:
+        resp = TestClient(app, raise_server_exceptions=False).post(
             f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments", data={"body": "x"}
         )
     finally:
         app.dependency_overrides.clear()
     assert resp.status_code == 403
-    assert db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).count() == 0
+    assert "viewing as a contact" in resp.text
+    assert _comment_rows(db) == []
+
+
+def test_unknown_portal_token_is_401(db):
+    from app.database import get_db
+
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        resp = TestClient(app, headers={"X-Portal-Token": "zzt-unknown"}, raise_server_exceptions=False).post(
+            f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments", data={"body": "x"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 401
+
+
+def test_plain_contact_comment_has_null_posted_by_name(db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    comment, _ = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "mine"))
+    assert comment["posted_by_name"] is None
 
 
 def test_portal_non_uuid_submission_id_is_not_a_500(portal, db):

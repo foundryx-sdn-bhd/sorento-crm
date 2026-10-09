@@ -1601,14 +1601,11 @@ async def portal_add_comment(
 
     from app.api.v1.form_comments import read_uploads
     from app.services import rate_limit
-    from app.services.form_comment_service import FormCommentService
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
 
-    if getattr(token, "is_impersonation", False):
-        raise AppException(
-            status_code=403,
-            message="Comments can't be posted while viewing as a contact.",
-            code="FORBIDDEN",
-        )
+    acting_user_id = (
+        resolve_impersonating_admin(db, token) if getattr(token, "is_impersonation", False) else None
+    )
     k = _check_kind(kind, db, token)
     sid = validate_uuid_path(submission_id, resource="Submission")
     # Per token plus one ceiling across tokens: checked first, charged only on a saved comment.
@@ -1626,7 +1623,7 @@ async def portal_add_comment(
             )
     uploads = await read_uploads(files)
     out = FormCommentService(db).add_contact_comment(
-        k, sid, token.contact_id, token.space_id, body, uploads
+        k, sid, token.contact_id, token.space_id, body, uploads, acting_user_id
     )
     for bucket, ident, _limit in buckets:
         rate_limit.record(bucket, ident, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)

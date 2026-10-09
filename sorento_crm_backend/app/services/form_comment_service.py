@@ -154,6 +154,10 @@ class FormCommentService:
         )
         return self._serialize_many(rows)
 
+    @staticmethod
+    def _staff_name(user: Optional[User]) -> str:
+        return ((user.name or "").strip() if user else "") or "Sorento team"
+
     def _serialize_many(self, rows: Sequence[EntityConversationMessage]) -> list[dict[str, Any]]:
         if not rows:
             return []
@@ -187,19 +191,25 @@ class FormCommentService:
             )
         out: list[dict[str, Any]] = []
         for r in rows:
-            if r.author_user_id:
-                u = users.get(r.author_user_id)
-                name = (u.name or "").strip() if u else ""
-                kind_label = "staff"
-            else:
+            posted_by = None
+            if r.author_contact_id:
+                # Contact-authored; author_user_id is the admin acting on their behalf, if any.
                 name = _contact_display_name(contacts.get(r.author_contact_id))
                 kind_label = "submitter"
+                if r.author_user_id:
+                    posted_by = self._staff_name(users.get(r.author_user_id))
+            elif r.author_user_id:
+                name = self._staff_name(users.get(r.author_user_id))
+                kind_label = "staff"
+            else:
+                name, kind_label = "Unknown", "submitter"
             out.append(
                 {
                     "id": r.id,
                     "body": r.body_html or "",
-                    "author_name": name or ("Sorento team" if r.author_user_id else "Unknown"),
+                    "author_name": name,
                     "author_kind": kind_label,
+                    "posted_by_name": posted_by,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "attachments": files.get(r.id, []),
                 }
@@ -239,7 +249,7 @@ class FormCommentService:
                 commit=False,
             )
 
-    def _store_contact_files(self, kind: str, entity_id: str, comment_id: str, contact_id: str, files: Sequence[CommentFile]) -> None:
+    def _store_contact_files(self, kind: str, entity_id: str, comment_id: str, contact_id: str, files: Sequence[CommentFile], acting_user_id: Optional[str] = None) -> None:
         """Portal upload path (portal_submission type, portal key prefix, uploader_kind contact)."""
         if not files:
             return
@@ -275,6 +285,7 @@ class FormCommentService:
                 storage_provider=provider,
                 mime_type=_normalize_mime(content_type),
                 uploader_kind="contact",
+                uploaded_by=acting_user_id,
                 uploaded_by_contact_id=contact_id,
             )
 
@@ -315,20 +326,26 @@ class FormCommentService:
         space_id: Optional[str],
         body: Optional[str],
         files: Optional[Sequence[CommentFile]] = None,
+        acting_user_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Returns ``{comment, delivery}``; delivery is queued | no_recipients | failed."""
+        """Returns ``{comment, delivery}``; delivery is queued | no_recipients | failed.
+
+        ``acting_user_id``: an admin posting through a portal impersonation session. The comment
+        stays the contact's (author_contact_id) and the admin is kept in author_user_id as the
+        audit "acted by".
+        """
         files = list(files or [])
         row = self._load_row(kind, entity_id, contact_id=contact_id, space_id=space_id)
         self._require_open(row)
         text = self._clean(body, files)
         try:
-            msg = self._insert(kind, entity_id, text, contact_id=contact_id)
-            self._store_contact_files(kind, entity_id, msg.id, contact_id, files)
+            msg = self._insert(kind, entity_id, text, user_id=acting_user_id, contact_id=contact_id)
+            self._store_contact_files(kind, entity_id, msg.id, contact_id, files, acting_user_id)
             comment = self._commit_comment(msg)
         except Exception:
             self.db.rollback()
             raise
-        delivery = self._notify_handler(kind, row, contact_id, text, comment["attachments"])
+        delivery = self._notify_handler(kind, row, contact_id, text, comment["attachments"], acting_user_id)
         return {"comment": comment, "delivery": delivery}
 
     # ------------------------------------------------------------------ #
@@ -426,7 +443,9 @@ class FormCommentService:
             base = (getattr(sys_settings, "website_url", None) or "").strip().rstrip("/")
         return f"{base}{_form_detail_link(kind, entity_id)}"
 
-    def _notify_handler(self, kind: str, row, contact_id: str, body: str, attachments: list[dict]) -> str:
+    def _notify_handler(
+        self, kind: str, row, contact_id: str, body: str, attachments: list[dict], acting_user_id: Optional[str] = None
+    ) -> str:
         try:
             handler = self._handler_for(kind, str(row.id))
             if handler is None:
@@ -445,6 +464,9 @@ class FormCommentService:
             names = ", ".join(a["filename"] for a in attachments if a.get("filename"))
             if names:
                 intro += f"\nAttachments: {names}"
+            if acting_user_id:
+                admin = self.db.query(User).filter(User.id == acting_user_id).first()
+                intro += f"\nPosted by {self._staff_name(admin)} on behalf of {_contact_display_name(contact)}."
             rendered = EmailTemplateService(self.db).render_code(
                 # The generic system template: a dedicated one would have to be frozen into the
                 # eml_0002 seed migration (test_frozen_documents_match_registry).
@@ -490,3 +512,34 @@ class FormCommentService:
             self.db.rollback()
             logger.exception("Form comment email failed for %s %s", kind, getattr(row, "id", None))
             return "failed"
+
+
+def resolve_impersonating_admin(db: Session, token) -> str:
+    """The admin behind an impersonation portal token, re-checked now, or a 403.
+
+    The session must still be open, and the admin must exist, be active and not trashed, and
+    still hold an admin role (the same rule the impersonation start route applies).
+    """
+    from app.models.impersonation import ContactImpersonationSession
+    from app.services.user_service import UserPermissionService
+
+    refused = AppException(
+        status_code=403, message="Comments can't be posted while viewing as a contact.", code="FORBIDDEN"
+    )
+    session = (
+        db.query(ContactImpersonationSession)
+        .filter(
+            ContactImpersonationSession.portal_token_id == token.id,
+            ContactImpersonationSession.ended_at.is_(None),
+        )
+        .first()
+    )
+    if session is None:
+        raise refused
+    admin = db.query(User).filter(User.id == session.admin_user_id).first()
+    if admin is None or admin.is_trashed or str(admin.status) != "ACTIVE":
+        raise refused
+    roles = UserPermissionService(db).get_user_role_slugs(admin.id)
+    if not roles & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}:
+        raise refused
+    return str(admin.id)
