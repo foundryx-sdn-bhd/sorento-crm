@@ -117,3 +117,33 @@ AC-27 One consolidated new dev parser version (never labelled production) carrie
 AC-28 Live console check covers the owner phrases: "kitchen cabinet promo", "sorento cabinet
       promo", "seat cover promo", "basin cabinet promo", "any sorento a3 flyer?".
 
+## Round 3: detection consistency (owner hand test #1527 FAIL, rulings 9 Oct 2026)
+
+Owner rulings: (1) expired promos are shown only when the same ask (brand + subject + kind + level)
+has no live promo, EXPIRED mark kept; (2) A3 flyers are promos like any other; (3) same intent, same
+result, typo or not. Card answers: Q1 (a) brand = brand of the promotion's linked products; Q3 (b)
+"flyer" means the A3 Flyer kind, decided semantically by the parser against the promotion_types list
+(flyer / 传单 / A3 / poster wording), never keyword code; Q2 provisional "- expired promotions only",
+the wording in one constant.
+
+AC-29 The parser is given, each turn, the live brand names, product type names and promotion kinds
+      (codes + names) and returns names from those lists only, correcting a typo to the listed name
+      ("Sorneto" -> Sorento); a word it cannot place is marked unresolved. New unlabelled dev prompt.
+AC-30 Code only checks a returned name is in its list (exact). No substring / keyword / fuzzy match in
+      code anywhere on a promo ask: the tier_gate BRANDS substring fallback (tier_gate.py:225-240) is
+      not used for promo asks, and resolver promotion-name matching does not run on promo asks.
+AC-31 Unresolved brand, subject or kind on a promo ask: ask back ("I could not match "X" to a
+      brand." etc.), never a wider search.
+AC-32 Brand filter = brand of linked products (promotion_products -> products.brand_id); a promotion
+      with no linked products never matches a brand ask; access levels never stand in for a brand.
+AC-33 ONE query builder (brand + subject + kind + level) feeds both the per-level stamp and the pick
+      fetch. Expired rows are served only when that exact ask at that level has no live row (type
+      show_expired windows still apply), marked EXPIRED.
+AC-34 Stamp: "- has promotion" only when the level has a live row; "- expired promotions only" when
+      it has only expired rows (one constant); "- no promotion" when none.
+AC-35 Owner turns on dev data: "Sorneto grab bar promotion" and "sorento grab bar promotion" give
+      identical replies (Dealer "- expired promotions only"; pick 2 -> the expired Sorento grab bar
+      promos and Sorento A3 flyers linked to grab bars, EXPIRED; never Mocha). "Promotion flyer" ->
+      A3 Flyer kind across brands; "sorento promotion flyer" -> Sorento A3 flyers only. Each checked
+      live 3x on the new prompt version.
+
