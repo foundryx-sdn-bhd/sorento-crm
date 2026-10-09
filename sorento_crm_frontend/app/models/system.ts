@@ -79,6 +79,9 @@ export interface SystemSetting {
    */
   priceTagAutoCollectDays?: number;
 
+  /** Days a chatbot file link keeps opening (1..3650). Null = never expires. */
+  chatbotFileLinkExpiryDays?: number | null;
+
   /**
    * SCM front planning: which grain new plans are DECIDED at (AC-F01).
    *
