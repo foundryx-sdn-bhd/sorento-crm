@@ -361,6 +361,11 @@ class _Builder:
         uploaded = a.get("uploaded_at")
         if _filled(uploaded):
             entry["uploadedAt"] = uploaded
+        # sha256 of the bytes: a picture uploaded twice has two urls and one hash, and
+        # is one file to send (PHOTO-SEND-CAP R2). Absent when the row has none.
+        file_hash = a.get("file_hash")
+        if _filled(file_hash):
+            entry["fileHash"] = file_hash
         self.attachments.append(entry)
 
     def link(self, label: str, url: str, link_type: str = "portal_link") -> None:
@@ -1917,13 +1922,19 @@ def present_response(tool_name: str, raw: str) -> str:
     # name often differs from the real key (parens/spaces sanitized at upload), so
     # patching it in produced URLs that 404 (e.g. a promotion whose stored_filename
     # kept "(CABANA) … END USER.pdf" while the object key is "CABANA … END USER.pdf").
+    # PHOTO-SEND-CAP R2: one file per IMAGE. Two entries with the same `fileHash` are
+    # the same bytes under two urls (a re-upload); the first one is kept.
     seen: set[tuple[Any, Any]] = set()
+    seen_hashes: set[Any] = set()
     attachments: list[dict[str, Any]] = []
     for a in b.attachments:
         sig = (a["url"], a.get("filename"))
-        if sig in seen:
+        file_hash = a.get("fileHash")
+        if sig in seen or (file_hash and file_hash in seen_hashes):
             continue
         seen.add(sig)
+        if file_hash:
+            seen_hashes.add(file_hash)
         attachments.append(a)
 
     has_result = bool(b.items or attachments or b.action_links)

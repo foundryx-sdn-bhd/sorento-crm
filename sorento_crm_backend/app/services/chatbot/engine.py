@@ -9048,12 +9048,14 @@ def _clean_attachments(source: Any) -> Any:
     Array.isArray(a) ? a : []`). Every other shape passes through untouched, including the
     casual lane's `{response}` and a bare list.
 
-    An attachment entry is `{url, filename, mimeType, attachmentType[, uploadedAt]}` and
-    NOTHING else - measured over 7402 entries in the capture corpus, zero of which carry an
-    id or a company. So:
+    An attachment entry is `{url, filename, mimeType, attachmentType[, uploadedAt][,
+    fileHash]}` and NOTHING else - measured over 7402 entries in the capture corpus, zero
+    of which carry an id or a company. So:
 
     * **Identity is the `url`**, which is also the key the executor's own `Remove
       Duplicates` node uses, so the two halves cannot disagree about what a duplicate is.
+      A `fileHash`, when present, also makes a duplicate (PHOTO-SEND-CAP R2): the second
+      url of one image is dropped HERE, so n8n never sees it.
     * **The company comes from the ROW that produced the file**, because the entry does not
       carry one. The envelope's rows do: each carries `company_name` and the values that
       name the thing the file belongs to. A row CLAIMS a file when one of its values is the
@@ -9126,9 +9128,15 @@ def _with_company(filename: str, company: Any) -> str:
 
 
 def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
-    """Dedupe on `url`, then qualify a surviving filename collision with its company."""
+    """Dedupe on `url` and on `fileHash`, then qualify a surviving filename collision with
+    its company.
+
+    PHOTO-SEND-CAP R2: every file is one WhatsApp message, and the same picture uploaded
+    twice has two urls and one `fileHash` (sha256 of the bytes). An entry with no hash
+    dedupes on its url alone, exactly as before."""
     kept: list[Any] = []
     seen_urls: set[Any] = set()
+    seen_hashes: set[str] = set()
     for entry in files:
         if not isinstance(entry, dict):
             kept.append(entry)
@@ -9139,9 +9147,12 @@ def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
             # says "(file link unavailable right now)") but never sent - a send with no
             # url is a dead action, not a delivery.
             continue
-        if url in seen_urls:
+        file_hash = jsc.nullish_str(entry.get("fileHash")).strip()
+        if url in seen_urls or (file_hash and file_hash in seen_hashes):
             continue
         seen_urls.add(url)
+        if file_hash:
+            seen_hashes.add(file_hash)
         kept.append(entry)
 
     groups: dict[str, list[int]] = {}
