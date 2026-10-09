@@ -116,6 +116,27 @@ class Tools:
                     ]
                 }
             )
+        if name == SPO_TOOL:
+            return json.dumps(
+                {
+                    "data": [
+                        {
+                            "spo_number": "SPO-2026-0101",
+                            "product_id": pid,
+                            "product_code": self.codes[pid],
+                            "spo_quantity": 300,
+                            "gr_quantity": 300,
+                            "spo_date": "2026-09-18",
+                            "spo_date_source": "expected",
+                            "gr_date": "2026-09-20",
+                            "warehouse": "BRW",
+                        }
+                        for pid in ids
+                    ],
+                    "pagination": {"total": len(ids), "page": 1, "limit": len(ids)},
+                    "empty": not ids,
+                }
+            )
         if name == "crm_procurement_po_last_cost_list":
             return json.dumps(
                 {
@@ -184,8 +205,12 @@ def _ids(raw: Any) -> list[str]:
     return []
 
 
+# Owner ruling 9 Oct 2026: "last in" is the last SPO line's delivery date everywhere.
+SPO_TOOL = "crm_procurement_spo_allocations_last_receipt_list"
+
 RUNNER_TOOLS = {
     "crm_procurement_grn_summary",
+    SPO_TOOL,
     "crm_procurement_po_last_cost_list",
     "crm_report_ask",
 }
@@ -225,7 +250,7 @@ OWNER_REPLY = "\n".join(
         "2026 入库数量: 1,200",
         "供应商: ABC SDN BHD（PO-2026-0412，03/06/2026）",
         "采购价: RM 45.00 / 件（PO-2026-0412，03/06/2026）",
-        "最后一次进库: 18/09/2026（300）",
+        "最后一次进库: 18/09/2026（300，SPO-2026-0101）",
         "2026 总共卖出（已出货）: 860",
         "2026 每位业务员卖出（已出货）:",
         "1. AGENT01: 300",
@@ -247,8 +272,10 @@ def test_the_owner_turn_makes_one_query_per_ask_on_the_exact_code(session_factor
     c = _console(session_factory, monkeypatch, stub_access, "+60000009502")
     c.say(OWNER_MESSAGE, owner_verdict())
     names = c.tools.names()
-    # received + last receipt share one GRN call; supplier + last cost share one PO call.
+    # received_qty stays on GRN (one call); last receipt is the SPO tool (one call, owner
+    # ruling 9 Oct); supplier + last cost share one PO call.
     assert names.count("crm_procurement_grn_summary") == 1
+    assert names.count(SPO_TOOL) == 1
     assert names.count("crm_procurement_po_last_cost_list") == 1
     # The total and the per-salesman list share ONE grouped call: its `total` is the whole
     # set, and the report is rate limited per contact (crew live check, 9 Oct).
@@ -260,6 +287,8 @@ def test_the_owner_turn_makes_one_query_per_ask_on_the_exact_code(session_factor
         assert _ids(args.get("product_ids")) == exact, (name, args)
     grn = c.tools.args("crm_procurement_grn_summary")[0]
     assert (grn.get("date_from"), grn.get("date_to")) == ("2026-01-01", "2026-12-31")
+    [spo] = c.tools.args(SPO_TOOL)
+    assert int(spo.get("top_n")) == 1
     [by_agent] = c.tools.args("crm_report_ask")
     assert by_agent.get("basis") == "delivered"
     assert by_agent.get("measure") == "qty"
@@ -285,7 +314,7 @@ def test_an_english_multi_ask_answers_in_english(session_factory, monkeypatch, s
         [
             "ELP3754",
             "Last cost: RM 45.00 / unit (PO-2026-0412, 03/06/2026)",
-            "Last received: 18/09/2026 (300)",
+            "Last in: 18/09/2026 (300, SPO-2026-0101)",
         ]
     )
 
@@ -346,7 +375,7 @@ def test_no_basis_answers_the_rest_and_asks_the_basis_last(session_factory, monk
             "2026 入库数量: 1,200",
             "供应商: ABC SDN BHD（PO-2026-0412，03/06/2026）",
             "采购价: RM 45.00 / 件（PO-2026-0412，03/06/2026）",
-            "最后一次进库: 18/09/2026（300）",
+            "最后一次进库: 18/09/2026（300，SPO-2026-0101）",
             "卖出按已出货还是按下单算？",
         ]
     )
@@ -773,3 +802,185 @@ def test_a_busy_report_says_so_on_its_own_line_and_traces_why(session_factory, m
     assert "2026 总共卖出（已出货）: 销售报表查询太频繁，请几分钟后再试" in lines
     assert "2026 每位业务员卖出（已出货）: 销售报表查询太频繁，请几分钟后再试" in lines
     assert "2026 入库数量: 1,200" in lines
+
+
+# ---------------------------------------------------------------- owner ruling 9 Oct: "last in" is the SPO date
+
+
+def _last_in(code: str = "ELP3754"):
+    return verdict(
+        domain_hint="purchase_cost",
+        intent_hint="check_po_cost",
+        entities=[entity(code, hint="product")],
+        sub_asks=[sub("last_cost", "last cost"), sub("last_receipt", "last in")],
+        family=None,
+    )
+
+
+def test_last_receipt_reads_the_spo_tool_once_on_the_exact_code(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009540")
+    text = c.say("ELP3754 last cost and last in", _last_in())
+    assert "crm_procurement_grn_summary" not in c.tools.names()
+    assert c.tools.names().count(SPO_TOOL) == 1
+    [args] = c.tools.args(SPO_TOOL)
+    assert _ids(args.get("product_ids")) == [c.uuid_of["ELP3754"]]
+    assert int(args.get("top_n")) == 1
+    assert args.get("contact_id") and args.get("space_id")
+    assert text.splitlines()[-1] == "Last in: 18/09/2026 (300, SPO-2026-0101)"
+
+
+def test_last_receipt_line_in_chinese_and_malay(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009541")
+    zh = c.say("ELP3754 采购价和最后一次进库", _last_in())
+    assert zh.splitlines()[-1] == "最后一次进库: 18/09/2026（300，SPO-2026-0101）"
+
+
+def test_the_last_in_label_is_catalogued_in_malay_and_chinese():
+    from app.services.chatbot.label_catalog import LABELS
+
+    assert LABELS["Last in"] == {"ms": "Terakhir masuk", "zh": "最后一次进库"}
+    assert "Last received" not in LABELS
+
+
+def test_a_family_last_receipt_is_the_single_newest_spo_line(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009543")
+    base = c.tools.__call__
+    family_ids = [c.uuid_of[code] for code in OWNER_FAMILY]
+    newest, tied = family_ids[3], family_ids[5]
+
+    def spo(client, name, args):
+        if name != SPO_TOOL:
+            return base(client, name, args)
+        c.tools.calls.append((name, args))
+        dates = {pid: "2026-08-01" for pid in family_ids}
+        dates[newest] = "2026-09-30"
+        dates[tied] = "2026-09-30"
+        rows = [
+            {
+                "spo_number": f"SPO-{i:04d}",
+                "product_id": pid,
+                "product_code": c.codes[pid],
+                "spo_quantity": 10 * (i + 1),
+                "spo_date": dates[pid],
+                "spo_date_source": "expected",
+                "warehouse": "BRW",
+            }
+            for i, pid in enumerate(family_ids)
+            if pid in _ids(args.get("product_ids"))
+        ]
+        return json.dumps({"data": rows, "empty": not rows})
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", spo)
+    text = c.say(
+        "SRTWC286-SH all variants last cost and last in",
+        verdict(
+            domain_hint="purchase_cost",
+            intent_hint="check_po_cost",
+            entities=[entity("SRTWC286-SH", hint="product")],
+            sub_asks=[sub("last_cost", "last cost"), sub("last_receipt", "last in")],
+            family=True,
+        ),
+    )
+    # One row, not a sum of the two members sharing the newest date; a tie takes the first.
+    assert "Last in: 30/09/2026 (40, SPO-0003)" in text.splitlines()
+    assert sorted(_ids(c.tools.args(SPO_TOOL)[0].get("product_ids"))) == sorted(family_ids)
+
+
+def test_received_qty_and_last_receipt_each_use_their_own_tool(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009544")
+    text = c.say(
+        "ELP3754 2026 received and last in",
+        verdict(
+            domain_hint="purchase_cost",
+            intent_hint="check_po_cost",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("received_qty", "received", window=Y2026), sub("last_receipt", "last in")],
+            family=None,
+        ),
+    )
+    names = c.tools.names()
+    assert names.count("crm_procurement_grn_summary") == 1
+    assert names.count(SPO_TOOL) == 1
+    grn = c.tools.args("crm_procurement_grn_summary")[0]
+    assert (grn.get("date_from"), grn.get("date_to")) == ("2026-01-01", "2026-12-31")
+    assert text.splitlines() == ["ELP3754", "Received 2026: 1,200", "Last in: 18/09/2026 (300, SPO-2026-0101)"]
+
+
+def test_no_spo_line_says_none_on_record(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009545")
+    base = c.tools.__call__
+
+    def none(client, name, args):
+        if name == SPO_TOOL:
+            c.tools.calls.append((name, args))
+            return json.dumps({"data": [], "empty": True})
+        return base(client, name, args)
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", none)
+    en = c.say("ELP3754 last cost and last in", _last_in())
+    assert en.splitlines()[-1] == "Last in: none on record"
+    zh = c.say("ELP3754 采购价和最后一次进库", _last_in())
+    assert zh.splitlines()[-1] == "最后一次进库: 没有记录"
+
+
+def test_last_receipt_without_the_placed_grant_is_refused_and_never_queried(session_factory, monkeypatch, stub_access):
+    grants = [g for g in ALL_GRANTS if g != "purchase_orders.placed"]
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009546", grants=grants)
+    text = c.say("ELP3754 last cost and last in", _last_in())
+    assert SPO_TOOL not in c.tools.names()
+    assert "SPO-2026-0101" not in text
+    assert text.splitlines()[-1] == "Last in: not shared with you"
+
+
+# ---- lone "last in" (parser domain spo_allocation, one ask): the empty reply
+
+
+def _lone(code: str = "ELP3754", sub_asks=None):
+    return verdict(
+        domain_hint="spo_allocation",
+        intent_hint="check_spo",
+        entities=[entity(code, hint="product")],
+        sub_asks=sub_asks,
+        family=None,
+    )
+
+
+@pytest.mark.parametrize("sub_asks", [None, [sub("last_receipt", "last in")]])
+def test_a_lone_last_in_with_no_spo_line_says_none_on_record(session_factory, monkeypatch, stub_access, sub_asks):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009547" if sub_asks is None else "+60000009548")
+
+    def empty(client, name, args):
+        c.tools.calls.append((name, args))
+        return json.dumps({"data": [], "pagination": {"total": 0, "page": 1, "limit": 0}, "empty": True})
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", empty)
+    en = c.say("ELP3754 last in", _lone(sub_asks=sub_asks))
+    assert "matched these" not in en and "Here's what you want" not in en
+    assert en.splitlines()[-1] == "Last in: none on record", en
+    zh = c.say("ELP3754 最后一次进库", _lone(sub_asks=sub_asks))
+    assert "matched these" not in zh
+    assert zh.splitlines()[-1] == "最后一次进库: 没有记录", zh
+
+
+# ---- parser prompt
+
+
+def test_the_parser_prompt_teaches_last_in_date_and_quantity_is_one_ask():
+    from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
+
+    assert '"Srt38ss last in date and quantity" -> null (one ask)' in SUB_ASKS_ADDENDUM
+
+
+def test_the_last_receipt_measure_is_the_spo_delivery_date_not_grn():
+    from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
+
+    line = next(ln for ln in SUB_ASKS_ADDENDUM.splitlines() if '"last_receipt"' in ln)
+    text = " ".join(SUB_ASKS_ADDENDUM[SUB_ASKS_ADDENDUM.index(line) :].split("\n")[:3]).lower()
+    assert "spo" in text and "delivery date" in text
+    assert "grn" not in text
