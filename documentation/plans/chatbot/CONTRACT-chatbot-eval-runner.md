@@ -133,3 +133,14 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   has criteria does the case pass deterministically (`needs_judge`, counted `unverified`).
 - Report adds `strict_pass_rate`: passes that do not need the judge, over all results (unverified passes
   count as not passed), and `strict_underfit` on originals. Summary prints both rates.
+
+## Round 5 (baseline crash, 10 Oct)
+- First full run died: `DbContactReset` / `DbTraceReader` share one psycopg2 connection across the
+  ThreadPoolExecutor workers ("the connection cannot be re-entered recursively"), and one exception lost
+  the whole run with no report.
+- Both DB helpers are safe under concurrent calls from several threads (one connection per thread, or a
+  lock around each use; still lazy, still read-only for the reader).
+- An unexpected exception inside one case (not NotDryRunError) becomes that case's result: label `error`,
+  reason `harness: <ExcName>`; the run continues.
+- Whatever stops a run (NotDryRunError, budget, Ctrl-C), `--out` still gets the report + results of the cases
+  that finished, with `stopped_reason` set (`not_dry_run`, `budget`, `interrupted`).
