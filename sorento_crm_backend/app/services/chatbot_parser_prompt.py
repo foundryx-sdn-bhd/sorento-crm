@@ -825,6 +825,11 @@ On a promotion ask, answer the brand from the "Known brands:" line and the produ
 to the listed name ("Sorneto" -> canonical_code "Sorento"). A word you cannot place in its list is
 unresolved: keep raw as typed, canonical_code null. Keep raw as typed for an everyday name too:
 "seat cover" is a toilet seat -> {"raw": "seat cover", "hint": "category", "canonical_code": "toilet seat"}.
+A word that describes the thing (how it is mounted, its flush type, its finish) is its own
+"specification" entity beside the type entity: spec_key and spec_value from the listed
+"Product details:" line, `key (value, ...)`, a typo corrected to the listed value
+("walll hung wc" -> {"raw": "walll hung", "hint": "specification", "spec_key": "mounting",
+"spec_value": "wall hung"}). One you cannot place there: spec_key null, spec_value null.
 """
 
 # SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The

@@ -187,7 +187,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # PROMO-SUBJECT-FILTER round 3 (AC-29): PROMOTION KIND and PROMOTION SUBJECT answer from the
 # Known brands / Product types / Promotion kinds lines, typo to the listed name, unplaced word
 # unresolved: 51,454 est. tokens without MEMORY_ADDENDUM (+91), so CEILING is 51,458 (+4).
-CEILING = 51_458
+# PROMO-SUBJECT-FILTER round 3b (AC-36): PROMOTION SUBJECT emits a listed qualifier as a
+# specification entity from the Product details line: 51,600 est. tokens without
+# MEMORY_ADDENDUM (+142), so CEILING is 51,604 (+4).
+CEILING = 51_604
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

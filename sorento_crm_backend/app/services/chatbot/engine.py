@@ -4369,6 +4369,7 @@ def _run_stages_body(  # noqa: PLR0915
         brands = turn_runtime.active_brands(db)
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
+        product_details = turn_runtime.product_detail_values(db)
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4408,6 +4409,7 @@ def _run_stages_body(  # noqa: PLR0915
         brands=brands,
         promotion_kinds=promotion_kinds,
         product_types=product_types,
+        product_details=product_details,
         recent_exchanges=recent,
     )
     user_block, context_report = context_mod.assemble(context_layers)

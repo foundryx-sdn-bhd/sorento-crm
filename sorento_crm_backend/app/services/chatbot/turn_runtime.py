@@ -670,6 +670,21 @@ def promo_subject_ask_back(
         ]
         if unplaced:
             return f'I could not match "{", ".join(unplaced)}" to a brand.\nWhich brand do you mean?', []
+    from app.services.chatbot.head.grounding import specification_entities
+
+    # AC-38: a qualifier the grounding could not place on a listed spec value asks back; it is
+    # never dropped and never widens the read.
+    # An unplaced product type has its own ask-back below.
+    loose = [
+        e
+        for e in specification_entities(own["entities"])
+        if e.get("spec_value") is None and e.get("spec_key") != "product_type" and str(e.get("raw") or "").strip()
+    ]
+    if loose:
+        said = ", ".join(str(e.get("raw")).strip() for e in loose)
+        labels = {str(e.get("spec_label") or "").strip().lower() for e in loose} - {""}
+        which = labels.pop() if len(labels) == 1 else "product detail"
+        return f'I could not match "{said}" to a product detail.\nWhich {which} do you mean?', []
     unknown = [
         str(e.get("raw") or "").strip()
         for e in own["entities"]
@@ -726,6 +741,28 @@ def product_type_names(db: Session) -> list[str]:
             seen.add(key)
             out.append(name)
     return out
+
+
+def product_detail_values(db: Session) -> list[tuple[str, list[str]]]:
+    """PROMO-SUBJECT-FILTER AC-36: `(spec_key, value names)` for every active enum key of the
+    registry that describes a product (not its class, type or brand), the values as a customer
+    reads them; the parser's `Product details:` line. A key with more than
+    `_PRODUCT_DETAIL_VALUE_CAP` values is a list of codes, not words ("seat_cover" holds 29
+    product codes on the prod copy), and is left off to keep the line compact."""
+    from app.services.product_spec_registry import active_registry, display_spec_value, merged_allowed_values
+
+    out: list[tuple[str, list[str]]] = []
+    for row in active_registry(db):
+        if row.spec_key in ("class", "product_type", "brand") or (row.data_type or "").lower() != "enum":
+            continue
+        labels = dict(getattr(row, "value_labels", None) or {})
+        values = list(dict.fromkeys(display_spec_value(v, labels).lower() for v in merged_allowed_values(row)))
+        if values and len(values) <= _PRODUCT_DETAIL_VALUE_CAP:
+            out.append((row.spec_key, values))
+    return out
+
+
+_PRODUCT_DETAIL_VALUE_CAP = 15
 
 
 _BRAND_WORD_RE = re.compile(r"[0-9a-z]+")

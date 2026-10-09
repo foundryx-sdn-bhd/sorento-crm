@@ -137,12 +137,20 @@ def product_types_line(names: list[str] | None) -> str | None:
     return f"Product types: {', '.join(listed)}" if listed else None
 
 
+def product_details_line(details: list[tuple[str, list[str]]] | None) -> str | None:
+    """PROMO-SUBJECT-FILTER AC-36: the `Product details:` line, `spec_key (value, ...)` per
+    registry key, so the parser answers a qualifier with a listed key and value."""
+    parts = [f"{key} ({', '.join(values)})" for key, values in details or [] if key and values]
+    return f"Product details: {'; '.join(parts)}" if parts else None
+
+
 def _brands_and_kinds(layers: "ContextLayers") -> str | None:
     parts = [
         p
         for p in (
             known_brands_line(layers.brands),
             product_types_line(layers.product_types),
+            product_details_line(layers.product_details),
             promotion_kinds_line(layers.promotion_kinds),
         )
         if p
@@ -221,6 +229,8 @@ class ContextLayers:
     promotion_kinds: list[dict[str, Any]] | None = None
     #: PROMO-SUBJECT-FILTER round 3 (AC-29): the live class names, one `Product types:` line.
     product_types: list[str] | None = None
+    #: AC-36: the registry's descriptor keys and values, one `Product details:` line.
+    product_details: list[tuple[str, list[str]]] | None = None
 
 
 def _l5_segment(fact: dict[str, Any]) -> str:
