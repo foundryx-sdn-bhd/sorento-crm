@@ -308,7 +308,7 @@ def test_a_period_before_the_traces_begin_returns_nothing(db):
 
     assert result.row_count == 0
     assert result.layouts.summary.cells == {}
-    assert result.layouts.summary.grand_total in ({}, {"asks": "0.00", "failed": "0.00"})
+    assert result.layouts.summary.grand_total in ({}, {"asks": "0", "failed": "0"})
 
 
 def test_an_empty_table_runs_to_an_empty_report(db):
