@@ -15,6 +15,8 @@ from app.config import settings
 from app.services import ai_assistant_service
 from app.services.ai_assistant_service import MCPRuntimeClient
 
+TOKEN = "x" * 40  # fake fixture, built at runtime so it never looks like a real key
+
 
 @pytest.fixture
 def seen(monkeypatch):
@@ -36,9 +38,9 @@ def seen(monkeypatch):
 
 
 def test_sends_the_bearer_token(monkeypatch, seen):
-    monkeypatch.setattr(settings, "mcp_auth_token", "secret-token-for-the-mcp-server-0123")
+    monkeypatch.setattr(settings, "mcp_auth_token", TOKEN)
     MCPRuntimeClient("http://mcp:8765/mcp").list_tools()
-    assert seen[0].headers["authorization"] == "Bearer secret-token-for-the-mcp-server-0123"
+    assert seen[0].headers["authorization"] == f"Bearer {TOKEN}"
 
 
 def test_no_token_configured_sends_no_header(monkeypatch, seen):
@@ -54,6 +56,6 @@ def test_the_token_setting_defaults_blank():
 
 
 def test_a_token_with_a_trailing_newline_is_stripped(monkeypatch, seen):
-    monkeypatch.setattr(settings, "mcp_auth_token", "secret-token-for-the-mcp-server-0123\n")
+    monkeypatch.setattr(settings, "mcp_auth_token", TOKEN + "\n")
     MCPRuntimeClient("http://mcp:8765/mcp").list_tools()
-    assert seen[0].headers["authorization"] == "Bearer secret-token-for-the-mcp-server-0123"
+    assert seen[0].headers["authorization"] == f"Bearer {TOKEN}"

@@ -16,7 +16,7 @@ from starlette.testclient import TestClient
 from sorento_crm_mcp.server import create_http_app
 from sorento_crm_mcp.settings import Settings
 
-TOKEN = "t0k3n-for-tests-0123456789abcdef-0123"
+TOKEN = "x" * 40  # fake fixture, built at runtime so it never looks like a real key
 LIST_TOOLS = {"jsonrpc": "2.0", "id": "1", "method": "tools/list", "params": {}}
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
