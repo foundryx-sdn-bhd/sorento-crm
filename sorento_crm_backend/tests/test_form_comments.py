@@ -218,7 +218,7 @@ def test_staff_add_persists_comment_even_when_enqueue_fails(db, monkeypatch):
     assert len(rows) == 1 and rows[0].scope == SCOPE
 
 
-def test_staff_add_without_inbox_url_saves_and_reports_no_whatsapp(db, enqueued):
+def test_staff_add_without_inbox_url_saves_and_reports_no_whatsapp(db, enqueued, view_denied):
     staff = _user(db)
     inquiry = _inquiry(db, inbox=None)
 
@@ -262,7 +262,7 @@ def _tracker(db, kind: str, form_id: str, handler: User | None) -> None:
     db.commit()
 
 
-def test_contact_add_emails_only_the_sla_handler_and_never_whatsapps(db, enqueued):
+def test_contact_add_emails_only_the_sla_handler_and_never_whatsapps(db, enqueued, view_denied):
     contact_id = _contact(db, "Dealer Dan")
     handler = _user(db, "Handler")
     inquiry = _inquiry(db, contact_id=contact_id)
@@ -282,7 +282,7 @@ def test_contact_add_emails_only_the_sla_handler_and_never_whatsapps(db, enqueue
     assert _emails_of_notifications(db) == [[handler.email]]
 
 
-def test_contact_add_with_no_tracker_reports_no_recipients(db, enqueued):
+def test_contact_add_with_no_tracker_reports_no_recipients(db, enqueued, view_denied):
     contact_id = _contact(db)
     inquiry = _inquiry(db, contact_id=contact_id)
 
@@ -761,7 +761,7 @@ def test_portal_api_multipart_post_returns_201_with_one_attachment(portal, db, s
     assert len(resp.json()["comment"]["attachments"]) == 1
 
 
-def test_portal_download_of_a_comment_file_works_for_the_owner_and_404s_for_others(portal, db, storage, monkeypatch):
+def test_portal_download_of_a_comment_file_works_for_the_owner_and_404s_for_others(portal, db, storage, monkeypatch, view_denied):
     owner = _contact(db, "Owner")
     stranger = _contact(db, "Stranger")
     inquiry = _inquiry(db, contact_id=owner)
@@ -811,7 +811,7 @@ def _recipients(db):
     return [e for emails in _emails_of_notifications(db) for e in emails]
 
 
-def test_open_newer_tracker_handler_wins_over_resolved_older(db, enqueued):
+def test_open_newer_tracker_handler_wins_over_resolved_older(db, enqueued, view_denied):
     contact_id = _contact(db)
     a, b = _user(db, "A"), _user(db, "B")
     inquiry = _inquiry(db, contact_id=contact_id)
@@ -821,7 +821,7 @@ def test_open_newer_tracker_handler_wins_over_resolved_older(db, enqueued):
     assert _recipients(db) == [b.email]
 
 
-def test_only_resolved_trackers_newest_handler_wins(db, enqueued):
+def test_only_resolved_trackers_newest_handler_wins(db, enqueued, view_denied):
     contact_id = _contact(db)
     a, b = _user(db, "A"), _user(db, "B")
     inquiry = _inquiry(db, contact_id=contact_id)
@@ -831,7 +831,7 @@ def test_only_resolved_trackers_newest_handler_wins(db, enqueued):
     assert _recipients(db) == [b.email]
 
 
-def test_another_forms_tracker_is_never_used(db, enqueued):
+def test_another_forms_tracker_is_never_used(db, enqueued, view_denied):
     contact_id = _contact(db)
     c, mine = _user(db, "C"), _user(db, "Mine")
     inquiry, other = _inquiry(db, contact_id=contact_id), _inquiry(db, contact_id=contact_id)
@@ -842,7 +842,7 @@ def test_another_forms_tracker_is_never_used(db, enqueued):
 
 
 
-def test_fallback_to_the_newest_resolved_tracker_stays_on_this_form(db, enqueued):
+def test_fallback_to_the_newest_resolved_tracker_stays_on_this_form(db, enqueued, view_denied):
     # Only resolved stages, so the newest-tracker fallback runs: another form's newer resolved
     # stage must never win over this form's own (kill test K3).
     contact_id = _contact(db)
@@ -946,7 +946,7 @@ def _comment_rows(db):
     return db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).all()
 
 
-def test_impersonating_admin_comments_on_behalf_of_the_contact(db, enqueued, storage, monkeypatch):
+def test_impersonating_admin_comments_on_behalf_of_the_contact(db, enqueued, storage, monkeypatch, view_denied):
     from app.models.resources import Attachment
 
     owner = _contact(db, "Owner")
@@ -1365,7 +1365,7 @@ def test_staff_reply_is_201_with_parent_id_and_notifies_like_a_comment(staff_cli
     assert len(_by_queue(enqueued, "respond_io")) == 1
 
 
-def test_submitter_reply_emails_the_handler(portal, db, enqueued):
+def test_submitter_reply_emails_the_handler(portal, db, enqueued, view_denied):
     owner = _contact(db, "Owner")
     handler = _user(db, "Handler")
     inquiry = _inquiry(db, contact_id=owner)
@@ -1809,7 +1809,7 @@ def test_b4_portal_edit_on_a_voided_form_is_422_and_changes_nothing(portal, db, 
 # ---- B5: a reply with no recorded time lists with a null created_at ------------------------
 
 
-def test_b5_response_entry_without_last_responded_at_is_listed_with_null_created_at(staff_client, db, enqueued):
+def test_b5_response_entry_without_last_responded_at_is_listed_with_null_created_at(staff_client, db, enqueued, view_denied):
     inquiry = _inquiry(db)
     inquiry.purchasing_response = "brand?"
     inquiry.last_responded_at = None
@@ -1846,7 +1846,7 @@ def _prior_notification(db, kind, form_id, user, type_="sla_breach"):
     db.commit()
 
 
-def test_r1_recipients_are_handler_plus_staff_commenters_plus_responder_deduplicated(db, enqueued):
+def test_r1_recipients_are_handler_plus_staff_commenters_plus_responder_deduplicated(db, enqueued, view_denied):
     contact_id = _contact(db)
     handler = _user(db, "Handler")
     commenter = _user(db, "Commenter")
@@ -1868,7 +1868,7 @@ def test_r1_recipients_are_handler_plus_staff_commenters_plus_responder_deduplic
     assert len(notif.data["recipient_emails"]) == 3  # handler is both handler and commenter: once
 
 
-def test_r1_responder_resolves_by_users_id_too(db, enqueued):
+def test_r1_responder_resolves_by_users_id_too(db, enqueued, view_denied):
     contact_id = _contact(db)
     handler = _user(db, "Handler")
     responder = _user(db, "ById")
@@ -1884,7 +1884,7 @@ def test_r1_responder_resolves_by_users_id_too(db, enqueued):
     assert _mail_sets(db) == [{handler.email, responder.email}]
 
 
-def test_r1_contact_authored_comments_do_not_add_their_user(db, enqueued, monkeypatch):
+def test_r1_contact_authored_comments_do_not_add_their_user(db, enqueued, monkeypatch, view_denied):
     owner = _contact(db, "Owner")
     handler = _user(db, "Handler")
     inquiry = _inquiry(db, contact_id=owner)
@@ -1905,7 +1905,7 @@ def test_r1_contact_authored_comments_do_not_add_their_user(db, enqueued, monkey
     assert _mail_sets(db) == [{handler.email}]
 
 
-def test_r1_inactive_and_blank_email_staff_are_excluded(db, enqueued):
+def test_r1_inactive_and_blank_email_staff_are_excluded(db, enqueued, view_denied):
     contact_id = _contact(db)
     handler = _user(db, "Handler")
     gone = _user(db, "Gone")
@@ -1925,7 +1925,7 @@ def test_r1_inactive_and_blank_email_staff_are_excluded(db, enqueued):
     assert _mail_sets(db) == [{handler.email}]
 
 
-def test_r1_acting_impersonating_admin_is_excluded_even_as_staff_commenter(db, enqueued):
+def test_r1_acting_impersonating_admin_is_excluded_even_as_staff_commenter(db, enqueued, view_denied):
     contact_id = _contact(db)
     handler = _user(db, "Handler")
     admin = _user(db, "Admin")
@@ -1940,7 +1940,7 @@ def test_r1_acting_impersonating_admin_is_excluded_even_as_staff_commenter(db, e
     assert _mail_sets(db) == [{handler.email}]
 
 
-def test_r2_no_handler_still_emails_staff_commenters_and_responder(db, enqueued):
+def test_r2_no_handler_still_emails_staff_commenters_and_responder(db, enqueued, view_denied):
     contact_id = _contact(db)
     commenter = _user(db, "Commenter")
     responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
@@ -1958,7 +1958,7 @@ def test_r2_no_handler_still_emails_staff_commenters_and_responder(db, enqueued)
     assert len(_by_queue(enqueued, "notifications")) == 1
 
 
-def test_r3_empty_set_falls_back_to_users_who_got_this_forms_earlier_notifications(db, enqueued):
+def test_r3_empty_set_falls_back_to_users_who_got_this_forms_earlier_notifications(db, enqueued, view_denied):
     contact_id = _contact(db)
     a, b, other_form_user, inactive = _user(db, "A"), _user(db, "B"), _user(db, "Elsewhere"), _user(db, "Inactive")
     inquiry = _inquiry(db, contact_id=contact_id)
@@ -2005,7 +2005,7 @@ def test_r4_nothing_at_all_is_no_recipients_with_a_warning_naming_the_form(db, e
     assert warnings, [r.getMessage() for r in caplog.records]
 
 
-def test_r3_sponsorship_fallback_reads_purchase_request_typed_notifications(db, enqueued):
+def test_r3_sponsorship_fallback_reads_purchase_request_typed_notifications(db, enqueued, view_denied):
     contact_id = _contact(db)
     team = _user(db, "Team")
     stranger = _user(db, "Stranger")
