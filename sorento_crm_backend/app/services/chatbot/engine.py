@@ -7135,7 +7135,7 @@ def _run_answer(
     # Review S2: the A/B readout counts the files the turn delivered, before link mode
     # empties the list.
     files_delivered = len(answer.files or [])
-    file_text, file_list, file_mode = _apply_file_mode(
+    file_text, file_list, file_mode, file_fallback = _apply_file_mode(
         answer.text or "",
         list(answer.files or []),
         profile=getattr(state, "profile", None),
@@ -7158,8 +7158,10 @@ def _run_answer(
             "sections": len(answer.sections),
             "asking": answer.question.kind if answer.question is not None else None,
             "files": files_delivered,
-            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files).
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files), and why
+            # any of them did not go as links (owner hand test, 9 Oct 2026).
             "file_mode": file_mode,
+            "file_mode_fallback": file_fallback,
         },
         raw={"reply": reply},
     )
@@ -9051,8 +9053,8 @@ def _apply_file_mode(
     turn_id: Any,
     session_factory: SessionFactory | None = None,
     db: Session | None = None,
-) -> tuple[str, list[Any], str | None]:
-    """PHOTO-SEND-CAP round 2: `(text, files, file_mode)` for the contact's A/B mode.
+) -> tuple[str, list[Any], str | None, dict[str, Any] | None]:
+    """PHOTO-SEND-CAP round 2: `(text, files, file_mode, fallback)` for the contact's A/B mode.
 
     Attachment mode (the default, `respond_contacts.chatbot_files_as_links` off) is today's
     behaviour, untouched: the text, then one WhatsApp message per file. Link mode sends the
@@ -9061,7 +9063,14 @@ def _apply_file_mode(
     (no public base url, a database error) the turn falls back to attachments rather than
     sending a reply that names files it cannot deliver (never stuck), and the raw storage
     url the lane rendered under each row is dropped. `file_mode` is None when the reply
-    carries no file, else `attachments` or `links`, the A/B record the trace keeps.
+    carries no file, else `attachments`, `links` or `mixed`, the A/B record the trace keeps.
+
+    Owner hand test (9 Oct 2026): a file whose host is off the link list
+    (`file_link_service.link_hosts`) no longer silently turns the whole reply back into
+    attachments. It goes as an attachment ON ITS OWN, its row says "(sent as a file)", the
+    rest stay links (`mixed`), and `fallback` says why - `{"reason": "host_not_linkable",
+    "hosts": [...], "files": n}` or `{"reason": "error", "error": <type>, "files": n}` - for
+    the trace's `file_mode_fallback` fact. None when nothing fell back.
     """
     from app.services.chatbot import file_links
     from app.services.chatbot.turn.compose import _ATTACHED_SENTENCE
@@ -9074,9 +9083,9 @@ def _apply_file_mode(
     if not files:
         # Security review M1: a link-mode row can print a stored url even when the reply
         # sends no file; it never reaches the customer.
-        return (file_links.strip_storage_urls(text) if links else text), files, None
+        return (file_links.strip_storage_urls(text) if links else text), files, None, None
     if not links:
-        return text, files, "attachments"
+        return text, files, "attachments", None
 
     try:
         if db is not None:
@@ -9087,24 +9096,39 @@ def _apply_file_mode(
             # caller has pending is committed early.
             own_db = Session(bind=db.get_bind())
             try:
-                linked, _minted = file_links.links_for(
+                linked, _minted, skipped = file_links.links_for(
                     own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
                 )
             finally:
                 own_db.close()
         else:
             with _session(session_factory) as own_db:
-                linked, _minted = file_links.links_for(
+                linked, _minted, skipped = file_links.links_for(
                     own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
                 )
-    except Exception:  # noqa: BLE001 - the files still go, as attachments
+    except Exception as exc:  # noqa: BLE001 - the files still go, as attachments
         logger.warning("chatbot turn %s: link mode failed, sending attachments", turn_id, exc_info=True)
-        return file_links.strip_storage_urls(file_links.strip_raw_links(text, with_aliases)), files, "attachments"
+        fallback = {"reason": "error", "error": type(exc).__name__, "files": len(files)}
+        return (
+            file_links.strip_storage_urls(file_links.strip_raw_links(text, with_aliases)),
+            files,
+            "attachments",
+            fallback,
+        )
+    if skipped:
+        from app.services.file_link_service import host_of
+
+        skipped_urls = {str(f.get("url")) for f in skipped if isinstance(f, dict)}
+        attach = [f for f in files if isinstance(f, dict) and str(f.get("url")) in skipped_urls]
+        hosts = sorted({host_of(u) or "(no host)" for u in skipped_urls})
+        logger.info("chatbot turn %s: %d file(s) off the link list sent as attachments: %s", turn_id, len(attach), hosts)
+        fallback = {"reason": "host_not_linkable", "hosts": hosts, "files": len(attach)}
+        return linked.strip(), attach, ("mixed" if len(attach) < len(files) else "attachments"), fallback
     # "I have attached the file(s) below." is untrue once nothing is attached, in every
     # language the reply can be in (review S3).
     for sentence in _attached_sentences(_ATTACHED_SENTENCE):
         linked = linked.replace(sentence, "")
-    return linked.strip(), [], "links"
+    return linked.strip(), [], "links", None
 
 
 def _attached_sentences(english: str) -> tuple[str, ...]:
@@ -9400,7 +9424,7 @@ def run_tail(
         if isinstance(attachments_src, dict)
         else attachments_src
     )
-    composed_text, kept_files, file_mode = _apply_file_mode(
+    composed_text, kept_files, file_mode, file_fallback = _apply_file_mode(
         jsc.js_string(composed.get("text") or ""),
         src_files if isinstance(src_files, list) else [],
         profile=profile,
@@ -9411,6 +9435,14 @@ def run_tail(
     if file_mode == "links":
         composed = {**composed, "text": composed_text}
         attachments_src = None
+    elif file_mode == "mixed":
+        # Only the files off the link list go as attachments (owner hand test).
+        composed = {**composed, "text": composed_text}
+        attachments_src = (
+            {**attachments_src, "attachments": kept_files}
+            if isinstance(attachments_src, dict)
+            else kept_files
+        )
     elif file_mode == "attachments" and composed_text != jsc.js_string(composed.get("text") or ""):
         composed = {**composed, "text": composed_text}
     reply = {
@@ -9431,8 +9463,9 @@ def run_tail(
             "quick_replies": bool(reply["quick_replies"]),
             "rows_offered": len(reply["result_set"]),
             # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files), and
-            # how many (review S2).
+            # how many (review S2), and why any did not go as links (owner hand test).
             "file_mode": file_mode,
+            "file_mode_fallback": file_fallback,
             "files": len(src_files) if isinstance(src_files, list) else 0,
         },
         raw={"reply": reply},

@@ -112,3 +112,29 @@ def test_certificate_rows_stay_one_per_file():
     ]
     text = _render(rows)["response"]
     assert "1. *Product Code:* X1" in text and "2. *Product Code:* X1" in text
+
+
+def test_link_mode_names_each_file_of_a_row_that_has_no_file_name_field():
+    """Owner hand test (Vixx Loo promo, turn 85e162ca): a promotion row has no File Name
+    field, so three bare links under it could not be told apart. Each link now follows
+    its own `*File:*` line, the owner's round 2 sample format."""
+    promo = {
+        "promotion_name": "Vixx Loo Oct 2026",
+        "attachments": [
+            {"attachment": {"file_path": f"https://cdn-sorento.com/promotion/p/{n}.pdf", "original_filename": f"{n}.pdf",
+                            "stored_filename": f"{n}.pdf", "mime_type": "application/pdf"}}
+            for n in ("Flyer", "Price List")
+        ],
+    }
+    tool = "crm_marketing_promotions_list"
+    envelope = json.loads(present_response(tool, json.dumps({"data": [promo]})))
+    text = fetch.output_structurer(envelope, {"tool": tool, "entities": [], "semantic_input": {}, "files_as_links": True})["response"]
+    assert (
+        "*File:* Flyer.pdf\n*Link:* https://cdn-sorento.com/promotion/p/Flyer.pdf\n"
+        "*File:* Price List.pdf\n*Link:* https://cdn-sorento.com/promotion/p/Price List.pdf"
+    ) in text
+
+
+def test_a_product_row_keeps_its_own_file_name_line_and_adds_no_second_one():
+    text = _render(ROWS, links=True)["response"]
+    assert "*File:*" not in text

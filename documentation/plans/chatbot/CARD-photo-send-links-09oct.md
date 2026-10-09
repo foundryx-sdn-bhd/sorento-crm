@@ -225,3 +225,23 @@ On the lane PR as one crew-ask (Q1-Q5); answers land here.
 - Grouping keys on field labels (review N2): the product attachment presenter emits no keys
   for those fields; keying them is a presenter change of its own.
 - `/content` has no size cap (security L4).
+
+## Hand test 1 (owner, 9 Oct 2026): FAIL, fixed
+
+Contact 477071884 in link mode, console promo turn 85e162ca (check_promotion): 3 PDFs on
+`https://cdn-sorento.com/...` went as attachments; trace `file_mode: attachments`;
+`chatbot_file_links` empty. Cause: minting allowed only `CLOUDFRONT_DOMAIN` / `R2_CDN_DOMAIN`
+(the test copy's env names other hosts), and one off-list file silently turned the whole
+reply back into attachments.
+
+| Fix | Where |
+| --- | --- |
+| One link-able host list: `CLOUDFRONT_DOMAIN` + `R2_CDN_DOMAIN` + `CHATBOT_LINK_CDN_HOSTS` (default `cdn-sorento.com`, the production R2 custom domain stored rows name). Minting and the public route read it. | `app/config.py` `chatbot_link_cdn_hosts`; `app/services/file_link_service.py` `link_hosts`, `is_linkable` |
+| Per file, not per reply: a file off the list goes as an attachment alone, its row reads `*Link:* (sent as a file)`, the others stay links (`file_mode: mixed`), and the replied trace records `file_mode_fallback` `{reason, hosts, files}` (or `{reason: error, error, files}`). | `chatbot/file_links.py` `links_for`; `engine._apply_file_mode` |
+| `/f` for a listed host this deployment does not sign for (`cdn-sorento.com` on a copy): the click goes to the stored url, the one attachment mode already sends; a spreadsheet is fetched over https (no redirects, 25 MB cap). A signer host still gets a 1 h signed url. | `api/v1/public/file_links.py` `_handout`; `file_link_service.download_bytes`, `_fetch_public` |
+| A row with no File Name field (a promotion) names each file above its link, so three links under one promotion can be told apart. | `lanes/business/fetch.py` `_link_fields` |
+| Console: reply text already renders bare urls as links (`WhatsAppText`); pinned by a test for the copy's `:3111` host. Chips show only files that still go as attachments. | `components/chatbot/WhatsAppText.test.tsx` |
+
+Not verifiable from the cloud sandbox: whether `cdn-sorento.com` serves an unsigned GET
+(the egress proxy refuses that host). Attachment mode already hands WhatsApp that same url;
+the hand test confirms the click on the copy.

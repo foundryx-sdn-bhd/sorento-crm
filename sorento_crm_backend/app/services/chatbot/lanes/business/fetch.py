@@ -2794,12 +2794,26 @@ def _field_value(fields: list[Any], label: str) -> str:
     return ""
 
 
-def _link_fields(it: Any) -> list[dict[str, Any]]:
+def _link_fields(it: Any, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """`*Link:* <url>` under a file, link mode only. Unkeyed on purpose: the key-based
     projections below never drop it. The url is still the stored one here; the engine
     swaps it for the short link (`chatbot/file_links.links_for`) or, if it cannot, drops
-    the line and sends the file as before."""
-    return [{"label": "Link", "value": u} for u in jsc.array(jsc.get(it, "file_urls")) if isinstance(u, str) and u]
+    the line and sends the file as before.
+
+    A row with no File Name field of its own (a promotion: owner hand test, Vixx Loo, 9 Oct
+    2026) gets `*File:* <name>` above each link, so two links under one row can be told
+    apart. `names` is the envelope's own url -> filename (`attachments`)."""
+    fields = jsc.get(it, "fields") or []
+    named_row = any(isinstance(f, dict) and f.get("label") == "File Name" for f in fields)
+    out: list[dict[str, Any]] = []
+    for u in jsc.array(jsc.get(it, "file_urls")):
+        if not isinstance(u, str) or not u:
+            continue
+        name = (names or {}).get(u)
+        if not named_row and name:
+            out.append({"label": "File", "value": name})
+        out.append({"label": "Link", "value": u})
+    return out
 
 
 def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
@@ -2819,6 +2833,11 @@ def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
         return e
     out: list[Any] = []
     by_product: dict[tuple[str, str], dict[str, Any]] = {}
+    names = {
+        jsc.nullish_str(a.get("url")): jsc.nullish_str(a.get("filename")).strip()
+        for a in jsc.array(e.get("attachments"))
+        if isinstance(a, dict) and a.get("url") and a.get("filename")
+    }
     for it in items:
         if not isinstance(it, dict):
             out.append(it)
@@ -2834,7 +2853,7 @@ def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
             and not flags.get("expiring_soon")
         )
         if not groupable:
-            out.append({**it, "fields": [*fields, *(_link_fields(it) if links else [])]})
+            out.append({**it, "fields": [*fields, *(_link_fields(it, names) if links else [])]})
             continue
         key = (_field_value(fields, "Company"), code)
         group = by_product.get(key)
@@ -2849,7 +2868,7 @@ def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
             out.append(group)
         group["fields"].extend(f for f in fields if f.get("label") in _FILE_LEVEL_LABELS)
         if links:
-            group["fields"].extend(_link_fields(it))
+            group["fields"].extend(_link_fields(it, names))
         group["file_urls"].extend(jsc.array(it.get("file_urls")))
         if flags.get("discontinued"):
             group["flags"]["discontinued"] = True

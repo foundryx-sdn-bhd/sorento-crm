@@ -19,7 +19,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.services.file_link_service import download_bytes, is_sheet, record_click, resolve
+from app.services.file_link_service import (
+    download_bytes,
+    host_of,
+    is_linkable,
+    is_sheet,
+    link_hosts,
+    record_click,
+    resolve,
+    signer_hosts,
+)
 from app.services.storage_router import resolve_signed_url
 from app.utils.http import content_disposition
 
@@ -42,22 +51,25 @@ _SHEET_MEDIA_TYPES = {
 
 
 def _on_our_cdn(url: str | None) -> bool:
-    """Only an https url on our own CDN is handed to a browser (security review L2)."""
-    import os
+    """Only an https url on a listed host is handed to a browser (security review L2;
+    the list is `file_link_service.link_hosts`, owner hand test 9 Oct 2026)."""
     from urllib.parse import urlparse
 
     if not url:
         return False
-    parsed = urlparse(url)
-    hosts = {
-        h
-        for h in (
-            (os.getenv("CLOUDFRONT_DOMAIN") or "").strip().lower().rstrip("/"),
-            (os.getenv("R2_CDN_DOMAIN") or "").strip().lower().rstrip("/"),
-        )
-        if h
-    }
-    return parsed.scheme == "https" and bool(hosts) and (parsed.hostname or "").lower() in hosts
+    return urlparse(url).scheme == "https" and host_of(url) in link_hosts()
+
+
+def _handout(stored_url: str) -> str | None:
+    """Where a click goes. A host this deployment signs for gets a freshly signed url. Any
+    other LISTED host (`cdn-sorento.com` on a copy whose own CDN env names other hosts) gets
+    its stored url, the one attachment mode already hands to WhatsApp. Anything else: None."""
+    if not is_linkable(stored_url):
+        return None
+    if host_of(stored_url) in signer_hosts():
+        signed = resolve_signed_url(stored_url, expires_in=SIGNED_URL_SECONDS, strict=True)
+        return signed if _on_our_cdn(signed) else None
+    return stored_url
 
 
 def _as_ip(value: str | None) -> str | None:
@@ -109,8 +121,8 @@ def open_file_link(code: str, request: Request, db: Session = Depends(get_db)) -
     sheet = is_sheet(link.filename, link.mime_type)
     url = None
     if not sheet:
-        url = resolve_signed_url(link.target_url, expires_in=SIGNED_URL_SECONDS, strict=True)
-        if not _on_our_cdn(url):
+        url = _handout(link.target_url)
+        if not url:
             logger.warning("file link %s: the file could not be signed", link.id)
             raise HTTPException(status_code=502, detail="The file is not available right now. Please try again.")
     record_click(db, link)

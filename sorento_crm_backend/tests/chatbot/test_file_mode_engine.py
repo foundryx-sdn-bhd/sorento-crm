@@ -29,14 +29,14 @@ def _factory():
 
 
 def test_attachment_mode_is_untouched():
-    text, files, mode = engine._apply_file_mode(
+    text, files, mode, _fallback = engine._apply_file_mode(
         "words", FILES, profile=Profile(), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert (text, files, mode) == ("words", FILES, "attachments")
 
 
 def test_no_files_is_no_mode():
-    text, files, mode = engine._apply_file_mode(
+    text, files, mode, _fallback = engine._apply_file_mode(
         "words", [], profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert (text, files, mode) == ("words", [], None)
@@ -47,10 +47,10 @@ def test_link_mode_sends_the_text_alone(monkeypatch):
 
     def _links_for(db, text, files, *, contact_respond_id, turn_id):
         calls.append((contact_respond_id, turn_id, len(files)))
-        return text.replace(URL, "https://crm.test/f/ABCDEFGHJK"), 1
+        return text.replace(URL, "https://crm.test/f/ABCDEFGHJK"), 1, []
 
     monkeypatch.setattr(file_links, "links_for", _links_for)
-    text, files, mode = engine._apply_file_mode(
+    text, files, mode, _fallback = engine._apply_file_mode(
         TEXT, FILES, profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert files == []
@@ -65,7 +65,7 @@ def test_a_link_mode_that_cannot_mint_falls_back_to_attachments(monkeypatch, err
         raise error
 
     monkeypatch.setattr(file_links, "links_for", _boom)
-    text, files, mode = engine._apply_file_mode(
+    text, files, mode, _fallback = engine._apply_file_mode(
         TEXT, FILES, profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert files == FILES
@@ -75,8 +75,8 @@ def test_a_link_mode_that_cannot_mint_falls_back_to_attachments(monkeypatch, err
 
 
 def test_link_mode_drops_the_attached_sentence(monkeypatch):
-    monkeypatch.setattr(file_links, "links_for", lambda db, text, files, **kw: (text, 1))
-    text, _files, _mode = engine._apply_file_mode(
+    monkeypatch.setattr(file_links, "links_for", lambda db, text, files, **kw: (text, 1, []))
+    text, _files, _mode, _fallback = engine._apply_file_mode(
         TEXT, FILES, profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert "attached" not in text
@@ -86,7 +86,7 @@ def test_link_mode_drops_the_attached_sentence(monkeypatch):
 def test_link_mode_with_no_file_still_never_shows_a_stored_url(monkeypatch):
     """Security review M1, second path: rows printed links but nothing is sent."""
     monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
-    text, files, mode = engine._apply_file_mode(
+    text, files, mode, _fallback = engine._apply_file_mode(
         TEXT, [], profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
     )
     assert "cdn.test" not in text
@@ -100,7 +100,7 @@ def test_the_fallback_drops_every_stored_url(monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(file_links, "links_for", _boom)
-    text, _files, _mode = engine._apply_file_mode(
+    text, _files, _mode, _fallback = engine._apply_file_mode(
         TEXT + "\n*Link:* https://cdn.test/other.jpg",
         FILES,
         profile=Profile(files_as_links=True),
@@ -124,12 +124,13 @@ def test_run_tail_links_survive_a_caller_that_never_commits(monkeypatch):
     from tests._pg_fixture import blank_schema_engine
 
     monkeypatch.setattr(app_settings, "frontend_base_url", "https://crm.test")
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
     engine_ = blank_schema_engine()
     turn_id = str(uuid.uuid4())
     caller = Session(bind=engine_)
     try:
         caller.execute(text("SELECT 1"))
-        out, files, mode = engine._apply_file_mode(
+        out, files, mode, _fallback = engine._apply_file_mode(
             TEXT, FILES, profile=Profile(files_as_links=True), contact_respond_id="C1", turn_id=turn_id, db=caller
         )
         assert mode == "links" and files == []

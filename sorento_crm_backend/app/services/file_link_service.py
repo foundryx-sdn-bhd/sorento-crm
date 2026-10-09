@@ -93,8 +93,68 @@ def record_click(db: Session, row: ChatbotFileLink, *, now: datetime | None = No
     db.commit()
 
 
+def _clean_host(value: str | None) -> str:
+    return (value or "").strip().lower().rstrip("/")
+
+
+def signer_hosts() -> set[str]:
+    """The CDN hosts this deployment's own storage credentials sign and read for."""
+    import os
+
+    return {h for h in (_clean_host(os.getenv("CLOUDFRONT_DOMAIN")), _clean_host(os.getenv("R2_CDN_DOMAIN"))) if h}
+
+
+def link_hosts() -> set[str]:
+    """Every host whose files may be sent as a short link (owner hand test, 9 Oct 2026):
+    the signer hosts plus `CHATBOT_LINK_CDN_HOSTS`. ONE list, read by minting
+    (`chatbot/file_links.links_for`) and by the public route, so the two never disagree."""
+    from app.config import settings as app_settings
+
+    extra = {_clean_host(h) for h in (app_settings.chatbot_link_cdn_hosts or "").split(",")}
+    return signer_hosts() | {h for h in extra if h}
+
+
+def host_of(url: str | None) -> str:
+    from urllib.parse import urlparse
+
+    return (urlparse(url or "").hostname or "").lower()
+
+
+def is_linkable(url: str | None) -> bool:
+    """An https url on a listed host whose path has no `..`."""
+    from urllib.parse import urlparse
+
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and host_of(url) in link_hosts() and ".." not in (parsed.path or "")
+
+
+#: The most a spreadsheet fetched from a listed public host may weigh (security L4).
+PUBLIC_FETCH_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _fetch_public(url: str) -> bytes:
+    """GET a file from a listed public host: https only, no redirects, size capped."""
+    import httpx
+
+    with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+        with client.stream("GET", url) as response:
+            response.raise_for_status()
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > PUBLIC_FETCH_MAX_BYTES:
+                    raise ValueError("file too large to preview")
+                chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def download_bytes(url: str) -> bytes:
-    """The stored file's bytes, from whichever storage provider holds it."""
+    """The stored file's bytes. A signer host (or a bare key) is read through this
+    deployment's storage backend; any other LISTED host (`cdn-sorento.com` on a copy whose
+    own CDN env points elsewhere) is fetched over https. Anything else is refused."""
     from app.services.storage_router import (
         default_provider,
         detect_provider_from_url,
@@ -102,6 +162,11 @@ def download_bytes(url: str) -> bytes:
         get_backend,
     )
 
+    host = host_of(url)
+    if host and host not in signer_hosts():
+        if not is_linkable(url):
+            raise ValueError("host not on the link list")
+        return _fetch_public(url)
     key = extract_key(url)
     if not key:
         raise ValueError("no storage key")

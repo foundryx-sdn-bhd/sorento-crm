@@ -29,12 +29,12 @@ def _delegated_turn(session_factory) -> str:
     return head.turn_id
 
 
-def _answer_with_a_file() -> dict[str, Any]:
+def _answer_with_a_file(url: str = "https://cdn.test/sales.xlsx") -> dict[str, Any]:
     return {
         "outcome_fragment": {
             "central-exchange": {
                 "response": "Here is your sales analysis.",
-                "attachments": [{"url": "s3://zzt/sales.xlsx", "filename": "Sales.xlsx"}],
+                "attachments": [{"url": url, "filename": "Sales.xlsx"}],
             }
         }
     }
@@ -42,6 +42,7 @@ def _answer_with_a_file() -> dict[str, Any]:
 
 def test_run_tail_sends_one_text_with_the_link(seeded, stub_parser, session_factory, monkeypatch):  # noqa: F811
     monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
     turn_id = _delegated_turn(session_factory)
     _links_on(session_factory)
 
@@ -66,6 +67,32 @@ def test_run_tail_sends_one_text_with_the_link(seeded, stub_parser, session_fact
 def test_run_tail_in_attachment_mode_is_unchanged(seeded, stub_parser, session_factory, monkeypatch):  # noqa: F811
     turn_id = _delegated_turn(session_factory)
     result = engine_mod.complete_turn(turn_id, _fragments(answer=_answer_with_a_file()), session_factory=session_factory)
-    assert result.reply["attachments_src"]["attachments"] == [{"url": "s3://zzt/sales.xlsx", "filename": "Sales.xlsx"}]
+    assert result.reply["attachments_src"]["attachments"] == [{"url": "https://cdn.test/sales.xlsx", "filename": "Sales.xlsx"}]
     assert "/f/" not in result.reply["text"]
     assert _replied_facts(session_factory, turn_id).get("file_mode") == "attachments"
+
+
+def test_run_tail_sends_a_file_off_the_link_list_as_an_attachment_and_says_why(
+    seeded, stub_parser, session_factory, monkeypatch  # noqa: F811
+):
+    """Owner hand test, 9 Oct 2026: the file goes, alone, as an attachment; the reply says
+    so; the trace records the host, so the A/B readout is never silently wrong."""
+    monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+    turn_id = _delegated_turn(session_factory)
+    _links_on(session_factory)
+    off = "https://files.elsewhere.test/sales.xlsx"
+
+    result = engine_mod.complete_turn(
+        turn_id, _fragments(answer=_answer_with_a_file(off)), session_factory=session_factory
+    )
+
+    assert result.reply["attachments_src"]["attachments"] == [{"url": off, "filename": "Sales.xlsx"}]
+    assert "files.elsewhere.test" not in result.reply["text"]
+    facts = _replied_facts(session_factory, turn_id)
+    assert facts.get("file_mode") == "attachments"
+    assert facts.get("file_mode_fallback") == {
+        "reason": "host_not_linkable",
+        "hosts": ["files.elsewhere.test"],
+        "files": 1,
+    }

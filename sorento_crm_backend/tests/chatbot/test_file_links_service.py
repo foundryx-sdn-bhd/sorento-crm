@@ -26,6 +26,9 @@ BASE_URL = "https://crm.test"
 @pytest.fixture()
 def db(monkeypatch):
     monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    # The test files live on cdn.test: list it as this deployment's CDN host.
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+    monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
     with blank_session() as session:
         yield session
 
@@ -51,7 +54,7 @@ def test_a_code_is_sixteen_crockford_characters_and_never_repeats():
 def test_a_row_link_is_rewritten_to_its_short_url(db):
     url = "https://cdn.test/photos/a.jpg"
     text = f"1. *Product Code:* SRTSC1012\n*File Name:* a.jpg\n*Link:* {url}"
-    out, minted = file_links.links_for(
+    out, minted, _skipped = file_links.links_for(
         db, text, [_file(url, "a.jpg", "h1")], contact_respond_id="C1", turn_id=str(uuid.uuid4())
     )
     assert url not in out
@@ -69,7 +72,7 @@ def test_one_image_under_two_urls_is_one_code_repeated(db):
     """Q5 (a): the same link repeats under each product that uses it."""
     a, b = "https://cdn.test/a.jpg", "https://cdn.test/b.jpg"
     text = f"1. *Product Code:* X1\n*Link:* {a}\n\n2. *Product Code:* X2\n*Link:* {b}"
-    out, minted = file_links.links_for(
+    out, minted, _skipped = file_links.links_for(
         db, text, [_file(a, "a.jpg", "h1"), _file(b, "b.jpg", "h1")], contact_respond_id="C1", turn_id=None
     )
     codes = _codes(out)
@@ -79,7 +82,7 @@ def test_one_image_under_two_urls_is_one_code_repeated(db):
 
 def test_a_file_no_row_names_gets_its_own_block(db):
     url = "https://cdn.test/reports/sales.xlsx"
-    out, minted = file_links.links_for(
+    out, minted, _skipped = file_links.links_for(
         db,
         "Here is your sales analysis.",
         [_file(url, "Sales Analysis Sep 2026.xlsx", mime="application/vnd.ms-excel")],
@@ -98,7 +101,7 @@ def test_a_file_no_row_names_gets_its_own_block(db):
 def test_no_expiry_setting_means_the_link_never_expires(db):
     db.add(SystemSetting(id=str(uuid.uuid4()), name="ZZT co", chatbot_file_link_expiry_days=None))
     db.commit()
-    out, _ = file_links.links_for(
+    out, _, _skipped = file_links.links_for(
         db, "x", [_file("https://cdn.test/a.jpg", "a.jpg")], contact_respond_id="C1", turn_id=None
     )
     row = db.query(ChatbotFileLink).filter(ChatbotFileLink.code == _codes(out)[0]).one()
@@ -108,7 +111,7 @@ def test_no_expiry_setting_means_the_link_never_expires(db):
 def test_an_expiry_setting_stamps_the_link(db):
     db.add(SystemSetting(id=str(uuid.uuid4()), name="ZZT co", chatbot_file_link_expiry_days=7))
     db.commit()
-    out, _ = file_links.links_for(
+    out, _, _skipped = file_links.links_for(
         db, "x", [_file("https://cdn.test/a.jpg", "a.jpg")], contact_respond_id="C1", turn_id=None
     )
     row = db.query(ChatbotFileLink).filter(ChatbotFileLink.code == _codes(out)[0]).one()
@@ -170,7 +173,7 @@ def test_a_second_url_of_one_image_from_another_section_is_rewritten_too(db):
     section's url as an alias, so no row is left naming a stored url."""
     a, b = "https://cdn.test/a.jpg", "https://cdn.test/b.jpg"
     entry = {**_file(a, "a.jpg", "h1"), "aliasUrls": [b]}
-    out, minted = file_links.links_for(
+    out, minted, _skipped = file_links.links_for(
         db, f"*Link:* {a}\n\n*Link:* {b}", [entry], contact_respond_id="C1", turn_id=None
     )
     assert "cdn.test" not in out
@@ -206,9 +209,14 @@ def test_turning_the_expiry_on_later_closes_links_already_sent(db):
     ["https://evil.test/private/key.xlsx", "http://cdn.test/a.jpg", "https://cdn.test/../secret.xlsx"],
 )
 def test_a_file_off_our_cdn_is_never_linked(db, monkeypatch, url):
-    """Security re-review finding 2: link mode refuses, and the engine sends attachments."""
+    """Security re-review finding 2, per file since the owner's hand test: the file is
+    skipped (the engine attaches it) and no link row exists for it."""
     monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
     monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
-    with pytest.raises(file_links.LinkModeUnavailable):
-        file_links.links_for(db, "x", [_file(url, "f.xlsx")], contact_respond_id="C1", turn_id=None)
+    entry = _file(url, "f.xlsx")
+    out, minted, skipped = file_links.links_for(
+        db, f"*Link:* {url}", [entry], contact_respond_id="C1", turn_id=None
+    )
+    assert (minted, skipped) == (0, [entry])
+    assert out == "*Link:* (sent as a file)"
     assert db.query(ChatbotFileLink).count() == 0

@@ -55,6 +55,7 @@ def test_the_composer_tail_sends_one_text_with_the_link(
     from tests.chatbot import test_s6_s7_integration as harness
 
     monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
     harness.TestSendActionsAttachmentsAndDuplicateAc507D15._prepare(
         session_factory, system_settings_row, stub_parser, stub_access, monkeypatch
     )
@@ -63,7 +64,14 @@ def test_the_composer_tail_sends_one_text_with_the_link(
 
     def _spy(payload, **kwargs):
         lane_ctx.append(payload)
-        return original(payload, **kwargs)
+        out = original(payload, **kwargs)
+        # The harness's file is `s3://zzt/spec.pdf`; a link is only made for an https file
+        # on a listed host, so the same file is served from the listed test CDN here.
+        for key in ("fetch",):
+            fetched = out.get(key) if isinstance(out, dict) else None
+            if isinstance(fetched, dict) and fetched.get("attachments"):
+                fetched["attachments"] = [{**a, "url": "https://cdn.test/spec.pdf"} for a in fetched["attachments"]]
+        return out
 
     monkeypatch.setattr(engine_mod.business, "run_fetch", _spy)
     _links_on(session_factory)
@@ -74,10 +82,11 @@ def test_the_composer_tail_sends_one_text_with_the_link(
     assert [a["kind"] for a in result.actions] == ["send_message"]
     assert result.reply["attachments_src"] is None
     assert f"{BASE_URL}/f/" in result.actions[0]["text"]
-    assert "s3://zzt/spec.pdf" not in result.actions[0]["text"]
+    assert "cdn.test" not in result.actions[0]["text"]
     facts = _replied_facts(session_factory, result.turn_id)
     assert facts.get("file_mode") == "links"
     assert facts.get("files") == 1
+    assert facts.get("file_mode_fallback") is None
     assert lane_ctx and all((c.get("ctx") or {}).get("files_as_links") is True for c in lane_ctx)
     db = session_factory()
     assert db.query(ChatbotFileLink).filter(ChatbotFileLink.turn_id == result.turn_id).count() == 1

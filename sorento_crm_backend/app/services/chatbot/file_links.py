@@ -26,7 +26,9 @@ from app.services.file_link_service import (  # noqa: F401 - re-exported for the
     SHEET_MIME_TYPES,
     download_bytes,
     expiry_days,
+    is_linkable,
     is_sheet,
+    link_hosts,
     record_click,
     resolve,
 )
@@ -73,10 +75,12 @@ def links_for(
     *,
     contact_respond_id: str | None,
     turn_id: str | None,
-) -> tuple[str, int]:
-    """`(text, minted)`: the reply with every file as a short link, and how many rows were
-    minted. Raises (`LinkModeUnavailable`, or a database error) rather than return a text
-    that names a file it could not link; the caller falls back to attachments."""
+) -> tuple[str, int, list[dict[str, Any]]]:
+    """`(text, minted, skipped)`: the reply with every link-able file as a short link, how
+    many rows were minted, and the files NOT linked (a host off `link_hosts`, owner hand
+    test 9 Oct 2026). A skipped file's row says it goes as a file, its stored url never
+    shows, and the caller sends it as an attachment; the other files stay links. Raises
+    (`LinkModeUnavailable`, or a database error) only when nothing can be linked at all."""
     base = _base_url()
     days = expiry_days(db)
     now = datetime.utcnow()
@@ -84,6 +88,8 @@ def links_for(
 
     code_by_identity: dict[str, str] = {}
     url_by_raw: dict[str, str] = {}
+    skipped: list[dict[str, Any]] = []
+    skipped_raw: set[str] = set()
     blocks: list[str] = []
     rows: list[ChatbotFileLink] = []
     for entry in files:
@@ -92,8 +98,11 @@ def links_for(
         raw = str(entry["url"])
         if not _mintable(raw):
             # Security re-review finding 2: a public, possibly never-expiring link is only
-            # ever made for a file on our own CDN. Anything else goes as an attachment.
-            raise LinkModeUnavailable("a file is not on our CDN")
+            # ever made for a file on a listed host. This file goes as an attachment, alone.
+            skipped.append(entry)
+            skipped_raw.add(raw)
+            skipped_raw.update(a for a in entry.get("aliasUrls") or [] if isinstance(a, str) and a)
+            continue
         identity = _identity(entry)
         code = code_by_identity.get(identity)
         if code is None:
@@ -119,15 +128,22 @@ def links_for(
         if raw not in text:
             blocks.append(f"*File:* {entry.get('filename') or 'file'}\n*Link:* {link}")
 
-    db.add_all(rows)
-    db.commit()
+    if rows:
+        db.add_all(rows)
+        db.commit()
 
+    # A skipped file's link line says what happens to it instead of naming its url.
+    if skipped_raw:
+        text = "\n".join(
+            "*Link:* (sent as a file)" if any(raw in line for raw in skipped_raw) else line
+            for line in text.split("\n")
+        )
     # Longest first, so a url that is a prefix of another never rewrites part of it.
     for raw in sorted(url_by_raw, key=len, reverse=True):
         text = text.replace(raw, url_by_raw[raw])
     if blocks:
         text = "\n\n".join(part for part in (text.strip(), *blocks) if part)
-    return strip_storage_urls(text), len(rows)
+    return strip_storage_urls(text), len(rows), skipped
 
 
 def strip_raw_links(text: str, files: list[Any]) -> str:
@@ -138,40 +154,15 @@ def strip_raw_links(text: str, files: list[Any]) -> str:
     return "\n".join(kept)
 
 
-def _storage_hosts() -> set[str]:
-    import os
-
-    return {
-        h
-        for h in (
-            (os.getenv("CLOUDFRONT_DOMAIN") or "").strip().lower().rstrip("/"),
-            (os.getenv("R2_CDN_DOMAIN") or "").strip().lower().rstrip("/"),
-        )
-        if h
-    }
-
-
 def _mintable(url: str) -> bool:
-    """An https url on our own CDN host whose key has no `..`. With no CDN host configured
-    (a local copy) nothing can be signed at click time anyway, so the url is allowed and
-    the public route refuses it (`_on_our_cdn`)."""
-    from urllib.parse import urlparse
-
-    hosts = _storage_hosts()
-    if not hosts:
-        return True
-    parsed = urlparse(url)
-    return (
-        parsed.scheme == "https"
-        and (parsed.hostname or "").lower() in hosts
-        and ".." not in (parsed.path or "")
-    )
+    """An https url on a listed host (`file_link_service.link_hosts`) with no `..`."""
+    return is_linkable(url)
 
 
 def strip_storage_urls(text: str) -> str:
     """Drop every line that still names a stored CDN url (security review M1): in link
     mode the customer reads short links only, whichever path rendered the row."""
-    hosts = _storage_hosts()
+    hosts = link_hosts()
     if not hosts:
         return text
     return "\n".join(
