@@ -31,6 +31,9 @@ from app.services.otp_redaction import mask_otp_text
 from tests._pg_fixture import blank_session, pg_session, unique_code
 from tests.analytics_connector._helpers import (
     BASE,
+    pkce_pair,
+    start_authorize,
+    staff_headers,
     INTERNAL,
     USE,
     client_for,
@@ -199,23 +202,75 @@ def test_purge_expired_drops_dead_requests_and_unused_old_clients(env):
     assert db.get(AnalyticsOAuthRequest, live.id) is not None
 
 
-def test_register_refuses_once_too_many_clients_have_no_grant(env, monkeypatch):
+def test_register_at_the_cap_evicts_the_oldest_grantless_client_instead_of_refusing(env, monkeypatch):
     from app.services.analytics_connector import oauth
 
     assert oauth.MAX_PENDING_CLIENTS == 500
     db, client = env
     user = make_user(db, "cap", perms=(USE,))
-    full_sign_in(client, db, user)  # a client WITH a grant never counts
-    monkeypatch.setattr(oauth, "MAX_PENDING_CLIENTS", 2)
-    register(client)
-    register(client)
-    resp = client.post(
-        f"{BASE}/oauth/register",
-        json={"redirect_uris": ["https://claude.ai/api/mcp/auth_callback"], "token_endpoint_auth_method": "none"},
-        headers=INTERNAL,
-    )
-    assert resp.status_code in (429, 503), resp.text
-    assert "temporarily_unavailable" in resp.text
+    signed = full_sign_in(client, db, user)  # a client WITH a grant is never evicted, never counts
+    monkeypatch.setattr(oauth, "MAX_PENDING_CLIENTS", 3)
+    ids = [register(client) for _ in range(3)]
+    for age, cid in zip((30, 20, 10), ids):  # ids[0] is the oldest grant-less client
+        db.query(AnalyticsOAuthClient).filter(AnalyticsOAuthClient.id == cid).update(
+            {"created_at": now() - timedelta(minutes=age)})
+    db.query(AnalyticsOAuthClient).filter(AnalyticsOAuthClient.id == signed["client_id"]).update(
+        {"created_at": now() - timedelta(minutes=99)})  # older than all, but it has a grant
+    db.commit()
+    newest = register(client)  # asserts 201
+    db.expire_all()
+    present = {c.id for c in db.query(AnalyticsOAuthClient).all()}
+    assert ids[0] not in present
+    assert {ids[1], ids[2], newest, signed["client_id"]} <= present
+
+
+def test_authorize_also_purges_expired_request_rows(env):
+    db, client = env
+    cid = register(client)
+    stale = AnalyticsOAuthRequest(id=str(uuid.uuid4()), client_id=cid, redirect_uri="https://claude.ai/api/mcp/auth_callback",
+                                  code_challenge="c", scope="analytics.read", resource="r", status="pending",
+                                  expires_at=now() - timedelta(minutes=1))
+    db.add(stale)
+    db.commit()
+    stale_id = stale.id
+    _, challenge = pkce_pair()
+    assert start_authorize(client, cid, challenge).status_code == 200
+    db.expire_all()
+    assert db.get(AnalyticsOAuthRequest, stale_id) is None
+
+
+def _request_row(db, client_id):
+    return db.query(AnalyticsOAuthRequest).filter(AnalyticsOAuthRequest.client_id == client_id).one()
+
+
+def test_the_request_row_links_the_grant_as_soon_as_the_code_is_exchanged(env):
+    db, client = env
+    user = make_user(db, "lnk", perms=(USE,))
+    client_id, verifier, code = _code_for(client, db, user)
+    assert _exchange(client, client_id, verifier, code).status_code == 200
+    db.expire_all()
+    row = _request_row(db, client_id)
+    assert row.status == "used"
+    assert row.grant_id == _grant(db, user).id
+
+
+def test_purge_expired_keeps_a_used_request_row_that_has_a_grant_id(env):
+    from app.services.analytics_connector.oauth import purge_expired
+
+    db, client = env
+    user = make_user(db, "keep", perms=(USE,))
+    client_id, verifier, code = _code_for(client, db, user)
+    assert _exchange(client, client_id, verifier, code).status_code == 200
+    row = _request_row(db, client_id)
+    row.expires_at = now() - timedelta(hours=1)
+    row.code_expires_at = now() - timedelta(hours=1)
+    db.commit()
+    row_id = row.id
+    purge_expired(db)
+    db.expire_all()
+    assert db.get(AnalyticsOAuthRequest, row_id) is not None
+    _invalid_grant(_exchange(client, client_id, verifier, code))  # replay still revokes after a purge
+    assert _grant(db, user).revoked_at is not None
 
 
 # ------------------------------------------------------------------ A: connector path allowlist
@@ -251,8 +306,8 @@ def test_a_dot_segment_cannot_walk_out_of_an_allowed_prefix(env):
     assert resp.status_code != 200
 
 
-def test_every_reused_tool_route_is_inside_the_backend_allowlist():
-    """Keeps the container list and CONNECTOR_GET_PREFIXES in sync: add a tool, add its prefix."""
+def test_every_reused_tool_route_is_in_the_exact_backend_route_list():
+    """Keeps the container list and CONNECTOR_GET_ROUTES in sync: add a tool, add its path template."""
     repo = Path(__file__).resolve().parents[3]
     for extra in (repo / "sorento_crm_mcp", repo / "sorento_analytics_mcp"):
         if str(extra) not in sys.path:
@@ -263,18 +318,63 @@ def test_every_reused_tool_route_is_inside_the_backend_allowlist():
         from sorento_crm_mcp.module_loader import merged_catalog
     except Exception as exc:  # container deps absent in this env
         pytest.skip(f"container package not importable: {exc!r}")
-    from app.services.analytics_connector.access import CONNECTOR_GET_PREFIXES
+    import re
 
+    from app.services.analytics_connector.access import CONNECTOR_GET_ROUTES
+
+    norm = lambda t: re.sub(r"\{[^}]*\}", "{}", t.rstrip("/"))  # noqa: E731
+    routes = {norm(r) for r in CONNECTOR_GET_ROUTES}
     assert ANALYTICS_REUSED_TOOLS
     by_name = {t.name: t for t in merged_catalog(CATALOG)}
     for name in sorted(ANALYTICS_REUSED_TOOLS):
         spec = by_name[name]
         if spec.method.upper() != "GET":
             continue
-        route = spec.path
-        sample = route.replace("{", "").replace("}", "")
-        assert any(sample.startswith(p) for p in CONNECTOR_GET_PREFIXES), f"{name}: {route}"
-    assert any(p.rstrip("/").endswith("analytics-connector") for p in CONNECTOR_GET_PREFIXES)
+        assert norm(spec.path) in routes, f"{name}: {spec.path}"
+    assert any(r.startswith(BASE) for r in CONNECTOR_GET_ROUTES)
+
+
+_UID = "3f2b8c1e-5a47-4d0e-9c1a-0b6d2f7e8a91"
+
+
+@pytest.mark.parametrize("path", [
+    f"/api/v1/resource-management/attachments/{_UID}/download",
+    f"/api/v1/resource-management/attachments/{_UID}/preview-url",
+    "/api/v1/resource-management/attachments/current-stock-list",
+    "/api/v1/inventory/stock/balance/export",
+    "/api/v1/master-data/product-attachments/brochure-images",
+])
+def test_connector_get_on_a_file_or_export_route_inside_an_old_prefix_is_403(env, path):
+    db, client = env
+    user = make_user(db, "rt", perms=(USE,))
+    tok = full_sign_in(client, db, user)
+    resp = client.get(path, headers=connector_headers(tok["access_token"]))
+    assert resp.status_code == 403, resp.text
+    assert "connector_path_not_allowed" in resp.text
+
+
+def test_exact_routes_still_pass_the_guard_for_tool_routes_with_a_param(env):
+    db, client = env
+    user = make_user(db, "rt2", perms=(USE,))
+    tok = full_sign_in(client, db, user)
+    for path in ("/api/v1/master-data/brands", f"/api/v1/project-sales/projects/{_UID}"):
+        resp = client.get(path, headers=connector_headers(tok["access_token"]))
+        assert "connector_path_not_allowed" not in resp.text, path
+        assert resp.status_code not in (401, 405), (path, resp.text)
+
+
+@pytest.mark.parametrize("path,raw,expected", [
+    ("/api/v1/master-data/brands/../../users/me", "", False),
+    ("/api/v1/master-data/brands/x", "/api/v1/master-data/brands/%2e%2e/x", False),
+    ("/api/v1/master-data/brands/x", "/api/v1/master-data/brands%2fx", False),
+    ("//api/v1/master-data/brands", "", False),
+    ("/api/v1/master-data/brands-secret", "", False),
+    ("/api/v1/master-data/brands", "/api/v1/master-data/brands", True),
+])
+def test_connector_path_allowed_direct(path, raw, expected):
+    from app.services.analytics_connector.access import connector_path_allowed
+
+    assert connector_path_allowed(path, raw) is expected
 
 
 # ------------------------------------------------------------------ B: sign out everywhere ends the grants
@@ -311,3 +411,19 @@ def test_audit_args_over_4kb_are_stored_truncated_not_rejected(env):
     assert resp.status_code == 204
     small = [r for r in db.query(AuditLog).filter(AuditLog.event == "analytics_connector.tool_call") if r.new_values["tool"] == "t"]
     assert small[0].new_values["args"] == {"limit": "5"}
+
+
+# ------------------------------------------------------------------ single-session revoke ends the grant
+
+
+def test_revoking_the_connector_session_by_the_owner_also_revokes_the_grant(env):
+    db, client = env
+    user = make_user(db, "one", perms=(USE,))
+    tok = full_sign_in(client, db, user)
+    grant = _grant(db, user)
+    sid = grant.current_session_id
+    resp = client.delete(f"/api/v1/auth/sessions/{sid}", headers=staff_headers(db, user))
+    assert resp.status_code == 200, resp.text
+    db.refresh(grant)
+    assert grant.revoked_at is not None
+    _invalid_grant(_refresh(client, tok["client_id"], tok["refresh_token"]))
