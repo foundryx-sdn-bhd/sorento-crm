@@ -1,6 +1,6 @@
 # PLAN: promotion asks filter by subject; unresolved subject asks back; tier menu always stamped (PROMO-SUBJECT-FILTER)
 
-Status: BUILDING round 3 (9 Oct 2026). Owner hand test #1527 round 2 FAILED (detection inconsistent);
+Status: BUILDING round 3b spec qualifiers (9 Oct 2026; owner (a)); round 3 hand test passed except wall hung; red bc08b98b0, fix 91f6cd6c6; next: SQL migrate, reviewer, live 3x all cases, handtest. Round 3 history:. Owner hand test #1527 round 2 FAILED (detection inconsistent);
 rulings Q1 (a) brand = linked products, Q2 (b) expired-only level stamps "- has promotion", Q3 (b) "flyer" = A3 Flyer
 kind decided by the parser. UAC AC-29..35. Round 3 red 7a28b4b58, fix e164ae544, AC-31 test moves 37fe8173d, main
 4ee6f643d merged, pushed aa90dc192. Reviewer NOT READY aa90dc192 (Product types line lists classes, not the 43
