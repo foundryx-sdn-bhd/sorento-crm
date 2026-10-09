@@ -94,6 +94,19 @@ cases = {
              verb=IV_PRE_ORDERED, qty=6, delivery_date=D(2026, 11, 2), item_code="SRTMX0405",
              stock_location="KL-WH"),
     ],
+    "case6": [  # owner's hand test SO421287: one line, 5 columns, "ORDER, NEW ITEM CODE"
+        item("SO421287", "06/10/2026", "p7", "CUSTOMER H SDN BHD", "PROJECT Q", "raised", 1,
+             verb=IV_ORDER, qty=12, delivery_date=D(2026, 11, 6), item_code="SRT382-6-DIY",
+             stock_location="KL-WH", was={"item_code": "SRT382-6"}),
+    ],
+    "case7": [  # 7 columns + the long combo ORDER BACK, NEW ITEM CODE with a 16-char code
+        item("SO421300", "07/10/2026", "p8", "CUSTOMER J SDN BHD", "PROJECT W", "raised", 1,
+             verb=IV_ORDER_BACK, qty=16, delivery_date=D(2026, 11, 6), item_code="CWCX604-S-RL-NEW",
+             stock_location="KL-WH", cited_document="SPO-2026/08-0061", was={"item_code": "CWCX604-S-RL"}),
+        item("SO421300", "07/10/2026", "p8", "CUSTOMER J SDN BHD", "PROJECT W", "settled", 2,
+             verb=IV_ORDER, qty=30, delivery_date=D(2026, 11, 13), item_code="SRT382-6-DIY",
+             stock_location="KL-WH", was={"item_code": "SRT382-6", "qty": 24, "delivery_date": D(2026, 11, 6)}),
+    ],
     "case3": [  # long order: 42 lines
         item("SO418900", "01/10/2026", "p4", "CUSTOMER D SDN BHD", "PROJECT M", "raised", i,
              verb=IV_ORDER, qty=10 + i, delivery_date=D(2026, 11, 20), item_code=f"SRTWT{6800 + i}",

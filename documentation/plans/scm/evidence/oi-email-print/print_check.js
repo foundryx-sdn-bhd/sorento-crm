@@ -3,7 +3,7 @@ const fs = require('fs');
 const dir = process.argv[2];
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-  for (const c of ['case1', 'case2', 'case3', 'case4', 'case5']) {
+  for (const c of ['case1', 'case2', 'case3', 'case4', 'case5', 'case6', 'case7']) {
     const p = await b.newPage({ viewport: { width: 698, height: 1000 } });
     await p.setContent(fs.readFileSync(`${dir}/${c}.html`, 'utf8'));
     const m = await p.evaluate(() => {
@@ -16,7 +16,11 @@ const dir = process.argv[2];
         const pad = parseFloat(getComputedStyle(td).paddingTop) + parseFloat(getComputedStyle(td).paddingBottom);
         return [td.textContent.trim(), Math.round((td.getBoundingClientRect().height - pad) / lh)];
       }).filter(([, n]) => n > 1);
-      return { remarkLines, scrollWidth: document.documentElement.scrollWidth, card, rows: t[1].querySelectorAll('tbody tr').length, multi: [...new Set(multi)] };
+      const colW = [...t[1].querySelectorAll('thead th')].map(th => th.textContent.trim() + ':' + Math.round(th.getBoundingClientRect().width));
+      const tableW = Math.round(t[1].getBoundingClientRect().width);
+      const remarkTd = [...t[1].querySelectorAll('tbody tr')].filter(r => r.children.length > 1).map(r => r.lastElementChild);
+      const remarkSlack = Math.min(...remarkTd.map(td => { const rg = document.createRange(); rg.selectNodeContents(td); return Math.round(td.getBoundingClientRect().width - rg.getBoundingClientRect().width); }));
+      return { colW, tableW, remarkSlack, remarkLines, scrollWidth: document.documentElement.scrollWidth, card, rows: t[1].querySelectorAll('tbody tr').length, multi: [...new Set(multi)] };
     });
     await p.emulateMedia({ media: 'print' });
     const pdf = await p.pdf({ preferCSSPageSize: true, printBackground: true });
