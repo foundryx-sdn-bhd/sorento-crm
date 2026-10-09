@@ -1547,6 +1547,11 @@ async def portal_upload_attachment(
     }
 
 
+_COMMENT_RATE_WINDOW_SECONDS = 900
+_COMMENT_TOKEN_LIMIT = 10
+_COMMENT_GLOBAL_LIMIT = 300
+
+
 @router.get("/submissions/{kind}/{submission_id}/comments")
 def portal_list_comments(
     kind: str,
@@ -1557,9 +1562,11 @@ def portal_list_comments(
     from app.services.form_comment_service import FormCommentService
 
     k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
     svc = FormCommentService(db)
-    svc._load_row(k, submission_id, contact_id=token.contact_id, space_id=token.space_id)  # 404 unless own
-    return {"items": svc.list_comments(k, submission_id)}
+    # 404 unless the contact owns the row (list_comments below has no contact filter)
+    svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    return {"items": svc.list_comments(k, sid, _checked=True)}
 
 
 @router.post("/submissions/{kind}/{submission_id}/comments", status_code=status.HTTP_201_CREATED)
@@ -1571,13 +1578,40 @@ async def portal_add_comment(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
+    import hashlib
+
+    from app.api.v1.form_comments import read_uploads
+    from app.services import rate_limit
     from app.services.form_comment_service import FormCommentService
 
+    if getattr(token, "is_impersonation", False):
+        raise AppException(
+            status_code=403,
+            message="Comments can't be posted while viewing as a contact.",
+            code="FORBIDDEN",
+        )
     k = _check_kind(kind, db, token)
-    uploads = [(f.filename, await f.read(), f.content_type) for f in (files or []) if f.filename]
-    return FormCommentService(db).add_contact_comment(
-        k, submission_id, token.contact_id, token.space_id, body, uploads
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    # Per token plus one ceiling across tokens: checked first, charged only on a saved comment.
+    buckets = (
+        ("form_comment_token", hashlib.sha256(str(token.id).encode()).hexdigest(), _COMMENT_TOKEN_LIMIT),
+        ("form_comment_global", "all", _COMMENT_GLOBAL_LIMIT),
     )
+    for bucket, ident, limit in buckets:
+        result = rate_limit.peek(bucket, ident, limit=limit, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)
+        if not result.allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many comments. Try again later.",
+                headers={"Retry-After": str(result.retry_after_seconds or _COMMENT_RATE_WINDOW_SECONDS)},
+            )
+    uploads = await read_uploads(files)
+    out = FormCommentService(db).add_contact_comment(
+        k, sid, token.contact_id, token.space_id, body, uploads
+    )
+    for bucket, ident, _limit in buckets:
+        rate_limit.record(bucket, ident, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)
+    return out
 
 
 @router.delete("/attachments/{link_id}")

@@ -137,8 +137,10 @@ class FormCommentService:
     # Listing / serialization
     # ------------------------------------------------------------------ #
 
-    def list_comments(self, kind: str, entity_id: str) -> list[dict[str, Any]]:
-        self._load_row(kind, entity_id)
+    def list_comments(self, kind: str, entity_id: str, *, _checked: bool = False) -> list[dict[str, Any]]:
+        """``_checked``: the caller already loaded the row with its own ownership filter."""
+        if not _checked:
+            self._load_row(kind, entity_id)
         rows = (
             self.db.query(EntityConversationMessage)
             .filter(
@@ -186,7 +188,7 @@ class FormCommentService:
         for r in rows:
             if r.author_user_id:
                 u = users.get(r.author_user_id)
-                name = ((u.name or "").strip() or (u.email or "").strip()) if u else ""
+                name = (u.name or "").strip() if u else ""
                 kind_label = "staff"
             else:
                 name = _contact_display_name(contacts.get(r.author_contact_id))
@@ -195,7 +197,7 @@ class FormCommentService:
                 {
                     "id": r.id,
                     "body": r.body_html or "",
-                    "author_name": name or "Unknown",
+                    "author_name": name or ("Sorento team" if r.author_user_id else "Unknown"),
                     "author_kind": kind_label,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "attachments": files.get(r.id, []),
@@ -398,16 +400,22 @@ class FormCommentService:
             return "failed"
 
     def _handler_for(self, kind: str, entity_id: str) -> Optional[User]:
+        """The handler of the form's open SLA stage; else of the newest stage for the form
+        (a Responded inquiry has its stage resolved, and that handler is still the one to tell)."""
         from app.models.sla import ConversationSLATracking
+        from app.services.handling_lock_service import _active_form_tracker
 
-        tracking = (
-            self.db.query(ConversationSLATracking)
-            .filter(
-                ConversationSLATracking.source_entity_type == kind,
-                ConversationSLATracking.source_entity_id == entity_id,
+        tracking = _active_form_tracker(self.db, entity_id, kind)
+        if tracking is None or not tracking.handled_by_id:
+            tracking = (
+                self.db.query(ConversationSLATracking)
+                .filter(
+                    ConversationSLATracking.source_entity_type == kind,
+                    ConversationSLATracking.source_entity_id == entity_id,
+                )
+                .order_by(ConversationSLATracking.initiated_at.desc())
+                .first()
             )
-            .first()
-        )
         if tracking is None or not tracking.handled_by_id:
             return None
         handler = self.db.query(User).filter(User.id == tracking.handled_by_id).first()

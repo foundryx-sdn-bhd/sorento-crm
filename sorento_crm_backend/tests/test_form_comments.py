@@ -803,3 +803,174 @@ def test_portal_download_of_a_comment_file_works_for_the_owner_and_404s_for_othe
     assert ok.status_code == 200, ok.text
     assert ok.content == PDF[1]
     assert portal(stranger).get(url).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Review round: handler choice, failure isolation, names, limits, guards
+# --------------------------------------------------------------------------- #
+
+
+def _tracker_at(db, kind, form_id, handler, *, initiated, resolved=False):
+    from app.models.sla import ConversationSLATracking, SLAPolicy
+
+    policy = SLAPolicy(id=_uid(), code=f"{MARKER}-{uuid.uuid4().hex[:6]}", name=f"{MARKER} policy", company_id=SORENTO)
+    db.add(policy)
+    db.flush()
+    row = ConversationSLATracking(
+        id=_uid(),
+        policy_id=policy.id,
+        current_tier=1,
+        due_at=datetime(2026, 10, 20, 9, 0, 0),
+        source_entity_type=kind,
+        source_entity_id=form_id,
+        handled_by_id=handler.id,
+        initiated_at=initiated,
+    )
+    if resolved:
+        row.resolved_at = initiated + timedelta(hours=1)
+    db.add(row)
+    db.commit()
+
+
+def _recipients(db):
+    return [e for emails in _emails_of_notifications(db) for e in emails]
+
+
+def test_open_newer_tracker_handler_wins_over_resolved_older(db, enqueued):
+    contact_id = _contact(db)
+    a, b = _user(db, "A"), _user(db, "B")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker_at(db, "stock_inquiry", inquiry.id, a, initiated=datetime(2026, 10, 1), resolved=True)
+    _tracker_at(db, "stock_inquiry", inquiry.id, b, initiated=datetime(2026, 10, 2))
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+    assert _recipients(db) == [b.email]
+
+
+def test_only_resolved_trackers_newest_handler_wins(db, enqueued):
+    contact_id = _contact(db)
+    a, b = _user(db, "A"), _user(db, "B")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker_at(db, "stock_inquiry", inquiry.id, a, initiated=datetime(2026, 10, 1), resolved=True)
+    _tracker_at(db, "stock_inquiry", inquiry.id, b, initiated=datetime(2026, 10, 2), resolved=True)
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+    assert _recipients(db) == [b.email]
+
+
+def test_another_forms_tracker_is_never_used(db, enqueued):
+    contact_id = _contact(db)
+    c, mine = _user(db, "C"), _user(db, "Mine")
+    inquiry, other = _inquiry(db, contact_id=contact_id), _inquiry(db, contact_id=contact_id)
+    _tracker_at(db, "stock_inquiry", other.id, c, initiated=datetime(2026, 10, 3))
+    _tracker_at(db, "stock_inquiry", inquiry.id, mine, initiated=datetime(2026, 10, 1))
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+    assert _recipients(db) == [mine.email]
+
+
+@pytest.mark.parametrize("breaker", ["enqueue", "render"])
+def test_submitter_comment_survives_a_notification_failure(db, monkeypatch, breaker):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+
+    def _boom(*a, **k):
+        raise RuntimeError("down")
+
+    if breaker == "enqueue":
+        monkeypatch.setattr("app.services.queue_service.enqueue_job", _boom)
+    else:
+        monkeypatch.setattr("app.services.email_template_service.EmailTemplateService.render_code", _boom)
+
+    comment, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "kept"))
+
+    assert delivery == "failed"
+    db.rollback()
+    assert db.query(EntityConversationMessage).filter(EntityConversationMessage.id == comment["id"]).count() == 1
+
+
+def test_staff_author_without_a_name_reads_sorento_team(db, enqueued):
+    staff = _user(db)
+    staff.name = "  "
+    db.commit()
+    inquiry = _inquiry(db)
+    comment, _ = _unpack(_svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "hello"))
+    assert comment["author_name"] == "Sorento team"
+    assert staff.email not in str(_svc(db).list_comments("stock_inquiry", inquiry.id))
+
+
+def test_portal_post_is_429_when_the_bucket_is_full(portal, db, monkeypatch):
+    from app.services import rate_limit
+
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    monkeypatch.setattr(rate_limit, "peek", lambda *a, **k: rate_limit.RateResult(allowed=False, retry_after_seconds=30))
+    resp = portal(owner).post(
+        f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments", data={"body": "x"}
+    )
+    assert resp.status_code == 429
+    assert resp.headers["Retry-After"] == "30"
+    assert db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).count() == 0
+
+
+def test_portal_post_is_403_for_an_impersonation_token(db, enqueued):
+    from app.api.v1.public.portal import get_portal_token
+    from app.database import get_db
+    from app.models.portal import PortalToken
+    from app.services.company_scope_resolver import apply_company_scope
+
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+
+    async def _scope():
+        return frozenset({SORENTO})
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[apply_company_scope] = _scope
+    app.dependency_overrides[get_portal_token] = lambda: PortalToken(
+        id=_uid(), contact_id=owner, space_id=SPACE, is_impersonation=True
+    )
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments", data={"body": "x"}
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 403
+    assert db.query(EntityConversationMessage).filter(EntityConversationMessage.scope == SCOPE).count() == 0
+
+
+def test_portal_non_uuid_submission_id_is_not_a_500(portal, db):
+    owner = _contact(db, "Owner")
+    client = portal(owner)
+    url = "/api/v1/public/portal/submissions/stock_inquiry/not-a-uuid/comments"
+    assert client.get(url).status_code in (404, 422)
+    assert client.post(url, data={"body": "x"}).status_code in (404, 422)
+
+
+def test_module_gate_is_per_kind_when_strict(staff_client, db, monkeypatch):
+    from app.config import settings
+
+    staff_client.granted.update({"complaint_management.complaints.view", "procurement.stock_inquiries.view"})
+    complaint, inquiry = _complaint(db), _inquiry(db)
+    monkeypatch.setattr(settings, "module_guard_strict", True, raising=False)
+    monkeypatch.setattr("app.modules.runtime.installer.tenant_has_any_module_row", lambda db, t: True)
+    monkeypatch.setattr(
+        "app.modules.runtime.installer.is_module_enabled", lambda db, t, m: m == "procurement"
+    )
+    monkeypatch.setattr("app.modules.runtime.guards._all_modules_effectively_enabled", lambda db, t: False)
+    monkeypatch.setattr("app.modules.runtime.guards.is_module_enabled", lambda db, t, m: m == "procurement")
+    assert staff_client.get(f"/api/v1/form-comments/complaint/{complaint.id}").status_code == 403
+    assert staff_client.get(f"/api/v1/form-comments/stock_inquiry/{inquiry.id}").status_code == 200
+
+
+def test_more_than_five_files_is_422_before_any_read(staff_client, db, storage):
+    inquiry = _inquiry(db)
+    staff_client.granted.add("procurement.stock_inquiries.view")
+    resp = staff_client.post(
+        f"/api/v1/form-comments/stock_inquiry/{inquiry.id}",
+        data={"body": "many"},
+        files=[("files", PDF)] * 6,
+    )
+    assert resp.status_code == 422
+    assert storage.uploads == []
