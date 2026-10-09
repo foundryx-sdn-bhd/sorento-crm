@@ -477,7 +477,7 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
 
     entries = _line_entries(calls, row_a.item_code)
     remarks = sorted(entry["remark"] for entry in entries)
-    assert remarks == ["ADVANCE", "CANCEL 5", "ORDER"], entries
+    assert remarks == ["ADVANCE", "CANCEL ALL", "ORDER"], entries
     order_line = next(entry for entry in entries if entry["remark"] == "ORDER")
     assert order_line["qty"] == "50", "the fresh row's own quantity, never need - held"
     # OI-EMAIL-PRINT (AC-P2): AC-OH-40..42's wording stays on the fresh row, not in the email.

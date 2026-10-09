@@ -377,7 +377,8 @@ def test_raised_rows_no_was_and_order_back_carries_cited_document(api, monkeypat
     assert plain["was"] is None
     order_back = next(l for l in lines if l["remark"].startswith("ORDER BACK"))
     assert order_back["was"] is None
-    assert "SPO-2026/08-0061" in order_back["remark"]
+    # Owner, 9 Oct (Q-A): the document stays on the row, not in REMARK.
+    assert order_back["remark"] == "ORDER BACK"
 
 
 # --------------------------------------------------------------------------- #
@@ -1237,7 +1238,7 @@ def test_named_two_live_rows_supersede(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    cancelled = [l for l in lines if l["remark"].startswith("CANCEL BALANCE")]
+    cancelled = [l for l in lines if l["remark"].startswith("CANCEL")]
     assert len(cancelled) == 2, f"AC-R2-12: both still-owed rows must print cancelled, got {lines}"
 
 

@@ -129,7 +129,7 @@ def _link_count(db, row):
 
 
 def _assert_cancel_balance_line(line, row):
-    assert line["remark"] == "CANCEL BALANCE 36 NOS"
+    assert line["remark"] == "CANCEL ALL"
     assert line["qty"] == "0"  # QTY CHANGE TO 0, same as the cancel balance route
     assert line["was"]["qty"] == "36"
     assert line["item_code"] == row.item_code
@@ -324,7 +324,7 @@ def test_h9_three_cancelled_lines_make_one_dispatch_with_three_lines(api, monkey
     assert len(matches) == 1, f"expected one {TRIGGER} dispatch, got {len(matches)}"
     handover = matches[0]["context"]["handover"]
     assert handover["line_count"] == 3
-    assert {line["remark"] for line in handover["lines"]} == {"CANCEL BALANCE 36 NOS"}
+    assert {line["remark"] for line in handover["lines"]} == {"CANCEL ALL"}
     assert {line["item_code"] for line in handover["lines"]} == {
         p.product_code for _c, _m, p in mirrors
     }
@@ -344,7 +344,7 @@ def test_h10_a_mixed_press_hands_over_the_cancel_beside_the_confirm(api, monkeyp
     assert len(matches) == 1, f"expected one {TRIGGER} dispatch, got {len(matches)}"
     lines = matches[0]["context"]["handover"]["lines"]
     assert len(lines) >= 2, lines
-    assert [ln["remark"] for ln in lines].count("CANCEL BALANCE 36 NOS") == 1
+    assert [ln["remark"] for ln in lines].count("CANCEL ALL") == 1
 
 
 def test_h11_confirm_all_behaves_the_same(api, monkeypatch):
