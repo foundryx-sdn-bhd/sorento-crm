@@ -854,7 +854,7 @@ def test_fallback_to_the_newest_resolved_tracker_stays_on_this_form(db, enqueued
     assert _recipients(db) == [mine.email]
 
 @pytest.mark.parametrize("breaker", ["enqueue", "render"])
-def test_submitter_comment_survives_a_notification_failure(db, monkeypatch, breaker):
+def test_submitter_comment_survives_a_notification_failure(db, monkeypatch, breaker, view_denied):
     contact_id = _contact(db)
     handler = _user(db, "Handler")
     inquiry = _inquiry(db, contact_id=contact_id)
