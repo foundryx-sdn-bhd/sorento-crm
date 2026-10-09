@@ -1,6 +1,6 @@
 # PLAN: Two-way comment thread on form submissions (FORM-COMMENTS)
 
-Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Built; review fix round and crew audit tests landed; final review, browser pass and hand test on this head.
+Status: round 3 (owner hand test 9 Oct: email recipients + Comments tab) in build. Track: L.
 Track: full lane (one additive migration, notifications on two channels).
 
 Owner request (9 Oct 2026): every form submission page gets a comment thread reusing the
@@ -228,3 +228,34 @@ Contract:
   (composer on top, unchanged look) and by the form thread (composer at the bottom). The
   portal green reply box is removed; the CRM keeps its purchasing reply row inside the form
   table, because that is where the reply is edited.
+
+## Owner hand test round 3 (9 Oct): email recipients + Comments tab
+
+Diagnosis (PR #1544 crew-note): SI26-0154's two SLA trackers have `handled_by_id` NULL, so
+`_handler_for` returned None and the submitter comment was dropped with an INFO log. Only 13 of
+991 form trackers on the dev copy carry a handler, so handler-only email reaches almost nobody.
+
+Owner rules:
+1. Submitter comment or reply (portal, incl. impersonation) emails ONE notification to the
+   de-duplicated set: the SLA handler (as today, `_handler_for`) + every staff user who authored a
+   live staff comment/reply in this thread (`author_user_id` set AND `author_contact_id` NULL;
+   impersonation rows are the contact's, not staff) + the responder of the staff reply entry
+   (the user `_response_entry` resolves from `last_responded_by`, matching `users.id` or
+   `users.respond_user_id`). Only active users with a non-blank email; excluded: the acting
+   impersonating admin. Email text unchanged.
+2. If that set is empty, fall back to the form's team = distinct staff users who already received
+   this form's own notifications (`notifications.source_entity_type == kind`,
+   `source_entity_id == form id`, `type != 'form_comment_notification'`, user active with email).
+   SI26-0154 gives purchasing@ + baser@.
+3. Still empty: WARNING log naming kind, form id and the reason; delivery = "no_recipients".
+   Never silent.
+4. CRM layout: the thread moves out of Details into its own tab "Comments (N)" placed right after
+   Details on every form kind (stock inquiry, complaint, purchase request, sponsorship form), via
+   `extraTabs` of `sla-management/_shared/FormDetailWithSLATabs.tsx` (first entry). N = the
+   thread header count (comments incl. replies, live ones, excluding the purchasing reply entry
+   and deleted placeholders). Details no longer renders the thread. The form-table
+   "Comment / reply by purchasing" row stays (purchasing edits there).
+5. Portal layout: same "Comments (N)" tab next to Details / Revisions in `SubmissionForm.tsx`.
+   The Details tab shows the green "Comment / reply by purchasing" banner again, with a small
+   "Reply in Comments" link under it that switches to the Comments tab. The Comments tab holds the
+   thread as built (reply entry first, oldest first, composer last, reply/edit/delete, on-behalf).
