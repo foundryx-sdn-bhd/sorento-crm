@@ -974,3 +974,75 @@ def test_more_than_five_files_is_422_before_any_read(staff_client, db, storage):
     )
     assert resp.status_code == 422
     assert storage.uploads == []
+
+
+# ---------------------------------------------------------------------------
+# Crew audit (9 Oct): a comment never moves the form's status (owner Q3), and both upload paths
+# enforce their attachment type's extension allowlist.
+
+
+@pytest.mark.parametrize("author", ["staff", "submitter"])
+@pytest.mark.parametrize(
+    "kind,status",
+    [
+        ("stock_inquiry", "responded"),
+        ("stock_inquiry", "pending_purchasing"),
+        ("complaint", "responded"),
+        ("purchase_request", "approved"),
+        ("sponsorship_form", "approved"),
+    ],
+)
+def test_a_comment_never_changes_the_form_status(db, enqueued, kind, status, author):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    if kind == "stock_inquiry":
+        row = _inquiry(db, contact_id=contact_id, status=status)
+        row.purchasing_response = "brand?"
+        db.commit()
+    elif kind == "complaint":
+        row = _complaint(db, contact_id=contact_id, status=status)
+    else:
+        row = _request(db, request_type=kind, contact_id=contact_id, status=status)
+    _tracker(db, kind, row.id, handler)
+    form_id = row.id
+    model = type(row)
+
+    if author == "staff":
+        _svc(db).add_staff_comment(kind, form_id, _user(db), "Which brand?")
+    else:
+        _svc(db).add_contact_comment(kind, form_id, contact_id, SPACE, "Hafele")
+
+    db.expire_all()
+    fresh = db.query(model).filter(model.id == form_id).one()
+    assert fresh.status == status
+    if kind == "stock_inquiry":
+        assert fresh.purchasing_response == "brand?"
+
+
+@pytest.mark.parametrize("author", ["staff", "submitter"])
+def test_a_disallowed_file_type_is_refused_and_nothing_is_saved(db, enqueued, storage, author):
+    # The shared attachment-type check (check_quota / portal _check_quota) answers 400, the same
+    # as the existing staff response and portal upload routes.
+    from app.models.entity_conversation import EntityConversationMessage
+
+    contact_id = _contact(db)
+    inquiry = _inquiry(db, contact_id=contact_id)
+    bad = ("payload.exe", b"MZ\x90\x00", "application/octet-stream")
+
+    with pytest.raises(HTTPException) as exc:
+        if author == "staff":
+            _svc(db).add_staff_comment("stock_inquiry", inquiry.id, _user(db), "x", files=[bad])
+        else:
+            _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "x", files=[bad])
+
+    assert _status_of(exc.value) == 400
+    assert "Unsupported file type" in str(getattr(exc.value, "detail", exc.value))
+    db.rollback()
+    assert (
+        db.query(EntityConversationMessage)
+        .filter(EntityConversationMessage.entity_id == inquiry.id)
+        .count()
+        == 0
+    )
+    assert storage.uploads == []
+    assert enqueued == []
