@@ -167,3 +167,8 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   Failed stages and the `Error executing tool` marker stay tool errors. GRADER_VERSION 7.
 - `--regrade` of a run made before round 7 re-applies the rule to stored `tool_errors`: an entry
   `"None: <text>"` (no tool) without `returned HTTP` moves to `lane_notes`.
+
+## Round 8 (regrade metadata, 10 Oct)
+- A regraded report keeps the source run's `prompt_version`, `engine`, `run_id`, `started_at`, `wall_s` and
+  `variants` from `RUN_DIR/report.json` (when present) and adds `regraded_from` (the RUN_DIR path) and
+  `regraded_at`. `split` is the regrade's `--split`.
