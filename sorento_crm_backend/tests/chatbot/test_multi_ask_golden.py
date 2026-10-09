@@ -251,7 +251,7 @@ def test_g2c_resolved_customer_rides_the_runner(session_factory, monkeypatch, st
     )
     [report] = c.tools.args("crm_report_ask")
     assert _ids(report.get("customer_ids")) == [cid]
-    assert "库存: 120" in text.splitlines()
+    assert "Stock: 120" in text.splitlines()
     assert report.get("view") != "render", "the runner asks raw, never today's render path"
 
 
@@ -367,6 +367,59 @@ def test_g4_a_vague_message_asks_what_is_wanted_en(session_factory, monkeypatch,
     )
     assert text.splitlines()[0] == "What would you like to know about s r t? Stock, incoming, cost or sales?"
     assert len(c.tools.calls) == before
+
+
+VAGUE_EN = "What would you like to know about s r t? Stock, incoming, cost or sales?"
+
+
+def test_g4_live_case_b_confident_entity_still_asks(session_factory, monkeypatch, stub_access):
+    c = con(session_factory, monkeypatch, stub_access)
+    c.say(
+        "ELP3754 spo",
+        verdict(domain_hint="spo_allocation", intent_hint="check_spo", entities=[entity("ELP3754", hint="product")], family=False),
+    )
+    before = len(c.tools.calls)
+    text = c.say(
+        "s r t please",
+        verdict(
+            domain_hint=None, intent_hint=None, sub_asks=None, asks=None, continuation=False,
+            anaphora={"backward_reference": False},
+            entities=[entity("s r t", hint="product", canonical_code=None, current_message=True, confident=True, hint_confident=True)],
+        ),
+    )
+    assert text.splitlines()[0] == VAGUE_EN
+    assert len(c.tools.calls) == before
+
+
+def test_g4_guard_a_real_follow_up_is_not_the_vague_question(session_factory, monkeypatch, stub_access):
+    c = con(session_factory, monkeypatch, stub_access)
+    c.say(
+        "stock SRTWT165",
+        verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity("SRTWT165", hint="product")], family=False),
+    )
+    text = c.say(
+        "CB6633",
+        verdict(
+            domain_hint=None, intent_hint=None, sub_asks=None, asks=None, continuation=True,
+            anaphora={"backward_reference": True},
+            entities=[entity("CB6633", hint="product")],
+        ),
+    )
+    assert "What would you like to know about" not in text
+    assert "你想了解" not in text
+
+
+def test_g1_incoming_scope_then_all_is_not_a_second_picker(session_factory, monkeypatch, stub_access):
+    c = con(session_factory, monkeypatch, stub_access)
+    t1 = c.say(
+        "incoming SRTWT165",
+        verdict(domain_hint="incoming", intent_hint="check_incoming", entities=[entity("SRTWT165", hint="product")], sub_asks=None, family=None),
+    )
+    assert t1.splitlines()[0] == "SRTWT165 has 3 variants. Just SRTWT165, or all 3?"
+    t2 = c.say("all of them", pick(2))
+    assert "Which product do you mean" not in t2
+    calls = c.tools.args("crm_incoming_stock_by_product")
+    assert calls and sorted(pids(calls[-1])) == sorted(c.uuid_of[x] for x in WT)
 
 
 # ------------------------------------------------------------------ G4b moving on
