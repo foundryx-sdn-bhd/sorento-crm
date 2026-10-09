@@ -26,7 +26,7 @@ Idempotent. Downgrade restores `oihr_0004`'s three values byte for byte (frozen 
 whichever unedited state the upgrade started from.
 
 Revision ID: oihr_0005_print_one_page
-Revises: bflo_0001_borrow_order_toggle
+Revises: fcom_0003_conv_thread
 Create Date: 2026-10-09
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ from alembic import op
 logger = logging.getLogger("alembic.runtime.migration")
 
 revision = "oihr_0005_print_one_page"
-down_revision = "bflo_0001_borrow_order_toggle"
+down_revision = "fcom_0003_conv_thread"
 branch_labels = None
 depends_on = None
 
