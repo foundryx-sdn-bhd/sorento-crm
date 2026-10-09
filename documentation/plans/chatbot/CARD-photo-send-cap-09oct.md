@@ -1,7 +1,7 @@
 # CARD - cap and dedupe product photo sends (PHOTO-SEND-CAP)
 
-Status: Plan. Behaviour card posted to the owner (crew-ask on the lane PR); building waits on
-Q1-Q5. Track: M (new rule + customer-visible wording + parser prompt, no migration, no RBAC).
+Status: superseded by `CARD-photo-send-links-09oct.md` (owner redirect 9 Oct: links instead of a cap; cap Q1-Q5 parked). The `file_hash` dedupe (R2) shipped on the branch and is kept.
+Track was M (new rule + customer-visible wording + parser prompt, no migration, no RBAC).
 Lane PR carries `crew-lane: PHOTO-SEND-CAP`.
 
 ## The journey (owner, 9 Oct 2026)
