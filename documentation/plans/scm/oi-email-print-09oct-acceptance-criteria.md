@@ -15,7 +15,8 @@ Plan: `PLAN-oi-email-print-09oct.md`. Mock: `ALIGN-oi-email-print-09oct.html`.
   `REMARK-wording-oi-email-print-09oct.md`): `ORDER BACK` with no document (Q-A); `ORDER N`,
   `CANCEL N`, `CANCEL ALL` (Q-D); a product change adds `NEW ITEM CODE` (Q-E), and the
   headline says `NEW ITEM CODE` too. Combos join by ", ", e.g. `ADVANCE, CANCEL 5`,
-  `DELAY, ORDER 6, NEW ITEM CODE`. `PRE-ORDERED, DO NOT ORDER` is unchanged until Q-B is ruled.
+  `DELAY, ORDER 6, NEW ITEM CODE`. `PRE-ORDERED` (Q-B); the OI worklist and export keep
+  `PRE-ORDERED, DO NOT ORDER`.
 
 ## Layout
 

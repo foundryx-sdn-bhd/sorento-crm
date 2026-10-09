@@ -377,6 +377,11 @@ def _handover_verb_keys(
 #: CODE, so the remark only says that it changed.
 _NEW_ITEM_CODE = "NEW ITEM CODE"
 
+#: Where the handover email's REMARK words a verb differently from `REMARK_SPELLING`, which
+#: stays the client's own spelling for the OI worklist and export (`_remark`). Owner, 9 Oct
+#: (Q-B): "PRE-ORDERED" alone; the word already means "do not order".
+_HANDOVER_REMARK_SPELLING = {**REMARK_SPELLING, IV_PRE_ORDERED: "PRE-ORDERED"}
+
 
 def handover_remark(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
@@ -392,7 +397,7 @@ def handover_remark(
     number or code another column already shows: ITEM CODE prints the new code, QTY /
     NEW QTY and DELIVERY / NEW DATE print the moves.
 
-    * `kind="raised"`: the verb's own spelling (`REMARK_SPELLING`); a CHANGE SO NO whose
+    * `kind="raised"`: the verb's email spelling (`_HANDOVER_REMARK_SPELLING`); a CHANGE SO NO whose
       target is known reads `MOVED TO <SO>`; an ORDER BACK prints no document (Q-A).
       `row.note` itself is NEVER printed (OI-EMAIL-PRINT, owner 9 Oct): it is a bag of
       internal stamps ("Planning keeps this Buy: ...", "Replaces 20 used; ...",
@@ -409,7 +414,7 @@ def handover_remark(
     told off a row whose own quantity did not move.
     """
     if kind == "raised":
-        label = REMARK_SPELLING.get(row.verb, row.verb or "")
+        label = _HANDOVER_REMARK_SPELLING.get(row.verb, row.verb or "")
         if row.verb == IV_CHANGE_SO:
             # The one fact a note carries that IS the instruction: where the line moved
             # (`_change_note`'s "Moved to <SO>" for a repoint). Read back off that fixed

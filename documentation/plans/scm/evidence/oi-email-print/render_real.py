@@ -8,7 +8,7 @@ sys.path.insert(0, ".")
 from app.models.email_template import EmailTemplate
 from app.services.email_template_service import EmailTemplateService
 from app.services.project_order_inquiry_service import (
-    IV_ORDER, IV_ORDER_BACK, IV_DELAY, IV_CHANGE_SO, _build_handover_context, _format_handover_was,
+    IV_ORDER, IV_ORDER_BACK, IV_DELAY, IV_CHANGE_SO, IV_PRE_ORDERED, _build_handover_context, _format_handover_was,
     _handover_fmt_date, _handover_verb_keys, handover_remark,
 )
 from tests._pg_fixture import blank_session
@@ -90,6 +90,9 @@ cases = {
         item("SO419100", "05/10/2026", "p6", "CUSTOMER G SDN BHD", "PROJECT N", "raised", 4,
              verb=IV_ORDER_BACK, qty=16, delivery_date=D(2026, 11, 2), item_code="SRTWT6808",
              stock_location="KL-WH", cited_document="SPO-2026/08-0061"),
+        item("SO419100", "05/10/2026", "p6", "CUSTOMER G SDN BHD", "PROJECT N", "raised", 5,
+             verb=IV_PRE_ORDERED, qty=6, delivery_date=D(2026, 11, 2), item_code="SRTMX0405",
+             stock_location="KL-WH"),
     ],
     "case3": [  # long order: 42 lines
         item("SO418900", "01/10/2026", "p4", "CUSTOMER D SDN BHD", "PROJECT M", "raised", i,

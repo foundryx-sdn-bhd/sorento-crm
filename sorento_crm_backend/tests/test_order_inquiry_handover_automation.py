@@ -197,7 +197,7 @@ def test_handover_remark_raised_rows_use_the_verb_label():
     )
     assert (
         handover_remark("raised", _row(verb=IV_PRE_ORDERED), None)
-        == "PRE-ORDERED, DO NOT ORDER"
+        == "PRE-ORDERED"  # owner, 9 Oct (Q-B)
     )
     assert (
         handover_remark("raised", _row(verb=IV_ALREADY_INBOUND), None)

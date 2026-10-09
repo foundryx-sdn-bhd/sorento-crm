@@ -173,6 +173,23 @@ def test_remark_wording_owner_9_oct():
     ) == "ORDER, NEW ITEM CODE"
 
 
+def test_pre_ordered_is_one_word_in_the_email_only():
+    """AC-P13 (owner Q-B, 9 Oct): the email says PRE-ORDERED. The OI worklist and export keep
+    the client's own spelling (`REMARK_SPELLING`, read by `_remark`), which the ruling did not
+    touch."""
+    from app.services.project_order_inquiry_service import (
+        IV_PRE_ORDERED,
+        REMARK_SPELLING,
+        handover_remark,
+    )
+
+    assert handover_remark("raised", _remark_row(verb=IV_PRE_ORDERED), None) == "PRE-ORDERED"
+    assert handover_remark(
+        "raised", _remark_row(verb=IV_PRE_ORDERED, item_code="NEW-1"), {"item_code": "OLD-1"}
+    ) == "PRE-ORDERED, NEW ITEM CODE"
+    assert REMARK_SPELLING[IV_PRE_ORDERED] == "PRE-ORDERED, DO NOT ORDER"
+
+
 def test_headline_word_for_a_product_change_matches_remark():
     """AC-P13: the headline names the product change the way REMARK does."""
     from app.services.project_order_inquiry_service import _HANDOVER_VERB_LABEL

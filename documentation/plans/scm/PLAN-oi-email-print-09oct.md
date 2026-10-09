@@ -1,6 +1,6 @@
 # PLAN: OI handover email - no multi-line cells, fits one printed page (OI-EMAIL-PRINT)
 
-Status: Build, REMARK wording per owner rulings 9 Oct (Q-A, Q-C, Q-D, Q-E built; Q-B pending), then review + print pass (feature track, abbreviated per the crew brief; carries one data migration on `email_templates`, so not the small fix track). Layout passed the owner hand test 9 Oct.
+Status: Build complete, REMARK wording per owner rulings 9 Oct (Q-A to Q-E all built), on review + hand test (feature track, abbreviated per the crew brief; carries one data migration on `email_templates`, so not the small fix track). Layout passed the owner hand test 9 Oct.
 Lane: OI-EMAIL-PRINT, branch `claude/oi-email-print-ucrsgl`, PR #1543
 Domain: scm (order inquiry handover email, `order_inquiry_handover` automation) + email layout shell
 UAC: `oi-email-print-09oct-acceptance-criteria.md` alongside
@@ -59,7 +59,8 @@ and S/O NO repeat on every row.
 
 1. **REMARK is one short instruction.** Wording per the owner's rulings of 9 Oct in
    `REMARK-wording-oi-email-print-09oct.md` (no numbers or codes another column shows; ORDER
-   BACK without document; MOVED TO <SO>; CANCEL N / CANCEL ALL; NEW ITEM CODE). Earlier text: It is the verb's own spelling plus only the structured
+   BACK without document; MOVED TO <SO>; CANCEL N / CANCEL ALL; NEW ITEM CODE; PRE-ORDERED).
+   Earlier text: It is the verb's own spelling plus only the structured
    facts that belong to that verb: `ORDER`, `DELAY`, `ADVANCE`, `ORDER N`,
    `CANCEL BALANCE N NOS`, `ORDER BACK <cited document>`, `PRE-ORDERED, DO NOT ORDER`,
    `CHANGE ITEM CODE TO X (WAS Y)`, joined by ", " as today. `row.note` is never printed in

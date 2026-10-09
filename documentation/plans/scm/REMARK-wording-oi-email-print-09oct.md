@@ -6,8 +6,9 @@ Owner, after the layout PASS (9 Oct, about 09:5x): REMARK must be simple and con
 **Owner rulings (9 Oct), built:** Q-A (b) `ORDER BACK` with no document number; Q-C (a)
 `MOVED TO <SO>`; Q-D (a) `ORDER 64` / `CANCEL 4` / `CANCEL ALL`; Q-E (a) `NEW ITEM CODE`;
 combos as proposed; the headline word for a product change matches (`NEW ITEM CODE`).
-**Q-B pending** (owner asked what PRE-ORDERED is; answered on PR #1543): row 5 still reads
-`PRE-ORDERED, DO NOT ORDER`. Row 3's proposal below is superseded by Q-A (b).
+**Q-B (a)** (ruled after the scenario answer on PR #1543): the email says `PRE-ORDERED`; the
+verb is kept, and the OI worklist / export keep the client's `PRE-ORDERED, DO NOT ORDER`
+(`REMARK_SPELLING`, read by `_remark`). Row 3's proposal below is superseded by Q-A (b).
 
 Measured on head 12ecdc24. All REMARK text comes from four places:
 
