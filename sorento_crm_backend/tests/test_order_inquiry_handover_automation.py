@@ -207,8 +207,8 @@ def test_handover_remark_raised_rows_use_the_verb_label():
     order_back = handover_remark(
         "raised", _row(verb=IV_ORDER_BACK, cited_document="SPO-2026/08-0061"), None
     )
-    assert order_back.startswith("ORDER BACK")
-    assert "SPO-2026/08-0061" in order_back
+    # Owner, 9 Oct (Q-A): ORDER BACK, no document number.
+    assert order_back == "ORDER BACK"
 
 
 def test_handover_remark_never_appends_the_row_note():
@@ -247,7 +247,7 @@ def test_handover_remark_settle_qty_down_cancel_balance_up_order():
         "settled", _row(verb=IV_ORDER, qty=Decimal("6"), delivery_date=WAS),
         {"qty": Decimal("10")},
     )
-    assert down == "CANCEL BALANCE 4 NOS"
+    assert down == "CANCEL 4"  # owner, 9 Oct (Q-D)
 
     up = handover_remark(
         "settled", _row(verb=IV_ORDER, qty=Decimal("15"), delivery_date=WAS),
@@ -276,7 +276,7 @@ def test_handover_remark_settle_to_zero_is_cancel_balance():
     remark = handover_remark(
         "cancelled", _row(verb=IV_ORDER, qty=Decimal("0")), {"qty": Decimal("10")}
     )
-    assert remark == "CANCEL BALANCE 10 NOS"
+    assert remark == "CANCEL ALL"  # owner, 9 Oct (Q-D)
 
 
 # --------------------------------------------------------------------------- #
@@ -410,7 +410,7 @@ def test_settle_date_earlier_is_advance_later_is_delay(api, monkeypatch, new_dat
 
 @pytest.mark.parametrize(
     ("new_qty", "expected_remark"),
-    [("6", "CANCEL BALANCE 4 NOS"), ("15", "ORDER 5")],
+    [("6", "CANCEL 4"), ("15", "ORDER 5")],
 )
 def test_settle_qty_down_cancel_balance_up_order(api, monkeypatch, new_qty, expected_remark):
     client, world = api
@@ -447,7 +447,7 @@ def test_settle_to_zero_prints_cancel_balance(api, monkeypatch):
     line = matches[-1]["context"]["handover"]["lines"][0]
     assert line["qty"] == "0"
     assert line["was"]["qty"] == "10"
-    assert line["remark"] == "CANCEL BALANCE 10 NOS"
+    assert line["remark"] == "CANCEL ALL"
 
 
 # --------------------------------------------------------------------------- #
@@ -612,7 +612,7 @@ def test_retired_row_prints_cancelled_line(api, monkeypatch):
     `test_order_inquiry_changed_with_links_automation.py`'s
     `test_a_dropped_lines_cascade_linked_row_dispatches_when_retired` drives) - not a
     settle and not a same-line supersede. The retired row must still print as a CANCEL
-    BALANCE line: `qty` "0", `was.qty` the old qty, remark "CANCEL BALANCE <old> NOS".
+    BALANCE line: `qty` "0", `was.qty` the old qty, remark "CANCEL ALL" (owner, 9 Oct).
 
     The PLAN's revised rule (16 Sep, after AC-H19 was added) is that a retire prints
     ALWAYS, with no pairing to whatever else the same commit raises - a cross-reference
@@ -667,7 +667,7 @@ def test_retired_row_prints_cancelled_line(api, monkeypatch):
     assert matches, "the retire must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
 
-    cancelled = [l for l in lines if l["remark"] == "CANCEL BALANCE 10 NOS"]
+    cancelled = [l for l in lines if l["remark"] == "CANCEL ALL"]
     assert cancelled, f"no cancelled line for the retired row in {lines}"
     assert cancelled[0]["qty"] == "0"
     assert cancelled[0]["was"] == {"qty": "10"}
@@ -1117,7 +1117,7 @@ def test_named_changed_raised_row_settles_with_one_line(api, monkeypatch):
     assert len(lines) == 1, (
         f"AC-R2-11: exactly one settled line, never a cancel+order pair, got {lines}"
     )
-    assert lines[0]["remark"] == "CANCEL BALANCE 2 NOS"
+    assert lines[0]["remark"] == "CANCEL 2"
     assert lines[0]["was"] == {"qty": "10"}
     assert lines[0]["qty"] == "8"
 
@@ -1185,7 +1185,7 @@ def test_named_verb_switch_supersedes(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    assert any(l["remark"].startswith("CANCEL BALANCE") for l in lines), lines
+    assert any(l["remark"].startswith("CANCEL") for l in lines), lines
     assert any(l["remark"].startswith("ORDER BACK") for l in lines), lines
 
 

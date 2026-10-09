@@ -213,7 +213,7 @@ def test_date_and_qty_down_prints_one_line_and_hides_the_exception_row(api, monk
     entry = entries[0]
     assert entry["was"] == {"qty": "5", "delivery_date": WAS_FMT}, entry
     assert entry["qty"] == "3", entry
-    assert entry["remark"] == "ADVANCE, CANCEL BALANCE 2 NOS", entry
+    assert entry["remark"] == "ADVANCE, CANCEL 2", entry
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ def test_two_raised_rows_superseded_print_one_line_with_totals(api, monkeypatch)
     entry = entries[0]
     assert entry["was"] == {"qty": "13", "delivery_date": WAS_FMT}, entry
     assert entry["qty"] == "8", entry
-    assert entry["remark"] == "ADVANCE, CANCEL BALANCE 5 NOS", entry
+    assert entry["remark"] == "ADVANCE, CANCEL 5", entry
 
 
 # ---------------------------------------------------------------------------
@@ -400,10 +400,10 @@ def test_handover_remark_reads_the_difference_off_an_explicit_qty():
     was = {"qty": Decimal("5"), "delivery_date": date(2026, 8, 25)}
     assert handover_remark("settled", row, was, qty=Decimal("8")) == "ADVANCE, ORDER 3"
     assert handover_remark("settled", row, was, qty=Decimal("3")) == (
-        "ADVANCE, CANCEL BALANCE 2 NOS"
+        "ADVANCE, CANCEL 2"
     )
     assert handover_remark("settled", row, {"qty": Decimal("13")}, qty=Decimal("8")) == (
-        "CANCEL BALANCE 5 NOS"
+        "CANCEL 5"
     )
     # Without an explicit qty the row's own qty is read, as before (5 -> 5: date only).
     assert handover_remark("settled", row, was) == "ADVANCE"
@@ -477,7 +477,7 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
 
     entries = _line_entries(calls, row_a.item_code)
     remarks = sorted(entry["remark"] for entry in entries)
-    assert remarks == ["ADVANCE", "CANCEL BALANCE 5 NOS", "ORDER"], entries
+    assert remarks == ["ADVANCE", "CANCEL 5", "ORDER"], entries
     order_line = next(entry for entry in entries if entry["remark"] == "ORDER")
     assert order_line["qty"] == "50", "the fresh row's own quantity, never need - held"
     # OI-EMAIL-PRINT (AC-P2): AC-OH-40..42's wording stays on the fresh row, not in the email.

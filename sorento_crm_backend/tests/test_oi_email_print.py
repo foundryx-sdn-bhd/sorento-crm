@@ -61,8 +61,9 @@ def test_planning_note_never_reaches_remark():
 
 
 def test_no_internal_note_reaches_remark():
-    """AC-P2: every writer of `row.note` that reaches a raised row stays out of REMARK, while
-    the verb's own structured facts still print."""
+    """AC-P2: every writer of `row.note` that reaches a raised row stays out of REMARK. With
+    the owner's wording (9 Oct, Q-A/Q-E) ORDER BACK prints no document and a product change
+    prints NEW ITEM CODE (the new code is in ITEM CODE)."""
     from app.services.project_order_inquiry_service import (
         IV_ORDER,
         IV_ORDER_BACK,
@@ -90,30 +91,30 @@ def test_no_internal_note_reaches_remark():
                 _remark_row(verb=IV_ORDER_BACK, cited_document="SPO-2026/09-0102", note=note),
                 None,
             )
-            == "ORDER BACK SPO-2026/09-0102"
+            == "ORDER BACK"
         ), note
     # The structured product change still prints, the note beside it does not.
     assert handover_remark(
         "raised",
         _remark_row(verb=IV_ORDER, item_code="NEW-1", note="Replaces 4 used; Was item OLD-1"),
         {"item_code": "OLD-1"},
-    ) == "ORDER, CHANGE ITEM CODE TO NEW-1 (WAS OLD-1)"
+    ) == "ORDER, NEW ITEM CODE"
 
 
 def test_change_so_names_the_order_it_moves_to():
-    """AC-P3: the target order is the instruction, read off the fixed `Moved to <SO>`
+    """AC-P3 (owner Q-C, 9 Oct): MOVED TO <SO>, the target read off the fixed `Moved to <SO>`
     stamp `_change_note` writes (the row has no structured target column); no stamp, or
-    only the cascade's own "Moved to the ... line" stamp, bare verb."""
+    only the cascade's own "Moved to the ... line" stamp, the bare verb CHANGE SO NO."""
     from app.services.project_order_inquiry_service import IV_CHANGE_SO, handover_remark
 
     assert handover_remark(
         "raised", _remark_row(verb=IV_CHANGE_SO, note="Moved to SO418870"), None
-    ) == "CHANGE SO NO TO SO418870"
+    ) == "MOVED TO SO418870"
     assert handover_remark(
         "raised",
         _remark_row(verb=IV_CHANGE_SO, note="Linked to 202607-S0031 (x); Moved to SO9"),
         None,
-    ) == "CHANGE SO NO TO SO9"
+    ) == "MOVED TO SO9"
     assert handover_remark("raised", _remark_row(verb=IV_CHANGE_SO), None) == "CHANGE SO NO"
     cascade = (
         "Moved to the ORDER line of SPO-2026/09-0036 after the book was re-uploaded; "
@@ -126,6 +127,57 @@ def test_change_so_names_the_order_it_moves_to():
         "raised", _remark_row(verb=IV_CHANGE_SO, note="Superseded by revision 3"),
         {"so_number": "SO1", "customer": "C", "project": "P"},
     ) == "CHANGE SO NO"
+
+
+def test_remark_wording_owner_9_oct():
+    """AC-P13 (owner, 9 Oct: "simple and concise, ideally 3 words or fewer"): REMARK says
+    what purchasing must do and repeats no number or code another column already shows
+    (`REMARK-wording-oi-email-print-09oct.md`, Q-A/Q-C/Q-D/Q-E, combos as proposed)."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.services.project_order_inquiry_service import (
+        IV_ORDER,
+        IV_ORDER_BACK,
+        handover_remark,
+    )
+
+    early, late = date(2026, 10, 30), date(2026, 11, 13)
+    row = lambda **kw: _remark_row(verb=IV_ORDER, **kw)  # noqa: E731
+
+    # Q-A: no document number.
+    assert handover_remark("raised", _remark_row(verb=IV_ORDER_BACK, cited_document="SPO-2026/08-0061"), None) == "ORDER BACK"
+    # Q-D: ORDER n stays, CANCEL n, CANCEL ALL.
+    assert handover_remark("settled", row(qty=Decimal("436"), delivery_date=early), {"qty": Decimal("372")}) == "ORDER 64"
+    assert handover_remark("settled", row(qty=Decimal("8"), delivery_date=early), {"qty": Decimal("12")}) == "CANCEL 4"
+    assert handover_remark("cancelled", row(qty=Decimal("36"), delivery_date=early), {"qty": Decimal("36")}) == "CANCEL ALL"
+    # Combos.
+    assert handover_remark(
+        "settled", row(qty=Decimal("5"), delivery_date=early), {"qty": Decimal("10"), "delivery_date": late}
+    ) == "ADVANCE, CANCEL 5"
+    assert handover_remark(
+        "settled", row(qty=Decimal("8"), delivery_date=late), {"qty": Decimal("2"), "delivery_date": early}
+    ) == "DELAY, ORDER 6"
+    # Q-E: the owner's case, and the product change alone.
+    assert handover_remark(
+        "settled",
+        row(qty=Decimal("30"), delivery_date=late, item_code="SRT382-6-DIY"),
+        {"qty": Decimal("24"), "delivery_date": early, "item_code": "SRT382-6"},
+    ) == "DELAY, ORDER 6, NEW ITEM CODE"
+    assert handover_remark(
+        "settled", row(qty=Decimal("30"), delivery_date=late, item_code="SRT382-6-DIY"),
+        {"item_code": "SRT382-6"},
+    ) == "NEW ITEM CODE"
+    assert handover_remark(
+        "raised", row(item_code="SRT382-6-DIY"), {"item_code": "SRT382-6"}
+    ) == "ORDER, NEW ITEM CODE"
+
+
+def test_headline_word_for_a_product_change_matches_remark():
+    """AC-P13: the headline names the product change the way REMARK does."""
+    from app.services.project_order_inquiry_service import _HANDOVER_VERB_LABEL
+
+    assert _HANDOVER_VERB_LABEL["CHANGE_ITEM_CODE"] == "NEW ITEM CODE"
 
 
 # --------------------------------------------------------------------------- #
@@ -382,8 +434,8 @@ def test_two_orders_group_their_lines_under_one_row_each():
     lines = [
         _line("SO402757", "KL-WH", "SRTWT6808", "436", "25/09/2026", "ADVANCE, ORDER 64",
               {"qty": "372", "delivery_date": "01/10/2026"}),
-        _line("SO402757", "KL-WH", "SRTWT6808", "16", "25/09/2026", "ORDER BACK SPO-2026/08-0061"),
-        _line("SO402761", "PG-WH", "SRTBS2201", "8", "09/10/2026", "CANCEL BALANCE 4 NOS", {"qty": "12"}),
+        _line("SO402757", "KL-WH", "SRTWT6808", "16", "25/09/2026", "ORDER BACK"),
+        _line("SO402761", "PG-WH", "SRTBS2201", "8", "09/10/2026", "CANCEL 4", {"qty": "12"}),
     ]
     out = _render(_ctx(orders, lines))
     tables = re.findall(r"<table.*?</table>", _authored(out["body_html"]), re.S)
@@ -392,9 +444,9 @@ def test_two_orders_group_their_lines_under_one_row_each():
         ["LOCATION", "ITEM CODE", "QTY", "NEW QTY", "DELIVERY", "NEW DATE", "REMARK"],
         ["S/O NO SO402757"],
         ["KL-WH", "SRTWT6808", "372", "436", "01/10/2026", "25/09/2026", "ADVANCE, ORDER 64"],
-        ["KL-WH", "SRTWT6808", "16", "", "25/09/2026", "", "ORDER BACK SPO-2026/08-0061"],
+        ["KL-WH", "SRTWT6808", "16", "", "25/09/2026", "", "ORDER BACK"],
         ["S/O NO SO402761"],
-        ["PG-WH", "SRTBS2201", "12", "8", "09/10/2026", "", "CANCEL BALANCE 4 NOS"],
+        ["PG-WH", "SRTBS2201", "12", "8", "09/10/2026", "", "CANCEL 4"],
     ], body
     assert 'colspan="7"' in tables[1]
     assert "S/O NO SO402757\nKL-WH | SRTWT6808 | 372 | 436 |" in out["body_text"], out["body_text"]
