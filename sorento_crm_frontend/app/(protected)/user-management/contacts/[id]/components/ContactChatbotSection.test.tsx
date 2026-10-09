@@ -83,6 +83,7 @@ const BASE_PROFILE = {
   escalation_allowed: true,
   chatbot_allowed: true,
   skip_period_questions: false,
+  files_as_links: false,
 };
 
 function renderWithClient(ui: React.ReactElement) {
@@ -367,5 +368,36 @@ describe('ContactChatbotSection - Skip date-range questions switch', () => {
     renderWithClient(<ContactChatbotSection contactId="c1" />);
     fireEvent.click(screen.getByLabelText('Skip date-range questions'));
     expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, skip_period_questions: false });
+  });
+});
+
+describe('ContactChatbotSection - Send files as links switch', () => {
+  it('renders unchecked by default, directly after the skip date-range switch', () => {
+    useContactChatbotProfile.mockReturnValue({ data: BASE_PROFILE, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    const toggle = screen.getByLabelText('Send files as links');
+    expect(toggle).toHaveAttribute('id', 'contact-chatbot-files-as-links');
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
+    const skip = screen.getByLabelText('Skip date-range questions');
+    const switches = screen.getAllByRole('switch');
+    expect(switches.indexOf(toggle)).toBe(switches.indexOf(skip) + 1);
+  });
+
+  it('turning it on saves files_as_links true with every other field unchanged', () => {
+    const loaded = { ...BASE_PROFILE, notify_salesman: true };
+    useContactChatbotProfile.mockReturnValue({ data: loaded, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    fireEvent.click(screen.getByLabelText('Send files as links'));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, files_as_links: true });
+  });
+
+  it('turning it off saves files_as_links false', () => {
+    const loaded = { ...BASE_PROFILE, files_as_links: true };
+    useContactChatbotProfile.mockReturnValue({ data: loaded, isLoading: false, isError: false });
+    renderWithClient(<ContactChatbotSection contactId="c1" />);
+    expect(screen.getByLabelText('Send files as links')).toHaveAttribute('data-state', 'checked');
+    fireEvent.click(screen.getByLabelText('Send files as links'));
+    expect(mutate.mock.calls[0][0]).toEqual({ ...loaded, files_as_links: false });
   });
 });

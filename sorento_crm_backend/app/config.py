@@ -213,6 +213,10 @@ class Settings(BaseSettings):
     rate_limit_reset_window_seconds: int = 900
     rate_limit_portal_otp_max: int = 30        # portal OTP requests per window per IP
     rate_limit_portal_otp_window_seconds: int = 60
+    # PHOTO-SEND-CAP: opens of a chatbot file short link (`/public/file-links/{code}`) per
+    # window per IP. Generous for a dealer tapping through a photo list, tight for a guesser.
+    rate_limit_file_link_max: int = 60
+    rate_limit_file_link_window_seconds: int = 60
 
     # identity S1 (#1280): an optional override for the WhatsApp template use
     # case a phone sign-in code sends under. Ships empty: owner ruling of

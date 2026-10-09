@@ -18,7 +18,7 @@ role that already holds `system.chat_history.view`, because a permission granted
 indistinguishable from a broken feature. Idempotent, safe to re-run.
 
 Revision ID: chat_facts_0001_tables
-Revises: bflo_0001_borrow_order_toggle
+Revises: psl_0001_chatbot_file_links
 """
 import sqlalchemy as sa
 from alembic import op
@@ -26,7 +26,7 @@ from sqlalchemy.dialects import postgresql
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "chat_facts_0001_tables"
-down_revision = "bflo_0001_borrow_order_toggle"
+down_revision = "psl_0001_chatbot_file_links"
 branch_labels = None
 depends_on = None
 

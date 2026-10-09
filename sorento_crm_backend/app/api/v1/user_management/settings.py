@@ -75,6 +75,9 @@ class SystemSettingUpdate(BaseModel):
     # Global default grace window for form-SLA actions. 0 = nothing defers, which is
     # what ships; a stage may override it (form_sla_configs.grace_seconds).
     form_sla_grace_seconds: Optional[int] = Field(None, ge=0, le=600)
+    # PHOTO-SEND-CAP (owner Q1): days a chatbot file short link stays open. null = never,
+    # which is the owner's choice; an explicit null clears it back to never.
+    chatbot_file_link_expiry_days: Optional[int] = Field(None, ge=1, le=3650)
     # The two deferred-action windows (D16). `ge=1`, not `ge=0`: zero would apply a
     # delete with no way back, which is the confirmation dialog's failure mode wearing
     # the new model's clothes. Both must appear here AND in the GET dict below.
@@ -305,6 +308,10 @@ async def get_settings(
                 "default_uom_code": default_uom.uom_code if default_uom else None,
                 "form_sla_grace_seconds": (
                     getattr(settings, "form_sla_grace_seconds", 0) if settings else 0
+                ),
+                # PHOTO-SEND-CAP: null = chatbot file links never expire.
+                "chatbot_file_link_expiry_days": (
+                    getattr(settings, "chatbot_file_link_expiry_days", None) if settings else None
                 ),
                 # The two deferred-action windows (D16). Defaults stated here as well as
                 # on the column, so a settings row that predates the migration still
