@@ -658,6 +658,10 @@ LABELS.update(
         "not available yet": {"ms": "belum tersedia", "zh": "暂时无法提供"},
         "none on record": {"ms": "tiada rekod", "zh": "没有记录"},
         "couldn't check right now": {"ms": "tidak dapat disemak sekarang", "zh": "暂时无法查询"},
+        "too many sales reports just now, try again in a few minutes": {
+            "ms": "terlalu banyak laporan jualan sebentar tadi, cuba lagi dalam beberapa minit",
+            "zh": "销售报表查询太频繁，请几分钟后再试",
+        },
         "which period?": {"ms": "tempoh bila?", "zh": "哪个时间段？"},
         "{code} has {n} variants. Just {code}, or all {n}?": {
             "ms": "{code} ada {n} jenis. Hanya {code}, atau semua {n}?",
@@ -691,6 +695,7 @@ _SUB_ASK_KEYS = frozenset(
         "per customer", "per product", "per brand", "per category", "per location",
         "per channel", "per month", "delivered", "ordered", "not shared with you",
         "not available yet", "none on record", "couldn't check right now", "which period?",
+        "too many sales reports just now, try again in a few minutes",
         "{code} has {n} variants. Just {code}, or all {n}?", "Just {code}", "All {n}",
         "{code} (all {n} variants)", "Sold as delivered or as ordered?", "As delivered",
         "As ordered", "{supplier} ({po}, {date})", "{currency} {cost} / unit ({po}, {date})",

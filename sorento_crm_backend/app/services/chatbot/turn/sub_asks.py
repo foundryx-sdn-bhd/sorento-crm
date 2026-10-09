@@ -103,6 +103,7 @@ NOT_SHARED = "not shared with you"
 NOT_AVAILABLE = "not available yet"
 NONE_ON_RECORD = "none on record"
 CHECK_FAILED = "couldn't check right now"
+TOO_MANY_REPORTS = "too many sales reports just now, try again in a few minutes"
 WHICH_PERIOD = "which period?"
 VARIANT_QUESTION = "{code} has {n} variants. Just {code}, or all {n}?"
 JUST_CODE = "Just {code}"
@@ -128,6 +129,7 @@ CATALOG_KEYS = frozenset(
         NOT_AVAILABLE,
         NONE_ON_RECORD,
         CHECK_FAILED,
+        TOO_MANY_REPORTS,
         WHICH_PERIOD,
         VARIANT_QUESTION,
         JUST_CODE,
@@ -449,6 +451,10 @@ def _answer(
     # The GRN summary's last receipt is all time whatever window it is sent, so a last
     # receipt asked beside a received quantity rides the SAME call (card: one call each).
     calls.grn_window = next((_window(a) for a in asks if a.get("measure") == "received_qty"), None)
+    for a in asks:
+        if a.get("measure") == "sold_by" and a.get("group_by") in AXIS:
+            key = (_window(a), a.get("basis") if a.get("basis") in BASIS_WORD else basis)
+            calls.sold_groups.setdefault(key, a["group_by"])
     blocks: list[str] = []
     for product in products:
         ids = product.ids(family)
@@ -472,7 +478,12 @@ def _answer(
     return Result(
         text=text,
         question=question,
-        trace={"family": family, "basis": basis, "calls": [name for name, _ in calls.made]},
+        trace={
+            "family": family,
+            "basis": basis,
+            "calls": [name for name, _ in calls.made],
+            "failed": calls.failures,
+        },
         focus_products=answered,
     )
 
@@ -554,10 +565,15 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
             "basis": ask_basis,
             "measure": "qty",
         }
-        if measure == "sold_by":
-            args.update(group_by=ask["group_by"], top_n=REPORT_TOP_N)
+        group = ask["group_by"] if measure == "sold_by" else calls.sold_groups.get((window, ask_basis))
+        if group:
+            args.update(group_by=group, top_n=REPORT_TOP_N)
         payload = calls.payload(REPORT_TOOL, args)
-        if not isinstance(payload, dict) or payload.get("status") not in (None, "ok"):
+        status = payload.get("status") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict) or status not in (None, "ok"):
+            calls.failed(measure, REPORT_TOOL, status=status, message=(payload or {}).get("message") if isinstance(payload, dict) else None)
+            if status == "busy":
+                return [f"{label}: {loc.fill(TOO_MANY_REPORTS)}"]
             return [f"{label}: {loc.fill(CHECK_FAILED)}"]
         if measure == "sold_total":
             return [f"{label}: {_qty(_num((payload.get('total') or {}).get('qty')))}"]
@@ -567,7 +583,8 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
         return [f"{label}:"] + [
             f"{r.get('rank') or i}. {r.get('name') or '-'}: {_qty(_num(r.get('qty')))}" for i, r in enumerate(rows, 1)
         ]
-    except _CallFailed:
+    except _CallFailed as failed:
+        calls.failed(measure, failed.tool, status=failed.status, message=failed.message)
         return [f"{label}: {loc.fill(CHECK_FAILED)}"]
 
 
@@ -649,7 +666,9 @@ def _currency(value: Any) -> str:
 
 
 class _CallFailed(Exception):
-    pass
+    def __init__(self, tool: str = "", status: Any = None, message: Any = None) -> None:
+        super().__init__(tool)
+        self.tool, self.status, self.message = tool, status, message
 
 
 class _Calls:
@@ -657,6 +676,14 @@ class _Calls:
         self.run = run
         self.made: list[tuple[str, dict[str, Any]]] = []
         self.grn_window: tuple[str, str] | None = None
+        #: (window, basis) -> the group_by of a sold_by ask with that window and basis.
+        #: A sold_total asked beside it reads the grouped call's own `total` (the whole
+        #: set), so the message makes ONE report call, not two: `crm_report_ask` is rate
+        #: limited per contact (crew live check, 9 Oct: the second call came back busy).
+        self.sold_groups: dict[tuple[Any, Any], str] = {}
+        #: Why each failed line failed, for the trace (crew: a line that says it could
+        #: not check must say which call and why).
+        self.failures: list[dict[str, Any]] = []
         self._cache: dict[str, Any] = {}
 
     def payload(self, name: str, args: dict[str, Any]) -> Any:
@@ -680,10 +707,15 @@ class _Calls:
                 self._cache[key] = result
         value = self._cache[key]
         if isinstance(value, _CallFailed):
-            raise _CallFailed()
+            raise _CallFailed(name, status="exception")
         if isinstance(value, dict) and (value.get("error") or (value.get("status_code") or 0) >= 400):
-            raise _CallFailed()
+            raise _CallFailed(name, status=value.get("status_code") or "error", message=value.get("error") or value.get("detail"))
         return value
+
+    def failed(self, measure: Any, tool: str, *, status: Any = None, message: Any = None) -> None:
+        row = {"measure": measure, "tool": tool, "status": status, "message": str(message)[:200] if message else None}
+        self.failures.append(row)
+        logger.warning("sub_asks: the %s line could not be answered: %s", measure, row)
 
     def rows(self, name: str, args: dict[str, Any]) -> list[dict[str, Any]]:
         payload = self.payload(name, args)

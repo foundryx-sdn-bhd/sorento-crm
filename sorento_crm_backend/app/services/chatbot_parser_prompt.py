@@ -843,6 +843,8 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
+The date AND the quantity of one event are ONE thing: "last in date and quantity",
+"最后一次进库日期和数量" is ONE ask (null).
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,

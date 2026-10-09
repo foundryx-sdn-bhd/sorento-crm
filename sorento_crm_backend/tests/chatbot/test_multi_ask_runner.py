@@ -250,7 +250,9 @@ def test_the_owner_turn_makes_one_query_per_ask_on_the_exact_code(session_factor
     # received + last receipt share one GRN call; supplier + last cost share one PO call.
     assert names.count("crm_procurement_grn_summary") == 1
     assert names.count("crm_procurement_po_last_cost_list") == 1
-    assert names.count("crm_report_ask") == 2
+    # The total and the per-salesman list share ONE grouped call: its `total` is the whole
+    # set, and the report is rate limited per contact (crew live check, 9 Oct).
+    assert names.count("crm_report_ask") == 1
     # Nothing unasked: no stock, no order report, no incoming.
     assert set(names) == RUNNER_TOOLS
     exact = [c.uuid_of["SRTWC286-SH"]]
@@ -258,13 +260,11 @@ def test_the_owner_turn_makes_one_query_per_ask_on_the_exact_code(session_factor
         assert _ids(args.get("product_ids")) == exact, (name, args)
     grn = c.tools.args("crm_procurement_grn_summary")[0]
     assert (grn.get("date_from"), grn.get("date_to")) == ("2026-01-01", "2026-12-31")
-    total, by_agent = sorted(c.tools.args("crm_report_ask"), key=lambda a: bool(a.get("group_by")))
-    for args in (total, by_agent):
-        assert args.get("basis") == "delivered"
-        assert args.get("measure") == "qty"
-        assert (args.get("date_from"), args.get("date_to")) == ("2026-01-01", "2026-12-31")
-        assert not args.get("product_code"), "product_code is a PREFIX filter, never sent"
-    assert not total.get("group_by")
+    [by_agent] = c.tools.args("crm_report_ask")
+    assert by_agent.get("basis") == "delivered"
+    assert by_agent.get("measure") == "qty"
+    assert (by_agent.get("date_from"), by_agent.get("date_to")) == ("2026-01-01", "2026-12-31")
+    assert not by_agent.get("product_code"), "product_code is a PREFIX filter, never sent"
     assert by_agent.get("group_by") == "sales_agent"
     assert int(by_agent.get("top_n")) == 1000
 
@@ -730,3 +730,46 @@ def test_after_just_this_one_the_focus_is_the_exact_code(session_factory, monkey
     focus = (c.state or {}).get("focus") or {}
     codes = [p.get("canonical_code") or p.get("code") for p in focus.get("products") or []]
     assert codes == ["SRTWC286-SH"], focus
+
+
+
+# ---------------------------------------------------------------- crew live checks round 2
+
+
+def test_a_sold_total_alone_is_one_ungrouped_call(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009533")
+    text = c.say(
+        "ELP3754 2026 sold and last cost",
+        verdict(
+            domain_hint="order",
+            intent_hint="check_order",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("sold_total", "sold", window=Y2026, basis="delivered"), sub("last_cost", "last cost")],
+            family=None,
+        ),
+    )
+    [args] = c.tools.args("crm_report_ask")
+    assert not args.get("group_by")
+    assert "Sold 2026 (delivered): 860" in text.splitlines()
+
+
+def test_a_busy_report_says_so_on_its_own_line_and_traces_why(session_factory, monkeypatch, stub_access):
+    """`crm_report_ask` is rate limited per contact; a busy answer is named, never the
+    generic could-not-check, and the trace records which line and why."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009534")
+    real = c.tools.__call__
+
+    def busy(client, name, args):
+        if name == "crm_report_ask":
+            c.tools.calls.append((name, args))
+            return json.dumps({"status": "busy", "message": "Too many reports in the last 10 minutes.", "rows": [], "total": {"qty": 0, "amount": 0}})
+        return real(client, name, args)
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", busy)
+    text = c.say(OWNER_MESSAGE, owner_verdict())
+    lines = text.splitlines()
+    assert "2026 总共卖出（已出货）: 销售报表查询太频繁，请几分钟后再试" in lines
+    assert "2026 每位业务员卖出（已出货）: 销售报表查询太频繁，请几分钟后再试" in lines
+    assert "2026 入库数量: 1,200" in lines
