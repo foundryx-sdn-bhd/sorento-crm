@@ -215,11 +215,6 @@ class Settings(BaseSettings):
     rate_limit_portal_otp_window_seconds: int = 60
     # PHOTO-SEND-CAP: opens of a chatbot file short link (`/public/file-links/{code}`) per
     # window per IP. Generous for a dealer tapping through a photo list, tight for a guesser.
-    # PHOTO-SEND-CAP (owner hand test, 9 Oct 2026): extra hosts whose files the chatbot
-    # may send as short links, on top of CLOUDFRONT_DOMAIN and R2_CDN_DOMAIN. Comma list.
-    # Default: the production R2 custom domain that stored `file_path`s name; a copy whose
-    # own CDN env points elsewhere still links those rows (`file_link_service.link_hosts`).
-    chatbot_link_cdn_hosts: str = "cdn-sorento.com"
     rate_limit_file_link_max: int = 60
     rate_limit_file_link_window_seconds: int = 60
 

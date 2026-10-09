@@ -7,7 +7,7 @@ PDF, any other file) or opens a spreadsheet read-only in the browser from `/{cod
 What a caller can learn is kept to the minimum:
 * an unknown code and an expired one answer the SAME 404, so a guess learns nothing;
 * no answer carries the stored (unsigned) url or a company; a file answer carries a url
-  signed for one hour, minted at the click, and only an https url on our own CDN host;
+  signed for one hour, minted at the click, and only an https url on a host we sign for;
 * the route takes a code and nothing else (no url parameter, so no open redirect), and is
   rate limited per IP (`rate_limit_file_link_*`).
 """
@@ -27,7 +27,6 @@ from app.services.file_link_service import (
     link_hosts,
     record_click,
     resolve,
-    signer_hosts,
 )
 from app.services.storage_router import resolve_signed_url
 from app.utils.http import content_disposition
@@ -51,8 +50,8 @@ _SHEET_MEDIA_TYPES = {
 
 
 def _on_our_cdn(url: str | None) -> bool:
-    """Only an https url on a listed host is handed to a browser (security review L2;
-    the list is `file_link_service.link_hosts`, owner hand test 9 Oct 2026)."""
+    """Only an https url on a signer host is handed to a browser (security review L2;
+    the list is `file_link_service.link_hosts`)."""
     from urllib.parse import urlparse
 
     if not url:
@@ -61,17 +60,12 @@ def _on_our_cdn(url: str | None) -> bool:
 
 
 def _handout(stored_url: str) -> str | None:
-    """Where a click goes. A host this deployment signs for gets a freshly signed url. Any
-    other LISTED host (`cdn-sorento.com` on a copy whose own CDN env names other hosts) gets
-    its stored url, the one attachment mode already hands to WhatsApp. Anything else: None."""
+    """Where a click goes: a freshly signed url for a file on a host this deployment signs
+    for, else None. A stored url is never handed out unsigned."""
     if not is_linkable(stored_url):
         return None
-    if host_of(stored_url) in signer_hosts():
-        signed = resolve_signed_url(stored_url, expires_in=SIGNED_URL_SECONDS, strict=True)
-        return signed if _on_our_cdn(signed) else None
-    # Security review S1: the unsigned branch is visible in the logs, never silent.
-    logger.info("file link: unsigned handout for listed host %s", host_of(stored_url))
-    return stored_url
+    signed = resolve_signed_url(stored_url, expires_in=SIGNED_URL_SECONDS, strict=True)
+    return signed if _on_our_cdn(signed) else None
 
 
 def _as_ip(value: str | None) -> str | None:

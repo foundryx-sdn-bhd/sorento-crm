@@ -110,13 +110,10 @@ def signer_hosts() -> set[str]:
 
 
 def link_hosts() -> set[str]:
-    """Every host whose files may be sent as a short link (owner hand test, 9 Oct 2026):
-    the signer hosts plus `CHATBOT_LINK_CDN_HOSTS`. ONE list, read by minting
+    """Every host whose files may be sent as a short link: the hosts this deployment signs
+    for, and no others (owner ruling, 9 Oct 2026). ONE list, read by minting
     (`chatbot/file_links.links_for`) and by the public route, so the two never disagree."""
-    from app.config import settings as app_settings
-
-    extra = {_clean_host(h) for h in (app_settings.chatbot_link_cdn_hosts or "").split(",")}
-    return signer_hosts() | {h for h in extra if h}
+    return signer_hosts()
 
 
 def host_of(url: str | None) -> str:
@@ -129,7 +126,7 @@ def host_of(url: str | None) -> str:
 
 
 def is_linkable(url: str | None) -> bool:
-    """An https url on a listed host, default port, no userinfo, no `..` in the path
+    """An https url on a signer host, default port, no userinfo, no `..` in the path
     (raw or percent-encoded): security review S2 / N3."""
     from urllib.parse import unquote, urlparse
 
@@ -150,46 +147,9 @@ def is_linkable(url: str | None) -> bool:
     )
 
 
-#: The most a spreadsheet fetched from a listed public host may weigh (security L4).
-PUBLIC_FETCH_MAX_BYTES = 25 * 1024 * 1024
-
-
-#: The whole fetch, not one phase of it (security review N1).
-PUBLIC_FETCH_DEADLINE_SECONDS = 30.0
-
-
-def _fetch_public(url: str, *, transport=None) -> bytes:
-    """GET a file from a listed public host: https only, no redirects, size capped, one
-    overall deadline. `transport` is for tests."""
-    import time
-
-    import httpx
-
-    deadline = time.monotonic() + PUBLIC_FETCH_DEADLINE_SECONDS
-    with httpx.Client(timeout=15.0, follow_redirects=False, transport=transport) as client:
-        with client.stream("GET", url) as response:
-            if response.is_redirect:
-                raise ValueError("redirect refused")
-            response.raise_for_status()
-            declared = response.headers.get("content-length")
-            if declared and declared.isdigit() and int(declared) > PUBLIC_FETCH_MAX_BYTES:
-                raise ValueError("file too large to preview")
-            chunks: list[bytes] = []
-            total = 0
-            for chunk in response.iter_bytes():
-                total += len(chunk)
-                if total > PUBLIC_FETCH_MAX_BYTES:
-                    raise ValueError("file too large to preview")
-                if time.monotonic() > deadline:
-                    raise ValueError("file took too long")
-                chunks.append(chunk)
-    return b"".join(chunks)
-
-
 def download_bytes(url: str) -> bytes:
-    """The stored file's bytes. A signer host (or a bare key) is read through this
-    deployment's storage backend; any other LISTED host (`cdn-sorento.com` on a copy whose
-    own CDN env points elsewhere) is fetched over https. Anything else is refused."""
+    """The stored file's bytes, read through this deployment's storage backend. A url on a
+    host that is not linkable is refused; a bare key is read as is."""
     from app.services.storage_router import (
         default_provider,
         detect_provider_from_url,
@@ -197,11 +157,8 @@ def download_bytes(url: str) -> bytes:
         get_backend,
     )
 
-    host = host_of(url)
-    if host and not is_linkable(url):
+    if host_of(url) and not is_linkable(url):
         raise ValueError("host not on the link list")
-    if host and host not in signer_hosts():
-        return _fetch_public(url)
     key = extract_key(url)
     if not key:
         raise ValueError("no storage key")

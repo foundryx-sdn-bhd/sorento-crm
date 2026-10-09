@@ -135,7 +135,9 @@ def links_for(
     # A skipped file's link line says what happens to it instead of naming its url.
     if skipped_raw:
         text = "\n".join(
-            "*Link:* (sent as a file)" if any(raw in line for raw in skipped_raw) else line
+            "*Link:* (sent as a file)"
+            if line.lstrip().startswith("*Link:*") and any(raw in line for raw in skipped_raw)
+            else line
             for line in text.split("\n")
         )
     # Longest first, so a url that is a prefix of another never rewrites part of it.
