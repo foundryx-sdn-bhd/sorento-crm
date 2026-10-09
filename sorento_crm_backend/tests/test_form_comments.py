@@ -2003,3 +2003,31 @@ def test_r4_nothing_at_all_is_no_recipients_with_a_warning_naming_the_form(db, e
     assert enqueued == []
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING and str(inquiry.id) in r.getMessage()]
     assert warnings, [r.getMessage() for r in caplog.records]
+
+
+def test_r3_sponsorship_fallback_reads_purchase_request_typed_notifications(db, enqueued):
+    contact_id = _contact(db)
+    team = _user(db, "Team")
+    stranger = _user(db, "Stranger")
+    form = _request(db, request_type="sponsorship_form", contact_id=contact_id)
+    other = _request(db, request_type="sponsorship_form")
+    _prior_notification(db, "purchase_request", form.id, team)
+    _prior_notification(db, "purchase_request", other.id, stranger)  # guard: different id
+
+    _, delivery = _unpack(_svc(db).add_contact_comment("sponsorship_form", form.id, contact_id, SPACE, "anyone?"))
+
+    assert delivery == "queued"
+    assert _mail_sets(db) == [{team.email}]
+
+
+def test_r3_sponsorship_fallback_ignores_other_ids_purchase_request_notifications(db, enqueued):
+    contact_id = _contact(db)
+    stranger = _user(db, "Stranger")
+    form = _request(db, request_type="sponsorship_form", contact_id=contact_id)
+    other = _request(db, request_type="sponsorship_form")
+    _prior_notification(db, "purchase_request", other.id, stranger)
+
+    _, delivery = _unpack(_svc(db).add_contact_comment("sponsorship_form", form.id, contact_id, SPACE, "anyone?"))
+
+    assert delivery == "no_recipients"
+    assert _by_queue(enqueued, "notifications") == []
