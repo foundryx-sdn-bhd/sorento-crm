@@ -156,7 +156,7 @@ def test_g1_one_ask_incoming_keeps_the_gate_picker_no_scope_question(session_fac
     c = con(session_factory, monkeypatch, stub_access)
     text = _legacy(c, domain="incoming", intent="check_incoming", message="incoming SRTWT165")
     assert "variants" not in text and "个款式" not in text
-    assert "Which product do you mean" in text
+    assert "Related products" in text and "Reply with a number" in text
 
 
 def test_g1b_over_twenty_codes_offers_all_n_and_type_the_code(session_factory, monkeypatch, stub_access):
