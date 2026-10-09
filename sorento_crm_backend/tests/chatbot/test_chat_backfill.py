@@ -66,6 +66,7 @@ def seed_history(
         phone_number="+60100000000",
         message=words,
         sent_at=at,
+        created_at=at,  # real pre-cutover rows were written then (the dedupe index keys on it)
         type=kind,
         message_id=message_id,
         turn_id=exec_id,
