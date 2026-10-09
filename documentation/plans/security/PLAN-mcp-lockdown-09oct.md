@@ -47,14 +47,31 @@ a dormant backup that gets the token after the deploy (Rollout below).
 
 ## Committed secrets
 
-The scout's `docker-compose.yml:106,113` is the owner's untracked root copy: `docker-compose.yml`
-is gitignored (`.gitignore:59`) and was removed from git in `b53c3584a` (13 May 2026), so main
-carries no compose secret defaults and there is nothing to change to `${VAR:?}` in a tracked file.
-But the deleted file is still in this public repo's HISTORY (`git show b53c3584a^:docker-compose.yml`)
-with real defaults for, at least: `EXTERNAL_API_KEY`, `EXTERNAL_API_KEY_ACT_AS_USER_ID`,
-`OUTLINE_API_TOKEN`, `POSTGRES_USER` / `POSTGRES_PASSWORD`, and others in that file. **They must
-be rotated** (owner action, alongside the PII-SCRUB credential list); a history rewrite does not
-un-leak them. On the server copy, replace `:-<value>` defaults with `:?` for every secret.
+`docker-compose.yml` is gitignored (`.gitignore:59`) and was removed from git in `b53c3584a`
+(13 May 2026), so main carries no compose secret defaults and there is no tracked file to switch
+to `${VAR:?}`. The scout's `docker-compose.yml:106,113` is the owner's untracked root copy.
+
+The deleted file is still in this public repo's HISTORY, and every revision of it counts. Names
+with non-empty secret defaults in `b53c3584a^` (security review, 9 Oct; values never copied):
+
+- Database: `POSTGRES_PASSWORD` (also a literal in the `pgbackups` service), `DB_PASSWORD`
+  (pgbouncer), `DATABASE_URL` / `DIRECT_URL` (password embedded; two of them point at the public
+  IP on :5432).
+- Auth: `JWT_SECRET` (signs dealer-kit / SLA-summary / ticket-draft link tokens, which can be
+  forged with it), `NEXTAUTH_SECRET`.
+- Storage: `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` /
+  `R2_SECRET_ACCESS_KEY`, `CLOUDFRONT_KEY_PAIR_ID`.
+- Third parties: `OPENAI_API_KEY`, `RESPOND_API_KEY`, `RESPOND_SPACE_ID`, `N8N_WEBHOOK_URL`
+  (path may carry a secret), `OUTLINE_API_TOKEN`.
+- Integration: `EXTERNAL_API_KEY`, `EXTERNAL_API_KEY_ACT_AS_USER_ID`.
+
+Older revisions carry further distinct values (9 for `DATABASE_URL`, 4 for `POSTGRES_PASSWORD`,
+3 AWS key pairs, 2 each for `JWT_SECRET` and `EXTERNAL_API_KEY`): any still live is leaked too.
+
+Owner actions: **rotate every name above** (a history rewrite does not un-leak them); confirm
+Postgres :5432 is NOT reachable on the public IP; on the server compose replace each secret
+`:-<value>` default with `:?`; confirm `sorento_crm_backend/.env.browse` (tracked) holds dev-only
+values. This list is the in-repo record (`PLAN-pii-scrub.md:50` keeps the rest outside the repo).
 
 ## Rollout (enforced at release; owner rulings 9 Oct)
 
@@ -88,20 +105,27 @@ else. The deploy post-check accepts 401 from `GET /mcp`.
   `sorento-consume-main copy` `oo7LnsedPyKB9bWM`) get 401 from MCP if run.
 - Optional: re-export the 3 into `sorento_crm_n8n/n8n-workflows-init/export/sub-get-results*/`.
 
-**Rollback:** the token check has no switch; roll back by redeploying the previous image tag.
+**Rollback:** the token check has no switch; rolling back to an image tag before this PR
+REMOVES the auth and re-opens the write tools on the public port. Pair any such rollback with the
+nginx change below (drop or `deny all` the `:8765` block) until the gated image is back. The
+deploy post-check now fails on anything but 401 from an unauthenticated `GET /mcp`, so an
+ungated MCP behind nginx shows up red.
 
 **Rotate:** the leaked values listed under "Committed secrets".
 
 ## nginx (prod host, not in the repo)
 
 Only the upstream file is written from the repo (`blue_green_deploy.sh` step 4); the `:8765`
-server block is hand-edited on the host. Once n8n is the only external caller:
-- Best: if n8n runs on the same host / docker network, point the 6 nodes at the internal URL and
-  drop the public `listen 8765` block entirely (keep `127.0.0.1:8765` if the deploy post-check
-  should still pass, or change that check to `127.0.0.1:<colour port>/healthz`).
-- Otherwise restrict it: in the `:8765` server block add `allow <n8n egress IP>; deny all;`,
-  and move it behind TLS (`listen 8765 ssl` with the existing cert) so the token is not sent in
-  clear text over the internet.
+server block is hand-edited on the host. Until TLS, the bearer token crosses the internet in
+clear text on every n8n call over `http://72.62.195.20:8765`, and anyone on the path can replay it.
+
+- **Default: drop the public listener.** Bind the `:8765` block to `127.0.0.1` only (the deploy
+  post-check curls `127.0.0.1:8765`). If n8n runs on this host or its docker network, point the
+  6 nodes at the internal URL. The backend already uses the compose-internal URL.
+- Only if n8n must come in over the internet and its egress IP is static: `allow <n8n IP>; deny
+  all;` in the block, AND TLS. A cert for a hostname does not validate against the raw IP, so
+  the 6 n8n nodes must move to a hostname as part of that step (never "skip verification").
+- Never add `$http_authorization` to any nginx `log_format`.
 
 ## Tests
 
