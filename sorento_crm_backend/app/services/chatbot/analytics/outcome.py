@@ -218,6 +218,17 @@ def _named_codes(turn: dict[str, Any]) -> dict[str, list[str]]:
     return named
 
 
+def _asked_product_ids(turn: dict[str, Any]) -> list[str]:
+    """Distinct product ids the bot's tool calls looked up, first-seen order."""
+    ids: list[str] = []
+    for event in _events(turn, "tool"):
+        wanted = _dict(event.get("args")).get("product_ids")
+        for value in wanted if isinstance(wanted, list) else []:
+            if isinstance(value, str) and value not in ids:
+                ids.append(value)
+    return ids
+
+
 def _shown_codes(turn: dict[str, Any]) -> list[str]:
     reply = _dict(_dict((_stage(turn, "replied") or {}).get("raw")).get("reply"))
     shown: list[str] = []
@@ -252,4 +263,5 @@ def flatten(turn: dict[str, Any]) -> dict[str, Any]:
         "phantom_dropped": bool(_events(turn, "phantom_answer")),
         "named_codes": _named_codes(turn),
         "shown_codes": _shown_codes(turn),
+        "asked_product_ids": _asked_product_ids(turn),
     }

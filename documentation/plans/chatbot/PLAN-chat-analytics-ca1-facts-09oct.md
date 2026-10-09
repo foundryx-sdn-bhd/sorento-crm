@@ -35,8 +35,8 @@ existing Reports screen.
 
 `chatbot.chat_ask_items`
 - `id` uuid pk; `ask_id` uuid fk -> chat_ask_facts.id on delete cascade; `kind` text
-  (`product` / `brand`); `ref_id` text (the CRM id); `role` text (`named` / `shown`);
-  `resolved_by` text (`parser` / `reply`). Unique (`ask_id`, `kind`, `ref_id`, `role`).
+  (`product` / `brand`); `ref_id` text (the CRM id); `role` text (`named` / `shown` / `asked`);
+  `resolved_by` text (`parser` / `reply` / `lookup`; `asked` = a product id in a tool call's `product_ids`). Unique (`ask_id`, `kind`, `ref_id`, `role`).
   Index `ref_id`.
 
 `chatbot.chat_episode_facts`
@@ -79,8 +79,8 @@ No column holds customer words, an episode summary or `last_user_message`.
   (item grain), `app/services/reports/definitions/chat_overview.py` (key `chat_overview`,
   title "Chat overview", module `chatbot`, permission `chatbot.analytics.view`, scope `none`
   justified in the docstring, `datasets_by` on the `count_by` param). Count by Products switches
-  to one row per ask and product; choosing Product as the summary row and Named / Shown as the
-  measures shows each product by its code. The default layout stays outcome by week (one
+  to one row per ask and product; choosing Product as the summary row and Named / Shown / Asked as the
+  measures (Asked answers "most asked products") shows each product by its code. The default layout stays outcome by week (one
   default view per report).
 - Permission `chatbot.analytics.view` in `app/rbac/permission_registry.py` and seeded by the
   migration onto every role holding `system.chat_history.view`.

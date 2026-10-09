@@ -58,7 +58,10 @@ _CUSTOMERS = Customer.__table__
 #: it, and the coverage note says so; before it there is nothing to count (CA-4 may add it).
 TRACES_BEGIN = date(2026, 9, 5)
 
-COVERAGE_NOTE = "From bot traces, 5 Sep 2026 on. Topics arrive with CA-2."
+COVERAGE_NOTE = (
+    "From bot traces, 5 Sep 2026 on. Most asked products: Count by Products, measure Asked "
+    "(products the bot looked up). Topics arrive with CA-2."
+)
 
 #: (value, label) in the order a reader meets them. Values are `outcome.turn_outcome`'s.
 OUTCOME_LABELS: Tuple[Tuple[str, str], ...] = (

@@ -43,6 +43,7 @@ _PRODUCTS = Product.__table__
 _FAILED = sa.case((ASKS.c.failure_reason.isnot(None), 1), else_=0)
 _NAMED = sa.case((_ITEMS.c.role == "named", 1), else_=0)
 _SHOWN = sa.case((_ITEMS.c.role == "shown", 1), else_=0)
+_ASKED = sa.case((_ITEMS.c.role == "asked", 1), else_=0)
 
 _FROM = _ITEMS.join(ASKS, ASKS.c.id == _ITEMS.c.ask_id).join(
     _PRODUCTS, sa.cast(_PRODUCTS.c.id, sa.Text) == _ITEMS.c.ref_id
@@ -56,6 +57,7 @@ COLUMNS: Tuple[reg.Column, ...] = (
     reg.Column("failed", "Failed", "integer", "measure", lambda c: _FAILED, size=80),
     reg.Column("named", "Named", "integer", "measure", lambda c: _NAMED, size=80),
     reg.Column("shown", "Shown", "integer", "measure", lambda c: _SHOWN, size=80),
+    reg.Column("asked", "Asked", "integer", "measure", lambda c: _ASKED, size=80),
 )
 
 

@@ -172,7 +172,8 @@ def _pick(candidates: list[tuple[str, str | None]], company_id: str | None) -> s
 
 
 def _items(db: Session, flat: dict[str, Any], company_id: str | None) -> list[dict[str, str]]:
-    """The product and brand items of one ask: named by the parser, shown by the reply."""
+    """The product and brand items of one ask: named by the parser, shown by the reply, asked
+    (looked up by the bot through a tool call)."""
     named = flat["named_codes"]
     shown = flat["shown_codes"]
     products = _lookup(
@@ -192,6 +193,15 @@ def _items(db: Session, flat: dict[str, Any], company_id: str | None) -> list[di
         add("brand", _pick(brands.get(code.lower(), []), company_id), "named", "parser")
     for code in shown:
         add("product", _pick(products.get(code.lower(), []), company_id), "shown", "reply")
+    valid_ids = []
+    for value in flat.get("asked_product_ids") or []:
+        try:
+            valid_ids.append(str(uuid.UUID(value)))
+        except ValueError:
+            continue
+    if valid_ids:
+        for (found,) in db.execute(select(_PRODUCTS.c.id).where(_PRODUCTS.c.id.in_(valid_ids))):
+            add("product", str(found), "asked", "lookup")
     return [
         {"kind": kind, "ref_id": ref, "role": role, "resolved_by": by}
         for (kind, ref, role), by in out.items()

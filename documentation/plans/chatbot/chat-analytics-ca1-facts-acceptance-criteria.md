@@ -21,7 +21,9 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
   at the time the turn closed.
 - **CA1-07** A named product or brand is stored as an item only when its catalogue code equals a
   product or brand code exactly (case-insensitive). Unmatched words are never stored. A product
-  shown in the reply's result set is stored as role `shown`.
+  shown in the reply's result set is stored as role `shown`. A product the bot looked up (an id in
+  a tool call's `product_ids`, matched exactly to a product) is stored as role `asked`, resolved
+  by `lookup`.
 - **CA1-08** No fact, item or episode column holds customer words, a reply text, an episode
   summary, a phone number or a contact name.
 - **CA1-09** If recording a fact fails, the customer's turn still closes and answers normally.
@@ -70,7 +72,7 @@ section 8, lane CA-1. Behaviour card: PR #1546 comment 6073678534.
   from 5 Sep 2026 to today, the office (contact type) and noise excluded by default. Failed counts only technical,
   cannot do and missed.
 - **CA1-26** Count by Products switches to one row per ask and product; choosing Product as the
-  summary row and Named / Shown as the measures shows each product by its code. The default
+  summary row and Named / Shown / Asked as the measures (Asked answers "most asked products") shows each product by its code. The default
   layout stays outcome by week (one default view per report).
 - **CA1-27** Labels read as words (Answered, Off topic, Cannot do, Dealer, Not allowed), never raw
   codes or ids, in the summary and in the detail table. The filter is Contact type (Dealer,
