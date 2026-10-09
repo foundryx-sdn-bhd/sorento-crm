@@ -522,13 +522,18 @@ def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
 def names_a_class_label(db: "Session", raw: str) -> bool:
     """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
     a class of the built-in vocabulary), never one of its synonyms?"""
+    said = " ".join(_words(raw))
+    return any(" ".join(_words(label)) == said for label in class_label_names(db))
+
+
+def class_label_names(db: "Session") -> list[str]:
+    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
     from app.models.product import ProductCategory
     from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
 
-    said = " ".join(_words(raw))
     labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
     labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
-    return any(" ".join(_words(label)) == said for label in labels)
+    return labels
 
 
 def _names_two_types(db: "Session", raw: str, vocab: Vocabulary) -> bool:

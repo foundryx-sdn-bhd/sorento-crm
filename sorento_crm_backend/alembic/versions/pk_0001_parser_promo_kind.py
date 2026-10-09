@@ -29,7 +29,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 PROMPT_NAME = "chatbot_semantic_parser"
 MESSAGE = "pk_0001_parser_promo_kind: promotion kind + promotion subject (seat cover -> toilet seat)"
 #: The sections this version exists to carry; the constant must hold both.
-REQUIRED = ("== PROMOTION KIND ==", "== PROMOTION SUBJECT ==", '"seat cover" is a toilet seat')
+REQUIRED = ("== PROMOTION KIND ==", "== PROMOTION SUBJECT ==", '"seat cover" is a toilet seat', '"Product types:" line')
 
 
 def publish(session: Session) -> int | None:

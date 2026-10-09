@@ -4368,6 +4368,7 @@ def _run_stages_body(  # noqa: PLR0915
         # no cache, so an operator's table edit reaches the very next turn.
         brands = turn_runtime.active_brands(db)
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
+        product_types = turn_runtime.product_type_names(db)
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4406,6 +4407,7 @@ def _run_stages_body(  # noqa: PLR0915
         open_question_line=parser.open_question_line(open_question),
         brands=brands,
         promotion_kinds=promotion_kinds,
+        product_types=product_types,
         recent_exchanges=recent,
     )
     user_block, context_report = context_mod.assemble(context_layers)

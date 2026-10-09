@@ -556,6 +556,21 @@ def brand_entity_rows(entities: Any, live: list[dict[str, Any]]) -> list[tuple[d
     return out
 
 
+def _promotion_words_naming_no_promotion(db: Session, entities: Any) -> list[dict[str, Any]]:
+    """The promotion-hinted entities whose typed words are not a promotion's name exactly
+    (case and surrounding whitespace aside)."""
+    from app.models.marketing import Promotion
+
+    out: list[dict[str, Any]] = []
+    for e in entities or []:
+        if not (isinstance(e, dict) and jsc.nullish_str(e.get("hint")).strip().lower() == "promotion"):
+            continue
+        folded = " ".join(jsc.nullish_str(e.get("raw")).casefold().split())
+        if not folded or db.query(Promotion.id).filter(func.lower(func.trim(Promotion.description)) == folded).first() is None:
+            out.append(e)
+    return out
+
+
 def promo_filter(parse_output: dict[str, Any], db: Any, gate: Any = None) -> dict[str, list[str]]:
     """PROMO-SUBJECT-FILTER: what narrows a promotions read besides the access level, off the
     parser's own answer. `scope_terms`: the class words it named, unless the resolver placed
@@ -641,6 +656,20 @@ def promo_subject_ask_back(
             e for e in parse_output.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is not False
         ],
     }
+    if db is not None:
+        # AC-30/31: a brand word the parser could not place on the Known brands list (exact
+        # name or code only) asks back, echoed as typed (AC-16); it never widens to every brand.
+        live = active_brands(db)
+        unplaced = [
+            jsc.nullish_str(e.get("raw")).strip() or brand_identity_word(e)
+            for e in own["entities"]
+            if jsc.nullish_str(e.get("hint")).strip().lower() == "brand"
+            and e.get("confident") is not False
+            and brand_identity_word(e)
+            and not exact_brand_rows(live, brand_identity_word(e))
+        ]
+        if unplaced:
+            return f'I could not match "{", ".join(unplaced)}" to a brand.\nWhich brand do you mean?', []
     unknown = [
         str(e.get("raw") or "").strip()
         for e in own["entities"]
@@ -674,6 +703,14 @@ def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
 
     rows = db.query(PromotionType).order_by(PromotionType.match_priority, PromotionType.type_code).all()
     return [{"type_code": r.type_code, "type_name": r.type_name} for r in rows]
+
+
+def product_type_names(db: Session) -> list[str]:
+    """PROMO-SUBJECT-FILTER round 3 (AC-29): the class names the parser's `Product types:` line
+    lists, the same list `grounding.names_a_class_label` checks a name against."""
+    from app.services.chatbot.head import grounding
+
+    return sorted(set(grounding.class_label_names(db)))
 
 
 _BRAND_WORD_RE = re.compile(r"[0-9a-z]+")
@@ -2352,9 +2389,13 @@ def resolve_kinds(
         # unchanged, exactly as it did before this slice.
         matched_brands = []
         live_brands_read = False
-    resolver_excluded_entity_ids = (
-        frozenset(id(e) for e in matched_brands) if matched_brands else None
-    )
+    excluded = [id(e) for e in matched_brands]
+    if jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower() == "promotion":
+        # PROMO-SUBJECT-FILTER AC-30: on a promotion ask a promotion-hinted word reaches the
+        # resolver only when it IS a promotion's name (exact); any other word ("flyer") is
+        # never matched against promotion names. The kind comes from `promotion_kind` alone.
+        excluded += [id(e) for e in _promotion_words_naming_no_promotion(db, entities)]
+    resolver_excluded_entity_ids = frozenset(excluded) if excluded else None
     # CLASS-HINT-KIND-PICK: every confident entity whose canonical_code (else raw) names a
     # live brand exactly, whatever its hint and whatever the domain, IS that brand. The
     # `{id: brand name}` map reaches `resolve_entity_body` (which sends the tokens as

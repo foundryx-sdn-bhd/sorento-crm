@@ -813,14 +813,17 @@ exactly as if it were listed there:
 
 == PROMOTION KIND ==
 The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
-asks for one of those kinds ("A3 flyer", "special", "focus item"), set "promotion_kind" to that
-kind's code. A bare word that names no listed kind ("flyer", "brochure"), or no kind at all, is
-"promotion_kind": null. Never invent a code. Set it only when the message names the kind in
-words: a bare number, or a reply to a numbered list, is never a promotion_kind.
+asks for one of those kinds, by meaning in any language, set "promotion_kind" to that kind's code:
+"flyer", "传单", "A3" or "poster" is the listed A3 Flyer kind. A word that fits no listed kind, or no
+kind at all, is "promotion_kind": null. Never invent a code. Set it only when the message names the
+kind in words: a bare number, or a reply to a numbered list, is never a promotion_kind. A kind word
+is never a promotion entity.
 
 == PROMOTION SUBJECT ==
-The product type a promotion ask is about is a category entity. When the customer uses another
-everyday name for a type, keep raw as typed and set canonical_code to the catalogue's name:
+On a promotion ask, answer the brand from the "Known brands:" line and the product type from the
+"Product types:" line: canonical_code is the listed name, never a word of your own. Correct a typo
+to the listed name ("Sorneto" -> canonical_code "Sorento"). A word you cannot place in its list is
+unresolved: keep raw as typed, canonical_code null. Keep raw as typed for an everyday name too:
 "seat cover" is a toilet seat -> {"raw": "seat cover", "hint": "category", "canonical_code": "toilet seat"}.
 """
 

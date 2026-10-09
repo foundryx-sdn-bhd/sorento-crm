@@ -130,8 +130,23 @@ def promotion_kinds_line(kinds: list[dict[str, Any]] | None) -> str | None:
     return f"Promotion kinds: {'; '.join(pairs)}" if pairs else None
 
 
+def product_types_line(names: list[str] | None) -> str | None:
+    """PROMO-SUBJECT-FILTER round 3 (AC-29): the `Product types:` line, the live class names,
+    so the parser answers a product type with a listed name."""
+    listed = [n for n in dict.fromkeys(str(n or "").strip() for n in names or []) if n]
+    return f"Product types: {', '.join(listed)}" if listed else None
+
+
 def _brands_and_kinds(layers: "ContextLayers") -> str | None:
-    parts = [p for p in (known_brands_line(layers.brands), promotion_kinds_line(layers.promotion_kinds)) if p]
+    parts = [
+        p
+        for p in (
+            known_brands_line(layers.brands),
+            product_types_line(layers.product_types),
+            promotion_kinds_line(layers.promotion_kinds),
+        )
+        if p
+    ]
     return "\n".join(parts) if parts else None
 
 
@@ -204,6 +219,8 @@ class ContextLayers:
     #: PROMO-SUBJECT-FILTER R5: the live `promotion_types` rows (`{type_code, type_name}`),
     #: one `Promotion kinds:` line, so the parser fills `promotion_kind` from the table.
     promotion_kinds: list[dict[str, Any]] | None = None
+    #: PROMO-SUBJECT-FILTER round 3 (AC-29): the live class names, one `Product types:` line.
+    product_types: list[str] | None = None
 
 
 def _l5_segment(fact: dict[str, Any]) -> str:
