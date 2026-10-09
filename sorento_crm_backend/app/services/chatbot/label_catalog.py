@@ -639,6 +639,7 @@ LABELS.update(
         "Received": {"ms": "Diterima", "zh": "入库数量"},
         "Last in": {"ms": "Terakhir masuk", "zh": "最后一次进库"},
         "Last in: none on record": {"ms": "Terakhir masuk: tiada rekod", "zh": "最后一次进库: 没有记录"},
+        "Checked in: {companies}": {"ms": "Disemak di: {companies}", "zh": "已查询: {companies}"},
         "Last cost": {"ms": "Kos terakhir", "zh": "采购价"},
         "Stock": {"ms": "Stok", "zh": "库存"},
         "Incoming": {"ms": "Barang masuk", "zh": "到货"},
