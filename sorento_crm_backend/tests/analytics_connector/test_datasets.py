@@ -35,7 +35,7 @@ def _seed(db, tag: str) -> dict:
     db.execute(text("INSERT INTO companies (id, name, code) VALUES (:id, :n, :c)"),
                {"id": company_id, "n": f"ZZT Co {tag}", "c": unique_code("co")[:20]})
     db.execute(
-        text("INSERT INTO customers (id, customer_code, customer_name) VALUES (:id, :code, :name)"),
+        text("INSERT INTO customers (id, customer_code, customer_name, is_active) VALUES (:id, :code, :name, true)"),
         {"id": customer_id, "code": unique_code("cust")[:30], "name": f"ZZT Customer {tag}"},
     )
     contacts = {}
