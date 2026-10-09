@@ -70,6 +70,15 @@ def test_a_file_link_answers_a_signed_url_and_counts_the_click(env):
     db.refresh(row)
     assert row.click_count == 1
     assert row.first_clicked_at is not None and row.last_clicked_at is not None
+    # A second open within the dedupe window is the same tap (a page loaded twice).
+    client.get(f"{BASE}/PHOTO00001")
+    db.refresh(row)
+    assert row.click_count == 1
+    # Later opens count.
+    from datetime import datetime as _dt, timedelta as _td
+
+    row.last_clicked_at = _dt.utcnow() - _td(seconds=11)
+    db.commit()
     client.get(f"{BASE}/PHOTO00001")
     db.refresh(row)
     assert row.click_count == 2

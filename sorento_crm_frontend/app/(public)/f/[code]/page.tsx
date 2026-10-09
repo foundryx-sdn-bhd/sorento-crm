@@ -7,7 +7,7 @@
  * spreadsheet read-only in the browser, with a Download button.
  */
 
-import { use, useCallback, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,11 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
     }
   }, [code]);
 
+  // Once per page: every read counts a click, and a double-run effect would count two.
+  const loaded = useRef(false);
   useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
     void load();
   }, [load]);
 

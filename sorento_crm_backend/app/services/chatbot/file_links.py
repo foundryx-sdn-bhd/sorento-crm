@@ -199,14 +199,26 @@ def resolve(db: Session, code: str, *, now: datetime | None = None) -> ChatbotFi
     return row
 
 
+#: Opens of one link this close together are ONE click: a page that loads twice (a dev
+#: server's double render, a browser retry) must not double the A/B readout.
+CLICK_DEDUPE_SECONDS = 10
+
+
 def record_click(db: Session, row: ChatbotFileLink, *, now: datetime | None = None) -> None:
-    """One more open. Counted in SQL, so two phones opening one link at once both count."""
+    """One more open, counted in SQL, unless the same link was opened in the last
+    `CLICK_DEDUPE_SECONDS` (browser cold-start in the cloud browser pass showed one tap
+    arriving as up to four requests)."""
+    from sqlalchemy import case, or_
     from sqlalchemy import func as sa_func
 
     at = now or datetime.utcnow()
+    fresh = or_(
+        ChatbotFileLink.last_clicked_at.is_(None),
+        ChatbotFileLink.last_clicked_at <= at - timedelta(seconds=CLICK_DEDUPE_SECONDS),
+    )
     db.query(ChatbotFileLink).filter(ChatbotFileLink.id == row.id).update(
         {
-            ChatbotFileLink.click_count: ChatbotFileLink.click_count + 1,
+            ChatbotFileLink.click_count: case((fresh, ChatbotFileLink.click_count + 1), else_=ChatbotFileLink.click_count),
             ChatbotFileLink.first_clicked_at: sa_func.coalesce(ChatbotFileLink.first_clicked_at, at),
             ChatbotFileLink.last_clicked_at: at,
         },
