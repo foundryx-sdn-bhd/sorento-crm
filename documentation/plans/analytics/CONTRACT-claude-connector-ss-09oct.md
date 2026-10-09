@@ -104,8 +104,9 @@ Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allo
 ## 7. Resolutions while writing sorento's red tests (9 Oct 2026, relayed on SS #117)
 
 1. `req_hash` = base64url (no padding) of SHA-256 over `METHOD\nPATH\nCANONICAL_QUERY\nhex(sha256(body))`.
-   PATH = the raw request path, still percent-encoded, without the query. CANONICAL_QUERY = pairs sorted
-   by (key, value), each part encoded with `quote(safe="-_.~")`, joined by `&` (empty string when none).
+   PATH = the raw request path, still percent-encoded, without the query. CANONICAL_QUERY = the pairs in
+   the order they are sent (NOT sorted; changed 9 Oct after security review, so duplicate keys cannot be
+   reordered under one hash), each part encoded with `quote(safe="-_.~")`, joined by `&` (empty string when none).
    An empty body hashes as `sha256(b"")`.
 2. `consented_at`, `iat`, `exp` are integer unix seconds. A call token whose `exp - iat` exceeds 60 s is
    refused; 5 s clock skew is tolerated on `iat`/`exp`.
@@ -135,3 +136,13 @@ Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allo
    status).
 4. A sorento-side outage of the replay cache (redis) or an unconfigured connection answers 503
    `upstream_error`.
+
+## 9. Review-round tightening (9 Oct 2026, relayed on SS #117)
+
+1. CANONICAL_QUERY keeps the sent order (section 7.1 amended).
+2. A call may only send the query keys listed in that tool's manifest `query_params`; any other key is
+   403 `param_not_allowed`. `claims.tool` must name the tool whose manifest (method, path_template) is
+   being called, else 403 `route_not_allowed` (the manifest route itself is called with `tool=""`).
+3. The manifest no longer mentions `resolve_signed_urls`, `contact_id` or `space_id`.
+4. A request body over 1 MB is refused 413 before parsing; the token is verified before the body is read.
+5. sorento's audit row records the HTTP status the caller actually received.
