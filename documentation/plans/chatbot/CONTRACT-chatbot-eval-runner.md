@@ -91,3 +91,23 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - `HttpTurnEngine(..., trace_reader=None)`: when a reader is set and the response has `turn_id`, tokens and
   tool_errors come from `parse_trace(reader.fetch(turn_id))`, merged with any in the body. CLI: env
   `EVAL_TRACE_DB_URL` builds a DbTraceReader.
+
+## Fix round 1 (reviewer + security-reviewer, 10 Oct)
+- First turn sends `previous_conversation_state: {}`; later turns the carried state. Per-case
+  `test_run_id = f"{run_id}:{case.id}"` (variants add `:{kind}`).
+- Engine memory is not scoped by test run (`app/services/chatbot/engine.py:3736-3770` reads closed is_test
+  frames and is_test turns of the same contact), so: runner calls `engine.reset_contact(case)` before each
+  case when the engine has it; cases sharing a respond_id never run concurrently. `trace.DbContactReset(dsn)`
+  deletes that contact's is_test `chatbot.turns` / conversation frames and refuses any DB whose name does
+  not start with `sorento_eval_` (private eval clone only). `HttpTurnEngine.reset_contact` uses it when
+  `EVAL_RESET_DB_URL` is set.
+- `--budget-usd` with `--engine http` and no `EVAL_TRACE_DB_URL` -> exit 2.
+- Transport errors after retries -> Outcome `tool_errors ["transport: <Exc>"]`; 502/504 retried.
+- NotDryRunError aborts remaining cases; message omits the case id for hidden cases.
+- Judge runs only when calibrated: `<data-dir>/calibration/*.json`, agreement >= 0.9, else not called and
+  `judge_status: uncalibrated`; judge tokens count toward the budget.
+- Case with no deterministic criteria -> `needs_judge`; report counts `unverified` when no calibrated judge ran.
+- Number match: not inside letters/digits (`AP4844` no), decimals `.00` and units allowed.
+- Delegated turn (reply null) -> error, reason `delegated`.
+- `--out` inside the git work tree -> exit 2.
+- Data egress: `--judge` sends case message + reply to the judge provider; off by default.
