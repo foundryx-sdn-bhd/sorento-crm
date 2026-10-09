@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.text(
             """
             CREATE TABLE IF NOT EXISTS chatbot_file_links (
-                id VARCHAR(36) PRIMARY KEY,
+                id UUID PRIMARY KEY,
                 code VARCHAR(16) NOT NULL,
                 target_url TEXT NOT NULL,
                 filename TEXT NULL,
