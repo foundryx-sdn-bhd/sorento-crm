@@ -470,3 +470,23 @@ def test_run_is_403_without_the_permission_and_returns_the_pivot_with_it(api, db
     assert _dec(ok.json()["layouts"]["summary"]["grand_total"]["asks"]) == 7
     allow.clear()
     assert client.post(f"/api/v1/reports/{KEY}/run", json=body).status_code == 403
+
+
+# --------------------------------------------------------------------------- round 2: Count by picks the pivot rows
+
+
+def test_the_definition_names_the_pivot_rows_per_count_by(db):
+    assert _definition().pivot_rows_by == {"topics": "topic", "products": "product"}
+
+
+def test_meta_carries_pivot_rows_by_for_top_asks_and_null_for_chat_overview(api):
+    client, _allow = api
+    top = client.get(f"/api/v1/reports/{KEY}")
+    assert top.status_code == 200, top.text
+    assert top.json()["pivot_rows_by"] == {"topics": "topic", "products": "product"}
+    assert top.json()["dataset_param"] == "count_by"
+
+    overview = client.get("/api/v1/reports/chat_overview")
+    assert overview.status_code == 200, overview.text
+    assert "pivot_rows_by" in overview.json(), "the field is always present"
+    assert overview.json()["pivot_rows_by"] is None
