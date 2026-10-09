@@ -336,6 +336,22 @@ def test_the_snapshot_exists_even_when_the_inserted_frame_is_itself_trimmed(sess
     assert str(fact_rows(session_factory, turn_id=t1)[0].episode_id) == str(rows[0].frame_id)
 
 
+def test_an_off_topic_turn_makes_the_episode_a_handover(session_factory):
+    """Off topic also hands the thread to staff, so the episode went to staff."""
+    cid = _cid("offtopic")
+    seed_contact(session_factory, cid)
+    off_topic = apply_event()
+    off_topic["verdict"]["message_type"] = "request_for_help"
+    t1 = seed_turn(session_factory, cid, created_at=_minute(0), records=[off_topic], branch_kind="out_of_scope")
+    reset = seed_turn(session_factory, cid, created_at=_minute(5), records=[apply_event(topic_reset=True)])
+
+    frame = _close_episode(session_factory, cid, reset)
+
+    row = episode_rows(session_factory, frame_id=frame.id)[0]
+    assert row.last_outcome == "off_topic" and row.handover is True
+    assert t1
+
+
 # --------------------------------------------------------------------------- schema privacy
 
 

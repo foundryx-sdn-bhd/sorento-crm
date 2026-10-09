@@ -415,3 +415,10 @@ def test_flatten_holds_no_customer_or_reply_text():
     for forbidden in (sentence, CUSTOMER_WORDS, REPLY_WORDS, "ZZT-LABEL-TEXT"):
         assert forbidden not in dumped, forbidden
     assert "ZZTP1" in dumped and "ZZTP2" in dumped
+
+
+def test_a_blank_or_null_string_hint_names_no_business():
+    """The parser sometimes writes the literal string "null" for an absent hint."""
+    for hint in ("null", " NULL ", "", "   "):
+        turn = turn_dict(_escalating(message_type="request_for_help", domain_hint=hint, intent_hint=hint), branch_kind="out_of_scope")
+        assert _outcome(turn) == ("off_topic", None), repr(hint)
