@@ -17,6 +17,7 @@ from app.api.v1.public import (
     portal_sales_opportunity,
     print as print_route,
     quotation_sign,
+    respond_webhook,
     supplier_request,
     ticket_drafts,
     view,
@@ -59,6 +60,8 @@ router.include_router(
     portal_sales_opportunity.router, prefix="/portal", tags=["public-portal-sales-opportunity"]
 )
 router.include_router(portal.router, prefix="/portal", tags=["public-portal"])
+# Respond.io's direct message webhook (CHAT-LOCAL-FIRST R3), gated by its own signature.
+router.include_router(respond_webhook.router, prefix="/respond", tags=["public-respond-webhook"])
 router.include_router(
     quotation_sign.router, prefix="/quotation-sign", tags=["public-quotation-sign"]
 )
