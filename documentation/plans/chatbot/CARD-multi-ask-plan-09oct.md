@@ -1,7 +1,9 @@
 # CARD - per-ask planning, exact codes, compact replies (MULTI-ASK-PLAN)
 
 Status: card SETTLED by the owner (9 Oct 2026, two rounds). Built: S1 (d9f8321b), red-first
-tests (f6fc7adf), S3 (b482cfdb), S2 (3f9d878c), S4 (b6daddb0); in review. Track: L
+tests (f6fc7adf), S3 (b482cfdb), S2 (3f9d878c), S4 (b6daddb0); reviewer + security-reviewer
+findings fixed (4040609f, 25e6781a). Waiting on CI, crew's live parser checks and the owner's
+hand test (PR #1542). Track: L
 (chatbot core: parser prompt migration, per-ask runner in the engine, one new read endpoint +
 MCP tool). Lane PR #1542 carries `crew-lane: MULTI-ASK-PLAN`. Measured on origin/main
 bf07eff8b.
