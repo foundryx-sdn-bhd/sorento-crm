@@ -146,3 +146,67 @@ def test_engine_full_link_mode_records_no_fallback(copy_env, monkeypatch):
 class _Db:
     def close(self) -> None:
         pass
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn-sorento.com:8443/promotion/x.pdf",
+        "https://user:pw@cdn-sorento.com/promotion/x.pdf",
+        "https://cdn-sorento.com/promotion/%2e%2e/secret.pdf",
+        "https://cdn-sorento.com./promotion/x.pdf",
+        "http://cdn-sorento.com/promotion/x.pdf",
+        "https://[::1]@cdn-sorento.com/x.pdf",
+    ],
+)
+def test_only_a_plain_https_url_on_a_listed_host_is_linkable(copy_env, url):
+    """Security review S2/N3/N4: no port, no userinfo, no encoded `..`, no malformed netloc."""
+    assert file_link_service.is_linkable(url) is False
+
+
+def test_a_host_written_with_a_scheme_still_counts(monkeypatch):
+    monkeypatch.setenv("R2_CDN_DOMAIN", "https://cdn-sorento.com/")
+    monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
+    assert file_link_service.signer_hosts() == {"cdn-sorento.com"}
+
+
+def _transport(handler):
+    import httpx
+
+    return httpx.MockTransport(handler)
+
+
+def test_the_public_fetch_refuses_a_redirect():
+    import httpx
+
+    def handler(request):
+        return httpx.Response(302, headers={"location": "http://169.254.169.254/"})
+
+    with pytest.raises(ValueError, match="redirect"):
+        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(handler))
+
+
+def test_the_public_fetch_refuses_a_file_over_the_cap(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(file_link_service, "PUBLIC_FETCH_MAX_BYTES", 10)
+
+    def declared(request):
+        return httpx.Response(200, headers={"content-length": "11"}, content=b"x" * 11)
+
+    def streamed(request):
+        return httpx.Response(200, content=iter([b"x" * 6, b"x" * 6]))
+
+    with pytest.raises(ValueError, match="too large"):
+        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(declared))
+    with pytest.raises(ValueError, match="too large"):
+        file_link_service._fetch_public("https://cdn-sorento.com/r.csv", transport=_transport(streamed))
+
+
+def test_the_public_fetch_returns_the_bytes():
+    import httpx
+
+    data = file_link_service._fetch_public(
+        "https://cdn-sorento.com/r.csv", transport=_transport(lambda r: httpx.Response(200, content=b"a,b\n"))
+    )
+    assert data == b"a,b\n"

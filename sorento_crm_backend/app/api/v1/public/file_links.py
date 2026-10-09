@@ -69,6 +69,8 @@ def _handout(stored_url: str) -> str | None:
     if host_of(stored_url) in signer_hosts():
         signed = resolve_signed_url(stored_url, expires_in=SIGNED_URL_SECONDS, strict=True)
         return signed if _on_our_cdn(signed) else None
+    # Security review S1: the unsigned branch is visible in the logs, never silent.
+    logger.info("file link: unsigned handout for listed host %s", host_of(stored_url))
     return stored_url
 
 

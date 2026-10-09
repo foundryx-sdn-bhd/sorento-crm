@@ -94,7 +94,12 @@ def record_click(db: Session, row: ChatbotFileLink, *, now: datetime | None = No
 
 
 def _clean_host(value: str | None) -> str:
-    return (value or "").strip().lower().rstrip("/")
+    """A bare host. A value written with a scheme or a path (`https://cdn.example.com/`)
+    is reduced to its host, so a mistyped env value cannot drop a signer host off the list."""
+    raw = (value or "").strip().lower()
+    if "://" in raw:
+        raw = raw.split("://", 1)[1]
+    return raw.split("/", 1)[0].rstrip(".")
 
 
 def signer_hosts() -> set[str]:
@@ -117,36 +122,66 @@ def link_hosts() -> set[str]:
 def host_of(url: str | None) -> str:
     from urllib.parse import urlparse
 
-    return (urlparse(url or "").hostname or "").lower()
+    try:
+        return (urlparse(url or "").hostname or "").lower()
+    except ValueError:  # a malformed netloc (security review N4) names no host
+        return ""
 
 
 def is_linkable(url: str | None) -> bool:
-    """An https url on a listed host whose path has no `..`."""
-    from urllib.parse import urlparse
+    """An https url on a listed host, default port, no userinfo, no `..` in the path
+    (raw or percent-encoded): security review S2 / N3."""
+    from urllib.parse import unquote, urlparse
 
     if not url:
         return False
-    parsed = urlparse(url)
-    return parsed.scheme == "https" and host_of(url) in link_hosts() and ".." not in (parsed.path or "")
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and port is None
+        and parsed.username is None
+        and parsed.password is None
+        and host_of(url) in link_hosts()
+        and ".." not in unquote(parsed.path or "")
+    )
 
 
 #: The most a spreadsheet fetched from a listed public host may weigh (security L4).
 PUBLIC_FETCH_MAX_BYTES = 25 * 1024 * 1024
 
 
-def _fetch_public(url: str) -> bytes:
-    """GET a file from a listed public host: https only, no redirects, size capped."""
+#: The whole fetch, not one phase of it (security review N1).
+PUBLIC_FETCH_DEADLINE_SECONDS = 30.0
+
+
+def _fetch_public(url: str, *, transport=None) -> bytes:
+    """GET a file from a listed public host: https only, no redirects, size capped, one
+    overall deadline. `transport` is for tests."""
+    import time
+
     import httpx
 
-    with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+    deadline = time.monotonic() + PUBLIC_FETCH_DEADLINE_SECONDS
+    with httpx.Client(timeout=15.0, follow_redirects=False, transport=transport) as client:
         with client.stream("GET", url) as response:
+            if response.is_redirect:
+                raise ValueError("redirect refused")
             response.raise_for_status()
+            declared = response.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > PUBLIC_FETCH_MAX_BYTES:
+                raise ValueError("file too large to preview")
             chunks: list[bytes] = []
             total = 0
             for chunk in response.iter_bytes():
                 total += len(chunk)
                 if total > PUBLIC_FETCH_MAX_BYTES:
                     raise ValueError("file too large to preview")
+                if time.monotonic() > deadline:
+                    raise ValueError("file took too long")
                 chunks.append(chunk)
     return b"".join(chunks)
 
@@ -163,9 +198,9 @@ def download_bytes(url: str) -> bytes:
     )
 
     host = host_of(url)
+    if host and not is_linkable(url):
+        raise ValueError("host not on the link list")
     if host and host not in signer_hosts():
-        if not is_linkable(url):
-            raise ValueError("host not on the link list")
         return _fetch_public(url)
     key = extract_key(url)
     if not key:
