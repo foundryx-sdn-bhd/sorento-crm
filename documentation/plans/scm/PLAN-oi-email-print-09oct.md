@@ -1,6 +1,6 @@
 # PLAN: OI handover email - no multi-line cells, fits one printed page (OI-EMAIL-PRINT)
 
-Status: Build complete; owner retests 9 Oct: REMARK wording OK, line table OK, order table rebalanced (AC-P15), built; on review + hand test (feature track, abbreviated per the crew brief; carries one data migration on `email_templates`, so not the small fix track).
+Status: Build complete; owner retests 9 Oct: REMARK wording OK, line table OK, order table at the owner's 13/13/32/42 (AC-P15), built; on review + hand test (feature track, abbreviated per the crew brief; carries one data migration on `email_templates`, so not the small fix track).
 Lane: OI-EMAIL-PRINT, branch `claude/oi-email-print-ucrsgl`, PR #1543
 Domain: scm (order inquiry handover email, `order_inquiry_handover` automation) + email layout shell
 UAC: `oi-email-print-09oct-acceptance-criteria.md` alongside
