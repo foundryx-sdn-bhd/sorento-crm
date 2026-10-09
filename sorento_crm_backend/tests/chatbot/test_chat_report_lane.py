@@ -432,3 +432,104 @@ def test_the_reply_is_one_fact_per_line_with_no_ids_or_snake_case(console) -> No
     assert lines[1].startswith("Period: "), lines
     assert lines[-1].startswith("Topics labelled: 90% of asks"), lines
     assert not UUID_RE.search(text) and not _SNAKE.search(text), text
+
+
+# --------------------------------------------------------------------------- review round 1
+
+
+def _sales_ranking_verdict() -> dict[str, Any]:
+    return _parser_output(
+        message_type="business_query", domain_hint="order", intent_hint="check_order",
+        order_status="sales_ranking", entities=[], group_by="sales_agent", top_n=10,
+        chat_report=None, **SEP,
+    )
+
+
+def _chat_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [a for a in calls if a.get("dataset") == "chat"]
+
+
+def test_review_a_new_sales_ranking_over_an_open_period_question_is_not_the_answer(console) -> None:
+    text, calls = console.say(_chat(date_filter_start=None, date_filter_end=None), "top 5 questions")
+    assert text.strip() == PERIOD_Q and calls == [], (text, calls)
+    text, calls = console.say(_sales_ranking_verdict(), "top 10 sales agents for September")
+    assert _chat_calls(calls) == [], "a different ask must not complete the chat report"
+    assert "Availability" not in text and "Topics labelled" not in text, text
+
+
+@pytest.mark.parametrize("intent", [None, "chat_report"])
+def test_review_a_period_reply_with_no_or_chat_intent_is_the_answer(console, intent) -> None:
+    console.say(_chat(date_filter_start=None, date_filter_end=None), "top 5 questions")
+    _text, calls = console.say(_reply(intent_hint=intent, **SEP), "September")
+    (args,) = _chat_calls(calls)
+    assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
+
+
+def test_review_domain_chat_analytics_with_no_intent_still_runs_the_report(console) -> None:
+    _text, calls = console.say(_chat(intent_hint=None), "top 5 questions this week")
+    (args,) = _chat_calls(calls)
+    assert args["group_by"] == "topic" and args["top_n"] == 5, args
+
+
+def test_review_domain_chat_analytics_with_no_intent_asks_the_period(console) -> None:
+    text, calls = console.say(
+        _chat(intent_hint=None, date_filter_start=None, date_filter_end=None), "top 5 questions"
+    )
+    assert calls == [] and PERIOD_Q in text, (text, calls)
+
+
+def test_review_a_dealer_cannot_tell_a_missing_customer_from_anothers(console) -> None:
+    from tests.chatbot.test_report_ask_lane import _link_dealer, _other_customer
+
+    _link_dealer(console)
+    other = _other_customer(console, "ZZT OTHER DEALER SDN BHD")
+    text_other, calls_other = console.say(
+        _chat(_e("ZZT OTHER DEALER SDN BHD", "customer")), "top 5 questions for ZZT OTHER DEALER SDN BHD this week"
+    )
+    text_none, calls_none = console.say(
+        _chat(_e("Nonexistent Trading Sdn Bhd", "customer")), "top 5 questions for Nonexistent Trading Sdn Bhd this week"
+    )
+    for args in calls_other + calls_none:
+        assert other not in (args.get("customer_ids") or []), args
+    assert text_other.strip() and text_other.strip() == text_none.strip(), (text_other, text_none)
+
+
+# --------------------------------------------------------------------------- reply_verdict unit (review round 2)
+
+LONG_NEW_ASK = "show me the top 10 customers by sales amount in September please"
+
+
+def _open_period_slot() -> dict[str, Any]:
+    from app.services.chatbot.lanes.business import chat_report
+
+    return {"ask": chat_report.ASK_NAME, "asking": "period", "values": {}, "extras": {}, "misses": 0}
+
+
+def _long_verdict(**over: Any) -> dict[str, Any]:
+    base = {
+        "message_type": "business_query", "domain_hint": "order", "intent_hint": "check_order",
+        "order_status": "sales_ranking", "group_by": "customer", "top_n": 10,
+        "date_filter_start": "2026-09-01", "date_filter_end": "2026-09-30", "open_question_answer": None,
+    }
+    base.update(over)
+    return base
+
+
+def test_review_reply_verdict_drops_the_open_period_question_for_a_new_sales_ranking() -> None:
+    from app.services.chatbot import required_fields
+
+    verdict, rule = required_fields.reply_verdict(_long_verdict(), _open_period_slot(), LONG_NEW_ASK)
+    assert rule == "required_ask_dropped", rule
+    assert verdict["domain_hint"] == "order", "the new ask keeps its own domain"
+
+
+@pytest.mark.parametrize("intent", [None, "chat_report"])
+def test_review_reply_verdict_takes_a_same_shape_period_reply_as_the_answer(intent) -> None:
+    from app.services.chatbot import required_fields
+
+    verdict, rule = required_fields.reply_verdict(
+        _long_verdict(domain_hint="master_products", order_status=None, group_by=None, intent_hint=intent),
+        _open_period_slot(), LONG_NEW_ASK,
+    )
+    assert rule == "required_ask_answer", rule
+    assert verdict["domain_hint"] == "chat_analytics", "rerouted to the chat report"

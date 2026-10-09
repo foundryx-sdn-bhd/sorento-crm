@@ -352,3 +352,39 @@ def test_a_call_without_dataset_is_the_sales_report_unchanged(client, db):
     assert body["basis"] == "delivered" and body["basis_label"] == "delivered sales", body
     assert body.get("dataset") in (None, "sales") and not body.get("coverage"), body
     assert body["rows"] == [] and body["total"] == {"qty": 0, "amount": 0.0}, body
+
+
+# ======================================================================== review round 1
+
+
+def test_review_sort_asc_is_echoed_on_the_chat_body(client, db):
+    seed_world(db)
+    body = _ok(client, _staff(db), group_by="topic", top_n=10, sort="asc")
+    assert body["sort"] == "asc", "ReportAskChatResponse must declare and the route must set `sort`"
+    assert body["rows"][0]["name"] != "Availability", "ascending: the smallest first"
+    assert _ok(client, _staff(db), group_by="topic", top_n=10)["sort"] == "desc"
+
+
+def test_review_a_salesman_naming_another_agents_customer_gets_no_echo_of_it(client, db):
+    from app.services.contact_field_reveal_service import set_granted_keys
+
+    w = seed_world(db)
+    contact = _contact(db, granted=False)
+    set_granted_keys(db, contact.id, [GRANT], actor_id=None)
+    agent = seed_agent(db, code="ZZT-CHAT-AG2")
+    agent.contact_id = contact.id
+    w.cust_a.sales_agent_id = agent.id  # cust_b belongs to nobody they are
+    db.commit()
+    resp = _ask(client, contact, group_by="topic", top_n=10, customer_ids=[w.cust_b.id])
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["rows"] == [] and D(str(body["total"]["value"])) == 0, body
+    assert w.cust_b.customer_name not in resp.text, "the other agent's customer name leaked through the filters echo"
+
+
+def test_review_failure_rate_on_the_asks_basis_runs_as_turns(client, db):
+    seed_world(db)
+    body = _ok(client, _staff(db), basis="asks", measure="failure_rate", group_by="week")
+    assert body["basis"] == "turns" and body["unit"] == "%", body
+    total = body["total"]
+    assert (total["numerator"], total["denominator"]) == (2, 5), total

@@ -159,3 +159,8 @@ def test_the_catalog_declares_the_dataset_and_chat_params():
     assert {"dataset", "subjects", "product_ids", "customer_ids", "measure", "basis", "group_by", "top_n"} <= params, \
         sorted(params)
     assert "chat" in spec.description, "the tool description names the chat dataset"
+
+
+def test_review_sort_asc_heads_bottom():
+    lines = _lines(_body(sort="asc"))
+    assert lines[0] == "Bottom 2 topics by asks", lines
