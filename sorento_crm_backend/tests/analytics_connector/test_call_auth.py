@@ -179,11 +179,14 @@ def test_a_token_cannot_be_moved_to_another_route_query_or_body(env, bound, sent
     assert_error(signed(client, method, url, user.id, token=tok, json_body=body), 401, "invalid_signature")
 
 
-def test_the_canonical_query_ignores_parameter_order(env):
+def test_the_canonical_query_keeps_the_sent_parameter_order(env):
+    """r3 review round (contract change): CANONICAL_QUERY is the pairs in their sent order, not sorted.
+    Replaces `test_the_canonical_query_ignores_parameter_order`, which pinned the old sorting."""
     db, client = env
     user = _analyst(db, "order")
     tok = call_token(user.id, "GET", BRANDS, "page=1&limit=5")
-    resp = signed(client, "GET", f"{BRANDS}?limit=5&page=1", user.id, token=tok)
+    assert_error(signed(client, "GET", f"{BRANDS}?limit=5&page=1", user.id, token=tok), 401, "invalid_signature")
+    resp = signed(client, "GET", f"{BRANDS}?page=1&limit=5", user.id)
     assert resp.status_code == 200, resp.text
 
 

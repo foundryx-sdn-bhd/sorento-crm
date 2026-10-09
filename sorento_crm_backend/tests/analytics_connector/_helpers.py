@@ -17,8 +17,12 @@ Contract gaps resolved here (relayed to SS on #117):
 * `req_hash` = base64url, NO padding, of SHA-256 over the UTF-8 string
   `METHOD\\nPATH\\nCANONICAL_QUERY\\nBODY_SHA256_HEX`.
   - METHOD upper case; PATH = the request path as sent, percent-encoding intact, no query string.
-  - CANONICAL_QUERY = the decoded query pairs sorted by (key, value), each re-encoded with
+  - CANONICAL_QUERY = the decoded query pairs IN THEIR SENT ORDER (r3 review round: no sorting, so
+    `limit=1&limit=500` and `limit=500&limit=1` hash differently), each re-encoded with
     `urllib.parse.quote(x, safe="-_.~")` as `k=v`, joined by `&`; empty string when there is none.
+* `tool` must name the manifest tool whose (method, path_template) is the called route
+  (`route_not_allowed` otherwise); ``signed``/``call_token`` default it from the manifest via
+  ``tool_for`` so a test only passes ``tool=`` to pin or break that binding.
   - BODY_SHA256_HEX = lowercase hex SHA-256 of the raw body bytes (empty bytes for a GET).
 * `consented_at` is an int unix timestamp in seconds, like `iat`/`exp`.
 """
@@ -231,7 +235,7 @@ def consent_request(*, secret: str = SS_TO_PRODUCT, drop: tuple[str, ...] = (), 
 
 
 def canonical_query(query: str) -> str:
-    pairs = sorted(parse_qsl(query, keep_blank_values=True))
+    pairs = parse_qsl(query, keep_blank_values=True)
     return "&".join(f"{quote(k, safe='-_.~')}={quote(v, safe='-_.~')}" for k, v in pairs)
 
 
@@ -240,8 +244,26 @@ def req_hash(method: str, path: str, query: str = "", body: bytes = b"") -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(material.encode()).digest()).rstrip(b"=").decode()
 
 
+_UNSET: Any = object()
+
+
+def tool_for(method: str, path: str) -> str:
+    """The manifest tool bound to ``method path`` (first match), or ``"zzt_tool"`` for a route outside
+    the manifest (route-guard tests, the manifest itself)."""
+    import re
+
+    from app.services.analytics_connector.manifest import build_manifest
+
+    for t in build_manifest()["tools"]:
+        h = t["http"]
+        pattern = "^" + re.sub(r"\\\{[^/]+?\\\}", "[^/]+", re.escape(h["path_template"])) + "$"
+        if h["method"].upper() == method.upper() and re.match(pattern, path):
+            return t["name"]
+    return "zzt_tool"
+
+
 def call_token(sub: str, method: str, path: str, query: str = "", body: bytes = b"", *,
-               secret: str = SS_TO_PRODUCT, tool: str = "zzt_tool", grant_id: Optional[str] = None,
+               secret: str = SS_TO_PRODUCT, tool: Any = _UNSET, grant_id: Optional[str] = None,
                consented_at: Optional[int] = None, drop: tuple[str, ...] = (), **overrides: Any) -> str:
     t = epoch()
     claims: dict[str, Any] = {
@@ -252,7 +274,7 @@ def call_token(sub: str, method: str, path: str, query: str = "", body: bytes = 
         "sub": sub,
         "grant_id": grant_id or f"grant-{uuid.uuid4().hex[:12]}",
         "consented_at": consented_at if consented_at is not None else t - 60,
-        "tool": tool,
+        "tool": tool_for(method, path) if tool is _UNSET else tool,
         "req_hash": req_hash(method, path, query, body),
         "iat": t,
         "exp": t + 60,

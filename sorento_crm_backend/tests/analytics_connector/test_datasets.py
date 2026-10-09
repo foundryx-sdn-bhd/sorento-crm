@@ -192,6 +192,9 @@ def test_read_only_role_reads_views_only():
     role = f"zzt_ro_{uuid.uuid4().hex[:8]}"
     with pg_session() as db:
         db.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+        # Membership lets the app DB user (CREATEROLE, not superuser) SET ROLE to it; the
+        # transaction rolls back, so the role and the grant never outlive the test.
+        db.execute(text(f'GRANT "{role}" TO CURRENT_USER'))
         grant_read_role(db, role)
         db.execute(text("SAVEPOINT ro"))
         db.execute(text(f'SET LOCAL ROLE "{role}"'))
