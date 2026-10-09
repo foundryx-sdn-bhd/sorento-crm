@@ -763,7 +763,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             files.append(f)
 
     # One numbering over the whole reply, whichever section a block sits in.
-    text_parts = ["\n\n".join(g) for g in renumber([part.split("\n\n") for part in text_parts])]
+    text_parts = ["\n\n".join(g) for g in renumber([part.split("\n\n") for part in text_parts], localizer=localizer)]
     # The freshness footer closes the whole body, once, whichever section printed it.
     if len(text_parts) > 1:
         starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
@@ -993,7 +993,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         said = [p for p in paras if p in attached]
         if not any(a in text for a in attached):
             text += "\n\n" + localizer.sentence(_ATTACHED_SENTENCE)
-        elif said and any(is_block(p) for p in paras):
+        elif said and any(is_block(p, localizer) for p in paras):
             text = "\n\n".join([p for p in paras if p not in attached] + [said[0]])
 
     return Answer(

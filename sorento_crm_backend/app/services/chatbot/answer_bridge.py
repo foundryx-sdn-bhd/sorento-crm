@@ -1569,55 +1569,64 @@ def _block_product_codes(block_text: Any) -> set[str]:
 
 
 _BLOCK_CODE_RE = re.compile(r"^\*Product Code:\*[ \t]*(.+?)[ \t]*$", re.MULTILINE)
-def _alt(*english: str) -> str:
-    return "|".join(re.escape(w) for w in label_catalog.label_words(*english))
-
-
-_COMPANY_WORDS = label_catalog.label_words("Company")
-_BLOCK_LINE_RE = re.compile(
-    r"^(?:\d+\. )?\*(" + _alt("Company", "Product Code") + r"):\*[ \t]*(.+?)[ \t]*$"
-)
-_STOCK_LINE_START = tuple(f"*{w}:*" for w in label_catalog.label_words("Stock"))
-_CONTAINER_LINE_START = tuple(f"*{w}:*" for w in label_catalog.label_words("Container"))
 _FLAG_LINE_RE = re.compile("^(?:\u26a0\ufe0f|\U0001f6a9)")
-_IDENTITY_LINE_RE = re.compile(
-    r"^(?:\d+\. )?\*(?:" + _alt("Company", "Product Code", "Product Name") + r"):\*"
-)
 _INCOMING_OPENER = "Here is the incoming stock I found."
 
 
-def _block_key(para: str) -> tuple[str | None, str | None]:
+class _Labels:
+    """The card labels the fold matches, in every language plus the turn localizer's own
+    (staff-edited) wording."""
+
+    def __init__(self, localizer: Any = None) -> None:
+        def words(*english: str) -> tuple[str, ...]:
+            return label_catalog.label_words(*english, localizer=localizer)
+
+        def alt(*english: str) -> str:
+            return "|".join(re.escape(w) for w in words(*english))
+
+        self.company = words("Company")
+        self.line = re.compile(r"^(?:\d+\. )?\*(" + alt("Company", "Product Code") + r"):\*[ \t]*(.+?)[ \t]*$")
+        self.identity = re.compile(
+            r"^(?:\d+\. )?\*(?:" + alt("Company", "Product Code", "Product Name") + r"):\*"
+        )
+        self.stock = tuple(f"*{w}:*" for w in words("Stock"))
+        self.container = tuple(f"*{w}:*" for w in words("Container"))
+
+
+def _block_key(para: str, labels: _Labels | None = None) -> tuple[str | None, str | None]:
     """`(company, product code)` of a block paragraph, upper-cased; `(None, None)` for a
     paragraph that is not a block. A block may open with its Company line or its number."""
+    labels = labels or _Labels()
     found = {
-        ("Company" if m.group(1) in _COMPANY_WORDS else "Product Code"): m.group(2).upper()
-        for m in map(_BLOCK_LINE_RE.match, para.split("\n"))
+        ("Company" if m.group(1) in labels.company else "Product Code"): m.group(2).upper()
+        for m in map(labels.line.match, para.split("\n"))
         if m
     }
     return found.get("Company"), found.get("Product Code")
 
 
-def _merge_block(primary: str, extra: str) -> str:
+def _merge_block(primary: str, extra: str, labels: _Labels | None = None) -> str:
     """One block for a code that has a primary stock block and a cross-domain one: the
     primary's identity and stock lines (name, `*BRW:* 0 (O/S: 233)`), then the cross-domain
     block's own lines (its incoming facts, in today's order), flags last and once. When the
     primary's stock lines carry no outstanding, the cross-domain `*Stock:*` line stands for
     them."""
+    labels = labels or _Labels()
     p_lines = [ln for ln in primary.split("\n") if not _FLAG_LINE_RE.match(ln)]
     x_lines = [ln for ln in extra.split("\n") if not _FLAG_LINE_RE.match(ln)]
     both = primary.split("\n") + extra.split("\n")
     flags = list(dict.fromkeys(ln for ln in both if _FLAG_LINE_RE.match(ln)))
-    p_id = [re.sub(r"^\d+\. ", "", ln) for ln in p_lines if _IDENTITY_LINE_RE.match(ln)]
-    p_stock = [ln for ln in p_lines if not _IDENTITY_LINE_RE.match(ln)]
-    x_rest = [ln for ln in x_lines if not _IDENTITY_LINE_RE.match(ln)]
-    stock_line = next((ln for ln in x_rest if ln.startswith(_STOCK_LINE_START)), None)
+    p_id = [re.sub(r"^\d+\. ", "", ln) for ln in p_lines if labels.identity.match(ln)]
+    p_stock = [ln for ln in p_lines if not labels.identity.match(ln)]
+    x_rest = [ln for ln in x_lines if not labels.identity.match(ln)]
+    stock_line = next((ln for ln in x_rest if ln.startswith(labels.stock)), None)
     tail = [ln for ln in x_rest if ln is not stock_line]
     has_outstanding = any(
         int(n) > 0 for ln in p_stock for n in re.findall(r"\(O/S: (\d+)\)", ln)
     )
     # An incoming primary keeps its Container/ETA/quantity lines; the cross-domain
     # `*Stock:*` line only stands in for stock location lines.
-    if any(ln.startswith(_CONTAINER_LINE_START) for ln in p_stock):
+    if any(ln.startswith(labels.container) for ln in p_stock):
         stock = [*p_stock, *([stock_line] if stock_line else [])]
     else:
         stock = p_stock if has_outstanding or stock_line is None else [stock_line]
@@ -1631,34 +1640,35 @@ def _fold_blocks(primary: str, xd_text: str, localizer: Any = None) -> tuple[str
     one block remains they number on from 1 across both. A primary with no block left loses
     its footer, a set header stays; a kept footer moves to the end of the cross-domain
     text. Returns `(primary, cross-domain text)`."""
+    labels = _Labels(localizer)
     paras = [p for p in primary.split("\n\n") if p != _INCOMING_OPENER]
     xd_paras = xd_text.split("\n\n")
     merged = False
-    first = next((p for p in paras if is_block(p)), "")
+    first = next((p for p in paras if is_block(p, localizer)), "")
     start = int(m.group(1)) if (m := re.match(r"^(\d+)\. ", first)) else 1
     for i, x in enumerate(xd_paras):
-        x_company, x_code = _block_key(x)
+        x_company, x_code = _block_key(x, labels)
         if x_code is None:
             continue
         hit = next(
             (
                 j
                 for j, p in enumerate(paras)
-                if is_block(p)
-                and _block_key(p)[1] == x_code
-                and (x_company is None or _block_key(p)[0] in (None, x_company))
+                if is_block(p, localizer)
+                and _block_key(p, labels)[1] == x_code
+                and (x_company is None or _block_key(p, labels)[0] in (None, x_company))
             ),
             None,
         )
         if hit is not None:
-            merged = merged or any(c in paras[hit] for c in _CONTAINER_LINE_START)
-            xd_paras[i] = _merge_block(paras.pop(hit), x)
+            merged = merged or any(c in paras[hit] for c in labels.container)
+            xd_paras[i] = _merge_block(paras.pop(hit), x, labels)
     footer_starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
     footers = [p for p in paras if p.startswith(footer_starts)]
     paras = [p for p in paras if p not in footers]
-    if merged or any(is_block(p) for p in paras):
+    if merged or any(is_block(p, localizer) for p in paras):
         xd_paras += footers  # the footer closes the whole body, after the last block
-    paras, xd_paras = renumber([paras, xd_paras], start)
+    paras, xd_paras = renumber([paras, xd_paras], start, localizer)
     return "\n\n".join(paras), "\n\n".join(xd_paras)
 
 
@@ -1737,7 +1747,7 @@ def _apply_crossdomain_render(
             ),
         }
     if covers and not answered:
-        [paras] = renumber([str(block["block"]).split("\n\n")])
+        [paras] = renumber([str(block["block"]).split("\n\n")], localizer=localizer)
         block = {**block, "block": "\n\n".join(paras)}
     variables: dict[str, Any] = {"last_result_set": [True]} if answered else {}
     if answered:

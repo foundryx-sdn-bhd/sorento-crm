@@ -513,13 +513,16 @@ def footer_leads(localizer: Any = None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(lead for lead in leads if lead))
 
 
-def label_words(*english: str) -> tuple[str, ...]:
+def label_words(*english: str, localizer: Any = None) -> tuple[str, ...]:
     """Each English label with its catalog translations, for matchers that must recognise
-    a card label in whichever language printed it."""
+    a card label in whichever language printed it. `localizer` adds its own (staff-edited)
+    wording of the same labels."""
     out: list[str] = []
     for word in english:
         out.append(word)
         out.extend(LABELS.get(word, {}).get(lang, "") for lang in LANGUAGES if lang != "en")
+        if localizer is not None:
+            out.append(localizer.table.get(word, ""))
     return tuple(dict.fromkeys(w for w in out if w))
 
 
