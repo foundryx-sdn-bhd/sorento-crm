@@ -259,3 +259,18 @@ def test_the_prompt_teaches_that_how_many_is_one_total():
     for splitter in ("by", "per", "each", "ikut", "每"):
         assert splitter in text, splitter
     assert "list" in text and "null" in text
+
+
+def test_the_prompt_describes_each_domain_with_its_label_and_switch_words(configured):
+    from app.models.chatbot_policy import ChatbotDomain
+
+    promo = configured.query(ChatbotDomain).filter_by(name="promotion").one()
+    promo.label, promo.switch_words = "promotions", ["promo"]
+    configured.add(ChatbotDomain(name="order", label="orders", switch_words=["delivery", "penghantaran"]))
+    configured.commit()
+    provider = _Provider(json.dumps(GOOD))
+    _run(configured, provider)
+    system = next(m for m in provider.calls[0]["messages"] if m["role"] == "system")["content"].lower()
+    for words in (("order", "orders", "delivery", "penghantaran"), ("promotion", "promotions", "promo")):
+        for word in words:
+            assert word in system, word
