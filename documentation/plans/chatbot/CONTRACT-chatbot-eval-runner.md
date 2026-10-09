@@ -155,3 +155,13 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - `--regrade RUN_DIR`: no engine calls; re-loads the cases from `--data-dir`, re-grades every stored result
   with the current grader + labels, writes a new report (to `--out`). Reason: label corrections (owner spot
   check) and grader fixes must not cost a new paid run. Rows whose case id is gone are dropped and counted.
+
+## Round 7 (baseline findings, 10 Oct)
+- `message.reply_to` may be a plain string (the quoted text) or `{id, text}`; a string becomes
+  `replyTo: {"id": "", "text": <string>}`. (3 real cases crashed with AttributeError.)
+- `looked_up` `raw.envelopes[*].error` is the LANE's own verdict when the envelope has no `tool`
+  (`app/services/chatbot/turn_runtime.py:5099-5101`: "the error text is the answer"), e.g. "purchase_cost needs
+  the purchase_orders.cost grant", "the described set qualifies nothing". Such an entry is NOT a tool error;
+  it is kept on the result as `lane_notes` and the reply is graded by the rubric. It IS a tool error when the
+  envelope has a `tool`, or the text contains `returned HTTP` (a real API failure, e.g. sales-report 422).
+  Failed stages and the `Error executing tool` marker stay tool errors. GRADER_VERSION 7.
