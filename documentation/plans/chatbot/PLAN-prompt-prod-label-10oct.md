@@ -1,6 +1,6 @@
 # PLAN: prepare the prod parser label move from v52 (PROMPT-PROD-LABEL)
 
-Status: Built, PR #1554 draft, reviewer READY; replay + v52 diff pending (track: small fix size by diff, one data file + one migration + one static
+Status: Built, PR #1554 ready, reviewer READY, v52 diff + replay done (candidate 28/31 vs prod v52 24/31); label move is the owner's (track: small fix size by diff, one data file + one migration + one static
 test; no auth/RBAC; brief size M so card + red-first + reviewer apply).
 
 UAC: `prompt-prod-label-acceptance-criteria.md`.
@@ -30,3 +30,13 @@ policy blocks, so their prompt has no `Specification <key>` lines (`chatbot_pars
 No label move (owner's click). No change to the constant itself. No runtime injection of policy blocks (named
 trigger: if a constant-built version is ever labelled again, a publish-time guard that refuses a body without
 blocks is the fix).
+
+## Outcome (10 Oct 2026)
+
+- Step 2 against the owner's v52 paste: v52 = the 6 Oct console text + "product details" + the hand-merged
+  SALES RANKING block. The candidate gained the "product details" edit. The owner's installation guide line
+  maps to the grounding spelling "installation guide" (`chatbot/head/grounding.py` DOCUMENT_TYPE_CODES), because the
+  underscore form was rejected (replay: prod v52 1/4, candidate 6/6).
+- Replay on the 6 Oct snapshot copy, 31 cases: prod v52 24 PASS / 2 PARTIAL / 5 FAIL, candidate 28 / 1 / 2.
+  One case is worse: a pasted catalogue line whose property contradicts the code's own data (washdown vs a
+  twister code) now filters by the property. That is engine behaviour and an owner decision.
