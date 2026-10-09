@@ -9,8 +9,8 @@ nothing unasked (owner Q1), in the asker's language.
 
 Owner rulings this file carries (card: documentation/plans/chatbot/CARD-multi-ask-plan-09oct.md):
 * Q2: a typed code with variants and no `family` said asks back once (`sub_ask_scope`),
-  before EITHER path answers (round 6, G1): `scope_question` here, asked by the engine
-  for a one-ask turn as much as for a multi-ask one. An exact code with variants is
+  before the runner answers (round 6, G1; multi-ask turns only, owner ruling Q1 (b): a
+  one-ask turn keeps today's path): `scope_question` here, asked by the engine. An exact code with variants is
   "just X, or all N?"; a code that is only a prefix lists its codes after "all N". The
   reply re-runs the original verdict with the scope settled (`scope_reply`).
 * Q3: supplier = the supplier of the LAST PO line, labelled with that PO.
@@ -292,8 +292,7 @@ def scope_question(
     """Round 6 G1: the ONE "which of them?" question, asked before either path answers,
     when the parser left `family` null and a code typed this message maps to two or more
     products. `replay` is the verdict the reply re-runs with the scope settled
-    (`scope_reply`), so a one-ask turn and a multi-ask one resume the same way. None when
-    nothing needs asking."""
+    (`scope_reply`). Multi-ask turns only. None when nothing needs asking."""
     # Owner ruling Q1 (b), 9 Oct: a one-ask turn keeps today's path, no scope question.
     if verdict.get("family") is not None or len(_sub_asks(verdict)) < 2:
         return None
@@ -351,17 +350,31 @@ def scope_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
     payload = dict(getattr(pending, "payload", None) or {})
     replay, asked = payload.get("verdict"), Product.from_wire(payload.get("asked"))
     reply = verdict.get("open_question_answer")
-    if not isinstance(replay, dict) or asked is None or not isinstance(reply, dict):
+    if not isinstance(replay, dict) or asked is None:
         return None
     options = getattr(pending, "options", None) or []
-    position = _answered_position(reply, SCOPE_KIND, options)
-    if position is None:
-        return None
-    if asked.exact is not None:
-        return {**replay, "family": position == 2, "open_question_answer": None}
-    if position == 1:
-        return {**replay, "family": True, "open_question_answer": None}
-    picked = next((o.get("code") for o in options if isinstance(o, dict) and o.get("position") == position), None)
+    position = _answered_position(reply, SCOPE_KIND, options) if isinstance(reply, dict) else None
+    picked: str | None = None
+    if position is not None:
+        if asked.exact is not None:
+            return {**replay, "family": position == 2, "open_question_answer": None}
+        if position == 1:
+            return {**replay, "family": True, "open_question_answer": None}
+        picked = next((o.get("code") for o in options if isinstance(o, dict) and o.get("position") == position), None)
+    else:
+        # A full code typed to the over-20 question (no numbered line offered): the parser's
+        # item code or a product entity of this message, when it is a member of the asked
+        # family. Parser fields only.
+        members = {str(r.get("code")).casefold(): str(r["code"]) for r in asked.family if r.get("code")}
+        typed = [str(i.get("code") or "") for i in (reply or {}).get("items") or [] if isinstance(i, dict)] if isinstance(reply, dict) else []
+        typed += [
+            str(e.get("canonical_code") or e.get("raw") or "")
+            for e in verdict.get("entities") or []
+            if isinstance(e, dict) and e.get("hint") in (None, "", "product") and e.get("current_message") is not False
+        ]
+        hits = {members[t.strip().casefold()] for t in typed if t.strip().casefold() in members}
+        if len(hits) == 1 and asked.exact is None:
+            picked = hits.pop()
     if not picked:
         return None
     key = turn_state.token_key(asked.code)

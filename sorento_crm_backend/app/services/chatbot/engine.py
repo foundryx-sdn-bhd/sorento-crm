@@ -4774,8 +4774,8 @@ def _run_stages_body(  # noqa: PLR0915
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
         # MULTI-ASK-PLAN round 6 (G1): the reply to the scope question re-runs the asked
-        # turn's own verdict from HERE, with the scope the parser read settled, so a
-        # one-ask turn and a multi-ask one continue exactly as if the scope had been said.
+        # multi-ask turn's own verdict from HERE, with the scope the parser read settled, so
+        # it continues exactly as if the scope had been said.
         scope_verdict = turn_sub_asks.scope_reply(verdict, state_in.pending)
         if scope_verdict is not None:
             turn_trace.add("sub_asks", {"scope_answered": scope_verdict.get("family")})
@@ -5839,9 +5839,9 @@ def _run_stages_body(  # noqa: PLR0915
         # MULTI-ASK-PLAN round 6 (owner hand test, 9 Oct 2026), before EITHER path answers
         # a staff turn: G4, a message naming only a product word the parser is unsure of,
         # with nothing asked about it, asks what is wanted rather than inheriting the last
-        # turn's domain; G1, a typed code that maps to two or more products with `family`
-        # left null asks which of them, ONE question for the runner and today's path
-        # alike. Neither calls a tool.
+        # turn's domain; G1, a MULTI-ASK turn (2+ sub_asks, owner ruling Q1 (b): a one-ask
+        # turn keeps today's path) whose typed code maps to two or more products with
+        # `family` left null asks which of them. Neither calls a tool.
         if (
             answer is None
             and branch_kind == "business_query"
@@ -5852,7 +5852,7 @@ def _run_stages_body(  # noqa: PLR0915
         ):
             vague = turn_sub_asks.vague_token(verdict, list(state_in.focus.products or []))
             pre_question: Any = None
-            if vague or verdict.get("family") is None:
+            if vague or (verdict.get("family") is None and len(turn_sub_asks._sub_asks(verdict)) >= 2):
                 reply_language = _turn_language(
                     latest_user_message,
                     remembered_before,
@@ -5950,9 +5950,7 @@ def _run_stages_body(  # noqa: PLR0915
                 turn_trace.add("sub_asks", sub_result.trace)
                 answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
                 bridge_answered = True
-                if turn_sub_asks.resumes(verdict, state_in.pending) or (
-                    getattr(state_out.pending, "kind", None) in turn_sub_asks.KINDS
-                ):
+                if turn_sub_asks.resumes(verdict, state_in.pending):
                     # The runner's own question is answered, or a new multi-ask moved on
                     # from it (G4b): closed here, whatever form the parser's reply took
                     # (apply clears only a `pick`; review F1). A new question the answer
