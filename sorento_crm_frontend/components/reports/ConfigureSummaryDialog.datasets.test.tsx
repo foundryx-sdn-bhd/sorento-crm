@@ -75,7 +75,12 @@ const CATALOG = [
   { key: 'shown', label: 'Shown', type: 'count', tag: 'measure', unavailable_for: ['asks'] },
 ] as unknown as ReportCatalogColumn[];
 
-function open(datasetValue: string, value: { rows: string; cols: string; measures: string[] }, onApply = vi.fn()) {
+function open(
+  datasetValue: string,
+  value: { rows: string; cols: string; measures: string[] },
+  onApply = vi.fn(),
+  datasetLabel?: string,
+) {
   render(
     <ConfigureSummaryDialog
       open
@@ -84,6 +89,8 @@ function open(datasetValue: string, value: { rows: string; cols: string; measure
       value={value}
       onApply={onApply}
       datasetValue={datasetValue}
+      // @ts-expect-error new prop, the contract under test
+      datasetLabel={datasetLabel}
     />,
   );
   return { onApply };
@@ -144,5 +151,22 @@ describe('ConfigureSummaryDialog with a dataset param', () => {
   it('shows no note when every held choice is available', () => {
     open('asks', VALID);
     expect(screen.queryByTestId('summary-choice-note')).not.toBeInTheDocument();
+  });
+
+  it('announces the note: the form is described by it', () => {
+    open('asks', { rows: 'product', cols: 'week', measures: ['asks'] });
+
+    const note = screen.getByTestId('summary-choice-note');
+    expect(note.id).toBeTruthy();
+    const form = note.closest('form') as HTMLFormElement;
+    expect(form.getAttribute('aria-describedby')).toBe(note.id);
+  });
+
+  it('names the param by the label the page passes, not a hard-coded Count by', () => {
+    open('asks', { rows: 'product', cols: 'week', measures: ['asks'] }, vi.fn(), 'Group by');
+
+    const text = screen.getByTestId('summary-choice-note').textContent ?? '';
+    expect(text).toContain('Group by');
+    expect(text).not.toContain('Count by');
   });
 });

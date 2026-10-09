@@ -217,4 +217,33 @@ describe('ReportPage dataset switch', () => {
     expect(last.measures).toEqual(['asks', 'failed']);
     expect((await screen.findByTestId('summary-choice-note')).textContent).toContain('Product');
   });
+
+  it('announces the page note as a status naming the param by its meta label', async () => {
+    render();
+    await waitFor(() => expect(pivotsSent().some((p) => p.rows === 'product')).toBe(true));
+    fireEvent.change(screen.getByLabelText('report-param-count_by'), { target: { value: 'asks' } });
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('Product');
+    expect(status.textContent).toContain('Count by');
+  });
+
+  it('exports the corrected summary, never the held product choice', async () => {
+    render();
+    await waitFor(() => expect(pivotsSent().some((p) => p.rows === 'product')).toBe(true));
+    fireEvent.change(screen.getByLabelText('report-param-count_by'), { target: { value: 'asks' } });
+    await screen.findByTestId('summary-choice-note');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Export to Excel/i })[0]);
+
+    await waitFor(() => expect(exportReport).toHaveBeenCalled());
+    const sent = JSON.stringify(exportReport.mock.calls[0]);
+    expect(sent).not.toContain('product');
+    expect(sent).not.toContain('named');
+    const view = exportReport.mock.calls[0].find(
+      (a: unknown) => a && typeof a === 'object' && 'pivot' in (a as object),
+    ) as { pivot: { rows: string } } | undefined;
+    const pivot = view?.pivot ?? (exportReport.mock.calls[0][1] as { view: { pivot: { rows: string } } }).view.pivot;
+    expect(pivot.rows).toBe('outcome');
+  });
 });
