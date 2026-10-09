@@ -2,8 +2,9 @@
 
 GENERATED from `sorento_crm_mcp` (catalog + merged module catalogs): name, description, method and
 params as the n8n catalog has them (dashes become hyphens); `path` is the backend's REAL route path
-(trailing slash included). `resolve_signed_urls` (presigned URLs are credentials) and the chatbot's
-`contact_id` / `space_id` are dropped. The backend image carries no `sorento_crm_mcp`, so this is
+(trailing slash included). The chatbot's contact-scoping params and the signed-URL switch (presigned
+URLs are credentials) are dropped, with every description sentence that names them. The backend image
+carries no `sorento_crm_mcp`, so this is
 a static copy; `tests/analytics_connector/test_manifest.py` cross-checks it against the catalog.
 """
 from __future__ import annotations
@@ -33,12 +34,8 @@ REUSED_TOOLS: tuple[dict, ...] = (
             '(true = the register flagged the extracted data for a human)\n\nTHE SAME NUMBER '
             'CAN EXIST UNDER TWO SCHEMES (04124FC is approved under both PPS and SPAN, with '
             'different expiries). When a number filter returns more than one row, ask which '
-            'scheme rather than answering from the first row.\n\nFILES: pass '
-            '`resolve_signed_urls=true` to get `preview_url` + `download_url` for the '
-            "CURRENT revision's PDF. Superseded revisions are never resolved, so no path can "
-            'hand out a replaced document.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'scheme rather than answering from the first row.\n\nSuperseded revisions are '
+            'never resolved, so no path can hand out a replaced document.'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/certificates/',
@@ -105,9 +102,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'OPTIONAL ETA WINDOW: `eta_from` / `eta_to` (YYYY-MM-DD, inclusive) narrow to '
             "shipments arriving within the window - e.g. 'is SKU X arriving before month "
             "end?'. Applied on top of the product filter (a product hint is still required); "
-            'never a standalone filter.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'never a standalone filter.'
         ),
         "method": 'GET',
         "path": '/api/v1/incoming-stock/by-product',
@@ -137,20 +132,15 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'per-warehouse summary. Never exposes received/rejected quantities, SPO numbers, '
             'or internal IDs. REQUIRED: at least ONE narrowing filter (product_ids / '
             'shipment_ids / supplier_ids / eta_from / eta_to) or the tool returns an empty '
-            'page.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results.\n\nCLEARANCE DATES (eta_delay_date, inspection_date, '
-            'approval_date, gatepass_date, loading/etc/etd, liner_code, forwarders, '
-            'consignee, free_days_available, coa_permit_no) are ENTITLEMENT-GATED '
-            'server-side, FIELD BY FIELD. They appear only when the caller may see them: for '
-            'a contact question, pass `contact_id`; the contact must hold the '
-            '`incoming_stock_enquiries` agent AND have that specific field allowed on it. '
-            'Holding the agent does NOT mean every field. When not permitted the keys are '
-            "ABSENT from the response - absent means 'not permitted', it does NOT mean 'not "
-            "reached yet'. Never tell a user a date is unknown or pending because a key is "
-            'missing; say you cannot share it. A `field_access.denied` block lists what was '
-            'withheld and why. The container number (`shipping_container_number`) and the '
-            'quantities (`remaining_incoming_quantity`, `unallocated_quantity`, '
+            'page.\n\nCLEARANCE DATES (eta_delay_date, inspection_date, approval_date, '
+            'gatepass_date, loading/etc/etd, liner_code, forwarders, consignee, '
+            'free_days_available, coa_permit_no) are ENTITLEMENT-GATED server-side, FIELD BY '
+            'FIELD. Holding the agent does NOT mean every field. When not permitted the keys '
+            "are ABSENT from the response - absent means 'not permitted', it does NOT mean "
+            "'not reached yet'. Never tell a user a date is unknown or pending because a key "
+            'is missing; say you cannot share it. A `field_access.denied` block lists what '
+            'was withheld and why. The container number (`shipping_container_number`) and '
+            'the quantities (`remaining_incoming_quantity`, `unallocated_quantity`, '
             '`allocated_quantity`) are gated the same way for a contact. For a contact, the '
             'ETA is already the date that contact may be told, and the packing-list '
             'attachment is present only when that contact may receive it.'
@@ -173,9 +163,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             '`supplier_ids` (canonical supplier UUIDs)\n  • `eta_from` / `eta_to` (ETA '
             "window, YYYY-MM-DD)\n\nFor 'incoming for product X' use "
             'crm_incoming_stock_by_product instead - do NOT call this tool without a '
-            'narrower just to enumerate every open shipment.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'narrower just to enumerate every open shipment.'
         ),
         "method": 'GET',
         "path": '/api/v1/incoming-stock/shipments',
@@ -208,11 +196,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "pass `include_sellable=true` to add `Outstanding` (that warehouse row's own "
             'open sales-order quantity, not yet a delivery order) to every stock row, and an '
             "`(O/S: n)` suffix on the compact block's Total and warehouse lines. Default "
-            'false. Field-reveal gated downstream (`inventory.sellable`), not by this tool.\n\n'
-            'COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results. Pass BOTH or NEITHER: `contact_id` without `space_id` '
-            'returns no rows.'
+            'false. Field-reveal gated downstream (`inventory.sellable`), not by this tool.'
         ),
         "method": 'GET',
         "path": '/api/v1/inventory/stock/balance',
@@ -226,10 +210,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'List warehouses. Response uses Sage-aligned vocabulary: `system_location` (was '
             'warehouse_code), `system_location_description` (was warehouse_name), '
             '`warehouse` (was location). FILTER BY UUID: `warehouse_ids` (canonical '
-            'warehouse UUIDs csv / JSON / repeated). is_active=true for active-only.\n\n'
-            'COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results.'
+            'warehouse UUIDs csv / JSON / repeated). is_active=true for active-only.'
         ),
         "method": 'GET',
         "path": '/api/v1/inventory/warehouses/',
@@ -244,9 +225,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'set. Body: {set_key, raw, locale?}. Returns '
             '{value,label,matched_keyword,match_type,score} or 404. Use whenever a user '
             'gives a free-text value for a CRM dropdown field - translate first, then send '
-            'the canonical value to the matching write API.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'the canonical value to the matching write API.'
         ),
         "method": 'POST',
         "path": '/api/v1/lookup/resolve',
@@ -275,9 +254,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'inactive, superseded or no-longer-honoured promotion cannot be retrieved here '
             'at all, so never offer a result as the full set of past promotion flyers. DO '
             'NOT PASS `active`: the backend discards it, and `active=false` returns the same '
-            'served set rather than the archive.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'served set rather than the archive.'
         ),
         "method": 'GET',
         "path": '/api/v1/marketing/promotion-attachments/',
@@ -308,9 +285,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'superseded or no-longer-honoured promotion cannot be retrieved here at all, so '
             "never present a result as the full history of a product's promotions. DO NOT "
             'PASS `active`: the backend discards it, and `active=false` returns the same '
-            'served set rather than the archive.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'served set rather than the archive.'
         ),
         "method": 'GET',
         "path": '/api/v1/marketing/promotion-products/',
@@ -358,9 +333,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'of the full catalog.\n\nACCESS LEVELS: `access_levels` filters promotions whose '
             '`access_levels` JSONB overlaps the supplied names (case-insensitive). Phrases '
             'like `sorento dealer`, `mocha office`, `end user` are `access_levels` ONLY - '
-            'never `*_ids` values.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io '
-            "contact id) + `space_id` to scope results to that contact's company/companies; "
-            'omit both for all-company results.'
+            'never `*_ids` values.'
         ),
         "method": 'GET',
         "path": '/api/v1/marketing/promotions/',
@@ -373,9 +346,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
         "description": (
             'List brands with pagination. FILTER BY UUID: `brand_ids` (canonical brand '
             'UUIDs) and / or `product_ids` (returns the brands of those products). Both '
-            'accept csv / JSON list / repeated.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'accept csv / JSON list / repeated.'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/brands/',
@@ -399,10 +370,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "this developer') sort by debtor_name.\n\nFILTER BY UUID: `customer_ids` "
             '(canonical customer UUIDs, csv / JSON / repeated) filters the source orders by '
             'Order.customer_id before aggregation. External AI/MCP callers are HARD-CAPPED '
-            'at limit=20 server-side. Sort: debtor_name | debtor_code | order_count.\n\n'
-            'COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results.'
+            'at limit=20 server-side. Sort: debtor_name | debtor_code | order_count.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/orders/debtors',
@@ -427,10 +395,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'compare dates yourself and never call a certificate valid when `certificate` is '
             'absent - absent means the file is not a certificate at all (a brochure, a spec '
             'sheet). Do not hand over a file whose `validity_state` is `expired`; say it has '
-            'lapsed and use crm_certificates_list to find whether a renewal has been filed.\n\n'
-            'COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results.'
+            'lapsed and use crm_certificates_list to find whether a renewal has been filed.'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/product-attachments/',
@@ -443,9 +408,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
         "description": (
             'List product categories with pagination. FILTER BY UUID: `category_ids` '
             '(canonical category UUIDs) and / or `product_ids` (returns the categories of '
-            'those products). csv / JSON / repeated.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'those products). csv / JSON / repeated.'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/product-categories/',
@@ -485,9 +448,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'then label. Default false; omit it for a plain price/dimension listing. '
             'Distinct from `include_specifications` above (this is the ranked-list shape the '
             'render presenter appends as fields; that one is the sentence/values block for a '
-            'catalogue editor).\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io '
-            "contact id) + `space_id` to scope results to that contact's company/companies; "
-            'omit both for all-company results.'
+            'catalogue editor).'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/products/',
@@ -500,9 +461,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
         "description": (
             'List units of measure with pagination. FILTER BY UUID: `uom_ids` (canonical UOM '
             'UUIDs) and / or `product_ids` (returns the base UOMs of those products). csv / '
-            'JSON / repeated.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io '
-            "contact id) + `space_id` to scope results to that contact's company/companies; "
-            'omit both for all-company results.'
+            'JSON / repeated.'
         ),
         "method": 'GET',
         "path": '/api/v1/master-data/units-of-measure/',
@@ -536,9 +495,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'matched the product. The only date filter here is '
             '`actual_delivery_date_from`/`actual_delivery_date_to` above; for a '
             'sales-order-placement-date window over open/pending figures use '
-            'crm_outstanding_report instead.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'crm_outstanding_report instead.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/orders/by-product',
@@ -589,9 +546,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'qualifies when ANY of its lines sits at one of these warehouses. The only date '
             'filter here is `actual_delivery_date_from`/`actual_delivery_date_to` above; for '
             'a sales-order-placement-date window over open/pending figures use '
-            'crm_outstanding_report instead.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'crm_outstanding_report instead.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/orders/',
@@ -648,9 +603,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'back so the rendered reply names the withheld SO half; it changes no filter, '
             'send `scope=do` alongside it.\n\nUse crm_order_management_orders_list / '
             'crm_order_management_orders_by_product_list instead for a plain row list or a '
-            'delivered/actual-delivery-date question.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'delivered/actual-delivery-date question.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/outstanding-report',
@@ -683,9 +636,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'unit_cost, discount_per_unit and unit_cost_after_discount are gated on the '
             'contact holding purchase_orders.cost; Supplier is gated on '
             'purchase_orders.supplier, independent of the cost grant - a dealer without the '
-            'matching grant never sees that one field.\n\nCOMPANY SCOPE: optionally pass '
-            '`contact_id` (Respond.io contact id) + `space_id` to scope results to that '
-            "contact's company/companies; omit both for all-company results."
+            'matching grant never sees that one field.'
         ),
         "method": 'GET',
         "path": '/api/v1/procurement/purchase-orders/last-cost',
@@ -712,10 +663,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'expected_date | product | supplier | outstanding_qty | po_date | ordered_qty, '
             '`dir` = asc | desc; an unknown value is a 422.\n\nGROUPING: `group_by` = product '
             '| supplier | date renders headed sections. `include_summary=true` adds '
-            '`summary` (po_placed_qty/po_placed_count over the filtered lines).\n\nCOMPANY '
-            'SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to '
-            "scope results to that contact's company/companies; omit both for all-company "
-            'results.'
+            '`summary` (po_placed_qty/po_placed_count over the filtered lines).'
         ),
         "method": 'GET',
         "path": '/api/v1/procurement/purchase-orders/placed',
@@ -751,9 +699,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'product named returns the 3 newest lines across every product, NOT 3 per '
             'product.\n\nSORT: `sort` = spo_date (default) | spo_quantity | gr_date | '
             'gr_quantity, `dir` = asc | desc (default desc); nulls last; `top_n` still means '
-            'lines per product / lines overall.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'lines per product / lines overall.'
         ),
         "method": 'GET',
         "path": '/api/v1/procurement/spo-allocations/last-receipt',
@@ -773,9 +719,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "the status of Residensi Damai', 'who owns PRJ-000142', 'when does <project> "
             "launch'). INVOCATION: `project_id` is the canonical project UUID -- resolve the "
             'project code or title first. For what we quoted on it, call '
-            'crm_project_quotations_list.\n\nCOMPANY SCOPE: optionally pass `contact_id` '
-            "(Respond.io contact id) + `space_id` to scope results to that contact's "
-            'company/companies; omit both for all-company results.'
+            'crm_project_quotations_list.'
         ),
         "method": 'GET',
         "path": '/api/v1/project-sales/projects/{project_id}',
@@ -816,10 +760,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "<project> worth', 'did we win the common area', 'why did we lose <project>'. A "
             'project has MANY quotations, one per scope, and each quotation has versions -- '
             "the total returned is the CURRENT version's, which is the only figure that "
-            'should be quoted back. INVOCATION: `project_id` is the canonical project UUID.\n\n'
-            'COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + '
-            "`space_id` to scope results to that contact's company/companies; omit both for "
-            'all-company results.'
+            'should be quoted back. INVOCATION: `project_id` is the canonical project UUID.'
         ),
         "method": 'GET',
         "path": '/api/v1/project-sales/projects/{project_id}/quotations',
@@ -854,9 +795,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             "project can sit at 'tendering' with outcome 'partial' when one scope is won.\n  "
             '* `only_critical=true` -- the Final Negotiation flag, not a stage.\nSORT KEYS: '
             'created_at, updated_at, title, project_code, estimated_sales_value, '
-            'last_meaningful_activity_at; combine with dir=asc|desc.\n\nCOMPANY SCOPE: '
-            'optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope '
-            "results to that contact's company/companies; omit both for all-company results."
+            'last_meaningful_activity_at; combine with dir=asc|desc.'
         ),
         "method": 'GET',
         "path": '/api/v1/project-sales/projects/',
@@ -874,12 +813,8 @@ REUSED_TOOLS: tuple[dict, ...] = (
             '`attachment_ids` (canonical attachment UUIDs csv / JSON / repeated) MUST be '
             'supplied or the tool returns an empty page. This tool does NOT browse the '
             'catalogue library; it resolves a known set of UUIDs scoped to the catalogue '
-            'type.\n\nSet resolve_signed_urls=true to include signed preview/download URLs in '
-            'the response. Backend hard-filters by attachment_type_code=catalogue '
-            'server-side, so non-catalogue UUIDs passed in `attachment_ids` are excluded '
-            'automatically.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io contact '
-            "id) + `space_id` to scope results to that contact's company/companies; omit "
-            'both for all-company results.'
+            'type.\n\nBackend hard-filters by attachment_type_code=catalogue server-side, so '
+            'non-catalogue UUIDs passed in `attachment_ids` are excluded automatically.'
         ),
         "method": 'GET',
         "path": '/api/v1/resource-management/attachments/',
@@ -907,18 +842,9 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'types is returned.\n  • They named a SPECIFIC FILE you already hold the UUID for '
             '-> `attachment_ids`. Also available: `directory_id`, `uploaded_by` (canonical '
             'UUIDs).\n  • They named NO document at all -> this tool returns NOTHING, by '
-            'design. `contact_id` alone is NOT a narrowing filter: it scopes the answer to '
-            "that contact's entitlements, but a document request has to name a document, and "
-            'returning everything they may have is a directory listing rather than an '
-            'answer. Ask which document they want instead of guessing.\nPass `contact_id` + '
-            '`space_id` ALONGSIDE one of the filters above - see DOCUMENT TYPES below. They '
-            'widen WHICH types are visible; they never stand in for the filter.\nSet '
-            'resolve_signed_urls=true to include signed preview/download URLs in the '
-            'response.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) '
-            "+ `space_id` to scope results to that contact's company/companies; omit both "
-            'for all-company results.\n\nDOCUMENT TYPES: every caller gets the dealer-facing '
-            'baseline. Passing `contact_id` + `space_id` ADDITIONALLY returns document types '
-            'granted to that contact specifically (e.g. the Container Status workbook for '
+            'design. Ask which document they want instead of guessing.\nThey widen WHICH '
+            'types are visible; they never stand in for the filter.\nDOCUMENT TYPES: every '
+            'caller gets the dealer-facing baseline. the Container Status workbook for '
             'office staff). Grants only widen - a contact with none sees exactly the '
             'baseline, so always pass both when answering on behalf of someone.'
         ),
@@ -953,10 +879,7 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'latest first), top 10 with `more` the rest (`view=render` prints the drill).\n\n'
             'Use crm_outstanding_report instead for the SO-backlog / DO-pending question; '
             "this tool is for a SALES REPORT / sales performance / 'how much did X buy' "
-            'question.\n\nCOMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) '
-            "+ `space_id` to scope results to that contact's company/companies and its stock "
-            'visibility locations (a named location outside them answers `status: refused`); '
-            'omit both for all-company results.'
+            'question.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/sales-report',
@@ -1014,12 +937,12 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'items with a sale in the window are ranked either way.\n\nDETAIL: `detail_code` = '
             "one row's code (a product code, or a category code under group=category) "
             'answers the detail offer: `rows`/`totals` narrow to that code and `detail` '
-            'carries its `by_customer` and `by_month`, same filters and basis.\n\nACCESS: pass '
-            '`contact_id` + `space_id` (both or neither). The contact needs the Sales report '
-            'reveal (403 `sales_report_not_enabled`). A contact holding any active office '
-            'access type is staff and sees every customer, whatever else it holds. Otherwise '
-            'a contact linked to customers is forced to them and naming another is 403 '
-            '`customer_not_permitted`, the same 403 any other contact gets.'
+            'carries its `by_customer` and `by_month`, same filters and basis.\n\nThe contact '
+            'needs the Sales report reveal (403 `sales_report_not_enabled`). A contact '
+            'holding any active office access type is staff and sees every customer, '
+            'whatever else it holds. Otherwise a contact linked to customers is forced to '
+            'them and naming another is 403 `customer_not_permitted`, the same 403 any other '
+            'contact gets.'
         ),
         "method": 'GET',
         "path": '/api/v1/order-management/top-selling',

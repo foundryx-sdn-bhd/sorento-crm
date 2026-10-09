@@ -1,4 +1,4 @@
-"""claude.ai connector: permission, users.connector_revoked_at, session method, chat views
+"""claude.ai connector: permission, users.connector_revoked_at, chat views
 
 Revision ID: acc_0001_connector
 Revises: fcom_0003_conv_thread
@@ -11,10 +11,9 @@ CONTRACT-claude-connector-ss-09oct.md: OAuth, grants and the MCP endpoint live i
    older is refused with `reconsent_required`.
 2. `analytics.connector.use`, granted to NO role (owner ruling Q1 (a): not even admins; the
    connector checks role grants directly).
-3. `user_sessions.auth_method` accepts `claude_connector` (kept from r2; nothing mints it now).
-4. Schema `analytics_connector` with four views, created by
+3. Schema `analytics_connector` with four views, created by
    `app.services.analytics_connector.views.ensure_views` (also run by scripts/bootstrap_env.py).
-5. If role `sorento_analytics_ro` exists, it is granted SELECT on the views (the role and its
+4. If role `sorento_analytics_ro` exists, it is granted SELECT on the views (the role and its
    password are created by the owner on the server, never in the repo; re-run
    scripts/analytics_ro_grants.sql afterwards if the role came later).
 """
@@ -30,9 +29,6 @@ revision = "acc_0001_connector"
 down_revision = "fcom_0003_conv_thread"
 branch_labels = None
 depends_on = None
-
-_OLD = "('password', 'phone_otp', 'portal_link', 'impersonation', 'dev_login')"
-_NEW = "('password', 'phone_otp', 'portal_link', 'impersonation', 'dev_login', 'claude_connector')"
 
 _PERMISSIONS = (
     (
@@ -57,12 +53,6 @@ def upgrade() -> None:
             {"id": str(uuid.uuid4()), "slug": slug, "name": name, "desc": desc, "now": now},
         )
 
-    op.execute("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method")
-    op.execute(
-        "ALTER TABLE user_sessions ADD CONSTRAINT ck_user_sessions_auth_method "
-        f"CHECK (auth_method IN {_NEW})"
-    )
-
     views.ensure_views(bind)
     if bind.execute(sa.text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": views.RO_ROLE}).scalar():
         views.grant_read_role(bind, views.RO_ROLE)
@@ -70,12 +60,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(f"DROP SCHEMA IF EXISTS {views.SCHEMA} CASCADE")
-    op.execute("DELETE FROM user_sessions WHERE auth_method = 'claude_connector'")
-    op.execute("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method")
-    op.execute(
-        "ALTER TABLE user_sessions ADD CONSTRAINT ck_user_sessions_auth_method "
-        f"CHECK (auth_method IN {_OLD})"
-    )
     op.execute(
         "DELETE FROM user_permissions WHERE slug IN "
         "('analytics.connector.use')"

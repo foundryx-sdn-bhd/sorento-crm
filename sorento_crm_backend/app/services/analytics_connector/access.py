@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, AsyncIterator, Optional
 from urllib.parse import parse_qsl, quote
 
@@ -95,7 +96,9 @@ def _same(a: Optional[str], b: Optional[str]) -> bool:
 
 
 def canonical_query(query: str) -> str:
-    pairs = sorted(parse_qsl(query, keep_blank_values=True))
+    """The query pairs in their SENT order (section 7.1 as amended in section 9): a repeated key
+    cannot be reordered under one hash."""
+    pairs = parse_qsl(query, keep_blank_values=True)
     return "&".join(f"{quote(k, safe='-_.~')}={quote(v, safe='-_.~')}" for k, v in pairs)
 
 
@@ -107,8 +110,9 @@ def request_hash(method: str, raw_path: str, query: str, body: bytes) -> str:
 # ------------------------------------------------------------------ the call token
 
 
-def decode_call(token: str, *, method: str, raw_path: str, query: str, body: bytes) -> dict:
-    """The verified claims of a call token, or ConnectorError 401 / 503."""
+def verify_token(token: str) -> dict:
+    """The verified claims of a call token, or ConnectorError 401 / 503. Needs no body: the
+    request's own binding (``req_hash``) is checked by ``check_request_hash`` once the body is read."""
     secret = settings.connector_ss_to_product_secret
     connection_id = settings.connector_connection_id
     if not secret or not connection_id:
@@ -142,9 +146,12 @@ def decode_call(token: str, *, method: str, raw_path: str, query: str, body: byt
         raise ConnectorError(401, "token_expired", "The connector token has expired.")
     if not 0 < claims["exp"] - claims["iat"] <= CALL_MAX_LIFETIME or claims["iat"] > now + CLOCK_SKEW:
         raise _bad_token()
+    return claims
+
+
+def check_request_hash(claims: dict, *, method: str, raw_path: str, query: str, body: bytes) -> None:
     if not _same(claims["req_hash"], request_hash(method, raw_path, query, body)):
         raise _bad_token("The token does not match this request.")
-    return claims
 
 
 def claim_jti(jti: str) -> None:
@@ -161,6 +168,33 @@ def claim_jti(jti: str) -> None:
 
 
 # ------------------------------------------------------------------ routes and users
+
+
+@lru_cache(maxsize=1)
+def _tool_bindings() -> dict[str, tuple[str, str, frozenset[str]]]:
+    """tool name -> (METHOD, path_template, the query keys that tool may send), from the manifest."""
+    from app.services.analytics_connector.manifest import build_manifest
+
+    return {
+        t["name"]: (t["http"]["method"].upper(), t["http"]["path_template"], frozenset(t["http"]["query_params"]))
+        for t in build_manifest()["tools"]
+    }
+
+
+def check_tool_binding(tool: str, method: str, route_path: Optional[str], query: str) -> None:
+    """``claims.tool`` names the manifest tool being called (the manifest route itself: ``""``), and
+    the query sends only that tool's own params (section 9.2). Refusals write no audit row."""
+    if route_path == MANIFEST_PATH:
+        allowed: frozenset[str] = frozenset()
+        if tool != "":
+            raise ConnectorError(403, "route_not_allowed", "The manifest is read with no tool.")
+    else:
+        binding = _tool_bindings().get(tool)
+        if binding is None or binding[:2] != (method.upper(), route_path):
+            raise ConnectorError(403, "route_not_allowed", "This token is not for this tool's route.")
+        allowed = binding[2]
+    if any(k not in allowed for k, _ in parse_qsl(query, keep_blank_values=True)):
+        raise ConnectorError(403, "param_not_allowed", "The call sends a parameter this tool does not take.")
 
 
 def route_allowed(method: str, route_path: Optional[str], raw_path: str) -> bool:
@@ -284,11 +318,15 @@ async def connector_call_gate(request: Request, db: Session = Depends(get_db)) -
     route = request.scope.get("route")
     raw_path = (request.scope.get("raw_path") or request.url.path.encode()).decode("latin-1").split("?", 1)[0]
     query = (request.scope.get("query_string") or b"").decode("latin-1")
-    claims = decode_call(token.strip(), method=request.method, raw_path=raw_path, query=query, body=await request.body())
+    # Verified before any body is read: by ConnectorPreflightMiddleware (which also caps the body),
+    # or here when a caller reached the route without it.
+    claims = getattr(request.state, "connector_claims", None) or verify_token(token.strip())
+    check_request_hash(claims, method=request.method, raw_path=raw_path, query=query, body=await request.body())
     claim_jti(claims["jti"])
     route_path = getattr(route, "path", None)
     if not route_allowed(request.method, route_path, raw_path):
         raise ConnectorError(403, "route_not_allowed", "The connector cannot call this route.")
+    check_tool_binding(claims["tool"], request.method, route_path, query)
     if route_path == MANIFEST_PATH:
         request.state.connector_call = ConnectorCall(claims=claims, user=None)
         yield
@@ -316,7 +354,10 @@ async def connector_call_gate(request: Request, db: Session = Depends(get_db)) -
     except Exception as exc:
         translated = _translate(exc)
         db.rollback()
-        record_tool_call(db, call, status=translated.status_code if translated else 500, started=started)
+        # The status the caller receives: the translated one, the route's own, or 500.
+        sent = translated or exc
+        record_tool_call(db, call, status=sent.status_code if isinstance(sent, HTTPException) else 500,
+                         started=started)
         if translated is not None and translated is not exc:
             raise translated from exc
         raise

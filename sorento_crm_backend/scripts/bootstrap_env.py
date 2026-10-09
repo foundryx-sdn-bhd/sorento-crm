@@ -165,9 +165,8 @@ def create_analytics_connector() -> None:
     """Lay down migration `acc_0001_connector`'s non-table work (it has no ORM model).
 
     `users.connector_revoked_at` comes from `create_all` (added here too for an older database); the
-    `analytics_connector` schema + views and the widened `user_sessions.auth_method` CHECK exist
-    only in the migration body, so a bootstrapped database needs them replayed (same gap as the
-    scm views above). Idempotent.
+    `analytics_connector` schema + views exist only in the migration body, so a bootstrapped
+    database needs them replayed (same gap as the scm views above). Idempotent.
     """
     from sqlalchemy import text
 
@@ -177,11 +176,6 @@ def create_analytics_connector() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
         views.ensure_views(conn)
-        conn.execute(text("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method"))
-        conn.execute(text(
-            "ALTER TABLE user_sessions ADD CONSTRAINT ck_user_sessions_auth_method CHECK (auth_method IN "
-            "('password', 'phone_otp', 'portal_link', 'impersonation', 'dev_login', 'claude_connector'))"
-        ))
     log.info("analytics_connector views created")
 
 

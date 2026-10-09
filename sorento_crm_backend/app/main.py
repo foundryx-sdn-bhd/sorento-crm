@@ -50,6 +50,7 @@ from app.api.v1 import api_router
 from app.services.error_handler import AppException
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.idempotency_middleware import IdempotencyMiddleware
+from app.middleware.connector_preflight_middleware import ConnectorPreflightMiddleware
 from app.middleware.api_call_log_middleware import ApiCallLogMiddleware
 from app.middleware.impersonation_ended_middleware import (
     IMPERSONATION_ENDED_HEADER,
@@ -98,6 +99,10 @@ app = FastAPI(
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+
+# claude.ai connector: a `Connector` token is verified, and its body capped at 1 MB, before any body
+# is read (CLAUDE-CONNECTOR contract 9.4). Other requests pass straight through.
+app.add_middleware(ConnectorPreflightMiddleware)
 
 # A view-as header the auth dependency could not honour gets X-Impersonation-Ended: 1,
 # so the client drops its banner instead of labelling the admin's own data as the
