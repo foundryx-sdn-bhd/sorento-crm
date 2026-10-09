@@ -305,3 +305,22 @@ describe('booleans, merge cap, hidden rows and columns', () => {
     expect(s.columnWidths?.[1]).toBe(0);
   });
 });
+
+describe('hidden rows with merges and a freeze pane', () => {
+  it('remaps row numbers, merges and pinned rows to the visible rows', async () => {
+    const s = await single((ws) => {
+      for (let r = 1; r <= 8; r += 1) {
+        ws.getCell(r, 1).value = `r${r}`;
+        ws.getCell(r, 2).value = `b${r}`;
+      }
+      ws.mergeCells('B4:B7');
+      ws.getRow(2).hidden = true;
+      ws.getRow(6).hidden = true;
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+    });
+    expect(s.rows.map((r) => r[0])).toEqual(['r1', 'r3', 'r4', 'r5', 'r7', 'r8']);
+    expect(s.rowNumbers).toEqual([1, 3, 4, 5, 7, 8]);
+    expect(s.merges).toContainEqual({ r: 2, c: 1, rowSpan: 3, colSpan: 1 });
+    expect(s.pinnedRows).toEqual([0, 1]);
+  });
+});

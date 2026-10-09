@@ -167,3 +167,51 @@ describe('AC-V6 tabs at the bottom', () => {
     expect(screen.queryByText('Basin white')).not.toBeInTheDocument();
   });
 });
+
+describe('tall merges survive virtualisation', () => {
+  it('keeps the head row of a vertical merge rendered while only its lower rows are in view', () => {
+    const rows = Array.from({ length: 200 }, (_, i) => (i === 1 ? ['MERGEHEAD', 'h1'] : [`r${i}`, `c${i}`]));
+    render(
+      <SpreadsheetViewer
+        workbook={wb({ rows, merges: [{ r: 1, c: 0, rowSpan: 59, colSpan: 1 }] })}
+      />,
+    );
+    const scroller = screen.getByTestId('spreadsheet-scroller');
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, value: 1300 });
+    act(() => {
+      fireEvent.scroll(scroller);
+    });
+    expect(screen.queryByText('c2')).not.toBeInTheDocument(); // far above the window
+    expect(screen.getByText('c45')).toBeInTheDocument(); // the window is down in the merge
+    expect(screen.getByText('MERGEHEAD')).toBeInTheDocument();
+  });
+});
+
+describe('rowNumbers drive the row-number column', () => {
+  it('shows the sheet row numbers given, not 1, 2, 3', () => {
+    render(<SpreadsheetViewer workbook={wb({ rows: [['a'], ['b'], ['c']], rowNumbers: [1, 3, 4] })} />);
+    expect(screen.getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['1', '3', '4']);
+  });
+});
+
+describe('centred long text', () => {
+  it('centres on a block and truncates, so it clips only at the end', () => {
+    const long = 'A very long centred caption that cannot fit its column';
+    const cells = [[{ align: 'center' as const }]];
+    render(
+      <SpreadsheetViewer
+        workbook={wb({ rows: [[long]], cells, columnWidths: [60] })}
+      />,
+    );
+    const cell = cellOf(long);
+    const el = [cell, ...Array.from(cell.querySelectorAll<HTMLElement>('*'))].find((n) =>
+      n.textContent === long && (n.className.includes('truncate') || n.style.textOverflow === 'ellipsis'),
+    );
+    expect(el).toBeTruthy();
+    for (const n of [cell, el as HTMLElement]) {
+      expect(n.className).not.toMatch(/justify-center/);
+      expect(n.className).not.toMatch(/(^|\s)(inline-)?flex(\s|$)/);
+    }
+    expect(cell.className.includes('text-center') || cell.style.textAlign === 'center').toBe(true);
+  });
+});
