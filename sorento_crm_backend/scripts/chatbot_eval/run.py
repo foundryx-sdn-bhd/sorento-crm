@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .budget import PRICES, Budget
@@ -30,6 +31,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--max-parallel", type=int, default=1)
     p.add_argument("--budget-usd", type=float)
     p.add_argument("--budget-model", choices=sorted(PRICES), default="gpt-5.4-mini")
+    p.add_argument("--prompt-version")
     p.add_argument("--baseline")
     p.add_argument("--out")
     p.add_argument("--seed", type=int, default=0)
@@ -113,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as exc:
                 print(str(exc), file=sys.stderr)
                 return 2
+    if args.prompt_version:
+        kw["prompt_version"] = args.prompt_version
     engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
@@ -122,16 +126,22 @@ def main(argv: list[str] | None = None) -> int:
         items = _calibration_items(args.data_dir)
         agreement = calibrate(_Counting(judge, budget), items)
         calibrated = bool(items) and agreement >= CALIBRATION_MIN
+    run_id = f"eval-{uuid.uuid4().hex[:8]}"
+    started_at = datetime.now(timezone.utc).isoformat()
     try:
         run = run_all(
             engine, loaded.cases, variants=args.variants, max_parallel=args.max_parallel, budget=budget,
-            run_id=f"eval-{uuid.uuid4().hex[:8]}", seed=args.seed, judge=judge if calibrated else None,
+            run_id=run_id, seed=args.seed, judge=judge if calibrated else None,
             judge_calibrated=calibrated,
         )
     except NotDryRunError as exc:
         print(f"aborted: {exc}", file=sys.stderr)
         return 4
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
+    report.update(
+        engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
+        prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
+    )
     if args.out:
         _write(args.out, report, run)
     print(render_summary(report, args.split))

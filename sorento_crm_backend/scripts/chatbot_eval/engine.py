@@ -38,9 +38,12 @@ def _is_final_text(case: Any, text: str) -> bool:
 
 
 class HttpTurnEngine:
-    def __init__(self, base_url: str, api_key: str, timeout: float = 60, trace_reader: Any = None, contact_reset: Any = None):
+    def __init__(
+        self, base_url: str, api_key: str, timeout: float = 60, trace_reader: Any = None, contact_reset: Any = None, prompt_version: Any = None
+    ):
         self.trace_reader = trace_reader
         self.contact_reset = contact_reset
+        self.prompt_version = prompt_version
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
@@ -66,6 +69,8 @@ class HttpTurnEngine:
             "test_run_id": run_id,
             "ingress": "console",
         }
+        if self.prompt_version is not None:
+            env["prompt_overrides"] = {"chatbot_semantic_parser": str(self.prompt_version)}
         if state is not None:
             env["previous_conversation_state"] = state
         return env
