@@ -164,3 +164,23 @@ def test_the_catalog_declares_the_dataset_and_chat_params():
 def test_review_sort_asc_heads_bottom():
     lines = _lines(_body(sort="asc"))
     assert lines[0] == "Bottom 2 topics by asks", lines
+
+
+@pytest.mark.parametrize(
+    ("unit", "plural", "singular"),
+    [("asks", "asks", "ask"), ("turns", "turns", "turn"), ("contacts", "contacts", "contact")],
+)
+def test_a_figure_of_exactly_one_uses_the_singular_unit(unit, plural, singular):
+    one = _report_ask(_body(unit=unit, rows=[{"rank": 1, "name": "Availability", "value": 1}], more=0,
+                            total_count=1, total={"value": 1}))
+    assert f"Availability: 1 {singular}" in one and f"1 {plural}" not in one, one
+    two = _report_ask(_body(unit=unit, rows=[{"rank": 1, "name": "Availability", "value": 2}], more=0,
+                            total_count=1, total={"value": 2}))
+    assert f"Availability: 2 {plural}" in two, two
+
+
+def test_a_failure_rate_over_one_turn_reads_singular():
+    body = _body(unit="%", measure="failure_rate",
+                 rows=[{"rank": 1, "name": "Availability", "value": 100.0, "numerator": 1, "denominator": 1}],
+                 more=0, total_count=1, total={"value": 100.0, "numerator": 1, "denominator": 1})
+    assert "(1 of 1 turn)" in _report_ask(body) and "1 turns" not in _report_ask(body)

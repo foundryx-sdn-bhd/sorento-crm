@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services import ai_prompt_registry
+from app.services.chatbot import llm_call
 from app.services.ai_assistant_service import AIAssistantConfigService
 from app.services.llm_provider import get_provider, resolve_api_key, resolve_model
 
@@ -106,6 +107,7 @@ def extract_chat_report(db: Session, message_text: str, *, today: date) -> dict[
             temperature=0.0,
             model=model,
             max_tokens=256,
+            timeout=llm_call.ATTEMPT_TIMEOUT_SECONDS,
             json_schema=_schema(domains),
             json_schema_name=SCHEMA_NAME,
         )

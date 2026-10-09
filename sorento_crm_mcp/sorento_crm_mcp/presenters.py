@@ -3321,6 +3321,11 @@ def _chat_date(value: Any) -> str:
     return f"{d.day} {d.strftime('%b')} {d.year}"
 
 
+def _singular(unit: str, count: Any) -> str:
+    """`asks` / `turns` / `contacts` as the singular for exactly one."""
+    return unit[:-1] if int(count) == 1 and unit.endswith("s") else unit
+
+
 def _chat_figure(figures: dict, body: dict) -> str:
     """One row's (or the total's) figure with its unit: `124 asks`, `7 contacts`, or for a
     failure rate `1.2% (14 of 1,215 turns)`."""
@@ -3328,9 +3333,10 @@ def _chat_figure(figures: dict, body: dict) -> str:
     if body.get("unit") == "%":
         text = f"{float(value):.1f}%"
         if figures.get("denominator") is not None:
-            text += f" ({int(figures.get('numerator') or 0):,} of {int(figures['denominator']):,} turns)"
+            text += f" ({int(figures.get('numerator') or 0):,} of {int(figures['denominator']):,} {_singular('turns', figures['denominator'])})"
         return text
-    return f"{int(value):,} {body.get('unit') or 'asks'}"
+    unit = body.get("unit") or "asks"
+    return f"{int(value):,} {_singular(unit, value)}"
 
 
 def _chat_report_ask(body: dict) -> str:

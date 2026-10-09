@@ -371,8 +371,13 @@ def _reply_verdict_by_shape(
         any(verdict.get(k) for k in ask.answer_keys)
         and (
             verdict.get("intent_hint") in (None, "", ask.reroute.get("intent_hint"))
-            # A verdict naming a ranking axis or a status is another ask in its own right.
-            or not (verdict.get("group_by") or verdict.get("order_status"))
+            # Another intent's verdict is a reply only when it names no axis, status, entity
+            # or domain of its own (a plain period or count), else it is another ask.
+            or (
+                not (verdict.get("group_by") or verdict.get("order_status"))
+                and not verdict.get("entities")
+                and verdict.get("domain_hint") in (None, "", ask.reroute.get("domain_hint"))
+            )
         )
     ):
         return verdict, "required_ask_dropped"
