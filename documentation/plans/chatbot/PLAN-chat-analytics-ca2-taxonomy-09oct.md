@@ -211,3 +211,26 @@ Top asks opens 5 Sep 2026 to today, topic by month. UAC: `ca2-taxonomy-acceptanc
   `MENU_SIDEBAR_COMPACT` (`config/menu.config.tsx:945`, `:2250`): Top Asks and Bot Failures
   gated `chatbot.analytics.view`, Topic Audit gated `system.chat_history.view` (menu items take
   one slug, `config/types.ts:18`; the server enforces both).
+
+### Review round 1 (reviewer + security-reviewer, 10 Oct 2026): rulings
+
+Fixed in this lane (red-first): split asks count once on turn measures (Chat overview and Bot
+failures read `ask_seq = 1`; Top asks counts every ask); `wrong_subject` needs a leaf under a
+DIFFERENT subject (422); a concurrent second draw is 409 and a version with no topics 404; a
+malformed audit id is 404; the labeller caps extra asks per message, ignores keys not in the
+batch and keeps the first label per key (one customer's text cannot relabel another's ask);
+Chat overview's coverage note no longer says topics are coming.
+
+Accepted, recorded here:
+- Topic Audit menu is gated on `system.chat_history.view` only (menu items take one slug,
+  `config/types.ts:18`). CA-1 granted `chatbot.analytics.view` to every role holding that slug
+  (`chat_facts_0001_tables.py:40,172`), so the 403 case needs a role edited by hand since; the
+  server enforces both.
+- `chat_label_audits.ask_id` cascades: a CA-1 `sweep(rebuild=True)` or a relabel that replaces
+  split rows drops those verdicts. A rebuild is a rare admin step, and a relabel happens only on
+  a taxonomy bump, which gets its own sample. Trigger to revisit: a rebuild after an audit has
+  started.
+- A fact domain outside the 16 subjects would label as the bare domain code with no row. All 15
+  parser domains are subjects today; a new parser domain needs a taxonomy bump anyway.
+- Nightly flag gates only the scheduler tick; the script and a hand-queued job are deliberate
+  dev actions.
