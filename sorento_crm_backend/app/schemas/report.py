@@ -218,6 +218,8 @@ class ReportMeta(BaseModel):
     opens_on: str = "detail"
     # The select param that picks the row set (null when the report reads one).
     dataset_param: Optional[str] = None
+    # Per value of `dataset_param`, the pivot rows column the screen switches to (or null).
+    pivot_rows_by: Optional[Dict[str, str]] = None
 
 
 class ReportCatalogEntry(BaseModel):

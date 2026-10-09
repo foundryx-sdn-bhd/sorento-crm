@@ -381,6 +381,10 @@ class ReportDefinition:
     #: lines (finance S1). The datasets share the company param, the date basis key and the
     #: default view's pivot axes, so one saved view runs on any of them.
     datasets_by: Optional[Tuple[str, Dict[str, "Dataset"]]] = None
+    #: With `datasets_by`: per value of that param, the pivot ROWS column key the screen
+    #: switches to when the value is picked (Top asks: topics -> topic, products -> product).
+    #: None leaves the rows alone on a switch.
+    pivot_rows_by: Optional[Dict[str, str]] = None
 
     def dataset_for(self, values: Dict[str, Any]) -> Dataset:
         """The dataset a run with these bound param values reads."""
@@ -422,6 +426,7 @@ class ReportDefinition:
 
 def validate(definition: ReportDefinition) -> None:
     """Fail at import time rather than on the first run of the screen."""
+    _validate_pivot_rows_by(definition)
     for dataset in definition.datasets():
         _validate_against(definition, dataset)
     if definition.datasets_by is not None:
@@ -438,6 +443,28 @@ def validate(definition: ReportDefinition) -> None:
                 raise ValueError(
                     f"Report '{definition.key}' dataset '{dataset.key}' names another company param or scope"
                 )
+
+
+def _validate_pivot_rows_by(definition: ReportDefinition) -> None:
+    mapping = definition.pivot_rows_by
+    if mapping is None:
+        return
+    if definition.datasets_by is None:
+        raise ValueError(f"Report '{definition.key}' sets pivot_rows_by without datasets_by")
+    key = definition.datasets_by[0]
+    param = next((p for p in definition.params if isinstance(p, SelectParam) and p.key == key), None)
+    offered = {value for value, _label in param.options(None)} if param is not None else set()
+    for value, column_key in mapping.items():
+        if value not in offered:
+            raise ValueError(
+                f"Report '{definition.key}' pivot_rows_by names '{value}', which '{key}' does not offer"
+            )
+        column = definition.dataset_for({key: [value]}).column(column_key)
+        if column is None or column.tag != "dimension":
+            raise ValueError(
+                f"Report '{definition.key}' pivot_rows_by sets '{column_key}' for '{value}', "
+                "which is not a dimension of that dataset"
+            )
 
 
 def _validate_against(definition: ReportDefinition, dataset: Dataset) -> None:

@@ -266,6 +266,9 @@ export interface ReportMeta {
   opens_on?: 'detail' | 'summary';
   /** The select param that picks the row set; null/absent when the report reads one. */
   dataset_param?: string | null;
+  /** Per value of `dataset_param`, the pivot rows column the screen switches to; null when
+   *  a switch leaves the rows alone. */
+  pivot_rows_by?: Record<string, string> | null;
 }
 
 export interface ReportExportResult {

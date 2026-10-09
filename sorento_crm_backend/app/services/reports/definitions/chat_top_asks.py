@@ -136,6 +136,7 @@ REPORT = reg.register(
         note=lambda ctx: ds.topics_note(ctx, skip=("products", "count_by")),
         opens_on="summary",
         datasets_by=("count_by", {"products": ITEMS_DATASET}),
+        pivot_rows_by={"topics": "topic", "products": "product"},
         workbook=reg.WorkbookSpec(
             company_name="SORENTO SDN BHD",
             report_title="TOP ASKS",
