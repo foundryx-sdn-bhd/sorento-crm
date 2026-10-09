@@ -1,10 +1,16 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { FileText, Timer } from 'lucide-react';
+import { FileText, MessageSquare, Timer } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import FormSLATrackingTab from './FormSLATrackingTab';
 import type { FormSLASourceType } from './formSLAService';
+import { FormComments } from '@/components/common/comments/FormComments';
+import { useFormCommentsQuery } from '@/hooks/useFormComments';
+import { useComplaint } from '@/app/(protected)/complaint-management/complaints/hooks/useComplaints';
+import { useStockInquiry } from '@/app/(protected)/procurement-management/stock-inquiries/hooks/useStockInquiries';
+import { usePurchaseRequest } from '@/app/(protected)/procurement-management/purchase-requests/hooks/usePurchaseRequests';
+import type { FormCommentKind } from '@/types/formComments';
 
 export interface FormDetailExtraTab {
   value: string;
@@ -24,9 +30,44 @@ interface FormDetailWithSLATabsProps {
   children: ReactNode;
   /** Entity-specific tabs inserted between "Details" and "SLA Tracking". */
   extraTabs?: FormDetailExtraTab[];
+  /** Prepends a "Comments (N)" tab right after Details, holding that form's comment thread. */
+  commentsKind?: FormCommentKind;
 }
 
-export default function FormDetailWithSLATabs({
+/** The thread's tab: the count shares the thread's query, and a voided form reads only. */
+function useCommentsTab(kind: FormCommentKind, id: string): FormDetailExtraTab {
+  const { data } = useFormCommentsQuery(kind, id);
+  const complaint = useComplaint(kind === 'complaint' ? id : null);
+  const inquiry = useStockInquiry(kind === 'stock_inquiry' ? id : null);
+  const request = usePurchaseRequest(
+    kind === 'purchase_request' || kind === 'sponsorship_form' ? id : null,
+  );
+  const status = (complaint.data ?? inquiry.data ?? request.data)?.status;
+  const isVoided = (status ?? '').trim().toLowerCase() === 'voided';
+  const count = (data ?? []).filter((c) => c.kind !== 'response' && !c.deleted).length;
+  return {
+    value: 'comments',
+    label: `Comments (${count})`,
+    icon: <MessageSquare />,
+    content: <FormComments kind={kind} entityId={id} readOnly={isVoided} />,
+  };
+}
+
+export default function FormDetailWithSLATabs(props: FormDetailWithSLATabsProps) {
+  if (props.commentsKind) return <WithCommentsTab {...props} commentsKind={props.commentsKind} />;
+  return <Shell {...props} />;
+}
+
+function WithCommentsTab({
+  commentsKind,
+  extraTabs = [],
+  ...rest
+}: FormDetailWithSLATabsProps & { commentsKind: FormCommentKind }) {
+  const tab = useCommentsTab(commentsKind, rest.sourceEntityId);
+  return <Shell {...rest} extraTabs={[tab, ...extraTabs]} />;
+}
+
+function Shell({
   sourceEntityType,
   sourceEntityId,
   children,

@@ -31,6 +31,7 @@ const BASE_INPUT = {
   escalation_allowed: true,
   chatbot_allowed: true,
   skip_period_questions: false,
+  files_as_links: false,
 };
 
 beforeEach(() => {

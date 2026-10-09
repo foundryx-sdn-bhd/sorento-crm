@@ -1,0 +1,251 @@
+# CARD - send files as short links, A/B per contact (PHOTO-SEND-CAP round 2)
+
+Status: Hand test 2 next (signer-only host list, 9 Oct 2026). Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
+a link table, one contact column, one settings column; a new PUBLIC route, so
+security-reviewer joins; customer-visible wording). Supersedes the round 1 cap card
+`CARD-photo-send-cap-09oct.md` (cap Q1-Q5 parked by the owner, 9 Oct).
+
+## Owner answers (9 Oct 2026)
+
+| Q | Ruling | What it means in the build |
+| --- | --- | --- |
+| Q1 | Configurable | New system setting `chatbot_file_link_expiry_days` (null = never, else 1..3650 days), on the System Settings page. The owner sets NO expiry for now, so the default is null (never). A link's `expires_at` is stamped when it is minted. |
+| Q2 | (a) | No sign-in. Anyone holding a link opens it until it expires. |
+| Q3 | (a) | `{frontend_base_url}/f/{code}` on our CRM domain. |
+| Q4 | (a) | `respond_contacts.chatbot_files_as_links` default false for every contact; staff switch contacts by hand. |
+| Q5 | (a) | One image shared by several products: one code, the same link repeats under each product. |
+
+## Build contract (crew, from the approved card)
+
+- `PUT /api/v1/user-management/contacts/{id}/chatbot` takes `chatbot_files_as_links: bool | None`
+  (absent = leave alone); the contact dict and `RespondContactResponse` carry
+  `chatbot_files_as_links: bool`.
+- `GET|PUT /api/v1/user-management/settings` carry `chatbot_file_link_expiry_days: int | null`
+  (1..3650; null = never).
+- `GET /api/v1/public/file-links/{code}` (no auth, per-IP rate limit) answers
+  `{filename, mime_type, kind: "sheet" | "file", url}`: `url` is a 1 h signed CDN url for
+  `file`, null for `sheet`. Counts one click. Unknown or expired: 404 `{"detail": "This link
+  has expired."}`.
+- `GET /api/v1/public/file-links/{code}/content`: the bytes, only for `sheet`, same 404.
+- Frontend `/f/[code]` (public, no login): `file` redirects to `url`; `sheet` opens
+  read-only in the browser through `AttachmentPreviewModal` with a plain fetch of `/content`,
+  with Download. Expired: "This link has expired. Ask us on WhatsApp for a new one."
+- Engine, link mode: no `send_attachments` action. Each file row gets `*Link:* <short url>`
+  under it; a file no row names (an Excel report) gets its own `*File:*` / `*Link:*` block at
+  the end. If minting fails, the turn falls back to attachment mode (never stuck).
+- Trace: the `replied` stage facts carry `file_mode` (`attachments` | `links`) and `files`.
+- Product photo rows group by product in both modes (rule 1, round 1): one numbered block
+  per product, its files under it.
+
+Already on the branch from round 1 and kept: one file per image, deduped by `file_hash`
+(commit 08c46748: `app/schemas/product.py` `AttachmentSimple.file_hash`,
+`presenters.py` `attach` + dedupe, `engine._label_attachments`).
+
+## The journey (owner redirect, 9 Oct 2026)
+
+Every file the bot sends is its own WhatsApp message (about 0.042 MYR each); a photo set sent
+about 50. Instead of capping, the owner wants the bot to send ONE text message where each
+file is a block with a short link, and to A/B test it per contact: staff switch a contact
+between attachment mode (today) and link mode, then compare how dealers react. Excel files
+must open in the browser with no extra software.
+
+## What exists today (measured on origin/main bf07eff8)
+
+| Fact | Where |
+| --- | --- |
+| The CRM never sends a chatbot file itself: the turn returns `send_message` then `send_attachments`; n8n `sub-send-attachments-live` sends one WhatsApp message per file | `chatbot/engine.py:9596-9644` (`_send_actions`), `:7530-7541`, `:8360-8380`; `documentation/plans/chatbot/n8n-changes.md:248` |
+| The url in an entry is the stored, UNSIGNED CDN url (`https://{CLOUDFRONT_DOMAIN or R2_CDN_DOMAIN}/{key}`); n8n signs it on the way out | `presenters.py:344`; `storage_router.py:174-180`; `sorento_crm_mcp/server.py:159-163` |
+| Signing on demand exists: `resolve_signed_url`, default 1 h, S3 via CloudFront key pair, R2 presigned | `storage_router.py:299-373` |
+| Excel reports (sales analysis, low stock) are generated files: an R2 url with no expiry or an S3 url signed for 7 days, purged at 30 days | `api/v1/sales/analysis.py:390-405`; `scm/low_stock_report_service.py:76-102` |
+| A long text is already split into WhatsApp-sized parts: whole lines, 3900 characters, "(k/m)" markers, one `send_message` per part | `presenters.py:2872-2874`, `:2997-3027`; `engine.py:134-180` |
+| Public routes live under `/api/v1/public`; 10 token kinds exist, the closest is `view_tokens` (`token_urlsafe(32)`, read-only, attachment download, no expiry) | `api/v1/__init__.py:239`; `api/v1/public/view.py:142-153`; `models/procurement.py:1222-1234` |
+| A token page that previews an attachment with NO login already exists: `/view/complaint?token=` renders `AttachmentPreviewModal` with a plain `fetch` | `frontend app/(auth)/view/complaint/page.tsx:94-122`; `app/(auth)/view/lib/attachmentDownload.ts:44-48` |
+| `AttachmentPreviewModal` opens xlsx, xls, xlsm and csv in the browser (SheetJS; at most 200 rows x 40 columns), plus PDF, images and video | `components/common/AttachmentPreviewModal.tsx:184-193`, `:540-556` |
+| Open-count precedent: `supplier_price_links` (`token`, `expires_at`, `revoked_at`, `open_count`) | `models/cost_price.py:253-275` |
+| Rate limiter: the Redis fixed-window limiter, used on public portal OTP | `services/rate_limit.py`; `public/portal.py:197-209` |
+| No short-link table, no redirect route, no short-domain setting; `frontend_base_url` is the only public base url | `app/config.py:313` |
+| Per-contact chatbot switches are booleans on `respond_contacts`, saved by `PUT /contacts/{id}/chatbot`, shown as `SwitchRow`s on the contact page | `models/access.py:271-301`; `user_management/contacts.py:365-430`; `ContactChatbotSection.tsx:102-134`, `:275-281` |
+| The turn reads contact flags once into `Profile` | `turn_runtime.py:170-174`, `:416-497`; `turn/state.py:192-225` |
+| Each turn's trace is JSONB on `chatbot.turns.trace` (stage records with `facts`); no thumbs or rating on chatbot turns | `models/chatbot_turn.py:100`; `trace.py:155-183` |
+
+## Proposed behaviour (crew reading, pending Q1-Q5)
+
+**L1. Two modes per contact.** New column `respond_contacts.chatbot_files_as_links`
+(boolean, default false = attachment mode, today's behaviour). One new `SwitchRow` on the
+contact's Chatbot card, "Send files as links", the same control as "Skip date-range
+questions". It reuses an existing control, so no mock.
+
+**L2. Link mode sends one text, no files.** The turn emits no `send_attachments` action. Each
+file becomes a block in the reply text, and the existing 3900-character splitter
+(`whatsapp_parts`) cuts a long list into parts on whole lines. Every file type the bot sends
+is covered: photos, promotion files, certificates, brochures, documents, and Excel reports.
+
+**L3. Own short links, no third party.** New table `chatbot_file_links`: `code` (unique),
+the target (an attachment id, or a storage provider + key for a generated report), the
+contact, the company, the turn id, `created_at`, `expires_at`, `click_count`,
+`first_clicked_at`, `last_clicked_at`. Codes are 10 characters of Crockford base32 (50 bits,
+`secrets`), unguessable. The link is `{frontend_base_url}/f/{code}`, so there is no new
+domain and no new certificate.
+
+**L4. Opening a link.** `/f/{code}` is a public page with no login. The backend route
+`GET /api/v1/public/file-links/{code}` checks that the code exists and has not expired,
+counts the click, and:
+- image, PDF or any other file: redirects to a freshly signed CDN url (1 h,
+  `resolve_signed_url`), so the stored url never leaves us;
+- xlsx, xls, xlsm or csv: the page opens the sheet read-only in the browser through
+  `AttachmentPreviewModal` with a plain `fetch`, exactly as `/view/complaint` does, with a
+  Download button.
+
+The route is rate limited by IP with the existing Redis limiter. An unknown or expired code
+gets one page: "This link has expired. Ask us on WhatsApp for a new one." No detail leaks.
+
+**L5. Access stays where it is today.** A link is minted only for a file the contact's own
+fetch already returned under their access levels. Anyone holding the link can open it until
+it expires, the same as a forwarded WhatsApp file today (Q2).
+
+**L6. A/B measurement.** Every turn that sends files records `file_mode` (`attachments` or
+`links`) and the file count in its `replied` stage facts (JSONB, no migration). Clicks are
+counted on the link row, which carries the turn id. Crew's comparison query is per mode:
+turns with files, files per turn, share of links clicked, and the dealer's next message
+within 10 minutes. There is no thumbs-up/down today; a feedback ask is out of scope unless
+the owner wants one.
+
+**Kept from round 1 (both modes):** one file per image (`file_hash`); products are the one
+count basis (one block per product, its files under it); a bare "compatible" makes the
+parser ask "Compatible with which WC? Send the WC code."
+
+## Sample messages (customer-visible, exact)
+
+Link codes below are illustrative; real ones are random.
+
+**1. Photo set, link mode** ("sorento" after "toilet seat photos"; 42 products, 62 distinct
+images on dev). As built: one block per product, each file's own lines with its link under
+them (review N3: this replaces the shorter `*File:*` sample the card first showed):
+
+```
+1. *Product Code:* SRTSC1012
+*Product Name:* Soft close seat cover
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-front.jpg
+*Link:* https://crm.example.com/f/7K2QX9MWAPH3V8RZ
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-side.jpg
+*Link:* https://crm.example.com/f/H3V8RZ4N1C7K2QX9
+
+2. *Product Code:* SRTSC1013
+*Product Name:* Soft close seat cover
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-front.jpg
+*Link:* https://crm.example.com/f/7K2QX9MWAPH3V8RZ
+```
+
+A file no row names (an Excel report) closes the reply as `*File:* <name>` / `*Link:* <url>`.
+Codes are 16 characters (security review L1).
+
+One product block holds about 150 characters, so 42 products with 62 images comes to about
+two parts, "(1/2)" and "(2/2)": 2 messages instead of about 62.
+
+**2. Promotion PDF, link mode** (owner's format, one file):
+
+```
+1. *Promotion:* <promotion name>
+*File:* <flyer>.pdf
+*Link:* https://crm.example.com/f/Q4M7T2B9XE
+```
+
+**3. Excel report, link mode** (the sales analysis workbook):
+
+```
+Here is your sales analysis.
+
+1. *File:* Sales Analysis Sep 2026.xlsx
+*Link:* https://crm.example.com/f/N8C3W6P0KD
+```
+
+Tapping it opens the sheet in the phone's browser, read-only, with a Download button.
+
+**4. Same asks in attachment mode:** unchanged from today, except that one image under two
+urls is sent once.
+
+**5. Single code with 2 photos:** link mode gives one block and 2 links in 1 message;
+attachment mode gives the text plus 2 files (unchanged).
+
+## Edge cases
+
+- A file whose link could not be signed: still listed with "(file link unavailable right
+  now)", no link minted (D9 unchanged).
+- Link opened after expiry: the expired page. The expiry setting applies to links already
+  sent (security review M3). A report purged at 30 days answers "Something went wrong.
+  Please try again." (a storage miss is not told apart from a storage outage; review N4).
+- Revoking one link: delete its `chatbot_file_links` row.
+- A spreadsheet over 200 rows or 40 columns: the preview shows the first 200 rows and the
+  Download button gets the whole file.
+- WhatsApp unfurling: the API sends text with link previews off unless the sender asks for
+  them (Respond.io's own default; crew confirms with one test send). If a preview does
+  show, `/f/{code}` serves no Open Graph image, so the preview never shows the file itself.
+- Same file asked again in a later turn: a new code each turn, so clicks attribute to the
+  turn that sent them.
+- Contact switched mid-conversation: the next turn uses the new mode; links already sent
+  keep working.
+- The staff console's dry-run turns record the mode, and their links are minted with the
+  same expiry.
+- Files sent outside a turn (the low-stock push from the worker, `export_tasks.py:1008-1080`)
+  are out of scope for round 2.
+
+## Security notes (public repo; files can be dealer-only promos and prices)
+
+- No file url, bucket, key or company name in the code, the page or the error.
+- Codes come from `secrets`, 16 characters, 80 bits: the code alone makes enumeration
+  impractical. The per-client rate limit only spreads honest load (its key is the
+  forwarded client IP, validated as an IP, which a client can choose).
+- The route never lists, never searches, never takes a url, only a code (no open redirect).
+- A signed url lives 1 h; the code lives per Q1.
+- The new public route and migration bring in security-reviewer (PRINCIPLES.md).
+
+## Questions for the owner
+
+On the lane PR as one crew-ask (Q1-Q5); answers land here.
+
+## Live checks crew runs locally
+
+- One real test send in link mode to a test contact: link preview on or off, how the block
+  wraps on a phone, and an xlsx opening in the phone's browser.
+- Parser: the bare "compatible" ask (from round 1).
+
+## Not in this lane (named follow-ups)
+
+- **"compatible" with no target asks "Compatible with which WC?"** (round 1 R5, kept in the
+  card): the parser has no clarification output today, so this is a new parser key plus an
+  engine reader, and it cannot be checked without the live parser. Its own lane.
+- **Trusted client IP for the rate limit** (security M2, re-review): the limiter keys on
+  the left-most `X-Forwarded-For` entry when it is a valid IP, else the peer, and the `/f`
+  page calls the API host directly. The key is only trustworthy when the edge nginx
+  OVERWRITES the header (`proxy_set_header X-Forwarded-For $remote_addr;`); the host nginx
+  config is not in the repo. Infra follow-up.
+- Grouping keys on field labels (review N2): the product attachment presenter emits no keys
+  for those fields; keying them is a presenter change of its own.
+- `/content` has no size cap (security L4).
+
+## Hand test 1 (owner, 9 Oct 2026): FAIL, fixed
+
+Contact 477071884 in link mode, console promo turn 85e162ca (check_promotion): 3 PDFs on
+`https://cdn-sorento.com/...` went as attachments; trace `file_mode: attachments`;
+`chatbot_file_links` empty. Cause: minting allowed only `CLOUDFRONT_DOMAIN` / `R2_CDN_DOMAIN`
+(the test copy's env names other hosts), and one off-list file silently turned the whole
+reply back into attachments.
+
+| Fix | Where |
+| --- | --- |
+| One link-able host list: the hosts this environment SIGNS, `CLOUDFRONT_DOMAIN` + `R2_CDN_DOMAIN`, nothing else. Minting and the public route read it. | `app/services/file_link_service.py` `link_hosts`, `is_linkable` |
+| Per file, not per reply: a file off the list goes as an attachment alone, its row reads `*Link:* (sent as a file)`, the others stay links (`file_mode: mixed`), and the replied trace records `file_mode_fallback` `{reason, hosts, files}` (or `{reason: error, error, files}`). | `chatbot/file_links.py` `links_for`; `engine._apply_file_mode` |
+| A row with no File Name field (a promotion) names each file above its link, so three links under one promotion can be told apart. | `lanes/business/fetch.py` `_link_fields` |
+| Console: reply text already renders bare urls as links (`WhatsAppText`); pinned by a test for the copy's `:3111` host. Chips show only files that still go as attachments. | `components/chatbot/WhatsAppText.test.tsx` |
+| `/f` only ever answers a freshly signed url (1 h); a stored url on any other host is a 502, never handed out, and `/content` reads only through the storage backend. | `api/v1/public/file_links.py` `_handout`; `file_link_service.download_bytes` |
+
+Owner ruling (9 Oct 2026, relayed by crew) on the security review S1: no hard-coded
+`cdn-sorento.com` and no `CHATBOT_LINK_CDN_HOSTS` setting. A file on a host this environment
+cannot sign is refused per file (it goes as an attachment, its row reads `*Link:* (sent as a
+file)`, trace `file_mode_fallback` reason `host_not_linkable`), never redirected to an unsigned
+permanent url. The public https fetch is removed with it. Production links `cdn-sorento.com`
+files because production's `R2_CDN_DOMAIN` is `cdn-sorento.com`. A copy links only files on its
+own host (no production bucket credentials on a copy, crew ruling (b)).

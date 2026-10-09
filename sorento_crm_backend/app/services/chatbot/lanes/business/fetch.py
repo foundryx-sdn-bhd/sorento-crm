@@ -2810,6 +2810,101 @@ def _field_label(loc: Localizer, f: Any) -> str:
     return loc.label(f) if isinstance(f, dict) and "label" in f else label
 
 
+#: PHOTO-SEND-CAP (round 1 rule 1, kept by the owner in round 2): a product file row's
+#: fields that describe the PRODUCT. The rest describe the file, so rows of one product
+#: merge into one numbered block with each file's lines under it.
+_PRODUCT_LEVEL_LABELS = frozenset({"Company", "Product Code", "Product Name", "Description", "Dimensions"})
+_FILE_LEVEL_LABELS = frozenset({"Attachment Type", "File Name", "File Link"})
+
+
+def _field_value(fields: list[Any], label: str) -> str:
+    for f in fields:
+        if isinstance(f, dict) and f.get("label") == label:
+            return jsc.nullish_str(f.get("value")).strip()
+    return ""
+
+
+def _link_fields(it: Any, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """`*Link:* <url>` under a file, link mode only. Unkeyed on purpose: the key-based
+    projections below never drop it. The url is still the stored one here; the engine
+    swaps it for the short link (`chatbot/file_links.links_for`) or, if it cannot, drops
+    the line and sends the file as before.
+
+    A row with no File Name field of its own (a promotion: owner hand test, Vixx Loo, 9 Oct
+    2026) gets `*File:* <name>` above each link, so two links under one row can be told
+    apart. `names` is the envelope's own url -> filename (`attachments`)."""
+    fields = jsc.get(it, "fields") or []
+    named_row = any(isinstance(f, dict) and f.get("label") == "File Name" for f in fields)
+    out: list[dict[str, Any]] = []
+    for u in jsc.array(jsc.get(it, "file_urls")):
+        if not isinstance(u, str) or not u:
+            continue
+        name = (names or {}).get(u)
+        if not named_row and name:
+            out.append({"label": "File", "value": name})
+        out.append({"label": "Link", "value": u})
+    return out
+
+
+def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
+    """Product file rows grouped by product (both modes), and each file's link under it
+    (link mode). Every other envelope passes through as it is.
+
+    A row groups only when every field is a product or a plain file field and no flag is
+    about the FILE (an expired or expiring certificate): a certificate row keeps its own
+    number, its validity and its own marker. `items` is replaced by the grouped rows, so
+    the header count, the numbered list and a positional pick all read products.
+    """
+    items = e.get("items")
+    if not isinstance(items, list) or not items:
+        return e
+    product_rows = jsc.js_string(e.get("result_type") or "") == "product_attachments" and not e.get("groups")
+    if not product_rows and not links:
+        return e
+    out: list[Any] = []
+    by_product: dict[tuple[str, str], dict[str, Any]] = {}
+    names = {
+        jsc.nullish_str(a.get("url")): jsc.nullish_str(a.get("filename")).strip()
+        for a in jsc.array(e.get("attachments"))
+        if isinstance(a, dict) and a.get("url") and a.get("filename")
+    }
+    for it in items:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
+        fields = [f for f in (it.get("fields") or []) if isinstance(f, dict)]
+        flags = it.get("flags") if isinstance(it.get("flags"), dict) else {}
+        code = _field_value(fields, "Product Code")
+        groupable = (
+            product_rows
+            and bool(code)
+            and all(f.get("label") in _PRODUCT_LEVEL_LABELS | _FILE_LEVEL_LABELS for f in fields)
+            and not flags.get("expired")
+            and not flags.get("expiring_soon")
+        )
+        if not groupable:
+            out.append({**it, "fields": [*fields, *(_link_fields(it, names) if links else [])]})
+            continue
+        key = (_field_value(fields, "Company"), code)
+        group = by_product.get(key)
+        if group is None:
+            group = {
+                **it,
+                "fields": [f for f in fields if f.get("label") in _PRODUCT_LEVEL_LABELS],
+                "flags": dict(flags),
+                "file_urls": [],
+            }
+            by_product[key] = group
+            out.append(group)
+        group["fields"].extend(f for f in fields if f.get("label") in _FILE_LEVEL_LABELS)
+        if links:
+            group["fields"].extend(_link_fields(it, names))
+        group["file_urls"].extend(jsc.array(it.get("file_urls")))
+        if flags.get("discontinued"):
+            group["flags"]["discontinued"] = True
+    return {**e, "items": out}
+
+
 def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]:
     """The MCP render envelope becomes a WhatsApp message. Deterministic, no LLM (H7).
 
@@ -2836,7 +2931,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
         }
-    e = _extract_envelope(result)
+    e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
     # localizer only rewrites the strings printed below (absent = identity, byte-identical).
     # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
