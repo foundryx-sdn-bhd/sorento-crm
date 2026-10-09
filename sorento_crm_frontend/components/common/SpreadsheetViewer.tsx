@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, observeElementRect, useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronUp, Ellipsis } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -63,6 +63,8 @@ export interface SpreadsheetViewerProps {
   /** `filter` hides rows that do not match; `highlight` marks every match and steps through them. */
   searchMode?: 'filter' | 'highlight';
   tabsPosition?: 'top' | 'bottom';
+  /** Fill the height the parent gives instead of capping at `--grid-max-h`. */
+  fill?: boolean;
   className?: string;
 }
 
@@ -101,6 +103,7 @@ export function SpreadsheetViewer({
   searchPlaceholder = 'Search',
   searchMode = 'filter',
   tabsPosition = 'top',
+  fill = false,
   className,
 }: SpreadsheetViewerProps) {
   const [localSheet, setLocalSheet] = useState<string | null>(null);
@@ -143,7 +146,7 @@ export function SpreadsheetViewer({
   const numeric = useMemo(() => (sheet ? numericColumns(sheet) : []), [sheet]);
   const widths = useMemo(() => (sheet ? sizeColumns(sheet) : []), [sheet]);
   const merges = useMemo(
-    () => (sheet ? indexMerges(sheet, cols) : { heads: new Map(), covered: new Set<string>() }),
+    () => (sheet ? indexMerges(sheet, cols) : { heads: new Map(), covered: new Set<string>(), tallRows: new Set<number>(), tall: [] }),
     [sheet, cols],
   );
   const frozen = sheet?.frozenCols ?? (chrome ? 0 : 1);
@@ -163,6 +166,14 @@ export function SpreadsheetViewer({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan: 12,
+    // A vertical merge is drawn by its head row: keep the head rendered while any row it covers is.
+    rangeExtractor: (range) => {
+      const indexes = defaultRangeExtractor(range);
+      const extra = merges.tall
+        .filter((m) => m.r < range.startIndex && m.r + m.rowSpan > range.startIndex)
+        .map((m) => m.r);
+      return extra.length ? [...new Set([...extra, ...indexes])].sort((a, b) => a - b) : indexes;
+    },
     initialRect: FALLBACK_RECT,
     observeElementRect: (instance, callback) =>
       observeElementRect(instance, (rect) => callback(rect.height > 0 ? rect : FALLBACK_RECT)),
@@ -227,9 +238,7 @@ export function SpreadsheetViewer({
   const renderRow = (index: number, extra: React.CSSProperties, rowClass: string) => {
     const row = rows[index];
     const styles = sheet.cells?.[index] ?? EMPTY_STYLES;
-    const hasTall = chrome
-      ? Array.from(merges.heads.entries()).some(([k, v]) => v.rowSpan > 1 && k.startsWith(`${index}:`))
-      : false;
+    const hasTall = merges.tallRows.has(index);
     return (
       <div
         key={`row-${index}`}
@@ -238,6 +247,8 @@ export function SpreadsheetViewer({
         className={cn('grid', chrome ? '' : 'border-b border-border', rowClass)}
         style={{
           gridTemplateColumns: template,
+          // A fixed track keeps each cell's bottom border inside its row.
+          ...(chrome ? { gridTemplateRows: `${rowHeight}px`, gridAutoRows: rowHeight } : null),
           height: rowHeight,
           ...(hasTall ? { zIndex: 1 } : null),
           ...extra,
@@ -247,8 +258,9 @@ export function SpreadsheetViewer({
           <div
             role="rowheader"
             className="sticky start-0 z-10 border-b border-e border-border bg-muted text-center text-xs leading-6 text-muted-foreground"
+            style={{ gridColumn: 1, gridRow: 1 }}
           >
-            {index + 1}
+            {sheet.rowNumbers?.[index] ?? (sheet.firstRowNumber ?? 1) + index}
           </div>
         ) : null}
         {Array.from({ length: cols }, (_, col) => {
@@ -256,16 +268,17 @@ export function SpreadsheetViewer({
           if (merges.covered.has(key)) return null;
           const span = merges.heads.get(key);
           const style = styles[col] ?? null;
-          const text = cellText(row[col] ?? null);
+          const text = widths[col] === 0 ? '' : cellText(row[col] ?? null);
           const isMatch = highlight && needle && text.toLowerCase().includes(needle);
           const isCurrent = current?.r === index && current?.c === col;
+          const track = col + 1 + (chrome ? 1 : 0);
           const position: React.CSSProperties = span
             ? {
-                gridColumn: `${col + 1 + (chrome ? 1 : 0)} / span ${span.colSpan}`,
+                gridColumn: `${track} / span ${span.colSpan}`,
                 gridRow: `1 / span ${span.rowSpan}`,
                 height: span.rowSpan * rowHeight,
               }
-            : {};
+            : { gridColumn: track, gridRow: 1 };
           return (
             <div
               key={col}
@@ -276,6 +289,7 @@ export function SpreadsheetViewer({
               className={cn(
                 cellClass(col, style, text),
                 span && 'bg-background',
+                widths[col] === 0 && 'px-0',
                 isCurrent && 'outline-2 -outline-offset-2 outline-primary',
               )}
               style={{ ...cellStyle(col, style), ...position }}
@@ -422,7 +436,8 @@ export function SpreadsheetViewer({
         ref={scrollRef}
         data-testid="spreadsheet-scroller"
         className={cn(
-          'relative min-h-0 min-w-0 max-h-(--grid-max-h) flex-1 overflow-auto',
+          'relative min-h-0 min-w-0 flex-1 overflow-auto',
+          !fill && 'max-h-(--grid-max-h)',
           busy && 'opacity-60',
         )}
         style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
@@ -443,7 +458,11 @@ export function SpreadsheetViewer({
               'sticky top-0 z-20 grid border-b border-border',
               chrome ? 'bg-muted' : 'bg-background/90 backdrop-blur-xs',
             )}
-            style={{ gridTemplateColumns: template, height: rowHeight }}
+            style={{
+              gridTemplateColumns: template,
+              ...(chrome ? { gridTemplateRows: `${rowHeight}px` } : null),
+              height: rowHeight,
+            }}
           >
             {chrome ? (
               <div
@@ -455,7 +474,7 @@ export function SpreadsheetViewer({
               <div
                 key={col}
                 role="columnheader"
-                title={chrome ? columnLetters(col) : sheet.columns[col]}
+                title={chrome ? columnLetters(col + (sheet.firstColIndex ?? 0)) : sheet.columns[col]}
                 className={cn(
                   cellClass(col, null, ''),
                   chrome
@@ -464,7 +483,7 @@ export function SpreadsheetViewer({
                 )}
                 style={col < frozen ? { insetInlineStart: frozenLeft(col) } : undefined}
               >
-                {chrome ? columnLetters(col) : sheet.columns[col]}
+                {chrome ? columnLetters(col + (sheet.firstColIndex ?? 0)) : sheet.columns[col]}
               </div>
             ))}
           </div>

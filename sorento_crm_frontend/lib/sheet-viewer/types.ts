@@ -39,6 +39,12 @@ export interface SpreadsheetSheet {
   frozenCols?: number;
   /** Column letters as the header and a sticky row-number column; `columns` is then unused. */
   excelChrome?: boolean;
+  /** 1-based sheet row number of `rows[0]` (default 1). */
+  firstRowNumber?: number;
+  /** 0-based sheet column index of the first column (default 0). */
+  firstColIndex?: number;
+  /** Sheet row number of each row, when hidden rows were left out. */
+  rowNumbers?: number[];
   truncatedRows?: boolean;
   truncatedCols?: boolean;
   totalRows?: number;

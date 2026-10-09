@@ -59,13 +59,17 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
         const response = await fetchFileLinkContent(code);
         if (cancelled) return;
         if (response.status === 413) return setState({ status: 'tooBig' });
         if (!response.ok) return setState({ status: 'cannot' });
-        const workbook = await parseWorkbookInWorker(await response.arrayBuffer(), filename);
+        const workbook = await parseWorkbookInWorker(await response.arrayBuffer(),
+          filename,
+          controller.signal,
+        );
         if (!cancelled) setState({ status: 'ready', workbook });
       } catch {
         if (!cancelled) setState({ status: 'cannot' });
@@ -73,6 +77,7 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [code, filename]);
 
@@ -149,6 +154,8 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
             onActiveSheetChange={setActiveTitle}
             searchMode="highlight"
             tabsPosition="bottom"
+            searchPlaceholder="Search in sheet"
+            fill
             className="min-h-0 flex-1"
           />
           {note ? (

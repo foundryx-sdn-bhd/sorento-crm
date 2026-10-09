@@ -6,7 +6,9 @@ const PARSE_TIMEOUT_MS = 20_000;
 export async function parseWorkbookInWorker(
   bytes: ArrayBuffer,
   filename: string,
+  signal?: AbortSignal,
 ): Promise<SpreadsheetWorkbook> {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   if (typeof Worker === 'undefined') {
     const { parseWorkbook } = await import('./parseWorkbook');
     return parseWorkbook(bytes, filename);
@@ -17,9 +19,12 @@ export async function parseWorkbookInWorker(
     });
     const finish = (settle: () => void) => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       worker.terminate();
       settle();
     };
+    const onAbort = () => finish(() => reject(new DOMException('Aborted', 'AbortError')));
+    signal?.addEventListener('abort', onAbort);
     const timer = setTimeout(
       () => finish(() => reject(new Error('Parsing timed out'))),
       PARSE_TIMEOUT_MS,

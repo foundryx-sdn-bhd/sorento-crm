@@ -72,24 +72,40 @@ export interface MergeIndex {
   heads: Map<string, { rowSpan: number; colSpan: number }>;
   /** Every other cell a merge covers. */
   covered: Set<string>;
+  /** Rows holding the head of a merge that spans more than one row. */
+  tallRows: Set<number>;
+  /** Merges spanning more than one row, for finding the ones a scroll window cuts through. */
+  tall: { r: number; rowSpan: number }[];
 }
+
+/** Hostile files declare overlapping merges; this bounds the covered-cell work per sheet. */
+const MERGE_WORK_BUDGET = 1_000_000;
 
 export function indexMerges(sheet: SpreadsheetSheet, cols: number): MergeIndex {
   const heads: MergeIndex['heads'] = new Map();
   const covered = new Set<string>();
+  const tallRows = new Set<number>();
+  const tall: MergeIndex['tall'] = [];
+  let work = 0;
   for (const m of sheet.merges ?? []) {
-    if (m.c >= cols) continue;
+    if (m.c >= cols || m.r >= sheet.rows.length) continue;
     const colSpan = Math.min(m.colSpan, cols - m.c);
-    const rowSpan = Math.min(m.rowSpan, Math.max(1, sheet.rows.length - m.r));
+    const rowSpan = Math.min(m.rowSpan, sheet.rows.length - m.r);
     if (colSpan === 1 && rowSpan === 1) continue;
+    work += colSpan * rowSpan;
+    if (work > MERGE_WORK_BUDGET) break;
     heads.set(`${m.r}:${m.c}`, { rowSpan, colSpan });
+    if (rowSpan > 1) {
+      tallRows.add(m.r);
+      tall.push({ r: m.r, rowSpan });
+    }
     for (let r = m.r; r < m.r + rowSpan; r += 1) {
       for (let c = m.c; c < m.c + colSpan; c += 1) {
         if (r !== m.r || c !== m.c) covered.add(`${r}:${c}`);
       }
     }
   }
-  return { heads, covered };
+  return { heads, covered, tallRows, tall };
 }
 
 export interface Match {
