@@ -82,7 +82,6 @@ import { complaintsPagerQuery } from '../hooks/useComplaints';
 import ComplaintManualAttachmentsSection from './ComplaintManualAttachmentsSection';
 import ComplaintConversationPanel from './ComplaintConversationPanel';
 import AuditTrail from '@/components/audit/AuditTrail';
-import { FormComments } from '@/components/common/comments/FormComments';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
 import { EntityDownloadsButton } from '@/components/my-downloads/EntityDownloadsButton';
@@ -1113,7 +1112,6 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
 
       {/* Comment thread at the top, before the form, so the conversation reads in one place
           (owner hand test, 9 Oct); it shows here even before any reply exists. */}
-      <FormComments kind="complaint" entityId={complaintId} readOnly={isVoided} />
 
       {/* Complaint Information */}
       <Card>

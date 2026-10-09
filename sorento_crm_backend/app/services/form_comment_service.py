@@ -661,14 +661,78 @@ class FormCommentService:
             base = (getattr(sys_settings, "website_url", None) or "").strip().rstrip("/")
         return f"{base}{_form_detail_link(kind, entity_id)}"
 
+    def _recipients(self, kind: str, row, acting_user_id: Optional[str]) -> list[User]:
+        """Who is emailed when the submitter comments: the SLA handler, the staff who commented in
+        this thread and the responder of the staff reply; failing all of those, the users already
+        notified about this form. Active users with an email only; never the acting admin."""
+        from app.models.notification import Notification
+
+        def usable(u: Optional[User]) -> bool:
+            return (
+                u is not None
+                and str(u.status) == "ACTIVE"
+                and not u.is_trashed
+                and bool((u.email or "").strip())
+                and str(u.id) != str(acting_user_id or "")
+            )
+
+        found: dict[str, User] = {}
+
+        def add(u: Optional[User]) -> None:
+            if usable(u):
+                found.setdefault(str(u.id), u)
+
+        add(self._handler_for(kind, str(row.id)))
+        author_ids = {
+            a
+            for (a,) in self.db.query(EntityConversationMessage.author_user_id).filter(
+                EntityConversationMessage.entity_type == kind,
+                EntityConversationMessage.entity_id == str(row.id),
+                EntityConversationMessage.scope == FORM_COMMENT_SCOPE,
+                EntityConversationMessage.author_user_id.isnot(None),
+                EntityConversationMessage.author_contact_id.is_(None),
+                EntityConversationMessage.deleted_at.is_(None),
+            )
+        }
+        if author_ids:
+            for u in self.db.query(User).filter(User.id.in_(author_ids)).all():
+                add(u)
+        responded_by = getattr(row, "last_responded_by", None)
+        if responded_by and kind in ("stock_inquiry", "complaint"):
+            add(
+                self.db.query(User)
+                .filter((User.id == responded_by) | (User.respond_user_id == responded_by))
+                .first()
+            )
+        if not found:
+            team_ids = {
+                uid
+                for (uid,) in self.db.query(Notification.user_id).filter(
+                    Notification.source_entity_type == kind,
+                    Notification.source_entity_id == str(row.id),
+                    Notification.type != "form_comment_notification",
+                    Notification.user_id.isnot(None),
+                )
+            }
+            if team_ids:
+                for u in self.db.query(User).filter(User.id.in_(team_ids)).all():
+                    add(u)
+        return list(found.values())
+
     def _notify_handler(
         self, kind: str, row, contact_id: str, body: str, attachments: list[dict], acting_user_id: Optional[str] = None
     ) -> str:
         try:
-            handler = self._handler_for(kind, str(row.id))
-            if handler is None:
-                logger.info("Form comment on %s %s: no SLA handler with an email; no mail sent.", kind, row.id)
+            recipients = self._recipients(kind, row, acting_user_id)
+            if not recipients:
+                logger.warning(
+                    "Form comment on %s %s: no recipient (no SLA handler, staff commenter, responder or earlier "
+                    "notified user with an active account and an email); no mail sent.",
+                    kind,
+                    row.id,
+                )
                 return "no_recipients"
+            handler = recipients[0]
             from datetime import datetime
 
             from app.models.notification import Notification, NotificationDelivery
@@ -702,7 +766,7 @@ class FormCommentService:
                 title=rendered["subject"],
                 body=rendered["body_text"],
                 data={
-                    "recipient_emails": [handler.email.strip()],
+                    "recipient_emails": [u.email.strip() for u in recipients],
                     "single_email_to_all": True,
                     "body_html": rendered["body_html"],
                 },

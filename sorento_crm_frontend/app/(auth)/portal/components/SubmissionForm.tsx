@@ -19,6 +19,7 @@ import {
   Copy,
   FileText,
   History,
+  MessageSquare,
   Info,
   PencilLine,
   Plus,
@@ -102,7 +103,14 @@ import { DOFilterMultiSelect } from './DOFilterMultiSelect';
 import { LookupSelect } from './LookupSelect';
 import { MultiPillInput } from './MultiPillInput';
 import { RevisionHistory } from './RevisionHistory';
-import { PortalSubmissionComments } from './PortalSubmissionComments';
+import {
+  PortalSubmissionComments,
+  usePortalSubmissionComments,
+} from './PortalSubmissionComments';
+import AttachmentPreviewModal, {
+  type AttachmentPreviewItem,
+} from '@/components/common/AttachmentPreviewModal';
+import { portalFetchBytes, toPreviewItem } from '../lib/portal-preview';
 import {
   InquiryFormTableRow,
   ProductInquiryFormLayout,
@@ -423,9 +431,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // create-succeeded-but-flushPendingFiles-failed never gets a fresh prop, so
   // without this the next Save Draft/Submit click saw "no id yet" again and
   // created a second row for the same draft (#482).
-  const [createdSubmissionId, setCreatedSubmissionId] = useState<
-    string | null
-  >(null);
+  const [createdSubmissionId, setCreatedSubmissionId] = useState<string | null>(
+    null,
+  );
   const [fields, setFields] = useState<Record<string, string | string[]>>({});
   const [products, setProducts] = useState<ProductLine[]>([]);
   const [complaintLines, setComplaintLines] = useState<ComplaintLine[]>([]);
@@ -438,6 +446,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // failed the sponsorship-only check below, so the "Unit price" cell itself can show
   // the inline message - same shape `invalidFields` gives every other required field.
   const [invalidLineIndex, setInvalidLineIndex] = useState<number | null>(null);
+  const [staffPreviewOpen, setStaffPreviewOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
   const [neighbours, setNeighbours] =
     useState<PortalSubmissionNeighbours | null>(null);
   const [reviseMode, setReviseMode] = useState(false);
@@ -464,6 +474,12 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // The id to save/flush against: the route param when one exists, else
   // whatever a create call in THIS session already answered with (#482).
   const effectiveId = submissionId ?? createdSubmissionId ?? undefined;
+  const commentsTabbed = Boolean(effectiveId && detail && !detail.is_draft);
+  const commentsThread = usePortalSubmissionComments(
+    kind,
+    effectiveId ?? '',
+    commentsTabbed,
+  );
   const isEditable = useMemo(
     () => !detail || detail.is_draft || detail.status === 'rejected',
     [detail],
@@ -545,7 +561,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           Array.isArray(c.visible_form_types) &&
           !c.visible_form_types.includes(kind)
         ) {
-          setError(`${SUBMISSION_LABELS[kind]} is not available for your account.`);
+          setError(
+            `${SUBMISSION_LABELS[kind]} is not available for your account.`,
+          );
         }
       })
       .catch(() => {});
@@ -1513,6 +1531,45 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         }
       : null;
 
+  // Purchasing / technical response shown at top for salesperson once responded. Hidden when empty.
+  const responseInfo = (() => {
+    if (kind === 'stock_inquiry') {
+      const v = (
+        (detail?.purchasing_response as string | null | undefined) ?? ''
+      ).trim();
+      return v
+        ? {
+            label: 'Comment / reply by purchasing',
+            value: v,
+            team: 'purchasing',
+          }
+        : null;
+    }
+    if (kind === 'complaint') {
+      let v = (
+        (detail?.technical_team_response as string | null | undefined) ?? ''
+      ).trim();
+      // Strip legacy composed customer message so only technician wording shows (matches CRM).
+      if (v.startsWith('There has been an update regarding your complaint')) {
+        const idx = v.lastIndexOf(': ');
+        if (idx !== -1) v = v.slice(idx + 2).trim();
+      }
+      return v
+        ? { label: 'Technical team response', value: v, team: 'technical team' }
+        : null;
+    }
+    return null;
+  })();
+
+  // Staff (purchasing / technical) response attachments - surfaced at the top
+  // of the reply banner, scoped away from the contact's own uploads below.
+  // Count is derived from the loaded attachments, never typed.
+  const staffAttachments = attachments.filter(
+    (a) => a.uploader_kind === 'user',
+  );
+  const staffPreviewItems: AttachmentPreviewItem[] =
+    staffAttachments.map(toPreviewItem);
+
   // "Requested by" / "Salesperson" contact-select: pre-select the saved id and
   // resolve a NAME to show (never a UUID) - the legacy free-text sibling
   // column carries the point-in-time label, falling back to the submitting
@@ -1544,6 +1601,11 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // all: a one-tab tab bar is furniture, not navigation.
   const revisionsTabbed =
     Boolean(submissionId) && revisionPolicy?.enabled === true;
+  // The thread is its own tab once the form is submitted. Its count shares the thread's fetch.
+  const commentsCount = commentsThread.comments.filter(
+    (c) => c.kind !== 'response' && !c.deleted,
+  ).length;
+  const tabbed = revisionsTabbed || commentsTabbed;
 
   const detailsContent = (
     <>
@@ -1588,15 +1650,40 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         </div>
       )}
 
-      {/* The thread reads as one story at the top of the page: the staff reply is its first
-          entry (served by the comments API), the composer its last (owner hand test, 9 Oct). */}
-      {effectiveId && detail && !detail.is_draft && (
-        <PortalSubmissionComments
-          kind={kind}
-          submissionId={effectiveId}
-          authorName={contact?.name ?? ''}
-          readOnly={detail.status === 'voided'}
-        />
+      {responseInfo && (
+        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm">
+          <p className="font-medium text-emerald-700 dark:text-emerald-400">
+            {responseInfo.label}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-foreground">
+            {responseInfo.value}
+          </p>
+          {staffAttachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-emerald-700/80 dark:text-emerald-400/80">
+                {staffAttachments.length} attachment
+                {staffAttachments.length === 1 ? '' : 's'} from{' '}
+                {responseInfo.team}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setStaffPreviewOpen(true)}
+              >
+                View attachment{staffAttachments.length === 1 ? '' : 's'} (
+                {staffAttachments.length})
+              </Button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="mt-2 block text-xs font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
+            onClick={() => setActiveTab('comments')}
+          >
+            Reply in Comments
+          </button>
+        </div>
       )}
 
       {reviseMode && (
@@ -1693,7 +1780,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                     {kind === 'sponsorship_form' && (
                       <>
                         <th className="w-32 px-2 py-2 text-left">
-                          Unit price<span className="ml-0.5 text-destructive">*</span>
+                          Unit price
+                          <span className="ml-0.5 text-destructive">*</span>
                         </th>
                         <th className="w-32 px-2 py-2 text-left">Total</th>
                       </>
@@ -2116,8 +2204,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         </div>
       </div>
 
-      {revisionsTabbed ? (
-        <Tabs defaultValue="details">
+      {tabbed ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* Same underlined strip the office detail pages use, so a record's
               tabs look the same whichever side of the system you are on. The
               list carries its own bottom margin, so the root drops space-y. */}
@@ -2126,17 +2214,42 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
               <FileText />
               <span>Details</span>
             </TabsTrigger>
-            <TabsTrigger value="revisions">
-              <History />
-              <span>Revisions</span>
-            </TabsTrigger>
+            {commentsTabbed && (
+              <TabsTrigger
+                value="comments"
+                onClick={() => setActiveTab('comments')}
+              >
+                <MessageSquare />
+                <span>Comments ({commentsCount})</span>
+              </TabsTrigger>
+            )}
+            {revisionsTabbed && (
+              <TabsTrigger value="revisions">
+                <History />
+                <span>Revisions</span>
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="details" className="m-0 space-y-4">
             {detailsContent}
+            {!revisionsTabbed && revisionHistoryCard}
           </TabsContent>
-          <TabsContent value="revisions" className="m-0">
-            {revisionHistoryCard}
-          </TabsContent>
+          {commentsTabbed && (
+            <TabsContent value="comments" className="m-0">
+              <PortalSubmissionComments
+                kind={kind}
+                submissionId={effectiveId as string}
+                authorName={contact?.name ?? ''}
+                readOnly={detail?.status === 'voided'}
+                thread={commentsThread}
+              />
+            </TabsContent>
+          )}
+          {revisionsTabbed && (
+            <TabsContent value="revisions" className="m-0">
+              {revisionHistoryCard}
+            </TabsContent>
+          )}
         </Tabs>
       ) : (
         <>
@@ -2144,6 +2257,13 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           {revisionHistoryCard}
         </>
       )}
+
+      <AttachmentPreviewModal
+        open={staffPreviewOpen}
+        onOpenChange={setStaffPreviewOpen}
+        items={staffPreviewItems}
+        fetchBytes={portalFetchBytes}
+      />
 
       <AlertDialog open={reviseConfirmOpen} onOpenChange={setReviseConfirmOpen}>
         <AlertDialogContent>

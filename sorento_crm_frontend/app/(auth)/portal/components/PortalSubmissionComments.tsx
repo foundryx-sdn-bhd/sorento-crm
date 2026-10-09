@@ -110,21 +110,17 @@ function PortalCommentDelete({
  * on the CRM detail page, read as one story - the staff reply first, the composer last. A comment
  * emails the form's handler; the reply comes back by WhatsApp and shows here.
  */
-export function PortalSubmissionComments({
-  kind,
-  submissionId,
-  authorName,
-  readOnly,
-}: {
-  kind: PortalLandingKind;
-  submissionId: string;
-  authorName: string;
-  readOnly: boolean;
-}) {
+/**
+ * The thread's data, loaded once. SubmissionForm owns it so the "Comments (N)" tab label and the
+ * thread share one fetch; a component used on its own calls it itself.
+ */
+export function usePortalSubmissionComments(
+  kind: PortalLandingKind,
+  submissionId: string,
+  enabled = true,
+) {
   const [comments, setComments] = useState<FormComment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [posting, setPosting] = useState(false);
-  const { isDeleting, report } = useDeletingIds();
+  const [loading, setLoading] = useState(enabled);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -146,8 +142,29 @@ export function PortalSubmissionComments({
   }, [refresh]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (enabled) void load();
+  }, [load, enabled]);
+
+  return { comments, loading, loadError, refresh, load };
+}
+
+export function PortalSubmissionComments({
+  kind,
+  submissionId,
+  authorName,
+  readOnly,
+  thread,
+}: {
+  kind: PortalLandingKind;
+  submissionId: string;
+  authorName: string;
+  readOnly: boolean;
+  thread?: ReturnType<typeof usePortalSubmissionComments>;
+}) {
+  const own = usePortalSubmissionComments(kind, submissionId, !thread);
+  const { comments, loading, loadError, refresh, load } = thread ?? own;
+  const [posting, setPosting] = useState(false);
+  const { isDeleting, report } = useDeletingIds();
 
   if (loadError) {
     return (

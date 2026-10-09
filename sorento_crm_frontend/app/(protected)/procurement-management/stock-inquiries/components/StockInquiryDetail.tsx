@@ -71,7 +71,6 @@ import { formatDate } from '@/lib/helpers';
 import { useHasPermission } from '@/hooks/usePermissions';
 import StockInquiryDeleteDialog from './stock-inquiry-delete-dialog';
 import AuditTrail from '@/components/audit/AuditTrail';
-import { FormComments } from '@/components/common/comments/FormComments';
 import { stockInquiriesPagerQuery } from '../hooks/useStockInquiries';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
@@ -1081,7 +1080,6 @@ export default function StockInquiryDetail({
 
       {/* Comment thread at the top, before the form, so the conversation reads in one place
           (owner hand test, 9 Oct); it shows here even before any reply exists. */}
-      <FormComments kind="stock_inquiry" entityId={inquiryId} readOnly={isVoided} />
 
       <ProductInquiryFormLayout>
         <InquiryFormTableRow label="Date">
