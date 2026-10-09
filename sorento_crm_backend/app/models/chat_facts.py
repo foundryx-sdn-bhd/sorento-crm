@@ -101,6 +101,8 @@ class ChatAskFact(Base):
     label_prompt_version = Column(Text, nullable=True)
     labelled_at = Column(DateTime(timezone=True), nullable=True)
     label_confidence = Column(REAL, nullable=True)
+    # en | ms | zh | mixed | other, named by the CA-2 labeller in the same call as the topic.
+    language = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -129,8 +131,10 @@ class ChatAskItem(Base):
     ref_id = Column(Text, nullable=False)
     # named | shown
     role = Column(Text, nullable=False)
-    # parser | reply
+    # parser | reply | lookup | resolver_pass
     resolved_by = Column(Text, nullable=False)
+    # The CA-2 labeller's own score for a `resolver_pass` item; null for the others.
+    confidence = Column(REAL, nullable=True)
 
 
 class ChatEpisodeFact(Base):
@@ -157,3 +161,27 @@ class ChatEpisodeFact(Base):
     # Null until CA-2 judges them.
     resolved = Column(Boolean, nullable=True)
     asked_again = Column(Boolean, nullable=True)
+
+
+class ChatTopic(Base):
+    """One node of the topic taxonomy (chat analytics CA-2).
+
+    A subject has no parent and is one of the parser's domains, or `general`; a leaf nests
+    under a subject (`inventory.availability`). Seeded and changed only by migration: a
+    taxonomy bump is a new `version`, so a trend only ever compares labels of one version.
+    """
+
+    __tablename__ = "chat_topics"
+    __audit_skip__ = "reference rows written only by migration"
+    __table_args__ = ({"schema": "chatbot"},)
+
+    code = Column(Text, primary_key=True)
+    parent_code = Column(Text, ForeignKey("chatbot.chat_topics.code"), nullable=True)
+    label = Column(Text, nullable=False)
+    definition = Column(Text, nullable=False)
+    # The taxonomy version that introduced the row.
+    version = Column(SmallInteger, nullable=False)
+    # active | retired
+    status = Column(Text, nullable=False, server_default=text("'active'"), default="active")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
