@@ -101,8 +101,9 @@ def test_no_internal_note_reaches_remark():
 
 
 def test_change_so_names_the_order_it_moves_to():
-    """AC-P3 (Q1 rec b): the target order is the instruction, read off the fixed
-    `Moved to <SO>` stamp `_change_note` writes; no stamp, bare verb."""
+    """AC-P3: the target order is the instruction, read off the fixed `Moved to <SO>`
+    stamp `_change_note` writes (the row has no structured target column); no stamp, or
+    only the cascade's own "Moved to the ... line" stamp, bare verb."""
     from app.services.project_order_inquiry_service import IV_CHANGE_SO, handover_remark
 
     assert handover_remark(
@@ -114,6 +115,13 @@ def test_change_so_names_the_order_it_moves_to():
         None,
     ) == "CHANGE SO NO TO SO9"
     assert handover_remark("raised", _remark_row(verb=IV_CHANGE_SO), None) == "CHANGE SO NO"
+    cascade = (
+        "Moved to the ORDER line of SPO-2026/09-0036 after the book was re-uploaded; "
+        "auto: relinked"
+    )
+    assert handover_remark(
+        "raised", _remark_row(verb=IV_CHANGE_SO, note=cascade), None
+    ) == "CHANGE SO NO"
     assert handover_remark(
         "raised", _remark_row(verb=IV_CHANGE_SO, note="Superseded by revision 3"),
         {"so_number": "SO1", "customer": "C", "project": "P"},
@@ -228,6 +236,21 @@ def test_admin_edited_document_is_left_alone():
         row = _handover_row(db)
         assert row["layout_json"] == edited
         assert row["body_text"] == before["body_text"]
+
+
+def test_admin_edited_text_part_is_left_alone():
+    """Review N1: this migration also rewrites `body_text`, so a text-only edit stops it."""
+    module = _load(REVISION)
+    with blank_session() as db:
+        before = _seeded_through_0004(db)
+        db.execute(
+            sa.text("UPDATE email_templates SET body_text = :t WHERE code = :c"),
+            {"t": "Admin text {{ handover.headline }}", "c": CODE},
+        )
+        _run(module, db)
+        row = _handover_row(db)
+        assert row["layout_json"] == before["layout_json"]
+        assert row["body_text"] == "Admin text {{ handover.headline }}"
 
 
 def test_upgrade_inserts_when_the_row_is_absent():

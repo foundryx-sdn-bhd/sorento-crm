@@ -143,7 +143,7 @@ export type EmailBlockType = EmailBlock['type'];
 /**
  * The card width the shell renders the document at (EMAIL-HANDOVER-QTY): `standard` is
  * the 600px card every mail ships on, `wide` the 900px one for table emails, `print`
- * the 660px one for a table email that gets printed on A4 portrait, such as the order
+ * the 672px one for a table email that gets printed on A4 portrait, such as the order
  * inquiry handover (OI-EMAIL-PRINT). A stored document without the key is standard.
  */
 export type EmailLayoutWidth = 'standard' | 'wide' | 'print';

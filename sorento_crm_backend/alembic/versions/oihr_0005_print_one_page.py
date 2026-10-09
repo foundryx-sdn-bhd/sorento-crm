@@ -7,15 +7,16 @@ repeated on every line, and the 900px `wide` card is wider than A4 portrait's pr
 width (698px at Outlook's 0.5in margins).
 
 Updates ``email_templates`` (``code`` = ``TEMPLATE_CODE`` below) IN PLACE, only while its
-``layout_json`` is still exactly the document `oihr_0004_wide_line_table` wrote (that
-migration's own guard: an arrangement an admin saved in the block editor is theirs and is
-left alone, with a logged warning). The new document:
+``layout_json`` and ``body_text`` are still exactly what `oihr_0004_wide_line_table` left
+(that migration's own guard, widened to the text part this one also rewrites): a row an
+admin edited in the block editor is theirs and is left alone, with a logged warning. The
+new document:
 
 * ``width: "print"`` (672px card, 12px gutters, `app/services/email_layout.py`).
 * S/O table gains SO DATE (``order.so_date``, which `_build_handover_context` now carries).
 * line table drops SO DATE and S/O NO; when the email names two or more orders, a one-cell
   group row ``S/O NO <n>`` opens each order's lines instead. Short labels (NEW QTY,
-  DELIVERY, NEW DELIVERY), 12px text, ``white-space:nowrap`` on every header and every
+  DELIVERY, NEW DATE), 12px text, ``white-space:nowrap`` on every header and every
   cell but REMARK, ``<thead>`` repeated on each printed page.
 
 ``body_html`` becomes the mirror of the custom text (#1349 D3) and ``body_text`` the same
@@ -132,15 +133,17 @@ _PRIOR_BODY_TEXT = '{%- set cols = namespace(qty=false, delivery_date=false) -%}
 def _set(
     bind, *, layout: dict, body_html: str, body_text: str, only_when: list, direction: str
 ) -> None:
-    """Update the row only while its document is still one of `only_when`; log and leave
-    any other document alone. Insert when no row exists."""
+    """Update the row only while its document AND its plain-text part are still one of
+    `only_when`'s (layout, text) pairs (review N1: this migration also rewrites
+    `body_text`, which oihr_0004 never did, so an admin edit to the text part alone must
+    stop it too); log and leave any other row alone. Insert when no row exists."""
     existing = bind.execute(
         sa.text("SELECT id FROM email_templates WHERE code = :code"),
         {"code": TEMPLATE_CODE},
     ).first()
     if existing:
         touched = 0
-        for candidate in only_when:
+        for candidate_layout, candidate_text in only_when:
             touched += bind.execute(
                 sa.text(
                     """
@@ -148,6 +151,7 @@ def _set(
                     SET layout_json = CAST(:layout AS jsonb), body_html = :body_html,
                         body_text = :body_text
                     WHERE code = :code AND layout_json = CAST(:only_when AS jsonb)
+                      AND body_text IS NOT DISTINCT FROM :only_when_text
                     """
                 ),
                 {
@@ -155,7 +159,8 @@ def _set(
                     "layout": json.dumps(layout),
                     "body_html": body_html,
                     "body_text": body_text,
-                    "only_when": json.dumps(candidate),
+                    "only_when": json.dumps(candidate_layout),
+                    "only_when_text": candidate_text,
                 },
             ).rowcount
             if touched:
@@ -184,7 +189,7 @@ def _set(
             "description": (
                 "Shaped like the manual handover mail CS sends purchasing: SO table with "
                 "the SO date, line table (stock location, item, QTY / NEW QTY, DELIVERY / "
-                "NEW DELIVERY, remark), on the print shell that fits one A4 portrait page."
+                "NEW DATE, remark), on the print shell that fits one A4 portrait page."
             ),
             "subject": _SUBJECT,
             "body_html": body_html,
@@ -200,7 +205,7 @@ def upgrade() -> None:
         layout=_PRINT_LAYOUT,
         body_html=_PRINT_BODY_HTML,
         body_text=_PRINT_BODY_TEXT,
-        only_when=[_PRIOR_LAYOUT],
+        only_when=[(_PRIOR_LAYOUT, _PRIOR_BODY_TEXT)],
         direction="upgrade",
     )
 
@@ -211,6 +216,6 @@ def downgrade() -> None:
         layout=_PRIOR_LAYOUT,
         body_html=_PRIOR_BODY_HTML,
         body_text=_PRIOR_BODY_TEXT,
-        only_when=[_PRINT_LAYOUT],
+        only_when=[(_PRINT_LAYOUT, _PRINT_BODY_TEXT)],
         direction="downgrade",
     )

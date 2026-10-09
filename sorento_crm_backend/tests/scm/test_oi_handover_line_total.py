@@ -476,13 +476,12 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
     assert len(fresh) == 1 and Decimal(str(fresh[0].qty)) == Decimal("50"), fresh
 
     entries = _line_entries(calls, row_a.item_code)
-    remarks = sorted(entry["remark"].split(" - ")[0] for entry in entries)
+    remarks = sorted(entry["remark"] for entry in entries)
     assert remarks == ["ADVANCE", "CANCEL BALANCE 5 NOS", "ORDER"], entries
-    order_line = next(entry for entry in entries if entry["remark"].startswith("ORDER"))
+    order_line = next(entry for entry in entries if entry["remark"] == "ORDER")
     assert order_line["qty"] == "50", "the fresh row's own quantity, never need - held"
-    assert "Replaces 40 used" in order_line["remark"], (
-        "AC-OH-40..42's own wording travels on the fresh row, as today"
-    )
+    # OI-EMAIL-PRINT (AC-P2): AC-OH-40..42's wording stays on the fresh row, not in the email.
+    assert "Replaces 40 used" in (fresh[0].note or ""), fresh[0].note
     assert not any((entry["was"] or {}).get("qty") == "45" for entry in entries), (
         f"no totals line for a line the netting redirected: {entries}"
     )

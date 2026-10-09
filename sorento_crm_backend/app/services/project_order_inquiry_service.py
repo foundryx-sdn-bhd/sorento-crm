@@ -404,9 +404,14 @@ def handover_remark(
             # The one fact a note carries that IS the instruction: where the line moved
             # (`_change_note`'s "Moved to <SO>" for a repoint). Read back off that fixed
             # stamp, the way `_amendment_row_was` reads "Was dd/mm/yyyy".
-            moved = re.search(r"(?:^|; )Moved to ([^;]+)", getattr(row, "note", None) or "")
+            # Anchored to one order-number token, so the book re-upload's cascade stamp
+            # ("Moved to the <x> line of <doc> after the book was re-uploaded") never
+            # matches and never leaks into REMARK.
+            moved = re.search(
+                r"(?:^|; )Moved to ([A-Z0-9][^\s;]*)\s*(?:;|$)", getattr(row, "note", None) or ""
+            )
             if moved:
-                label = f"{label} TO {moved.group(1).strip()}"
+                label = f"{label} TO {moved.group(1)}"
         old_code = (was or {}).get("item_code")
         if old_code:
             # OI-PRODUCT-FOLLOW R4: a fresh row raised on the line's new product.

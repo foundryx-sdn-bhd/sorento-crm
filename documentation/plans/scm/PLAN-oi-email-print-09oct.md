@@ -1,6 +1,6 @@
 # PLAN: OI handover email - no multi-line cells, fits one printed page (OI-EMAIL-PRINT)
 
-Status: Plan, card out for owner answers (feature track, abbreviated per the crew brief: card + mock first, then red tests, one PR; carries one data migration on `email_templates`, so not the small fix track)
+Status: Build, on review fixes (feature track, abbreviated per the crew brief: card + mock, red tests, one PR; carries one data migration on `email_templates`, so not the small fix track). Q1 to Q5 are built on their recommendations; the owner's rulings are pending on PR #1543 and none is recorded yet.
 Lane: OI-EMAIL-PRINT, branch `claude/oi-email-print-ucrsgl`, PR #1543
 Domain: scm (order inquiry handover email, `order_inquiry_handover` automation) + email layout shell
 UAC: `oi-email-print-09oct-acceptance-criteria.md` alongside
@@ -85,7 +85,7 @@ and S/O NO repeat on every row.
    lines carry the SO date; the pipe table drops SO DATE / S/O NO and prints the S/O NO as a
    group line when there are several).
 6. **Admin edits are respected**: the migration converts the row only while its `layout_json`
-   is still exactly what `oihr_0004` wrote (same guard as oihr_0004), logs and skips otherwise.
+   and `body_text` are still exactly what `oihr_0004` left, logs and skips otherwise.
    Rule 1 is code, so it applies to an admin-edited template too.
 
 ### Examples (real cases, customer and project names masked)
@@ -117,7 +117,9 @@ and S/O NO repeat on every row.
 
 1. **CHANGE SO NO target.** Its note `Moved to SO...` is the only place the target order is
    named. (a) drop it like every other note; (b) print `CHANGE SO NO TO <SO>` from the
-   amendment's own `to_value` (structured, not the free note). **Rec (b)**: it is an
+   repoint stamp `Moved to <SO>` (the row has no structured target column, so the fixed
+   stamp `_change_note` writes is read back, anchored to one order-number token so the
+   book re-upload's "Moved to the ... line" stamp never matches). **Rec (b)**: it is an
    instruction, not a planning note, and it is short.
 2. **Column labels.** (a) `NEW QTY` / `DELIVERY` / `NEW DATE` (short, one line);
    (b) keep `QTY CHANGE TO` / `DELIVERY DATE` / `DELIVERY DATE CHANGE TO` with nowrap (the
