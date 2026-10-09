@@ -85,12 +85,35 @@ def test_each_call_is_audited_separately(client, backend):
     assert len(backend.calls("POST", AUDIT)) == 2
 
 
-def test_an_audit_failure_does_not_break_the_tool_answer(client, backend):
-    backend.on("GET", BRANDS, json_body={"data": [{"id": "1"}], "total": 1})
-    backend.on("POST", AUDIT, status=500, json_body={"detail": "down"})
+SECRET_ROW = "ZZT-ROW-MUST-NOT-LEAK"
+
+
+def _transport_error(_req):
+    import httpx
+
+    raise httpx.ConnectError("audit backend unreachable")
+
+
+def test_an_audit_failure_refuses_the_call_and_returns_no_data(client, backend):
+    """Crew ruling: reused-tool audit is NOT best-effort. If the audit post fails, fail closed.
+
+    (Replaces test_an_audit_failure_does_not_break_the_tool_answer, which asserted the opposite.)
+    """
+    rows = [{"id": "1", "name": SECRET_ROW}]
+    for status in (500, 400, 403):
+        backend.on("GET", BRANDS, json_body={"data": rows, "total": 1})
+        backend.on("POST", AUDIT, status=status, json_body={"detail": "no"})
+        out = call_tool(client, "crm_master_brands_list", {})
+        assert SECRET_ROW not in out["text"], status
+        assert out["isError"] is True or "error" in out["text"].lower(), (status, out)
+
+
+def test_an_audit_transport_error_refuses_the_call_and_returns_no_data(client, backend):
+    backend.on("GET", BRANDS, json_body={"data": [{"id": "1", "name": SECRET_ROW}], "total": 1})
+    backend.routes[("POST", AUDIT)] = _transport_error
     out = call_tool(client, "crm_master_brands_list", {})
-    assert out["isError"] is False
-    assert json.loads(out["text"])["data"] == [{"id": "1"}]
+    assert SECRET_ROW not in out["text"]
+    assert out["isError"] is True or "error" in out["text"].lower(), out
 
 
 def test_listing_tools_is_not_audited(client, backend):

@@ -117,7 +117,10 @@ def test_views_exist_and_expose_no_secret_columns():
 
 
 def test_views_mask_otp_codes_like_the_crm_does():
+    from app.services.analytics_connector.views import ensure_views
+
     with pg_session() as db:
+        ensure_views(db)  # a reused local DB must not hide a regression in the view body
         seed = _seed(db, unique_code("otp", alpha=True))
         rows = db.execute(text(
             "SELECT text FROM analytics_connector.messages WHERE contact_respond_id = :r ORDER BY sent_at"
@@ -150,7 +153,10 @@ def test_sql_mask_matches_python_mask(sample):
 
 
 def test_views_show_malaysia_time_and_skip_test_turns():
+    from app.services.analytics_connector.views import ensure_views
+
     with pg_session() as db:
+        ensure_views(db)
         seed = _seed(db, unique_code("tz", alpha=True))
         first = db.execute(text(
             "SELECT sent_at FROM analytics_connector.messages WHERE contact_respond_id = :r ORDER BY sent_at LIMIT 1"

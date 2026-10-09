@@ -59,6 +59,7 @@ class Rec:
     query: dict[str, str]
     headers: dict[str, str]
     body: bytes
+    raw_path: str = ""  # the path exactly as sent on the wire (percent-encoding intact)
 
     @property
     def json(self) -> Any:
@@ -92,6 +93,7 @@ class Backend:
             query=dict(parse_qsl(req.url.query.decode())),
             headers={k.lower(): v for k, v in req.headers.items()},
             body=req.content,
+            raw_path=req.url.raw_path.decode().split("?")[0],
         ))
         route = self.routes.get((req.method, req.url.path))
         if route is None:
@@ -167,17 +169,19 @@ def list_tools(client, *, token: str = "tok-A") -> list[dict]:
     return _sse_json(resp.text)["result"]["tools"]
 
 
-# The 40 reused tools, card section 4.2 (pinned here on purpose: the test is the contract,
-# the code under test must not be able to widen it by editing its own list).
-REUSED_40 = frozenset({
+# The reused tools, card section 4.2 (pinned here on purpose: the test is the contract,
+# the code under test must not be able to widen it by editing its own list). ONE constant: a
+# further removal after an audit is one edit here (and the two counts derive from it).
+# Removed in the security round: crm_low_stock_report (its GET creates a report run and can
+# WhatsApp-send a workbook), crm_report_ask and crm_sales_analysis (chatbot-only, 403 for staff).
+REUSED_TOOLS = frozenset({
     "crm_master_products_list", "crm_master_brands_list", "crm_master_product_categories_list",
     "crm_master_units_of_measure_list", "crm_master_product_attachments_list", "crm_certificates_list",
     "crm_master_customers_list", "crm_lookup_resolve",
-    "crm_inventory_stock_balance_list", "crm_inventory_warehouses_list", "crm_low_stock_report",
+    "crm_inventory_stock_balance_list", "crm_inventory_warehouses_list",
     "crm_incoming_stock_by_product", "crm_incoming_stock_shipments", "crm_incoming_stock_list",
     "crm_order_management_orders_list", "crm_order_management_orders_by_product_list",
-    "crm_outstanding_report", "crm_sales_report", "crm_report_ask", "crm_top_selling_report",
-    "crm_sales_analysis",
+    "crm_outstanding_report", "crm_sales_report", "crm_top_selling_report",
     "crm_procurement_po_placed_list", "crm_procurement_spo_allocations_last_receipt_list",
     "crm_procurement_po_last_cost_list",
     "crm_marketing_promotions_list", "crm_marketing_promotion_products_list",
@@ -188,6 +192,7 @@ REUSED_40 = frozenset({
     "crm_sla_conversation_tracking_dashboard", "crm_sla_conversation_tracking_list",
     "crm_sla_conversation_event_logs_list",
 })
+REMOVED_TOOLS = frozenset({"crm_low_stock_report", "crm_report_ask", "crm_sales_analysis"})
 EXCLUDED_FROM_43 = frozenset({"crm_portal_link_get", "user_guides_read", "crm_system_tool_capabilities_summary"})
 WRITE_TOOLS = frozenset({
     "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject",

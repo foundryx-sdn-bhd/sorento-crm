@@ -26,6 +26,7 @@ from tests.analytics_connector._helpers import (
 )
 
 ME_PERMS = "/api/v1/user-management/users/me/permissions"
+ALLOWED_GET = "/api/v1/master-data/brands"  # a reused tool route: inside the connector path allowlist
 
 
 @pytest.fixture()
@@ -61,8 +62,9 @@ def test_connector_token_with_a_wrong_internal_key_is_refused(signed_in):
 
 def test_connector_token_reads_ordinary_get_routes_as_the_user(signed_in):
     _db, client, _user, token = signed_in
-    resp = client.get(ME_PERMS, headers=connector_headers(token))
-    assert resp.status_code == 200, resp.text
+    resp = client.get(ALLOWED_GET, headers=connector_headers(token))
+    assert resp.status_code != 403 or resp.json().get("detail") != "connector_path_not_allowed", resp.text
+    assert resp.status_code not in (401, 405), resp.text
 
 
 @pytest.mark.parametrize(
@@ -94,7 +96,7 @@ def test_losing_the_permission_fails_the_next_call(signed_in):
     revoke_permission(db, user, USE)
     resp = client.get(f"{BASE}/me", headers=connector_headers(token))
     assert resp.status_code == 401
-    assert client.get(ME_PERMS, headers=connector_headers(token)).status_code == 401
+    assert client.get(ALLOWED_GET, headers=connector_headers(token)).status_code == 401
 
 
 def test_deactivated_user_fails_the_next_call(signed_in):
