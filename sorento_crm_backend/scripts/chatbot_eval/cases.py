@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-OUTCOMES = ("answer", "clarify", "not_supported", "handover")
+OUTCOMES = ("answer", "clarify", "not_supported", "handover", "silent")
 SPLITS = ("dev", "hidden")
 
 

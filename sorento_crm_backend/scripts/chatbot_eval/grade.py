@@ -49,6 +49,8 @@ def _has_date(reply: str, iso: str) -> bool:
 def _must_ok(reply: str, item: dict) -> bool:
     low = reply.lower()
     for key, want in item.items():
+        if key == "near":
+            continue
         want = str(want)
         if key in ("code", "text"):
             ok = want.lower() in low
@@ -79,6 +81,10 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
     if outcome.tool_errors:
         return Verdict("error", ["tool_error"])
     raw = outcome.raw or {}
+    if expect.outcome == "silent":
+        if not reply.strip() or (raw.get("reply") is None and raw.get("delegate")):
+            return Verdict("correct", [], bool(expect.judge_note))
+        return Verdict("wrong", ["reply_when_silent_expected"])
     if raw.get("reply") is None and raw.get("delegate"):
         return Verdict("error", ["delegated"])
     if not reply.strip():
