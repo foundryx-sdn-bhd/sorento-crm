@@ -378,13 +378,18 @@ def scope_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
 def vague_token(verdict: Any, focus_products: list[Any]) -> str | None:
     """Round 6 G4: the product word a message names with nothing asked about it, or None.
 
-    The parser named no domain, no intent, no ask and no sub-ask, and every entity it
-    read is a product typed this message that it is not sure of (`confident: false`) and
-    the conversation is not already about. Such a message does not inherit the last
-    turn's domain; the reply asks what is wanted. Reads the parser's fields only."""
+    The parser named no domain, no ask and no sub-ask, did not read the message as a
+    follow-up (`continuation` and `anaphora.backward_reference` both false: round 6b, the
+    live case-B parse was `confident: true`), and every entity is a product typed this
+    message that the conversation is not already about. Such a message does not inherit
+    the last turn's domain; the reply asks what is wanted. A real follow-up ("CB6633"
+    after a stock ask) keeps today's carry. Reads the parser's fields only."""
     if not isinstance(verdict, dict):
         return None
-    if verdict.get("domain_hint") or verdict.get("intent_hint") or verdict.get("asks") or _sub_asks(verdict):
+    if verdict.get("domain_hint") or verdict.get("asks") or _sub_asks(verdict):
+        return None
+    anaphora = verdict.get("anaphora") if isinstance(verdict.get("anaphora"), dict) else {}
+    if verdict.get("continuation") is not False or anaphora.get("backward_reference") is not False:
         return None
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     if not entities:
@@ -398,8 +403,6 @@ def vague_token(verdict: Any, focus_products: list[Any]) -> str | None:
     }
     for e in entities:
         if e.get("hint") not in (None, "", "product") or e.get("current_message") is False:
-            return None
-        if e.get("confident") is not False:
             return None
         if turn_state.token_key(str(e.get("canonical_code") or e.get("raw") or "")) in known:
             return None
