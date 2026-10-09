@@ -9,7 +9,7 @@ function Consent() {
   const requestId = useSearchParams().get('request');
   if (!requestId) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-4 text-sm text-muted-foreground">
+      <div className="flex min-h-[60dvh] items-center justify-center p-4 text-sm text-muted-foreground">
         This request has expired. Return to Claude and connect again.
       </div>
     );

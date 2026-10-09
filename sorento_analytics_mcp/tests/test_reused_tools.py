@@ -50,6 +50,8 @@ def test_every_allowed_tool_is_in_the_catalog_and_read_only():
 
 def test_allow_list_is_a_subset_of_the_chatbot_read_only_set_live(monkeypatch):
     backend_dir = Path(__file__).resolve().parents[2] / "sorento_crm_backend"
+    if not backend_dir.is_dir():  # the container CI image ships no backend
+        pytest.skip(f"no backend checkout at {backend_dir}")
     sys.path.insert(0, str(backend_dir))
     monkeypatch.chdir(backend_dir)  # the backend Settings read .env from the working directory
     try:

@@ -1,19 +1,15 @@
 'use client';
 
+import { useMemo } from 'react';
+import { ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { History } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader } from '@/components/ui/card';
+import { Card, CardHeader, CardTable } from '@/components/ui/card';
+import { DataGrid } from '@/components/ui/data-grid';
+import { DataGridTable } from '@/components/ui/data-grid-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import DetailActions from '@/components/common/DetailActions';
 import { formatDateSafe, formatDateTimeSafe } from '@/lib/helpers';
 import { useGrantQuery, useGrantRevocation } from '../hooks/useClaudeConnector';
@@ -44,6 +40,80 @@ function Meta({ label, children }: { label: string; children: React.ReactNode })
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-sm font-medium">{children}</span>
     </div>
+  );
+}
+
+const count = (n: number | null | undefined) => (n == null ? '-' : n.toLocaleString('en-US'));
+
+function RecentCallsTable({ calls }: { calls: GrantCall[] }) {
+  const columns = useMemo<ColumnDef<GrantCall>[]>(
+    () => [
+      {
+        id: 'time',
+        header: 'Time',
+        cell: ({ row }) => {
+          const when = formatDateTimeSafe(row.original.time);
+          return (
+            <span className="block truncate" title={when}>
+              {when}
+            </span>
+          );
+        },
+        size: 180,
+      },
+      {
+        id: 'tool',
+        header: 'Tool',
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-xs" title={row.original.tool}>
+            {row.original.tool}
+          </span>
+        ),
+        size: 260,
+      },
+      {
+        id: 'rows',
+        header: 'Rows',
+        cell: ({ row }) => <span className="block text-right">{count(row.original.rows)}</span>,
+        size: 100,
+      },
+      {
+        id: 'ms',
+        header: 'ms',
+        cell: ({ row }) => <span className="block text-right">{count(row.original.ms)}</span>,
+        size: 100,
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        cell: ({ row }) => <CallStatus status={row.original.status} />,
+        size: 120,
+      },
+    ],
+    [],
+  );
+  const table = useReactTable({
+    columns,
+    data: calls,
+    getRowId: (row, i) => `${row.time}-${i}`,
+    getCoreRowModel: getCoreRowModel(),
+    columnResizeMode: 'onChange',
+    enableColumnResizing: true,
+  });
+
+  return (
+    <DataGrid
+      table={table}
+      recordCount={calls.length}
+      listingKey={null}
+      tableLayout={{ width: 'fixed', columnsResizable: true }}
+    >
+      <Card>
+        <CardTable>
+          <DataGridTable />
+        </CardTable>
+      </Card>
+    </DataGrid>
   );
 }
 
@@ -134,36 +204,7 @@ export default function GrantDetail({ id }: { id: string }) {
               </div>
             </Card>
           ) : (
-            <Card>
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-44">Time</TableHead>
-                    <TableHead className="w-64">Tool</TableHead>
-                    <TableHead className="w-24 text-right">Rows</TableHead>
-                    <TableHead className="w-24 text-right">ms</TableHead>
-                    <TableHead className="w-28">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {calls.map((c, i) => (
-                    <TableRow key={`${c.time}-${i}`}>
-                      <TableCell className="truncate" title={formatDateTimeSafe(c.time)}>
-                        {formatDateTimeSafe(c.time)}
-                      </TableCell>
-                      <TableCell className="truncate font-mono text-xs" title={c.tool}>
-                        {c.tool}
-                      </TableCell>
-                      <TableCell className="text-right">{c.rows == null ? '-' : c.rows.toLocaleString('en-US')}</TableCell>
-                      <TableCell className="text-right">{c.ms == null ? '-' : c.ms.toLocaleString('en-US')}</TableCell>
-                      <TableCell>
-                        <CallStatus status={c.status} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
+            <RecentCallsTable calls={calls} />
           )}
         </TabsContent>
       </Tabs>

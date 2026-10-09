@@ -22,7 +22,7 @@ function useRemaining(expiresAt?: string) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center p-4">
+    <div className="flex min-h-[60dvh] items-center justify-center p-4">
       <Card className="w-full max-w-md space-y-5 p-6">{children}</Card>
     </div>
   );
@@ -43,7 +43,6 @@ export default function ConsentCard({ requestId }: { requestId: string }) {
     queryKey: ['claude-connector-consent', requestId],
     queryFn: () => getConsent(requestId),
     retry: false,
-    refetchOnWindowFocus: false,
   });
   const remaining = useRemaining(data?.expires_at);
   const go = (url: string) => window.location.assign(url);
