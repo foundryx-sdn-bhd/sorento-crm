@@ -194,6 +194,7 @@ def apply_crossdomain_hit(
     turn_id: str | None = None,
     focus_products: Any = None,
     profile: Any = None,
+    localizer: Any = None,
 ) -> turn_compose.Answer:
     """Hand pass 11, defect 1: a single-domain inventory/incoming HIT whose rows all
     read 0 on hand climbs the SAME cross-domain ladder a miss does, instead of
@@ -286,7 +287,7 @@ def apply_crossdomain_hit(
             result,
             answered=True,
             include_offer=not is_staff,
-            localizer=getattr(ctx, "localizer", None),
+            localizer=localizer if localizer is not None else getattr(ctx, "localizer", None),
         )
         if text == answer.text:
             return answer
@@ -1848,6 +1849,7 @@ def answer_for(
     dealer_stock_ask: bool = False,
     dealer_incoming_ask: bool = False,
     product_token_missed: bool = False,
+    localizer: Any = None,
 ) -> turn_compose.Answer | None:
     """The MISS seam (R4): `None` outside its own two triggers (see module docstring),
     so a hit, an `access_denied` refusal, an infrastructure error and a multi-domain plan
@@ -2202,6 +2204,7 @@ def answer_for(
         include_offer=offers_escalation(profile),
         covers=_block_covers_asked(crossdomain_result, resolved),
         quantities=_quantity_labels(parser),
+        localizer=localizer,
     )
     if dealer_stock_ask:
         # Owner ruling 26 Sep 2026 (hand test F1): a dealer's stock ask never offers
