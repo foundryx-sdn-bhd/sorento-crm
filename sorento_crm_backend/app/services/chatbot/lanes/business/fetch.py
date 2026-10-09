@@ -2792,6 +2792,7 @@ _DROPPED_OPENERS = (
     "Here are the delivered orders I found.",
     "Here are the matching products.",
     "Here is the incoming stock I found.",
+    "Here are the results.",
     "Here is the last SPO line per product.",
     "Here is the PO placed I found.",
     "Here is the last purchase cost per product and location.",

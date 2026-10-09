@@ -513,6 +513,16 @@ def footer_leads(localizer: Any = None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(lead for lead in leads if lead))
 
 
+def label_words(*english: str) -> tuple[str, ...]:
+    """Each English label with its catalog translations, for matchers that must recognise
+    a card label in whichever language printed it."""
+    out: list[str] = []
+    for word in english:
+        out.append(word)
+        out.extend(LABELS.get(word, {}).get(lang, "") for lang in LANGUAGES if lang != "en")
+    return tuple(dict.fromkeys(w for w in out if w))
+
+
 def refer_sentences(localizer: Any = None) -> tuple[str, ...]:
     """The refer line in every language: the English constant, and the last sentence of each
     translated verdict that ends with it. For the text matchers that ask "was it printed?".

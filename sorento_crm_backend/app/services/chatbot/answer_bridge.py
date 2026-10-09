@@ -281,7 +281,13 @@ def apply_crossdomain_hit(
 
         # ESCALATION-CONTROL: staff and a barred contact alike get no offer.
         is_staff = not offers_escalation(profile)
-        text = _apply_crossdomain_render(answer.text, result, answered=True, include_offer=not is_staff)
+        text = _apply_crossdomain_render(
+            answer.text,
+            result,
+            answered=True,
+            include_offer=not is_staff,
+            localizer=getattr(ctx, "localizer", None),
+        )
         if text == answer.text:
             return answer
         # #1262 slice 11 (F8): staff get the rung's own rendered block (the text
@@ -1563,9 +1569,20 @@ def _block_product_codes(block_text: Any) -> set[str]:
 
 
 _BLOCK_CODE_RE = re.compile(r"^\*Product Code:\*[ \t]*(.+?)[ \t]*$", re.MULTILINE)
-_BLOCK_LINE_RE = re.compile(r"^(?:\d+\. )?\*(Company|Product Code):\*[ \t]*(.+?)[ \t]*$")
+def _alt(*english: str) -> str:
+    return "|".join(re.escape(w) for w in label_catalog.label_words(*english))
+
+
+_COMPANY_WORDS = label_catalog.label_words("Company")
+_BLOCK_LINE_RE = re.compile(
+    r"^(?:\d+\. )?\*(" + _alt("Company", "Product Code") + r"):\*[ \t]*(.+?)[ \t]*$"
+)
+_STOCK_LINE_START = tuple(f"*{w}:*" for w in label_catalog.label_words("Stock"))
+_CONTAINER_LINE_START = tuple(f"*{w}:*" for w in label_catalog.label_words("Container"))
 _FLAG_LINE_RE = re.compile("^(?:\u26a0\ufe0f|\U0001f6a9)")
-_IDENTITY_LINE_RE = re.compile(r"^(?:\d+\. )?\*(?:Company|Product Code|Product Name):\*")
+_IDENTITY_LINE_RE = re.compile(
+    r"^(?:\d+\. )?\*(?:" + _alt("Company", "Product Code", "Product Name") + r"):\*"
+)
 _INCOMING_OPENER = "Here is the incoming stock I found."
 
 
@@ -1573,7 +1590,9 @@ def _block_key(para: str) -> tuple[str | None, str | None]:
     """`(company, product code)` of a block paragraph, upper-cased; `(None, None)` for a
     paragraph that is not a block. A block may open with its Company line or its number."""
     found = {
-        m.group(1): m.group(2).upper() for m in map(_BLOCK_LINE_RE.match, para.split("\n")) if m
+        ("Company" if m.group(1) in _COMPANY_WORDS else "Product Code"): m.group(2).upper()
+        for m in map(_BLOCK_LINE_RE.match, para.split("\n"))
+        if m
     }
     return found.get("Company"), found.get("Product Code")
 
@@ -1591,21 +1610,21 @@ def _merge_block(primary: str, extra: str) -> str:
     p_id = [re.sub(r"^\d+\. ", "", ln) for ln in p_lines if _IDENTITY_LINE_RE.match(ln)]
     p_stock = [ln for ln in p_lines if not _IDENTITY_LINE_RE.match(ln)]
     x_rest = [ln for ln in x_lines if not _IDENTITY_LINE_RE.match(ln)]
-    stock_line = next((ln for ln in x_rest if ln.startswith("*Stock:*")), None)
+    stock_line = next((ln for ln in x_rest if ln.startswith(_STOCK_LINE_START)), None)
     tail = [ln for ln in x_rest if ln is not stock_line]
     has_outstanding = any(
         int(n) > 0 for ln in p_stock for n in re.findall(r"\(O/S: (\d+)\)", ln)
     )
     # An incoming primary keeps its Container/ETA/quantity lines; the cross-domain
     # `*Stock:*` line only stands in for stock location lines.
-    if any(ln.startswith("*Container:*") for ln in p_stock):
+    if any(ln.startswith(_CONTAINER_LINE_START) for ln in p_stock):
         stock = [*p_stock, *([stock_line] if stock_line else [])]
     else:
         stock = p_stock if has_outstanding or stock_line is None else [stock_line]
     return "\n".join([*p_id, *stock, *tail, *flags])
 
 
-def _fold_blocks(primary: str, xd_text: str) -> tuple[str, str]:
+def _fold_blocks(primary: str, xd_text: str, localizer: Any = None) -> tuple[str, str]:
     """WA-CONCISE card v4: the cross-domain blocks join the primary reply as more blocks of
     one list. A code that has a primary block AND a cross-domain block prints once, merged
     (`_merge_block`) in the cross-domain position; the incoming opener goes; when more than
@@ -1632,9 +1651,9 @@ def _fold_blocks(primary: str, xd_text: str) -> tuple[str, str]:
             None,
         )
         if hit is not None:
-            merged = merged or "*Container:*" in paras[hit]
+            merged = merged or any(c in paras[hit] for c in _CONTAINER_LINE_START)
             xd_paras[i] = _merge_block(paras.pop(hit), x)
-    footer_starts = tuple("_" + lead for lead in label_catalog.footer_leads())
+    footer_starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
     footers = [p for p in paras if p.startswith(footer_starts)]
     paras = [p for p in paras if p not in footers]
     if merged or any(is_block(p) for p in paras):
@@ -1681,6 +1700,7 @@ def _apply_crossdomain_render(
     include_offer: bool = True,
     covers: bool = False,
     quantities: Mapping[str, str] | None = None,
+    localizer: Any = None,
 ) -> str:
     """The rung's own rendered block, folded above the escalate marker, from the
     ALREADY-COMPUTED `result` `_run_crossdomain_ladder` (above) returned - this
@@ -1721,7 +1741,7 @@ def _apply_crossdomain_render(
         block = {**block, "block": "\n\n".join(paras)}
     variables: dict[str, Any] = {"last_result_set": [True]} if answered else {}
     if answered:
-        text, xd_text = _fold_blocks(text, str(block["block"]))
+        text, xd_text = _fold_blocks(text, str(block["block"]), localizer)
         block = {**block, "block": xd_text}
         covers = covers or not text
     sealed = {"reply": {"text": text, "session_patch": {"user_response": text, "variables": variables}}}

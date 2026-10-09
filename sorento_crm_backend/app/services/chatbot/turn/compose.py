@@ -764,6 +764,17 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
 
     # One numbering over the whole reply, whichever section a block sits in.
     text_parts = ["\n\n".join(g) for g in renumber([part.split("\n\n") for part in text_parts])]
+    # The freshness footer closes the whole body, once, whichever section printed it.
+    if len(text_parts) > 1:
+        starts = tuple("_" + lead for lead in label_catalog.footer_leads(localizer))
+        footers: list[str] = []
+        for i, part in enumerate(text_parts):
+            paras = part.split("\n\n")
+            footers += [p for p in paras if p.startswith(starts)]
+            text_parts[i] = "\n\n".join(p for p in paras if not p.startswith(starts))
+        text_parts = [part for part in text_parts if part]
+        if footers:
+            text_parts.append(footers[0])
     text = "\n\n".join(text_parts)
 
     # A token nobody could place is named, never dropped in silence (hand pass 2 item 6,
@@ -966,10 +977,18 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # presenters`'s universal "has attachments" intro), so it is never repeated.
         # A card reply (blocks) closes with it, after every block and the footer.
         paras = text.split("\n\n")
-        if _ATTACHED_SENTENCE not in text:
-            text += "\n\n" + _ATTACHED_SENTENCE
-        elif any(is_block(p) for p in paras):
-            text = "\n\n".join([p for p in paras if p != _ATTACHED_SENTENCE] + [_ATTACHED_SENTENCE])
+        # The line reads in the turn language, so the English constant and every
+        # catalog translation count as "already said".
+        attached = {
+            _ATTACHED_SENTENCE,
+            localizer.sentence(_ATTACHED_SENTENCE),
+            *label_catalog.LABELS[_ATTACHED_SENTENCE].values(),
+        }
+        said = [p for p in paras if p in attached]
+        if not any(a in text for a in attached):
+            text += "\n\n" + localizer.sentence(_ATTACHED_SENTENCE)
+        elif said and any(is_block(p) for p in paras):
+            text = "\n\n".join([p for p in paras if p not in attached] + [said[0]])
 
     return Answer(
         sections=sections, question=question, offer=offer, canned=[], files=files, actions=actions, text=text

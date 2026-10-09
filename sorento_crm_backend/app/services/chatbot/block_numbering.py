@@ -3,10 +3,19 @@ from __future__ import annotations
 
 import re
 
+from app.services.chatbot import label_catalog
+
 _NUMBERED_FIRST = re.compile(r"^\d+\. \*[^*\n]+:\*[ \t]*\S")
 _LABEL_LINE = re.compile(r"^\*[^*\n]+:\*")
 _BLOCK_HEAD = re.compile(
-    r"^\*(?:Company|Product Code|Order Number|SPO Number|PO Number|Shipment|Container):\*"
+    r"^\*(?:"
+    + "|".join(
+        re.escape(w)
+        for w in label_catalog.label_words(
+            "Company", "Product Code", "Order Number", "SPO Number", "PO Number", "Shipment", "Container"
+        )
+    )
+    + r"):\*"
 )
 
 
