@@ -324,8 +324,8 @@ def sweep(
 
     `rebuild` reloads the range under the current rules after a logic change: the range's
     fact rows are deleted (items cascade), rewritten, and their `episode_id` re-stamped.
-    `chat_episode_facts` is never touched. It commits per chunk, so an interrupted rebuild
-    is finished by running it again.
+    `chat_episode_facts` is never touched. A rebuild is one transaction, committed once at
+    the end: an interrupted one leaves the old rows (and their episodes) as they were.
 
     One bad turn is logged and skipped inside its own SAVEPOINT, so it cannot sink the
     rest of the load; the next sweep tries it again.
@@ -342,7 +342,6 @@ def sweep(
         db.execute(
             delete(_FACTS).where(_FACTS.c.turn_id.in_(select(_TURNS.c.id).where(*in_range)))
         )
-        db.commit()
 
     has_fact = select(_FACTS.c.id).where(_FACTS.c.turn_id == _TURNS.c.id).exists()
     query = (
@@ -384,6 +383,9 @@ def sweep(
                     .where(_FACTS.c.turn_id == row.id)
                     .values(episode_id=episodes[str(row.id)])
                 )
+        if not rebuild:
+            db.commit()
+    if rebuild:
         db.commit()
     return written
 
