@@ -71,7 +71,11 @@ and S/O NO repeat on every row.
    LOCATION | ITEM CODE | QTY | [NEW QTY] | DELIVERY | [NEW DATE] | REMARK
    (bracketed columns appear only when some line changed that value, as today). Every header
    and every cell except REMARK (and CUSTOMER / PROJECT in the order table) is
-   `white-space:nowrap`; font 12px; padding 4px.
+   `white-space:nowrap`; font 11px / 15px line height in the line table (12px in the order
+   table); padding 4px. 11px (owner hand test, 9 Oct): at 12px the owner's case
+   `DELAY, ORDER 6, CHANGE ITEM CODE TO SRT382-6-DIY (WAS SRT382-6)` took 3 lines in the
+   widest layout (NEW QTY + NEW DATE + a 16-char code); at 11px it takes 2 and
+   `ORDER BACK SPO-2026/08-0061` fits on 1.
 4. **Fits A4 portrait.** The handover document moves from the 900px `wide` card to a new
    `print` width: 672px card, 12px gutters (648px of table); card + the shell's 12px outer
    padding = 696px, inside Outlook's 698px and Chrome's 718px printable width. The shell also
@@ -87,7 +91,10 @@ and S/O NO repeat on every row.
    lines carry the SO date; the pipe table drops SO DATE / S/O NO and prints the S/O NO as a
    group line when there are several).
 6. **Admin edits are respected**: the migration converts the row only while its `layout_json`
-   and `body_text` are still exactly what `oihr_0004` left, logs and skips otherwise.
+   and `body_text` are still one of the known unedited states: oihr_0004's output, or the
+   pre-0004 document (eml_0002's, with or without the editor's `width: standard`). Crew hand
+   test, 9 Oct: the dev row was still pre-0004, and a guard that only knew oihr_0004's output
+   updated 0 rows in silence. Any other row is logged and skipped.
    Rule 1 is code, so it applies to an admin-edited template too.
 
 ### Examples (real cases, customer and project names masked)

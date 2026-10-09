@@ -222,6 +222,31 @@ def test_upgrade_converts_0004_document_in_place_idempotent_and_reversible():
         assert _handover_row(db) == before, "downgrade restores oihr_0004 byte for byte"
 
 
+def test_upgrade_converts_the_pre_0004_row_too():
+    """Crew hand test, 9 Oct: the dev row was still the pre-oihr_0004 document (eml_0002's,
+    no width key) and the guard that knew only oihr_0004's output updated 0 rows in
+    silence. Both that state and the block editor's re-save of it (`width: standard`)
+    reach the print document."""
+    module = _load(REVISION)
+    for resaved in (False, True):
+        with blank_session() as db:
+            mods = _seed(db)
+            _run(mods["eml_0002_seed_layouts"], db)
+            before = _handover_row(db)
+            assert "width" not in before["layout_json"], "sanity: the pre-0004 document"
+            if resaved:
+                db.execute(
+                    sa.text("UPDATE email_templates SET layout_json = CAST(:l AS jsonb) WHERE code = :c"),
+                    {"l": json.dumps({**before["layout_json"], "width": "standard"}), "c": CODE},
+                )
+            _run(module, db)
+            after = _handover_row(db)
+            assert after["layout_json"]["width"] == "print", (resaved, after["layout_json"].get("width"))
+            assert after["body_html"] == _custom_text(after["layout_json"])
+            assert "LOCATION | ITEM CODE | QTY |" in after["body_text"]
+            assert after["layout_json"] == module._PRINT_LAYOUT
+
+
 def test_admin_edited_document_is_left_alone():
     module = _load(REVISION)
     with blank_session() as db:

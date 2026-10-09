@@ -66,6 +66,17 @@ cases = {
              verb=IV_ORDER, qty=8, delivery_date=D(2026, 10, 9), item_code="SRTBS2201",
              stock_location="PG-WH", was={"qty": 12}),
     ],
+    "case4": [  # owner's case: AutoCount swapped the product; worst width (NEW QTY + NEW DATE)
+        item("SO419012", "02/10/2026", "p5", "CUSTOMER F SDN BHD", "PROJECT K", "settled", 1,
+             verb=IV_ORDER, qty=30, delivery_date=D(2026, 11, 6), item_code="SRT382-6-DIY",
+             stock_location="KL-WH", was={"item_code": "SRT382-6", "qty": 24, "delivery_date": D(2026, 10, 30)}),
+        item("SO419012", "02/10/2026", "p5", "CUSTOMER F SDN BHD", "PROJECT K", "raised", 2,
+             verb=IV_ORDER, qty=12, delivery_date=D(2026, 11, 6), item_code="SRT382-6-DIY",
+             stock_location="KL-WH", note="Replaces 12 used; Was item SRT382-6", was={"item_code": "SRT382-6"}),
+        item("SO419012", "02/10/2026", "p5", "CUSTOMER F SDN BHD", "PROJECT K", "settled", 3,
+             verb=IV_ORDER, qty=8, delivery_date=D(2026, 11, 13), item_code="CWCX604-S-RL-NEW",
+             stock_location="KL-WH", was={"delivery_date": D(2026, 11, 6)}),
+    ],
     "case3": [  # long order: 42 lines
         item("SO418900", "01/10/2026", "p4", "CUSTOMER D SDN BHD", "PROJECT M", "raised", i,
              verb=IV_ORDER, qty=10 + i, delivery_date=D(2026, 11, 20), item_code=f"SRTWT{6800 + i}",
