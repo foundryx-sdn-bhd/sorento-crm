@@ -17,7 +17,7 @@ DB): both are listed at the bottom for crew to run locally.
 | --- | --- | --- |
 | Q1 | No fixed template, NO size ceiling for now | ONE line per sub-ask the user ACTUALLY asked, in their order: "price and last receipt date" is two lines. Nothing unasked is printed (no stock summary under a cost ask, no header block). No list cap and no DETAIL offer: a "per salesman" list prints every salesman, one per line. |
 | Q2 | Clarify, parser-driven | The parser says per product code whether the asker meant the exact code, the family, or did not say (`family: true / false / null`). `null` and the code has variants -> ONE short question naming the variant count, and nothing else runs that turn: `SRTWT7445 有 8 个款式。只要 SRTWT7445，还是全部 8 款？` / `SRTWT7445 has 8 variants. Just SRTWT7445, or all 8?`. The reply to it is parsed as `family`, and the original sub-asks run. No code rule picks exact or family. |
-| Q3 | (b) current behaviour, labelled | Supplier = the supplier of the LAST PO line for the product (newest PO date across every location), the same row `crm_procurement_po_last_cost_list` answers today; the line names that PO: `供应商: ABC SDN BHD (PO-2026-0412, 03/06/2026)`. No date window. |
+| Q3 | (b) current behaviour, labelled | Supplier = the supplier of the LAST PO line for the product (newest PO date across every location), the same row `crm_procurement_po_last_cost_list` answers today; the line names that PO: `供应商: ABC SDN BHD（PO-2026-0412，03/06/2026）`. No date window. |
 | Q4 | Clarify | `sold_*` with no basis the parser can read -> ONE short question `卖出按已出货还是按下单算？` / `Sold as delivered or as ordered?`. Only the sold lines wait on it: every other asked line answers in the same reply and the question is the last line. |
 | Q5 | (b), text, no Excel | The reply goes as TEXT packed into the fewest WhatsApp messages: lines fill each message up to the per-message limit (`WHATSAPP_MESSAGE_MAX_CHARS` 3,900), never a short part when the next line would have fitted, never one message per section. |
 
@@ -152,7 +152,8 @@ them still post-processes (`output_exchange`, the `group_by` precedent at `head/
 ## The SRTWT7445 turn, expected replies
 
 Staff contact holding every grant, Chinese message. `<...>` values come from dev data (SQL at
-the bottom).
+the bottom). Chinese lines use full-width brackets and comma `（，）`; English and Malay use
+ASCII `(, )` (the catalog templates in `label_catalog.py`, pinned by `test_multi_ask_runner.py`).
 
 Turn 1 (the owner's message; SRTWT7445 has variants, the message did not say which):
 
@@ -165,7 +166,7 @@ Turn 2 (`只要这个` -> `family: false`), the six asks run; basis not said:
 ```
 SRTWT7445
 2026 入库数量: <received_2026>
-供应商: <supplier> (<po_number>, <po_date>)
+供应商: <supplier>（<po_number>，<po_date>）
 采购价: RM <cost_after_discount> / 件（<po_number>，<po_date>）
 最后一次进库: <gr_date>（<gr_qty>）
 卖出按已出货还是按下单算？
