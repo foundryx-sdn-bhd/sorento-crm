@@ -73,10 +73,15 @@ describe('PortalSubmissionComments', () => {
     expect(await screen.findByText('No comments yet')).toBeInTheDocument();
   });
 
-  it('toasts when the load fails', async () => {
-    fetchMock.mockRejectedValue(new Error('Failed to load comments.'));
+  it('shows an inline error with Retry, not a toast, when the load fails', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('Failed to load comments.'));
     mount();
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Failed to load comments.'));
+    expect(await screen.findByText('Comments could not be loaded')).toBeInTheDocument();
+    expect(screen.queryByText('No comments yet')).not.toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(await screen.findByText('No comments yet')).toBeInTheDocument();
   });
 
   it('appends a successfully posted comment and clears the composer', async () => {

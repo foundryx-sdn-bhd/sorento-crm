@@ -15,9 +15,15 @@ vi.mock('@/services/formCommentsService', () => ({
 
 vi.mock('@/lib/toast', () => ({ toast }));
 
-vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: { user: { name: 'Pat Buyer' } } }),
-}));
+vi.mock('next-auth/react', async () => {
+  const { createContext } = await import('react');
+  return {
+    SessionContext: createContext({
+      data: { user: { name: 'Pat Buyer' } },
+      status: 'authenticated',
+    }),
+  };
+});
 
 import { FormComments } from './FormComments';
 

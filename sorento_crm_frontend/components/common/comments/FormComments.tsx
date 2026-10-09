@@ -1,6 +1,7 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useContext } from 'react';
+import { SessionContext } from 'next-auth/react';
 import LoadErrorState from '@/components/common/LoadErrorState';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -20,7 +21,9 @@ export function FormComments({
   entityId: string;
   readOnly?: boolean;
 }) {
-  const { data: session } = useSession();
+  // The session is only needed for the composer avatar's name; read the context directly so
+  // the thread also renders where no SessionProvider wraps the page (detail-page tests).
+  const session = useContext(SessionContext)?.data;
   const { data, isLoading, isError, error, refetch, isFetching } =
     useFormCommentsQuery(kind, entityId);
   const add = useAddFormComment(kind, entityId);
