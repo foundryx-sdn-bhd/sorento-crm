@@ -206,8 +206,16 @@ def history_lines(ctx) -> list:
     return lines
 
 
+#: Printed once after the era lines when a text era shows (crew rulings Q1, Q3).
+TEXT_ERA_CAVEAT = (
+    "Before 5 Sep a reply is the bot's next message within 24 hours; a reply with no sender "
+    "recorded counts as the bot's, so a staff reply then cannot be told apart."
+)
+
+
 def _with_history(ctx, note: str) -> str:
-    return " ".join([note, *history_lines(ctx)])
+    lines = history_lines(ctx)
+    return " ".join([note, *lines, *([TEXT_ERA_CAVEAT] if lines else [])])
 
 
 def default_period(db=None) -> dict:

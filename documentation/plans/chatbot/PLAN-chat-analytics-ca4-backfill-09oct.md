@@ -55,8 +55,10 @@ output in the trace (D:231). D:37's "to 7 Sep" is about the saved parser column;
   is a taxonomy subject; otherwise the labeller picks a subject. Leaf, ask split, language,
   product words: the CA-2 rules.
 - B5a Senders: `user` (inbox) and `echo` (the WhatsApp Business phone) are staff, `broadcast`
-  answers nobody, every other sender (`bot`, `api`, `workflow`, none) is the bot (review round 1,
-  pending a crew ruling).
+  answers nobody, every other sender (`bot`, `api`, `workflow`, none) is the bot (crew ruling Q1, 10 Oct
+  2026). The fallback reply window closes 24 hours after the ask (crew ruling Q3 b). Era D
+  incoming rows with no `message_id`: 0 on the 6 Oct snapshot, so B1 needs no other link (Q2).
+  The text-era notes say both rules once.
 - B5 Outcome: the model picks one of `answered`, `answered_empty`, `clarified`,
   `refused_policy`, `cannot_do`, `handover`, `noise` from the reply. No bot reply rows: staff
   rows only -> `handover`; nothing at all -> `no_reply` (new, not a failure, crew Q3).

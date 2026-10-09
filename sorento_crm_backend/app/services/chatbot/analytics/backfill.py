@@ -80,6 +80,10 @@ PARSER_INTENT_KEY = "intent_hint"
 STAFF_SENDERS = ("user", "echo")
 NOT_A_REPLY = ("broadcast",)
 
+#: The fallback reply window (no execution-id link) closes this long after the ask, even with
+#: no later incoming row: a send a day later is not a reply (crew ruling Q3 b).
+REPLY_WINDOW = timedelta(hours=24)
+
 #: Malaysia is UTC+8 all year; `sent_at` is stored as naive UTC.
 _MYT_OFFSET = timedelta(hours=8)
 
@@ -206,7 +210,7 @@ def parser_hint(state_trace: Any, subjects: Iterable[str]) -> tuple[str | None, 
 
 def _reply_rows(db: Session, row: Any) -> list[Any]:
     """The outgoing rows answering `row` (B3): same execution id, else the contact's outgoing
-    rows after it and before its next incoming row."""
+    rows after it, before its next incoming row and within `REPLY_WINDOW`."""
     columns = (_H.c.message, _H.c.result, _H.c.sender_source)
     if row.turn_id:
         linked = db.execute(
@@ -232,7 +236,12 @@ def _reply_rows(db: Session, row: Any) -> list[Any]:
         .order_by(_H.c.sent_at, _H.c.id)
         .limit(1)
     ).first()
-    query = select(*columns).where(_H.c.type == "outgoing", _H.c.contact_id == row.contact_id, after)
+    query = select(*columns).where(
+        _H.c.type == "outgoing",
+        _H.c.contact_id == row.contact_id,
+        after,
+        _H.c.sent_at <= row.sent_at + REPLY_WINDOW,
+    )
     if next_incoming is not None:
         query = query.where(tuple_(_H.c.sent_at, _H.c.id) < tuple_(next_incoming.sent_at, next_incoming.id))
     return db.execute(query.order_by(_H.c.sent_at, _H.c.id)).all()
