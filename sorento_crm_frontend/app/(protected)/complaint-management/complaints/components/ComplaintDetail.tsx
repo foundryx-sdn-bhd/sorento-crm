@@ -1111,6 +1111,10 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         }
       />
 
+      {/* Comment thread at the top, before the form, so the conversation reads in one place
+          (owner hand test, 9 Oct); it shows here even before any reply exists. */}
+      <FormComments kind="complaint" entityId={complaintId} readOnly={isVoided} />
+
       {/* Complaint Information */}
       <Card>
         <CardHeader>
@@ -1375,8 +1379,6 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         complaintId={complaintId}
         attachments={complaint.attachments ?? []}
       />
-
-      <FormComments kind="complaint" entityId={complaintId} readOnly={isVoided} />
 
       <AuditTrail entityType="complaint" entityId={complaintId} title="Audit Trail" />
 

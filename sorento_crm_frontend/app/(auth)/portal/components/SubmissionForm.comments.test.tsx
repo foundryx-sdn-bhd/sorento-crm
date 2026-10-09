@@ -152,7 +152,6 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/portal/stock_inquiry/si-1');
 });
 
-
 async function renderWith(over: Partial<PortalSubmissionDetail> = {}) {
   (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(detail(over));
   render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
@@ -162,9 +161,39 @@ async function renderWith(over: Partial<PortalSubmissionDetail> = {}) {
 describe('SubmissionForm - comment thread placement', () => {
   it('shows the thread with its composer on a submitted inquiry', async () => {
     await renderWith();
-    expect(await screen.findByRole('region', { name: 'Comments' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: 'Comments' }),
+    ).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Write a comment')).toBeInTheDocument();
-    expect(fetchSubmissionComments).toHaveBeenCalledWith('stock_inquiry', 'si-1');
+    expect(fetchSubmissionComments).toHaveBeenCalledWith(
+      'stock_inquiry',
+      'si-1',
+    );
+  });
+
+  it('places the thread directly under the purchasing reply box, above the form', async () => {
+    await renderWith({ purchasing_response: 'brand?' });
+    const thread = await screen.findByRole('region', { name: 'Comments' });
+    const reply = screen.getByText('Comment / reply by purchasing');
+    const attachments = screen.getByText('Attachments');
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(reply.compareDocumentPosition(thread) & FOLLOWING).toBeTruthy();
+    expect(
+      thread.compareDocumentPosition(attachments) & FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('keeps the thread in the same top spot before any purchasing reply', async () => {
+    await renderWith({ purchasing_response: null });
+    const thread = await screen.findByRole('region', { name: 'Comments' });
+    expect(
+      screen.queryByText('Comment / reply by purchasing'),
+    ).not.toBeInTheDocument();
+    const attachments = screen.getByText('Attachments');
+    expect(
+      thread.compareDocumentPosition(attachments) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('hides the thread entirely on a draft', async () => {
@@ -176,7 +205,9 @@ describe('SubmissionForm - comment thread placement', () => {
 
   it('keeps the thread but hides the composer on a voided inquiry', async () => {
     await renderWith({ status: 'voided' });
-    expect(await screen.findByRole('region', { name: 'Comments' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('region', { name: 'Comments' }),
+    ).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Write a comment')).toBeNull();
   });
 });

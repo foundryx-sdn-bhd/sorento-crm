@@ -1201,6 +1201,10 @@ export default function PurchaseRequestDetail({
         }
       />
 
+      {/* Comment thread at the top, before the form, so the conversation reads in one place
+          (owner hand test, 9 Oct); it shows here even before any reply exists. */}
+      <FormComments kind={requestTypeForNav} entityId={requestId} readOnly={isVoided} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isPurchaseRequest ? (
           <div className="lg:col-span-2 w-full">
@@ -1551,10 +1555,6 @@ export default function PurchaseRequestDetail({
             </SheetContent>
           </Sheet>
         )}
-
-        <div className="lg:col-span-2 w-full">
-          <FormComments kind={requestTypeForNav} entityId={requestId} readOnly={isVoided} />
-        </div>
 
         {/* Direct child of the 2-col grid - without the span it renders half-width while
             every sibling block above it is full-width. */}

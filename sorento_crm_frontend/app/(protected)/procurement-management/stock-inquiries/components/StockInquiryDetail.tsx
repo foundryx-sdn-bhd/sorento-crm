@@ -1079,6 +1079,10 @@ export default function StockInquiryDetail({
         }
       />
 
+      {/* Comment thread at the top, before the form, so the conversation reads in one place
+          (owner hand test, 9 Oct); it shows here even before any reply exists. */}
+      <FormComments kind="stock_inquiry" entityId={inquiryId} readOnly={isVoided} />
+
       <ProductInquiryFormLayout>
         <InquiryFormTableRow label="Date">
           <InquiryReadValue empty=" - ">
@@ -1270,8 +1274,6 @@ export default function StockInquiryDetail({
           this stack: it is reference material, and burying it under the whole
           form meant scrolling past everything to read it. The query stays here
           because the revise banner above quotes the newest entry. */}
-
-      <FormComments kind="stock_inquiry" entityId={inquiryId} readOnly={isVoided} />
 
       <AuditTrail entityType="stock_inquiry" entityId={inquiryId} title="Audit Trail" />
     </div>

@@ -52,6 +52,13 @@ describe('FormComments (staff)', () => {
     vi.clearAllMocks();
   });
 
+  it('shows the signed-in user initials on the composer avatar', async () => {
+    listFormComments.mockResolvedValueOnce([]);
+    renderIt();
+    await screen.findByText('No comments yet');
+    expect(screen.getByText('PB')).toBeInTheDocument();
+  });
+
   it('shows an error state with Retry when the thread fails to load', async () => {
     listFormComments.mockRejectedValueOnce(new Error('boom'));
     renderIt();

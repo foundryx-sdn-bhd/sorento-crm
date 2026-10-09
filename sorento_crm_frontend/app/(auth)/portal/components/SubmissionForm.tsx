@@ -1661,6 +1661,17 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         </div>
       )}
 
+      {/* The thread sits directly under the staff reply box so the conversation reads in one
+          place (owner hand test, 9 Oct); it shows here even before any reply exists. */}
+      {effectiveId && detail && !detail.is_draft && (
+        <PortalSubmissionComments
+          kind={kind}
+          submissionId={effectiveId}
+          authorName={contact?.name ?? ''}
+          readOnly={detail.status === 'voided'}
+        />
+      )}
+
       {reviseMode && (
         <Alert
           variant="warning"
@@ -1972,15 +1983,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           />
         </CardContent>
       </Card>
-
-      {effectiveId && detail && !detail.is_draft && (
-        <PortalSubmissionComments
-          kind={kind}
-          submissionId={effectiveId}
-          authorName={contact?.name ?? ''}
-          readOnly={detail.status === 'voided'}
-        />
-      )}
 
       {reviseMode && (
         <Card>

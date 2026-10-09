@@ -61,7 +61,6 @@ export function PortalSubmissionComments({
             title="Comments could not be loaded"
             message={loadError}
             onRetry={() => void load()}
-            retrying={loading}
           />
         </CardContent>
       </Card>
