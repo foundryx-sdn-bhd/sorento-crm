@@ -123,8 +123,8 @@ Owner rulings: (1) expired promos are shown only when the same ask (brand + subj
 has no live promo, EXPIRED mark kept; (2) A3 flyers are promos like any other; (3) same intent, same
 result, typo or not. Card answers: Q1 (a) brand = brand of the promotion's linked products; Q3 (b)
 "flyer" means the A3 Flyer kind, decided semantically by the parser against the promotion_types list
-(flyer / 传单 / A3 / poster wording), never keyword code; Q2 provisional "- expired promotions only",
-the wording in one constant.
+(flyer / 传单 / A3 / poster wording), never keyword code; Q2 (b): a level with only expired
+promotions stamps "- has promotion" and the pick marks them EXPIRED.
 
 AC-29 The parser is given, each turn, the live brand names, product type names and promotion kinds
       (codes + names) and returns names from those lists only, correcting a typo to the listed name
@@ -139,10 +139,10 @@ AC-32 Brand filter = brand of linked products (promotion_products -> products.br
 AC-33 ONE query builder (brand + subject + kind + level) feeds both the per-level stamp and the pick
       fetch. Expired rows are served only when that exact ask at that level has no live row (type
       show_expired windows still apply), marked EXPIRED.
-AC-34 Stamp: "- has promotion" only when the level has a live row; "- expired promotions only" when
-      it has only expired rows (one constant); "- no promotion" when none.
+AC-34 Stamp (Q2 (b)): "- has promotion" when the level has a live row or only expired rows the
+      serving rule serves (the pick marks them EXPIRED); "- no promotion" when none.
 AC-35 Owner turns on dev data: "Sorneto grab bar promotion" and "sorento grab bar promotion" give
-      identical replies (Dealer "- expired promotions only"; pick 2 -> the expired Sorento grab bar
+      identical replies (Dealer "- has promotion"; pick 2 -> the expired Sorento grab bar
       promos and Sorento A3 flyers linked to grab bars, EXPIRED; never Mocha). "Promotion flyer" ->
       A3 Flyer kind across brands; "sorento promotion flyer" -> Sorento A3 flyers only. Each checked
       live 3x on the new prompt version.
