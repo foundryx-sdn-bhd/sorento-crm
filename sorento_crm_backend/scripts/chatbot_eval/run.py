@@ -124,13 +124,17 @@ def _regrade(args, cases: list[Case]) -> int:
                 previous_bot_reply=row.get("previous_bot_reply"),
             )
         )
-    run = RunResult(results=results, stopped_reason=None, wall_s=0.0)
+    src_path = Path(args.regrade) / "report.json"
+    src = json.loads(src_path.read_text()) if src_path.exists() else {}
+    run = RunResult(results=results, stopped_reason=None, wall_s=src.get("wall_s", 0.0))
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     report = build_report(run, baseline, args.budget_model)
     report.update(
-        engine="regrade", split=args.split, variants=args.variants, run_id=f"regrade-{uuid.uuid4().hex[:8]}",
-        prompt_version="stored", cases=len(results), regrade_dropped=dropped,
-        started_at=datetime.now(timezone.utc).isoformat(),
+        engine=src.get("engine", "regrade"), split=args.split, variants=src.get("variants", args.variants),
+        run_id=src.get("run_id", f"regrade-{uuid.uuid4().hex[:8]}"),
+        prompt_version=src.get("prompt_version", "stored"), cases=len(results), regrade_dropped=dropped,
+        started_at=src.get("started_at", datetime.now(timezone.utc).isoformat()),
+        regraded_from=args.regrade, regraded_at=datetime.now(timezone.utc).isoformat(),
     )
     if args.out:
         _write(args.out, report, run)
