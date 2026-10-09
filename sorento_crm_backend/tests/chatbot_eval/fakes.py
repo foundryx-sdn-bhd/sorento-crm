@@ -131,3 +131,10 @@ class ExplodingEngine(RecordingEngine):
         if case.id == "boom":
             raise RuntimeError("kaboom")
         return super().turn(case, text, state, run_id)
+
+
+class NeverEngine:
+    """A regrade must not build or call an engine."""
+
+    def __init__(self, **kw):
+        raise AssertionError("engine constructed during --regrade")
