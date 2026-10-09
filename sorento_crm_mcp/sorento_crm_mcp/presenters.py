@@ -675,7 +675,7 @@ def _orders_by_product(rows: list[dict], b: _Builder) -> None:
 # Delivery Date) reach every include_summary caller, n8n included - owner ruling 8 Sep.
 _SUMMARY_FIELDS = (
     ("customer", "Customer"),
-    ("customers", "Customers"),
+    ("customers", "Customer count"),
     ("product_code", "Product Code"),
     ("so_count", "SO"),
     ("so_date", "SO Date"),

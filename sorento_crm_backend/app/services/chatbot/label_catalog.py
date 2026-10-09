@@ -160,7 +160,10 @@ LABELS: dict[str, dict[str, str]] = {
     "EXPIRED": {"ms": "TAMAT TEMPOH", "zh": "已过期"},
     # The order summary block (presenter `_SUMMARY_FIELDS`) and its truncation notice. SO and DO
     # stay as printed (owner Q3).
-    "Customers": {"ms": "Pelanggan", "zh": "客户"},
+    # MULTI-ASK-PLAN R8 (owner, 9 Oct 2026): the product total row's customer COUNT. Was
+    # "Customers" -> "客户", so "客户: 33" read as a name. A new key, so the new wording is
+    # seeded fresh instead of losing to the stored `translation_memory` row of the old one.
+    "Customer count": {"ms": "Bil. pelanggan", "zh": "客户数"},
     "SO": {"ms": "SO", "zh": "SO"},
     "SO Date": {"ms": "Tarikh SO", "zh": "SO 日期"},
     "Ordered": {"ms": "Dipesan", "zh": "订购"},
@@ -454,7 +457,7 @@ FIELD_KEYS: dict[str, str] = {
     "open_so_qty": "Outstanding",
     "total_on_hand": "Total",
     # Slice 2 summary block (`order_date` is a DO Date there; by-label lookup covers it).
-    "customers": "Customers",
+    "customers": "Customer count",
     "so_count": "SO",
     "so_date": "SO Date",
     "so_ordered_qty": "Ordered",
