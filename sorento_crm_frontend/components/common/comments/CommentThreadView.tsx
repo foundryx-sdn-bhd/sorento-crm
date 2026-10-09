@@ -8,7 +8,7 @@ import AttachmentPreviewModal, {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatDateTime } from '@/lib/helpers';
+import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import {
   CommentAvatar,
@@ -185,7 +185,7 @@ export function CommentThreadView({
             ) : null}
             {comment.createdAt ? (
               <span className="text-xs text-muted-foreground">
-                {formatDateTime(comment.createdAt)}
+                {formatDateTimeInMalaysia(comment.createdAt)}
               </span>
             ) : null}
             {comment.editedAt ? (

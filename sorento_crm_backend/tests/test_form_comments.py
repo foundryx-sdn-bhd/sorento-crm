@@ -1285,6 +1285,25 @@ def test_list_starts_with_the_purchasing_reply_as_a_synthetic_entry(staff_client
     assert [i["kind"] for i in items] == ["response", "comment"]
 
 
+def test_list_times_carry_a_utc_offset(staff_client, db, enqueued):
+    """COMMENT-TZ: the columns hold naive UTC, so the API stamps +00:00 rather than leave the
+    reader to guess (a 16:26 MYT comment read as 8:26 AM)."""
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db)
+    _with_reply(db, inquiry, responder)
+    said = _staff_says(db, "stock_inquiry", inquiry.id, _user(db, "Later"), "a later comment")
+    db.query(EntityConversationMessage).filter(EntityConversationMessage.id == said["id"]).update(
+        {"created_at": datetime(2026, 10, 9, 8, 26, 20), "edited_at": datetime(2026, 10, 9, 8, 30, 0)}
+    )
+    db.commit()
+
+    items = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)
+
+    assert items[0]["created_at"] == "2026-10-02T08:30:00+00:00"
+    assert items[1]["created_at"] == "2026-10-09T08:26:20+00:00"
+    assert items[1]["edited_at"] == "2026-10-09T08:30:00+00:00"
+
+
 def test_response_entry_falls_back_to_the_team_name_for_an_unknown_responder(staff_client, db, enqueued):
     inquiry = _inquiry(db)
     inquiry.purchasing_response = "no idea who"
