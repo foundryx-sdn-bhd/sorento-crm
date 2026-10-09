@@ -2,7 +2,7 @@
 sync state, and the reconcile task.
 
 Revision ID: clf_0001_chat_local_first
-Revises: oihr_0005_print_one_page
+Revises: acc_0001_connector
 Create Date: 2026-09-30
 
 `documentation/plans/sla/PLAN-chat-local-first-30sep.md`. Additive only:
@@ -31,7 +31,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "clf_0001_chat_local_first"
-down_revision = "oihr_0005_print_one_page"
+down_revision = "acc_0001_connector"
 branch_labels = None
 depends_on = None
 
