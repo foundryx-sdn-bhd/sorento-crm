@@ -21,7 +21,7 @@ Create a dedicated user in the CRM (e.g. `n8n-mcp@internal`), assign a role with
 | `CRM_MCP_MAX_RESPONSE_BYTES` | No | Cap JSON body size (default `8000000`) |
 | `CRM_MCP_LOG_LEVEL` | No | Default `INFO` |
 | `MCP_AUTH_TOKEN` | **Yes** | Bearer token every caller sends as `Authorization: Bearer <token>`; 32+ chars (`openssl rand -hex 32`). The server will not start without it. The backend sends it from its own `MCP_AUTH_TOKEN` (same value). |
-| `CRM_MCP_ALLOWED_HOSTS` | No | Comma-separated Host values (`host:*` = any port). Set = DNS-rebinding protection on, other hosts get 421. Empty = off. |
+| `CRM_MCP_ALLOWED_HOSTS` | No | Comma-separated Host values (`host:*` = any port). Set = DNS-rebinding protection on: other hosts get 421, and any request with an `Origin` header gets 403 (server-side callers send none). Empty = off. |
 
 `GET /healthz` answers `ok` with no token, for probes.
 

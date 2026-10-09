@@ -51,3 +51,9 @@ def test_the_token_setting_defaults_blank():
     from app.config import Settings
 
     assert Settings.model_fields["mcp_auth_token"].default == ""
+
+
+def test_a_token_with_a_trailing_newline_is_stripped(monkeypatch, seen):
+    monkeypatch.setattr(settings, "mcp_auth_token", "secret-token-for-the-mcp-server-0123\n")
+    MCPRuntimeClient("http://mcp:8765/mcp").list_tools()
+    assert seen[0].headers["authorization"] == "Bearer secret-token-for-the-mcp-server-0123"

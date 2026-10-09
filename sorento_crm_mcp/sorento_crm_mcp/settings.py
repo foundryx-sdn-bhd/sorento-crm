@@ -47,7 +47,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CRM_MCP_ALLOWED_HOSTS", "mcp_allowed_hosts"),
         description=(
             "Comma-separated Host header values the server answers (`host:*` matches any "
-            "port). Set = DNS-rebinding protection on (other hosts get 421); empty = off."
+            "port). Set = DNS-rebinding protection on: other hosts get 421 and any request carrying "
+            "an Origin header gets 403 (server callers send none); empty = off."
         ),
     )
 

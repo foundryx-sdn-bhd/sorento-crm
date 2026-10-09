@@ -87,7 +87,7 @@ def test_healthz_needs_no_token(client):
     assert resp.text == "ok"
 
 
-@pytest.mark.parametrize("token", [None, "", "   ", "short"])
+@pytest.mark.parametrize("token", [None, "", "   ", "short", "a" * 31, " " + "a" * 31 + " "])
 def test_server_refuses_to_start_without_a_real_token(token):
     overrides = {"MCP_AUTH_TOKEN": token} if token is not None else {}
     settings = _settings(**overrides) if token is not None else Settings(
@@ -95,6 +95,20 @@ def test_server_refuses_to_start_without_a_real_token(token):
     )
     with pytest.raises(RuntimeError, match="MCP_AUTH_TOKEN"):
         create_http_app(settings)
+
+
+def test_a_32_char_token_is_enough():
+    with TestClient(create_http_app(_settings(MCP_AUTH_TOKEN="b" * 32))) as c:
+        resp = c.post("/mcp", json=LIST_TOOLS, headers={**MCP_HEADERS, "Authorization": "Bearer " + "b" * 32})
+    assert resp.status_code == 200
+
+
+def test_websocket_is_refused(client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/mcp") as ws:
+            ws.receive_text()
 
 
 def test_allowed_hosts_rejects_a_foreign_host_header():

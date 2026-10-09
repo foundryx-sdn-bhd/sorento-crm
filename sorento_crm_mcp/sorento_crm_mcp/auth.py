@@ -22,9 +22,14 @@ class BearerAuthMiddleware:
         self._token = token.encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] == "lifespan":
             # lifespan must pass through so FastMCP's session manager starts.
             await self._app(scope, receive, send)
+            return
+        if scope["type"] != "http":
+            # No websocket route exists; refuse anything that is not plain HTTP outright.
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
             return
         if scope["path"] == HEALTH_PATH:
             await PlainTextResponse("ok")(scope, receive, send)

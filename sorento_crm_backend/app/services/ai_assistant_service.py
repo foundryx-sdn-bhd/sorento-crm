@@ -370,8 +370,9 @@ class MCPRuntimeClient:
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
-        if settings.mcp_auth_token:
-            headers["Authorization"] = f"Bearer {settings.mcp_auth_token}"
+        token = (settings.mcp_auth_token or "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _decode_streamable_body(self, resp: httpx.Response) -> dict[str, Any]:
