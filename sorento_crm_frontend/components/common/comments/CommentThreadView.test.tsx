@@ -252,3 +252,46 @@ describe('CommentThreadView', () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * FORM-COMMENTS review round (red). Assumed API, using the props that already exist:
+ *  - `isDeleting(comment) => boolean` is true while that comment's delete countdown runs. For that
+ *    row Reply and Edit are hidden and the row is dimmed (`opacity-60`), exactly as IdeaComments
+ *    behaved before the shared thread. `renderDelete` still renders (it carries the countdown).
+ *  - The header count ("Comments N") excludes the synthetic `kind: 'response'` entry.
+ *  - A null `createdAt` (a reply with no recorded time) renders no date text at all.
+ */
+describe('CommentThreadView review round', () => {
+  it('F1: while a delete countdown runs, Reply and Edit are hidden for that row and it is dimmed', () => {
+    mount({ isDeleting: (c: { id: string }) => c.id === 'c1' });
+    // c1 is the only row with canReply; c2 can still be edited, c1 cannot.
+    expect(screen.queryAllByRole('button', { name: 'Reply' })).toHaveLength(0);
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(1);
+    expect(screen.getByText('Delete-c1')).toBeInTheDocument();
+    const row = screen.getByText('First comment').closest('.opacity-60');
+    expect(row).not.toBeNull();
+    expect(screen.getByText('A reply').closest('.opacity-60')).toBeNull();
+  });
+
+  it('F1: with no countdown running Reply and Edit show for the row', () => {
+    mount({ isDeleting: () => false });
+    expect(screen.getAllByRole('button', { name: 'Reply' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Edit' })).toHaveLength(2);
+  });
+
+  it('F2: the header count leaves out the synthetic response entry', () => {
+    mount({ comments: [response, first] as never });
+    const heading = screen.getByRole('heading', { name: /Comments/ });
+    expect(heading.textContent?.replace(/\s+/g, '')).toBe('Comments1');
+  });
+
+  it('B5: an entry with a null createdAt renders no date text', () => {
+    mount({
+      comments: [{ ...response, createdAt: null }] as never,
+    });
+    expect(screen.getByText('brand?')).toBeInTheDocument();
+    const author = screen.getByText('Rita Responder');
+    expect(author.parentElement?.textContent).toBe('Rita Responder');
+    expect(screen.queryByText(/Invalid|NaN|1970/)).toBeNull();
+  });
+});

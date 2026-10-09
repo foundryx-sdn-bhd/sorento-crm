@@ -1541,11 +1541,19 @@ def test_impersonating_admin_edits_the_contacts_comment_through_the_portal(db, e
 # ---- delete ------------------------------------------------------------------------------
 
 
-def _execute_delete(db, comment_id, requested_by):
+def _execute_delete(db, comment_id, requested_by, *, holds_view=True):
+    """Run the commit-time executor. ``holds_view`` stands in for the requester holding the kind's
+    view slug (the commit re-checks it); pass False for a requester who has lost it."""
+    from unittest.mock import patch
+
     import app.services.record_actions  # noqa: F401  registers the actions
     from app.services.form_action_registry import get_action
+    from app.services.user_service import UserPermissionService
 
-    return get_action("form_comment.delete").execute(db, {"entity_id": comment_id, "requested_by_id": requested_by})
+    with patch.object(UserPermissionService, "check_user_has_permission", lambda self, uid, slug: holds_view), patch.object(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {INQ_VIEW} if holds_view else set()
+    ):
+        return get_action("form_comment.delete").execute(db, {"entity_id": comment_id, "requested_by_id": requested_by})
 
 
 def test_form_comment_delete_is_a_registered_destructive_record_action():
@@ -1698,3 +1706,146 @@ def test_portal_viewer_may_edit_and_delete_only_contact_authored_comments(portal
 # --------------------------------------------------------------------------- #
 # Migration fcom_0003_conv_thread is covered in tests/test_migration_fcom_0003_conv_thread.py
 # --------------------------------------------------------------------------- #
+
+
+# --------------------------------------------------------------------------- #
+# Review round (red): delete gating, park check, impersonation on edit/delete,
+# voided edit, reply date. Contract: PLAN-form-comments-09oct.md, "Owner hand test round 2".
+# --------------------------------------------------------------------------- #
+
+
+# ---- B1: the delete commit re-checks the form and the kind's view grant ---------------------
+
+
+def test_b1_delete_commit_by_an_author_who_lost_the_view_slug_is_403_and_keeps_the_row(db, enqueued):
+    author = _user(db, "Author")
+    inquiry = _inquiry(db)
+    comment = _staff_says(db, "stock_inquiry", inquiry.id, author, "mine")
+
+    with pytest.raises(HTTPException) as exc:
+        _execute_delete(db, comment["id"], author.id, holds_view=False)
+
+    assert exc.value.status_code == 403
+    assert _row(db, comment["id"]) is not None
+
+
+def test_b1_delete_commit_for_a_comment_whose_form_cannot_be_loaded_is_refused_and_keeps_the_row(db, enqueued):
+    # Forms carry no company_id in this schema, so "a form the requester's scope cannot load" is
+    # seeded as a form row that is not there: the commit must load the form, not trust the comment.
+    author = _user(db, "Author")
+    inquiry = _inquiry(db)
+    comment = _staff_says(db, "stock_inquiry", inquiry.id, author, "mine")
+    db.execute(text("DELETE FROM stock_inquiries WHERE id = :i"), {"i": inquiry.id})
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        _execute_delete(db, comment["id"], author.id)
+
+    assert exc.value.status_code in (403, 404)
+    assert _row(db, comment["id"]) is not None
+
+
+# ---- B2: park time refuses a delete the requester could never commit -----------------------
+
+
+def test_b2_parking_a_delete_on_someone_elses_comment_is_404_and_does_not_block_the_author(staff_client, db, enqueued, monkeypatch):
+    from app.dependencies import get_current_user, get_current_user_or_api_key
+    from app.models.sla import SlaFormAction
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(UserPermissionService, "get_user_permission_slugs", lambda self, uid: {INQ_VIEW})
+    author = _user(db, "Author")
+    inquiry = _inquiry(db)
+    comment = _staff_says(db, "stock_inquiry", inquiry.id, author, "authors words")
+    body = {"action_key": "form_comment.delete", "entity_type": "form_comment", "entity_id": comment["id"], "payload": {}}
+
+    refused = staff_client.post("/api/v1/pending-actions", json=body)
+
+    assert refused.status_code == 404, refused.text
+    assert db.query(SlaFormAction).filter(SlaFormAction.source_entity_id == comment["id"]).count() == 0
+
+    as_author = {"id": author.id, "email": author.email, "role": "staff"}
+    app.dependency_overrides[get_current_user] = lambda: as_author
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: as_author
+    parked = staff_client.post("/api/v1/pending-actions", json=body)
+    assert parked.status_code == 202, parked.text
+
+
+# ---- B3: impersonation is re-checked on edit and delete, as on post -------------------------
+
+
+@pytest.mark.parametrize("verb", ["patch", "delete"])
+@pytest.mark.parametrize("case", ["ended", "lost_role", "inactive", "trashed"])
+def test_b3_impersonation_edit_and_delete_are_403_and_change_nothing_when_no_longer_allowed(db, enqueued, monkeypatch, case, verb):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "before")
+    _token, admin = _impersonation(
+        db, monkeypatch, contact_id=owner, ended=(case == "ended"),
+        admin_roles=frozenset() if case == "lost_role" else frozenset({"admin"}),
+    )
+    if case == "inactive":
+        admin.status = "INACTIVE"
+    elif case == "trashed":
+        admin.is_trashed = True
+    db.commit()
+    url = _portal_url("stock_inquiry", inquiry.id, mine["id"])
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.patch(url, json={"body": "after"}) if verb == "patch" else client.delete(url)
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 403, resp.text
+    row = _row(db, mine["id"])
+    assert row is not None
+    assert row.body_html == "before" and row.edited_at is None and row.deleted_at is None
+
+
+# ---- B4: edit is refused on a voided form, like post ---------------------------------------
+
+
+def _void(db, form):
+    form.status = "voided"
+    db.commit()
+
+
+def test_b4_staff_edit_on_a_voided_form_is_422_and_changes_nothing(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    mine = _staff_says(db, "stock_inquiry", inquiry.id, staff_client.actor, "before")
+    staff_client.granted.add(INQ_VIEW)
+    _void(db, inquiry)
+
+    resp = _patch(staff_client, _staff_url("stock_inquiry", inquiry.id, mine["id"]), "after")
+
+    assert resp.status_code == 422, resp.text
+    assert _row(db, mine["id"]).body_html == "before"
+    assert _row(db, mine["id"]).edited_at is None
+
+
+def test_b4_portal_edit_on_a_voided_form_is_422_and_changes_nothing(portal, db, enqueued):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    mine = _contact_says(db, "stock_inquiry", inquiry.id, owner, "before")
+    _void(db, inquiry)
+
+    resp = _patch(portal(owner), _portal_url("stock_inquiry", inquiry.id, mine["id"]), "after")
+
+    assert resp.status_code == 422, resp.text
+    assert _row(db, mine["id"]).body_html == "before"
+    assert _row(db, mine["id"]).edited_at is None
+
+
+# ---- B5: a reply with no recorded time lists with a null created_at ------------------------
+
+
+def test_b5_response_entry_without_last_responded_at_is_listed_with_null_created_at(staff_client, db, enqueued):
+    inquiry = _inquiry(db)
+    inquiry.purchasing_response = "brand?"
+    inquiry.last_responded_at = None
+    db.commit()
+
+    items = _as_staff_list(staff_client, "stock_inquiry", inquiry.id)
+
+    first = items[0]
+    assert first["kind"] == "response" and first["body"] == "brand?"
+    assert first["created_at"] is None
