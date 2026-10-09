@@ -131,3 +131,29 @@ Total: 399 asks
 
 Coverage line LAST when percent >= 80, FIRST when < 80 (the example is 17%, so first). Failure rate rows: `1. 2026-09-14: 1.2% (14 of 1,215 turns)`.
 No asks: `No asks in that period. Chat data starts 5 Sep 2026.`
+
+## Revision 10 Oct 2026: focused extractor (pending crew ruling, recommended)
+
+Measured live (gpt-5.4-mini, dev DB production prompt + domain row, read-only): the parser
+addendum alone reads golden 16/20 stable over 3 runs and a held-out set of 8 new messages 4/8,
+after five prompt rounds. A focused second call with a 2.1k-char system prompt and a strict
+schema read golden 19/20 and held-out 8/8 in a scratch run. So:
+
+- **Parser** only ROUTES: `domain_hint "chat_analytics"`, `intent_hint "chat_report"`, plus
+  the `chat_report` object kept as a light "this message is a new chat report" signal for the
+  open-question seam (`names_its_own_ask`). Its addendum shrinks to routing (target <= 250 est.
+  tokens). Period / count on an ANSWERING turn still come from the parser's own date and top_n
+  keys, as today.
+- **Extractor** `app/services/chatbot/analytics/chat_report_extractor.py`
+  `extract_chat_report(db, message_text, *, today) -> dict | None` returning
+  `{group_by, measure, subject, top_n, date_from, date_to}` (strict JSON schema, enums as the
+  contract, subject = a chatbot domain name or null). Prompt key `chat_report_extractor` in
+  `ai_prompt_registry.PROMPT_KEYS` with a code fallback (pattern: `ideation_extractor.py`,
+  `ideate_extractor` key), provider through `llm_provider.get_provider` + `resolve_api_key`
+  and the per-key model override (`agent_model`). Called by the lane on a FRESH chat report
+  only (never on the answer to "Which period?" / "How many?"); its values replace the parser's
+  chat_report / top_n / dates for that ask. Provider error, timeout or invalid output -> one
+  clear line ("I couldn't read that report request. Try: top 5 questions this week."), turn
+  closes, nothing runs.
+- Golden live check runs the whole read: parser route + extractor fields, 3 runs each, plus
+  the held-out set.
