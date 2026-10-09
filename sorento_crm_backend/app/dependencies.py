@@ -250,6 +250,17 @@ def get_actor_user_id(request: Request, current_user: dict) -> str:
     return str(current_user["id"])
 
 
+def _connector_user(request: Request) -> Optional[dict]:
+    """The user of an SS-signed connector call, already verified by ``connector_call_gate``
+    (``app/services/analytics_connector/access.py``): no session row, no impersonation."""
+    call = getattr(request.state, "connector_call", None)
+    if call is None:
+        return None
+    if call.user is None:  # the manifest token names no user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return dict(call.user)
+
+
 def extract_token_from_request(request: Request) -> Optional[str]:
     """Extract JWT token from Authorization header or cookies."""
     # Try Authorization header first
@@ -281,7 +292,11 @@ async def get_current_user(
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
+
     # Try to get token from request if not in header
     if not token:
         token = extract_token_from_request(request)
@@ -343,6 +358,11 @@ async def get_current_user_optional(
     Same as get_current_user but returns None instead of raising.
     Use for read-only endpoints where we want to avoid 500 on auth issues.
     """
+    if getattr(request.state, "connector_call", None) is not None:
+        try:
+            return _connector_user(request)
+        except HTTPException:
+            return None
     if not token:
         token = extract_token_from_request(request)
     if not token:
@@ -374,6 +394,9 @@ async def get_real_user(
     X-Impersonate-User-Id header. Use for impersonation start/stop endpoints so
     an impersonated session cannot end its own impersonation.
     """
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
     if not token:
         token = extract_token_from_request(request)
     if not token:
@@ -642,6 +665,10 @@ async def get_current_user_or_api_key(
     auth_mode = "unknown"
 
     logger.info("auth.get_current_user_or_api_key start has_api_key=%s has_token=%s", bool(api_key), bool(token))
+
+    connector = _connector_user(request)
+    if connector is not None:
+        return connector
 
     # If API key is provided, validate it
     if api_key:
