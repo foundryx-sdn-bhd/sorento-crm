@@ -452,3 +452,82 @@ def test_case_c_end_to_end(session_factory, monkeypatch, stub_access):
     )
     assert "2026 总共卖出（已出货）: 860" in t3.splitlines()
     assert any("AGENT01" in ln for ln in t3.splitlines())
+
+
+# ------------------------------------------------------------------ round 6d
+
+
+def _big_console(session_factory, monkeypatch, stub_access):
+    big = [f"ZZTBIG-{i:02d}" for i in range(21)]
+    monkeypatch.setattr(r9, "OTHER_CODES", WT + SS + ["ELP3754"] + big)
+    c = con(session_factory, monkeypatch, stub_access)
+    c.say("ZZTBIG stock and last cost", v("ZZTBIG", [sub("stock", "stock"), sub("last_cost", "last cost")]))
+    return c
+
+
+def _typed_code_checks(c, text):
+    lines = text.splitlines()
+    assert lines[0] == "ZZTBIG-05"
+    assert "Stock: 120" in lines
+    calls = [(n, a) for n, a in c.tools.calls if n in RUNNER_TOOLS | {STOCK_TOOL}]
+    assert calls
+    for name, args in calls:
+        assert pids(args) == [c.uuid_of["ZZTBIG-05"]], name
+    assert (c.stored_question or {}).get("kind") not in ("sub_ask_scope", "sub_ask_basis")
+
+
+def test_g1b_over_twenty_typed_code_as_an_open_question_item(session_factory, monkeypatch, stub_access):
+    c = _big_console(session_factory, monkeypatch, stub_access)
+    text = c.say(
+        "ZZTBIG-05",
+        verdict(
+            domain_hint=None, intent_hint=None, entities=[],
+            open_question_answer={"mode": "pick", "picked": [], "items": [{"position": None, "code": "ZZTBIG-05", "qty": None}], "qty_for_all": None},
+        ),
+    )
+    _typed_code_checks(c, text)
+
+
+def test_g1b_over_twenty_typed_code_as_a_fresh_entity(session_factory, monkeypatch, stub_access):
+    c = _big_console(session_factory, monkeypatch, stub_access)
+    text = c.say(
+        "ZZTBIG-05",
+        verdict(
+            domain_hint="inventory", intent_hint="check_stock",
+            entities=[entity("ZZTBIG-05", hint="product", current_message=True)],
+            sub_asks=None, open_question_answer=None,
+        ),
+    )
+    _typed_code_checks(c, text)
+
+
+def test_g2_filters_are_this_messages_customer_never_the_focus_one(session_factory, monkeypatch, stub_access):
+    from app.models.order import Customer
+    from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+
+    c = con(session_factory, monkeypatch, stub_access)
+    a_id, b_id = str(uuid.uuid4()), str(uuid.uuid4())
+    db = session_factory()
+    db.info["company_scope"] = frozenset({SORENTO})
+    db.add(Customer(id=a_id, customer_code="ZZTCUSTA", customer_name="ZZT ALPHA TRADING", company_id=SORENTO))
+    db.add(Customer(id=b_id, customer_code="ZZTCUSTB", customer_name="ZZT BRAVO TRADING", company_id=SORENTO))
+    db.commit()
+    db.close()
+    c.say(
+        "orders for ZZT ALPHA TRADING",
+        verdict(domain_hint="order", intent_hint="check_order", entities=[entity("ZZT ALPHA TRADING", hint="customer", canonical_code="ZZTCUSTA")]),
+    )
+    c.tools.calls.clear()
+    text = c.say(
+        "SRTWT165 sold to ZZT BRAVO TRADING 2026 and stock",
+        verdict(
+            domain_hint="order",
+            intent_hint="check_order",
+            entities=[entity("SRTWT165", hint="product"), entity("ZZT BRAVO TRADING", hint="customer", canonical_code="ZZTCUSTB")],
+            sub_asks=[sub("sold_total", "sold", window=Y2026, basis="delivered"), sub("stock", "stock")],
+            family=False,
+        ),
+    )
+    [report] = c.tools.args("crm_report_ask")
+    assert _ids(report.get("customer_ids")) == [b_id]
+    assert "Stock: 120" in text.splitlines()
