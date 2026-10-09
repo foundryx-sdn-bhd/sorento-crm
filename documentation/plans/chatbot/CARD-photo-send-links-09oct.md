@@ -1,6 +1,6 @@
 # CARD - send files as short links, A/B per contact (PHOTO-SEND-CAP round 2)
 
-Status: Review fix round done; hand test next. Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
+Status: Hand test 2 next (signer-only host list, 9 Oct 2026). Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
 a link table, one contact column, one settings column; a new PUBLIC route, so
 security-reviewer joins; customer-visible wording). Supersedes the round 1 cap card
 `CARD-photo-send-cap-09oct.md` (cap Q1-Q5 parked by the owner, 9 Oct).
@@ -236,12 +236,16 @@ reply back into attachments.
 
 | Fix | Where |
 | --- | --- |
-| One link-able host list: `CLOUDFRONT_DOMAIN` + `R2_CDN_DOMAIN` + `CHATBOT_LINK_CDN_HOSTS` (default `cdn-sorento.com`, the production R2 custom domain stored rows name). Minting and the public route read it. | `app/config.py` `chatbot_link_cdn_hosts`; `app/services/file_link_service.py` `link_hosts`, `is_linkable` |
+| One link-able host list: the hosts this environment SIGNS, `CLOUDFRONT_DOMAIN` + `R2_CDN_DOMAIN`, nothing else. Minting and the public route read it. | `app/services/file_link_service.py` `link_hosts`, `is_linkable` |
 | Per file, not per reply: a file off the list goes as an attachment alone, its row reads `*Link:* (sent as a file)`, the others stay links (`file_mode: mixed`), and the replied trace records `file_mode_fallback` `{reason, hosts, files}` (or `{reason: error, error, files}`). | `chatbot/file_links.py` `links_for`; `engine._apply_file_mode` |
-| `/f` for a listed host this deployment does not sign for (`cdn-sorento.com` on a copy): the click goes to the stored url, the one attachment mode already sends; a spreadsheet is fetched over https (no redirects, 25 MB cap). A signer host still gets a 1 h signed url. | `api/v1/public/file_links.py` `_handout`; `file_link_service.download_bytes`, `_fetch_public` |
 | A row with no File Name field (a promotion) names each file above its link, so three links under one promotion can be told apart. | `lanes/business/fetch.py` `_link_fields` |
 | Console: reply text already renders bare urls as links (`WhatsAppText`); pinned by a test for the copy's `:3111` host. Chips show only files that still go as attachments. | `components/chatbot/WhatsAppText.test.tsx` |
+| `/f` only ever answers a freshly signed url (1 h); a stored url on any other host is a 502, never handed out, and `/content` reads only through the storage backend. | `api/v1/public/file_links.py` `_handout`; `file_link_service.download_bytes` |
 
-Not verifiable from the cloud sandbox: whether `cdn-sorento.com` serves an unsigned GET
-(the egress proxy refuses that host). Attachment mode already hands WhatsApp that same url;
-the hand test confirms the click on the copy.
+Owner ruling (9 Oct 2026, relayed by crew) on the security review S1: no hard-coded
+`cdn-sorento.com` and no `CHATBOT_LINK_CDN_HOSTS` setting. A file on a host this environment
+cannot sign is refused per file (it goes as an attachment, its row reads `*Link:* (sent as a
+file)`, trace `file_mode_fallback` reason `host_not_linkable`), never redirected to an unsigned
+permanent url. The public https fetch is removed with it. Production links `cdn-sorento.com`
+files because production's `R2_CDN_DOMAIN` is `cdn-sorento.com`. A copy links only files on its
+own host (no production bucket credentials on a copy, crew ruling (b)).
