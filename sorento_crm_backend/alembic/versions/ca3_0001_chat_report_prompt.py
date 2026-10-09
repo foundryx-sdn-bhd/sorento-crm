@@ -18,7 +18,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
-from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "ca3_0001_chat_report_prompt"
 down_revision = "chat_topics_0002_audit"

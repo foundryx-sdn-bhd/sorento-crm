@@ -81,6 +81,7 @@ class ReportAskChatResponse(BaseModel):
     basis: str
     measure: str
     unit: str  # asks | turns | contacts | %
+    sort: str = "desc"
     group_by: Optional[str] = None
     group_label: Optional[str] = None
     date_from: str

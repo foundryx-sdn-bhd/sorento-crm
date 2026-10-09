@@ -903,6 +903,8 @@ def _variance(
     total: Dict[str, Decimal] = {}
     for month in months:
         for measure in measures:
+            if measure.ratio_of is not None or measure.agg != "sum":
+                continue  # a ratio or a distinct count has no meaningful difference of cells
             now = (cells.get(last) or {}).get(month, {}).get(measure.key)
             before = (cells.get(previous) or {}).get(month, {}).get(measure.key)
             if now is None and before is None:

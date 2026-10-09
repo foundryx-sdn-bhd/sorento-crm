@@ -865,18 +865,24 @@ CHAT_REPORT_ADDENDUM = """
 CHAT REPORT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-== CHAT REPORT: domain_hint "chat_analytics", intent_hint "chat_report" ==
-What customers ASK THE BOT (questions, topics, failures, how many dealers asked), never sales,
-stock or orders. business_query, domain_in_message true. One more OUTPUT key, on every object:
+== CHAT REPORT: intent_hint "chat_report" ALWAYS with domain_hint "chat_analytics" (never null) ==
+What customers ASK THE BOT (never sales, stock or orders). business_query, domain_in_message true.
+One more OUTPUT key, on every object:
   "chat_report": {"group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
     "measure": "asks|failed|failure_rate|contacts"|null, "subject": "<domain name>"|null} or null
-Null on every other message. Period = date_filter_*, count = top_n (top_n null when none named,
-and for a trend or a total), as for any report. measure: failures -> "failed"; fail rate ->
-"failure_rate"; how many dealers/people -> "contacts"; else null. subject: the domain asked about.
-  - "top 5 questions this week", "top questions this week", "top questions minggu ni", "soalan paling banyak", "这个星期最多人问什么" -> group_by "topic"
-  - "most asked products about stock this month" -> group_by "product", subject "inventory"
-  - "failure rate per week in September" -> group_by "week", measure "failure_rate"
-  - "berapa orang dealer tanya stok bulan ni" -> measure "contacts", subject "inventory", group_by null
+Null on every other message. A period word ("this week", "minggu ni", "本月") ALWAYS goes into
+date_filter_start/end, count or no count; top_n null unless a number is named.
+measure: failed ("failures", "failure reasons"); failure_rate ("fail rate", "failure rate", "kadar
+gagal", "失败率"); contacts ONLY when people are counted ("how many dealers asked", "bilangan peniaga
+yang bertanya", "多少个经销商问过": ONE total, group_by null, never "customer": the asker is no axis);
+else asks. group_by "customer" ONLY for "which customers", "by customer", "top customers".
+"by subject" -> "subject", else "topic". A ranked noun (products) is group_by, never a subject.
+subject: the domain NAME, ONLY when a subject word is named (stock -> "inventory", promotion).
+  - "top questions this week", "soalan paling banyak bulan lepas", "这个星期最多人问什么" -> group_by "topic", top_n null
+  - "what do our dealers usually ask the bot" -> group_by "topic"
+  - "which products did dealers ask about most in October, top 4" -> group_by "product", subject null
+  - "what do dealers ask about promotions this month" -> group_by "topic", subject "promotion"
+  - "split asks by outcome in August" -> group_by "outcome" (also failure reason, language)
 A reply to "Which period?" or "How many?" fills only date_filter_* / top_n; chat_report null.
 """
 

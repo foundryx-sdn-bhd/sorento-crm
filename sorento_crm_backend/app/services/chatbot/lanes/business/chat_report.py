@@ -85,12 +85,20 @@ CHAT_REPORT_ASK = rf.register(rf.AskType(
 ))
 
 
+def is_chat_report(parse_output: dict[str, Any]) -> bool:
+    """The parser's reading is a chat report: domain `chat_analytics` with the intent
+    `chat_report` or none (the parser sometimes leaves the intent null)."""
+    return jsc.js_string(parse_output.get("domain_hint") or "") == DOMAIN and jsc.js_string(
+        parse_output.get("intent_hint") or ""
+    ).strip() in ("", ASK_NAME)
+
+
 def names_its_own_ask(verdict: dict[str, Any]) -> bool:
     """Engine seam before `required_fields.reply_verdict`: a verdict that is a chat report in
     its own right (the parser filled `chat_report` with an axis, a measure or a subject) is a
     NEW ask, so an open period / how many question is dropped, not answered by it. A reply to
     the question carries `chat_report` null."""
-    if jsc.js_string(verdict.get("intent_hint") or "").strip() != ASK_NAME:
+    if not (is_chat_report(verdict) or jsc.js_string(verdict.get("intent_hint") or "").strip() == ASK_NAME):
         return False
     report = _dict(verdict.get("chat_report"))
     return any(report.get(k) for k in ("group_by", "measure", "subject"))
@@ -124,7 +132,9 @@ def _resolve_word(db: Any, kind: str, word: str) -> list[str]:
     return [str(p.id) for p in _resolve_products(db, word)] if len(word) >= 3 else []
 
 
-def _args(db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool) -> tuple[dict[str, Any] | None, str | None]:
+def _args(
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool, own_ids: Any = None
+) -> tuple[dict[str, Any] | None, str | None]:
     """The route params a fresh ask names (every one but the period and top_n), or the one
     line to say instead of running."""
     report = _dict(parse_output.get("chat_report"))
@@ -159,6 +169,11 @@ def _args(db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool)
         for entity in report_ask._current_entities(parse_output, kind):
             word = " ".join(jsc.js_string(entity.get("raw") or "").split())
             found = _resolve_word(db, kind, word)
+            if dealer and kind == "customer":
+                # A dealer's word only ever names its own customers: another dealer's name
+                # gets the same line as a name that does not exist.
+                own = {str(i) for i in own_ids or ()}
+                found = [i for i in found if i in own]
             if not found:
                 return None, f"I couldn't find the {kind} '{word}'."
             ids.extend(i for i in found if i not in ids)
@@ -168,7 +183,7 @@ def _args(db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool)
 
 
 def settle(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, own_ids: Any = None
 ) -> tuple[rf.Outcome | None, str | None]:
     """Every required field settled, or the line to send instead of running. `(outcome, None)`
     (send `outcome.reply` with `outcome.slot` unless `outcome.done`), or `(None, line)` for a
@@ -177,7 +192,7 @@ def settle(
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
         return _answer(db, parse_output, slot), None
 
-    args, line = _args(db, parse_output, entities, dealer=dealer)
+    args, line = _args(db, parse_output, entities, dealer=dealer, own_ids=own_ids)
     if args is None:
         return None, line
     top_n = parse_output.get("top_n")

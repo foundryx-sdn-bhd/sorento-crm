@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import false, or_
+from sqlalchemy import false, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.v1.order_management._contact_scope import (
@@ -525,6 +525,13 @@ def _chat_report_ask(
         if len(values or []) > _MAX_VALUES:
             raise _unprocessable(f"Too many values for '{name}' (max {_MAX_VALUES})", "too_many_values", name)
 
+    if subject_codes:
+        known = {n for (n,) in db.execute(text("SELECT name FROM chatbot_domains")).all()}
+        # No domain rows (a blank schema) leaves nothing to check against.
+        unknown = [c for c in subject_codes if known and c not in known]
+        if unknown:
+            raise _unprocessable(f"Unknown subject '{unknown[0]}'", "unknown_subject", unknown[0])
+
     from app.services.contact_field_reveal_service import granted_keys
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
@@ -534,12 +541,15 @@ def _chat_report_ask(
     if CHAT_GRANT not in keys:
         raise AppException(403, "Chat analytics is not enabled for your account.", code="chat_analytics_not_enabled")
 
+    if measure_norm in ("failed", "failure_rate"):
+        basis_norm = "turns"  # a failure is counted on messages, never on split asks
     unit = {"contacts": "contacts", "failure_rate": "%"}.get(measure_norm, basis_norm)
     common = {
         "dataset": "chat",
         "basis": basis_norm,
         "measure": measure_norm,
         "unit": unit,
+        "sort": sort_norm,
         "group_by": group_norm,
         "group_label": ask.CHAT_GROUP_LABELS[group_norm] if group_norm else None,
         "date_from": date_from.isoformat(),
@@ -593,7 +603,10 @@ def _chat_report_ask(
     if named_products:
         echo.append(("product", _lookup(db, Product, Product.product_code, named_products, grants, "Product")))
     if named_customers:
-        echo.append(("customer", _lookup(db, Customer, Customer.customer_name, named_customers, grants, "Customer")))
+        # Only the customers left after scoping: a name outside the contact's own is never echoed.
+        shown = [c for c in named_customers if c in set(customers)]
+        if shown:
+            echo.append(("customer", _lookup(db, Customer, Customer.customer_name, shown, grants, "Customer")))
 
     filters: dict[str, list[str]] = {}
     if subject_codes:

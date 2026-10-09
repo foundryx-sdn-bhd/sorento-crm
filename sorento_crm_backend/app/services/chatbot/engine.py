@@ -4994,7 +4994,7 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope = (
             business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
             if verdict.get("self_reference") is True
-            or {*ORDER_OR_SALES_DOMAINS, "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
+            or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
 

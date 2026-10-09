@@ -193,7 +193,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # re-pin 10 Oct 2026 (CA-3-CHAT-DATASET, PR #1553, design approved 9 Oct): CHAT_REPORT_ADDENDUM
 # (502 est. tokens, trimmed from 1,404) plus the chat_analytics line of the policy blocks seed:
 # 52,149 est. tokens without MEMORY_ADDENDUM (+545), so CEILING is 52,153 (+4).
-CEILING = 52_153
+# CA-3 review round (10 Oct 2026): the live golden run taught CHAT_REPORT_ADDENDUM to 677 est. tokens
+# (subject, contacts, intent and period rules): 52,316 est. tokens without MEMORY_ADDENDUM (+163),
+# so CEILING is 52,320 (+4).
+CEILING = 52_320
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

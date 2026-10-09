@@ -890,10 +890,7 @@ def run_until_exit(
     )
     # CA-3: a chat report names no order subject for the gate to resolve; the lane resolves its
     # customer and product words itself (`chat_report.settle`) and says a miss in one line.
-    chat_report_ask = (
-        jsc.js_string(parse_output_peek.get("domain_hint") or "") == chat_report.DOMAIN
-        and jsc.js_string(parse_output_peek.get("intent_hint") or "") == chat_report.ASK_NAME
-    )
+    chat_report_ask = chat_report.is_chat_report(parse_output_peek)
     if (
         isinstance(parse_output_peek.get("outstanding_reask_filters"), dict)
         or isinstance(parse_output_peek.get("outstanding_detail_reask"), dict)
@@ -2107,7 +2104,7 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
-    elif domain == chat_report.DOMAIN and jsc.js_string(parse_output.get("intent_hint") or "") == chat_report.ASK_NAME:
+    elif domain == chat_report.DOMAIN and chat_report.is_chat_report(parse_output):
         # CA-3 (PLAN-chat-analytics-ca3-chat-dataset-10oct.md slice 5): what customers ask
         # the bot, `crm_report_ask` with `dataset=chat`. The reveal was checked above; every
         # other gate (a dealer's or a salesman's customers) is the route's, from
@@ -2116,7 +2113,8 @@ def run_fetch(
         tool_name = chat_report.TOOL
         tool_item = {"name": tool_name, "_tool_pick": {"source": "chat_report_override"}}
         settled, line = chat_report.settle(
-            db, parse_output, entities, dealer=bool(customer_scope.get("enforced"))
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
+            own_ids=customer_scope.get("ids"),
         )
         if trace is not None:
             trace.add(

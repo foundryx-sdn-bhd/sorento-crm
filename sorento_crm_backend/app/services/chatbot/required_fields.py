@@ -367,7 +367,14 @@ def _reply_verdict_by_shape(
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,
     )
-    if other_ask and len(words) > SHORT_REPLY_WORDS and not any(verdict.get(k) for k in ask.answer_keys):
+    if other_ask and len(words) > SHORT_REPLY_WORDS and not (
+        any(verdict.get(k) for k in ask.answer_keys)
+        and (
+            verdict.get("intent_hint") in (None, "", ask.reroute.get("intent_hint"))
+            # A verdict naming a ranking axis or a status is another ask in its own right.
+            or not (verdict.get("group_by") or verdict.get("order_status"))
+        )
+    ):
         return verdict, "required_ask_dropped"
     rerouted = {
         **{k: v for k, v in verdict.items() if k not in ask.answer_drops},
