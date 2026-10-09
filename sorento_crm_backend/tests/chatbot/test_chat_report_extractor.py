@@ -218,3 +218,17 @@ def test_seeding_the_registry_gives_the_key_a_production_label(db):
     seed_prompt_registry(db.get_bind())
     label = db.query(AIPromptLabel).filter_by(name="chat_report_extractor", label="production").one()
     assert label.version_id
+
+
+# ------------------------------------------------------------------ re-review: no hang
+
+
+def test_the_provider_call_is_bounded_by_the_shared_attempt_deadline(configured):
+    from app.services.chatbot.llm_call import ATTEMPT_TIMEOUT_SECONDS
+
+    provider = _Provider(json.dumps(GOOD))
+    _run(configured, provider)
+    timeout = provider.calls[0].get("timeout")
+    assert timeout is not None and 0 < timeout <= ATTEMPT_TIMEOUT_SECONDS, (
+        "the provider default (600 s) would hang the turn", timeout,
+    )

@@ -19,7 +19,6 @@ from __future__ import annotations
 import copy
 import json
 import re
-import uuid
 from typing import Any
 
 import pytest
@@ -624,3 +623,41 @@ def _extractor_reads_the_parser_verdict(request, monkeypatch):
         }
 
     monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)
+
+
+# --------------------------------------------------------------------------- re-review
+
+
+def test_review_reply_verdict_drops_the_open_period_question_for_a_plain_order_count() -> None:
+    from app.services.chatbot import required_fields
+
+    verdict = {
+        "message_type": "business_query", "domain_hint": "order", "intent_hint": "check_order",
+        "group_by": None, "order_status": None, "top_n": None, "open_question_answer": None,
+        "entities": [{"raw": "Ah Seng Motor", "hint": "customer", "current_message": True}],
+        "date_filter_start": "2026-10-01", "date_filter_end": "2026-10-10",
+    }
+    out, rule = required_fields.reply_verdict(
+        verdict, _open_period_slot(), "how many orders did Ah Seng Motor place with us this month so far"
+    )
+    assert rule == "required_ask_dropped", rule
+    assert out["domain_hint"] == "order", out
+
+
+def _dealer_args(monkeypatch, found, own, entity_words=("Zzt Dealer",)):
+    from app.services.chatbot.lanes.business import chat_report
+
+    monkeypatch.setattr(chat_report, "_resolve_word", lambda db, kind, word: list(found))
+    verdict = _chat(*[_e(w, "customer") for w in entity_words])
+    return chat_report._args(None, verdict, verdict["entities"], dealer=True, own_ids=own)
+
+
+def test_review_a_dealer_word_keeps_only_the_own_customer_ids(monkeypatch) -> None:
+    args, line = _dealer_args(monkeypatch, ["own-1", "other-9"], ["own-1"])
+    assert line is None and args["customer_ids"] == ["own-1"], (args, line)
+
+
+def test_review_a_dealer_word_naming_only_another_customer_gets_the_missing_name_line(monkeypatch) -> None:
+    _args_none, outside = _dealer_args(monkeypatch, ["other-9"], ["own-1"])
+    _args_none2, missing = _dealer_args(monkeypatch, [], ["own-1"])
+    assert _args_none is None and outside and outside == missing, (outside, missing)
