@@ -1,8 +1,7 @@
 # PLAN: Chat analytics CA-2, topic taxonomy + topic labelling
 
-Status: Plan, HELD for an owner ruling on HOW topics are labelled (on the fly from the turn's
-own parser output vs the designed nightly LLM labeller). No labeller is designed or built until
-that ruling lands. Track: full (migration + new report definitions).
+Status: Plan, behaviour card posted as a crew-ask on PR #1551 (labelling mode ruled HYBRID by
+the owner, 9 Oct 2026). Track: full (migration + new queue + new report definitions).
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545, branch
 `claude/chat-analytics-design-cvrxu8`, approved 9 Oct 2026), section 8 lane CA-2. Builds on CA-1
@@ -60,3 +59,69 @@ Measured on #1546, not settled: no local copy can tell a staff reply from a bot 
 prod copy predates the `chatbot_turn_id` / `sender_source` columns; `is_human_intervened` true
 on 0 of 8,990 turns). Upper bound: 921 of 4,984 outgoing rows (about 18%, 5 to 18 Sep) carry no
 turn id. The prod-latest data request raised there has no answer on the PR yet.
+
+## Owner ruling, 9 Oct 2026: HYBRID labelling
+
+1. **Subject (top level) = the parser's own domain**, already on the fact row (CA-1
+   `outcome._domain`: `plan.domains[0]`, else `verdict.domain_hint`; `outcome.py:183`). Free,
+   written at turn close. A `casual` message type is the noise bucket.
+2. **A small nightly labeller fills only what the parser does not**: the leaf topic, the ask
+   split, language, product words + confidence, history backfill (CA-4), taxonomy version
+   bumps, and messages with no parser turn. Batches of 40, the cheap model, only rows whose
+   topic is empty or whose taxonomy version is stale.
+3. **No parser prompt change; the live chatbot is untouched.** Leaves nest under the parser
+   domains.
+
+## Behaviour card (posted on PR #1551 as crew-ask)
+
+### Rules
+
+- R1 Subject. `subject = fact.domain` (one of the 14 parser domains). Null domain: `casual`
+  message type -> `general.noise`; anything else -> `general` (the labeller picks its leaf).
+  The labeller never changes the subject of ask 1.
+- R2 Leaf. The labeller picks one leaf code from the active leaves UNDER that subject (the
+  prompt lists only that subject's leaves per ask). Nothing fits: `<subject>.other`.
+- R3 Split. The labeller may return asks 2..n for one message ("stock A and price B"). Ask 1
+  keeps the turn row; each extra ask is a new fact row (`ask_seq` 2..n) copying the turn's
+  contact, time, outcome and branch, with the labeller's subject (must be a parser domain).
+  Turn measures count `ask_seq = 1` only.
+- R4 Language. `en` / `ms` / `zh` / `mixed` / `other` per ask, new column `language`.
+- R5 Products. The labeller returns product words with a confidence; each word goes through
+  the bot's own entity resolver (`lanes/business/services.py:534` `production_services` ->
+  `resolve_entity`). A unique hit writes `chat_ask_items` (`role = named`,
+  `resolved_by = resolver_pass`). No hit or several hits: nothing (never guessed). Note:
+  `report_ask._resolve_word` (`report_ask.py:350`) resolves brand / category / sales agent
+  only, not products, so brand words use it and product words use `resolve_entity`.
+- R6 What gets labelled. Rows with `topic_code IS NULL` or `taxonomy_version <` current,
+  newest first, capped per night. A row is written once per batch in one transaction.
+- R7 Privacy. The customer's words are read from `chatbot.turns.envelope` into memory for the
+  call and never stored. Facts get codes, a version, model, prompt version, confidence.
+- R8 Schedule. RQ job on a new `analytics` queue (`worker.py` `QUEUES`, role `batch`), queued
+  by the scheduler at 02:15 Malaysia; also runnable by script.
+
+### Token estimate (per day)
+
+Measured: ~315 asks/day, ~62K input + ~13K output tokens/day, 8 calls of 40 asks. At small
+model list prices (USD 0.4 to 1 per M in, 1.6 to 5 per M out) that is about USD 0.05 to 0.13 a
+day, USD 1.5 to 4 a month. One-time label of the live era (5 Sep on, ~11K asks): ~2.2M in /
+0.45M out, USD 1 to 4.
+
+### Draft taxonomy v1 (subjects = parser domains; leaves pending counts)
+
+| Subject (parser domain) | Draft leaves |
+|---|---|
+| inventory | availability, quantity_for_need, by_warehouse, low_stock_list, other |
+| incoming | product_eta, container_contents, other |
+| order | status, delivery_eta, outstanding_list, document_copy, other |
+| master_products | price, specification, alternative, discontinued, find_by_description, other |
+| product_attachment | photo, catalogue, other |
+| promotion | current_promotions, tier_terms, other |
+| sales | ranking_report, own_figures, other |
+| purchase_order | outstanding, other |
+| purchase_cost | last_cost |
+| spo_allocation | last_in |
+| forms / portal_link / resource_attachment / ideate / goods_receive | one leaf each + other |
+| general (no domain) | noise, ask_for_person, account_statement, complaint, other |
+
+About 45 leaves. Final leaves keep only those holding >= 0.5% of asks; the counts come from the
+data request.
