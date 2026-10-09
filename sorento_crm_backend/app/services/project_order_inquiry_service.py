@@ -7461,7 +7461,8 @@ class ProjectOrderInquiryService:
             spo_rows = (
                 self.db.query(SPOAllocation, Supplier, Warehouse)
                 .outerjoin(InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id)
-                .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                # OI-SUPPLIER-FROM-PO: the source PO's supplier, not the SPO's own.
+                .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                 .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                 .filter(
                     SPOAllocation.product_id == product_id,
@@ -7642,7 +7643,7 @@ class ProjectOrderInquiryService:
             elif link.spo_allocation_id:
                 found = (
                     self.db.query(SPOAllocation, Supplier, Warehouse)
-                    .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                    .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                     .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                     .filter(SPOAllocation.id == link.spo_allocation_id)
                     .first()

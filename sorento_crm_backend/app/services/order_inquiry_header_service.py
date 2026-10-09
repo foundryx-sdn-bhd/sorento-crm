@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any, List, Literal, Optional, get_args
 
 from sqlalchemy import Date, String, and_, case, cast, func, or_
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
@@ -50,6 +51,7 @@ from app.schemas.project_order_inquiry import (
     OrderInquiryRelatedSPOOut,
 )
 from app.services.error_handler import AppException
+from app.services.scm import spo_supply
 
 _ZERO = Decimal("0")
 _LIKE_ESCAPE = "\\"
@@ -491,20 +493,31 @@ class OrderInquiryHeaderService:
         spo_rows = (
             self.db.query(
                 SPOAllocation.spo_number.label("spo_number"),
-                Supplier.supplier_name.label("supplier_name"),
+                # One entry per SPO even when its lines' source POs name different
+                # suppliers (each line resolves its own): every distinct name, sorted.
+                func.array_to_string(
+                    func.array_agg(
+                        aggregate_order_by(
+                            Supplier.supplier_name.distinct(), Supplier.supplier_name
+                        )
+                    ),
+                    ", ",
+                ).label("supplier_name"),
                 func.count(func.distinct(OrderInquiryLink.row_id)).label("lines_linked"),
                 func.sum(OrderInquiryLink.qty).label("qty_linked"),
             )
             .select_from(OrderInquiryLink)
             .join(OrderInquiryRow, OrderInquiryRow.id == OrderInquiryLink.row_id)
             .join(SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id)
-            .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+            # OI-SUPPLIER-FROM-PO: the source PO's supplier, the SPO's own only
+            # when the CRM holds no such purchase order.
+            .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
             .filter(
                 OrderInquiryRow.order_inquiry_id == inquiry_id,
                 OrderInquiryRow.state != INQUIRY_CANCELLED,
                 OrderInquiryLink.spo_allocation_id.isnot(None),
             )
-            .group_by(SPOAllocation.spo_number, Supplier.supplier_name)
+            .group_by(SPOAllocation.spo_number)
             .all()
         )
         return OrderInquiryRelatedDocumentsOut(
