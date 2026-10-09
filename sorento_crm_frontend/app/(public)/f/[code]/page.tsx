@@ -27,6 +27,15 @@ type State =
   | { status: 'error' }
   | { status: 'ok'; link: FileLink };
 
+function isHttpsUrl(url: string | null): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4 px-4 py-10 text-center">
@@ -46,8 +55,13 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
     setState({ status: 'loading' });
     const result = await readFileLink(code);
     if (result.status === 'ok') {
-      if (result.link.kind === 'file' && result.link.url) {
-        window.location.replace(result.link.url);
+      if (result.link.kind === 'file') {
+        // Only ever hand the browser an https file url (security review L2).
+        if (!isHttpsUrl(result.link.url)) {
+          setState({ status: 'error' });
+          return;
+        }
+        window.location.replace(result.link.url as string);
       }
       setState({ status: 'ok', link: result.link });
     } else {

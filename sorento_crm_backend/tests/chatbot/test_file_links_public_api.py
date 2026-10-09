@@ -24,6 +24,8 @@ EXPIRED = "This link has expired."
 
 @pytest.fixture()
 def env(monkeypatch):
+    monkeypatch.setenv("CLOUDFRONT_DOMAIN", "cdn.test")
+    monkeypatch.delenv("R2_CDN_DOMAIN", raising=False)
     with blank_session() as db:
 
         def _override_db():
@@ -34,7 +36,7 @@ def env(monkeypatch):
 
         def _sign(url, **kwargs):
             signed.append(url)
-            return f"{url}?sig=1"
+            return f"{url}?sig=1".replace("http://", "https://")
 
         monkeypatch.setattr("app.api.v1.public.file_links.resolve_signed_url", _sign)
         monkeypatch.setattr(
@@ -146,3 +148,24 @@ def test_a_signing_failure_is_a_502_without_the_storage_url(env, monkeypatch):
     resp = client.get(f"{BASE}/PHOTO00004")
     assert resp.status_code == 502
     assert "cdn.test" not in resp.text
+
+
+@pytest.mark.parametrize("signed_url", ["javascript:alert(1)//X-Amz-Signature=1", "http://cdn.test/a.jpg", "https://evil.test/a.jpg"])
+def test_only_an_https_url_on_our_cdn_is_handed_out(env, monkeypatch, signed_url):
+    """Security review L2: never a redirect to another scheme or host."""
+    client, db, _ = env
+    _link(db, "PHOTO00005", "https://cdn.test/a.jpg", "a.jpg")
+    monkeypatch.setattr("app.api.v1.public.file_links.resolve_signed_url", lambda url, **kw: signed_url)
+    resp = client.get(f"{BASE}/PHOTO00005")
+    assert resp.status_code == 502
+    assert signed_url not in resp.text
+
+
+def test_content_type_comes_from_the_extension_not_the_upload(env):
+    """Security review L3: a `.csv` uploaded as text/html is served as text/csv."""
+    client, db, _ = env
+    _link(db, "SHEET00002", "https://cdn.test/r.csv", "r.csv", "text/html")
+    resp = client.get(f"{BASE}/SHEET00002/content")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert resp.headers["x-content-type-options"] == "nosniff"

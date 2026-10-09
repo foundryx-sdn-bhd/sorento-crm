@@ -744,6 +744,13 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         for f in env_files:
             key = _file_key(f)
             if key in seen_file_keys:
+                # PHOTO-SEND-CAP (security review M1): the same image under another url is
+                # not sent twice, but this section's text may name that url under its row;
+                # the kept entry carries it so link mode rewrites it too.
+                kept = next((k for k in files if _file_key(k) == key), None)
+                url = f.get("url") if isinstance(f, dict) else None
+                if kept is not None and url and url != kept.get("url"):
+                    files[files.index(kept)] = {**kept, "aliasUrls": [*(kept.get("aliasUrls") or []), url]}
                 continue
             seen_file_keys.add(key)
             files.append(f)

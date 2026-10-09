@@ -41,10 +41,11 @@ def _codes(text: str) -> list[str]:
     return re.findall(re.escape(BASE_URL) + r"/f/([0-9A-Z]+)", text)
 
 
-def test_a_code_is_ten_crockford_characters_and_never_repeats():
+def test_a_code_is_sixteen_crockford_characters_and_never_repeats():
+    """80 bits: links never expire by default, so a code must stay unguessable (review L1)."""
     codes = {file_links.new_code() for _ in range(2000)}
     assert len(codes) == 2000
-    assert all(re.fullmatch(r"[0-9ABCDEFGHJKMNPQRSTVWXYZ]{10}", c) for c in codes)
+    assert all(re.fullmatch(r"[0-9ABCDEFGHJKMNPQRSTVWXYZ]{16}", c) for c in codes)
 
 
 def test_a_row_link_is_rewritten_to_its_short_url(db):
@@ -162,3 +163,39 @@ def test_strip_raw_links_removes_only_the_link_lines():
 )
 def test_is_sheet(name, mime, sheet):
     assert file_links.is_sheet(name, mime) is sheet
+
+
+def test_a_second_url_of_one_image_from_another_section_is_rewritten_too(db):
+    """Security review M1: compose keeps one entry per image and carries the other
+    section's url as an alias, so no row is left naming a stored url."""
+    a, b = "https://cdn.test/a.jpg", "https://cdn.test/b.jpg"
+    entry = {**_file(a, "a.jpg", "h1"), "aliasUrls": [b]}
+    out, minted = file_links.links_for(
+        db, f"*Link:* {a}\n\n*Link:* {b}", [entry], contact_respond_id="C1", turn_id=None
+    )
+    assert "cdn.test" not in out
+    assert len(set(_codes(out))) == 1 and minted == 1
+
+
+def test_any_line_still_naming_our_cdn_is_dropped(monkeypatch):
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+    monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
+    text = "1. *Product Code:* X1\n*Link:* https://cdn.test/x.jpg\n*Link:* https://crm.test/f/ABC"
+    assert file_links.strip_storage_urls(text) == "1. *Product Code:* X1\n*Link:* https://crm.test/f/ABC"
+
+
+def test_turning_the_expiry_on_later_closes_links_already_sent(db):
+    """Security review M3: the setting as it stands now applies to every link."""
+    db.add(
+        ChatbotFileLink(
+            code="OLDLINK000000001",
+            target_url="https://cdn.test/a.jpg",
+            filename="a.jpg",
+            created_at=datetime.utcnow() - timedelta(days=10),
+        )
+    )
+    db.commit()
+    assert file_links.resolve(db, "OLDLINK000000001") is not None
+    db.add(SystemSetting(id=str(uuid.uuid4()), name="ZZT co", chatbot_file_link_expiry_days=7))
+    db.commit()
+    assert file_links.resolve(db, "OLDLINK000000001") is None

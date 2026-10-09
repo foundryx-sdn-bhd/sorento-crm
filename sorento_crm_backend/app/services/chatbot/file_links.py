@@ -23,10 +23,10 @@ from app.models.chatbot_file_link import ChatbotFileLink
 
 #: Crockford base32: no I, L, O or U, so a code read aloud or retyped cannot be misread.
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-#: 10 characters of a 32-letter alphabet is 50 bits from `secrets`: the code IS the
-#: capability (owner Q2 (a), no sign-in), so it must not be guessable, and the public
-#: route is rate limited per IP on top.
-CODE_LENGTH = 10
+#: 16 characters of a 32-letter alphabet is 80 bits from `secrets`: the code IS the
+#: capability (owner Q2 (a), no sign-in) and links never expire by default, so it must
+#: stay unguessable however many links exist (security review L1).
+CODE_LENGTH = 16
 
 #: The spreadsheet kinds the `/f/{code}` page opens in the browser instead of
 #: downloading (owner: "Excel must open in the browser with no extra software").
@@ -128,6 +128,9 @@ def links_for(
             )
         link = f"{base}/f/{code}"
         url_by_raw[raw] = link
+        for alias in entry.get("aliasUrls") or []:
+            if isinstance(alias, str) and alias:
+                url_by_raw[alias] = link
         if raw not in text:
             blocks.append(f"*File:* {entry.get('filename') or 'file'}\n*Link:* {link}")
 
@@ -139,7 +142,7 @@ def links_for(
         text = text.replace(raw, url_by_raw[raw])
     if blocks:
         text = "\n\n".join(part for part in (text.strip(), *blocks) if part)
-    return text, len(rows)
+    return strip_storage_urls(text), len(rows)
 
 
 def strip_raw_links(text: str, files: list[Any]) -> str:
@@ -150,14 +153,48 @@ def strip_raw_links(text: str, files: list[Any]) -> str:
     return "\n".join(kept)
 
 
+def _storage_hosts() -> set[str]:
+    import os
+
+    return {
+        h
+        for h in (
+            (os.getenv("CLOUDFRONT_DOMAIN") or "").strip().lower().rstrip("/"),
+            (os.getenv("R2_CDN_DOMAIN") or "").strip().lower().rstrip("/"),
+        )
+        if h
+    }
+
+
+def strip_storage_urls(text: str) -> str:
+    """Drop every line that still names a stored CDN url (security review M1): in link
+    mode the customer reads short links only, whichever path rendered the row."""
+    hosts = _storage_hosts()
+    if not hosts:
+        return text
+    return "\n".join(
+        line
+        for line in text.split("\n")
+        if not any(f"://{host}/" in line.lower() for host in hosts)
+    )
+
+
 def resolve(db: Session, code: str, *, now: datetime | None = None) -> ChatbotFileLink | None:
-    """The live link for `code`, or None when unknown or expired (one answer for both)."""
+    """The live link for `code`, or None when unknown or expired (one answer for both).
+
+    Expired is EITHER the stamp minted with the link OR the setting as it stands now
+    (security review M3): turning the expiry on later closes the links already sent.
+    Revoking one link is deleting its row."""
     if not code or len(code) > 16:
         return None
     row = db.query(ChatbotFileLink).filter(ChatbotFileLink.code == code).first()
     if row is None:
         return None
-    if row.expires_at is not None and row.expires_at <= (now or datetime.utcnow()):
+    at = now or datetime.utcnow()
+    if row.expires_at is not None and row.expires_at <= at:
+        return None
+    days = expiry_days(db)
+    if days and row.created_at is not None and row.created_at + timedelta(days=days) <= at:
         return None
     return row
 

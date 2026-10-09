@@ -9060,13 +9060,17 @@ def _apply_file_mode(
     url the lane rendered under each row is dropped. `file_mode` is None when the reply
     carries no file, else `attachments` or `links`, the A/B record the trace keeps.
     """
-    files = [f for f in (files or []) if f is not None]
-    if not files:
-        return text, files, None
-    if not getattr(profile, "files_as_links", False):
-        return text, files, "attachments"
     from app.services.chatbot import file_links
     from app.services.chatbot.turn.compose import _ATTACHED_SENTENCE
+
+    files = [f for f in (files or []) if f is not None]
+    links = bool(getattr(profile, "files_as_links", False))
+    if not files:
+        # Security review M1: a link-mode row can print a stored url even when the reply
+        # sends no file; it never reaches the customer.
+        return (file_links.strip_storage_urls(text) if links else text), files, None
+    if not links:
+        return text, files, "attachments"
 
     try:
         if db is not None:
@@ -9080,7 +9084,7 @@ def _apply_file_mode(
                 )
     except Exception:  # noqa: BLE001 - the files still go, as attachments
         logger.warning("chatbot turn %s: link mode failed, sending attachments", turn_id, exc_info=True)
-        return file_links.strip_raw_links(text, files), files, "attachments"
+        return file_links.strip_storage_urls(file_links.strip_raw_links(text, files)), files, "attachments"
     # "I have attached the file(s) below." is untrue once nothing is attached.
     linked = linked.replace(_ATTACHED_SENTENCE, "").strip()
     return linked, [], "links"

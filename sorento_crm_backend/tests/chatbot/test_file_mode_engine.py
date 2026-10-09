@@ -80,3 +80,31 @@ def test_link_mode_drops_the_attached_sentence(monkeypatch):
     )
     assert "attached" not in text
     assert text.startswith("1. *Product Code:* X1")
+
+
+def test_link_mode_with_no_file_still_never_shows_a_stored_url(monkeypatch):
+    """Security review M1, second path: rows printed links but nothing is sent."""
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+    text, files, mode = engine._apply_file_mode(
+        TEXT, [], profile=Profile(files_as_links=True), session_factory=_factory, contact_respond_id="C1", turn_id="T1"
+    )
+    assert "cdn.test" not in text
+    assert (files, mode) == ([], None)
+
+
+def test_the_fallback_drops_every_stored_url(monkeypatch):
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+
+    def _boom(*a, **kw):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(file_links, "links_for", _boom)
+    text, _files, _mode = engine._apply_file_mode(
+        TEXT + "\n*Link:* https://cdn.test/other.jpg",
+        FILES,
+        profile=Profile(files_as_links=True),
+        session_factory=_factory,
+        contact_respond_id="C1",
+        turn_id="T1",
+    )
+    assert "cdn.test" not in text

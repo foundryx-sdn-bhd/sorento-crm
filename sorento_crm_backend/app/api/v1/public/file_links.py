@@ -6,8 +6,8 @@ PDF, any other file) or opens a spreadsheet read-only in the browser from `/{cod
 
 What a caller can learn is kept to the minimum:
 * an unknown code and an expired one answer the SAME 404, so a guess learns nothing;
-* the stored CDN url, bucket, key and company never appear in any answer; a file answer
-  carries a url signed for one hour, minted at the click;
+* no answer carries the stored (unsigned) url or a company; a file answer carries a url
+  signed for one hour, minted at the click, and only an https url on our own CDN host;
 * the route takes a code and nothing else (no url parameter, so no open redirect), and is
   rate limited per IP (`rate_limit_file_link_*`).
 """
@@ -30,6 +30,34 @@ router = APIRouter()
 EXPIRED = "This link has expired."
 #: How long the signed url a click receives stays usable.
 SIGNED_URL_SECONDS = 3600
+
+
+#: The type `/content` serves, by extension (security review L3): never the uploader's.
+_SHEET_MEDIA_TYPES = {
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xlsm": "application/vnd.ms-excel.sheet.macroenabled.12",
+    "xls": "application/vnd.ms-excel",
+    "csv": "text/csv",
+}
+
+
+def _on_our_cdn(url: str | None) -> bool:
+    """Only an https url on our own CDN is handed to a browser (security review L2)."""
+    import os
+    from urllib.parse import urlparse
+
+    if not url:
+        return False
+    parsed = urlparse(url)
+    hosts = {
+        h
+        for h in (
+            (os.getenv("CLOUDFRONT_DOMAIN") or "").strip().lower().rstrip("/"),
+            (os.getenv("R2_CDN_DOMAIN") or "").strip().lower().rstrip("/"),
+        )
+        if h
+    }
+    return parsed.scheme == "https" and bool(hosts) and (parsed.hostname or "").lower() in hosts
 
 
 def _rate_limited(request: Request) -> None:
@@ -62,7 +90,7 @@ def open_file_link(code: str, request: Request, db: Session = Depends(get_db)) -
     url = None
     if not sheet:
         url = resolve_signed_url(link.target_url, expires_in=SIGNED_URL_SECONDS, strict=True)
-        if not url:
+        if not _on_our_cdn(url):
             logger.warning("file link %s: the file could not be signed", link.id)
             raise HTTPException(status_code=502, detail="The file is not available right now. Please try again.")
     record_click(db, link)
@@ -88,12 +116,14 @@ def file_link_content(code: str, request: Request, db: Session = Depends(get_db)
         logger.warning("file link %s: download failed", link.id, exc_info=True)
         raise HTTPException(status_code=502, detail="The file is not available right now. Please try again.")
     filename = link.filename or "file"
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     return Response(
         content=content,
-        media_type=link.mime_type or "application/octet-stream",
+        media_type=_SHEET_MEDIA_TYPES.get(extension, "application/octet-stream"),
         headers={
             "Content-Disposition": content_disposition(filename),
             "Content-Length": str(len(content)),
             "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
         },
     )
