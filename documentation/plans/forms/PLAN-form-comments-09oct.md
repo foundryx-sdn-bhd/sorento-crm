@@ -1,6 +1,6 @@
 # PLAN: Two-way comment thread on form submissions (FORM-COMMENTS)
 
-Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Phase 2 built; Phase 3 review fix round in progress.
+Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Built; review fix round and crew audit tests landed; final review, browser pass and hand test on this head.
 Track: full lane (one additive migration, notifications on two channels).
 
 Owner request (9 Oct 2026): every form submission page gets a comment thread reusing the
