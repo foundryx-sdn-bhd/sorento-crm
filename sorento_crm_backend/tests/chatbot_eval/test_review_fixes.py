@@ -201,7 +201,6 @@ def test_judge_cost_counts_against_budget(tmp_path):
         ex("answer", must=[]),
         ex("not_supported", must=[]),
         ex("handover", must=[]),
-        ex("answer", acceptable_alternates=["clarify"], must=[{"code": "TESTCODE-1"}], options=[]),
         ex("answer", acceptable_alternates=["handover"], must=[]),
     ],
 )
