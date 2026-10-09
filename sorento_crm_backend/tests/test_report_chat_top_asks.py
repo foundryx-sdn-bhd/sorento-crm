@@ -490,3 +490,14 @@ def test_meta_carries_pivot_rows_by_for_top_asks_and_null_for_chat_overview(api)
     assert overview.status_code == 200, overview.text
     assert "pivot_rows_by" in overview.json(), "the field is always present"
     assert overview.json()["pivot_rows_by"] is None
+
+
+def test_the_summary_title_is_neutral_for_topic_and_product_rows(db):
+    assert _definition().pivot.title == "Asks by month"
+    _seed_items(db)
+
+    topics = _run(db, {"count_by": ["topics"]})
+    products = _run(db, {"count_by": ["products"]}, PRODUCT_VIEW)
+
+    assert topics.layouts.summary.title == "Asks by month"
+    assert products.layouts.summary.title == "Asks by month"
