@@ -1,9 +1,9 @@
 # DESIGN: Chat analytics, methodology and engineering (9 Oct 2026)
 
 Status: DRAFT for owner review (design only; no code, no migrations in this lane). Lane
-CHAT-ANALYTICS-DESIGN. Track once built: full pipeline (migrations + new grant), see section 9.
+CHAT-ANALYTICS-DESIGN. Track once built: full pipeline (migrations + new grant), see section 8.
 
-Companion: `DESIGN-chat-analytics-09oct.html` (same content, with drawn diagrams).
+Twin files: `DESIGN-chat-analytics-09oct.md` and `DESIGN-chat-analytics-09oct.html` carry the same content; the HTML draws the diagrams.
 
 Sources: code at `origin/main` 4ee6f643d (cited `file:line`); numbers are AGGREGATES from the prod
 snapshot `sorento_ai_automation_20261006` taken by the crew scout. This repo is public: there are no
@@ -30,9 +30,9 @@ and masked (`<product>`, `<dealer>`).
    query over curated views, with a time limit, a row cap and no access to raw message text.
 5. **Privacy.** Analytics answer with counts and labels, never with what a customer typed, never
    with episode summaries. Contact-level breakdowns need a new grant. Dealers see only their own.
-6. **Order of work.** Five build lanes, each one showing the owner something usable. First lane:
-   the fact table from traces plus 6 fixed dashboard numbers (about two weeks of history already
-   there). Last lane: the AI assistant folds into the chatbot console.
+6. **Order of work.** Six build lanes, each one showing the owner something usable. First lane:
+   the fact table from traces plus a "Chat overview" screen (about five weeks of traced history,
+   5 Sep on, is already there). Last lane: the AI assistant folds into the chatbot console.
 7. **Honest limits.** Before 5 Sep we only have message text, and 19 Aug to 7 Sep is a gap in
    saved parser output. Every answer prints a coverage line so nobody reads a gap as a trend.
 
@@ -255,7 +255,7 @@ line says so: `Before 5 Sep from message text (estimated)`. When coverage for th
          +----------(D) one-time backfill extractor (LLM) ---------------------+
                                                    |
                                                    v
-                    report registry: dataset "chat_asks" / "chat_turns" / "chat_episodes"
+                    report registry: dataset "chat", bases asks / turns / episodes
                                   |                                   |
                       /report-ask (chatbot, MCP)          /reports/{key}/run (CRM screen)
 ```
