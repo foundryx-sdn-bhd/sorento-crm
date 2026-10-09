@@ -1200,8 +1200,6 @@ export default function PurchaseRequestDetail({
         }
       />
 
-      {/* Comment thread at the top, before the form, so the conversation reads in one place
-          (owner hand test, 9 Oct); it shows here even before any reply exists. */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isPurchaseRequest ? (

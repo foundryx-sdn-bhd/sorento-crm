@@ -708,7 +708,10 @@ class FormCommentService:
             team_ids = {
                 uid
                 for (uid,) in self.db.query(Notification.user_id).filter(
-                    Notification.source_entity_type == kind,
+                    # Sponsorship notifications are stored under purchase_request.
+                    Notification.source_entity_type.in_(
+                        ("sponsorship_form", "purchase_request") if kind == "sponsorship_form" else (kind,)
+                    ),
                     Notification.source_entity_id == str(row.id),
                     Notification.type != "form_comment_notification",
                     Notification.user_id.isnot(None),

@@ -1110,8 +1110,6 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         }
       />
 
-      {/* Comment thread at the top, before the form, so the conversation reads in one place
-          (owner hand test, 9 Oct); it shows here even before any reply exists. */}
 
       {/* Complaint Information */}
       <Card>
