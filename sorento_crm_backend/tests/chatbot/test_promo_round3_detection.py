@@ -330,3 +330,116 @@ def test_sorento_promotion_flyer_serves_sorento_a3_flyers_only(session_factory, 
     assert fetches and all(a.get("promotion_types") == ["a3_flyer"] and a.get("brand_ids") == [str(w["srt"].id)] for a in fetches), fetches
     assert "ZZT SORENTO A3 FLYER LIVE" in reply, reply
     assert "MOCHA" not in reply.upper() and "FLYER BUNDLE" not in reply.upper(), reply
+
+
+# --------------------------------------------------------------------------- #
+# Review round: product types are product_type spec values (not only classes)
+# --------------------------------------------------------------------------- #
+
+
+def _type_world(session_factory):
+    """Grab bar and toilet seat are product_type VALUES; the classes are Bathroom Accessory and
+    Water Closet (Grab Bar is not a class)."""
+    from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
+
+    def extra(w):
+        db = w["db"]
+        db.add(
+            ProductSpecRegistry(
+                id=str(uuid.uuid4()), spec_key="product_type", label="Product type", data_type="enum",
+                allowed_values=["grab_bar", "toilet_seat"],
+                synonyms={"grab_bar": ["grab bar"], "toilet_seat": ["toilet seat"]},
+            )
+        )
+        db.flush()
+        _class_rows = ("Bathroom Accessory", "Water Closet")
+        bar = _prod(db, w["srt"], "Bathroom Accessory", "ZZTGB1")
+        other = _prod(db, w["srt"], "Bathroom Accessory", "ZZTTR1")
+        spec = db.query(ProductSpecifications).filter_by(product_id=bar.id).one()
+        spec.values = {"class": {"value": "Bathroom Accessory"}, "product_type": {"value": "grab_bar"}}
+        db.flush()
+        _promo(db, "ZZT GRAB BAR PROMO", w["std"], bar, levels=["sorento_dealer"])
+        _promo(db, "ZZT ACCESSORY OTHER PROMO", w["std"], other, levels=["sorento_dealer"])
+
+    # `_world` seeds class "Grab Bar" and its products; the type world needs its own classes only
+    _seed_contact(session_factory, variables={})
+    _class(session_factory, "Bathroom Accessory")
+    _class(session_factory, "Water Closet")
+    db = session_factory()
+    std, flyer = _types(db)
+    srt = _brand(db, "Sorento")
+    w = {"db": db, "std": std, "flyer": flyer, "srt": srt}
+    extra(w)
+    db.commit()
+    return w
+
+
+def _types_line(blocks: list[str]) -> str:
+    return next((l for l in "\n".join(blocks).splitlines() if l.lower().startswith("product types:")), "")
+
+
+def test_the_product_types_line_lists_product_type_values_not_only_classes(session_factory, monkeypatch):
+    _type_world(session_factory)
+    _mcp(monkeypatch, session_factory)
+    blocks: list[str] = []
+    svc = _wire(session_factory)
+    _run_turn(session_factory, monkeypatch, qf=_ask("Sorento", "Sorento"), text_body="sorento grab bar promotion", msg_id="zzt-r3-pt-ctx", resolve_services=svc, capture_user_block=blocks)
+    line = _types_line(blocks).lower()
+    assert "grab bar" in line and "toilet seat" in line, blocks
+
+
+def test_a_listed_product_type_canonical_grounds_to_the_type_and_filters_by_it(session_factory, monkeypatch):
+    _type_world(session_factory)
+    _mcp(monkeypatch, session_factory)
+    ents = [{"raw": "grab bra", "hint": "category", "canonical_code": "grab bar", "current_message": True, "confident": True}]
+    qf = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=ents)
+    menu = _go(session_factory, monkeypatch, qf, "grab bra promotion", "zzt-r3-pt-ask")
+    assert menu.startswith("Which access level"), menu
+    reply = _go(session_factory, monkeypatch, _pick_qf(2), "2", "zzt-r3-pt-2")
+    assert "ZZT GRAB BAR PROMO" in reply, reply
+    assert "ZZT ACCESSORY OTHER PROMO" not in reply, reply
+
+
+def test_a_canonical_that_is_neither_a_listed_type_nor_a_class_asks_back_and_never_widens(session_factory, monkeypatch):
+    _type_world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    ents = [{"raw": "grab bra", "hint": "category", "canonical_code": "zzt gadget", "current_message": True, "confident": True}]
+    qf = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=ents)
+    reply = _go(session_factory, monkeypatch, qf, "grab bra promotion", "zzt-r3-pt-unl")
+    assert "I could not match" in reply and "Which access level" not in reply, reply
+    assert "ZZT ACCESSORY OTHER PROMO" not in reply, reply
+    assert not [a for n, a in captured if n == PROMO_TOOL], captured
+
+
+def test_every_canonical_code_example_in_the_promotion_subject_prompt_can_be_listed(session_factory, monkeypatch):
+    """An example the Product types line could never list teaches the parser to invent a name."""
+    import re
+
+    from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT as prompt
+
+    section = prompt.split("== PROMOTION SUBJECT ==", 1)[1].split("\n== ")[0].split("\n━")[0]
+    examples = re.findall(r'"canonical_code":\s*"([^"]+)"', section)
+    brands = {"sorento", "mocha", "cabana"}
+    examples = [e for e in examples if e.lower() not in brands]
+    assert examples, section
+    _type_world(session_factory)
+    _mcp(monkeypatch, session_factory)
+    blocks: list[str] = []
+    svc = _wire(session_factory)
+    _run_turn(session_factory, monkeypatch, qf=_ask("Sorento", "Sorento"), text_body="sorento promotion", msg_id="zzt-r3-pt-ex", resolve_services=svc, capture_user_block=blocks)
+    line = _types_line(blocks).lower()
+    for e in examples:
+        assert e.lower() in line, (e, line)
+
+
+def test_an_unconfident_unlisted_brand_word_asks_back_and_the_substring_fallback_never_runs(session_factory, monkeypatch):
+    """AC-30: {raw "sorentoo", brand, confident false} must not become Sorento through tier_gate's
+    BRANDS substring scan; it asks back, no menu, no fetch."""
+    _world(session_factory)
+    captured = _mcp(monkeypatch, session_factory)
+    qf = _ask("sorentoo", None)
+    qf["entities"][0]["confident"] = False
+    reply = _go(session_factory, monkeypatch, qf, "sorentoo grab bar promotion", "zzt-r3-unconf")
+    assert reply.startswith('I could not match "sorentoo" to a brand.'), reply
+    assert "Which access level" not in reply, reply
+    assert not [a for n, a in captured if n == PROMO_TOOL], captured
