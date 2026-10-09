@@ -154,7 +154,8 @@ function resultFor(rows: string) {
   return {
     key: 'zzt_report',
     period_label: '2026',
-    row_count: 0,
+    // Non-zero: the summary tab strip, where the title prints, renders only for a run with rows.
+    row_count: 1,
     layouts: {
       detail: { key: 'detail', title: 'Asks', columns: [], column_groups: [], rows: [], totals: {} },
       summary: {
