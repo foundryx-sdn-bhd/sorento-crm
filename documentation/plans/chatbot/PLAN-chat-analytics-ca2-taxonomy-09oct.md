@@ -1,7 +1,8 @@
 # PLAN: Chat analytics CA-2, topic taxonomy + topic labelling
 
-Status: Plan, behaviour card posted as a crew-ask on PR #1551 (labelling mode ruled HYBRID by
-the owner, 9 Oct 2026). Track: full (migration + new queue + new report definitions).
+Status: Build. Labelling ruled HYBRID by the owner (9 Oct 2026); behaviour card answered by
+crew (9 Oct, see "Card answers"). Building the schema now; leaves wait for taxonomy v1
+approval. Track: full (migration + new queue + new report definitions).
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545, branch
 `claude/chat-analytics-design-cvrxu8`, approved 9 Oct 2026), section 8 lane CA-2. Builds on CA-1
@@ -23,35 +24,32 @@ Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (
   `entities[].hint` (entity kind), `requested_attributes`, `order_status`, `group_by`,
   `date_mode`, `top_n`, `user_goal` (free text). CA-1 already copies domain + intent into
   facts.
-- Language: chosen per turn, deterministically, no model (`app/services/chatbot/language.py`
-  `detect`, `engine.py:5540` / `:5901` `item["reply_language"]`, carried by
-  `turn/tail.py:87`). Zero tokens.
+- The bot also picks a reply language per turn (`language.py`, `engine.py:5540`). Not used
+  here: crew ruling Q4, the labeller decides language for every row in its own call.
 
-## The open ruling (owner, pending): how a topic is assigned
+## Taxonomy discovery
 
-| | (a) On the fly from parser fields | (b) Parser emits `topic` | (c) Nightly LLM labeller (design 3.4) |
-|---|---|---|---|
-| When | at `record_turn`, same INSERT | at parse, every turn | 02:15 MYT batch |
-| Extra tokens | none | ~400 cached prompt + ~5 out per turn | ~120 in / 40 out per ask |
-| Parser change | no | yes (schema key + prompt version) | no |
-| Leaf granularity | what the parser already distinguishes: domain x intent x message type x entity kind x order status / attribute | any leaf in the list | any leaf in the list |
-| Multi-ask split | no (one ask per turn) | possible with an array | yes |
-| Taxonomy bump | a migration of mapping rows | a prompt version | a version number |
+1. Subjects are exactly the 14 parser domains (`turn/policy_rows.py`) plus `general` (no
+   domain). Ruled, so the migration seeds them now.
+2. Leaves nest under a subject. Crew sends, from the local 6 Oct prod snapshot (no prod DB
+   access, ever): counts per (domain, intent, message type, outcome) since 5 Sep, and about 60
+   masked asks with their parser fields.
+3. Leaves are drafted from those asks. A leaf holding under 0.5% of asks folds into
+   `<subject>.other`.
+4. `taxonomy_v1.md` (tree, counts per leaf, 2 real masked examples per leaf) goes to the owner
+   as a crew-ask. The leaves are seeded by a second migration only after approval, and nothing
+   is labelled before then.
 
-Pre-5-Sep history (CA-4 backfill) has no traces under any option; it still needs an LLM pass.
+## Schema (migration `chat_topics_0001_taxonomy`, additive)
 
-## Taxonomy discovery (planning only, nothing run)
-
-1. Seed subjects from the 14 parser domains plus `general` (casual / unknown / escalation).
-2. Measure the real distribution, counts only, of the parser fields over live turns since
-   5 Sep: `(domain, intent, message_type, entity kinds, order_status, requested_attributes
-   present, group_by)` per turn, plus `branch_kind`. Requested from crew as a
-   `crew-data-request:` (no message text needed for counts).
-3. Under (a): each leaf is a combination that holds >= 0.5% of asks; rarer ones fold into
-   `<subject>.other`. Under (b)/(c): the one-off LLM discovery over ~2,000 masked asks the
-   brief describes.
-4. `taxonomy_v1.md` (tree, counts per leaf, 2 masked examples per leaf) goes to the owner as a
-   crew-ask; nothing is labelled before approval.
+- `chatbot.chat_topics`: `code` text pk (`inventory`, `inventory.availability`),
+  `parent_code` text null (null on a subject), `label`, `definition` text, `version` smallint
+  (the version that introduced the row), `status` text `active` / `retired`, `sort_order`
+  int. The current taxonomy version is the highest `version` of an active row.
+- `chatbot.chat_ask_facts.language` text null (`en` / `ms` / `zh` / `mixed` / `other`).
+- `chatbot.chat_ask_items.confidence` real null (the labeller's own score for a
+  `resolver_pass` item).
+- Seed: the 15 subjects at version 1.
 
 ## Q5 (staff replies in chat_histories), as measured by CA-1
 
@@ -85,10 +83,11 @@ turn id. The prod-latest data request raised there has no answer on the PR yet.
   keeps the turn row; each extra ask is a new fact row (`ask_seq` 2..n) copying the turn's
   contact, time, outcome and branch, with the labeller's subject (must be a parser domain).
   Turn measures count `ask_seq = 1` only.
-- R4 Language. `en` / `ms` / `zh` / `mixed` / `other` per ask, new column `language`.
+- R4 Language. `en` / `ms` / `zh` / `mixed` / `other` per ask, new column `language`, decided
+  by the labeller in the same call for every row (card answer 4).
 - R5 Products. The labeller returns product words with a confidence; each word goes through
   the bot's own entity resolver (`lanes/business/services.py:534` `production_services` ->
-  `resolve_entity`). A unique hit writes `chat_ask_items` (`role = named`,
+  `resolve_entity`), keeping only `exact`-tier matches (see "Q5 follow-up"). A unique hit writes `chat_ask_items` (`role = named`,
   `resolved_by = resolver_pass`). No hit or several hits: nothing (never guessed). Note:
   `report_ask._resolve_word` (`report_ask.py:350`) resolves brand / category / sales agent
   only, not products, so brand words use it and product words use `resolve_entity`.
@@ -125,3 +124,26 @@ day, USD 1.5 to 4 a month. One-time label of the live era (5 Sep on, ~11K asks):
 
 About 45 leaves. Final leaves keep only those holding >= 0.5% of asks; the counts come from the
 data request.
+
+## Card answers (crew, 9 Oct 2026)
+
+1. Monthly taxonomy bumps: the owner approves until a delegate is named.
+2. A split ask's subject: the labeller picks it, from the parser domains only.
+3. A pick or follow-up with no domain inherits the domain of the previous ask ONLY through an
+   explicit episode / turn link, never by text or name matching.
+4. Language: the labeller decides it for every row, in the same call; `mixed` allowed; no
+   `language.detect` heuristic.
+5. Product items: confidence >= 0.8 AND a unique EXACT resolver hit.
+
+### Q5 follow-up: the resolver DOES fuzzy-match, so the pass keeps exact hits only
+
+`resolve_entity` (`lanes/business/services.py:140`) calls the route
+`resolve_reference_post` (`api/v1/system/references.py:3151`). Its product matches carry a
+`match_tier`, and several tiers are not exact: `prefix`, `substring`, `head_code`,
+`embedding` (`services/entity_resolver.py:511`) and `trgm` (`references.py:1700`
+`_NEIGHBOUR_TIERS`, "nearest-neighbour guesses", :1610). Spec search runs only when the caller
+opts in (`spec_fallback`, default false, `references.py:1378`).
+
+Rule for the resolver pass: call it without `spec_fallback`, keep only product matches whose
+`match_tier == "exact"`, and write an item only when exactly one product remains (and the
+labeller's confidence is >= 0.8). Every other tier counts as unresolved.
