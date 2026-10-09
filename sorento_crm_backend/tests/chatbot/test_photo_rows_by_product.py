@@ -7,9 +7,17 @@ into a short link afterwards (`file_links.links_for`); here the url is still raw
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
+from pathlib import Path
 
-from sorento_crm_mcp.presenters import present_response
+# CI's backend environment does not install the MCP package; the source sits beside it
+# (same as `tests/test_report_ask_route.py`).
+if importlib.util.find_spec("sorento_crm_mcp") is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sorento_crm_mcp"))
+
+from sorento_crm_mcp.presenters import present_response  # noqa: E402
 
 from app.services.chatbot.lanes.business import fetch
 
