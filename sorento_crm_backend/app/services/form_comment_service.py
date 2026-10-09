@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from datetime import datetime
 from typing import Any, Optional, Sequence
 
 from sqlalchemy.orm import Session
@@ -29,6 +30,7 @@ from app.models.procurement import PurchaseRequestHeader, StockInquiry
 from app.models.resources import Attachment
 from app.models.user import User
 from app.services.error_handler import AppException, handle_not_found, handle_unprocessable
+from app.services.user_service import UserPermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +140,17 @@ class FormCommentService:
     # Listing / serialization
     # ------------------------------------------------------------------ #
 
-    def list_comments(self, kind: str, entity_id: str, *, _checked: bool = False) -> list[dict[str, Any]]:
-        """``_checked``: the caller already loaded the row with its own ownership filter."""
-        if not _checked:
-            self._load_row(kind, entity_id)
+    def list_comments(
+        self, kind: str, entity_id: str, viewer: Optional[dict] = None, *, row=None
+    ) -> list[dict[str, Any]]:
+        """The thread, oldest first, led by the form's reply as a synthetic ``response`` entry.
+
+        ``row``: the caller already loaded the form with its own ownership filter.
+        ``viewer``: ``{"user_id": ..., "is_admin": bool}`` for staff, ``{"contact_id": ...}`` for
+        the portal; None gives an entry with every ``can_*`` flag off.
+        """
+        if row is None:
+            row = self._load_row(kind, entity_id)
         rows = (
             self.db.query(EntityConversationMessage)
             .filter(
@@ -152,13 +161,88 @@ class FormCommentService:
             .order_by(EntityConversationMessage.created_at.asc(), EntityConversationMessage.id.asc())
             .all()
         )
-        return self._serialize_many(rows)
+        items = self._serialize_many(rows, viewer)
+        first = self._response_entry(kind, row)
+        return [first, *items] if first else items
+
+    def staff_viewer(self, user: Any) -> dict:
+        uid = str(user.id if hasattr(user, "id") else user["id"])
+        roles = UserPermissionService(self.db).get_user_role_slugs(uid)
+        return {"user_id": uid, "is_admin": bool(roles & {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"})}
 
     @staticmethod
     def _staff_name(user: Optional[User]) -> str:
         return ((user.name or "").strip() if user else "") or "Sorento team"
 
-    def _serialize_many(self, rows: Sequence[EntityConversationMessage]) -> list[dict[str, Any]]:
+    def _response_entry(self, kind: str, row) -> Optional[dict[str, Any]]:
+        """The purchasing / technical reply as the first entry of the thread (None when blank)."""
+        if kind == "stock_inquiry":
+            text = row.purchasing_response
+        elif kind == "complaint":
+            text = row.technical_team_response
+        else:
+            return None
+        text = (text or "").strip()
+        if text.startswith("There has been an update regarding your") and ": " in text:
+            text = text[text.rfind(": ") + 2 :].strip()
+        if not text:
+            return None
+        responder = None
+        if row.last_responded_by:
+            responder = self.db.query(User).filter(User.respond_user_id == row.last_responded_by).first()
+        from app.models.resources import AttachmentType
+
+        files = (
+            self.db.query(Attachment)
+            .join(EntityAttachmentLink, EntityAttachmentLink.attachment_id == Attachment.id)
+            .join(AttachmentType, AttachmentType.id == Attachment.attachment_type_id)
+            .filter(
+                EntityAttachmentLink.entity_type == kind,
+                EntityAttachmentLink.entity_id == str(row.id),
+                AttachmentType.code == "response_attachment",
+                Attachment.uploader_kind == "user",
+            )
+            .order_by(EntityAttachmentLink.sort_order.asc())
+            .all()
+        )
+        return {
+            "id": "response",
+            "kind": "response",
+            "body": text,
+            "author_name": self._staff_name(responder),
+            "author_kind": "staff",
+            "posted_by_name": None,
+            "created_at": row.last_responded_at.isoformat() if row.last_responded_at else None,
+            "attachments": [self._file_dict(a) for a in files],
+            "parent_id": None,
+            "edited_at": None,
+            "deleted": False,
+            "can_edit": False,
+            "can_delete": False,
+            "can_reply": False,
+        }
+
+    @staticmethod
+    def _file_dict(att: Attachment) -> dict[str, Any]:
+        return {
+            "attachment_id": str(att.id),
+            "filename": att.original_filename,
+            "size": att.file_size_bytes,
+            "content_type": att.mime_type,
+        }
+
+    @staticmethod
+    def _can_modify(r: EntityConversationMessage, viewer: Optional[dict]) -> bool:
+        """Author-or-admin. Staff author = a user with no contact; portal author = the contact."""
+        if not viewer or r.deleted_at is not None:
+            return False
+        if "contact_id" in viewer:
+            return r.author_contact_id is not None and r.author_contact_id == viewer["contact_id"]
+        if viewer.get("is_admin"):
+            return True
+        return r.author_contact_id is None and r.author_user_id is not None and r.author_user_id == viewer.get("user_id")
+
+    def _serialize_many(self, rows: Sequence[EntityConversationMessage], viewer: Optional[dict] = None) -> list[dict[str, Any]]:
         if not rows:
             return []
         user_ids = {r.author_user_id for r in rows if r.author_user_id}
@@ -181,14 +265,7 @@ class FormCommentService:
             .all()
         )
         for link, att in pairs:
-            files.setdefault(str(link.entity_id), []).append(
-                {
-                    "attachment_id": str(att.id),
-                    "filename": att.original_filename,
-                    "size": att.file_size_bytes,
-                    "content_type": att.mime_type,
-                }
-            )
+            files.setdefault(str(link.entity_id), []).append(self._file_dict(att))
         out: list[dict[str, Any]] = []
         for r in rows:
             posted_by = None
@@ -203,15 +280,24 @@ class FormCommentService:
                 kind_label = "staff"
             else:
                 name, kind_label = "Unknown", "submitter"
+            deleted = r.deleted_at is not None
+            can = self._can_modify(r, viewer)
             out.append(
                 {
                     "id": r.id,
-                    "body": r.body_html or "",
+                    "kind": "comment",
+                    "body": "" if deleted else (r.body_html or ""),
                     "author_name": name,
                     "author_kind": kind_label,
                     "posted_by_name": posted_by,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
-                    "attachments": files.get(r.id, []),
+                    "attachments": [] if deleted else files.get(r.id, []),
+                    "parent_id": r.parent_id,
+                    "edited_at": r.edited_at.isoformat() if r.edited_at else None,
+                    "deleted": deleted,
+                    "can_edit": can,
+                    "can_delete": can,
+                    "can_reply": bool(viewer) and r.parent_id is None and not deleted,
                 }
             )
         return out
@@ -220,7 +306,7 @@ class FormCommentService:
     # Writes
     # ------------------------------------------------------------------ #
 
-    def _insert(self, kind, entity_id, text, *, user_id=None, contact_id=None) -> EntityConversationMessage:
+    def _insert(self, kind, entity_id, text, *, user_id=None, contact_id=None, parent_id=None) -> EntityConversationMessage:
         msg = EntityConversationMessage(
             id=str(uuid.uuid4()),
             entity_type=kind,
@@ -229,6 +315,7 @@ class FormCommentService:
             body_html=text,
             author_user_id=user_id,
             author_contact_id=contact_id,
+            parent_id=parent_id,
         )
         self.db.add(msg)
         self.db.flush()
@@ -289,10 +376,105 @@ class FormCommentService:
                 uploaded_by_contact_id=contact_id,
             )
 
-    def _commit_comment(self, msg: EntityConversationMessage) -> dict[str, Any]:
+    def _commit_comment(self, msg: EntityConversationMessage, viewer: Optional[dict] = None) -> dict[str, Any]:
         self.db.commit()
         self.db.refresh(msg)
-        return self._serialize_many([msg])[0]
+        return self._serialize_many([msg], viewer)[0]
+
+    def _check_parent(self, kind: str, entity_id: str, parent_id: Optional[str]) -> Optional[str]:
+        """A reply must hang off a live top-level comment of this same thread (one level only)."""
+        if not parent_id:
+            return None
+        parent = (
+            self.db.query(EntityConversationMessage)
+            .filter(
+                EntityConversationMessage.id == parent_id,
+                EntityConversationMessage.entity_type == kind,
+                EntityConversationMessage.entity_id == entity_id,
+                EntityConversationMessage.scope == FORM_COMMENT_SCOPE,
+                EntityConversationMessage.parent_id.is_(None),
+                EntityConversationMessage.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if parent is None:
+            raise handle_unprocessable("You can only reply to a comment that is still there.")
+        return parent.id
+
+    def _load_comment(self, kind: str, entity_id: str, comment_id: str) -> EntityConversationMessage:
+        msg = (
+            self.db.query(EntityConversationMessage)
+            .filter(
+                EntityConversationMessage.id == comment_id,
+                EntityConversationMessage.entity_type == kind,
+                EntityConversationMessage.entity_id == entity_id,
+                EntityConversationMessage.scope == FORM_COMMENT_SCOPE,
+            )
+            .first()
+        )
+        if msg is None:
+            raise handle_not_found("Comment", comment_id)
+        return msg
+
+    # ------------------------------------------------------------------ #
+    # Edit / delete (author or admin, enforced here)
+    # ------------------------------------------------------------------ #
+
+    def _require_modifier(self, msg: EntityConversationMessage, viewer: dict) -> None:
+        if not self._can_modify(msg, {**viewer}) and msg.deleted_at is None:
+            raise AppException(status_code=403, message="Only the author can change this comment.", code="FORBIDDEN")
+
+    def edit_comment(self, kind: str, entity_id: str, comment_id: str, viewer: dict, body: Optional[str], *, row=None) -> dict[str, Any]:
+        if row is None:
+            self._load_row(kind, entity_id)
+        msg = self._load_comment(kind, entity_id, comment_id)
+        self._require_modifier(msg, viewer)
+        if msg.deleted_at is not None:
+            raise handle_unprocessable("This comment was deleted.")
+        text = (body or "").strip()
+        if not text:
+            raise handle_unprocessable("A comment can't be empty.")
+        if len(text) > MAX_BODY_CHARS:
+            raise handle_unprocessable(f"Comment is too long (max {MAX_BODY_CHARS} characters).")
+        msg.body_html = text
+        msg.edited_at = datetime.utcnow()
+        return self._commit_comment(msg, viewer)
+
+    def delete_comment(self, kind: str, entity_id: str, comment_id: str, viewer: dict, *, row=None) -> None:
+        """With live replies the row stays as a placeholder; otherwise it goes with its files."""
+        if row is None:
+            self._load_row(kind, entity_id)
+        msg = self._load_comment(kind, entity_id, comment_id)
+        self._require_modifier(msg, viewer)
+        if msg.deleted_at is not None:
+            return
+        from app.services.entity_attachment_service import EntityAttachmentService
+
+        EntityAttachmentService(self.db).delete_links_for_entity(FORM_COMMENT_SCOPE, msg.id)
+        has_replies = (
+            self.db.query(EntityConversationMessage.id).filter(EntityConversationMessage.parent_id == msg.id).first()
+            is not None
+        )
+        if has_replies:
+            msg.body_html = ""
+            msg.deleted_at = datetime.utcnow()
+        else:
+            self.db.delete(msg)
+        self.db.commit()
+
+    def delete_by_id(self, comment_id: str, requested_by_id: Optional[str]) -> None:
+        """The pending-action executor: the comment row says which form it is on."""
+        msg = (
+            self.db.query(EntityConversationMessage)
+            .filter(EntityConversationMessage.id == comment_id, EntityConversationMessage.scope == FORM_COMMENT_SCOPE)
+            .first()
+        )
+        if msg is None:
+            raise handle_not_found("Comment", comment_id)
+        if not requested_by_id:
+            raise AppException(status_code=403, message="Sign in to do that.", code="FORBIDDEN")
+        viewer = self.staff_viewer({"id": requested_by_id})
+        self.delete_comment(msg.entity_type, msg.entity_id, msg.id, viewer, row=True)
 
     def add_staff_comment(
         self,
@@ -301,17 +483,19 @@ class FormCommentService:
         user: Any,
         body: Optional[str],
         files: Optional[Sequence[CommentFile]] = None,
+        parent_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Returns ``{comment, delivery}``; delivery is queued | no_whatsapp | failed."""
         files = list(files or [])
         row = self._load_row(kind, entity_id)
         self._require_open(row)
         text = self._clean(body, files)
+        parent_id = self._check_parent(kind, entity_id, parent_id)
         user_id = str(user.id if hasattr(user, "id") else user["id"])
         try:
-            msg = self._insert(kind, entity_id, text, user_id=user_id)
+            msg = self._insert(kind, entity_id, text, user_id=user_id, parent_id=parent_id)
             self._store_staff_files(kind, entity_id, msg.id, user_id, files)
-            comment = self._commit_comment(msg)
+            comment = self._commit_comment(msg, self.staff_viewer(user))
         except Exception:
             self.db.rollback()
             raise
@@ -327,6 +511,7 @@ class FormCommentService:
         body: Optional[str],
         files: Optional[Sequence[CommentFile]] = None,
         acting_user_id: Optional[str] = None,
+        parent_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Returns ``{comment, delivery}``; delivery is queued | no_recipients | failed.
 
@@ -338,10 +523,11 @@ class FormCommentService:
         row = self._load_row(kind, entity_id, contact_id=contact_id, space_id=space_id)
         self._require_open(row)
         text = self._clean(body, files)
+        parent_id = self._check_parent(kind, entity_id, parent_id)
         try:
-            msg = self._insert(kind, entity_id, text, user_id=acting_user_id, contact_id=contact_id)
+            msg = self._insert(kind, entity_id, text, user_id=acting_user_id, contact_id=contact_id, parent_id=parent_id)
             self._store_contact_files(kind, entity_id, msg.id, contact_id, files, acting_user_id)
-            comment = self._commit_comment(msg)
+            comment = self._commit_comment(msg, {"contact_id": contact_id})
         except Exception:
             self.db.rollback()
             raise

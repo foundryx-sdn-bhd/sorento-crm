@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -78,7 +79,8 @@ def list_form_comments(
     db: Session = Depends(get_db),
 ):
     eid = _authorize(kind, entity_id, current_user, db)
-    return {"items": FormCommentService(db).list_comments(kind, eid)}
+    svc = FormCommentService(db)
+    return {"items": svc.list_comments(kind, eid, svc.staff_viewer(current_user))}
 
 
 @router.post("/{kind}/{entity_id}", status_code=status.HTTP_201_CREATED)
@@ -87,6 +89,7 @@ async def add_form_comment(
     entity_id: str,
     body: Annotated[str, Form()] = "",
     files: Annotated[Optional[list[UploadFile]], File()] = None,
+    parent_id: Annotated[Optional[str], Form()] = None,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -95,4 +98,22 @@ async def add_form_comment(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     uploads = await read_uploads(files)
-    return FormCommentService(db).add_staff_comment(kind, eid, user, body, uploads)
+    return FormCommentService(db).add_staff_comment(kind, eid, user, body, uploads, parent_id=parent_id or None)
+
+
+class EditCommentBody(BaseModel):
+    body: str = ""
+
+
+@router.patch("/{kind}/{entity_id}/comments/{comment_id}")
+def edit_form_comment(
+    kind: str,
+    entity_id: str,
+    comment_id: str,
+    payload: EditCommentBody,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    eid = _authorize(kind, entity_id, current_user, db)
+    svc = FormCommentService(db)
+    return {"comment": svc.edit_comment(kind, eid, comment_id, svc.staff_viewer(current_user), payload.body)}

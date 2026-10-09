@@ -122,6 +122,12 @@ _REQUIRED_PAYLOAD_KEYS: dict = {
 # is not hers - the ownership question itself is `cancel_request`'s own job, not the
 # park gate's).
 _ANY_OF_PERMISSIONS: dict = {
+    "form_comment.delete": (
+        "complaint_management.complaints.view",
+        "procurement.stock_inquiries.view",
+        "procurement.purchase_requests.view",
+        "procurement.sponsorship_forms.view",
+    ),
     "order_inquiry_reserve_request.cancel": (
         "projects.order_inquiries.acknowledge",
         "projects.order_inquiries.reserve",

@@ -1584,8 +1584,8 @@ def portal_list_comments(
     sid = validate_uuid_path(submission_id, resource="Submission")
     svc = FormCommentService(db)
     # 404 unless the contact owns the row (list_comments below has no contact filter)
-    svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
-    return {"items": svc.list_comments(k, sid, _checked=True)}
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    return {"items": svc.list_comments(k, sid, {"contact_id": token.contact_id}, row=row)}
 
 
 @router.post("/submissions/{kind}/{submission_id}/comments", status_code=status.HTTP_201_CREATED)
@@ -1594,6 +1594,7 @@ async def portal_add_comment(
     submission_id: str,
     body: Annotated[str, Form()] = "",
     files: Annotated[Optional[list[UploadFile]], File()] = None,
+    parent_id: Annotated[Optional[str], Form()] = None,
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
@@ -1623,11 +1624,51 @@ async def portal_add_comment(
             )
     uploads = await read_uploads(files)
     out = FormCommentService(db).add_contact_comment(
-        k, sid, token.contact_id, token.space_id, body, uploads, acting_user_id
+        k, sid, token.contact_id, token.space_id, body, uploads, acting_user_id, parent_id or None
     )
     for bucket, ident, _limit in buckets:
         rate_limit.record(bucket, ident, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)
     return out
+
+
+class _EditCommentBody(BaseModel):
+    body: str = ""
+
+
+@router.patch("/submissions/{kind}/{submission_id}/comments/{comment_id}")
+def portal_edit_comment(
+    kind: str,
+    submission_id: str,
+    comment_id: str,
+    payload: _EditCommentBody,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService
+
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    svc = FormCommentService(db)
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    return {"comment": svc.edit_comment(k, sid, comment_id, {"contact_id": token.contact_id}, payload.body, row=row)}
+
+
+@router.delete("/submissions/{kind}/{submission_id}/comments/{comment_id}")
+def portal_delete_comment(
+    kind: str,
+    submission_id: str,
+    comment_id: str,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService
+
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    svc = FormCommentService(db)
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    svc.delete_comment(k, sid, comment_id, {"contact_id": token.contact_id}, row=row)
+    return {"deleted": True}
 
 
 @router.delete("/attachments/{link_id}")

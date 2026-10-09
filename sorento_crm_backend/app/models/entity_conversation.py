@@ -32,6 +32,12 @@ class EntityConversationMessage(Base):
     # A submitter's comment on a form (scope 'form_comment') has no CRM user.
     author_contact_id = Column(Text, ForeignKey("respond_contacts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    # Form comment thread (fcom_0003): one-level reply, edit marker, delete placeholder.
+    parent_id = Column(
+        String(36), ForeignKey("entity_conversation_messages.id", ondelete="CASCADE", name="fk_entity_conversation_messages_parent_id"), nullable=True, index=True
+    )
+    edited_at = Column(DateTime(timezone=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=False), nullable=True)
 
     author = relationship("User", foreign_keys=[author_user_id])
 
