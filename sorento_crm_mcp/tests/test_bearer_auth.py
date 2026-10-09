@@ -100,9 +100,12 @@ def test_server_refuses_to_start_without_a_real_token(token):
 def test_allowed_hosts_rejects_a_foreign_host_header():
     app = create_http_app(_settings(CRM_MCP_ALLOWED_HOSTS="mcp:8765, 127.0.0.1:*"))
     auth = {**MCP_HEADERS, "Authorization": f"Bearer {TOKEN}"}
-    with TestClient(app, base_url="http://evil.example") as c:
-        assert c.post("/mcp", json=LIST_TOOLS, headers=auth).status_code == 421
-    with TestClient(app, base_url="http://mcp:8765") as c:
-        assert c.post("/mcp", json=LIST_TOOLS, headers=auth).status_code == 200
-    with TestClient(app, base_url="http://127.0.0.1:8766") as c:
-        assert c.post("/mcp", json=LIST_TOOLS, headers=auth).status_code == 200
+    with TestClient(app) as c:
+        assert c.post("/mcp", json=LIST_TOOLS, headers={**auth, "Host": "evil.example"}).status_code == 421
+        assert c.post("/mcp", json=LIST_TOOLS, headers={**auth, "Host": "mcp:8765"}).status_code == 200
+        assert c.post("/mcp", json=LIST_TOOLS, headers={**auth, "Host": "127.0.0.1:8766"}).status_code == 200
+
+
+def test_no_allowed_hosts_keeps_host_checks_off(client):
+    auth = {**MCP_HEADERS, "Authorization": f"Bearer {TOKEN}", "Host": "72.62.195.20:8765"}
+    assert client.post("/mcp", json=LIST_TOOLS, headers=auth).status_code == 200

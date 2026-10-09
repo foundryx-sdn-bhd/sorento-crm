@@ -34,6 +34,22 @@ class Settings(BaseSettings):
     mcp_host: str = Field("0.0.0.0", validation_alias=AliasChoices("CRM_MCP_HOST", "mcp_host"))
     mcp_port: int = Field(8765, validation_alias=AliasChoices("CRM_MCP_PORT", "mcp_port"))
     log_level: str = Field("INFO", validation_alias=AliasChoices("CRM_MCP_LOG_LEVEL", "log_level"))
+    mcp_auth_token: str | None = Field(
+        None,
+        validation_alias=AliasChoices("MCP_AUTH_TOKEN", "mcp_auth_token"),
+        description=(
+            "Shared bearer token every MCP caller sends as `Authorization: Bearer <token>`. "
+            "Required to serve HTTP: the server refuses to start without one (32+ chars)."
+        ),
+    )
+    mcp_allowed_hosts: str = Field(
+        "",
+        validation_alias=AliasChoices("CRM_MCP_ALLOWED_HOSTS", "mcp_allowed_hosts"),
+        description=(
+            "Comma-separated Host header values the server answers (`host:*` matches any "
+            "port). Set = DNS-rebinding protection on (other hosts get 421); empty = off."
+        ),
+    )
 
     outline_base_url: str = Field(
         "https://doc.foundryx.my",
