@@ -2031,3 +2031,116 @@ def test_r3_sponsorship_fallback_ignores_other_ids_purchase_request_notification
 
     assert delivery == "no_recipients"
     assert _by_queue(enqueued, "notifications") == []
+
+
+# --------------------------------------------------------------------------- #
+# Round 3 security: recipients must still be able to view the form (S1), and the
+# responder resolves by respond_user_id first (S2).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def view_denied(monkeypatch):
+    """Permission stand-in for the recipient tests: every user holds every view slug except the
+    ids put in the returned set (their role no longer grants it). Admin status is untouched
+    (``get_user_role_slugs``), so an admin id stays allowed whatever is in the set. Tests that
+    install their own patches later simply override this one."""
+    from app.services.user_service import UserPermissionService
+    from app.services.form_comment_service import VIEW_PERMISSION
+
+    denied: set[str] = set()
+    all_slugs = set(VIEW_PERMISSION.values())
+    monkeypatch.setattr(
+        UserPermissionService, "check_user_has_permission", lambda self, uid, slug: str(uid) not in denied
+    )
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_permission_slugs",
+        lambda self, uid: set() if str(uid) in denied else set(all_slugs),
+    )
+    return denied
+
+
+def test_s1_recipients_without_the_kinds_view_slug_are_not_emailed(db, enqueued, view_denied):
+    contact_id = _contact(db)
+    handler = _user(db, "Handler")
+    lost = _user(db, "LostAccess")
+    kept = _user(db, "Kept")
+    responder = _user(db, "Responder", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _with_reply(db, inquiry, responder)
+    _tracker(db, "stock_inquiry", inquiry.id, handler)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, lost, "a")
+    svc.add_staff_comment("stock_inquiry", inquiry.id, kept, "b")
+    view_denied.update({handler.id, lost.id, responder.id})
+    enqueued.clear()
+
+    _, delivery = _unpack(svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi"))
+
+    assert delivery == "queued"
+    assert _mail_sets(db) == [{kept.email}]
+
+
+def test_s1_an_admin_without_the_slug_is_still_emailed(db, enqueued, view_denied, monkeypatch):
+    contact_id = _contact(db)
+    admin = _user(db, "AdminCommenter")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    svc = _svc(db)
+    svc.add_staff_comment("stock_inquiry", inquiry.id, admin, "a")
+    view_denied.add(admin.id)
+    _roles(monkeypatch, admins=[admin.id])
+    enqueued.clear()
+
+    svc.add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+
+    assert _mail_sets(db) == [{admin.email}]
+
+
+def test_s1_the_fallback_skips_notified_users_without_the_slug(db, enqueued, view_denied):
+    contact_id = _contact(db)
+    gone, kept = _user(db, "Gone"), _user(db, "Kept")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _prior_notification(db, "stock_inquiry", inquiry.id, gone)
+    _prior_notification(db, "stock_inquiry", inquiry.id, kept)
+    view_denied.add(gone.id)
+
+    _, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi"))
+
+    assert delivery == "queued"
+    assert _mail_sets(db) == [{kept.email}]
+
+
+def test_s1_a_fallback_of_only_unauthorised_users_is_no_recipients_with_a_warning(db, enqueued, view_denied, caplog):
+    import logging
+
+    contact_id = _contact(db)
+    gone = _user(db, "Gone")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    _prior_notification(db, "stock_inquiry", inquiry.id, gone)
+    view_denied.add(gone.id)
+
+    with caplog.at_level(logging.DEBUG):
+        _, delivery = _unpack(_svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi"))
+
+    assert delivery == "no_recipients"
+    assert _by_queue(enqueued, "notifications") == []
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and str(inquiry.id) in r.getMessage()]
+
+
+def test_s2_responder_matches_respond_user_id_before_a_users_id_collision(db, enqueued, view_denied):
+    contact_id = _contact(db)
+    a = _user(db, "ByRespondId", responder_id=f"resp-{uuid.uuid4().hex[:8]}")
+    b = _user(db, "ById")
+    inquiry = _inquiry(db, contact_id=contact_id)
+    # B's users.id equals the stored responder value, A's respond_user_id does too: A wins.
+    a.respond_user_id = b.id
+    db.commit()
+    inquiry.purchasing_response = "brand?"
+    inquiry.last_responded_by = b.id
+    inquiry.last_responded_at = datetime(2026, 10, 2, 8, 30, 0)
+    db.commit()
+
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+
+    assert _mail_sets(db) == [{a.email}]
