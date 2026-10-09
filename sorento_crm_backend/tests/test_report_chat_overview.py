@@ -19,8 +19,8 @@ to change the tests):
 * item dataset: dimension `product` (its label is the product code), measures `named` and
   `shown`; it also carries `outcome`, `week`, `asks`, `failed` because the engine validates
   the default view (outcome x week, asks + failed) against EVERY dataset of a report.
-* the pivot formats every measure through `_money`, so a count reads "3.00"; the tests
-  compare with Decimal.
+* an integer measure (asks, failed, named, shown) serializes as a whole-number string
+  ("3", no ".00"); the tests compare with Decimal and one test pins the string shape.
 * noise is excluded by default (no parameter is pinned for opting in).
 """
 from __future__ import annotations
@@ -513,12 +513,22 @@ def test_run_returns_the_pivot_to_a_holder(api, db):
     assert _dec(payload["layouts"]["summary"]["grand_total"]["failed"]) == 3
 
 
-def test_the_pivot_reads_whole_units_so_counts_do_not_print_as_money(api):
-    client, _allow = api
-    body = {"params": {"period": SEPTEMBER}, "view": None}
-    resp = client.post(f"/api/v1/reports/{KEY}/run", json=body)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["layouts"]["summary"]["whole_units"] is True
+def test_integer_measures_read_whole_in_the_summary(db):
+    _seed_overview(db)
+
+    summary = _run(db).layouts.summary
+
+    values = [summary.grand_total["asks"], summary.grand_total["failed"]]
+    for bucket in (summary.row_totals, summary.col_totals):
+        for totals in bucket.values():
+            values += [v for k, v in totals.items() if k in ("asks", "failed")]
+    for by_col in summary.cells.values():
+        for cell in by_col.values():
+            values += [v for k, v in cell.items() if k in ("asks", "failed")]
+    assert values
+    assert summary.grand_total["asks"] == "11"
+    for value in values:
+        assert "." not in value, value
 
 
 # --------------------------------------------------------------------------- summary choices per dataset
