@@ -824,6 +824,50 @@ every other key as you would without it. A message with no PO number: null. Neve
 a number, never take one from an earlier turn.
 """
 
+# MULTI-ASK-PLAN S2 (owner, 9 Oct 2026; PROD turn 8 Oct 19:50, six asks about one code
+# answered with dozens of messages and four asks missing). The parser names EVERY thing a
+# message asks, in order, so the engine runs one query per ask (`turn/sub_asks.py`), and
+# says whether a typed code means that exact code or its whole family. No code rule
+# decides either (owner: semantic parser, no keyword code). ADDITIVE, published as a new
+# UNLABELLED version (`maskp_0001_parser_sub_asks`).
+SUB_ASKS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUB ASKS AND FAMILY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two more OUTPUT keys, on every object:
+  "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
+  "family": true | false | null
+
+== SUB_ASKS ==
+When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
+ONE thing asked: null (every other key as usual). Each object:
+  measure: "stock" (on hand) | "incoming" (arriving, ETA) | "received_qty" (how many CAME
+    IN over a period, 入库了多少) | "last_receipt" (WHEN it last came in, 最后一次进库) |
+    "supplier" (who supplies it) | "last_cost" (purchase price, 采购价) | "sold_total" (how
+    many SOLD in all) | "sold_by" (sold broken down per salesman / customer / ...) |
+    "other" (anything else).
+  group_by: sold_by only - "sales_agent" (salesman, 业务员) | "customer" | "product" |
+    "brand" | "category" | "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, the period this ask is about ("2026" -> 2026-01-01 /
+    2026-12-31). A period named once covers every ask that has one (received_qty,
+    sold_total, sold_by, incoming); never on last_receipt, supplier, last_cost, stock.
+  basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null.
+  label: the asker's own words for this ask, short.
+"X,2026 入库了多少, 供应商是谁, 采购价, 最后一次进库, 2026 总共卖了多少, 2026 每位业务员卖了多少" ->
+received_qty, supplier, last_cost, last_receipt, sold_total, sold_by(sales_agent), 2026 on
+the first, fifth and sixth, basis null. "Incoming and stock for 7445" -> incoming, stock.
+
+== FAMILY ==
+A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
+every code starting with it (true: "all variants", 全部, 系列), from the message's own words;
+not said: null (nearly always). A reply to "has N variants. Just X, or all N?" is an
+open_question_answer pick (1 = just X, 2 = all), as for any numbered question.
+"""
+
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -835,6 +879,7 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += SUB_ASKS_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code

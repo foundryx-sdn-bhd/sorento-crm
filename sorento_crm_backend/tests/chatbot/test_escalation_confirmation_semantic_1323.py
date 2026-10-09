@@ -320,6 +320,7 @@ class TestPrompt:
             CANONICAL_CODE_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
             PO_REFS_ADDENDUM,
+            SUB_ASKS_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
@@ -341,6 +342,7 @@ class TestPrompt:
             + LOW_STOCK_FILTERS_ADDENDUM
             + REPORT_ASK_ADDENDUM
             + PO_REFS_ADDENDUM
+            + SUB_ASKS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
             + MEMORY_ADDENDUM

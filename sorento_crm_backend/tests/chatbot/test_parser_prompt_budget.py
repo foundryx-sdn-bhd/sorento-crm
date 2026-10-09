@@ -179,7 +179,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # and the unsure reply's count exception: 50,863 (+100), so CEILING is 50,867 (+4).
 # Crew live-pass round (same PR): a different ranked noun is never a refine, "global" only when
 # said, doubt is "unsure": 51,040 (+177), so CEILING is 51,044 (+4).
-CEILING = 51_044
+# MULTI-ASK-PLAN S2 (PR #1542, owner card 9 Oct 2026): SUB_ASKS_ADDENDUM (the `sub_asks` and
+# `family` keys, one entry per thing a message asks) between PO_REFS_ADDENDUM and
+# CANONICAL_CODE_ADDENDUM: 51,809 est. tokens without MEMORY_ADDENDUM (+769), so CEILING is
+# 51,813 (+4). Nothing else grew.
+CEILING = 51_813
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is
