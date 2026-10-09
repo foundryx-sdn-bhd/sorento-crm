@@ -144,6 +144,7 @@ def test_an_interrupted_rebuild_keeps_the_old_fact_rows_and_their_episodes(
         _tamper(session_factory, tid, episode_id=episode_id)
 
     facts = facts_mod()
+    monkeypatch.setattr(facts, "_SWEEP_CHUNK", 1)
     real_write = facts._write
     calls = {"n": 0}
 

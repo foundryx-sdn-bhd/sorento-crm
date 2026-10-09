@@ -324,6 +324,24 @@ def test_flatten_intent_is_the_verdict_intent_hint():
     assert outcome_mod().flatten(turn_dict(apply_event()))["intent"] is None
 
 
+def test_flatten_a_null_string_verdict_hint_stores_no_domain_or_intent():
+    for hint in ("null", "", " NULL "):
+        flat = outcome_mod().flatten(
+            turn_dict(apply_event(domain_hint=hint, intent_hint=hint, domains=[]))
+        )
+        assert flat["domain"] is None, repr(hint)
+        assert flat["intent"] is None, repr(hint)
+
+
+def test_flatten_a_null_string_understood_fact_stores_no_domain_or_intent():
+    for value in ("null", "", " NULL "):
+        flat = outcome_mod().flatten(
+            turn_dict(_understood(domain=value, intent=value), branch_kind="business_query")
+        )
+        assert flat["domain"] is None, repr(value)
+        assert flat["intent"] is None, repr(value)
+
+
 def test_flatten_tools_are_the_distinct_tool_names_in_call_order():
     turn = turn_dict(
         event("tool", name="crm_stock", args={}, envelope={}, ms=3),
