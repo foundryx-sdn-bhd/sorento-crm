@@ -36,6 +36,7 @@ import { formatDate, formatCurrency } from '@/lib/helpers';
 import { useCurrencyFormat } from '@/hooks/useCurrencyFormat';
 import PurchaseRequestDeleteDialog from './purchase-request-delete-dialog';
 import AuditTrail from '@/components/audit/AuditTrail';
+import { FormComments } from '@/components/common/comments/FormComments';
 import { purchaseRequestsPagerQuery } from '../hooks/usePurchaseRequests';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
@@ -1553,6 +1554,10 @@ export default function PurchaseRequestDetail({
 
         {/* Direct child of the 2-col grid - without the span it renders half-width while
             every sibling block above it is full-width. */}
+        <div className="lg:col-span-2 w-full">
+          <FormComments kind={requestTypeForNav} entityId={requestId} readOnly={isVoided} />
+        </div>
+
         <div className="lg:col-span-2 w-full">
           <AuditTrail entityType="purchase_request" entityId={requestId} title="Audit Trail" />
         </div>

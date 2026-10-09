@@ -82,6 +82,7 @@ import { complaintsPagerQuery } from '../hooks/useComplaints';
 import ComplaintManualAttachmentsSection from './ComplaintManualAttachmentsSection';
 import ComplaintConversationPanel from './ComplaintConversationPanel';
 import AuditTrail from '@/components/audit/AuditTrail';
+import { FormComments } from '@/components/common/comments/FormComments';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
 import { EntityDownloadsButton } from '@/components/my-downloads/EntityDownloadsButton';
@@ -1374,6 +1375,8 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         complaintId={complaintId}
         attachments={complaint.attachments ?? []}
       />
+
+      <FormComments kind="complaint" entityId={complaintId} readOnly={isVoided} />
 
       <AuditTrail entityType="complaint" entityId={complaintId} title="Audit Trail" />
 

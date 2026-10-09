@@ -71,6 +71,7 @@ import { formatDate } from '@/lib/helpers';
 import { useHasPermission } from '@/hooks/usePermissions';
 import StockInquiryDeleteDialog from './stock-inquiry-delete-dialog';
 import AuditTrail from '@/components/audit/AuditTrail';
+import { FormComments } from '@/components/common/comments/FormComments';
 import { stockInquiriesPagerQuery } from '../hooks/useStockInquiries';
 import { DetailActionsMenu } from '@/components/common/DetailActionsMenu';
 import DetailActions from '@/components/common/DetailActions';
@@ -1269,6 +1270,8 @@ export default function StockInquiryDetail({
           this stack: it is reference material, and burying it under the whole
           form meant scrolling past everything to read it. The query stays here
           because the revise banner above quotes the newest entry. */}
+
+      <FormComments kind="stock_inquiry" entityId={inquiryId} readOnly={isVoided} />
 
       <AuditTrail entityType="stock_inquiry" entityId={inquiryId} title="Audit Trail" />
     </div>
