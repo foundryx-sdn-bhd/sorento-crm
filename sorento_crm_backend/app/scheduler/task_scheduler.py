@@ -560,6 +560,24 @@ def _ai_trace_sweep_tick():
         logger.error("AI trace sweep tick failed: %s", e, exc_info=True)
 
 
+def _chat_facts_sweep_tick():
+    """APScheduler tick: backfill chat analytics facts the live hook missed (CA-1).
+    The hook writes a fact as each turn closes and never fails a turn, so a fault leaves a
+    gap; this refills the last three days (idempotent, so overlap costs nothing). Owns its
+    own DB session; best-effort and never raises."""
+    try:
+        from datetime import timezone
+
+        from app.tasks.chat_turns import sweep_chat_facts
+
+        with scheduler_session("chat_facts_sweep") as db:
+            written = sweep_chat_facts(db, since=datetime.now(timezone.utc) - timedelta(days=3))
+        if written:
+            logger.info("Chat facts sweep: wrote %s missing rows", written)
+    except Exception as e:
+        logger.error("Chat facts sweep tick failed: %s", e, exc_info=True)
+
+
 def _spo_container_relink_sweep_tick():
     """APScheduler tick: relink SPO allocations whose shipment arrived after
     they did (S5, review re-check, 2026-09-06). Owns its own DB session;
@@ -748,6 +766,16 @@ def start_scheduler():
         trigger=IntervalTrigger(hours=24),
         id="ai_trace_sweep",
         name="AI assistant trace retention sweep",
+        replace_existing=True,
+    )
+
+    # Chat facts sweep (CA-1): daily. The close hook writes each turn's fact and never fails
+    # a turn, so a fault leaves a gap; the last three days are re-swept to refill it.
+    scheduler.add_job(
+        _chat_facts_sweep_tick,
+        trigger=IntervalTrigger(hours=24),
+        id="chat_facts_sweep",
+        name="Chat analytics facts sweep",
         replace_existing=True,
     )
 
