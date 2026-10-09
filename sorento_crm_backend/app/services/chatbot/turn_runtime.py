@@ -658,13 +658,13 @@ def promo_subject_ask_back(
     }
     if db is not None:
         # AC-30/31: a brand word the parser could not place on the Known brands list (exact
-        # name or code only) asks back, echoed as typed (AC-16); it never widens to every brand.
+        # name or code only), confident or not, asks back, echoed as typed (AC-16); it never
+        # widens to every brand.
         live = active_brands(db)
         unplaced = [
             jsc.nullish_str(e.get("raw")).strip() or brand_identity_word(e)
             for e in own["entities"]
             if jsc.nullish_str(e.get("hint")).strip().lower() == "brand"
-            and e.get("confident") is not False
             and brand_identity_word(e)
             and not exact_brand_rows(live, brand_identity_word(e))
         ]
@@ -706,11 +706,26 @@ def promotion_kind_rows(db: Session) -> list[dict[str, Any]]:
 
 
 def product_type_names(db: Session) -> list[str]:
-    """PROMO-SUBJECT-FILTER round 3 (AC-29): the class names the parser's `Product types:` line
-    lists, the same list `grounding.names_a_class_label` checks a name against."""
+    """PROMO-SUBJECT-FILTER round 3 (AC-29): the names the parser's `Product types:` line lists:
+    the `product_type` registry values as a customer reads them, then the class names
+    (`grounding.class_label_names`), one entry per name whatever its case."""
     from app.services.chatbot.head import grounding
+    from app.services.product_spec_registry import active_registry, display_spec_value, merged_allowed_values
 
-    return sorted(set(grounding.class_label_names(db)))
+    names: list[str] = []
+    for row in active_registry(db):
+        if row.spec_key == "product_type":
+            labels = dict(getattr(row, "value_labels", None) or {})
+            names += sorted(display_spec_value(v, labels) for v in merged_allowed_values(row))
+    names += sorted(set(grounding.class_label_names(db)))
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        key = " ".join(str(name or "").casefold().split())
+        if key and key not in seen:
+            seen.add(key)
+            out.append(name)
+    return out
 
 
 _BRAND_WORD_RE = re.compile(r"[0-9a-z]+")

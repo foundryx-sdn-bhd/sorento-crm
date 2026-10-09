@@ -230,12 +230,15 @@ def tier_gate(
         ]
     else:
         seen: list[str] = []
+        # PROMO-SUBJECT-FILTER AC-30: on a promotion ask the word must BE the brand (exact);
+        # the substring scan stays for the other domains.
+        promo_ask = jsc.js_string(parser.get("domain_hint") or "").strip().lower() == "promotion"
         for e in jsc.array(parser.get("entities")):
             if jsc.js_string(jsc.get(e, "hint") or "").lower() != "brand":
                 continue
             raw = jsc.get(e, "canonical_code") or jsc.get(e, "raw") or ""
             haystack = jsc.js_string("" if raw is None else raw).lower()
-            found = next((v for v in BRANDS if v in haystack), None)
+            found = next((v for v in BRANDS if (v == haystack.strip() if promo_ask else v in haystack)), None)
             if found and found not in seen:
                 seen.append(found)
         query_brands = seen
