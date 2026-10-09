@@ -246,7 +246,9 @@ def test_the_draw_favours_the_lowest_confidence_for_half_the_rest(client, taxono
     confidences = sorted(r["confidence"] for r in _rows(client))
     assert len(drawn_ids) == 300
     assert min(confidences) == pytest.approx(0.01), "the lowest-confidence ask is always drawn"
-    assert confidences[149] < 0.6, "half the draw comes from the low end of the confidence range"
+    # 121 seeded asks sit below 0.60, so a lowest-first half reaches 0.62 at index 149; a random
+    # draw of 300 from 451 would sit near the 0.70 median.
+    assert confidences[149] < 0.65, "half the draw comes from the low end of the confidence range"
     assert low  # the seeded fact
 
 
