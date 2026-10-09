@@ -21,7 +21,7 @@ nullable additions. Additive and idempotent: `IF NOT EXISTS` throughout and
 `ON CONFLICT DO NOTHING` on the seed.
 
 Revision ID: chat_topics_0001_taxonomy
-Revises: fcom_0003_conv_thread
+Revises: pk_0001_parser_promo_kind
 """
 import sqlalchemy as sa
 from alembic import op
@@ -29,7 +29,7 @@ from sqlalchemy.dialects import postgresql
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "chat_topics_0001_taxonomy"
-down_revision = "fcom_0003_conv_thread"
+down_revision = "pk_0001_parser_promo_kind"
 branch_labels = None
 depends_on = None
 
