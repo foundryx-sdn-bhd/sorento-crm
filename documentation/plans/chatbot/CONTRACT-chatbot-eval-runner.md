@@ -117,3 +117,10 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   Grade: tool errors -> `error`; blank or delegated reply -> `correct`; any non-blank reply -> `wrong`,
   reason `reply_when_silent_expected`. For every other outcome a blank or delegated reply stays `error`.
   `load_cases` accepts `silent`.
+
+## Round 3 (prompt pin, 10 Oct)
+- `HttpTurnEngine(..., prompt_version=None)`; when set, every envelope carries
+  `prompt_overrides: {"chatbot_semantic_parser": str(prompt_version)}` (the dry-run-only harness key,
+  `app/services/chatbot/engine.py:1218-1240`, same as `scripts/chatbot_console_check.py:201-203`).
+  CLI `--prompt-version`. The report records `prompt_version` (pinned value or "label") and `engine`.
+- Report also records `run_id`, `split`, `variants`, `cases`, `started_at` so a baseline JSON says what it measured.
