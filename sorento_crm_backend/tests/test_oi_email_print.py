@@ -567,8 +567,9 @@ def test_line_table_columns_share_the_width_in_every_variant():
 
 
 def test_order_table_columns_have_fixed_shares():
-    """AC-P14 (review nit): the order table above carries 18/16/40/26, attribute and style
-    alike, so the two tables read as one balanced block."""
+    """AC-P15 (owner retest 9 Oct, SO421287: PROJECT wrapped to 4 lines while S/O NO and SO
+    DATE sat in empty width): the order table is 13/13/32/42, attribute and style alike.
+    S/O NO and SO DATE never wrap; PROJECT, the longest free text, gets the most room."""
     orders = [{"so_number": "SO421287", "so_date": "02/10/2026", "customer": "C", "project": "P"}]
     out = _render(_ctx(orders, [_line("SO421287", "KL-WH", "X", "1", "06/11/2026", "ORDER")]))
     table = re.findall(r"<table.*?</table>", _authored(out["body_html"]), re.S)[0]
@@ -578,5 +579,5 @@ def test_order_table_columns_have_fixed_shares():
         styles = re.findall(r"[;\"]width:(\d+)%", tag)
         assert attr and styles == [attr.group(1)], tag
         got.append((text.strip(), int(attr.group(1))))
-    assert got == [("S/O NO", 18), ("SO DATE", 16), ("CUSTOMER", 40), ("PROJECT", 26)], got
+    assert got == [("S/O NO", 13), ("SO DATE", 13), ("CUSTOMER", 32), ("PROJECT", 42)], got
 
