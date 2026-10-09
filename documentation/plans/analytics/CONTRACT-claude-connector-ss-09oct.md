@@ -89,6 +89,8 @@ HTTP status + `{"error": {"code": "<code>", "message": "<plain words>"}}`.
 | 401 | `invalid_signature`, `token_expired`, `replayed`, `wrong_audience` | treat as SS bug/config; retry once with a fresh token, then alert |
 | 403 | `connector_access_removed`, `user_inactive`, `reconsent_required` | revoke the grant; Claude's next call gets 401 + re-sign-in |
 | 403 | `chat_history_not_permitted`, `route_not_allowed`, `permission_required` | tool error to Claude; grant stays |
+| 403 | `param_not_allowed` (section 9.2) | tool error to Claude; grant stays |
+| 413 | `payload_too_large` (body over 1 MB, section 9.4) | tool error to Claude; grant stays |
 | 404 / 422 | `not_found`, `validation_error` | tool error |
 | 429 / 5xx | `rate_limited`, `upstream_error` | tool error, retry later |
 Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allowed`, `bad_request`.
@@ -144,5 +146,5 @@ Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allo
    403 `param_not_allowed`. `claims.tool` must name the tool whose manifest (method, path_template) is
    being called, else 403 `route_not_allowed` (the manifest route itself is called with `tool=""`).
 3. The manifest no longer mentions `resolve_signed_urls`, `contact_id` or `space_id`.
-4. A request body over 1 MB is refused 413 before parsing; the token is verified before the body is read.
+4. A request body over 1 MB is refused 413 `payload_too_large` before parsing; the token is verified before the body is read.
 5. sorento's audit row records the HTTP status the caller actually received.
