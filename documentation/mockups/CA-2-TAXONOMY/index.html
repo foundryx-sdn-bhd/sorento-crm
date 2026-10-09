@@ -92,7 +92,8 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 <body>
 <div class="wrap">
 <div class="intro">
-<b>CA-2 mockup, for the owner's review.</b> Two screens: <b>Top asks</b> (a report on the existing Reports screen, nothing new to build in the page) and <b>Topic audit</b> (a small new review screen). Every number and every message below is <b>invented</b> and masked (<code>&lt;product&gt;</code>, <code>&lt;dealer&gt;</code>). Purple tags name the component each part reuses; the table at the bottom maps them all.
+<b>CA-2 mockup v1, for the owner's review.</b> Two screens: <b>Top asks</b> (a report on the existing Reports screen) and <b>Topic audit</b> (a small new review screen).
+<b>Real data:</b> 3,809 live turns, 24 Sep to 5 Oct 2026 (6 Oct prod copy). Subject counts and month totals are measured. Leaf counts and the labeller's picks do not exist yet (nothing is labelled before this lane ships), so the product table counts the 60-ask sample and the audit rows show real asks with the leaf the labeller <i>would</i> write. Customers are masked (<code>&lt;dealer&gt;</code>, C01..); product codes are catalogue codes. Purple tags name the reused component; the table at the bottom maps them all.
 </div>
 <div class="switch" role="group" aria-label="Screen">
 <button type="button" data-s="top" aria-pressed="true">Top asks: by topic</button>
@@ -110,40 +111,47 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 <div class="head"><h1>Top asks <span class="tag">PageHeader</span></h1>
 <div class="actions"><span class="btn">Views: Default <span class="tag">ReportViewsMenu</span></span><span class="btn">Configure summary</span><span class="btn pri">Export to Excel</span></div></div>
 <div class="filters">
-<span class="sel"><small>Period</small> 5 Sep 2026 to 9 Oct 2026</span>
+<span class="sel"><small>Period</small> 24 Sep 2026 to 5 Oct 2026</span>
 <span class="sel"><small>Contact type</small> Dealer, Not allowed, Unknown</span>
 <span class="sel"><small>Outcome</small> All but noise</span>
 <span class="sel"><small>Subject</small> All</span>
 <span class="sel"><small>Count by</small> <span class="seg"><span class="on">Topics</span><span>Products</span></span></span>
 <span class="tag">ReportFilterBar</span>
 </div>
-<div class="note">Topics labelled: 97% of asks (taxonomy v1, nightly). From bot traces, 5 Sep 2026 on. <span class="tag">result.note</span></div>
+<div class="note">Topics labelled: 0% of asks until the first nightly run (taxonomy v1). From bot traces, 5 Sep 2026 on. <span class="tag">result.note</span></div>
 <div class="tabs"><span class="on">Summary</span><span>Asks</span></div>
-<div class="card"><h3>Top topics by month <span class="tag">ReportPivotChart (bar)</span></h3>
+<div class="card"><h3>Top subjects (topic leaves appear after the first run) <span class="tag">ReportPivotChart (bar)</span></h3>
 <div class="bars">
-<div class="bar"><span class="lbl">Stock: availability</span><span class="stack"><i style="width:34%;background:var(--s1)"></i><i style="width:41%;background:var(--s2)"></i></span></div>
-<div class="bar"><span class="lbl">Incoming: product ETA</span><span class="stack"><i style="width:15%;background:var(--s1)"></i><i style="width:18%;background:var(--s2)"></i></span></div>
-<div class="bar"><span class="lbl">Orders: delivery status</span><span class="stack"><i style="width:5%;background:var(--s1)"></i><i style="width:6%;background:var(--s2)"></i></span></div>
-<div class="bar"><span class="lbl">Product files: photo or drawing</span><span class="stack"><i style="width:3%;background:var(--s1)"></i><i style="width:4%;background:var(--s2)"></i></span></div>
-<div class="bar"><span class="lbl">Promotions: product promotion</span><span class="stack"><i style="width:2.5%;background:var(--s1)"></i><i style="width:3%;background:var(--s2)"></i></span></div>
-<div class="bar"><span class="lbl">Orders: sales figures</span><span class="stack"><i style="width:1.5%;background:var(--s1)"></i><i style="width:2%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Stock <small style="color:var(--muted-fg)">1,758</small></span><span class="stack"><i style="width:100.0%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Incoming stock <small style="color:var(--muted-fg)">737</small></span><span class="stack"><i style="width:41.9%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Orders <small style="color:var(--muted-fg)">380</small></span><span class="stack"><i style="width:21.6%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">General (no subject) <small style="color:var(--muted-fg)">283</small></span><span class="stack"><i style="width:16.1%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Product files <small style="color:var(--muted-fg)">224</small></span><span class="stack"><i style="width:12.7%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Promotions <small style="color:var(--muted-fg)">170</small></span><span class="stack"><i style="width:9.7%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Purchase cost <small style="color:var(--muted-fg)">82</small></span><span class="stack"><i style="width:4.7%;background:var(--s1)"></i></span></div>
+<div class="bar"><span class="lbl">Product information <small style="color:var(--muted-fg)">80</small></span><span class="stack"><i style="width:4.6%;background:var(--s1)"></i></span></div>
 </div>
-<div class="legend"><span><i style="background:var(--s1)"></i>Sep'26</span><span><i style="background:var(--s2)"></i>Oct'26</span></div>
+<div class="legend"><span><i style="background:var(--s1)"></i>24 Sep to 5 Oct (one series: the month split per subject is in the data request)</span></div>
 </div>
-<div class="card"><h3>Topic by month <span class="tag">ReportPivotTable</span></h3>
+<div class="card"><h3>Subject by month ("-" = month split not in the extract yet) <span class="tag">ReportPivotTable</span></h3>
 <div class="scroll"><table class="tbl" style="min-width:520px">
 <colgroup><col style="width:46%"><col><col><col></colgroup>
 <thead><tr><th>Topic</th><th class="n">Sep'26</th><th class="n">Oct'26</th><th class="n">Total</th></tr></thead>
 <tbody>
-<tr><td>Stock: availability</td><td class="n">1,240</td><td class="n">1,512</td><td class="n">2,752</td></tr>
-<tr><td>Incoming: product ETA</td><td class="n">548</td><td class="n">661</td><td class="n">1,209</td></tr>
-<tr><td>Orders: delivery status</td><td class="n">182</td><td class="n">214</td><td class="n">396</td></tr>
-<tr><td>Product files: photo or drawing</td><td class="n">121</td><td class="n">150</td><td class="n">271</td></tr>
-<tr><td>Promotions: product promotion</td><td class="n">95</td><td class="n">108</td><td class="n">203</td></tr>
-<tr><td>Orders: sales figures</td><td class="n">60</td><td class="n">74</td><td class="n">134</td></tr>
-<tr><td>Stock: quantity check</td><td class="n">41</td><td class="n">52</td><td class="n">93</td></tr>
-<tr><td>(not labelled yet)</td><td class="n">0</td><td class="n">88</td><td class="n">88</td></tr>
-<tr class="tot"><td>Total asks</td><td class="n">2,412</td><td class="n">2,948</td><td class="n">5,360</td></tr>
+<tr><td>Stock</td><td class="n">-</td><td class="n">-</td><td class="n">1,758</td></tr>
+<tr><td>Incoming stock</td><td class="n">-</td><td class="n">-</td><td class="n">737</td></tr>
+<tr><td>Orders</td><td class="n">-</td><td class="n">-</td><td class="n">380</td></tr>
+<tr><td>General (no subject)</td><td class="n">-</td><td class="n">-</td><td class="n">283</td></tr>
+<tr><td>Product files</td><td class="n">-</td><td class="n">-</td><td class="n">224</td></tr>
+<tr><td>Promotions</td><td class="n">-</td><td class="n">-</td><td class="n">170</td></tr>
+<tr><td>Purchase cost</td><td class="n">-</td><td class="n">-</td><td class="n">82</td></tr>
+<tr><td>Product information</td><td class="n">-</td><td class="n">-</td><td class="n">80</td></tr>
+<tr><td>Portal link</td><td class="n">-</td><td class="n">-</td><td class="n">25</td></tr>
+<tr><td>Resources</td><td class="n">-</td><td class="n">-</td><td class="n">21</td></tr>
+<tr><td>Ideas</td><td class="n">-</td><td class="n">-</td><td class="n">19</td></tr>
+<tr><td>Forms</td><td class="n">-</td><td class="n">-</td><td class="n">15</td></tr>
+<tr><td>Purchase orders</td><td class="n">-</td><td class="n">-</td><td class="n">15</td></tr>
+<tr class="tot"><td>Total asks</td><td class="n">2,055</td><td class="n">1,754</td><td class="n">3,809</td></tr>
 </tbody></table></div>
 </div>
 </div></div>
@@ -157,7 +165,7 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 <div class="crumbs">System Management / Top Asks</div>
 <div class="head"><h1>Top asks</h1><div class="actions"><span class="btn">Views: Default</span><span class="btn">Configure summary</span><span class="btn pri">Export to Excel</span></div></div>
 <div class="filters">
-<span class="sel"><small>Period</small> 5 Sep 2026 to 9 Oct 2026</span>
+<span class="sel"><small>Period</small> 24 Sep 2026 to 5 Oct 2026</span>
 <span class="sel"><small>Contact type</small> Dealer, Not allowed, Unknown</span>
 <span class="sel"><small>Subject</small> Stock</span>
 <span class="sel"><small>Count by</small> <span class="seg"><span>Topics</span><span class="on">Products</span></span></span>
@@ -166,16 +174,19 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 </div>
 <div class="note">Asked about = the customer named it, or the bot looked it up for them. Shown = the bot listed it in a reply. <span class="tag">result.note</span></div>
 <div class="tabs"><span class="on">Summary</span><span>Asks</span></div>
-<div class="card"><h3>Product by month</h3>
+<div class="card"><h3>Product by month (here: count in the 60-ask sample; the real table counts every ask)</h3>
 <div class="scroll"><table class="tbl" style="min-width:520px">
 <colgroup><col style="width:46%"><col><col><col></colgroup>
-<thead><tr><th>Product</th><th class="n">Sep'26</th><th class="n">Oct'26</th><th class="n">Total</th></tr></thead>
+<thead><tr><th>Product</th><th class="n">Sep'26</th><th class="n">Oct'26</th><th class="n">In sample</th></tr></thead>
 <tbody>
-<tr><td>&lt;product A&gt;</td><td class="n">62</td><td class="n">81</td><td class="n">143</td></tr>
-<tr><td>&lt;product B&gt;</td><td class="n">48</td><td class="n">55</td><td class="n">103</td></tr>
-<tr><td>&lt;product C&gt;</td><td class="n">31</td><td class="n">44</td><td class="n">75</td></tr>
-<tr><td>&lt;product D&gt;</td><td class="n">29</td><td class="n">30</td><td class="n">59</td></tr>
-<tr class="tot"><td>Total asks naming a product</td><td class="n">1,904</td><td class="n">2,316</td><td class="n">4,220</td></tr>
+<tr><td>SRTWC286 (and -SH-NEW)</td><td class="n">-</td><td class="n">-</td><td class="n">3</td></tr>
+<tr><td>SRTWT2634-RG</td><td class="n">-</td><td class="n">-</td><td class="n">2</td></tr>
+<tr><td>MWC7625-SH-S10</td><td class="n">-</td><td class="n">-</td><td class="n">2</td></tr>
+<tr><td>SRTKT9610-GM</td><td class="n">-</td><td class="n">-</td><td class="n">1</td></tr>
+<tr><td>SRTKS8151-BL</td><td class="n">-</td><td class="n">-</td><td class="n">1</td></tr>
+<tr><td>CGB9032</td><td class="n">-</td><td class="n">-</td><td class="n">1</td></tr>
+<tr><td>Srtub904</td><td class="n">-</td><td class="n">-</td><td class="n">1</td></tr>
+<tr class="tot"><td>Sample asks naming a product</td><td class="n">-</td><td class="n">-</td><td class="n">31 of 60</td></tr>
 </tbody></table></div>
 </div>
 <div class="card"><h3>Asks <span class="tag">DataGrid (detail tab), fixed layout, resizable</span></h3>
@@ -183,9 +194,12 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 <colgroup><col style="width:110px"><col style="width:120px"><col style="width:170px"><col style="width:80px"><col style="width:130px"><col style="width:150px"></colgroup>
 <thead><tr><th>Asked on</th><th>Subject</th><th>Topic</th><th>Language</th><th>Outcome</th><th>Customer</th></tr></thead>
 <tbody>
-<tr><td>9 Oct 2026</td><td>Stock</td><td>Availability</td><td>ms</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt;</td></tr>
-<tr><td>9 Oct 2026</td><td>Stock</td><td>Quantity check</td><td>zh</td><td><span class="pill warn">Answered, nothing found</span></td><td>&lt;dealer&gt;</td></tr>
-<tr><td>8 Oct 2026</td><td>Stock</td><td>Availability</td><td>mixed</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt;</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Availability</td><td>en</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt; C06</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Quantity check</td><td>zh</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt; C03</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Availability</td><td>zh</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt; C12</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Availability</td><td>mixed</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt; C31</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Availability</td><td>mixed</td><td><span class="pill warn">Answered, nothing found</span></td><td>&lt;dealer&gt; C09</td></tr>
+<tr><td>24 Sep-5 Oct</td><td>Stock</td><td>Availability</td><td>mixed</td><td><span class="pill warn">Answered, nothing found</span></td><td>&lt;dealer&gt; C09</td></tr>
 </tbody></table></div>
 </div>
 </div></div>
@@ -204,21 +218,22 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 <span class="sel"><small>Subject</small> All</span>
 </div>
 <div class="tiles">
-<div class="tile"><div class="k">Reviewed</div><div class="v">212 / 300</div><div class="t"><span class="pill info">88 to go</span></div></div>
-<div class="tile"><div class="k">Subject right</div><div class="v">94%</div><div class="t"><span class="pill ok">Target 90%</span></div></div>
-<div class="tile"><div class="k">Topic right</div><div class="v">78%</div><div class="t"><span class="pill bad">Target 80%</span></div></div>
-<div class="tile"><div class="k">Product right</div><div class="v">97%</div><div class="t"><span class="pill ok">Target 95%</span></div></div>
+<div class="tile"><div class="k">Reviewed</div><div class="v">2 / 300</div><div class="t"><span class="pill info">298 to go</span></div></div>
+<div class="tile"><div class="k">Subject right</div><div class="v">100%</div><div class="t"><span class="pill ok">Target 90%</span></div></div>
+<div class="tile"><div class="k">Topic right</div><div class="v">50%</div><div class="t"><span class="pill bad">Target 80%</span></div></div>
+<div class="tile"><div class="k">Product right</div><div class="v">100%</div><div class="t"><span class="pill ok">Target 95%</span></div></div>
 </div>
-<div class="card"><h3>Sample, taxonomy v1 <span class="tag">DataGrid, fixed layout, resizable</span></h3>
+<div class="card"><h3>Sample, taxonomy v1 (real asks; Topic and Sure are what the labeller would write, illustrative) <span class="tag">DataGrid, fixed layout, resizable</span></h3>
 <div class="scroll"><table class="tbl" style="min-width:980px">
 <colgroup><col style="width:96px"><col style="width:230px"><col style="width:110px"><col style="width:160px"><col style="width:70px"><col style="width:110px"><col style="width:200px"></colgroup>
 <thead><tr><th>Asked on</th><th>Message</th><th>Subject</th><th>Topic</th><th class="n">Sure</th><th>Products</th><th>Verdict</th></tr></thead>
 <tbody>
-<tr><td>8 Oct 2026</td><td title="&lt;product&gt; ada stock?">&lt;product&gt; ada stock?</td><td>Stock</td><td>Availability</td><td class="n">0.96</td><td>&lt;product&gt;</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
-<tr><td>8 Oct 2026</td><td title="price &lt;product&gt; and got stock?">price &lt;product&gt; and got stock?</td><td>Product info</td><td>Other product information</td><td class="n">0.58</td><td>&lt;product&gt;</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
-<tr><td>7 Oct 2026</td><td title="&lt;dealer&gt; today delivery">&lt;dealer&gt; today delivery</td><td>Orders</td><td>Delivery status</td><td class="n">0.91</td><td>-</td><td><span class="pill ok">Right</span> <span class="crumbs">by Owner</span></td></tr>
-<tr><td>7 Oct 2026</td><td title="what is my sales today">what is my sales today</td><td>Orders</td><td>Other orders</td><td class="n">0.62</td><td>-</td><td><span class="pill bad">Wrong topic</span> <span class="crumbs">should be Sales figures</span></td></tr>
-<tr><td>6 Oct 2026</td><td title="&lt;product&gt; 高清图">&lt;product&gt; 高清图</td><td>Product files</td><td>Photo or drawing</td><td class="n">0.88</td><td>&lt;product&gt; <span class="pill bad">wrong</span></td><td><span class="pill ok">Right</span> <span class="crumbs">product wrong</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="SRTWT2634-RG有货吗？5个">SRTWT2634-RG有货吗？5个</td><td>Stock</td><td>Quantity check</td><td class="n">0.93</td><td>SRTWT2634-RG</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="&lt;brand&gt; MAP4944A, may I know what is the thickness of the sink. / plesae escalate to marketing product team">&lt;brand&gt; MAP4944A, may I know what is the thickness of the sink. / plesae escalate to marketing product team</td><td>Product info</td><td>Specification</td><td class="n">0.71</td><td>-</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="&lt;dealer&gt; today delivery">&lt;dealer&gt; today delivery</td><td>Orders</td><td>Delivery status</td><td class="n">0.90</td><td>-</td><td><span class="pill ok">Right</span> <span class="crumbs">by Owner</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="Sale agent wt &lt;brand&gt; top 10 ceramic product sale on September">Sale agent wt &lt;brand&gt; top 10 ceramic product sale on September</td><td>Orders</td><td>Other orders</td><td class="n">0.55</td><td>-</td><td><span class="pill bad">Wrong topic</span> <span class="crumbs">should be Sales figures</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="MBF77501 高清图">MBF77501 高清图</td><td>Product files</td><td>Photo or drawing</td><td class="n">0.88</td><td>MBF77501</td><td><span class="pill ok">Right</span> <span class="crumbs">product right</span></td></tr>
+<tr><td>24 Sep-5 Oct</td><td title="&lt;brand&gt;">&lt;brand&gt; (a picker answer)</td><td>General</td><td>Noise</td><td class="n">0.40</td><td>-</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
 </tbody></table></div>
 <p class="crumbs" style="margin:10px 0 0">"Wrong topic" opens a SearchableSelect of the leaves under the ask's subject; "Wrong subject" a SearchableSelect of subjects, then leaves. A row with products gets a second, smaller verdict for them (Right / Wrong).</p>
 </div>

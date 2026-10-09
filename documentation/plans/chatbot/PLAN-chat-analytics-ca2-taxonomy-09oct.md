@@ -2,7 +2,8 @@
 
 Status: Build. Labelling ruled HYBRID; taxonomy v1 APPROVED by the owner (9 Oct 2026) and
 seeded as version 1; monthly bumps approved by the owner until he names a delegate. Labeller,
-resolver pass and migration built and green; next: Top asks + audit review mocks, then build.
+resolver pass and migration built and green; Top asks + audit mock v1 (real masked data) at
+`documentation/mockups/CA-2-TAXONOMY/index.html`, awaiting owner approval; then build red-first.
 Labelling runs on dev only (nightly tick off unless CHAT_TOPIC_LABELLER_ENABLED). Track: full (migration + new queue + new report definitions).
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545, branch
