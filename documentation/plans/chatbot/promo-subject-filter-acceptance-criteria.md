@@ -147,3 +147,19 @@ AC-35 Owner turns on dev data: "Sorneto grab bar promotion" and "sorento grab ba
       A3 Flyer kind across brands; "sorento promotion flyer" -> Sorento A3 flyers only. Each checked
       live 3x on the new prompt version.
 
+## Round 3b: spec qualifiers (owner, 9 Oct 2026: do it in this PR)
+
+AC-36 The parser turns a promo subject's qualifiers that are registry spec values (mounting, flush
+      type, trap type, ...) into spec entities (spec_key + spec_value corrected to a listed synonym),
+      beside the class/product type entity; semantic, from a listed spec-values context (compact, token
+      budget re-pinned), never keyword code. New unlabelled dev prompt version.
+AC-37 promo_filter passes grounded spec entities to the promotions route (and MCP) as specs, applied
+      through filter_specs ANDed with the class/product type and brand; one builder feeds both the
+      per-level stamp and the pick.
+AC-38 A qualifier the parser cannot place in the listed spec values asks back ("I could not match "X"
+      to a product detail." / "Which ... do you mean?"), never silently dropped and never a wider
+      search.
+AC-39 Dev data: "wall hung water closet promo" and "walll hugggg waterd. clost promo?" -> Dealer pick
+      returns only SORENTO WALL HUNG WC COMBO PROMO_14092026 DEALER; previous live cases (A-D,
+      Sorneto/sorento/SORENTO, sorentoo) unchanged, each checked live 3x on the new version.
+
