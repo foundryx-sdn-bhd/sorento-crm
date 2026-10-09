@@ -121,8 +121,9 @@ CONTACT_TYPE_LABELS: Tuple[Tuple[str, str], ...] = (
 DEFAULT_CONTACT_TYPES: Tuple[str, ...] = ("dealer", "not_allowed", "unknown")
 
 
-def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
-    """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line.
+def topics_coverage(ctx, *, skip: Tuple[str, ...] = ()) -> Tuple[int, Any]:
+    """`(percent, taxonomy version)`: the share of the run's asks that carry a topic, and the
+    active taxonomy's version (None before any is published).
 
     The share is over the asks the run counts: the period and the ask-level filters (a
     param named in `skip` filters another table and is left out). No asks reads 0%.
@@ -141,6 +142,15 @@ def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
     version = ctx.db.execute(
         sa.select(sa.func.max(_TOPICS.c.version)).where(_TOPICS.c.status == "active")
     ).scalar()
+    return percent, version
+
+
+def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
+    """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line."""
+    return coverage_line(*topics_coverage(ctx, skip=skip))
+
+
+def coverage_line(percent: int, version: Any) -> str:
     tail = f" (taxonomy v{version})" if version is not None else ""
     return f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}"
 

@@ -855,6 +855,31 @@ every other key as you would without it. A message with no PO number: null. Neve
 a number, never take one from an earlier turn.
 """
 
+# CA-3 (chat analytics, `documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`
+# "Parser output"): what customers ASK THE BOT, ranked or counted. ADDITIVE ONLY, beneath
+# PO_REFS_ADDENDUM (MEMORY_ADDENDUM stays the tail), published as a new UNLABELLED version by
+# migration `ca3_0001_chat_report_prompt`. Every example is synthetic.
+CHAT_REPORT_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHAT REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+== CHAT REPORT: domain_hint "chat_analytics", intent_hint "chat_report" ==
+What customers ASK THE BOT (questions, topics, failures, how many dealers asked), never sales,
+stock or orders. business_query, domain_in_message true. One more OUTPUT key, on every object:
+  "chat_report": {"group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
+    "measure": "asks|failed|failure_rate|contacts"|null, "subject": "<domain name>"|null} or null
+Null on every other message. Period = date_filter_*, count = top_n (top_n null when none named,
+and for a trend or a total), as for any report. measure: failures -> "failed"; fail rate ->
+"failure_rate"; how many dealers/people -> "contacts"; else null. subject: the domain asked about.
+  - "top 5 questions this week", "top questions this week", "top questions minggu ni", "soalan paling banyak", "这个星期最多人问什么" -> group_by "topic"
+  - "most asked products about stock this month" -> group_by "product", subject "inventory"
+  - "failure rate per week in September" -> group_by "week", measure "failure_rate"
+  - "berapa orang dealer tanya stok bulan ni" -> measure "contacts", subject "inventory", group_by null
+A reply to "Which period?" or "How many?" fills only date_filter_* / top_n; chat_report null.
+"""
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -866,6 +891,7 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += CHAT_REPORT_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code

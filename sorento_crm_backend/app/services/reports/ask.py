@@ -12,12 +12,12 @@ resolves to nothing is answered HERE with zero rows, never handed to the engine 
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
-from app.services.reports.datasets import sales_order_lines_ask
+from app.services.reports.datasets import chat_asks, chat_report_ask, sales_order_lines_ask
 from app.services.sales_report_delivered import _CHANNEL_CLASS, resolve_locations
 from app.services.sales_report_service import _money_edge, _qty
 
@@ -27,23 +27,47 @@ from app.services.sales_report_service import _money_edge, _qty
 DIMENSIONS = ("customer", "product", "brand", "category", "sales_agent", "location", "channel", "month")
 FILTERS = ("customer", "product", "brand", "category", "sales_agent", "customer_agent", "location", "channel")
 
-#: One entry per basis, every one over sales order lines.
-CATALOGUE: dict[str, dict[str, Any]] = {
-    basis: {
-        "definition": sales_order_lines_ask.DEFINITIONS[basis],
-        "label": label,
-        "dimensions": DIMENSIONS,
-        "filters": FILTERS,
-    }
-    for basis, label in (
-        ("delivered", "delivered sales"),
-        ("ordered", "ordered sales"),
-        ("outstanding", "outstanding orders"),
-    )
+#: The datasets a caller may ask over; the first is the default (a call naming none is sales).
+DATASETS = ("sales", "chat")
+
+#: The chat words (CA-3). Every word is named the same as the column or param key behind it.
+CHAT_DIMENSIONS = (
+    "topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language",
+)
+CHAT_MEASURES = ("asks", "failed", "failure_rate", "contacts")
+#: The dimensions that are a run of time: a trend lists every bucket, oldest first.
+CHAT_TRENDS = frozenset({"week", "month", "day"})
+
+#: Dataset -> basis -> entry. Sales: one entry per basis, every one over sales order lines.
+#: Chat: `asks` counts every ask, `turns` each message once.
+CATALOGUE: dict[str, dict[str, dict[str, Any]]] = {
+    "sales": {
+        basis: {
+            "definition": sales_order_lines_ask.DEFINITIONS[basis],
+            "label": label,
+            "dimensions": DIMENSIONS,
+            "filters": FILTERS,
+        }
+        for basis, label in (
+            ("delivered", "delivered sales"),
+            ("ordered", "ordered sales"),
+            ("outstanding", "outstanding orders"),
+        )
+    },
+    "chat": {
+        basis: {
+            "definition": chat_report_ask.DEFINITIONS[basis],
+            "label": label,
+            "dimensions": CHAT_DIMENSIONS,
+            "filters": ("subject", "product", "customer"),
+        }
+        for basis, label in (("asks", "asks"), ("turns", "turns"))
+    },
 }
 
 #: What a customer-scoped contact (a dealer) may group or filter by (PLAN section 0, Q1/Q2).
 DEALER_KEYS = frozenset({"product", "brand", "category", "month"})
+CHAT_DEALER_KEYS = frozenset({"topic", "subject", "product", "month"})
 
 GROUP_LABELS = {
     "customer": "Customer",
@@ -55,6 +79,20 @@ GROUP_LABELS = {
     "channel": "Channel",
     "month": "Month",
 }
+
+CHAT_GROUP_LABELS = {
+    "topic": "Topic",
+    "subject": "Subject",
+    "product": "Product",
+    "customer": "Customer",
+    "outcome": "Outcome",
+    "failure_reason": "Failure reason",
+    "week": "Week",
+    "month": "Month",
+    "day": "Day",
+    "language": "Language",
+}
+CHAT_FILTER_LABELS = {"subject": "Subject", "product": "Product", "customer": "Customer"}
 
 #: The filter words' labels, as the route echoes them: the dimensions' own, plus the customer
 #: card link a drill down uses (REPORT-DRILLDOWN, owner 8 Oct 2026), named so the reply says it.
@@ -152,6 +190,7 @@ def _empty(status: str = "ok", message: Optional[str] = None) -> dict[str, Any]:
 def run_ask(
     db: Session,
     *,
+    dataset: str = "sales",
     basis: str,
     measure: str,
     group_by: Optional[str],
@@ -170,7 +209,12 @@ def run_ask(
     from app.schemas.report import ReportViewConfig
     from app.services.reports import engine
 
-    entry = CATALOGUE[basis]
+    if dataset == "chat":
+        return _run_chat(
+            db, basis=basis, measure=measure, group_by=group_by, date_from=date_from, date_to=date_to,
+            filters=filters, sort=sort, top_n=top_n,
+        )
+    entry = CATALOGUE["sales"][basis]
     definition = entry["definition"]
 
     params: dict[str, Any] = {
@@ -231,6 +275,111 @@ def run_ask(
         {"rank": i, "name": name, "qty": _qty(qty), "amount": _money_edge(amount), "keys": keys.get(name, [])}
         for i, (name, qty, amount) in enumerate(shown, start=1)
     ]
+    body["total_count"] = len(ranked)
+    body["more"] = len(ranked) - len(shown)
+    return body
+
+
+# ----------------------------------------------------------------------- chat (CA-3)
+
+NO_ASKS = f"No asks in that period. Chat data starts {chat_asks.TRACES_BEGIN.day} Sep 2026."
+
+
+def _chat_value(measure: str, totals: dict) -> Optional[dict[str, Any]]:
+    """One row's (or the total's) figures, or None for a row that prints nothing: a rate over
+    no turns, or a count of nothing."""
+    if measure == "failure_rate":
+        num, den = int(Decimal(totals.get("failed") or 0)), int(Decimal(totals.get("asks") or 0))
+        if not den:
+            return None
+        pct = (Decimal(num) * 100 / Decimal(den)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        return {"value": float(pct), "numerator": num, "denominator": den}
+    value = int(Decimal(totals.get(measure) or 0))
+    return {"value": value} if value else None
+
+
+def _run_chat(
+    db: Session,
+    *,
+    basis: str,
+    measure: str,
+    group_by: Optional[str],
+    date_from: date,
+    date_to: date,
+    filters: dict[str, list[str]],
+    sort: str,
+    top_n: Optional[int],
+) -> dict[str, Any]:
+    """The chat dataset's ranked rows, their cut and the whole set's total, with the coverage
+    of topic labels. The period opens no earlier than the traces do."""
+    from app.schemas.report import ReportViewConfig
+    from app.services.reports import engine
+
+    date_from = max(date_from, chat_asks.TRACES_BEGIN)
+    body: dict[str, Any] = {
+        "status": "ok",
+        "message": None,
+        "rows": [],
+        "more": 0,
+        "total_count": 0,
+        "total": {"value": 0},
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "coverage": {"percent": 0, "taxonomy_version": None, "line": chat_asks.coverage_line(0, None)},
+    }
+    definition = CATALOGUE["chat"][basis]["definition"]
+    params: dict[str, Any] = {
+        "date_basis": "asked_at",
+        "period": {"kind": "custom", "from": date_from.isoformat(), "to": date_to.isoformat()},
+    }
+    for word, values in filters.items():
+        if not values:  # a filter resolving to nothing is zero rows, never "no filter"
+            body["message"] = NO_ASKS
+            return body
+        params[word] = list(values)
+    coverage_ctx = engine.resolve(db, definition, params)
+    percent, version = chat_asks.topics_coverage(coverage_ctx)
+    body["coverage"] = {
+        "percent": percent, "taxonomy_version": version, "line": chat_asks.coverage_line(percent, version)
+    }
+    if date_to < date_from:
+        body["message"] = NO_ASKS
+        return body
+
+    if group_by == "product":
+        params["grain"] = ["products"]
+    measures = list(dict.fromkeys([measure, "asks", *(("failed",) if measure == "failure_rate" else ())]))
+    view = ReportViewConfig.model_validate(
+        {
+            "params": params,
+            "detail": {"columns": [], "order": []},
+            "pivot": {"rows": group_by or "month", "cols": "all", "measures": measures},
+        }
+    )
+    pivot = engine.run_summary(db, definition, params, view)
+
+    grand = pivot.grand_total or {}
+    if not int(Decimal(grand.get("asks") or 0)):
+        body["message"] = NO_ASKS
+        return body
+    body["total"] = _chat_value(measure, grand) or {"value": 0}
+    if not group_by:
+        return body
+
+    ranked = []
+    for name in pivot.row_values:
+        if group_by == "failure_reason" and name == engine.BLANK_VALUE:
+            continue  # only a failed ask has a reason
+        figures = _chat_value(measure, pivot.row_totals.get(name) or {})
+        if figures is not None:
+            ranked.append((name, figures))
+    sign = -1 if sort == "desc" else 1
+    if group_by in CHAT_TRENDS and top_n is None:
+        ranked.sort(key=lambda r: r[0])
+    else:
+        ranked.sort(key=lambda r: (sign * r[1]["value"], r[0]))
+    shown = ranked[:top_n] if top_n else ranked
+    body["rows"] = [{"rank": i, "name": name, **figures} for i, (name, figures) in enumerate(shown, start=1)]
     body["total_count"] = len(ranked)
     body["more"] = len(ranked) - len(shown)
     return body

@@ -133,6 +133,10 @@ class AskType:
     #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
     #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
     answer_drops: tuple[str, ...] = ()
+    #: Verdict keys that make a LONG reply read as another ask still an answer: the parser
+    #: put the answer's own words in them (CA-3: a period or a count named in "top 5 for
+    #: September"). Empty keeps the original capture.
+    answer_keys: tuple[str, ...] = ()
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -363,7 +367,7 @@ def _reply_verdict_by_shape(
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,
     )
-    if other_ask and len(words) > SHORT_REPLY_WORDS:
+    if other_ask and len(words) > SHORT_REPLY_WORDS and not any(verdict.get(k) for k in ask.answer_keys):
         return verdict, "required_ask_dropped"
     rerouted = {
         **{k: v for k, v in verdict.items() if k not in ask.answer_drops},

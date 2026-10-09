@@ -49,3 +49,45 @@ class ReportAskResponse(BaseModel):
     more: int = 0
     total_count: int = 0
     total: ReportAskTotal
+
+
+class ReportAskChatRow(BaseModel):
+    rank: int
+    name: str
+    value: float
+    # Failure rate only: failed turns and the non-noise turns they are a share of.
+    numerator: Optional[int] = None
+    denominator: Optional[int] = None
+
+
+class ReportAskChatTotal(BaseModel):
+    value: float
+    numerator: Optional[int] = None
+    denominator: Optional[int] = None
+
+
+class ReportAskChatCoverage(BaseModel):
+    percent: int
+    taxonomy_version: Optional[int] = None
+    line: str
+
+
+class ReportAskChatResponse(BaseModel):
+    """`dataset=chat` (CA-3). Declared in full: `response_model` drops what is not named."""
+
+    status: str  # ok | busy
+    message: Optional[str] = None
+    dataset: str = "chat"
+    basis: str
+    measure: str
+    unit: str  # asks | turns | contacts | %
+    group_by: Optional[str] = None
+    group_label: Optional[str] = None
+    date_from: str
+    date_to: str
+    filters: List[ReportAskFilter] = []
+    rows: List[ReportAskChatRow] = []
+    more: int = 0
+    total_count: int = 0
+    total: ReportAskChatTotal
+    coverage: Optional[ReportAskChatCoverage] = None
