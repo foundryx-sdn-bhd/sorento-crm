@@ -142,11 +142,18 @@ def test_the_share_read_never_reads_over_100(db):
 
 def test_a_text_era_line_carries_the_reply_rules_once(db):
     """Crew rulings Q1 and Q3: the notes say how a text-era reply was found."""
+    _run_row(db, "B", 5, started=datetime(2026, 10, 1, tzinfo=UTC))
     note = _run(db, params={"period": {"kind": "custom", "from": "2026-07-01", "to": "2026-08-31"}}).note
     assert note.count(chat_asks().TEXT_ERA_CAVEAT) == 1
     assert "24 hours" in chat_asks().TEXT_ERA_CAVEAT
     assert "no sender" in chat_asks().TEXT_ERA_CAVEAT
     assert chat_asks().TEXT_ERA_CAVEAT not in _run(db, params={"period": OCTOBER}).note
+
+
+def test_no_caveat_while_no_text_era_is_loaded(db):
+    note = _run(db, params={"period": {"kind": "custom", "from": "2026-07-01", "to": "2026-08-31"}}).note
+    assert "not loaded yet" in note
+    assert chat_asks().TEXT_ERA_CAVEAT not in note
 
 
 def chat_asks():

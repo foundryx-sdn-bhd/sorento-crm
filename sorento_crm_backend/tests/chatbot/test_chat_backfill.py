@@ -293,6 +293,19 @@ def test_a_duplicate_of_the_ask_does_not_cut_off_its_reply(session_factory, taxo
     assert all("ZZT-THE-REPLY" in r["bot_reply_start"] for r in rows if r["key"] == str(h))
 
 
+def test_a_next_ask_with_no_message_id_still_closes_the_window(session_factory, taxonomy):
+    # Review round 2: `NOT (NULL = 'x')` is NULL in SQL, which used to hide the next ask.
+    c = contact_id()
+    h = seed_history(session_factory, c, message_id="ZZT-has-id")
+    seed_history(session_factory, c, at=A_TIME + timedelta(minutes=1), words="ZZT next ask, no id")
+    seed_history(session_factory, c, kind="outgoing", words="ZZT-NEXT-ASKS-REPLY", at=A_TIME + timedelta(minutes=1, seconds=5))
+    chat = answered(outcome="answered")
+    run(session_factory, chat)
+    assert facts(session_factory, h)[0].outcome == "no_reply"
+    first = next(r for c_ in chat.calls for r in rows_of(c_[0]) if r["key"] == str(h))
+    assert first["bot_reply_start"] == ""
+
+
 @pytest.mark.parametrize("source,outcome", [("user", "handover"), ("echo", "handover"), ("broadcast", "no_reply")])
 def test_staff_and_broadcast_rows_are_not_the_bots_reply(session_factory, taxonomy, source, outcome):
     c = contact_id()
