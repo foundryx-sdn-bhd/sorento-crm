@@ -113,6 +113,14 @@ class Settings(BaseSettings):
     # (UAC AC-J6).
     n8n_crm_webhook_secret: str | None = None
 
+    # Respond.io's DIRECT message webhook into the CRM (lane CHAT-LOCAL-FIRST, R3):
+    # POST /api/v1/public/respond/webhook. RESPOND_WEBHOOK_SECRET is the signing key
+    # entered on the Respond.io webhook (HMAC-SHA256 of the raw body, compared against
+    # the signature header) and, for a webhook set up with a custom header instead, the
+    # value of X-Respond-Webhook-Secret. Unset = the endpoint answers 503 and n8n stays
+    # the only feed. See documentation/reference/RESPOND-WEBHOOK-SETUP.md.
+    respond_webhook_secret: str | None = None
+
     # Direct webhook the CRM calls when a resolve closes the contact's LAST open
     # intervention ticket (UAC AC-M3). N8N_CLOSE_CONVO_WEBHOOK_URL. Unset = the
     # call is skipped with a warning and the resolve is unaffected.

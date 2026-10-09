@@ -183,6 +183,29 @@ _STUBBABLE_SYMBOLS: tuple[tuple[str, str], ...] = (
 
 
 @pytest.fixture(autouse=True)
+def _no_background_thread_sync():
+    """A thread page read with a Respond client queues a delta sync on a real thread pool
+    (chat_thread_sync_service), which opens `SessionLocal` against the non-scratch database
+    and calls Respond. No test wants that: the seam runs nothing unless the test installs
+    its own runner. Reads `sys.modules` and never imports (same rule as the fixture below)."""
+    import sys
+
+    module = sys.modules.get("app.services.chat_thread_sync_service")
+    if module is not None and getattr(module, "_runner", None) is None:
+        module.set_runner(lambda _contact: None)
+        try:
+            yield
+        finally:
+            module.set_runner(None)
+        return
+    yield
+    # Imported during the test: cover the next test too by installing now.
+    module = sys.modules.get("app.services.chat_thread_sync_service")
+    if module is not None and getattr(module, "_runner", None) is None:
+        module.set_runner(lambda _contact: None)
+
+
+@pytest.fixture(autouse=True)
 def _restore_stubbed_module_symbols():
     """Restore module-level symbols a test rebound without undoing it.
 
