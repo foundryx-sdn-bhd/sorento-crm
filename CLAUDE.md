@@ -70,8 +70,8 @@ Vitest: jsdom env, `@/` aliases repo root. Single test: `npx vitest run path/to/
 
 ```bash
 pip install -e ".[dev]"
-export CRM_BASE_URL=http://localhost:8000 EXTERNAL_API_KEY=...
-python -m sorento_crm_mcp        # default :8765/mcp
+export CRM_BASE_URL=http://localhost:8000 EXTERNAL_API_KEY=... MCP_AUTH_TOKEN=<32+ chars, same as backend .env>
+python -m sorento_crm_mcp        # default :8765/mcp; refuses to start without MCP_AUTH_TOKEN
 pytest                            # tests/
 ```
 
@@ -92,7 +92,7 @@ For a lane that goes to a Claude Code cloud environment instead of a local workt
 | Backend  | `venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` (in `sorento_crm_backend/`) | 8000 | `--reload` - backend file edits auto-restart uvicorn; nothing to do |
 | Worker   | `no_proxy='*' PGGSSENCMODE=disable OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES venv/bin/python worker.py` (in `sorento_crm_backend/`) | -    | **No reload.** Restart manually after editing any RQ task (`app/tasks/*`). |
 | Frontend | `npm run dev` (Turbopack; in `sorento_crm_frontend/`)                                                      | 3000 | **HMR - edits hot-reload; no rebuild.** ONE dev server machine-wide; see "Frontend dev loop". |
-| MCP      | `CRM_BASE_URL=http://localhost:8000 EXTERNAL_API_KEY=<from backend .env> backend venv's python -m sorento_crm_mcp` (in `sorento_crm_mcp/`; package installed in the backend venv) | 8765 | Restart manually after MCP code/catalog changes |
+| MCP      | `CRM_BASE_URL=http://localhost:8000 EXTERNAL_API_KEY=<from backend .env> MCP_AUTH_TOKEN=<from backend .env> backend venv's python -m sorento_crm_mcp` (in `sorento_crm_mcp/`; package installed in the backend venv) | 8765 | Restart manually after MCP code/catalog changes |
 
 - Run each as `run_in_background: true` Bash so logs are inspectable and sessions survive across turns.
 - Before booting, check ports (`lsof -i :3000 -i :8000 -i :8765 -sTCP:LISTEN`) and the worker (`ps aux | grep worker.py`) - if already running, reuse, don't double-boot.
@@ -189,7 +189,7 @@ Storage routing: each `attachments` row carries a `storage_provider` (`s3` or `r
 
 Frontend (`sorento_crm_frontend/.env` or `.env.local`): `NEXTAUTH_SECRET` (must align with backend `JWT_SECRET` if sharing tokens), `NEXTAUTH_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BASE_PATH`, `GOOGLE_CLIENT_*`, `EXTERNAL_API_KEY`, `SMTP_*`, `STORAGE_*`, `RECAPTCHA_*`, `FRONTEND_BASE_URL`.
 
-MCP (`sorento_crm_mcp/`): `CRM_BASE_URL`, `EXTERNAL_API_KEY`, optional `CRM_MCP_HOST/PORT/TIMEOUT/MAX_RESPONSE_BYTES/LOG_LEVEL`.
+MCP (`sorento_crm_mcp/`): `CRM_BASE_URL`, `EXTERNAL_API_KEY`, `MCP_AUTH_TOKEN` (required; every caller sends it as a Bearer token, the backend from its own `MCP_AUTH_TOKEN`), optional `MCP_AUTH_ENFORCE`, `CRM_MCP_ALLOWED_HOSTS`, `CRM_MCP_HOST/PORT/TIMEOUT/MAX_RESPONSE_BYTES/LOG_LEVEL`.
 
 ## Simplest thing that works (governing)
 

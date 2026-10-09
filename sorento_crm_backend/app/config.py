@@ -280,6 +280,9 @@ class Settings(BaseSettings):
     # AI assistant
     ai_assistant_enabled: bool = True
     ai_assistant_mcp_url: str = "http://localhost:8765/mcp"
+    # Bearer token the MCP server requires (its MCP_AUTH_TOKEN, same value). Blank sends no
+    # Authorization header, which the server answers 401 once MCP_AUTH_ENFORCE is on.
+    mcp_auth_token: str = ""                                # MCP_AUTH_TOKEN
     ai_assistant_mcp_timeout_seconds: int = 20
     ai_assistant_tool_call_limit: int = 3
     # RAG: how many MCP tools to BIND to the agent per turn. Default 1 - 
