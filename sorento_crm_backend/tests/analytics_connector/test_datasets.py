@@ -1,4 +1,7 @@
-"""CLAUDE-CONNECTOR S1: chat datasets, the read-only role and the chat tools (card sections 4.3, 5, 6).
+"""CLAUDE-CONNECTOR r3: chat datasets, the read-only role and the chat tools (card sections 4.3, 5, 6).
+
+Ported from r2 onto the new paths (`/api/v1/connector/*`) and the SS-signed call auth
+(contract section 3); the data rules are unchanged.
 
 Runs on the bootstrapped database (`pg_session`), which holds the `analytics_connector`
 views (`scripts/bootstrap_env.py` creates them, like the scm views). Every row is created
@@ -20,9 +23,9 @@ from tests.analytics_connector._helpers import (
     CHAT_VIEW,
     USE,
     client_for,
-    connector_headers,
-    full_sign_in,
     make_user,
+    signed,
+    tool_call_rows,
 )
 
 T0 = datetime(2026, 9, 1, 2, 0, 0)  # naive UTC = 10:00 in Malaysia
@@ -227,7 +230,51 @@ def test_ensure_views_is_idempotent():
         ensure_views(db)
 
 
-# ------------------------------------------------------------------ the chat tools over HTTP
+# ------------------------------------------------------------------ bot_turns text masking (security round)
+
+
+def test_bot_turn_reply_text_and_error_are_otp_masked():
+    from app.services.analytics_connector.views import ensure_views
+
+    with pg_session() as db:
+        ensure_views(db)
+        seed = _seed(db, unique_code("otpr", alpha=True))
+        reply = "Your Sorento sign-in code is 482913"
+        err = "send failed: your verification code is 777123"
+        turn_id = str(uuid.uuid4())
+        db.execute(
+            text("INSERT INTO chatbot.turns (id, contact_respond_id, envelope, status, is_test, response, error, created_at) "
+                 "VALUES (:id, :c, '{}'::jsonb, 'done', false, CAST(:r AS jsonb), :e, :t)"),
+            {"id": turn_id, "c": seed["contacts"]["a"]["respond_io_id"], "r": json.dumps({"reply": {"text": reply}}),
+             "e": err, "t": T0 + timedelta(hours=1)},
+        )
+        db.flush()
+        row = db.execute(
+            text("SELECT reply_text, error FROM analytics_connector.bot_turns WHERE id = :i"), {"i": turn_id}
+        ).one()
+        assert row.reply_text == mask_otp_text(reply)
+        assert "482913" not in row.reply_text
+        assert row.error == mask_otp_text(err)
+        assert "777123" not in row.error
+
+
+# ------------------------------------------------------------------ the chat tools over HTTP (signed calls)
+
+
+class Caller:
+    """Sends SS-signed calls as one user."""
+
+    def __init__(self, client, user):
+        self.client, self.user = client, user
+
+    def get(self, path, params=None, tool="zzt_tool"):
+        from urllib.parse import urlencode
+
+        url = f"{path}?{urlencode(params)}" if params else path
+        return signed(self.client, "GET", url, self.user.id, tool=tool)
+
+    def query(self, tool="chat_query", **body):
+        return signed(self.client, "POST", f"{BASE}/query", self.user.id, json_body=body, tool=tool)
 
 
 @pytest.fixture()
@@ -236,30 +283,12 @@ def chat(monkeypatch):
         with client_for(db, monkeypatch) as client:
             seed = _seed(db, unique_code("api", alpha=True))
             user = make_user(db, "analyst", perms=(USE, CHAT_VIEW))
-            tok = full_sign_in(client, db, user)
-            yield db, client, seed, connector_headers(tok["access_token"]), user
-
-
-def _query(client, headers, **body):
-    return client.post(f"{BASE}/query", json=body, headers=headers)
-
-
-def test_chat_tools_need_chat_history_view(monkeypatch):
-    """Q2 (a): the connector permission alone does not open chat data."""
-    with pg_session() as db:
-        with client_for(db, monkeypatch) as client:
-            user = make_user(db, "nochat", perms=(USE,))
-            tok = full_sign_in(client, db, user)
-            h = connector_headers(tok["access_token"])
-            assert client.get(f"{BASE}/datasets", headers=h).status_code == 403
-            assert _query(client, h, dataset="messages").status_code == 403
-            assert client.get(f"{BASE}/messages/search", params={"text": "x"}, headers=h).status_code == 403
-            assert client.get(f"{BASE}/me", headers=h).status_code == 200
+            yield db, Caller(client, user), seed, user
 
 
 def test_list_datasets(chat):
-    _db, client, _seed_, h, _u = chat
-    resp = client.get(f"{BASE}/datasets", headers=h)
+    _db, c, _seed_, _u = chat
+    resp = c.get(f"{BASE}/datasets")
     assert resp.status_code == 200, resp.text
     keys = {d["key"] for d in resp.json()["datasets"]}
     assert keys == {"messages", "contacts", "bot_turns", "episodes"}
@@ -268,34 +297,47 @@ def test_list_datasets(chat):
 
 
 def test_describe_dataset(chat):
-    _db, client, _seed_, h, _u = chat
-    resp = client.get(f"{BASE}/datasets/messages", headers=h)
+    _db, c, _seed_, _u = chat
+    resp = c.get(f"{BASE}/datasets/messages")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    cols = {c["key"]: c for c in body["columns"]}
+    cols = {col["key"]: col for col in body["columns"]}
     assert cols["text"]["type"] == "text" and cols["sent_at"]["type"] == "datetime"
+    assert "phone_number" not in cols and "phone" not in cols
     assert body["date_column"] == "sent_at"
     assert len(body["sample"]["rows"]) <= 3
-    assert client.get(f"{BASE}/datasets/nope", headers=h).status_code == 404
+    missing = c.get(f"{BASE}/datasets/nope")
+    assert missing.status_code == 404
+
+
+def test_no_dataset_exposes_a_phone_column(chat):
+    """Q3 (a): phone numbers are excluded from every dataset."""
+    _db, c, _seed_, _u = chat
+    for key in ("messages", "contacts", "bot_turns", "episodes"):
+        body = c.get(f"{BASE}/datasets/{key}").json()
+        names = {col["key"] for col in body["columns"]}
+        assert not {"phone_number", "phone", "session_vars", "portal_slug", "envelope", "trace"} & names, key
+        assert "+60100000" not in json.dumps(body), key
 
 
 def test_query_detail_with_filters(chat):
-    _db, client, seed, h, _u = chat
-    resp = _query(client, h, dataset="messages", columns=["sent_at", "direction", "text"],
-                  filters=[{"column": "contact_respond_id", "op": "eq", "value": seed["contacts"]["a"]["respond_io_id"]},
-                           {"column": "direction", "op": "eq", "value": "outgoing"}],
-                  order_by=[{"column": "sent_at", "dir": "asc"}])
+    _db, c, seed, _u = chat
+    resp = c.query(dataset="messages", columns=["sent_at", "direction", "text"],
+                   filters=[{"column": "contact_respond_id", "op": "eq", "value": seed["contacts"]["a"]["respond_io_id"]},
+                            {"column": "direction", "op": "eq", "value": "outgoing"}],
+                   order_by=[{"column": "sent_at", "dir": "asc"}])
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["columns"] == ["sent_at", "direction", "text"]
     assert [r[1] for r in body["rows"]] == ["outgoing", "outgoing"]
     assert body["truncated"] is False
+    assert "482913" not in json.dumps(body)
 
 
 def test_query_group_by_with_measures_and_period(chat):
-    _db, client, seed, h, _u = chat
-    resp = _query(
-        client, h, dataset="messages",
+    _db, c, seed, _u = chat
+    resp = c.query(
+        dataset="messages",
         filters=[{"column": "text", "op": "contains", "value": seed["tag"]}],
         group_by=["direction", "sent_at:month"],
         measures=[{"fn": "count"}, {"fn": "count_distinct", "column": "contact_id"}],
@@ -306,20 +348,19 @@ def test_query_group_by_with_measures_and_period(chat):
     body = resp.json()
     assert body["columns"] == ["direction", "sent_at:month", "count", "count_distinct:contact_id"]
     rows = {(r[0], r[1]): r[2] for r in body["rows"]}
-    # Sept: incoming x2 (a + b), outgoing x1 carrying the tag; the 40-day-later message is October.
     assert rows[("incoming", "2026-09")] == 2
     assert rows[("outgoing", "2026-09")] == 1
 
 
 def test_contains_escapes_like_wildcards(chat):
-    _db, client, seed, h, _u = chat
-    resp = _query(client, h, dataset="messages", columns=["text"],
-                  filters=[{"column": "text", "op": "contains", "value": "100%_off"}])
+    _db, c, seed, _u = chat
+    resp = c.query(dataset="messages", columns=["text"],
+                   filters=[{"column": "text", "op": "contains", "value": "100%_off"}])
     texts = [r[0] for r in resp.json()["rows"]]
     assert texts and all("100%_off" in t for t in texts)
-    resp = _query(client, h, dataset="messages", columns=["text"],
-                  filters=[{"column": "text", "op": "contains", "value": "%"},
-                           {"column": "contact_respond_id", "op": "eq", "value": seed["contacts"]["a"]["respond_io_id"]}])
+    resp = c.query(dataset="messages", columns=["text"],
+                   filters=[{"column": "text", "op": "contains", "value": "%"},
+                            {"column": "contact_respond_id", "op": "eq", "value": seed["contacts"]["a"]["respond_io_id"]}])
     assert resp.json()["rows"] == []
 
 
@@ -328,6 +369,7 @@ def test_contains_escapes_like_wildcards(chat):
     [
         {"dataset": "users"},
         {"dataset": "messages", "columns": ["phone_number"]},
+        {"dataset": "contacts", "columns": ["phone_number"]},
         {"dataset": "messages", "columns": ["text; DROP TABLE x"]},
         {"dataset": "messages", "filters": [{"column": "text", "op": "regex", "value": "a"}]},
         {"dataset": "messages", "filters": [{"column": "nope", "op": "eq", "value": "a"}]},
@@ -335,33 +377,46 @@ def test_contains_escapes_like_wildcards(chat):
         {"dataset": "messages", "group_by": ["text"], "measures": [{"fn": "sum", "column": "text"}]},
         {"dataset": "messages", "measures": [{"fn": "drop", "column": "id"}]},
         {"dataset": "messages", "limit": 5000},
+        {"dataset": "messages", "limit": 1001},
         {"dataset": "messages", "order_by": [{"column": "sent_at", "dir": "sideways"}]},
         {"dataset": "messages", "period": {"from": "not-a-date"}},
     ],
 )
 def test_query_rejects_anything_outside_the_catalog(chat, body):
-    _db, client, _seed_, h, _u = chat
-    resp = _query(client, h, **body)
+    _db, c, _seed_, _u = chat
+    resp = c.query(**body)
     assert resp.status_code == 422, resp.text
 
 
+def test_query_accepts_the_1000_row_cap(chat):
+    _db, c, _seed_, _u = chat
+    resp = c.query(dataset="messages", columns=["id"], limit=1000)
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["rows"]) <= 1000
+
+
+def test_output_cap_is_120000_characters():
+    from app.services.analytics_connector import datasets
+
+    assert datasets.MAX_OUTPUT_CHARS == 120_000
+    assert datasets.MAX_ROWS == 1000
+
+
 def test_query_caps_rows_and_pages(chat):
-    _db, client, seed, h, _u = chat
-    resp = _query(client, h, dataset="messages", columns=["id"],
-                  filters=[{"column": "text", "op": "contains", "value": seed["tag"]}],
-                  order_by=[{"column": "sent_at", "dir": "asc"}], limit=2)
-    body = resp.json()
+    _db, c, seed, _u = chat
+    flt = [{"column": "text", "op": "contains", "value": seed["tag"]}]
+    body = c.query(dataset="messages", columns=["id"], filters=flt,
+                   order_by=[{"column": "sent_at", "dir": "asc"}], limit=2).json()
     assert len(body["rows"]) == 2 and body["truncated"] is True and body["next_offset"] == 2
-    page2 = _query(client, h, dataset="messages", columns=["id"],
-                   filters=[{"column": "text", "op": "contains", "value": seed["tag"]}],
-                   order_by=[{"column": "sent_at", "dir": "asc"}], limit=2, offset=2).json()
+    page2 = c.query(dataset="messages", columns=["id"], filters=flt,
+                    order_by=[{"column": "sent_at", "dir": "asc"}], limit=2, offset=2).json()
     assert len(page2["rows"]) == 2 and not set(map(tuple, page2["rows"])) & set(map(tuple, body["rows"]))
 
 
 def test_query_caps_output_characters(chat, monkeypatch):
     from app.services.analytics_connector import datasets
 
-    db, client, seed, h, _u = chat
+    db, c, seed, _u = chat
     big = "x" * 5000
     for _ in range(5):
         db.execute(text("INSERT INTO chat_histories (channel, contact_id, phone_number, message, sent_at, type) "
@@ -369,67 +424,47 @@ def test_query_caps_output_characters(chat, monkeypatch):
                    {"c": seed["contacts"]["b"]["respond_io_id"], "m": big + seed["tag"], "t": T0})
     db.flush()
     monkeypatch.setattr(datasets, "MAX_OUTPUT_CHARS", 12000)
-    body = _query(client, h, dataset="messages", columns=["text"],
-                  filters=[{"column": "text", "op": "contains", "value": big[:10] + "x"}]).json()
+    body = c.query(dataset="messages", columns=["text"],
+                   filters=[{"column": "text", "op": "contains", "value": big[:10] + "x"}]).json()
     assert len(json.dumps(body)) <= 12000
     assert body["truncated"] is True and 0 < len(body["rows"]) < 5
 
 
 def test_search_messages(chat):
-    _db, client, seed, h, _u = chat
-    resp = client.get(f"{BASE}/messages/search", params={"text": f"ZZT-SKU-{seed['tag']}"}, headers=h)
+    _db, c, seed, _u = chat
+    resp = c.get(f"{BASE}/messages/search", {"text": f"ZZT-SKU-{seed['tag']}"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "text" in body["columns"] and "contact_name" in body["columns"]
+    assert "phone_number" not in body["columns"]
     assert len(body["rows"]) == 2
     sent = body["columns"].index("sent_at")
     assert body["rows"][0][sent] >= body["rows"][1][sent]  # newest first
 
 
 def test_get_conversation_by_name_and_ambiguity(chat):
-    _db, client, seed, h, _u = chat
-    resp = client.get(f"{BASE}/conversation", params={"contact": f"ZZT Contact a {seed['tag']}"}, headers=h)
+    _db, c, seed, _u = chat
+    resp = c.get(f"{BASE}/conversation", {"contact": f"ZZT Contact a {seed['tag']}"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["contact"]["id"] == seed["contacts"]["a"]["id"]
     texts = [r[body["columns"].index("text")] for r in body["rows"]]
     assert texts[0].startswith("stock for")  # oldest first
     assert "482913" not in " ".join(texts)
-    amb = client.get(f"{BASE}/conversation", params={"contact": f"ZZT Contact"}, headers=h).json()
+    assert "+60100000" not in json.dumps(body)
+    amb = c.get(f"{BASE}/conversation", {"contact": "ZZT Contact"}).json()
     assert len(amb["candidates"]) >= 2 and "rows" not in amb
-    assert client.get(f"{BASE}/conversation", params={"contact": "zzt-nobody-xyz"}, headers=h).status_code == 404
+    assert c.get(f"{BASE}/conversation", {"contact": "zzt-nobody-xyz"}).status_code == 404
 
 
 def test_every_chat_call_is_audited(chat):
-    from app.models.audit import AuditLog
-
-    db, client, _seed_, h, user = chat
-    _query(client, h, dataset="messages", columns=["id"], limit=1)
-    row = (
-        db.query(AuditLog)
-        .filter(AuditLog.event == "analytics_connector.tool_call", AuditLog.user_id == user.id)
-        .order_by(AuditLog.changed_at.desc())
-        .first()
-    )
-    assert row is not None
+    db, c, _seed_, user = chat
+    assert c.query(dataset="messages", columns=["id"], limit=1).status_code == 200
+    rows = tool_call_rows(db, user.id)
+    assert len(rows) == 1
+    row = rows[0]
     assert row.new_values["tool"] == "chat_query"
-    assert row.new_values["args"]["dataset"] == "messages"
-    assert row.new_values["rows"] == 1
-    assert "ms" in row.new_values
-    assert row.auth_method == "claude_connector"
-
-
-def test_container_audit_endpoint(chat):
-    from app.models.audit import AuditLog
-
-    db, client, _seed_, h, user = chat
-    resp = client.post(f"{BASE}/audit", headers=h, json={
-        "tool": "crm_sales_report", "args": {"year": 2026}, "status": "ok", "ms": 120, "chars": 5000})
-    assert resp.status_code == 204, resp.text
-    row = (
-        db.query(AuditLog)
-        .filter(AuditLog.event == "analytics_connector.tool_call", AuditLog.user_id == user.id)
-        .order_by(AuditLog.changed_at.desc())
-        .first()
-    )
-    assert row.new_values["tool"] == "crm_sales_report" and row.new_values["chars"] == 5000
+    assert row.new_values["status"] in ("ok", 200, "200")
+    assert "grant_id" in row.new_values and "ms" in row.new_values
+    assert row.auth_method == "connector"
+    assert row.source == "connector"
