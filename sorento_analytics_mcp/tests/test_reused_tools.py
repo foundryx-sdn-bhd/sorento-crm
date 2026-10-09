@@ -1,7 +1,7 @@
 """CLAUDE-CONNECTOR S2: the reused catalog tools (card sections 4.1 and 4.2).
 
 Allow-list source: CHATBOT_READ_ONLY_TOOLS in sorento_crm_backend/app/services/chatbot/lanes/business/fetch.py.
-The container image has no backend, so the 37 names are PINNED in conftest.REUSED_TOOLS (the card's table);
+The container image has no backend, so the 34 names are PINNED in conftest.REUSED_TOOLS (the card's table);
 the drift test below also reads the live backend set when the backend is importable (it skips otherwise,
 and CI's backend job runs it with the backend present). A pinned copy keeps the container tests free of
 a backend dependency; the live read stops the pinned copy and the backend set drifting silently.
@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from conftest import CHAT_TOOLS, EXCLUDED_FROM_43, REMOVED_TOOLS, REUSED_TOOLS, WRITE_TOOLS, list_tools
+from conftest import (
+    CHAT_TOOLS, EXCLUDED_FROM_43, REMOVED_TOOLS, REUSED_TOOLS, SIGNED_URL_TOOLS, WRITE_TOOLS, call_tool, list_tools,
+)
 
 
 def _reused():
@@ -22,10 +24,10 @@ def _reused():
     return ANALYTICS_REUSED_TOOLS
 
 
-def test_allow_list_is_exactly_the_pinned_37():
+def test_allow_list_is_exactly_the_pinned_34():
     assert _reused() == REUSED_TOOLS
     assert isinstance(_reused(), frozenset)
-    assert len(_reused()) == 37
+    assert len(_reused()) == 34
 
 
 def test_allow_list_has_no_write_tool_and_none_of_the_three_excluded():
@@ -59,7 +61,7 @@ def test_allow_list_is_a_subset_of_the_chatbot_read_only_set_live(monkeypatch):
     assert _reused() <= CHATBOT_READ_ONLY_TOOLS
 
 
-def test_registered_tools_are_the_37_plus_the_five_chat_tools(client):
+def test_registered_tools_are_the_34_plus_the_five_chat_tools(client):
     names = {t["name"] for t in list_tools(client)}
     assert names == REUSED_TOOLS | CHAT_TOOLS
     assert not (names & WRITE_TOOLS)
@@ -68,7 +70,7 @@ def test_registered_tools_are_the_37_plus_the_five_chat_tools(client):
 
 def test_every_tool_is_annotated_read_only_and_non_destructive(client):
     tools = list_tools(client)
-    assert len(tools) == 42
+    assert len(tools) == 39
     for t in tools:
         ann = t.get("annotations") or {}
         assert ann.get("readOnlyHint") is True, t["name"]
@@ -89,8 +91,23 @@ def test_listing_tools_needs_a_valid_token(client, backend):
     assert resp.status_code == 401
 
 
-def test_the_three_removed_tools_are_not_allowed_and_not_listed(client):
+def test_the_removed_tools_are_not_allowed_and_not_listed(client):
     """crm_low_stock_report writes (report run + WhatsApp send) on GET; the other two are chatbot-only (403 for staff)."""
-    assert REMOVED_TOOLS == {"crm_low_stock_report", "crm_report_ask", "crm_sales_analysis"}
+    assert REMOVED_TOOLS == {
+        "crm_low_stock_report", "crm_report_ask", "crm_sales_analysis",
+        "crm_complaints_list", "crm_resource_attachments_current_stock_list", "crm_sla_conversation_tracking_list",
+    }
     assert not (_reused() & REMOVED_TOOLS)
     assert not ({t["name"] for t in list_tools(client)} & REMOVED_TOOLS)
+
+
+@pytest.mark.parametrize("tool", sorted(SIGNED_URL_TOOLS))
+def test_signed_url_tools_never_forward_resolve_signed_urls(client, backend, tool):
+    """Presigned URLs are credentials (owner ruling R2): the flag is dropped or forced false."""
+    for path in ("/api/v1/master-data/certificates", "/api/v1/resource-management/attachments"):
+        backend.on("GET", path, json_body={"data": [{"id": "1"}], "total": 1})
+    call_tool(client, tool, {"resolve_signed_urls": True})
+    sent = [r for r in backend.requests if r.method == "GET"]
+    assert sent, "the tool made no backend call"
+    for r in sent:
+        assert str(r.query.get("resolve_signed_urls", "false")).lower() in ("false", "0"), r.query

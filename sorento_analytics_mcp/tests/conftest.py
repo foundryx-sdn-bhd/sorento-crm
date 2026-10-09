@@ -186,13 +186,23 @@ REUSED_TOOLS = frozenset({
     "crm_procurement_po_last_cost_list",
     "crm_marketing_promotions_list", "crm_marketing_promotion_products_list",
     "crm_marketing_promotion_attachments_list", "crm_resource_attachments_list",
-    "crm_resource_attachments_catalogue", "crm_resource_attachments_current_stock_list",
-    "crm_projects_list", "crm_project_detail", "crm_project_quotations_list", "crm_project_forecast",
-    "crm_complaints_list", "crm_complaint_analytics", "crm_forms_management_forms_list",
-    "crm_sla_conversation_tracking_dashboard", "crm_sla_conversation_tracking_list",
+    "crm_resource_attachments_catalogue",
+    "crm_projects_list", "crm_project_detail", "crm_project_quotations_list", "crm_project_forecast", "crm_complaint_analytics", "crm_forms_management_forms_list",
+    "crm_sla_conversation_tracking_dashboard",
     "crm_sla_conversation_event_logs_list",
 })
-REMOVED_TOOLS = frozenset({"crm_low_stock_report", "crm_report_ask", "crm_sales_analysis"})
+# Removed after the crew audit of 9c (9 Oct 2026):
+# - crm_low_stock_report: its GET creates a report run and can WhatsApp-send the workbook;
+# - crm_report_ask, crm_sales_analysis: chatbot-only routes, 403 for staff;
+# - crm_complaints_list: its GET inserts ViewToken rows and returns a tokenised public view_url + contact_number;
+# - crm_resource_attachments_current_stock_list: every call mints a signed CDN URL (a credential);
+# - crm_sla_conversation_tracking_list: returns customer WhatsApp phone numbers (owner ruling Q3).
+REMOVED_TOOLS = frozenset({
+    "crm_low_stock_report", "crm_report_ask", "crm_sales_analysis",
+    "crm_complaints_list", "crm_resource_attachments_current_stock_list", "crm_sla_conversation_tracking_list",
+})
+# Tools whose catalog exposes resolve_signed_urls: the container never forwards it (no presigned URLs).
+SIGNED_URL_TOOLS = frozenset({"crm_certificates_list", "crm_resource_attachments_list", "crm_resource_attachments_catalogue"})
 EXCLUDED_FROM_43 = frozenset({"crm_portal_link_get", "user_guides_read", "crm_system_tool_capabilities_summary"})
 WRITE_TOOLS = frozenset({
     "crm_order_cancel", "crm_purchase_request_approve", "crm_purchase_request_reject",
