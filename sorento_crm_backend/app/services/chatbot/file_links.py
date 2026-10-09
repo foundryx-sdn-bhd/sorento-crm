@@ -92,7 +92,6 @@ def links_for(
     *,
     contact_respond_id: str | None,
     turn_id: str | None,
-    commit: bool = True,
 ) -> tuple[str, int]:
     """`(text, minted)`: the reply with every file as a short link, and how many rows were
     minted. Raises (`LinkModeUnavailable`, or a database error) rather than return a text
@@ -136,10 +135,7 @@ def links_for(
             blocks.append(f"*File:* {entry.get('filename') or 'file'}\n*Link:* {link}")
 
     db.add_all(rows)
-    if commit:
-        db.commit()
-    else:
-        db.flush()
+    db.commit()
 
     # Longest first, so a url that is a prefix of another never rewrites part of it.
     for raw in sorted(url_by_raw, key=len, reverse=True):

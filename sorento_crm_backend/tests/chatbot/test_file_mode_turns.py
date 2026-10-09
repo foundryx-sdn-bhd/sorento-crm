@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from sqlalchemy import text
 
 import app.main  # noqa: F401  isort:skip - registers every model before any query
@@ -45,9 +46,12 @@ def _replied_facts(session_factory, turn_id: str) -> dict[str, Any]:
     return replied[-1].get("facts") or {}
 
 
+@pytest.mark.parametrize("is_test", [False, True], ids=["live", "console_dry_run"])
 def test_the_composer_tail_sends_one_text_with_the_link(
-    session_factory, seeded, stub_parser, stub_access, system_settings_row, monkeypatch  # noqa: F811
+    is_test, session_factory, seeded, stub_parser, stub_access, system_settings_row, monkeypatch  # noqa: F811
 ):
+    """`is_test=True` is the chatbot console's dry run (D14): its links must still open,
+    so the row is read back from a fresh session (crew audit item 4)."""
     from tests.chatbot import test_s6_s7_integration as harness
 
     monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
@@ -64,7 +68,7 @@ def test_the_composer_tail_sends_one_text_with_the_link(
     monkeypatch.setattr(engine_mod.business, "run_fetch", _spy)
     _links_on(session_factory)
 
-    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    result = engine_mod.run_turn(_envelope(is_test=is_test), session_factory=session_factory)
 
     assert result.status == "done", result.error
     assert [a["kind"] for a in result.actions] == ["send_message"]

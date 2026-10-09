@@ -9080,13 +9080,18 @@ def _apply_file_mode(
 
     try:
         if db is not None:
-            # Review S1: the caller's session holds the rest of the turn. The links go in
-            # a savepoint, so a failure rolls back only them and the session stays usable,
-            # and nothing the caller has pending is committed early.
-            with db.begin_nested():
+            # Review S1 + crew audit item 4: the caller's session holds the rest of the
+            # turn and may never commit (a console dry run). The links go through their
+            # OWN session on the same connection source, so they persist whatever the
+            # caller does, a failure leaves the caller's session usable, and nothing the
+            # caller has pending is committed early.
+            own_db = Session(bind=db.get_bind())
+            try:
                 linked, _minted = file_links.links_for(
-                    db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id, commit=False
+                    own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
                 )
+            finally:
+                own_db.close()
         else:
             with _session(session_factory) as own_db:
                 linked, _minted = file_links.links_for(

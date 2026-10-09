@@ -3,7 +3,7 @@
 A contact switched to link mode (`respond_contacts.chatbot_files_as_links`) gets one text
 message where each file is a `{frontend_base_url}/f/{code}` link, not a WhatsApp file
 each (about 0.042 MYR per message). One row per distinct file per turn: `code` is the
-whole capability (10 Crockford characters from `secrets`, about 50 bits), so the public
+whole capability (16 Crockford characters from `secrets`, 80 bits), so the public
 route takes a code and nothing else, never a url. `target_url` is the stored, UNSIGNED
 CDN url; a fresh signed url is minted on each click, so the stored one never leaves us.
 

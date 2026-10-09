@@ -169,3 +169,20 @@ def test_content_type_comes_from_the_extension_not_the_upload(env):
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/csv")
     assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
+    """Crew audit item 6: behind nginx every socket peer is the proxy; the bucket key is
+    the forwarded client, so two dealers never share one limit."""
+    client, db, _ = env
+    _link(db, "PHOTO00006", "https://cdn.test/a.jpg", "a.jpg")
+    idents: list[str | None] = []
+
+    def _hit(bucket, ident, **kw):
+        idents.append(ident)
+        return rate_limit.RateResult(allowed=True)
+
+    monkeypatch.setattr(rate_limit, "hit", _hit)
+    client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
+    client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "198.51.100.9"})
+    assert idents == ["203.0.113.7", "198.51.100.9"]

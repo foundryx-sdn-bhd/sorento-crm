@@ -1,6 +1,6 @@
 """Public short file links the chatbot sends in link mode (PHOTO-SEND-CAP round 2).
 
-No login (owner Q2 (a)): the 10-character code is the whole capability. The frontend page
+No login (owner Q2 (a)): the 16-character code (80 bits) is the whole capability. The frontend page
 `/f/{code}` reads `GET /{code}` and then either goes to the freshly signed url (a photo, a
 PDF, any other file) or opens a spreadsheet read-only in the browser from `/{code}/content`.
 
@@ -64,7 +64,14 @@ def _rate_limited(request: Request) -> None:
     from app.config import settings as app_settings
     from app.services import rate_limit
 
-    ip = request.client.host if request.client else None
+    from app.services.client_ip import client_ip
+
+    # Behind nginx (and the Next proxy when `NEXT_PUBLIC_API_URL` is unset) the socket peer
+    # is the proxy, so keying on it would put every dealer in ONE bucket (security review
+    # M2). The repo's one rule for public routes is the left-most `X-Forwarded-For` entry,
+    # else the peer. That entry is client-supplied, so this limit spreads honest load per
+    # client; resistance to guessing comes from the 80-bit code, not from this limit.
+    ip = client_ip(request)
     gate = rate_limit.hit(
         "chatbot_file_link",
         ip,

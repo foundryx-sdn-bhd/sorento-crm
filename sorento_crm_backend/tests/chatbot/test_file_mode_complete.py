@@ -54,6 +54,13 @@ def test_run_tail_sends_one_text_with_the_link(seeded, stub_parser, session_fact
     facts = _replied_facts(session_factory, turn_id)
     assert facts.get("file_mode") == "links"
     assert facts.get("files") == 1
+    # Crew audit item 4: the link row is there for the next request to open, read from a
+    # fresh session (the tail's own session never had to commit it).
+    from app.models.chatbot_file_link import ChatbotFileLink
+
+    fresh = session_factory()
+    assert fresh.query(ChatbotFileLink).filter(ChatbotFileLink.turn_id == turn_id).count() == 1
+    fresh.close()
 
 
 def test_run_tail_in_attachment_mode_is_unchanged(seeded, stub_parser, session_factory, monkeypatch):  # noqa: F811
