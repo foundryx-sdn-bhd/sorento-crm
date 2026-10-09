@@ -124,3 +124,12 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   `app/services/chatbot/engine.py:1218-1240`, same as `scripts/chatbot_console_check.py:201-203`).
   CLI `--prompt-version`. The report records `prompt_version` (pinned value or "label") and `engine`.
 - Report also records `run_id`, `split`, `variants`, `cases`, `started_at` so a baseline JSON says what it measured.
+
+## Round 4 (smoke-run finding, 10 Oct)
+- Found on the first live run: case clarify (options X, Y) with alternate `answer` (no must) graded
+  `correct` for a "Couldn't find" reply, because a criteria-less kind passes anything.
+- Rule: an outcome kind with no deterministic criteria (clarify without options; answer / not_supported /
+  handover without must) is skipped while any other kind of the same case has criteria. Only when no kind
+  has criteria does the case pass deterministically (`needs_judge`, counted `unverified`).
+- Report adds `strict_pass_rate`: passes that do not need the judge, over all results (unverified passes
+  count as not passed), and `strict_underfit` on originals. Summary prints both rates.
