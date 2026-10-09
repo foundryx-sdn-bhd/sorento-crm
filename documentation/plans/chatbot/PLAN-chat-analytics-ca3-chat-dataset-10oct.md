@@ -132,7 +132,7 @@ Total: 399 asks
 Coverage line LAST when percent >= 80, FIRST when < 80 (the example is 17%, so first). Failure rate rows: `1. 2026-09-14: 1.2% (14 of 1,215 turns)`.
 No asks: `No asks in that period. Chat data starts 5 Sep 2026.`
 
-## Revision 10 Oct 2026: focused extractor (pending crew ruling, recommended)
+## Revision 10 Oct 2026: focused extractor (crew ruled (b), 10 Oct)
 
 Measured live (gpt-5.4-mini, dev DB production prompt + domain row, read-only): the parser
 addendum alone reads golden 16/20 stable over 3 runs and a held-out set of 8 new messages 4/8,
@@ -157,3 +157,9 @@ schema read golden 19/20 and held-out 8/8 in a scratch run. So:
   closes, nothing runs.
 - Golden live check runs the whole read: parser route + extractor fields, 3 runs each, plus
   the held-out set.
+
+Ruling conditions (crew, 10 Oct): extractor prompt published in the ai_prompt registry by a
+migration on the single chain; main parser golden set run before and after the routing
+addendum, both posted; clear failure line when the second call errors (no hang); the zh "most"
+case (most asked with no number reads top_n null, never 1) fixed; held-out messages never used
+as prompt examples.
