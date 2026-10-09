@@ -40,6 +40,7 @@ blanking the name for a session with no company set.
 """
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, List, Sequence, Tuple
@@ -63,7 +64,7 @@ TRACES_BEGIN = date(2026, 9, 5)
 TRACES_NOTE = "From bot traces, 5 Sep 2026 on."
 COVERAGE_NOTE = (
     f"{TRACES_NOTE} Most asked products: Count by Products, measure Asked "
-    "(products the bot looked up). Topics arrive with CA-2."
+    "(products the bot looked up)."
 )
 
 #: (value, label) in the order a reader meets them. Values are `outcome.turn_outcome`'s.
@@ -286,6 +287,16 @@ DATASET = reg.Dataset(
     date_bases=(reg.DateBasis("asked_at", "Asked on", ASKS.c.asked_at),),
     base=_base,
 )
+
+
+def turn_only(dataset: reg.Dataset) -> reg.Dataset:
+    """`dataset` counting each TURN once: only ask 1 of a split message, so a turn measure
+    (asks, failed) does not double on the labeller's extra asks. Top asks keeps every ask."""
+    return dataclasses.replace(
+        dataset,
+        key=f"{dataset.key}_turns",
+        base=lambda ctx: dataset.base(ctx).where(ASKS.c.ask_seq == 1),
+    )
 
 
 def order_by(ctx) -> Sequence[Any]:

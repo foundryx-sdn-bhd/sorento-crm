@@ -18,10 +18,12 @@ with a products verdict; each is None while nothing is judged.
 from __future__ import annotations
 
 import random
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.chat_facts import ChatAskFact, ChatAskItem, ChatLabelAudit, ChatTopic
@@ -116,15 +118,21 @@ def choose(candidates: list[tuple[str, str, Optional[float]]], rng: random.Rando
     return picked
 
 
+def _already_drawn() -> AppException:
+    return AppException(
+        status_code=409,
+        message="A sample was already drawn for that taxonomy version.",
+        code="AUDIT_SAMPLE_EXISTS",
+    )
+
+
 def draw(db: Session, version: int, *, rng: Optional[random.Random] = None) -> int:
     """Write the sample for `version`; 409 when one exists. Returns how many were drawn."""
+    if not db.query(ChatTopic.code).filter(ChatTopic.version == version).first():
+        raise AppException(status_code=404, message="That taxonomy version does not exist.", code="NOT_FOUND")
     taken = db.query(ChatLabelAudit.id).filter(ChatLabelAudit.taxonomy_version == version).first()
     if taken is not None:
-        raise AppException(
-            status_code=409,
-            message="A sample was already drawn for that taxonomy version.",
-            code="AUDIT_SAMPLE_EXISTS",
-        )
+        raise _already_drawn()
     candidates = [
         (str(ask_id), subject, confidence)
         for ask_id, subject, confidence in db.query(ChatAskFact.id, _SUBJECT, ChatAskFact.label_confidence).filter(
@@ -133,7 +141,12 @@ def draw(db: Session, version: int, *, rng: Optional[random.Random] = None) -> i
     ]
     ids = choose(candidates, rng or random.Random())
     db.add_all([ChatLabelAudit(ask_id=ask_id, taxonomy_version=version) for ask_id in ids])
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Another request drew this version between the check above and this insert.
+        db.rollback()
+        raise _already_drawn()
     return len(ids)
 
 
@@ -280,7 +293,12 @@ def judge(
     products_verdict: Optional[str],
     reviewer_id: str,
 ) -> dict[str, Any]:
-    found = _query(db).filter(ChatLabelAudit.id == audit_id).first()
+    try:
+        uuid.UUID(str(audit_id))
+    except ValueError:
+        found = None
+    else:
+        found = _query(db).filter(ChatLabelAudit.id == audit_id).first()
     if found is None:
         raise AppException(status_code=404, message="That audit row does not exist.", code="NOT_FOUND")
     audit, fact, _turn = found
@@ -298,6 +316,8 @@ def judge(
             raise _unprocessable("Choose the topic this ask belongs to.")
         if verdict == "wrong_topic" and leaf.parent_code != (fact.domain or "general"):
             raise _unprocessable("Choose a topic under the ask's own subject.")
+        if verdict == "wrong_subject" and leaf.parent_code == (fact.domain or "general"):
+            raise _unprocessable("Choose a topic under a different subject.")
         corrected = leaf.code
     audit.verdict = verdict
     audit.corrected_topic = corrected

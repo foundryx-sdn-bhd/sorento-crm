@@ -165,6 +165,10 @@ def _product_words(value: Any) -> tuple[ProductWord, ...]:
     return tuple(words)
 
 
+#: Extra asks one message may add after ask 1 (ask_seq at most 4).
+MAX_EXTRA_ASKS = 3
+
+
 def parse_labels(content: str, batch: list[AskInput], taxonomy: Taxonomy) -> dict[str, Label]:
     """The model's answer, held to the rules. Anything malformed is left out (that row stays
     unlabelled and is picked again next night); nothing here raises.
@@ -172,7 +176,8 @@ def parse_labels(content: str, batch: list[AskInput], taxonomy: Taxonomy) -> dic
     - ask 1 keeps the row's subject; a leaf outside that subject is `<subject>.other`;
     - a further ask keeps the model's subject only when it is a known subject;
     - a forced leaf (casual with no domain) wins over the model;
-    - a language outside `LANGUAGES` is `other`.
+    - a language outside `LANGUAGES` is `other`;
+    - the first entry for a key wins, and at most `MAX_EXTRA_ASKS` asks follow ask 1.
     """
     try:
         data = json.loads(content)
@@ -183,10 +188,15 @@ def parse_labels(content: str, batch: list[AskInput], taxonomy: Taxonomy) -> dic
         return {}
     rows = {row.key: row for row in batch}
     out: dict[str, Label] = {}
+    seen: set[str] = set()
     for entry in labels:
         if not isinstance(entry, dict):
             continue
         row = rows.get(entry.get("key"))
+        if row is not None:
+            if row.key in seen:
+                continue
+            seen.add(row.key)
         raw_asks = entry.get("asks")
         if row is None or not isinstance(raw_asks, list) or not raw_asks:
             continue
@@ -205,6 +215,7 @@ def parse_labels(content: str, batch: list[AskInput], taxonomy: Taxonomy) -> dic
             asks.append(
                 AskLabel(subject, leaf, _confidence(raw.get("confidence")), _product_words(raw.get("product_words")))
             )
+        asks = asks[: 1 + MAX_EXTRA_ASKS]
         if not asks or asks[0].subject != row.subject:
             continue
         language = entry.get("language")

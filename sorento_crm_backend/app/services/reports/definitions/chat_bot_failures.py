@@ -44,7 +44,7 @@ REPORT = reg.register(
         title="Bot failures",
         permission=PERMISSION,
         module_key=MODULE_KEY,
-        dataset=ds.DATASET,
+        dataset=ds.turn_only(ds.DATASET),
         params=_params(),
         detail=reg.DetailLayout(title="Asks", order_by=ds.order_by, cap="truncate"),
         pivot=reg.PivotLayout(title="Failure reason by topic"),

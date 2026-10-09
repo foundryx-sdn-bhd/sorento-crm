@@ -166,7 +166,7 @@ function VerdictCell({
   const options = (
     mine === 'wrong_topic'
       ? leaves.filter((t) => t.parent_code === row.subject)
-      : leaves
+      : leaves.filter((t) => t.parent_code !== row.subject)
   ).map((t) => ({
     value: t.code,
     label: t.label,
