@@ -102,11 +102,12 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
         if hit:
             return Verdict("wrong", [f"must_not:{rule}"])
     kinds = [expect.outcome, *expect.acceptable_alternates]
+    # An alternate with no criteria would pass anything, so it only counts when no kind has criteria.
     has_criteria = any(not _vacuous(k, expect) for k in kinds)
-    for kind in kinds:
-        if has_criteria and _vacuous(kind, expect):
+    for i, kind in enumerate(kinds):
+        if i > 0 and has_criteria and _vacuous(kind, expect):
             continue
         label = _passes(kind, expect, reply)
         if label:
-            return Verdict(label, [], bool(expect.judge_note) or not has_criteria)
+            return Verdict(label, [], bool(expect.judge_note) or _vacuous(kind, expect))
     return Verdict("wrong", ["expectation_not_met"])

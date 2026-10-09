@@ -36,6 +36,7 @@ class CaseResult:
     outcome: Outcome
     latency_ms: int
     tokens: dict
+    previous_bot_reply: str | None = None
 
 
 @dataclass
@@ -94,6 +95,7 @@ def run_case(
     return CaseResult(
         case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
         variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,
+        previous_bot_reply=prev_bot,
     )
 
 

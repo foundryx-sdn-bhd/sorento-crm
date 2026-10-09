@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from .budget import cost_usd
 from .runner import CaseResult, RunResult
 
+GRADER_VERSION = 6  # bump on any grading-rule change
 PASS = ("correct", "good_clarify")
 
 
@@ -60,6 +61,7 @@ def build_report(
             _rate([r for r in originals if r.split == "dev"]), _rate([r for r in originals if r.split == "hidden"])
         ),
         "gap_original_variant": _diff(_rate(originals), _rate(variants)),
+        "grader_version": GRADER_VERSION,
         "pass_rate": _rate(res),
         "strict_pass_rate": _strict(res),
         "strict_underfit": _strict(originals),
@@ -77,6 +79,8 @@ def build_report(
         base_topics = baseline.get("pass_rate_by_topic", {})
         report["delta"] = {
             "total": _diff(report["pass_rate"], baseline.get("pass_rate")),
+            "strict_total": _diff(report["strict_pass_rate"], baseline.get("strict_pass_rate")),
+            "comparable": baseline.get("grader_version") == GRADER_VERSION,
             "by_topic": {
                 t: _diff(rate, base_topics.get(t)) for t, rate in by_topic_rate.items() if t in base_topics
             },

@@ -18,7 +18,8 @@ from .engine import Outcome
 from .judge import CALIBRATION_MIN, calibrate, load_judge
 from .report import build_report, render_summary
 from .trace import DbContactReset, DbTraceReader
-from .runner import NotDryRunError, run_all
+from .grade import grade
+from .runner import CaseResult, NotDryRunError, RunResult, run_all
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -32,6 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--budget-usd", type=float)
     p.add_argument("--budget-model", choices=sorted(PRICES), default="gpt-5.4-mini")
     p.add_argument("--prompt-version")
+    p.add_argument("--regrade", metavar="RUN_DIR")
     p.add_argument("--baseline")
     p.add_argument("--out")
     p.add_argument("--seed", type=int, default=0)
@@ -54,6 +56,9 @@ def _write(out: str, report: dict, run) -> None:
                 "case_id": r.case_id, "split": r.split, "topic_code": r.topic_code, "language": r.language,
                 "variant_kind": r.variant_kind, "label": r.verdict.label, "reasons": r.verdict.reasons,
                 "latency_ms": r.latency_ms, "tokens": r.tokens, "reply_text": r.outcome.reply_text,
+                "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors,
+                "delegated": (r.outcome.raw or {}).get("reply") is None and bool((r.outcome.raw or {}).get("delegate")),
+                "previous_bot_reply": r.previous_bot_reply,
             }
             fh.write(json.dumps(row) + "\n")
 
@@ -85,6 +90,48 @@ class _Counting:
         return res
 
 
+def _regrade(args, cases: list[Case]) -> int:
+    """Grade stored replies again against the current cases; no engine is built or called."""
+    if args.out and _inside_repo(args.out):
+        print("--out must be outside the git work tree", file=sys.stderr)
+        return 2
+    by_id = {c.id: c for c in cases}
+    rows = [
+        json.loads(x) for x in (Path(args.regrade) / "results.jsonl").read_text().splitlines() if x.strip()
+    ]
+    results, dropped = [], 0
+    for row in rows:
+        case = by_id.get(row["case_id"])
+        if case is None:
+            dropped += 1
+            continue
+        raw = {"reply": None, "delegate": "stored"} if row.get("delegated") else {}
+        out = Outcome(
+            reply_text=row.get("reply_text") or "", branch_kind=row.get("branch_kind"),
+            tool_errors=list(row.get("tool_errors") or []), latency_ms=row.get("latency_ms", 0), raw=raw,
+        )
+        results.append(
+            CaseResult(
+                case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
+                variant_kind=row.get("variant_kind"), verdict=grade(case.expect, out, row.get("previous_bot_reply")),
+                outcome=out, latency_ms=row.get("latency_ms", 0), tokens=row.get("tokens") or {},
+                previous_bot_reply=row.get("previous_bot_reply"),
+            )
+        )
+    run = RunResult(results=results, stopped_reason=None, wall_s=0.0)
+    baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
+    report = build_report(run, baseline, args.budget_model)
+    report.update(
+        engine="regrade", split=args.split, variants=args.variants, run_id=f"regrade-{uuid.uuid4().hex[:8]}",
+        prompt_version="stored", cases=len(results), regrade_dropped=dropped,
+        started_at=datetime.now(timezone.utc).isoformat(),
+    )
+    if args.out:
+        _write(args.out, report, run)
+    print(render_summary(report, args.split))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not args.data_dir:
@@ -99,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
         for path, reason in loaded.invalid:
             print(f"invalid case: {path}: {reason}", file=sys.stderr)
         return 2
+    if args.regrade:
+        return _regrade(args, loaded.cases)
     if args.out and _inside_repo(args.out):
         print("--out must be outside the git work tree", file=sys.stderr)
         return 2
