@@ -8,8 +8,10 @@ The LLM and the product resolver are injected as plain callables, so nothing her
 provider:
 
 * `chat(messages, schema) -> str`: the provider's raw JSON content;
-* `resolve(word) -> list[dict]`: the resolver's product matches (`entity_type`, `uuid`,
-  `match_tier`), the shape `resolve_reference_post` returns per token.
+* `resolve(word, contact_respond_id) -> list[dict]`: the resolver's product matches
+  (`entity_type`, `uuid`, `match_tier`), the shape `resolve_reference_post` returns per
+  token. The contact rides along because the bot resolves inside the asking contact's
+  company and brand scope, and the pass must resolve the same way.
 """
 from __future__ import annotations
 
@@ -121,7 +123,7 @@ class FakeChat:
         return self.answer(keys)
 
 
-def no_products(word):
+def no_products(word, contact_respond_id):
     return []
 
 
@@ -450,7 +452,8 @@ def test_limit_caps_the_rows_picked(session_factory):
 
 
 def _resolver(table: dict):
-    def resolve(word):
+    def resolve(word, contact_respond_id):
+        assert contact_respond_id == "ZZT-lab-1"
         return table.get(word, [])
 
     return resolve
@@ -522,7 +525,7 @@ def test_a_resolver_failure_leaves_the_label_and_skips_the_item(session_factory)
     seed_taxonomy(session_factory)
     fact_id = seed_fact(session_factory, records=answered_trace(named=()))
 
-    def boom(word):
+    def boom(word, contact_respond_id):
         raise RuntimeError("zzt resolver down")
 
     chat = FakeChat(

@@ -9,7 +9,8 @@ Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca2-taxonomy-09oct.md, "Sc
   transaction, seeds the 15 subjects (the 14 parser domains plus `general`) at version 1,
   and is idempotent.
 
-Run: pytest tests/test_migration_chat_topics_0001.py -q
+Run: pytest tests/chatbot/test_migration_chat_topics_0001.py -q (under tests/chatbot/: it reads the
+parser domains from `turn/policy_rows.py`, and only this folder may import the chatbot package)
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from tests import _pg_fixture
 from tests._pg_fixture import blank_session
 
 STEM = "chat_topics_0001_taxonomy"
-_MIGRATION = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "versions" / f"{STEM}.py"
+_MIGRATION = pathlib.Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{STEM}.py"
 DOMAINS = tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS)
 
 
