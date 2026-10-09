@@ -68,15 +68,18 @@ and S/O NO repeat on every row.
    email names two or more orders, each order's lines sit under a one-cell group row naming
    the S/O NO (lines are already sorted by S/O NO then line no), so nothing is lost.
 3. **No wrapped cells.** Line table columns:
-   LOCATION | ITEM CODE | QTY | [NEW QTY] | DELIVERY | [NEW DELIVERY] | REMARK
+   LOCATION | ITEM CODE | QTY | [NEW QTY] | DELIVERY | [NEW DATE] | REMARK
    (bracketed columns appear only when some line changed that value, as today). Every header
-   and every cell except REMARK is `white-space:nowrap`; font 12px; padding 4px 6px.
+   and every cell except REMARK (and CUSTOMER / PROJECT in the order table) is
+   `white-space:nowrap`; font 12px; padding 4px.
 4. **Fits A4 portrait.** The handover document moves from the 900px `wide` card to a new
-   `print` width: 660px card, 16px gutters (628px of table), which fits Outlook's 698px and
-   Chrome's 718px printable width with the 12px outer padding. The shell also gains a
-   `@media print` rule (card fluid, outer padding 0, `@page { size: A4 portrait; margin: 10mm }`)
-   for clients that honour it. A long order flows onto page 2 with the column header row
-   repeated (`<thead>` with `display: table-header-group`).
+   `print` width: 672px card, 12px gutters (648px of table); card + the shell's 12px outer
+   padding = 696px, inside Outlook's 698px and Chrome's 718px printable width. The shell also
+   gains a `@media print` rule (card fluid, outer padding 0, `@page { size: A4 portrait;
+   margin: 10mm }`) for clients that honour it. A long order flows onto page 2 with the column
+   header row repeated (`<thead>` with `display: table-header-group`); each line row carries
+   `page-break-inside:avoid` inline (a global `tr` rule also held the shell's own block rows
+   together and pushed the whole table to page 2, caught in the print pass).
 5. **Everything else unchanged**: subject, headline, verbs, values, date format, attachments
    line, "Raised by" line, button. The plain-text part follows rules 1 and 2 (no note; header
    lines carry the SO date; the pipe table drops SO DATE / S/O NO and prints the S/O NO as a
@@ -97,9 +100,12 @@ and S/O NO repeat on every row.
 
 - **Many lines** (40+): rows continue on page 2+, header row repeated, no row split across
   pages (`page-break-inside: avoid` on `tr`).
-- **Long item codes** (e.g. 22 chars, `SRT-WC-ABCDE-1234-WHT`): nowrap means the column grows and
-  REMARK narrows; REMARK is the only cell allowed to wrap. At 12px a 22-char code is ~150px, so
-  the row still fits 628px with both CHANGE TO columns present.
+- **Long item codes**: the golden OI files' longest code is 16 chars (`CWCX604-S-RL-NEW`,
+  `e2e/fixtures/project-cs/expected-order-inquiry-2025-12-18.xlsx`). Nowrap means the column
+  grows and REMARK narrows; REMARK is the only line cell allowed to wrap. Measured (Chromium,
+  Arial metrics): with both NEW columns AND a 16-char code REMARK gets ~185px, and
+  `ORDER BACK SPO-2026/08-0061` needs ~194px, so that one value can still break onto a second
+  line in that worst combination. Every other measured row stays one line.
 - **Several SOs in one email**: header table lists each with its own SO DATE; line table has a
   group row per SO.
 - **Attachments**: the "Attachments: ..." suffix stays in REMARK (it is a file list, not a note);
@@ -113,11 +119,11 @@ and S/O NO repeat on every row.
    named. (a) drop it like every other note; (b) print `CHANGE SO NO TO <SO>` from the
    amendment's own `to_value` (structured, not the free note). **Rec (b)**: it is an
    instruction, not a planning note, and it is short.
-2. **Column labels.** (a) `NEW QTY` / `DELIVERY` / `NEW DELIVERY` (short, one line);
+2. **Column labels.** (a) `NEW QTY` / `DELIVERY` / `NEW DATE` (short, one line);
    (b) keep `QTY CHANGE TO` / `DELIVERY DATE` / `DELIVERY DATE CHANGE TO` with nowrap (the
    table gets ~120px wider and no longer fits portrait with both CHANGE TO columns).
    **Rec (a)**.
-3. **Card width.** (a) new `print` width 660px for this email (portrait, no scaling, Outlook
+3. **Card width.** (a) new `print` width 672px for this email (portrait, no scaling, Outlook
    desktop safe); (b) keep 900px and rely on print CSS / landscape (Outlook desktop ignores
    `@page`, so the photo's client would still clip or shrink). **Rec (a)**.
 4. **Multiple SOs.** (a) group row per SO in the line table; (b) keep an S/O NO column only
@@ -125,3 +131,26 @@ and S/O NO repeat on every row.
 5. **Undone email** (`order_inquiry_undone_default`) shares the shape. (a) leave it for its own
    lane; (b) fold the same layout in here. **Rec (a)**: the request names the handover email,
    and the undone mail has no REMARK note leak.
+
+## Print pass (Chromium, rendered through the real shell, masked data)
+
+`ALIGN-oi-email-print-09oct.html`, viewport 698px (Outlook's A4 printable width), print to PDF:
+
+| Case | Before (oihr_0004) | After |
+|------|--------------------|-------|
+| 1: SO418869 shape, planning note + 2 DELAY | page wider than 698 (712px), 2 pages, REMARK 17 lines tall | 698px, 1 page, every cell one line |
+| 2: two SOs, NEW QTY + NEW DATE, ORDER BACK | 830px wide, 2 pages | 698px, 1 page; ORDER BACK + doc wraps once (edge case above) |
+| 3: 42 lines | 3 pages | 2 pages, header row repeated on page 2 |
+
+Not verifiable from the cloud sandbox: Outlook desktop's own print engine. The 672px card is
+what makes it fit there; `@page` / `@media print` only help browser and webmail clients.
+
+## Slices
+
+1. Card + mock (this file, UAC, ALIGN page).
+2. Red tests: `tests/test_oi_email_print.py` (remark never carries the note, CHANGE SO NO
+   target, header so_date, migration in place / guard / downgrade / idempotent, rendered
+   line table shape, `print` width in the shell, print CSS).
+3. Code: `handover_remark`, `_build_handover_context` (`so_date` on orders),
+   `email_layout` `print` width, `base.html` print CSS, `oihr_0005_print_one_page`, FE width
+   option; existing tests that pinned the note in REMARK updated.
