@@ -161,6 +161,24 @@ def create_views() -> None:
     _fix_committed_v()
 
 
+def create_analytics_connector() -> None:
+    """Lay down migration `acc_0001_connector`'s non-table work (it has no ORM model).
+
+    `users.connector_revoked_at` comes from `create_all` (added here too for an older database); the
+    `analytics_connector` schema + views exist only in the migration body, so a bootstrapped
+    database needs them replayed (same gap as the scm views above). Idempotent.
+    """
+    from sqlalchemy import text
+
+    from app.database import engine
+    from app.services.analytics_connector import views
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
+        views.ensure_views(conn)
+    log.info("analytics_connector views created")
+
+
 def _fix_committed_v() -> None:
     """Bring ``scm.committed_v`` current past migration 337.
 
@@ -959,6 +977,7 @@ def main() -> int:
     create_schema()
     apply_migration_only_ddl()
     create_views()
+    create_analytics_connector()
     if not args.skip_seed:
         seed_reference_data()
         seed_n8n_sales_reports_grant()
