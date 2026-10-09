@@ -10,8 +10,9 @@ Published with `chatbot_prompt_vars.publish_wording_edit`, the way a migration a
 wording layer changes the parser (the drift test refuses a version rebuilt from the code
 constant): one exact edit to the PRODUCTION text, owner edits and variables kept, as a new
 UNLABELLED version. The addendum goes right after `PO_REFS_ADDENDUM` when production carries
-it, else right before the MEMORY block (the tail). A production text with neither fails the
-migration loudly. The one silent case is a freshly bootstrapped database, whose production
+it, else right before the MEMORY block, else right before the rendered policy blocks
+(`<<<CHATBOT POLICY BLOCKS>>>`, how dev's v60 ends). A production text with none of the three
+fails the migration loudly. The one silent case is a freshly bootstrapped database, whose production
 text predates the wording layer (an edit of it would carry the registry lists as literal
 text, which the drift test refuses): it is skipped with a warning.
 Promoting is one label move in the admin UI, after crew's live parser checks; rolling back
@@ -40,6 +41,10 @@ logger = logging.getLogger("alembic.runtime.migration")
 PROMPT_NAME = "chatbot_semantic_parser"
 #: The head of MEMORY_ADDENDUM, the production text's tail block.
 MEMORY_ANCHOR = "\n\n== MEMORY ==\n"
+#: The rendered policy blocks every version since `chatbot_rearch_s4` ends with
+#: (`chatbot_parser_prompt.BLOCKS_BEGIN`). Dev's production text (v60, 10 Oct 2026) carries
+#: neither PO_REFS_ADDENDUM nor the MEMORY block, but ends with these.
+BLOCKS_ANCHOR = "\n\n<<<CHATBOT POLICY BLOCKS>>>"
 MESSAGE = (
     "MULTI-ASK-PLAN: the sub_asks and family keys (one entry per thing a message asks; "
     "exact code or family). Unlabelled, promote from the Prompts page."
@@ -90,18 +95,23 @@ def publish(session: Session) -> int | None:
     # PO_REFS_ADDENDUM, so the first form of this publish wrote nothing and said so only
     # in a warning). After PO_REFS_ADDENDUM when the production text carries it (its place
     # in the code constant), else right before the MEMORY block, which every production
-    # text since `mem_0002_parser_memory` carries and which stays the tail. Neither: the
-    # deploy fails here, loudly, rather than shipping a runner the parser never feeds.
+    # text since `mem_0002_parser_memory` carries and which stays the tail, else right
+    # before the policy blocks (dev v60 has neither of the first two, crew 10 Oct). None of
+    # the three: the deploy fails here, loudly, rather than shipping a runner the parser
+    # never feeds.
     if production is None:
         raise RuntimeError("maskp_0001: no production-labelled chatbot_semantic_parser version")
     if PO_REFS_ADDENDUM in production:
         old, new = PO_REFS_ADDENDUM, PO_REFS_ADDENDUM + SUB_ASKS_ADDENDUM
     elif MEMORY_ANCHOR in production:
         old, new = MEMORY_ANCHOR, SUB_ASKS_ADDENDUM + MEMORY_ANCHOR
+    elif BLOCKS_ANCHOR in production:
+        old, new = BLOCKS_ANCHOR, SUB_ASKS_ADDENDUM + BLOCKS_ANCHOR
     else:
         raise RuntimeError(
-            "maskp_0001: the production parser text carries neither PO_REFS_ADDENDUM nor the "
-            "MEMORY block, so the sub asks addendum has no place to go; publish it by hand"
+            "maskp_0001: the production parser text carries none of PO_REFS_ADDENDUM, the "
+            "MEMORY block or the policy blocks, so the sub asks addendum has no place to go; "
+            "publish it by hand"
         )
     version = publish_wording_edit(session, old=old, new=new, message=MESSAGE)
     if version is None:

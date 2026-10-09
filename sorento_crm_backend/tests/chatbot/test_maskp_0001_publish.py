@@ -100,6 +100,17 @@ def test_a_production_text_without_po_refs_gets_the_addendum_before_the_memory_b
         assert new.template == "HEAD {{domains}}" + SUB_ASKS_ADDENDUM + m.MEMORY_ANCHOR + "memory body"
 
 
+def test_a_production_text_with_only_the_policy_blocks_gets_the_addendum_before_them():
+    """Crew, 10 Oct 2026: dev's production text (v60) has neither PO_REFS_ADDENDUM nor the
+    MEMORY block; it ends with the rendered policy blocks."""
+    m = _migration()
+    with blank_session() as db:
+        tail = m.BLOCKS_ANCHOR + "\n{{domains_detail}}\n<<<END CHATBOT POLICY BLOCKS>>>"
+        _production(db, "HEAD {{domains}}" + tail)
+        assert m.publish(db) == 8
+        assert _versions(db)[-1].template == "HEAD {{domains}}" + SUB_ASKS_ADDENDUM + tail
+
+
 def test_a_production_text_with_no_anchor_fails_loudly():
     import pytest
 
