@@ -1,0 +1,71 @@
+AC-UC-41 - refused undo via direct API call (curl-equivalent, browser fetch with Bearer token)
+================================================================================================
+
+Setup: SO314593 (projects.sales_orders.id 937b6647-cf52-4b1c-bffb-6790fd97c608), decision
+revision 2 active (dd8f4b75-5d71-435b-afa2-bfe0da0ff664), an order_inquiry_links row inserted
+by hand on the OI row revision 2 raised (row c3887e7a-6e89-442c-8ff1-90e2faccf849), auto=true,
+linked_at > confirmed_at.
+
+Call made (Authorization: Bearer <token from /api/auth/token>, same as the browser session):
+
+  POST /api/v1/pending-actions
+  { "action_key": "project_sales_order.undo_confirm",
+    "entity_type": "project_sales_order",
+    "entity_id": "937b6647-cf52-4b1c-bffb-6790fd97c608",
+    "payload": { "decision_id": "dd8f4b75-5d71-435b-afa2-bfe0da0ff664" } }
+
+Actual response: 202 Accepted
+  {"id":"cbf27873-2378-4df5-a7da-2d87f931e267","commit_at":"2026-09-17T02:09:47.635570","window_seconds":5}
+
+FINDING - this does NOT answer 409 the way the brief expected. Read against the code
+(`app/services/record_actions.py` module docstring and `app/api/v1/system/pending_actions.py`
+`create_pending_action`): the ONLY synchronous check at POST time is `permission` (the route's
+own slug) and a same-form-already-pending conflict. The "linked" business refusal that
+`undo_last_confirm` raises is a `capture`/`execute` check that only runs at COMMIT time - by
+design, per the code's own comment, because Purchasing could link a PO line during the 5 second
+countdown itself, so checking it only at the click would miss a link that lands one second later.
+
+So the correct, measured behaviour is: the POST always parks (202) for a UI-channel caller, and
+the refusal appears at COMMIT time as a terminal `ineligible` status on the pending-action row,
+not as an immediate 409 on the create call. Confirmed in the DB after the window lapsed:
+
+  select id, action_key, status, error_text, committed_at, resolved_at
+  from sla_form_actions where id = 'cbf27873-2378-4df5-a7da-2d87f931e267';
+
+  status      = ineligible
+  error_text  = "Purchasing has linked a PO line to this order since it was confirmed."
+  committed_at = (null - never applied)
+  resolved_at  = 2026-09-17 02:10:50
+
+Decision revision 2 stayed active throughout (confirmed unaffected by the refused attempt):
+
+  select id, revision_no, state from projects.so_supply_decisions
+  where project_sales_order_id = '937b6647-cf52-4b1c-bffb-6790fd97c608';
+  -> rev 1 superseded, rev 2 active (unchanged by the refused undo attempt)
+
+So AC-UC-41's underlying guarantee holds (a linked order cannot be undone, the revision is
+untouched), but the observable shape at the API boundary is 202-then-ineligible, not a synchronous
+409. The disabled gear entry (AC-UC-03) is the correct, and only, way the UI ever surfaces this
+refusal to a reader before the click - the raw endpoint has no reason to reject early once the
+window model already exists, since the gear being disabled is what stops a real click from ever
+reaching this call. Flagging as an observation for the captain, not treating it as a defect: the
+"click has no button left to report a later refusal on" design note in record_actions.py is about
+the PERMISSION check, not about this business-rule refusal, so there is no contradiction in the
+code - only in the brief's description of the response code.
+
+SIDE FINDING: `_last_outcome` (pending_actions.py) sorts by `committed_at desc nullslast` first.
+An `ineligible` row never sets `committed_at` (only `resolved_at`), so it sorts BEHIND any older
+row on the same record that DID commit, even if the ineligible one is more recent. On this order,
+GET /api/v1/pending-actions/current?entity_type=project_sales_order&entity_id=<id> returned the
+00:54 `committed` row as `last_outcome`, not the 02:10 `ineligible` one, right after the refusal.
+Not exercised by AC-UC-03/04 (the board's per-order `undo.refusal` field is read fresh from a
+different endpoint each load and was correct throughout - see the two screenshots), but a reader
+depending on `last_outcome` after an undo attempt on a record with prior undo history would see
+the wrong outcome. Logged here for the captain to route as a possible follow-up, not fixed as
+part of this browser-verification pass.
+
+Immediately after recording this, the pending action was cancelled/left to resolve as `ineligible`
+per standing rule (never let a countdown lapse un-managed): it had already resolved by the time
+the cancel call was made (resolved_at 02:10:50, roughly 5s after the POST, as designed), and the
+cancel call correctly answered 409 "That action has already been applied. Use Undo to reverse it."
+No further action was needed; the decision revision was never touched by this attempt.
