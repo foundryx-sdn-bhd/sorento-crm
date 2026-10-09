@@ -1738,6 +1738,14 @@ def test_detail_query_stays_fast_at_scale(api):
             _do_line(db, company_id, product.id, warehouse.id, line.id, quantity=6, order_date=order_date)
             _do_line(db, company_id, product.id, warehouse.id, line.id, quantity=4, order_date=order_date)
     db.flush()
+    # Plan against the rows just seeded, not against whatever an earlier test on this xdist
+    # worker left in the shared scratch schema's pg_class. Autovacuum on a worker whose earlier
+    # files rolled back a few hundred rows records reltuples = 0 over non-empty pages, and the
+    # planner then reads these 3,600 SO lines as about one row: a join filter removing 12,956,400
+    # rows, 7 to 18 s against about 1 s on the same seed. ANALYZE runs inside this test's
+    # transaction (it counts the transaction's own uncommitted rows), so the outer rollback
+    # discards the statistics with the rows.
+    db.execute(text("ANALYZE sales_orders, sales_order_lines, orders, order_lines, products"))
 
     target = client.post(BASE, json={
         "subject_kind": "agent", "sales_agent_id": agent.id, "name": "ZZT Perf", "metric": "amount",

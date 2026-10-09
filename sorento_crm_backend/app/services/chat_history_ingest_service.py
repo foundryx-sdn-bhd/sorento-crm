@@ -51,6 +51,8 @@ class ChatMessageRow:
     media_file_name: Optional[str] = None
     sender_source: Optional[str] = None
     sender_user_id: Optional[str] = None
+    # QUOTED-REPLY R1: the engine turn an outgoing row carries (chat_history_turn_link).
+    chatbot_turn_id: Optional[str] = None
 
 
 # AC-J5: a CRM drawer send reaches the ingest TWICE (the direct respond-send-user
@@ -71,12 +73,12 @@ _UPSERT_SQL = text(
         channel, contact_id, phone_number, message, sent_at, first_name, last_name, type,
         message_id, result, reply_to_message_id, reply_to_message, turn_id, ingest_at,
         respond_ts, state_trace, media_url, media_type, media_file_name, sender_source,
-        sender_user_id
+        sender_user_id, chatbot_turn_id
     ) VALUES (
         :channel, :contact_id, :phone_number, :message, :sent_at, :first_name, :last_name, :type,
         :message_id, :result, :reply_to_message_id, :reply_to_message, :turn_id, :ingest_at,
         :respond_ts, :state_trace, :media_url, :media_type, :media_file_name, :sender_source,
-        :sender_user_id
+        :sender_user_id, :chatbot_turn_id
     )
     ON CONFLICT (contact_id, message_id) WHERE {CHAT_HISTORY_DEDUPE_PREDICATE}
     DO UPDATE SET
@@ -96,7 +98,8 @@ _UPSERT_SQL = text(
         media_type = COALESCE(chat_histories.media_type, EXCLUDED.media_type),
         media_file_name = COALESCE(chat_histories.media_file_name, EXCLUDED.media_file_name),
         sender_source = COALESCE(chat_histories.sender_source, EXCLUDED.sender_source),
-        sender_user_id = COALESCE(chat_histories.sender_user_id, EXCLUDED.sender_user_id)
+        sender_user_id = COALESCE(chat_histories.sender_user_id, EXCLUDED.sender_user_id),
+        chatbot_turn_id = COALESCE(chat_histories.chatbot_turn_id, EXCLUDED.chatbot_turn_id)
     RETURNING id, (xmax <> 0) AS already_existed
     """
 )
@@ -139,6 +142,7 @@ def upsert_message_row(db: Session, row: ChatMessageRow) -> tuple[int, bool]:
             "media_file_name": row.media_file_name,
             "sender_source": row.sender_source,
             "sender_user_id": row.sender_user_id,
+            "chatbot_turn_id": row.chatbot_turn_id,
         },
     )
     out = result.one()

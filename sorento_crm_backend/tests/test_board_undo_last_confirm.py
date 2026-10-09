@@ -46,6 +46,7 @@ from app.models.stock_transfer import StockTransfer
 from app.services import project_line_draft_service
 from app.services.error_handler import AppException
 
+from ._borrow_mode import borrow_from_order_on
 from .test_so_supply_confirmation import (  # noqa: F401  (api is a fixture)
     BASE,
     _core_line,
@@ -1285,6 +1286,7 @@ def test_undo_refuses_when_purchasing_linked_a_donor_orders_row_after_the_confir
 
     client, world = api
     db = world.db
+    borrow_from_order_on(db)
     donor_wh = _warehouse(db, f"ZZT-DNRX-{_suffix()}")
     _stock(db, world.product, donor_wh, on_hand=100)
     donor_project = register_project(

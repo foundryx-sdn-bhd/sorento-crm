@@ -669,6 +669,11 @@ class SalesOrder(Base, CompanyScopedMixin):
     # source never said - every order that predates the field or came from Excel - and
     # counts like T. Migration sotr_0001.
     is_transferable = Column(Boolean, nullable=True)
+    # The customer's own PO number for this order (SO-PO-REF), as AutoCount printed it, and
+    # its folded key (`app.services.scm.po_ref.po_ref_key`) the chatbot matches on. Written
+    # only by the ESB ingest, never touches `project_label`. Migration sopr_0001.
+    po_ref = Column(String(255), nullable=True)
+    po_ref_key = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -755,6 +760,12 @@ class SalesOrderLine(Base, CompanyScopedMixin):
         String(24), default="not_reviewed", server_default="not_reviewed", nullable=False
     )
     line_status = Column(String(50), default="open", nullable=False)
+    # SO-CANCEL-LINE: set when CS transfers the line to Cancel SO on the fulfilment board.
+    # `cancelled_at` is what tells that cancel apart from a header-driven one (the ingest
+    # keeps such a line cancelled on a re-push).
+    cancelled_at = Column(DateTime(timezone=False), nullable=True)
+    cancelled_by_id = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    cancel_reason = Column(Text, nullable=True)
     source_system = Column(String, nullable=True)
     source_ref = Column(String, nullable=True)
     # AutoCount's own `Seq` (PLAN-so-lines-autocount-order.md), kept as it arrives. NULL

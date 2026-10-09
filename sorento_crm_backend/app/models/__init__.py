@@ -4,7 +4,7 @@
 from app.models.company import Company, UserCompany, RespondContactCompany
 from app.models.user import User, UserRole, UserRoleAssignment, UserPermission, UserRolePermission, SystemLog, SystemSetting, UserQuickAccess, UserListColumnConfig
 from app.models.auth import VerificationToken
-from app.models.product import Product, ProductCategory, Brand, UnitOfMeasure
+from app.models.product import Product, ProductAlternative, ProductCategory, Brand, UnitOfMeasure
 from app.models.country import Country
 from app.models.product_set import ProductSet, ProductSetMember
 from app.models.product_companion import ProductCompanionRule, ProductCompanionRuleHost
@@ -95,6 +95,8 @@ from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
 from app.models.chat_thread_sync_state import ChatThreadSyncState
 from app.models.chatbot_turn import ChatbotTurn
+from app.models.chat_facts import ChatAskFact, ChatAskItem, ChatEpisodeFact
+from app.models.chatbot_file_link import ChatbotFileLink
 from app.models.conversation_frame import ConversationFrame
 from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding
@@ -200,6 +202,7 @@ __all__ = [
     "UserQuickAccess",
     "UserListColumnConfig",
     "Product",
+    "ProductAlternative",
     "ProductSet",
     "ProductSetMember",
     "ProductSetProposalBatch",

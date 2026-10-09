@@ -85,6 +85,8 @@ function renderControl(overrides: {
   onSave?: (
     entries: { key: string; decision: unknown }[],
   ) => Promise<{ savedKeys: string[]; failed: { key: string; why: string }[] }>;
+  /** The board's "Borrow from another order" switch; on unless a test says otherwise. */
+  borrowFromOrderEnabled?: boolean;
 } = {}) {
   const contributions = overrides.contributions ?? [row()];
   const onSave =
@@ -103,6 +105,7 @@ function renderControl(overrides: {
       onSave={onSave as never}
       onSaved={onSaved}
       onClear={onClear}
+      borrowFromOrderEnabled={overrides.borrowFromOrderEnabled ?? true}
     />,
   );
   return { ...utils, onSave, onSaved, onClear };
@@ -136,9 +139,10 @@ describe('BoardDecideControl: the menu (AC-4)', () => {
       'As suggested',
       'Use own location',
       'Borrow from another order',
-      'Borrow other location',
+      'Borrow',
       'Use BRW',
       'Buy',
+      'Transfer to Cancel SO',
     ]);
     expect(screen.queryByRole('menuitem', { name: 'Reserve' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Use incoming' })).not.toBeInTheDocument();
@@ -258,7 +262,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -295,7 +299,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -407,5 +411,65 @@ describe('BoardDecideControl: a covered row already decided exactly this way is 
     expect(toast.success).toHaveBeenCalledWith(
       expect.stringContaining('already decided that way'),
     );
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY (BR1, K8). The menu offers "Borrow from another order" exactly when
+ * the board says the switch is on, as it always did before the switch existed. The "Borrow
+ * other location" picker never lists a location reachable only through a donor-NAMED
+ * candidate.
+ */
+describe('BoardDecideControl: Borrow from another order follows the switch (BR1)', () => {
+  const impact = { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' };
+  const named = {
+    source: 'other_location' as const,
+    warehouse_code: 'MWH-IB',
+    warehouse_id: 'wh-mwh',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: 'SO397450',
+    donor_line_no: 446,
+    donor_core_line_id: 'core-1',
+  };
+  const nameless = {
+    source: 'other_location' as const,
+    warehouse_code: 'DC1-IR',
+    warehouse_id: 'wh-dc1',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: 'core-2',
+  };
+
+  it('offers it when the switch is on, whatever the candidates name', () => {
+    renderControl({ contributions: [row({ borrow_candidates: [nameless] })] });
+    openMenu();
+
+    expect(screen.getByRole('menuitem', { name: 'Borrow from another order' })).toBeInTheDocument();
+  });
+
+  it('does not offer it when the switch is off, even beside a donor-named candidate', () => {
+    renderControl({
+      contributions: [row({ borrow_candidates: [named] })],
+      borrowFromOrderEnabled: false,
+    });
+    openMenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Borrow from another order' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Borrow' })).toBeInTheDocument();
+  });
+
+  it('keeps a donor-named location out of the Borrow picker (K8)', async () => {
+    renderControl({ contributions: [row({ borrow_candidates: [named, nameless] })] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const select = within(dialog).getByLabelText('donor-or-location');
+    expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
+    expect(within(select).queryByText('MWH-IB')).not.toBeInTheDocument();
   });
 });

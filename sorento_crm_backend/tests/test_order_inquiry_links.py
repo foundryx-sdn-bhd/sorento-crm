@@ -527,6 +527,36 @@ def test_an_order_row_is_offered_the_shipping_order_before_any_purchase_order(wo
     assert [c["kind"] for c in candidates[1:]] == ["po"] * 5
 
 
+def test_an_spo_candidate_names_its_source_pos_supplier_not_its_own(world):
+    """OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026: "the supplier always take from PO, not
+    the SPO"): the link dialog's SPO candidate - and the note `_write_link` writes off
+    it - names the supplier of the PO the SPO line was raised from (`from_po_number`),
+    not the allocation's own `supplier_id`."""
+    _two_purchase_orders(world)
+    spo_supplier = _uid()
+    world.db.execute(
+        text(
+            "INSERT INTO suppliers (id, company_id, supplier_code, supplier_name, "
+            "is_active) VALUES (:i, :c, :code, :code, true)"
+        ),
+        {"i": spo_supplier, "c": world.company_id, "code": f"{MARKER}-SPO-SUP"},
+    )
+    allocation = world.spo_allocation("SPO-2026/08-0061", "BRW", 332)
+    world.db.execute(
+        text(
+            "UPDATE spo_allocations SET supplier_id = :s, from_po_number = :n "
+            "WHERE id = :i"
+        ),
+        {"s": spo_supplier, "n": "202608-S0015", "i": allocation},
+    )
+    world.db.flush()
+    row = world.row("ORDER", 8)
+
+    [spo] = [c for c in world.svc.po_candidates_for_row(row.id) if c["kind"] == "spo"]
+
+    assert spo["supplier_name"] == f"{MARKER}-SUP"
+
+
 def test_an_order_back_walks_its_cited_document_first_then_spo_then_purchase_orders(world):
     """AC-I2 + part 2 section 4b, against the fixture's SRTWCY7405-PJ row: the document CS
     cited comes before everything, then SPO allocations, then purchase order lines."""

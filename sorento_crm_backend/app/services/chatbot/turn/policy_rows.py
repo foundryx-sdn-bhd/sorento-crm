@@ -171,6 +171,9 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
             # the `sales_analysis` override in `run_fetch`, never `tools[0]`. Migration
             # `sales_s1_reports_module` adds it to a seeded database.
             "crm_sales_analysis",
+            # REPORT-ENGINE slice 1b: an allow-list member only, picked by the
+            # `sales_ranking` override in `run_fetch`, never `tools[0]`.
+            "crm_report_ask",
         ],
         escalation_team_code="customer_service",
         switch_words=[

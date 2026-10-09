@@ -163,6 +163,8 @@ const CROSS_GROUP: BorrowCandidate = {
 const onAdd = vi.fn();
 const onDone = vi.fn();
 
+const onAddMany = vi.fn();
+
 function renderDialog(candidates: BorrowCandidate[] = [OTHER_LOCATION, OTHER_PROJECT]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
@@ -174,6 +176,7 @@ function renderDialog(candidates: BorrowCandidate[] = [OTHER_LOCATION, OTHER_PRO
         candidates={candidates}
         onDone={onDone}
         onAdd={onAdd}
+        onAddMany={onAddMany}
       />
     </QueryClientProvider>,
   );
@@ -313,6 +316,144 @@ describe('BorrowAddDialog', () => {
         'true',
       );
     });
+  });
+
+  // BORROW-LOCATION-ONLY S5: with "Borrow from another order" off the server names no
+  // donor, so a group-borrow row reads as its location alone, never "An unnamed sales order".
+  it('labels a donor-less group-borrow row by its location alone', () => {
+    renderDialog([
+      {
+        ...OTHER_LOCATION,
+        rung: 'group_borrow',
+        donor_core_line_id: 'core-9',
+        donor_so_number: null,
+        donor_line_no: null,
+      },
+    ]);
+
+    const table = screen.getByTestId('borrow-donor-table');
+    expect(within(table).queryByText(/unnamed sales order/i)).not.toBeInTheDocument();
+    expect(within(table).queryByText(/line /)).not.toBeInTheDocument();
+  });
+
+  // BORROW-LOCATION-ONLY BR2: with the switch off the server names neither the donor order
+  // nor the donor project, so two rows at one bin have nothing to tell them apart and are
+  // shown as the one location they are.
+  it('shows one row for a bin whose donor-less rows nothing tells apart, with no project tag', () => {
+    const stepTwo: BorrowCandidate = {
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: 'core-9',
+      donor_so_number: null,
+      recommended: true,
+    };
+    const held: BorrowCandidate = { ...OTHER_PROJECT, donor_project_ref: null };
+    renderDialog([stepTwo, held]);
+
+    const table = screen.getByTestId('borrow-donor-table');
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(1);
+    expect(within(table).queryByText(/Another project|PRJ-/)).not.toBeInTheDocument();
+  });
+
+  // BORROW-LOCATION-ONLY fix round 2, R1: with the switch ON two NAMED step-2 donors at one
+  // bin are two choices, and both stay listed and selectable.
+  it('keeps two donor-named order_borrow rows at one bin apart (switch on)', () => {
+    const named = (core: string, so: string, lineNo: number): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: so,
+      donor_line_no: lineNo,
+    });
+    renderDialog([named('core-1', 'SO371334', 2), named('core-2', 'SO371335', 7)]);
+
+    const rows = within(screen.getByTestId('borrow-donor-table')).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    fireEvent.click(within(rows[1]).getByRole('radio'));
+    expect(within(rows[1]).getByRole('radio')).toBeChecked();
+    // Browser re-check (d77b15fbc): with the switch on, the two rows at one bin are told
+    // apart by the order each one names, as the user guide says ("SO371334 line 2").
+    expect(within(rows[0]).getByText('SO371334 line 2')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('SO371335 line 7')).toBeInTheDocument();
+  });
+
+  // R2: the merged nameless row is the BIN, so it offers the bin's summed free stock and
+  // splits an Add across its lines in the server's order, each within its own free.
+  it('offers the summed free of a merged bin and splits an Add of 6 into 4 + 2', () => {
+    const line = (core: string): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: null,
+      free_qty: '4',
+      need_qty: null,
+    });
+    renderDialog([line('core-a'), line('core-b')]);
+
+    expect(screen.getByLabelText('Quantity')).toHaveValue(8);
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(onAddMany).toHaveBeenCalledTimes(1);
+    const [parts] = onAddMany.mock.calls[0];
+    expect(
+      (parts as { candidate: BorrowCandidate; qty: string }[]).map((p) => [
+        p.candidate.donor_core_line_id,
+        p.qty,
+      ]),
+    ).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
+  });
+
+  // Defect A: the donor project's hold at the bin is the SAME stock as the bin's later-order
+  // lines, so a merged bin offers the lines' 4 + 4, never 4 + 4 + 8.
+  it('never adds a project hold to the lines it holds when it merges a bin', () => {
+    const line = (core: string): BorrowCandidate => ({
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: core,
+      donor_so_number: null,
+      free_qty: '4',
+      need_qty: null,
+    });
+    const hold: BorrowCandidate = {
+      ...OTHER_PROJECT,
+      warehouse_code: 'JB',
+      donor_project_ref: null,
+      free_qty: '8',
+      need_qty: null,
+    };
+    renderDialog([line('core-a'), line('core-b'), hold]);
+
+    expect(screen.getByLabelText('Quantity')).toHaveValue(8);
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+    const [parts] = onAddMany.mock.calls[0];
+    expect(
+      (parts as { candidate: BorrowCandidate; qty: string }[]).map((p) => [
+        p.candidate.donor_core_line_id,
+        p.qty,
+      ]),
+    ).toEqual([
+      ['core-a', '4'],
+      ['core-b', '2'],
+    ]);
   });
 
   // -------------------------------------------------------------- AC-1.7 (fix round)

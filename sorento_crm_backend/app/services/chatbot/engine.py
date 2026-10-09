@@ -60,6 +60,7 @@ from app.services.chatbot.lanes import business, canned as canned_lanes, casual
 from app.services.chatbot.lanes import fallback as fallback_mod
 from app.services.chatbot.lanes.escalation import run as run_escalation_lane, routing_line as escalation_routing_line
 from app.services.chatbot.lanes.business import resolve_gate, services as business_services
+from app.services.chatbot.analytics import facts as chat_facts
 from app.services.chatbot.usage import record_parser_usage
 # Stages C to G (PLAN-chatbot-turn-rearch.md "Turn order"). `turn/` is the pure core -
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
@@ -77,7 +78,7 @@ from app.services.chatbot.turn import memory as memory_mod
 from app.services.chatbot.turn import profile_facts as profile_facts_mod
 from app.services.chatbot.turn import tail as turn_tail
 from app.services.chatbot.turn import task as turn_task
-from app.services.chatbot.turn.apply import apply as turn_apply
+from app.services.chatbot.turn.apply import apply as _apply_state
 from app.services.chatbot.turn.apply import is_product_shaped_entity
 from app.services.chatbot.turn.apply import record_top_selling_asked
 from app.services.chatbot.turn.decide import EVERYTHING, broaden_kind, broaden_level
@@ -426,6 +427,14 @@ def _as_a_stock_ask_by_its_own_words(verdict: dict[str, Any], message: str) -> d
     text = str(message or "")
     if not incoming or _ETA_WORDS.search(text):
         return verdict
+    # DISCONTINUED-ASK (8 Oct 2026): "mean discontinued model?" quoting "SRTWT9613-BL x 5:
+    # ..." may carry the quoted 5 onto the entity; the parser's own `requested_attributes`
+    # says it is a status question, so it stays a product question (a parsed field, not
+    # the user's words).
+    from app.services.chatbot.lanes.business.fetch import _asks_discontinued
+
+    if _asks_discontinued(jsc.array(verdict.get("requested_attributes"))):
+        return verdict
     codes = {
         str(e.get(k)).strip()
         for e in verdict.get("entities") or []
@@ -514,6 +523,7 @@ def _exact_codes_only(
     resolved_candidates: dict[str, list[dict[str, Any]]],
     compatible_entities: list[dict[str, Any]],
     unplaced: dict[str, str],
+    read_values: dict[str, str] | None = None,
 ):
     """AVAIL-MODE-REPLIES (owner hand test, 3 Oct 2026): an availability-access stock or
     ETA turn answers EXACT codes only, and steers the dealer to one when they typed less.
@@ -529,10 +539,17 @@ def _exact_codes_only(
       product_code, `entity_resolver._prefix_probe_product`). The same prefix-then-
       substring order as that probe: this filter keeps what the resolver placed, it
       matches nothing of its own;
-    * else a code-like token is not found, and goes to the did-you-mean ("srt5764");
-    * a word or a bare number with no exact code is not a product at all: the describe /
-      semantic matches the resolver found for "xx", "10" or a "2" typed over a
-      did-you-mean listed a page of the catalogue.
+    * else a code-like token or a bare number is not found, and goes to the did-you-mean
+      ("srt5764");
+    * a word with no exact code is not a product at all: the describe / semantic matches
+      the resolver found for "xx" listed a page of the catalogue.
+    ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026, prod turn "8066 stock ?" answered with
+    the scope sentence): a BARE NUMBER takes the same ladder as a code-like token
+    (`turn.task.code_or_number`): exact, then the prefix family, then the substring family
+    the resolver's own probe placed (SRTWC8066-*, the picker compact mode already gives),
+    else a miss that stays unplaced so the reply names it. It was `ignored` here, which
+    dropped both the family AND the token, and the dealer read "I need at least one
+    filter" for a product they had named.
     STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763 "Srt 364-hp x 1 stock
     available?"): the typed word and the resolver's code are compared the way the
     resolver itself matched them - case AND separators folded (`turn.state.token_key`,
@@ -551,8 +568,12 @@ def _exact_codes_only(
     for e in parse_output.get("entities") or []:
         if not isinstance(e, dict) or e.get("hint") not in (None, "product"):
             continue
+        # RESOLVE-SEMANTIC-FALLBACK: the resolver's token is `canonical_code` first, raw
+        # second (`resolve_gate._token_of`), so the join folds the SAME value - "TAP
+        # SRTWT5608" with canonical_code SRTWT5608 is the code the resolver placed, not a
+        # phrase no code equals. The typed raw stays the word the reply quotes.
         typed = str(e.get("raw") or e.get("canonical_code") or "").strip()
-        fold = turn_state.token_key(typed)
+        fold = turn_state.token_key(str(e.get("canonical_code") or "").strip() or typed)
         if fold and fold not in {t for t, _ in tokens}:
             tokens.append((fold, typed))
     candidates = [c for c in resolved_candidates.get("product") or [] if isinstance(c, dict)]
@@ -563,17 +584,22 @@ def _exact_codes_only(
     misses: dict[str, str] = {}
     ignored: set[str] = set()
     for fold, typed in tokens:
-        exact = [c for c in candidates if code_of(c) == fold]
+        # RESOLVE-SEMANTIC-FALLBACK: the code (or family fragment) the resolver's code
+        # reader read out of this token is what the catalogue matched, so it is the value
+        # compared here ("TAP SRTWT5608" with canonical_code null: the token is
+        # "tapsrtwt5608", the placed code "srtwt5608"); the maps stay keyed by the token.
+        code = (read_values or {}).get(fold) or fold
+        exact = [c for c in candidates if code_of(c) == code]
         family: list[dict[str, Any]] = []
-        if _code_like(fold):
-            family = [c for c in candidates if code_of(c).startswith(fold)] or [
-                c for c in candidates if fold in code_of(c)
+        if turn_task.code_or_number(code):
+            family = [c for c in candidates if code_of(c).startswith(code)] or [
+                c for c in candidates if code in code_of(c)
             ]
         chosen = exact or family
         if chosen:
             keep.update(str(c.get("uuid")) for c in chosen)
             per_token[fold] = len(chosen)
-        elif _code_like(fold):
+        elif turn_task.code_or_number(code):
             misses[fold] = typed
         else:
             ignored.add(fold)
@@ -598,6 +624,68 @@ def _exact_codes_only(
     ]
     placed = {**{k: v for k, v in unplaced.items() if k not in ignored}, **misses}
     return kinds, {**resolved_candidates, "product": kept}, compatible, placed
+
+
+def _with_read_codes(verdict: dict[str, Any], parse_output: dict[str, Any], resolved: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """RESOLVE-SEMANTIC-FALLBACK: a code the shared resolver's reader read out of a product
+    token (`fallback.kind == "code"`, confirmed by the catalogue's exact probe) is the
+    `canonical_code` the parser did not give (null, or the whole phrase copied), written
+    onto the entity whose resolver token that was (`resolve_gate._token_of`: canonical
+    first, raw second, folded) in BOTH the verdict `turn_apply` reads and the parse output
+    the resolver joins read, so the turn continues exactly as it does when the promoted
+    prompt fills the field (the quantity a line states, the focus row, every canonical-
+    first join). New dicts, nothing mutated; a turn the reader never answered is returned
+    as it came. Measured on a1eae3bb through the availability console: with the field
+    left as typed, "TAP SRTWT5608 x 5" answered "How many units of SRTWT5608?" over a
+    quantity the message had stated."""
+    values: dict[str, str] = {}
+    for row in (resolved or {}).get("resolutions") or [] if isinstance(resolved, dict) else []:
+        fb = row.get("fallback") if isinstance(row, dict) else None
+        # `matched`: only a code the catalogue holds is written; a reading no row answered
+        # stays a miss quoted as typed (security review on 4ce61a6c, nit 3).
+        if isinstance(fb, dict) and fb.get("kind") == "code" and fb.get("value") and fb.get("matched"):
+            key = turn_state.token_key(str(row.get("token") or ""))
+            if key:
+                values[key] = str(fb["value"])
+    if not values:
+        return verdict, parse_output
+
+    def rewrite(output: dict[str, Any]) -> dict[str, Any]:
+        entities = output.get("entities")
+        if not isinstance(entities, list):
+            return output
+        changed = False
+        out: list[Any] = []
+        for e in entities:
+            # The same hints the resolver puts to the reader (`entity_resolver`: product,
+            # or none given).
+            if isinstance(e, dict) and e.get("hint") in (None, "", "product"):
+                key = turn_state.token_key(str(e.get("canonical_code") or "").strip() or str(e.get("raw") or ""))
+                if key in values and str(e.get("canonical_code") or "") != values[key]:
+                    out.append({**e, "canonical_code": values[key]})
+                    changed = True
+                    continue
+            out.append(e)
+        return {**output, "entities": out} if changed else output
+
+    return rewrite(verdict), rewrite(parse_output)
+
+
+def _read_values(resolved: Any) -> dict[str, str]:
+    """`{folded resolver token: folded value the code reader read out of it}` for every
+    resolution the shared resolver answered through its code reader (`fallback.kind`
+    `code` or `family`, RESOLVE-SEMANTIC-FALLBACK). Empty when the reader was never
+    consulted, so every other turn is untouched."""
+    out: dict[str, str] = {}
+    for row in (resolved or {}).get("resolutions") or [] if isinstance(resolved, dict) else []:
+        if not isinstance(row, dict):
+            continue
+        fb = row.get("fallback")
+        if isinstance(fb, dict) and fb.get("kind") in ("code", "family") and fb.get("value"):
+            key, value = turn_state.token_key(str(row.get("token") or "")), turn_state.token_key(str(fb["value"]))
+            if key and value:
+                out[key] = value
+    return out
 
 
 def _is_bare_all(message: str) -> bool:
@@ -990,6 +1078,96 @@ def _reply_to_message_id(envelope: Envelope) -> str | None:
     return str(value) if value not in (None, "") else None
 
 
+def turn_apply(state_in: Any, *args: Any, **kwargs: Any) -> Any:
+    """APPLY, keeping the QUOTED-REPLY live-question aside (R4) on the state it returns:
+    APPLY builds a fresh `State`, which would otherwise drop it."""
+    out, plan = _apply_state(state_in, *args, **kwargs)
+    live = getattr(state_in, "quoted_live", None)
+    if live and getattr(out, "quoted_live", None) is None:
+        out = dataclasses_replace(out, quoted_live=live)
+    return out, plan
+
+
+def _quoted_context(
+    db: Session,
+    envelope: Envelope,
+    *,
+    contact_respond_id: str,
+    dry_run: bool,
+    state_in: Any,
+    remembered_before: dict[str, Any],
+) -> tuple[Any, dict[str, Any]]:
+    """QUOTED-REPLY (owner rulings, 7 Oct 2026): a quoted bot message is this turn's context.
+
+    Returns `(state_in, quoted_turn facts)`. When the quote resolves to an earlier engine turn
+    whose stored state differs from the live one, that turn's focus and open question replace
+    the live ones for THIS turn; the live ones ride aside on `remembered_before` so the tail
+    writes them back (R4). Profile, turn number and ideation stay live (R7). Anything else
+    (no quote, the dealer's own message, nothing found, no stored state) is main's behaviour.
+    """
+    from app.services.chatbot import quoted as quoted_mod
+
+    facts: dict[str, Any] = {"found": False, "via": None, "turn_id": None, "same_as_live": False}
+    reply_to_id = _reply_to_message_id(envelope)
+    if reply_to_id is None:
+        return state_in, facts
+    reply_to = jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")
+    sender_source = jsc.get(jsc.get(reply_to, "sender"), "source")
+    quoted_text = jsc.get(jsc.get(reply_to, "message"), "text")
+    try:
+        found = quoted_mod.resolve_quoted_turn(
+            db,
+            contact_respond_id=contact_respond_id,
+            reply_to_id=reply_to_id,
+            quoted_text=quoted_text if isinstance(quoted_text, str) else None,
+            is_test=bool(dry_run),
+            before=datetime.now(tz=timezone.utc),
+            sender_source=sender_source if isinstance(sender_source, str) else None,
+        )
+    except Exception as exc:  # noqa: BLE001 - a quote must never fail the turn
+        logger.warning("quoted turn resolve failed: %s", exc, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return state_in, facts
+    if found is None:
+        return state_in, facts
+    same = found.focus == remembered_before.get("focus") and found.open_question == remembered_before.get(
+        "open_question"
+    )
+    facts.update(found=True, via=found.via, turn_id=found.turn_id, same_as_live=same)
+    if same:
+        return state_in, facts
+    pending = turn_runtime.tick_pending(turn_pending.from_wire(found.open_question))
+    if (
+        pending is not None
+        and pending.kind in turn_pending.ESCALATION_OFFER_KINDS
+        and not (isinstance(found.turn_no, int) and state_in.turn_no - found.turn_no < 3)
+    ):
+        pending = None  # R6: an old (or undated) escalation offer is not revived
+    return (
+        dataclasses_replace(
+            state_in,
+            focus=turn_state.focus_from_wire(found.focus),
+            pending=pending,
+            quoted_live={
+                "pending": state_in.pending,
+                "focus": state_in.focus,
+                "quoted_open": next(
+                    (
+                        t
+                        for t in turn_state.focus_from_wire(found.focus).tasks or ()
+                        if t.kind == "stock_qty" and t.status == turn_task.OPEN
+                    ),
+                    None,
+                ),
+            },
+        ),
+        facts,
+    )
+
+
 def build_latest_user_message(envelope: Envelope, session_block: Any = None) -> str:
     """The two-line string `Call 'sub-query-reformulator'` builds today, verbatim.
 
@@ -1379,6 +1557,16 @@ def _close_turn(
     row.response = trace_mod.cap_document(response)
     row.finished_at = _now()
     db.commit()
+    if status in _TERMINAL_STATUSES:
+        # Chat analytics (CA-1): the closed turn becomes a fact row. AFTER the commit and
+        # inside its own try, so an analytics fault can never reopen or fail the turn the
+        # customer was already answered on; the nightly sweep refills whatever this skips.
+        # Called as a module attribute so the tests can swap the recorder.
+        try:
+            chat_facts.record_turn(db, turn_id)
+        except Exception:  # noqa: BLE001 - analytics must never fail a turn
+            db.rollback()
+            logger.warning("chat facts: recording turn %s failed", turn_id, exc_info=True)
 
 
 def _record_parser_usage(
@@ -2035,12 +2223,23 @@ def _scoped_compatible(
 
 
 def _pass_scope_gate(
-    payload: dict[str, Any] | None, compatible: list[dict[str, Any]], *, force: bool
+    payload: dict[str, Any] | None,
+    compatible: list[dict[str, Any]],
+    *,
+    force: bool,
+    reason: str = "customer scope",
 ) -> dict[str, Any] | None:
-    """The resolver's exit for a turn the scope gate answered. The linked customers are
-    the subject the gate's "no entities and 'order' requires a scoping entity" arm asked
-    for, so that arm (or, when `force`, any arm: the lane refuses before a fetch) is
-    passed instead of ending in the miss text and its escalate offer."""
+    """The resolver's exit for a turn whose subject is settled elsewhere. The linked
+    customers are the subject the gate's "no entities and 'order' requires a scoping
+    entity" arm asked for, so that arm (or, when `force`, any arm: the lane refuses
+    before a fetch) is passed instead of ending in the miss text and its escalate offer.
+
+    STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): the same arm, `reason="product
+    subject"`, for a plan whose fetch is already scoped to a resolved product (a task
+    slot, a carried subject). The resolver was asked about the stray carried word alone,
+    placed nothing and said "no entities", while the lane's fetch answers the product in
+    full; that exit is not the turn's miss.
+    """
     if not isinstance(payload, dict):
         return payload
     gate = dict(payload.get("gate") if isinstance(payload.get("gate"), dict) else {})
@@ -2049,7 +2248,7 @@ def _pass_scope_gate(
         gate.get("gate_passed") is False and str(gate.get("gate_reason") or "").startswith("no entities and")
     ):
         gate["gate_passed"] = True
-        gate["gate_reason"] = "customer scope"
+        gate["gate_reason"] = reason
         gate["gate_clarification"] = ""
         exit_kind = "continue" if force or payload.get("_exit_kind") == "not_found" else payload.get("_exit_kind")
         return {**payload, "gate": gate, "_exit_kind": exit_kind}
@@ -2515,12 +2714,14 @@ def _classify_word_group(db: Session, group: str) -> str | None:
 
     if group.lower() in TOP_SELLING_WHO_WORDS:
         return None
-    if business_services.resolve_sales_agent_token(db, group):
-        return "sales_agent"
+    # A category or an exact brand beats a sales agent alias ("water closet", "sorento" are
+    # aliases of an agent on dev): customers stay last.
     if business_services.resolve_category_token(db, group) or resolve_classes_for_term(db, group.lower()):
         return "category"
     if business_services.resolve_brand_token(db, group, exact_only=True):
         return "brand"
+    if business_services.resolve_sales_agent_token(db, group):
+        return "sales_agent"
     if business_services.customers_named(db, group):
         return "customer"
     return None
@@ -2579,6 +2780,10 @@ def _top_selling_verdict(
     the ranking whatever the parser's status; an echoed word from an earlier turn is
     dropped; basis words switch the basis; a period alone re-runs the ranking for it.
     """
+    if jsc.js_string(verdict.get("order_status") or "").strip() == "sales_ranking":
+        # A new ask the parser named (owner held-state rule: a new intent always wins): never
+        # captured by an open top selling question.
+        return verdict, state, None
     focus = state.focus
     slot = focus.top_selling if isinstance(focus.top_selling, dict) else None
     ranking = focus.status == "top_selling" or bool(slot and slot.get("hop"))
@@ -3949,6 +4154,14 @@ def _run_stages_body(  # noqa: PLR0915
         turn_no = turn_runtime.turn_number(db, contact_respond_id)
         state_in = turn_runtime.load_state(session_block, profile=profile, turn_no=turn_no)
         remembered_before = session_state.five_keys(session_block)
+        state_in, quoted_turn_facts = _quoted_context(
+            db,
+            envelope,
+            contact_respond_id=contact_respond_id,
+            dry_run=bool(dry_run),
+            state_in=state_in,
+            remembered_before=remembered_before,
+        )
         # The parser's `Previous response:` line. Read here, at `received`, with the
         # other contact facts and off the SAME session: it is what the bot last said to
         # this contact, and the parser is the one component allowed to read prose.
@@ -3997,6 +4210,7 @@ def _run_stages_body(  # noqa: PLR0915
             "ingress": envelope.ingress,
             "remembered_keys": len([k for k, v in remembered_before.items() if v]),
             "quoted_a_message": _reply_to_message_id(envelope) is not None,
+            "quoted_turn": quoted_turn_facts,
             "dry_run": dry_run,
             "turn_no": turn_no,
             # ALWAYS present, empty list included: a reader must never have to tell
@@ -4046,7 +4260,12 @@ def _run_stages_body(  # noqa: PLR0915
             # no ledger row, no job.
             outcome = media_intake.no_url_outcome(modality)
         else:
-            caption = jsc.js_string(jsc.get(attachment, "description")) or None
+            # ROGUE-CONVO-REVIEW class G: `jsc.js_string(None)` is the STRING "null" (and
+            # an absent key "undefined"), both truthy, so `or None` never fired and the
+            # parser read a "null" line above the codes (prod photo turns, 6 Oct 2026).
+            # The same truthiness read `media_intake._build_request` makes for `url`.
+            description = jsc.get(attachment, "description")
+            caption = jsc.js_string(description) if jsc.truthy(description) else None
             outcome = media_intake.run(
                 respond_io_id=contact_respond_id,
                 message_id=_message_id(envelope),
@@ -4384,6 +4603,10 @@ def _run_stages_body(  # noqa: PLR0915
     verdict = turn_runtime.with_brand_from_offer(
         verdict, latest_user_message, carried=state_in.focus.set_page
     )
+    # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
+    # the focus already holds settled is the carry restated, not an axis to rewrite with
+    # an unsettled copy.
+    verdict = turn_runtime.without_restated_rows(verdict, state_in.focus)
     # Round 3 W3 on PR #833: a class word of this message's own starts a new set.
     verdict = turn_runtime.with_new_set_words(verdict)
     # Fix round 8 on PR #833 (owner retest of round 7): every descriptor the parser
@@ -4392,10 +4615,21 @@ def _run_stages_body(  # noqa: PLR0915
     # before APPLY reads the verdict: the category keeps what the thing IS, a colour or
     # a size becomes a `specification` entity, and nothing is a document type unless it
     # is on the list.
+    # ATTACH-GROUNDING-TYPO: `ctx.parse._parser_raw` is the verdict as it stood before
+    # grounding rewrote the entities.
+    parser_verdict = copy.deepcopy(verdict)
+    # REPORT-ENGINE 1b code review S3: a sales ranking's brand / sales agent / category
+    # words are the lane's own (matched against their tables, an exact name winning alone),
+    # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
+    from app.services.chatbot.lanes.business import report_ask as _report_ask
+
+    verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
         verdict, grounding_notes = grounding.ground(
             grounding_db, verdict, message=latest_user_message.split("\n", 1)[0] if isinstance(latest_user_message, str) else None
         )
+    if _ranking_words:
+        verdict = {**verdict, "entities": [*(verdict.get("entities") or []), *_ranking_words]}
     if grounding_notes:
         turn_trace.add("grounding", {"changes": grounding_notes})
     # Fix round 12 on PR #833 (owner ruling 28 Sep 2026): once grounding has read the ask
@@ -4459,7 +4693,7 @@ def _run_stages_body(  # noqa: PLR0915
         # when the parser declared one; a fresh low stock ask keeps only the entities that
         # scope the run. Read before every other seam below.
         from app.services.chatbot import required_fields
-        from app.services.chatbot.lanes.business import low_stock_ask
+        from app.services.chatbot.lanes.business import low_stock_ask, report_ask
 
         _message_text = jsc.js_string(jsc.get(_inner_message(envelope), "text") or "")
         # Security S1: these keys are the ENGINE's own; one the parser emitted (the
@@ -4467,11 +4701,16 @@ def _run_stages_body(  # noqa: PLR0915
         verdict = {k: v for k, v in verdict.items() if k not in required_fields.ENGINE_KEYS}
         open_ask = state_in.focus.required_ask
         state_in.focus.required_ask = None
+        if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
+            open_ask = None  # a new sales ranking ask, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
         if required_rule:
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+        # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
+        # words, kept away from the generic resolver for the lane (`report_ask_words`).
+        verdict = report_ask.take_words(verdict, _message_text)
         # LOWSTOCK-SEMANTIC: the low stock ask's own words ride the parser's `low_stock`
         # key; only the entities that scope the RUN stay, and the last settled report's
         # frame rides along for a refinement.
@@ -4732,7 +4971,7 @@ def _run_stages_body(  # noqa: PLR0915
             contact=_contact_block(envelope, known_phone),
             text=_tf_message(envelope),
             session=ctx_session,
-            parse={"output": parsed_output, "_parser_raw": verdict},
+            parse={"output": parsed_output, "_parser_raw": parser_verdict},
             access=access,
             media=getattr(envelope, "media", None),
         )[0]["json"]["ctx"]
@@ -4800,6 +5039,14 @@ def _run_stages_body(  # noqa: PLR0915
         predicate: dict[str, Any] | None = None
         resolved_candidates: dict[str, list[dict[str, Any]]] = {}
         unplaced_tokens: dict[str, str] = {}
+        # ROGUE-CONVO-REVIEW-R2 (reviewer round 2): a turn that skips the resolver (a page
+        # of a carried set, a refused sales-report grant) names no product token, so the
+        # answer to "did this message's own product token miss?" is False there; the
+        # bridge and the set_page carry both read it, with or without a resolve outcome.
+        miss_on_typed_product = False
+        # RESOLVER-TOKEN-CAP: the codes the resolver cut at its ceiling and never looked
+        # up, as typed - named by the reply's "Not checked:" line, never silently dropped.
+        not_checked_tokens: dict[str, str] = {}
         spec_tier = False
         # R2 (PLAN-chatbot-answer-half-reattach.md): the raw `resolve_gate.run` payload
         # (`resolved`, `gate`, `aggregate`, `tier_gate`, `_exit_kind`), carried through
@@ -4854,6 +5101,12 @@ def _run_stages_body(  # noqa: PLR0915
             # and no hint at all when none does - message order alone decided it before,
             # so "incoming and orders for hanlim" handed the gate a row with no
             # `customer` and lost the ambiguous customer entirely.
+            # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026): a carried uuid-less word
+            # (a brand read off a photo and mis-tagged `promotion`) IS handed over here
+            # and may resolve on its own; what it must never do is gate or widen the
+            # product lookup. That rule lives where the predicate is attached to a fetch
+            # (`turn_runtime.make_tool_runner`: a fetch already scoped to a resolved
+            # product takes no set predicate), not here.
             resolver_parse_output = turn_runtime.with_carried_entities(
                 (ctx.get("parse") or {}).get("output") or {},
                 state_out.focus,
@@ -4888,6 +5141,11 @@ def _run_stages_body(  # noqa: PLR0915
                 )
             elif isinstance(state_out.focus.top_selling, dict) and state_out.focus.top_selling.get("hop"):
                 resolver_parse_output = _without_carried_words(resolver_parse_output)
+            # REPORT-ENGINE 1b fix round F1: a dealer's sales ranking never has a location
+            # word looked up (the resolver's miss line would probe warehouse codes); the
+            # lane refuses the ask off the word itself (`report_ask._dealer_outside`).
+            if (customer_scope or {}).get("enforced"):
+                resolver_parse_output = report_ask.dealer_location_words(resolver_parse_output)
             gate_refusal: str | None = None
             staff_level_refused = False
             unnamed_account = _unnamed_account(verdict, resolver_parse_output)
@@ -4971,15 +5229,35 @@ def _run_stages_body(  # noqa: PLR0915
             predicate = resolve_outcome.predicate
             resolved_candidates = resolve_outcome.resolved_candidates
             unplaced_tokens = resolve_outcome.unplaced_tokens
+            not_checked_tokens = resolve_outcome.not_checked
             spec_tier = resolve_outcome.spec_tier
             resolver_payload = resolve_outcome.payload
+            # ROGUE-CONVO-REVIEW-R2 (crew review on PR #1506): "did THIS message name a
+            # product token the resolver could not place?" is asked ONCE, here, over the
+            # resolver's OWN listing (`turn_runtime.named_unplaced`, before
+            # `_exact_codes_only` below rewrites the engine's copy of the map for the
+            # fetch), and read by both the composer's header (`answer_bridge.answer_for`
+            # -> `not_found_error_message`, rule C) and the `set_page` carry. The
+            # composer used to fold the question a second way (`[-\s]+`, no unicode
+            # dashes), so an en dash in the typed code let the two sides disagree in
+            # silence. Reviewer should-fix 2: the filter's `ignored` (a word with no
+            # digit beside spec-tier rows) is "not a product" for the FETCH, but the
+            # dealer typed it as one and the resolver listed it unplaced, so it stays a
+            # miss on the token here (pinned on the availability profile).
+            miss_on_typed_product = turn_runtime.typed_product_unplaced(verdict, unplaced_tokens)
+            # RESOLVE-SEMANTIC-FALLBACK: a code the reader read out of a token is the
+            # entity's `canonical_code` from here on (see `_with_read_codes`).
+            verdict, resolver_parse_output = _with_read_codes(
+                verdict, resolver_parse_output, (resolver_payload or {}).get("resolved")
+            )
             # Every turn of availability access, not only a stock / ETA one: a code the
             # dealer names on an order or outstanding turn is carried into the next one, and
             # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
             # a5ba9dc9f, fix 4).
             if getattr(getattr(state_out, "profile", None), "stock_availability_only", False):
                 exact = _exact_codes_only(
-                    resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens
+                    resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens,
+                    read_values=_read_values((resolver_payload or {}).get("resolved")),
                 )
                 if exact is not None:
                     resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact
@@ -5035,6 +5313,83 @@ def _run_stages_body(  # noqa: PLR0915
                         "ids": list(scope_ids),
                         "self_reference": verdict.get("self_reference") is True,
                         **({"dropped": screened_dropped} if screened_dropped else {}),
+                    },
+                )
+            # STOCK-FILL-PREDICATE (owner ruling, 6 Oct 2026, the `_pass_scope_gate`
+            # precedent): this plan's fetch is already scoped to a resolved product (a
+            # task slot, a carried subject with its uuid), so the resolver's "no
+            # entities" exit - it was asked about the stray carried word alone - is
+            # passed, not answered as the turn's miss over a fetch that answers the
+            # product in full (prod turn 121's "1"). ONLY when every token the resolver
+            # was asked about was CARRIED (`current_message: False`): a word the dealer
+            # typed this turn that resolves to nothing ("water tap basin" over carried
+            # products) is still a miss the reply must name (hand pass 2 item 6), so
+            # that exit stands.
+            resolver_entities = [
+                e for e in (resolver_parse_output.get("entities") or []) if isinstance(e, dict)
+            ]
+            product_subject = bool(
+                not customer_scope_refused
+                and scope_ids is None
+                and plan.fetch
+                and resolver_entities
+                and all(e.get("current_message") is False for e in resolver_entities)
+                and all(turn_runtime.scoped_to_a_resolved_product(spec) for spec in plan.fetch)
+            )
+            if product_subject:
+                before_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                before_exit = (resolver_payload or {}).get("_exit_kind")
+                resolver_payload = _pass_scope_gate(
+                    resolver_payload, compatible_entities, force=False, reason="product subject"
+                )
+                # Reviewer round 6, S1: on a domain whose gate permits a broad query
+                # (`incoming`: "no entities; 'incoming' permits broad query") the gate
+                # PASSED and only the stray word's zero set made the exit `not_found`;
+                # the same exit, the same rule, the same subject. Applied whatever the
+                # gate's reason (reviewer round 7, N1): under the ruling a stray carried
+                # word never gates the product lookup, so any `not_found` exit it earned
+                # is passed here, the "no entities and" arm having been passed above.
+                if isinstance(resolver_payload, dict) and resolver_payload.get("_exit_kind") == "not_found":
+                    resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
+                after_gate = ((resolver_payload or {}).get("gate") or {}).get("gate_passed")
+                after_exit = (resolver_payload or {}).get("_exit_kind")
+                if before_gate != after_gate or before_exit != after_exit:
+                    turn_trace.add(
+                        "product_subject_passes_resolver_gate",
+                        {"fetch": [s.domain for s in plan.fetch], "gate_was": before_gate, "exit_was": before_exit},
+                    )
+            # The same subject, the resolver's OTHER exit (live console replay, 6 Oct
+            # 2026). On a catalogue that holds stock the stray word plus the intent's
+            # `require` is a population (prod: every product with stock; a word that
+            # binds as a brand: that brand's products), the exit is `continue`, and the
+            # re-entry below re-made the plan from it: the population replaced the
+            # carried product in the fetch and on the focus. "check stock" asked "How
+            # many units for each?" over the catalogue; turn 121's fill answered right
+            # (the task drives its own fetch) and left 50 products as the next turn's
+            # subject. The population is dropped here, before the re-entry and before
+            # the gate is read, so the product stays the plan. A carried product CODE
+            # that resolves is the dealer's own product and is not dropped; nor is the
+            # re-description of a carried SET (`spec_is_a_described_set`: "stock?" after
+            # "any gunmetal basin has incoming?"), whose members the carried words placed.
+            if (
+                product_subject
+                and resolved_candidates.get("product")
+                and all(str(e.get("hint") or "").strip().lower() != "product" for e in resolver_entities)
+                and not any(turn_runtime.spec_is_a_described_set(spec) for spec in plan.fetch)
+            ):
+                resolved_kinds, resolved_candidates, compatible_entities, resolver_payload, stray_codes = (
+                    turn_runtime.drop_stray_population(
+                        resolved_kinds, resolved_candidates, compatible_entities, resolver_payload
+                    )
+                )
+                predicate = None
+                turn_trace.add(
+                    "stray_carried_word_population_dropped",
+                    {
+                        "words": [str(e.get("raw") or e.get("canonical_code") or "") for e in resolver_entities],
+                        "dropped": len(stray_codes),
+                        "sample": stray_codes[:5],
+                        "fetch": [s.domain for s in plan.fetch],
                     },
                 )
             answer_parse_output = turn_runtime.answer_parse_output(
@@ -5574,6 +5929,7 @@ def _run_stages_body(  # noqa: PLR0915
                     dry_run=dry_run,
                     turn_trace=turn_trace,
                     counted_set=spec_tier and bool(turn_runtime.class_scope_terms(verdict)),
+                    profile=state_out.profile,
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)
@@ -5591,6 +5947,8 @@ def _run_stages_body(  # noqa: PLR0915
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),
+                    # RESOLVER-TOKEN-CAP: the codes the resolver never looked up, as typed.
+                    not_checked=list(not_checked_tokens.values()),
                     # R6 (fix round 2): so a null `routing.suggested_team` inside the
                     # per-domain fetch context gets the same domain-aware fill this
                     # turn's own `ctx.parse.output` already got above.
@@ -5782,6 +6140,7 @@ def _run_stages_body(  # noqa: PLR0915
                         profile=state_out.profile,
                         dealer_stock_ask=_dealer_stock_ask(state_out, plan),
                         dealer_incoming_ask=_dealer_incoming_ask(state_out, plan),
+                        product_token_missed=miss_on_typed_product,
                     )
                     if answer is not None:
                         bridge_answered = True
@@ -5997,9 +6356,35 @@ def _run_stages_body(  # noqa: PLR0915
                     and min(asked, business_answer.SET_LIST_MAX) < qualifying
                 )
                 paged = bool(plan.fetch) and isinstance(plan.fetch[0].filters.get("set_page"), dict)
+                # ROGUE-CONVO-REVIEW (owner ruling Q4): a set the spec tier read off the
+                # words INSIDE an unplaced product token is not what the customer asked
+                # for, so it is never carried (prod turn 5, 6 Oct 2026: 145 water closets
+                # carried off a miss on one description line; `set_page_carry` alone keeps
+                # it, because the words gave the set a description). Reviewer finding 2:
+                # a set the customer described with a CLASS word of their own ("which tap
+                # has cert ZZQ9917") is listed by the reply and stays carried, so the
+                # follow-up count continues it; only the missed code is named beside it.
+                # `miss_on_typed_product` is the one computation beside the resolve outcome.
                 if paged:
                     # A page of a carried set: the runner hands back where it stopped.
                     state_out.focus.set_page = envelopes[0].get("set_carry") if envelopes else None
+                    # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local
+                    # copy, 7 Oct 2026): the rows the page LISTED are the subject now.
+                    # The page turn never ran the resolver, so nothing settled the focus
+                    # (`turn/apply._narrow_and_plan` writes it off the resolver's own
+                    # candidates only) and it still held turn 1's code-tier rows and
+                    # class word: "pic" after "sorento" listed 50 taps ran over the two
+                    # COLD TAP rows, and on a copy without that match re-counted every
+                    # tap. The listed rows replace both - the class word described the
+                    # set the page has now narrowed and shown, so a document word after
+                    # it reads about these products and nothing wider.
+                    listed = envelopes[0].get("listed_products") if envelopes else None
+                    if isinstance(listed, list) and listed:
+                        state_out.focus.products = [dict(row) for row in listed if isinstance(row, dict)]
+                        for kind in turn_runtime.CLASS_HINTS:
+                            state_out.focus.extra.pop(kind, None)
+                elif miss_on_typed_product and not class_terms:
+                    state_out.focus.set_page = None
                 elif withheld or partly_listed or listed_to_the_limit:
                     state_out.focus.set_page = turn_runtime.set_page_carry(
                         predicate,
@@ -6014,6 +6399,11 @@ def _run_stages_body(  # noqa: PLR0915
                             else business_answer.SET_LIST_MAX
                             if listed_to_the_limit
                             else min(asked, business_answer.SET_LIST_MAX)
+                        ),
+                        # ATTACH-SET-BRAND-FOLLOWUP: the document type this answer
+                        # fetched under is part of the set's description.
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
                         ),
                     )
                 elif predicate is not None and plan.fetch and spec_tier and (
@@ -6030,6 +6420,9 @@ def _run_stages_body(  # noqa: PLR0915
                         ),
                         shown=qualifying,
                         offer_only=True,
+                        attachment_type_ids=(
+                            envelopes[0].get("attachment_type_ids") if envelopes else None
+                        ),
                     )
                 else:
                     state_out.focus.set_page = None
@@ -6073,6 +6466,14 @@ def _run_stages_body(  # noqa: PLR0915
                 state_out.focus.required_ask = next(
                     (e["required_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("required_ask"), dict)),
                     None,
+                )
+                # The frame lives only through sales ranking turns (one that ran replaces it,
+                # one that asked a required field keeps it); any other ask clears it.
+                state_out.focus.sales_ranking_frame = next(
+                    (e["sales_ranking_frame"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("sales_ranking_frame"), dict)),
+                    state_out.focus.sales_ranking_frame
+                    if jsc.js_string(parsed_output.get("order_status") or "").strip() == "sales_ranking"
+                    else None,
                 )
                 # LOWSTOCK-SEMANTIC (crew root cause, 4 Oct 2026): the filters a low stock
                 # report was built with outlive the turn, so "taiyang only" narrows it.
@@ -6742,6 +7143,19 @@ def _run_answer(
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
     stage[0] = "replied"
+    # Review S2: the A/B readout counts the files the turn delivered, before link mode
+    # empties the list.
+    files_delivered = len(answer.files or [])
+    file_text, file_list, file_mode, file_fallback = _apply_file_mode(
+        answer.text or "",
+        list(answer.files or []),
+        profile=getattr(state, "profile", None),
+        contact_respond_id=contact_respond_id,
+        turn_id=turn_id,
+        session_factory=session_factory,
+    )
+    if file_mode is not None and (file_text != (answer.text or "") or file_list != list(answer.files or [])):
+        answer = dataclasses_replace(answer, text=file_text, files=file_list)
     reply = {
         **_reply_of(answer),
         "attachments_src": answer.files or None,
@@ -6754,7 +7168,11 @@ def _run_answer(
             "lane": branch_kind,
             "sections": len(answer.sections),
             "asking": answer.question.kind if answer.question is not None else None,
-            "files": len(answer.files),
+            "files": files_delivered,
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files), and why
+            # any of them did not go as links (owner hand test, 9 Oct 2026).
+            "file_mode": file_mode,
+            "file_mode_fallback": file_fallback,
         },
         raw={"reply": reply},
     )
@@ -6775,6 +7193,14 @@ def _run_answer(
         # for the older lanes, so every asking lane carries its question to the next
         # console or replay turn the same way (finding 2a).
         session_payload = turn_tail.session_payload(state, answer, tail_ctx)
+        turn_trace.add(
+            "state",
+            {
+                "focus": session_payload["focus"],
+                "open_question": session_payload["open_question"],
+                "turn_no": state.turn_no,
+            },
+        )
         if not dry_run:
             turn_tail.persist(
                 state, answer, tail_ctx, base=remembered_before, turn_id=turn_id
@@ -7008,7 +7434,23 @@ def _run_entities_only_arm(
         # field, see below) is what made every code look unplaced regardless of
         # scope - not a missing re-stamp.
         services = business_services.production_services(db, space_id=space_id)
-        body = {"tokens": raws, "allowed_entity_types": ["product"]}
+        # RESOLVE-SEMANTIC-FALLBACK: the resolver's token is `canonical_code` first, raw
+        # second (`resolve_gate._token_of`'s order, unfolded here as this arm always sent
+        # its tokens), with the raw beside it for the shared code reader; the answer is
+        # keyed back to the raw through the token this arm sent for it.
+        token_by_raw = {
+            e["raw"]: (str(e.get("canonical_code") or "").strip() or e["raw"]) for e in entities
+        }
+        body = {
+            "tokens": [token_by_raw[raw] for raw in raws],
+            "raw_tokens": list(raws),
+            "allowed_entity_types": ["product"],
+        }
+        if dry_run:
+            # D14: a test or console turn writes nothing outside `chatbot.turns`; the
+            # shared route's code reader (on by default) keeps its usage row out on a dry
+            # run, the same key `resolve_gate.resolve_entity_body` already sends.
+            body["dry_run"] = True
         ResolveReferenceRequest(**body)  # validated the same way every other caller is
         result = services.resolve_entity(body)
         # B2 fix, second half (browser pass): `resolve_reference_post`'s own
@@ -7034,7 +7476,7 @@ def _run_entities_only_arm(
         # dicts.
         before_products = copy.deepcopy(by_raw)
         for raw in raws:
-            resolution = resolutions.get(raw)
+            resolution = resolutions.get(token_by_raw[raw])
             matches = jsc.array(jsc.get(resolution, "matches")) if resolution else []
             row = by_raw.get(raw)
             if matches and row is not None:
@@ -8613,6 +9055,107 @@ def _after_stock_ask_turn(
         logger.exception("chatbot turn %s: stock ask follow-up failed", turn_id)
 
 
+def _apply_file_mode(
+    text: str,
+    files_in: list[Any],
+    *,
+    profile: Any,
+    contact_respond_id: Any,
+    turn_id: Any,
+    session_factory: SessionFactory | None = None,
+    db: Session | None = None,
+) -> tuple[str, list[Any], str | None, dict[str, Any] | None]:
+    """PHOTO-SEND-CAP round 2: `(text, files, file_mode, fallback)` for the contact's A/B mode.
+
+    Attachment mode (the default, `respond_contacts.chatbot_files_as_links` off) is today's
+    behaviour, untouched: the text, then one WhatsApp message per file. Link mode sends the
+    text ALONE, every file a short link in it (`file_links.links_for`), so `files` comes
+    back empty and no `send_attachments` action is built. If the links cannot be minted
+    (no public base url, a database error) the turn falls back to attachments rather than
+    sending a reply that names files it cannot deliver (never stuck), and the raw storage
+    url the lane rendered under each row is dropped. `file_mode` is None when the reply
+    carries no file, else `attachments`, `links` or `mixed`, the A/B record the trace keeps.
+
+    Owner hand test (9 Oct 2026): a file whose host is off the link list
+    (`file_link_service.link_hosts`) no longer silently turns the whole reply back into
+    attachments. It goes as an attachment ON ITS OWN, its row says "(sent as a file)", the
+    rest stay links (`mixed`), and `fallback` says why - `{"reason": "host_not_linkable",
+    "hosts": [...], "files": n}` or `{"reason": "error", "error": <type>, "files": n}` - for
+    the trace's `file_mode_fallback` fact. None when nothing fell back.
+    """
+    from app.services.chatbot import file_links
+    from app.services.chatbot.turn.compose import _ATTACHED_SENTENCE
+
+    # Review N1: `aliasUrls` is this seam's own key (`compose`'s cross-section dedupe);
+    # the entry n8n sends from keeps its documented shape.
+    with_aliases = [f for f in (files_in or []) if f is not None]
+    files = [{k: v for k, v in f.items() if k != "aliasUrls"} if isinstance(f, dict) else f for f in with_aliases]
+    links = bool(getattr(profile, "files_as_links", False))
+    if not files:
+        # Security review M1: a link-mode row can print a stored url even when the reply
+        # sends no file; it never reaches the customer.
+        return (file_links.strip_storage_urls(text) if links else text), files, None, None
+    if not links:
+        return text, files, "attachments", None
+
+    try:
+        if db is not None:
+            # Review S1 + crew audit item 4: the caller's session holds the rest of the
+            # turn and may never commit (a console dry run). The links go through their
+            # OWN session on the same connection source, so they persist whatever the
+            # caller does, a failure leaves the caller's session usable, and nothing the
+            # caller has pending is committed early.
+            own_db = Session(bind=db.get_bind())
+            try:
+                linked, _minted, skipped = file_links.links_for(
+                    own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
+                )
+            finally:
+                own_db.close()
+        else:
+            with _session(session_factory) as own_db:
+                linked, _minted, skipped = file_links.links_for(
+                    own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
+                )
+    except Exception as exc:  # noqa: BLE001 - the files still go, as attachments
+        logger.warning("chatbot turn %s: link mode failed, sending attachments", turn_id, exc_info=True)
+        fallback = {"reason": "error", "error": type(exc).__name__, "files": len(files)}
+        return (
+            file_links.strip_storage_urls(file_links.strip_raw_links(text, with_aliases)),
+            files,
+            "attachments",
+            fallback,
+        )
+    if skipped:
+        from app.services.file_link_service import host_of
+
+        skipped_urls = {str(f.get("url")) for f in skipped if isinstance(f, dict)}
+        attach = [f for f in files if isinstance(f, dict) and str(f.get("url")) in skipped_urls]
+        hosts = sorted({host_of(u) or "(no host)" for u in skipped_urls})
+        logger.info("chatbot turn %s: %d file(s) off the link list sent as attachments: %s", turn_id, len(attach), hosts)
+        fallback = {"reason": "host_not_linkable", "hosts": hosts, "files": len(attach)}
+        return linked.strip(), attach, ("mixed" if len(attach) < len(files) else "attachments"), fallback
+    # "I have attached the file(s) below." is untrue once nothing is attached, in every
+    # language the reply can be in (review S3).
+    for sentence in _attached_sentences(_ATTACHED_SENTENCE):
+        linked = linked.replace(sentence, "")
+    return linked.strip(), [], "links", None
+
+
+def _attached_sentences(english: str) -> tuple[str, ...]:
+    """The sentence and its catalogued translations (`label_catalog`)."""
+    from app.services.chatbot import label_catalog
+
+    found = [english]
+    for lang in label_catalog.LANGUAGES:
+        if lang == "en":
+            continue
+        translated = label_catalog.defaults(lang).get(english)
+        if translated:
+            found.append(translated)
+    return tuple(found)
+
+
 def _attachments_src(answer: Any) -> Any:
     """`send-attachments`'s own frozen expression, as a value.
 
@@ -8634,12 +9177,14 @@ def _clean_attachments(source: Any) -> Any:
     Array.isArray(a) ? a : []`). Every other shape passes through untouched, including the
     casual lane's `{response}` and a bare list.
 
-    An attachment entry is `{url, filename, mimeType, attachmentType[, uploadedAt]}` and
-    NOTHING else - measured over 7402 entries in the capture corpus, zero of which carry an
-    id or a company. So:
+    An attachment entry is `{url, filename, mimeType, attachmentType[, uploadedAt][,
+    fileHash]}` and NOTHING else - measured over 7402 entries in the capture corpus, zero
+    of which carry an id or a company. So:
 
     * **Identity is the `url`**, which is also the key the executor's own `Remove
       Duplicates` node uses, so the two halves cannot disagree about what a duplicate is.
+      A `fileHash`, when present, also makes a duplicate (PHOTO-SEND-CAP R2): the second
+      url of one image is dropped HERE, so n8n never sees it.
     * **The company comes from the ROW that produced the file**, because the entry does not
       carry one. The envelope's rows do: each carries `company_name` and the values that
       name the thing the file belongs to. A row CLAIMS a file when one of its values is the
@@ -8712,9 +9257,15 @@ def _with_company(filename: str, company: Any) -> str:
 
 
 def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
-    """Dedupe on `url`, then qualify a surviving filename collision with its company."""
+    """Dedupe on `url` and on `fileHash`, then qualify a surviving filename collision with
+    its company.
+
+    PHOTO-SEND-CAP R2: every file is one WhatsApp message, and the same picture uploaded
+    twice has two urls and one `fileHash` (sha256 of the bytes). An entry with no hash
+    dedupes on its url alone, exactly as before."""
     kept: list[Any] = []
     seen_urls: set[Any] = set()
+    seen_hashes: set[str] = set()
     for entry in files:
         if not isinstance(entry, dict):
             kept.append(entry)
@@ -8725,9 +9276,12 @@ def _label_attachments(files: list, rows: list[tuple[Any, list[str]]]) -> list:
             # says "(file link unavailable right now)") but never sent - a send with no
             # url is a dead action, not a delivery.
             continue
-        if url in seen_urls:
+        file_hash = jsc.nullish_str(entry.get("fileHash")).strip()
+        if url in seen_urls or (file_hash and file_hash in seen_hashes):
             continue
         seen_urls.add(url)
+        if file_hash:
+            seen_hashes.add(file_hash)
         kept.append(entry)
 
     groups: dict[str, list[int]] = {}
@@ -8875,13 +9429,40 @@ def run_tail(
             composed = {**composed, "text": stripped_text}
             # Security review N2: the offer's team buttons go with it.
             quick_replies = None
+    attachments_src = _attachments_src(values["answer"])
+    src_files = (
+        attachments_src.get("attachments")
+        if isinstance(attachments_src, dict)
+        else attachments_src
+    )
+    composed_text, kept_files, file_mode, file_fallback = _apply_file_mode(
+        jsc.js_string(composed.get("text") or ""),
+        src_files if isinstance(src_files, list) else [],
+        profile=profile,
+        contact_respond_id=contact_respond_id,
+        turn_id=turn_id,
+        db=db,
+    )
+    if file_mode == "links":
+        composed = {**composed, "text": composed_text}
+        attachments_src = None
+    elif file_mode == "mixed":
+        # Only the files off the link list go as attachments (owner hand test).
+        composed = {**composed, "text": composed_text}
+        attachments_src = (
+            {**attachments_src, "attachments": kept_files}
+            if isinstance(attachments_src, dict)
+            else kept_files
+        )
+    elif file_mode == "attachments" and composed_text != jsc.js_string(composed.get("text") or ""):
+        composed = {**composed, "text": composed_text}
     reply = {
         "text": composed.get("text"),
         # Already guarded above; the persisted reply, the trace fact and the send action
         # all read this one value.
         "quick_replies": quick_replies,
         "result_set": composed.get("result_set") or [],
-        "attachments_src": _attachments_src(values["answer"]),
+        "attachments_src": attachments_src,
     }
 
     turn_trace.record(
@@ -8892,6 +9473,11 @@ def run_tail(
             "lane": branch_kind,
             "quick_replies": bool(reply["quick_replies"]),
             "rows_offered": len(reply["result_set"]),
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files), and
+            # how many (review S2), and why any did not go as links (owner hand test).
+            "file_mode": file_mode,
+            "file_mode_fallback": file_fallback,
+            "files": len(src_files) if isinstance(src_files, list) else 0,
         },
         raw={"reply": reply},
     )
@@ -8914,6 +9500,10 @@ def run_tail(
             turn_no=0,
         )
     before = dict(remembered_before or session_state.five_keys(jsc.get(ctx, "session")))
+    if applied is not None and getattr(applied, "quoted_live", None):
+        applied = state = turn_tail.carry_live_state(
+            applied, question is not None, applied.quoted_live, non_answer=True
+        )
     payload = {
         "focus": turn_state.focus_to_wire(state.focus),
         # The lane's OWN question, else the one APPLY carried - the same rule the
@@ -8940,6 +9530,14 @@ def run_tail(
     }
     SessionVars(**payload)
     reply_ladder.sanitize_em_dash(payload)
+    turn_trace.add(
+        "state",
+        {
+            "focus": payload["focus"],
+            "open_question": payload["open_question"],
+            "turn_no": getattr(state, "turn_no", 0),
+        },
+    )
 
     written = (not dry_run) and write_session
     if written:

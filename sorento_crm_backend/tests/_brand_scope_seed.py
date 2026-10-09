@@ -72,18 +72,24 @@ def branded_product(db, code: str, brand_row: Brand | None):
     return row
 
 
-def contact(db, *, brand_ids: list[str] | None = None) -> RespondContact:
+def contact(
+    db, *, brand_ids: list[str] | None = None, companies: list[str] | None = None
+) -> RespondContact:
+    """A contact in `companies` (Sorento alone by default) with the given brand list."""
     kwargs = {"brand_ids": brand_ids} if brand_ids else {}
     row = RespondContact(
-        id=str(uuid.uuid4()), phone_number=f"+6{unique_code('PH')[:10]}", **kwargs
+        # The full unique code: truncating it to 10 chars left 3 hex digits of entropy, and a
+        # world of four or five contacts collided on `respond_contacts_phone_number_key` in CI.
+        id=str(uuid.uuid4()), phone_number=f"+6{unique_code('PH')}", **kwargs
     )
     db.add(row)
     db.flush()
-    db.add(
-        RespondContactCompany(
-            id=str(uuid.uuid4()), respond_contact_id=row.id, company_id=DEFAULT_COMPANY_ID
+    for company_id in companies or [DEFAULT_COMPANY_ID]:
+        db.add(
+            RespondContactCompany(
+                id=str(uuid.uuid4()), respond_contact_id=row.id, company_id=company_id
+            )
         )
-    )
     db.flush()
     from app.services.contact_field_reveal_service import set_granted_keys
 
@@ -215,6 +221,14 @@ class BrandWorld:
             self._db.commit()
         return self._scoped
 
+    @property
+    def mch(self) -> "MochaWorld":
+        """The second company (BRAND-SCOPE-PER-COMPANY), built on first use so the parent lane's
+        single-company tests never see a row of it."""
+        if getattr(self, "_mch", None) is None:
+            self._mch = MochaWorld(self._db, self)
+        return self._mch
+
     def _so(self, db, lines, *, delivered: bool = False) -> SalesOrder:
         so = SalesOrder(
             id=str(uuid.uuid4()),
@@ -249,6 +263,51 @@ class BrandWorld:
             "sorento": self.p_sorento.product_code,
             "null": self.p_null.product_code,
         }
+
+
+class MochaWorld:
+    """Company MCH: no brand row, two NULL-brand products with stock and a DO line, plus the two
+    contacts the per-company rule is about. `brand_ids` on both is the SRT brand `SORENTO`
+    (the owner script writes the Sorento brands on every contact, `mch_mode=apply`).
+
+    - `dual`: SRT + MCH memberships -> SORENTO products of SRT and every MCH product.
+    - `mocha_only`: MCH membership only -> every MCH product (SRT is out by company scope).
+    """
+
+    def __init__(self, db, world: BrandWorld) -> None:
+        from app.models.company import Company
+
+        self.company_id = str(uuid.uuid4())
+        db.add(Company(id=self.company_id, name="ZZT Mocha", code=unique_code("MCH")[:20]))
+        db.flush()
+        self.p_one = product(db, company_id=self.company_id, code=unique_code("MCHONE", alpha=True))
+        self.p_two = product(db, company_id=self.company_id, code=unique_code("MCHTWO", alpha=True))
+        self.products = (self.p_one, self.p_two)
+        self.wh = warehouse(db, company_id=self.company_id)
+        for prod, qty in ((self.p_one, 80), (self.p_two, 90)):
+            stock(db, company_id=self.company_id, product_id=prod.id, warehouse_id=self.wh.id, on_hand=qty)
+        self.cust = customer(db, company_id=self.company_id, name="ZZT MOCHA CUSTOMER")
+        self.do_one = order(db, company_id=self.company_id, customer_id=self.cust.id, number=unique_code("MDO"))
+        self.do_one.debtor_name = "ZZT MOCHA CUSTOMER"
+        self.do_one.source_book = "db1"
+        self.do_one.order_date = date(2026, 6, 1)
+        for seq, (prod, qty, total) in enumerate(((self.p_one, 7, Decimal("70.00")), (self.p_two, 1, Decimal("5.00"))), start=1):
+            db.add(
+                OrderLine(
+                    id=str(uuid.uuid4()), order_id=self.do_one.id, product_id=prod.id,
+                    warehouse_id=self.wh.id, quantity=qty, total=total,
+                    total_excluding_tax=total, line_sequence=seq, company_id=self.company_id,
+                )
+            )
+        self.do_one.total_amount = Decimal("75.00")
+        db.flush()
+        self.dual = contact(db, brand_ids=[world.sorento.id], companies=[DEFAULT_COMPANY_ID, self.company_id])
+        self.mocha_only = contact(db, brand_ids=[world.sorento.id], companies=[self.company_id])
+        db.commit()
+
+    @property
+    def codes(self) -> dict[str, str]:
+        return {"mch_one": self.p_one.product_code, "mch_two": self.p_two.product_code}
 
 
 @pytest.fixture

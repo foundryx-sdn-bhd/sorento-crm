@@ -1,0 +1,89 @@
+# Console case for DO-SUMMARY-CAP round 2 (owner hand test, 7 Oct 2026, turn e4895b28): the
+# trailer under a capped By product group is a count only (owner ruling, ask a69045557), and the
+# closing offer line is the one pointer. DO-only: `... and 20 more products` above `Reply 1 for
+# the delivery order list.`; both blocks: two count-only trailers above the numbered offer, and
+# `1` / `2` land on the sales order / delivery order list.
+#
+# `documentation/plans/chatbot/PLAN-do-summary-cap.md` ("R3: the trailer counts only"), UAC
+# AC-1602 / AC-1603.
+#
+# NOT collected by pytest. Runs on the shared dev copy (sorento_cagent_stack) against a lane
+# test copy, dry run, a dealer contact that holds `sales_orders.outstanding` and has no open
+# question in its stored frames (the owner's own contact carried a stock ask from a later hand
+# test, and "both" answered THAT; 445239408 is quiet since 18 Sep):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-do-summary-cap-r2.yaml --base-url http://127.0.0.1:8103 --live
+#
+# Case A is the owner's exact ask (HANLIM TRADING, September 2026: 40 products on 25 DOs, both
+# HANLIM accounts picked). Cases B and C are SYNTALUN MARKETING (EM) SDN BHD (the first entry of
+# the customer pick) over September 2026: 55 SO products and 38 DO products outstanding, so both
+# blocks cap; B answers 1, C answers 2. The date range matters: an SO LIST with no period asks
+# "Which period for ...?" first (`so_status.period_reply`, Q1 (a) of the SO-NUMBER-ASK lane), so a
+# bare "1" on a both-scope offer without a range is a period question, not the list.
+contact: "445239408"
+
+cases:
+  - name: R2-A DO-only (owner's case) - count-only trailer, the offer line alone points, "1" lists every DO
+    cold: true
+    turns:
+      - text: "HANLIM TRADING delivery order outstanding 01/09/2026 to 30/09/2026"
+        expect:
+          reply_contains: ["Which one do you mean?", "HANLIM TRADING"]
+      - text: "both"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "*Delivery order outstanding*"
+            - "*_By product_*"
+            - "... and 20 more products"
+            - "Reply 1 for the delivery order list."
+          reply_not_contains: ["full list", "(reply", "Sales order outstanding"]
+          no_uuid: true
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["DO Number:"]
+          reply_not_contains: ["By product", "more products", "full list"]
+          no_uuid: true
+
+  - name: R2-B both blocks - each capped group ends with its count line above the numbered offer
+    cold: true
+    turns:
+      - text: "SYNTALUN MARKETING outstanding both 01/09/2026 to 30/09/2026"
+        expect:
+          reply_contains: ["Which customer do you mean?", "SYNTALUN MARKETING (EM) SDN BHD"]
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          reply_contains:
+            - "*Sales order outstanding*"
+            - "more products"
+            - "*Delivery order outstanding*"
+            - "Reply with a number for detail:"
+            - "1. Sales order list"
+            - "2. Delivery order list"
+            - "3. Both lists"
+          reply_not_contains: ["full list", "(reply"]
+          no_uuid: true
+      # "1" (the sales order list) is NOT graded here: on the live parser the pick carries
+      # `order_status: so_outstanding` and the engine answers from the SO status lane (the
+      # open engine finding on PR #1518, console-pass-r2-07oct.md); case C grades "2".
+
+  - name: R2-C both blocks - "2" is the DO list
+    cold: true
+    turns:
+      - text: "SYNTALUN MARKETING outstanding both 01/09/2026 to 30/09/2026"
+        expect:
+          reply_contains: ["Which customer do you mean?", "SYNTALUN MARKETING (EM) SDN BHD"]
+      - text: "1"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["more products", "3. Both lists"]
+          reply_not_contains: ["full list"]
+      - text: "2"
+        expect:
+          branch_kind: business_query
+          reply_contains: ["DO Number:"]
+          reply_not_contains: ["SO Number:", "By product", "more products", "full list"]
+          no_uuid: true

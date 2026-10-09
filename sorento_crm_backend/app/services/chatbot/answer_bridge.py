@@ -101,6 +101,7 @@ from app.services.chatbot.tail import scope_block
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import fetch as run_fetch
 from app.services.chatbot.turn import pending
+from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 from app.services.chatbot.turn.state import escalation_barred, is_staff_profile, offers_escalation
 
 # AC-1691's umbrella: no roster is ever asked with fewer than two options, in any
@@ -1659,6 +1660,7 @@ def answer_for(
     profile: Any = None,
     dealer_stock_ask: bool = False,
     dealer_incoming_ask: bool = False,
+    product_token_missed: bool = False,
 ) -> turn_compose.Answer | None:
     """The MISS seam (R4): `None` outside its own two triggers (see module docstring),
     so a hit, an `access_denied` refusal, an infrastructure error and a multi-domain plan
@@ -1827,6 +1829,9 @@ def answer_for(
         resolved=resolved,
         gate=miss_gate,
         profile=profile,
+        # ROGUE-CONVO-REVIEW-R2: the engine's one answer to "did this message's own
+        # product token miss?", never re-derived here.
+        product_token_missed=product_token_missed,
         granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
@@ -2016,7 +2021,46 @@ def answer_for(
         dealer = _dealer_did_you_mean(offer, parser, asked_at_turn)
         if dealer is not None:
             return turn_compose.Answer(text=dealer[0], question=dealer[1])
+    alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
+    if alternative_lines:
+        text = with_alternative_lines(text, alternative_lines)
     return turn_compose.Answer(text=text, question=question)
+
+
+def with_alternative_lines(text: str, lines: Any) -> str:
+    """PRODUCT-ALTERNATIVES (owner, 9 Oct 2026): a miss on a discontinued code still names
+    its alternative and what the search for it found, BEFORE any escalate offer. The lines
+    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`).
+
+    Where they go, first match wins: before a "Related products:" picker (its last line is
+    the offer, and it lists the alternative itself); else before the sentence carrying the
+    offer ("would you like me to escalate", or a picker's "reply 'yes' to escalate to"), or
+    the dealer's "Please refer to your salesman."; else at the end."""
+    block = "\n".join(str(line) for line in (lines or []) if line)
+    if not block:
+        return text
+    picker = text.find("Related products:")
+    if picker >= 0:
+        return f"{text[:picker].rstrip()}\n{block}\n\n{text[picker:]}"
+    lowered = text.lower()
+    found = [
+        i
+        for i in (
+            lowered.find("would you like me to escalate"),
+            lowered.find("to escalate to"),
+            lowered.find(REFER_TO_SALESMAN.rstrip(".").lower()),
+        )
+        if i >= 0
+    ]
+    if not found:
+        return f"{text.rstrip()}\n{block}"
+    at = min(found)
+    # The sentence carrying it starts after the last sentence end (or line break) before it.
+    start = max(text.rfind(". ", 0, at), text.rfind("? ", 0, at), text.rfind("\n", 0, at))
+    if start < 0:
+        return f"{block}\n{text}"
+    cut = start + (1 if text[start] == "\n" else 2)
+    return f"{text[:cut].rstrip()}\n{block}\n{text[cut:].lstrip()}"
 
 
 def _dealer_did_you_mean(

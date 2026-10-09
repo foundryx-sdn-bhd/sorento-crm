@@ -146,7 +146,8 @@ def _render_row(n: int, fig: dict[str, Any]) -> str:
 
 
 def _file_key(f: dict[str, Any]) -> Any:
-    return f.get("url") or f.get("id") or f.get("filename")
+    # PHOTO-SEND-CAP: one picture under two urls (two domains' envelopes) is one file.
+    return f.get("fileHash") or f.get("url") or f.get("id") or f.get("filename")
 
 
 def _dealer_view(figures: list[dict[str, Any]]) -> bool:
@@ -507,6 +508,10 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     missed_domains: list[str] = []
     files: list[dict[str, Any]] = []
     seen_file_keys: set[Any] = set()
+    # RESOLVER-TOKEN-CAP: a code the resolver cut at its ceiling rides every envelope
+    # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
+    # per turn, under the first section that carries it.
+    named_not_checked: set[str] = set()
 
     for env in envelopes:
         domain = env.get("domain")
@@ -610,6 +615,27 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             # the customer read `*orders* for HANLIM TRADING SDN BHD:` and nothing else,
             # which reads as "there are none" rather than "ask me again".
             block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif codes and not header_override and (
+            env.get("tool_has_result") is True or env.get("tool_ran") is not True
+        ):
+            # Never-stuck (owner ruling, STOCK-FILL-PREDICATE, prod turn 121 of 6 Oct
+            # 2026): a lane header is never sent with an empty body. And no claim
+            # without a lookup (owner, 6 Oct 17:50, the #1501 principle): the lane
+            # rendered nothing, and EITHER the tool did answer (a withheld set whose
+            # only line was the header `envelope_of` strips) OR no tool ran for these
+            # codes at all (a set predicate's refusal, a gate refusal, `tool_ran` off
+            # `turn_runtime.envelope_of`), so "No stock found" would be a stock claim
+            # nothing looked up: this is the `error` arm's own sentence, a reply that
+            # did not reach the dealer, never a verdict about the stock.
+            block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif codes and not header_override:
+            # Never-stuck, the miss half: the tool RAN for these codes and found nothing
+            # (`tool_ran`, no rows), so the section says the same miss the
+            # `NO_RESULT_INTRO` arm above says for the same subjects, rather than
+            # `*stock* for SRTWC8383-RL-GY:` over nothing - which the dealer read as
+            # "there are none" and which `envelope_missed` still files as a miss.
+            subject_label = label.lower() if isinstance(label, str) else str(domain)
+            block = localizer.sentence(f"No {subject_label} found for {codes}.")
         else:
             block = header
         # Prod turn f0a2 (1 Oct 2026, "Srtswt3001 / Srtswt3001-gm stock"): both codes
@@ -705,14 +731,26 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # out which of the products they asked about are missing from the answer.
         # LAST, under the rungs line: it is the closing note on this section, and it
         # read as part of the ladder sentence when it sat above one.
-        not_checked = [n for n in (env.get("not_checked") or []) if isinstance(n, str)]
+        not_checked = [
+            n
+            for n in (env.get("not_checked") or [])
+            if isinstance(n, str) and n not in named_not_checked
+        ]
         if not_checked:
+            named_not_checked.update(not_checked)
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
         text_parts.append(block)
 
         for f in env_files:
             key = _file_key(f)
             if key in seen_file_keys:
+                # PHOTO-SEND-CAP (security review M1): the same image under another url is
+                # not sent twice, but this section's text may name that url under its row;
+                # the kept entry carries it so link mode rewrites it too.
+                kept = next((k for k in files if _file_key(k) == key), None)
+                url = f.get("url") if isinstance(f, dict) else None
+                if kept is not None and url and url != kept.get("url"):
+                    files[files.index(kept)] = {**kept, "aliasUrls": [*(kept.get("aliasUrls") or []), url]}
                 continue
             seen_file_keys.add(key)
             files.append(f)

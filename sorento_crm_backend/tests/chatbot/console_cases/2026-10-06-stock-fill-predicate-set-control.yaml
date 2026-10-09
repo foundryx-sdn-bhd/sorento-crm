@@ -1,0 +1,35 @@
+# Console replay for STOCK-FILL-PREDICATE (PR #1502), step 3: the set control. A real set
+# question still returns a set, with its predicate, after the rule that a fetch scoped to
+# a resolved product never takes one. Graded LIVE (real parser), every turn a dry run.
+# The dealer steps are `2026-10-06-stock-fill-predicate.yaml`.
+#
+# NOT collected by pytest. `live_only: true`: no `parser:` block, the run needs `--live`.
+#
+#   cd sorento_crm_backend
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-stock-fill-predicate-set-control.yaml \
+#       --base-url http://localhost:<backend port> --contact <full stock view contact> --live
+#
+# `--contact`: a Respond contact whose stock policy shows full stock details (mode
+# `detailed`), with at least one stored chatbot turn. NOT the "Availability only" dealer of
+# the other file: on that view a set question opens the quantity question over the set's
+# members ("How many units for each?" and the first 50 codes) instead of the set summary,
+# on this branch and on main alike (measured 6 Oct 2026 on the shared dev copy). The
+# `contact:` below is a placeholder, not a real contact.
+
+contact: "900000039"
+
+cases:
+  - name: "3. control (#1502): a real set question still returns a set (full stock view)"
+    live_only: true
+    cold: true
+    text: "which basins have stock"
+    expect:
+      branch_kind: business_query
+      no_uuid: true
+      reply_contains:
+        - "Here's what you want:"
+        - "with stock ("
+      reply_not_contains:
+        - "*stock* for"
+        - "No stock found for"

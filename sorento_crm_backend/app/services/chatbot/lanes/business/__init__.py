@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import copy as _copy
 import logging
 import time
 
@@ -29,8 +30,11 @@ from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
+from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
+from app.services.chatbot.lanes.business import report_ask
+from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import resolve_gate
 from app.services.chatbot.lanes.business import services as business_services
 from app.services.chatbot.turn import policy_rows
@@ -83,11 +87,13 @@ _SALES_ANALYSIS_TOOL = "crm_sales_analysis"
 #: its own copy because its container does not ship `sorento_crm_mcp`, and
 #: `tests/chatbot/test_top_selling_lane.py` pins the two equal.
 TOP_SELLING_TOOL = "crm_top_selling_report"
-TOP_SELLING_ASK_METRIC = "By quantity or by amount?"
+TOP_SELLING_ASK_METRIC = ranking_ask.METRIC_LINE
 TOP_SELLING_ASK_GROUP = (
     "Do you want the top items inside one category, or the categories ranked against each other?"
 )
-TOP_SELLING_ASK_BASIS = "Delivered (transferred to DO) or ordered?"
+TOP_SELLING_ASK_BASIS = ranking_ask.TOP_SELLING_BASIS_LINE
+#: The sales ranking's own basis question (`report_ask`), three bases.
+SALES_RANKING_ASK_BASIS = ranking_ask.RANKING_BASIS_LINE
 TOP_SELLING_REFUSED_OTHER_CUSTOMER = "Sorry, I can only share sales figures for your own account."
 #: Owner retest of round 4 (27 Sep 2026, R8): one short question in words when a message
 #: inside a ranking cannot be placed.
@@ -503,7 +509,8 @@ def top_selling_ceiling_note(slot: dict[str, Any]) -> str | None:
 def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
     """S4 point 8a: the one question an unsettled top selling ask gets, in this order:
     the grain when the parser could not tell a category filter from a category ranking,
-    the metric when none was named, the basis when a word could mean either. None once
+    the metric when none was named, the basis when none was named or it is not delivered or
+    ordered (`ranking_ask.next_question`, shared with the sales ranking). None once
     the ask is settled. A picked row (`detail_code`) is never asked about: the ranking
     it came from already ran. Returns `(axis, line)`: the axis is what the reply records
     as asked (`top_selling_asked`), so the next message is read as its answer only if it
@@ -512,11 +519,11 @@ def _top_selling_question(slot: dict[str, Any]) -> tuple[str, str] | None:
         return None
     if slot.get("rank_group") == "unclear":
         return "group", TOP_SELLING_ASK_GROUP
-    if slot.get("rank_by") not in ("quantity", "amount"):
-        return "metric", TOP_SELLING_ASK_METRIC
-    if slot.get("basis") == "unclear":
-        return "basis", TOP_SELLING_ASK_BASIS
-    return None
+    return ranking_ask.next_question(
+        metric_settled=slot.get("rank_by") in ("quantity", "amount"),
+        basis_settled=slot.get("basis") in ("delivered", "ordered"),
+        basis_line=TOP_SELLING_ASK_BASIS,
+    )
 
 
 def _top_selling_category_ids(
@@ -1072,6 +1079,10 @@ def _refinement_product_resolves(db: Any, token: str) -> bool:
         "match_mode": "or",
         "allowed_entity_types": ["product"],
         "limit": 1,
+        # A yes/no check on a refinement WORD ("cheaper") against the catalogue, inside a
+        # turn that already resolved its subject: no model question here (it would cost
+        # the turn up to 3 s and a usage row for a word nobody typed as a code).
+        "semantic_fallback": False,
     }
     try:
         result = resolve_entity(body)
@@ -1092,6 +1103,9 @@ def _refinement_product_resolves(db: Any, token: str) -> bool:
 def typed_brand_words(parse_output: dict[str, Any]) -> set[str]:
     """The brand-hinted words this turn (or a refinement) typed, listed or not."""
     words = {
+        # A BRAND word stays raw first (#1262 R1 below: the typed word, never the parser's
+        # canonical_code, which a misspelling makes a guess); the canonical-first rule of
+        # RESOLVE-SEMANTIC-FALLBACK is for hint "product" only.
         jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
         for e in [
             *jsc.array(parse_output.get("entities")),
@@ -1229,8 +1243,11 @@ def _resolve_report_product_and_location(
     elif jsc.truthy(carried_code):
         semantic_input["outstanding_product_code"] = jsc.js_string(carried_code)
     else:
+        # RESOLVE-SEMANTIC-FALLBACK: the code the customer typed is `canonical_code` first
+        # ("TAP SRTWT5608" carries SRTWT5608 there), raw second - the resolver's own token
+        # order (`resolve_gate._token_of`), so the subject match reads the same value.
         typed_codes = {
-            jsc.js_string(e.get("raw") or "").strip().casefold()
+            jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip().casefold()
             for e in jsc.array(parse_output.get("entities"))
             if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
         }
@@ -1247,7 +1264,7 @@ def _resolve_report_product_and_location(
             for e in jsc.array(parse_output.get("outstanding_refinement_entities")):
                 if not isinstance(e, dict) or jsc.js_string(e.get("hint") or "") != "product":
                     continue
-                token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+                token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
                 if token and _refinement_product_resolves(db, token):
                     semantic_input["outstanding_product_code"] = token
                 break
@@ -1258,7 +1275,7 @@ def _resolve_report_product_and_location(
     ]:
         if not isinstance(e, dict) or jsc.js_string(e.get("hint") or "") != "warehouse":
             continue
-        token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+        token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
         if not token or db is None:
             break
         codes = resolve_warehouse_token(db, token)
@@ -1410,6 +1427,44 @@ def run_fetch(
             # (`answer_bridge._miss_triggers`).
             fragment["fetch"]["so_status"] = True
             return fragment
+    # SO-PO-REF: the parser's `po_refs` is a dealer/customer's own PO number, answered from
+    # `sales_orders.po_ref_key` inside their links (`so_status.lookup_po_refs`). Staff turns
+    # arrive with it cleared (`turn_runtime.make_tool_runner`), so their "PO" stays the
+    # supplier PO path. The number is never read off the message text here.
+    po_refs = [w for w in jsc.array(parse_output.get("po_refs")) if isinstance(w, str) and w.strip()]
+    if po_refs:
+        access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
+        granted_raw = access_ctx.get("attributes")
+        granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if _OUTSTANDING_SO_GRANT not in granted:
+            if trace is not None:
+                trace.add("so_status", {"refused": "not_granted", "needs": _OUTSTANDING_SO_GRANT})
+            refusal = _fixed_reply(fetch_mod.SO_NOT_ENABLED_MESSAGE)
+            # The refusal is the whole answer: the miss ladder (escalation offer) stands down.
+            refusal["fetch"]["so_status"] = True
+            return refusal
+        if db is not None:
+            from app.services.chatbot import so_status
+
+            linked = list(customer_scope.get("linked") or [])
+            looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
+            if trace is not None:
+                trace.add(
+                    "so_status",
+                    {"asked_po_refs": po_refs, "cards": len(looked.cards), "missing": looked.missing},
+                )
+            texts: list[str] = []
+            seen_refs: set[str] = set()
+            for ref in po_refs:
+                folded = so_status.po_ref_key(ref)
+                if not folded or folded in seen_refs:
+                    continue
+                seen_refs.add(folded)
+                texts.append(so_status.po_ref_reply_text(looked, ref))
+            if texts:
+                fragment = _fixed_reply("\n\n".join(texts))
+                fragment["fetch"]["so_status"] = True
+                return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the
     # links on a scoped or "my" turn, a resolved customer otherwise), behind the same SO
     # reveal key (Q4), over a period of at most 31 days asked like the DO list's (Q1).
@@ -1719,7 +1774,7 @@ def run_fetch(
                 continue
             if e.get("current_message") is not True:
                 continue  # carried from an earlier turn - not this ask's scope
-            token = jsc.js_string(e.get("raw") or e.get("canonical_code") or "").strip()
+            token = jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip()
             if not token or db is None:
                 break
             codes = resolve_warehouse_token(db, token)
@@ -1999,6 +2054,35 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
+    elif domain in contracts.ORDER_OR_SALES_DOMAINS and order_status_raw == report_ask.ASK_NAME:
+        # REPORT-ENGINE slice 1b (PLAN-report-engine.md section 11): sales ranked or
+        # totalled by one dimension, `crm_report_ask`. The grant was checked above for
+        # every sales figure status; every other gate (audience, company, location) is
+        # the route's, from `contact_id`. Nothing runs until the period, and how many for
+        # a ranking, are settled (`required_fields`, asked one per reply).
+        tool_name = report_ask.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "sales_ranking_override"}}
+        # 1b fix round F1: a customer-scoped (dealer) turn is refused a staff breakdown
+        # before any agent or location word is resolved.
+        settled, line = report_ask.settle(
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced"))
+        )
+        if trace is not None:
+            trace.add(
+                "required_ask",
+                {"ask": report_ask.ASK_NAME, "done": bool(settled and settled.done),
+                 "values": settled.values if settled else None, "line": line},
+            )
+        if settled is None:
+            return _fixed_reply(line or "")
+        if not settled.done:
+            return _fixed_reply(settled.reply or "", required_ask=settled.slot)
+        semantic_input["report_ask_args"] = report_ask.route_args(settled)
+        if settled.extras.get("note"):
+            semantic_input["report_ask_note"] = settled.extras["note"]
+        # The args carry every id the ask settled (an answering turn's came off the slot);
+        # nothing the session carried rides beside them.
+        entities = []
     elif tool_name in fetch_mod.ORDER_TOOLS and order_status_raw == "so_outstanding":
         # S2 (security review, 13 Sep 2026), narrowed by R13: the LEGACY bucket now only
         # catches an `so_outstanding` ask with NO subject at all (no product and no
@@ -2035,6 +2119,8 @@ def run_fetch(
         # always None, so every restricted field stays hidden by construction.
         "access": ctx.get("access"),
         "localizer": ctx.get("localizer"),
+        # PHOTO-SEND-CAP: the contact's link mode (`turn_runtime.make_tool_runner`).
+        "files_as_links": bool(ctx.get("files_as_links")),
         # E2 (attribute-first asks): the resolver's `predicate` block, carried
         # through the gate untouched (`resolved`/`gate` are the same mutated dict,
         # `gate.py`'s own C4 bypass reads it off `resolver.get("predicate")` the
@@ -2157,9 +2243,153 @@ def run_fetch(
     # The ERROR check comes BEFORE the render: an error envelope has no rows, and rendering
     # it first would build a "No matching results found." message for a turn that failed.
     if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
+        # REPORT-ENGINE slice 1b: the route's own refusal (the audience check is the
+        # route's) is said as its message, a 404 as one line.
+        refusal = report_ask.error_line(envelope) if tool_name == report_ask.TOOL else None
+        if refusal:
+            if trace is not None:
+                trace.add("report_ask", {"refused": envelope.get("status_code")})
+            return _fixed_reply(refusal)
         return _error_fragment(envelope["error"])
 
+    # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
+    # that is discontinued and has a stored alternative gets the SAME tool's answer for the
+    # alternative folded in (`alternatives.py`), one call per alternative through the same
+    # seam and brand guard. Best-effort end to end: any failure (the lookup included) leaves
+    # the reply exactly as the first call made it.
+    alternative_tail: list[str] = []
+    alternative_found = False
+    alternative_pairs: list[Any] = []
+    main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
+    if isinstance(envelope, dict) and not jsc.array(envelope.get("groups")) and db is not None:
+        savepoint = None
+        try:
+            # One savepoint around the lookup AND the second calls' brand guard, so a failed
+            # statement in either is rolled back here and never aborts the turn.
+            savepoint = db.begin_nested()
+            alternative_pairs = alternatives_mod.plan(
+                db,
+                tool_name,
+                entities,
+                predicate=trigger.get("predicate"),
+                scope_brand_ids=semantic_input.get("scope_brand_ids"),
+            )
+            requested = jsc.array(semantic_input.get("requested_attributes"))
+            status_only = (
+                alternatives_mod.TOOL_KINDS.get(tool_name) == "product"
+                and bool(requested)
+                and all(fetch_mod._asks_discontinued([a]) for a in requested)
+            )
+            answers: list[tuple[str, Any, Any]] = []
+            for old_code, alternative in alternative_pairs:
+                if status_only:
+                    # The status line names the code alone; nothing to fetch for it.
+                    answers.append((old_code, alternative, None))
+                    continue
+                alternative_args = fetch_mod.entity_ids_transformer(
+                    alternatives_mod.alternative_trigger(trigger, alternative), space_id=space_id
+                )
+                if (
+                    tool_name in policy_rows.ENTITY_FILTER_REQUIRED_TOOLS
+                    and not fetch_mod.has_narrowing_filter(alternative_args, tool_name=tool_name)
+                ):
+                    continue
+                _alt_started = time.perf_counter()
+                alternative_envelope = brand_guard.guard_result(
+                    tool_name,
+                    fetch_mod.parse_mcp_content(
+                        fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
+                    ),
+                    semantic_input.get("scope_brand_ids"),
+                    db,
+                )
+                if trace is not None:
+                    trace.add(
+                        "tool",
+                        {
+                            "name": tool_name,
+                            "args": alternative_args,
+                            "envelope": alternative_envelope,
+                            "ms": int((time.perf_counter() - _alt_started) * 1000),
+                            "alternative_of": old_code,
+                        },
+                    )
+                if isinstance(alternative_envelope, dict) and not isinstance(
+                    alternative_envelope.get("error"), str
+                ):
+                    answers.append((old_code, alternative, alternative_envelope))
+            savepoint.commit()
+            if answers:
+                folded = _copy.deepcopy(envelope)
+                # An alternative's rows placed in this envelope are filtered by ITS
+                # restricted fields too, not only the asked product's.
+                restricted = dict(folded.get("restricted_fields") or {})
+                for _old, _alt, alt_envelope in answers:
+                    if isinstance(alt_envelope, dict) and isinstance(alt_envelope.get("restricted_fields"), dict):
+                        restricted = {**alt_envelope["restricted_fields"], **restricted}
+                if restricted:
+                    folded["restricted_fields"] = restricted
+
+                def _render(alt_envelope: Any, rows: list, alternative: Any) -> str:
+                    rendered = fetch_mod.output_structurer(
+                        {**alt_envelope, "items": rows, "intro": ""},
+                        alternatives_mod.alternative_trigger(trigger, alternative),
+                    )
+                    return jsc.js_string(rendered.get("response") or "")
+
+                alternative_tail, alternative_found = alternatives_mod.fold(
+                    tool_name,
+                    folded,
+                    answers,
+                    fmt_value=fetch_mod._fmt_value,
+                    render=_render,
+                    status_only=status_only,
+                    loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
+                    dealer=any(
+                        isinstance(env, dict) and env.get("result_type") == "incoming_dealer"
+                        for env in [envelope] + [a[2] for a in answers]
+                    ),
+                    subject_label=next(
+                        (
+                            jsc.nullish_str(e.get("display_name") or e.get("code")).strip() or None
+                            for e in jsc.array(entities)
+                            if isinstance(e, dict) and e.get("entity_type") == "attachment_type"
+                        ),
+                        None,
+                    ),
+                )
+                envelope = folded
+        except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
+            if savepoint is not None and savepoint.is_active:
+                savepoint.rollback()
+            logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
+            if trace is not None:
+                trace.add("alternatives", {"tool": tool_name, "failed": str(exc)[:200]})
+            alternative_tail, alternative_found = [], False
+
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if alternative_tail and isinstance(structured, dict):
+        response = jsc.js_string(structured.get("response") or "").strip()
+        if main_missed:
+            old_codes = list(dict.fromkeys(old for old, _alt in alternative_pairs))
+            # The same miss sentence compose would print, in the contact's language.
+            miss = alternatives_mod.miss_sentence(tool_name, old_codes)
+            localizer = trigger.get("localizer")
+            structured["response"] = (
+                (localizer.sentence(miss) if localizer is not None else miss)
+                + "\n"
+                + "\n".join(alternative_tail)
+            )
+            if alternative_found:
+                # Only an alternative that actually had rows turns a miss into an answer;
+                # a bare "No promotion." keeps the miss handling (rerun, escalation offer).
+                structured["has_result"] = True
+            else:
+                # Still a miss: the miss reply (`answer_bridge.answer_for`) replaces this
+                # text, and prints these lines before its escalate offer (owner, 9 Oct).
+                structured["alternative_lines"] = list(alternative_tail)
+        else:
+            structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
     # pending, busy, empty, error - opens with the filters it was built with, "Low stock
     # report (water closet, supplier X, by supplier)", so a narrowed file never reads as
@@ -2364,6 +2594,16 @@ def complete_answer(
     resolved = payload.get("resolved") if isinstance(payload.get("resolved"), dict) else {}
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     fetch = payload.get("fetch") if isinstance(payload.get("fetch"), dict) else {}
+    # ROGUE-CONVO-REVIEW-R2: "did THIS message's own product token miss?" is computed
+    # ONCE per turn over the resolver's own listing (`turn_runtime.named_unplaced`, the
+    # same builder `resolve_kinds` keys `ResolveOutcome.unplaced_tokens` by, which is
+    # what the live path in `engine.py` reads beside its resolve outcome) and handed down
+    # to the composer; `not_found_error_message` never re-derives it.
+    from app.services.chatbot import turn_runtime
+
+    product_token_missed = turn_runtime.typed_product_unplaced(
+        parser, turn_runtime.named_unplaced(jsc.array(parser.get("entities")), resolved)
+    )
     exit_kind = payload.get("_exit_kind")
     # The entitlement union the resolver's aggregate returned, when it ran. Two readers:
     # `crossdomain-probe`'s access-level intersection and the promotion entitlement-miss
@@ -2463,6 +2703,7 @@ def complete_answer(
         lane_item = _run_miss_half(
             payload,
             granted_keys=(ctx.get("access") or {}).get("attributes"),
+            product_token_missed=product_token_missed,
             parser=parser,
             resolved=resolved,
             gate=gate,
@@ -2563,6 +2804,7 @@ def complete_answer(
             lane_item = _run_miss_half(
                 miss_payload,
                 granted_keys=(ctx.get("access") or {}).get("attributes"),
+                product_token_missed=product_token_missed,
                 parser=parser,
                 resolved=resolved,
                 gate=gate,
@@ -2695,6 +2937,7 @@ def _run_miss_half(
     dry_run: bool,
     build_result: Any = None,
     granted_keys: Any = None,
+    product_token_missed: bool = False,
 ) -> dict[str, Any]:
     """`not-found-error-message` -> `sub-miss-suggest` -> `build-suggest-offer` ->
     `tag-not-found`.
@@ -2705,7 +2948,12 @@ def _run_miss_half(
     the composer's own output untagged, so what the tail grades is unchanged.
     """
     not_found = answer_mod.not_found_error_message(
-        payload, parser=parser, resolved=resolved, gate=gate, granted_keys=granted_keys
+        payload,
+        parser=parser,
+        resolved=resolved,
+        gate=gate,
+        granted_keys=granted_keys,
+        product_token_missed=product_token_missed,
     )
     fragments["not_found"] = not_found
 

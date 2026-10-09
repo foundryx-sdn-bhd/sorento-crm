@@ -172,6 +172,40 @@ def _policy_location_ids(db: Session, policy: Any) -> Optional[list[str]]:
     return None
 
 
+def resolve_locations(
+    db: Session,
+    named_codes: list[str],
+    policy: Any,
+    *,
+    capped_by_policy: bool = True,
+    token: Optional[str] = None,
+) -> tuple[Optional[list[str]], Optional[str], bool]:
+    """The one location-policy rule, shared by the sales report and the report ask.
+
+    Returns (location ids or None for no cap, a refusal message or None, nothing). `nothing`
+    means the answer is empty and the engine must not run (it reads `[]` as no filter). A
+    named location outside the policy is a refusal; with `capped_by_policy` and no policy
+    (nobody resolved) the answer is nothing (fail closed)."""
+    if named_codes:
+        by_code = _warehouse_ids_by_code(db, named_codes)
+        if capped_by_policy:
+            if policy is None:
+                return None, None, True
+            for named in named_codes:
+                if any(not _allowed(policy, wid) for wid in by_code[named]):
+                    return None, refusal_message(token or named), False
+        ids = sorted({wid for found in by_code.values() for wid in found})
+        return (ids, None, False) if ids else (None, None, True)
+    if capped_by_policy:
+        if policy is None:
+            return None, None, True
+        ids = _policy_location_ids(db, policy)
+        if ids is not None and not ids:
+            return None, None, True
+        return ids, None, False
+    return None, None, False
+
+
 def _ranked(pivot: Any) -> list[tuple[str, Decimal, Decimal]]:
     """(name, qty, amount) per row value, by amount desc, qty desc, then name."""
     out = []
@@ -257,26 +291,15 @@ def delivered_sales_report(
     }
 
     # ---------------------------------------------------------------- locations
-    location_ids: Optional[list[str]] = None
-    if named_codes:
-        by_code = _warehouse_ids_by_code(db, named_codes)
-        if capped_by_policy:
-            if policy is None:
-                return body
-            for named in named_codes:
-                if any(not _allowed(policy, wid) for wid in by_code[named]):
-                    body["status"] = "refused"
-                    body["message"] = refusal_message(token or named)
-                    return body
-        location_ids = sorted({wid for ids in by_code.values() for wid in ids})
-        if not location_ids:
-            return body
-    elif capped_by_policy:
-        if policy is None:
-            return body
-        location_ids = _policy_location_ids(db, policy)
-        if location_ids is not None and not location_ids:
-            return body
+    location_ids, refusal, nothing = resolve_locations(
+        db, named_codes, policy, capped_by_policy=capped_by_policy, token=token
+    )
+    if refusal is not None:
+        body["status"] = "refused"
+        body["message"] = refusal
+        return body
+    if nothing:
+        return body
 
     # ---------------------------------------------------------------- channel
     channel_used: Optional[str] = None

@@ -95,6 +95,7 @@ BrandScopeTreatment = Literal["filtered", "no_products"]
 # A key not named here is not looked up as a product.
 BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
     "crm_top_selling_report": ("code",),
+    "crm_report_ask": ("name",),
     "crm_order_analytics": ("group_key",),
     "crm_complaint_analytics": ("group_key",),
 }
@@ -140,6 +141,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_purchase_request_reject": "no_products",
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
+    "crm_report_ask": "filtered",
     "crm_resource_attachments_list": "filtered",
     "crm_sales_analysis": "filtered",
     "crm_sales_report": "filtered",
@@ -465,8 +467,9 @@ SALES_REPORT_GROUP_BYS: tuple[str, ...] = ("customer", "product", "delivery_orde
 # values that read sales figures under the `sales_orders.sales_report` reveal key (the
 # owner's access ruling, 26 Sep 2026: no new key). The engine's grant-before-roster
 # check reads this one tuple, so the asks cannot be gated differently. `sales_analysis`
-# (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key.
-SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis")
+# (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key, and so is
+# `sales_ranking` (REPORT-ENGINE slice 1b, `crm_report_ask`).
+SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis", "sales_ranking")
 
 # PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
 # jumble up with order"): a SALES_FIGURE_STATUSES ask is the `sales` domain
@@ -674,6 +677,8 @@ class Focus(BaseModel):
     # LOWSTOCK-FILTER-ASK: the question `required_fields` left open, one turn long
     # (`turn/state.py::Focus.required_ask`).
     required_ask: dict[str, Any] | None = None
+    # REPORT-ENGINE: the last sales ranking's route args (`turn/state.py::Focus.sales_ranking_frame`).
+    sales_ranking_frame: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the last low stock report's filters (`turn/state.py::Focus.low_stock`).
     low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling

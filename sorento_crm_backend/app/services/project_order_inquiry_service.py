@@ -658,6 +658,19 @@ TIER_SIBLING = 4
 TIER_ELSEWHERE = 5
 
 
+def _is_borrow_order_back(row: Any) -> bool:
+    """A BORROW's order-back (`ProjectSupplyService._borrow_shortfalls`, every note it writes
+    opens "Order-back:"), as against the Amend "Order back" Buy row on the same verb. Both can
+    sit on one line once a borrow's order-back hangs on the borrowing line
+    (`PLAN-borrow-location-only-8oct.md` K7), so the line alone no longer tells them apart.
+    A row naming its cover is step 3's and is neither."""
+    return (
+        row.verb == IV_ORDER_BACK
+        and not (row.covered_by or "").strip()
+        and (row.note or "").startswith("Order-back:")
+    )
+
+
 def _also_cited(note: Optional[str]) -> List[str]:
     """The EXTRA documents a form remark named, read back off the row's note.
 
@@ -1035,15 +1048,18 @@ class ProjectOrderInquiryService:
             # `CANCEL_BALANCE` row a book-change wrote for a qty decrease is correctly
             # picked up and retired here too, exactly like one this confirm raised itself
             # - one header, one supersede rule, no second inquiry to leave stale.
-            rows = (
-                self.db.query(OrderInquiryRow)
+            rows = [
+                row
+                for row in self.db.query(OrderInquiryRow)
                 .filter(
                     OrderInquiryRow.order_inquiry_id == inquiry.id,
                     OrderInquiryRow.so_line_id == line.id,
                     OrderInquiryRow.verb.in_(owned_verbs),
                 )
                 .all()
-            )
+                # K7: a borrow's order-back on this line is `_raise_borrow_shortfalls`'s.
+                if not _is_borrow_order_back(row)
+            ]
             # A still-raised CANCEL_BALANCE exception is superseded like a raised ORDER
             # row, or every reconfirm at the same lower need would stack another copy.
             # `placed` sums ORDER rows only: the exception row is a message, not supply.
@@ -3975,12 +3991,12 @@ class ProjectOrderInquiryService:
         """
         # `ORDER_BACK` is written by TWO paths since part 2 section 4b: this one, for the
         # hole a borrow left at the donor's location, and the Buy line CS marked "Order
-        # back" in Amend. The two never meet on one sales-order LINE - the whole-line rule
-        # (AC-L5) makes a line either wholly stock or wholly Buy - so the line is what
-        # tells them apart, and this method leaves the Buy-line rows to
-        # `refresh_for_decision`, which supersedes and nets them exactly as it does an
-        # ORDER. Without the exclusion every board order-back would be cancelled on the
-        # next confirm and never re-raised.
+        # back" in Amend. This method leaves the Buy-line rows to `refresh_for_decision`,
+        # which supersedes and nets them exactly as it does an ORDER. Without the exclusion
+        # every board order-back would be cancelled on the next confirm and never
+        # re-raised. A borrow's own order-back can hang on that same line (K7,
+        # `PLAN-borrow-location-only-8oct.md`), so it is told apart by its note and stays
+        # here.
         rows = [
             row
             for row in self.db.query(OrderInquiryRow)
@@ -3989,7 +4005,11 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.verb == IV_ORDER_BACK,
             )
             .all()
-            if not (buy_line_ids and str(row.so_line_id) in buy_line_ids)
+            if not (
+                buy_line_ids
+                and str(row.so_line_id) in buy_line_ids
+                and not _is_borrow_order_back(row)
+            )
             # A ROW THAT NAMES ITS COVER IS NOT A HOLE (S4). Ladder v7.1 step 3 raises an
             # ORDER_BACK on the ASKER's own line carrying `covered_by` - the document that
             # already covers the quantity, which is exactly what this column has always
@@ -4073,6 +4093,61 @@ class ProjectOrderInquiryService:
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
             created += 1
         return created
+
+    def retire_rows_for_cancelled_lines(
+        self,
+        cancelled: Sequence[Tuple[Any, str]],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> int:
+        """SO-CANCEL-HANDOVER: CS transferred whole lines to Cancel SO, so each line's live
+        still-owed rows (raised, partly linked or placed; ORDER / ORDER_BACK; not released to
+        stock) are cancelled the way the cancel balance zero-need branch of
+        `_settle_row_in_place` cancels one: placements go back, a reason note is appended,
+        and purchasing hears about it through the post-commit handover queue. `cancelled`
+        is `(core line id, reason)` pairs. Actioned and CANCEL_BALANCE rows are left for
+        `flag_rows_for_cancelled_lines`. In the caller's transaction.
+        """
+        reason_by_core = {str(cid): reason for cid, reason in cancelled if cid}
+        if not reason_by_core:
+            return 0
+        found = (
+            self.db.query(OrderInquiryRow, ProjectSalesOrderLine.core_sales_order_line_id)
+            .join(
+                ProjectSalesOrderLine,
+                ProjectSalesOrderLine.id == OrderInquiryRow.so_line_id,
+            )
+            .filter(
+                ProjectSalesOrderLine.core_sales_order_line_id.in_(list(reason_by_core)),
+                OrderInquiryRow.state.in_(
+                    (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                ),
+                OrderInquiryRow.verb.in_((IV_ORDER, IV_ORDER_BACK)),
+                OrderInquiryRow.redirected_to_pool.is_(False),
+            )
+            .all()
+        )
+        for row, core_id in found:
+            was_qty = _dec(row.qty)
+            links = self._links_of(row.id)
+            if links:
+                self._remove_links(row, links)
+            row.state = INQUIRY_CANCELLED
+            stamp = f"Transferred to Cancel SO: {reason_by_core[str(core_id)]}"
+            row.note = f"{row.note}; {stamp}" if row.note else stamp
+            self._drop_suggested_links([row])
+            self.db.flush()
+            if links:
+                inquiry = (
+                    self.db.query(OrderInquiry)
+                    .filter(OrderInquiry.id == row.order_inquiry_id)
+                    .one()
+                )
+                self._dispatch_changed_with_links(inquiry, row, had_link=True)
+            self._record_handover(
+                row, kind="cancelled", was={"qty": was_qty}, actor_user_id=actor_user_id
+            )
+        return len(found)
 
     def _retire_uncovered_rows(
         self,
@@ -7386,7 +7461,8 @@ class ProjectOrderInquiryService:
             spo_rows = (
                 self.db.query(SPOAllocation, Supplier, Warehouse)
                 .outerjoin(InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id)
-                .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                # OI-SUPPLIER-FROM-PO: the source PO's supplier, not the SPO's own.
+                .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                 .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                 .filter(
                     SPOAllocation.product_id == product_id,
@@ -7567,7 +7643,7 @@ class ProjectOrderInquiryService:
             elif link.spo_allocation_id:
                 found = (
                     self.db.query(SPOAllocation, Supplier, Warehouse)
-                    .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                    .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                     .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                     .filter(SPOAllocation.id == link.spo_allocation_id)
                     .first()

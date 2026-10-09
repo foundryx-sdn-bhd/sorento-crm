@@ -279,6 +279,13 @@ function ChatbotSettingsCard({
             disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
             onCheckedChange={(checked) => save.mutate({ ...profile, skip_period_questions: checked })}
           />
+          <SwitchRow
+            id="contact-chatbot-files-as-links"
+            label="Send files as links"
+            checked={profile.files_as_links}
+            disabled={save.isPending || saveEscalation.isPending || saveAiAllowed.isPending}
+            onCheckedChange={(checked) => save.mutate({ ...profile, files_as_links: checked })}
+          />
         </div>
       </CardContent>
     </Card>

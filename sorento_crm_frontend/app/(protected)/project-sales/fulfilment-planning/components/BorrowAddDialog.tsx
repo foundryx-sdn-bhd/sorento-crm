@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { fromMinor, toMinor } from '../../_shared/lib/supplyComposition';
+import { drawAcross } from '../../_shared/lib/boardAmend';
 import { CellStockTable, type DonorLocationRow } from './CellStockTable';
 import type { BorrowCandidate } from '../../_shared/types/fulfilmentPlanning.types';
 
@@ -57,6 +58,7 @@ export function BorrowAddDialog({
   candidates,
   onDone,
   onAdd,
+  onAddMany,
 }: {
   lineNo: number;
   itemCode?: string | null;
@@ -72,19 +74,58 @@ export function BorrowAddDialog({
    * row at save time; this dialog no longer collects one.
    */
   onAdd: (candidate: BorrowCandidate, qty: string, authorisationReason: string) => void;
+  /**
+   * BORROW-LOCATION-ONLY R2: an Add on a merged nameless bin, split across its lines in the
+   * server's order - several rows in ONE call, so the caller appends them together. Without
+   * it each part goes through `onAdd`.
+   */
+  onAddMany?: (
+    parts: { candidate: BorrowCandidate; qty: string }[],
+    authorisationReason: string,
+  ) => void;
 }) {
   // Every candidate is selectable since v7.1 (R5): the cross-group cap that used to show a
   // row disabled and unselectable is gone, so the opening selection is simply the first of
   // the ranked list - which is also the recommended one.
   const first = candidates[0];
+  // BORROW-LOCATION-ONLY BR2/R2: a row naming neither a donor order nor a donor project is
+  // its location (the switch off), so every such row at one bin is ONE choice: listed once,
+  // as the server's first row for it, offering the bin's summed free stock. Keyed by that
+  // first row's own candidate key, in the server's order.
+  const bins = React.useMemo(() => {
+    const byBin = new Map<string, BorrowCandidate[]>();
+    const byKey = new Map<string, BorrowCandidate[]>();
+    for (const c of candidates) {
+      if (c.donor_so_number || c.donor_project_ref) continue;
+      const bin = c.warehouse_id ?? c.warehouse_code;
+      const members = byBin.get(bin);
+      if (members) {
+        members.push(c);
+      } else {
+        const fresh = [c];
+        byBin.set(bin, fresh);
+        byKey.set(candidateKey(c), fresh);
+      }
+    }
+    return byKey;
+  }, [candidates]);
+  /** The row as the dialog offers it: a merged bin reads its stock's summed free. */
+  const offered = (candidate: BorrowCandidate | undefined): BorrowCandidate | undefined => {
+    const members = candidate ? bins.get(candidateKey(candidate)) : undefined;
+    if (!candidate || !members || members.length < 2) return candidate;
+    const free = binStock(members).reduce((sum, c) => sum + toMinor(c.free_qty), 0);
+    return { ...candidate, free_qty: fromMinor(free) };
+  };
   // S4/review B2: keyed by CANDIDATE, not by warehouse - two donors can share one bin (a
   // same-agent Borrow off two different sales-order lines), and `warehouse_id` alone would
   // make the second row's radio silently select the first.
   const [selectedKey, setSelectedKey] = React.useState(first ? candidateKey(first) : '');
-  const [qty, setQty] = React.useState(openingQty(first));
+  const [qty, setQty] = React.useState(() => openingQty(offered(first)));
   const [authorisation, setAuthorisation] = React.useState('');
 
-  const selected = candidates.find((candidate) => candidateKey(candidate) === selectedKey) ?? first;
+  const selected = offered(
+    candidates.find((candidate) => candidateKey(candidate) === selectedKey) ?? first,
+  );
   const authorised = authorisation.trim();
   const needsAuthorisation = Boolean(selected?.same_agent);
   const amount = Number.parseFloat(qty);
@@ -93,17 +134,19 @@ export function BorrowAddDialog({
   // S4/review S3: `rowKey`/`label` are CellStockTable's own opt-in fields for a donor
   // picker - every OTHER caller (the Grid Location table) sets neither and keys/labels
   // itself off the location alone, unchanged.
-  const locations = React.useMemo<DonorLocationRow[]>(
-    () =>
-      candidates
-        .filter((c) => c.location)
-        .map((c) => ({
-          ...(c.location as NonNullable<BorrowCandidate['location']>),
-          rowKey: candidateKey(c),
-          label: donorLabel(c),
-        })),
-    [candidates],
-  );
+  const locations = React.useMemo<DonorLocationRow[]>(() => {
+    // BORROW-LOCATION-ONLY BR2: a nameless bin's later rows are part of its first (`bins`).
+    const merged = new Set(
+      [...bins.values()].flatMap((members) => members.slice(1)),
+    );
+    return candidates
+      .filter((c) => c.location && !merged.has(c))
+      .map((c) => ({
+        ...(c.location as NonNullable<BorrowCandidate['location']>),
+        rowKey: candidateKey(c),
+        label: donorLabel(c),
+      }));
+  }, [candidates, bins]);
   // Every candidate lacks a `location` (a server that has not wired S4) reads the same as
   // no candidates at all: the DIALOG's own empty state, never `CellStockTable`'s "No stock
   // position for this cell" - that message is about a CELL with several products, and is
@@ -138,7 +181,27 @@ export function BorrowAddDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!valid || !selected) return;
-            onAdd(selected, qty.trim(), storedReason(selected, authorised));
+            const reason = storedReason(selected, authorised);
+            const members = binStock(bins.get(candidateKey(selected)) ?? []);
+            if (members.length < 2) {
+              onAdd(members[0] ?? selected, qty.trim(), reason);
+              onDone();
+              return;
+            }
+            // R2: the typed quantity split across the bin's lines in the server's order,
+            // each within its own free. Anything typed beyond the bin's free rides on the
+            // last part, exactly as an over-ask on a single row does.
+            const wanted = toMinor(qty.trim());
+            const drawn = drawAcross(members, wanted, stockKey, (c) => toMinor(c.free_qty));
+            const parts = drawn.length ? drawn : [{ item: members[0], minor: 0 }];
+            const over = wanted - parts.reduce((sum, part) => sum + part.minor, 0);
+            parts[parts.length - 1] = {
+              ...parts[parts.length - 1],
+              minor: parts[parts.length - 1].minor + Math.max(over, 0),
+            };
+            const rows = parts.map((part) => ({ candidate: part.item, qty: fromMinor(part.minor) }));
+            if (onAddMany) onAddMany(rows, reason);
+            else rows.forEach((row) => onAdd(row.candidate, row.qty, reason));
             onDone();
           }}
         >
@@ -173,7 +236,7 @@ export function BorrowAddDialog({
                         );
                         if (!next) return;
                         setSelectedKey(key);
-                        setQty(openingQty(next));
+                        setQty(openingQty(offered(next)));
                         // The authorisation names ONE agent and belongs to the donor it was
                         // typed for. Carrying it onto the next donor would file somebody
                         // else's approval against an order they never agreed to give stock
@@ -345,24 +408,55 @@ function candidateKey(candidate: BorrowCandidate): string {
   ].join('|');
 }
 
+/** One pile of stock: a donor line, else the source at the bin (and the project it is held
+ *  for). Two rows with one key are the same stock. */
+function stockKey(candidate: BorrowCandidate): string {
+  return (
+    candidate.donor_core_line_id ??
+    `${candidate.source}|${candidate.warehouse_id ?? candidate.warehouse_code}|${candidate.donor_project_id ?? ''}`
+  );
+}
+
+/**
+ * A merged bin's rows as STOCK (BORROW-LOCATION-ONLY defect A): never counted twice. A
+ * project's hold beside the later-order lines it holds is the same stock as those lines, so
+ * it drops out when the bin has donor lines; rows that cannot be told apart are one pile.
+ */
+function binStock(members: BorrowCandidate[]): BorrowCandidate[] {
+  const lines = members.some((c) => c.donor_core_line_id)
+    ? members.filter((c) => c.source !== 'other_project')
+    : members;
+  const seen = new Set<string>();
+  return lines.filter((c) => {
+    const key = stockKey(c);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /**
  * The donor's own identity, shown under the location code (S4/review B2) - never a bare
  * warehouse code, which two donor lines at the same location would otherwise share.
  * `undefined` for a plain free-stock donor: the code alone already fully identifies it.
  */
 function donorLabel(candidate: BorrowCandidate): string | undefined {
-  if (candidate.rung === 'group_borrow') {
-    return donorSoLabel(candidate);
+  if (candidate.rung === 'group_borrow' || candidate.rung === 'order_borrow') {
+    // With "Borrow from another order" off no donor is named: the location is the row
+    // (BORROW-LOCATION-ONLY S5). On, a step-2 row names its order too, so two donors at one
+    // bin read apart.
+    return candidate.donor_so_number ? donorSoLabel(candidate) : undefined;
   }
   if (candidate.source === 'other_project') {
-    return candidate.donor_project_ref ?? 'Another project';
+    // Unnamed with the switch off (BR2): the location is the row.
+    return candidate.donor_project_ref ?? undefined;
   }
   return undefined;
 }
 
 /** "SO371334 line 2" - a group-borrow donor's own identity, never a bare warehouse code. */
 function donorSoLabel(candidate: BorrowCandidate): string {
-  const so = candidate.donor_so_number ?? 'An unnamed sales order';
+  const so = candidate.donor_so_number;
   const line =
     candidate.donor_line_no !== null && candidate.donor_line_no !== undefined
       ? ` line ${candidate.donor_line_no}`

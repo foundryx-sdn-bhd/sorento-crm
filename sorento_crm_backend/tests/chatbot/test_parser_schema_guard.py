@@ -130,13 +130,25 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # `turn/apply.py::_focus_rules` onto `Focus.sort`. 45 declared keys -> 47.
     "sort_by": "app/services/chatbot/turn/apply.py",
     "sort_dir": "app/services/chatbot/turn/apply.py",
+    # REPORT-ENGINE (owner rule 4 Oct 2026, semantic only): the parser's own reading of "this
+    # message only refines the sales ranking on screen", and the ranking's measure
+    # ("qty" | "amount" | null). 47 declared keys -> 49.
+    "ranking_refine": "app/services/chatbot/engine.py",
+    "measure": "app/services/chatbot/lanes/business/report_ask.py",
     # 4 Oct 2026 (LOWSTOCK-SEMANTIC): the low stock filters, read by
     # `lanes/business/low_stock_ask.reading`. 48 declared keys -> 49.
     "low_stock": "app/services/chatbot/lanes/business/low_stock_ask.py",
+    # 7 Oct 2026 (SO-PO-REF): the customer's PO number(s), read by the business lane's
+    # `po_refs` arm for non-staff profiles (`so_status.lookup_po_refs`). 49 -> 50.
+    "po_refs": "app/services/chatbot/lanes/business/__init__.py",
+    # 8 Oct 2026 (REPORT-DRILLDOWN): the parser's reading of a follow-up ranking on a new axis
+    # ("scoped" to the rows above, "global", "unsure"), read by `turn_runtime` (frame carry)
+    # and `lanes/business/report_ask.settle`. 50 -> 51.
+    "ranking_drill": "app/services/chatbot/lanes/business/report_ask.py",
 }
 
 
-def test_measured_read_set_matches_the_49_declared_keys():
+def test_measured_read_set_matches_the_51_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

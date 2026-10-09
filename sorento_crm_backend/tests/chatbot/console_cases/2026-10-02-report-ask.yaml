@@ -1,0 +1,134 @@
+# Console case: the parser keeps the sales vocabularies apart (REPORT-ENGINE, slice 1b).
+#
+# `documentation/plans/chatbot/PLAN-report-engine.md` section 11 and "1b fix round rulings
+# (code review)" S1. NOT collected by pytest. Run against a lane backend with the worker up and
+# the parser prompt `report_engine_0001_prompt` promoted (grades the LIVE model):
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-02-report-ask.yaml \
+#       --base-url http://127.0.0.1:8000 --sleep-seconds 15
+#
+# Contact 437264483 must hold `sales_orders.sales_report`. Each case grades the parser's
+# `order_status` (and `group_by` for a ranking), the one thing the phrases below can confuse.
+contact: "437264483"
+
+cases:
+  - name: a salesman ranking for a brand is a sales ranking
+    cold: true
+    turns:
+      - text: "top 3 salesman for Cabana brand last month"
+        expect:
+          branch_kind: business_query
+          parser:
+            domain_hint: order
+            order_status: sales_ranking
+            group_by: sales_agent
+            top_n: 3
+          no_uuid: true
+
+  - name: the company's own sales by month stays the sales analysis
+    cold: true
+    turns:
+      - text: "sales by month this year"
+        expect:
+          branch_kind: business_query
+          parser:
+            order_status: sales_analysis
+          no_uuid: true
+
+  - name: dealer sales this year stays the sales analysis
+    cold: true
+    turns:
+      - text: "dealer sales this year"
+        expect:
+          branch_kind: business_query
+          parser:
+            order_status: sales_analysis
+          no_uuid: true
+
+  - name: ranking products stays top selling
+    cold: true
+    turns:
+      - text: "top 10 products this year"
+        expect:
+          branch_kind: business_query
+          parser:
+            order_status: top_selling
+          no_uuid: true
+
+  - name: a sales report of one product stays the sales report
+    cold: true
+    turns:
+      - text: "sales report of SRT5674"
+        expect:
+          branch_kind: business_query
+          parser:
+            order_status: sales_report
+          no_uuid: true
+
+  # REPORT-ENGINE semantic-only round (owner rule 4 Oct 2026): the parser fields the lane reads.
+  - name: no count named leaves top_n null
+    cold: true
+    turns:
+      - text: "top salesman for cabana last month"
+        expect:
+          parser:
+            order_status: sales_ranking
+            ranking_refine: false
+            top_n: null
+
+  - name: ranking sales items stays top selling
+    cold: true
+    turns:
+      - text: "top 10 sales items for sorento"
+        expect:
+          parser:
+            order_status: top_selling
+
+  - name: a ranking is refined by a count, a period, then replaced by a new ask
+    cold: true
+    turns:
+      - text: "top 3 salesman for Cabana brand last month"
+        expect:
+          parser:
+            order_status: sales_ranking
+            ranking_refine: false
+            top_n: 3
+      - text: "5"
+        expect:
+          parser:
+            order_status: sales_ranking
+            ranking_refine: true
+            top_n: 5
+      - text: "this year"
+        expect:
+          parser:
+            order_status: sales_ranking
+            ranking_refine: true
+            date_filter_start: "2026-01-01"
+            date_filter_end: "2026-12-31"
+      - text: "top 3 salesman for sorento"
+        expect:
+          parser:
+            order_status: sales_ranking
+            ranking_refine: false
+            date_filter_start: null
+            date_filter_end: null
+
+  - name: a salesman ranking with no quantity word has a null measure
+    cold: true
+    turns:
+      - text: "top 3 salesman for sorento water closet this year"
+        expect:
+          parser:
+            order_status: sales_ranking
+            measure: null
+
+  - name: a salesman ranking by quantity has measure qty
+    cold: true
+    turns:
+      - text: "top 3 salesman for sorento water closet this year by quantity"
+        expect:
+          parser:
+            order_status: sales_ranking
+            measure: qty

@@ -12,6 +12,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.planning_change import PlanningChangeFromTo
+
 
 # --- sales orders -----------------------------------------------------------
 
@@ -115,13 +117,19 @@ class SalesOrderLinePlanningChange(BaseModel):
     this is the SO detail screen's own seam onto the same fact. `applied_state` is
     whatever the row's own is (pending, applied, failed, superseded), never filtered to
     one value: a superseded row is still worth reading if it is the newest one the batch
-    carries for this line. `result` is `None` until Apply has run.
+    carries for this line. `result` is `None` until Apply has run. The row also carries its
+    own `from`/`to` sides, the same shape as the board feed, so What changed can show the
+    Was and the Now.
     """
+
+    model_config = {"populate_by_name": True}
 
     id: str
     kind: str
     applied_state: str
     result: Optional[SalesOrderLinePlanningChangeResult] = None
+    from_: Optional[PlanningChangeFromTo] = Field(default=None, alias="from")
+    to: Optional[PlanningChangeFromTo] = None
 
 
 class SalesOrderLine(BaseModel):
@@ -296,6 +304,8 @@ class SalesOrder(BaseModel):
     #: count; `None` means the source never said (counted). Read-only - AutoCount owns it and
     #: `SalesOrderUpdate` has no such input.
     is_transferable: Optional[bool] = None
+    #: The customer's own PO number as AutoCount printed it (SO-PO-REF). Read-only.
+    po_ref: Optional[str] = None
     #: The purchase orders its lines wait on, each with whether the pairing is resolved.
     #: Present on the LIST (attached in one query per page); absent on a single read.
     linked_purchase_orders: List[LinkedPurchaseOrder] = Field(default_factory=list)

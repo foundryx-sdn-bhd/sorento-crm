@@ -82,6 +82,26 @@ def ingest_chat_message(
 
     # The row writer (dedupe on (contact_id, message_id), fill-if-null merge) is shared
     # with the direct Respond.io webhook: app/services/chat_history_ingest_service.py.
+
+    # QUOTED-REPLY R1: an outgoing row names the engine turn it carries. Never fails the ingest.
+    chatbot_turn_id: str | None = None
+    if str(payload.type or "").lower() == "outgoing":
+        try:
+            from app.services.chat_history_turn_link import link_outgoing_row
+
+            chatbot_turn_id = link_outgoing_row(
+                db,
+                contact_id=payload.contact_id,
+                turn_id=payload.turn_id,
+                message=payload.message,
+                sent_at=sent_at,
+                explicit=payload.chatbot_turn_id,
+            )
+        except Exception as link_error:  # noqa: BLE001
+            db.rollback()
+            logger.warning("chatbot_turn_id link failed: %s", link_error, exc_info=True)
+            chatbot_turn_id = None
+
     message_id: int | None = None
     already_existed = False
     status_code = status.HTTP_201_CREATED
@@ -110,6 +130,7 @@ def ingest_chat_message(
                 media_file_name=payload.media_file_name,
                 sender_source=payload.sender_source,
                 sender_user_id=payload.sender_user_id,
+                chatbot_turn_id=chatbot_turn_id,
             ),
         )
     except Exception as e:
@@ -139,7 +160,7 @@ def ingest_chat_message(
                 # not keep a sign-in code the row itself refuses to.
                 request_payload=json.dumps(
                     {
-                        **payload.model_dump(exclude={"state_trace"}),
+                        **payload.model_dump(exclude={"state_trace", "chatbot_turn_id"}),
                         "message": mask_otp_text(payload.message),
                         "reply_to_message": mask_otp_text(payload.reply_to_message),
                     }

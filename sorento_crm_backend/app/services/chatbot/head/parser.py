@@ -234,6 +234,11 @@ def _build_json_schema() -> dict[str, Any]:
                     # PLAN-retail-sales-reports-26sep S1: the sales analysis's axes.
                     "month",
                     "year",
+                    # REPORT-ENGINE slice 1b: the `sales_ranking` ask's other dimensions.
+                    "sales_agent",
+                    "brand",
+                    "category",
+                    "channel",
                     None,
                 ],
             },
@@ -258,7 +263,7 @@ def _build_json_schema() -> dict[str, Any]:
             # (owner rulings 26 Sep 2026: never assume the basis or the grain). A null
             # `rank_by` is asked too (no default metric).
             "rank_by": {"type": ["string", "null"], "enum": ["quantity", "amount", None]},
-            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "unclear", None]},
+            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "outstanding", "unclear", None]},
             "rank_group": {"type": ["string", "null"], "enum": ["item", "category", "unclear", None]},
             # Fix lane round 4 (owner retest, 27 Sep 2026): "cold selling", "least sold"
             # rank ascending. Same shape and same exemption as the three above.
@@ -280,6 +285,15 @@ def _build_json_schema() -> dict[str, Any]:
                 ],
             },
             "sort_dir": {"type": ["string", "null"], "enum": ["asc", "desc", None]},
+            # REPORT-ENGINE (owner rule 4 Oct 2026, semantic only): the parser's own reading
+            # that this message only refines the sales ranking on screen, and the ranking's
+            # measure. Same shape and exemption as `rank_direction`.
+            "ranking_refine": {"type": ["boolean", "null"]},
+            # REPORT-DRILLDOWN (owner 8 Oct 2026, semantic only): a follow-up ranking on a new
+            # axis read as about the rows the last ranking printed ("scoped"), its own ask
+            # ("global"), or either ("unsure", asked). Same exemption as `ranking_refine`.
+            "ranking_drill": {"type": ["string", "null"], "enum": ["scoped", "global", "unsure", None]},
+            "measure": {"type": ["string", "null"], "enum": ["qty", "amount", None]},
             # PLAN-retail-sales-reports-26sep S1: the sales analysis's basis and the
             # company named. Required for strict mode and tolerated absent, exactly as
             # `sales_channel` above (no recorded emission carries them).
@@ -454,6 +468,10 @@ def _build_json_schema() -> dict[str, Any]:
                 },
                 "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
             },
+            # SO-PO-REF (owner, 7 Oct 2026): the PO number(s) the message gives, as typed
+            # without the word PO. Read by the business lane for a non-staff profile only
+            # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
+            "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -528,6 +546,9 @@ def _build_json_schema() -> dict[str, Any]:
             "rank_direction",
             "sort_by",
             "sort_dir",
+            "ranking_refine",
+            "ranking_drill",
+            "measure",
             "sales_basis",
             "sales_company",
             "correction",
@@ -543,6 +564,7 @@ def _build_json_schema() -> dict[str, Any]:
             "anaphora",
             "profile_statements",
             "low_stock",
+            "po_refs",
         ],
     }
 
@@ -588,6 +610,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "rank_direction",
         "sort_by",
         "sort_dir",
+        "ranking_refine",
+        "ranking_drill",
+        "measure",
         "sales_basis",
         "sales_company",
         "proceed_anyway",
@@ -597,6 +622,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
         # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
         "low_stock",
+        # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
+        # absent reads as "no PO number given".
+        "po_refs",
     }
 )
 
@@ -661,6 +689,10 @@ def _subject_names(rows: Any) -> list[str]:
     return names
 
 
+#: How many names one axis of the "Current subject" line prints before "(and N more)".
+SUBJECT_NAMES_CAP = 5
+
+
 def current_subject_line(focus: Any) -> str | None:
     """"Current subject: ..." - what the conversation is about, on one line, or None.
 
@@ -682,6 +714,12 @@ def current_subject_line(focus: Any) -> str | None:
         ("document", getattr(focus, "document", None)),
     ):
         names = _subject_names(rows)
+        if len(names) > SUBJECT_NAMES_CAP:
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): a set page
+            # settles every listed row on the focus, fifty of them, and the model echoed all
+            # fifty back as entities, past `PARSER_MAX_TOKENS` (the turn then failed on
+            # truncated JSON). The subject line names the subject, never every row.
+            names = names[:SUBJECT_NAMES_CAP] + [f"(and {len(names) - SUBJECT_NAMES_CAP} more)"]
         if names:
             parts.append(f"{label} {', '.join(names)}")
     status = getattr(focus, "status", None)

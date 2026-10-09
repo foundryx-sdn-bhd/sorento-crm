@@ -303,7 +303,11 @@ describe('SubmissionForm - the revisions tab', () => {
     await renderRevisable();
 
     const tabs = await screen.findAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Details', 'Revisions']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'Details',
+      expect.stringMatching(/^Comments \(\d+\)$/),
+      'Revisions',
+    ]);
     // Details is what the contact lands on.
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute(
       'data-state',
@@ -352,7 +356,7 @@ describe('SubmissionForm - the revisions tab', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders one flat stack with no tab strip when the type has revisions off', async () => {
+  it('has Details and Comments but no Revisions tab when the type has revisions off', async () => {
     await renderRevisable({
       revision: policy({
         enabled: false,
@@ -363,8 +367,13 @@ describe('SubmissionForm - the revisions tab', () => {
       }),
     });
 
-    expect(screen.queryByRole('tablist')).toBeNull();
-    // Form and history both on screen at once, exactly as before.
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      'Details',
+      expect.stringMatching(/^Comments \(\d+\)$/),
+    ]);
+    expect(screen.queryByRole('tab', { name: 'Revisions' })).toBeNull();
+    // Form and history both on screen in Details, exactly as before.
     expect(document.getElementById('quantity')).toBeInTheDocument();
     expect(await screen.findByText('Revision history')).toBeInTheDocument();
   });
