@@ -1552,12 +1552,12 @@ export default function PurchaseRequestDetail({
           </Sheet>
         )}
 
-        {/* Direct child of the 2-col grid - without the span it renders half-width while
-            every sibling block above it is full-width. */}
         <div className="lg:col-span-2 w-full">
           <FormComments kind={requestTypeForNav} entityId={requestId} readOnly={isVoided} />
         </div>
 
+        {/* Direct child of the 2-col grid - without the span it renders half-width while
+            every sibling block above it is full-width. */}
         <div className="lg:col-span-2 w-full">
           <AuditTrail entityType="purchase_request" entityId={requestId} title="Audit Trail" />
         </div>

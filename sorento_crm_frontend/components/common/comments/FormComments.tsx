@@ -1,6 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
+import LoadErrorState from '@/components/common/LoadErrorState';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   useAddFormComment,
@@ -20,8 +21,24 @@ export function FormComments({
   readOnly?: boolean;
 }) {
   const { data: session } = useSession();
-  const { data, isLoading } = useFormCommentsQuery(kind, entityId);
+  const { data, isLoading, isError, error, refetch, isFetching } =
+    useFormCommentsQuery(kind, entityId);
   const add = useAddFormComment(kind, entityId);
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent>
+          <LoadErrorState
+            title="Comments could not be loaded"
+            message={error instanceof Error ? error.message : undefined}
+            onRetry={() => void refetch()}
+            retrying={isFetching}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

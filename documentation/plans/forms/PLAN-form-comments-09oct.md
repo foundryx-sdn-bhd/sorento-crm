@@ -1,6 +1,6 @@
 # PLAN: Two-way comment thread on form submissions (FORM-COMMENTS)
 
-Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Phase 2 build in progress.
+Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Phase 2 built; Phase 3 review fix round in progress.
 Track: full lane (one additive migration, notifications on two channels).
 
 Owner request (9 Oct 2026): every form submission page gets a comment thread reusing the
@@ -53,8 +53,10 @@ purchasing reply -> WhatsApp -> the process stops).
    `PortalService.get_submission`) and any staff user who can open the CRM record.
 4. Staff comment -> WhatsApp to the submitter through the existing window-aware path
    (`_send_and_log` with the kind's own use case), never inline in the request.
-5. Submitter comment -> one email to the form's staff participants (see Q2), new system email
-   template `form_comment_from_submitter` editable in Email Templates.
+5. Submitter comment -> one email to the form's SLA handler (owner Q2), sent with the existing
+   `notification_generic` email template; `form_comment_from_submitter` is only the email event
+   key (kill switch), not a new template (a new system template trips
+   `test_frozen_documents_match_registry` / the applied `eml_0002` migration).
 6. Never-stuck: the comment row commits first; the send is enqueued after. A failed send is an
    `integration_logs` failed row (as today) and does not roll back or hide the comment.
 7. Drafts have no thread (not submitted). Voided: thread visible, composer hidden.
@@ -110,10 +112,13 @@ Backend
   - `FORM_COMMENT_SCOPE = "form_comment"`;
     `FORM_COMMENT_KINDS = ("complaint", "stock_inquiry", "purchase_request", "sponsorship_form")`.
   - `FormCommentService(db)`: `list_comments(kind, entity_id)`,
-    `add_staff_comment(kind, entity_id, user, body)`,
-    `add_contact_comment(kind, entity_id, contact_id, space_id, body)`.
-  - A comment serializes as `{id, body, author_name, author_kind: "staff"|"submitter", created_at}`.
-  - Body is plain text, stripped, 1..4000 chars, else 422. Stored as-is in `body_html` (the FE
+    `add_staff_comment(kind, entity_id, user, body, files=None)`,
+    `add_contact_comment(kind, entity_id, contact_id, space_id, body, files=None)`.
+  - A comment serializes as `{id, body, author_name, author_kind: "staff"|"submitter", created_at,
+    attachments: [{attachment_id, filename, size, content_type}]}`. A staff author with no name
+    shows as "Sorento team", never an email address.
+  - Body is plain text, stripped, at most 4000 chars; empty only when files are attached; at most
+    5 files; else 422. Stored as-is in `body_html` (the FE
     renders it as text, never as HTML).
   - Add on a `draft` row -> 422; on a voided row -> 422. Listing works in any state.
   - Staff add: row committed FIRST, then the WhatsApp is enqueued on `respond_io`
@@ -124,24 +129,31 @@ Backend
     `delivery = "no_whatsapp"`; else `delivery = "queued"`. An enqueue error is logged, comment
     stays, `delivery = "failed"`.
   - Contact add: row committed first, then one email (Notification `single_email_to_all`,
-    `notifications` queue, template `form_comment_from_submitter`). Recipients: CRM users whose
-    `respond_user_id == row.last_responded_by`, the SLA tracker's `handled_by_id`, and authors of
-    earlier staff comments on the thread; when that set is empty and kind is `stock_inquiry`, the
-    purchasing team (`lead_time_enquiries` / `purchasing`). No recipient -> logged, comment kept,
-    `delivery = "no_recipients"`.
+    `notifications` queue, `notification_generic` template, event key
+    `form_comment_from_submitter`). Recipient: the SLA handler only, from the active form tracker
+    (`handling_lock_service._active_form_tracker`), else the newest tracker for the form. No
+    handler or no email -> logged, comment kept, `delivery = "no_recipients"`. Posting while an
+    admin views as the contact is refused (403). The portal POST is rate limited like portal idea
+    comments (429).
 - Routes:
   - Staff: `GET|POST /api/v1/form-comments/{kind}/{entity_id}`; GET and POST need the kind's view
     slug (`complaint_management.complaints.view`, `procurement.stock_inquiries.view`,
     `procurement.purchase_requests.view`, `procurement.sponsorship_forms.view`); POST is staff
-    session only (no API key). Unknown kind -> 422, unknown row -> 404.
+    session only (no API key). Unknown kind -> 422, unknown row -> 404. Mounted behind
+    `require_any_module_enabled("procurement", "complaints")`, plus the kind's own module when
+    `module_guard_strict` is on.
   - Portal: `GET|POST /api/v1/public/portal/submissions/{kind}/{submission_id}/comments`, portal
     token, same ownership filter as `PortalService.get_submission` (contact_id + space_id, and
     request_type for PR/sponsorship); someone else's submission -> 404.
   - POST returns `{comment, delivery}`; GET returns `{items: [...]}` oldest first.
 
 Frontend
-- `components/common/CommentThread.tsx`: presentational thread extracted from `IdeaComments`
-  (same header, composer, empty state); `IdeaComments` reuses it.
+- `components/common/comments/CommentParts.tsx`: `CommentAvatar`, `CommentComposer` (optional
+  files) and `CommentsSection` (header, composer slot, loading, empty state), extracted from
+  `IdeaComments`, which now reuses them. `FormCommentThread.tsx` is the add-only form thread with
+  attachment chips opening `AttachmentPreviewModal`; `FormComments.tsx` is the staff wrapper
+  (error state with Retry); `app/(auth)/portal/components/PortalSubmissionComments.tsx` the
+  portal one.
 - CRM: `FormComments` (kind, entityId, readOnly) on StockInquiryDetail, ComplaintDetail,
   PurchaseRequestDetail (covers sponsorship), after Attachments, before Audit trail.
 - Portal: the same thread in `SubmissionForm` after Attachments, before the button row, hidden
