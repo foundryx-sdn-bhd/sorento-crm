@@ -121,7 +121,7 @@ REPORT = reg.register(
         dataset=ds.DATASET,
         params=params(),
         detail=reg.DetailLayout(title="Asks", order_by=ds.order_by, cap="truncate"),
-        pivot=reg.PivotLayout(title="Topic by month", chart="bar"),
+        pivot=reg.PivotLayout(title="Asks by month", chart="bar"),
         default_view={
             "params": {
                 "date_basis": "asked_at",
