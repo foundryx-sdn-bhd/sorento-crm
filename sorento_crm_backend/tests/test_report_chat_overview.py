@@ -594,7 +594,9 @@ def test_the_asked_measure_is_labelled_and_only_the_products_dataset_has_it(api)
 
 
 def test_the_note_says_which_measure_answers_most_asked_products(db):
-    assert _run(db).note == (
+    note = _run(db).note
+    assert note.startswith(
         "From bot traces, 5 Sep 2026 on. Most asked products: Count by Products, "
-        "measure Asked (products the bot looked up). Topics arrive with CA-2."
+        "measure Asked (products the bot looked up)."
     )
+    assert "CA-2" not in note, "the note no longer says topics are coming"
