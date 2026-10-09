@@ -106,6 +106,7 @@ import { DOFilterMultiSelect } from './DOFilterMultiSelect';
 import { LookupSelect } from './LookupSelect';
 import { MultiPillInput } from './MultiPillInput';
 import { RevisionHistory } from './RevisionHistory';
+import { PortalSubmissionComments } from './PortalSubmissionComments';
 import {
   InquiryFormTableRow,
   ProductInquiryFormLayout,
@@ -1971,6 +1972,15 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           />
         </CardContent>
       </Card>
+
+      {effectiveId && detail && !detail.is_draft && (
+        <PortalSubmissionComments
+          kind={kind}
+          submissionId={effectiveId}
+          authorName={contact?.name ?? ''}
+          readOnly={detail.status === 'voided'}
+        />
+      )}
 
       {reviseMode && (
         <Card>

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { FileDropzone } from '@/components/common/FileDropzone';
 import { cn } from '@/lib/utils';
 
 /**
@@ -49,7 +50,10 @@ export interface CommentComposerProps {
   pending?: boolean;
   small?: boolean;
   autoFocus?: boolean;
-  onSubmit: (body: string) => Promise<void>;
+  /** Set to let the comment carry files (up to this many). Omit for text only. */
+  maxFiles?: number;
+  /** `files` is always [] when `maxFiles` is not set. */
+  onSubmit: (body: string, files: File[]) => Promise<void>;
   onCancel?: () => void;
 }
 
@@ -61,17 +65,20 @@ export function CommentComposer({
   pending,
   small,
   autoFocus,
+  maxFiles,
   onSubmit,
   onCancel,
 }: CommentComposerProps) {
   const [body, setBody] = useState(initial);
-  const canSubmit = body.trim().length > 0 && !pending;
+  const [files, setFiles] = useState<File[]>([]);
+  const canSubmit = (body.trim().length > 0 || files.length > 0) && !pending;
 
   const submit = async () => {
     if (!canSubmit) return;
     try {
-      await onSubmit(body);
+      await onSubmit(body, files);
       setBody('');
+      setFiles([]);
     } catch {
       // The hook toasted the reason; what was typed stays.
     }
@@ -89,6 +96,17 @@ export function CommentComposer({
           rows={small ? 2 : 3}
           autoFocus={autoFocus}
         />
+        {maxFiles ? (
+          <FileDropzone
+            multiple
+            files={files}
+            onFilesChange={(next) => setFiles(next.slice(0, maxFiles))}
+            disabled={pending}
+            title="Attach files"
+            hint={`Up to ${maxFiles} files`}
+            aria-label="Attach files to the comment"
+          />
+        ) : null}
         <div className="flex justify-end gap-2">
           {onCancel ? (
             <Button

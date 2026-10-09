@@ -34,8 +34,15 @@ export function FormComments({
           readOnly={readOnly}
           pending={add.isPending}
           emptyHint="Comments between the submitter and the team appear here."
-          onAdd={async (body) => {
-            await add.mutateAsync(body);
+          previewItem={(a) => ({
+            id: a.attachmentId,
+            name: a.filename,
+            url: '',
+            downloadUrl: `/api/v1/resource-management/attachments/${a.attachmentId}/download`,
+            sizeBytes: a.size,
+          })}
+          onAdd={async (body, files) => {
+            await add.mutateAsync({ body, files });
           }}
         />
       </CardContent>

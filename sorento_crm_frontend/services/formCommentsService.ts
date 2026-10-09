@@ -2,7 +2,7 @@
  * Form submission comment thread, staff side.
  *
  *   listFormComments  GET  /api/v1/form-comments/{kind}/{id}          {items}
- *   addFormComment    POST /api/v1/form-comments/{kind}/{id}  {body}  {comment, delivery}
+ *   addFormComment    POST /api/v1/form-comments/{kind}/{id}  multipart body + files  {comment, delivery}
  *
  * The contact portal has its own pair in `app/(auth)/portal/lib/portal-client.ts`; both map the
  * same snake_case row through `toFormComment`.
@@ -26,6 +26,12 @@ export function toFormComment(raw: Raw): FormComment {
     authorName: String(raw.author_name ?? ''),
     authorKind: raw.author_kind === 'submitter' ? 'submitter' : 'staff',
     createdAt: String(raw.created_at ?? ''),
+    attachments: ((raw.attachments as Raw[] | undefined) ?? []).map((a) => ({
+      attachmentId: String(a.attachment_id),
+      filename: String(a.filename ?? 'Attachment'),
+      size: typeof a.size === 'number' ? a.size : null,
+      contentType: (a.content_type as string | null | undefined) ?? null,
+    })),
   };
 }
 
@@ -47,15 +53,23 @@ export async function listFormComments(
   return (data.items ?? []).map(toFormComment);
 }
 
+/** Multipart: `body` plus 0..5 `files`. The portal posts the same shape. */
+export function formCommentFormData(body: string, files: File[]): FormData {
+  const form = new FormData();
+  form.append('body', body);
+  for (const file of files) form.append('files', file);
+  return form;
+}
+
 export async function addFormComment(
   kind: FormCommentKind,
   id: string,
   body: string,
+  files: File[] = [],
 ): Promise<FormCommentPostResult> {
   const res = await apiFetch(`${BASE}/${kind}/${encodeURIComponent(id)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
+    body: formCommentFormData(body, files),
   });
   if (!res.ok)
     throw new Error(await extractApiError(res, 'Failed to post the comment'));

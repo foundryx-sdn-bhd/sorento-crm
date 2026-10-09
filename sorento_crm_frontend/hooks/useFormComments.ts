@@ -25,7 +25,8 @@ export function useFormCommentsQuery(kind: FormCommentKind, id: string) {
 export function useAddFormComment(kind: FormCommentKind, id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => addFormComment(kind, id, body),
+    mutationFn: ({ body, files }: { body: string; files: File[] }) =>
+      addFormComment(kind, id, body, files),
     onSuccess: ({ delivery }) => {
       queryClient.invalidateQueries({
         queryKey: [FORM_COMMENTS_KEY, kind, id],
