@@ -101,7 +101,8 @@ SELECT rc.id,
        rc.chatbot_profile ->> 'language' AS profile_language,
        {_myt_naive('mc.first_message_at')} AS first_message_at,
        {_myt_naive('mc.last_message_at')} AS last_message_at,
-       COALESCE(mc.message_count, 0) AS message_count
+       COALESCE(mc.message_count, 0) AS message_count,
+       rc.chatbot_profile -> 'facts' AS profile_facts
   FROM respond_contacts rc
   {_CONTACT_JOINS}
   LEFT JOIN LATERAL (

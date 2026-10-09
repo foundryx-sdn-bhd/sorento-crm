@@ -109,6 +109,7 @@ CATALOG: dict[str, Dataset] = {
             Col("first_message_at", "datetime", "First message (Malaysia time)"),
             Col("last_message_at", "datetime", "Last message (Malaysia time)"),
             Col("message_count", "int", "Messages exchanged", measurable=True),
+            Col("profile_facts", "json", "Facts the chatbot remembers about the contact", filterable=False),
         ),
     ),
     "bot_turns": Dataset(

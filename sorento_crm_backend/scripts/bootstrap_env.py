@@ -170,9 +170,15 @@ def create_analytics_connector() -> None:
     """
     from sqlalchemy import text
 
-    from app.database import engine
+    from app.database import Base, engine
+    from app.models import analytics_connector as m
     from app.services.analytics_connector import views
 
+    # Tables too, so this is safe alone on a database bootstrapped before the connector existed.
+    Base.metadata.create_all(
+        engine,
+        tables=[m.AnalyticsOAuthClient.__table__, m.AnalyticsOAuthRequest.__table__, m.AnalyticsConnectorGrant.__table__],
+    )
     with engine.begin() as conn:
         views.ensure_views(conn)
         conn.execute(text("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method"))
