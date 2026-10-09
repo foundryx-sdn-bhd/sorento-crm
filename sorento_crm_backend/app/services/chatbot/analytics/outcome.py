@@ -185,7 +185,12 @@ def _domain(turn: dict[str, Any]) -> str | None:
     if domains:
         return str(domains[0])
     hint = _verdict(turn).get("domain_hint")
-    return str(hint) if hint else None
+    return str(hint) if _present(hint) else None
+
+
+def _intent(turn: dict[str, Any]) -> str | None:
+    hint = _verdict(turn).get("intent_hint")
+    return str(hint) if _present(hint) else None
 
 
 def _tools(turn: dict[str, Any]) -> list[str]:
@@ -238,7 +243,7 @@ def flatten(turn: dict[str, Any]) -> dict[str, Any]:
     outcome, failure_reason = turn_outcome(turn)
     return {
         "domain": _domain(turn),
-        "intent": _verdict(turn).get("intent_hint") or None,
+        "intent": _intent(turn),
         "outcome": outcome,
         "failure_reason": failure_reason,
         "branch_kind": turn.get("branch_kind"),

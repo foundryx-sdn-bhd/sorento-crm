@@ -30,6 +30,7 @@ class ReportColumn(BaseModel):
 
 class ReportCatalogColumn(ReportColumn):
     tag: ReportColumnTag
+    unavailable_for: List[str] = []
 
 
 class ReportColumnGroup(BaseModel):
@@ -215,6 +216,8 @@ class ReportMeta(BaseModel):
     can_publish: bool
     # "detail" or "summary": the tab the screen opens on.
     opens_on: str = "detail"
+    # The select param that picks the row set (null when the report reads one).
+    dataset_param: Optional[str] = None
 
 
 class ReportCatalogEntry(BaseModel):
