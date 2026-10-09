@@ -384,6 +384,38 @@
         "top_n": 3,
         "has_period": true
       }
+    },
+    {
+      "id": "q_ms_quarter_outcome",
+      "language": "ms",
+      "message": "pecahan keputusan perbualan bot bagi suku tahun lepas",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "outcome",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "q_en_howmany_stock_failed",
+      "language": "en",
+      "message": "how many stock questions did the bot get wrong in Q3",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": null,
+          "measure": "failed",
+          "subject": "inventory"
+        },
+        "top_n": null,
+        "has_period": true
+      }
     }
   ]
 }

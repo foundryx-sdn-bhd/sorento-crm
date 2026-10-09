@@ -232,3 +232,30 @@ def test_the_provider_call_is_bounded_by_the_shared_attempt_deadline(configured)
     assert timeout is not None and 0 < timeout <= ATTEMPT_TIMEOUT_SECONDS, (
         "the provider default (600 s) would hang the turn", timeout,
     )
+
+
+# ------------------------------------------------------------------ prompt-teaching pins (generalisation)
+
+
+def _prompt() -> str:
+    return PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+
+
+def test_the_prompt_teaches_quarters_as_periods_in_all_three_languages():
+    """Prompt-teaching pins only: they check the fallback text names the idea, not exact
+    sentences. The model's behaviour is graded live (third fresh held-out set)."""
+    text = _prompt()
+    for word in ("quarter", "q3", "suku", "季度"):
+        assert word in text, word
+    assert "three" in text and "july" in text and "september" in text, "a quarter is three calendar months (Q3 = July to September)"
+
+
+def test_the_prompt_teaches_that_how_many_is_one_total():
+    """Prompt-teaching pins; behaviour graded live. A 'how many' question is ONE total unless
+    the message splits it or asks for a list."""
+    text = _prompt()
+    for word in ("how many", "berapa", "多少", "total"):
+        assert word in text, word
+    for splitter in ("by", "per", "each", "ikut", "每"):
+        assert splitter in text, splitter
+    assert "list" in text and "null" in text

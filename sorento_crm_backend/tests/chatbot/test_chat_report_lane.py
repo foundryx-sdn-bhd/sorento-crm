@@ -661,3 +661,13 @@ def test_review_a_dealer_word_naming_only_another_customer_gets_the_missing_name
     _args_none, outside = _dealer_args(monkeypatch, ["other-9"], ["own-1"])
     _args_none2, missing = _dealer_args(monkeypatch, [], ["own-1"])
     assert _args_none is None and outside and outside == missing, (outside, missing)
+
+
+def test_extractor_a_total_with_a_subject_runs_straight_to_the_route_asking_no_count(console, monkeypatch) -> None:
+    _extractor(monkeypatch, {"group_by": None, "measure": "failed", "subject": "promotion", "top_n": None,
+                             "date_from": "2026-09-26", "date_to": "2026-10-10"})
+    text, calls = console.say(_chat(), "how many promotion questions could the bot not answer last 2 weeks")
+    (args,) = _chat_calls(calls)
+    assert args["subjects"] == ["promotion"] and args["measure"] == "failed" and args["basis"] == "turns", args
+    assert not args.get("group_by"), args
+    assert COUNT_Q not in text and PERIOD_Q not in text, text
