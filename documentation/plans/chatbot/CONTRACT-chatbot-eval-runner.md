@@ -77,3 +77,17 @@ fake engine, fake cases generated in tmp dirs (never real data).
 - `main(argv) -> int`: `--data-dir` (default env `EVAL_DATA_DIR`), `--split dev|hidden|all`,
   `--variants none|one|all`, `--engine`, `--base-url`, `--max-parallel`, `--budget-usd`, `--baseline`,
   `--out` (writes report JSON + per-case JSONL), `--seed`. Exit 2 on invalid cases, 3 on budget stop, 0 otherwise.
+
+## trace.py (S1b)
+Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array of stage entries):
+- tokens: stage `understood` `facts.prompt_tokens`, `facts.cached_tokens`, `facts.completion_tokens`
+  (sum over every entry carrying them).
+- tool errors: (a) any entry with `status == "failed"` and a non-null `error` -> `"<stage>: <error>"`;
+  (b) stage `looked_up` `raw.envelopes[*].error` non-null -> `"<tool>: <error>"`; (c) `raw.envelopes[*].lane_text`
+  starting with `Error executing tool` -> `"<tool>: <lane_text>"` (engine-emitted marker, e.g. INVALID_UUID, 422).
+- `parse_trace(trace: list) -> (tokens: dict, tool_errors: list[str])`, pure.
+- `DbTraceReader(dsn)`: `fetch(turn_id) -> list | None` (`SELECT trace FROM chatbot.turns WHERE id = %s`), read-only
+  connection (`SET default_transaction_read_only = on`), psycopg2.
+- `HttpTurnEngine(..., trace_reader=None)`: when a reader is set and the response has `turn_id`, tokens and
+  tool_errors come from `parse_trace(reader.fetch(turn_id))`, merged with any in the body. CLI: env
+  `EVAL_TRACE_DB_URL` builds a DbTraceReader.
