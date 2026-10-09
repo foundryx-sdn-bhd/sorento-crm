@@ -21,7 +21,7 @@ describe('readFileLink', () => {
 
     const result = await readFileLink('abc123');
 
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/public/file-links/abc123');
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/v1\/public\/file-links\/abc123$/);
     expect(result).toEqual({ status: 'ok', link: body });
   });
 

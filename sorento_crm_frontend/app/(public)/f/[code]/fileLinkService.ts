@@ -56,7 +56,9 @@ function absoluteApiUrl(path: string): string {
 
 export async function readFileLink(code: string): Promise<FileLinkResult> {
   try {
-    const response = await fetch(`${apiBase()}${linkPath(code)}`);
+    // Direct to the API host, like the bytes route: the Next `/api/v1/public` proxy does not
+    // forward the client address, so every opener would share one rate-limit bucket.
+    const response = await fetch(absoluteApiUrl(linkPath(code)));
     if (response.status === 404) return { status: 'expired' };
     if (!response.ok) return { status: 'error' };
     return { status: 'ok', link: (await response.json()) as FileLink };

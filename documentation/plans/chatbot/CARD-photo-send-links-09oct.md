@@ -195,8 +195,9 @@ attachment mode gives the text plus 2 files (unchanged).
 ## Security notes (public repo; files can be dealer-only promos and prices)
 
 - No file url, bucket, key or company name in the code, the page or the error.
-- Codes come from `secrets`, 50 bits, plus per-IP rate limiting, so enumerating codes is
-  impractical.
+- Codes come from `secrets`, 16 characters, 80 bits: the code alone makes enumeration
+  impractical. The per-client rate limit only spreads honest load (its key is the
+  forwarded client IP, validated as an IP, which a client can choose).
 - The route never lists, never searches, never takes a url, only a code (no open redirect).
 - A signed url lives 1 h; the code lives per Q1.
 - The new public route and migration bring in security-reviewer (PRINCIPLES.md).
@@ -216,11 +217,11 @@ On the lane PR as one crew-ask (Q1-Q5); answers land here.
 - **"compatible" with no target asks "Compatible with which WC?"** (round 1 R5, kept in the
   card): the parser has no clarification output today, so this is a new parser key plus an
   engine reader, and it cannot be checked without the live parser. Its own lane.
-- **Rate limit sees the proxy, not the dealer** (security M2, review S4): uvicorn has no
-  `forwarded_allow_ips`, so `request.client.host` is nginx (or the Next proxy when
-  `NEXT_PUBLIC_API_URL` is unset) and all dealers share one 60/min bucket. Infra fix: set
-  `forwarded_allow_ips` to the nginx address and have nginx overwrite `X-Forwarded-For`.
-  Same gap already applies to the portal OTP limiter.
+- **Trusted client IP for the rate limit** (security M2, re-review): the limiter keys on
+  the left-most `X-Forwarded-For` entry when it is a valid IP, else the peer, and the `/f`
+  page calls the API host directly. The key is only trustworthy when the edge nginx
+  OVERWRITES the header (`proxy_set_header X-Forwarded-For $remote_addr;`); the host nginx
+  config is not in the repo. Infra follow-up.
 - Grouping keys on field labels (review N2): the product attachment presenter emits no keys
   for those fields; keying them is a presenter change of its own.
 - `/content` has no size cap (security L4).

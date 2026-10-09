@@ -109,6 +109,10 @@ def links_for(
         if not isinstance(entry, dict) or not entry.get("url"):
             continue
         raw = str(entry["url"])
+        if not _mintable(raw):
+            # Security re-review finding 2: a public, possibly never-expiring link is only
+            # ever made for a file on our own CDN. Anything else goes as an attachment.
+            raise LinkModeUnavailable("a file is not on our CDN")
         identity = _identity(entry)
         code = code_by_identity.get(identity)
         if code is None:
@@ -164,6 +168,23 @@ def _storage_hosts() -> set[str]:
         )
         if h
     }
+
+
+def _mintable(url: str) -> bool:
+    """An https url on our own CDN host whose key has no `..`. With no CDN host configured
+    (a local copy) nothing can be signed at click time anyway, so the url is allowed and
+    the public route refuses it (`_on_our_cdn`)."""
+    from urllib.parse import urlparse
+
+    hosts = _storage_hosts()
+    if not hosts:
+        return True
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https"
+        and (parsed.hostname or "").lower() in hosts
+        and ".." not in (parsed.path or "")
+    )
 
 
 def strip_storage_urls(text: str) -> str:

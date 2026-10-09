@@ -199,3 +199,16 @@ def test_turning_the_expiry_on_later_closes_links_already_sent(db):
     db.add(SystemSetting(id=str(uuid.uuid4()), name="ZZT co", chatbot_file_link_expiry_days=7))
     db.commit()
     assert file_links.resolve(db, "OLDLINK000000001") is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://evil.test/private/key.xlsx", "http://cdn.test/a.jpg", "https://cdn.test/../secret.xlsx"],
+)
+def test_a_file_off_our_cdn_is_never_linked(db, monkeypatch, url):
+    """Security re-review finding 2: link mode refuses, and the engine sends attachments."""
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn.test")
+    monkeypatch.delenv("CLOUDFRONT_DOMAIN", raising=False)
+    with pytest.raises(file_links.LinkModeUnavailable):
+        file_links.links_for(db, "x", [_file(url, "f.xlsx")], contact_respond_id="C1", turn_id=None)
+    assert db.query(ChatbotFileLink).count() == 0

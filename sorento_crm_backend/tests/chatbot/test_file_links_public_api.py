@@ -195,3 +195,19 @@ def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "198.51.100.9"})
     assert idents == ["203.0.113.7", "198.51.100.9"]
+
+
+def test_a_forwarded_value_that_is_not_an_ip_never_becomes_a_key(env, monkeypatch):
+    """Security re-review finding 1: arbitrary header text would mint a Redis key per request."""
+    client, db, _ = env
+    _link(db, "PHOTO00007", "https://cdn.test/a.jpg", "a.jpg")
+    idents: list[str | None] = []
+
+    def _hit(bucket, ident, **kw):
+        idents.append(ident)
+        return rate_limit.RateResult(allowed=True)
+
+    monkeypatch.setattr(rate_limit, "hit", _hit)
+    client.get(f"{BASE}/PHOTO00007", headers={"X-Forwarded-For": "x" * 4000})
+    assert idents and idents[0] != "x" * 4000
+    assert len(idents[0] or "") < 64
