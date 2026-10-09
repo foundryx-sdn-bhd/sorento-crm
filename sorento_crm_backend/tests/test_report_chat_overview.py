@@ -511,3 +511,11 @@ def test_run_returns_the_pivot_to_a_holder(api, db):
     assert payload["row_count"] == 11
     assert _dec(payload["layouts"]["summary"]["grand_total"]["asks"]) == 11
     assert _dec(payload["layouts"]["summary"]["grand_total"]["failed"]) == 3
+
+
+def test_the_pivot_reads_whole_units_so_counts_do_not_print_as_money(api):
+    client, _allow = api
+    body = {"params": {"period": SEPTEMBER}, "view": None}
+    resp = client.post(f"/api/v1/reports/{KEY}/run", json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["layouts"]["summary"]["whole_units"] is True
