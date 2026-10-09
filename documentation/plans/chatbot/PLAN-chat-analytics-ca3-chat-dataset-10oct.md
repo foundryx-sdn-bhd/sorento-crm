@@ -1,6 +1,6 @@
 # PLAN: CA-3 chat dataset in the bot (10 Oct 2026)
 
-Status: PLANNING. Behaviour card filed to crew 10 Oct (Q1 to Q5 pending). Track: full pipeline,
+Status: BUILDING (Phase 2 red tests). Behaviour card ruled 10 Oct (Q1 b, Q2 b, Q3 a, Q4 a, Q5 a). Track: full pipeline,
 size M, LEAD pattern (tester -> coder -> reviewer + security-reviewer: the lane adds a grant).
 Base: CA-2 #1551 (open) on main 096e4665d; rebase onto main once #1551 merges.
 
@@ -41,8 +41,9 @@ two-group pivots (CA-5), backfill (CA-4), any new screen.
    (`chatbot_domains` row, `reveal_key = chatbot.analytics`, tool `crm_report_ask`) and
    `DOMAIN_GRANT_REQUIRED["chat_analytics"]` (`lanes/business/answer.py:1199`) so the lane gate
    at `lanes/business/__init__.py:1685` refuses before any call.
-5. **Lane** `lanes/business/chat_report.py` beside `report_ask.py`: settle (period default per
-   Q1, top_n default per Q2, words -> ids through the existing resolvers, never string
+5. **Lane** `lanes/business/chat_report.py` beside `report_ask.py`: settle (no period -> ask "Which
+   period?", ranking with no count -> ask "How many?", both missing -> both in ONE reply,
+   through `required_fields` like `report_ask.py`; words -> ids through the existing resolvers, never string
    matching), route args, error lines. Dispatch in `lanes/business/__init__.py` next to the
    sales_ranking branch (:2098).
 6. **MCP** (`sorento_crm_mcp/catalog.py:814`, `presenters.py:1896`, :3270): `dataset` param;
@@ -66,6 +67,7 @@ two-group pivots (CA-5), backfill (CA-4), any new screen.
 - presenter: line shape, no " · ", coverage first under 80%.
 - golden: parser route per message.
 
-## Open (behaviour card Q1 to Q5)
+## Rulings (10 Oct 2026, crew a66005801)
 
-Pending owner. Recommended options written into the UAC so red tests can start.
+Q1 (b) ask the period; Q2 (b) ask how many; both in one reply when both missing. Q3 (a) office
+excluded. Q4 (a) nobody granted by default. Q5 (a) unlinked staff with grant sees all.

@@ -1,8 +1,8 @@
 # UAC: CA-3 chat dataset in the bot (10 Oct 2026)
 
 Plan: `PLAN-chat-analytics-ca3-chat-dataset-10oct.md`. Design: `DESIGN-chat-analytics-09oct.md`
-section 4.2 to 4.6 and 5. Answers Q1 to Q5 of the behaviour card are marked PENDING until the
-owner rules; the recommended option is written in so the tests can be red now.
+section 4.2 to 4.6 and 5. Behaviour card ruled 10 Oct 2026 (crew a66005801): Q1 (b), Q2 (b),
+Q3 (a), Q4 (a), Q5 (a).
 
 Every example is synthetic (public repo): fixtures seed their own topics, contacts and asks.
 
@@ -11,13 +11,21 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 - **UAC-1** A staff contact holding the `chatbot.analytics` reveal texts "top questions this
   week" (en), "这个星期最多人问什么" (zh), "soalan paling banyak minggu ni" (ms) or "top
   questions minggu ni" (mixed). The parser reads each as a chat report ranked by topic, measure
-  asks, period this week; the bot replies with the ranking, never a clarify question.
+  asks, period this week. "top questions this week" names no count, so the bot asks "How many?"
+  (UAC-4); "top 5 questions this week" answers directly.
 - **UAC-2** Ranking axes the bot accepts: topic, subject, product, customer, outcome, failure
   reason, week, month, day, language. Measures: asks, failed, failure rate, contacts. Anything
   else gets the catalogue line, never a guess.
-- **UAC-3** (Q1 PENDING, rec a) No period named: last 30 days ending today (Malaysia), printed on
-  the Period line.
-- **UAC-4** (Q2 PENDING, rec a) No count named: top 10, head line says "Top 10".
+- **UAC-3** (Q1 b, owner) No period named: the bot asks "Which period?" (a pending question, in
+  the asker's language, like the sales ranking); the reply to it completes the ask. A named
+  period ("this week", "since Sept", "September", "1 to 15 Sep") answers directly.
+- **UAC-4** (Q2 b, owner) A ranking with no count named: the bot asks "How many?" (owner 4 Oct
+  sales ranking rule). A total (no ranking axis) needs no count. A ranking by week, month or day
+  is a trend and never asks how many (every bucket of the period).
+- **UAC-4a** Period AND count both missing: both questions in ONE reply, one per line; the
+  answer to either or both is read by the parser; whatever is still missing is asked again.
+  Cancel words end the ask with one line. Two unreadable replies end with a clear line, never
+  a loop.
 - **UAC-5** Filters by name: topic ("most asked products about stock availability"), product,
   customer, outcome ("questions the bot failed on"). A name that resolves to nothing ends in
   "I couldn't find ..." , never an empty ranking that looks like data.
@@ -25,7 +33,7 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 ## Counting (same numbers as the Chat overview / Top asks screens)
 
 - **UAC-6** Asks count every ask; failed and failure rate count turns (ask 1 of a message).
-- **UAC-7** Noise is never counted. Office contacts are excluded (Q3 PENDING, rec a).
+- **UAC-7** Noise is never counted. Office (staff-testing) contacts are always excluded (Q3 a).
 - **UAC-8** Contacts = distinct contacts in the row (count-distinct, never a sum of rows). The
   Total line is the distinct count over the whole set, not the sum of the printed rows.
 - **UAC-9** Failure rate per row = failed turns / non-noise turns in that row, one decimal,
@@ -54,8 +62,8 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
   your account."
 - **UAC-17** Salesman (contact linked from `sales_agents.contact_id`): only asks of customers
   whose card agent is that agent. Staff contact with the grant and no agent link: all
-  (Q5 PENDING, rec a).
-- **UAC-18** (Q4 PENDING, rec a) No contact holds the grant after the migration; the owner
+  customers (Q5 a, owner).
+- **UAC-18** (Q4 a) No contact holds the grant after the migration; the owner
   grants it on the contact reveal screen ("Chat analytics").
 
 ## Failure paths (never stuck)
