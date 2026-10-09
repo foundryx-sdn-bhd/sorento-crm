@@ -98,3 +98,21 @@ def test_listing_tools_is_not_audited(client, backend):
 
     list_tools(client)
     assert backend.calls("POST", AUDIT) == []
+
+
+# --------------------------------------------------------------------------- escalation side call
+
+
+def test_an_empty_result_makes_no_escalation_side_call(client, backend):
+    """The stock template asks /api/v1/system/mcp-routing with the shared key on an empty result.
+
+    Card 4.1: that call is neutralised, so the only backend calls are the tool's own GET and
+    the audit POST, and none of them carries X-API-Key.
+    """
+    backend.on("GET", BRANDS, json_body={"data": [], "total": 0})
+    backend.on("GET", "/api/v1/system/mcp-routing", json_body={"team": "x"})
+    out = call_tool(client, "crm_master_brands_list", {})
+    assert "suggested_escalation" not in out["text"]
+    paths = [r.path for r in backend.requests]
+    assert not [p for p in paths if "mcp-routing" in p], paths
+    assert all("x-api-key" not in r.headers for r in backend.requests)
