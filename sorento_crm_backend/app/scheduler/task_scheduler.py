@@ -593,6 +593,21 @@ def _chat_facts_sweep_tick():
         logger.error("Chat facts sweep tick failed: %s", e, exc_info=True)
 
 
+def _chat_topic_labeller_tick():
+    """APScheduler tick: queue the nightly chat topic labeller on `analytics` (CA-2). The job
+    runs on the worker (minutes of model calls); this only enqueues. Off unless
+    CHAT_TOPIC_LABELLER_ENABLED is set (owner: labelling on dev only for now). Never raises."""
+    try:
+        from app.config import settings
+        from app.tasks import chat_turns
+
+        if not settings.chat_topic_labeller_enabled:
+            return
+        chat_turns.enqueue_chat_topic_labeller()
+    except Exception as e:
+        logger.error("Chat topic labeller tick failed: %s", e, exc_info=True)
+
+
 def _spo_container_relink_sweep_tick():
     """APScheduler tick: relink SPO allocations whose shipment arrived after
     they did (S5, review re-check, 2026-09-06). Owns its own DB session;
@@ -793,6 +808,17 @@ def start_scheduler():
         trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
         id="chat_facts_sweep",
         name="Chat analytics facts sweep",
+        replace_existing=True,
+    )
+
+    # Chat topic labeller (CA-2): nightly at 02:15 Malaysia, beside the facts sweep. Labels
+    # only asks with no topic or a stale taxonomy version; does nothing before taxonomy v1
+    # has leaves. An ask the sweep adds tonight is labelled the next night.
+    scheduler.add_job(
+        _chat_topic_labeller_tick,
+        trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
+        id="chat_topic_labeller",
+        name="Chat topic labeller",
         replace_existing=True,
     )
 
