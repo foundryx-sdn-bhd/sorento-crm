@@ -11,6 +11,9 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
     const workbook = await parseWorkbook(event.data.bytes, event.data.filename);
     self.postMessage({ ok: true, workbook });
   } catch (error) {
-    self.postMessage({ ok: false, message: error instanceof Error ? error.message : 'Parse failed' });
+    self.postMessage({
+      ok: false,
+      message: error instanceof Error ? error.message : 'Parse failed',
+    });
   }
 };

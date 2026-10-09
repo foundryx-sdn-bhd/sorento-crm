@@ -14,25 +14,37 @@ export async function parseWorkbookInWorker(
     return parseWorkbook(bytes, filename);
   }
   return new Promise<SpreadsheetWorkbook>((resolve, reject) => {
-    const worker = new Worker(new URL('./parseWorkbook.worker.ts', import.meta.url), {
-      type: 'module',
-    });
+    const worker = new Worker(
+      new URL('./parseWorkbook.worker.ts', import.meta.url),
+      {
+        type: 'module',
+      },
+    );
     const finish = (settle: () => void) => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       worker.terminate();
       settle();
     };
-    const onAbort = () => finish(() => reject(new DOMException('Aborted', 'AbortError')));
+    const onAbort = () =>
+      finish(() => reject(new DOMException('Aborted', 'AbortError')));
     signal?.addEventListener('abort', onAbort);
     const timer = setTimeout(
       () => finish(() => reject(new Error('Parsing timed out'))),
       PARSE_TIMEOUT_MS,
     );
-    worker.onmessage = (event: MessageEvent<{ ok: boolean; workbook?: SpreadsheetWorkbook; message?: string }>) => {
+    worker.onmessage = (
+      event: MessageEvent<{
+        ok: boolean;
+        workbook?: SpreadsheetWorkbook;
+        message?: string;
+      }>,
+    ) => {
       const data = event.data;
       finish(() =>
-        data.ok && data.workbook ? resolve(data.workbook) : reject(new Error(data.message ?? 'Parse failed')),
+        data.ok && data.workbook
+          ? resolve(data.workbook)
+          : reject(new Error(data.message ?? 'Parse failed')),
       );
     };
     worker.onerror = () => finish(() => reject(new Error('Parse failed')));

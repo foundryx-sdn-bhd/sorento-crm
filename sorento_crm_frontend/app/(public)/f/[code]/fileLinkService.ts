@@ -68,7 +68,10 @@ export async function readFileLink(code: string): Promise<FileLinkResult> {
 }
 
 /** `fetchBytes` for AttachmentPreviewModal and the Download button on a sheet link. */
-export function fetchFileLinkContent(code: string, signal?: AbortSignal): Promise<Response> {
+export function fetchFileLinkContent(
+  code: string,
+  signal?: AbortSignal,
+): Promise<Response> {
   return fetch(absoluteApiUrl(`${linkPath(code)}/content`), { signal });
 }
 

@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { defaultRangeExtractor, observeElementRect, useVirtualizer } from '@tanstack/react-virtual';
+import {
+  defaultRangeExtractor,
+  observeElementRect,
+  useVirtualizer,
+} from '@tanstack/react-virtual';
 import { ChevronDown, ChevronUp, Ellipsis } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +16,12 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverPortal, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Popover,
+  PopoverContent,
+  PopoverPortal,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type {
   CellStyle,
@@ -48,7 +57,13 @@ import {
  * workbook can hold hundreds of sheets of different columns.
  */
 
-export type { CellStyle, SheetMerge, SpreadsheetCell, SpreadsheetSheet, SpreadsheetWorkbook };
+export type {
+  CellStyle,
+  SheetMerge,
+  SpreadsheetCell,
+  SpreadsheetSheet,
+  SpreadsheetWorkbook,
+};
 
 export interface SpreadsheetViewerProps {
   workbook: SpreadsheetWorkbook;
@@ -127,12 +142,17 @@ export function SpreadsheetViewer({
   // The search stays as typed across sheets, so one code can be looked up sheet after sheet.
   const needle = search.trim().toLowerCase();
   const rows = useMemo(() => {
-    if (!sheet || highlight || !needle || !searchColumns) return sheet?.rows ?? [];
+    if (!sheet || highlight || !needle || !searchColumns)
+      return sheet?.rows ?? [];
     const cols = searchColumns
       .map((header) => sheet.columns.indexOf(header))
       .filter((col) => col >= 0);
     return sheet.rows.filter((row) =>
-      cols.some((col) => cellText(row[col] ?? null).toLowerCase().includes(needle)),
+      cols.some((col) =>
+        cellText(row[col] ?? null)
+          .toLowerCase()
+          .includes(needle),
+      ),
     );
   }, [sheet, needle, searchColumns, highlight]);
 
@@ -140,25 +160,41 @@ export function SpreadsheetViewer({
     () => (sheet && highlight ? findMatches(sheet, needle) : []),
     [sheet, highlight, needle],
   );
-  const current = matches.length > 0 ? matches[Math.min(activeMatch, matches.length - 1)] : null;
+  const current =
+    matches.length > 0
+      ? matches[Math.min(activeMatch, matches.length - 1)]
+      : null;
 
   const cols = useMemo(() => (sheet ? columnCount(sheet) : 0), [sheet]);
   const numeric = useMemo(() => (sheet ? numericColumns(sheet) : []), [sheet]);
   const widths = useMemo(() => (sheet ? sizeColumns(sheet) : []), [sheet]);
   const merges = useMemo(
-    () => (sheet ? indexMerges(sheet, cols) : { heads: new Map(), covered: new Set<string>(), tallRows: new Set<number>(), tall: [] }),
+    () =>
+      sheet
+        ? indexMerges(sheet, cols)
+        : {
+            heads: new Map(),
+            covered: new Set<string>(),
+            tallRows: new Set<number>(),
+            tall: [],
+          },
     [sheet, cols],
   );
   const frozen = sheet?.frozenCols ?? (chrome ? 0 : 1);
   const pinned = useMemo(
-    () => [...(sheet?.pinnedRows ?? [])].filter((r) => r < rows.length).sort((a, b) => a - b),
+    () =>
+      [...(sheet?.pinnedRows ?? [])]
+        .filter((r) => r < rows.length)
+        .sort((a, b) => a - b),
     [sheet, rows.length],
   );
   const lead = chrome ? [`${ROW_NUMBER_WIDTH}px`] : [];
   const template = [...lead, ...widths.map((w) => `${w}px`)].join(' ');
-  const totalWidth = widths.reduce((sum, w) => sum + w, 0) + (chrome ? ROW_NUMBER_WIDTH : 0);
+  const totalWidth =
+    widths.reduce((sum, w) => sum + w, 0) + (chrome ? ROW_NUMBER_WIDTH : 0);
   const frozenLeft = (col: number) =>
-    (chrome ? ROW_NUMBER_WIDTH : 0) + widths.slice(0, col).reduce((sum, w) => sum + w, 0);
+    (chrome ? ROW_NUMBER_WIDTH : 0) +
+    widths.slice(0, col).reduce((sum, w) => sum + w, 0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -170,13 +206,19 @@ export function SpreadsheetViewer({
     rangeExtractor: (range) => {
       const indexes = defaultRangeExtractor(range);
       const extra = merges.tall
-        .filter((m) => m.r < range.startIndex && m.r + m.rowSpan > range.startIndex)
+        .filter(
+          (m) => m.r < range.startIndex && m.r + m.rowSpan > range.startIndex,
+        )
         .map((m) => m.r);
-      return extra.length ? [...new Set([...extra, ...indexes])].sort((a, b) => a - b) : indexes;
+      return extra.length
+        ? [...new Set([...extra, ...indexes])].sort((a, b) => a - b)
+        : indexes;
     },
     initialRect: FALLBACK_RECT,
     observeElementRect: (instance, callback) =>
-      observeElementRect(instance, (rect) => callback(rect.height > 0 ? rect : FALLBACK_RECT)),
+      observeElementRect(instance, (rect) =>
+        callback(rect.height > 0 ? rect : FALLBACK_RECT),
+      ),
   });
   const scrollOffset = virtualizer.scrollOffset ?? 0;
 
@@ -192,7 +234,8 @@ export function SpreadsheetViewer({
       const left = frozenLeft(match.c);
       const right = left + (widths[match.c] ?? 0);
       const visibleLeft = scroller.scrollLeft + frozenLeft(frozen);
-      if (left < visibleLeft) scroller.scrollLeft = Math.max(0, left - frozenLeft(frozen));
+      if (left < visibleLeft)
+        scroller.scrollLeft = Math.max(0, left - frozenLeft(frozen));
       else if (right > scroller.scrollLeft + scroller.clientWidth) {
         scroller.scrollLeft = right - scroller.clientWidth;
       }
@@ -231,23 +274,38 @@ export function SpreadsheetViewer({
 
   // Centred or right-aligned text overflows both ways (or off its start); an inner
   // inline-block keeps the clip at the end only.
-  const inner = (content: React.ReactNode, col: number, style: CellStyle | null, text: string) => {
+  const inner = (
+    content: React.ReactNode,
+    col: number,
+    style: CellStyle | null,
+    text: string,
+  ) => {
     const right =
-      style?.align === 'right' || (!style?.align && (chrome ? looksNumeric(text) : numeric[col]));
+      style?.align === 'right' ||
+      (!style?.align && (chrome ? looksNumeric(text) : numeric[col]));
     return !style?.wrap && (style?.align === 'center' || right) ? (
-      <span className="inline-block max-w-full truncate align-top">{content}</span>
+      <span className="inline-block max-w-full truncate align-top">
+        {content}
+      </span>
     ) : (
       content
     );
   };
 
-  const cellStyle = (col: number, style: CellStyle | null): React.CSSProperties => ({
+  const cellStyle = (
+    col: number,
+    style: CellStyle | null,
+  ): React.CSSProperties => ({
     ...(style?.fill ? { backgroundColor: style.fill } : null),
     ...(style?.color ? { color: style.color } : null),
     ...(col < frozen ? { insetInlineStart: frozenLeft(col) } : null),
   });
 
-  const renderRow = (index: number, extra: React.CSSProperties, rowClass: string) => {
+  const renderRow = (
+    index: number,
+    extra: React.CSSProperties,
+    rowClass: string,
+  ) => {
     const row = rows[index];
     const styles = sheet.cells?.[index] ?? EMPTY_STYLES;
     const hasTall = merges.tallRows.has(index);
@@ -260,7 +318,9 @@ export function SpreadsheetViewer({
         style={{
           gridTemplateColumns: template,
           // A fixed track keeps each cell's bottom border inside its row.
-          ...(chrome ? { gridTemplateRows: `${rowHeight}px`, gridAutoRows: rowHeight } : null),
+          ...(chrome
+            ? { gridTemplateRows: `${rowHeight}px`, gridAutoRows: rowHeight }
+            : null),
           height: rowHeight,
           ...(hasTall ? { zIndex: 1 } : null),
           ...extra,
@@ -281,7 +341,8 @@ export function SpreadsheetViewer({
           const span = merges.heads.get(key);
           const style = styles[col] ?? null;
           const text = widths[col] === 0 ? '' : cellText(row[col] ?? null);
-          const isMatch = highlight && needle && text.toLowerCase().includes(needle);
+          const isMatch =
+            highlight && needle && text.toLowerCase().includes(needle);
           const isCurrent = current?.r === index && current?.c === col;
           const track = col + 1 + (chrome ? 1 : 0);
           const position: React.CSSProperties = span
@@ -306,7 +367,12 @@ export function SpreadsheetViewer({
               )}
               style={{ ...cellStyle(col, style), ...position }}
             >
-              {inner(isMatch ? highlightCell(text, needle) : text, col, style, text)}
+              {inner(
+                isMatch ? highlightCell(text, needle) : text,
+                col,
+                style,
+                text,
+              )}
             </div>
           );
         })}
@@ -322,12 +388,19 @@ export function SpreadsheetViewer({
         tabsPosition === 'bottom' && 'border-t border-border',
       )}
     >
-      <Tabs value={sheet.title} onValueChange={select} className="min-w-0 flex-1">
+      <Tabs
+        value={sheet.title}
+        onValueChange={select}
+        className="min-w-0 flex-1"
+      >
         <TabsList variant="line" size="sm" className="px-2" aria-label="Sheets">
           {sheets.map((s) => (
             <TabsTrigger key={s.title} value={s.title}>
               {s.flagged ? (
-                <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+                <span
+                  aria-hidden
+                  className="size-1.5 shrink-0 rounded-full bg-warning"
+                />
               ) : null}
               {s.title}
             </TabsTrigger>
@@ -367,7 +440,10 @@ export function SpreadsheetViewer({
                     className={cn(s.title === sheet.title && 'font-medium')}
                   >
                     {s.flagged ? (
-                      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+                      <span
+                        aria-hidden
+                        className="size-1.5 shrink-0 rounded-full bg-warning"
+                      />
                     ) : null}
                     <span className="min-w-0 break-words">{s.title}</span>
                   </CommandItem>
@@ -384,7 +460,10 @@ export function SpreadsheetViewer({
   const stuckRows = pinned.filter((_, k) => stuck(k));
 
   return (
-    <div className={cn('flex min-w-0 flex-col', className)} data-slot="spreadsheet-viewer">
+    <div
+      className={cn('flex min-w-0 flex-col', className)}
+      data-slot="spreadsheet-viewer"
+    >
       {tabsPosition === 'top' ? sheetBar : null}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-2 py-1.5">
@@ -486,16 +565,26 @@ export function SpreadsheetViewer({
               <div
                 key={col}
                 role="columnheader"
-                title={chrome ? columnLetters(col + (sheet.firstColIndex ?? 0)) : sheet.columns[col]}
+                title={
+                  chrome
+                    ? columnLetters(col + (sheet.firstColIndex ?? 0))
+                    : sheet.columns[col]
+                }
                 className={cn(
                   cellClass(col, null, ''),
                   chrome
                     ? 'bg-muted text-center text-xs font-medium text-muted-foreground'
                     : 'text-xs font-medium text-muted-foreground',
                 )}
-                style={col < frozen ? { insetInlineStart: frozenLeft(col) } : undefined}
+                style={
+                  col < frozen
+                    ? { insetInlineStart: frozenLeft(col) }
+                    : undefined
+                }
               >
-                {chrome ? columnLetters(col + (sheet.firstColIndex ?? 0)) : sheet.columns[col]}
+                {chrome
+                  ? columnLetters(col + (sheet.firstColIndex ?? 0))
+                  : sheet.columns[col]}
               </div>
             ))}
           </div>
@@ -510,19 +599,26 @@ export function SpreadsheetViewer({
 
           {rows.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-              {sheet.rows.length > 0 ? 'No matching rows' : (sheet.emptyText ?? 'No rows')}
+              {sheet.rows.length > 0
+                ? 'No matching rows'
+                : (sheet.emptyText ?? 'No rows')}
             </div>
           ) : (
-            <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
-              {virtualizer.getVirtualItems().map((item) =>
-                stuckRows.includes(item.index)
-                  ? null
-                  : renderRow(
-                      item.index,
-                      { transform: `translateY(${item.start}px)` },
-                      'absolute start-0 top-0 w-full bg-background',
-                    ),
-              )}
+            <div
+              className="relative"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer
+                .getVirtualItems()
+                .map((item) =>
+                  stuckRows.includes(item.index)
+                    ? null
+                    : renderRow(
+                        item.index,
+                        { transform: `translateY(${item.start}px)` },
+                        'absolute start-0 top-0 w-full bg-background',
+                      ),
+                )}
             </div>
           )}
         </div>

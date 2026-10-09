@@ -1,12 +1,17 @@
 import { splitHighlightSegments } from '@/lib/textHighlight';
-import type { SpreadsheetCell, SpreadsheetSheet } from '@/lib/sheet-viewer/types';
+import type {
+  SpreadsheetCell,
+  SpreadsheetSheet,
+} from '@/lib/sheet-viewer/types';
 
 export { splitHighlightSegments };
 
 /** Rows read when sizing columns: enough to see a typical cell, cheap on 50,000 rows. */
 export const WIDTH_SAMPLE = 200;
 
-const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
+const numberFormat = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 4,
+});
 
 export function formatCount(n: number): string {
   return numberFormat.format(n);

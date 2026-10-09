@@ -44,7 +44,38 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-const CONTENT_TIMEOUT_MS = 30_000;
+/** The download gives up after this long without a byte (a dev proxy can drop a body's tail). */
+const CONTENT_IDLE_MS = 30_000;
+
+async function readBody(
+  response: Response,
+  aborted: Promise<never>,
+  onChunk: () => void,
+): Promise<ArrayBuffer> {
+  if (!response.body) return Promise.race([response.arrayBuffer(), aborted]);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) break;
+      chunks.push(value);
+      size += value.byteLength;
+      onChunk();
+    }
+  } catch (error) {
+    void reader.cancel().catch(() => undefined);
+    throw error;
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
+}
 
 type SheetState =
   | { status: 'loading' }
@@ -62,8 +93,11 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    // The download may stall mid-body (a dev proxy can drop the tail): give up after 30 s.
-    const timer = setTimeout(() => controller.abort(), CONTENT_TIMEOUT_MS);
+    let timer = setTimeout(() => controller.abort(), CONTENT_IDLE_MS);
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), CONTENT_IDLE_MS);
+    };
     const aborted = new Promise<never>((_, reject) => {
       controller.signal.addEventListener(
         'abort',
@@ -78,7 +112,7 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
         if (cancelled) return;
         if (response.status === 413) return setState({ status: 'tooBig' });
         if (!response.ok) return setState({ status: 'cannot' });
-        const bytes = await Promise.race([response.arrayBuffer(), aborted]);
+        const bytes = await readBody(response, aborted, resetTimer);
         clearTimeout(timer);
         const workbook = await parseWorkbookInWorker(
           bytes,
