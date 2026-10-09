@@ -33,7 +33,7 @@ REASON_REVOKED = "session_revoked"
 REASON_EXPIRED = "session_expired"
 
 # How a session was minted (identity S0, AC-07). Mirrors `ck_user_sessions_auth_method`.
-AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation", "dev_login")
+AUTH_METHODS = ("password", "phone_otp", "portal_link", "impersonation", "dev_login", "claude_connector")
 
 
 class SessionAuthError(Exception):
@@ -57,11 +57,15 @@ def mint_session(
     user_agent: Optional[str] = None,
     ip_address: Optional[str] = None,
     auth_method: str = "password",
+    ttl: Optional[timedelta] = None,
+    rolling: bool = True,
 ) -> UserSession:
     """Create a new session row and return it. Caller commits via this function.
 
     ``auth_method`` records how the person signed in; the audit actor of every
     request on this session carries it. Raises ValueError for an unknown method.
+    ``ttl`` / ``rolling`` override the staff default (30 days, sliding); the claude.ai
+    connector mints 1 hour, non-sliding.
     """
     if auth_method not in AUTH_METHODS:
         raise ValueError(f"Unknown session auth_method: {auth_method!r}")
@@ -69,8 +73,8 @@ def mint_session(
     row = UserSession(
         token=secrets.token_urlsafe(48),
         user_id=user_id,
-        rolling=True,
-        expires_at=now + REMEMBER_TTL,
+        rolling=rolling,
+        expires_at=now + (ttl or REMEMBER_TTL),
         last_seen_at=now,
         user_agent=(user_agent or None),
         ip_address=(ip_address or None),

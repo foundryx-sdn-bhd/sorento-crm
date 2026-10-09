@@ -49,6 +49,7 @@ from app.config import settings
 from app.api.v1 import api_router
 from app.services.error_handler import AppException
 from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.connector_read_only_middleware import ConnectorReadOnlyMiddleware
 from app.middleware.idempotency_middleware import IdempotencyMiddleware
 from app.middleware.api_call_log_middleware import ApiCallLogMiddleware
 from app.middleware.impersonation_ended_middleware import (
@@ -98,6 +99,9 @@ app = FastAPI(
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+
+# claude.ai connector: writes carrying the container's internal key are refused before routing.
+app.add_middleware(ConnectorReadOnlyMiddleware)
 
 # A view-as header the auth dependency could not honour gets X-Impersonation-Ended: 1,
 # so the client drops its banner instead of labelling the admin's own data as the

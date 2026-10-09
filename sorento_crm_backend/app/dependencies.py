@@ -170,6 +170,12 @@ def _resolve_session_to_user(token: str, request: Request, db: Session) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": REASON_REVOKED, "message": "Account is not active"},
         )
+    if getattr(session_row, "auth_method", None) == "claude_connector":
+        # claude.ai connector sessions: internal key, reads only, permission re-checked
+        # (CLAUDE-CONNECTOR card section 3 step 6). Staff sessions never reach this.
+        from app.services.analytics_connector.access import enforce_connector_guard
+
+        enforce_connector_guard(request, db, user)
     # Expose the current session for "this device" / revoke-others / logout.
     request.state.session_id = str(session_row.id)
     request.state.session_token = token
@@ -191,6 +197,8 @@ def _maybe_apply_impersonation(
     ``ImpersonationEndedMiddleware`` tells the client its view-as is over.
     """
     request.state.real_user = real_user
+    if getattr(request.state, "session_auth_method", None) == "claude_connector":
+        return real_user  # a connector session never acts as anyone else (card step 6d)
     target_id = request.headers.get(IMPERSONATE_HEADER)
     if not target_id:
         return real_user

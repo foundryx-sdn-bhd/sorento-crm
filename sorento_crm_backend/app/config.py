@@ -172,6 +172,13 @@ class Settings(BaseSettings):
     # When set, X-API-Key auth resolves RBAC as this users row (required for MCP/n8n read tools).
     external_api_key_act_as_user_id: str | None = None  # EXTERNAL_API_KEY_ACT_AS_USER_ID
 
+    # claude.ai analytics connector (CLAUDE-CONNECTOR, card documentation/plans/analytics/).
+    # Env only: the internal key is the shared secret between the public container and this
+    # backend, the RO url holds the read-only role's password. Unset RO url = main engine.
+    analytics_connector_internal_key: str | None = None  # ANALYTICS_CONNECTOR_INTERNAL_KEY
+    analytics_connector_public_base_url: str | None = None  # https://<crm-domain>/analytics
+    analytics_ro_database_url: str | None = None  # ANALYTICS_RO_DATABASE_URL
+
     # AutoCount pull + review: the FoundryX gateway base URL and key are NOT env vars
     # (PLAN-foundryx-pull-connection-ui.md retires the two settings this comment used to
     # name) - they live on the seeded `foundryx-esb` `integrations` row, configured from

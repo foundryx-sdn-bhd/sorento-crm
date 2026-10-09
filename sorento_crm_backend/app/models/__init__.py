@@ -15,6 +15,7 @@ from app.models.order import Order, OrderStatus, Customer, CustomerAlias, Custom
 from app.models.sales_agent import SalesAgent
 from app.models.sales import SalesTeam, SalesTeamMember
 from app.models.stock_ask import StockAsk
+from app.models.analytics_connector import AnalyticsOAuthClient, AnalyticsOAuthRequest, AnalyticsConnectorGrant
 from app.models.finance import BillingDocument, BillingDocumentLine
 from app.models.autocount_branch import Branch
 from app.models.autocount_compare_mapping import AutocountCompareMapping
@@ -415,6 +416,10 @@ __all__ = [
     "OnboardingPerson",
     # Chatbot stock ask v2 S5
     "StockAsk",
+    # claude.ai analytics connector
+    "AnalyticsOAuthClient",
+    "AnalyticsOAuthRequest",
+    "AnalyticsConnectorGrant",
 ]
 
 # Auto-discovery: import models.py from each app/modules/<key>/ so Alembic + SQLAlchemy

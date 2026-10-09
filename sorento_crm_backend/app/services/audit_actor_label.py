@@ -22,6 +22,7 @@ METHOD_WORDS = {
     "api_key": "API key",
     "impersonation": "impersonation",
     "dev_login": "dev sign-in",
+    "claude_connector": "Claude connector",
 }
 
 

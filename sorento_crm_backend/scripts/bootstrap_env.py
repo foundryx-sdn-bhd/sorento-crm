@@ -161,6 +161,28 @@ def create_views() -> None:
     _fix_committed_v()
 
 
+def create_analytics_connector() -> None:
+    """Lay down migration `acc_0001_connector`'s non-table work (it has no ORM model).
+
+    The tables come from `create_all`; the `analytics_connector` schema + views and the widened
+    `user_sessions.auth_method` CHECK exist only in the migration body, so a bootstrapped
+    database needs them replayed (same gap as the scm views above). Both are idempotent.
+    """
+    from sqlalchemy import text
+
+    from app.database import engine
+    from app.services.analytics_connector import views
+
+    with engine.begin() as conn:
+        views.ensure_views(conn)
+        conn.execute(text("ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS ck_user_sessions_auth_method"))
+        conn.execute(text(
+            "ALTER TABLE user_sessions ADD CONSTRAINT ck_user_sessions_auth_method CHECK (auth_method IN "
+            "('password', 'phone_otp', 'portal_link', 'impersonation', 'dev_login', 'claude_connector'))"
+        ))
+    log.info("analytics_connector views created")
+
+
 def _fix_committed_v() -> None:
     """Bring ``scm.committed_v`` current past migration 337.
 
@@ -959,6 +981,7 @@ def main() -> int:
     create_schema()
     apply_migration_only_ddl()
     create_views()
+    create_analytics_connector()
     if not args.skip_seed:
         seed_reference_data()
         seed_n8n_sales_reports_grant()
