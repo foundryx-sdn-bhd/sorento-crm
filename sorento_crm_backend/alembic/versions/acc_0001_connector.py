@@ -1,7 +1,7 @@
 """claude.ai connector: permission, users.connector_revoked_at, chat views
 
 Revision ID: acc_0001_connector
-Revises: pk_0001_parser_promo_kind
+Revises: oihr_0005_print_one_page
 Create Date: 2026-10-09 00:00:00.000000
 
 CLAUDE-CONNECTOR (card documentation/plans/analytics/CARD-claude-connector-09oct.md; r3 contract
@@ -26,7 +26,7 @@ from alembic import op
 from app.services.analytics_connector import views
 
 revision = "acc_0001_connector"
-down_revision = "pk_0001_parser_promo_kind"
+down_revision = "oihr_0005_print_one_page"
 branch_labels = None
 depends_on = None
 
