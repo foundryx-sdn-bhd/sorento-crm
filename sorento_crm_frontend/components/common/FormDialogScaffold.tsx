@@ -28,6 +28,8 @@ export interface FormDialogScaffoldProps {
    * title so a caller that names nothing more specific never trips the "Missing
    * Description" console warning. */
   description?: string;
+  /** Id of an element inside the form that describes it (read out on focus). */
+  formDescribedBy?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export function FormDialogScaffold({
   isPending = false,
   error,
   description,
+  formDescribedBy,
 }: FormDialogScaffoldProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -52,7 +55,7 @@ export function FormDialogScaffold({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">{description ?? title}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4" aria-describedby={formDescribedBy}>
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>

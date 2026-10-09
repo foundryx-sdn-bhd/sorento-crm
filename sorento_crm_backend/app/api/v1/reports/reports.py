@@ -192,15 +192,22 @@ def get_report_meta(
         # The report opens on the caller's current company, resolved now, per caller.
         ctx = engine.resolve(db, definition, {}, company_grants=grants)
         default_view.params[company_param] = ctx.values.get(company_param) or []
+    lacking = definition.unavailable_for(db)
     return ReportMeta(
         key=definition.key,
         title=definition.title,
         permission=definition.permission,
         opens_on=definition.opens_on,
+        dataset_param=definition.datasets_by[0] if definition.datasets_by else None,
         params=_params_meta(db, definition, grants),
         catalog=[
             ReportCatalogColumn(
-                key=c.key, label=c.label, type=c.type, tag=c.tag, size=c.size
+                key=c.key,
+                label=c.label,
+                type=c.type,
+                tag=c.tag,
+                size=c.size,
+                unavailable_for=lacking[c.key],
             )
             for c in definition.catalog()
         ],
