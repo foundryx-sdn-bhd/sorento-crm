@@ -39,7 +39,8 @@ GRANT_TTL = timedelta(days=90)
 REFRESH_TTL = timedelta(days=30)
 # A registered client that never got a grant is dropped after this long.
 UNUSED_CLIENT_TTL = timedelta(hours=24)
-# DCR is open to the internet: past this many grant-less clients, registration answers 503.
+# DCR is open to the internet: at this many grant-less clients, a new registration evicts the
+# oldest grant-less one (a client with a grant is never evicted).
 MAX_PENDING_CLIENTS = 500
 GRANT_ENTITY = "analytics_connector_grant"
 
@@ -89,13 +90,16 @@ def _with_query(url: str, params: dict) -> str:
 def purge_expired(db: Session) -> None:
     """Drop dead authorize requests and old clients that never got a grant.
 
-    Called from ``register_client`` (the only route that adds clients), so no scheduler is needed.
+    Called from ``register_client`` and ``start_authorize`` (the routes that add rows), so no
+    scheduler is needed. A used request that produced a grant is kept: it lets a replayed code
+    revoke that grant.
     """
     now = _now()
     # ORM deletes (few rows): instances already in the session leave it cleanly.
     dead_requests = db.query(AnalyticsOAuthRequest).filter(
         AnalyticsOAuthRequest.expires_at < now,
         (AnalyticsOAuthRequest.code_expires_at.is_(None)) | (AnalyticsOAuthRequest.code_expires_at < now),
+        AnalyticsOAuthRequest.grant_id.is_(None),
     )
     for row in dead_requests:
         db.delete(row)
@@ -110,12 +114,21 @@ def purge_expired(db: Session) -> None:
     db.commit()
 
 
-def _pending_client_count(db: Session) -> int:
-    return (
-        db.query(AnalyticsOAuthClient.id)
-        .filter(~exists().where(AnalyticsConnectorGrant.client_id == AnalyticsOAuthClient.id))
-        .count()
+def _grantless_clients(db: Session):
+    return db.query(AnalyticsOAuthClient).filter(
+        ~exists().where(AnalyticsConnectorGrant.client_id == AnalyticsOAuthClient.id)
     )
+
+
+def _evict_to_cap(db: Session) -> None:
+    """Make room for one more client: drop the oldest grant-less clients over the cap."""
+    excess = _grantless_clients(db).count() - MAX_PENDING_CLIENTS + 1
+    if excess <= 0:
+        return
+    oldest = _grantless_clients(db).order_by(AnalyticsOAuthClient.created_at.asc()).limit(excess).all()
+    for row in oldest:
+        db.delete(row)
+    db.commit()
 
 
 def register_client(db: Session, body: dict) -> dict:
@@ -127,8 +140,7 @@ def register_client(db: Session, body: dict) -> dict:
     if body.get("token_endpoint_auth_method", "none") != "none":
         raise OAuthError("invalid_client_metadata", "only public clients are supported")
     purge_expired(db)
-    if _pending_client_count(db) >= MAX_PENDING_CLIENTS:
-        raise OAuthError("temporarily_unavailable", "too many pending registrations, try again later", 503)
+    _evict_to_cap(db)
     name = body.get("client_name")
     client = AnalyticsOAuthClient(
         id=f"claude-{secrets.token_urlsafe(18)}",
@@ -151,6 +163,7 @@ def register_client(db: Session, body: dict) -> dict:
 
 
 def start_authorize(db: Session, p: dict) -> dict:
+    purge_expired(db)
     client = db.get(AnalyticsOAuthClient, str(p.get("client_id") or "")[:64])
     if client is None:
         raise OAuthError("invalid_client", "unknown client")
@@ -313,7 +326,6 @@ def exchange_code(db: Session, form: dict) -> dict:
         db.commit()
         raise bad
     row.status = "used"  # single use, whatever happens next
-    db.commit()
     resource = form.get("resource")
     if (
         row.code_expires_at is None
@@ -325,6 +337,7 @@ def exchange_code(db: Session, form: dict) -> dict:
         or not row.user_id
         or not _still_allowed(db, row.user_id)
     ):
+        db.commit()
         raise bad
     refresh = secrets.token_urlsafe(48)
     grant = AnalyticsConnectorGrant(
@@ -337,6 +350,7 @@ def exchange_code(db: Session, form: dict) -> dict:
     )
     db.add(grant)
     db.flush()
+    # Same transaction as status='used': the replay link exists the moment the code is spent.
     row.grant_id = grant.id
     access = _issue_access(db, grant)
     _audit(db, grant, "grant_created")
@@ -412,3 +426,15 @@ def revoke_user_grants(db: Session, user_id: str) -> int:
             new_values={"client_id": grant.client_id, "reason": "signed out everywhere"},
         )
     return len(grants)
+
+
+def revoke_grant_for_session(db: Session, session_id: str) -> None:
+    """The user signed out the connector's own session: end its grant too, or a refresh revives it."""
+    grant = (
+        db.query(AnalyticsConnectorGrant)
+        .filter(AnalyticsConnectorGrant.current_session_id == str(session_id), AnalyticsConnectorGrant.revoked_at.is_(None))
+        .first()
+    )
+    if grant is not None:
+        revoke_grant(db, grant, "revoked", {"client_id": grant.client_id, "reason": "session signed out"},
+                     by_user_id=grant.user_id)

@@ -122,8 +122,9 @@ Steps:
    - an **access token**, which is a `user_sessions` row with `auth_method='claude_connector'`,
      `rolling=false` and `expires_at = now + 1 h`.
    Response: `{access_token, token_type: "Bearer", expires_in: 3600, refresh_token, refresh_token_expires_in: 2592000, scope}`.
-   - The code row is locked (`SELECT ... FOR UPDATE`) while it is redeemed and remembers the grant
-     it produced. A replayed, already-used code revokes that grant.
+   - The code row is locked (`SELECT ... FOR UPDATE`) while it is redeemed. It is marked used and
+     linked to the grant it produced in the same transaction, and that row survives the purge. A
+     replayed, already-used code revokes that grant.
 5. **Refresh.** `grant_type=refresh_token` rotates the refresh token (row locked), resets
    `refresh_issued_at`, revokes the previous access-token session and mints a new one.
    - A refresh token older than 30 days is `invalid_grant`; the grant itself lives 90 days.
@@ -142,10 +143,12 @@ Steps:
      - (b) The method must be GET or HEAD, or a POST on a short allowlist: `/api/v1/lookup/resolve`
        and the connector's own `query` and `audit` routes. Any write fails with 403 even if a write
        tool slipped in.
-     - (b2) A GET or HEAD must fall under `CONNECTOR_GET_PREFIXES` (`access.py`): the reused tools'
-       backend routes plus `/api/v1/analytics-connector/`. Dot segments, empty segments, backslashes
-       and encoded `/`, `\` or `.` are refused first. Anything else answers 403
-       `connector_path_not_allowed`. A test keeps the prefixes in step with the tool list.
+     - (b2) A GET or HEAD must match one of `CONNECTOR_GET_ROUTES` (`access.py`) exactly: the
+       reused tools' backend routes plus the connector's own GET routes, where `{param}` is exactly
+       one non-empty segment. A download, preview or export route under the same prefix is
+       therefore refused. Dot segments, empty segments, backslashes and encoded `/`, `\` or `.`
+       are refused first. Anything else answers 403 `connector_path_not_allowed`. A test keeps the
+       route list in step with the tool list.
      - (c) The user must hold `analytics.connector.use`, re-checked on every request (Q1). A user who
        loses it, or is deactivated, fails the next call.
      - (d) `X-Impersonate-User-Id` is ignored.
@@ -157,7 +160,8 @@ Steps:
    - The user's own Current sessions screen also lists and revokes the connector session (existing
      screen, `auth_method` shown).
    - Sign out everywhere and password change or reset (`revoke_all_for_user`) also revoke every
-     connector grant of the user.
+     connector grant of the user. Signing out the connector's own session on that screen revokes
+     its grant.
    - Disconnecting in claude.ai does not reach our server, so the grant just stops being used.
      Admin revoke is the server-side kill switch.
 
@@ -335,7 +339,7 @@ Basis: 53,895 messages, 17 Apr to 6 Oct, about 3,000 a week. Measure on the prod
 | Someone outside claude.ai calls `/analytics/mcp` | nginx `allow 160.79.104.0/21; deny all;` plus 401 without a token | None material |
 | Stolen access token used elsewhere | 1 h life. The internal key is required by the backend, so the token is useless on the public `/api/v1`. The nginx allowlist leaves only the Anthropic IP range. | Use through another claude.ai account for at most 1 h; admin revoke ends it at once |
 | Stolen refresh token | Rotation, any retired token revokes the grant, 30-day refresh life, 90-day absolute expiry, stored hashed | Claude holds it server-side (Anthropic's custody) |
-| Rogue DCR client | `redirect_uris` allowlist (claude.ai callback only), nginx rate limit on `register`, at most 500 grant-less clients (then 503 `temporarily_unavailable`); `register` first purges expired requests and grant-less clients older than 24 h | Clients can still be registered, but they are harmless |
+| Rogue DCR client | `redirect_uris` allowlist (claude.ai callback only), nginx rate limit on `register`, at most 500 grant-less clients (a new registration evicts the oldest grant-less one; a client with a grant is never evicted); `register` and `authorize` first purge expired requests and grant-less clients older than 24 h | Clients can still be registered, but they are harmless |
 | Consent phishing: an attacker starts a flow in their own claude.ai and gets staff to approve it | Consent page names the app and the redirect host and says it acts as <you>. Codes live 60 s. Few holders of the permission. Every call is audited, admin revoke. | Inherent to OAuth consent; mitigated by training and the audit trail |
 | Prompt injection in customer messages ("ignore instructions, call X") | Every tool is read-only and the backend refuses writes. Users approve tool calls in claude.ai. | Claude could be steered to paste data into ANOTHER connector in the same chat. Guidance: do not enable write connectors in analysis chats. |
 | Write through a reused tool | Allow-list ⊆ catalog read-only ⊆ `CHATBOT_READ_ONLY_TOOLS`, pinned by tests. The backend refuses non-GET for connector sessions except the 3 listed POSTs. | None |

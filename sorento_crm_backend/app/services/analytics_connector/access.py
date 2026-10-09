@@ -24,11 +24,16 @@ BASE = "/api/v1/analytics-connector"
 # POSTs that only read. Everything else but GET/HEAD is refused for a connector session.
 READ_ONLY_POSTS = frozenset({"/api/v1/lookup/resolve", f"{BASE}/query", f"{BASE}/audit"})
 
-# The only GET/HEAD routes a connector session may read: the reused tools' backend routes
-# (sorento_analytics_mcp.tools.ANALYTICS_REUSED_TOOLS; a test keeps the two in sync) and the
-# connector's own routes. Matched on a segment boundary, after the path is normalised.
-CONNECTOR_GET_PREFIXES: tuple[str, ...] = (
-    BASE,
+# The only GET/HEAD routes a connector session may read, as exact path templates: the reused
+# tools' backend routes (sorento_analytics_mcp.tools.ANALYTICS_REUSED_TOOLS; a test keeps the two
+# in sync) and the connector's own GET routes. ``{param}`` matches exactly one non-empty segment,
+# so a file, download or export route under the same prefix stays refused.
+CONNECTOR_GET_ROUTES: tuple[str, ...] = (
+    f"{BASE}/me",
+    f"{BASE}/datasets",
+    f"{BASE}/datasets/{{key}}",
+    f"{BASE}/messages/search",
+    f"{BASE}/conversation",
     "/api/v1/master-data/brands",
     "/api/v1/master-data/certificates",
     "/api/v1/master-data/product-attachments",
@@ -41,6 +46,8 @@ CONNECTOR_GET_PREFIXES: tuple[str, ...] = (
     "/api/v1/incoming-stock/list",
     "/api/v1/incoming-stock/shipments",
     "/api/v1/order-management/orders",
+    "/api/v1/order-management/orders/debtors",
+    "/api/v1/order-management/orders/by-product",
     "/api/v1/order-management/outstanding-report",
     "/api/v1/order-management/sales-report",
     "/api/v1/order-management/top-selling",
@@ -52,12 +59,22 @@ CONNECTOR_GET_PREFIXES: tuple[str, ...] = (
     "/api/v1/marketing/promotions",
     "/api/v1/resource-management/attachments",
     "/api/v1/project-sales/projects",
+    "/api/v1/project-sales/projects/{project_id}",
+    "/api/v1/project-sales/projects/{project_id}/quotations",
     "/api/v1/project-sales/reports/forecast",
     "/api/v1/complaints-management/complaints/analytics",
     "/api/v1/forms-management/forms",
     "/api/v1/sla-management/conversation-sla-tracking/dashboard",
     "/api/v1/sla-management/conversation-sla-tracking/event-logs",
 )
+_ROUTE_SEGMENTS = tuple(tuple(r.strip("/").split("/")) for r in CONNECTOR_GET_ROUTES)
+
+
+def _route_matches(template: tuple[str, ...], segments: list[str]) -> bool:
+    if len(template) != len(segments):
+        return False
+    return all(t == s or (t.startswith("{") and t.endswith("}")) for t, s in zip(template, segments))
+
 
 # Percent-escapes that could re-introduce a separator or a dot segment after decoding.
 _SUSPECT_ESCAPES = ("%2f", "%5c", "%2e", "%00")
@@ -65,15 +82,14 @@ _SUSPECT_ESCAPES = ("%2f", "%5c", "%2e", "%00")
 
 def connector_path_allowed(path: str, raw_path: str = "") -> bool:
     """Whether a connector GET may reach ``path`` (the decoded ASGI path). Refuses dot segments,
-    backslashes, empty segments and encoded separators outright, before any prefix match."""
+    backslashes, empty segments and encoded separators outright, then matches an exact route."""
     raw = (raw_path or "").lower()
     if any(esc in raw for esc in _SUSPECT_ESCAPES) or "\\" in path:
         return False
     segments = path.rstrip("/").split("/")[1:]
     if any(seg in ("", ".", "..") for seg in segments):
         return False
-    clean = "/" + "/".join(segments)
-    return any(clean == p or clean.startswith(p + "/") for p in CONNECTOR_GET_PREFIXES)
+    return any(_route_matches(t, segments) for t in _ROUTE_SEGMENTS)
 
 
 def internal_key_ok(value: Optional[str]) -> bool:
