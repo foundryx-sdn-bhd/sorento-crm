@@ -1,7 +1,7 @@
 """Form comments: a contact can author a thread message
 
 Revision ID: fcom_0001_conv_author_contact
-Revises: psl_0001_chatbot_file_links
+Revises: chat_facts_0001_tables
 Create Date: 2026-10-09 00:00:00.000000
 
 `PLAN-form-comments-09oct.md` Contract. A submitter's comment on a form has no CRM user, so
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "fcom_0001_conv_author_contact"
-down_revision = "psl_0001_chatbot_file_links"
+down_revision = "chat_facts_0001_tables"
 branch_labels = None
 depends_on = None
 
