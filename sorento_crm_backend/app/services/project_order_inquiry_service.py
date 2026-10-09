@@ -382,7 +382,12 @@ def handover_remark(
     exactly why this is a pure function rather than a method: it never queries anything.
 
     * `kind="raised"`: the verb's own spelling (`REMARK_SPELLING`), an `ORDER_BACK`
-      appending its cited document, and any CS `note` appended after " - ".
+      appending its cited document, a CHANGE SO NO appending the order it moves to.
+      `row.note` itself is NEVER printed (OI-EMAIL-PRINT, owner 9 Oct): it is a bag of
+      internal stamps ("Planning keeps this Buy: ...", "Replaces 20 used; ...",
+      "Order-back: ...", "Linked to ...") that made REMARK wrap over several lines and
+      leaked planning notes into a mail purchasing prints. It stays on the row and on the
+      OI worklist, one click away through the email's own button.
     * `kind="settled"`: the date verb (ADVANCE/DELAY) and the qty phrase (`CANCEL BALANCE
       N NOS` / `ORDER N`), whichever of the two actually moved, joined by ", " when both did.
     * `kind="cancelled"`: `CANCEL BALANCE <old qty> NOS` - the honest end of a line the book
@@ -395,16 +400,13 @@ def handover_remark(
         label = REMARK_SPELLING.get(row.verb, row.verb or "")
         if row.verb == IV_ORDER_BACK and getattr(row, "cited_document", None):
             label = f"{label} {row.cited_document}"
-        note = getattr(row, "note", None)
-        # AC-R2-06: a `was` carrying `qty` or `delivery_date` means the r2 layout
-        # already prints the previous value in its own CHANGE TO columns, so the
-        # note's own ISO-dated sentence ("Was 2026-08-25") would only repeat it in a
-        # different format - the REMARK stays the bare verb. A CHANGE SO row's `was`
-        # carries `so_number`, not a date/qty, so its note (naming the source order)
-        # still prints.
-        skip_note = bool(was) and ("qty" in was or "delivery_date" in was)
-        if note and not skip_note:
-            label = f"{label} - {note}"
+        if row.verb == IV_CHANGE_SO:
+            # The one fact a note carries that IS the instruction: where the line moved
+            # (`_change_note`'s "Moved to <SO>" for a repoint). Read back off that fixed
+            # stamp, the way `_amendment_row_was` reads "Was dd/mm/yyyy".
+            moved = re.search(r"(?:^|; )Moved to ([^;]+)", getattr(row, "note", None) or "")
+            if moved:
+                label = f"{label} TO {moved.group(1).strip()}"
         old_code = (was or {}).get("item_code")
         if old_code:
             # OI-PRODUCT-FOLLOW R4: a fresh row raised on the line's new product.
@@ -10979,6 +10981,8 @@ def _build_handover_context(
             orders.append(
                 {
                     "so_number": so_number,
+                    # OI-EMAIL-PRINT: the SO date prints once here, not on every line.
+                    "so_date": (item.get("line") or {}).get("so_date"),
                     "customer": item.get("customer"),
                     "project": item.get("project"),
                 }

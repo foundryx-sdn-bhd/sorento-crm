@@ -385,15 +385,18 @@ BLOCK_TYPES = (
 )
 
 
-#: The two card widths the shell renders (EMAIL-HANDOVER-QTY, owner 30 Sep: the OI
+#: The card widths the shell renders (EMAIL-HANDOVER-QTY, owner 30 Sep: the OI
 #: handover's nine-column line table was "cramped" in the 600 card). `wide` is for a
 #: table email: 900px card, 24px side gutters, phone breakpoint at 920. Every other mail,
 #: and every stored document that says nothing, is `standard` - exactly the shell #1349
-#: shipped. A third width has no trigger today; two named ones are the whole surface.
-DocumentWidth = Literal["standard", "wide"]
+#: shipped. `print` (OI-EMAIL-PRINT, owner 9 Oct: "fit in one page to print out") is a
+#: table email that purchasing prints: 672px card, 12px gutters, so the card plus the
+#: shell's 12px outer padding stays inside A4 portrait's printable width (698px at
+#: Outlook's 0.5in margins) with no scaling and nothing clipped.
+DocumentWidth = Literal["standard", "wide", "print"]
 
-_CARD_WIDTH: dict[str, int] = {"standard": 600, "wide": 900}
-_SIDE_GUTTER: dict[str, int] = {"standard": 40, "wide": 24}
+_CARD_WIDTH: dict[str, int] = {"standard": 600, "wide": 900, "print": 672}
+_SIDE_GUTTER: dict[str, int] = {"standard": 40, "wide": 24, "print": 12}
 
 
 class EmailDocument(BaseModel):
