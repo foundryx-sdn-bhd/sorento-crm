@@ -13,16 +13,26 @@ from scripts.chatbot_eval.run import main
 
 
 class FakeCursor:
+    """psycopg2 raises when one connection is used by two threads at once; mirror that."""
+
     rowcount = 0
 
+    def __init__(self, conn):
+        self.conn = conn
+
     def __enter__(self):
+        with self.conn.guard:
+            if self.conn.cursor_busy:
+                raise psycopg2.ProgrammingError("connection already in use by another thread")
+            self.conn.cursor_busy = True
         return self
 
     def __exit__(self, *a):
+        self.conn.cursor_busy = False
         return False
 
     def execute(self, *a, **k):
-        time.sleep(0.005)
+        time.sleep(0.02)
 
     def fetchone(self):
         return ([],)
@@ -30,17 +40,16 @@ class FakeCursor:
     def fetchall(self):
         return []
 
-    def __getattr__(self, name):
-        return lambda *a, **k: None
-
 
 class FakeConn:
-    """Mimics psycopg2: entering the same connection object twice at once raises."""
+    """Entering the same connection object twice at once raises, as psycopg2 does."""
 
     autocommit = False
+    closed = False
 
     def __init__(self):
         self.entered = False
+        self.cursor_busy = False
         self.guard = threading.Lock()
 
     def __enter__(self):
@@ -56,17 +65,24 @@ class FakeConn:
         return False
 
     def cursor(self, *a, **k):
-        return FakeCursor()
+        return FakeCursor(self)
+
+    def close(self):
+        pass
 
     def __getattr__(self, name):
         return lambda *a, **k: None
 
 
-def _threads(fn, n=8):
+def _warm_then_hammer(fn, n=8):
+    """Warm the cached connection sequentially, then overlap n threads on it behind a barrier."""
+    fn()
+    barrier = threading.Barrier(n)
     errors = []
 
     def work():
         try:
+            barrier.wait()
             for _ in range(3):
                 fn()
         except Exception as e:  # noqa: BLE001
@@ -81,13 +97,13 @@ def _threads(fn, n=8):
 def test_contact_reset_thread_safe(monkeypatch):
     monkeypatch.setattr(psycopg2, "connect", lambda *a, **k: FakeConn())
     r = DbContactReset("postgresql://u:p@127.0.0.1:1/sorento_eval_t")
-    assert _threads(lambda: r.reset("9001")) == []
+    assert _warm_then_hammer(lambda: r.reset("9001")) == []
 
 
 def test_trace_reader_thread_safe(monkeypatch):
     monkeypatch.setattr(psycopg2, "connect", lambda *a, **k: FakeConn())
     r = DbTraceReader("postgresql://u:p@127.0.0.1:1/x")
-    assert _threads(lambda: r.fetch("t-1")) == []
+    assert _warm_then_hammer(lambda: r.fetch("t-1")) == []
 
 
 def test_unexpected_exception_becomes_error_result():
