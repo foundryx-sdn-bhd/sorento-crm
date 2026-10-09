@@ -827,6 +827,9 @@ def _tracker_at(db, kind, form_id, handler, *, initiated, resolved=False):
         initiated_at=initiated,
     )
     if resolved:
+        # "Open" is is_resolved False and not voided (sla_scope.open_tracker_scope); the
+        # timestamp alone would leave the stage open and the fallback path untested.
+        row.is_resolved = True
         row.resolved_at = initiated + timedelta(hours=1)
     db.add(row)
     db.commit()
@@ -865,6 +868,18 @@ def test_another_forms_tracker_is_never_used(db, enqueued):
     _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
     assert _recipients(db) == [mine.email]
 
+
+
+def test_fallback_to_the_newest_resolved_tracker_stays_on_this_form(db, enqueued):
+    # Only resolved stages, so the newest-tracker fallback runs: another form's newer resolved
+    # stage must never win over this form's own (kill test K3).
+    contact_id = _contact(db)
+    c, mine = _user(db, "C"), _user(db, "Mine")
+    inquiry, other = _inquiry(db, contact_id=contact_id), _inquiry(db, contact_id=contact_id)
+    _tracker_at(db, "stock_inquiry", inquiry.id, mine, initiated=datetime(2026, 10, 1), resolved=True)
+    _tracker_at(db, "stock_inquiry", other.id, c, initiated=datetime(2026, 10, 3), resolved=True)
+    _svc(db).add_contact_comment("stock_inquiry", inquiry.id, contact_id, SPACE, "hi")
+    assert _recipients(db) == [mine.email]
 
 @pytest.mark.parametrize("breaker", ["enqueue", "render"])
 def test_submitter_comment_survives_a_notification_failure(db, monkeypatch, breaker):
