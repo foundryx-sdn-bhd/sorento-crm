@@ -1031,14 +1031,19 @@ def test_acting_admin_without_a_name_reads_sorento_team(db, enqueued):
     assert comment["posted_by_name"] == "Sorento team"
 
 
-@pytest.mark.parametrize("case", ["ended", "lost_role"])
+@pytest.mark.parametrize("case", ["ended", "lost_role", "inactive", "trashed"])
 def test_impersonation_post_is_403_and_saves_nothing_when_no_longer_allowed(db, enqueued, monkeypatch, case):
     owner = _contact(db, "Owner")
     inquiry = _inquiry(db, contact_id=owner)
-    _impersonation(
+    _token, admin = _impersonation(
         db, monkeypatch, contact_id=owner, ended=(case == "ended"),
         admin_roles=frozenset() if case == "lost_role" else frozenset({"admin"}),
     )
+    if case == "inactive":
+        admin.status = "INACTIVE"
+    elif case == "trashed":
+        admin.is_trashed = True
+    db.commit()
     try:
         resp = TestClient(app, raise_server_exceptions=False).post(
             f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}/comments", data={"body": "x"}
