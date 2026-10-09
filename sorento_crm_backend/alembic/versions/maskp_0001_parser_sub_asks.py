@@ -22,7 +22,7 @@ on the old prompt, tolerated), so nothing changes.
 Idempotent: skipped when a version already carries the addendum.
 
 Revision ID: maskp_0001_parser_sub_asks
-Revises: pk_0001_parser_promo_kind
+Revises: oihr_0005_print_one_page
 """
 import logging
 
@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 
 revision = "maskp_0001_parser_sub_asks"
-down_revision = "pk_0001_parser_promo_kind"
+down_revision = "oihr_0005_print_one_page"
 branch_labels = None
 depends_on = None
 
