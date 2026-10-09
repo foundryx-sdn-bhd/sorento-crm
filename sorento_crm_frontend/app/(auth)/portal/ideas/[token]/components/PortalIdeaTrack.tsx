@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { usePortalIdea } from '@/hooks/usePortalIdea';
-import { formatDate, formatDateTime } from '@/lib/helpers';
+import { formatDate, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { cn } from '@/lib/utils';
 import type { PortalIdeaComment } from '@/types/ideas';
 import { IdeaStatusBadge } from '@/components/ideas/IdeaStatusBadge';
@@ -50,7 +50,7 @@ function Comment({ comment, reply }: { comment: PortalIdeaComment; reply?: boole
               You
             </Badge>
           ) : null}
-          <span className="text-xs text-muted-foreground">{formatDateTime(comment.createdAt)}</span>
+          <span className="text-xs text-muted-foreground">{formatDateTimeInMalaysia(comment.createdAt)}</span>
         </div>
         <p className="whitespace-pre-wrap break-words text-sm">{comment.body}</p>
       </div>

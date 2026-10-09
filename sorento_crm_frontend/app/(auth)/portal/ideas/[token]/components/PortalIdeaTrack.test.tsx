@@ -100,6 +100,12 @@ describe('AC-H-04 what the page shows', () => {
     expect(await screen.findByText(hostile)).toBeInTheDocument();
     expect(container.querySelector('img')).toBeNull();
   });
+
+  it('COMMENT-TZ: a comment time reads in Malaysia time (08:26 UTC = 4:26 pm)', async () => {
+    svc.listPortalComments.mockResolvedValue([comment({ createdAt: '2026-10-09T08:26:20Z' })]);
+    render(<PortalIdeaTrack token={TOKEN} />);
+    expect(await screen.findByText('09/10/2026, 4:26 pm')).toBeInTheDocument();
+  });
 });
 
 describe('heading fallback', () => {
