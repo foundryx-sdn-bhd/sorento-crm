@@ -95,7 +95,8 @@ cases = {
              stock_location="KL-WH"),
     ],
     "case6": [  # owner's hand test SO421287: one line, 5 columns, "ORDER, NEW ITEM CODE"
-        item("SO421287", "06/10/2026", "p7", "CUSTOMER H SDN BHD", "PROJECT Q", "raised", 1,
+        item("SO421287", "06/10/2026", "p7", "CUSTOMER H TRADING & ENGINEERING SDN BHD",
+             "CADANGAN PEMBANGUNAN 2 BLOK PANGSAPURI SERVIS 38 TINGKAT DI LOT 1234, MUKIM BATU, KUALA LUMPUR", "raised", 1,
              verb=IV_ORDER, qty=12, delivery_date=D(2026, 11, 6), item_code="SRT382-6-DIY",
              stock_location="KL-WH", was={"item_code": "SRT382-6"}),
     ],
@@ -106,6 +107,12 @@ cases = {
         item("SO421300", "07/10/2026", "p8", "CUSTOMER J SDN BHD", "PROJECT W", "settled", 2,
              verb=IV_ORDER, qty=30, delivery_date=D(2026, 11, 13), item_code="SRT382-6-DIY",
              stock_location="KL-WH", was={"item_code": "SRT382-6", "qty": 24, "delivery_date": D(2026, 11, 6)}),
+    ],
+    "case8": [  # longest project text we model (150 chars) and a long customer
+        item("SO421400", "08/10/2026", "p9", "CUSTOMER K INTERIOR DESIGN AND BUILD SOLUTIONS (M) SDN BHD",
+             "CADANGAN MEMBINA DAN MENYIAPKAN 3 BLOK KONDOMINIUM 45 TINGKAT BESERTA KEMUDAHAN, TEMPAT LETAK KERETA DAN PUSAT KOMERSIAL DI ATAS LOT 5678, SEKSYEN 13",
+             "raised", 1, verb=IV_ORDER, qty=12, delivery_date=D(2026, 11, 6), item_code="SRTWT6808",
+             stock_location="KL-WH"),
     ],
     "case3": [  # long order: 42 lines
         item("SO418900", "01/10/2026", "p4", "CUSTOMER D SDN BHD", "PROJECT M", "raised", i,

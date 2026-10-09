@@ -568,8 +568,9 @@ def test_line_table_columns_share_the_width_in_every_variant():
 
 def test_order_table_columns_have_fixed_shares():
     """AC-P15 (owner retest 9 Oct, SO421287: PROJECT wrapped to 4 lines while S/O NO and SO
-    DATE sat in empty width): the order table is 13/13/32/42, attribute and style alike.
-    S/O NO and SO DATE never wrap; PROJECT, the longest free text, gets the most room."""
+    DATE sat in empty width): the order table is 11/11/32/46 at 11px, attribute and style
+    alike. S/O NO and SO DATE never wrap at their minimal width (71px measured); PROJECT,
+    the longest free text, gets the most room."""
     orders = [{"so_number": "SO421287", "so_date": "02/10/2026", "customer": "C", "project": "P"}]
     out = _render(_ctx(orders, [_line("SO421287", "KL-WH", "X", "1", "06/11/2026", "ORDER")]))
     table = re.findall(r"<table.*?</table>", _authored(out["body_html"]), re.S)[0]
@@ -579,5 +580,8 @@ def test_order_table_columns_have_fixed_shares():
         styles = re.findall(r"[;\"]width:(\d+)%", tag)
         assert attr and styles == [attr.group(1)], tag
         got.append((text.strip(), int(attr.group(1))))
-    assert got == [("S/O NO", 13), ("SO DATE", 13), ("CUSTOMER", 32), ("PROJECT", 42)], got
+    assert got == [("S/O NO", 11), ("SO DATE", 11), ("CUSTOMER", 32), ("PROJECT", 46)], got
+    # Same 11px as the line table, so PROJECT holds about 48 characters a line.
+    # The shell writes its defaults first in the style; the last font-size is the one that wins.
+    assert re.findall(r"font-size:(\d+)px", table.split(">", 1)[0])[-1] == "11", table[:160]
 

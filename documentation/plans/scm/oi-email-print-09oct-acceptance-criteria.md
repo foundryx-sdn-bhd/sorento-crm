@@ -34,9 +34,14 @@ Plan: `PLAN-oi-email-print-09oct.md`. Mock: `ALIGN-oi-email-print-09oct.html`.
   line-table header carries an explicit percentage width (`width="N%"` attribute, mirrored in
   the style), summing to 100 in each variant; ITEM CODE is the widest fixed column and REMARK
   a moderate share (5 columns 14/28/10/18/30; +NEW QTY 12/24/9/11/16/28; +NEW DATE
-  12/23/9/15/15/26; 7 columns 9/19/6/9/12/12/33). The order table is 18/16/40/26. Every
+  12/23/9/15/15/26; 7 columns 9/19/6/9/12/12/33). Every
   REMARK, including `DELAY, ORDER 6, NEW ITEM CODE` and `ORDER BACK, NEW ITEM CODE` in the
   7-column layout with a 16-char code, stays on one line.
+- **AC-P15** (owner retest 9 Oct, SO421287: PROJECT wrapped to 4 lines while S/O NO and SO
+  DATE sat in empty width) The order table is 11px like the line table, with S/O NO 11% /
+  SO DATE 11% (no wrap, 71px measured is their minimum), CUSTOMER 32% and PROJECT 46%
+  (attribute and style alike). PROJECT holds about 48 characters a line, so a project name up
+  to about 90 characters takes at most 2 lines; longer names wrap further.
 - **AC-P8** The rendered mail's card is 672px wide (`print` width), side gutters 12px; the shell's
   `<style>` carries an `@media print` rule and `@page { size: A4 portrait }`.
 - **AC-P9** Printing the mock's "after" email in Chromium to A4 portrait gives one page for 12 lines
