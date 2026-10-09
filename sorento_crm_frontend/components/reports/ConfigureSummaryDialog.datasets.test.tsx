@@ -83,7 +83,6 @@ function open(datasetValue: string, value: { rows: string; cols: string; measure
       catalog={CATALOG}
       value={value}
       onApply={onApply}
-      // @ts-expect-error new prop, the contract under test
       datasetValue={datasetValue}
     />,
   );
