@@ -291,7 +291,7 @@ def _answered_position(reply: dict[str, Any], kind: str, options: list[Any]) -> 
     """Which option the PARSER read the reply as (crew live check 3: "已出货" to the basis
     question came back as an item naming the option, not a `pick`). Every reading is the
     parser's own: a pick of one position, one item naming a position or an option's code,
-    or "all" to the variant question. No word of the message is read here."""
+    or "all" to the variant question. This reads no word of the message."""
     picked = [p for p in reply.get("picked") or [] if isinstance(p, int) and not isinstance(p, bool)]
     if reply.get("mode") == "pick" and len(picked) == 1 and picked[0] in (1, 2):
         return picked[0]
