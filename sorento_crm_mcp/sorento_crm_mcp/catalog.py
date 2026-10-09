@@ -1455,6 +1455,29 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_procurement_po_placed_list", "crm_incoming_stock_by_product"),
         escalation_team="procurement",
     ),
+    # --- procurement: received quantity in a window + the last receipt, per product
+    # (MULTI-ASK-PLAN S3, 9 Oct 2026) ---
+    ToolSpec(
+        "crm_procurement_grn_summary",
+        (
+            "Per product: how much was RECEIVED (approved goods-received notes) in a date "
+            "window, and the LAST receipt of all time - 'how many received in 2026', '2026 "
+            "入库了多少', 'when was it last received', '最后一次进库'. Each row: product_id, "
+            "product_code, received_qty (sum of picked quantity over approved, not cancelled "
+            "GRNs dated in the window; no window = all time), grn_count, last_receipt_date "
+            "and last_receipt_qty (the newest approved GRN date of ALL time and the quantity "
+            "received that day; null when never received). A receipt booked with no GRN "
+            "(ESB-stated) is not counted.\n\n"
+            "REQUIRED: `product_ids` (canonical UUIDs, csv / JSON / repeated). Optional "
+            "`date_from` / `date_to` (ISO dates, inclusive) bound received_qty only."
+        ),
+        "/api/v1/procurement/grn/summary",
+        (),
+        ("product_ids", "date_from", "date_to"),
+        domain="procurement",
+        related_tools=("crm_procurement_spo_allocations_last_receipt_list",),
+        escalation_team="procurement",
+    ),
     # --- procurement: last purchase cost per product per location
     # (PLAN-chatbot-last-purchase-cost.md, 12 Sep 2026) ---
     ToolSpec(

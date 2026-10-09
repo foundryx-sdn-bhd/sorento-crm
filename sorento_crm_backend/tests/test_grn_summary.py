@@ -1,7 +1,7 @@
 """MULTI-ASK-PLAN S3 (owner, 9 Oct 2026): received quantity in a window and the last
 receipt, per product, from approved goods-received notes.
 
-`GET /api/v1/procurement/goods-received/summary?product_ids=...&date_from=...&date_to=...`
+`GET /api/v1/procurement/grn/summary?product_ids=...&date_from=...&date_to=...`
 answers `{data: [{product_id, product_code, received_qty, grn_count, last_receipt_date,
 last_receipt_qty}]}`, one row per asked product that exists, in the asked order. Received
 is the sum of `picking_lines.quantity_picked` over APPROVED, not cancelled,
@@ -32,7 +32,7 @@ from app.services.company_scope_resolver import apply_company_scope
 from tests._mc_lookup_seed import product
 from tests._pg_fixture import blank_session, unique_code
 
-URL = "/api/v1/procurement/goods-received/summary"
+URL = "/api/v1/procurement/grn/summary"
 
 
 @pytest.fixture
