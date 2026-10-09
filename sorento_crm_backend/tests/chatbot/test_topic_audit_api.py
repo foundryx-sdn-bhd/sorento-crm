@@ -519,3 +519,77 @@ def test_the_rates_cover_the_whole_sample_not_the_filtered_rows(client, taxonomy
     assert body["rows"] == []
     assert body["sample_size"] == 4 and body["reviewed"] == 4
     assert body["rates"]["subject"] == pytest.approx(0.75)
+
+
+# --------------------------------------------------------------------------- review round 1
+
+
+def test_wrong_subject_with_a_leaf_under_the_asks_own_subject_is_422(client, taxonomy, session_factory):
+    _fact_id, row = _drawn_one(client, session_factory, subject="inventory")
+
+    resp = _patch(client, row["id"], verdict="wrong_subject", corrected_topic="inventory.other")
+
+    assert resp.status_code == 422, resp.text
+    assert _rows(client)[0]["verdict"] is None
+
+
+def test_a_sample_for_a_version_with_no_topics_is_404(client, taxonomy, session_factory):
+    _fact(session_factory)
+
+    resp = _draw(client, 7)
+
+    assert resp.status_code == 404, resp.text
+
+
+def test_a_lost_draw_race_is_409_never_500(client, taxonomy, session_factory, monkeypatch):
+    from app.models.chat_facts import ChatLabelAudit
+    from app.services.chatbot.analytics import topic_audit
+
+    _fact(session_factory)
+    real_choose = topic_audit.choose
+
+    def racing_choose(candidates, rng):
+        ids = real_choose(candidates, rng)
+        rival = session_factory()  # another request wins between the check and the insert
+        rival.add(ChatLabelAudit(ask_id=ids[0], taxonomy_version=VERSION))
+        rival.commit()
+        return ids
+
+    monkeypatch.setattr(topic_audit, "choose", racing_choose)
+
+    resp = _draw(client)
+
+    assert resp.status_code == 409, resp.text
+
+
+def test_a_malformed_audit_id_is_404(client, taxonomy, session_factory):
+    _fact(session_factory)
+    assert _draw(client).status_code == 201
+
+    resp = client.patch(f"{BASE}/not-a-uuid", json={"verdict": "right"})
+
+    assert resp.status_code == 404, resp.text
+
+
+def test_a_products_only_patch_keeps_the_verdict(client, taxonomy, session_factory):
+    _fact_id, row = _drawn_one(client, session_factory)
+    assert _patch(client, row["id"], verdict="right").status_code == 200
+
+    resp = _patch(client, row["id"], products_verdict="wrong")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["verdict"] == "right"
+    assert resp.json()["products_verdict"] == "wrong"
+
+
+def test_the_draw_follows_volume_not_an_equal_split(client, taxonomy, session_factory):
+    _bulk(session_factory, "inventory", 400)
+    _bulk(session_factory, "order", 150)
+
+    assert _draw(client).json() == {"drawn": 300}
+
+    rows = _rows(client)
+    inventory = sum(1 for r in rows if r["subject"] == "inventory")
+    order = sum(1 for r in rows if r["subject"] == "order")
+    assert inventory + order == 300
+    assert inventory > 2 * order, f"inventory {inventory} vs order {order}: an equal split would give 150 each"

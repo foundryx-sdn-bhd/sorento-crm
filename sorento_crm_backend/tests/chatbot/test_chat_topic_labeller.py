@@ -606,3 +606,49 @@ def test_the_tick_queues_the_job_only_when_switched_on(monkeypatch, enabled, exp
     task_scheduler._chat_topic_labeller_tick()
 
     assert len(calls) == expect_enqueued
+
+
+# --------------------------------------------------------------------------- review round 1: parse hardening
+
+
+def test_an_entry_whose_key_is_not_in_the_batch_is_ignored():
+    content = json.dumps(
+        {
+            "labels": [
+                {"key": "zzt-not-in-batch", "language": "en", "asks": [ask("inventory", "inventory.availability")]},
+                {"key": "k1", "language": "ms", "asks": [ask("inventory", "inventory.availability")]},
+            ]
+        }
+    )
+
+    out = labeller().parse_labels(content, [_row()], _taxonomy())
+
+    assert set(out) == {"k1"}
+    assert out["k1"].language == "ms"
+
+
+def test_for_a_duplicate_key_the_first_entry_wins():
+    content = json.dumps(
+        {
+            "labels": [
+                {"key": "k1", "language": "ms", "asks": [ask("inventory", "inventory.availability")]},
+                {"key": "k1", "language": "zh", "asks": [ask("inventory", "inventory.other")]},
+            ]
+        }
+    )
+
+    out = labeller().parse_labels(content, [_row()], _taxonomy())
+
+    assert out["k1"].language == "ms"
+    assert [a.leaf for a in out["k1"].asks] == ["inventory.availability"]
+
+
+def test_extra_asks_per_message_are_capped_at_three():
+    asks = [ask("inventory", "inventory.availability")] + [
+        ask("master_products", "master_products.price") for _ in range(5)
+    ]
+
+    out = labeller().parse_labels(answer_for({"k1": asks}), [_row()], _taxonomy())
+
+    assert len(out["k1"].asks) == 4, "ask 1 plus at most three extra asks (ask_seq max 4)"
+    assert out["k1"].asks[0].leaf == "inventory.availability"
