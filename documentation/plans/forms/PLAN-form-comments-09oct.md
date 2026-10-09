@@ -182,3 +182,49 @@ Frontend
   - WhatsApp / email name the files: WhatsApp appends `Attachments: a.pdf, b.jpg` before the link;
     the email lists the file names.
 - Wording approved as drafted.
+
+## Owner hand test round 2 (9 Oct): one story, same component as ideation
+
+Owner rulings (supersede Q1 (a) and "add-only v1"):
+1. The purchasing / technical reply is the FIRST entry of the thread, styled like any comment:
+   author = the responder, time = `last_responded_at`. No separate green box on the portal.
+2. Oldest first; the composer sits at the BOTTOM, after the last comment.
+3. Ideation's thread features: reply (one level), edit own, delete own; "edited" marker; a
+   deleted comment with replies stays as a "Comment deleted" placeholder. Notifications only on
+   new comments and replies (never on edit or delete); a reply notifies like a comment.
+4. "Posted by X on behalf" stays.
+5. CRM and portal. Only the author (or an admin) edits or deletes, enforced on the server.
+
+Contract:
+- Migration `fcom_0003_conv_thread` (additive): `entity_conversation_messages.parent_id`
+  (String(36), FK self ON DELETE CASCADE, nullable, indexed), `edited_at` (timestamp NULL),
+  `deleted_at` (timestamp NULL). Model mirrors.
+- Serialized comment adds `parent_id`, `edited_at`, `deleted` (bool; body "" and attachments []
+  when deleted), `can_edit`, `can_delete`, `can_reply`. The list starts with a synthetic entry
+  `{id: "response", kind: "response", author_kind: "staff", author_name: responder name
+  (users.respond_user_id == row.last_responded_by, else "Sorento team"), created_at:
+  last_responded_at, body: the reply text (stock_inquiry `purchasing_response`, complaint
+  `technical_team_response`, legacy preamble stripped as today), attachments: the form's
+  staff `response_attachment` files, can_* false}` when that kind has a reply and it is not
+  blank. Every other entry has `kind: "comment"`.
+- Replies: POST takes optional `parent_id`; it must be a live top-level comment of the same
+  thread (else 422); one level only. Notifications as for a comment.
+- Edit: `PATCH /form-comments/{kind}/{id}/comments/{comment_id}` (staff) and
+  `PATCH /public/portal/submissions/{kind}/{id}/comments/{comment_id}` (portal), body only
+  (1..4000), sets `edited_at`; no notification. Allowed: staff author (author_user_id and no
+  author_contact_id) or a CRM admin/superadmin; on the portal, the contact who owns the
+  submission for a contact-authored comment (an impersonating admin counts as the contact).
+  Anyone else 403. Deleted comments cannot be edited (422).
+- Delete: staff side is the standard server-deferred pending action `form_comment.delete`
+  (record_actions registry, WINDOW_DESTRUCTIVE, permission = the kind's view slug, executor
+  re-checks author-or-admin). Portal side has no pending-action infrastructure, so the portal
+  uses `DELETE /public/portal/submissions/{kind}/{id}/comments/{comment_id}` after a client-side
+  countdown with Cancel (deviation, raised as crew-ask). Effect either way: a comment WITH live
+  replies keeps its row with `deleted_at` set (placeholder); otherwise the row and its
+  `form_comment` attachment links are removed. No notification.
+- Frontend: the ideation thread becomes a presentational `CommentThreadView` (ideation's
+  shape: id, parentId, authorName, body, createdAt, editedAt, deleted, canEdit, canDelete,
+  canReply, plus attachments / postedByName / authorKind badge), used by `IdeaComments`
+  (composer on top, unchanged look) and by the form thread (composer at the bottom). The
+  portal green reply box is removed; the CRM keeps its purchasing reply row inside the form
+  table, because that is where the reply is edited.
