@@ -102,3 +102,13 @@ class FakeJudge:
         else:
             passed = True
         return JudgeResult(passed=passed, note="n", tokens=dict(JUDGE_CFG["tokens"]))
+
+
+class KwEngine(RecordingEngine):
+    """Records the kwargs load_engine passed (class-level, reset by the test)."""
+
+    SEEN: list = []
+
+    def __init__(self, **kw):
+        super().__init__()
+        KwEngine.SEEN.append(kw)
