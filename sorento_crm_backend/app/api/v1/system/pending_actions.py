@@ -158,7 +158,7 @@ def _assert_required_payload(action_key: str, payload: dict, entity_id: Optional
             require_uuid((payload or {}).get("idea_id"), "idea_id")
 
 
-def _assert_entity_visible(db: Session, action_key: str, entity_id: str) -> None:
+def _assert_entity_visible(db: Session, action_key: str, entity_id: str, actor_id: Optional[str] = None) -> None:
     """Park-time existence check for the contact-customers and customer-group actions.
 
     The record is read under the requester's company scope, so a link or customer in
@@ -183,6 +183,10 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str) -> None
         from app.services.customer_group_service import CustomerGroupService
 
         CustomerGroupService(db).get_group(entity_id)
+    elif action_key == "form_comment.delete":
+        from app.services.form_comment_service import FormCommentService
+
+        FormCommentService(db).assert_staff_may_delete(entity_id, actor_id)
     elif action_key in ("customer.unassign_sales_agent", "customer.remove_from_group"):
         from app.services.contact_customer_service import get_customer_in_scope
 
@@ -464,7 +468,7 @@ def create_pending_action(
         else nullcontext()
     )
     with scope:
-        _assert_entity_visible(db, body.action_key, body.entity_id)
+        _assert_entity_visible(db, body.action_key, body.entity_id, actor_id)
         _assert_undo_not_refused(db, body.action_key, body.entity_id, body.payload, actor_id)
 
         try:

@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 FORM_COMMENT_SCOPE = "form_comment"
 FORM_COMMENT_KINDS = ("complaint", "stock_inquiry", "purchase_request", "sponsorship_form")
 MAX_BODY_CHARS = 4000
+VIEW_PERMISSION = {
+    "complaint": "complaint_management.complaints.view",
+    "stock_inquiry": "procurement.stock_inquiries.view",
+    "purchase_request": "procurement.purchase_requests.view",
+    "sponsorship_form": "procurement.sponsorship_forms.view",
+}
 MAX_FILES = 5
 
 # (filename, bytes, content_type)
@@ -426,7 +432,8 @@ class FormCommentService:
 
     def edit_comment(self, kind: str, entity_id: str, comment_id: str, viewer: dict, body: Optional[str], *, row=None) -> dict[str, Any]:
         if row is None:
-            self._load_row(kind, entity_id)
+            row = self._load_row(kind, entity_id)
+        self._require_open(row)
         msg = self._load_comment(kind, entity_id, comment_id)
         self._require_modifier(msg, viewer)
         if msg.deleted_at is not None:
@@ -462,19 +469,44 @@ class FormCommentService:
             self.db.delete(msg)
         self.db.commit()
 
+    def _gate_delete(self, comment_id: str, requested_by_id: Optional[str], *, hide: bool = False):
+        """The comment, its form row and the requester's viewer, or a refusal.
+
+        The form is loaded (a form that cannot be loaded refuses), the requester must hold the
+        kind's view slug unless admin, and be the author or an admin. ``hide`` turns every
+        refusal into a 404 (park time: a comment the requester cannot delete does not exist).
+        """
+        try:
+            msg = (
+                self.db.query(EntityConversationMessage)
+                .filter(EntityConversationMessage.id == comment_id, EntityConversationMessage.scope == FORM_COMMENT_SCOPE)
+                .first()
+            )
+            if msg is None:
+                raise handle_not_found("Comment", comment_id)
+            if not requested_by_id:
+                raise AppException(status_code=403, message="Sign in to do that.", code="FORBIDDEN")
+            row = self._load_row(msg.entity_type, msg.entity_id)
+            viewer = self.staff_viewer({"id": requested_by_id})
+            if not viewer["is_admin"] and VIEW_PERMISSION[msg.entity_type] not in set(
+                UserPermissionService(self.db).get_user_permission_slugs(viewer["user_id"])
+            ):
+                raise AppException(status_code=403, message="You can't change this comment.", code="FORBIDDEN")
+            if msg.deleted_at is None:
+                self._require_modifier(msg, viewer)
+            return msg, row, viewer
+        except AppException:
+            if hide:
+                raise handle_not_found("Comment", comment_id)
+            raise
+
+    def assert_staff_may_delete(self, comment_id: str, requested_by_id: Optional[str]) -> None:
+        self._gate_delete(comment_id, requested_by_id, hide=True)
+
     def delete_by_id(self, comment_id: str, requested_by_id: Optional[str]) -> None:
         """The pending-action executor: the comment row says which form it is on."""
-        msg = (
-            self.db.query(EntityConversationMessage)
-            .filter(EntityConversationMessage.id == comment_id, EntityConversationMessage.scope == FORM_COMMENT_SCOPE)
-            .first()
-        )
-        if msg is None:
-            raise handle_not_found("Comment", comment_id)
-        if not requested_by_id:
-            raise AppException(status_code=403, message="Sign in to do that.", code="FORBIDDEN")
-        viewer = self.staff_viewer({"id": requested_by_id})
-        self.delete_comment(msg.entity_type, msg.entity_id, msg.id, viewer, row=True)
+        msg, row, viewer = self._gate_delete(comment_id, requested_by_id)
+        self.delete_comment(msg.entity_type, msg.entity_id, msg.id, viewer, row=row)
 
     def add_staff_comment(
         self,

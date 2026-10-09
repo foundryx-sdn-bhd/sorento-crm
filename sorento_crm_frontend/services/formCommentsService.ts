@@ -30,7 +30,7 @@ export function toFormComment(raw: Raw): FormComment {
     parentId: (raw.parent_id as string | null | undefined) ?? null,
     authorKind: raw.author_kind === 'submitter' ? 'submitter' : 'staff',
     postedByName: (raw.posted_by_name as string | null | undefined) || null,
-    createdAt: String(raw.created_at ?? ''),
+    createdAt: raw.created_at ? String(raw.created_at) : null,
     editedAt: (raw.edited_at as string | null | undefined) ?? null,
     deleted: Boolean(raw.deleted),
     canEdit: Boolean(raw.can_edit),

@@ -22,7 +22,7 @@ export interface FormComment {
   authorKind: 'staff' | 'submitter';
   /** Set when an admin viewing as the contact posted it on the contact's behalf. */
   postedByName: string | null;
-  createdAt: string;
+  createdAt: string | null;
   editedAt: string | null;
   deleted: boolean;
   canEdit: boolean;

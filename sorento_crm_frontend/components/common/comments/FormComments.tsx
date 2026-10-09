@@ -1,6 +1,6 @@
 'use client';
 
-import { useContext } from 'react';
+import { useContext, useEffect } from 'react';
 import { SessionContext } from 'next-auth/react';
 import { Trash2 } from 'lucide-react';
 import LoadErrorState from '@/components/common/LoadErrorState';
@@ -18,16 +18,19 @@ import {
   type FormCommentKind,
 } from '@/types/formComments';
 import { CommentThreadView } from './CommentThreadView';
+import { useDeletingIds } from './useDeletingIds';
 
 /** Staff delete: the server-deferred countdown in place of the button (D7), never a dialog. */
 function FormCommentDelete({
   kind,
   entityId,
   commentId,
+  onActive,
 }: {
   kind: FormCommentKind;
   entityId: string;
   commentId: string;
+  onActive: (id: string, active: boolean) => void;
 }) {
   const removal = useDeferredAction({
     actionKey: 'form_comment.delete',
@@ -39,6 +42,11 @@ function FormCommentDelete({
     successMessage: 'Comment deleted',
     invalidateKeys: [[FORM_COMMENTS_KEY, kind, entityId]],
   });
+  const active = Boolean(removal.countdown) || removal.isPending;
+  useEffect(() => {
+    onActive(commentId, active);
+    return () => onActive(commentId, false);
+  }, [commentId, active, onActive]);
   if (removal.countdown) return <div className="pt-1">{removal.countdown}</div>;
   return (
     <Button
@@ -74,6 +82,7 @@ export function FormComments({
     useFormCommentsQuery(kind, entityId);
   const add = useAddFormComment(kind, entityId);
   const edit = useEditFormComment(kind, entityId);
+  const { isDeleting, report } = useDeletingIds();
 
   if (isError) {
     return (
@@ -102,6 +111,8 @@ export function FormComments({
           readOnly={readOnly}
           maxFiles={FORM_COMMENT_MAX_FILES}
           pending={add.isPending}
+          editPending={edit.isPending}
+          isDeleting={isDeleting}
           emptyHint="Comments between the submitter and the team appear here."
           previewItem={(a) => ({
             id: a.attachmentId,
@@ -121,6 +132,7 @@ export function FormComments({
               kind={kind}
               entityId={entityId}
               commentId={c.id}
+              onActive={report}
             />
           )}
         />

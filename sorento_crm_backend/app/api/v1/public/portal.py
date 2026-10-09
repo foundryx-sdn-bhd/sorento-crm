@@ -1644,8 +1644,10 @@ def portal_edit_comment(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    from app.services.form_comment_service import FormCommentService
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
 
+    if getattr(token, "is_impersonation", False):
+        resolve_impersonating_admin(db, token)
     k = _check_kind(kind, db, token)
     sid = validate_uuid_path(submission_id, resource="Submission")
     svc = FormCommentService(db)
@@ -1661,8 +1663,10 @@ def portal_delete_comment(
     token: PortalToken = Depends(get_portal_token),
     db: Session = Depends(get_db),
 ):
-    from app.services.form_comment_service import FormCommentService
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
 
+    if getattr(token, "is_impersonation", False):
+        resolve_impersonating_admin(db, token)
     k = _check_kind(kind, db, token)
     sid = validate_uuid_path(submission_id, resource="Submission")
     svc = FormCommentService(db)

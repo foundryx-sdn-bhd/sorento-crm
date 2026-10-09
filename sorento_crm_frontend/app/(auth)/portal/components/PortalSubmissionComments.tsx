@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { CommentThreadView } from '@/components/common/comments/CommentThreadView';
+import { useDeletingIds } from '@/components/common/comments/useDeletingIds';
 import { DeferredCountdown } from '@/components/common/DeferredActionButton';
 import LoadErrorState from '@/components/common/LoadErrorState';
 import { Button } from '@/components/ui/button';
@@ -31,12 +32,20 @@ const DELETE_WINDOW_SECONDS = 10;
 function PortalCommentDelete({
   commentId,
   onDelete,
+  onActive,
 }: {
   commentId: string;
   onDelete: (commentId: string) => Promise<void>;
+  onActive: (id: string, active: boolean) => void;
 }) {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const active = pending !== null;
+  useEffect(() => {
+    onActive(commentId, active);
+    return () => onActive(commentId, false);
+  }, [commentId, active, onActive]);
 
   useEffect(
     () => () => {
@@ -115,6 +124,7 @@ export function PortalSubmissionComments({
   const [comments, setComments] = useState<FormComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
+  const { isDeleting, report } = useDeletingIds();
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -165,6 +175,7 @@ export function PortalSubmissionComments({
           readOnly={readOnly}
           maxFiles={FORM_COMMENT_MAX_FILES}
           pending={posting}
+          isDeleting={isDeleting}
           emptyHint="Questions and answers about this form appear here."
           previewItem={(a) => ({
             id: a.attachmentId,
@@ -213,6 +224,7 @@ export function PortalSubmissionComments({
           renderDelete={(c) => (
             <PortalCommentDelete
               commentId={c.id}
+              onActive={report}
               onDelete={async (commentId) => {
                 try {
                   await deleteSubmissionComment(kind, submissionId, commentId);

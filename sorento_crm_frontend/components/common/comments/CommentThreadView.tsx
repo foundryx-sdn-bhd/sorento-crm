@@ -28,7 +28,7 @@ export interface ThreadComment {
   authorKind?: 'staff' | 'submitter';
   /** Set when an admin viewing as the contact posted it on the contact's behalf. */
   postedByName?: string | null;
-  createdAt: string;
+  createdAt: string | null;
   editedAt: string | null;
   deleted: boolean;
   canEdit: boolean;
@@ -59,6 +59,8 @@ export interface CommentThreadViewProps {
   /** Files per comment; omit for text only (ideation). */
   maxFiles?: number;
   pending?: boolean;
+  /** True while an edit is being saved. */
+  editPending?: boolean;
   onAdd: (body: string, files: File[], parentId?: string) => Promise<void>;
   onEdit: (id: string, body: string) => Promise<void>;
   /** The host's delete control (a server-deferred countdown), rendered where Delete goes. */
@@ -84,6 +86,7 @@ export function CommentThreadView({
   className,
   maxFiles,
   pending,
+  editPending,
   onAdd,
   onEdit,
   renderDelete,
@@ -108,7 +111,7 @@ export function CommentThreadView({
           replies: comments.filter((r) => r.parentId === c.id && !r.deleted),
         }))
         .filter(({ root, replies }) => !root.deleted || replies.length > 0),
-      count: comments.filter((c) => !c.deleted).length,
+      count: comments.filter((c) => !c.deleted && c.kind !== 'response').length,
     };
   }, [comments]);
 
@@ -146,6 +149,7 @@ export function CommentThreadView({
             placeholder="Edit comment"
             submitLabel="Save"
             initial={comment.body}
+            pending={editPending}
             small={small}
             autoFocus
             onCancel={() => setEditing(null)}
@@ -159,14 +163,15 @@ export function CommentThreadView({
     }
     const isResponse = comment.kind === 'response';
     const attachments = comment.attachments ?? [];
-    const canReply = !readOnly && !isResponse && comment.canReply;
-    const canEdit = !readOnly && !isResponse && comment.canEdit;
+    const countingDown = Boolean(isDeleting?.(comment));
+    const canReply = !readOnly && !isResponse && !countingDown && comment.canReply;
+    const canEdit = !readOnly && !isResponse && !countingDown && comment.canEdit;
     const canDelete = !readOnly && !isResponse && comment.canDelete;
     return (
       <div
         className={cn(
           'flex items-start gap-3 py-3',
-          isDeleting?.(comment) && 'opacity-60',
+          countingDown && 'opacity-60',
         )}
       >
         <CommentAvatar name={comment.authorName} small={small} />
@@ -178,9 +183,11 @@ export function CommentThreadView({
                 Submitter
               </Badge>
             ) : null}
-            <span className="text-xs text-muted-foreground">
-              {formatDateTime(comment.createdAt)}
-            </span>
+            {comment.createdAt ? (
+              <span className="text-xs text-muted-foreground">
+                {formatDateTime(comment.createdAt)}
+              </span>
+            ) : null}
             {comment.editedAt ? (
               <Badge variant="outline" size="xs">
                 edited

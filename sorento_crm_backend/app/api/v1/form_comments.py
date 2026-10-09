@@ -17,18 +17,13 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.error_handler import handle_unprocessable
-from app.services.form_comment_service import FORM_COMMENT_KINDS, FormCommentService
+from app.services.form_comment_service import FORM_COMMENT_KINDS, VIEW_PERMISSION, FormCommentService
 from app.services.user_service import UserPermissionService
 from app.services.uuid_path_param import validate_uuid_path
 
 router = APIRouter()
 
-_VIEW_PERMISSION = {
-    "complaint": "complaint_management.complaints.view",
-    "stock_inquiry": "procurement.stock_inquiries.view",
-    "purchase_request": "procurement.purchase_requests.view",
-    "sponsorship_form": "procurement.sponsorship_forms.view",
-}
+_VIEW_PERMISSION = VIEW_PERMISSION
 
 
 _MODULE = {"complaint": "complaints"}  # every other kind is procurement
