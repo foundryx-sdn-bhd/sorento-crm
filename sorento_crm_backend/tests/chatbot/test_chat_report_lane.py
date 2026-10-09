@@ -533,3 +533,65 @@ def test_review_reply_verdict_takes_a_same_shape_period_reply_as_the_answer(inte
     )
     assert rule == "required_ask_answer", rule
     assert verdict["domain_hint"] == "chat_analytics", "rerouted to the chat report"
+
+
+# --------------------------------------------------------------------------- focused extractor (revision 10 Oct 2026)
+
+COULDNT_READ = "couldn't read that report request"
+EXTRACTED = {"group_by": "topic", "measure": "failed", "subject": "inventory", "top_n": 5,
+             "date_from": "2026-10-05", "date_to": "2026-10-11"}
+
+
+def _extractor(monkeypatch, result):
+    """Replace the extractor with a recorder. The lane must call it through the module attribute
+    (`chat_report_extractor.extract_chat_report(...)`) so this seam holds."""
+    from app.services.chatbot.analytics import chat_report_extractor
+
+    seen: list[str] = []
+
+    def fake(db, text, *args, **kwargs):
+        seen.append(text)
+        return dict(result) if result is not None else None
+
+    monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)
+    return seen
+
+
+def test_extractor_a_fresh_report_calls_it_once_and_its_values_drive_the_route(console, monkeypatch) -> None:
+    seen = _extractor(monkeypatch, EXTRACTED)
+    disagreeing = _chat(group_by="product", measure="asks", subject=None, top_n=3, **SEP)
+    _text, calls = console.say(disagreeing, "top 5 failed topics about stock this week")
+    assert seen == ["top 5 failed topics about stock this week"], seen
+    (args,) = _chat_calls(calls)
+    assert args["group_by"] == "topic" and args["measure"] == "failed" and args["basis"] == "turns", args
+    assert args["subjects"] == ["inventory"] and args["top_n"] == 5, args
+    assert args["date_from"] == "2026-10-05" and args["date_to"] == "2026-10-11", args
+
+
+def test_extractor_none_says_one_line_runs_nothing_and_opens_no_question(console, monkeypatch) -> None:
+    _extractor(monkeypatch, None)
+    text, calls = console.say(_chat(), "top 5 questions this week")
+    assert calls == [] and COULDNT_READ in text and "\n" not in text.strip(), (text, calls)
+    _text, calls = console.say(_reply(top_n=5, **SEP), "5")
+    assert _chat_calls(calls) == [], "nothing was left open to answer"
+
+
+def test_extractor_is_not_called_on_the_answering_turn(console, monkeypatch) -> None:
+    seen = _extractor(monkeypatch, {**EXTRACTED, "date_from": None, "date_to": None})
+    text, calls = console.say(_chat(), "top 5 failed topics about stock")
+    assert text.strip() == PERIOD_Q and calls == [] and len(seen) == 1, (text, calls, seen)
+    _text, calls = console.say(_reply(**SEP), "September")
+    assert len(seen) == 1, "the reply to 'Which period?' is read by the parser, not the extractor"
+    (args,) = _chat_calls(calls)
+    assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
+    assert args["group_by"] == "topic" and args["measure"] == "failed", "the extracted ask is kept"
+
+
+def test_extractor_topic_without_a_count_asks_how_many_and_keeps_the_period(console, monkeypatch) -> None:
+    seen = _extractor(monkeypatch, {**EXTRACTED, "top_n": None})
+    text, calls = console.say(_chat(), "top failed topics this week")
+    assert text.strip() == COUNT_Q and calls == [], (text, calls)
+    _text, calls = console.say(_reply(top_n=5), "5")
+    assert len(seen) == 1, seen
+    (args,) = _chat_calls(calls)
+    assert args["top_n"] == 5 and args["date_from"] == "2026-10-05" and args["date_to"] == "2026-10-11", args
