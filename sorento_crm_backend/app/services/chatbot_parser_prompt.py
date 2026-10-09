@@ -841,7 +841,8 @@ Two more OUTPUT keys, on every object:
   "family": true | false | null
 
 == SUB_ASKS ==
-When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
+When the CURRENT message asks TWO OR MORE different things, list ALL of them, in the order
+asked, whatever they are (stock and incoming included): two asks are two sub_asks.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
 "last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
 last_receipt (it carries its own date, quantity and SPO number): never add incoming or
@@ -849,7 +850,8 @@ received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      进仓, 进仓库, 入仓, 到了多少, 收货, "received", "came in", "diterima", "masuk gudang".
+      Past; with a count or a period it is
       received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
@@ -869,12 +871,14 @@ Each object:
     / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
     an earlier turn said one: only the CURRENT message's own word counts.
   label: the asker's own words for this ask, short.
-Examples:
-  "X,2026 年 入库了多少数量, 供应商是谁, 采购价是多少钱, 最后一次进库是什么时候, 2026 总共卖了多少个,
-  2026年每位业务员共卖了多少个" -> received_qty (2026), supplier, last_cost, last_receipt (no
-  period), sold_total (2026, basis null), sold_by (sales_agent, 2026, basis null).
+Examples (code anywhere in the message, any language, 2 to 6 asks):
+  "Is CB2290 in stock? also what is the supplier" -> stock, supplier.
+  "采购价和库存, SRTAB512" -> last_cost, stock.
+  "berapa jualan SRTQX88 bulan ni, dan siapa supplier" -> sold_total (this month), supplier.
+  "CWZP307 sold per customer in 2025, plus how many we received and the margin" ->
+  sold_by (customer, 2025), received_qty (2025), other (label "margin").
+  "SRTMK14 到了多少 2026, 在途多少, 毛利呢" -> received_qty (2026), incoming, other (label "毛利").
   "Incoming and stock for 7445" -> incoming, stock.
-  "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
   "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
