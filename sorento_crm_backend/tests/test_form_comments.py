@@ -660,7 +660,7 @@ def _links(db, attachment_id: str) -> set[tuple[str, str]]:
     return {(r.entity_type, str(r.entity_id)) for r in rows}
 
 
-def test_staff_comment_with_a_pdf_links_the_file_to_the_form_and_the_comment(db, enqueued, storage):
+def test_staff_comment_with_a_pdf_links_the_file_to_the_comment_only(db, enqueued, storage):
     staff = _user(db)
     inquiry = _inquiry(db)
 
@@ -670,11 +670,11 @@ def test_staff_comment_with_a_pdf_links_the_file_to_the_form_and_the_comment(db,
     att = comment["attachments"][0]
     assert set(att) == ATTACHMENT_KEYS
     assert (att["filename"], att["size"], att["content_type"]) == (PDF[0], len(PDF[1]), PDF[2])
-    assert _links(db, att["attachment_id"]) == {("stock_inquiry", inquiry.id), ("form_comment", comment["id"])}
+    assert _links(db, att["attachment_id"]) == {("form_comment", comment["id"])}
     assert len(storage.uploads) == 1
 
 
-def test_contact_comment_with_a_file_is_a_contact_upload_with_two_links(db, enqueued, storage):
+def test_contact_comment_with_a_file_is_a_contact_upload_linked_to_the_comment_only(db, enqueued, storage):
     from app.models.resources import Attachment
 
     contact_id = _contact(db)
@@ -688,17 +688,17 @@ def test_contact_comment_with_a_file_is_a_contact_upload_with_two_links(db, enqu
     row = db.query(Attachment).filter(Attachment.id == att["attachment_id"]).one()
     assert row.uploader_kind == "contact"
     assert row.uploaded_by_contact_id == contact_id
-    assert _links(db, att["attachment_id"]) == {("stock_inquiry", inquiry.id), ("form_comment", comment["id"])}
+    assert _links(db, att["attachment_id"]) == {("form_comment", comment["id"])}
 
 
-def test_sponsorship_comment_file_links_the_form_side_as_purchase_request(db, enqueued, storage):
+def test_sponsorship_comment_file_links_to_the_comment_only(db, enqueued, storage):
     staff = _user(db)
     row = _request(db, request_type="sponsorship_form")
 
     comment, _ = _unpack(_svc(db).add_staff_comment("sponsorship_form", row.id, staff, "sponsor file", files=[PDF]))
 
     att = comment["attachments"][0]
-    assert _links(db, att["attachment_id"]) == {("purchase_request", row.id), ("form_comment", comment["id"])}
+    assert _links(db, att["attachment_id"]) == {("form_comment", comment["id"])}
 
 
 def test_empty_body_with_one_file_is_accepted(db, enqueued, storage):
@@ -1046,3 +1046,47 @@ def test_a_disallowed_file_type_is_refused_and_nothing_is_saved(db, enqueued, st
     )
     assert storage.uploads == []
     assert enqueued == []
+
+
+def test_comment_files_do_not_count_as_staff_response_attachments(db, enqueued, storage):
+    from app.services.entity_attachment_service import count_staff_attachments
+
+    staff = _user(db)
+    inquiry = _inquiry(db)
+    _svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "see attached", files=[PDF])
+    assert count_staff_attachments(db, "stock_inquiry", inquiry.id) == 0
+
+
+def test_portal_attachment_list_and_detail_hide_comment_files(portal, db, storage):
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    staff = _user(db)
+    _svc(db).add_staff_comment("stock_inquiry", inquiry.id, staff, "for you", files=[PDF])
+    client = portal(owner)
+
+    listed = client.get(
+        "/api/v1/public/portal/attachments", params={"kind": "stock_inquiry", "submission_id": inquiry.id}
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["items"] == []
+    detail = client.get(f"/api/v1/public/portal/submissions/stock_inquiry/{inquiry.id}")
+    assert detail.status_code == 200, detail.text
+    assert PDF[0] not in detail.text
+
+
+def test_portal_cannot_delete_a_comment_file_link(portal, db, storage):
+    from app.models.entity_attachment import EntityAttachmentLink
+    from app.models.resources import Attachment
+
+    owner = _contact(db, "Owner")
+    inquiry = _inquiry(db, contact_id=owner)
+    comment, _ = _unpack(
+        _svc(db).add_contact_comment("stock_inquiry", inquiry.id, owner, SPACE, "mine", files=[PDF])
+    )
+    link = db.query(EntityAttachmentLink).filter(EntityAttachmentLink.entity_id == comment["id"]).one()
+
+    resp = portal(owner).delete(f"/api/v1/public/portal/attachments/{link.id}")
+
+    assert resp.status_code in (403, 404)
+    assert db.query(EntityAttachmentLink).filter(EntityAttachmentLink.id == link.id).count() == 1
+    assert db.query(Attachment).filter(Attachment.id == comment["attachments"][0]["attachment_id"]).count() == 1

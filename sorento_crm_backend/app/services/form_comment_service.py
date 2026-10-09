@@ -7,8 +7,9 @@ A comment is an ``entity_conversation_messages`` row with scope ``form_comment``
 SLA handler only. The row is always committed BEFORE any notification, so a notification
 failure never loses the comment. Status never changes on a comment.
 
-Each attached file gets two links: one to the form (so it shows in the form's Attachments and
-the portal download check covers it) and one to ('form_comment', comment id).
+Each attached file gets ONE link, to ('form_comment', comment id). It is deliberately not linked
+to the form: the form's response-attachment count, quota and the portal's "from purchasing" box
+must not see comment files. The portal download check resolves the comment back to its form.
 """
 from __future__ import annotations
 
@@ -223,26 +224,20 @@ class FormCommentService:
         self.db.flush()
         return msg
 
-    def _link_to_comment(self, comment_id: str, attachment_id: str) -> None:
-        from app.services.entity_attachment_service import EntityAttachmentService
-
-        EntityAttachmentService(self.db).link_existing_attachment(FORM_COMMENT_SCOPE, comment_id, attachment_id)
-
     def _store_staff_files(self, kind: str, entity_id: str, comment_id: str, user_id: str, files: Sequence[CommentFile]) -> None:
         from app.services.entity_attachment_service import create_response_attachment
 
         for filename, contents, content_type in files:
             saved = create_response_attachment(
                 self.db,
-                entity_type=form_entity_type(kind),
-                entity_id=entity_id,
+                entity_type=FORM_COMMENT_SCOPE,
+                entity_id=comment_id,
                 contents=contents,
                 filename=filename,
                 content_type=content_type,
                 uploaded_by=user_id,
                 commit=False,
             )
-            self._link_to_comment(comment_id, saved["attachment_id"])
 
     def _store_contact_files(self, kind: str, entity_id: str, comment_id: str, contact_id: str, files: Sequence[CommentFile]) -> None:
         """Portal upload path (portal_submission type, portal key prefix, uploader_kind contact)."""
@@ -255,11 +250,10 @@ class FormCommentService:
 
         service = EntityAttachmentService(self.db)
         attachment_type = PortalService(self.db).get_portal_attachment_type()
-        entity_type = form_entity_type(kind)
         for filename, contents, content_type in files:
             size = len(contents)
             ext = _ext(filename, content_type)
-            service.check_quota(attachment_type, entity_type, entity_id, size, ext)
+            service.check_quota(attachment_type, FORM_COMMENT_SCOPE, comment_id, size, ext)
             key = f"portal/{contact_id}/{uuid.uuid4()}{'.' + ext if ext else ''}"
             provider = default_provider()
             backend = get_backend(provider)
@@ -269,9 +263,9 @@ class FormCommentService:
                 logger.warning("Form comment upload failed (provider=%s): %s", provider, e)
                 raise AppException(status_code=502, message="File upload failed. Please try again.", code="UPLOAD_FAILED") from e
             thumb = store_thumbnail(backend, provider, key, contents, content_type)
-            link = service.create_attachment_and_link(
-                entity_type=entity_type,
-                entity_id=entity_id,
+            service.create_attachment_and_link(
+                entity_type=FORM_COMMENT_SCOPE,
+                entity_id=comment_id,
                 file_url=key,
                 file_name=filename or os.path.basename(key),
                 file_size_bytes=size,
@@ -283,7 +277,6 @@ class FormCommentService:
                 uploader_kind="contact",
                 uploaded_by_contact_id=contact_id,
             )
-            self._link_to_comment(comment_id, str(link.attachment_id))
 
     def _commit_comment(self, msg: EntityConversationMessage) -> dict[str, Any]:
         self.db.commit()

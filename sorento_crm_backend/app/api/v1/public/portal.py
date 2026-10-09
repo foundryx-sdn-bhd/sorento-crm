@@ -1321,14 +1321,33 @@ def _attachment_is_on_own_submission(
         .all()
     )
     for link in links:
-        for kind in _kinds_for_entity_type(link.entity_type):
+        entity_type, entity_id = link.entity_type, link.entity_id
+        kinds: tuple[str, ...]
+        if entity_type == "form_comment":
+            # A comment file is linked to its comment only; the comment names the form.
+            from app.models.entity_conversation import EntityConversationMessage
+
+            msg = (
+                db.query(EntityConversationMessage)
+                .filter(
+                    EntityConversationMessage.id == entity_id,
+                    EntityConversationMessage.scope == "form_comment",
+                )
+                .first()
+            )
+            if msg is None:
+                continue
+            kinds, entity_id = (msg.entity_type,), msg.entity_id
+        else:
+            kinds = _kinds_for_entity_type(entity_type)
+        for kind in kinds:
             try:
                 if kind == "price_tag_request":
                     _require_own_price_tag_request(
-                        db, token, link.entity_id, check_visibility=False
+                        db, token, entity_id, check_visibility=False
                     )
                 else:
-                    portal.get_submission(token, kind, link.entity_id)
+                    portal.get_submission(token, kind, entity_id)
             except HTTPException:
                 # Not this contact's (404 / OWNER_MISMATCH) - try the next link.
                 continue
@@ -1630,6 +1649,9 @@ def portal_delete_attachment(
 
     portal = PortalService(db)
     raw_kind = link.entity_type
+    if raw_kind == "form_comment":
+        # Comment files belong to the thread; a contact cannot remove them.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found.")
     # sponsorship_form attachments live under entity_type=purchase_request; verify ownership against either type.
     if raw_kind == "purchase_request":
         owns = False
