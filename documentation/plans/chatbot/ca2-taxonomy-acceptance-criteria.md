@@ -2,9 +2,9 @@
 
 Plan: `PLAN-chat-analytics-ca2-taxonomy-09oct.md`. Mock: `documentation/mockups/CA-2-TAXONOMY/index.html`.
 
-Status: labeller section ACCEPTED (built, green at 3523fcb1 / bf4a7056). Top asks and Topic audit
-sections DRAFT, written on the mock v1 recommendations (Q1-Q5 all (a)); they change only if the
-owner's answers differ.
+Status: APPROVED (owner, mock v1 "ok", 9 Oct 2026). Labeller section built and green (3523fcb1 / bf4a7056).
+sections build next, red-first. Q1-Q5 answered as recommended. Build contract: the plan's "Mock v1
+APPROVED" section.
 
 ## Labeller (built)
 
@@ -52,4 +52,9 @@ owner's answers differ.
 - U22. Tiles: Reviewed n / 300, Subject right %, Topic right %, Product right %, each against
   its target (90 / 80 / 95); a tile under target shows red.
 - U23. Show filter: To review / Reviewed / All; Subject filter.
+## Bot failures
+
+- U25. Menu: System Management > Bot Failures, gated `chatbot.analytics.view`; opens on the
+  failed outcomes (technical, cannot do, missed), failure reason by topic.
+
 - U24. Usable without horizontal page scroll at 375 px and 1280 px.

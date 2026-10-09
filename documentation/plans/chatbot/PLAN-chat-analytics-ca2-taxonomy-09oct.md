@@ -148,3 +148,66 @@ labeller's confidence is >= 0.8). Every other tier counts as unresolved.
 - `scripts/chat_topic_label.py [--limit N]`: run now, in process.
 - Tests: `tests/chatbot/test_chat_topic_labeller.py`, `tests/chatbot/test_migration_chat_topics_0001.py`,
   `tests/test_chat_topic_label_script.py`.
+
+## Mock v1 APPROVED (owner, Lavish, 9 Oct 2026): build contract for Top asks + Topic audit
+
+Mock: `documentation/mockups/CA-2-TAXONOMY/index.html` (652404da). Q1-Q5 answered as
+recommended: a person judges all 300; audit gated by `system.chat_history.view` AND
+`chatbot.analytics.view`, no new grant; stratified draw; Bot failures report IN this lane;
+Top asks opens 5 Sep 2026 to today, topic by month. UAC: `ca2-taxonomy-acceptance-criteria.md`.
+
+### Top asks (report, no route of its own)
+
+- `app/services/reports/definitions/chat_top_asks.py`, `KEY = "chat_top_asks"`, permission
+  `chatbot.analytics.view`, module `chatbot`, modelled on `definitions/chat_overview.py`.
+- `datasets/chat_asks.py` gains dimensions `subject` (subject words: the `chat_topics` label of
+  the subject code, `general` for a null domain), `topic` (the `chat_topics` label of
+  `topic_code`, `(not labelled yet)` when null) and `language`. Joined as Core tables (no
+  mapped-class scope splice). A `month` dimension exists already or is added (Malaysia month).
+- Params: Period (default 5 Sep 2026 to today), Contact type, Outcome (defaults as Chat
+  overview), Subject (multi, clearable, options = subject rows of `chat_topics`), Count by
+  (`topics` default / `products`), Products (`asked` default / `shown`; `asked` = role in
+  (`named`, `asked`), `shown` = role `shown`; filters only the products grain).
+- Default view: pivot rows `topic`, cols `month`, measure `asks`, bar chart; detail columns
+  asked_at, subject, topic, language, outcome, customer. Note: `Topics labelled: <n>% of asks
+  (taxonomy v<k>).` plus the coverage line.
+- Product grain counts one per (ask, product) for the chosen role (the unique constraint
+  `uq_chat_ask_items_ask_kind_ref_role` already guarantees it).
+- `definitions/chat_bot_failures.py`, `KEY = "chat_bot_failures"`: same datasets, outcome
+  filter default = failed outcomes (technical, cannot_do, missed), pivot rows `failure_reason`
+  cols `topic`, measure `asks`.
+
+### Topic audit (new table, routes, page)
+
+- Migration `chat_topics_0002_audit` (down_revision `chat_topics_0001_taxonomy`): table
+  `chatbot.chat_label_audits`: `id uuid pk`, `ask_id uuid FK chat_ask_facts.id ON DELETE
+  CASCADE`, `taxonomy_version smallint not null`, `drawn_at timestamptz not null default now()`,
+  `verdict text null` (`right` / `wrong_topic` / `wrong_subject`), `corrected_topic text null FK
+  chat_topics.code`, `products_verdict text null` (`right` / `wrong`), `reviewed_by text null`
+  (user id), `reviewed_at timestamptz null`; unique (`ask_id`, `taxonomy_version`). No message
+  text column.
+- Routes in `app/api/v1/system/chatbot.py` (both slugs required, 403 otherwise):
+  - `GET /system/chatbot/topic-audit?version=&show=to_review|reviewed|all&subject=` ->
+    `{version, versions[], sample_size, reviewed, rates: {subject, topic, product} (null when
+    nothing judged), targets: {subject: 0.9, topic: 0.8, product: 0.95}, rows: [{id, asked_at,
+    message, subject, subject_label, topic, topic_label, confidence, products: [code],
+    verdict, corrected_topic, corrected_topic_label, products_verdict, reviewed_by_name}]}`.
+    `version` defaults to the current taxonomy version. `message` is read from
+    `chatbot.turns.envelope` at request time (labeller `_message_text`), never stored.
+  - `POST /system/chatbot/topic-audit/sample {version}` -> 201 `{drawn}`; 409 when a sample
+    for that version exists; draws from facts with `topic_code` set and `taxonomy_version =
+    version`: at least 10 per subject that has asks (all, when fewer), the rest of the 300 in
+    proportion to subject volume, half of that rest from the lowest `label_confidence`.
+    Fewer than 300 labelled asks: draws all of them.
+  - `PATCH /system/chatbot/topic-audit/{id} {verdict, corrected_topic?, products_verdict?}`
+    -> the row. `wrong_topic` / `wrong_subject` require `corrected_topic` (a leaf; for
+    `wrong_topic` it must be under the ask's subject, else 422).
+  - Rates: subject = (right + wrong_topic) / judged; topic = right / judged; product = right /
+    rows with a products_verdict.
+- FE: `app/(protected)/system-management/top-asks/page.tsx` and `bot-failures/page.tsx`
+  (`ReportPage`, like `chat-overview/page.tsx`); `topic-audit/page.tsx` + 
+  `services/topicAuditService.ts` + `hooks/useTopicAuditQuery.ts` /
+  `useTopicAuditMutations.ts`; menu entries after Chat Overview in BOTH `MENU_SIDEBAR` and
+  `MENU_SIDEBAR_COMPACT` (`config/menu.config.tsx:945`, `:2250`): Top Asks and Bot Failures
+  gated `chatbot.analytics.view`, Topic Audit gated `system.chat_history.view` (menu items take
+  one slug, `config/types.ts:18`; the server enforces both).
