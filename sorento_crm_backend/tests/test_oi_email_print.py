@@ -526,8 +526,10 @@ def _line_header_widths(out) -> list[tuple[str, int]]:
     widths = []
     for tag, text in re.findall(r"(<th(?:\s[^>]*)?>)(.*?)</th>", head, re.S):
         attr = re.search(r'\swidth="(\d+)%"', tag)
-        style = re.search(r"[;\"]width:(\d+)%", tag)
-        assert attr and style and attr.group(1) == style.group(1), tag
+        styles = re.findall(r"[;\"]width:(\d+)%", tag)
+        # Exactly one width in the style, equal to the attribute (review nit: a trailing
+        # `width:100%` would otherwise slip past a first-match read).
+        assert attr and styles == [attr.group(1)], tag
         widths.append((re.sub(r"<[^>]+>", "", text).strip(), int(attr.group(1))))
     return widths
 
@@ -562,4 +564,19 @@ def test_line_table_columns_share_the_width_in_every_variant():
         fixed = {k: v for k, v in values.items() if k != "REMARK"}
         assert max(fixed, key=fixed.get) == "ITEM CODE", (key, widths)
         assert 20 <= values["REMARK"] <= 40, (key, widths)
+
+
+def test_order_table_columns_have_fixed_shares():
+    """AC-P14 (review nit): the order table above carries 18/16/40/26, attribute and style
+    alike, so the two tables read as one balanced block."""
+    orders = [{"so_number": "SO421287", "so_date": "02/10/2026", "customer": "C", "project": "P"}]
+    out = _render(_ctx(orders, [_line("SO421287", "KL-WH", "X", "1", "06/11/2026", "ORDER")]))
+    table = re.findall(r"<table.*?</table>", _authored(out["body_html"]), re.S)[0]
+    got = []
+    for tag, text in re.findall(r"(<th(?:\s[^>]*)?>)(.*?)</th>", table, re.S):
+        attr = re.search(r'\swidth="(\d+)%"', tag)
+        styles = re.findall(r"[;\"]width:(\d+)%", tag)
+        assert attr and styles == [attr.group(1)], tag
+        got.append((text.strip(), int(attr.group(1))))
+    assert got == [("S/O NO", 18), ("SO DATE", 16), ("CUSTOMER", 40), ("PROJECT", 26)], got
 
