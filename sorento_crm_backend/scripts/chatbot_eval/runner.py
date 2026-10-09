@@ -1,0 +1,135 @@
+"""Replay cases through an engine and grade the final turn."""
+
+from __future__ import annotations
+
+import random
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any
+
+from .budget import Budget
+from .cases import Case
+from .engine import Engine, Outcome
+from .grade import Verdict, grade
+from .judge import Judge, apply_judge
+
+
+class NotDryRunError(RuntimeError):
+    """A turn came back without the dry-run stamp; the whole run aborts."""
+
+
+class BudgetStop(Exception):
+    """Spend cap reached before this turn could start."""
+
+
+@dataclass
+class CaseResult:
+    case_id: str
+    split: str
+    topic_code: str | None
+    language: str | None
+    variant_kind: str | None
+    verdict: Verdict
+    outcome: Outcome
+    latency_ms: int
+    tokens: dict
+
+
+@dataclass
+class RunResult:
+    results: list[CaseResult] = field(default_factory=list)
+    stopped_reason: str | None = None
+    wall_s: float = 0.0
+
+
+def run_case(
+    engine: Engine,
+    case: Case,
+    text: str,
+    run_id: str,
+    *,
+    variant_kind: str | None = None,
+    budget: Budget | None = None,
+    judge: Judge | None = None,
+    judge_calibrated: bool = False,
+) -> CaseResult:
+    total = {"prompt": 0, "cached": 0, "output": 0}
+    state: dict | None = None
+    prev_bot = next((h.get("text") for h in reversed(case.history) if h.get("role") == "bot"), None)
+
+    def step(turn_text: str) -> Outcome:
+        if budget is not None and budget.exceeded:
+            raise BudgetStop()
+        out = engine.turn(case, turn_text, state, run_id)
+        if not out.dry_run:
+            raise NotDryRunError(f"case {case.id}: turn was not a dry run")
+        for k in total:
+            total[k] += int(out.tokens.get(k, 0) or 0)
+        if budget is not None:
+            budget.add(out.tokens)
+        return out
+
+    for h in case.history:
+        if h.get("role") == "user":
+            out = step(h["text"])
+            state = out.state
+            prev_bot = out.reply_text
+    final = step(text)
+    verdict = grade(case.expect, final, prev_bot)
+    if verdict.needs_judge and judge is not None:
+        verdict = apply_judge(verdict, judge.score(case, final), judge_calibrated)
+    return CaseResult(
+        case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
+        variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,
+    )
+
+
+def run_all(
+    engine: Engine,
+    cases: list[Case],
+    *,
+    variants: str = "none",
+    max_parallel: int = 1,
+    budget: Budget | None = None,
+    run_id: str,
+    seed: int = 0,
+    judge: Judge | None = None,
+    judge_calibrated: bool = False,
+) -> RunResult:
+    rng = random.Random(seed)
+    jobs: list[tuple[Case, str, str | None]] = []
+    for case in cases:
+        jobs.append((case, case.message["text"], None))
+        if variants == "all":
+            jobs += [(case, v["text"], v.get("kind")) for v in case.variants]
+        elif variants == "one" and case.variants:
+            v = rng.choice(case.variants)
+            jobs.append((case, v["text"], v.get("kind")))
+
+    stopped = False
+    aborted = False
+
+    def work(job: tuple[Case, str, str | None]) -> CaseResult | None:
+        nonlocal stopped, aborted
+        case, text, kind = job
+        if aborted:
+            return None
+        try:
+            return run_case(
+                engine, case, text, run_id, variant_kind=kind, budget=budget,
+                judge=judge, judge_calibrated=judge_calibrated,
+            )
+        except BudgetStop:
+            stopped = True
+            return None
+        except NotDryRunError:
+            aborted = True
+            raise
+
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=max(1, max_parallel)) as pool:
+        done = list(pool.map(work, jobs))
+    results = [r for r in done if r is not None]
+    reason = "budget" if stopped or (budget is not None and budget.exceeded and len(results) < len(jobs)) else None
+    return RunResult(results=results, stopped_reason=reason, wall_s=time.monotonic() - started)
