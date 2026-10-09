@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { FormDialogScaffold } from '@/components/common/FormDialogScaffold';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -32,6 +32,7 @@ export function ConfigureSummaryDialog({
   value,
   onApply,
   datasetValue,
+  datasetLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,9 +40,11 @@ export function ConfigureSummaryDialog({
   value: PivotConfig;
   onApply: (next: PivotConfig) => void;
   datasetValue?: string;
+  datasetLabel?: string;
 }) {
   const [draft, setDraft] = useState<PivotConfig>(value);
   const [error, setError] = useState<string | null>(null);
+  const noteId = useId();
   const [note, setNote] = useState<string | null>(null);
   const unavailable = useMemo(
     () => unavailableKeys(catalog, datasetValue),
@@ -63,11 +66,11 @@ export function ConfigureSummaryDialog({
         measures: value.measures.filter((m) => keep(m)),
       });
       setNote(
-        cleared.length ? `${cleared.join(', ')} does not apply to this Count by; pick again.` : null,
+        cleared.length ? `${cleared.join(', ')} does not apply to this ${datasetLabel ?? 'choice'}; pick again.` : null,
       );
       setError(null);
     }
-  }, [open, value, catalog, unavailable]);
+  }, [open, value, catalog, unavailable, datasetLabel]);
 
   const dimensionOptions = useMemo(
     () =>
@@ -114,9 +117,10 @@ export function ConfigureSummaryDialog({
       submitLabel="Apply"
       onSubmit={submit}
       error={error}
+      formDescribedBy={note ? noteId : undefined}
     >
       {note && (
-        <p className="text-sm text-muted-foreground" data-testid="summary-choice-note">
+        <p id={noteId} className="text-sm text-muted-foreground" data-testid="summary-choice-note">
           {note}
         </p>
       )}

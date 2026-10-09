@@ -723,7 +723,11 @@ export function ReportPage({
           </Card>
 
           {pivotNote && (
-            <p className="text-xs text-muted-foreground" data-testid="summary-choice-note">
+            <p
+              role="status"
+              className="text-xs text-muted-foreground"
+              data-testid="summary-choice-note"
+            >
               {pivotNote}
             </p>
           )}
@@ -901,6 +905,7 @@ export function ReportPage({
         catalog={meta.catalog}
         value={pivot ?? state.pivot}
         datasetValue={datasetValue}
+        datasetLabel={meta.params.find((p) => p.key === meta.dataset_param)?.label}
         onApply={(pivot) =>
           setState((prev) => (prev ? { ...prev, pivot } : prev))
         }
