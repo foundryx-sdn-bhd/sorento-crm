@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import status
@@ -412,7 +412,8 @@ def _measure_value(column: reg.Column, value: Any) -> Optional[str]:
     if value is None:
         return None
     if column.type == "integer":
-        return str(int(Decimal(str(value))))
+        whole = Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        return str(int(whole))  # int() drops the exponent and a negative zero
     return _money(value)
 
 
