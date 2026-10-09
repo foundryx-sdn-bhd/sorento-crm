@@ -365,7 +365,11 @@ class TestPromotionTierRosterStaysAnswerableAcrossMultiplePicks:
         )
         result1, _c1 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf1, text_body=f"promo for {code}",
-            msg_id="zzt-hp9-tier-ask", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp9-tier-ask",
+            # PROMO-SUBJECT-FILTER (#1527): each level is probed before the menu, and a
+            # menu with no promotion at any level is "No current promotion". One row per
+            # probe keeps the picker the setup needs.
+            mcp_response={"has_result": True, "items": [{"title": "ZZT promo"}]},
             real_entitlement=True,
         )
         open_question = _session_of(session_factory).get("open_question") or {}
