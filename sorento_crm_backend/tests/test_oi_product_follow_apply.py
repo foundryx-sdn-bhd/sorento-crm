@@ -7,7 +7,8 @@ restated IN PLACE on the new product, exactly the way a qty / date change alread
 Owner rulings 2 Oct (plan R1/R2/R4): the switch happens when CS clicks Confirm in
 fulfilment planning (the apply); a link already on the row is KEPT and the change is
 flagged with the existing qty/date mechanism (acknowledged -> changed, `changed_at`); the
-handover email says "CHANGE ITEM CODE TO <new> (WAS <old>)".
+handover email says "NEW ITEM CODE" (owner, 9 Oct; it said "CHANGE ITEM CODE TO <new> (WAS
+<old>)" before).
 
 Runs on the real database, rolled back (same fixture as the board-apply suite).
 """
@@ -207,13 +208,11 @@ def test_handover_email_says_change_item_code_to_new_was_old(api, monkeypatch):
     lines = matches[-1]["context"]["handover"]["lines"]
     mine = [entry for entry in lines if entry["item_code"] == fx["new"].product_code]
     assert len(mine) == 1, lines
-    expected = (
-        f"CHANGE ITEM CODE TO {fx['new'].product_code} (WAS {fx['old'].product_code})"
-    )
-    assert expected in mine[0]["remark"], mine[0]
+    # Owner, 9 Oct (Q-E): the new code is in ITEM CODE, so REMARK says NEW ITEM CODE.
+    assert "NEW ITEM CODE" in mine[0]["remark"], mine[0]
     assert (mine[0]["was"] or {}).get("item_code") == fx["old"].product_code
     headline = matches[-1]["context"]["handover"]["headline"]
-    assert "CHANGE ITEM CODE" in headline, headline
+    assert "NEW ITEM CODE" in headline, headline
 
 
 def test_handover_remark_joins_product_and_qty_change():
@@ -229,7 +228,7 @@ def test_handover_remark_joins_product_and_qty_change():
     remark = handover_remark(
         "settled", row, {"qty": Decimal("10"), "item_code": "MWCY7604"}
     )
-    assert remark == "ORDER 5, CHANGE ITEM CODE TO MWCY7604-SH (WAS MWCY7604)"
+    assert remark == "ORDER 5, NEW ITEM CODE"
 
 
 def test_a_line_swapped_before_the_mirror_followed_still_moves_on_confirm(api):
@@ -264,7 +263,7 @@ def test_a_row_whose_code_is_not_a_catalogue_code_is_never_rewritten(api):
 def test_a_declined_settle_still_moves_the_product_and_tells_purchasing(api, monkeypatch):
     """Review S2: a lone PLACED row with no link makes `_settle_row_in_place` decline,
     and the netting path runs. The product still follows, with "was", the flag, and one
-    handover line saying CHANGE ITEM CODE."""
+    handover line saying NEW ITEM CODE."""
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -288,7 +287,7 @@ def test_a_declined_settle_still_moves_the_product_and_tells_purchasing(api, mon
     assert row.ack_state == ACK_CHANGED
 
     lines = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
-    told = [entry for entry in lines if "CHANGE ITEM CODE" in (entry["remark"] or "")]
+    told = [entry for entry in lines if "NEW ITEM CODE" in (entry["remark"] or "")]
     assert len(told) == 1, lines
     assert told[0]["item_code"] == fx["new"].product_code
 
@@ -300,7 +299,7 @@ def test_a_received_link_line_raises_its_replacement_on_the_new_product_with_was
     RECEIVED, so the replan sets the old row aside as "used" (history, keeps its link and
     its old code, R2) and raises a fresh "Replaces N used" row. That fresh row is the
     line's live instruction now, so R1 applies to it: new code, "was OLD", and the email
-    says CHANGE ITEM CODE."""
+    says NEW ITEM CODE."""
     from app.models.procurement import PurchaseOrderLine
 
     client, world = api
@@ -334,11 +333,8 @@ def test_a_received_link_line_raises_its_replacement_on_the_new_product_with_was
     handover = _handover_calls(calls)[-1]["context"]["handover"]
     told = [e for e in handover["lines"] if e["item_code"] == fx["new"].product_code]
     assert len(told) == 1, handover["lines"]
-    assert (
-        f"CHANGE ITEM CODE TO {fx['new'].product_code} (WAS {fx['old'].product_code})"
-        in told[0]["remark"]
-    ), told[0]
-    assert "CHANGE ITEM CODE" in handover["headline"], handover["headline"]
+    assert "NEW ITEM CODE" in told[0]["remark"], told[0]
+    assert "NEW ITEM CODE" in handover["headline"], handover["headline"]
 
 
 def test_a_plain_qty_settle_writes_no_previous_item_code(api):

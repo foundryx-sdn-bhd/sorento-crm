@@ -40,13 +40,19 @@ interface TemplateDraft {
   width: EmailLayoutWidth;
 }
 
-// The two card widths the shell renders (EMAIL-HANDOVER-QTY): the standard 600px
-// card, or the 900px one a table email such as the order inquiry handover needs.
+// The card widths the shell renders (EMAIL-HANDOVER-QTY, OI-EMAIL-PRINT): the standard
+// 600px card, the 900px one for a table email, or the 672px one that prints on one A4
+// portrait page, which the order inquiry handover uses.
 const WIDTH_OPTIONS: { value: EmailLayoutWidth; label: string }[] = [
   { value: 'standard', label: 'Standard (600px)' },
   { value: 'wide', label: 'Wide (900px)' },
+  { value: 'print', label: 'Print, A4 portrait (672px)' },
 ];
-const DESKTOP_PREVIEW_WIDTH: Record<EmailLayoutWidth, number> = { standard: 600, wide: 900 };
+const DESKTOP_PREVIEW_WIDTH: Record<EmailLayoutWidth, number> = {
+  standard: 600,
+  wide: 900,
+  print: 672,
+};
 
 function widthLabel(width: EmailLayoutWidth): string {
   return WIDTH_OPTIONS.find((o) => o.value === width)?.label ?? width;

@@ -213,7 +213,7 @@ def test_date_and_qty_down_prints_one_line_and_hides_the_exception_row(api, monk
     entry = entries[0]
     assert entry["was"] == {"qty": "5", "delivery_date": WAS_FMT}, entry
     assert entry["qty"] == "3", entry
-    assert entry["remark"] == "ADVANCE, CANCEL BALANCE 2 NOS", entry
+    assert entry["remark"] == "ADVANCE, CANCEL 2", entry
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +261,8 @@ def test_qty_only_change_prints_one_line_with_qty_was_only(api, monkeypatch):
 def test_two_raised_rows_superseded_print_one_line_with_totals(api, monkeypatch):
     """AC-4. Two still-owed RAISED rows (10 + 3), the book moves the line to 8, earlier.
     `_settle_row_in_place` declines (two live rows); both rows are cancelled by the
-    netting and a fresh ORDER 8 is raised. Today that prints CANCEL BALANCE 10 NOS,
-    CANCEL BALANCE 3 NOS and a bare ORDER beside the ADVANCE line - four lines for one
+    netting and a fresh ORDER 8 is raised. Before this lane that printed two CANCEL lines
+    (10 and 3) and a bare ORDER beside the ADVANCE line - four lines for one
     line moving 13 -> 8. The email says it once."""
     client, world = api
     _register(world)
@@ -296,7 +296,7 @@ def test_two_raised_rows_superseded_print_one_line_with_totals(api, monkeypatch)
     entry = entries[0]
     assert entry["was"] == {"qty": "13", "delivery_date": WAS_FMT}, entry
     assert entry["qty"] == "8", entry
-    assert entry["remark"] == "ADVANCE, CANCEL BALANCE 5 NOS", entry
+    assert entry["remark"] == "ADVANCE, CANCEL 5", entry
 
 
 # ---------------------------------------------------------------------------
@@ -400,10 +400,10 @@ def test_handover_remark_reads_the_difference_off_an_explicit_qty():
     was = {"qty": Decimal("5"), "delivery_date": date(2026, 8, 25)}
     assert handover_remark("settled", row, was, qty=Decimal("8")) == "ADVANCE, ORDER 3"
     assert handover_remark("settled", row, was, qty=Decimal("3")) == (
-        "ADVANCE, CANCEL BALANCE 2 NOS"
+        "ADVANCE, CANCEL 2"
     )
     assert handover_remark("settled", row, {"qty": Decimal("13")}, qty=Decimal("8")) == (
-        "CANCEL BALANCE 5 NOS"
+        "CANCEL 5"
     )
     # Without an explicit qty the row's own qty is read, as before (5 -> 5: date only).
     assert handover_remark("settled", row, was) == "ADVANCE"
@@ -427,7 +427,7 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
     (two live rows); the netting's own PARTLY_LINKED branch then redirects A to the
     pool (no own-arrival credit), so `placed` is 0 and the fresh row is ORDER 50 - not
     the 5 a totals line (45 -> 50) would have said. The email prints today's lines
-    instead: ADVANCE (date only), CANCEL BALANCE 5 NOS for B, and the fresh ORDER 50."""
+    instead: ADVANCE (date only), CANCEL ALL for B, and the fresh ORDER 50."""
     from app.models.project_so import OrderInquiryLink
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
     from tests.scm._own_arrival_fixture import spo_allocation_fully_received
@@ -476,13 +476,12 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
     assert len(fresh) == 1 and Decimal(str(fresh[0].qty)) == Decimal("50"), fresh
 
     entries = _line_entries(calls, row_a.item_code)
-    remarks = sorted(entry["remark"].split(" - ")[0] for entry in entries)
-    assert remarks == ["ADVANCE", "CANCEL BALANCE 5 NOS", "ORDER"], entries
-    order_line = next(entry for entry in entries if entry["remark"].startswith("ORDER"))
+    remarks = sorted(entry["remark"] for entry in entries)
+    assert remarks == ["ADVANCE", "CANCEL ALL", "ORDER"], entries
+    order_line = next(entry for entry in entries if entry["remark"] == "ORDER")
     assert order_line["qty"] == "50", "the fresh row's own quantity, never need - held"
-    assert "Replaces 40 used" in order_line["remark"], (
-        "AC-OH-40..42's own wording travels on the fresh row, as today"
-    )
+    # OI-EMAIL-PRINT (AC-P2): AC-OH-40..42's wording stays on the fresh row, not in the email.
+    assert "Replaces 40 used" in (fresh[0].note or ""), fresh[0].note
     assert not any((entry["was"] or {}).get("qty") == "45" for entry in entries), (
         f"no totals line for a line the netting redirected: {entries}"
     )
