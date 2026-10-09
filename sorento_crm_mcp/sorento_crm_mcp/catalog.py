@@ -1469,11 +1469,13 @@ CATALOG: tuple[ToolSpec, ...] = (
             "received that day; null when never received). A receipt booked with no GRN "
             "(ESB-stated) is not counted.\n\n"
             "REQUIRED: `product_ids` (canonical UUIDs, csv / JSON / repeated). Optional "
-            "`date_from` / `date_to` (ISO dates, inclusive) bound received_qty only."
+            "`date_from` / `date_to` (ISO dates, inclusive) bound received_qty only.\n\n"
+            "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
+            "results to that contact's company/companies; omit both for all-company results."
         ),
         "/api/v1/procurement/grn/summary",
         (),
-        ("product_ids", "date_from", "date_to"),
+        ("product_ids", "date_from", "date_to", "contact_id", "space_id"),
         domain="procurement",
         related_tools=("crm_procurement_spo_allocations_last_receipt_list",),
         escalation_team="procurement",

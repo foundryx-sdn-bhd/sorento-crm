@@ -400,7 +400,7 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
     if measure in SOLD and ask.get("group_by") and ask.get("group_by") not in AXIS:
         return [f"{_own_label(ask)}: {loc.fill(NOT_AVAILABLE)}"]
     need = GRANT.get(measure)
-    if need and need not in run.grants or (measure == "stock" and not run.stock_allowed):
+    if (need and need not in run.grants) or (measure == "stock" and not run.stock_allowed):
         return [f"{label}: {loc.fill(NOT_SHARED)}"]
     if measure in SOLD and window is None:
         return [f"{_own_label(ask)}: {loc.fill(WHICH_PERIOD)}"]
@@ -459,8 +459,6 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
             **_dates(window),
             "basis": ask_basis,
             "measure": "qty",
-            "contact_id": run.contact_id,
-            "space_id": run.space_id,
         }
         if measure == "sold_by":
             args.update(group_by=ask["group_by"], top_n=REPORT_TOP_N)
@@ -568,6 +566,13 @@ class _Calls:
         self._cache: dict[str, Any] = {}
 
     def payload(self, name: str, args: dict[str, Any]) -> Any:
+        # Security review B2: EVERY call names the contact, as the fetch path's
+        # `entity_ids_transformer` does. Without the pair the route's
+        # `_resolve_api_key_scope` reads ALL companies and the stock route skips the
+        # contact's stock visibility. The space falls back the same way (review S1).
+        from app.services.chatbot.lanes.business.fetch import space_id_or_default
+
+        args = {**args, "contact_id": self.run.contact_id, "space_id": space_id_or_default(self.run.space_id)}
         clean = {k: v for k, v in args.items() if v is not None and v != []}
         key = name + repr(sorted((k, repr(v)) for k, v in clean.items()))
         if key not in self._cache:

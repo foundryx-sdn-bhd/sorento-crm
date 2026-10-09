@@ -164,3 +164,44 @@ def test_an_inverted_window_is_422(client, db):
     p = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("P"))
     resp = client.get(URL, params={"product_ids": p.id, "date_from": "2026-12-31", "date_to": "2026-01-01"})
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------- company scope (security review B2)
+
+
+def test_another_companys_receipts_never_answer(db):
+    """Under a Mocha scope a Sorento product's GRNs are not counted, and the product row
+    itself is not answered; under Sorento they are."""
+    from app.services.grn_summary_service import grn_summary_rows
+
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
+
+    seed_mocha(db)
+    p = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("P"))
+    _grn(db, p.id, 40, date(2026, 4, 4))
+    db.flush()
+
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    [row] = grn_summary_rows(db, product_ids=[str(p.id)])
+    assert row["received_qty"] == 40
+
+    set_company_scope(db, frozenset({MOCHA_ID}))
+    assert grn_summary_rows(db, product_ids=[str(p.id)]) == []
+
+
+def test_a_line_owned_by_another_company_is_not_counted(db):
+    """The product is Mocha's, the GRN header and line are Sorento's: under Mocha the
+    explicit predicates keep the lines out of both sums (the subquery hazard
+    `spo_last_receipt_service` documents)."""
+    from app.services.grn_summary_service import grn_summary_rows
+
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
+
+    seed_mocha(db)
+    p = product(db, company_id=MOCHA_ID, code=unique_code("PM"))
+    _grn(db, p.id, 70, date(2026, 5, 5))  # header + line under DEFAULT_COMPANY_ID
+    db.flush()
+
+    set_company_scope(db, frozenset({MOCHA_ID}))
+    [row] = grn_summary_rows(db, product_ids=[str(p.id)])
+    assert (row["received_qty"], row["grn_count"], row["last_receipt_date"]) == (0, 0, None)

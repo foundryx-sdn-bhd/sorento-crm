@@ -490,3 +490,24 @@ def test_pack_parts_leaves_a_short_text_alone_and_marks_a_long_one():
     assert len(parts) > 1
     rows = [ln for p in parts for ln in p.splitlines() if ln and not ln.startswith("(")]
     assert rows == long.splitlines()
+
+
+# ---------------------------------------------------------------- security review B1 / B2
+
+
+def test_a_contact_refused_the_agent_gets_the_refusal_not_the_figures(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009518")
+    stub_access(allowed=False, decision="deny", attributes=list(ALL_GRANTS))
+    text = c.say(OWNER_MESSAGE, owner_verdict())
+    assert not set(c.tools.names()) & RUNNER_TOOLS
+    assert "1,200" not in text and "ABC SDN BHD" not in text and "AGENT01" not in text
+
+
+def test_every_runner_call_names_the_contact_and_the_space(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009519")
+    c.say(OWNER_MESSAGE, owner_verdict())
+    calls = [(n, a) for n, a in c.tools.calls if n in RUNNER_TOOLS]
+    assert calls
+    for name, args in calls:
+        assert args.get("contact_id"), (name, args)
+        assert args.get("space_id"), (name, args)

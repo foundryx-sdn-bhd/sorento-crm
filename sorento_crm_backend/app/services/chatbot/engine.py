@@ -5792,6 +5792,10 @@ def _run_stages_body(  # noqa: PLR0915
         # fewest WhatsApp messages. Staff only; every other turn falls through untouched.
         if (
             answer is None
+            # Security review B1: only a turn the business lane would answer. An
+            # `access_denied` (or any other canned) branch also completes here, and the
+            # runner must never answer over its refusal.
+            and branch_kind == "business_query"
             and completes_here
             and not customer_scope_refused
             and not getattr(state_out.profile, "stock_availability_only", False)
