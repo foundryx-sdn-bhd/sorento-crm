@@ -22,6 +22,7 @@ class Outcome:
     branch_kind: str | None = None
     dry_run: bool = True
     tool_errors: list[str] = field(default_factory=list)
+    lane_notes: list[str] = field(default_factory=list)
     tokens: dict = field(default_factory=lambda: {"prompt": 0, "cached": 0, "output": 0})
     latency_ms: int = 0
     state: dict | None = None
@@ -56,7 +57,9 @@ class HttpTurnEngine:
             "message": {"type": "text", "text": text},
         }
         reply_to = case.message.get("reply_to")
-        if reply_to and _is_final_text(case, text):
+        if isinstance(reply_to, str) and reply_to and _is_final_text(case, text):
+            inner["replyTo"] = {"id": "", "text": reply_to}
+        elif reply_to and not isinstance(reply_to, str) and _is_final_text(case, text):
             inner["replyTo"] = {
                 "id": str(reply_to.get("id", "")),
                 "sender": {"source": reply_to.get("source") or "n8n"},
@@ -79,8 +82,8 @@ class HttpTurnEngine:
         """Tokens and tool errors from the turns row when a trace reader is set, else None."""
         if self.trace_reader is None or not turn_id:
             return None
-        tokens, errors = parse_trace(self.trace_reader.fetch(turn_id))
-        return {"tokens": tokens, "tool_errors": errors}
+        tokens, errors, notes = parse_trace(self.trace_reader.fetch(turn_id))
+        return {"tokens": tokens, "tool_errors": errors, "lane_notes": notes}
 
     def reset_contact(self, case: Any) -> None:
         """Clear the contact's earlier test memory (private eval DB only); no-op without a reset handle."""
@@ -130,6 +133,7 @@ class HttpTurnEngine:
             branch_kind=body.get("branch_kind"),
             dry_run=dry,
             tool_errors=tool_errors,
+            lane_notes=list(trace.get("lane_notes") or []),
             tokens={k: int(tokens.get(k, 0) or 0) for k in ("prompt", "cached", "output")},
             latency_ms=latency_ms,
             state=body.get("session_patch"),

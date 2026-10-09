@@ -9,9 +9,11 @@ from typing import Any
 ERROR_MARKER = "Error executing tool"
 
 
-def parse_trace(trace: list | None) -> tuple[dict, list[str]]:
+def parse_trace(trace: list | None) -> tuple[dict, list[str], list[str]]:
+    """Returns (tokens, tool_errors, lane_notes); a tool-less envelope error is the lane's own verdict."""
     tokens = {"prompt": 0, "cached": 0, "output": 0}
     errors: list[str] = []
+    notes: list[str] = []
     for entry in trace or []:
         if not isinstance(entry, dict):
             continue
@@ -28,12 +30,15 @@ def parse_trace(trace: list | None) -> tuple[dict, list[str]]:
                 if not isinstance(env, dict):
                     continue
                 tool = env.get("tool")
-                if env.get("error"):
-                    errors.append(f"{tool}: {env['error']}")
+                err = env.get("error")
+                if err and (tool or "returned HTTP" in str(err)):
+                    errors.append(f"{tool}: {err}")
+                elif err:
+                    notes.append(str(err))
                 lane = env.get("lane_text")
                 if isinstance(lane, str) and lane.startswith(ERROR_MARKER):
                     errors.append(f"{tool}: {lane}")
-    return tokens, errors
+    return tokens, errors, notes
 
 
 class DbTraceReader:

@@ -56,7 +56,7 @@ def _write(out: str, report: dict, run) -> None:
                 "case_id": r.case_id, "split": r.split, "topic_code": r.topic_code, "language": r.language,
                 "variant_kind": r.variant_kind, "label": r.verdict.label, "reasons": r.verdict.reasons,
                 "latency_ms": r.latency_ms, "tokens": r.tokens, "reply_text": r.outcome.reply_text,
-                "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors,
+                "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors, "lane_notes": r.outcome.lane_notes,
                 "delegated": (r.outcome.raw or {}).get("reply") is None and bool((r.outcome.raw or {}).get("delegate")),
                 "previous_bot_reply": r.previous_bot_reply,
             }
@@ -106,9 +106,15 @@ def _regrade(args, cases: list[Case]) -> int:
             dropped += 1
             continue
         raw = {"reply": None, "delegate": "stored"} if row.get("delegated") else {}
+        errors, notes = [], list(row.get("lane_notes") or [])
+        for entry in row.get("tool_errors") or []:
+            if entry.startswith("None: ") and "returned HTTP" not in entry:
+                notes.append(entry[len("None: ") :])
+            else:
+                errors.append(entry)
         out = Outcome(
             reply_text=row.get("reply_text") or "", branch_kind=row.get("branch_kind"),
-            tool_errors=list(row.get("tool_errors") or []), latency_ms=row.get("latency_ms", 0), raw=raw,
+            tool_errors=errors, lane_notes=notes, latency_ms=row.get("latency_ms", 0), raw=raw,
         )
         results.append(
             CaseResult(
