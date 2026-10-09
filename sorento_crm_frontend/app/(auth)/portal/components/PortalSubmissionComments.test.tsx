@@ -14,6 +14,8 @@ vi.mock('@/lib/toast', () => ({
 vi.mock('../lib/portal-client', () => ({
   fetchSubmissionComments: vi.fn(),
   postSubmissionComment: vi.fn(),
+  editSubmissionComment: vi.fn(),
+  deleteSubmissionComment: vi.fn(),
   portalAttachmentDownloadUrl: (id: string) => `/dl/${id}`,
 }));
 vi.mock('../lib/portal-preview', () => ({ portalFetchBytes: vi.fn() }));
@@ -23,6 +25,8 @@ vi.mock('@/components/common/AttachmentPreviewModal', () => ({
 }));
 
 import {
+  deleteSubmissionComment,
+  editSubmissionComment,
   fetchSubmissionComments,
   postSubmissionComment,
 } from '../lib/portal-client';
@@ -31,6 +35,8 @@ import type { FormComment } from '@/types/formComments';
 
 const fetchMock = fetchSubmissionComments as ReturnType<typeof vi.fn>;
 const postMock = postSubmissionComment as ReturnType<typeof vi.fn>;
+const editMock = editSubmissionComment as ReturnType<typeof vi.fn>;
+const deleteMock = deleteSubmissionComment as ReturnType<typeof vi.fn>;
 
 const existing: FormComment = {
   id: 'c1',
@@ -38,6 +44,13 @@ const existing: FormComment = {
   authorName: 'Alice Staff',
   authorKind: 'staff',
   postedByName: null,
+  kind: 'comment' as const,
+  parentId: null,
+  editedAt: null,
+  deleted: false,
+  canEdit: true,
+  canDelete: true,
+  canReply: true,
   createdAt: '2026-10-01T09:00:00',
   attachments: [],
 };
@@ -47,6 +60,13 @@ const mine: FormComment = {
   authorName: 'Dan Dealer',
   authorKind: 'submitter',
   postedByName: null,
+  kind: 'comment' as const,
+  parentId: null,
+  editedAt: null,
+  deleted: false,
+  canEdit: true,
+  canDelete: true,
+  canReply: true,
   createdAt: '2026-10-01T10:00:00',
   attachments: [],
 };
@@ -91,8 +111,10 @@ describe('PortalSubmissionComments', () => {
     expect(await screen.findByText('No comments yet')).toBeInTheDocument();
   });
 
-  it('appends a successfully posted comment and clears the composer', async () => {
-    fetchMock.mockResolvedValue([existing]);
+  it('re-reads the thread after a post so the comment shows, and clears the composer', async () => {
+    fetchMock
+      .mockResolvedValueOnce([existing])
+      .mockResolvedValue([existing, mine]);
     postMock.mockResolvedValue({ comment: mine, delivery: 'queued' });
     mount();
     await screen.findByText('We need the PDF.');
@@ -108,6 +130,7 @@ describe('PortalSubmissionComments', () => {
       'si-1',
       'Here you go',
       [],
+      undefined,
     );
     expect(screen.getByText('Submitter')).toBeInTheDocument();
     expect(toastSuccess).toHaveBeenCalled();
@@ -137,5 +160,72 @@ describe('PortalSubmissionComments', () => {
     mount(true);
     await screen.findByText('We need the PDF.');
     expect(screen.queryByPlaceholderText('Write a comment')).toBeNull();
+  });
+
+  it('Reply posts with the parent id', async () => {
+    fetchMock.mockResolvedValue([existing]);
+    postMock.mockResolvedValue({ comment: mine, delivery: 'queued' });
+    mount();
+    await screen.findByText('We need the PDF.');
+    fireEvent.click(screen.getByRole('button', { name: 'Reply' }));
+    fireEvent.change(screen.getByPlaceholderText('Write a reply'), {
+      target: { value: 'Answer' },
+    });
+    const replyButtons = screen.getAllByRole('button', { name: 'Reply' });
+    fireEvent.click(replyButtons[replyButtons.length - 1]);
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        'stock_inquiry',
+        'si-1',
+        'Answer',
+        [],
+        'c1',
+      ),
+    );
+  });
+
+  it('Edit saves through the portal edit call and re-reads the thread', async () => {
+    fetchMock.mockResolvedValue([existing]);
+    editMock.mockResolvedValue(undefined);
+    mount();
+    await screen.findByText('We need the PDF.');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByPlaceholderText('Edit comment'), {
+      target: { value: 'We need the PDF, please.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(editMock).toHaveBeenCalledWith(
+        'stock_inquiry',
+        'si-1',
+        'c1',
+        'We need the PDF, please.',
+      ),
+    );
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('Delete is a countdown with Cancel: Cancel keeps the comment, the lapse deletes it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchMock.mockResolvedValue([existing]);
+      deleteMock.mockResolvedValue(undefined);
+      mount();
+      await screen.findByText('We need the PDF.');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      expect(await screen.findByRole('timer')).toHaveTextContent(/Deleting/);
+      fireEvent.click(screen.getByRole('button', { name: /Cancel/ }));
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect(deleteMock).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await vi.advanceTimersByTimeAsync(11_000);
+      await waitFor(() =>
+        expect(deleteMock).toHaveBeenCalledWith('stock_inquiry', 'si-1', 'c1'),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -57,9 +57,6 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from '@/components/common/SearchableSelect';
-import AttachmentPreviewModal, {
-  type AttachmentPreviewItem,
-} from '@/components/common/AttachmentPreviewModal';
 import {
   DebtorLookupItem,
   DOLookupItem,
@@ -96,7 +93,6 @@ import {
   portalHomePath,
   portalVerifyPath,
 } from '../lib/portal-paths';
-import { portalFetchBytes, toPreviewItem } from '../lib/portal-preview';
 import { cleanLineItems } from '../lib/line-items';
 import { useRevisionHistory, useReviseSubmission } from '../hooks/useRevisions';
 import { AIExtractDialog, AIExtractApplyPayload } from './AIExtractDialog';
@@ -442,7 +438,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // failed the sponsorship-only check below, so the "Unit price" cell itself can show
   // the inline message - same shape `invalidFields` gives every other required field.
   const [invalidLineIndex, setInvalidLineIndex] = useState<number | null>(null);
-  const [staffPreviewOpen, setStaffPreviewOpen] = useState(false);
   const [neighbours, setNeighbours] =
     useState<PortalSubmissionNeighbours | null>(null);
   const [reviseMode, setReviseMode] = useState(false);
@@ -1518,45 +1513,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         }
       : null;
 
-  // Purchasing / technical response shown at top for salesperson once responded. Hidden when empty.
-  const responseInfo = (() => {
-    if (kind === 'stock_inquiry') {
-      const v = (
-        (detail?.purchasing_response as string | null | undefined) ?? ''
-      ).trim();
-      return v
-        ? {
-            label: 'Comment / reply by purchasing',
-            value: v,
-            team: 'purchasing',
-          }
-        : null;
-    }
-    if (kind === 'complaint') {
-      let v = (
-        (detail?.technical_team_response as string | null | undefined) ?? ''
-      ).trim();
-      // Strip legacy composed customer message so only technician wording shows (matches CRM).
-      if (v.startsWith('There has been an update regarding your complaint')) {
-        const idx = v.lastIndexOf(': ');
-        if (idx !== -1) v = v.slice(idx + 2).trim();
-      }
-      return v
-        ? { label: 'Technical team response', value: v, team: 'technical team' }
-        : null;
-    }
-    return null;
-  })();
-
-  // Staff (purchasing / technical) response attachments - surfaced at the top
-  // of the reply banner, scoped away from the contact's own uploads below.
-  // Count is derived from the loaded attachments, never typed.
-  const staffAttachments = attachments.filter(
-    (a) => a.uploader_kind === 'user',
-  );
-  const staffPreviewItems: AttachmentPreviewItem[] =
-    staffAttachments.map(toPreviewItem);
-
   // "Requested by" / "Salesperson" contact-select: pre-select the saved id and
   // resolve a NAME to show (never a UUID) - the legacy free-text sibling
   // column carries the point-in-time label, falling back to the submitting
@@ -1632,37 +1588,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         </div>
       )}
 
-      {responseInfo && (
-        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm">
-          <p className="font-medium text-emerald-700 dark:text-emerald-400">
-            {responseInfo.label}
-          </p>
-          <p className="mt-1 whitespace-pre-wrap text-foreground">
-            {responseInfo.value}
-          </p>
-          {staffAttachments.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-emerald-700/80 dark:text-emerald-400/80">
-                {staffAttachments.length} attachment
-                {staffAttachments.length === 1 ? '' : 's'} from{' '}
-                {responseInfo.team}
-              </span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setStaffPreviewOpen(true)}
-              >
-                View attachment{staffAttachments.length === 1 ? '' : 's'} (
-                {staffAttachments.length})
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* The thread sits directly under the staff reply box so the conversation reads in one
-          place (owner hand test, 9 Oct); it shows here even before any reply exists. */}
+      {/* The thread reads as one story at the top of the page: the staff reply is its first
+          entry (served by the comments API), the composer its last (owner hand test, 9 Oct). */}
       {effectiveId && detail && !detail.is_draft && (
         <PortalSubmissionComments
           kind={kind}
@@ -2311,13 +2238,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <AttachmentPreviewModal
-        open={staffPreviewOpen}
-        onOpenChange={setStaffPreviewOpen}
-        items={staffPreviewItems}
-        fetchBytes={portalFetchBytes}
-      />
 
       {neighbours?.prev_id && (
         <button

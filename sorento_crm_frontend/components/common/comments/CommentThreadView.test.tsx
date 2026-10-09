@@ -92,8 +92,8 @@ function mount(over: Record<string, unknown> = {}) {
 describe('CommentThreadView', () => {
   it('renders the response entry first, then comments oldest first, replies under their parent', () => {
     mount();
-    const order = ['brand?', 'First comment', 'A reply'].map(
-      (t) => screen.getByText(t),
+    const order = ['brand?', 'First comment', 'A reply'].map((t) =>
+      screen.getByText(t),
     );
     for (let i = 0; i < order.length - 1; i++) {
       expect(
@@ -155,7 +155,9 @@ describe('CommentThreadView', () => {
   it('Edit swaps in a prefilled composer and Save calls onEdit', async () => {
     const { onEdit } = mount({ comments: [first] });
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    const box = screen.getByPlaceholderText('Edit comment') as HTMLTextAreaElement;
+    const box = screen.getByPlaceholderText(
+      'Edit comment',
+    ) as HTMLTextAreaElement;
     expect(box.value).toBe('First comment');
     fireEvent.change(box, { target: { value: 'First comment, fixed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -171,7 +173,10 @@ describe('CommentThreadView', () => {
 
   it('shows an edited badge only on edited comments', () => {
     mount({
-      comments: [first, comment({ id: 'c5', body: 'tweaked', editedAt: '2026-10-02T09:00:00' })],
+      comments: [
+        first,
+        comment({ id: 'c5', body: 'tweaked', editedAt: '2026-10-02T09:00:00' }),
+      ],
     });
     expect(screen.getAllByText('edited')).toHaveLength(1);
   });
@@ -179,7 +184,14 @@ describe('CommentThreadView', () => {
   it('shows a Comment deleted placeholder for a deleted comment that still has replies', () => {
     mount({
       comments: [
-        comment({ id: 'c1', deleted: true, body: '', canEdit: false, canDelete: false, canReply: false }),
+        comment({
+          id: 'c1',
+          deleted: true,
+          body: '',
+          canEdit: false,
+          canDelete: false,
+          canReply: false,
+        }),
         reply,
       ],
     });
@@ -204,9 +216,18 @@ describe('CommentThreadView', () => {
 
   it('still shows "Posted by X on behalf" on a comment posted for a contact', () => {
     mount({
-      comments: [comment({ id: 'c7', authorKind: 'submitter', authorName: 'Dan Dealer', postedByName: 'Admin Ann' })],
+      comments: [
+        comment({
+          id: 'c7',
+          authorKind: 'submitter',
+          authorName: 'Dan Dealer',
+          postedByName: 'Admin Ann',
+        }),
+      ],
     });
-    expect(screen.getByText('Posted by Admin Ann on behalf')).toBeInTheDocument();
+    expect(
+      screen.getByText('Posted by Admin Ann on behalf'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Submitter')).toBeInTheDocument();
   });
 
@@ -215,10 +236,19 @@ describe('CommentThreadView', () => {
       comments: [
         comment({
           id: 'c8',
-          attachments: [{ attachmentId: 'a1', filename: 'quote.pdf', size: 1, contentType: 'application/pdf' }],
+          attachments: [
+            {
+              attachmentId: 'a1',
+              filename: 'quote.pdf',
+              size: 1,
+              contentType: 'application/pdf',
+            },
+          ],
         }),
       ],
     });
-    expect(screen.getByRole('button', { name: /quote\.pdf/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /quote\.pdf/ }),
+    ).toBeInTheDocument();
   });
 });

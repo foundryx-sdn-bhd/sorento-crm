@@ -36,11 +36,18 @@ describe('toFormComment', () => {
   it('maps snake_case to the FE shape', () => {
     expect(toFormComment(raw)).toEqual({
       id: 'c1',
+      kind: 'comment',
+      parentId: null,
       body: 'hi',
       authorName: 'Alice',
       authorKind: 'submitter',
       postedByName: null,
       createdAt: '2026-10-01T09:00:00',
+      editedAt: null,
+      deleted: false,
+      canEdit: false,
+      canDelete: false,
+      canReply: false,
       attachments: [
         {
           attachmentId: 'a1',
@@ -49,6 +56,28 @@ describe('toFormComment', () => {
           contentType: 'application/pdf',
         },
       ],
+    });
+  });
+
+  it('maps the round-2 thread fields (response entry, reply, edited, deleted, viewer flags)', () => {
+    const c = toFormComment({
+      ...raw,
+      kind: 'response',
+      parent_id: 'p1',
+      edited_at: '2026-10-02T09:00:00',
+      deleted: true,
+      can_edit: true,
+      can_delete: true,
+      can_reply: true,
+    });
+    expect(c).toMatchObject({
+      kind: 'response',
+      parentId: 'p1',
+      editedAt: '2026-10-02T09:00:00',
+      deleted: true,
+      canEdit: true,
+      canDelete: true,
+      canReply: true,
     });
   });
 

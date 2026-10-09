@@ -171,15 +171,14 @@ describe('SubmissionForm - comment thread placement', () => {
     );
   });
 
-  it('places the thread directly under the purchasing reply box, above the form', async () => {
+  it("shows no separate reply box: the reply is the thread's first entry, and the thread sits above the form", async () => {
     await renderWith({ purchasing_response: 'brand?' });
     const thread = await screen.findByRole('region', { name: 'Comments' });
-    const reply = screen.getByText('Comment / reply by purchasing');
+    expect(screen.queryByText('Comment / reply by purchasing')).toBeNull();
     const attachments = screen.getByText('Attachments');
-    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
-    expect(reply.compareDocumentPosition(thread) & FOLLOWING).toBeTruthy();
     expect(
-      thread.compareDocumentPosition(attachments) & FOLLOWING,
+      thread.compareDocumentPosition(attachments) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

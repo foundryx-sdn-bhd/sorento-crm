@@ -2,16 +2,62 @@
 
 import { useContext } from 'react';
 import { SessionContext } from 'next-auth/react';
+import { Trash2 } from 'lucide-react';
 import LoadErrorState from '@/components/common/LoadErrorState';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useDeferredAction } from '@/hooks/useDeferredAction';
 import {
+  FORM_COMMENTS_KEY,
   useAddFormComment,
+  useEditFormComment,
   useFormCommentsQuery,
 } from '@/hooks/useFormComments';
-import type { FormCommentKind } from '@/types/formComments';
-import { FormCommentThread } from './FormCommentThread';
+import {
+  FORM_COMMENT_MAX_FILES,
+  type FormCommentKind,
+} from '@/types/formComments';
+import { CommentThreadView } from './CommentThreadView';
 
-/** Staff side of a form submission's comment thread (CRM detail pages). */
+/** Staff delete: the server-deferred countdown in place of the button (D7), never a dialog. */
+function FormCommentDelete({
+  kind,
+  entityId,
+  commentId,
+}: {
+  kind: FormCommentKind;
+  entityId: string;
+  commentId: string;
+}) {
+  const removal = useDeferredAction({
+    actionKey: 'form_comment.delete',
+    entityType: 'form_comment',
+    entityId: commentId,
+    verb: 'Deleting',
+    subject: 'Comment',
+    surface: 'inline',
+    successMessage: 'Comment deleted',
+    invalidateKeys: [[FORM_COMMENTS_KEY, kind, entityId]],
+  });
+  if (removal.countdown) return <div className="pt-1">{removal.countdown}</div>;
+  return (
+    <Button
+      type="button"
+      variant="dim"
+      size="sm"
+      className="h-7 gap-1 px-1.5"
+      onClick={() => removal.start()}
+    >
+      <Trash2 className="size-3.5" />
+      Delete
+    </Button>
+  );
+}
+
+/**
+ * Staff side of a form submission's comment thread (CRM detail pages): the thread shared with
+ * ideation, read as one story - the staff reply first, comments oldest first, the composer last.
+ */
 export function FormComments({
   kind,
   entityId,
@@ -27,6 +73,7 @@ export function FormComments({
   const { data, isLoading, isError, error, refetch, isFetching } =
     useFormCommentsQuery(kind, entityId);
   const add = useAddFormComment(kind, entityId);
+  const edit = useEditFormComment(kind, entityId);
 
   if (isError) {
     return (
@@ -46,12 +93,14 @@ export function FormComments({
   return (
     <Card>
       <CardContent>
-        <FormCommentThread
+        <CommentThreadView
           className="border-t-0 pt-0"
           comments={data ?? []}
           isLoading={isLoading}
           authorName={session?.user?.name ?? ''}
+          composerPosition="bottom"
           readOnly={readOnly}
+          maxFiles={FORM_COMMENT_MAX_FILES}
           pending={add.isPending}
           emptyHint="Comments between the submitter and the team appear here."
           previewItem={(a) => ({
@@ -61,9 +110,19 @@ export function FormComments({
             downloadUrl: `/api/v1/resource-management/attachments/${a.attachmentId}/download`,
             sizeBytes: a.size,
           })}
-          onAdd={async (body, files) => {
-            await add.mutateAsync({ body, files });
+          onAdd={async (body, files, parentId) => {
+            await add.mutateAsync({ body, files, parentId });
           }}
+          onEdit={async (commentId, body) => {
+            await edit.mutateAsync({ commentId, body });
+          }}
+          renderDelete={(c) => (
+            <FormCommentDelete
+              kind={kind}
+              entityId={entityId}
+              commentId={c.id}
+            />
+          )}
         />
       </CardContent>
     </Card>

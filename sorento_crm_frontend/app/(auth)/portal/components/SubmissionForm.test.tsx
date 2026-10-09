@@ -8,7 +8,13 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 
 import type {
   PortalAttachment,
@@ -24,7 +30,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('../lib/portal-client', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../lib/portal-client')>();
+  const original =
+    await importOriginal<typeof import('../lib/portal-client')>();
   return {
     ...original,
     fetchMe: vi.fn(),
@@ -39,17 +46,27 @@ vi.mock('../lib/portal-client', async (importOriginal) => {
   };
 });
 
-import { fetchMe, fetchSubmission, fetchSubmissionNeighbours } from '../lib/portal-client';
+import {
+  fetchMe,
+  fetchSubmission,
+  fetchSubmissionNeighbours,
+} from '../lib/portal-client';
 import { SubmissionForm } from './SubmissionForm';
 import { waitForSectionLoaded } from '@/test-utils';
 
 // Captures every render of the shared preview modal so the banner test can
 // assert on the exact `items` it was handed (staff uploads only - never the
 // contact's own files), without the real carousel engine.
-const previewCalls: Array<{ open: boolean; items: { id: string; name: string }[] }> = [];
+const previewCalls: Array<{
+  open: boolean;
+  items: { id: string; name: string }[];
+}> = [];
 vi.mock('@/components/common/AttachmentPreviewModal', () => ({
   __esModule: true,
-  default: (props: { open: boolean; items: { id: string; name: string }[] }) => {
+  default: (props: {
+    open: boolean;
+    items: { id: string; name: string }[];
+  }) => {
     previewCalls.push({ open: props.open, items: props.items });
     if (!props.open) return null;
     return (
@@ -96,7 +113,9 @@ function staffFile(over: Partial<PortalAttachment> = {}): PortalAttachment {
   };
 }
 
-function detail(over: Partial<PortalSubmissionDetail> = {}): PortalSubmissionDetail {
+function detail(
+  over: Partial<PortalSubmissionDetail> = {},
+): PortalSubmissionDetail {
   return {
     id: 'si-1',
     kind: 'stock_inquiry',
@@ -136,81 +155,21 @@ beforeEach(() => {
   } satisfies PortalSubmissionNeighbours);
 });
 
-describe('SubmissionForm - staff attachment banner', () => {
-  it('renders no attachment-count block or button when there are zero staff attachments', async () => {
-    (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(
-      detail({ attachments: [contactFile()] }),
-    );
-    render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
-    await waitForSectionLoaded();
-
-    expect(screen.getByText('Comment / reply by purchasing')).toBeInTheDocument();
-    expect(screen.queryByText(/attachment.*from purchasing/i)).toBeNull();
-    // Disambiguate from the per-row "View attachment" preview button that the
-    // (contact's own) attachments dropzone always renders - the banner button
-    // is the one with a "(N)" count suffix.
-    expect(screen.queryByRole('button', { name: /View attachments? \(/i })).toBeNull();
-  });
-
-  it('shows a singular "1 attachment from purchasing" + button for one staff file', async () => {
+describe('SubmissionForm - staff reply (FORM-COMMENTS round 2)', () => {
+  // Owner ruling (9 Oct): the purchasing reply is the comment thread's first entry, served by the
+  // comments API, so the separate green box and its "N attachments from purchasing" button are gone.
+  it('renders no separate reply box or staff-attachment button, even with a reply and staff files', async () => {
     (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(
       detail({ attachments: [contactFile(), staffFile({ link_id: 's-1' })] }),
     );
     render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
     await waitForSectionLoaded();
 
-    expect(screen.getByText(/1 attachment from purchasing/)).toBeInTheDocument();
+    expect(screen.queryByText('Comment / reply by purchasing')).toBeNull();
+    expect(screen.queryByText(/attachments? from purchasing/i)).toBeNull();
     expect(
-      screen.getByRole('button', { name: 'View attachment (1)' }),
-    ).toBeInTheDocument();
-  });
-
-  it('shows a plural count for many staff files, and the button label carries the count', async () => {
-    (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(
-      detail({
-        attachments: [
-          contactFile(),
-          staffFile({ link_id: 's-1' }),
-          staffFile({ link_id: 's-2' }),
-          staffFile({ link_id: 's-3' }),
-        ],
-      }),
-    );
-    render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
-    await waitForSectionLoaded();
-
-    expect(screen.getByText(/3 attachments from purchasing/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'View attachments (3)' }),
-    ).toBeInTheDocument();
-  });
-
-  it('opens the preview scoped to ONLY uploader_kind === "user" items, not the contact’s own uploads', async () => {
-    (fetchSubmission as ReturnType<typeof vi.fn>).mockResolvedValue(
-      detail({
-        attachments: [
-          contactFile({ link_id: 'contact-file', filename: 'contact-only.jpg' }),
-          staffFile({ link_id: 's-1', filename: 'staff-1.jpg' }),
-          staffFile({ link_id: 's-2', filename: 'staff-2.jpg' }),
-        ],
-      }),
-    );
-    render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
-    await waitForSectionLoaded();
-
-    fireEvent.click(screen.getByRole('button', { name: 'View attachments (2)' }));
-
-    const modal = within(screen.getByTestId('staff-preview-modal'));
-    expect(modal.getByText('staff-1.jpg')).toBeInTheDocument();
-    expect(modal.getByText('staff-2.jpg')).toBeInTheDocument();
-    expect(modal.queryByText('contact-only.jpg')).toBeNull();
-
-    // The prop the (mocked) modal actually received - never the contact's own file.
-    const lastOpenCall = previewCalls.filter((c) => c.open).at(-1);
-    expect(lastOpenCall?.items.map((i) => i.name).sort()).toEqual([
-      'staff-1.jpg',
-      'staff-2.jpg',
-    ]);
+      screen.queryByRole('button', { name: /View attachments? \(/i }),
+    ).toBeNull();
   });
 });
 
@@ -241,7 +200,9 @@ describe('SubmissionForm - portal record navigation', () => {
     });
     render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
     await waitForSectionLoaded();
-    await waitFor(() => expect(screen.getByLabelText('Previous submission')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText('Previous submission')).toBeInTheDocument(),
+    );
     expect(screen.queryByLabelText('Next submission')).toBeNull();
   });
 
@@ -255,7 +216,9 @@ describe('SubmissionForm - portal record navigation', () => {
     });
     render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
     await waitForSectionLoaded();
-    await waitFor(() => expect(screen.getByLabelText('Next submission')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText('Next submission')).toBeInTheDocument(),
+    );
 
     document.body.focus();
     fireEvent.keyDown(window, { key: 'ArrowRight' });
@@ -273,9 +236,13 @@ describe('SubmissionForm - portal record navigation', () => {
     });
     render(<SubmissionForm kind="stock_inquiry" submissionId="si-1" />);
     await waitForSectionLoaded();
-    await waitFor(() => expect(screen.getByLabelText('Next submission')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByLabelText('Next submission')).toBeInTheDocument(),
+    );
 
-    const additionalRemark = document.getElementById('additional_remark') as HTMLTextAreaElement;
+    const additionalRemark = document.getElementById(
+      'additional_remark',
+    ) as HTMLTextAreaElement;
     expect(additionalRemark).not.toBeNull();
     additionalRemark.focus();
     fireEvent.keyDown(additionalRemark, { key: 'ArrowRight' });

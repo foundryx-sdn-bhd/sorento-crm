@@ -144,10 +144,13 @@ export function CommentsSection({
   isEmpty,
   emptyHint,
   className,
+  footer,
   children,
 }: {
   count: number;
   composer: ReactNode;
+  /** Rendered after the list (or the empty state): a composer at the bottom of the story. */
+  footer?: ReactNode;
   isLoading: boolean;
   isEmpty: boolean;
   emptyHint: string;
@@ -181,6 +184,8 @@ export function CommentsSection({
       ) : (
         children
       )}
+
+      {footer}
     </section>
   );
 }

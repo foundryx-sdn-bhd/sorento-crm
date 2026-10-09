@@ -44,6 +44,13 @@ const comment = {
   authorName: 'Pat Buyer',
   authorKind: 'staff' as const,
   postedByName: null,
+  kind: 'comment' as const,
+  parentId: null,
+  editedAt: null,
+  deleted: false,
+  canEdit: true,
+  canDelete: true,
+  canReply: true,
   createdAt: '2026-10-09T01:00:00',
   attachments: [],
 };
@@ -96,6 +103,7 @@ describe('FormComments (staff)', () => {
       'si-1',
       'Which brand?',
       [],
+      undefined,
     );
   });
 });
