@@ -18,9 +18,12 @@ Dates are Malaysia calendar days (`--until` exclusive). Goes through
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import SessionLocal
 from app.models.base import set_company_scope

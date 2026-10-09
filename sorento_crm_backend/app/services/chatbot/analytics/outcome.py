@@ -65,7 +65,18 @@ def _dict(value: Any) -> dict[str, Any]:
 
 
 def _verdict(turn: dict[str, Any]) -> dict[str, Any]:
-    return _dict(_apply(turn).get("verdict"))
+    """The parser's verdict. The engine writes the `apply` event only from 24 Sep 2026;
+    earlier live turns keep the verdict on the `understood` stage, so read that when there
+    is no apply event (an apply event wins entirely)."""
+    if _apply(turn):
+        return _dict(_apply(turn).get("verdict"))
+    understood = _stage(turn, "understood")
+    facts = _dict(understood.get("facts")) if understood else {}
+    return {
+        "domain_hint": facts.get("domain"),
+        "intent_hint": facts.get("intent"),
+        "message_type": facts.get("message_type"),
+    }
 
 
 def _plan(turn: dict[str, Any]) -> dict[str, Any]:
