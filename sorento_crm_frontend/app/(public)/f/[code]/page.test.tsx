@@ -47,13 +47,15 @@ function respond(link: unknown, linkStatus = 200, contentStatus = 200) {
 }
 
 async function open() {
+  let view!: ReturnType<typeof render>;
   await act(async () => {
-    render(
+    view = render(
       <Suspense fallback={null}>
         <FileLinkPage params={Promise.resolve({ code: 'ABC1234567' })} />
       </Suspense>,
     );
   });
+  return view;
 }
 
 beforeEach(() => {
@@ -160,5 +162,22 @@ describe('AC-F6 unchanged states', () => {
     await open();
     await waitFor(() => expect(replace).toHaveBeenCalledWith('https://cdn.test/a.jpg?sig=1'));
     Object.defineProperty(window, 'location', { configurable: true, value: original });
+  });
+});
+
+describe('unmount cancels parsing', () => {
+  it('passes an AbortSignal to the parser and aborts it when the page unmounts', async () => {
+    respond(SHEET_LINK);
+    let received: unknown;
+    parse.mockImplementation(async (_b: ArrayBuffer, _n: string, signal?: AbortSignal) => {
+      received = signal;
+      return MODEL;
+    });
+    const view = await open();
+    await waitFor(() => expect(screen.getByRole('grid')).toBeInTheDocument());
+    expect(received).toBeInstanceOf(AbortSignal);
+    expect((received as AbortSignal).aborted).toBe(false);
+    view.unmount();
+    expect((received as AbortSignal).aborted).toBe(true);
   });
 });

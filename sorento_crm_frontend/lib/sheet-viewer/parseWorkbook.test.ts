@@ -234,3 +234,74 @@ describe('AC-P11 garbage', () => {
     await expect(parseWorkbook(junk, 'junk.xlsx')).rejects.toBeTruthy();
   });
 });
+
+describe('declared ranges (xls / csv)', () => {
+  function xlsBytes(ws: XLSX.WorkSheet): ArrayBuffer {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, ws, 'Old');
+    const arr = XLSX.write(book, { bookType: 'biff8', type: 'array' }) as ArrayBuffer | number[];
+    return arr instanceof ArrayBuffer ? arr : new Uint8Array(arr).buffer;
+  }
+
+  it('a declared A1:IV65536 range with 2 data rows still reads 2 rows, trimmed columns, no truncation', async () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Code', 'Qty'],
+      ['A-1', 5],
+    ]);
+    ws['!ref'] = 'A1:IV65536';
+    const s = (await parseWorkbook(xlsBytes(ws), 'old.xls')).sheets[0];
+    expect(s.rows).toHaveLength(2);
+    expect(s.rows[0]).toHaveLength(2);
+    expect(s.truncatedRows).toBeFalsy();
+    expect(s.truncatedCols).toBeFalsy();
+  });
+
+  it('a range starting at B3 keeps sheet row and column positions', async () => {
+    const ws: XLSX.WorkSheet = {
+      B3: { t: 's', v: 'x' },
+      C3: { t: 's', v: 'y' },
+      B4: { t: 'n', v: 1 },
+      C4: { t: 'n', v: 2 },
+      '!ref': 'B3:C4',
+    };
+    const s = (await parseWorkbook(xlsBytes(ws), 'old.xls')).sheets[0];
+    expect(s.rows).toHaveLength(2);
+    expect(s.firstRowNumber).toBe(3);
+    expect(s.firstColIndex).toBe(1);
+  });
+});
+
+describe('booleans, merge cap, hidden rows and columns', () => {
+  it('shows booleans as TRUE / FALSE', async () => {
+    const s = await single((ws) => {
+      ws.getCell('A1').value = true;
+      ws.getCell('B1').value = false;
+    });
+    expect(s.rows[0].slice(0, 2)).toEqual(['TRUE', 'FALSE']);
+  });
+
+  it('caps merges at 10,000 per sheet', async () => {
+    const s = await single((ws) => {
+      for (let r = 1; r <= 210; r += 1) {
+        for (let p = 0; p < 50; p += 1) {
+          ws.getCell(r, 2 * p + 1).value = 'm';
+          ws.mergeCells(r, 2 * p + 1, r, 2 * p + 2);
+        }
+      }
+    });
+    expect(s.merges).toHaveLength(10000);
+  }, 60000);
+
+  it('skips hidden rows and gives hidden columns width 0', async () => {
+    const s = await single((ws) => {
+      for (let r = 1; r <= 5; r += 1) {
+        ws.getCell(r, 1).value = `row${r}`;
+        ws.getCell(r, 2).value = `col2-${r}`;
+      }
+      ws.getRow(3).hidden = true;
+      ws.getColumn(2).hidden = true;
+    });
+    expect(s.rows.map((r) => r[0])).toEqual(['row1', 'row2', 'row4', 'row5']);
+    expect(s.columnWidths?.[1]).toBe(0);
+  });
+});

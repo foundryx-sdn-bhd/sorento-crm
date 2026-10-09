@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SpreadsheetViewer, type SpreadsheetWorkbook } from './SpreadsheetViewer';
 
@@ -75,24 +75,66 @@ describe('AC-V2 widths, alignment, bold, fill', () => {
 });
 
 describe('AC-V3 pinned rows and frozen columns', () => {
-  it('keeps pinned rows and frozen columns sticky', () => {
-    render(<SpreadsheetViewer workbook={wb({ pinnedRows: [0], frozenCols: 1 })} />);
-    expect(isSticky(rowOf('Code'), cellOf('Code'))).toBe(true);
-    expect(isSticky(cellOf('A-1'))).toBe(true); // first column frozen
-    expect(isSticky(rowOf('Tap chrome'), cellOf('Tap chrome'))).toBe(false);
+  it('keeps a pinned row sticky from its first render (row 0), outside any frozen column', () => {
+    render(<SpreadsheetViewer workbook={wb({ pinnedRows: [0], frozenCols: 0 })} />);
+    // "Description" is column B: not frozen, so only the pinned row itself can make it sticky.
+    expect(isSticky(rowOf('Description'))).toBe(true);
+    expect(isSticky(rowOf('Tap chrome'))).toBe(false);
+  });
+
+  it('pins a lower row once the grid has scrolled past it, and not before', () => {
+    render(<SpreadsheetViewer workbook={wb({ pinnedRows: [3], frozenCols: 0 })} />);
+    expect(isSticky(rowOf('Basin mixer'))).toBe(false);
+    const scroller = screen.getByTestId('spreadsheet-scroller');
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, value: 5000 });
+    act(() => {
+      fireEvent.scroll(scroller);
+    });
+    expect(isSticky(rowOf('Basin mixer'))).toBe(true);
+    expect(isSticky(rowOf('Tap chrome'))).toBe(false);
+  });
+
+  it('keeps frozen columns sticky at the left', () => {
+    render(<SpreadsheetViewer workbook={wb({ frozenCols: 1 })} />);
+    expect(isSticky(cellOf('A-1'))).toBe(true);
+    expect(isSticky(cellOf('Basin white'))).toBe(false);
   });
 });
 
 describe('AC-V4 merges', () => {
-  it('spans a merged cell across its columns and rows', () => {
+  it('spans a merged cell visually across its columns and rows', () => {
     render(
       <SpreadsheetViewer workbook={wb({ merges: [{ r: 1, c: 1, rowSpan: 2, colSpan: 2 }] })} />,
     );
     const merged = cellOf('Basin white');
-    const cols = merged.getAttribute('aria-colspan') === '2' || /span 2/.test(merged.style.gridColumn);
-    const rows = merged.getAttribute('aria-rowspan') === '2' || /span 2/.test(merged.style.gridRow);
-    expect(cols).toBe(true);
-    expect(rows).toBe(true);
+    expect(merged.style.gridColumn).toMatch(/span 2/);
+    expect(merged.style.gridRow).toMatch(/span 2/);
+  });
+
+  it('a vertical merge does not shift the cells to its right in the covered row', () => {
+    const rows = [
+      ['h1', 'h2', 'h3', 'h4', 'h5'],
+      ['a1', 'b1', 'merged', 'd1', 'e1'],
+      ['a2', 'b2', '', 'Dval', 'Eval'],
+    ];
+    render(
+      <SpreadsheetViewer workbook={wb({ rows, merges: [{ r: 1, c: 2, rowSpan: 2, colSpan: 1 }] })} />,
+    );
+    const row = rowOf('Dval');
+    const d = cellOf('Dval');
+    const explicit = parseInt(d.style.gridColumn, 10);
+    // Track 1 is the row-number column, so sheet column D (4th) sits in track 5.
+    const track = Number.isNaN(explicit) ? Array.from(row.children).indexOf(d) + 1 : explicit;
+    expect(track).toBe(5);
+  });
+});
+
+describe('zero-width (hidden) columns', () => {
+  it('renders no text for a column of width 0', () => {
+    render(<SpreadsheetViewer workbook={wb({ columnWidths: [100, 0, 100] })} />);
+    expect(screen.queryByText('Basin white')).not.toBeInTheDocument();
+    expect(screen.getByText('A-1')).toBeInTheDocument();
+    expect(screen.getByText('40.00')).toBeInTheDocument();
   });
 });
 
