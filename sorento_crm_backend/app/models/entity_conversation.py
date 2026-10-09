@@ -29,6 +29,8 @@ class EntityConversationMessage(Base):
     is_system = Column(Boolean, nullable=False, server_default="false")
     body_html = Column(Text, nullable=False, server_default="")
     author_user_id = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # A submitter's comment on a form (scope 'form_comment') has no CRM user.
+    author_contact_id = Column(Text, ForeignKey("respond_contacts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
     author = relationship("User", foreign_keys=[author_user_id])

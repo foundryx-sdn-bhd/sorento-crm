@@ -69,6 +69,11 @@ EMAIL_EVENT_REGISTRY: list[EventDef] = [
         coalesce_window_seconds=10,
     ),
     EventDef(
+        "form_comment_from_submitter",
+        "Form comment from submitter",
+        "Tells the form's SLA handler that the submitter commented on their form in the portal.",
+    ),
+    EventDef(
         "complaint_created_external",
         "Complaint created (portal)",
         "Alerts the complaint handler team when a portal user files a complaint.",

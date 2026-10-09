@@ -1547,6 +1547,39 @@ async def portal_upload_attachment(
     }
 
 
+@router.get("/submissions/{kind}/{submission_id}/comments")
+def portal_list_comments(
+    kind: str,
+    submission_id: str,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService
+
+    k = _check_kind(kind, db, token)
+    svc = FormCommentService(db)
+    svc._load_row(k, submission_id, contact_id=token.contact_id, space_id=token.space_id)  # 404 unless own
+    return {"items": svc.list_comments(k, submission_id)}
+
+
+@router.post("/submissions/{kind}/{submission_id}/comments", status_code=status.HTTP_201_CREATED)
+async def portal_add_comment(
+    kind: str,
+    submission_id: str,
+    body: Annotated[str, Form()] = "",
+    files: Annotated[Optional[list[UploadFile]], File()] = None,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService
+
+    k = _check_kind(kind, db, token)
+    uploads = [(f.filename, await f.read(), f.content_type) for f in (files or []) if f.filename]
+    return FormCommentService(db).add_contact_comment(
+        k, submission_id, token.contact_id, token.space_id, body, uploads
+    )
+
+
 @router.delete("/attachments/{link_id}")
 def portal_delete_attachment(
     link_id: str = Path(...),
