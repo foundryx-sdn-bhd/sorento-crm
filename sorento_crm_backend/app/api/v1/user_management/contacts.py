@@ -380,6 +380,8 @@ class ContactChatbotUpdate(BaseModel):
     chatbot_allowed: bool | None = None
     # DO-PERIOD-SKIP: absent = leave alone.
     chatbot_skip_period_questions: bool | None = None
+    # PHOTO-SEND-CAP: "Send files as links". Absent = leave alone.
+    chatbot_files_as_links: bool | None = None
     # CONTACT-REGION: absent = leave alone; empty, unknown or explicit null = 422.
     regions: list[Literal["west", "east"]] = Field(default=None, min_length=1)  # type: ignore[assignment]
 
@@ -428,6 +430,8 @@ async def update_contact_chatbot(
             contact.chatbot_allowed = body.chatbot_allowed
         if body.chatbot_skip_period_questions is not None:
             contact.chatbot_skip_period_questions = body.chatbot_skip_period_questions
+        if body.chatbot_files_as_links is not None:
+            contact.chatbot_files_as_links = body.chatbot_files_as_links
         if "regions" in body.model_fields_set:
             contact.regions = [r for r in ("west", "east") if r in body.regions]
         # `get_db` never commits (it only closes), so a flush here rolled back on

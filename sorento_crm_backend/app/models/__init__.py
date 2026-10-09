@@ -100,6 +100,8 @@ from app.models.ai_assistant import (
 from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
 from app.models.chatbot_turn import ChatbotTurn
+from app.models.chat_facts import ChatAskFact, ChatAskItem, ChatEpisodeFact
+from app.models.chatbot_file_link import ChatbotFileLink
 from app.models.conversation_frame import ConversationFrame
 from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding

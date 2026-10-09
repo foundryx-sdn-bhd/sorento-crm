@@ -820,6 +820,20 @@ PERMISSION_REGISTRY.extend([
 ])
 
 
+# Chat analytics CA-1 - migration `chat_facts_0001_tables` creates this and sweeps it onto
+# whoever already holds `system.chat_history.view`. Declared here for the same reason the
+# reporting-foundation block above is: a database built with create_all + sync_permissions
+# never runs a migration body. Separate from `chat_history.view`, which reads one customer's
+# words: this one reads counts only.
+PERMISSION_REGISTRY.extend([
+    {
+        "slug": "chatbot.analytics.view",
+        "name": "View Chat Overview",
+        "description": "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product. Covers every company's customers.",
+    },
+])
+
+
 # Saved views (segments) - migration 455 creates this one and sweeps it onto whoever
 # already holds `scm.recommendation.manage` (S4, PLAN-scm-reorder-oi-feedback-1sep.md).
 # Declared here for the same reason the reporting-foundation block above is: a database

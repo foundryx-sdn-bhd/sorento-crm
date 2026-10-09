@@ -416,6 +416,9 @@ class SystemSetting(Base):
     # Global default grace window for form-SLA actions (PLAN-form-sla-undo.md). 0 =
     # every action fires immediately, i.e. today's behaviour; a stage may override it.
     form_sla_grace_seconds = Column(Integer, nullable=False, server_default="0", default=0)
+    # PHOTO-SEND-CAP round 2 (owner Q1, 9 Oct 2026): how many days a chatbot file short link
+    # (`chatbot_file_links`) stays open. NULL = never expires, which is what the owner chose.
+    chatbot_file_link_expiry_days = Column(Integer, nullable=True)
 
     # The two windows a deferred RECORD action waits out (D7/D16, S6): the product has
     # no confirmation dialogs, so the countdown is the way back and its length is the

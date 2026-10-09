@@ -1,7 +1,7 @@
 """claude.ai analytics connector: OAuth tables, permissions, session method, chat views
 
 Revision ID: acc_0001_connector
-Revises: bflo_0001_borrow_order_toggle
+Revises: fcom_0003_conv_thread
 Create Date: 2026-10-09 00:00:00.000000
 
 CLAUDE-CONNECTOR S1 (card documentation/plans/analytics/CARD-claude-connector-09oct.md).
@@ -26,7 +26,7 @@ from sqlalchemy.dialects import postgresql
 from app.services.analytics_connector import views
 
 revision = "acc_0001_connector"
-down_revision = "bflo_0001_borrow_order_toggle"
+down_revision = "fcom_0003_conv_thread"
 branch_labels = None
 depends_on = None
 

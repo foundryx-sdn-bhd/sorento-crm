@@ -352,6 +352,39 @@ def send_stock_inquiry_respond_message(
     )
 
 
+_FORM_COMMENT_TABLES = {
+    "complaint": "complaints",
+    "stock_inquiry": "stock_inquiries",
+    "purchase_request": "purchase_requests",
+    "sponsorship_form": "purchase_requests",
+}
+
+
+def send_form_comment_message(
+    kind: str,
+    entity_id: str,
+    identifier: str,
+    message_text: str,
+    respond_user_id: str,
+    crm_sender_user_id: Optional[str],
+    space_id: Optional[str],
+    extra_context_vars: Optional[dict] = None,
+) -> dict:
+    """Worker-side: window-aware Respond.io send of a staff comment on a form."""
+    return _send_and_log(
+        use_case=kind,
+        business_table=_FORM_COMMENT_TABLES[kind],
+        business_id=entity_id,
+        identifier=identifier,
+        message_text=message_text,
+        respond_user_id=respond_user_id,
+        crm_sender_user_id=crm_sender_user_id,
+        space_id=space_id,
+        sla_entity_type=kind,
+        extra_context_vars=extra_context_vars,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Manual chat-panel sends (complaint / stock inquiry / purchase request /
 # conversation-SLA chat window). Decouple the Respond.io HTTP call from the

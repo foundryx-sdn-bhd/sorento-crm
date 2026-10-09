@@ -450,6 +450,9 @@ class AttachmentSimple(BaseModel):
     file_path: str
     file_size_bytes: Optional[int] = None
     mime_type: Optional[str] = None
+    # sha256 of the bytes: the chatbot sends one file per image, not per url, and a
+    # picture uploaded twice has two urls and one hash (PHOTO-SEND-CAP R2).
+    file_hash: Optional[str] = None
     uploaded_at: datetime
     created_at: datetime
     attachment_type: Optional[AttachmentTypeSimple] = None

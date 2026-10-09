@@ -34,6 +34,7 @@ from app.api.v1 import (
     sales,
     scm,
     analytics_connector,
+    form_comments,
 )
 from app.api.v1.system import (
     modules_runtime,
@@ -270,6 +271,16 @@ api_router.include_router(
     tags=["list-query"],
 )
 api_router.include_router(lookup.router, prefix="/lookup", tags=["lookup"])
+
+# Form comments span four kinds in two modules (complaints, procurement), so the module guard is
+# "either enabled" and the kind's own view permission is the real gate (see form_comments.py).
+# JWT-only guard on purpose: posting a comment is a staff-session action, no API key.
+api_router.include_router(
+    form_comments.router,
+    prefix="/form-comments",
+    tags=["form-comments"],
+    dependencies=[Depends(require_any_module_enabled("procurement", "complaints"))],
+)
 
 # Activities & Notes - generic per-entity panel (consumed by tickets et al.).
 api_router.include_router(

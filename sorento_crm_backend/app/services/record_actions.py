@@ -2361,6 +2361,21 @@ def _revoke_connector_grant(db: Session, payload: dict):
     return oauth.revoke_grant(db, grant, "revoked", by_user_id=payload.get("requested_by_id"))
 
 
+# ----- Form comments --------------------------------------------------------------------
+#
+# Staff delete of a comment on a submitted form (PLAN-form-comments-09oct.md round 2). The
+# comment row names its form, so the payload is just the comment id. The service re-checks
+# author-or-admin at commit; the park-time gate is any of the four kinds' view grants
+# (`_ANY_OF_PERMISSIONS` in `pending_actions.py`), because the kind is not known until the
+# comment is read.
+
+
+def _delete_form_comment(db: Session, payload: dict):
+    from app.services.form_comment_service import FormCommentService
+
+    return FormCommentService(db).delete_by_id(_entity_id(payload), payload.get("requested_by_id"))
+
+
 register(
     FormAction(
         key="analytics_connector_grant.revoke",
@@ -2369,5 +2384,17 @@ register(
         window=WINDOW_REVERSIBLE,
         permission="analytics.connector.manage",
         label="Revoke Claude connector access",
+    )
+)
+
+
+register(
+    FormAction(
+        key="form_comment.delete",
+        entity_types=("form_comment",),
+        execute=_delete_form_comment,
+        window=WINDOW_DESTRUCTIVE,
+        permission="procurement.stock_inquiries.view",
+        label="Delete comment",
     )
 )
