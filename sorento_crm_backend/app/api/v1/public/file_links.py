@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.services.chatbot.file_links import download_bytes, is_sheet, record_click, resolve
+from app.services.file_link_service import download_bytes, is_sheet, record_click, resolve
 from app.services.storage_router import resolve_signed_url
 from app.utils.http import content_disposition
 
