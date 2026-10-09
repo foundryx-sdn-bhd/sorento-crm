@@ -71,7 +71,7 @@ GRANT = {
 #: `{axis}` are filled in.
 LABEL = {
     "stock": "Stock",
-    "incoming": "Incoming",
+    "incoming": "Incoming {window}",
     "received_qty": "Received {window}",
     "last_receipt": "Last received",
     "supplier": "Supplier",
@@ -79,7 +79,7 @@ LABEL = {
     "sold_total": "Sold {window} ({basis})",
     "sold_by": "Sold {axis} {window} ({basis})",
 }
-NO_WINDOW_LABEL = {"received_qty": "Received"}
+NO_WINDOW_LABEL = {"received_qty": "Received", "incoming": "Incoming"}
 AXIS = {
     "sales_agent": "per salesman",
     "customer": "per customer",
@@ -168,6 +168,9 @@ class Run:
     grants: frozenset[str]
     contact_id: str | None
     space_id: str | None
+    #: Every catalogue product whose code starts with a code, `[{uuid, code}]`: the WHOLE
+    #: family, since the resolver's prefix probe stops at `PREFIX_LIMIT` (review S4).
+    family_of: Callable[[str], list[dict[str, str]]] | None = None
     stock_allowed: bool = True
     asked_at_turn: int | None = None
 
@@ -208,7 +211,8 @@ def answer(
         if not products or not asks:
             return None
         if kind == SCOPE_KIND:
-            return _answer(run, products, asks, family=position == 2, basis=None)
+            basis = payload.get("basis") if payload.get("basis") in BASIS_WORD else None
+            return _answer(run, products, asks, family=position == 2, basis=basis)
         return _answer(
             run,
             products,
@@ -221,15 +225,22 @@ def answer(
     asks = _sub_asks(verdict)
     if not (len(asks) >= 2 and any(a["measure"] in RUNNER_MEASURES for a in asks)):
         return None
+    if _has_other_filters(verdict):
+        return None
     products = _products(verdict, candidates)
     if not products:
         return None
+    if run.family_of is not None:
+        for p in products:
+            whole = run.family_of(p.code)
+            if len(whole) > len(p.family):
+                p.family = whole
     family = verdict.get("family")
     top_basis = verdict.get("basis") if verdict.get("basis") in BASIS_WORD else None
     if family is None:
         ambiguous = next((p for p in products if len(p.family) > 1), None)
         if ambiguous is not None:
-            return _ask_scope(run, ambiguous, products, asks)
+            return _ask_scope(run, ambiguous, products, asks, domain=verdict.get("domain_hint"), basis=top_basis)
     return _answer(run, products, asks, family=bool(family), basis=top_basis)
 
 
@@ -254,6 +265,16 @@ def _resumed(verdict: Any, pending: Any) -> tuple[str, int, dict[str, Any]] | No
     if len(picked) != 1 or picked[0] not in (1, 2):
         return None
     return kind, picked[0], dict(getattr(pending, "payload", None) or {})
+
+
+def _has_other_filters(verdict: dict[str, Any]) -> bool:
+    """A customer, brand, agent, warehouse or any other non-product entity narrows what
+    is asked ("sold to ABC Trading"). The runner's queries are product-only, so such a
+    message is today's path rather than an answer over every customer (review S1)."""
+    return any(
+        isinstance(e, dict) and e.get("hint") not in (None, "", "product")
+        for e in verdict.get("entities") or []
+    )
 
 
 def _products(verdict: dict[str, Any], candidates: list[dict[str, Any]]) -> list[Product]:
@@ -299,7 +320,15 @@ def _ref(c: dict[str, Any]) -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 
 
-def _ask_scope(run: Run, product: Product, products: list[Product], asks: list[dict[str, Any]]) -> Result:
+def _ask_scope(
+    run: Run,
+    product: Product,
+    products: list[Product],
+    asks: list[dict[str, Any]],
+    *,
+    domain: Any = None,
+    basis: str | None = None,
+) -> Result:
     loc = run.localizer
     n = str(len(product.family))
     text = loc.fill(VARIANT_QUESTION, code=product.code, n=n)
@@ -312,7 +341,14 @@ def _ask_scope(run: Run, product: Product, products: list[Product], asks: list[d
         options,
         asked_at_turn=run.asked_at_turn,
         expects="pick",
-        payload={"products": [p.to_wire() for p in products], "sub_asks": asks},
+        # `domain` (review S7): the domain the reply goes back to, so a bare "just this
+        # one" is read under the ask's domain like any other pick (`turn/apply`).
+        payload={
+            "products": [p.to_wire() for p in products],
+            "sub_asks": asks,
+            "basis": basis,
+            "domain": domain or "purchase_cost",
+        },
     )
     return Result(text=text, question=question, trace={"asked": SCOPE_KIND, "variants": len(product.family)})
 
@@ -328,7 +364,12 @@ def _basis_question(run: Run, products: list[Product], asks: list[dict[str, Any]
         options,
         asked_at_turn=run.asked_at_turn,
         expects="pick",
-        payload={"products": [p.to_wire() for p in products], "sub_asks": asks, "family": family},
+        payload={
+            "products": [p.to_wire() for p in products],
+            "sub_asks": asks,
+            "family": family,
+            "domain": "sales",
+        },
     )
     return loc.fill(BASIS_QUESTION), question
 
@@ -435,7 +476,11 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
                 + loc.fill(COST_VALUE, currency=_currency(last.get("currency")), cost=f"{float(cost):,.2f}", po=po, date=when)
             ]
         if measure == "stock":
-            payload = calls.payload(STOCK_TOOL, {"product_ids": ids})
+            # `include_sellable` makes the route answer `stock_summary` (the policy's own
+            # allowed-location totals) in EVERY stock policy mode; the detailed default
+            # answers paged rows and no summary (review B1). Only `total_on_hand` is read:
+            # the sellable figure the flag adds is never printed.
+            payload = calls.payload(STOCK_TOOL, {"product_ids": ids, "include_sellable": True})
             summary = payload.get("stock_summary") if isinstance(payload, dict) else None
             total = sum(_num(r.get("total_on_hand")) for r in summary or [] if isinstance(r, dict))
             return [f"{label}: {_qty(total)}"]

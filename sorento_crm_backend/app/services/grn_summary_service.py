@@ -37,8 +37,9 @@ def _approved_grn_lines(db: Session, product_ids: list[str]):
             PickingLine.product_id.in_(product_ids),
         )
     )
-    # Explicitly: a column query is not an entity query, so the session listener's
-    # company criteria are not relied on (the `spo_last_receipt_service` precedent).
+    # Explicitly as well as through the session listener: the `newest` subquery below is
+    # where `spo_last_receipt_service` measured the listener's criteria getting lost, so
+    # the scope is stated on the query itself rather than left to which form it takes.
     for model in (PickingLine, PickingHeader):
         predicate = build_company_predicate(model, get_company_scope(db))
         if predicate is not None:

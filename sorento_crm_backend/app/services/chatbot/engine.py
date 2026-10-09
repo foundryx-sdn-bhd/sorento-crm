@@ -170,6 +170,24 @@ def split_marked_message(text: str) -> list[str]:
 WHATSAPP_MESSAGE_MAX_CHARS = 3900
 
 
+def _product_family(db: Any, code: str) -> list[dict[str, str]]:
+    """Every chat-searchable product whose code starts with `code` (whitespace and case
+    folded the way the resolver's prefix probe folds them), code order: the WHOLE family
+    a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
+    Company-scoped by the session, as every product read in a turn is."""
+    from app.models.product import Product, chat_searchable_products
+    from app.services.entity_resolver import _strip_all_ws, _ws_insensitive_lower
+
+    prefix = f"{_strip_all_ws(code).lower()}%"
+    rows = (
+        db.query(Product.id, Product.product_code)
+        .filter(_ws_insensitive_lower(Product.product_code).like(prefix), chat_searchable_products())
+        .order_by(Product.product_code, Product.id)
+        .all()
+    )
+    return [{"uuid": str(pid), "code": pcode} for pid, pcode in rows]
+
+
 def pack_parts(text: str, limit: int = WHATSAPP_MESSAGE_MAX_CHARS) -> str:
     """`text` packed into the FEWEST WhatsApp messages, as one marked run
     `split_marked_message` splits (MULTI-ASK-PLAN Q5, owner 9 Oct 2026: text, never a
@@ -5799,6 +5817,8 @@ def _run_stages_body(  # noqa: PLR0915
             and completes_here
             and not customer_scope_refused
             and not getattr(state_out.profile, "stock_availability_only", False)
+            # Review S3: staff only, as the card's Scope says.
+            and turn_state.is_staff_profile(state_out.profile)
             and turn_sub_asks.wants(verdict, state_in.pending)
         ):
             reply_language = _turn_language(
@@ -5822,6 +5842,7 @@ def _run_stages_body(  # noqa: PLR0915
                     contact_id=contact_respond_id,
                     space_id=space_id_for_turn,
                     stock_allowed=getattr(state_out.profile, "stock_allowed", True) is not False,
+                    family_of=lambda code: _product_family(db, code),
                     asked_at_turn=turn_no,
                 ),
                 verdict=verdict,

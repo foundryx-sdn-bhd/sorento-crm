@@ -155,10 +155,15 @@ class Tools:
                 }
             )
         if name == "crm_inventory_stock_balance_list":
+            if not args.get("include_sellable"):
+                # The detailed policy mode (the default): paged rows, no summary.
+                return json.dumps(
+                    {"data": [{"product_id": pid, "quantity_on_hand": 60} for pid in ids], "stock_visibility": {"mode": "detailed"}}
+                )
             return json.dumps(
                 {
                     "data": [],
-                    "stock_visibility": {"mode": "compact", "warehouse_codes": None, "source": "contact"},
+                    "stock_visibility": {"mode": "detailed", "warehouse_codes": None, "source": "contact"},
                     "stock_summary": [
                         {"product_id": pid, "product_code": self.codes[pid], "total_on_hand": 120, "locations": []}
                         for pid in ids
@@ -183,8 +188,23 @@ RUNNER_TOOLS = {
 }
 
 
-def _console(session_factory, monkeypatch, stub_access, phone: str, grants=ALL_GRANTS, agents: int = 2):
+def _console(
+    session_factory, monkeypatch, stub_access, phone: str, grants=ALL_GRANTS, agents: int = 2, staff: bool = True
+):
     c = EngineConsole(session_factory, monkeypatch, stub_access, phone=phone)
+    if staff:
+        # Staff is `chatbot_profile.tier == "office"` (`turn_state.is_staff_profile`).
+        from sqlalchemy import text as sql
+
+        from tests.chatbot.test_engine import CONTACT_ID
+
+        db = session_factory()
+        db.execute(
+            sql("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb) WHERE respond_io_id = :c"),
+            {"p": '{"tier": "office"}', "c": str(CONTACT_ID)},
+        )
+        db.commit()
+        db.close()
     monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: False)
     stub_access(attributes=list(grants))
     tools = Tools(c.codes, agents=agents)
@@ -511,3 +531,95 @@ def test_every_runner_call_names_the_contact_and_the_space(session_factory, monk
     for name, args in calls:
         assert args.get("contact_id"), (name, args)
         assert args.get("space_id"), (name, args)
+
+
+# ---------------------------------------------------------------- review round 1
+
+
+def test_the_stock_line_reads_the_policy_total_on_the_detailed_mode(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009520")
+    text = c.say(
+        "ELP3754 stock and last cost",
+        verdict(
+            domain_hint="inventory",
+            intent_hint="check_stock",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("stock", "stock"), sub("last_cost", "last cost")],
+            family=None,
+        ),
+    )
+    assert text.splitlines()[:2] == ["ELP3754", "Stock: 120"]
+    [args] = c.tools.args("crm_inventory_stock_balance_list")
+    assert args.get("include_sellable") is True
+    assert "sellable" not in text.lower()
+
+
+def test_a_customer_filter_is_todays_path_never_an_all_customer_total(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009521")
+    c.say(
+        "ELP3754 2026 sold to ABC Trading and last cost",
+        verdict(
+            domain_hint="order",
+            intent_hint="check_order",
+            entities=[entity("ELP3754", hint="product"), entity("ABC Trading", hint="customer")],
+            sub_asks=[sub("sold_total", "sold", window=Y2026, basis="delivered"), sub("last_cost", "last cost")],
+            family=None,
+        ),
+    )
+    assert "crm_procurement_grn_summary" not in c.tools.names()
+    assert not any(a.get("view") != "render" for a in c.tools.args("crm_report_ask"))
+
+
+def test_a_non_staff_contact_keeps_todays_path(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009522", staff=False)
+    c.say(OWNER_MESSAGE, owner_verdict())
+    assert "crm_procurement_grn_summary" not in c.tools.names()
+
+
+def test_the_incoming_window_is_shown_when_it_was_applied(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009523")
+    text = c.say(
+        "ELP3754 2026 incoming and last cost",
+        verdict(
+            domain_hint="incoming",
+            intent_hint="check_incoming",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("incoming", "incoming", window=Y2026), sub("last_cost", "last cost")],
+            family=None,
+        ),
+    )
+    assert text.splitlines()[1].startswith("Incoming 2026: ")
+    [args] = c.tools.args("crm_incoming_stock_by_product")
+    assert (args.get("eta_from"), args.get("eta_to")) == ("2026-01-01", "2026-12-31")
+
+
+def test_the_scope_question_remembers_a_basis_turn_one_already_said(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009524")
+    v = owner_verdict(family=None, basis=None)
+    v["basis"] = "delivered"  # said once for the message, not per ask
+    c.say(OWNER_MESSAGE, v)
+    assert c.stored_question.get("kind") == "sub_ask_scope"
+    text = c.say("只要这个", pick(1))
+    assert "卖出按已出货还是按下单算？" not in text
+    assert "2026 总共卖出（已出货）: 860" in text.splitlines()
+
+
+def test_all_variants_counts_the_whole_family_past_the_resolver_cap(session_factory):
+    """The resolver's prefix probe stops at PREFIX_LIMIT (20); the family count does not."""
+    from app.services.chatbot.engine import _product_family
+    from app.services.entity_resolver import PREFIX_LIMIT
+
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    codes = [f"ZZTFAMX-{i:02d}" for i in range(PREFIX_LIMIT + 5)]
+    _seed_products(session_factory, codes)
+    db = session_factory()
+    try:
+        from app.models.base import set_company_scope
+        from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+
+        set_company_scope(db, frozenset({SORENTO}))
+        family = _product_family(db, "zztfamx-")
+    finally:
+        db.close()
+    assert [f["code"] for f in family] == codes

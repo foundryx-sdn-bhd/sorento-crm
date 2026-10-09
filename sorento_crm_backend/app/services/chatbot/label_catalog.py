@@ -641,6 +641,7 @@ LABELS.update(
         "Last cost": {"ms": "Kos terakhir", "zh": "采购价"},
         "Stock": {"ms": "Stok", "zh": "库存"},
         "Incoming": {"ms": "Barang masuk", "zh": "到货"},
+        "Incoming {window}": {"ms": "Barang masuk {window}", "zh": "{window} 到货"},
         "Sold {window} ({basis})": {"ms": "Terjual {window} ({basis})", "zh": "{window} 总共卖出（{basis}）"},
         "Sold {axis} {window} ({basis})": {"ms": "Terjual {axis} {window} ({basis})", "zh": "{window} {axis}卖出（{basis}）"},
         "per salesman": {"ms": "mengikut jurujual", "zh": "每位业务员"},
@@ -685,7 +686,7 @@ LABELS.update(
 #: "delivered" inside a stock or order answer must stay exactly as that answer wrote it.
 _SUB_ASK_KEYS = frozenset(
     {
-        "Received {window}", "Received", "Last received", "Last cost", "Stock", "Incoming",
+        "Received {window}", "Received", "Last received", "Last cost", "Stock", "Incoming", "Incoming {window}",
         "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
         "per customer", "per product", "per brand", "per category", "per location",
         "per channel", "per month", "delivered", "ordered", "not shared with you",
@@ -789,7 +790,7 @@ class Localizer:
         return _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), self.table.get(key, key))
 
     def _text(self, s: str, *, inline: bool) -> str:
-        if s in self.table:
+        if s in self.table and s not in DIRECT_ONLY:
             return self.table[s]
         best = None
         for regex, target, fixed, is_inline in self._templates:
@@ -861,7 +862,7 @@ class Localizer:
         if done != line:
             return done
         flag = _FLAG.fullmatch(line)
-        if flag and flag.group(2) in self.table and not tokens(flag.group(2)):
+        if flag and flag.group(2) in self.table and flag.group(2) not in DIRECT_ONLY and not tokens(flag.group(2)):
             return flag.group(1) + self.table[flag.group(2)] + flag.group(3)
         number = _NUMBERED.match(line)
         prefix, rest = (number.group(0), line[number.end() :]) if number else ("", line)
@@ -873,7 +874,7 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or _BREAKDOWN_VALUE.match(value):
+            if not found or head not in self.table or head in DIRECT_ONLY or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
             return prefix + left + self.table[head] + sep + self._value(value)
         return line
