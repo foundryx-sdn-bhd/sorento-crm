@@ -1,6 +1,6 @@
 # CARD - per-ask planning, exact codes, compact replies (MULTI-ASK-PLAN)
 
-Status: card SETTLED by the owner (9 Oct 2026, two rounds; round 3 ruling R-LASTIN 9 Oct, fix round in progress on a2). Built: S1 (d9f8321b), red-first
+Status: card SETTLED by the owner (9 Oct 2026, two rounds; round 3 ruling R-LASTIN 9 Oct). R-LASTIN fix round built on a2 (red c1e363853 / 7d3dd1b3e / 5fac0e3d3, fixes e4f631a2e / d2bee4ae3 / 546cd1aff, reviewer ready round 3); prompt r5b; waiting on crew's r5 migration and the owner hand test. Built: S1 (d9f8321b), red-first
 tests (f6fc7adf), S3 (b482cfdb), S2 (3f9d878c), S4 (b6daddb0); reviewer + security-reviewer
 findings fixed (4040609f, 25e6781a). Waiting on CI, crew's live parser checks and the owner's
 hand test (PR #1542). Track: L
