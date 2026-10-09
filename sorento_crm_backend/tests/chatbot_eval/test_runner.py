@@ -21,7 +21,7 @@ def test_history_user_turns_replayed_in_order_with_state():
     eng = RecordingEngine()
     res = run_case(eng, mk_case(history=hist), "final q", "run-1")
     assert [c[0] for c in eng.calls] == ["u1", "u2", "final q"]
-    assert eng.calls[0][1] is None
+    assert eng.calls[0][1] == {}
     assert eng.calls[1][1] == {"n": 1}
     assert eng.calls[2][1] == {"n": 2}
     assert all(c[2] == "run-1" for c in eng.calls)

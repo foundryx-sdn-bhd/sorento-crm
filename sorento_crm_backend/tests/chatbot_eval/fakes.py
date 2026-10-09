@@ -75,3 +75,30 @@ class BudgetBurner(RecordingEngine):
 
     def __init__(self, **kw):
         super().__init__(tokens={"prompt": 1_000_000, "cached": 0, "output": 0})
+
+
+# ---- judge fakes for CLI tests (module-level because --judge builds the class itself) ----
+JUDGE_CALLS: list = []
+JUDGE_CFG = {"agree": True, "tokens": {"prompt": 0, "cached": 0, "output": 0}}
+
+
+class FakeJudge:
+    """Importable by `--judge tests.chatbot_eval.fakes:FakeJudge`.
+
+    Agrees with the human label when JUDGE_CFG['agree'] else always disagrees.
+    Passes (during real cases) always. Calibration cases have ids starting 'cal'.
+    """
+
+    def __init__(self, **kw):
+        pass
+
+    def score(self, case, outcome):
+        from scripts.chatbot_eval.judge import JudgeResult
+
+        JUDGE_CALLS.append(case.id)
+        if case.id.startswith("cal"):
+            human = case.id.endswith("y")
+            passed = human if JUDGE_CFG["agree"] else (not human)
+        else:
+            passed = True
+        return JudgeResult(passed=passed, note="n", tokens=dict(JUDGE_CFG["tokens"]))
