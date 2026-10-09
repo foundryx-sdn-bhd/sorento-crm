@@ -45,14 +45,14 @@ class BearerAuthMiddleware:
                 )
                 await response(scope, receive, send)
                 return
-                client = scope.get("client") or ("?", 0)
-                logger.warning(
-                    "mcp auth: %s bearer token from %s on %s %s, allowed because MCP_AUTH_ENFORCE=false",
-                    "invalid" if header else "missing",
-                    client[0],
-                    scope.get("method", ""),
-                    scope["path"],
-                )
+            client = scope.get("client") or ("?", 0)
+            logger.warning(
+                "mcp auth: %s bearer token from %s on %s %s, allowed because MCP_AUTH_ENFORCE=false",
+                "invalid" if header else "missing",
+                client[0],
+                scope.get("method", ""),
+                scope["path"],
+            )
         await self._app(scope, receive, send)
 
     def _authorized(self, header: str) -> bool:
