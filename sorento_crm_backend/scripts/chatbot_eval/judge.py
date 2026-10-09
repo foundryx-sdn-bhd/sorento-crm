@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import httpx
@@ -24,6 +25,7 @@ _PROMPT = (
 class JudgeResult:
     passed: bool
     note: str = ""
+    tokens: dict = field(default_factory=lambda: {"prompt": 0, "cached": 0, "output": 0})
 
 
 class Judge(Protocol):
@@ -42,16 +44,19 @@ def apply_judge(verdict: Verdict, result: JudgeResult, calibrated: bool) -> Verd
         return replace(verdict, reasons=[*verdict.reasons, "judge_uncalibrated"])
     if not result.passed:
         return Verdict("wrong", [*verdict.reasons, f"judge:{result.note}"], False)
-    return verdict
+    return replace(verdict, needs_judge=False)
 
 
-def _parse(text: str) -> JudgeResult:
+def _parse(text: str, tokens: dict | None = None) -> JudgeResult:
     start, end = text.find("{"), text.rfind("}")
     try:
         data = json.loads(text[start : end + 1])
-        return JudgeResult(passed=bool(data.get("passed")), note=str(data.get("note", "")))
+        res = JudgeResult(passed=bool(data.get("passed")), note=str(data.get("note", "")))
     except ValueError:
-        return JudgeResult(passed=False, note="unparseable judge output")
+        res = JudgeResult(passed=False, note="unparseable judge output")
+    if tokens:
+        res.tokens = tokens
+    return res
 
 
 def _prompt(case: Any, outcome: Any) -> str:
@@ -72,7 +77,11 @@ class OpenAIJudge:
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return _parse(resp.json()["choices"][0]["message"]["content"])
+        body = resp.json()
+        use = body.get("usage") or {}
+        cached = (use.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+        tokens = {"prompt": use.get("prompt_tokens", 0), "cached": cached, "output": use.get("completion_tokens", 0)}
+        return _parse(body["choices"][0]["message"]["content"], tokens)
 
 
 class AnthropicJudge:
@@ -93,7 +102,10 @@ class AnthropicJudge:
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return _parse(resp.json()["content"][0]["text"])
+        body = resp.json()
+        use = body.get("usage") or {}
+        tokens = {"prompt": use.get("input_tokens", 0), "cached": 0, "output": use.get("output_tokens", 0)}
+        return _parse(body["content"][0]["text"], tokens)
 
 
 def load_judge(name: str) -> Judge | None:
@@ -101,4 +113,7 @@ def load_judge(name: str) -> Judge | None:
         return OpenAIJudge()
     if name == "anthropic":
         return AnthropicJudge()
+    if ":" in name:
+        module, _, cls = name.partition(":")
+        return getattr(importlib.import_module(module), cls)()
     return None

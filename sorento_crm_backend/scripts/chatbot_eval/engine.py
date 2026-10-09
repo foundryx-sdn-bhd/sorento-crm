@@ -13,7 +13,7 @@ import httpx
 from .trace import parse_trace
 
 MAX_TRIES = 5
-RETRY_STATUS = (429, 503)
+RETRY_STATUS = (429, 502, 503, 504)
 
 
 @dataclass
@@ -38,8 +38,9 @@ def _is_final_text(case: Any, text: str) -> bool:
 
 
 class HttpTurnEngine:
-    def __init__(self, base_url: str, api_key: str, timeout: float = 60, trace_reader: Any = None):
+    def __init__(self, base_url: str, api_key: str, timeout: float = 60, trace_reader: Any = None, contact_reset: Any = None):
         self.trace_reader = trace_reader
+        self.contact_reset = contact_reset
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
@@ -76,24 +77,40 @@ class HttpTurnEngine:
         tokens, errors = parse_trace(self.trace_reader.fetch(turn_id))
         return {"tokens": tokens, "tool_errors": errors}
 
+    def reset_contact(self, case: Any) -> None:
+        """Clear the contact's earlier test memory (private eval DB only); no-op without a reset handle."""
+        if self.contact_reset is not None:
+            self.contact_reset.reset(str(case.contact.get("respond_id", "")))
+
     def _post(self, client: httpx.Client, url: str, env: dict) -> httpx.Response:
         for attempt in range(MAX_TRIES):
-            resp = client.post(url, json={"envelope": env}, headers={"X-API-Key": self.api_key})
-            if resp.status_code not in RETRY_STATUS or attempt == MAX_TRIES - 1:
+            last = attempt == MAX_TRIES - 1
+            try:
+                resp = client.post(url, json={"envelope": env}, headers={"X-API-Key": self.api_key})
+            except httpx.TransportError:
+                if last:
+                    raise
+                time.sleep(2.0**attempt)
+                continue
+            if resp.status_code not in RETRY_STATUS or last:
                 return resp
             try:
                 wait = float(resp.headers.get("Retry-After", ""))
             except ValueError:
                 wait = 2.0**attempt
             time.sleep(min(wait, 60.0))
-        return resp  # pragma: no cover
+        raise RuntimeError("unreachable")  # pragma: no cover
 
     def turn(self, case: Any, text: str, state: dict | None, run_id: str) -> Outcome:
         env = self.build_envelope(case, text, state, run_id)
         url = f"{self.base_url}/api/v1/external/chat/turn"
         started = time.monotonic()
-        with httpx.Client(timeout=self.timeout) as client:
-            resp = self._post(client, url, env)
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = self._post(client, url, env)
+        except httpx.TransportError as exc:
+            latency = int((time.monotonic() - started) * 1000)
+            return Outcome(reply_text="", dry_run=True, tool_errors=[f"transport: {type(exc).__name__}"], latency_ms=latency)
         latency_ms = int((time.monotonic() - started) * 1000)
         if resp.status_code != 200:
             return Outcome(reply_text="", dry_run=True, tool_errors=[f"http {resp.status_code}"], latency_ms=latency_ms)

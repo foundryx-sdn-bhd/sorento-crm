@@ -35,7 +35,9 @@ def _group(results: list[CaseResult], attr: str) -> dict[str, dict[str, int]]:
     return {k: dict(v) for k, v in out.items()}
 
 
-def build_report(run: RunResult, baseline: dict | None = None, model: str = "gpt-5.4-mini") -> dict:
+def build_report(
+    run: RunResult, baseline: dict | None = None, model: str = "gpt-5.4-mini", judge_status: str = "uncalibrated"
+) -> dict:
     res = run.results
     originals = [r for r in res if r.variant_kind is None]
     variants = [r for r in res if r.variant_kind is not None]
@@ -53,6 +55,8 @@ def build_report(run: RunResult, baseline: dict | None = None, model: str = "gpt
         ),
         "gap_original_variant": _diff(_rate(originals), _rate(variants)),
         "pass_rate": _rate(res),
+        "judge_status": judge_status,
+        "unverified": sum(1 for r in res if r.verdict.needs_judge),
         "pass_rate_by_topic": by_topic_rate,
         "tokens": tokens,
         "est_usd": cost_usd(tokens, model),
@@ -93,6 +97,7 @@ def render_summary(report: dict, split: str) -> str:
         f"- underfit (originals pass rate): {_fmt(report['underfit'])}",
         f"- gap dev minus hidden: {_fmt(report['gap_dev_hidden'])}",
         f"- gap originals minus variants: {_fmt(report['gap_original_variant'])}",
+        f"- judge: {report.get('judge_status', 'uncalibrated')}; unverified: {report.get('unverified', 0)}",
         f"- tokens: prompt {t['prompt']}, cached {t['cached']}, output {t['output']}; est. USD {report['est_usd']:.4f}",
         f"- latency p50 {report['latency_p50_ms']} ms, p95 {report['latency_p95_ms']} ms; wall {report['wall_s']:.1f} s",
     ]

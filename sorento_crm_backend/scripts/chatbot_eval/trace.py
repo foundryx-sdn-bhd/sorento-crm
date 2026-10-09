@@ -60,3 +60,37 @@ class DbTraceReader:
         if row is None or row[0] is None:
             return None
         return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+
+
+class DbContactReset:
+    """Deletes a contact's is_test turns and frames. Only ever opens a DB named sorento_eval_*."""
+
+    PREFIX = "sorento_eval_"
+
+    def __init__(self, dsn: str):
+        from urllib.parse import urlparse
+
+        name = urlparse(dsn).path.lstrip("/")
+        if not name.startswith(self.PREFIX):
+            raise ValueError(f"contact reset refuses database {name!r}: name must start with {self.PREFIX}")
+        self.dsn = dsn
+        self._conn: Any = None
+
+    def reset(self, respond_id: str) -> None:
+        import psycopg2
+
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(self.dsn)
+        try:
+            with self._conn, self._conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM chatbot.turns WHERE is_test = true AND contact_respond_id = %s", (respond_id,)
+                )
+                cur.execute(
+                    "DELETE FROM conversation_frames WHERE is_test = true AND contact_respond_id = %s",
+                    (respond_id,),
+                )
+        except Exception:
+            self._conn.close()
+            self._conn = None
+            raise

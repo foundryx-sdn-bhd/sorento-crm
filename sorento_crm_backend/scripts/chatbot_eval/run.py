@@ -11,11 +11,12 @@ import uuid
 from pathlib import Path
 
 from .budget import PRICES, Budget
-from .cases import DataDirInRepoError, load_cases
+from .cases import DataDirInRepoError, Case, _repo_root, load_cases, parse_case
 from .engine import load_engine
-from .judge import load_judge
+from .engine import Outcome
+from .judge import CALIBRATION_MIN, calibrate, load_judge
 from .report import build_report, render_summary
-from .trace import DbTraceReader
+from .trace import DbContactReset, DbTraceReader
 from .runner import NotDryRunError, run_all
 
 
@@ -32,8 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--baseline")
     p.add_argument("--out")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--judge", choices=["openai", "anthropic", "none"], default="none")
-    p.add_argument("--judge-calibrated", action="store_true")
+    p.add_argument("--judge", default="none", help="openai, anthropic, none or module:Class; sends case text to the provider")
     return p
 
 
@@ -56,6 +56,33 @@ def _write(out: str, report: dict, run) -> None:
             fh.write(json.dumps(row) + "\n")
 
 
+def _inside_repo(path: str) -> bool:
+    repo = _repo_root()
+    target = Path(path).resolve()
+    return repo is not None and (target == repo or repo in target.parents)
+
+
+def _calibration_items(data_dir: str) -> list[tuple[Case, Outcome, bool]]:
+    items = []
+    for f in sorted((Path(data_dir) / "calibration").glob("*.json")):
+        raw = json.loads(f.read_text())
+        items.append((parse_case(raw["case"]), Outcome(reply_text=raw["reply_text"]), bool(raw["human_passed"])))
+    return items
+
+
+class _Counting:
+    """Charges calibration judge calls to the budget."""
+
+    def __init__(self, judge, budget):
+        self.judge, self.budget = judge, budget
+
+    def score(self, case, outcome):
+        res = self.judge.score(case, outcome)
+        if self.budget is not None:
+            self.budget.add(res.tokens)
+        return res
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not args.data_dir:
@@ -70,22 +97,41 @@ def main(argv: list[str] | None = None) -> int:
         for path, reason in loaded.invalid:
             print(f"invalid case: {path}: {reason}", file=sys.stderr)
         return 2
+    if args.out and _inside_repo(args.out):
+        print("--out must be outside the git work tree", file=sys.stderr)
+        return 2
+    if args.engine == "http" and args.budget_usd is not None and not os.environ.get("EVAL_TRACE_DB_URL"):
+        print("--budget-usd with the http engine needs EVAL_TRACE_DB_URL to see token use", file=sys.stderr)
+        return 2
     kw = {"base_url": args.base_url, "api_key": os.environ.get("EXTERNAL_API_KEY", ""), "timeout": 120}
-    if args.engine == "http" and os.environ.get("EVAL_TRACE_DB_URL"):
-        kw["trace_reader"] = DbTraceReader(os.environ["EVAL_TRACE_DB_URL"])
+    if args.engine == "http":
+        if os.environ.get("EVAL_TRACE_DB_URL"):
+            kw["trace_reader"] = DbTraceReader(os.environ["EVAL_TRACE_DB_URL"])
+        if os.environ.get("EVAL_RESET_DB_URL"):
+            try:
+                kw["contact_reset"] = DbContactReset(os.environ["EVAL_RESET_DB_URL"])
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
     engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
+    judge = load_judge(args.judge)
+    calibrated = False
+    if judge is not None:
+        items = _calibration_items(args.data_dir)
+        agreement = calibrate(_Counting(judge, budget), items)
+        calibrated = bool(items) and agreement >= CALIBRATION_MIN
     try:
         run = run_all(
             engine, loaded.cases, variants=args.variants, max_parallel=args.max_parallel, budget=budget,
-            run_id=f"eval-{uuid.uuid4().hex[:8]}", seed=args.seed, judge=load_judge(args.judge),
-            judge_calibrated=args.judge_calibrated,
+            run_id=f"eval-{uuid.uuid4().hex[:8]}", seed=args.seed, judge=judge if calibrated else None,
+            judge_calibrated=calibrated,
         )
     except NotDryRunError as exc:
         print(f"aborted: {exc}", file=sys.stderr)
         return 4
-    report = build_report(run, baseline, args.budget_model)
+    report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     if args.out:
         _write(args.out, report, run)
     print(render_summary(report, args.split))

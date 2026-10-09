@@ -23,9 +23,21 @@ def _norm(s: str) -> str:
     return " ".join(s.lower().split())
 
 
-def _has_number(reply: str, want: str) -> bool:
-    want = want.replace(",", "")
-    return any(t.replace(",", "") == want for t in NUM_RE.findall(reply))
+def _canon(token: str) -> str:
+    token = token.replace(",", "")
+    if "." in token:
+        token = token.rstrip("0").rstrip(".")
+    return token
+
+
+def _has_number(reply: str, want: object) -> bool:
+    want = _canon(str(want))
+    for m in NUM_RE.finditer(reply):
+        if m.start() > 0 and reply[m.start() - 1].isalnum():
+            continue
+        if _canon(m.group()) == want:
+            return True
+    return False
 
 
 def _has_date(reply: str, iso: str) -> bool:
@@ -51,6 +63,10 @@ def _must_ok(reply: str, item: dict) -> bool:
     return True
 
 
+def _vacuous(kind: str, expect: Expect) -> bool:
+    return not expect.options if kind == "clarify" else not expect.must
+
+
 def _passes(outcome: str, expect: Expect, reply: str) -> str | None:
     if outcome == "clarify":
         low = reply.lower()
@@ -62,6 +78,9 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
     reply = outcome.reply_text or ""
     if outcome.tool_errors:
         return Verdict("error", ["tool_error"])
+    raw = outcome.raw or {}
+    if raw.get("reply") is None and raw.get("delegate"):
+        return Verdict("error", ["delegated"])
     if not reply.strip():
         return Verdict("error", ["blank_reply"])
     if previous_bot_reply is not None and _norm(reply) == _norm(previous_bot_reply):
@@ -76,8 +95,9 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
             hit = rule.lower() in low
         if hit:
             return Verdict("wrong", [f"must_not:{rule}"])
-    for kind in [expect.outcome, *expect.acceptable_alternates]:
+    kinds = [expect.outcome, *expect.acceptable_alternates]
+    for kind in kinds:
         label = _passes(kind, expect, reply)
         if label:
-            return Verdict(label, [], bool(expect.judge_note))
+            return Verdict(label, [], bool(expect.judge_note) or any(_vacuous(k, expect) for k in kinds))
     return Verdict("wrong", ["expectation_not_met"])

@@ -55,30 +55,40 @@ def run_case(
     judge_calibrated: bool = False,
 ) -> CaseResult:
     total = {"prompt": 0, "cached": 0, "output": 0}
-    state: dict | None = None
+    state: dict | None = {}
     prev_bot = next((h.get("text") for h in reversed(case.history) if h.get("role") == "bot"), None)
+    reset = getattr(engine, "reset_contact", None)
+    if reset is not None:
+        reset(case)
+
+    def spend(tokens: dict) -> None:
+        for k in total:
+            total[k] += int(tokens.get(k, 0) or 0)
+        if budget is not None:
+            budget.add(tokens)
 
     def step(turn_text: str) -> Outcome:
         if budget is not None and budget.exceeded:
             raise BudgetStop()
         out = engine.turn(case, turn_text, state, run_id)
         if not out.dry_run:
-            raise NotDryRunError(f"case {case.id}: turn was not a dry run")
-        for k in total:
-            total[k] += int(out.tokens.get(k, 0) or 0)
-        if budget is not None:
-            budget.add(out.tokens)
+            who = "" if case.split == "hidden" else f" {case.id}"
+            raise NotDryRunError(f"case{who}: turn was not a dry run")
+        spend(out.tokens)
         return out
 
     for h in case.history:
         if h.get("role") == "user":
             out = step(h["text"])
-            state = out.state
+            if out.state is not None:
+                state = out.state
             prev_bot = out.reply_text
     final = step(text)
     verdict = grade(case.expect, final, prev_bot)
-    if verdict.needs_judge and judge is not None:
-        verdict = apply_judge(verdict, judge.score(case, final), judge_calibrated)
+    if verdict.needs_judge and judge is not None and judge_calibrated:
+        result = judge.score(case, final)
+        spend(result.tokens)
+        verdict = apply_judge(verdict, result, True)
     return CaseResult(
         case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
         variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,
@@ -109,27 +119,32 @@ def run_all(
 
     stopped = False
     aborted = False
+    results: list[CaseResult | None] = [None] * len(jobs)
 
-    def work(job: tuple[Case, str, str | None]) -> CaseResult | None:
+    def work(group: list[tuple[int, tuple[Case, str, str | None]]]) -> None:
         nonlocal stopped, aborted
-        case, text, kind = job
-        if aborted:
-            return None
-        try:
-            return run_case(
-                engine, case, text, run_id, variant_kind=kind, budget=budget,
-                judge=judge, judge_calibrated=judge_calibrated,
-            )
-        except BudgetStop:
-            stopped = True
-            return None
-        except NotDryRunError:
-            aborted = True
-            raise
+        for idx, (case, text, kind) in group:
+            if aborted:
+                return
+            scoped = f"{run_id}:{case.id}" + (f":{kind}" if kind else "")
+            try:
+                results[idx] = run_case(
+                    engine, case, text, scoped, variant_kind=kind, budget=budget,
+                    judge=judge, judge_calibrated=judge_calibrated,
+                )
+            except BudgetStop:
+                stopped = True
+            except NotDryRunError:
+                aborted = True
+                raise
 
+    # Engine memory is keyed by contact, so cases sharing a respond_id run one after another.
+    groups: dict[str, list] = {}
+    for idx, job in enumerate(jobs):
+        groups.setdefault(str(job[0].contact.get("respond_id", "")), []).append((idx, job))
     started = time.monotonic()
     with ThreadPoolExecutor(max_workers=max(1, max_parallel)) as pool:
-        done = list(pool.map(work, jobs))
-    results = [r for r in done if r is not None]
-    reason = "budget" if stopped or (budget is not None and budget.exceeded and len(results) < len(jobs)) else None
-    return RunResult(results=results, stopped_reason=reason, wall_s=time.monotonic() - started)
+        list(pool.map(work, groups.values()))
+    done = [r for r in results if r is not None]
+    reason = "budget" if stopped or (budget is not None and budget.exceeded and len(done) < len(jobs)) else None
+    return RunResult(results=done, stopped_reason=reason, wall_s=time.monotonic() - started)

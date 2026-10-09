@@ -50,7 +50,7 @@ def _repo_root() -> Path | None:
     return None
 
 
-def _parse(raw: object) -> Case:
+def parse_case(raw: object) -> Case:
     if not isinstance(raw, dict):
         raise ValueError("case is not a JSON object")
     for key in ("id", "split", "message", "expect"):
@@ -97,8 +97,10 @@ def load_cases(data_dir: str | Path, split: str | None = None) -> LoadResult:
     cases: list[Case] = []
     invalid: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.json")):
+        if "calibration" in path.relative_to(root).parts[:-1]:
+            continue
         try:
-            case = _parse(json.loads(path.read_text()))
+            case = parse_case(json.loads(path.read_text()))
         except (ValueError, OSError) as exc:  # JSONDecodeError is a ValueError
             invalid.append((str(path), str(exc)))
             continue
