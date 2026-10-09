@@ -399,3 +399,75 @@ def test_staff_sessions_still_work_on_reused_routes(env):
     user = make_user(db, "staff", perms=(BRANDS_VIEW,))
     assert client.get(BRANDS, headers=staff_headers(db, user)).status_code == 200
     assert tool_call_rows(db, user.id) == []
+
+
+# ------------------------------------------------------------------ token lifetime (coordinator ruling, r3)
+
+
+@pytest.mark.parametrize("lifetime", [61, 120, 3600])
+def test_a_call_token_living_longer_than_60_seconds_is_refused(env, lifetime):
+    db, client = env
+    user = _analyst(db, f"long{lifetime}")
+    t = epoch()
+    assert_error(signed(client, "GET", BRANDS, user.id, iat=t, exp=t + lifetime), 401, "invalid_signature")
+
+
+def test_a_call_token_exactly_60_seconds_long_passes(env):
+    db, client = env
+    user = _analyst(db, "sixty")
+    t = epoch()
+    resp = signed(client, "GET", BRANDS, user.id, iat=t, exp=t + 60)
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("shift", [-3, 3])
+def test_five_seconds_of_clock_skew_is_tolerated(env, shift):
+    """exp 3 s in the past, or iat 3 s in the future, still verifies (5 s skew)."""
+    db, client = env
+    user = _analyst(db, f"skew{shift}")
+    t = epoch()
+    iat = t - 63 if shift < 0 else t + 3
+    resp = signed(client, "GET", BRANDS, user.id, iat=iat, exp=iat + 60)
+    assert resp.status_code == 200, resp.text
+
+
+def test_an_iat_far_in_the_future_is_refused(env):
+    db, client = env
+    user = _analyst(db, "future")
+    t = epoch()
+    resp = signed(client, "GET", BRANDS, user.id, iat=t + 30, exp=t + 90)
+    assert resp.status_code == 401, resp.text
+
+
+# ------------------------------------------------------------------ connector routes are Connector-auth only
+
+
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("GET", f"{BASE}/datasets", None),
+        ("GET", f"{BASE}/datasets/messages", None),
+        ("POST", f"{BASE}/query", {"dataset": "messages", "limit": 1}),
+        ("GET", f"{BASE}/messages/search?text=x", None),
+        ("GET", f"{BASE}/conversation?contact=x", None),
+        ("GET", f"{BASE}/manifest", None),
+    ],
+)
+def test_a_staff_session_cannot_call_the_connector_data_routes(env, method, path, body):
+    from tests.analytics_connector._helpers import staff_headers
+
+    db, client = env
+    user = make_user(db, "staffcon", perms=(USE, CHAT_VIEW, BRANDS_VIEW))
+    resp = client.request(method, path, headers=staff_headers(db, user), json=body)
+    assert resp.status_code == 401, (path, resp.status_code, resp.text)
+    assert tool_call_rows(db, user.id) == []
+
+
+def test_staff_routes_are_untouched_by_the_connector_only_rule(env):
+    from tests.analytics_connector._helpers import staff_headers
+
+    db, client = env
+    user = make_user(db, "staffok", perms=(USE, CHAT_VIEW, BRANDS_VIEW))
+    h = staff_headers(db, user)
+    assert client.get(BRANDS, headers=h).status_code == 200
+    assert client.get("/api/v1/user-management/users/me", headers=h).status_code == 200
