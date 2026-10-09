@@ -188,7 +188,7 @@ def history_lines(ctx) -> list:
             .limit(1)
         ).scalar()
         if eligible is None:
-            lines.append(f"{label}: not loaded yet.")
+            lines.append(f"{label}{_NOT_LOADED}")
             continue
         read = ctx.db.execute(
             sa.select(sa.func.count(sa.distinct(ASKS.c.history_id))).where(
@@ -208,14 +208,18 @@ def history_lines(ctx) -> list:
 
 #: Printed once after the era lines when a text era shows (crew rulings Q1, Q3).
 TEXT_ERA_CAVEAT = (
-    "Before 5 Sep a reply is the bot's next message within 24 hours; a reply with no sender "
-    "recorded counts as the bot's, so a staff reply then cannot be told apart."
+    "Read from message text, a reply is the bot's next message within 24 hours; a reply with no "
+    "sender recorded counts as the bot's, so a staff reply there cannot be told apart."
 )
+
+_NOT_LOADED = ": not loaded yet."
 
 
 def _with_history(ctx, note: str) -> str:
+    """The note, the era lines, and the caveat once when any text era is loaded."""
     lines = history_lines(ctx)
-    return " ".join([note, *lines, *([TEXT_ERA_CAVEAT] if lines else [])])
+    loaded = any(not line.endswith(_NOT_LOADED) for line in lines)
+    return " ".join([note, *lines, *([TEXT_ERA_CAVEAT] if loaded else [])])
 
 
 def default_period(db=None) -> dict:

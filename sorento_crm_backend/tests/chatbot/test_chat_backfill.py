@@ -279,18 +279,21 @@ def test_with_no_execution_link_the_reply_is_the_outgoing_rows_before_the_next_i
 
 def test_a_duplicate_of_the_ask_does_not_cut_off_its_reply(session_factory, taxonomy):
     # Review round 1 blocker: a message delivered twice (before the dedupe cutover) sorts right
-    # after the original; it is the same ask, not the contact's next one.
-    c = contact_id()
-    h = seed_history(session_factory, c, message_id="ZZT-twice")
-    seed_history(session_factory, c, message_id="ZZT-twice", at=A_TIME + timedelta(seconds=1))
-    seed_history(session_factory, c, words="ZZT same", at=A_TIME + timedelta(seconds=2))
-    seed_history(session_factory, c, words="ZZT same", at=A_TIME + timedelta(seconds=2, microseconds=10))
-    seed_history(session_factory, c, kind="outgoing", words="ZZT-THE-REPLY", at=A_TIME + timedelta(seconds=5))
+    # after the original; it is the same ask, not the contact's next one. Both duplicate rules.
+    with_id, no_id = contact_id(), contact_id()
+    h1 = seed_history(session_factory, with_id, message_id="ZZT-twice")
+    seed_history(session_factory, with_id, message_id="ZZT-twice", at=A_TIME + timedelta(seconds=1))
+    seed_history(session_factory, with_id, kind="outgoing", words="ZZT-REPLY-ONE", at=A_TIME + timedelta(seconds=5))
+    h2 = seed_history(session_factory, no_id, words="ZZT same")
+    seed_history(session_factory, no_id, words="ZZT same", at=A_TIME + timedelta(microseconds=10))
+    seed_history(session_factory, no_id, kind="outgoing", words="ZZT-REPLY-TWO", at=A_TIME + timedelta(seconds=5))
     chat = answered()
     run(session_factory, chat)
-    assert facts(session_factory, h)[0].outcome == "answered"
-    rows = rows_of(chat.calls[0][0])
-    assert all("ZZT-THE-REPLY" in r["bot_reply_start"] for r in rows if r["key"] == str(h))
+    assert facts(session_factory, h1)[0].outcome == "answered"
+    assert facts(session_factory, h2)[0].outcome == "answered"
+    rows = {r["key"]: r for c_ in chat.calls for r in rows_of(c_[0])}
+    assert "ZZT-REPLY-ONE" in rows[str(h1)]["bot_reply_start"]
+    assert "ZZT-REPLY-TWO" in rows[str(h2)]["bot_reply_start"]
 
 
 def test_a_next_ask_with_no_message_id_still_closes_the_window(session_factory, taxonomy):

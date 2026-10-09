@@ -223,7 +223,9 @@ def _reply_rows(db: Session, row: Any) -> list[Any]:
     after = tuple_(_H.c.sent_at, _H.c.id) > tuple_(row.sent_at, row.id)
     # A copy of this same message (B2) is not the contact's next ask.
     if row.message_id is not None:
-        same_ask = _H.c.message_id == row.message_id
+        # IS NOT DISTINCT FROM: a next row with no id is a different ask, and `NOT (NULL = x)`
+        # would be NULL and hide it.
+        same_ask = _H.c.message_id.isnot_distinct_from(row.message_id)
     else:
         same_ask = and_(
             _H.c.message_id.is_(None),
