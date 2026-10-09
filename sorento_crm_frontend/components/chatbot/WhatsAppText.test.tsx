@@ -34,4 +34,16 @@ describe('WhatsAppText', () => {
     expect(container.querySelector('b')).toBeNull();
     expect(container.textContent).toContain('<b>x</b>');
   });
+
+  // PHOTO-SEND-CAP hand test (owner, 9 Oct 2026): in link mode the console shows the
+  // reply's short links, which must open from the console, on the crew copy's port too.
+  it.each([
+    'http://photo-send-cap.localhost:3111/f/7K2QX9MWAPH3V8RZ',
+    'https://crm.example.com/f/7K2QX9MWAPH3V8RZ',
+  ])('makes a /f/ short link clickable after a bold label: %s', (url) => {
+    render(<WhatsAppText text={`*File Name:* Vixx Loo A.pdf\n*Link:* ${url}`} />);
+    const link = screen.getByRole('link', { name: url });
+    expect(link.getAttribute('href')).toBe(url);
+    expect(link.getAttribute('target')).toBe('_blank');
+  });
 });
