@@ -734,3 +734,46 @@ def test_an_unlinked_contact_with_ai_on_is_office(session_factory):
 
 def test_a_turn_with_no_contact_row_is_unknown(session_factory):
     assert _contact_type(session_factory, _cid("ct-none")) == "unknown"
+
+
+# --------------------------------------------------------------------------- asked products (tool lookups)
+
+
+def _lookup(*product_ids, name="crm_inventory_stock_balance_list"):
+    return event("tool", name=name, args={"product_ids": list(product_ids)}, envelope={}, ms=4)
+
+
+def test_products_the_bot_looked_up_are_asked_items_and_unknown_ids_are_dropped(session_factory):
+    import uuid
+
+    cid = _cid("asked")
+    cat = seed_catalogue(session_factory, product_codes=("ZZTASK1", "ZZTASK2"))
+    seed_contact(session_factory, cid)
+    p1, p2 = cat["products"]["ZZTASK1"], cat["products"]["ZZTASK2"]
+    records = answered_trace() + [
+        _lookup(p1, p2, str(uuid.uuid4())),
+        _lookup(p2, name="crm_incoming_stock_list"),  # a repeat across two tool events
+    ]
+    turn_id = seed_turn(session_factory, cid, records=records)
+    _record(session_factory, turn_id)
+
+    items = item_rows(session_factory, fact_rows(session_factory, turn_id=turn_id)[0].id)
+    assert sorted((i.kind, i.ref_id, i.role, i.resolved_by) for i in items) == sorted(
+        [("product", str(p1), "asked", "lookup"), ("product", str(p2), "asked", "lookup")]
+    )
+
+
+def test_a_product_both_named_and_asked_is_two_items(session_factory):
+    cid = _cid("namask")
+    cat = seed_catalogue(session_factory, product_codes=("ZZTNAMASK",))
+    seed_contact(session_factory, cid)
+    pid = cat["products"]["ZZTNAMASK"]
+    records = answered_trace(named=(("product", "ZZTNAMASK"),)) + [_lookup(pid)]
+    turn_id = seed_turn(session_factory, cid, records=records)
+    _record(session_factory, turn_id)
+
+    items = item_rows(session_factory, fact_rows(session_factory, turn_id=turn_id)[0].id)
+    assert sorted((i.kind, i.ref_id, i.role) for i in items) == [
+        ("product", str(pid), "asked"),
+        ("product", str(pid), "named"),
+    ]

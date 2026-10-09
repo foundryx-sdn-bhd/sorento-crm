@@ -512,3 +512,34 @@ def test_the_apply_verdict_wins_over_the_understood_stage():
     flat = outcome_mod().flatten(turn)
     assert flat["domain"] == "inventory"
     assert flat["intent"] == "stock"
+
+
+# ------------------------------------------------------------------ asked product ids
+
+
+def _tool(name="crm_stock", **args):
+    return event("tool", name=name, args=args, envelope={}, ms=3)
+
+
+def test_flatten_asked_product_ids_are_distinct_across_tool_events_in_first_seen_order():
+    turn = turn_dict(
+        _tool(product_ids=["p1", "p2"]),
+        _tool("crm_price", product_ids=["p2", "p3"]),
+        _tool("crm_promo", product_ids=["p1"]),
+    )
+    assert outcome_mod().flatten(turn)["asked_product_ids"] == ["p1", "p2", "p3"]
+
+
+def test_flatten_asked_product_ids_ignore_missing_or_malformed_args():
+    turn = turn_dict(
+        event("tool", name="crm_a", envelope={}, ms=1),
+        _tool(),
+        _tool(product_ids="p9"),
+        _tool(product_ids=None),
+        _tool(product_ids=["p1", 7, None, {"x": 1}, "p2"]),
+    )
+    assert outcome_mod().flatten(turn)["asked_product_ids"] == ["p1", "p2"]
+
+
+def test_flatten_asked_product_ids_is_empty_without_tools():
+    assert outcome_mod().flatten(turn_dict(apply_event()))["asked_product_ids"] == []

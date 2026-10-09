@@ -554,3 +554,47 @@ def test_each_catalog_column_names_the_count_by_values_whose_dataset_lacks_it(ap
     assert lacking["outcome"] == []
     assert lacking["asks"] == []
     assert lacking["failed"] == []
+
+
+# --------------------------------------------------------------------------- asked products
+
+
+ASKED_VIEW = {
+    "params": {},
+    "detail": {"columns": [], "order": []},
+    "pivot": {"rows": "product", "cols": "week", "measures": ["asked", "named"]},
+}
+
+
+def test_count_by_products_counts_asked_rows_per_product(db):
+    products = _seed_items(db)
+    a, b = products["ZZTOV-A"], products["ZZTOV-B"]
+    f1 = _fact(db, outcome="answered", when=_day(9, 8))
+    _item(db, f1, "product", a, "asked")
+    _item(db, f1, "product", b, "asked")
+    f2 = _fact(db, outcome="answered", when=_day(9, 9))
+    _item(db, f2, "product", a, "asked")
+
+    summary = _run(db, {"count_by": ["products"]}, ASKED_VIEW).layouts.summary
+
+    totals = _by_code(summary)
+    assert _dec(totals["ZZTOV-A"].get("asked")) == 2
+    assert _dec(totals["ZZTOV-B"].get("asked")) == 1
+    assert _dec(summary.grand_total["asked"]) == 3
+
+
+def test_the_asked_measure_is_labelled_and_only_the_products_dataset_has_it(api):
+    client, _allow = api
+    resp = client.get(f"/api/v1/reports/{KEY}")
+    assert resp.status_code == 200, resp.text
+    asked = next(c for c in resp.json()["catalog"] if c["key"] == "asked")
+    assert asked["label"] == "Asked"
+    assert asked["tag"] == "measure"
+    assert asked["unavailable_for"] == ["asks"]
+
+
+def test_the_note_says_which_measure_answers_most_asked_products(db):
+    assert _run(db).note == (
+        "From bot traces, 5 Sep 2026 on. Most asked products: Count by Products, "
+        "measure Asked (products the bot looked up). Topics arrive with CA-2."
+    )
