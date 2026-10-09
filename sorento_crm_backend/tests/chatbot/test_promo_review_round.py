@@ -94,8 +94,12 @@ def test_menu_names_the_real_brand_name_and_binds_to_the_resolved_word(session_f
     db.add(Brand(id=str(uuid.uuid4()), brand_code="ZZTSRB", brand_name="Sorento Bath", company_id=DEFAULT_COMPANY_ID))
     db.commit()
     qf = _qf(kind=None, brand="Sorento Bath", typed="sroento")
-    qf["entities"].insert(0, {"raw": "xyzzy", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True})
-    reply, _, _ = _say(session_factory, monkeypatch, qf, "xyzzy sroento promo", "zzt-rr-nit", lambda n, a: HAS)
+    reply, _, _ = _say(session_factory, monkeypatch, qf, "sroento promo", "zzt-rr-nit", lambda n, a: HAS)
     first = reply.splitlines()[0]
-    assert "xyzzy" in first and "Sorento Bath" in first, reply
+    assert "Sorento Bath" in first, reply
     assert "sroento" not in first.lower(), reply
+    # AC-31: an unlisted brand word asks back, no menu, no fetch
+    qf["entities"].insert(0, {"raw": "xyzzy", "hint": "brand", "canonical_code": None, "current_message": True, "confident": True})
+    reply, calls, _ = _say(session_factory, monkeypatch, qf, "xyzzy sroento promo", "zzt-rr-nit-2", lambda n, a: HAS)
+    assert reply.splitlines()[:2] == ['I could not match "xyzzy" to a brand.', "Which brand do you mean?"], reply
+    assert "Which access level" not in reply and not [c for c in calls if c[0] == "crm_marketing_promotions_list"], repr(reply)

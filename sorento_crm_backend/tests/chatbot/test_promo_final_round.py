@@ -40,13 +40,13 @@ def test_a_named_level_with_nothing_live_there_never_says_there_is_no_flyer(sess
     assert reply.strip(), "an answer is expected: the empty-at-that-level reply or the stamped menu"
 
 
-def test_a_brand_the_table_does_not_hold_is_echoed_as_typed_not_the_parsers_canonical(session_factory, monkeypatch):
-    """AC-16: canonical_code "ZORBEX GROUP" matches no live brand row: the menu echoes the
-    typed "zorbex"."""
+def test_a_brand_the_table_does_not_hold_asks_back_as_typed_with_no_menu_and_no_fetch(session_factory, monkeypatch):
+    """AC-16 + AC-31: canonical_code "ZORBEX GROUP" matches no live brand row: the reply says
+    the typed "zorbex" could not be matched, asks which brand, shows no menu and fetches nothing."""
     _seed_contact(session_factory, variables={})
-    reply, _, _ = _say(
+    reply, calls, _ = _say(
         session_factory, monkeypatch, _ask_qf("zorbex", "brand", canonical_code="ZORBEX GROUP"),
         "zorbex promo", "zzt-fr-echo", lambda n, a: HAS,
     )
-    first = reply.splitlines()[0]
-    assert first == "Which access level do you need for zorbex?", reply
+    assert reply.splitlines()[:2] == ['I could not match "zorbex" to a brand.', "Which brand do you mean?"], reply
+    assert "Which access level" not in reply and not [c for c in calls if c[0] == "crm_marketing_promotions_list"], repr(reply)
