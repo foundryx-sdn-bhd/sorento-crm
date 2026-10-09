@@ -74,7 +74,7 @@ No column holds customer words, an episode summary or `last_user_message`.
   and BEFORE `_trim_to_newest`, same transaction, wrapped in a SAVEPOINT so an analytics failure
   never loses the frame.
 - Sweep: `scripts/chat_facts_sweep.py --since 2026-09-05` (one-time load, idempotent) and a
-  nightly scheduler job over the last 3 days.
+  nightly scheduler job over the last 3 days. `--rebuild` reloads a date range after a rule change.
 - Report: `app/services/reports/datasets/chat_asks.py` (ask grain) and `chat_ask_items.py`
   (item grain), `app/services/reports/definitions/chat_overview.py` (key `chat_overview`,
   title "Chat overview", module `chatbot`, permission `chatbot.analytics.view`, scope `none`

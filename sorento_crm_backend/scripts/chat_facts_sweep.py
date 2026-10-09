@@ -41,6 +41,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--since", required=True, help="first Malaysia day to sweep, YYYY-MM-DD")
     parser.add_argument("--until", help="Malaysia day to stop before, YYYY-MM-DD (default: now)")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="delete and reload the range's fact rows under the current rules (after a rule change)",
+    )
     args = parser.parse_args(argv)
 
     since = _day(args.since)
@@ -52,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     # A script has no caller: read every company's contacts, as the scheduler does.
     set_company_scope(db, None)
     try:
-        written = sweep_chat_facts(db, since=since, until=until)
+        written = sweep_chat_facts(db, since=since, until=until, rebuild=args.rebuild)
     finally:
         db.close()
     print(f"chat facts: wrote {written} rows")

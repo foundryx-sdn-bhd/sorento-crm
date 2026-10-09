@@ -316,13 +316,34 @@ def record_turn(db: Session, turn_id: str) -> bool:
     return bool(written)
 
 
-def sweep(db: Session, *, since: datetime, until: datetime | None = None) -> int:
+def sweep(
+    db: Session, *, since: datetime, until: datetime | None = None, rebuild: bool = False
+) -> int:
     """Every closed live turn created in `[since, until)` with no fact row. Returns the
     number of rows written. Idempotent: a second pass over the same range writes nothing.
+
+    `rebuild` reloads the range under the current rules after a logic change: the range's
+    fact rows are deleted (items cascade), rewritten, and their `episode_id` re-stamped.
+    `chat_episode_facts` is never touched. It commits per chunk, so an interrupted rebuild
+    is finished by running it again.
 
     One bad turn is logged and skipped inside its own SAVEPOINT, so it cannot sink the
     rest of the load; the next sweep tries it again.
     """
+    episodes: dict[str, str] = {}
+    if rebuild:
+        in_range = [_TURNS.c.created_at >= since]
+        if until is not None:
+            in_range.append(_TURNS.c.created_at < until)
+        old = select(_FACTS.c.turn_id, _FACTS.c.episode_id).where(
+            _FACTS.c.turn_id.in_(select(_TURNS.c.id).where(*in_range))
+        )
+        episodes = {str(t): str(e) for t, e in db.execute(old) if e is not None}
+        db.execute(
+            delete(_FACTS).where(_FACTS.c.turn_id.in_(select(_TURNS.c.id).where(*in_range)))
+        )
+        db.commit()
+
     has_fact = select(_FACTS.c.id).where(_FACTS.c.turn_id == _TURNS.c.id).exists()
     query = (
         select(_TURNS.c.id)
@@ -356,6 +377,13 @@ def sweep(db: Session, *, since: datetime, until: datetime | None = None) -> int
                     written += _write(db, row)
             except Exception:  # noqa: BLE001 - one turn must not sink the load
                 logger.warning("chat facts sweep: turn %s skipped", row.id, exc_info=True)
+        for row in rows:
+            if str(row.id) in episodes:
+                db.execute(
+                    update(_FACTS)
+                    .where(_FACTS.c.turn_id == row.id)
+                    .values(episode_id=episodes[str(row.id)])
+                )
         db.commit()
     return written
 
