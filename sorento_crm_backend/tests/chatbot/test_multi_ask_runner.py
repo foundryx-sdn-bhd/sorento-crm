@@ -1017,8 +1017,11 @@ def test_a_dealer_lone_last_in_none_keeps_the_escalate_offer(session_factory, mo
     c = _console(session_factory, monkeypatch, stub_access, "+60000009550", staff=False)
     _empty_spo(c, monkeypatch)
     text = c.say("ELP3754 last in", _lone())
-    assert text.startswith("Last in: none on record"), text
-    assert text.splitlines()[-1].endswith("Would you like me to escalate to customer service team?"), text
+    # Own-line shape (round 3): the offer is its own line after the scope lines, never glued
+    # to the bare line with a space.
+    lines = text.splitlines()
+    assert lines[0] == "Last in: none on record", text
+    assert lines[-1].startswith("Would you like me to escalate to ") and lines[-1].endswith(" team?"), text
     assert "matched these" not in text
 
 
@@ -1080,3 +1083,82 @@ def test_an_unresolved_second_code_is_still_named_beside_last_in_none(session_fa
 
 # (c) multi-company " - checked in A, B" is not covered: it needs the two-company seeded chain of
 # test_engine_company_scope.py, too costly for this harness; the coder keeps build_breakdown_msg for it.
+
+
+# ---------------------------------------------------------------- R-LASTIN round 3 (reviewer)
+
+
+def test_a_zh_dealer_lone_last_in_none_is_all_chinese(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009554", staff=False)
+    _empty_spo(c, monkeypatch)
+    text = c.say("ELP3754 最后一次进库", _lone())
+    assert "最后一次进库: 没有记录" in text.splitlines(), text
+    assert "需要我转交给" in text and "团队吗" in text, text
+    assert "Would you like" not in text and "none on record" not in text, text
+
+
+def test_an_unresolved_second_warehouse_is_not_listed_as_a_warehouse(session_factory, monkeypatch, stub_access):
+    from sqlalchemy import text as sql
+
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009555")
+    db = session_factory()
+    db.execute(
+        sql(
+            "INSERT INTO warehouses (id, warehouse_code, warehouse_name, is_active, company_id) "
+            "VALUES (gen_random_uuid(), 'ZZTKL', 'ZZT KL', true, :co)"
+        ),
+        {"co": str(DEFAULT_COMPANY_ID)},
+    )
+    db.commit()
+    db.close()
+    _empty_spo(c, monkeypatch)
+    v = verdict(
+        domain_hint="spo_allocation",
+        intent_hint="check_spo",
+        entities=[
+            entity("ELP3754", hint="product"),
+            entity("ZZTKL", hint="warehouse"),
+            entity("ZZTXX", hint="warehouse"),
+        ],
+        sub_asks=None,
+        family=None,
+    )
+    text = c.say("ELP3754 last in at ZZTKL and ZZTXX", v)
+    lines = text.splitlines()
+    assert "Warehouse: ZZTKL" in lines, text
+    assert any(ln.startswith("Couldn't find:") and "ZZTXX" in ln for ln in lines), text
+    assert [ln for ln in lines if "ZZTXX" in ln] == [ln for ln in lines if ln.startswith("Couldn't find:")], text
+
+
+def test_a_multi_company_lone_last_in_miss_keeps_the_bare_line_and_the_companies(session_factory):
+    """Unit level (an engine harness needs the two-company chain): the generic miss builder with
+    a company-scope suffix must not say `matched these` for a last-in ask."""
+    from app.services.chatbot.lanes.business.answer import not_found_error_message
+    from app.services.chatbot.lanes.business.gate import run_gate
+
+    a, b = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+    matches = [
+        {"uuid": a, "entity_type": "product", "canonical_code": "ELP3754", "company_name": "Sorento"},
+        {"uuid": b, "entity_type": "product", "canonical_code": "ELP3754", "company_name": "Mocha"},
+    ]
+    resolver = {"resolutions": [{"token": "ELP3754", "resolved": True, "matches": [m]} for m in matches]}
+    parser = {
+        "domain_hint": "spo_allocation",
+        "entities": [{"raw": "ELP3754", "hint": "product"}],
+        "routing": {"suggested_team": "procurement"},
+        "access_levels": [],
+    }
+    gate = run_gate(dict(resolver), parser=parser, resolver=resolver)
+    resolved = {
+        "by_entity_type": {"product": matches},
+        "tokens": ["ELP3754"],
+        "unresolved_tokens": [],
+        "resolutions": resolver["resolutions"],
+    }
+    out = not_found_error_message({}, parser=parser, resolved=resolved, gate=gate)
+    message = out.get("escalate_message") or ""
+    assert "Sorento" in message and "Mocha" in message, message
+    assert "matched these" not in message, message
+    assert "Last in: none on record" in message, message
