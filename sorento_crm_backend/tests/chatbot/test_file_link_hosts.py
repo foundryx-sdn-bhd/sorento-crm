@@ -230,3 +230,37 @@ def test_the_public_fetch_returns_the_bytes():
         "https://cdn-sorento.com/r.csv", transport=_transport(lambda r: httpx.Response(200, content=b"a,b\n"))
     )
     assert data == b"a,b\n"
+
+
+def test_a_skipped_url_in_prose_is_not_rewritten_as_a_link_line(monkeypatch):
+    """Only a line that STARTS with `*Link:*` and carries the skipped url becomes
+    `*Link:* (sent as a file)`; a prose line naming the same url keeps its words."""
+    monkeypatch.setenv("R2_CDN_DOMAIN", "cdn-sorento.com")
+    monkeypatch.setattr(app_settings, "frontend_base_url", BASE_URL)
+    off = {"url": "https://files.elsewhere.test/x.pdf", "filename": "x.pdf", "mimeType": "application/pdf"}
+    text = (
+        "Please read the notes before you open https://files.elsewhere.test/x.pdf today.\n"
+        "*File Name:* x.pdf\n*Link:* https://files.elsewhere.test/x.pdf"
+    )
+    with blank_session() as db:
+        out, minted, skipped = file_links.links_for(db, text, [off], contact_respond_id="C1", turn_id=None)
+    assert skipped == [off]
+    assert "*File Name:* x.pdf\n*Link:* (sent as a file)" in out
+    assert out.count("(sent as a file)") == 1
+    assert "Please read the notes before you open" in out
+
+
+@pytest.mark.parametrize("url", ["https://evil.test/x.csv", "https://cdn-sorento.com/x.csv"])
+def test_download_bytes_refuses_a_non_signer_host_without_any_http_call(copy_env, monkeypatch, url):
+    import httpx
+
+    def _no_http(*a, **kw):
+        raise AssertionError("an outbound http call was made")
+
+    for name in ("get", "stream", "request"):
+        monkeypatch.setattr(httpx, name, _no_http)
+    monkeypatch.setattr(httpx.Client, "send", _no_http)
+    monkeypatch.setattr(httpx.Client, "request", _no_http)
+    with pytest.raises(Exception) as exc:
+        file_link_service.download_bytes(url)
+    assert not isinstance(exc.value, AssertionError)
