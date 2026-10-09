@@ -181,3 +181,44 @@ describe('unmount cancels parsing', () => {
     expect((received as AbortSignal).aborted).toBe(true);
   });
 });
+
+describe('content fetch lifecycle', () => {
+  function stallContent() {
+    const inits: (RequestInit | undefined)[] = [];
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/content')) {
+        inits.push(init);
+        return { ok: true, status: 200, arrayBuffer: () => new Promise(() => {}) } as unknown as Response;
+      }
+      return new Response(JSON.stringify(SHEET_LINK), { status: 200 });
+    });
+    return inits;
+  }
+
+  it('gives up on a body that never arrives: cannot-be-shown after 30 s, no spinner', async () => {
+    vi.useFakeTimers();
+    try {
+      stallContent();
+      await open();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(screen.getByText('This file cannot be shown here.')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Loading')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('passes an AbortSignal to the content fetch and aborts it on unmount', async () => {
+    const inits = stallContent();
+    const view = await open();
+    await waitFor(() => expect(inits.length).toBeGreaterThan(0));
+    const signal = inits[0]?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect((signal as AbortSignal).aborted).toBe(false);
+    view.unmount();
+    expect((signal as AbortSignal).aborted).toBe(true);
+  });
+});

@@ -215,3 +215,19 @@ describe('centred long text', () => {
     expect(cell.className.includes('text-center') || cell.style.textAlign === 'center').toBe(true);
   });
 });
+
+describe('centred overflow never spills both ways', () => {
+  it('wraps centred text in an inline-block, max-w-full, truncating inner element', () => {
+    const long = 'Another long centred caption that cannot fit the column';
+    render(
+      <SpreadsheetViewer
+        workbook={wb({ rows: [[long]], cells: [[{ align: 'center' }]], columnWidths: [60] })}
+      />,
+    );
+    const inner = screen.getByText(long);
+    expect(inner).not.toBe(cellOf(long));
+    for (const cls of ['inline-block', 'max-w-full', 'truncate']) {
+      expect(inner.className).toContain(cls);
+    }
+  });
+});
