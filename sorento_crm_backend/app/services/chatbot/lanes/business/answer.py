@@ -4249,11 +4249,37 @@ def not_found_error_message(
                     if esc:
                         order_lines[-1] = f"{order_lines[-1]} {esc}"
                     escalate_message = "\n".join(order_lines)
-                elif use_breakdown and jsc.js_string(domain_hint) == "spo_allocation":
+                elif (
+                    use_breakdown
+                    and jsc.js_string(domain_hint) == "spo_allocation"
+                    and not co_suffix
+                    and not access
+                ):
                     # Owner ruling R-LASTIN (9 Oct 2026): a lone "last in" with no SPO line
                     # says so in the multi-ask's own words, never "no spo allocation matched
-                    # these". A whole-line catalog key, so the reply pass localizes it.
-                    escalate_message = LAST_IN_NONE
+                    # these". The scope the generic breakdown names stays: a warehouse (or
+                    # other non-product entity) as typed, an unresolved code beside it. A
+                    # company-scope suffix or an access notice falls through to the generic
+                    # miss.
+                    # A whole-line catalog key, so the reply pass localizes it; the escalate
+                    # offer follows it exactly as it follows the generic miss sentence.
+                    esc = _esc_offer()
+                    lines_out = [LAST_IN_NONE]
+                    for line in found_lines:
+                        kind = line[2:].split(":", 1)[0]
+                        if kind == "product":
+                            continue
+                        typed_raws = [
+                            jsc.js_string(jsc.get(e, "raw"))
+                            for e in all_ents
+                            if _prettify_type(jsc.get(e, "hint")) == kind and jsc.truthy(jsc.get(e, "raw"))
+                        ]
+                        lines_out.append(f"{kind.capitalize()}: {', '.join(typed_raws)}" if typed_raws else line)
+                    if not_found_raw:
+                        lines_out.append(
+                            f"Couldn't find: {', '.join(jsc.js_string(raw_of_token(t)) for t in not_found_raw)}."
+                        )
+                    escalate_message = "\n".join(lines_out) + (f" {esc}" if esc else "")
                 elif use_breakdown:
                     escalate_message = build_breakdown_msg(
                         f"{status_label}{jsc.js_string(domain_hint)}"

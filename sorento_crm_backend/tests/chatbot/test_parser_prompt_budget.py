@@ -193,7 +193,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # line's delivery date, a lone "last in date and quantity" example, and a plain "sold" is
 # null whatever an earlier turn said: 52,226 est. tokens without MEMORY_ADDENDUM (+57), so
 # CEILING is 52,230 (+4). Nothing else grew.
-CEILING = 52_230
+# Round 2a (same PR): incoming is only not-yet-arrived goods, last_receipt is one ask that
+# carries its own date and quantity, a zh example: 52,288 est. tokens without MEMORY_ADDENDUM
+# (+62), so CEILING is 52,292 (+4). Nothing else grew.
+CEILING = 52_292
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

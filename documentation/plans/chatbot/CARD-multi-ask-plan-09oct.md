@@ -105,6 +105,19 @@ d9f8321b; a new catalog key, so the stored `translation_memory` row for the old 
 - Staff contacts. A dealer (availability-only) contact keeps today's path: its replies have
   their own owner-approved shapes (AVAIL-MODE-REPLIES) and it may not see most measures.
 
+## Fix round 3 notes (9 Oct, a2)
+
+- Prompt r5 also says a plain "卖了" / "sold" is basis null even when an earlier turn named one.
+  Source: a live v78 run (a2 scratch `v78/golden2`) where the owner's six-ask message came back
+  `basis: delivered` with no basis word, so no basis question was asked.
+- An SPO line with `spo_date_source = 'recorded'` (no expected or issue date, so `created_at`
+  answered) prints as a plain `Last in` date in the runner, while the lone path labels it
+  "SPO Date (recorded)". Rare on dev; flagged for the owner, not changed.
+- Parser noise, measured 6x each on gpt-5.4-mini at temperature 0, v78 vs r5: family null 6/6 on
+  both; 入库 read as `incoming` 2/6 (v78) and 3/6 (r5); "Srt38ss last in date and quantity" split
+  into last_receipt + incoming or + received_qty 4/6 on both, but every reply still reads
+  `Last in: none on record`. The base prompt lists "last incoming qty" as a last-in phrase.
+
 ## Sub-ask vocabulary (closed enum the parser emits)
 
 | `measure` | Asked as | Query (one call) | Window | Grant (line says "not shared" without it) | Line (en / zh) |

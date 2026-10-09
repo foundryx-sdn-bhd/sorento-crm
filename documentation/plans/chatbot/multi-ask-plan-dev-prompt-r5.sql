@@ -1,7 +1,8 @@
 -- MULTI-ASK-PLAN r5 addendum (R-LASTIN). A NEW UNLABELLED chatbot_semantic_parser
 -- version = the production text with SUB_ASKS_ADDENDUM after PO_REFS_ADDENDUM, else before the
 -- MEMORY block, else before the policy blocks. Idempotent per addendum text; no label moves;
--- the last statement RAISES if no version carries this addendum.
+-- the last statement RAISES if no version carries this addendum. Precondition: the production
+-- label's text has no SUB ASKS block (true on dev and prod 9 Oct; a promoted r4 makes it raise).
 SELECT v.version, position($q$
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -88,16 +89,17 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-The date AND the quantity of one event are ONE thing: "last in date and quantity",
-"最后一次进库日期和数量" is ONE ask (null).
+"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
+last_receipt (it carries its own date, quantity and SPO number): never add incoming or
+received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past.
+      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
-    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
-      "2026 入库了多少" is received_qty, NEVER incoming.
+    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
     采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
     / ...).
@@ -121,6 +123,7 @@ Examples:
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
+  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -149,16 +152,17 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-The date AND the quantity of one event are ONE thing: "last in date and quantity",
-"最后一次进库日期和数量" is ONE ask (null).
+"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
+last_receipt (it carries its own date, quantity and SPO number): never add incoming or
+received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past.
+      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
-    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
-      "2026 入库了多少" is received_qty, NEVER incoming.
+    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
     采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
     / ...).
@@ -182,6 +186,7 @@ Examples:
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
+  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -216,16 +221,17 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-The date AND the quantity of one event are ONE thing: "last in date and quantity",
-"最后一次进库日期和数量" is ONE ask (null).
+"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
+last_receipt (it carries its own date, quantity and SPO number): never add incoming or
+received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past.
+      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
-    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
-      "2026 入库了多少" is received_qty, NEVER incoming.
+    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
     采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
     / ...).
@@ -249,6 +255,7 @@ Examples:
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
+  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -271,6 +278,9 @@ option's position: never "yes" or "no", never a new question.
        v.variables, '{"wording_edit": true}'::jsonb, $q$MULTI-ASK-PLAN r5: the sub_asks and family keys (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Prompts page.$q$
 FROM ai_prompt_versions v JOIN ai_prompt_labels l ON l.version_id = v.id
 WHERE l.name = 'chatbot_semantic_parser' AND l.label = 'production'
+  -- Precondition: the production text carries no SUB ASKS block yet (an earlier round promoted
+  -- would give two). Then nothing is inserted and the final check RAISES.
+  AND position('SUB ASKS AND FAMILY' IN v.template) = 0
   AND (position($q$
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -306,16 +316,17 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-The date AND the quantity of one event are ONE thing: "last in date and quantity",
-"最后一次进库日期和数量" is ONE ask (null).
+"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
+last_receipt (it carries its own date, quantity and SPO number): never add incoming or
+received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past.
+      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
-    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
-      "2026 入库了多少" is received_qty, NEVER incoming.
+    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
     采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
     / ...).
@@ -339,6 +350,7 @@ Examples:
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
+  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
@@ -368,16 +380,17 @@ Two more OUTPUT keys, on every object:
 == SUB_ASKS ==
 When the CURRENT message asks TWO OR MORE different things, list each, in the order asked.
 ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-The date AND the quantity of one event are ONE thing: "last in date and quantity",
-"最后一次进库日期和数量" is ONE ask (null).
+"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
+last_receipt (it carries its own date, quantity and SPO number): never add incoming or
+received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进了多少, 收货, "received", "came in", "diterima". Past.
+      进了多少, 收货, "received", "came in", "diterima". Past; with a count or a period it is
+      received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
-    "incoming" - goods NOT yet arrived: on the way, ETA, 到货时间, 在途, "arriving". Future.
-      "2026 入库了多少" is received_qty, NEVER incoming.
+    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
     采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
     / ...).
@@ -401,6 +414,7 @@ Examples:
   "SRTWT7445 margin and last cost" -> other (label "margin"), last_cost.
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
+  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
