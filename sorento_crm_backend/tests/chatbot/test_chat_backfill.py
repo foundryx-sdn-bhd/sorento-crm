@@ -277,6 +277,40 @@ def test_with_no_execution_link_the_reply_is_the_outgoing_rows_before_the_next_i
     assert "ZZT-LATER-REPLY" in rows[1]["bot_reply_start"]
 
 
+def test_a_duplicate_of_the_ask_does_not_cut_off_its_reply(session_factory, taxonomy):
+    # Review round 1 blocker: a message delivered twice (before the dedupe cutover) sorts right
+    # after the original; it is the same ask, not the contact's next one.
+    c = contact_id()
+    h = seed_history(session_factory, c, message_id="ZZT-twice")
+    seed_history(session_factory, c, message_id="ZZT-twice", at=A_TIME + timedelta(seconds=1))
+    seed_history(session_factory, c, words="ZZT same", at=A_TIME + timedelta(seconds=2))
+    seed_history(session_factory, c, words="ZZT same", at=A_TIME + timedelta(seconds=2, microseconds=10))
+    seed_history(session_factory, c, kind="outgoing", words="ZZT-THE-REPLY", at=A_TIME + timedelta(seconds=5))
+    chat = answered()
+    run(session_factory, chat)
+    assert facts(session_factory, h)[0].outcome == "answered"
+    rows = rows_of(chat.calls[0][0])
+    assert all("ZZT-THE-REPLY" in r["bot_reply_start"] for r in rows if r["key"] == str(h))
+
+
+@pytest.mark.parametrize("source,outcome", [("user", "handover"), ("echo", "handover"), ("broadcast", "no_reply")])
+def test_staff_and_broadcast_rows_are_not_the_bots_reply(session_factory, taxonomy, source, outcome):
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    seed_history(session_factory, c, kind="outgoing", words="ZZT not the bot", at=A_TIME + timedelta(seconds=9), sender_source=source)
+    run(session_factory, answered(outcome="answered"))
+    assert facts(session_factory, h)[0].outcome == outcome
+
+
+@pytest.mark.parametrize("source", [None, "bot", "api", "workflow"])
+def test_bot_api_workflow_and_unknown_senders_are_the_bots_reply(session_factory, taxonomy, source):
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    seed_history(session_factory, c, kind="outgoing", words=REPLY_WORDS, at=A_TIME + timedelta(seconds=9), sender_source=source)
+    run(session_factory, answered(outcome="clarified"))
+    assert facts(session_factory, h)[0].outcome == "clarified"
+
+
 def test_the_reply_the_model_sees_is_cut_to_300_characters(session_factory, taxonomy):
     c = contact_id()
     seed_history(session_factory, c)
@@ -626,6 +660,39 @@ def test_relabel_rereads_messages_labelled_under_an_older_taxonomy(session_facto
     run(session_factory, answered(subject="master_products", leaf="master_products.price"), relabel=True)
     rows = facts(session_factory, h)
     assert [(r.topic_code, r.taxonomy_version) for r in rows] == [("master_products.price", 2)]
+
+
+def test_relabel_keeps_ask_one_so_its_audit_verdict_survives(session_factory, taxonomy):
+    # Review round 1: the topic audit row cascades from the fact; a relabel must not delete it.
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    seed_history(session_factory, c, kind="outgoing", words=REPLY_WORDS, at=A_TIME + timedelta(seconds=2))
+    two = FakeChat(
+        lambda keys, rows: answer_for(
+            {k: ("answered", [ask("inventory", "inventory.availability"), ask("incoming", "incoming.other")]) for k in keys}
+        )
+    )
+    run(session_factory, two)
+    first_id = facts(session_factory, h)[0].id
+    db = session_factory()
+    models = models_mod()
+    db.add(models.ChatLabelAudit(ask_id=first_id, taxonomy_version=1, verdict="right"))
+    db.query(models.ChatAskFact).filter_by(history_id=h).update({"taxonomy_version": 1})
+    db.commit()
+    run(session_factory, answered(subject="master_products", leaf="master_products.price"), relabel=True)
+    rows = facts(session_factory, h)
+    assert [(r.id, r.ask_seq, r.topic_code) for r in rows] == [(first_id, 1, "master_products.price")]
+    assert session_factory().query(models.ChatLabelAudit).filter_by(ask_id=first_id).count() == 1
+
+
+@pytest.mark.parametrize("bad", ['{"labels": [{"key": "K", "language": "en", "outcome": "answered", "asks": [{"subject": ["x"], "leaf": "x", "confidence": 1, "product_words": []}]}]}', '[]', 'not json'])
+def test_a_malformed_answer_skips_its_rows_and_never_stops_the_run(session_factory, taxonomy, bad):
+    c = contact_id()
+    h = seed_history(session_factory, c)
+    out = run(session_factory, FakeChat(lambda keys, rows: bad.replace('"K"', f'"{keys[0]}"')))
+    assert out["messages_skipped"] == 1
+    assert facts(session_factory, h) == []
+    assert runs(session_factory)[0].status == "done"
 
 
 def test_the_prompt_carries_the_taxonomy_and_the_row_fields(session_factory, taxonomy):

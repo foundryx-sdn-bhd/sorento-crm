@@ -133,6 +133,13 @@ def test_top_asks_and_bot_failures_carry_the_same_lines(db, key):
     assert "17 Apr to 21 Jul: from message text (estimated), 13% of 8 messages read." in note
 
 
+def test_the_share_read_never_reads_over_100(db):
+    for day in range(1, 4):
+        _history_fact(db, datetime(2026, 5, day, 3, tzinfo=UTC))
+    _run_row(db, "A", 2, started=datetime(2026, 10, 1, tzinfo=UTC))
+    assert "17 Apr to 21 Jul: from message text (estimated), 100% of 2 messages read." in _run(db).note
+
+
 # --------------------------------------------------------------------------- default period
 
 
@@ -179,3 +186,37 @@ def test_no_reply_is_an_outcome_in_words_counted_and_not_failed(db):
     assert Decimal(str(summary.grand_total["asks"])) == 1
     assert Decimal(str(summary.grand_total["failed"])) == 0
     assert "No reply" in summary.row_totals
+
+
+def test_the_report_meta_opens_on_the_earliest_fact(db, monkeypatch):
+    """Review round 1: the screen opens on the meta's `default_view` and `params[].default`, so
+    the route must hand the session to the default period too (AC-20)."""
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.dependencies import get_current_user, get_current_user_or_api_key
+    from app.main import app
+    from app.models.user import User
+    from app.services.user_service import UserPermissionService
+
+    me = {"id": str(uuid.uuid4()), "email": "coverage@zzt.test", "name": "Coverage Caller"}
+    db.add(User(id=me["id"], email=me["email"], name=me["name"], status="ACTIVE"))
+    _history_fact(db, datetime(2026, 5, 2, 3, tzinfo=UTC))
+
+    def _override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_current_user] = lambda: me
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: me
+    monkeypatch.setattr(UserPermissionService, "check_user_has_permission", lambda self, uid, slug: True)
+    try:
+        resp = TestClient(app).get("/api/v1/reports/chat_overview")
+    finally:
+        for dep in (get_db, get_current_user, get_current_user_or_api_key):
+            app.dependency_overrides.pop(dep, None)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["default_view"]["params"]["period"]["from"] == "2026-05-02"
+    period = next(p for p in body["params"] if p["key"] == "period")
+    assert period["default"]["from"] == "2026-05-02"
