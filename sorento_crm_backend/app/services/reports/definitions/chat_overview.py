@@ -82,7 +82,7 @@ REPORT = reg.register(
             ),
         ),
         detail=reg.DetailLayout(title="Asks", order_by=ds.order_by, cap="truncate"),
-        pivot=reg.PivotLayout(title="Outcome by week", chart="line", whole_units=True),
+        pivot=reg.PivotLayout(title="Outcome by week", chart="line"),
         default_view={
             "params": {
                 "date_basis": "asked_at",
