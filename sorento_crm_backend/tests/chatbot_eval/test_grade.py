@@ -100,5 +100,5 @@ def test_nothing_passes_wrong():
 
 def test_needs_judge_only_when_pass_and_note():
     assert g(ex(judge_note="be polite"), "hello").needs_judge
-    assert not g(ex(), "hello").needs_judge
+    assert not g(ex(must=[{"code": "TESTCODE-1"}]), "TESTCODE-1 here").needs_judge
     assert not g(ex(judge_note="be polite", must=[{"code": "ZZ"}]), "hello").needs_judge
