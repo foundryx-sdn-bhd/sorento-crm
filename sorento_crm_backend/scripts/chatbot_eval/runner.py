@@ -16,7 +16,9 @@ from .judge import Judge, apply_judge
 
 
 class NotDryRunError(RuntimeError):
-    """A turn came back without the dry-run stamp; the whole run aborts."""
+    """A turn came back without the dry-run stamp; the whole run aborts. `run` holds the partial result."""
+
+    run: "RunResult | None" = None
 
 
 class BudgetStop(Exception):
@@ -137,14 +139,39 @@ def run_all(
             except NotDryRunError:
                 aborted = True
                 raise
+            except Exception as exc:  # noqa: BLE001
+                results[idx] = CaseResult(
+                    case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
+                    variant_kind=kind, verdict=Verdict("error", [f"harness: {type(exc).__name__}"]),
+                    outcome=Outcome(reply_text=""), latency_ms=0, tokens={"prompt": 0, "cached": 0, "output": 0},
+                )
 
     # Engine memory is keyed by contact, so cases sharing a respond_id run one after another.
     groups: dict[str, list] = {}
     for idx, job in enumerate(jobs):
         groups.setdefault(str(job[0].contact.get("respond_id", "")), []).append((idx, job))
     started = time.monotonic()
+    failure: NotDryRunError | None = None
+    interrupted = False
     with ThreadPoolExecutor(max_workers=max(1, max_parallel)) as pool:
-        list(pool.map(work, groups.values()))
+        try:
+            list(pool.map(work, groups.values()))
+        except NotDryRunError as exc:
+            failure = exc
+        except KeyboardInterrupt:
+            aborted = True
+            interrupted = True
     done = [r for r in results if r is not None]
-    reason = "budget" if stopped or (budget is not None and budget.exceeded and len(done) < len(jobs)) else None
-    return RunResult(results=done, stopped_reason=reason, wall_s=time.monotonic() - started)
+    if failure is not None:
+        reason = "not_dry_run"
+    elif interrupted:
+        reason = "interrupted"
+    elif stopped or (budget is not None and budget.exceeded and len(done) < len(jobs)):
+        reason = "budget"
+    else:
+        reason = None
+    run = RunResult(results=done, stopped_reason=reason, wall_s=time.monotonic() - started)
+    if failure is not None:
+        failure.run = run
+        raise failure
+    return run

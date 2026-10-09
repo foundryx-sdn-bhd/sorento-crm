@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 ERROR_MARKER = "Error executing tool"
@@ -40,18 +41,20 @@ class DbTraceReader:
 
     def __init__(self, dsn: str):
         self.dsn = dsn
-        self._conn: Any = None
+        self._local = threading.local()
 
     def _connect(self) -> Any:
-        if self._conn is None or self._conn.closed:
+        conn = getattr(self._local, "conn", None)
+        if conn is None or conn.closed:
             import psycopg2
 
             conn = psycopg2.connect(self.dsn)
             conn.set_session(readonly=True, autocommit=True)
             with conn.cursor() as cur:
                 cur.execute("SET default_transaction_read_only = on")
-            self._conn = conn
-        return self._conn
+            self._local.conn = conn
+            return conn
+        return conn
 
     def fetch(self, turn_id: str) -> list | None:
         with self._connect().cursor() as cur:
@@ -74,15 +77,16 @@ class DbContactReset:
         if not name.startswith(self.PREFIX):
             raise ValueError(f"contact reset refuses database {name!r}: name must start with {self.PREFIX}")
         self.dsn = dsn
-        self._conn: Any = None
+        self._local = threading.local()
 
     def reset(self, respond_id: str) -> None:
         import psycopg2
 
-        if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(self.dsn)
+        conn = getattr(self._local, "conn", None)
+        if conn is None or conn.closed:
+            conn = self._local.conn = psycopg2.connect(self.dsn)
         try:
-            with self._conn, self._conn.cursor() as cur:
+            with conn, conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM chatbot.turns WHERE is_test = true AND contact_respond_id = %s", (respond_id,)
                 )
@@ -91,6 +95,6 @@ class DbContactReset:
                     (respond_id,),
                 )
         except Exception:
-            self._conn.close()
-            self._conn = None
+            conn.close()
+            self._local.conn = None
             raise

@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except NotDryRunError as exc:
         print(f"aborted: {exc}", file=sys.stderr)
-        return 4
+        run = exc.run
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
         engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         _write(args.out, report, run)
     print(render_summary(report, args.split))
-    return 3 if run.stopped_reason == "budget" else 0
+    return {"not_dry_run": 4, "budget": 3, "interrupted": 130}.get(run.stopped_reason, 0)
 
 
 if __name__ == "__main__":
