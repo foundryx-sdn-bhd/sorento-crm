@@ -2,7 +2,7 @@ import json
 
 from scripts.chatbot_eval.cases import Expect
 from scripts.chatbot_eval.grade import Verdict, grade
-from scripts.chatbot_eval.report import build_report
+from scripts.chatbot_eval.report import GRADER_VERSION, build_report
 from scripts.chatbot_eval.run import main
 from scripts.chatbot_eval.runner import CaseResult, RunResult
 from tests.chatbot_eval.fakes import case_dict, make_outcome, write_case
@@ -43,14 +43,14 @@ def _rep(results, baseline=None):
 def test_grader_version_and_strict_total_delta():
     base = _rep([cr("1"), cr("2", "wrong")])
     now = _rep([cr("1"), cr("2")], baseline=base)
-    assert now["grader_version"] == 6
+    assert now["grader_version"] == GRADER_VERSION
     assert "strict_total" in now["delta"]
     assert now["delta"]["comparable"] is True
 
 
 def test_baseline_with_other_grader_version_not_comparable():
     base = _rep([cr("1")])
-    base["grader_version"] = 5
+    base["grader_version"] = GRADER_VERSION - 1
     assert _rep([cr("1")], baseline=base)["delta"]["comparable"] is False
 
 
@@ -91,4 +91,4 @@ def test_regrade_uses_stored_replies_and_current_labels(tmp_path):
     assert labels == {"k0": "wrong", "k1": "correct"}
     rep = json.loads((out2 / "report.json").read_text())
     assert rep["regrade_dropped"] == 1
-    assert rep["grader_version"] == 6
+    assert rep["grader_version"] == GRADER_VERSION
