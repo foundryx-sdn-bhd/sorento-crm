@@ -667,6 +667,9 @@ class FormCommentService:
         notified about this form. Active users with an email only; never the acting admin."""
         from app.models.notification import Notification
 
+        perms = UserPermissionService(self.db)
+        admin_slugs = {UserPermissionService.SUPERADMIN_ROLE_SLUG, "admin"}
+
         def usable(u: Optional[User]) -> bool:
             return (
                 u is not None
@@ -674,6 +677,11 @@ class FormCommentService:
                 and not u.is_trashed
                 and bool((u.email or "").strip())
                 and str(u.id) != str(acting_user_id or "")
+                # Mail carries the comment text: only staff who can still open the form get it.
+                and (
+                    bool(perms.get_user_role_slugs(u.id) & admin_slugs)
+                    or perms.check_user_has_permission(u.id, VIEW_PERMISSION[kind])
+                )
             )
 
         found: dict[str, User] = {}
@@ -699,10 +707,10 @@ class FormCommentService:
                 add(u)
         responded_by = getattr(row, "last_responded_by", None)
         if responded_by and kind in ("stock_inquiry", "complaint"):
+            # respond_user_id is the stored value's meaning; users.id only when nobody has it.
             add(
-                self.db.query(User)
-                .filter((User.id == responded_by) | (User.respond_user_id == responded_by))
-                .first()
+                self.db.query(User).filter(User.respond_user_id == responded_by).first()
+                or self.db.query(User).filter(User.id == responded_by).first()
             )
         if not found:
             team_ids = {
