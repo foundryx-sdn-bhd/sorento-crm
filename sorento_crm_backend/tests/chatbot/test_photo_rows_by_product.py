@@ -12,12 +12,15 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 # CI's backend environment does not install the MCP package; the source sits beside it
-# (same as `tests/test_report_ask_route.py`).
+# (same as `tests/test_report_ask_route.py`). The backend-only image (`/app`) has no
+# MCP source at all, so there the module is skipped (`test_chat_language_slice2.py`).
 if importlib.util.find_spec("sorento_crm_mcp") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "sorento_crm_mcp"))
 
-from sorento_crm_mcp.presenters import present_response  # noqa: E402
+present_response = pytest.importorskip("sorento_crm_mcp.presenters").present_response
 
 from app.services.chatbot.lanes.business import fetch
 
