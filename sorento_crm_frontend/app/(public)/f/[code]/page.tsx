@@ -11,12 +11,12 @@ import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import AttachmentPreviewModal, {
-  type AttachmentPreviewItem,
-} from '@/components/common/AttachmentPreviewModal';
+import { SpreadsheetViewer } from '@/components/common/SpreadsheetViewer';
+import { parseWorkbookInWorker } from '@/lib/sheet-viewer/parseWorkbookInWorker';
+import type { SpreadsheetWorkbook } from '@/lib/sheet-viewer/types';
 import {
   fetchFileLinkContent,
-  fileLinkContentPath,
+  fetchFileLinkDownload,
   readFileLink,
   type FileLink,
 } from './fileLinkService';
@@ -44,12 +44,127 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+type SheetState =
+  | { status: 'loading' }
+  | { status: 'tooBig' }
+  | { status: 'cannot' }
+  | { status: 'ready'; workbook: SpreadsheetWorkbook };
+
+/** A sheet link: the file opens straight into the viewer, with Download in the top bar. */
+function SheetLinkView({ code, filename }: { code: string; filename: string }) {
+  const [state, setState] = useState<SheetState>({ status: 'loading' });
+  const [activeTitle, setActiveTitle] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadFailed, setDownloadFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetchFileLinkContent(code);
+        if (cancelled) return;
+        if (response.status === 413) return setState({ status: 'tooBig' });
+        if (!response.ok) return setState({ status: 'cannot' });
+        const workbook = await parseWorkbookInWorker(await response.arrayBuffer(), filename);
+        if (!cancelled) setState({ status: 'ready', workbook });
+      } catch {
+        if (!cancelled) setState({ status: 'cannot' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, filename]);
+
+  const download = async () => {
+    setDownloading(true);
+    setDownloadFailed(false);
+    try {
+      const response = await fetchFileLinkDownload(code);
+      if (!response.ok) throw new Error('Download failed');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      setDownloadFailed(true);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const shown =
+    state.status === 'ready'
+      ? (state.workbook.sheets.find((s) => s.title === activeTitle) ?? state.workbook.sheets[0])
+      : null;
+  const note = shown?.truncatedRows
+    ? 'Showing first 5,000 rows. Download for the full sheet.'
+    : shown?.truncatedCols
+      ? 'Showing first 100 columns. Download for the full sheet.'
+      : null;
+
+  return (
+    <main className="flex h-dvh w-full min-w-0 flex-col">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
+        <h1 className="min-w-0 flex-1 truncate text-sm font-medium" title={filename}>
+          {filename}
+        </h1>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Download"
+          disabled={downloading}
+          onClick={() => void download()}
+        >
+          {downloading ? <Loader2 className="animate-spin" /> : <Download />}
+          <span className="hidden sm:inline">Download</span>
+        </Button>
+      </header>
+      {downloadFailed ? (
+        <p className="px-3 py-1.5 text-sm text-destructive">Something went wrong. Please try again.</p>
+      ) : null}
+      {state.status === 'loading' ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" />
+        </div>
+      ) : null}
+      {state.status === 'tooBig' || state.status === 'cannot' ? (
+        <div className="flex flex-1 items-center justify-center px-4 text-center">
+          <p className="max-w-sm text-base font-medium">
+            {state.status === 'tooBig'
+              ? 'This file is too big to show here.'
+              : 'This file cannot be shown here.'}
+          </p>
+        </div>
+      ) : null}
+      {state.status === 'ready' ? (
+        <>
+          <SpreadsheetViewer
+            workbook={state.workbook}
+            activeSheet={shown?.title}
+            onActiveSheetChange={setActiveTitle}
+            searchMode="highlight"
+            tabsPosition="bottom"
+            className="min-h-0 flex-1"
+          />
+          {note ? (
+            <p className="shrink-0 border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+              {note}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+    </main>
+  );
+}
+
 export default function FileLinkPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
   const [state, setState] = useState<State>({ status: 'loading' });
-  const [previewOpen, setPreviewOpen] = useState(true);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadFailed, setDownloadFailed] = useState(false);
 
   const load = useCallback(async () => {
     setState({ status: 'loading' });
@@ -117,54 +232,5 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
     );
   }
 
-  const item: AttachmentPreviewItem = {
-    id: code,
-    name: link.filename,
-    url: '',
-    downloadUrl: fileLinkContentPath(code),
-  };
-  const fetchBytes = () => fetchFileLinkContent(code);
-
-  const download = async () => {
-    setDownloading(true);
-    setDownloadFailed(false);
-    try {
-      const response = await fetchFileLinkContent(code);
-      if (!response.ok) throw new Error('Download failed');
-      const objectUrl = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = link.filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
-    } catch {
-      setDownloadFailed(true);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    <Centered>
-      <p className="max-w-sm break-words text-base font-medium">{link.filename}</p>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button onClick={() => setPreviewOpen(true)}>View</Button>
-        <Button variant="outline" disabled={downloading} onClick={() => void download()}>
-          {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-          Download
-        </Button>
-      </div>
-      {downloadFailed ? (
-        <p className="text-sm text-destructive">Something went wrong. Please try again.</p>
-      ) : null}
-      <AttachmentPreviewModal
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        items={[item]}
-        fetchBytes={fetchBytes}
-      />
-    </Centered>
-  );
+  return <SheetLinkView code={code} filename={link.filename} />;
 }
