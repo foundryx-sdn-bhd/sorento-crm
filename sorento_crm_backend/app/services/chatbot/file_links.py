@@ -77,9 +77,9 @@ def links_for(
     turn_id: str | None,
 ) -> tuple[str, int, list[dict[str, Any]]]:
     """`(text, minted, skipped)`: the reply with every link-able file as a short link, how
-    many rows were minted, and the files NOT linked (a host off `link_hosts`, owner hand
-    test 9 Oct 2026). A skipped file's row says it goes as a file, its stored url never
-    shows, and the caller sends it as an attachment; the other files stay links. Raises
+    many rows were minted, and the files NOT linked (a host off `link_hosts`, i.e. one this
+    environment does not sign). Only a skipped file's `*Link:*` line is replaced with
+    `(sent as a file)`; a prose line is left as written. The caller sends it as an attachment; the other files stay links. Raises
     (`LinkModeUnavailable`, or a database error) only when nothing can be linked at all."""
     base = _base_url()
     days = expiry_days(db)
@@ -98,7 +98,7 @@ def links_for(
         raw = str(entry["url"])
         if not _mintable(raw):
             # Security re-review finding 2: a public, possibly never-expiring link is only
-            # ever made for a file on a listed host. This file goes as an attachment, alone.
+            # ever made for a file on a signer host (CLOUDFRONT_DOMAIN / R2_CDN_DOMAIN). This file goes as an attachment, alone.
             skipped.append(entry)
             skipped_raw.add(raw)
             skipped_raw.update(a for a in entry.get("aliasUrls") or [] if isinstance(a, str) and a)
@@ -157,7 +157,7 @@ def strip_raw_links(text: str, files: list[Any]) -> str:
 
 
 def _mintable(url: str) -> bool:
-    """An https url on a listed host (`file_link_service.link_hosts`) with no `..`."""
+    """An https url on a signer host (`file_link_service.link_hosts`) with no `..`."""
     return is_linkable(url)
 
 
