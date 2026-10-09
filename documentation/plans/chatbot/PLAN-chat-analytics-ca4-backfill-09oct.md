@@ -1,6 +1,7 @@
 # PLAN: Chat analytics CA-4, history backfill (9 Oct 2026)
 
-Status: Review fix round 1 pushed (10 Oct 2026); next: crew rulings on sender sources, hand test.
+Status: Hand test (10 Oct 2026). Reviewer READY on f7e552cb (round 3), cloud browser pass PASS,
+dev run of era A with --limit by crew (script laneboard/scripts/1552.md).
 Track: full pipeline (migration, new run table, LLM job). Lane: CA-4-BACKFILL, PR #1552.
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545), CA-4
