@@ -21,3 +21,18 @@ def test_sweep_script_help_runs_without_pythonpath():
     )
     assert result.returncode == 0, result.stderr
     assert "--since" in result.stdout
+
+
+def test_sweep_script_help_lists_rebuild():
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "scripts/chat_facts_sweep.py", "--help"],
+        cwd=BACKEND_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--rebuild" in result.stdout
