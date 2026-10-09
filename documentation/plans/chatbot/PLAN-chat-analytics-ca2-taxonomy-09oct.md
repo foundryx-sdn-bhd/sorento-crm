@@ -109,8 +109,8 @@ day, USD 1.5 to 4 a month. One-time label of the live era (5 Sep on, ~11K asks):
 
 ### Taxonomy v1
 
-Drafted from crew's data in `taxonomy_v1.md` (30 leaves under 16 subjects, real masked
-examples). Awaiting owner approval.
+Drafted from crew's data in `taxonomy_v1.md` (31 leaves under 16 subjects, real masked
+examples). Approved by the owner as the 31-leaf table, 9 Oct 2026.
 
 ## Card answers (crew, 9 Oct 2026)
 
