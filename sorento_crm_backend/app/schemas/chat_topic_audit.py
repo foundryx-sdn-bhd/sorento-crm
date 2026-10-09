@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class AuditRates(BaseModel):
@@ -39,6 +39,14 @@ class AuditRow(BaseModel):
     reviewed_by_name: Optional[str] = None
 
 
+class AuditTopic(BaseModel):
+    """One active taxonomy row, for the corrected-topic pickers (a leaf has a parent)."""
+
+    code: str
+    label: str
+    parent_code: Optional[str] = None
+
+
 class AuditResponse(BaseModel):
     version: int
     versions: list[int]
@@ -46,6 +54,7 @@ class AuditResponse(BaseModel):
     reviewed: int
     rates: AuditRates
     targets: AuditTargets
+    topics: list[AuditTopic]
     rows: list[AuditRow]
 
 
@@ -58,6 +67,15 @@ class DrawResponse(BaseModel):
 
 
 class VerdictRequest(BaseModel):
-    verdict: Literal["right", "wrong_topic", "wrong_subject"]
+    """A verdict on the topic, on the products, or both (a row's products can be judged
+    before its topic is)."""
+
+    verdict: Optional[Literal["right", "wrong_topic", "wrong_subject"]] = None
     corrected_topic: Optional[str] = None
     products_verdict: Optional[Literal["right", "wrong"]] = None
+
+    @model_validator(mode="after")
+    def _says_something(self) -> "VerdictRequest":
+        if self.verdict is None and self.products_verdict is None:
+            raise ValueError("Give a verdict, a products verdict, or both.")
+        return self

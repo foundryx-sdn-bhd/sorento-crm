@@ -254,6 +254,12 @@ def listing(db: Session, *, version: Optional[int], show: str, subject: Optional
         reviewed=reviewed,
         rates=rates,
         targets=TARGETS,
+        topics=[
+            {"code": code, "label": label, "parent_code": parent}
+            for code, label, parent in db.query(ChatTopic.code, ChatTopic.label, ChatTopic.parent_code)
+            .filter(ChatTopic.status == "active")
+            .order_by(ChatTopic.sort_order, ChatTopic.code)
+        ],
         rows=_rows(db, audits),
     )
 
@@ -269,7 +275,7 @@ def judge(
     db: Session,
     audit_id: str,
     *,
-    verdict: str,
+    verdict: Optional[str],
     corrected_topic: Optional[str],
     products_verdict: Optional[str],
     reviewer_id: str,
@@ -278,6 +284,13 @@ def judge(
     if found is None:
         raise AppException(status_code=404, message="That audit row does not exist.", code="NOT_FOUND")
     audit, fact, _turn = found
+    if verdict is None:
+        # Products only: the topic verdict, and the correction with it, stay as they are.
+        audit.products_verdict = products_verdict
+        audit.reviewed_by = str(reviewer_id)
+        audit.reviewed_at = datetime.now(timezone.utc)
+        db.commit()
+        return _rows(db, [_query(db).filter(ChatLabelAudit.id == audit_id).one()])[0]
     corrected: Optional[str] = None
     if verdict in ("wrong_topic", "wrong_subject"):
         leaf = db.query(ChatTopic).filter(ChatTopic.code == corrected_topic).first() if corrected_topic else None

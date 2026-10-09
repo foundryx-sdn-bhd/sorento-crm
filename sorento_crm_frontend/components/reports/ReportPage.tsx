@@ -342,7 +342,7 @@ function SummaryBlock({
         <p className="text-sm text-muted-foreground">No sales in this period</p>
       )}
       <ReportPivotTable layout={layout} />
-      {layout.chart === 'line' && !empty && (
+      {(layout.chart === 'line' || layout.chart === 'bar') && !empty && (
         <Card>
           <CardContent className="py-4">
             <ReportPivotChart layout={layout} />

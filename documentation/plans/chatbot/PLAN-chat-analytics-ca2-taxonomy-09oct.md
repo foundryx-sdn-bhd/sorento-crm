@@ -189,7 +189,7 @@ Top asks opens 5 Sep 2026 to today, topic by month. UAC: `ca2-taxonomy-acceptanc
 - Routes in `app/api/v1/system/chatbot.py` (both slugs required, 403 otherwise):
   - `GET /system/chatbot/topic-audit?version=&show=to_review|reviewed|all&subject=` ->
     `{version, versions[], sample_size, reviewed, rates: {subject, topic, product} (null when
-    nothing judged), targets: {subject: 0.9, topic: 0.8, product: 0.95}, rows: [{id, asked_at,
+    nothing judged), targets: {subject: 0.9, topic: 0.8, product: 0.95}, topics: [{code, label, parent_code}] (active taxonomy rows, for the corrected-topic pickers; added at build), rows: [{id, asked_at,
     message, subject, subject_label, topic, topic_label, confidence, products: [code],
     verdict, corrected_topic, corrected_topic_label, products_verdict, reviewed_by_name}]}`.
     `version` defaults to the current taxonomy version. `message` is read from
