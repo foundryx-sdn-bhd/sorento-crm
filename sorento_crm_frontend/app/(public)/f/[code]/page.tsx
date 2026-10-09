@@ -38,7 +38,7 @@ function isHttpsUrl(url: string | null): boolean {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+    <main className="flex min-h-dvh w-full flex-col items-center justify-center gap-4 px-4 py-10 text-center">
       {children}
     </main>
   );
