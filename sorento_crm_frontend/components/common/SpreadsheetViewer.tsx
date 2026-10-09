@@ -217,8 +217,8 @@ export function SpreadsheetViewer({
       style?.align === 'right' ||
       (!style?.align && (chrome ? looksNumeric(text) : numeric[col]));
     return cn(
-      'min-w-0 overflow-hidden border-e border-border px-2.5',
-      chrome ? 'leading-6' : 'leading-8',
+      'min-w-0 overflow-hidden border-e border-border',
+      chrome ? 'px-1 text-xs leading-6' : 'px-2.5 leading-8',
       style?.wrap ? 'whitespace-normal break-words' : 'truncate',
       right && 'text-end tabular-nums',
       style?.align === 'center' && 'text-center',
@@ -226,6 +226,18 @@ export function SpreadsheetViewer({
       style?.italic && 'italic',
       col < frozen && 'sticky z-10 bg-background',
       chrome && 'border-b',
+    );
+  };
+
+  // Centred or right-aligned text overflows both ways (or off its start); an inner
+  // inline-block keeps the clip at the end only.
+  const inner = (content: React.ReactNode, col: number, style: CellStyle | null, text: string) => {
+    const right =
+      style?.align === 'right' || (!style?.align && (chrome ? looksNumeric(text) : numeric[col]));
+    return !style?.wrap && (style?.align === 'center' || right) ? (
+      <span className="inline-block max-w-full truncate align-top">{content}</span>
+    ) : (
+      content
     );
   };
 
@@ -294,7 +306,7 @@ export function SpreadsheetViewer({
               )}
               style={{ ...cellStyle(col, style), ...position }}
             >
-              {isMatch ? highlightCell(text, needle) : text}
+              {inner(isMatch ? highlightCell(text, needle) : text, col, style, text)}
             </div>
           );
         })}

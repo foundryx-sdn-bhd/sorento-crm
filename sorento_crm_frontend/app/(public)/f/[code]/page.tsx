@@ -44,6 +44,8 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+const CONTENT_TIMEOUT_MS = 30_000;
+
 type SheetState =
   | { status: 'loading' }
   | { status: 'tooBig' }
@@ -60,23 +62,39 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    // The download may stall mid-body (a dev proxy can drop the tail): give up after 30 s.
+    const timer = setTimeout(() => controller.abort(), CONTENT_TIMEOUT_MS);
+    const aborted = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener(
+        'abort',
+        () => reject(new Error('Aborted')),
+        { once: true },
+      );
+    });
+    aborted.catch(() => undefined);
     void (async () => {
       try {
-        const response = await fetchFileLinkContent(code);
+        const response = await fetchFileLinkContent(code, controller.signal);
         if (cancelled) return;
         if (response.status === 413) return setState({ status: 'tooBig' });
         if (!response.ok) return setState({ status: 'cannot' });
-        const workbook = await parseWorkbookInWorker(await response.arrayBuffer(),
+        const bytes = await Promise.race([response.arrayBuffer(), aborted]);
+        clearTimeout(timer);
+        const workbook = await parseWorkbookInWorker(
+          bytes,
           filename,
           controller.signal,
         );
         if (!cancelled) setState({ status: 'ready', workbook });
       } catch {
         if (!cancelled) setState({ status: 'cannot' });
+      } finally {
+        clearTimeout(timer);
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       controller.abort();
     };
   }, [code, filename]);
@@ -104,7 +122,8 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
 
   const shown =
     state.status === 'ready'
-      ? (state.workbook.sheets.find((s) => s.title === activeTitle) ?? state.workbook.sheets[0])
+      ? (state.workbook.sheets.find((s) => s.title === activeTitle) ??
+        state.workbook.sheets[0])
       : null;
   const note = shown?.truncatedRows
     ? 'Showing first 5,000 rows. Download for the full sheet.'
@@ -115,7 +134,10 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
   return (
     <main className="flex h-dvh w-full min-w-0 flex-col">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium" title={filename}>
+        <h1
+          className="min-w-0 flex-1 truncate text-sm font-medium"
+          title={filename}
+        >
           {filename}
         </h1>
         <Button
@@ -130,11 +152,16 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
         </Button>
       </header>
       {downloadFailed ? (
-        <p className="px-3 py-1.5 text-sm text-destructive">Something went wrong. Please try again.</p>
+        <p className="px-3 py-1.5 text-sm text-destructive">
+          Something went wrong. Please try again.
+        </p>
       ) : null}
       {state.status === 'loading' ? (
         <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" />
+          <Loader2
+            className="size-6 animate-spin text-muted-foreground"
+            aria-label="Loading"
+          />
         </div>
       ) : null}
       {state.status === 'tooBig' || state.status === 'cannot' ? (
@@ -169,7 +196,11 @@ function SheetLinkView({ code, filename }: { code: string; filename: string }) {
   );
 }
 
-export default function FileLinkPage({ params }: { params: Promise<{ code: string }> }) {
+export default function FileLinkPage({
+  params,
+}: {
+  params: Promise<{ code: string }>;
+}) {
   const { code } = use(params);
   const [state, setState] = useState<State>({ status: 'loading' });
 
@@ -202,7 +233,10 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
   if (state.status === 'loading') {
     return (
       <Centered>
-        <Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" />
+        <Loader2
+          className="size-6 animate-spin text-muted-foreground"
+          aria-label="Loading"
+        />
       </Centered>
     );
   }
@@ -220,7 +254,9 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
   if (state.status === 'error') {
     return (
       <Centered>
-        <p className="max-w-sm text-base font-medium">Something went wrong. Please try again.</p>
+        <p className="max-w-sm text-base font-medium">
+          Something went wrong. Please try again.
+        </p>
         <Button onClick={() => void load()}>Retry</Button>
       </Centered>
     );
@@ -231,7 +267,10 @@ export default function FileLinkPage({ params }: { params: Promise<{ code: strin
   if (link.kind === 'file') {
     return (
       <Centered>
-        <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden="true" />
+        <Loader2
+          className="size-5 animate-spin text-muted-foreground"
+          aria-hidden="true"
+        />
         <p className="max-w-sm break-words text-sm text-muted-foreground">
           Opening {link.filename}...
         </p>
