@@ -519,3 +519,28 @@ def test_the_pivot_reads_whole_units_so_counts_do_not_print_as_money(api):
     resp = client.post(f"/api/v1/reports/{KEY}/run", json=body)
     assert resp.status_code == 200, resp.text
     assert resp.json()["layouts"]["summary"]["whole_units"] is True
+
+
+# --------------------------------------------------------------------------- summary choices per dataset
+
+
+def test_meta_names_the_param_that_picks_the_dataset(api):
+    client, _allow = api
+    resp = client.get(f"/api/v1/reports/{KEY}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["dataset_param"] == "count_by"
+
+
+def test_each_catalog_column_names_the_count_by_values_whose_dataset_lacks_it(api):
+    client, _allow = api
+    resp = client.get(f"/api/v1/reports/{KEY}")
+    assert resp.status_code == 200, resp.text
+    lacking = {c["key"]: c["unavailable_for"] for c in resp.json()["catalog"]}
+    assert lacking["product"] == ["asks"]
+    assert lacking["named"] == ["asks"]
+    assert lacking["shown"] == ["asks"]
+    assert lacking["failure_reason"] == ["products"]
+    assert lacking["branch_kind"] == ["products"]
+    assert lacking["outcome"] == []
+    assert lacking["asks"] == []
+    assert lacking["failed"] == []
