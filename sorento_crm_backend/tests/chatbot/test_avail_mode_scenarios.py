@@ -63,7 +63,7 @@ def test_S01_exact_code_enough_stock(console):
 
 def test_S02_exact_code_short_within_the_cap_names_the_count(console):
     c = console(SRT5674=Stock(on_hand=30, x=100))
-    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert c.say("SRT5674 x 50", stock(product("SRT5674", 50))) == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 def test_S03_no_stock_shipment_due(console):
@@ -158,7 +158,7 @@ def test_S17_all_exact_one_line_each_in_asked_order(console):
         stock(product("SRT5674", 50), product("CWCX604", 40), product("SRTW2000", 10)),
     )
     assert out == (
-        f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Got stock, 30 available.\n\n"
+        f"SRT5674 x 50: {TICK} Got stock.\n\nCWCX604 x 40: {TICK} Only 30 got stock.\n\n"
         f"SRTW2000 x 10: {CROSS} No stock, ETA 19/10/2026."
     )
 
@@ -265,7 +265,7 @@ def test_S28_one_number_applies_to_every_product_asked(console):
 def test_S29_short_stock_beside_an_eta_line(console):
     c = console(SRT5674=Stock(on_hand=30), SRTW2000=Stock(x=200, eta=ETA))
     out = c.say("SRT5674 x 50, SRTW2000 x 150", stock(product("SRT5674", 50), product("SRTW2000", 150)))
-    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available.\n\nSRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
+    assert out == f"SRT5674 x 50: {TICK} Only 30 got stock.\n\nSRTW2000 x 150: {CROSS} No stock, ETA 19/10/2026."
 
 
 # ================================================================== picker replies
@@ -483,7 +483,7 @@ def test_S46_code_x_qty_misread_as_an_eta_ask_is_still_a_stock_ask(console):
 def test_S46b_misread_through_asks_too(console):
     c = console(SRT5674=Stock(on_hand=30))
     misread = _misread_as_eta(product("SRT5674", 50), asks=[{"domain": "incoming"}])
-    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert c.say("SRT5674 x 50", misread) == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 @pytest.mark.parametrize("typed", ["SRTW2000 x 10 when arrive?", "ETA SRTW2000 x 10", "SRTW2000 x 10 bila sampai"])
@@ -709,7 +709,7 @@ def test_S54_a_code_with_a_quantity_read_as_a_product_info_ask_is_still_a_stock_
 def test_S54b_an_exact_code_with_a_quantity_read_as_product_info_answers_stock(console):
     c = console(SRT5674=Stock(on_hand=30))
     out = c.say("SRT5674 x 50", _misread_as_product_info(product("SRT5674", 50)))
-    assert out == f"SRT5674 x 50: {TICK} Got stock, 30 available."
+    assert out == f"SRT5674 x 50: {TICK} Only 30 got stock."
 
 
 @pytest.mark.parametrize(
@@ -775,12 +775,22 @@ def test_S55e_a_substring_family_beside_an_exact_code_answers_one_and_picks_the_
     assert c.say("2", _pick(2)) == f"SRTWC286-SH-150 x 10: {TICK} Got stock."
 
 
-def test_S55f_a_bare_number_the_parser_tagged_as_a_product_never_names_the_family(console):
-    """Reviewer finding 1 on the AVAIL-PICKER fix: "2 srtwc286" parsed as two products.
-    "2" sits inside half the family's codes and is not code-like, so the picker is
-    SRTWC286's, exactly as on main; "2" is ignored, never "2 matches 10 products"."""
+def test_S55f_a_bare_number_the_parser_tagged_as_a_product_reads_as_its_own_family(console):
+    """ROGUE-CONVO-REVIEW (owner ruling Q3, 6 Oct 2026, prod turn "8066 stock ?"): a bare
+    number the parser tagged as a product reads like a code, through the family the
+    resolver's own substring probe placed, the picker compact mode already gives. So "2
+    srtwc286" parsed as TWO products asks two pickers, "2"'s own family first (the three
+    catalogue rows the console seeds for a stray "2"), then SRTWC286's, numbering running
+    on (owner v2 note 3). The defence for this mis-parse is the parser's QUANTITY rule (a
+    count beside a code is that code's quantity), not a code-side heuristic; the previous
+    pin here ("2" is ignored) was the reviewer's finding 1 on the AVAIL-PICKER fix."""
+    from app.services.chatbot.turn import task as turn_task
+
     c = console()
-    assert c.say("2 srtwc286", stock(product("2"), product("srtwc286"))) == FAMILY_ASK
+    out = c.say("2 srtwc286", stock(product("2"), product("srtwc286")))
+    stray = numbered("2 matches 3 products. Which one?", ["2001", "2002", "2120H"])
+    family = "\n".join(["SRTWC286 matches 10 products. Which one?", *turn_task.numbered(OWNER_FAMILY, 4)])
+    assert out == f"{stray}\n\n{family}", out
 
 # ================================================================== AVAIL-RENDER (owner, 5 Oct 2026)
 # Plan: documentation/plans/chatbot/PLAN-avail-render-05oct.md. The tick says got stock and
@@ -815,7 +825,7 @@ def test_S63_a_mixed_reply_marks_only_the_discontinued_line(console):
     c = console(SRT5674=Stock(on_hand=30, x=100, discontinued=True), CWCX604=Stock(on_hand=100))
     out = c.say("SRT5674 x 50, CWCX604 x 5", stock(product("SRT5674", 50), product("CWCX604", 5)))
     assert out == (
-        f"SRT5674 x 50: {TICK} Got stock, 30 available.\n{DISCONTINUED}\n\nCWCX604 x 5: {TICK} Got stock."
+        f"SRT5674 x 50: {TICK} Only 30 got stock.\n{DISCONTINUED}\n\nCWCX604 x 5: {TICK} Got stock."
     )
 
 

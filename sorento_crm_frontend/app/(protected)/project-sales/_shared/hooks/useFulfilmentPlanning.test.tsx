@@ -10,7 +10,7 @@
  * decision would look like it had not happened.
  */
 import React, { type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { render, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -79,6 +79,8 @@ import {
   ORDER_INQUIRY_SUMMARY_KEY,
   ORDER_INQUIRY_WORKLIST_KEY,
   ORDER_INQUIRY_WORKLIST_SUMMARY_KEY,
+  ORDER_INQUIRY_HEADER_KEY,
+  ORDER_INQUIRY_HEADER_LINES_KEY,
 } from './useOrderInquiry';
 import { SALES_ORDERS_KEY, SALES_ORDER_KEY } from './useProjectSalesOrders';
 
@@ -908,5 +910,140 @@ describe('patchContributionDraft', () => {
 
     expect(patched.contributions[0]).toBe(source.contributions[0]);
     expect(patched.cells[0]).not.toBe(source.cells[0]);
+  });
+});
+
+/**
+ * Owner hand test, 9 Oct 2026 (BORROW-LOCATION-ONLY): right after Confirm, the board's OI
+ * link said "the line you clicked is not here" and the OI page still showed the borrow's old
+ * donor line; a second click a while later showed the right one. The server had already
+ * committed every row before Confirm returned. Two caches were stale: the OI page's own
+ * header and Lines queries (cached from an earlier visit, fresh for the app's 30s default and
+ * never invalidated by Confirm), and the board itself, whose refetch Confirm fired without
+ * waiting for, so its OI link still named the row this Confirm had just cancelled.
+ */
+describe('a Confirm hands back only once the OI page and the board are fresh', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  /** An OI page visited before the Confirm: its cached header and Lines name the old row. */
+  function seedVisitedOi() {
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30_000 }, mutations: { retry: false } },
+    });
+    client.setQueryData([ORDER_INQUIRY_HEADER_KEY, 'oi-1'], { id: 'oi-1' });
+    client.setQueryData([ORDER_INQUIRY_HEADER_LINES_KEY, 'oi-1'], { rows: [{ id: 'donor-row' }] });
+  }
+
+  /** A mounted board whose refetch after the Confirm is held until the test lets it land. */
+  function mountBoard(refetch: Promise<unknown>) {
+    const boardFn = vi.fn().mockResolvedValueOnce({ cells: [] }).mockReturnValueOnce(refetch);
+    function Board() {
+      useQuery({ queryKey: [PLANNING_BOARD_KEY, 'b'], queryFn: boardFn });
+      return null;
+    }
+    return { Board, boardFn };
+  }
+
+  async function harness<T>(useApi: () => T, Board: () => null) {
+    let api: T | null = null;
+    function Harness({ onReady }: { onReady: (value: T) => void }) {
+      const value = useApi();
+      React.useEffect(() => {
+        onReady(value);
+      }, [value, onReady]);
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Board />
+        <Harness onReady={(value) => (api = value)} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(api).not.toBeNull());
+    return () => api as T;
+  }
+
+  it('per-order Confirm: drops the visited OI page and waits for the board refetch', async () => {
+    seedVisitedOi();
+    confirmSupply.mockResolvedValue({
+      revision_no: 2,
+      confirmed_at: '2026-10-09T01:20:00',
+      review_state: 'confirmed',
+      inquiry_rows_created: 1,
+      exceptions: [],
+    });
+    const refetch = deferred<unknown>();
+    const { Board, boardFn } = mountBoard(refetch.promise);
+    const api = await harness(useReconciliationMutations, Board);
+    await waitFor(() => expect(boardFn).toHaveBeenCalledTimes(1));
+
+    let settled = false;
+    const done = api()
+      .confirm.mutateAsync({ psoId: 'pso-1', body: CONFIRM_BODY })
+      .then(() => {
+        settled = true;
+      });
+    await waitFor(() => expect(boardFn).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    refetch.resolve({ cells: [] });
+    await done;
+
+    expect(settled).toBe(true);
+    expect(client.getQueryData([ORDER_INQUIRY_HEADER_KEY, 'oi-1'])).toBeUndefined();
+    expect(client.getQueryData([ORDER_INQUIRY_HEADER_LINES_KEY, 'oi-1'])).toBeUndefined();
+  });
+
+  it('per-order Confirm with the board not on screen: drops the cached board too', async () => {
+    // Reviewer, hand-test round: from the per-order sheet the board query is inactive, so an
+    // invalidation only marks it stale and the next visit paints the cached board, old OI
+    // link and all, while it refetches. Dropped, the board loads instead of lying.
+    seedVisitedOi();
+    client.setQueryData([PLANNING_BOARD_KEY, 'b'], { cells: [] });
+    client.setQueryData([FULFILMENT_PLANNING_KEY, 'list'], { items: [] });
+    confirmSupply.mockResolvedValue({
+      revision_no: 2,
+      confirmed_at: '2026-10-09T01:20:00',
+      review_state: 'confirmed',
+      inquiry_rows_created: 1,
+      exceptions: [],
+    });
+    const api = await harness(useReconciliationMutations, () => null);
+
+    await api().confirm.mutateAsync({ psoId: 'pso-1', body: CONFIRM_BODY });
+
+    expect(client.getQueryData([PLANNING_BOARD_KEY, 'b'])).toBeUndefined();
+    expect(client.getQueryData([FULFILMENT_PLANNING_KEY, 'list'])).toBeUndefined();
+  });
+
+  it('board Confirm: drops the visited OI page and waits for the board refetch', async () => {
+    seedVisitedOi();
+    confirmMany.mockResolvedValue({
+      results: [{ pso_id: 'pso-1', ok: true, decision_revision: 2 }],
+    });
+    const refetch = deferred<unknown>();
+    const { Board, boardFn } = mountBoard(refetch.promise);
+    const api = await harness(useConfirmManyMutation, Board);
+    await waitFor(() => expect(boardFn).toHaveBeenCalledTimes(1));
+
+    let settled = false;
+    const done = api()
+      .mutateAsync({ orders: [{ pso_id: 'pso-1', lines: [] }] })
+      .then(() => {
+        settled = true;
+      });
+    await waitFor(() => expect(boardFn).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    refetch.resolve({ cells: [] });
+    await done;
+
+    expect(settled).toBe(true);
+    expect(client.getQueryData([ORDER_INQUIRY_HEADER_KEY, 'oi-1'])).toBeUndefined();
+    expect(client.getQueryData([ORDER_INQUIRY_HEADER_LINES_KEY, 'oi-1'])).toBeUndefined();
   });
 });

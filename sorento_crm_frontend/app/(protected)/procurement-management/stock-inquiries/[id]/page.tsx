@@ -45,6 +45,7 @@ async function StockInquiryDetailWrapper({
       sourceEntityType="stock_inquiry"
       sourceEntityId={id}
       revisionsKind="stock_inquiry"
+      commentsKind="stock_inquiry"
     >
       <RecordEntityRegistrar entityType="stock_inquiry" id={id} />
       <StockInquiryDetail inquiryId={id} />

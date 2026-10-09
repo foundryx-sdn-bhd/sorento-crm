@@ -358,7 +358,7 @@ describe('the Was / Now table of a changed line', () => {
     );
     expect(annotation.now.decision).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
     expect(annotation.now.decision).toMatch(/Pool share|Use/);
-    expect(annotation.now.decision).not.toContain('Borrow other location');
+    expect(annotation.now.decision).not.toContain('Borrow');
   });
 
   it('says where an APPLIED row\'s held composition actually went, under "Where it went" (AC-P3-9-ish)', () => {

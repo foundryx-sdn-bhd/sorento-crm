@@ -1208,11 +1208,16 @@ class TestParserPromptAndContractsTeachSalesReport:
         stripped, checked by `.removesuffix` rather than a bare `.endswith`."""
         from app.services.chatbot_parser_prompt import (
             ACCOUNT_LEDGER_ADDENDUM,
+            CANONICAL_CODE_ADDENDUM,
+            PROMOTION_KIND_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
             MEMORY_ADDENDUM,
+            REPORT_ASK_ADDENDUM,
+            TRAP_SPECS_FALLBACK_BLOCK,
             LOW_STOCK_FILTERS_ADDENDUM,
+            PO_REFS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             QUANTITY_ADDENDUM,
             SALES_ANALYSIS_ADDENDUM,
@@ -1232,11 +1237,13 @@ class TestParserPromptAndContractsTeachSalesReport:
         # 8 on PR #833), the #1262 pair, `TOP_SELLING_ADDENDUM`, then
         # ESCALATION_CONFIRMATION_ADDENDUM (#1323), then MEMORY_ADDENDUM stacked after this
         # one, newest outermost, so they come off first.
-        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).endswith(
+        # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, CANONICAL_CODE_ADDENDUM (#1511), PO_REFS_ADDENDUM (#1528), then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
+            # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, CANONICAL_CODE_ADDENDUM (#1511), PO_REFS_ADDENDUM (#1528), then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
+        assert SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM).endswith(
             ESCALATION_CONFIRMATION_ADDENDUM
         )
         assert (
-            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
             .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
             .removesuffix(TOP_SELLING_ADDENDUM)
             .removesuffix(KNOWN_BRANDS_ADDENDUM)
@@ -1261,11 +1268,16 @@ class TestParserPromptAndContractsTeachSalesReport:
         `test_the_addendum_is_appended_to_the_single_body` above) - one body, not two."""
         from app.services.chatbot_parser_prompt import (
             ACCOUNT_LEDGER_ADDENDUM,
+            CANONICAL_CODE_ADDENDUM,
+            PROMOTION_KIND_ADDENDUM,
             KNOWN_BRANDS_ADDENDUM,
             LOW_STOCK_ADDENDUM,
             ESCALATION_CONFIRMATION_ADDENDUM,
             MEMORY_ADDENDUM,
+            REPORT_ASK_ADDENDUM,
+            TRAP_SPECS_FALLBACK_BLOCK,
             LOW_STOCK_FILTERS_ADDENDUM,
+            PO_REFS_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
             SELF_REFERENCE_ADDENDUM,
             QUANTITY_ADDENDUM,
@@ -1278,7 +1290,8 @@ class TestParserPromptAndContractsTeachSalesReport:
         )
 
         assert (
-            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+            # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, CANONICAL_CODE_ADDENDUM (#1511), PO_REFS_ADDENDUM (#1528), then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
+            SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
             .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
             .removesuffix(TOP_SELLING_ADDENDUM)
             .removesuffix(KNOWN_BRANDS_ADDENDUM)

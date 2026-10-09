@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COLOURS,
   LABELS,
+  SHORT_LABELS,
   boardOrderInquiryWord,
   cellSupply,
   contributionSupply,
@@ -94,8 +95,13 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     expect(rowOf({ kind: 'reserve', rung: 'group_take', qty: '1' })).toBe(
       'own',
     );
+    // A group borrow names its donor SO only with "Borrow from another order" on
+    // (BORROW-LOCATION-ONLY D3); with none named it is a location borrow.
+    expect(
+      rowOf({ kind: 'borrow', rung: 'group_borrow', qty: '1', donor_so_number: 'SO1' }),
+    ).toBe('borrow_order');
     expect(rowOf({ kind: 'borrow', rung: 'group_borrow', qty: '1' })).toBe(
-      'borrow_order',
+      'borrow_other',
     );
     expect(
       rowOf({ kind: 'borrow', rung: 'cross_group_borrow', qty: '1' }),
@@ -179,7 +185,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
 
   it('reads a FREE step-3 document as a borrow all the same (S4)', () => {
     // A document nobody was waiting on names no donor, and the unrunged fallback would
-    // read that as 'borrow_other' - "Borrow other location", which is a location this
+    // read that as 'borrow_other' - "Borrow", which is a location this
     // line never borrows from. The RUNG decides, as it does everywhere else here.
     expect(
       rowOf({
@@ -208,7 +214,11 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     expect(LABELS.shared).toBe('Use BRW');
     expect(LABELS.own).toBe('Use own location');
     expect(LABELS.borrow_order).toBe('Borrow from another order');
-    expect(LABELS.borrow_other).toBe('Borrow other location');
+    // Owner hand test, 9 Oct 2026: "just called it borrow cause it is not just other
+    // location, own location also can borrow". The order borrow keeps its own words.
+    expect(LABELS.borrow_other).toBe('Borrow');
+    expect(SHORT_LABELS.borrow_other).toBe('Borrow');
+    expect(SHORT_LABELS.borrow_order).toBe('Borrow (order)');
     // The two words of 30 Aug 2026. "Use", because the group's own incoming document is
     // taken free and owes nobody anything; "Borrow", because a later order's document is
     // taken from somebody and raises an order-back.
@@ -289,6 +299,8 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     });
 
     it('reads a borrow that names a donor order as a borrow from another order', () => {
+      // The donor SO is named: with none, the same rung is a location borrow
+      // (BORROW-LOCATION-ONLY D3).
       expect(
         rowOf(
           {
@@ -296,6 +308,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
             rung: 'group_borrow',
             qty: '3',
             location: 'BRW-BB',
+            donor_so_number: 'SO415472',
           },
           'BRW-BB',
         ),
@@ -512,11 +525,14 @@ describe('suggestionBreakdown', () => {
       cell([
         line({
           sources: [
+            // Names its donor SO: a donor-less one reads as a location borrow
+            // (BORROW-LOCATION-ONLY D3).
             source({
               kind: 'borrow',
               rung: 'group_borrow',
               qty: '3',
               location: 'BRW-BB',
+              donor_so_number: 'SO415472',
             }),
             source({
               kind: 'borrow',
@@ -530,7 +546,7 @@ describe('suggestionBreakdown', () => {
     );
 
     expect(row(rows, 'Borrow from another order').qty).toBe('3');
-    expect(row(rows, 'Borrow other location').qty).toBe('9');
+    expect(row(rows, 'Borrow').qty).toBe('9');
     expect(has(rows, 'Use own location')).toBe(false);
   });
 
@@ -800,7 +816,7 @@ describe('AC-A2: a covered line whose composition arrives with no rungs', () => 
     expect(decided.map((entry) => entry.label)).toEqual(['Use own location']);
     expect(decided[0].qty).toBe('932');
     expect(suggested.map((entry) => entry.label)).toEqual([
-      'Borrow other location',
+      'Borrow',
     ]);
     expect(suggested[0].qty).toBe('100');
   });
@@ -1486,5 +1502,58 @@ describe('boardOrderInquiryWord: the Product cell chip ladder (AC-A1 to AC-A7)',
     );
 
     expect(word?.word).toBe('PO');
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY (D3): a borrow that names no donor SO is a LOCATION borrow, whatever
+ * its rung. Under the switch OFF the engine still walks step 2 (`order_borrow`), step 4b
+ * (`pool`) and the frozen `group_borrow`, but blanks the donor fields, so those must read
+ * "Borrow". With a donor SO named (switch ON) they keep reading "Borrow from
+ * another order".
+ */
+describe('rowOf: a borrow that names no donor is a location borrow (BORROW-LOCATION-ONLY D3)', () => {
+  it.each(['order_borrow', 'group_borrow', 'pool'])(
+    'reads a donor-less %s borrow as borrow_other',
+    (rung) => {
+      expect(
+        rowOf({
+          kind: 'borrow',
+          rung,
+          qty: '30',
+          location: 'MWH-IB',
+          donor_so_number: null,
+        }),
+      ).toBe('borrow_other');
+      expect(
+        rowOf({ kind: 'borrow', rung, qty: '30', location: 'MWH-IB' }),
+      ).toBe('borrow_other');
+    },
+  );
+
+  it.each(['order_borrow', 'group_borrow', 'pool'])(
+    'still reads a %s borrow that names a donor SO as borrow_order (ON pinned)',
+    (rung) => {
+      expect(
+        rowOf({
+          kind: 'borrow',
+          rung,
+          qty: '30',
+          location: 'MWH-IB',
+          donor_so_number: 'SO397450',
+        }),
+      ).toBe('borrow_order');
+    },
+  );
+});
+
+describe('the Decided cell reads a location borrow as plain Borrow (owner, 9 Oct 2026)', () => {
+  it('writes "Borrow 6 (BRW-BB)", not "Borrow (other) 6 (BRW-BB)"', () => {
+    expect(
+      describeSupply(
+        [{ kind: 'borrow', rung: 'order_borrow', qty: '6', location: 'BRW-BB', donor_so_number: null }],
+        'BRW-IR',
+      ),
+    ).toBe('Borrow 6 (BRW-BB)');
   });
 });

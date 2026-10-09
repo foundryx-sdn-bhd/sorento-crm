@@ -10,7 +10,7 @@ import {
   PackageSearch,
 } from 'lucide-react';
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
-import { formatDateInMalaysia } from '@/lib/helpers';
+import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
@@ -147,6 +147,8 @@ export interface FulfilmentBoardListViewProps {
    * can carry a site-pool row as readily as a cell's can.
    */
   poolSharePct?: number;
+  /** The board's "Borrow from another order" switch, for the Decide menu (BR1). */
+  borrowFromOrderEnabled?: boolean;
   /**
    * #1312: whether the signed-in reader may upload/remove a line's own attachments
    * (`projects.projects.edit`) - resolved by the caller (`FulfilmentBoardPanel`, which
@@ -201,6 +203,7 @@ export function FulfilmentBoardListView({
   focusKey,
   onFocusHandled,
   poolSharePct,
+  borrowFromOrderEnabled = false,
   canEditAttachments = false,
   attachmentsByLine = {},
   search,
@@ -542,7 +545,15 @@ export function FulfilmentBoardListView({
             // A cancelled line has no decision to take (R3): the book removed it, and
             // Confirm retires it. The row still opens, and says that rather than offering
             // controls that would compose supply for a quantity nobody is owed.
-            contribution.cancelled ? (
+            contribution.cancelled_at ? (
+              <p className="px-4 py-3 text-sm text-muted-foreground">
+                {`Transferred to Cancel SO${
+                  contribution.cancelled_by ? ` by ${contribution.cancelled_by}` : ''
+                }, ${formatDateTimeInMalaysia(contribution.cancelled_at)}${
+                  contribution.cancel_reason ? ` · ${contribution.cancel_reason}` : ''
+                }`}
+              </p>
+            ) : contribution.cancelled ? (
               <p className="px-4 py-3 text-sm text-muted-foreground">
                 This line was removed from the sales order. Confirm retires it; there is
                 nothing left to decide for it.
@@ -810,6 +821,9 @@ export function FulfilmentBoardListView({
         cell: ({ row }) => {
           const contribution = row.original;
           const drafted = draft[contribution.key] ?? null;
+          if (isCancelSo(contribution, drafted)) {
+            return <span className="block truncate">Cancel SO</span>;
+          }
           const parts = contributionDecision(contribution, drafted);
           if (!parts) {
             // DECIDED BY THE BOOK, not by a board (14 Sep 2026 ruling): a line carrying a
@@ -1071,6 +1085,7 @@ export function FulfilmentBoardListView({
               onSaved={untickSaved}
               onClear={() => setRowSelection({})}
               embedded
+              borrowFromOrderEnabled={borrowFromOrderEnabled}
             />
           }
         />
@@ -1126,8 +1141,14 @@ function suggestedSortText(contribution: BoardContribution): string {
   return describeSupply(parts, contribution.fulfilment_location) || 'Nothing proposed';
 }
 
+/** SO-CANCEL-LINE: the line is saved for, or already confirmed as, Transfer to Cancel SO. */
+function isCancelSo(contribution: BoardContribution, drafted: BoardDecision | null): boolean {
+  return Boolean(contribution.cancelled_at) || drafted?.verdict === 'cancelled';
+}
+
 /** The Decided column's own equivalent of `suggestedSortText` above. */
 function decidedSortText(contribution: BoardContribution, drafted: BoardDecision | null): string {
+  if (isCancelSo(contribution, drafted)) return 'Cancel SO';
   const parts = contributionDecision(contribution, drafted);
   if (!parts) {
     const inquiry = contributionInquiryDecision(contribution);

@@ -312,7 +312,7 @@ class TestTierPickFetchUsesResolverEntitlementNeverParserWords:
         )
         result1, captured1 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf1, text_body=f"promo for {code}",
-            msg_id=f"zzt-r6-tier-ask-{answer_text}", mcp_response={"has_result": False, "items": []},
+            msg_id=f"zzt-r6-tier-ask-{answer_text}", mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
             real_entitlement=True,
         )
         reply1 = (result1.reply or {}).get("text") or ""
@@ -339,7 +339,7 @@ class TestTierPickFetchUsesResolverEntitlementNeverParserWords:
         )
         result2, captured2 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=answer_qf, text_body=answer_text,
-            msg_id=f"zzt-r6-tier-answer-{answer_text}", mcp_response={"has_result": False, "items": []},
+            msg_id=f"zzt-r6-tier-answer-{answer_text}", mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
             real_entitlement=True,
         )
         promo_calls = [c for c in captured2 if c[0] == fetch_mod.TIER_PROBE_TOOL]
@@ -401,7 +401,7 @@ class TestBarePromoTierAskIsEntitlementScoped:
         )
         result, captured = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf, text_body="promo",
-            msg_id="zzt-r6-bare-promo-ask", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-r6-bare-promo-ask", mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
             real_entitlement=True,
         )
         reply = (result.reply or {}).get("text") or ""
@@ -414,6 +414,8 @@ class TestBarePromoTierAskIsEntitlementScoped:
         expected_text = answer_mod.access_level_choice_message(
             {"name": entitled_names, "entitled_tiers": ["dealer", "office"]},
             parser=qf,
+            # PROMO-SUBJECT-FILTER AC-9: the menu is always probed, so each level is stamped.
+            tier_availability={"dealer": True, "office": True},
         )["escalate_message"]
 
         assert "Which one do you mean?" not in reply, (
@@ -449,7 +451,7 @@ class TestBarePromoTierAskIsEntitlementScoped:
         qf1 = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=[])
         _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf1, text_body="promo",
-            msg_id="zzt-r6-bare-promo-pick-ask", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-r6-bare-promo-pick-ask", mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
             real_entitlement=True,
         )
         open_question = _session_of(session_factory).get("open_question") or {}
@@ -463,7 +465,7 @@ class TestBarePromoTierAskIsEntitlementScoped:
         )
         result2, captured2 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf2, text_body="1",
-            msg_id="zzt-r6-bare-promo-pick-answer", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-r6-bare-promo-pick-answer", mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
             real_entitlement=True,
         )
         promo_calls = [c for c in captured2 if c[0] == fetch_mod.TIER_PROBE_TOOL]

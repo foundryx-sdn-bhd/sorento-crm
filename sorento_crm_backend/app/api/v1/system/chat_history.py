@@ -87,6 +87,23 @@ def list_chat_messages(
     )
 
 
+@router.get("/chat-history/respond-io-calls")
+def get_respond_io_call_counts(
+    minutes: int = Query(10, ge=1, le=15),
+    current_user: dict = Depends(require_permission("system.chat_history.view")),
+):
+    """Respond.io HTTP calls per minute, oldest first (lane CHAT-LOCAL-FIRST, R6).
+
+    The hand-test figure: opening a thread with history is at most 1 call, the
+    polls that follow are 0. Read from Redis (every process) when reachable, else
+    this process's own count."""
+    from app.services import respond_call_counter
+
+    _ = current_user
+    rows = respond_call_counter.counts(minutes=minutes)
+    return {"minutes": rows, "total": sum(int(r["calls"]) for r in rows)}
+
+
 @router.get("/chat-history/thread", response_model=ChatThreadResponse)
 def get_chat_thread(
     contact_id: str = Query(...),

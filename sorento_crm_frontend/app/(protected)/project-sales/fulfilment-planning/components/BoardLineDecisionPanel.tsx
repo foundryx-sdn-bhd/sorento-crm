@@ -353,12 +353,11 @@ export function BoardLineDecisionPanel({
    * turning it back OFF afterwards took the "nothing was captured" branch below and wrote
    * zeroes over rows nobody asked to zero.
    *
-   * Seeded ONCE from the opening draft - a line that opens already wholly bought (its stock
-   * rows already at zero) starts on the switch, the same line `setBuying`'s OFF transition
-   * documents - and changed only by `setBuying` itself. No reactive re-seed: the panel already
-   * remounts fresh (via `draftFor`, the initializer `draft` itself uses) whenever it is closed
-   * and reopened on a different contribution or a different saved draft, which is the only
-   * point this needs to move.
+   * Seeded from the opening draft - a line that opens already wholly bought (its stock rows
+   * already at zero) starts on the switch, the same line `setBuying`'s OFF transition
+   * documents - and changed by `setBuying` itself, or by the BOARD-DECIDE-RESEED effect below
+   * when the decision changes under an untouched panel (the same seed, off the re-seeded
+   * draft). Never derived from the numbers mid-edit.
    */
   const [buying, setBuyingState] = React.useState(
     () => toMinor(draft.buy_qty) > 0 && fromStockMinor === 0,
@@ -401,6 +400,33 @@ export function BoardLineDecisionPanel({
     });
   };
   const setBorrow = (borrow: DraftBorrow[]) => editComposition({ ...draft, borrow });
+  // One or several borrow rows appended in ONE change: a merged bin's split arrives as
+  // several (BORROW-LOCATION-ONLY R2), and appending them one by one off the same `draft`
+  // would keep only the last.
+  const addBorrows = (
+    parts: { candidate: BorrowCandidate; qty: string }[],
+    borrowReason: string,
+  ) =>
+    setBorrow([
+      ...draft.borrow,
+      ...parts.map(({ candidate, qty }, index) => ({
+        key: `borrow-${candidate.warehouse_id}-${draft.borrow.length + index}`,
+        source: candidate.source,
+        warehouse_code: candidate.warehouse_code,
+        warehouse_id: candidate.warehouse_id,
+        donor_project_ref: candidate.donor_project_ref,
+        donor_project_id: candidate.donor_project_id,
+        qty,
+        reason: borrowReason,
+        donor_impact: candidate.donor_impact,
+        donor_core_line_id: candidate.donor_core_line_id,
+        donor_so_number: candidate.donor_so_number,
+        donor_line_no: candidate.donor_line_no,
+        donor_agent_code: candidate.donor_agent_code,
+        same_agent: candidate.same_agent,
+        donor_required_date: candidate.donor_required_date,
+      })),
+    ]);
 
   /**
    * The switch means WHOLLY bought, not "no mix allowed" - a stock-and-Buy mix is a legal
@@ -451,6 +477,50 @@ export function BoardLineDecisionPanel({
     // typed into.
     edit({ ...draft, buy_qty: '0' });
   };
+
+  /**
+   * BOARD-DECIDE-RESEED (owner, 7 Oct 2026, SO424856 lines 16 / 32): the draft, the Reason
+   * box, the tick, the lock and the Buy switch seed from `decision` at MOUNT, and nothing
+   * re-read it. A panel left open while the planner picked a way from the Decide dropdown
+   * (`BoardDecideControl` writes `draft[key]` through `FulfilmentBoardPanel.decide`, never
+   * through this panel) kept the OLD Reserve rows under a pill already reading the new
+   * decision, and Save posted those stale rows - "The components add up to X and the line is
+   * open for Y" from the server.
+   *
+   * So it re-seeds exactly as a fresh mount would, when the decision changes under it, UNLESS
+   * the planner has typed into this panel (`dirty`): their work is not overwritten; the pill
+   * beside the row already shows the new decision, and closing and reopening the row loads
+   * it. Read through a ref so the effect keys on the decision alone - keying on `dirty` too
+   * would fire this again the moment a save cleared it.
+   *
+   * This panel's OWN `save()` / `reject()` never trips it: `FulfilmentBoardPanel.decide`
+   * writes `draft[key]` synchronously, before its await, so the render that carries the new
+   * decision still has `dirty` true and is skipped; and an untouched approving Save re-seeds
+   * to the suggestion either way (review round 1: an own-write guard here was unreachable).
+   *
+   * The N3 effect above is the same idea for `savedOnce` / `rejectedOnce`; this one is for
+   * what the inputs hold.
+   */
+  const dirtyRef = React.useRef(dirty);
+  dirtyRef.current = dirty;
+  const seededFrom = React.useRef<BoardDecision | null>(decision);
+  React.useEffect(() => {
+    if (decision === seededFrom.current) return;
+    seededFrom.current = decision;
+    if (dirtyRef.current) return;
+    const next = draftFor(contribution, decision);
+    const stock = lineBalance({ ...next, buy_qty: '0' });
+    setDraft(next);
+    setReason(seedReason(decision) || seedReason(contribution.decision) || '');
+    setSuspected(
+      decision
+        ? Boolean(decision.suspected_system_issue)
+        : Boolean(contribution.decision?.suspected_system_issue),
+    );
+    setLocked(Boolean(contribution.covered) && !decision);
+    stockBefore.current = null;
+    setBuyingState(toMinor(next.buy_qty) > 0 && stock.totalMinor === 0);
+  }, [decision, contribution]);
 
   /**
    * ONE PRESS, TWO VERDICTS, decided by what the inputs hold rather than by which button was
@@ -586,10 +656,14 @@ export function BoardLineDecisionPanel({
     }
   };
 
-  const summary = amendSummary(
-    decisionFromAmendDraft(draft, reason),
-    contribution.fulfilment_location,
-  );
+  // A saved cancel, until the composition is edited: then it is an ordinary amend.
+  const cancelSaved = decision?.verdict === 'cancelled' && !dirty;
+  const summary = cancelSaved
+    ? 'Transfer to Cancel SO'
+    : amendSummary(
+        decisionFromAmendDraft(draft, reason),
+        contribution.fulfilment_location,
+      );
 
   // Shared between the bare Save button and its tooltip-wrapped, disabled twin below, so the
   // two never drift apart on what the button says.
@@ -963,7 +1037,7 @@ export function BoardLineDecisionPanel({
               {summary}
             </p>
             {/* Two words, and only while the composition does not add up (R9). */}
-            {balance.balanced ? null : (
+            {balance.balanced || cancelSaved ? null : (
               <p
                 data-testid={`line-decision-hint-${contribution.key}`}
                 className="text-sm text-destructive tabular-nums"
@@ -1181,26 +1255,9 @@ export function BoardLineDecisionPanel({
           candidates={candidates}
           onDone={() => setAdding(false)}
           onAdd={(candidate: BorrowCandidate, qty, borrowReason) =>
-            setBorrow([
-              ...draft.borrow,
-              {
-                key: `borrow-${candidate.warehouse_id}-${draft.borrow.length}`,
-                source: candidate.source,
-                warehouse_code: candidate.warehouse_code,
-                warehouse_id: candidate.warehouse_id,
-                donor_project_ref: candidate.donor_project_ref,
-                donor_project_id: candidate.donor_project_id,
-                qty,
-                reason: borrowReason,
-                donor_impact: candidate.donor_impact,
-                donor_core_line_id: candidate.donor_core_line_id,
-                donor_so_number: candidate.donor_so_number,
-                donor_line_no: candidate.donor_line_no,
-                donor_agent_code: candidate.donor_agent_code,
-                same_agent: candidate.same_agent,
-              },
-            ])
+            addBorrows([{ candidate, qty }], borrowReason)
           }
+          onAddMany={addBorrows}
         />
       )}
 
@@ -1252,6 +1309,21 @@ function draftFor(
   decision: BoardDecision | null,
 ): DraftLine {
   const base = amendDraftFrom(contribution);
+  // A saved Transfer to Cancel SO carries no composition: open on zeros, not the suggestion.
+  if (decision?.verdict === 'cancelled') {
+    return {
+      ...base,
+      reserve: base.reserve.map((row) => ({ ...row, qty: '0' })),
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+    };
+  }
+  // An `approved` decision is NOT overlaid even though it carries rows (D11): an approval
+  // means "the engine's composition", and `confirmLinesFor` (`fulfilmentBoard.ts`) commits
+  // the CURRENT proposal for it, not the rows stored at the time - so the panel opens on the
+  // same current proposal, or the two would disagree on a line whose suggestion moved after
+  // it was approved (BOARD-DECIDE-RESEED review round 1).
   if (!decision || decision.verdict !== 'amended' || !decision.reserve)
     return base;
 

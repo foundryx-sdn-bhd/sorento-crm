@@ -7,7 +7,7 @@ import pytest
 from app.services.stock_ask_branch import branch, short_of
 
 
-# (q, x, available, shipment_date, expected) - the UAC table verbatim, rows 1-8.
+# (q, x, available, shipment_date, expected) - the UAC table verbatim, rows 1-10.
 # Y (the ETA offset) is not an input to branch() - it only affects the "told" date,
 # which is composed by the caller from shipment_date + Y, not by this function.
 TRUTH_TABLE = [
@@ -21,7 +21,12 @@ TRUTH_TABLE = [
     pytest.param(150, 200, 149, None, "in_stock", id="row5_short_in_stock_no_shipment"),
     pytest.param(150, 200, 0, None, "no_incoming", id="row6_no_incoming"),
     pytest.param(150, 200, 0, date(2026, 10, 12), "incoming", id="row7_incoming_y_unset"),
-    pytest.param(1, 1, -3, None, "no_incoming", id="row8_so_over_on_hand"),
+    # AVAIL-ONHAND-BASIS (owner, 6 Oct 2026): `available` is on hand, the open SO is
+    # ignored, so the old row 8 (-3, "SO over on hand") is unreachable. Rows 8 to 10 are
+    # the MWC7632-SH-P prod case: 6 on hand (13 outstanding) asked for 10, then 5; and 0.
+    pytest.param(10, 100, 6, None, "in_stock", id="row8_prod_case_short_in_stock"),
+    pytest.param(5, 100, 6, None, "in_stock", id="row9_prod_case_covered"),
+    pytest.param(5, 100, 0, None, "no_incoming", id="row10_nothing_on_hand"),
 ]
 
 
@@ -50,7 +55,7 @@ def test_q_at_x_boundary_with_shipment_is_incoming_not_too_big():
         (150, 200, 149, 149),  # short, within X: the count
         (150, 200, 150, None),  # covered: no count
         (150, 200, 0, None),  # nothing: no count
-        (1, 1, -3, None),  # open SO over on hand: no count
+        (1, 1, -3, None),  # a negative figure (unreachable since AVAIL-ONHAND-BASIS): no count
         (250, 200, 30, None),  # above X: never a count (owner Q5 (a))
         (5, 0, 3, None),  # X unset: never a count
     ],

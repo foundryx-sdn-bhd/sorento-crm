@@ -571,10 +571,13 @@ def test_a_board_of_76_lines_does_not_scale_its_query_count_with_the_line_count(
         # per line - 46 at the cap. Brand-flows-to-purchasing (22 Sep 2026) adds ONE more:
         # `buy_origin_by_product` now runs a brand-blocked-products read BEFORE the
         # toggle gate, so the statement fires even with the toggle off (where the
-        # resolver previously ran none) - 47 at the cap. One statement of slack, and no
-        # more: the bound is here to catch a `for line in lines: db.query(...)`, and a
-        # generous one lets 76 lines' worth of per-line reads hide under it.
-        assert calls["n"] <= 47, calls["n"]
+        # resolver previously ran none) - 47 at the cap. BORROW-LOCATION-ONLY (8 Oct 2026)
+        # adds ONE more: the "Borrow from another order" switch, read once per
+        # `ProjectSupplyService` (`borrow_from_order`), so once per build - 48 at the cap.
+        # One statement of slack, and no more: the bound is here to catch a
+        # `for line in lines: db.query(...)`, and a generous one lets 76 lines' worth of
+        # per-line reads hide under it.
+        assert calls["n"] <= 48, calls["n"]
 
 
 # --------------------------------------------------------------------------- #

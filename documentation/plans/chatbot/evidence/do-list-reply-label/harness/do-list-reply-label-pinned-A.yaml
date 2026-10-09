@@ -1,0 +1,129 @@
+# SANDBOX COPY of tests/chatbot/console_cases/2026-10-06-do-list-reply-label.yaml with turn A
+# PINNED (`--mock-parser` reads the turn-level `parser:` block on A; B and C carry none, so
+# they stay LIVE). The pinned emission is the live parser's own answer to turn A in sandbox
+# run 1 (6 Oct 2026, console-check-1791310546), copied byte for byte: in 2 of 4 live runs the
+# parser read the opening ask as a plain order lookup and armed no offer, which leaves B and C
+# nothing to answer. The lane's seam is B over an armed offer, so A is held still here.
+# Never run against the Mac: the committed case file is the live one.
+contact: '900000008'
+cases:
+- name: DO-LIST-REPLY-LABEL - quick-reply label answers the detail offer like "1"
+  cold: true
+  turns:
+  - text: SRTWT7445 delivery order outstanding
+    expect:
+      branch_kind: business_query
+      reply_contains:
+      - Delivery order outstanding
+      - Reply 1 for the delivery order list.
+      no_uuid: true
+      pending_kind: outstanding_detail
+    parser:
+      asks: []
+      basis: null
+      top_n: null
+      status: outstanding
+      rank_by: null
+      routing:
+        suggested_team: customer_service
+        suggested_agent: order_enquiries
+      sort_by: null
+      anaphora:
+        backward_reference: false
+      document:
+      - DO
+      entities:
+      - raw: SRTWT7445
+        hint: product
+        account: null
+        quantity: null
+        spec_key: null
+        confident: true
+        spec_value: null
+        canonical_code: null
+        hint_confident: true
+        current_message: true
+      group_by: null
+      sort_dir: null
+      date_mode: null
+      entity_op: replace_combine
+      is_active: null
+      low_stock:
+        brands: []
+        group_by: null
+        suppliers: []
+        categories: []
+        all_categories: null
+      user_goal: trying to check the outstanding delivery order for SRTWT7445
+      broaden_to: null
+      correction: false
+      demand_qty: null
+      escalation:
+        company_pick: null
+        is_escalation_confirmation: false
+      match_mode: and
+      rank_group: null
+      domain_hint: order
+      intent_hint: check_order
+      sales_basis: null
+      topic_reset: false
+      broaden_axis: null
+      continuation: false
+      message_type: business_query
+      order_status: outstanding
+      scope_intent: null
+      access_levels: []
+      sales_channel: null
+      sales_company: null
+      contains_flyer: false
+      is_affirmative: null
+      person_mention: null
+      proceed_anyway: null
+      rank_direction: null
+      self_reference: false
+      date_filter_end: null
+      reference_target: null
+      date_filter_start: null
+      domain_in_message: true
+      profile_statements: null
+      reference_positions: []
+      open_question_answer:
+        mode: null
+        items: []
+        picked: []
+        qty_for_all: null
+      requested_attributes: []
+  - text: Delivery order list
+    expect:
+      branch_kind: business_query
+      reply_contains:
+      - 'DO Number:'
+      reply_not_contains:
+      - By product
+      - By location
+      - Reply 1 for the delivery order list.
+      no_uuid: true
+      pending_kind: outstanding_detail
+      parser:
+        open_question_answer:
+          mode: pick
+          picked:
+          - 1
+        document:
+        - DO
+  - text: '1'
+    expect:
+      branch_kind: business_query
+      reply_contains:
+      - 'DO Number:'
+      reply_not_contains:
+      - By product
+      - By location
+      - Reply 1 for the delivery order list.
+      no_uuid: true
+      pending_kind: outstanding_detail
+      parser:
+        open_question_answer:
+          mode: pick
+          picked:
+          - 1

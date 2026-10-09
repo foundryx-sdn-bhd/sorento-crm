@@ -75,6 +75,9 @@ class SystemSettingUpdate(BaseModel):
     # Global default grace window for form-SLA actions. 0 = nothing defers, which is
     # what ships; a stage may override it (form_sla_configs.grace_seconds).
     form_sla_grace_seconds: Optional[int] = Field(None, ge=0, le=600)
+    # PHOTO-SEND-CAP (owner Q1): days a chatbot file short link stays open. null = never,
+    # which is the owner's choice; an explicit null clears it back to never.
+    chatbot_file_link_expiry_days: Optional[int] = Field(None, ge=1, le=3650)
     # The two deferred-action windows (D16). `ge=1`, not `ge=0`: zero would apply a
     # delete with no way back, which is the confirmation dialog's failure mode wearing
     # the new model's clothes. Both must appear here AND in the GET dict below.
@@ -161,10 +164,15 @@ class SystemSettingUpdate(BaseModel):
     # The same 5..90 band the media wait carries, and for the same reason: a turn held
     # longer than the chatbot's own queue-wait budget is a turn nobody is waiting on.
     low_stock_sync_wait_seconds: Optional[int] = Field(None, ge=5, le=90)
+    # The chatbot report engine's cap (lane REPORT-RATE-LIMIT-CONFIG). 0 = no limit.
+    report_ask_rate_limit: Optional[int] = Field(None, ge=0, le=1000)
+    report_ask_rate_window_minutes: Optional[int] = Field(None, ge=1, le=1440)
     chatbot_stock_denial_enabled: Optional[bool] = None
     # PLAN-local-buy-routing-toggle.md: local-supplier Buy routing is a switch, off
     # by default. Off means the rule does not run at all (no pill, every Buy raises).
     local_buy_routing_enabled: Optional[bool] = None
+    # PLAN-borrow-location-only-8oct.md D1: "Borrow from another order", off by default.
+    borrow_from_order_enabled: Optional[bool] = None
     # AC-304 (D5): the unsupported-domain list. `List[str]`, so an owner cannot save a
     # bare string that would then be iterated one CHARACTER at a time by the route's
     # membership test.
@@ -301,6 +309,10 @@ async def get_settings(
                 "form_sla_grace_seconds": (
                     getattr(settings, "form_sla_grace_seconds", 0) if settings else 0
                 ),
+                # PHOTO-SEND-CAP: null = chatbot file links never expire.
+                "chatbot_file_link_expiry_days": (
+                    getattr(settings, "chatbot_file_link_expiry_days", None) if settings else None
+                ),
                 # The two deferred-action windows (D16). Defaults stated here as well as
                 # on the column, so a settings row that predates the migration still
                 # renders 10 and 5 rather than an empty field.
@@ -426,10 +438,13 @@ async def get_settings(
                 # PLAN-low-stock-report S5 (AC-43/AC-48): in BOTH manual builders, or the
                 # System Settings screen never sees the column at all.
                 "low_stock_sync_wait_seconds": getattr(settings, "low_stock_sync_wait_seconds", 40) if settings else None,
+                "report_ask_rate_limit": getattr(settings, "report_ask_rate_limit", 10) if settings else None,
+                "report_ask_rate_window_minutes": getattr(settings, "report_ask_rate_window_minutes", 10) if settings else None,
                 "chatbot_stock_denial_enabled": getattr(settings, "chatbot_stock_denial_enabled", False) if settings else None,
                 # PLAN-local-buy-routing-toggle.md: BOTH manual builders, or the setting
                 # never reaches the General settings screen at all.
                 "local_buy_routing_enabled": getattr(settings, "local_buy_routing_enabled", False) if settings else None,
+                "borrow_from_order_enabled": getattr(settings, "borrow_from_order_enabled", False) if settings else None,
                 "chatbot_unsupported_domains": getattr(settings, "chatbot_unsupported_domains", None) if settings else None,
                 "chatbot_crossdomain_ladder": getattr(settings, "chatbot_crossdomain_ladder", None) if settings else None,
                 "chatbot_tier_order": getattr(settings, "chatbot_tier_order", None) if settings else None,
@@ -830,6 +845,7 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
         "chatbot_completed_lanes": [],
         "chatbot_stock_denial_enabled": False,
         "local_buy_routing_enabled": False,
+        "borrow_from_order_enabled": False,
         "chatbot_business_lane_enabled": False,
         "chatbot_ordering_enabled": False,
         # A7 (chatbot-growth-r1): repeats SystemSetting.chatbot_crossdomain_ladder's own

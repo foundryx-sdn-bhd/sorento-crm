@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import status
@@ -407,6 +407,16 @@ def _money(value: Any) -> Optional[str]:
     return str(Decimal(str(value)).quantize(_TWO_PLACES))
 
 
+def _measure_value(column: reg.Column, value: Any) -> Optional[str]:
+    """A measure as the string the screen and workbook read: a count whole, money to the sen."""
+    if value is None:
+        return None
+    if column.type == "integer":
+        whole = Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        return str(int(whole))  # int() drops the exponent and a negative zero
+    return _money(value)
+
+
 def _cell_value(column: reg.Column, value: Any) -> Any:
     if value is None:
         return None
@@ -446,8 +456,15 @@ def _natural_key(value: str) -> Tuple:
     return (0, tuple((1, int(c), "") if c.isdigit() else (0, 0, c.casefold()) for c in chunks))
 
 
-def _totals(sums: Dict[str, Optional[Decimal]]) -> Dict[str, str]:
-    return {key: str(total.quantize(_TWO_PLACES)) for key, total in sums.items() if total is not None}
+def _totals(
+    sums: Dict[str, Optional[Decimal]], measures: List[reg.Column]
+) -> Dict[str, str]:
+    by_key = {m.key: m for m in measures}
+    return {
+        key: _measure_value(by_key[key], total)
+        for key, total in sums.items()
+        if total is not None
+    }
 
 
 # -------------------------------------------------------------------------- detail
@@ -576,7 +593,7 @@ def _detail_layout(
         columns=out_columns,
         column_groups=out_groups,
         rows=rows,
-        totals=_totals(sums),
+        totals=_totals(sums, measures),
     )
 
 
@@ -614,7 +631,7 @@ def _whole_set_totals(ctx: QueryContext, columns: List[reg.Column]) -> Dict[str,
         *[func.sum(m.expr(ctx)).label(m.key) for m in measures]
     ).where(and_(*_predicates(ctx)))
     row = ctx.db.execute(stmt).mappings().first() or {}
-    return {m.key: _money(row[m.key]) for m in measures if row.get(m.key) is not None}
+    return {m.key: _measure_value(m, row[m.key]) for m in measures if row.get(m.key) is not None}
 
 
 # --------------------------------------------------------------------------- pivot
@@ -675,7 +692,7 @@ def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotL
             if total is None:  # every row in this cell was blank; the cell stays blank
                 continue
             amount = Decimal(str(total))
-            cells.setdefault(row_value, {}).setdefault(col_value, {})[measure.key] = _money(amount)
+            cells.setdefault(row_value, {}).setdefault(col_value, {})[measure.key] = _measure_value(measure, amount)
             row_sums.setdefault(row_value, {})
             row_sums[row_value][measure.key] = row_sums[row_value].get(measure.key, Decimal(0)) + amount
             col_sums.setdefault(col_value, {})
@@ -724,9 +741,9 @@ def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotL
         ],
         row_values=row_values,
         cells=cells,
-        row_totals={k: _totals(v) for k, v in row_sums.items()},
-        col_totals={k: _totals(v) for k, v in col_sums.items()},
-        grand_total=_totals(grand),
+        row_totals={k: _totals(v, measures) for k, v in row_sums.items()},
+        col_totals={k: _totals(v, measures) for k, v in col_sums.items()},
+        grand_total=_totals(grand, measures),
         variance_row=variance_row,
         variance_total=variance_total,
         variance_label="VARIANCE" if variance_row is not None else None,
@@ -820,9 +837,9 @@ def _variance(
             if now is None and before is None:
                 continue
             diff = Decimal(now or 0) - Decimal(before or 0)
-            row.setdefault(month, {})[measure.key] = _money(diff)
+            row.setdefault(month, {})[measure.key] = _measure_value(measure, diff)
             total[measure.key] = total.get(measure.key, Decimal(0)) + diff
-    return row, _totals(total)
+    return row, _totals(total, measures)
 
 
 # ----------------------------------------------------------------------------- run

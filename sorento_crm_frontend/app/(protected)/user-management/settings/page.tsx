@@ -276,10 +276,13 @@ export default function Page() {
     deferredActionSeconds: settings?.deferredActionSeconds ?? 5,
     priceTagAutoCollectDays:
       settings?.priceTagAutoCollectDays ?? AUTO_COLLECT_DAYS_DEFAULT,
+    chatbotFileLinkExpiryDays: settings?.chatbotFileLinkExpiryDays ?? null,
     // The rollout default (plan 5.1) when the blob carries no value yet.
     planGrain: settings?.planGrain ?? 'product',
     // Off is the shipped state (PLAN-local-buy-routing-toggle.md).
     localBuyRoutingEnabled: Boolean(settings?.localBuyRoutingEnabled),
+    // Off is the shipped state (PLAN-borrow-location-only-8oct.md).
+    borrowFromOrderEnabled: Boolean(settings?.borrowFromOrderEnabled),
     priceTagGuardedClasses: settings?.priceTagGuardedClasses ?? [],
     purchaseRequestDefaultApproverUserId:
       settings?.purchaseRequestDefaultApproverUserId &&
@@ -346,8 +349,10 @@ export default function Page() {
       deferredActionSeconds: settings.deferredActionSeconds ?? 5,
       priceTagAutoCollectDays:
         settings.priceTagAutoCollectDays ?? AUTO_COLLECT_DAYS_DEFAULT,
+      chatbotFileLinkExpiryDays: settings.chatbotFileLinkExpiryDays ?? null,
       planGrain: settings.planGrain ?? 'product',
       localBuyRoutingEnabled: Boolean(settings.localBuyRoutingEnabled),
+      borrowFromOrderEnabled: Boolean(settings.borrowFromOrderEnabled),
       priceTagGuardedClasses: settings.priceTagGuardedClasses ?? [],
       purchaseRequestDefaultApproverUserId:
         settings.purchaseRequestDefaultApproverUserId &&
@@ -396,8 +401,10 @@ export default function Page() {
         deferred_action_seconds: values.deferredActionSeconds,
         // r9 D10.
         price_tag_auto_collect_days: values.priceTagAutoCollectDays,
+        chatbot_file_link_expiry_days: values.chatbotFileLinkExpiryDays,
         plan_grain: values.planGrain,
         local_buy_routing_enabled: values.localBuyRoutingEnabled,
+        borrow_from_order_enabled: values.borrowFromOrderEnabled,
         price_tag_guarded_classes: values.priceTagGuardedClasses,
         purchase_request_default_approver_user_id:
           values.purchaseRequestDefaultApproverUserId ===
@@ -978,6 +985,35 @@ export default function Page() {
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="chatbotFileLinkExpiryDays"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Chatbot file link expiry (days)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={3650}
+                      placeholder="Never expires"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '') {
+                          field.onChange(null);
+                          return;
+                        }
+                        const n = parseInt(v, 10);
+                        if (!Number.isNaN(n)) field.onChange(n);
+                      }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
               <FormField
                 control={form.control}
                 name="defaultUomId"
@@ -1164,6 +1200,28 @@ export default function Page() {
                         />
                         <Label htmlFor="local-buy-routing-enabled">
                           Local supplier Buys skip Order Inquiries
+                        </Label>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="borrowFromOrderEnabled"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <div className="flex items-center space-x-2 rounded-lg bg-accent/60 p-4">
+                        <Switch
+                          id="borrow-from-order-enabled"
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                        <Label htmlFor="borrow-from-order-enabled">
+                          Borrow from another order
                         </Label>
                       </div>
                     </FormControl>

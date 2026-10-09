@@ -13,7 +13,8 @@ gone (AC-SA316, `app/services/stock_verdict.py` deleted) - `_apply_stock_visibil
 (`app.services.stock_ask_branch.branch`, `too_big` / `in_stock` / `incoming` /
 `no_incoming`) per `StockAvailabilityEntry` (`branch`, `cap_unset`, `category_name`, `eta`,
 `packing_list`). What survives from the old suite: the location-scope guarantee (AC-SA302),
-the open-SO subtraction (AC-SA303), the per-code multi-company merge structure, the asked-
+the open-SO rule (AC-SA303, re-ruled by AVAIL-ONHAND-BASIS on 6 Oct 2026: the outstanding
+is IGNORED, the figure is on hand), the per-code multi-company merge structure, the asked-
 order guarantee, the `needs_product` flag, and the `detailed`/`compact` byte-identity check
 (AC-SA315) - all re-asserted against the new entry shape. AC-SA301 (the `branch()` truth
 table) lives in `tests/test_stock_ask_branch.py` and AC-SA304 to AC-SA309 (the R5 read
@@ -296,10 +297,11 @@ def test_available_counts_only_the_contacts_policy_locations(db):
     _assert_no_quantity_anywhere(result, {500, 100, 10})
 
 
-def test_open_so_in_policy_scope_is_subtracted(db):
-    """AC-SA303. On hand 100, open SO 60 (net 40): Q = 50 exceeds the net, so it is
-    answered short with the NET count (AVAIL-MODE-REPLIES rule 2, was "not in_stock");
-    Q = 40 exactly covers it and carries no count."""
+def test_open_so_in_policy_scope_is_not_subtracted(db):
+    """AC-SA303 as re-ruled (AVAIL-ONHAND-BASIS, owner 6 Oct 2026): on hand 100, open SO 60.
+    The figure is the 100 on hand, the 60 is ignored: Q = 50 is covered and carries no
+    count (was: net 40, "40 available"); Q = 150 is answered short with the ON HAND count,
+    100 (was: net 40). The open SO figure itself never appears."""
     brw = _wh(db, "ZZTBRW")
     p = product(db, company_id=DEFAULT_COMPANY_ID)
     _category_of(db, p).chatbot_max_qty = 200
@@ -309,17 +311,19 @@ def test_open_so_in_policy_scope_is_subtracted(db):
     _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
     db.flush()
 
-    not_covered = StockService(db).list_stock(
+    covered = StockService(db).list_stock(
         product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 50}
     )
-    assert _entry(not_covered, p.id)["branch"] == "in_stock"
-    assert _entry(not_covered, p.id)["available_qty"] == 40
-
-    covered = StockService(db).list_stock(
-        product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 40}
-    )
     assert _entry(covered, p.id)["branch"] == "in_stock"
+    assert _entry(covered, p.id)["available_qty"] is None
     _assert_no_quantity_anywhere(covered, {100, 60, 40})
+
+    short = StockService(db).list_stock(
+        product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 150}
+    )
+    assert _entry(short, p.id)["branch"] == "in_stock"
+    assert _entry(short, p.id)["available_qty"] == 100
+    _assert_no_quantity_anywhere(short, {60, 40})
 
 
 # =================================================================== AC-SA310, AC-SA317
@@ -356,7 +360,10 @@ def test_entry_shape_is_the_v2_shape_not_1118s(db):
         "packing_list",
         "available_qty",
         "is_discontinued",
+        # PRODUCT-ALTERNATIVES (card Q4): the judged stored alternatives, empty here.
+        "alternatives",
     }
+    assert entry["alternatives"] == []
     assert entry["available_qty"] is None
     assert entry["is_discontinued"] is False
     assert entry["needs_quantity"] is False
@@ -426,6 +433,7 @@ def test_per_product_map_wins_scalar_fills(db):
         "packing_list": None,
         "available_qty": None,
         "is_discontinued": False,
+        "alternatives": [],
     }
 
     with_scalar = StockService(db).list_stock(
@@ -718,12 +726,13 @@ def test_route_answers_a_bad_product_or_warehouse_uuid_with_400_not_500(client, 
 
 
 def test_same_product_code_in_two_companies_is_one_entry_judged_on_the_sum(db):
-    """The ruling's own scenario, re-judged through `branch()`. Sorento holds 10 with 4
-    on open SO (net 6), Mocha holds 9 with 3 on open SO (net 6). Ask 10.
+    """The ruling's own scenario, re-judged through `branch()`. Sorento holds 10, Mocha
+    holds 9 (each with some open SO, which AVAIL-ONHAND-BASIS ignores). Ask 15.
 
-    Merged, the dealer is judged on 12 and the branch is `in_stock`. Unmerged, each
-    company's own 6 is short of 10 and BOTH entries would answer `no_incoming` - which
-    is the defect, twice over: two lines for one code, and both of them wrong."""
+    Merged, the dealer is judged on 19 on hand and the branch is `in_stock` with no
+    count. Unmerged, each company's own 10 or 9 is short of 15 and BOTH entries would
+    answer short - which is the defect, twice over: two lines for one code, and both
+    of them wrong."""
     seed_mocha(db)
     set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
     sorento_wh = _wh(db, unique_code("ZZTSRW")[:50])
@@ -765,18 +774,19 @@ def test_same_product_code_in_two_companies_is_one_entry_judged_on_the_sum(db):
     result = StockService(db).list_stock(
         product_ids=[sorento_p.id, mocha_p.id],
         contact_id=contact.id,
-        requested_quantities={sorento_p.id: 10},
+        requested_quantities={sorento_p.id: 15},
     )
 
     assert len(result["stock_availability"]) == 1, result["stock_availability"]
     entry = result["stock_availability"][0]
     assert entry["product_id"] == sorento_p.id
     assert entry["product_code"] == code
-    assert entry["requested_qty"] == 10
+    assert entry["requested_qty"] == 15
     assert entry["branch"] == "in_stock"
+    assert entry["available_qty"] is None
     # `pagination.total` still counts PRODUCTS (2 here) - the merge is about what the
     # dealer is told, not about how the page was walked - so 2 is not a forbidden number.
-    _assert_no_quantity_anywhere(result, {10, 9, 4, 3, 12, 6})
+    _assert_no_quantity_anywhere(result, {10, 9, 4, 3, 19, 12, 6})
 
 
 def test_a_named_id_answers_for_every_company_row_of_that_code(db):

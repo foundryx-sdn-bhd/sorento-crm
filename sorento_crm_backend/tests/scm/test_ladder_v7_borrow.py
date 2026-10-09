@@ -36,6 +36,7 @@ from app.services.project_supply_service import ProjectSupplyService, SupplyLine
 from app.services.scm import priority
 
 from .._pg_fixture import blank_session
+from .._borrow_mode import borrow_from_order_on
 from ..test_so_supply_confirmation import (  # noqa: F401  (helpers, not fixtures)
     _core_line,
     _core_so,
@@ -634,6 +635,7 @@ def _borrow_world(db, *, donor_days=WINDOW_DAY + 20, donor_qty="30", ask="30"):
 def test_a_decided_later_order_lends_its_on_hand_and_the_component_names_the_donor():
     """AC-S3-2: kind `borrow`, rung `order_borrow`, the donor named, the order-back sized."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         world = _borrow_world(db)
         proposal = ProjectSupplyService(db).proposal_for(world["asker"])
         components = _components(proposal)
@@ -660,6 +662,7 @@ def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
     stock between her OWN orders and cannot authorise moving somebody else's.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -702,6 +705,7 @@ def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
 def test_between_two_other_agents_the_later_required_date_donates_first():
     """AC-S3-3: on equal agent standing, the order that can wait longest gives it up."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -829,6 +833,7 @@ def test_borrowing_from_a_decided_donor_supersedes_its_decision_and_raises_its_o
     with the borrower named in the reason, and the donor gets an ORDER_BACK at its own
     required date. Its next board build re-proposes it, because it is no longer covered."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         world = _borrow_world(db)
         service = ProjectSupplyService(db)
         proposal = service.proposal_for(world["asker"])
@@ -901,6 +906,7 @@ def test_the_supply_sheet_route_serialises_a_step_two_donor_through_its_response
     from tests.test_fulfilment_board import BASE, VIEW, _client, _restore
 
     with blank_session() as db:
+        borrow_from_order_on(db)
         world = _borrow_world(db)
         db.commit()
         client, originals = _client(db, world["eling"], [VIEW])
@@ -1022,6 +1028,7 @@ def test_a_multi_line_donor_keeps_every_other_lines_hold_when_one_line_is_borrow
     one: four customers' promises disappeared because a fifth's was taken.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, _pool = sites["BRW"]
@@ -1211,6 +1218,7 @@ def test_a_later_pool_order_lends_its_on_hand_and_is_owed_it_back():
     ORDER_BACK at the pool order's own date. This is what retires "a pool draw raises
     nothing" as a blanket statement."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, pool = sites["BRW"]
@@ -1448,6 +1456,7 @@ def test_every_walked_unit_carries_five_options_in_step_order_with_one_chosen():
     at most one `chosen`; `fulfil_date` and `days_late` null together; `days_late` never
     negative; `debt_*` on the borrow steps only."""
     with blank_session() as db:
+        borrow_from_order_on(db)
         world = _borrow_world(db)
         options = _options(ProjectSupplyService(db).proposal_for(world["asker"]))
 
@@ -1530,6 +1539,7 @@ def test_the_pool_step_of_the_trail_states_the_borrow_half_and_names_the_donor()
     from ..test_fulfilment_board import _step
 
     with blank_session() as db:
+        borrow_from_order_on(db)
         company_id, _eling, project, product = _world(db)
         _group, sites = _group_sites(db)
         own, pool = sites["BRW"]

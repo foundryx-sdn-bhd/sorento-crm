@@ -163,6 +163,13 @@ def revoke_all_for_user(
         q = q.filter(UserSession.id != except_session_id)
     now = _utcnow()
     count = q.update({UserSession.revoked_at: now}, synchronize_session=False)
+    # The claude.ai connector: a call whose consent predates this is refused with
+    # `reconsent_required` (CLAUDE-CONNECTOR contract section 3), on every revoke-all.
+    from app.models.user import User
+
+    db.query(User).filter(User.id == user_id).update(
+        {User.connector_revoked_at: now}, synchronize_session=False
+    )
     db.commit()
     return count
 

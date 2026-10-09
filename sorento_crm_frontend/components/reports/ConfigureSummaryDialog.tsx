@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { FormDialogScaffold } from '@/components/common/FormDialogScaffold';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -8,6 +8,17 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import type { ReportCatalogColumn, ReportViewConfig } from '@/services/reportService';
 
 type PivotConfig = ReportViewConfig['pivot'];
+
+/** The catalog columns the chosen dataset does not carry, by key. */
+export function unavailableKeys(
+  catalog: ReportCatalogColumn[],
+  datasetValue: string | undefined,
+): Set<string> {
+  if (!datasetValue) return new Set();
+  return new Set(
+    catalog.filter((c) => c.unavailable_for?.includes(datasetValue)).map((c) => c.key),
+  );
+}
 
 /**
  * Rows / Columns / Measures, straight off the dataset catalog. This is the whole of
@@ -20,33 +31,60 @@ export function ConfigureSummaryDialog({
   catalog,
   value,
   onApply,
+  datasetValue,
+  datasetLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   catalog: ReportCatalogColumn[];
   value: PivotConfig;
   onApply: (next: PivotConfig) => void;
+  datasetValue?: string;
+  datasetLabel?: string;
 }) {
   const [draft, setDraft] = useState<PivotConfig>(value);
   const [error, setError] = useState<string | null>(null);
+  const noteId = useId();
+  const [note, setNote] = useState<string | null>(null);
+  const unavailable = useMemo(
+    () => unavailableKeys(catalog, datasetValue),
+    [catalog, datasetValue],
+  );
 
   useEffect(() => {
     if (open) {
-      setDraft(value);
+      const label = (key: string) => catalog.find((c) => c.key === key)?.label ?? key;
+      const cleared: string[] = [];
+      const keep = (key: string) => {
+        if (!unavailable.has(key)) return key;
+        cleared.push(label(key));
+        return '';
+      };
+      setDraft({
+        rows: keep(value.rows),
+        cols: keep(value.cols),
+        measures: value.measures.filter((m) => keep(m)),
+      });
+      setNote(
+        cleared.length ? `${cleared.join(', ')} does not apply to this ${datasetLabel ?? 'choice'}; pick again.` : null,
+      );
       setError(null);
     }
-  }, [open, value]);
+  }, [open, value, catalog, unavailable, datasetLabel]);
 
   const dimensionOptions = useMemo(
     () =>
       catalog
-        .filter((c) => c.tag === 'dimension')
+        .filter((c) => c.tag === 'dimension' && !unavailable.has(c.key))
         .map((c) => ({ value: c.key, label: c.label })),
-    [catalog],
+    [catalog, unavailable],
   );
   const measureOptions = useMemo(
-    () => catalog.filter((c) => c.tag === 'measure').map((c) => ({ value: c.key, label: c.label })),
-    [catalog],
+    () =>
+      catalog
+        .filter((c) => c.tag === 'measure' && !unavailable.has(c.key))
+        .map((c) => ({ value: c.key, label: c.label })),
+    [catalog, unavailable],
   );
 
   const submit = (event: React.FormEvent) => {
@@ -79,7 +117,13 @@ export function ConfigureSummaryDialog({
       submitLabel="Apply"
       onSubmit={submit}
       error={error}
+      formDescribedBy={note ? noteId : undefined}
     >
+      {note && (
+        <p id={noteId} className="text-sm text-muted-foreground" data-testid="summary-choice-note">
+          {note}
+        </p>
+      )}
       <div>
         <Label htmlFor="summary-rows">Rows</Label>
         <SearchableSelect

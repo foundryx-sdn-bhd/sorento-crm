@@ -79,6 +79,9 @@ export interface SystemSetting {
    */
   priceTagAutoCollectDays?: number;
 
+  /** Days a chatbot file link keeps opening (1..3650). Null = never expires. */
+  chatbotFileLinkExpiryDays?: number | null;
+
   /**
    * SCM front planning: which grain new plans are DECIDED at (AC-F01).
    *
@@ -94,6 +97,12 @@ export interface SystemSetting {
    * Inquiries and counts toward reorder demand.
    */
   localBuyRoutingEnabled?: boolean;
+
+  /**
+   * "Borrow from another order" (PLAN-borrow-location-only-8oct.md D1), off by default.
+   * Off borrows a location's stock and orders it back on the borrowing line.
+   */
+  borrowFromOrderEnabled?: boolean;
 
   /** System default approver for procurement "Send for approval" (skips chooser when set). */
   purchaseRequestDefaultApproverUserId?: string | null;

@@ -73,9 +73,12 @@ LABELS: dict[str, dict[str, str]] = {
     },
     # AVAIL-RENDER (owner, 5 Oct 2026): the tick says got stock and does not refer.
     "Got stock.": {"ms": "Stok ada.", "zh": "有库存。"},
-    "Got stock, {available} available.": {
-        "ms": "Stok ada, {available} tersedia.",
-        "zh": "有库存，可供 {available} 件。",
+    # AVAIL-ONHAND-BASIS hand test (owner, 6 Oct 2026): the partial line is "Only N got
+    # stock." (was "Got stock, N available."). The owner gave the en and zh; the ms is the
+    # lane's rendering of the same sentence, flagged in PR #1510 for the owner to confirm.
+    "Only {available} got stock.": {
+        "ms": "Hanya {available} ada stok.",
+        "zh": "只有 {available} 件有库存。",
     },
     # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the incoming line says the stock
     # state too; the bare "ETA {eta}." row it replaces is printed by nothing now.
@@ -91,6 +94,29 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "Here are the results.": {"ms": "Berikut ialah hasilnya.", "zh": "以下是结果。"},
     "PRODUCT DISCONTINUED": {"ms": "PRODUK DIHENTIKAN", "zh": "产品已停产"},
+    # DISCONTINUED-ASK (owner Q4 a, 8 Oct 2026): the status line both ways, the card's field
+    # line beside another property (Q1 a), and the stored alternative (Q5 a, #1533).
+    "{code}: ⚠️ Discontinued.": {"ms": "{code}: ⚠️ Dihentikan.", "zh": "{code}：⚠️ 已停产。"},
+    "{code}: ✅ Not discontinued.": {"ms": "{code}: ✅ Tidak dihentikan.", "zh": "{code}：✅ 未停产。"},
+    # Whole lines, so no other "Yes" / "No" in any reply is touched.
+    "*Discontinued:* ⚠️ Yes": {"ms": "*Dihentikan:* ⚠️ Ya", "zh": "*已停产:* ⚠️ 是"},
+    "*Discontinued:* ✅ No": {"ms": "*Dihentikan:* ✅ Tidak", "zh": "*已停产:* ✅ 否"},
+    "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
+    # PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): the two refer-bearing verdicts without
+    # their refer (it drops when an alternative printed under the line has stock); the
+    # `Alternative` label itself is DISCONTINUED-ASK's entry above. The ms and zh are the
+    # lane's rendering, flagged on PR #1533 for the owner to confirm.
+    "No stock and no incoming.": {
+        "ms": "Tiada stok dan tiada stok masuk.",
+        "zh": "没有库存，也没有到货。",
+    },
+    # PRODUCT-ALTERNATIVES round B (owner, 9 Oct 2026): what an alternative's own search
+    # found when it found nothing, on the incoming line (the one localised tool it reaches).
+    "No incoming stock.": {"ms": "Tiada stok masuk.", "zh": "没有到货。"},
+    "the quantity is more than what I can confirm here.": {
+        "ms": "kuantiti ini melebihi apa yang boleh saya sahkan di sini.",
+        "zh": "这个数量超出我在这里可以确认的范围。",
+    },
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
@@ -182,6 +208,9 @@ LABELS: dict[str, dict[str, str]] = {
     "DO Qty": {"ms": "Kuantiti DO", "zh": "DO 数量"},
     "Category": {"ms": "Kategori", "zh": "类别"},
     "Sales agent": {"ms": "Ejen jualan", "zh": "销售代理"},
+    # REPORT-DRILLDOWN: the sales ranking header's own labels (one fact per line).
+    "Period": {"ms": "Tempoh", "zh": "期间"},
+    "Customers assigned to": {"ms": "Pelanggan di bawah", "zh": "所属客户的业务员"},
     "Channel": {"ms": "Saluran", "zh": "渠道"},
     "Delivery date": {"ms": "Tarikh penghantaran", "zh": "送货日期"},
     "Ranked by": {"ms": "Disusun mengikut", "zh": "排名依据"},
@@ -208,6 +237,13 @@ LABELS: dict[str, dict[str, str]] = {
     "Reply with a number for detail:": {"ms": "Balas dengan nombor untuk butiran:", "zh": "回复数字查看详情："},
     "Reply 1 for the sales order list.": {"ms": "Balas 1 untuk senarai pesanan jualan.", "zh": "回复 1 查看销售订单列表。"},
     "Reply 1 for the delivery order list.": {"ms": "Balas 1 untuk senarai pesanan penghantaran.", "zh": "回复 1 查看送货单列表。"},
+    # DO-SUMMARY-CAP (7 Oct 2026): the trailer under a capped By product / By customer group
+    # (`presenters._outstanding_capped_group`), four forms: the noun, singular for K = 1. R3
+    # (owner ruling, ask a69045557): a count only, no pointer; the offer line below it points.
+    "... and {k} more products": {"ms": "... dan {k} lagi produk", "zh": "... 还有 {k} 个产品"},
+    "... and {k} more product": {"ms": "... dan {k} lagi produk", "zh": "... 还有 {k} 个产品"},
+    "... and {k} more customers": {"ms": "... dan {k} lagi pelanggan", "zh": "... 还有 {k} 个客户"},
+    "... and {k} more customer": {"ms": "... dan {k} lagi pelanggan", "zh": "... 还有 {k} 个客户"},
     "No sales found.": {"ms": "Tiada jualan ditemui.", "zh": "未找到销售记录。"},
     "By quantity or by amount?": {"ms": "Mengikut kuantiti atau amaun?", "zh": "按数量还是按金额？"},
     "Do you want the top items inside one category, or the categories ranked against each other?": {"ms": "Anda mahu item teratas dalam satu kategori, atau kategori disusun antara satu sama lain?", "zh": "您要看某一类别内的热销项目，还是各类别之间的排名？"},
@@ -379,6 +415,17 @@ LABELS: dict[str, dict[str, str]] = {
     # Slice 5 (3 Oct): required fields (#1445) and the attachment gap line (#1437).
     'Which product category? Reply with a category (e.g. water tap) or "all".': {"ms": 'Kategori produk yang mana? Balas dengan kategori (cth. water tap) atau "all".', "zh": '请问是哪个产品类别？请回复类别（例如 water tap）或 "all"。'},
     "Which supplier?": {"ms": "Pembekal yang mana?", "zh": "请问是哪个供应商？"},
+    "Which period? For example this month, September, 2026, or 1 to 15 Sep.": {"ms": "Tempoh yang mana? Contohnya bulan ini, September, 2026, atau 1 hingga 15 Sep.", "zh": "请问是哪个时间段？例如本月、九月、2026 年，或 9 月 1 日至 15 日。"},
+    "How many? For example top 5.": {"ms": "Berapa banyak? Contohnya 5 teratas.", "zh": "要看多少个？例如前 5 名。"},
+    "I don't know '{word}' as a brand.": {"ms": "Saya tidak mengenali '{word}' sebagai jenama.", "zh": "我不认识 '{word}' 这个品牌。"},
+    "I don't know '{word}' as a sales agent.": {"ms": "Saya tidak mengenali '{word}' sebagai ejen jualan.", "zh": "我不认识 '{word}' 这个业务员。"},
+    "I don't know '{word}' as a location.": {"ms": "Saya tidak mengenali '{word}' sebagai lokasi.", "zh": "我不认识 '{word}' 这个地点。"},
+    "Delivered, ordered or outstanding?": {"ms": "Dihantar, dipesan atau tertunggak?", "zh": "按已送货、已订购还是未交货统计？"},
+    "I don't know '{word}' as a period.": {"ms": "Saya tidak mengenali '{word}' sebagai tempoh.", "zh": "我看不懂 '{word}' 这个时间段。"},
+    "I don't know '{word}' as a basis.": {"ms": "Saya tidak mengenali '{word}' sebagai asas.", "zh": "我不认识 '{word}' 这个统计基准。"},
+    "I don't know '{word}' as a number.": {"ms": "Saya tidak mengenali '{word}' sebagai nombor.", "zh": "我看不懂 '{word}' 这个数字。"},
+    "I don't know '{word}' as a measure.": {"ms": "Saya tidak mengenali '{word}' sebagai ukuran.", "zh": "我不认识 '{word}' 这个衡量方式。"},
+    "I couldn't read how many, so here is the top 10.": {"ms": "Saya tidak dapat memahami berapa banyak, jadi ini 10 teratas.", "zh": "我没能看懂要多少个，所以这里显示前 10 名。"},
     "I don't know '{word}' as a category.": {"ms": "Saya tidak mengenali '{word}' sebagai kategori.", "zh": "我不认识 '{word}' 这个类别。"},
     "I don't know '{word}' as a supplier.": {"ms": "Saya tidak mengenali '{word}' sebagai pembekal.", "zh": "我不认识 '{word}' 这个供应商。"},
     'Which category do you mean? Reply with a number or "all":': {"ms": 'Kategori mana yang anda maksudkan? Balas dengan nombor atau "all":', "zh": '您指的是哪个类别？请回复编号或 "all"：'},

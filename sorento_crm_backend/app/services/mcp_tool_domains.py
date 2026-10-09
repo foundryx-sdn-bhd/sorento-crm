@@ -57,6 +57,7 @@ CHATBOT_TOOL_DOMAINS: dict[str, str] = {
     # them as allow-list members; this map names the domain they answer FROM.
     "crm_sales_report": "sales",
     "crm_top_selling_report": "sales",
+    "crm_report_ask": "sales",
     "crm_sales_analysis": "sales",
     "crm_incoming_stock_list": "incoming",
     "crm_incoming_stock_by_product": "incoming",

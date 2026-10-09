@@ -1041,6 +1041,16 @@ def pool_borrow_reason(
     return f"Borrow {qty_text(qty)} on hand at pool {location} from {who}{when}{debt}"
 
 
+def location_borrow_reason(qty: Decimal, location: str) -> str:
+    """Steps 2 and 4b with "Borrow from another order" OFF (`PLAN-borrow-location-only-8oct.md`
+    B2): the same later-order stock, told as a LOCATION's. No donor and no debt month, because
+    the order-back is this line's own, at this line's date.
+    """
+    return (
+        f"Borrow {qty_text(qty)} on hand at {location}; ordered back to {location} on this line"
+    )
+
+
 def month_text(value: date) -> str:
     """"Nov 2026" - the Stock Debt column a debt lands in, spelled once."""
     return f"{_MONTHS[value.month - 1]} {value.year}"
@@ -1737,7 +1747,9 @@ def _draw_order_borrow(
                 kind=BORROW,
                 qty=take,
                 reason=(
-                    pool_borrow_reason(
+                    location_borrow_reason(take, str(location))
+                    if candidate.get("location_only")
+                    else pool_borrow_reason(
                         take, str(location), candidate.get("donor_so_number"), donor_date
                     )
                     if rung == RUNG_POOL

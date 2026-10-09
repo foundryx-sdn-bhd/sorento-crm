@@ -299,6 +299,10 @@ class RespondContact(Base):
     chatbot_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     # DO-PERIOD-SKIP (owner, 4 Oct 2026): never ask this contact for a date range on a list ask.
     chatbot_skip_period_questions = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): the A/B switch. Off = attachment mode, one
+    # WhatsApp message per file (today); on = link mode, one text with a short link per file
+    # (`chatbot_file_links`). Default OFF: every contact starts in attachment mode (Q4 (a)).
+    chatbot_files_as_links = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(Text, nullable=True)
