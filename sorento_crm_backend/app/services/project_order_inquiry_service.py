@@ -397,8 +397,8 @@ def handover_remark(
     number or code another column already shows: ITEM CODE prints the new code, QTY /
     NEW QTY and DELIVERY / NEW DATE print the moves.
 
-    * `kind="raised"`: the verb's email spelling (`_HANDOVER_REMARK_SPELLING`); a CHANGE SO NO whose
-      target is known reads `MOVED TO <SO>`; an ORDER BACK prints no document (Q-A).
+    * `kind="raised"`: the verb's email spelling (`_HANDOVER_REMARK_SPELLING`); a CHANGE SO
+      NO whose target is known reads `MOVED TO <SO>`; an ORDER BACK prints no document (Q-A).
       `row.note` itself is NEVER printed (OI-EMAIL-PRINT, owner 9 Oct): it is a bag of
       internal stamps ("Planning keeps this Buy: ...", "Replaces 20 used; ...",
       "Order-back: ...", "Linked to ...") that made REMARK wrap over several lines and
@@ -1711,8 +1711,8 @@ class ProjectOrderInquiryService:
                 )
                 self.db.add(cancel_balance_row)
                 if not line_total_told:
-                    # EMAIL-HANDOVER-QTY: the settled line's `CANCEL BALANCE n NOS`
-                    # already says what this exception row says.
+                    # EMAIL-HANDOVER-QTY: the settled line's `CANCEL n` already says
+                    # what this exception row says.
                     self._record_handover(
                         cancel_balance_row, kind="raised", actor_user_id=actor_user_id
                     )

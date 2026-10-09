@@ -1079,8 +1079,8 @@ def test_named_changed_raised_row_settles_with_one_line(api, monkeypatch):
     S2 widens the `drafted` predicate to ALSO admit exactly this shape - a single
     still-owed ORDER/ORDER_BACK row, no links, not redirected, same verb the reconfirm
     would raise - so it settles in place instead: same row id, new qty, one `settled`
-    handover line (`CANCEL BALANCE 2 NOS`, not a `CANCEL BALANCE 10 NOS` + `ORDER 8`
-    pair)."""
+    handover line (`CANCEL 2`, not a `CANCEL ALL` + `ORDER 8` pair; wording per the
+    owner, 9 Oct)."""
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -1186,7 +1186,7 @@ def test_named_verb_switch_supersedes(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    assert any(l["remark"].startswith("CANCEL") for l in lines), lines
+    assert any(l["remark"] == "CANCEL ALL" for l in lines), lines
     assert any(l["remark"].startswith("ORDER BACK") for l in lines), lines
 
 
@@ -1238,7 +1238,7 @@ def test_named_two_live_rows_supersede(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    cancelled = [l for l in lines if l["remark"].startswith("CANCEL")]
+    cancelled = [l for l in lines if l["remark"] == "CANCEL ALL"]
     assert len(cancelled) == 2, f"AC-R2-12: both still-owed rows must print cancelled, got {lines}"
 
 

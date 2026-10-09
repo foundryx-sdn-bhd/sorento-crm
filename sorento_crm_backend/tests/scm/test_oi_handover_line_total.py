@@ -261,8 +261,8 @@ def test_qty_only_change_prints_one_line_with_qty_was_only(api, monkeypatch):
 def test_two_raised_rows_superseded_print_one_line_with_totals(api, monkeypatch):
     """AC-4. Two still-owed RAISED rows (10 + 3), the book moves the line to 8, earlier.
     `_settle_row_in_place` declines (two live rows); both rows are cancelled by the
-    netting and a fresh ORDER 8 is raised. Today that prints CANCEL BALANCE 10 NOS,
-    CANCEL BALANCE 3 NOS and a bare ORDER beside the ADVANCE line - four lines for one
+    netting and a fresh ORDER 8 is raised. Before this lane that printed two CANCEL lines
+    (10 and 3) and a bare ORDER beside the ADVANCE line - four lines for one
     line moving 13 -> 8. The email says it once."""
     client, world = api
     _register(world)
@@ -427,7 +427,7 @@ def test_redirected_row_falls_back_to_todays_per_row_lines(api, monkeypatch):
     (two live rows); the netting's own PARTLY_LINKED branch then redirects A to the
     pool (no own-arrival credit), so `placed` is 0 and the fresh row is ORDER 50 - not
     the 5 a totals line (45 -> 50) would have said. The email prints today's lines
-    instead: ADVANCE (date only), CANCEL BALANCE 5 NOS for B, and the fresh ORDER 50."""
+    instead: ADVANCE (date only), CANCEL ALL for B, and the fresh ORDER 50."""
     from app.models.project_so import OrderInquiryLink
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
     from tests.scm._own_arrival_fixture import spo_allocation_fully_received

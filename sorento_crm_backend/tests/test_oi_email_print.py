@@ -190,6 +190,48 @@ def test_pre_ordered_is_one_word_in_the_email_only():
     assert REMARK_SPELLING[IV_PRE_ORDERED] == "PRE-ORDERED, DO NOT ORDER"
 
 
+def test_worklist_remark_keeps_the_clients_pre_ordered_spelling():
+    """AC-P13 / Q-B scope (review round 3): the OI worklist and export (`_remark`) still say
+    PRE-ORDERED, DO NOT ORDER; only the email's REMARK is shortened."""
+    from app.services.project_order_inquiry_service import (
+        IV_PRE_ORDERED,
+        ProjectOrderInquiryService,
+    )
+
+    row = _remark_row(verb=IV_PRE_ORDERED, spo_ref=None)
+    assert ProjectOrderInquiryService._remark(None, row) == "PRE-ORDERED, DO NOT ORDER"
+
+
+def test_a_product_move_on_an_already_queued_line_appends_new_item_code():
+    """AC-P13 / Q-E (review round 3): `_tell_product_moves`' queued branch puts the product
+    change onto the line this confirm already queued, as `<remark>, NEW ITEM CODE`, with the
+    old code in `was` and the headline key added."""
+    from app.services.project_order_inquiry_service import (
+        _HANDOVER_PENDING_KEY,
+        ProjectOrderInquiryService,
+    )
+
+    item = {
+        "row_id": "row-1", "item_code": "SRT382-6", "verb_keys": ["DELAY"],
+        "line": {"item_code": "SRT382-6", "remark": "DELAY", "was": {"delivery_date": "30/10/2026"}},
+    }
+    service = ProjectOrderInquiryService.__new__(ProjectOrderInquiryService)
+    service.db = SimpleNamespace(info={_HANDOVER_PENDING_KEY: [item]})
+    moved = SimpleNamespace(id="row-1", state="raised", item_code="SRT382-6-DIY")
+
+    service._tell_product_moves([([moved], "SRT382-6")])
+
+    assert item["line"]["remark"] == "DELAY, NEW ITEM CODE"
+    assert item["line"]["item_code"] == "SRT382-6-DIY"
+    assert item["line"]["was"] == {"delivery_date": "30/10/2026", "item_code": "SRT382-6"}
+    assert item["verb_keys"] == ["DELAY", "CHANGE_ITEM_CODE"]
+
+    bare = {"row_id": "row-2", "item_code": "A", "verb_keys": [], "line": {"item_code": "A", "remark": ""}}
+    service.db.info[_HANDOVER_PENDING_KEY] = [bare]
+    service._tell_product_moves([([SimpleNamespace(id="row-2", state="raised", item_code="B")], "A")])
+    assert bare["line"]["remark"] == "NEW ITEM CODE"
+
+
 def test_headline_word_for_a_product_change_matches_remark():
     """AC-P13: the headline names the product change the way REMARK does."""
     from app.services.project_order_inquiry_service import _HANDOVER_VERB_LABEL
