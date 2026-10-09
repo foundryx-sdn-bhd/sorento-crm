@@ -933,3 +933,15 @@ PERMISSION_REGISTRY.extend([
         "description": "Open the sales reports (Yearly comparison, Sales report), export them and ask for them on WhatsApp.",
     },
 ])
+
+
+# claude.ai connector (CLAUDE-CONNECTOR, contract section 3). Granted to NO role by the migration:
+# admins and superadmins do not get it by bypass either (owner ruling Q1 (a)); the connector checks
+# the role grants directly. Grant listing and revoke live in the shared service.
+PERMISSION_REGISTRY.extend([
+    {
+        "slug": "analytics.connector.use",
+        "name": "Use the Claude connector",
+        "description": "Connect claude.ai to read CRM data as yourself. Chat tools also need View Chat History.",
+    },
+])

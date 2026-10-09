@@ -16,34 +16,39 @@ This module adds the two reads that fix it, both scoped to ONE contact:
     searches ``chat_histories.message`` only (the message body); contact
     name/phone are not part of an in-thread search.
 
-Two lanes serve the page:
+Two lanes serve the page (lane CHAT-LOCAL-FIRST, 30 Sep 2026, reversed the order):
 
-1. **Respond.io cursor (primary).** Respond is the system of record for a
-   WhatsApp conversation, so it is the only source that can be trusted to reach
-   the true start of the thread, and its message objects carry attachments,
-   delivery receipts and sender source - a scrolled-back page therefore renders
-   identically to the live window instead of degrading to bare text. Verified
-   against the live API 2026-08-15: ``cursorId=<id>`` returns messages OLDER
-   than the anchor, newest-first; ``cursorId=-<id>`` returns messages NEWER than
-   the anchor, oldest-first.
-2. **``chat_histories`` keyset (fallback + search substrate).** Used when the
-   Respond lane is unavailable (no API key, timeout, HTTP error), and always for
-   search. Keyset on ``(sent_at, id)`` under a ``(channel, contact_id)``
-   equality prefix, which is exactly what
+1. **``chat_histories`` keyset (primary, and always for search).** A contact with
+   stored rows is served from the local table and the request path makes NO
+   Respond.io call: with ~100 dealers polling every 10 s, Respond was the
+   bottleneck and the outage. Keyset on ``(sent_at, id)`` under a
+   ``(channel, contact_id)`` equality prefix, which is exactly what
    ``ix_chat_histories_channel_contact_sent_id`` indexes - never OFFSET, and
    ``sent_at`` rather than ``created_at`` because ``created_at`` is INGEST
    order: a backfilled 2026-05 message is written today and would sort as the
    newest thing in the thread. Both leading columns must be in the predicate
-   for that index to be usable at all; see ``_base_query``.
+   for that index to be usable at all; see ``_base_query``. Media and sender
+   source are stored columns now (migration clf_0001), so the local page renders
+   the same bubbles the live one did.
+2. **Respond.io cursor (first open of an empty thread, and delta sync).** A
+   contact with no stored row still gets one live page (then stored). Everything
+   else Respond-side goes through ``chat_thread_sync_service``: one delta read
+   newer than the newest stored row, in the background after the page was
+   served and at most every 30 s per contact; one read older than the oldest
+   stored row when a reader scrolls past it; and the reconcile tick. Verified
+   against the live API 2026-08-15: ``cursorId=<id>`` returns messages OLDER
+   than the anchor, newest-first; ``cursorId=-<id>`` returns messages NEWER than
+   the anchor, oldest-first.
 
 Every Respond page we fetch is written into ``chat_histories`` (idempotent,
-best-effort, never mark-read and never a window-cache write) so that search
-coverage grows over history that predates our ingest. A failure to persist is
+best-effort, never mark-read and never a window-cache write; a row already held
+gets its media / sender filled if it lacked them). A failure to persist is
 logged and the read still answers.
 """
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
@@ -180,13 +185,60 @@ def _local_status(row: ChatHistory) -> list[dict]:
     return entries
 
 
+_PLACEHOLDER_RE = re.compile(r"^\[[a-z_]+\](?:\s+(?P<name>.*))?$", re.IGNORECASE)
+
+
+def _is_media_placeholder(text_value: str, file_name: Optional[str]) -> bool:
+    """True when the stored text is the ``[image] name.jpg`` placeholder the ingest
+    writes for a media message with no caption (see ``_respond_item_text``), so it
+    is not shown as a caption beside the attachment."""
+    match = _PLACEHOLDER_RE.match((text_value or "").strip())
+    if not match:
+        return False
+    name = (match.group("name") or "").strip()
+    return not name or name == unquote(str(file_name or "")).strip()
+
+
+def _local_message(row: ChatHistory) -> dict:
+    """The ``message`` block: an attachment when the row holds one (R5), else text."""
+    body = mask_otp_text(row.message or "") or ""
+    media_url = getattr(row, "media_url", None)
+    media_type = getattr(row, "media_type", None)
+    if not media_url and not media_type:
+        return {"type": "text", "text": body}
+    file_name = getattr(row, "media_file_name", None)
+    message: dict = {
+        "type": "attachment",
+        "attachment": {
+            "type": media_type or "file",
+            "url": media_url,
+            "fileName": file_name,
+        },
+    }
+    if body and not _is_media_placeholder(body, file_name):
+        message["text"] = body
+    return message
+
+
+def _local_sender(row: ChatHistory) -> dict:
+    source = getattr(row, "sender_source", None)
+    if not source:
+        source = "contact" if row.type == "incoming" else None
+    sender: dict = {"source": source}
+    user_id = getattr(row, "sender_user_id", None)
+    if user_id:
+        sender["userId"] = user_id
+    return sender
+
+
 def _row_to_item(row: ChatHistory) -> dict:
     """A `chat_histories` row in the shape the chat list already renders.
 
-    Fidelity note: the local table stores text only, so a scrolled-back media
-    message shows the caption/placeholder the ingest wrote, and ``sender.source``
-    is unknown (the column does not exist). Both are full on the Respond lane,
-    which is why that lane is primary.
+    Media (``media_url`` / ``media_type`` / ``media_file_name``) and the sender
+    (``sender_source`` / ``sender_user_id``) are stored columns since migration
+    clf_0001, so a local page renders the same bubbles a live Respond page did. A row
+    written before that lane renders as text with ``sender.source`` inferred from the
+    traffic direction, until the delta / reconcile read fills it.
     """
     numeric_id = None
     try:
@@ -196,8 +248,8 @@ def _row_to_item(row: ChatHistory) -> dict:
     return {
         "messageId": numeric_id,
         "traffic": row.type,
-        "message": {"type": "text", "text": mask_otp_text(row.message or "")},
-        "sender": {"source": "contact" if row.type == "incoming" else None},
+        "message": _local_message(row),
+        "sender": _local_sender(row),
         "status": _local_status(row),
         "replyTo": (
             {
@@ -280,13 +332,60 @@ def _respond_item_text(item: dict) -> str:
     if title:
         return title
     kind = (message.get("type") or "").strip() or "attachment"
-    attachment = message.get("attachment") if isinstance(message.get("attachment"), dict) else None
+    attachment = _first_attachment(message)
     if attachment:
-        name = unquote(str(attachment.get("fileName") or "")).strip()
+        name = unquote(str(attachment.get("fileName") or attachment.get("filename") or "")).strip()
         sub = (attachment.get("type") or "").strip()
         label = sub or kind
         return f"[{label}] {name}".strip() if name else f"[{label}]"
     return f"[{kind}]"
+
+
+def _first_attachment(message: dict) -> Optional[dict]:
+    """The attachment block of a Respond message, whichever of the shapes Respond v2
+    emits it in: ``message.attachment`` (object or list), ``message.attachments[]``,
+    or a bare ``url`` on a typed (image / video / audio / file) message."""
+    raw = message.get("attachment")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                return entry
+    raw = message.get("attachments")
+    if isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                return entry
+    kind = str(message.get("type") or "").strip().lower()
+    url = message.get("url") or message.get("link")
+    if url and kind and kind not in ("text", "quick_reply", "whatsapp_template", "template"):
+        return {"type": kind, "url": url, "fileName": message.get("fileName") or message.get("filename")}
+    return None
+
+
+def _respond_item_media(item: dict) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """``(media_url, media_type, media_file_name)`` of a Respond message, or Nones."""
+    message = item.get("message") if isinstance(item.get("message"), dict) else {}
+    attachment = _first_attachment(message)
+    if not attachment:
+        return None, None, None
+    url = attachment.get("url") or attachment.get("link")
+    url = str(url).strip() if url else None
+    kind = (attachment.get("type") or message.get("type") or "").strip().lower() or None
+    name = unquote(str(attachment.get("fileName") or attachment.get("filename") or "")).strip() or None
+    if not url and not kind:
+        return None, None, None
+    return url, (kind[:32] if kind else None), (name[:512] if name else None)
+
+
+def _respond_item_sender(item: dict) -> tuple[Optional[str], Optional[str]]:
+    """``(sender_source, sender_user_id)`` of a Respond message, or Nones."""
+    sender = item.get("sender") if isinstance(item.get("sender"), dict) else {}
+    source = str(sender.get("source") or "").strip().lower() or None
+    user_id = sender.get("userId")
+    user_id = str(user_id).strip() if user_id not in (None, "") else None
+    return (source[:32] if source else None), (user_id[:64] if user_id else None)
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +668,8 @@ def persist_messages(db: Session, contact: ThreadContact, items: Iterable[dict])
         # it the fallback (local) lane renders a "replying to" block with nothing
         # in it - the id alone cannot be shown to a reader.
         reply_to_text = _respond_item_text(reply_to) if reply_to else None
+        media_url, media_type, media_file_name = _respond_item_media(item)
+        sender_source, sender_user_id = _respond_item_sender(item)
         rows.append(
             {
                 "channel": contact.channel,
@@ -586,6 +687,11 @@ def persist_messages(db: Session, contact: ThreadContact, items: Iterable[dict])
                 "reply_to_message": reply_to_text,
                 "respond_ts": sent_at,
                 "ingest_at": datetime.now(tz=timezone.utc).replace(tzinfo=None),
+                "media_url": media_url,
+                "media_type": media_type,
+                "media_file_name": media_file_name,
+                "sender_source": sender_source,
+                "sender_user_id": sender_user_id,
             }
         )
     if not rows:
@@ -601,6 +707,37 @@ def persist_messages(db: Session, contact: ThreadContact, items: Iterable[dict])
         .all()
     }
     fresh = [r for r in rows if r["message_id"] not in existing]
+
+    # R5 / AC-RF3: a row already held (written by n8n, or before the media columns
+    # existed) gets the attachment and sender filled in from this read, fill-if-null.
+    # This is the ONLY backfill for old rows - no one-shot script.
+    held = [
+        r
+        for r in rows
+        if r["message_id"] in existing
+        and (r["media_url"] or r["media_type"] or r["sender_source"] or r["sender_user_id"])
+    ]
+    if held:
+        db.execute(
+            text(
+                """
+                UPDATE chat_histories SET
+                    media_url = COALESCE(media_url, :media_url),
+                    media_type = COALESCE(media_type, :media_type),
+                    media_file_name = COALESCE(media_file_name, :media_file_name),
+                    sender_source = COALESCE(sender_source, :sender_source),
+                    sender_user_id = COALESCE(sender_user_id, :sender_user_id)
+                WHERE contact_id = :contact_id AND message_id = :message_id
+                  AND ((media_url IS NULL AND CAST(:media_url AS TEXT) IS NOT NULL)
+                       OR (media_type IS NULL AND CAST(:media_type AS TEXT) IS NOT NULL)
+                       OR (media_file_name IS NULL AND CAST(:media_file_name AS TEXT) IS NOT NULL)
+                       OR (sender_source IS NULL AND CAST(:sender_source AS TEXT) IS NOT NULL)
+                       OR (sender_user_id IS NULL AND CAST(:sender_user_id AS TEXT) IS NOT NULL))
+                """
+            ),
+            held,
+        )
+
     if not fresh:
         return 0
 
@@ -608,16 +745,26 @@ def persist_messages(db: Session, contact: ThreadContact, items: Iterable[dict])
         f"""
         INSERT INTO chat_histories (
             channel, contact_id, phone_number, message, sent_at, first_name, last_name,
-            type, message_id, reply_to_message_id, reply_to_message, respond_ts, ingest_at
+            type, message_id, reply_to_message_id, reply_to_message, respond_ts, ingest_at,
+            media_url, media_type, media_file_name, sender_source, sender_user_id
         ) VALUES (
             :channel, :contact_id, :phone_number, :message, :sent_at, :first_name, :last_name,
-            :type, :message_id, :reply_to_message_id, :reply_to_message, :respond_ts, :ingest_at
+            :type, :message_id, :reply_to_message_id, :reply_to_message, :respond_ts, :ingest_at,
+            :media_url, :media_type, :media_file_name, :sender_source, :sender_user_id
         )
         ON CONFLICT (contact_id, message_id) WHERE {CHAT_HISTORY_DEDUPE_PREDICATE}
         DO NOTHING
         """
     )
     db.execute(insert_sql, fresh)
+
+    # The reconcile selects on this (R4): activity from any lane keeps the contact in
+    # its window. Same transaction as the rows; the caller commits.
+    from app.services import chat_thread_sync_service
+
+    chat_thread_sync_service.touch_activity(
+        db, contact.channel, contact.respond_io_id, max(r["sent_at"] for r in fresh)
+    )
     return len(fresh)
 
 
@@ -749,16 +896,44 @@ def fetch_thread_page(
 
     At most one of ``before`` / ``after`` / ``around`` is honoured, in that
     precedence order (the route rejects more than one before we get here).
+
+    Local first (R1): a contact with stored rows is answered from ``chat_histories``
+    and this call makes no Respond request. With a client, the newest-window and
+    ``after`` reads then queue ONE background delta read newer than the newest stored
+    row (R2, at most every 30 s per contact), and a ``before`` read that runs past the
+    oldest stored row makes ONE inline read older than it (the page being asked for is
+    the data being fetched). A contact with no stored row gets today's live page, then
+    stored; Respond failing there still answers the (empty) local page.
     """
+    from app.services import chat_thread_sync_service as sync_service
+
     limit = max(1, min(int(DEFAULT_LIMIT if limit is None else limit), MAX_LIMIT))
     before = _cursor("before", before)
     after = _cursor("after", after)
     around = _cursor("around", around)
 
-    if client is not None:
+    # A client with an explicitly empty key can only raise; anything else is tried.
+    usable_client = client if client is not None and getattr(client, "api_key", "set") else None
+
+    if sync_service.has_local_rows(db, contact):
+        if usable_client is not None and before:
+            _fill_older_if_needed(db, contact, usable_client, before=before, limit=limit)
+        page = _local_page(db, contact, before=before, after=after, around=around, limit=limit)
+        _attach_sender_names(db, page["items"])
+        page["backfilled"] = 0
+        # A short local page is the start of the thread only once Respond said so: a
+        # contact with three n8n rows and a thousand messages on Respond must keep
+        # offering older history, or the scroll-back that fills it never runs (review B1).
+        if not page["has_more_older"] and usable_client is not None and not after:
+            page["has_more_older"] = sync_service.older_read_allowed(db, contact)
+        if usable_client is not None and not before and not around:
+            sync_service.schedule_sync_newer(db, contact)
+        return page
+
+    if usable_client is not None:
         try:
             page = _respond_page(
-                client,
+                usable_client,
                 contact,
                 before=before,
                 after=after,
@@ -775,11 +950,45 @@ def fetch_thread_page(
         else:
             _attach_sender_names(db, page["items"])
             page["backfilled"] = _persist_best_effort(db, contact, page["items"])
+            if page["backfilled"]:
+                # The live page IS this contact's first sync: the watermark moves to its
+                # newest id, no delta read for 30 s, and a short newest page means the
+                # whole thread is already here.
+                sync_service.note_first_page(
+                    db,
+                    contact,
+                    oldest_reached=not before and not around and not page["has_more_older"],
+                    items=page["items"] if not before and not around else None,
+                )
             return page
 
     page = _local_page(db, contact, before=before, after=after, around=around, limit=limit)
+    _attach_sender_names(db, page["items"])
     page["backfilled"] = 0
     return page
+
+
+def _fill_older_if_needed(
+    db: Session, contact: ThreadContact, client: Any, *, before: str, limit: int
+) -> None:
+    """A scroll-back that would run past the oldest stored row pulls ONE older Respond
+    page first (R2, AC-DS3). Nothing happens when enough rows are already stored or
+    the start of the Respond thread was reached before; a failure leaves the local
+    page to answer with what it has."""
+    from app.services import chat_thread_sync_service as sync_service
+
+    anchor = _anchor_row(db, contact, before)
+    if anchor is None:
+        return
+    stored_older = (
+        _older_than(_base_query(db, contact), anchor)
+        .order_by(ChatHistory.sent_at.desc(), ChatHistory.id.desc())
+        .limit(limit)
+        .count()
+    )
+    if stored_older >= limit or not sync_service.older_read_allowed(db, contact):
+        return
+    sync_service.sync_older(db, contact, client)
 
 
 def _like_pattern(q: str) -> str:
