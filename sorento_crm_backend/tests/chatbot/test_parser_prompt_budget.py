@@ -213,7 +213,9 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # (+91), so CEILING is 52,383 (+4). Nothing else grew.
 # Merge of main (#1527 PROMO-SUBJECT-FILTER, PROMOTION_KIND_ADDENDUM) with MULTI-ASK-PLAN r6:
 # 52,939 est. tokens without MEMORY_ADDENDUM, so CEILING is 52,943 (+4).
-CEILING = 52_943
+# MULTI-ASK-PLAN r7 (live evidence, period and basis only from the message, 进仓库 never incoming, jual is sold,
+# a bare name asks what is wanted): 53,139 est. tokens without MEMORY_ADDENDUM (+200), so CEILING is 53,143 (+4).
+CEILING = 53_143
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

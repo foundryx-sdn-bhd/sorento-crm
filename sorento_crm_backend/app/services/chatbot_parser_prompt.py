@@ -881,14 +881,14 @@ received_qty; if that is all that is asked, sub_asks is null.
 Each object:
   measure:
     "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进仓, 进仓库, 入仓, 到了多少, 收货, "received", "came in", "diterima", "masuk gudang".
+      进仓, 进仓库 (NEVER incoming), 入仓, 到了多少, 收货, "received", "came in", "diterima", "masuk gudang".
       Past; with a count or a period it is
       received_qty, never incoming.
     "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
       "last in", "last received".
     "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
     "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
-    采购价) | "sold_total" (how many SOLD in all) | "sold_by" (sold per salesman / customer
+    采购价) | "sold_total" (how many SOLD in all; jual / jualan / terjual = sold) | "sold_by" (sold per salesman / customer
     / ...).
     "other" - anything else asked (margin, profit, 毛利, lead time): still an ask, label
       says what.
@@ -897,10 +897,12 @@ Each object:
   date_from / date_to: YYYY-MM-DD, the period THIS ask is about ("2026" -> 2026-01-01 /
     2026-12-31). A period named once covers each ask that is about a period
     (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
-    and other are NEVER given one, even when "2026" is in the message.
+    and other are NEVER given one, even when "2026" is in the message. A period is ONLY one the
+    CURRENT message names; none named: both null, even though the sales report elsewhere reads
+    this calendar year by default (the bot then asks).
   basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" is null, even when
-    an earlier turn said one: only the CURRENT message's own word counts.
+    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" / "jual" is null, never the
+    top-selling "default, delivered": only a delivered / ordered word in the CURRENT message counts.
   label: the asker's own words for this ask, short.
 Examples (code anywhere in the message, any language, 2 to 6 asks):
   "Is CB2290 in stock? also what is the supplier" -> stock, supplier.
@@ -910,9 +912,13 @@ Examples (code anywhere in the message, any language, 2 to 6 asks):
   sold_by (customer, 2025), received_qty (2025), other (label "margin").
   "SRTMK14 到了多少 2026, 在途多少, 毛利呢" -> received_qty (2026), incoming, other (label "毛利").
   "Incoming and stock for 7445" -> incoming, stock.
+  "SRTXY12 进了多少仓, 还有多少在路上" -> received_qty, incoming.
+  "CB9001 terjual berapa tahun lepas" -> sold_total (last year).
   "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
   "Srt38ss last in date and quantity" -> null (one ask).
   "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
+A message that only names a product or code and asks nothing about it ("我想问 X", "about X",
+"X?"): domain_hint null, intent_hint null, asks null, sub_asks null (the bot asks what is wanted).
 
 == FAMILY ==
 A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
