@@ -1,6 +1,6 @@
 # CARD - send files as short links, A/B per contact (PHOTO-SEND-CAP round 2)
 
-Status: Build. Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
+Status: Review fix round done; hand test next. Owner answered Q1-Q5 and approved the card (9 Oct 2026). Track: L (migration:
 a link table, one contact column, one settings column; a new PUBLIC route, so
 security-reviewer joins; customer-visible wording). Supersedes the round 1 cap card
 `CARD-photo-send-cap-09oct.md` (cap Q1-Q5 parked by the owner, 9 Oct).
@@ -119,21 +119,28 @@ parser ask "Compatible with which WC? Send the WC code."
 Link codes below are illustrative; real ones are random.
 
 **1. Photo set, link mode** ("sorento" after "toilet seat photos"; 42 products, 62 distinct
-images on dev):
+images on dev). As built: one block per product, each file's own lines with its link under
+them (review N3: this replaces the shorter `*File:*` sample the card first showed):
 
 ```
-Sorento toilet seats with product photos: 42.
-
 1. *Product Code:* SRTSC1012
-*File:* SRTSC1012-front.jpg
-*Link:* https://crm.example.com/f/7K2QX9MWAP
-*File:* SRTSC1012-side.jpg
-*Link:* https://crm.example.com/f/H3V8RZ4N1C
+*Product Name:* Soft close seat cover
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-front.jpg
+*Link:* https://crm.example.com/f/7K2QX9MWAPH3V8RZ
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-side.jpg
+*Link:* https://crm.example.com/f/H3V8RZ4N1C7K2QX9
 
 2. *Product Code:* SRTSC1013
-*File:* SRTSC1012-front.jpg
-*Link:* https://crm.example.com/f/7K2QX9MWAP
+*Product Name:* Soft close seat cover
+*Attachment Type:* Product Photo
+*File Name:* SRTSC1012-front.jpg
+*Link:* https://crm.example.com/f/7K2QX9MWAPH3V8RZ
 ```
+
+A file no row names (an Excel report) closes the reply as `*File:* <name>` / `*Link:* <url>`.
+Codes are 16 characters (security review L1).
 
 One product block holds about 150 characters, so 42 products with 62 images comes to about
 two parts, "(1/2)" and "(2/2)": 2 messages instead of about 62.
@@ -167,7 +174,10 @@ attachment mode gives the text plus 2 files (unchanged).
 
 - A file whose link could not be signed: still listed with "(file link unavailable right
   now)", no link minted (D9 unchanged).
-- Link opened after expiry, or a report purged at 30 days before expiry: the expired page.
+- Link opened after expiry: the expired page. The expiry setting applies to links already
+  sent (security review M3). A report purged at 30 days answers "Something went wrong.
+  Please try again." (a storage miss is not told apart from a storage outage; review N4).
+- Revoking one link: delete its `chatbot_file_links` row.
 - A spreadsheet over 200 rows or 40 columns: the preview shows the first 200 rows and the
   Download button gets the whole file.
 - WhatsApp unfurling: the API sends text with link previews off unless the sender asks for
@@ -200,3 +210,17 @@ On the lane PR as one crew-ask (Q1-Q5); answers land here.
 - One real test send in link mode to a test contact: link preview on or off, how the block
   wraps on a phone, and an xlsx opening in the phone's browser.
 - Parser: the bare "compatible" ask (from round 1).
+
+## Not in this lane (named follow-ups)
+
+- **"compatible" with no target asks "Compatible with which WC?"** (round 1 R5, kept in the
+  card): the parser has no clarification output today, so this is a new parser key plus an
+  engine reader, and it cannot be checked without the live parser. Its own lane.
+- **Rate limit sees the proxy, not the dealer** (security M2, review S4): uvicorn has no
+  `forwarded_allow_ips`, so `request.client.host` is nginx (or the Next proxy when
+  `NEXT_PUBLIC_API_URL` is unset) and all dealers share one 60/min bucket. Infra fix: set
+  `forwarded_allow_ips` to the nginx address and have nginx overwrite `X-Forwarded-For`.
+  Same gap already applies to the portal OTP limiter.
+- Grouping keys on field labels (review N2): the product attachment presenter emits no keys
+  for those fields; keying them is a presenter change of its own.
+- `/content` has no size cap (security L4).

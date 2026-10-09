@@ -7132,6 +7132,9 @@ def _run_answer(
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
     stage[0] = "replied"
+    # Review S2: the A/B readout counts the files the turn delivered, before link mode
+    # empties the list.
+    files_delivered = len(answer.files or [])
     file_text, file_list, file_mode = _apply_file_mode(
         answer.text or "",
         list(answer.files or []),
@@ -7154,7 +7157,7 @@ def _run_answer(
             "lane": branch_kind,
             "sections": len(answer.sections),
             "asking": answer.question.kind if answer.question is not None else None,
-            "files": len(answer.files),
+            "files": files_delivered,
             # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files).
             "file_mode": file_mode,
         },
@@ -9041,7 +9044,7 @@ def _after_stock_ask_turn(
 
 def _apply_file_mode(
     text: str,
-    files: list[Any],
+    files_in: list[Any],
     *,
     profile: Any,
     contact_respond_id: Any,
@@ -9063,7 +9066,10 @@ def _apply_file_mode(
     from app.services.chatbot import file_links
     from app.services.chatbot.turn.compose import _ATTACHED_SENTENCE
 
-    files = [f for f in (files or []) if f is not None]
+    # Review N1: `aliasUrls` is this seam's own key (`compose`'s cross-section dedupe);
+    # the entry n8n sends from keeps its documented shape.
+    with_aliases = [f for f in (files_in or []) if f is not None]
+    files = [{k: v for k, v in f.items() if k != "aliasUrls"} if isinstance(f, dict) else f for f in with_aliases]
     links = bool(getattr(profile, "files_as_links", False))
     if not files:
         # Security review M1: a link-mode row can print a stored url even when the reply
@@ -9074,20 +9080,40 @@ def _apply_file_mode(
 
     try:
         if db is not None:
-            linked, _minted = file_links.links_for(
-                db, text, files, contact_respond_id=contact_respond_id, turn_id=turn_id
-            )
+            # Review S1: the caller's session holds the rest of the turn. The links go in
+            # a savepoint, so a failure rolls back only them and the session stays usable,
+            # and nothing the caller has pending is committed early.
+            with db.begin_nested():
+                linked, _minted = file_links.links_for(
+                    db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id, commit=False
+                )
         else:
             with _session(session_factory) as own_db:
                 linked, _minted = file_links.links_for(
-                    own_db, text, files, contact_respond_id=contact_respond_id, turn_id=turn_id
+                    own_db, text, with_aliases, contact_respond_id=contact_respond_id, turn_id=turn_id
                 )
     except Exception:  # noqa: BLE001 - the files still go, as attachments
         logger.warning("chatbot turn %s: link mode failed, sending attachments", turn_id, exc_info=True)
-        return file_links.strip_storage_urls(file_links.strip_raw_links(text, files)), files, "attachments"
-    # "I have attached the file(s) below." is untrue once nothing is attached.
-    linked = linked.replace(_ATTACHED_SENTENCE, "").strip()
-    return linked, [], "links"
+        return file_links.strip_storage_urls(file_links.strip_raw_links(text, with_aliases)), files, "attachments"
+    # "I have attached the file(s) below." is untrue once nothing is attached, in every
+    # language the reply can be in (review S3).
+    for sentence in _attached_sentences(_ATTACHED_SENTENCE):
+        linked = linked.replace(sentence, "")
+    return linked.strip(), [], "links"
+
+
+def _attached_sentences(english: str) -> tuple[str, ...]:
+    """The sentence and its catalogued translations (`label_catalog`)."""
+    from app.services.chatbot import label_catalog
+
+    found = [english]
+    for lang in label_catalog.LANGUAGES:
+        if lang == "en":
+            continue
+        translated = label_catalog.defaults(lang).get(english)
+        if translated:
+            found.append(translated)
+    return tuple(found)
 
 
 def _attachments_src(answer: Any) -> Any:
@@ -9399,8 +9425,10 @@ def run_tail(
             "lane": branch_kind,
             "quick_replies": bool(reply["quick_replies"]),
             "rows_offered": len(reply["result_set"]),
-            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files).
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files), and
+            # how many (review S2).
             "file_mode": file_mode,
+            "files": len(src_files) if isinstance(src_files, list) else 0,
         },
         raw={"reply": reply},
     )
