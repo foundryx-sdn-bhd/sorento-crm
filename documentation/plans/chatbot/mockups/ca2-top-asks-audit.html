@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top asks and topic audit</title>
+<style>
+:root{--bg:#ffffff;--fg:#0a0a0a;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;
+--primary:#1b84ff;--primary-fg:#fff;--primary-soft:#eef5ff;--danger:#f8285a;--danger-soft:#ffeef3;
+--ok:#17c653;--ok-soft:#eafff1;--warn:#f6b100;--warn-soft:#fff8dd;--violet:#7239ea;--violet-soft:#f8f5ff;
+--note:#fffbe6;--radius:8px;--s1:#1b84ff;--s2:#7239ea;--s3:#17c653;--s4:#f6b100;--s5:#f8285a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;
+--muted-fg:#a1a1aa;--border:#2e2e33;--primary-soft:#0f2742;--danger-soft:#3a0f1a;--ok-soft:#0d2d1a;--warn-soft:#332600;
+--violet-soft:#23163f;--note:#2a2410}}
+:root[data-theme="dark"]{--bg:#0b0b0d;--fg:#f4f4f5;--muted:#18181b;--muted-fg:#a1a1aa;--border:#2e2e33;
+--primary-soft:#0f2742;--danger-soft:#3a0f1a;--ok-soft:#0d2d1a;--warn-soft:#332600;--violet-soft:#23163f;--note:#2a2410}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:16px}
+.intro{background:var(--muted);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:13px}
+.intro b{font-weight:600}
+.switch{display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap}
+.switch button{border:1px solid var(--border);background:var(--bg);color:var(--fg);border-radius:999px;padding:6px 14px;cursor:pointer;font:inherit}
+.switch button[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+.screen{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.screen[hidden]{display:none}
+.chrome{display:grid;grid-template-columns:200px minmax(0,1fr)}
+.side{border-right:1px solid var(--border);padding:14px 10px;font-size:13px;color:var(--muted-fg)}
+.side .grp{font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:10px 8px 4px}
+.side a{display:block;padding:6px 8px;border-radius:6px;color:inherit;text-decoration:none}
+.side a.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.main{padding:18px 20px;min-width:0}
+.crumbs{font-size:12px;color:var(--muted-fg)}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:4px 0 14px}
+.head h1{font-size:20px;margin:0;font-weight:600}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--border);background:var(--bg);color:var(--fg);border-radius:6px;padding:7px 12px;font:inherit;font-size:13px;white-space:nowrap}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.ok{border-color:var(--ok);color:var(--ok)}
+.btn.bad{border-color:var(--danger);color:var(--danger)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.sel{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;display:flex;gap:6px;align-items:center;background:var(--bg)}
+.sel small{color:var(--muted-fg)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg span{padding:6px 10px;font-size:13px}
+.seg span.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.note{background:var(--note);border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:12px}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:14px}
+.tabs span{padding:8px 0;font-size:13.5px;color:var(--muted-fg)}
+.tabs span.on{color:var(--fg);border-bottom:2px solid var(--primary);font-weight:600}
+.card{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:14px;font-weight:600}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:minmax(120px,210px) 1fr;gap:10px;align-items:center;font-size:12.5px}
+.bar .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stack{display:flex;height:16px;border-radius:4px;overflow:hidden;background:var(--muted)}
+.stack i{display:block}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted-fg);margin-top:8px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+.tbl th,.tbl td{border-bottom:1px solid var(--border);padding:7px 8px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl th{color:var(--muted-fg);font-weight:500;background:var(--muted)}
+.tbl td.n,.tbl th.n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr.tot td{font-weight:600}
+.scroll{overflow-x:auto}
+.pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:#b57f00}
+.pill.bad{background:var(--danger-soft);color:var(--danger)}.pill.info{background:var(--primary-soft);color:var(--primary)}
+.pill.v{background:var(--violet-soft);color:var(--violet)}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.tile{border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+.tile .k{font-size:12px;color:var(--muted-fg)}
+.tile .v{font-size:22px;font-weight:600;margin:2px 0}
+.tile .t{font-size:12px}
+.map{margin-top:18px}
+.map h2{font-size:15px;margin:0 0 8px}
+.map td:first-child{white-space:normal}
+.map td{white-space:normal}
+.qs li{margin-bottom:6px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--muted);padding:1px 4px;border-radius:4px}
+.tag{font-size:10.5px;color:var(--violet);font-weight:600;margin-left:6px}
+@container (max-width:700px){}
+@media (max-width:760px){
+ .chrome{grid-template-columns:minmax(0,1fr)}.side{display:none}
+ .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .main{padding:14px 12px}
+ .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="intro">
+<b>CA-2 mockup, for the owner's review.</b> Two screens: <b>Top asks</b> (a report on the existing Reports screen, nothing new to build in the page) and <b>Topic audit</b> (a small new review screen). Every number and every message below is <b>invented</b> and masked (<code>&lt;product&gt;</code>, <code>&lt;dealer&gt;</code>). Purple tags name the component each part reuses; the table at the bottom maps them all.
+</div>
+<div class="switch" role="group" aria-label="Screen">
+<button type="button" data-s="top" aria-pressed="true">Top asks: by topic</button>
+<button type="button" data-s="prod" aria-pressed="false">Top asks: by product</button>
+<button type="button" data-s="audit" aria-pressed="false">Topic audit</button>
+<button type="button" data-s="empty" aria-pressed="false">Topic audit: no sample yet</button>
+</div>
+
+<!-- ============================== TOP ASKS: TOPICS ============================== -->
+<section class="screen" id="s-top">
+<div class="chrome">
+<nav class="side" aria-label="Menu"><div class="grp">System Management</div><a>Chat Overview</a><a class="on">Top Asks</a><a>Bot Failures</a><a>Topic Audit</a><a>Chatbot Console</a></nav>
+<div class="main">
+<div class="crumbs">System Management / Top Asks</div>
+<div class="head"><h1>Top asks <span class="tag">PageHeader</span></h1>
+<div class="actions"><span class="btn">Views: Default <span class="tag">ReportViewsMenu</span></span><span class="btn">Configure summary</span><span class="btn pri">Export to Excel</span></div></div>
+<div class="filters">
+<span class="sel"><small>Period</small> 5 Sep 2026 to 9 Oct 2026</span>
+<span class="sel"><small>Contact type</small> Dealer, Not allowed, Unknown</span>
+<span class="sel"><small>Outcome</small> All but noise</span>
+<span class="sel"><small>Subject</small> All</span>
+<span class="sel"><small>Count by</small> <span class="seg"><span class="on">Topics</span><span>Products</span></span></span>
+<span class="tag">ReportFilterBar</span>
+</div>
+<div class="note">Topics labelled: 97% of asks (taxonomy v1, nightly). From bot traces, 5 Sep 2026 on. <span class="tag">result.note</span></div>
+<div class="tabs"><span class="on">Summary</span><span>Asks</span></div>
+<div class="card"><h3>Top topics by month <span class="tag">ReportPivotChart (bar)</span></h3>
+<div class="bars">
+<div class="bar"><span class="lbl">Stock: availability</span><span class="stack"><i style="width:34%;background:var(--s1)"></i><i style="width:41%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Incoming: product ETA</span><span class="stack"><i style="width:15%;background:var(--s1)"></i><i style="width:18%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Orders: delivery status</span><span class="stack"><i style="width:5%;background:var(--s1)"></i><i style="width:6%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Product files: photo or drawing</span><span class="stack"><i style="width:3%;background:var(--s1)"></i><i style="width:4%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Promotions: product promotion</span><span class="stack"><i style="width:2.5%;background:var(--s1)"></i><i style="width:3%;background:var(--s2)"></i></span></div>
+<div class="bar"><span class="lbl">Orders: sales figures</span><span class="stack"><i style="width:1.5%;background:var(--s1)"></i><i style="width:2%;background:var(--s2)"></i></span></div>
+</div>
+<div class="legend"><span><i style="background:var(--s1)"></i>Sep'26</span><span><i style="background:var(--s2)"></i>Oct'26</span></div>
+</div>
+<div class="card"><h3>Topic by month <span class="tag">ReportPivotTable</span></h3>
+<div class="scroll"><table class="tbl" style="min-width:520px">
+<colgroup><col style="width:46%"><col><col><col></colgroup>
+<thead><tr><th>Topic</th><th class="n">Sep'26</th><th class="n">Oct'26</th><th class="n">Total</th></tr></thead>
+<tbody>
+<tr><td>Stock: availability</td><td class="n">1,240</td><td class="n">1,512</td><td class="n">2,752</td></tr>
+<tr><td>Incoming: product ETA</td><td class="n">548</td><td class="n">661</td><td class="n">1,209</td></tr>
+<tr><td>Orders: delivery status</td><td class="n">182</td><td class="n">214</td><td class="n">396</td></tr>
+<tr><td>Product files: photo or drawing</td><td class="n">121</td><td class="n">150</td><td class="n">271</td></tr>
+<tr><td>Promotions: product promotion</td><td class="n">95</td><td class="n">108</td><td class="n">203</td></tr>
+<tr><td>Orders: sales figures</td><td class="n">60</td><td class="n">74</td><td class="n">134</td></tr>
+<tr><td>Stock: quantity check</td><td class="n">41</td><td class="n">52</td><td class="n">93</td></tr>
+<tr><td>(not labelled yet)</td><td class="n">0</td><td class="n">88</td><td class="n">88</td></tr>
+<tr class="tot"><td>Total asks</td><td class="n">2,412</td><td class="n">2,948</td><td class="n">5,360</td></tr>
+</tbody></table></div>
+</div>
+</div></div>
+</section>
+
+<!-- ============================== TOP ASKS: PRODUCTS ============================== -->
+<section class="screen" id="s-prod" hidden>
+<div class="chrome">
+<nav class="side" aria-label="Menu"><div class="grp">System Management</div><a>Chat Overview</a><a class="on">Top Asks</a><a>Bot Failures</a><a>Topic Audit</a></nav>
+<div class="main">
+<div class="crumbs">System Management / Top Asks</div>
+<div class="head"><h1>Top asks</h1><div class="actions"><span class="btn">Views: Default</span><span class="btn">Configure summary</span><span class="btn pri">Export to Excel</span></div></div>
+<div class="filters">
+<span class="sel"><small>Period</small> 5 Sep 2026 to 9 Oct 2026</span>
+<span class="sel"><small>Contact type</small> Dealer, Not allowed, Unknown</span>
+<span class="sel"><small>Subject</small> Stock</span>
+<span class="sel"><small>Count by</small> <span class="seg"><span>Topics</span><span class="on">Products</span></span></span>
+<span class="sel"><small>Products</small> <span class="seg"><span class="on">Asked about</span><span>Shown by the bot</span></span></span>
+<span class="tag">SelectParam (single), the "shown" toggle</span>
+</div>
+<div class="note">Asked about = the customer named it, or the bot looked it up for them. Shown = the bot listed it in a reply. <span class="tag">result.note</span></div>
+<div class="tabs"><span class="on">Summary</span><span>Asks</span></div>
+<div class="card"><h3>Product by month</h3>
+<div class="scroll"><table class="tbl" style="min-width:520px">
+<colgroup><col style="width:46%"><col><col><col></colgroup>
+<thead><tr><th>Product</th><th class="n">Sep'26</th><th class="n">Oct'26</th><th class="n">Total</th></tr></thead>
+<tbody>
+<tr><td>&lt;product A&gt;</td><td class="n">62</td><td class="n">81</td><td class="n">143</td></tr>
+<tr><td>&lt;product B&gt;</td><td class="n">48</td><td class="n">55</td><td class="n">103</td></tr>
+<tr><td>&lt;product C&gt;</td><td class="n">31</td><td class="n">44</td><td class="n">75</td></tr>
+<tr><td>&lt;product D&gt;</td><td class="n">29</td><td class="n">30</td><td class="n">59</td></tr>
+<tr class="tot"><td>Total asks naming a product</td><td class="n">1,904</td><td class="n">2,316</td><td class="n">4,220</td></tr>
+</tbody></table></div>
+</div>
+<div class="card"><h3>Asks <span class="tag">DataGrid (detail tab), fixed layout, resizable</span></h3>
+<div class="scroll"><table class="tbl" style="min-width:760px">
+<colgroup><col style="width:110px"><col style="width:120px"><col style="width:170px"><col style="width:80px"><col style="width:130px"><col style="width:150px"></colgroup>
+<thead><tr><th>Asked on</th><th>Subject</th><th>Topic</th><th>Language</th><th>Outcome</th><th>Customer</th></tr></thead>
+<tbody>
+<tr><td>9 Oct 2026</td><td>Stock</td><td>Availability</td><td>ms</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt;</td></tr>
+<tr><td>9 Oct 2026</td><td>Stock</td><td>Quantity check</td><td>zh</td><td><span class="pill warn">Answered, nothing found</span></td><td>&lt;dealer&gt;</td></tr>
+<tr><td>8 Oct 2026</td><td>Stock</td><td>Availability</td><td>mixed</td><td><span class="pill ok">Answered</span></td><td>&lt;dealer&gt;</td></tr>
+</tbody></table></div>
+</div>
+</div></div>
+</section>
+
+<!-- ============================== AUDIT ============================== -->
+<section class="screen" id="s-audit" hidden>
+<div class="chrome">
+<nav class="side" aria-label="Menu"><div class="grp">System Management</div><a>Chat Overview</a><a>Top Asks</a><a>Bot Failures</a><a class="on">Topic Audit</a></nav>
+<div class="main">
+<div class="crumbs">System Management / Topic Audit</div>
+<div class="head"><h1>Topic audit <span class="tag">PageHeader</span></h1><div class="actions"><span class="btn pri" aria-disabled="true" style="opacity:.5">Draw sample</span></div></div>
+<div class="filters">
+<span class="sel"><small>Taxonomy</small> Version 1 <span class="tag">SearchableSelect</span></span>
+<span class="sel"><small>Show</small> <span class="seg"><span class="on">To review</span><span>Reviewed</span><span>All</span></span></span>
+<span class="sel"><small>Subject</small> All</span>
+</div>
+<div class="tiles">
+<div class="tile"><div class="k">Reviewed</div><div class="v">212 / 300</div><div class="t"><span class="pill info">88 to go</span></div></div>
+<div class="tile"><div class="k">Subject right</div><div class="v">94%</div><div class="t"><span class="pill ok">Target 90%</span></div></div>
+<div class="tile"><div class="k">Topic right</div><div class="v">78%</div><div class="t"><span class="pill bad">Target 80%</span></div></div>
+<div class="tile"><div class="k">Product right</div><div class="v">97%</div><div class="t"><span class="pill ok">Target 95%</span></div></div>
+</div>
+<div class="card"><h3>Sample, taxonomy v1 <span class="tag">DataGrid, fixed layout, resizable</span></h3>
+<div class="scroll"><table class="tbl" style="min-width:980px">
+<colgroup><col style="width:96px"><col style="width:230px"><col style="width:110px"><col style="width:160px"><col style="width:70px"><col style="width:110px"><col style="width:200px"></colgroup>
+<thead><tr><th>Asked on</th><th>Message</th><th>Subject</th><th>Topic</th><th class="n">Sure</th><th>Products</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>8 Oct 2026</td><td title="&lt;product&gt; ada stock?">&lt;product&gt; ada stock?</td><td>Stock</td><td>Availability</td><td class="n">0.96</td><td>&lt;product&gt;</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
+<tr><td>8 Oct 2026</td><td title="price &lt;product&gt; and got stock?">price &lt;product&gt; and got stock?</td><td>Product info</td><td>Other product information</td><td class="n">0.58</td><td>&lt;product&gt;</td><td><span class="btn sm ok">Right</span> <span class="btn sm bad">Wrong topic</span> <span class="btn sm">Wrong subject</span></td></tr>
+<tr><td>7 Oct 2026</td><td title="&lt;dealer&gt; today delivery">&lt;dealer&gt; today delivery</td><td>Orders</td><td>Delivery status</td><td class="n">0.91</td><td>-</td><td><span class="pill ok">Right</span> <span class="crumbs">by Owner</span></td></tr>
+<tr><td>7 Oct 2026</td><td title="what is my sales today">what is my sales today</td><td>Orders</td><td>Other orders</td><td class="n">0.62</td><td>-</td><td><span class="pill bad">Wrong topic</span> <span class="crumbs">should be Sales figures</span></td></tr>
+<tr><td>6 Oct 2026</td><td title="&lt;product&gt; 高清图">&lt;product&gt; 高清图</td><td>Product files</td><td>Photo or drawing</td><td class="n">0.88</td><td>&lt;product&gt; <span class="pill bad">wrong</span></td><td><span class="pill ok">Right</span> <span class="crumbs">product wrong</span></td></tr>
+</tbody></table></div>
+<p class="crumbs" style="margin:10px 0 0">"Wrong topic" opens a SearchableSelect of the leaves under the ask's subject; "Wrong subject" a SearchableSelect of subjects, then leaves. A row with products gets a second, smaller verdict for them (Right / Wrong).</p>
+</div>
+</div></div>
+</section>
+
+<!-- ============================== AUDIT: EMPTY ============================== -->
+<section class="screen" id="s-empty" hidden>
+<div class="chrome">
+<nav class="side" aria-label="Menu"><div class="grp">System Management</div><a>Chat Overview</a><a>Top Asks</a><a>Bot Failures</a><a class="on">Topic Audit</a></nav>
+<div class="main">
+<div class="crumbs">System Management / Topic Audit</div>
+<div class="head"><h1>Topic audit</h1><div class="actions"><span class="btn pri">Draw sample</span></div></div>
+<div class="card" style="text-align:center;padding:40px 16px">
+<h3 style="margin-bottom:4px">No sample for taxonomy v1 yet</h3>
+<div class="crumbs">A sample is 300 labelled asks, drawn once per taxonomy version.</div>
+</div>
+<p class="crumbs">Empty state: heading + hint, no button in the body (one CTA per page, in the header; DESIGN-LANGUAGE section 6).</p>
+</div></div>
+</section>
+
+<div class="map">
+<h2>Component map</h2>
+<div class="scroll"><table class="tbl" style="min-width:640px">
+<colgroup><col style="width:34%"><col></colgroup>
+<thead><tr><th>Element</th><th>Component / file</th></tr></thead>
+<tbody>
+<tr><td>Top asks page, header, Views, Configure summary, Export</td><td><code>components/reports/ReportPage.tsx</code> (unchanged), new page <code>app/(protected)/system-management/top-asks/page.tsx</code> like <code>chat-overview/page.tsx</code></td></tr>
+<tr><td>Filter bar: Period, Contact type, Outcome, Subject, Count by, Products (asked / shown)</td><td><code>components/reports/ReportFilterBar.tsx</code>, driven by the definition's params (<code>reg.PeriodParam</code>, <code>reg.SelectParam</code>)</td></tr>
+<tr><td>Coverage line under the filters</td><td><code>ReportPage</code> <code>result.note</code> (definition's <code>note</code>)</td></tr>
+<tr><td>Bar chart, pivot table</td><td><code>components/reports/ReportPivotChart.tsx</code>, <code>ReportPivotTable.tsx</code></td></tr>
+<tr><td>Asks detail grid</td><td><code>ReportPage</code> detail tab (<code>DataGrid</code>, fixed layout, resizable)</td></tr>
+<tr><td>Topic and subject dimensions, language</td><td>backend <code>app/services/reports/datasets/chat_asks.py</code> + <code>chat_ask_items.py</code> (new columns), new definition <code>definitions/chat_top_asks.py</code></td></tr>
+<tr><td>Topic audit page</td><td>new <code>app/(protected)/system-management/topic-audit/page.tsx</code>: <code>PageHeader</code>, KPI tiles (<code>Card</code> + <code>Badge</code>), <code>DataGrid</code> with <code>tableLayout: fixed, columnsResizable</code>, <code>SearchableSelect</code> (clearable) for the corrected leaf</td></tr>
+<tr><td>Audit data</td><td>new table <code>chatbot.chat_label_audits</code>; routes <code>GET/POST /api/v1/system/chatbot/topic-audit</code>; service <code>services/topicAuditService.ts</code> + hooks <code>useTopicAuditQuery</code> / <code>useTopicAuditMutations</code></td></tr>
+<tr><td>Menu entries</td><td><code>config/menu.config.tsx</code>, beside Chat Overview</td></tr>
+</tbody></table></div>
+<h2 style="margin-top:16px">Questions (recommendation first)</h2>
+<ol class="qs">
+<li><b>Who judges the sample?</b> (a) a person marks all 300 (one click each, about 15 minutes); (b) a larger model relabels all 300 and a person reviews only the disagreements. <b>Recommend (a)</b>: no extra model, and the precision numbers are a person's judgement.</li>
+<li><b>Who sees the customer's words on the audit?</b> (a) anyone who already holds <code>system.chat_history.view</code> and <code>chatbot.analytics.view</code>; (b) a new grant. <b>Recommend (a)</b>: the same people already read those words on the trace screen.</li>
+<li><b>How the 300 are drawn</b>: (a) at least 10 per subject that has asks, the rest in proportion to volume, and half of that rest from the lowest-confidence labels; (b) purely random. <b>Recommend (a)</b>: small subjects and doubtful labels are where errors hide.</li>
+<li><b>Bot failures report</b> (failure reason by topic, plus the turn list): (a) include it in this lane, about one definition file and a menu line; (b) leave it to a later lane. <b>Recommend (a)</b>: it is small and reuses the same datasets.</li>
+<li><b>Top asks opens on</b>: (a) 5 Sep 2026 to today, topic by month, like Chat overview; (b) the last 30 days. <b>Recommend (a)</b>: the month columns are the point of the view.</li>
+</ol>
+</div>
+</div>
+<script>
+document.querySelectorAll('.switch button').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.switch button').forEach(function(x){x.setAttribute('aria-pressed','false')});
+    b.setAttribute('aria-pressed','true');
+    document.querySelectorAll('.screen').forEach(function(s){s.hidden=true});
+    document.getElementById('s-'+b.dataset.s).hidden=false;
+  });
+});
+</script>
+</body>
+</html>
