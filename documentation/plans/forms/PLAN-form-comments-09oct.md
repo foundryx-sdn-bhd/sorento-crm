@@ -1,6 +1,6 @@
 # PLAN: Two-way comment thread on form submissions (FORM-COMMENTS)
 
-Status: Card posted, waiting on owner answers (Q1-Q5); building the non-blocked parts meanwhile.
+Status: Card approved by owner 9 Oct (Q1 a, Q2 SLA handler, Q3 a, Q4 a, Q5 b; wording OK). Phase 2 build in progress.
 Track: full lane (one additive migration, notifications on two channels).
 
 Owner request (9 Oct 2026): every form submission page gets a comment thread reusing the
@@ -146,3 +146,27 @@ Frontend
   PurchaseRequestDetail (covers sponsorship), after Attachments, before Audit trail.
 - Portal: the same thread in `SubmissionForm` after Attachments, before the button row, hidden
   for drafts, composer hidden when voided.
+
+## Owner answers (9 Oct 2026) and what they change
+
+- Q1 (a): the "Comment / reply by purchasing" box and field stay exactly as they are; the thread
+  sits below. No data migration.
+- Q2: a submitter comment emails the form's SLA HANDLER only (`conversation_sla_tracking.
+  handled_by_id` for `(kind, id)`), not the participant set and no team fallback. No handler, or
+  a handler without an email -> comment kept, `delivery = "no_recipients"`, logged.
+- Q3 (a): status never changes on a comment.
+- Q4 (a): all four kinds.
+- Q5 (b): comments may carry attachments, reusing the existing upload, storage and preview code:
+  - POST becomes multipart: `body` (text, may be empty only when at least one file is sent) and
+    `files` (0..5). Same storage rules as today: staff files through
+    `create_response_attachment`'s path (`response_attachment` type, quota, storage_router,
+    thumbnail), portal files through the portal upload path (`portal_submission` type, portal
+    quota, `uploader_kind = contact`).
+  - Each file gets TWO links: one to the form (`_entity_type_for(kind)`, form id), so it shows in
+    the form's Attachments section and the portal's existing download ownership check covers it
+    with no new access path; and one to `("form_comment", comment_id)`, so the thread knows which
+    files belong to which comment.
+  - A comment serializes `attachments: [{attachment_id, filename, size, content_type}]`.
+  - WhatsApp / email name the files: WhatsApp appends `Attachments: a.pdf, b.jpg` before the link;
+    the email lists the file names.
+- Wording approved as drafted.
