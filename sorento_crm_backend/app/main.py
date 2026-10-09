@@ -100,10 +100,6 @@ app = FastAPI(
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
 
-# claude.ai connector: a `Connector` token is verified, and its body capped at 1 MB, before any body
-# is read (CLAUDE-CONNECTOR contract 9.4). Other requests pass straight through.
-app.add_middleware(ConnectorPreflightMiddleware)
-
 # A view-as header the auth dependency could not honour gets X-Impersonation-Ended: 1,
 # so the client drops its banner instead of labelling the admin's own data as the
 # target's. See app/middleware/impersonation_ended_middleware.py.
@@ -122,6 +118,10 @@ app.add_middleware(IdempotencyMiddleware)
 # Telemetry for /api/v1/external/* - total coverage by construction, so a new
 # external route is logged the day it is added rather than opt-in per endpoint.
 app.add_middleware(ApiCallLogMiddleware)
+# claude.ai connector: a `Connector` token is verified, and its body capped at 1 MB, before any body
+# is read (CLAUDE-CONNECTOR contract 9.4). Added after (so outside) the api-call log and idempotency,
+# which buffer bodies and write rows: a refused call reaches neither. Other requests pass through.
+app.add_middleware(ConnectorPreflightMiddleware)
 
 # Compress JSON responses. List endpoints (products, attachments) return 50-70KB
 # of JSON per page; uncompressed transfer was ~1s of "content download" on prod.

@@ -1,6 +1,7 @@
 """The 34 reused read tools the connector manifest offers (CLAUDE-CONNECTOR card 4.2).
 
-GENERATED from `sorento_crm_mcp` (catalog + merged module catalogs): name, description, method and
+GENERATED from `sorento_crm_mcp` (catalog + merged module catalogs), then hand-edited where dropping
+params left broken sentences (incoming-stock list, the two attachment tools): name, description, method and
 params as the n8n catalog has them (dashes become hyphens); `path` is the backend's REAL route path
 (trailing slash included). The chatbot's contact-scoping params and the signed-URL switch (presigned
 URLs are credentials) are dropped, with every description sentence that names them. The backend image
@@ -135,15 +136,13 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'page.\n\nCLEARANCE DATES (eta_delay_date, inspection_date, approval_date, '
             'gatepass_date, loading/etc/etd, liner_code, forwarders, consignee, '
             'free_days_available, coa_permit_no) are ENTITLEMENT-GATED server-side, FIELD BY '
-            'FIELD. Holding the agent does NOT mean every field. When not permitted the keys '
+            'FIELD. When not permitted the keys '
             "are ABSENT from the response - absent means 'not permitted', it does NOT mean "
             "'not reached yet'. Never tell a user a date is unknown or pending because a key "
             'is missing; say you cannot share it. A `field_access.denied` block lists what '
             'was withheld and why. The container number (`shipping_container_number`) and '
             'the quantities (`remaining_incoming_quantity`, `unallocated_quantity`, '
-            '`allocated_quantity`) are gated the same way for a contact. For a contact, the '
-            'ETA is already the date that contact may be told, and the packing-list '
-            'attachment is present only when that contact may receive it.'
+            '`allocated_quantity`) are gated the same way.'
         ),
         "method": 'GET',
         "path": '/api/v1/incoming-stock/list',
@@ -806,20 +805,16 @@ REUSED_TOOLS: tuple[dict, ...] = (
     {
         "name": 'crm_resource_attachments_catalogue',
         "description": (
-            'DOMAIN: catalogue. Narrow attachment lookup pre-filtered to '
-            'AttachmentType=catalogue (Sorento product catalogue PDFs / catalog documents '
-            'only). Use when the n8n flow has already resolved one or more catalogue '
-            'attachment UUIDs and needs metadata / signed URLs for them.\n\nREQUIRED - '
-            '`attachment_ids` (canonical attachment UUIDs csv / JSON / repeated) MUST be '
-            'supplied or the tool returns an empty page. This tool does NOT browse the '
-            'catalogue library; it resolves a known set of UUIDs scoped to the catalogue '
-            'type.\n\nBackend hard-filters by attachment_type_code=catalogue server-side, so '
-            'non-catalogue UUIDs passed in `attachment_ids` are excluded automatically.'
+            'DOMAIN: catalogue. Attachment lookup for Sorento product catalogue PDFs / '
+            'catalog documents. ALWAYS pass `attachment_type_code=catalogue`: that filter '
+            'is what scopes the answer to catalogue documents. Pass `attachment_ids` '
+            '(canonical attachment UUIDs, csv / JSON / repeated) to read the metadata of '
+            'known catalogue files.'
         ),
         "method": 'GET',
         "path": '/api/v1/resource-management/attachments/',
         "path_params": (),
-        "query_params": ('page', 'limit', 'attachment_ids', 'sort', 'dir', 'uploaded_at_from', 'uploaded_at_to'),
+        "query_params": ('page', 'limit', 'attachment_ids', 'attachment_type_code', 'sort', 'dir', 'uploaded_at_from', 'uploaded_at_to'),
         "body_params": (),
     },
     {
@@ -841,12 +836,9 @@ REUSED_TOOLS: tuple[dict, ...] = (
             'UUIDs); each unions with its singular twin, so a row matching ANY of the named '
             'types is returned.\n  • They named a SPECIFIC FILE you already hold the UUID for '
             '-> `attachment_ids`. Also available: `directory_id`, `uploaded_by` (canonical '
-            'UUIDs).\n  • They named NO document at all -> this tool returns NOTHING, by '
-            'design. Ask which document they want instead of guessing.\nThey widen WHICH '
-            'types are visible; they never stand in for the filter.\nDOCUMENT TYPES: every '
-            'caller gets the dealer-facing baseline. the Container Status workbook for '
-            'office staff). Grants only widen - a contact with none sees exactly the '
-            'baseline, so always pass both when answering on behalf of someone.'
+            'UUIDs).\n  • They named NO document at all -> ask which document they want '
+            'instead of guessing.\nDOCUMENT TYPES: the answer holds only the document types '
+            'the signed-in user may see.'
         ),
         "method": 'GET',
         "path": '/api/v1/resource-management/attachments/',
