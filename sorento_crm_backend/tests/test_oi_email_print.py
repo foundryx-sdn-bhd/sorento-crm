@@ -584,4 +584,9 @@ def test_order_table_columns_have_fixed_shares():
     # Same 11px as the line table, so PROJECT holds about 48 characters a line.
     # The shell writes its defaults first in the style; the last font-size is the one that wins.
     assert re.findall(r"font-size:(\d+)px", table.split(">", 1)[0])[-1] == "11", table[:160]
+    # Review nit: 11% is only safe because these two cells never wrap (a percentage is a
+    # minimum hint, so a no-wrap column widens instead).
+    first_row = re.search(r"<tbody>.*?<tr[^>]*>(.*?)</tr>", table, re.S).group(1)
+    cells = re.findall(r"<td(?:\s[^>]*)?>", first_row)
+    assert all("white-space:nowrap" in td for td in cells[:2]), cells[:2]
 
