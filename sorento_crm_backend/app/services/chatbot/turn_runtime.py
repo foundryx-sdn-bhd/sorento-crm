@@ -3110,6 +3110,9 @@ def make_tool_runner(
             "customer_scope": customer_scope,
             # CHAT-LANGUAGE: read by `output_structurer` (render-only).
             "localizer": localizer,
+            # PHOTO-SEND-CAP: link mode prints each file's link under its row
+            # (`fetch.output_structurer`); the engine turns it into a short link.
+            "files_as_links": bool(getattr(profile, "files_as_links", False)),
         }
         if page_predicate is not None:
             entities = [

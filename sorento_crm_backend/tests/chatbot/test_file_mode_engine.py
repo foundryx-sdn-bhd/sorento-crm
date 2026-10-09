@@ -7,8 +7,6 @@ storage url never reaches the customer.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
-
 import pytest
 
 import app.main  # noqa: F401  isort:skip
@@ -20,9 +18,13 @@ FILES = [{"url": URL, "filename": "a.jpg", "mimeType": "image/jpeg", "fileHash":
 TEXT = f"I have attached the file(s) below.\n\n1. *Product Code:* X1\n*File Name:* a.jpg\n*Link:* {URL}"
 
 
-@contextmanager
+class _Db:
+    def close(self) -> None:
+        pass
+
+
 def _factory():
-    yield object()
+    return _Db()
 
 
 def test_attachment_mode_is_untouched():

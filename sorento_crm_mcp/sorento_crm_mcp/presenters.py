@@ -229,6 +229,10 @@ class _Builder:
         self.items: list[dict[str, Any]] = []
         self.attachments: list[dict[str, Any]] = []
         self.action_links: list[dict[str, Any]] = []
+        # The item the next `attach` belongs to: every presenter calls `item()` for a row
+        # and then `attach()` for that row's files. None when `item()` dropped an empty row,
+        # so its files are never credited to the row before it (PHOTO-SEND-CAP).
+        self._current: dict[str, Any] | None = None
         # field key -> permission key (A2/A5/A6, e.g. "inventory.sellable",
         # "purchase_orders.supplier"). The MCP itself stays unfiltered (in-app
         # assistant + n8n operators are internal); `output_structurer` is the
@@ -301,6 +305,7 @@ class _Builder:
             fields.append(
                 {"label": lbl, "value": val} if key is None else {"key": key, "label": lbl, "value": val}
             )
+        self._current = None
         if not fields:
             return
         self.items.append(
@@ -320,6 +325,7 @@ class _Builder:
                 **({"id": entity_id} if _filled(entity_id) else {}),
             }
         )
+        self._current = self.items[-1]
 
     def raw_item(self, title: Any, fields: list[dict[str, Any]], flags: dict[str, Any]) -> None:
         """An item whose fields and flags the SOURCE already shaped.
@@ -337,6 +343,7 @@ class _Builder:
                 "flags": flags,
             }
         )
+        self._current = self.items[-1]
 
     def attach(self, a: Any) -> None:
         if not isinstance(a, dict):
@@ -367,6 +374,10 @@ class _Builder:
         if _filled(file_hash):
             entry["fileHash"] = file_hash
         self.attachments.append(entry)
+        # PHOTO-SEND-CAP round 2: which row this file belongs to, so a link-mode reply
+        # (`output_structurer`) prints each file's link under its own row.
+        if self._current is not None:
+            self._current.setdefault("file_urls", []).append(url)
 
     def link(self, label: str, url: str, link_type: str = "portal_link") -> None:
         if _filled(url):
@@ -1936,6 +1947,16 @@ def present_response(tool_name: str, raw: str) -> str:
         if file_hash:
             seen_hashes.add(file_hash)
         attachments.append(a)
+    # A row whose file was dropped as a second url of a kept image names the KEPT url,
+    # so every product sharing one picture shows the one file that is sent (owner Q5 (a)).
+    kept_by_hash = {a["fileHash"]: a["url"] for a in reversed(attachments) if a.get("fileHash")}
+    url_hash = {a["url"]: a.get("fileHash") for a in b.attachments}
+    for it in b.items:
+        urls = it.get("file_urls")
+        if not urls:
+            continue
+        canonical = [kept_by_hash.get(url_hash.get(u), u) for u in urls]
+        it["file_urls"] = list(dict.fromkeys(canonical))
 
     has_result = bool(b.items or attachments or b.action_links)
     if attachments:

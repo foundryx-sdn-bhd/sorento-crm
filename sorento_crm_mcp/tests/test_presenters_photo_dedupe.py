@@ -61,3 +61,23 @@ def test_no_hash_falls_back_to_the_url():
     )
     assert [a["url"] for a in out["attachments"]] == ["https://cdn/a.jpg", "https://cdn/b.jpg"]
     assert all("fileHash" not in a for a in out["attachments"])
+
+
+def test_each_row_names_its_own_files_and_a_shared_image_names_the_kept_url():
+    """Round 2 (link mode): a row prints its own files' links, and a picture shared by
+    two products is the one file that is sent (owner Q5 (a))."""
+    out = env(
+        "crm_master_product_attachments_list",
+        {
+            "data": [
+                _row("SRTSC1012", "https://cdn/a.jpg", "h1", "a.jpg"),
+                _row("SRTSC1013", "https://cdn/b.jpg", "h1", "b.jpg"),
+                {"product": {"product_code": "SRTSC1014"}, "attachment": {"original_filename": "x.jpg"}},
+            ]
+        },
+    )
+    assert [it.get("file_urls") for it in out["items"]] == [
+        ["https://cdn/a.jpg"],
+        ["https://cdn/a.jpg"],
+        None,
+    ]

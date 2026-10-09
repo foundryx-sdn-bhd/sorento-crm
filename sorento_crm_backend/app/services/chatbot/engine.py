@@ -7132,6 +7132,16 @@ def _run_answer(
     if carried and (getattr(answer, "text", "") or "").strip():
         answer = dataclasses_replace(answer, text=f"{carried}\n\n{answer.text}")
     stage[0] = "replied"
+    file_text, file_list, file_mode = _apply_file_mode(
+        answer.text or "",
+        list(answer.files or []),
+        profile=getattr(state, "profile", None),
+        contact_respond_id=contact_respond_id,
+        turn_id=turn_id,
+        session_factory=session_factory,
+    )
+    if file_mode is not None and (file_text != (answer.text or "") or file_list != list(answer.files or [])):
+        answer = dataclasses_replace(answer, text=file_text, files=file_list)
     reply = {
         **_reply_of(answer),
         "attachments_src": answer.files or None,
@@ -7145,6 +7155,8 @@ def _run_answer(
             "sections": len(answer.sections),
             "asking": answer.question.kind if answer.question is not None else None,
             "files": len(answer.files),
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files).
+            "file_mode": file_mode,
         },
         raw={"reply": reply},
     )
@@ -9027,6 +9039,53 @@ def _after_stock_ask_turn(
         logger.exception("chatbot turn %s: stock ask follow-up failed", turn_id)
 
 
+def _apply_file_mode(
+    text: str,
+    files: list[Any],
+    *,
+    profile: Any,
+    contact_respond_id: Any,
+    turn_id: Any,
+    session_factory: SessionFactory | None = None,
+    db: Session | None = None,
+) -> tuple[str, list[Any], str | None]:
+    """PHOTO-SEND-CAP round 2: `(text, files, file_mode)` for the contact's A/B mode.
+
+    Attachment mode (the default, `respond_contacts.chatbot_files_as_links` off) is today's
+    behaviour, untouched: the text, then one WhatsApp message per file. Link mode sends the
+    text ALONE, every file a short link in it (`file_links.links_for`), so `files` comes
+    back empty and no `send_attachments` action is built. If the links cannot be minted
+    (no public base url, a database error) the turn falls back to attachments rather than
+    sending a reply that names files it cannot deliver (never stuck), and the raw storage
+    url the lane rendered under each row is dropped. `file_mode` is None when the reply
+    carries no file, else `attachments` or `links`, the A/B record the trace keeps.
+    """
+    files = [f for f in (files or []) if f is not None]
+    if not files:
+        return text, files, None
+    if not getattr(profile, "files_as_links", False):
+        return text, files, "attachments"
+    from app.services.chatbot import file_links
+    from app.services.chatbot.turn.compose import _ATTACHED_SENTENCE
+
+    try:
+        if db is not None:
+            linked, _minted = file_links.links_for(
+                db, text, files, contact_respond_id=contact_respond_id, turn_id=turn_id
+            )
+        else:
+            with _session(session_factory) as own_db:
+                linked, _minted = file_links.links_for(
+                    own_db, text, files, contact_respond_id=contact_respond_id, turn_id=turn_id
+                )
+    except Exception:  # noqa: BLE001 - the files still go, as attachments
+        logger.warning("chatbot turn %s: link mode failed, sending attachments", turn_id, exc_info=True)
+        return file_links.strip_raw_links(text, files), files, "attachments"
+    # "I have attached the file(s) below." is untrue once nothing is attached.
+    linked = linked.replace(_ATTACHED_SENTENCE, "").strip()
+    return linked, [], "links"
+
+
 def _attachments_src(answer: Any) -> Any:
     """`send-attachments`'s own frozen expression, as a value.
 
@@ -9300,13 +9359,32 @@ def run_tail(
             composed = {**composed, "text": stripped_text}
             # Security review N2: the offer's team buttons go with it.
             quick_replies = None
+    attachments_src = _attachments_src(values["answer"])
+    src_files = (
+        attachments_src.get("attachments")
+        if isinstance(attachments_src, dict)
+        else attachments_src
+    )
+    composed_text, kept_files, file_mode = _apply_file_mode(
+        jsc.js_string(composed.get("text") or ""),
+        src_files if isinstance(src_files, list) else [],
+        profile=profile,
+        contact_respond_id=contact_respond_id,
+        turn_id=turn_id,
+        db=db,
+    )
+    if file_mode == "links":
+        composed = {**composed, "text": composed_text}
+        attachments_src = None
+    elif file_mode == "attachments" and composed_text != jsc.js_string(composed.get("text") or ""):
+        composed = {**composed, "text": composed_text}
     reply = {
         "text": composed.get("text"),
         # Already guarded above; the persisted reply, the trace fact and the send action
         # all read this one value.
         "quick_replies": quick_replies,
         "result_set": composed.get("result_set") or [],
-        "attachments_src": _attachments_src(values["answer"]),
+        "attachments_src": attachments_src,
     }
 
     turn_trace.record(
@@ -9317,6 +9395,8 @@ def run_tail(
             "lane": branch_kind,
             "quick_replies": bool(reply["quick_replies"]),
             "rows_offered": len(reply["result_set"]),
+            # PHOTO-SEND-CAP A/B: how this turn's files went out (None = no files).
+            "file_mode": file_mode,
         },
         raw={"reply": reply},
     )

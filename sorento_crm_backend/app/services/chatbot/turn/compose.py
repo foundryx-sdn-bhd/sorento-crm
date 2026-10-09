@@ -146,7 +146,8 @@ def _render_row(n: int, fig: dict[str, Any]) -> str:
 
 
 def _file_key(f: dict[str, Any]) -> Any:
-    return f.get("url") or f.get("id") or f.get("filename")
+    # PHOTO-SEND-CAP: one picture under two urls (two domains' envelopes) is one file.
+    return f.get("fileHash") or f.get("url") or f.get("id") or f.get("filename")
 
 
 def _dealer_view(figures: list[dict[str, Any]]) -> bool:
