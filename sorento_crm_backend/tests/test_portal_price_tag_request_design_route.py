@@ -187,6 +187,33 @@ class TestAllowedStatuses:
         assert lines[0]["name"]
 
 
+class TestReadsUnderTheRequestsOwnCompany:
+    def test_a_contact_retagged_to_another_company_still_sees_the_design(self, client):
+        """PRICE-TAG-COMPANY: the design of an existing request scopes to the company
+        the request was stamped with, not the contact's company today. Re-tag the
+        contact into another company after a Sorento request exists: the design and
+        its Sorento line still resolve."""
+        c, db, contact_id = client
+        from app.models.company import Company
+        from tests._portal_grant import link_contact_company
+
+        request_id = _request_with_a_design(db, contact_id, status="proof_ready")
+        other = Company(
+            id=str(uuid.uuid4()), name="ZZT Other Co", code=unique_code("co")[:20]
+        )
+        db.add(other)
+        db.flush()
+        link_contact_company(db, contact_id, other.id)
+        db.commit()
+
+        res = c.get(_DESIGN_URL.format(id=request_id))
+
+        assert res.status_code == 200, res.text
+        lines = res.json()["lines"]
+        assert len(lines) == 1
+        assert lines[0]["code"]
+
+
 class TestPrefersTheSavedVersionOverTheDraft:
     def test_a_differing_draft_does_not_win_over_the_saved_version(self, client):
         """Review fix (D11 follow-up): the portal must show what was
