@@ -631,7 +631,72 @@ INLINE = frozenset(
 
 #: Sentences too generic to match inside running text ("I have checked with the warehouse."): the
 #: composer that owns one fills it with `Localizer.fill`.
-DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."})
+# MULTI-ASK-PLAN S4 (owner card 9 Oct 2026): the per-ask runner's labels, values and two
+# questions (`turn/sub_asks.py`). "Supplier" is already catalogued above.
+LABELS.update(
+    {
+        "Received {window}": {"ms": "Diterima {window}", "zh": "{window} 入库数量"},
+        "Received": {"ms": "Diterima", "zh": "入库数量"},
+        "Last received": {"ms": "Terakhir diterima", "zh": "最后一次进库"},
+        "Last cost": {"ms": "Kos terakhir", "zh": "采购价"},
+        "Stock": {"ms": "Stok", "zh": "库存"},
+        "Incoming": {"ms": "Barang masuk", "zh": "到货"},
+        "Sold {window} ({basis})": {"ms": "Terjual {window} ({basis})", "zh": "{window} 总共卖出（{basis}）"},
+        "Sold {axis} {window} ({basis})": {"ms": "Terjual {axis} {window} ({basis})", "zh": "{window} {axis}卖出（{basis}）"},
+        "per salesman": {"ms": "mengikut jurujual", "zh": "每位业务员"},
+        "per customer": {"ms": "mengikut pelanggan", "zh": "每位客户"},
+        "per product": {"ms": "mengikut produk", "zh": "每个产品"},
+        "per brand": {"ms": "mengikut jenama", "zh": "每个品牌"},
+        "per category": {"ms": "mengikut kategori", "zh": "每个类别"},
+        "per location": {"ms": "mengikut lokasi", "zh": "每个仓库"},
+        "per channel": {"ms": "mengikut saluran", "zh": "每个渠道"},
+        "per month": {"ms": "mengikut bulan", "zh": "每月"},
+        "delivered": {"ms": "dihantar", "zh": "已出货"},
+        "ordered": {"ms": "ditempah", "zh": "下单"},
+        "not shared with you": {"ms": "tidak dikongsi dengan anda", "zh": "您没有查看权限"},
+        "not available yet": {"ms": "belum tersedia", "zh": "暂时无法提供"},
+        "none on record": {"ms": "tiada rekod", "zh": "没有记录"},
+        "couldn't check right now": {"ms": "tidak dapat disemak sekarang", "zh": "暂时无法查询"},
+        "which period?": {"ms": "tempoh bila?", "zh": "哪个时间段？"},
+        "{code} has {n} variants. Just {code}, or all {n}?": {
+            "ms": "{code} ada {n} jenis. Hanya {code}, atau semua {n}?",
+            "zh": "{code} 有 {n} 个款式。只要 {code}，还是全部 {n} 款？",
+        },
+        "Just {code}": {"ms": "Hanya {code}", "zh": "只要 {code}"},
+        "All {n}": {"ms": "Semua {n}", "zh": "全部 {n} 款"},
+        "{code} (all {n} variants)": {"ms": "{code} (semua {n} jenis)", "zh": "{code}（全部 {n} 款）"},
+        "Sold as delivered or as ordered?": {
+            "ms": "Terjual mengikut yang dihantar atau yang ditempah?",
+            "zh": "卖出按已出货还是按下单算？",
+        },
+        "As delivered": {"ms": "Yang dihantar", "zh": "按已出货"},
+        "As ordered": {"ms": "Yang ditempah", "zh": "按下单"},
+        "{supplier} ({po}, {date})": {"ms": "{supplier} ({po}, {date})", "zh": "{supplier}（{po}，{date}）"},
+        "{currency} {cost} / unit ({po}, {date})": {
+            "ms": "{currency} {cost} / unit ({po}, {date})",
+            "zh": "{currency} {cost} / 件（{po}，{date}）",
+        },
+        "{date} ({qty})": {"ms": "{date} ({qty})", "zh": "{date}（{qty}）"},
+        "{qty}, ETA {date}": {"ms": "{qty}, ETA {date}", "zh": "{qty}，ETA {date}"},
+    }
+)
+#: The per-ask runner's keys are whole labels and values of ITS reply, filled by key
+#: (`Localizer.fill`), never matched inside another reply's running text: "Stock" or
+#: "delivered" inside a stock or order answer must stay exactly as that answer wrote it.
+_SUB_ASK_KEYS = frozenset(
+    {
+        "Received {window}", "Received", "Last received", "Last cost", "Stock", "Incoming",
+        "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
+        "per customer", "per product", "per brand", "per category", "per location",
+        "per channel", "per month", "delivered", "ordered", "not shared with you",
+        "not available yet", "none on record", "couldn't check right now", "which period?",
+        "{code} has {n} variants. Just {code}, or all {n}?", "Just {code}", "All {n}",
+        "{code} (all {n} variants)", "Sold as delivered or as ordered?", "As delivered",
+        "As ordered", "{supplier} ({po}, {date})", "{currency} {cost} / unit ({po}, {date})",
+        "{date} ({qty})", "{qty}, ETA {date}",
+    }
+)
+DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."}) | _SUB_ASK_KEYS
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.

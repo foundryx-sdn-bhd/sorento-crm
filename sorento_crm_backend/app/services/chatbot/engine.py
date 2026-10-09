@@ -68,6 +68,7 @@ from app.services.chatbot import label_catalog, language as language_mod, sessio
 from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
+from app.services.chatbot.turn import sub_asks as turn_sub_asks
 from app.services.chatbot.turn import state as turn_state
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import context as context_mod
@@ -162,6 +163,43 @@ def split_marked_message(text: str) -> list[str]:
     if not (first.startswith(marker) or f"\n{marker}" in first):
         return [text]
     return pieces
+
+
+#: WhatsApp's per-message ceiling as the MCP presenter keeps it
+#: (`sorento_crm_mcp.presenters.WHATSAPP_MESSAGE_MAX_CHARS`, under WhatsApp's own 4096).
+WHATSAPP_MESSAGE_MAX_CHARS = 3900
+
+
+def pack_parts(text: str, limit: int = WHATSAPP_MESSAGE_MAX_CHARS) -> str:
+    """`text` packed into the FEWEST WhatsApp messages, as one marked run
+    `split_marked_message` splits (MULTI-ASK-PLAN Q5, owner 9 Oct 2026: text, never a
+    file, and no tiny chunks). Unchanged when it fits in one message. Lines are packed
+    greedily and never split, each part opens with its own "(k/m)" line, and the marker's
+    width is reserved in every part's budget. The same packing as the MCP presenter's
+    `whatsapp_parts`; a copy because the deployed backend image carries no copy of that
+    package (`lanes/business/fetch.CHATBOT_READ_ONLY_TOOLS` states the same constraint)."""
+    if len(text) <= limit:
+        return text
+    budget = limit - len("(9999/9999)\n")
+    parts: list[list[str]] = [[]]
+    size = 0
+    for line in text.split("\n"):
+        if not parts[-1] and not line.strip():
+            continue  # a part never opens on a blank line
+        grown = size + len(line) + (1 if parts[-1] else 0)
+        if parts[-1] and grown > budget:
+            while parts[-1] and not parts[-1][-1].strip():
+                parts[-1].pop()  # nor closes on one
+            parts.append([])
+            size = 0
+            if not line.strip():
+                continue
+            grown = len(line)
+        parts[-1].append(line)
+        size = grown
+    chunks = ["\n".join(p) for p in parts if p]
+    total = len(chunks)
+    return "\n\n".join(f"({i}/{total})\n{chunk}" for i, chunk in enumerate(chunks, start=1))
 
 
 def split_send_actions(actions: list[Any]) -> list[Any]:
@@ -5746,6 +5784,52 @@ def _run_stages_body(  # noqa: PLR0915
         # The fetch's envelopes, empty on a turn that fetched nothing (REFER-SALESMAN reads
         # them below the fetch section, on every dealer refer reply).
         envelopes: list[dict[str, Any]] = []
+
+        # MULTI-ASK-PLAN S4 (owner card 9 Oct 2026): a message that asks two or more things,
+        # one of them a measure the per-domain fan-out cannot answer (received, last
+        # receipt, supplier, last cost, sold), or the reply to one of the runner's own two
+        # questions, is answered here: one query per ask, one line per ask, packed into the
+        # fewest WhatsApp messages. Staff only; every other turn falls through untouched.
+        if (
+            answer is None
+            and completes_here
+            and not customer_scope_refused
+            and not getattr(state_out.profile, "stock_availability_only", False)
+            and turn_sub_asks.wants(verdict, state_in.pending)
+        ):
+            reply_language = _turn_language(
+                latest_user_message,
+                remembered_before,
+                state_out.profile,
+                strip=[
+                    str(e[k])
+                    for e in verdict.get("entities") or []
+                    for k in ("raw", "canonical_code")
+                    if isinstance(e, dict) and e.get(k)
+                ],
+            )
+            localizer = label_catalog.resolve(db, reply_language, dry_run=dry_run)
+            granted = access.get("attributes") if isinstance(access, dict) else None
+            sub_result = turn_sub_asks.answer(
+                turn_sub_asks.Run(
+                    call=business_services._mcp_call(db),
+                    localizer=localizer,
+                    grants=frozenset(granted) if isinstance(granted, list) else frozenset(),
+                    contact_id=contact_respond_id,
+                    space_id=space_id_for_turn,
+                    stock_allowed=getattr(state_out.profile, "stock_allowed", True) is not False,
+                    asked_at_turn=turn_no,
+                ),
+                verdict=verdict,
+                pending=state_in.pending,
+                candidates=list(resolved_candidates.get("product") or []),
+            )
+            if sub_result is not None:
+                stage[0] = "looked_up"
+                item["reply_language"] = reply_language
+                turn_trace.add("sub_asks", sub_result.trace)
+                answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
+                bridge_answered = True
 
         # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner
         # ruling 24 Sep 2026) for chatbot-stock-ask-v2 S3. -- the OPEN TASK's own

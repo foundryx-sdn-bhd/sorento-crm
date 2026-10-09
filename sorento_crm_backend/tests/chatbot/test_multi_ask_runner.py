@@ -190,7 +190,8 @@ def _console(session_factory, monkeypatch, stub_access, phone: str, grants=ALL_G
     tools = Tools(c.codes, agents=agents)
     from app.services.ai_assistant_service import MCPRuntimeClient
 
-    monkeypatch.setattr(MCPRuntimeClient, "call_tool", tools)
+    # A function, not the instance: an instance set on the class is never bound.
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", lambda client, name, args: tools(client, name, args))
     c.tools = tools
     return c
 
