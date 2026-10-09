@@ -222,3 +222,63 @@ describe('content fetch lifecycle', () => {
     expect((signal as AbortSignal).aborted).toBe(true);
   });
 });
+
+describe('idle download limit', () => {
+  function streamed(chunks: number, every: number, stallAfter = false) {
+    let sent = 0;
+    const read = () =>
+      new Promise<{ done: boolean; value?: Uint8Array }>((resolve) => {
+        if (sent >= chunks) {
+          if (stallAfter) return; // never resolves
+          return resolve({ done: true });
+        }
+        setTimeout(() => {
+          sent += 1;
+          resolve({ done: false, value: new Uint8Array([1, 2, 3, 4]) });
+        }, every);
+      });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/content')) {
+        return {
+          ok: true,
+          status: 200,
+          body: { getReader: () => ({ read, cancel: async () => {}, releaseLock: () => {} }) },
+          arrayBuffer: () => new Promise(() => {}),
+        } as unknown as Response;
+      }
+      return new Response(JSON.stringify(SHEET_LINK), { status: 200 });
+    });
+  }
+
+  it('a slow but steady download (60 s, a chunk every 10 s) succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      streamed(6, 10_000);
+      await open();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(65_000);
+      });
+      expect(screen.queryByText('This file cannot be shown here.')).not.toBeInTheDocument();
+      expect(parse).toHaveBeenCalled();
+      const bytes = parse.mock.calls[0][0] as ArrayBuffer;
+      expect(bytes.byteLength).toBe(24);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a stall after the first chunk gives up 30 s later', async () => {
+    vi.useFakeTimers();
+    try {
+      streamed(1, 1_000, true);
+      await open();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_500);
+      });
+      expect(screen.getByText('This file cannot be shown here.')).toBeInTheDocument();
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
