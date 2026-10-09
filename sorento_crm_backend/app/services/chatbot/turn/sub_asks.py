@@ -294,7 +294,8 @@ def scope_question(
     products. `replay` is the verdict the reply re-runs with the scope settled
     (`scope_reply`), so a one-ask turn and a multi-ask one resume the same way. None when
     nothing needs asking."""
-    if verdict.get("family") is not None:
+    # Owner ruling Q1 (b), 9 Oct: a one-ask turn keeps today's path, no scope question.
+    if verdict.get("family") is not None or len(_sub_asks(verdict)) < 2:
         return None
     products = _scoped_products(run, verdict, candidates, typed_only=True)
     ambiguous = next((p for p in products or [] if len(p.family) > 1), None)
