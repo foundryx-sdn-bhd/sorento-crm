@@ -53,6 +53,11 @@ COST_TOOL = "crm_procurement_po_last_cost_list"
 REPORT_TOOL = "crm_report_ask"
 STOCK_TOOL = "crm_inventory_stock_balance_list"
 INCOMING_TOOL = "crm_incoming_stock_by_product"
+#: `/inventory/stock/balance`'s own `limit` ceiling (`api/v1/inventory/stock.py`).
+STOCK_LIMIT = 5000
+#: A family larger than this is today's path (review R3): its ids would ride every GET and
+#: the stored question. Far above any real family (the owner's code has 8).
+FAMILY_MAX = 200
 #: `crm_report_ask`'s own ceiling (`sales_report_service.TOP_SELLING_N_CEILING`): every row,
 #: no cap (owner Q1).
 REPORT_TOP_N = 1000
@@ -233,6 +238,8 @@ def answer(
     if run.family_of is not None:
         for p in products:
             whole = run.family_of(p.code)
+            if len(whole) > FAMILY_MAX:
+                return None
             if len(whole) > len(p.family):
                 p.family = whole
     family = verdict.get("family")
@@ -480,7 +487,9 @@ def _lines(run: Run, calls: "_Calls", ask: dict[str, Any], ids: list[str], basis
             # allowed-location totals) in EVERY stock policy mode; the detailed default
             # answers paged rows and no summary (review B1). Only `total_on_hand` is read:
             # the sellable figure the flag adds is never printed.
-            payload = calls.payload(STOCK_TOOL, {"product_ids": ids, "include_sellable": True})
+            # `limit`: the route's own maximum. Its summary covers only the rows of the page
+            # it answers (50 by default), so a family over 50 stock rows read short (review R1).
+            payload = calls.payload(STOCK_TOOL, {"product_ids": ids, "include_sellable": True, "limit": STOCK_LIMIT})
             summary = payload.get("stock_summary") if isinstance(payload, dict) else None
             total = sum(_num(r.get("total_on_hand")) for r in summary or [] if isinstance(r, dict))
             return [f"{label}: {_qty(total)}"]

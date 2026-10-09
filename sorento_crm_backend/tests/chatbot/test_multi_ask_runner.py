@@ -160,13 +160,16 @@ class Tools:
                 return json.dumps(
                     {"data": [{"product_id": pid, "quantity_on_hand": 60} for pid in ids], "stock_visibility": {"mode": "detailed"}}
                 )
+            # Like the real route: the summary covers only the rows of the page it answers,
+            # 7 stock rows per product here, `limit` rows a page (default 50).
+            covered = ids[: -(-int(args.get("limit") or 50) // 7)]
             return json.dumps(
                 {
                     "data": [],
                     "stock_visibility": {"mode": "detailed", "warehouse_codes": None, "source": "contact"},
                     "stock_summary": [
                         {"product_id": pid, "product_code": self.codes[pid], "total_on_hand": 120, "locations": []}
-                        for pid in ids
+                        for pid in covered
                     ],
                 }
             )
@@ -623,3 +626,50 @@ def test_all_variants_counts_the_whole_family_past_the_resolver_cap(session_fact
     finally:
         db.close()
     assert [f["code"] for f in family] == codes
+
+
+# ---------------------------------------------------------------- review round 2
+
+
+def test_a_family_stock_line_counts_every_variant_past_one_page(session_factory, monkeypatch, stub_access):
+    """Ten variants at 7 stock rows each are 70 rows: past the route's default page of 50."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009525")
+    text = c.say(
+        "SRTWC286-SH all variants stock and last cost",
+        verdict(
+            domain_hint="inventory",
+            intent_hint="check_stock",
+            entities=[entity("SRTWC286-SH", hint="product")],
+            sub_asks=[sub("stock", "stock"), sub("last_cost", "last cost")],
+            family=True,
+        ),
+    )
+    assert text.splitlines()[1] == f"Stock: {120 * len(OWNER_FAMILY):,}"
+    [args] = c.tools.args("crm_inventory_stock_balance_list")
+    assert int(args.get("limit")) == 5000
+
+
+def test_a_family_past_the_ceiling_is_todays_path(session_factory, monkeypatch, stub_access):
+    from app.services.chatbot.turn import sub_asks as sub_asks_mod
+
+    monkeypatch.setattr(sub_asks_mod, "FAMILY_MAX", 3)
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009526")
+    c.say(OWNER_MESSAGE, owner_verdict(family=True))
+    assert "crm_procurement_grn_summary" not in c.tools.names()
+
+
+def test_a_code_with_an_underscore_is_matched_as_typed(session_factory):
+    from app.services.chatbot.engine import _product_family
+
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTUS_A-1", "ZZTUSXA-1"])
+    db = session_factory()
+    try:
+        from app.models.base import set_company_scope
+        from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+
+        set_company_scope(db, frozenset({SORENTO}))
+        assert [f["code"] for f in _product_family(db, "ZZTUS_A")] == ["ZZTUS_A-1"]
+    finally:
+        db.close()

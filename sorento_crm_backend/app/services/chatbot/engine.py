@@ -176,13 +176,22 @@ def _product_family(db: Any, code: str) -> list[dict[str, str]]:
     a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
     Company-scoped by the session, as every product read in a turn is."""
     from app.models.product import Product, chat_searchable_products
+    from app.services.contact_brand_scope import product_in_scope_clauses
     from app.services.entity_resolver import _strip_all_ws, _ws_insensitive_lower
 
-    prefix = f"{_strip_all_ws(code).lower()}%"
+    # A code is matched as typed: `%` and `_` in it are literal, never LIKE wildcards
+    # (review R4). The contact's brand scope narrows the family as it narrows every
+    # product read in the turn (review R2).
+    typed = _strip_all_ws(code).lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = (
         db.query(Product.id, Product.product_code)
-        .filter(_ws_insensitive_lower(Product.product_code).like(prefix), chat_searchable_products())
+        .filter(
+            _ws_insensitive_lower(Product.product_code).like(f"{typed}%", escape="\\"),
+            chat_searchable_products(),
+            *product_in_scope_clauses(db, Product.id),
+        )
         .order_by(Product.product_code, Product.id)
+        .limit(turn_sub_asks.FAMILY_MAX + 1)
         .all()
     )
     return [{"uuid": str(pid), "code": pcode} for pid, pcode in rows]
