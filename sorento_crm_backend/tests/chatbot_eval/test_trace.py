@@ -10,13 +10,13 @@ def understood(p, c, o):
 
 
 def test_tokens_summed_over_entries():
-    tokens, errs = parse_trace([understood(100, 10, 5), {"stage": "routed", "status": "ok"}, understood(50, 0, 7)])
+    tokens, errs, _notes = parse_trace([understood(100, 10, 5), {"stage": "routed", "status": "ok"}, understood(50, 0, 7)])
     assert tokens["prompt"] == 150 and tokens["cached"] == 10 and tokens["output"] == 12
     assert errs == []
 
 
 def test_failed_stage_with_error():
-    _, errs = parse_trace([{"stage": "resolved", "status": "failed", "error": "BOOM-1"}])
+    _, errs, _notes = parse_trace([{"stage": "resolved", "status": "failed", "error": "BOOM-1"}])
     assert len(errs) == 1 and "resolved" in errs[0] and "BOOM-1" in errs[0]
 
 
@@ -26,13 +26,13 @@ def test_failed_without_error_ignored():
 
 def test_looked_up_envelope_error():
     entry = {"stage": "looked_up", "status": "ok", "raw": {"envelopes": [{"tool": "get_stock", "error": "TIMEOUT-9"}, {"tool": "ok_tool", "error": None}]}}
-    _, errs = parse_trace([entry])
+    _, errs, _notes = parse_trace([entry])
     assert len(errs) == 1 and "TIMEOUT-9" in errs[0]
 
 
 def test_lane_text_error_marker():
     entry = {"stage": "looked_up", "status": "ok", "raw": {"envelopes": [{"tool": "get_stock", "lane_text": "Error executing tool get_stock: INVALID_UUID"}, {"tool": "t2", "lane_text": "fine"}]}}
-    _, errs = parse_trace([entry])
+    _, errs, _notes = parse_trace([entry])
     assert len(errs) == 1 and "Error executing tool" in errs[0]
 
 
@@ -43,7 +43,7 @@ def test_ok_entries_yield_nothing():
 
 def test_empty_and_none():
     for t in ([], None):
-        tokens, errs = parse_trace(t)
+        tokens, errs, _notes = parse_trace(t)
         assert errs == []
         assert not any(tokens.get(k) for k in ("prompt", "cached", "output"))
 

@@ -8,7 +8,8 @@ from pathlib import Path
 from scripts.chatbot_eval.engine import Outcome
 
 
-def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, state=None, latency_ms=10, branch_kind=None):
+def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, state=None, latency_ms=10, branch_kind=None, lane_notes=None):
+    extra = {"lane_notes": list(lane_notes)} if lane_notes else {}
     return Outcome(
         reply_text=reply,
         branch_kind=branch_kind,
@@ -18,6 +19,7 @@ def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, sta
         latency_ms=latency_ms,
         state=state,
         raw={},
+        **extra,
     )
 
 
@@ -138,3 +140,9 @@ class NeverEngine:
 
     def __init__(self, **kw):
         raise AssertionError("engine constructed during --regrade")
+
+
+class LaneNoteEngine(RecordingEngine):
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n}, lane_notes=["note one"])
