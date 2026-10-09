@@ -198,7 +198,7 @@ def history_lines(ctx) -> list:
             )
         ).scalar()
         percent = (
-            int((Decimal(read) * 100 / Decimal(eligible)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+            int((Decimal(min(read, eligible)) * 100 / Decimal(eligible)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
             if eligible
             else 0
         )

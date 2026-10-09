@@ -74,8 +74,11 @@ _FAILURE_OUTCOMES = ("cannot_do",)
 PARSER_DOMAIN_KEY = "domain_hint"
 PARSER_INTENT_KEY = "intent_hint"
 
-#: A staff member typing in the thread (Respond's own sender vocabulary).
-STAFF_SENDER = "user"
+#: Respond's sender vocabulary: a person typing in the inbox (`user`) or on the WhatsApp
+#: Business phone (`echo`) is staff; a `broadcast` answers nobody. Every other sender (`bot`,
+#: `api`, `workflow`, or none: most rows before CHAT-LOCAL-FIRST carry no sender) is the bot.
+STAFF_SENDERS = ("user", "echo")
+NOT_A_REPLY = ("broadcast",)
 
 #: Malaysia is UTC+8 all year; `sent_at` is stored as naive UTC.
 _MYT_OFFSET = timedelta(hours=8)
@@ -214,9 +217,18 @@ def _reply_rows(db: Session, row: Any) -> list[Any]:
         if linked:
             return linked
     after = tuple_(_H.c.sent_at, _H.c.id) > tuple_(row.sent_at, row.id)
+    # A copy of this same message (B2) is not the contact's next ask.
+    if row.message_id is not None:
+        same_ask = _H.c.message_id == row.message_id
+    else:
+        same_ask = and_(
+            _H.c.message_id.is_(None),
+            _H.c.message == row.message,
+            func.date_trunc("second", _H.c.sent_at) == func.date_trunc("second", row.sent_at),
+        )
     next_incoming = db.execute(
         select(_H.c.sent_at, _H.c.id)
-        .where(_H.c.type == "incoming", _H.c.contact_id == row.contact_id, after)
+        .where(_H.c.type == "incoming", _H.c.contact_id == row.contact_id, after, ~same_ask)
         .order_by(_H.c.sent_at, _H.c.id)
         .limit(1)
     ).first()
@@ -250,10 +262,10 @@ def _load(db: Session, ids: list[int], subjects: set[str]) -> list[Message]:
         if row is None:
             continue
         replies = _reply_rows(db, row)
-        bot = [r for r in replies if r.sender_source != STAFF_SENDER]
+        bot = [r for r in replies if r.sender_source not in (*STAFF_SENDERS, *NOT_A_REPLY)]
         if bot:
             forced = None
-        elif replies:
+        elif any(r.sender_source in STAFF_SENDERS for r in replies):
             forced = HANDOVER
         else:
             forced = NO_REPLY
@@ -360,7 +372,7 @@ def parse(content: str, batch: list[Message], taxonomy: lab.Taxonomy) -> dict[in
             asks = entry.get("asks")
             first = asks[0] if isinstance(asks, list) and asks and isinstance(asks[0], dict) else {}
             subject = first.get("subject")
-            if subject not in taxonomy.subjects:
+            if not isinstance(subject, str) or subject not in taxonomy.subjects:
                 continue
         inputs.append(
             lab.AskInput(
@@ -404,9 +416,18 @@ def _write(
     resolve: lab.ResolveFn,
     now: datetime,
 ) -> int:
-    """The message's fact rows (one per ask) and items. Replaces an older label of the same
-    message (`--relabel`). Returns the asks written. Does not commit."""
-    db.execute(_FACTS.delete().where(_FACTS.c.history_id == m.id))
+    """The message's fact rows (one per ask) and items. Returns the asks written. Does not
+    commit.
+
+    A relabel (`--relabel`) keeps ask 1's row and id, as the CA-2 labeller does, so a topic
+    audit verdict on it (which cascades from the fact) survives; the further asks and the
+    items are replaced."""
+    kept = db.execute(
+        select(_FACTS.c.id).where(_FACTS.c.history_id == m.id, _FACTS.c.ask_seq == 1)
+    ).scalar()
+    db.execute(_FACTS.delete().where(_FACTS.c.history_id == m.id, _FACTS.c.ask_seq > 1))
+    if kept is not None:
+        db.execute(_ITEMS.delete().where(_ITEMS.c.ask_id == kept))
     who = facts_mod._who(db, m.contact)
     common = {
         "source": "history_backfill",
@@ -437,18 +458,19 @@ def _write(
             for r in db.execute(select(facts_mod._PRODUCTS.c.id).where(facts_mod._PRODUCTS.c.id.in_(m.shown_ids)))
         ]
     for seq, ask in enumerate(label.asks, start=1):
-        fact_id = str(uuid.uuid4())
-        db.execute(
-            pg_insert(_FACTS).values(
-                id=fact_id,
-                ask_seq=seq,
-                domain=_domain(ask.subject),
-                intent=m.parser_intent if seq == 1 else None,
-                topic_code=ask.leaf,
-                label_confidence=ask.confidence,
-                **common,
-            )
-        )
+        values = {
+            "domain": _domain(ask.subject),
+            "intent": m.parser_intent if seq == 1 else None,
+            "topic_code": ask.leaf,
+            "label_confidence": ask.confidence,
+            **common,
+        }
+        if seq == 1 and kept is not None:
+            fact_id = str(kept)
+            db.execute(_FACTS.update().where(_FACTS.c.id == fact_id).values(**values))
+        else:
+            fact_id = str(uuid.uuid4())
+            db.execute(pg_insert(_FACTS).values(id=fact_id, ask_seq=seq, **values))
         lab._write_items(db, fact_id, ask, m.contact, resolve)
         if seq == 1 and shown:
             db.execute(
@@ -547,7 +569,10 @@ def run(
                 record.tokens_out += tokens_out
                 record.tokens_cached += tokens_cached
                 if asked:
-                    settled.update(parse(content, asked, taxonomy))
+                    try:
+                        settled.update(parse(content, asked, taxonomy))
+                    except Exception:  # noqa: BLE001 - a malformed answer costs its rows, not the run
+                        logger.warning("chat backfill: an answer could not be read; its rows wait", exc_info=True)
             for m in batch:
                 if m.id not in settled:
                     record.messages_skipped += 1 if m in asked else 0
@@ -559,7 +584,7 @@ def run(
                 record.messages_read += 1
             record.last_history_id = max(m.id for m in batch) if batch else record.last_history_id
             db.commit()
-    except Exception as exc:
+    except BaseException as exc:  # Ctrl-C too: the row must not stay `running`
         db.rollback()
         record.status = "failed"
         record.error = type(exc).__name__

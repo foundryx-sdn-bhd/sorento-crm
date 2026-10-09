@@ -1,7 +1,7 @@
 # PLAN: Chat analytics CA-4, history backfill (9 Oct 2026)
 
-Status: Build (card answered by crew, 9 Oct 2026). Track: full pipeline (migration, new run
-table, LLM job). Lane: CA-4-BACKFILL, PR #1552.
+Status: Review fix round 1 pushed (10 Oct 2026); next: crew rulings on sender sources, hand test.
+Track: full pipeline (migration, new run table, LLM job). Lane: CA-4-BACKFILL, PR #1552.
 
 Design (binding): `documentation/plans/chatbot/DESIGN-chat-analytics-09oct.md` (PR #1545), CA-4
 row (section 8), eras A to C (section 2.6), backfill (section 3.5). Builds on CA-1
@@ -49,10 +49,14 @@ output in the trace (D:231). D:37's "to 7 Sep" is about the saved parser column;
   same contact + exact text + `sent_at` to the second. Exact equality only.
 - B3 The reply: outgoing rows with the same `turn_id` (n8n execution id); with none, the
   outgoing rows of the same contact after the ask and before that contact's next incoming row
-  (crew Q2 b). Ordering only, never text.
+  (crew Q2 b). Ordering only, never text. A copy of the ask itself (B2) is not the next
+  incoming row (review round 1).
 - B4 Subject: the saved parser output's domain when `parser_raw` is a JSON object and the domain
   is a taxonomy subject; otherwise the labeller picks a subject. Leaf, ask split, language,
   product words: the CA-2 rules.
+- B5a Senders: `user` (inbox) and `echo` (the WhatsApp Business phone) are staff, `broadcast`
+  answers nobody, every other sender (`bot`, `api`, `workflow`, none) is the bot (review round 1,
+  pending a crew ruling).
 - B5 Outcome: the model picks one of `answered`, `answered_empty`, `clarified`,
   `refused_policy`, `cannot_do`, `handover`, `noise` from the reply. No bot reply rows: staff
   rows only -> `handover`; nothing at all -> `no_reply` (new, not a failure, crew Q3).
@@ -66,6 +70,9 @@ output in the trace (D:231). D:37's "to 7 Sep" is about the saved parser column;
 - B9 Run: `scripts/chat_backfill.py --era A|B|C|D [--estimate] [--limit N]`. Batches of 40,
   grouped by contact then time, one commit per batch with the run's progress. Re-run writes
   nothing new (a message with a fact is not eligible). A taxonomy bump: `--relabel`.
+- B9a A relabel keeps ask 1's row and id (as CA-2's `_apply`), so a topic audit verdict that
+  cascades from it survives; further asks and items are replaced. The topic audit screen reads a
+  backfilled ask's words live from its `chat_histories` row, never stored.
 - B10 Coverage line per era the period touches, "% read" = backfilled messages / eligible
   messages from the era's latest run; no run -> "not loaded yet".
 - Q4 Default report period opens on the earliest fact (5 Sep until a backfill exists).
