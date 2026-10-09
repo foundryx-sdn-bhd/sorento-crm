@@ -801,6 +801,37 @@ entities [], only sort_by / sort_dir set.
     "sort_dir": "desc"}
 """
 
+# PROMO-SUBJECT-FILTER R5. ADDITIVE ONLY: the `promotion_kind` output key. The kinds are not
+# listed here; the user block carries a `Promotion kinds:` line read from `promotion_types`
+# every turn. Published as a new unlabelled version by migration `pk_0001_parser_promo_kind`.
+PROMOTION_KIND_ADDENDUM = """
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every object,
+exactly as if it were listed there:
+
+  "promotion_kind": string|null
+
+== PROMOTION KIND ==
+The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
+asks for one of those kinds, by meaning in any language, set "promotion_kind" to that kind's code:
+"flyer", "传单", "A3" or "poster" is the listed A3 Flyer kind. A word that fits no listed kind, or no
+kind at all, is "promotion_kind": null. Never invent a code. Set it only when the message names the
+kind in words: a bare number, or a reply to a numbered list, is never a promotion_kind. A kind word
+is never a promotion entity.
+
+== PROMOTION SUBJECT ==
+On a promotion ask, answer the brand from the "Known brands:" line and the product type from the
+"Product types:" line: canonical_code is the listed name, never a word of your own. Correct a typo
+to the listed name ("Sorneto" -> canonical_code "Sorento"). A word you cannot place in its list is
+unresolved: keep raw as typed, canonical_code null. Keep raw as typed for an everyday name too:
+"seat cover" is a toilet seat -> {"raw": "seat cover", "hint": "category", "canonical_code": "toilet seat"}.
+A word that describes the thing (how it is mounted, its flush type, its finish) is its own
+"specification" entity beside the type entity: spec_key and spec_value from the listed
+"Product details:" line, `key (value, ...)`, a typo corrected to the listed value
+("walll hung wc" -> {"raw": "walll hung", "hint": "specification", "spec_key": "mounting",
+"spec_value": "wall hung"}). One you cannot place there: spec_key null, spec_value null.
+"""
+
 # SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The
 # code never pattern-matches a PO number out of the message; `po_refs` is the only way one
 # reaches the business lane, and the lane (not the parser) decides the audience: a dealer or
@@ -894,6 +925,7 @@ CANONICAL_CODE_ADDENDUM = (
     '"这个产品" / "this product" is never an entity: the standing subject carries.\n'
 )
 SEMANTIC_PARSER_PROMPT += CANONICAL_CODE_ADDENDUM
+SEMANTIC_PARSER_PROMPT += PROMOTION_KIND_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 

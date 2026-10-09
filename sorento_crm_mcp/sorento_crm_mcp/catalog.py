@@ -274,6 +274,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "  When BOTH `promotion_ids` and `product_ids` are supplied, they combine\n"
             "  via OR: a promotion is returned if it is in `promotion_ids` OR contains\n"
             "  any product in `product_ids` (no AND option).\n\n"
+            "  • `scope_terms` (class phrases, e.g. \"bathroom furniture\") - only promotions with a linked "
+            "product of that class; an empty match returns no promotions.\n"
+            "  • `promotion_types` (promotion type codes, e.g. a3_flyer) and `brand_ids` (brand UUIDs of a linked "
+            "product); both AND with every other filter.\n\n"
             "Unfiltered MCP calls are auto-capped to limit=10 newest-first so open questions like "
             "\"what is sorento's latest promo\" return a bounded page instead of the full catalog.\n\n"
             "ACCESS LEVELS: `access_levels` filters promotions whose `access_levels` JSONB overlaps the "
@@ -284,7 +288,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         "/api/v1/marketing/promotions",
         (),
-        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "contact_id", "space_id"),
+        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "contact_id", "space_id"),
         domain="promotions",
         related_tools=("crm_marketing_promotion_products_list", "crm_marketing_promotion_attachments_list"),
         escalation_team="sales",

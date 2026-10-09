@@ -294,4 +294,19 @@ describe('CommentThreadView review round', () => {
     expect(author.parentElement?.textContent).toBe('Rita Responder');
     expect(screen.queryByText(/Invalid|NaN|1970/)).toBeNull();
   });
+  it('COMMENT-TZ: a naive UTC createdAt from the API renders in Malaysia time (08:26 UTC = 4:26 pm)', () => {
+    mount({
+      comments: [{ ...first, createdAt: '2026-10-09T08:26:20' }] as never,
+    });
+    const author = screen.getByText('Alice Staff');
+    expect(author.parentElement?.textContent).toContain('09/10/2026, 4:26 pm');
+    expect(author.parentElement?.textContent).not.toMatch(/8:26/);
+  });
+
+  it('COMMENT-TZ: an explicit +00:00 offset renders the same Malaysia time', () => {
+    mount({
+      comments: [{ ...first, createdAt: '2026-10-09T08:26:20+00:00' }] as never,
+    });
+    expect(screen.getByText('Alice Staff').parentElement?.textContent).toContain('09/10/2026, 4:26 pm');
+  });
 });
