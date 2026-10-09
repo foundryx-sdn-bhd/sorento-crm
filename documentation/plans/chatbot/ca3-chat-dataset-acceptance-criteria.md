@@ -26,9 +26,10 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
   answer to either or both is read by the parser; whatever is still missing is asked again.
   Cancel words end the ask with one line. Two unreadable replies end with a clear line, never
   a loop.
-- **UAC-5** Filters by name: topic ("most asked products about stock availability"), product,
-  customer, outcome ("questions the bot failed on"). A name that resolves to nothing ends in
-  "I couldn't find ..." , never an empty ranking that looks like data.
+- **UAC-5** Filters: subject ("most asked products about stock" -> subject inventory), product,
+  customer (by name, through the existing resolvers). A name that resolves to nothing ends in
+  "I couldn't find ...", never an empty ranking that looks like data. No measure word reads as
+  asks; the head line names the unit.
 
 ## Counting (same numbers as the Chat overview / Top asks screens)
 
