@@ -1078,6 +1078,7 @@ export default function StockInquiryDetail({
         }
       />
 
+
       <ProductInquiryFormLayout>
         <InquiryFormTableRow label="Date">
           <InquiryReadValue empty=" - ">
