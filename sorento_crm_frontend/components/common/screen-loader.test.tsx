@@ -17,8 +17,17 @@ describe('ScreenLoader (LOADER-CENTER)', () => {
 
   it('stacks wordmark then spinner in one centred column over the viewport', () => {
     const { container } = render(<ScreenLoader />);
-    const root = container.querySelector('[data-slot="screen-loader"]') as HTMLElement;
-    for (const cls of ['fixed', 'inset-0', 'flex', 'flex-col', 'items-center', 'justify-center']) {
+    const root = container.querySelector(
+      '[data-slot="screen-loader"]',
+    ) as HTMLElement;
+    for (const cls of [
+      'fixed',
+      'inset-0',
+      'flex',
+      'flex-col',
+      'items-center',
+      'justify-center',
+    ]) {
       expect(root).toHaveClass(cls);
     }
     const [word, spinner] = Array.from(root.children);

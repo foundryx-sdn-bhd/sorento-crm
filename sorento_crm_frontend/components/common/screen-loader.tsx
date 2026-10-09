@@ -22,12 +22,16 @@ export function ScreenLoader() {
       data-loading=""
     >
       <span
-        className="font-[system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',Roboto,sans-serif] text-[24px] font-semibold leading-none text-[#252F4A] dark:text-[#F4F4F5]"
+        className="font-[system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',Roboto,sans-serif] text-2xl font-semibold leading-none tracking-normal text-[#252F4A] dark:text-[#F4F4F5]"
         data-slot="screen-loader-wordmark"
       >
         Sorento
       </span>
-      <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" role="status" aria-label="Loading" />
+      <LoaderCircleIcon
+        className="size-4 animate-spin text-muted-foreground"
+        role="status"
+        aria-label="Loading"
+      />
     </div>
   );
 }
