@@ -619,6 +619,7 @@ def create_response_attachment(
     filename: Optional[str],
     content_type: Optional[str],
     uploaded_by: Optional[str],
+    commit: bool = True,
 ) -> dict[str, Any]:
     """Upload + link a staff response attachment (``response_attachment`` type, D9).
 
@@ -682,8 +683,9 @@ def create_response_attachment(
         uploaded_by=uploader_id,
         uploader_kind="user",
     )
-    db.commit()
-    db.refresh(link)
+    if commit:
+        db.commit()
+        db.refresh(link)
     attachment = db.query(Attachment).filter(Attachment.id == link.attachment_id).first()
     file_path = attachment.file_path if attachment else key
     return {

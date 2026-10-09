@@ -21,6 +21,7 @@ _NOTIFICATION_TYPE_TO_EVENT_KEY: dict[str, str] = {
     "stock_inquiry_notification": "stock_inquiry_created",
     "stock_inquiry_notification:external_created": "stock_inquiry_created_external",
     "stock_inquiry_notification:external_resubmitted": "stock_inquiry_created_external",
+    "form_comment_notification": "form_comment_from_submitter",
     "external_promotion_created": "external_promotion_uploader_notice",
     "external_product_attachment_linked": "external_product_attachment",
     "external_form_created": "external_form_created",

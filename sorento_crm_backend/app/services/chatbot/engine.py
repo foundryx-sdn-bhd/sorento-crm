@@ -60,6 +60,7 @@ from app.services.chatbot.lanes import business, canned as canned_lanes, casual
 from app.services.chatbot.lanes import fallback as fallback_mod
 from app.services.chatbot.lanes.escalation import run as run_escalation_lane, routing_line as escalation_routing_line
 from app.services.chatbot.lanes.business import resolve_gate, services as business_services
+from app.services.chatbot.analytics import facts as chat_facts
 from app.services.chatbot.usage import record_parser_usage
 # Stages C to G (PLAN-chatbot-turn-rearch.md "Turn order"). `turn/` is the pure core -
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
@@ -1621,6 +1622,16 @@ def _close_turn(
     row.response = trace_mod.cap_document(response)
     row.finished_at = _now()
     db.commit()
+    if status in _TERMINAL_STATUSES:
+        # Chat analytics (CA-1): the closed turn becomes a fact row. AFTER the commit and
+        # inside its own try, so an analytics fault can never reopen or fail the turn the
+        # customer was already answered on; the nightly sweep refills whatever this skips.
+        # Called as a module attribute so the tests can swap the recorder.
+        try:
+            chat_facts.record_turn(db, turn_id)
+        except Exception:  # noqa: BLE001 - analytics must never fail a turn
+            db.rollback()
+            logger.warning("chat facts: recording turn %s failed", turn_id, exc_info=True)
 
 
 def _record_parser_usage(

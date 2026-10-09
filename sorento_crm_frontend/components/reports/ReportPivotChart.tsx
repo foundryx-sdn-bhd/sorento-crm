@@ -96,7 +96,7 @@ export function ReportPivotChart({ layout }: { layout: ReportPivotLayout }) {
             />
           }
         />
-        <ChartLegend content={<ChartLegendContent />} />
+        <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
         {rows.map((_row, index) => (
           <Line
             key={`r${index}`}
