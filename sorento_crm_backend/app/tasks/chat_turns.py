@@ -15,6 +15,7 @@ currently draining - forever, at whatever rate redis can accept.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -49,3 +50,20 @@ def run_turn_job(envelope: dict[str, Any]) -> dict[str, Any]:
         result.stage,
     )
     return payload
+
+
+def sweep_chat_facts(
+    db: Any, *, since: datetime, until: datetime | None = None, rebuild: bool = False
+) -> int:
+    """Fill the chat analytics fact rows of every closed live turn in `[since, until)` that
+    has none (CA-1). Returns the rows written.
+
+    A doorway for the two callers that sit outside the chatbot package, the nightly
+    scheduler tick and `scripts/chat_facts_sweep.py`: neither may import
+    `app.services.chatbot`, and neither needs more than this one call. The writer is
+    idempotent, so a repeat over the same range writes nothing. `rebuild` first deletes the
+    range's fact rows and reloads them under the current rules (after a rule change).
+    """
+    from app.services.chatbot.analytics import facts
+
+    return facts.sweep(db, since=since, until=until, rebuild=rebuild)

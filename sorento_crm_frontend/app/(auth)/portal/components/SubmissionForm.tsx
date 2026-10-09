@@ -19,6 +19,7 @@ import {
   Copy,
   FileText,
   History,
+  MessageSquare,
   Info,
   PencilLine,
   Plus,
@@ -57,9 +58,6 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from '@/components/common/SearchableSelect';
-import AttachmentPreviewModal, {
-  type AttachmentPreviewItem,
-} from '@/components/common/AttachmentPreviewModal';
 import {
   DebtorLookupItem,
   DOLookupItem,
@@ -96,7 +94,6 @@ import {
   portalHomePath,
   portalVerifyPath,
 } from '../lib/portal-paths';
-import { portalFetchBytes, toPreviewItem } from '../lib/portal-preview';
 import { cleanLineItems } from '../lib/line-items';
 import { useRevisionHistory, useReviseSubmission } from '../hooks/useRevisions';
 import { AIExtractDialog, AIExtractApplyPayload } from './AIExtractDialog';
@@ -106,6 +103,14 @@ import { DOFilterMultiSelect } from './DOFilterMultiSelect';
 import { LookupSelect } from './LookupSelect';
 import { MultiPillInput } from './MultiPillInput';
 import { RevisionHistory } from './RevisionHistory';
+import {
+  PortalSubmissionComments,
+  usePortalSubmissionComments,
+} from './PortalSubmissionComments';
+import AttachmentPreviewModal, {
+  type AttachmentPreviewItem,
+} from '@/components/common/AttachmentPreviewModal';
+import { portalFetchBytes, toPreviewItem } from '../lib/portal-preview';
 import {
   InquiryFormTableRow,
   ProductInquiryFormLayout,
@@ -426,9 +431,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // create-succeeded-but-flushPendingFiles-failed never gets a fresh prop, so
   // without this the next Save Draft/Submit click saw "no id yet" again and
   // created a second row for the same draft (#482).
-  const [createdSubmissionId, setCreatedSubmissionId] = useState<
-    string | null
-  >(null);
+  const [createdSubmissionId, setCreatedSubmissionId] = useState<string | null>(
+    null,
+  );
   const [fields, setFields] = useState<Record<string, string | string[]>>({});
   const [products, setProducts] = useState<ProductLine[]>([]);
   const [complaintLines, setComplaintLines] = useState<ComplaintLine[]>([]);
@@ -442,6 +447,7 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // the inline message - same shape `invalidFields` gives every other required field.
   const [invalidLineIndex, setInvalidLineIndex] = useState<number | null>(null);
   const [staffPreviewOpen, setStaffPreviewOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
   const [neighbours, setNeighbours] =
     useState<PortalSubmissionNeighbours | null>(null);
   const [reviseMode, setReviseMode] = useState(false);
@@ -468,6 +474,12 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // The id to save/flush against: the route param when one exists, else
   // whatever a create call in THIS session already answered with (#482).
   const effectiveId = submissionId ?? createdSubmissionId ?? undefined;
+  const commentsTabbed = Boolean(effectiveId && detail && !detail.is_draft);
+  const commentsThread = usePortalSubmissionComments(
+    kind,
+    effectiveId ?? '',
+    commentsTabbed,
+  );
   const isEditable = useMemo(
     () => !detail || detail.is_draft || detail.status === 'rejected',
     [detail],
@@ -549,7 +561,9 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           Array.isArray(c.visible_form_types) &&
           !c.visible_form_types.includes(kind)
         ) {
-          setError(`${SUBMISSION_LABELS[kind]} is not available for your account.`);
+          setError(
+            `${SUBMISSION_LABELS[kind]} is not available for your account.`,
+          );
         }
       })
       .catch(() => {});
@@ -1587,6 +1601,11 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
   // all: a one-tab tab bar is furniture, not navigation.
   const revisionsTabbed =
     Boolean(submissionId) && revisionPolicy?.enabled === true;
+  // The thread is its own tab once the form is submitted. Its count shares the thread's fetch.
+  const commentsCount = commentsThread.comments.filter(
+    (c) => c.kind !== 'response' && !c.deleted,
+  ).length;
+  const tabbed = revisionsTabbed || commentsTabbed;
 
   const detailsContent = (
     <>
@@ -1657,6 +1676,13 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
               </Button>
             </div>
           )}
+          <button
+            type="button"
+            className="mt-2 block text-xs font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
+            onClick={() => setActiveTab('comments')}
+          >
+            Reply in Comments
+          </button>
         </div>
       )}
 
@@ -1754,7 +1780,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
                     {kind === 'sponsorship_form' && (
                       <>
                         <th className="w-32 px-2 py-2 text-left">
-                          Unit price<span className="ml-0.5 text-destructive">*</span>
+                          Unit price
+                          <span className="ml-0.5 text-destructive">*</span>
                         </th>
                         <th className="w-32 px-2 py-2 text-left">Total</th>
                       </>
@@ -2177,8 +2204,8 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
         </div>
       </div>
 
-      {revisionsTabbed ? (
-        <Tabs defaultValue="details">
+      {tabbed ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           {/* Same underlined strip the office detail pages use, so a record's
               tabs look the same whichever side of the system you are on. The
               list carries its own bottom margin, so the root drops space-y. */}
@@ -2187,17 +2214,42 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
               <FileText />
               <span>Details</span>
             </TabsTrigger>
-            <TabsTrigger value="revisions">
-              <History />
-              <span>Revisions</span>
-            </TabsTrigger>
+            {commentsTabbed && (
+              <TabsTrigger
+                value="comments"
+                onClick={() => setActiveTab('comments')}
+              >
+                <MessageSquare />
+                <span>Comments ({commentsCount})</span>
+              </TabsTrigger>
+            )}
+            {revisionsTabbed && (
+              <TabsTrigger value="revisions">
+                <History />
+                <span>Revisions</span>
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="details" className="m-0 space-y-4">
             {detailsContent}
+            {!revisionsTabbed && revisionHistoryCard}
           </TabsContent>
-          <TabsContent value="revisions" className="m-0">
-            {revisionHistoryCard}
-          </TabsContent>
+          {commentsTabbed && (
+            <TabsContent value="comments" className="m-0">
+              <PortalSubmissionComments
+                kind={kind}
+                submissionId={effectiveId as string}
+                authorName={contact?.name ?? ''}
+                readOnly={detail?.status === 'voided'}
+                thread={commentsThread}
+              />
+            </TabsContent>
+          )}
+          {revisionsTabbed && (
+            <TabsContent value="revisions" className="m-0">
+              {revisionHistoryCard}
+            </TabsContent>
+          )}
         </Tabs>
       ) : (
         <>
@@ -2205,6 +2257,13 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           {revisionHistoryCard}
         </>
       )}
+
+      <AttachmentPreviewModal
+        open={staffPreviewOpen}
+        onOpenChange={setStaffPreviewOpen}
+        items={staffPreviewItems}
+        fetchBytes={portalFetchBytes}
+      />
 
       <AlertDialog open={reviseConfirmOpen} onOpenChange={setReviseConfirmOpen}>
         <AlertDialogContent>
@@ -2299,13 +2358,6 @@ export function SubmissionForm({ kind, submissionId, slug }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <AttachmentPreviewModal
-        open={staffPreviewOpen}
-        onOpenChange={setStaffPreviewOpen}
-        items={staffPreviewItems}
-        fetchBytes={portalFetchBytes}
-      />
 
       {neighbours?.prev_id && (
         <button

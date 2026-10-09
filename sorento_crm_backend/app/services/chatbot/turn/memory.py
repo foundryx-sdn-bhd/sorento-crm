@@ -5,6 +5,7 @@
 # seam AC-1547 names without depending on a worker having drained it in the same test.
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -23,6 +24,8 @@ from app.services.chatbot.turn.episode_digest import (
     topic_domain,
 )
 from app.services.chatbot.turn.state import Profile
+
+logger = logging.getLogger(__name__)
 
 #: Contract section 2 / PLAN 6.0 (round 3, AC-MEM051): the four values a context level
 #: is ever stored as. "past" was RENAMED "episodes" in round 3 - the stored value
@@ -265,6 +268,19 @@ def write_episode_for_reset(
         # ON CONFLICT DO NOTHING fired: another writer already closed this exact
         # range. Nothing of ours landed, so there is nothing of ours to trim for.
         return None
+
+    if not is_test:
+        # Chat analytics (CA-1): snapshot the episode BEFORE the trim can drop its frame.
+        # A SAVEPOINT, because a database error aborts the whole Postgres transaction and
+        # the frame (and the trim) must survive an analytics fault. Imported here, and
+        # called as a module attribute, so the tests can swap it.
+        from app.services.chatbot.analytics import facts as chat_facts
+
+        try:
+            with db.begin_nested():
+                chat_facts.snapshot_episode(db, inserted_id, rows)
+        except Exception:  # noqa: BLE001 - analytics must never lose a frame
+            logger.warning("chat facts: episode snapshot for frame %s failed", inserted_id, exc_info=True)
 
     _trim_to_newest(db, contact_respond_id=contact_respond_id, is_test=is_test)
     db.commit()

@@ -144,6 +144,8 @@ class Brand(Base, CompanyScopedMixin):
         Index(
             "uq_brands_company_brand_code", "company_id", "brand_code", unique=True
         ),
+        # Same index as migration `chat_facts_0001_tables` (see Product).
+        Index("ix_brands_lower_brand_code", func.lower(brand_code)),
         Index("ix_brands_is_active", "is_active"),
         Index("ix_brands_access_levels", "access_levels", postgresql_using="gin"),
     )
@@ -348,6 +350,9 @@ class Product(Base, CompanyScopedMixin):
     
     __table_args__ = (
         Index("uq_products_company_product_code", "company_id", "product_code", unique=True),
+        # The chat facts writer matches a named code with `lower(code) IN (...)`; same index
+        # as migration `chat_facts_0001_tables`, so create_all builds it too.
+        Index("ix_products_lower_product_code", func.lower(product_code)),
         Index("ix_products_category_id", "category_id"),
         Index("ix_products_brand_id", "brand_id"),
         Index("ix_products_base_uom_id", "base_uom_id"),

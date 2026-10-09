@@ -45,6 +45,7 @@ async function PurchaseRequestDetailWrapper({
       sourceEntityType="purchase_request"
       sourceEntityId={id}
       revisionsKind="purchase_request"
+      commentsKind="purchase_request"
     >
       <RecordEntityRegistrar entityType="purchase_request" id={id} />
       <PurchaseRequestDetail requestId={id} />

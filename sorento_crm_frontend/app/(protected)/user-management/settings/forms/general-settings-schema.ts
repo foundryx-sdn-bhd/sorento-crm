@@ -61,6 +61,8 @@ export const GeneralSettingsSchema = z.object({
    * run a counter.
    */
   priceTagAutoCollectDays: z.coerce.number().int().min(0).max(90),
+  /** How long a chatbot file link opens, in days. Null = the link never expires. */
+  chatbotFileLinkExpiryDays: z.number().int().min(1).max(3650).nullable(),
   /** SCM front planning: the grain new plans are decided at (AC-F01). */
   planGrain: z.enum(['product', 'location']),
   /** Local-supplier Buy routing (PLAN-local-buy-routing-toggle.md), off by default. Off

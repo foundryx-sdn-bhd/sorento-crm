@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -29,7 +29,15 @@ class EntityConversationMessage(Base):
     is_system = Column(Boolean, nullable=False, server_default="false")
     body_html = Column(Text, nullable=False, server_default="")
     author_user_id = Column(String(100), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # A submitter's comment on a form (scope 'form_comment') has no CRM user.
+    author_contact_id = Column(Text, ForeignKey("respond_contacts.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    # Form comment thread (fcom_0003): one-level reply, edit marker, delete placeholder.
+    parent_id = Column(
+        String(36), ForeignKey("entity_conversation_messages.id", ondelete="CASCADE", name="fk_entity_conversation_messages_parent_id"), nullable=True, index=True
+    )
+    edited_at = Column(DateTime(timezone=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=False), nullable=True)
 
     author = relationship("User", foreign_keys=[author_user_id])
 
@@ -42,4 +50,16 @@ class EntityConversationMessage(Base):
             "created_at",
         ),
         Index("ix_entity_conversation_messages_author", "author_user_id"),
+        # Mirrors migrations 150 + fcom_0002, so a schema built by create_all (tests, CI
+        # bootstrap) refuses what the migrated database refuses. Widen both together.
+        CheckConstraint(
+            "entity_type IN ('commercial_project','commercial_master_quotation',"
+            "'commercial_project_task','commercial_master_quotation_task','commercial_lead',"
+            "'complaint','stock_inquiry','purchase_request','sponsorship_form')",
+            name="ck_entity_conversation_messages_entity_type",
+        ),
+        CheckConstraint(
+            "scope IN ('activity','internal_note','form_comment')",
+            name="ck_entity_conversation_messages_scope",
+        ),
     )
