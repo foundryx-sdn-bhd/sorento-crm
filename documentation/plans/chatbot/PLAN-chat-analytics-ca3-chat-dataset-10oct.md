@@ -71,3 +71,63 @@ two-group pivots (CA-5), backfill (CA-4), any new screen.
 
 Q1 (b) ask the period; Q2 (b) ask how many; both in one reply when both missing. Q3 (a) office
 excluded. Q4 (a) nobody granted by default. Q5 (a) unlinked staff with grant sees all.
+
+## Contract (binding for tester and coder)
+
+**Parser output.** A chat analytics question is `message_type "business_query"`, `domain_hint
+"chat_analytics"`, `intent_hint "chat_report"`, `domain_in_message true`, plus ONE new object key
+(the `low_stock` object pattern, `head/parser.py` ~:465, so no shared enum changes):
+
+```
+"chat_report": {
+  "group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
+  "measure":  "asks|failed|failure_rate|contacts"|null,
+  "subject":  <a chatbot domain name, e.g. "inventory", "promotion">|null
+} | null
+```
+
+Null on every other message. Period = the existing `date_filter_start` / `date_filter_end`;
+count = `top_n`; direction = `rank_direction`; product and customer filters = `entities`
+(hint `product` / `customer`), resolved by the existing resolvers. `measure` null reads as
+`asks` (the head line names the unit); "fail" words set `failed`, "fail rate" `failure_rate`,
+"how many dealers / contacts / people" `contacts`.
+
+**Lane** (`lanes/business/chat_report.py`, ask name `chat_report`, tool `crm_report_ask`).
+Gate: `DOMAIN_GRANT_REQUIRED["chat_analytics"] = "chatbot.analytics"`. Required: period always;
+`top_n` only when `group_by` is set and not week / month / day (a trend lists every bucket).
+Both missing -> ONE reply with both questions, one per line:
+`Which period? For example this week, September, or 1 to 15 Sep.` then
+`How many? For example top 5.` Basis: `turns` for failed / failure_rate, else `asks`.
+
+**Route** `GET /api/v1/order-management/report-ask` gains `dataset` (`sales` default | `chat`).
+Chat params: `basis` asks|turns, `measure` asks|failed|failure_rate|contacts, `group_by` (the
+ten words), `top_n`, `sort`, `date_from`, `date_to`, `subjects` (domain codes), `product_ids`,
+`customer_ids`, `contact_id`, `space_id`. Sales-only params with `dataset=chat` -> 422
+`unknown_param`. Chat needs reveal `chatbot.analytics` (403 `chat_analytics_not_enabled`); the
+sales reveal is not checked on chat and not enough for it. Response (chat):
+
+```
+{status, message, dataset: "chat", basis, measure, unit ("asks"|"turns"|"contacts"|"%"),
+ group_by, group_label, date_from, date_to (clipped to >= 2026-09-05),
+ rows: [{rank, name, value, numerator?, denominator?}], more, total_count,
+ total: {value, numerator?, denominator?}, filters: [{key,label,values}],
+ coverage: {percent, taxonomy_version, line}}
+```
+
+`numerator`/`denominator` only for failure_rate (failed turns / non-noise turns). Contacts
+total = distinct over the whole set.
+
+**Reply** (MCP presenter for `dataset == "chat"`), one fact per line, no " · ":
+
+```
+Top 5 topics by asks
+Period: 1 Sep 2026 to 30 Sep 2026
+1. Availability: 124 asks
+2. Product ETA: 85 asks
+and 12 more
+Total: 399 asks
+Topics labelled: 17% of asks (taxonomy v1). From bot traces, 5 Sep 2026 on.
+```
+
+Coverage line first when percent < 80. Failure rate rows: `1. 2026-09-14: 1.2% (14 of 1,215 turns)`.
+No asks: `No asks in that period. Chat data starts 5 Sep 2026.`
