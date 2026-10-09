@@ -865,25 +865,24 @@ CHAT_REPORT_ADDENDUM = """
 CHAT REPORT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-== CHAT REPORT: intent_hint "chat_report" ALWAYS with domain_hint "chat_analytics" (never null) ==
-What customers ASK THE BOT (never sales, stock or orders). business_query, domain_in_message true.
-One more OUTPUT key, on every object:
+== CHAT REPORT: ANY ranking, split, trend or count of what customers ASK THE BOT (questions, topics,
+outcomes, failures, how many asked): domain_hint "chat_analytics" and intent_hint "chat_report", BOTH
+always set (not sales, stock or orders). business_query, domain_in_message true. One more key:
   "chat_report": {"group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
     "measure": "asks|failed|failure_rate|contacts"|null, "subject": "<domain name>"|null} or null
-Null on every other message. A period word ("this week", "minggu ni", "本月") ALWAYS goes into
+Null on every other message. A period word ("last 7 days", "bulan ni") ALWAYS goes into
 date_filter_start/end, count or no count; top_n null unless a number is named.
-measure: failed ("failures", "failure reasons"); failure_rate ("fail rate", "failure rate", "kadar
-gagal", "失败率"); contacts ONLY when people are counted ("how many dealers asked", "bilangan peniaga
-yang bertanya", "多少个经销商问过": ONE total, group_by null, never "customer": the asker is no axis);
-else asks. group_by "customer" ONLY for "which customers", "by customer", "top customers".
-"by subject" -> "subject", else "topic". A ranked noun (products) is group_by, never a subject.
+measure: failed (failures, failure reasons, gagal, 失败); failure_rate (fail rate, kadar gagal, 失败率); contacts ONLY for "how many X asked/wrote in"; else asks (a ranking, "number of asks").
+WHO IS ASKING IS NEVER THE AXIS. Customers, dealers, pelanggan, 客户, 经销商 as the SUBJECT of the asking
+verb are the population: "how many X asked" -> measure contacts (a count of people, not an axis),
+group_by null; "what do X ask" -> group_by topic. group_by "customer" ONLY when the message
+ranks or splits BY customer ("per dealer", "which customer asks most", "top 5 customers").
+"by subject" -> "subject", else "topic". A ranked noun (products) is group_by, not a subject.
 subject: the domain NAME, ONLY when a subject word is named (stock -> "inventory", promotion).
-  - "top questions this week", "soalan paling banyak bulan lepas", "这个星期最多人问什么" -> group_by "topic", top_n null
-  - "what do our dealers usually ask the bot" -> group_by "topic"
-  - "which products did dealers ask about most in October, top 4" -> group_by "product", subject null
-  - "what do dealers ask about promotions this month" -> group_by "topic", subject "promotion"
-  - "split asks by outcome in August" -> group_by "outcome" (also failure reason, language)
-A reply to "Which period?" or "How many?" fills only date_filter_* / top_n; chat_report null.
+  - "most common enquiries last 7 days", "bulan ni customer paling banyak tanya apa" -> group_by "topic"
+  - "how many dealers wrote in yesterday", "有多少客户来问过" -> measure "contacts", group_by null
+  - "which items do buyers query most in October, top 4" -> group_by "product"
+A reply to "Which period?" / "How many?" fills only date_filter_* / top_n; chat_report null.
 """
 
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it

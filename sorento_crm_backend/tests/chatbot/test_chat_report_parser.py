@@ -11,6 +11,9 @@ Pinned where the plan is silent (flagged to the captain):
   `ca3` or `chat_analytics` or `chat_report` AND defines `publish`;
 * the domain seed is found by content: a migration file that mentions `chatbot_domains`,
   `chat_analytics` and `chatbot.analytics`.
+
+pin loosened by lead 10 Oct 2026: golden wording is graded live, not by prompt text (the
+addendum must not carry the golden messages, so it is pinned structurally).
 """
 from __future__ import annotations
 
@@ -94,9 +97,11 @@ def test_the_prompt_names_the_domain_the_intent_and_the_object() -> None:
 
 def test_the_prompt_teaches_the_four_languages_with_synthetic_examples() -> None:
     chunk = SEMANTIC_PARSER_PROMPT[SEMANTIC_PARSER_PROMPT.index("chat_report"):]
-    assert "top questions this week" in chunk
-    assert "soalan paling banyak" in chunk
-    assert "这个星期最多人问什么" in chunk
+    from app.services.chatbot_parser_prompt import CHAT_REPORT_ADDENDUM
+
+    assert chunk and "chat_analytics" in CHAT_REPORT_ADDENDUM and "chat_report" in CHAT_REPORT_ADDENDUM
+    for word in GROUP_BY | MEASURE:
+        assert word in CHAT_REPORT_ADDENDUM, word
 
 
 def test_the_prompt_says_no_count_is_top_n_null() -> None:
