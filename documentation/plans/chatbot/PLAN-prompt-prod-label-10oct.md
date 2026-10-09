@@ -1,6 +1,6 @@
 # PLAN: prepare the prod parser label move from v52 (PROMPT-PROD-LABEL)
 
-Status: Plan, awaiting card answers (track: small fix size by diff, one data file + one migration + one static
+Status: Built, PR #1554 draft, reviewer READY; replay + v52 diff pending (track: small fix size by diff, one data file + one migration + one static
 test; no auth/RBAC; brief size M so card + red-first + reviewer apply).
 
 UAC: `prompt-prod-label-acceptance-criteria.md`.

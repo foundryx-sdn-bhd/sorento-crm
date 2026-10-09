@@ -14,7 +14,10 @@ AC-2  The file carries none of the obsolete lines the later PRs rewrote on purpo
       `Never emit BOTH an entity and a reference_position` (#1352), `"SPO", "shipment", "container" -> ["SPO"]`
       (#1373), `null (the default, delivered)` (#1447).
 AC-3  Every line of the current `SEMANTIC_PARSER_PROMPT` outside the owner-edit lines is in the file
-      (the candidate drops nothing the code ships).
+      (the candidate drops nothing the code ships). Verified ONCE at build, not as a standing test:
+      `scripts/build_parser_candidate.py` reproduces the committed file byte for byte (reviewer, PR #1554)
+      and the diff vs the constant is +61/-9, all intended. A standing test would go red on every later
+      constant edit and block unrelated chatbot PRs.
 AC-4  Each addendum sits once, at its documented anchor (`tests/chatbot/_order_broaden_prompt.py:26`,
       `tests/chatbot/_rogue_convo_prompt.py:33-35`).
 AC-5  A migration publishes the file plus the policy blocks rendered at run time

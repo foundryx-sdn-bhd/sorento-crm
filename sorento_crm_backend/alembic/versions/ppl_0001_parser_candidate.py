@@ -68,7 +68,7 @@ def with_blocks(body: str, blocks: str) -> str:
 def publish(session: Session) -> int | None:
     from app.models.ai_prompt import AIPromptVersion
     from app.services.ai_prompt_registry import PROMPT_KEYS
-    from app.services.chatbot_parser_prompt import render_prompt_blocks
+    from app.services.chatbot_parser_prompt import prompt_blocks_hash, render_prompt_blocks
 
     body = CANDIDATE.read_text(encoding="utf-8")
     missing = missing_markers(body)
@@ -93,6 +93,7 @@ def publish(session: Session) -> int | None:
             type="text",
             template=template,
             variables=list(PROMPT_KEYS[PROMPT_NAME].variables),
+            config_json={"blocks_hash": prompt_blocks_hash(session)},
             commit_message=MESSAGE,
         )
     )
@@ -107,7 +108,15 @@ def upgrade() -> None:
     bind = op.get_bind()
     # v1 from the fallback plus the production label, if this install never seeded the key.
     seed_prompt_registry(bind)
-    publish(Session(bind=bind))
+    session = Session(bind=bind)
+    try:
+        publish(session)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def downgrade() -> None:
