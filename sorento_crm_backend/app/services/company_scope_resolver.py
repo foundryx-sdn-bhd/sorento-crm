@@ -183,7 +183,10 @@ def _resolve_user_scope(db: Session, token: str, request: Optional[Request] = No
         target_id = _impersonation_target_id(db, request, user_id)
         if target_id:
             user_id, claim = target_id, None
+    return _scope_for_user(db, user_id, claim)
 
+
+def _scope_for_user(db: Session, user_id: str, claim: Optional[str]) -> CompanyScope:
     from app.services.user_service import UserPermissionService
 
     perm = UserPermissionService(db)
@@ -340,6 +343,11 @@ def _portal_token_scope(request: Request, db: Session) -> Optional[CompanyScope]
 
 def resolve_company_scope(request: Request, db: Session) -> CompanyScope:
     """Pure resolver (no session mutation) - exposed for tests. Never raises."""
+    # An SS-signed connector call (verified by the router dependency that runs first) is scoped
+    # as its own user, with no impersonation and no active-company claim.
+    call = getattr(request.state, "connector_call", None)
+    if call is not None:
+        return _scope_for_user(db, str(call.user["id"]), None) if call.user else UNSET
     api_key = request.headers.get("X-API-Key")
     if api_key:
         if _api_key_valid(api_key):

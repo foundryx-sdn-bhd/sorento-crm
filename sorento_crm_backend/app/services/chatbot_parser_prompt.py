@@ -197,7 +197,11 @@ basis, measure, rank_by and sales_channel come from the CURRENT message only; a 
 Follow-up to a SALES RANKING: "Previous response" starts "Top N sales agents|customers|brands|
 categories|locations|channels|months by delivered sales" (or "by ordered sales", "by outstanding orders", or "Bottom N").
 That is NOT a top selling list ("Top N selling items"): a number never picks a row
-(reference_positions []) and the ask stays "sales_ranking". A message that ONLY changes:
+(reference_positions []) and the ask stays "sales_ranking". First the RANKED noun: one that is
+not the previous ranking's (customers after sales agents, products after customers) is
+never a refine, whatever else it says: ranking_refine false, group_by that noun, ranking_drill below.
+"top 10 customers for these sales agents" -> group_by "customer" (the noun after "top 10"),
+never "sales_agent": "these sales agents" names the rows, not the axis. A message that ONLY changes:
   - the count: "5", "top 10", "show 20" -> ranking_refine true, top_n 5 / 10 / 20 (the number IS
     top_n; a count refine never leaves top_n null)
   - the period: "this year", "2025", "last month" -> ranking_refine true, those dates
@@ -215,6 +219,21 @@ period of the previous ranking is never this ask's period.
   - "top salesman for sorento" -> ranking_refine false, top_n null
 A singular "top salesman", "top customer" or "best sales agent" names NO count: top_n null
 (not 1), also after a ranking.
+"ranking_drill": "scoped|global|unsure|null": set only on a sales_ranking naming its OWN group_by
+right after a SALES RANKING answer, else null:
+  - "scoped": it asks about the rows that ranking listed ("these", "their", "those", "them",
+    "这些", "above"): after top sales agents, "who are the customers for these sales agent" ->
+    group_by "customer", top_n null; "top 10 customers of these agents" -> top_n 10; dates null;
+    entities only for a filter the message itself names (the listed rows and earlier filters
+    carry by themselves). Products or categories too: "which products do these agents sell" ->
+    order_status "sales_ranking", group_by "product", "scoped" (never top_selling)
+  - "global": ONLY when it says so ("overall", "all customers", "whole company") or names its own
+    subject ("top 10 customers for Cabana this year")
+  - "unsure": either reading fits: "top 10 customers", "customers", "top customers" with nothing
+    tying it to the rows or saying overall. In doubt, "unsure", never "global"
+  - a reply to "... above, or across all customers?": "above", "those", "them" -> that
+    question's ranking, "scoped"; "all", "overall" -> "global"; group_by AND top_n come from
+    that question (the one exception to the top_n rule)
 A ranking of PEOPLE or ACCOUNTS ("top N customers", "top N salesman", "bottom 5 sales agents")
 is ALWAYS order_status "sales_ranking" with its own group_by, even while a top selling
 question ("By quantity or by amount?") is open: a new ask, not a reply to that question.
@@ -227,7 +246,7 @@ NOT a sales ranking:
     ("sales by month this year", "dealer sales this year") stay "sales_analysis";
   - "sales report of X" stays "sales_report";
   - ranking PRODUCTS or CATEGORIES ("top 10 products", "hot selling", "which category
-    sells most") stays "top_selling";
+    sells most") stays "top_selling", except a "ranking_drill" ask right after a SALES RANKING;
   - "top 10 sales items for sorento" -> top_selling (items, not people);
   - "top SA01 items this year" -> top_selling, SA01 as sales_agent.
 """
@@ -782,6 +801,37 @@ entities [], only sort_by / sort_dir set.
     "sort_dir": "desc"}
 """
 
+# PROMO-SUBJECT-FILTER R5. ADDITIVE ONLY: the `promotion_kind` output key. The kinds are not
+# listed here; the user block carries a `Promotion kinds:` line read from `promotion_types`
+# every turn. Published as a new unlabelled version by migration `pk_0001_parser_promo_kind`.
+PROMOTION_KIND_ADDENDUM = """
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every object,
+exactly as if it were listed there:
+
+  "promotion_kind": string|null
+
+== PROMOTION KIND ==
+The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
+asks for one of those kinds, by meaning in any language, set "promotion_kind" to that kind's code:
+"flyer", "传单", "A3" or "poster" is the listed A3 Flyer kind. A word that fits no listed kind, or no
+kind at all, is "promotion_kind": null. Never invent a code. Set it only when the message names the
+kind in words: a bare number, or a reply to a numbered list, is never a promotion_kind. A kind word
+is never a promotion entity.
+
+== PROMOTION SUBJECT ==
+On a promotion ask, answer the brand from the "Known brands:" line and the product type from the
+"Product types:" line: canonical_code is the listed name, never a word of your own. Correct a typo
+to the listed name ("Sorneto" -> canonical_code "Sorento"). A word you cannot place in its list is
+unresolved: keep raw as typed, canonical_code null. Keep raw as typed for an everyday name too:
+"seat cover" is a toilet seat -> {"raw": "seat cover", "hint": "category", "canonical_code": "toilet seat"}.
+A word that describes the thing (how it is mounted, its flush type, its finish) is its own
+"specification" entity beside the type entity: spec_key and spec_value from the listed
+"Product details:" line, `key (value, ...)`, a typo corrected to the listed value
+("walll hung wc" -> {"raw": "walll hung", "hint": "specification", "spec_key": "mounting",
+"spec_value": "wall hung"}). One you cannot place there: spec_key null, spec_value null.
+"""
+
 # SO-PO-REF (owner, 7 Oct 2026): a customer's own PO number, read HERE and nowhere else. The
 # code never pattern-matches a PO number out of the message; `po_refs` is the only way one
 # reaches the business lane, and the lane (not the parser) decides the audience: a dealer or
@@ -875,6 +925,7 @@ CANONICAL_CODE_ADDENDUM = (
     '"这个产品" / "this product" is never an entity: the standing subject carries.\n'
 )
 SEMANTIC_PARSER_PROMPT += CANONICAL_CODE_ADDENDUM
+SEMANTIC_PARSER_PROMPT += PROMOTION_KIND_ADDENDUM
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
 

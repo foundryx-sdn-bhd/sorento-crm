@@ -859,7 +859,8 @@ def test_the_outstanding_header_reads_top_n_sales_agents_by_outstanding_orders(c
     from sorento_crm_mcp.presenters import _report_ask
 
     first = _report_ask(body).split("\n")[0]
-    assert first.startswith("Top 3 sales agents by outstanding orders, "), first
+    # REPORT-DRILLDOWN: the head line stands alone; filters and the period follow, one per line.
+    assert first == "Top 3 sales agents by outstanding orders", first
 
 
 def test_outstanding_works_with_a_total_and_a_filter(client, db):

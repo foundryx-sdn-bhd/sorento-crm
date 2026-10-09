@@ -83,6 +83,24 @@ class ChatHistoryMessageIngestRequest(BaseModel):
         "voice-not-allowed, LLM fallback) and is a real signal - never coerce it to {}. "
         "Stored as received; the producer owns the inner shape.",
     )
+    # Lane CHAT-LOCAL-FIRST (R5): what the local thread could not render before. All
+    # optional; n8n sends them when the Respond message carries them, and the delta /
+    # reconcile read fills them on rows that arrived without.
+    media_url: Optional[str] = Field(
+        None, description="Attachment URL of a media message (Respond `attachment.url`)."
+    )
+    media_type: Optional[str] = Field(
+        None, max_length=32, description="image | video | audio | file | sticker ..."
+    )
+    media_file_name: Optional[str] = Field(None, max_length=512)
+    sender_source: Optional[str] = Field(
+        None,
+        max_length=32,
+        description="Respond `sender.source`: contact | user | bot | api | workflow ...",
+    )
+    sender_user_id: Optional[str] = Field(
+        None, max_length=64, description="Respond user id behind a `user` send."
+    )
 
 
     @field_validator("chatbot_turn_id")

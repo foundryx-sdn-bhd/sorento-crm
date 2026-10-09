@@ -898,6 +898,9 @@ class FulfilmentBoardService:
             # Every pool ROW already arrives with its own `available_for_project` computed
             # here; this is the one number the client still has to apply the rule with.
             "pool_share_pct": self._pool_share_pct(),
+            # "Borrow from another order" (PLAN-borrow-location-only-8oct.md, BR1): the Decide
+            # menu offers it exactly when this is on, read once with the walk's own switch.
+            "borrow_from_order_enabled": self.supply.borrow_from_order,
         }
 
     # ----------------------------------------------------- the stock drill-down
@@ -3607,7 +3610,10 @@ class FulfilmentBoardService:
         if not donors:
             return None
         shown = " · ".join(
-            f"{c.get('donor_so_number') or 'an unnamed order'}"
+            # "Borrow from another order" OFF: the location is the whole story (D2).
+            f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+            if c.get("location_only")
+            else f"{c.get('donor_so_number') or 'an unnamed order'}"
             + (f" line {c['donor_line_no']}" if c.get("donor_line_no") is not None else "")
             + f" {qty_text(_dec(c.get('qty')))} at {c.get('location')}"
             for c in donors[:3]
@@ -3690,7 +3696,9 @@ class FulfilmentBoardService:
             return "This unit was already covered before a borrow was needed."
         if donors:
             named = ", ".join(
-                f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
+                f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                if c.get("location_only")
+                else f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
                 for c in donors[:3]
             )
             return (
@@ -3866,7 +3874,9 @@ class FulfilmentBoardService:
             component
             for component in components
             if getattr(component, "rung", None) == RUNG_POOL
-            and getattr(component, "donor_so_number", None)
+            # The borrow half, not the free share. Read off `kind` rather than the donor's
+            # name: "Borrow from another order" OFF borrows the same stock nameless (D2).
+            and getattr(component, "kind", None) == BORROW
         ]
         if drawn:
             return " ".join(component.reason for component in drawn)
@@ -3887,7 +3897,9 @@ class FulfilmentBoardService:
         if not pool_chain:
             if borrow_donors:
                 named = ", ".join(
-                    f"{c.get('donor_so_number') or 'an unnamed pool order'} "
+                    f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                    if c.get("location_only")
+                    else f"{c.get('donor_so_number') or 'an unnamed pool order'} "
                     f"{qty_text(_dec(c.get('qty')))}"
                     for c in borrow_donors[:3]
                 )
@@ -5212,6 +5224,19 @@ class FulfilmentBoardService:
                     # facts for this donor, so the manual Borrow modal renders `CellStockTable`
                     # instead of a second, narrower table of its own.
                     "location": candidate.get("location"),
+                    # The rung and the donor line (BORROW-LOCATION-ONLY defect A): a Decide or
+                    # Amend borrow posts `donor_core_line_id` back, which is what keeps the
+                    # re-borrow guard (K6) and gives each line at one bin its own running
+                    # claim. The donor's name fields are whatever the service left on them -
+                    # blank with "Borrow from another order" off.
+                    "rung": candidate.get("rung"),
+                    "donor_core_line_id": candidate.get("donor_core_line_id"),
+                    "donor_so_number": candidate.get("donor_so_number"),
+                    "donor_line_no": candidate.get("donor_line_no"),
+                    "donor_agent_code": candidate.get("donor_agent_code"),
+                    "donor_required_date": candidate.get("donor_required_date"),
+                    "same_agent": bool(candidate.get("same_agent")),
+                    "lower_ranked": bool(candidate.get("lower_ranked")),
                 }
                 for candidate in row.borrow_candidates
             ],

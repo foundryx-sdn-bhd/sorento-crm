@@ -229,6 +229,10 @@ class _Builder:
         self.items: list[dict[str, Any]] = []
         self.attachments: list[dict[str, Any]] = []
         self.action_links: list[dict[str, Any]] = []
+        # The item the next `attach` belongs to: every presenter calls `item()` for a row
+        # and then `attach()` for that row's files. None when `item()` dropped an empty row,
+        # so its files are never credited to the row before it (PHOTO-SEND-CAP).
+        self._current: dict[str, Any] | None = None
         # field key -> permission key (A2/A5/A6, e.g. "inventory.sellable",
         # "purchase_orders.supplier"). The MCP itself stays unfiltered (in-app
         # assistant + n8n operators are internal); `output_structurer` is the
@@ -301,6 +305,7 @@ class _Builder:
             fields.append(
                 {"label": lbl, "value": val} if key is None else {"key": key, "label": lbl, "value": val}
             )
+        self._current = None
         if not fields:
             return
         self.items.append(
@@ -320,6 +325,7 @@ class _Builder:
                 **({"id": entity_id} if _filled(entity_id) else {}),
             }
         )
+        self._current = self.items[-1]
 
     def raw_item(self, title: Any, fields: list[dict[str, Any]], flags: dict[str, Any]) -> None:
         """An item whose fields and flags the SOURCE already shaped.
@@ -337,6 +343,7 @@ class _Builder:
                 "flags": flags,
             }
         )
+        self._current = self.items[-1]
 
     def attach(self, a: Any) -> None:
         if not isinstance(a, dict):
@@ -361,7 +368,16 @@ class _Builder:
         uploaded = a.get("uploaded_at")
         if _filled(uploaded):
             entry["uploadedAt"] = uploaded
+        # sha256 of the bytes: a picture uploaded twice has two urls and one hash, and
+        # is one file to send (PHOTO-SEND-CAP R2). Absent when the row has none.
+        file_hash = a.get("file_hash")
+        if _filled(file_hash):
+            entry["fileHash"] = file_hash
         self.attachments.append(entry)
+        # PHOTO-SEND-CAP round 2: which row this file belongs to, so a link-mode reply
+        # (`output_structurer`) prints each file's link under its own row.
+        if self._current is not None:
+            self._current.setdefault("file_urls", []).append(url)
 
     def link(self, label: str, url: str, link_type: str = "portal_link") -> None:
         if _filled(url):
@@ -1529,8 +1545,37 @@ def _availability_line(entry: dict) -> str:
     return f"{code} x {qty}: {_availability_tail(entry)}"
 
 
+def _printed_alternatives(entry: dict) -> list[dict]:
+    """The alternatives that print a line under `entry` - the one filter the line builder
+    and the referral stamp both read, so a stamp never counts a line nobody saw."""
+    return [
+        a
+        for a in (entry.get("alternatives") or [])
+        if isinstance(a, dict) and a.get("branch") and _availability_label(a)
+    ]
+
+
+def _alternative_has_stock(entry: dict) -> bool:
+    """PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): a stored alternative of this
+    entry, judged by the backend with the same asked quantity, got stock (full or
+    partial)."""
+    return any(
+        isinstance(a, dict) and a.get("branch") == "in_stock"
+        for a in (entry.get("alternatives") or [])
+    )
+
+
 def _availability_tail(entry: dict) -> str:
-    """The sentence after "<code> x <Q>:" for one answered entry."""
+    """The sentence after "<code> x <Q>:" for one answered entry. PRODUCT-ALTERNATIVES
+    (card Q4): the refer drops when an alternative printed under it has stock - the dealer
+    has their answer on the next line."""
+    tail = _verdict_tail(entry)
+    if _alternative_has_stock(entry):
+        tail = tail.replace(f" {REFER_TO_SALESMAN}", "")
+    return tail
+
+
+def _verdict_tail(entry: dict) -> str:
     branch = entry.get("branch")
     if branch == "incoming":
         # AVAIL-RENDER fix round (owner hand test, 6 Oct 2026): the cross says the stock
@@ -1570,8 +1615,17 @@ def _stamp_refers(entries: Any) -> Any:
         return entries
     # AVAIL-MODE-REPLIES rule 5: an answered line is printed even while another product
     # still owes its quantity, so it is stamped on that turn too.
+    # PRODUCT-ALTERNATIVES: an `Alternative:` line printed under an entry that ends in the
+    # refer referred the dealer too, so the entry is stamped when ITS line or any of its
+    # printed alternative lines refers.
+    def _refers(e: dict) -> bool:
+        return _availability_tail(e).endswith(REFER_TO_SALESMAN) or any(
+            _availability_tail(a).endswith(REFER_TO_SALESMAN)
+            for a in _printed_alternatives(e)
+        )
+
     return [
-        {**e, "refers_to_salesman": _availability_tail(e).endswith(REFER_TO_SALESMAN)}
+        {**e, "refers_to_salesman": _refers(e)}
         if isinstance(e, dict) and e.get("branch")
         else e
         for e in entries
@@ -1597,17 +1651,21 @@ def _stock_availability(payload: dict, b: _Builder) -> None:
         # (a branch) prints that answer even while another product still owes its
         # quantity; one still owed stays its bare code for the question to name.
         title = _availability_line(entry) if entry.get("branch") and not entry.get("needs_quantity") else label
-        b.raw_item(
-            title,
-            [],
-            {
-                "needs_quantity": bool(entry.get("needs_quantity")),
-                "branch": entry.get("branch"),
-                # AVAIL-RENDER (owner, 5 Oct 2026): the marker compact/detailed print
-                # (`fetch.py::_item_line` reads `flags.discontinued`) on this mode's line too.
-                "discontinued": entry.get("is_discontinued") is True,
-            },
-        )
+        flags = {
+            "needs_quantity": bool(entry.get("needs_quantity")),
+            "branch": entry.get("branch"),
+            # AVAIL-RENDER (owner, 5 Oct 2026): the marker compact/detailed print
+            # (`fetch.py::_item_line` reads `flags.discontinued`) on this mode's line too.
+            "discontinued": entry.get("is_discontinued") is True,
+        }
+        # PRODUCT-ALTERNATIVES (card Q4 (a)): each stored alternative's own
+        # "<code> x <Q>: <verdict>" line, printed under this one after the marker
+        # (`fetch.py::_item_line`). The backend attaches them to answered entries only,
+        # judged with the same asked quantity; no alternative, no key (flags unchanged).
+        alternative_lines = [_availability_line(a) for a in _printed_alternatives(entry)]
+        if alternative_lines:
+            flags["alternative_lines"] = alternative_lines
+        b.raw_item(title, [], flags)
 
 
 def _availability_intro(payload: dict) -> str:
@@ -1875,14 +1933,30 @@ def present_response(tool_name: str, raw: str) -> str:
     # name often differs from the real key (parens/spaces sanitized at upload), so
     # patching it in produced URLs that 404 (e.g. a promotion whose stored_filename
     # kept "(CABANA) … END USER.pdf" while the object key is "CABANA … END USER.pdf").
+    # PHOTO-SEND-CAP R2: one file per IMAGE. Two entries with the same `fileHash` are
+    # the same bytes under two urls (a re-upload); the first one is kept.
     seen: set[tuple[Any, Any]] = set()
+    seen_hashes: set[Any] = set()
     attachments: list[dict[str, Any]] = []
     for a in b.attachments:
         sig = (a["url"], a.get("filename"))
-        if sig in seen:
+        file_hash = a.get("fileHash")
+        if sig in seen or (file_hash and file_hash in seen_hashes):
             continue
         seen.add(sig)
+        if file_hash:
+            seen_hashes.add(file_hash)
         attachments.append(a)
+    # A row whose file was dropped as a second url of a kept image names the KEPT url,
+    # so every product sharing one picture shows the one file that is sent (owner Q5 (a)).
+    kept_by_hash = {a["fileHash"]: a["url"] for a in reversed(attachments) if a.get("fileHash")}
+    url_hash = {a["url"]: a.get("fileHash") for a in b.attachments}
+    for it in b.items:
+        urls = it.get("file_urls")
+        if not urls:
+            continue
+        canonical = [kept_by_hash.get(url_hash.get(u), u) for u in urls]
+        it["file_urls"] = list(dict.fromkeys(canonical))
 
     has_result = bool(b.items or attachments or b.action_links)
     if attachments:
@@ -3193,38 +3267,31 @@ def _ask_pcs(value: Any) -> str:
 
 
 def _report_ask(body: dict) -> str:
-    """The whole reply for `crm_report_ask`: a header echoing the interpreted ask, the ranked
-    rows, `and N more`, the whole set's total; or one line for the number shape."""
+    """The whole reply for `crm_report_ask`: a head line, then one fact per line (`Label: value`
+    per filter, then the period; owner rule, REPORT-DRILLDOWN), the ranked rows, `and N more`,
+    the whole set's total; for the number shape the total alone."""
     if body.get("status") in ("refused", "busy"):
         return str(body.get("message") or "")
-    filters = "; ".join(
-        f"{f.get('label')} {', '.join(str(v) for v in f.get('values') or [])}"
+    facts = [
+        f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
         for f in body.get("filters") or []
-    )
-    scope = ", ".join(
-        part
-        for part in (
-            body.get("basis_label"),
-            filters,
-            f"{body.get('date_from')} to {body.get('date_to')}",
-        )
-        if part
-    )
+    ]
+    facts.append(f"Period: {body.get('date_from')} to {body.get('date_to')}")
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
+    basis = body.get("basis_label")
     group_by = body.get("group_by")
     if not group_by:
-        return f"Sales by {scope}: {figures}"
+        return "\n".join([f"Sales by {basis}", *facts, f"Total {figures}"])
     rows = body.get("rows") or []
     if not rows:
-        return f"No sales found for {scope}."
+        return "\n".join([f"No {basis} found", *facts])
     plural = _REPORT_ASK_PLURALS.get(group_by, str(body.get("group_label") or group_by).lower())
     if len(rows) == 1:
         # One row printed reads singular: "Top 1 product", never "Top 1 products".
         plural = str(body.get("group_label") or group_by).lower()
     lead = "Bottom" if body.get("sort") == "asc" else "Top"
-    # "by" sits between the plural and the basis; `scope` starts with the basis label.
-    lines = [f"{lead} {len(rows)} {plural} by {scope}"]
+    lines = [f"{lead} {len(rows)} {plural} by {basis}", *facts]
     for row in rows:
         lines.append(
             f"{row.get('rank')}. {row.get('name')} {_ask_rm(row.get('amount'))}, {_ask_pcs(row.get('qty'))}"
@@ -3238,11 +3305,22 @@ def _report_ask(body: dict) -> str:
 
 def _report_ask_envelope(body: dict) -> dict:
     """Minimal envelope (`response` + `has_result`), like the other report tools: the rendered
-    header is never empty, so the text alone cannot tell a miss from a hit."""
+    header is never empty, so the text alone cannot tell a miss from a hit. A ranking that
+    printed rows also hands them on with their keys (`drill_rows`, REPORT-DRILLDOWN), so the
+    chatbot can rank within exactly those rows next."""
     answered = body.get("status") in ("ok", "refused", "busy") and (
         body.get("status") != "ok" or bool(body.get("rows")) or not body.get("group_by")
     )
-    return {"result_type": "report_ask", "response": _report_ask(body), "has_result": answered}
+    rows = body.get("rows") or [] if body.get("status") == "ok" and body.get("group_by") else []
+    drill = (
+        {
+            "group_by": body.get("group_by"),
+            "rows": [{"name": r.get("name"), "keys": list(r.get("keys") or [])} for r in rows],
+        }
+        if rows
+        else None
+    )
+    return {"result_type": "report_ask", "response": _report_ask(body), "has_result": answered, "drill_rows": drill}
 
 
 def _sales_analysis_envelope(payload: dict) -> dict:

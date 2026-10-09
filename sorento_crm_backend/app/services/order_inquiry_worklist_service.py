@@ -93,7 +93,7 @@ from app.services.project_order_inquiry_service import (
     project_title_with_note,
 )
 from app.services.project_supply_service import ProjectSupplyService
-from app.services.scm import order_link_service, priority
+from app.services.scm import order_link_service, priority, spo_supply
 from app.services.scm.front_planning_engine import DEFAULT_LEAD_TIME_DAYS
 from app.services.scm.raise_event_matching import nearest_raise_event
 
@@ -285,13 +285,20 @@ _PLACED_PO_ID = func.coalesce(
 # linked" under Supplier. Same "first link, ordered by when it was made" rule as
 # `_SPO_LINKED_PO_ID` above, read directly off the allocation rather than through a
 # purchase order line that, for this shape, does not exist.
+#
+# OI-SUPPLIER-FROM-PO (owner, 9 Oct 2026: "the supplier always take from PO, not the
+# SPO"): read through `spo_supply.supplier_id_for`, so a book-fed allocation naming its
+# source PO only by number (`from_po_number`, the "via SPO" PO cell) answers with THAT
+# purchase order's supplier, and the allocation's own `supplier_id` only when the CRM
+# holds no such purchase order.
+_SPO_LINE_SUPPLIER_ID = spo_supply.supplier_id_for()
 _SPO_LINKED_SUPPLIER_ID = (
-    select(SPOAllocation.supplier_id)
+    select(_SPO_LINE_SUPPLIER_ID)
     .select_from(OrderInquiryLink)
     .join(SPOAllocation, SPOAllocation.id == OrderInquiryLink.spo_allocation_id)
     .where(
         OrderInquiryLink.row_id == OrderInquiryRow.id,
-        SPOAllocation.supplier_id.isnot(None),
+        _SPO_LINE_SUPPLIER_ID.isnot(None),
     )
     .order_by(OrderInquiryLink.linked_at.asc(), OrderInquiryLink.id.asc())
     .limit(1)
@@ -2537,18 +2544,22 @@ class OrderInquiryWorklistService:
                 code="order_inquiry_spo_not_found",
             )
         allocations = [allocation for allocation, *_rest in rows]
-        supplier_ids = {
-            str(allocation.supplier_id)
-            for allocation in allocations
-            if allocation.supplier_id
-        }
-        supplier = (
-            self.db.query(Supplier)
-            .filter(Supplier.id.in_(list(supplier_ids)))
-            .order_by(Supplier.id)
-            .first()
-            if supplier_ids
-            else None
+        # OI-SUPPLIER-FROM-PO: each line's source PO supplier, the line's own
+        # `supplier_id` only when the CRM holds no such purchase order. Lines of one SPO
+        # can name POs of different suppliers, so every distinct name is stated, sorted,
+        # rather than one picked by id.
+        supplier_names = sorted(
+            {
+                name
+                for (name,) in self.db.query(Supplier.supplier_name)
+                .select_from(SPOAllocation)
+                .join(Supplier, Supplier.id == spo_supply.supplier_id_for())
+                .filter(
+                    SPOAllocation.id.in_([allocation.id for allocation in allocations])
+                )
+                .all()
+                if name
+            }
         )
         shipment_ids = {
             str(allocation.inbound_shipment_id)
@@ -2574,7 +2585,7 @@ class OrderInquiryWorklistService:
         ]
         return {
             "spo_number": wanted,
-            "supplier_name": supplier.supplier_name if supplier else None,
+            "supplier_name": ", ".join(supplier_names) or None,
             "eta": min(etas) if etas else None,
             "shipment_ref": shipment.shipment_number if shipment else None,
             # The container the goods travel in, by its own column name

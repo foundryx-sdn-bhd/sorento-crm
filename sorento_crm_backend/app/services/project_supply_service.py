@@ -118,6 +118,7 @@ from app.services.error_handler import AppException
 from app.services.scm import priority, spo_supply
 from app.services.scm.history_sources import SPO_HISTORY_SOURCE
 from app.services.scm.supply_origin import buy_origin_by_product
+from app.services.scm.borrow_mode import borrow_from_order_enabled
 from app.services.scm.container_request_service import OPEN_PO_STATUSES
 #: `purchase_orders.source_system` for a CRM-minted SPO document. Imported under a
 #: name that says whose stamp it is, so `_po_rows`' exclusion reads as "not a shipping
@@ -1067,6 +1068,23 @@ def _states_an_authorisation(reason: Optional[str]) -> bool:
     return _AUTHORISATION_PHRASE in (reason or "").strip().lower()
 
 
+def _location_only(candidate: Mapping[str, Any]) -> Dict[str, Any]:
+    """A later order's on hand told as a LOCATION's ("Borrow from another order" OFF,
+    `PLAN-borrow-location-only-8oct.md` D2). The donor's name, line, agent and project code
+    are blanked (BR2); `donor_core_line_id`, `donor_project_id` and `donor_required_date`
+    stay, never shown, so confirm still knows whose stock it is and the re-borrow guard
+    still counts what one later order has lent (K6)."""
+    return {
+        **candidate,
+        "donor_project_ref": None,
+        "donor_so_number": None,
+        "donor_line_no": None,
+        "donor_agent_code": None,
+        "same_agent": False,
+        "location_only": True,
+    }
+
+
 class ProjectSupplyService:
     """The supply sheet (`proposal_for`) and the atomic commit (`confirm`)."""
 
@@ -1160,6 +1178,9 @@ class ProjectSupplyService:
         # is itself deciding - never offered as a group-borrow donor (S2): a line whose own
         # state is moving in this same request is not a stable, pre-existing donor.
         self._current_selection_core_ids: Set[str] = set()
+        # "Borrow from another order" (`borrow_from_order`), read once per instance so one
+        # confirm or one board writes every row by the same rule (K1). `None` = not read.
+        self._borrow_from_order_value: Optional[bool] = None
         # Ladder v7.1: `supply_assignment.assign()` per product, per `as_of`, read once for
         # the whole request (`planning_assignments`), plus its line index by CORE line id.
         # One board walks hundreds of lines over a handful of products, and the assignment
@@ -3779,6 +3800,13 @@ class ProjectSupplyService:
             candidate["free_at"] = free_at
         return own, other, sum((_dec(c["qty"]) for c in own), _ZERO), other_short
 
+    @property
+    def borrow_from_order(self) -> bool:
+        """The "Borrow from another order" switch (`PLAN-borrow-location-only-8oct.md` D1)."""
+        if self._borrow_from_order_value is None:
+            self._borrow_from_order_value = borrow_from_order_enabled(self.db)
+        return self._borrow_from_order_value
+
     def _eligible_donor(
         self,
         row: Any,
@@ -3914,6 +3942,17 @@ class ProjectSupplyService:
                     }
                 )
         out.sort(key=self._donor_order)
+        if not self.borrow_from_order:
+            # Same stock, same ranking (sorted above), told as a location (D2). Less a
+            # donor only its agent's authorisation could release (B1): confirm refuses it.
+            return [
+                _location_only(candidate)
+                for candidate in out
+                if not (
+                    candidate["same_agent"]
+                    and self._needs_authorisation(fact, candidate["donor_core_line_id"])
+                )
+            ]
         return out
 
     def supply_borrow_candidates_for(
@@ -6454,10 +6493,15 @@ class ProjectSupplyService:
             return
         if qty > held + free:
             room = held + free - carried
+            room_text = qty_text(room if room > _ZERO else _ZERO)
             refuse(
                 stale,
-                f"{donor.project_code} has {qty_text(room if room > _ZERO else _ZERO)} at "
-                f"{warehouse.warehouse_code}, and {qty_text(ask)} was asked for.",
+                f"{donor.project_code} has {room_text} at {warehouse.warehouse_code}, and "
+                f"{qty_text(ask)} was asked for."
+                if self.borrow_from_order
+                # "Borrow from another order" OFF (fix round 2): the bin, never the project.
+                else f"Stock held at {warehouse.warehouse_code} now has {room_text}, and "
+                f"{qty_text(ask)} was asked for.",
             )
             return
         from_hold = min(qty, held)
@@ -6640,6 +6684,21 @@ class ProjectSupplyService:
             _ZERO,
         )
 
+    def _needs_authorisation(self, fact: _LineFacts, donor_core_line_id: Any) -> bool:
+        """AC-L6: a donor sharing this line's agent and ranked AHEAD of it, judged on the
+        server's own donor list (never the payload's `same_agent`)."""
+        donor = next(
+            (
+                d
+                for d in self._group_borrow_donors(fact)
+                if str(d.get("donor_core_line_id") or "") == str(donor_core_line_id)
+            ),
+            None,
+        )
+        return bool(
+            donor is not None and donor.get("same_agent") and not donor.get("lower_ranked")
+        )
+
     def _check_group_borrow(
         self,
         item: Any,
@@ -6680,21 +6739,26 @@ class ProjectSupplyService:
         # the same way `_borrow_shortfalls` names it in the order-back note.
         donor_line_no = getattr(item, "donor_line_no", None)
         line_text = f" line {donor_line_no}" if donor_line_no is not None else ""
+        # "Borrow from another order" OFF (S2): a refusal names the location, never the
+        # donor order, whatever the payload carried.
+        by_order = self.borrow_from_order
+        held = (
+            f"{order.so_number or 'That sales order'}{line_text}"
+            if by_order
+            else f"Later-order stock at {warehouse.warehouse_code}"
+        )
         # S8: the donor line named has to still BE what the borrow claims it is - the
         # same product, still open demand, and inside this line's own ownership group -
         # not merely a row that exists.
         if fact.product_id and str(line.product_id or "") != str(fact.product_id):
-            refuse(
-                invalid,
-                f"{order.so_number or 'That sales order'}{line_text} no longer holds "
-                "this product.",
-            )
+            refuse(invalid, f"{held} no longer holds this product.")
             return
         if str(line.warehouse_id or "") != str(warehouse.id):
             refuse(
                 invalid,
-                f"{order.so_number or 'That sales order'}{line_text} is no longer at "
-                f"{warehouse.warehouse_code}.",
+                f"{held} is no longer at {warehouse.warehouse_code}."
+                if by_order
+                else f"{held} is no longer there.",
             )
             return
         # LADDER V7.1 (R5): ANY ownership group may donate, so the donor no longer has to
@@ -6720,27 +6784,24 @@ class ProjectSupplyService:
         # BELOW this line needs nothing extra - that is ordinary group borrow, which the v2
         # ladder took automatically - so demanding a reason for it would make a mandatory
         # field a rubber stamp.
-        donor = next(
-            (
-                d
-                for d in self._group_borrow_donors(fact)
-                if str(d.get("donor_core_line_id") or "") == str(donor_core_line_id)
-            ),
-            None,
-        )
-        if (
-            donor is not None
-            and donor.get("same_agent")
-            and not donor.get("lower_ranked")
-            and not _states_an_authorisation(item.reason)
-        ):
-            refuse(
-                invalid,
-                f"{order.so_number or 'That sales order'}{line_text} shares this line's "
-                "sales agent and is ranked ahead of it, so it can only be borrowed with "
-                "that agent's authorisation. Say who authorised it in the reason.",
-            )
-            return
+        if self._needs_authorisation(fact, donor_core_line_id):
+            if not by_order:
+                # B1: a location borrow asks nobody, so stock only an authorisation could
+                # release is not this line's to take. It is never offered under OFF.
+                refuse(
+                    invalid,
+                    f"{held} is held for an order ranked ahead of this line, so it "
+                    "cannot be borrowed.",
+                )
+                return
+            if not _states_an_authorisation(item.reason):
+                refuse(
+                    invalid,
+                    f"{held} shares this line's sales agent and is ranked ahead of it, so "
+                    "it can only be borrowed with that agent's authorisation. Say who "
+                    "authorised it in the reason.",
+                )
+                return
         still_open = (
             self.db.query(SalesOrderLine.id)
             .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
@@ -6755,8 +6816,9 @@ class ProjectSupplyService:
         if still_open is None:
             refuse(
                 stale,
-                f"{order.so_number or 'That sales order'}{line_text} is no longer open "
-                "demand, so it cannot be borrowed from.",
+                f"{held} is no longer open demand, so it cannot be borrowed from."
+                if by_order
+                else f"{held} is no longer held by an open order, so it cannot be borrowed.",
             )
             return
         carried = self._carried_component_qty(
@@ -6778,13 +6840,16 @@ class ProjectSupplyService:
         available = self._donor_line_ledger[donor_core_line_id]
         if qty > available:
             room = available - carried
+            room_text = qty_text(room if room > _ZERO else _ZERO)
             refuse(
                 stale,
-                f"{order.so_number or 'that sales order'}{line_text} now holds "
-                f"{qty_text(room if room > _ZERO else _ZERO)} at {warehouse.warehouse_code}, "
                 # The number actually tested, above (`qty`) - not `ask`, which is only
                 # the increment over what this order already carried.
-                f"and {qty_text(qty)} was asked for.",
+                f"{order.so_number or 'that sales order'}{line_text} now holds "
+                f"{room_text} at {warehouse.warehouse_code}, and {qty_text(qty)} was "
+                "asked for."
+                if by_order
+                else f"{held} now holds {room_text}, and {qty_text(qty)} was asked for.",
             )
             return
         self._donor_line_ledger[donor_core_line_id] = available - qty
@@ -7291,6 +7356,11 @@ class ProjectSupplyService:
                 donor_core_line_id = getattr(item, "donor_core_line_id", None)
                 if not donor_core_line_id or _dec(item.qty) <= _ZERO:
                     continue
+                if not self.borrow_from_order and not getattr(item, "supply_key", None):
+                    # "Borrow from another order" OFF borrows a location, so the donor's
+                    # own decision is left alone (Q2). A step-3 document borrow is
+                    # unchanged in both states (D5).
+                    continue
                 by_donor.setdefault(str(donor_core_line_id), line)
         if not by_donor:
             return
@@ -7652,6 +7722,11 @@ class ProjectSupplyService:
             for item in (entry.borrow or [])
             if getattr(item, "donor_core_line_id", None) and _dec(item.qty) > _ZERO
         }
+        # "Borrow from another order" OFF (`PLAN-borrow-location-only-8oct.md` D4): only a
+        # step-3 DOCUMENT borrow keeps its donor-line row (D5); every other borrow is a
+        # location's, owed back on the borrowing line below. Keyed on the switch, never on
+        # the payload's donor fields, so a stale tab cannot bring the ON rule back (K5).
+        by_order = self.borrow_from_order
         donor_project_line_by_core: Dict[str, ProjectSalesOrderLine] = {}
         if donor_core_line_ids:
             for donor_line in (
@@ -7669,6 +7744,8 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not donor_core_line_id:
                     continue
                 supply_key = getattr(item, "supply_key", None)
+                if not by_order and not supply_key:
+                    continue
                 if supply_key:
                     # STEP 3, AND THE DONOR'S OWN ROW SAYS IT FIRST (S4, fixed 30 Aug).
                     # A donor holding a document through a PLACEMENT of its own gets that
@@ -7733,6 +7810,8 @@ class ProjectSupplyService:
         # only within the donor group's own net, so neither can push a pile below zero and
         # the negativity test would raise nothing at all, ever. What is left to record is
         # the fact itself: the `-IR` group lent 40 to a `-BB` line and is owed 40 back.
+        if not by_order:
+            return order_backs + self._location_order_backs(checked, reference)
         for line, entry, fact in checked:
             if not fact.product_id:
                 continue
@@ -7790,6 +7869,42 @@ class ProjectSupplyService:
                 }
             )
         return out
+
+    def _location_order_backs(
+        self,
+        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
+        reference: str,
+    ) -> List[Dict[str, Any]]:
+        """"Borrow from another order" OFF (D4, B3): every borrow that is not a document is
+        owed back on the BORROWING line, at its own date, at the location it left from. The
+        line's own location and its own group included (Q3): a project line is demand only
+        through its OI rows, so nothing else would replace what it took. One row per (line,
+        location)."""
+        backs: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for line, entry, fact in checked:
+            for item in entry.borrow or []:
+                qty = _dec(item.qty)
+                if qty <= _ZERO or not item.warehouse_id:
+                    continue
+                if getattr(item, "supply_key", None):
+                    continue
+                back = backs.get((str(line.id), str(item.warehouse_id)))
+                if back is None:
+                    warehouse = self._warehouse_row(str(item.warehouse_id))
+                    back = backs[(str(line.id), str(item.warehouse_id))] = {
+                        "line": line,
+                        "item_code": fact.item_code,
+                        "qty": _ZERO,
+                        "required_date": fact.required_date or line.delivery_date,
+                        "stock_location": warehouse.warehouse_code if warehouse else "",
+                    }
+                back["qty"] += qty
+        for back in backs.values():
+            back["note"] = (
+                f"Order-back: {back['stock_location']} lent {qty_text(back['qty'])} to "
+                f"{reference} line {back['line'].line_no}"
+            )
+        return list(backs.values())
 
     def _snapshot(
         self,
@@ -7909,7 +8024,10 @@ class ProjectSupplyService:
                     "source": item.source,
                     "source_location": warehouse.warehouse_code if warehouse else None,
                     "source_warehouse_id": str(item.warehouse_id),
-                    "donor_project_ref": donor.project_code if donor else None,
+                    # BR2: under OFF the project stays an id, never a shown code.
+                    "donor_project_ref": (
+                        donor.project_code if donor and self.borrow_from_order else None
+                    ),
                     "donor_project_id": str(donor.id) if donor else None,
                     "reason": (
                         # Step 3's sentence is the ENGINE's own, rebuilt from what was
@@ -7942,10 +8060,24 @@ class ProjectSupplyService:
                         if is_group_borrow
                         else None
                     ),
-                    "donor_so_number": getattr(item, "donor_so_number", None),
-                    "donor_line_no": getattr(item, "donor_line_no", None),
-                    "donor_agent_code": getattr(item, "donor_agent_code", None),
-                    "same_agent": bool(getattr(item, "same_agent", False)),
+                    # "Borrow from another order" OFF (S1, K5): the frozen record names no
+                    # donor whatever a stale tab posted. `donor_core_line_id` stays (K6).
+                    # A step-3 document borrow is unchanged in both states (D5).
+                    **(
+                        {
+                            "donor_so_number": getattr(item, "donor_so_number", None),
+                            "donor_line_no": getattr(item, "donor_line_no", None),
+                            "donor_agent_code": getattr(item, "donor_agent_code", None),
+                            "same_agent": bool(getattr(item, "same_agent", False)),
+                        }
+                        if supply_key or self.borrow_from_order
+                        else {
+                            "donor_so_number": None,
+                            "donor_line_no": None,
+                            "donor_agent_code": None,
+                            "same_agent": False,
+                        }
+                    ),
                     "order_back_qty": qty_text(qty) if is_group_borrow else None,
                     # (a free document names no donor, so `is_group_borrow` is False and
                     # nothing is owed back - which is the whole content of "it was free")
@@ -8138,6 +8270,9 @@ class ProjectSupplyService:
     ) -> str:
         where = warehouse.warehouse_code if warehouse else "another location"
         if item.source == ALLOC_SOURCE_OTHER_PROJECT and donor is not None:
+            if not self.borrow_from_order:
+                # BR2: a location's stock, the project it was held for not named.
+                return f"borrowed from stock held at {where}"
             return f"borrowed from {donor.project_code} at {where}"
         return f"borrowed from free stock at {where}"
 
@@ -10106,6 +10241,20 @@ class ProjectSupplyService:
             for row in ranked:
                 row["recommended"] = False
         candidates = step_two + ranked
+        if not self.borrow_from_order:
+            # D2: the manual group-borrow rows name a donor too, and another project's hold
+            # names that project (BR2); under OFF both are offered as the location they sit
+            # at. Step 2's rows are already blank.
+            # B1: a row ranked ahead of this line is offered only so its agent can
+            # authorise it, and a location borrow asks nobody, so it is left out.
+            candidates = [
+                _location_only(c)
+                if c.get("rung") == RUNG_GROUP_BORROW
+                or c.get("source") == ALLOC_SOURCE_OTHER_PROJECT
+                else c
+                for c in candidates
+                if not (c.get("rung") == RUNG_GROUP_BORROW and not c.get("lower_ranked"))
+            ]
         # S4 (`PLAN-local-supplier-oi-routing.md`, AC-2.20): the per-order sheet's own
         # `BorrowCandidate.location`, the board's `_donors_for` wrapper is not on this call
         # path at all - `SupplyLineCard`'s Borrow modal reads THIS list directly. Built by

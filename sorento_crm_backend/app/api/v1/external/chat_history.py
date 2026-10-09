@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_external_api_user
-from app.models.chat_history import CHAT_HISTORY_DEDUPE_PREDICATE
 from app.schemas.external.chat_history import (
     ChatHistoryMessageIngestRequest,
     ChatHistoryMessageIngestResponse,
@@ -28,12 +27,16 @@ from app.schemas.ticket_comment import (
 )
 from app.models.access import RespondContact
 from app.services import conversation_event_bus
-from app.services.chat_message_resolver import respond_ts_from_message_id
-from app.services.otp_redaction import mask_otp_text
+from app.services.chat_history_ingest_service import (
+    ChatMessageRow,
+    announce_new_row,
+    upsert_message_row,
+)
 from app.services.integration_service import (
     IntegrationLogService,
     sanitize_request_headers,
 )
+from app.services.otp_redaction import mask_otp_text
 from app.services.ticket_comment_service import TicketCommentService
 
 logger = logging.getLogger(__name__)
@@ -77,47 +80,8 @@ def ingest_chat_message(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
-    # AC-J5: a CRM drawer send reaches this endpoint TWICE - once from the direct
-    # respond-send-user webhook lane, once from Respond's own outgoing-message
-    # trigger - so the same WhatsApp message must resolve to one row whichever
-    # lane wins the race. The conflict target is the partial unique index from
-    # migration 326; its predicate is repeated verbatim because Postgres infers
-    # the arbiter index from it (see CHAT_HISTORY_DEDUPE_PREDICATE). Rows with no
-    # message_id are outside the index and keep inserting exactly as before.
-    #
-    # DO UPDATE, not DO NOTHING: DO NOTHING returns no row (so the caller could
-    # not be told which row its message is), and the losing lane often carries
-    # context the winner lacked (turn_id, the quoted message). Fill-if-null only:
-    # a mirror re-states a message, it never edits it.
-    insert_query = text(
-        f"""
-        INSERT INTO chat_histories (
-            channel, contact_id, phone_number, message, sent_at, first_name, last_name, type,
-            message_id, result, reply_to_message_id, reply_to_message, turn_id, ingest_at,
-            respond_ts, state_trace, chatbot_turn_id
-        ) VALUES (
-            :channel, :contact_id, :phone_number, :message, :sent_at, :first_name, :last_name, :type,
-            :message_id, :result, :reply_to_message_id, :reply_to_message, :turn_id, :ingest_at,
-            :respond_ts, :state_trace, :chatbot_turn_id
-        )
-        ON CONFLICT (contact_id, message_id) WHERE {CHAT_HISTORY_DEDUPE_PREDICATE}
-        DO UPDATE SET
-            first_name = COALESCE(chat_histories.first_name, EXCLUDED.first_name),
-            last_name = COALESCE(chat_histories.last_name, EXCLUDED.last_name),
-            result = COALESCE(chat_histories.result, EXCLUDED.result),
-            reply_to_message_id = COALESCE(
-                chat_histories.reply_to_message_id, EXCLUDED.reply_to_message_id
-            ),
-            reply_to_message = COALESCE(
-                chat_histories.reply_to_message, EXCLUDED.reply_to_message
-            ),
-            turn_id = COALESCE(chat_histories.turn_id, EXCLUDED.turn_id),
-            respond_ts = COALESCE(chat_histories.respond_ts, EXCLUDED.respond_ts),
-            state_trace = COALESCE(chat_histories.state_trace, EXCLUDED.state_trace),
-            chatbot_turn_id = COALESCE(chat_histories.chatbot_turn_id, EXCLUDED.chatbot_turn_id)
-        RETURNING id, (xmax <> 0) AS already_existed
-        """
-    )
+    # The row writer (dedupe on (contact_id, message_id), fill-if-null merge) is shared
+    # with the direct Respond.io webhook: app/services/chat_history_ingest_service.py.
 
     # QUOTED-REPLY R1: an outgoing row names the engine turn it carries. Never fails the ingest.
     chatbot_turn_id: str | None = None
@@ -144,46 +108,31 @@ def ingest_chat_message(
     error_message: str | None = None
 
     try:
-        result = db.execute(
-            insert_query,
-            {
-                "channel": payload.channel,
-                "contact_id": payload.contact_id,
-                "phone_number": payload.phone_number,
-                # Reviewer B2 (#1280): the mirror never stores an OTP code.
-                "message": mask_otp_text(payload.message),
-                "sent_at": sent_at,
-                "first_name": payload.first_name,
-                "last_name": payload.last_name,
-                "type": payload.type,
-                "message_id": payload.message_id,
-                "result": json.dumps(payload.result) if payload.result is not None else None,
-                "reply_to_message_id": payload.reply_to_message_id,
-                "reply_to_message": mask_otp_text(payload.reply_to_message),
-                "turn_id": payload.turn_id,
-                # Our clock at ingest. Never the SLA clock - its only job is to make
-                # webhook lag (ingest_at - respond_ts) separable from agent time.
-                "ingest_at": datetime.now(tz=timezone.utc).replace(tzinfo=None),
-                # Respond's `messageId` IS the message's epoch-microsecond timestamp,
-                # so the SLA clock is already in this payload - no resolver round trip
-                # needed for it. Null when the id isn't a plausible timestamp; the
-                # resolver still backstops those rows.
-                "respond_ts": respond_ts_from_message_id(
-                    payload.message_id, sent_at=sent_at
-                ),
-                # `is not None`, NOT truthiness: a `{}` trace (or `{"after": null}`)
-                # must round-trip, so the guard must not be what drops it. json.dumps
-                # of {"after": None} emits "after": null - the signal the view keys on.
-                "state_trace": json.dumps(payload.state_trace)
-                if payload.state_trace is not None
-                else None,
-                "chatbot_turn_id": chatbot_turn_id,
-            },
+        message_id, already_existed = upsert_message_row(
+            db,
+            ChatMessageRow(
+                channel=payload.channel,
+                contact_id=payload.contact_id,
+                phone_number=payload.phone_number,
+                message=payload.message,
+                sent_at=sent_at,
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                type=payload.type,
+                message_id=payload.message_id,
+                result=payload.result,
+                reply_to_message_id=payload.reply_to_message_id,
+                reply_to_message=payload.reply_to_message,
+                turn_id=payload.turn_id,
+                state_trace=payload.state_trace,
+                media_url=payload.media_url,
+                media_type=payload.media_type,
+                media_file_name=payload.media_file_name,
+                sender_source=payload.sender_source,
+                sender_user_id=payload.sender_user_id,
+                chatbot_turn_id=chatbot_turn_id,
+            ),
         )
-        row = result.one()
-        message_id = row.id
-        already_existed = bool(row.already_existed)
-        db.commit()
     except Exception as e:
         db.rollback()
         logger.exception("Failed to insert chat history: %s", e)
@@ -206,8 +155,16 @@ def ingest_chat_message(
                 request_headers=json.dumps(request_headers),
                 # Exclude state_trace: it is already persisted as jsonb on the row.
                 # integration_logs has no purge, so logging it here would store the
-                # whole trace a second time, as text, write-only, forever.
-                request_payload=payload.model_dump_json(exclude={"state_trace", "chatbot_turn_id"}),
+                # whole trace a second time, as text, write-only, forever. The text is
+                # masked like the row's (security review, CHAT-LOCAL-FIRST): the log must
+                # not keep a sign-in code the row itself refuses to.
+                request_payload=json.dumps(
+                    {
+                        **payload.model_dump(exclude={"state_trace", "chatbot_turn_id"}),
+                        "message": mask_otp_text(payload.message),
+                        "reply_to_message": mask_otp_text(payload.reply_to_message),
+                    }
+                ),
                 status_code=status_code,
                 status="success" if status_code < 400 else "failed",
                 error_message=error_message,
@@ -222,47 +179,13 @@ def ingest_chat_message(
             detail="Failed to ingest chat history message.",
         )
 
-    # AC-K1: poke every drawer open on this contact so the thread refetches
-    # within seconds instead of waiting for its slow poll. NOT on the dedupe
-    # path (AC-K4/AC-J5): the second mirror lane resolves the row the first one
-    # already announced, so a second poke would be a wasted refetch on every
-    # open drawer. `payload.contact_id` IS the Respond.io contact id the bus
-    # keys on, so nothing is resolved here.
+    # AC-K1 poke + AC-M20 push, AFTER the commit and NOT on the dedupe path (AC-K4 /
+    # AC-J5): see announce_new_row. `payload.contact_id` IS the Respond.io contact id
+    # the bus keys on, so nothing is resolved here.
     if not already_existed:
-        conversation_event_bus.publish(
-            conversation_event_bus.EVENT_MESSAGE, contact_id=payload.contact_id
+        announce_new_row(
+            db, message_pk=message_id, contact_id=payload.contact_id, traffic=payload.type
         )
-
-        # AC-M20: buzz the phones of whoever asked to hear from this contact. On
-        # the `notifications` queue, AFTER the row committed, and best-effort -
-        # a post-commit side effect that raises hands the caller a 500 for an
-        # operation that actually succeeded, and n8n answers a 500 by retrying
-        # the lane this endpoint exists to stop. Gated on the same
-        # `already_existed` as the poke above: the second mirror lane resolves a
-        # row the first already announced, so a second job would only re-derive
-        # a notification the dedup key throws away.
-        try:
-            from app.services.message_push_service import INBOUND_TYPE
-            from app.services.queue_service import enqueue_job
-            from app.tasks import message_push_tasks
-
-            # Half of everything ingested is OUTGOING, and an outgoing message
-            # buzzes nobody (AC-M11), so it is filtered here too rather than
-            # paying for a job and a database session per agent reply. Off the
-            # same constant the service compares against, so the two cannot
-            # drift onto different spellings of "from the contact".
-            if str(payload.type or "").lower() == INBOUND_TYPE:
-                enqueue_job(
-                    message_push_tasks.send_message_push,
-                    message_id,
-                    queue_name="notifications",
-                )
-        except Exception as push_error:
-            logger.warning(
-                "Failed to enqueue message push for chat_histories.id=%s: %s",
-                message_id,
-                push_error,
-            )
 
     # 201 either way: the caller (n8n) treats anything else as a lane failure and
     # retries, which is exactly the loop this endpoint exists to end. "duplicate"

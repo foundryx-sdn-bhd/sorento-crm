@@ -1893,7 +1893,9 @@ def _target_facts(db: Session, target_ids: set) -> Dict[str, dict]:
         }
     for allocation, supplier in (
         db.query(SPOAllocation, Supplier.supplier_name)
-        .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+        # OI-SUPPLIER-FROM-PO: the source PO's supplier, never the SPO's own when a PO
+        # can be found - this name lands in the row's "Linked to" note.
+        .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
         .filter(
             SPOAllocation.id.in_(wanted),
             # The same visibility test `_purchase_side` and `_chain_allocations` apply
@@ -2899,7 +2901,8 @@ def _document_facts_for_link(db: Session, link: Any) -> Dict[str, Any]:
         row = (
             db.query(Supplier.supplier_name, SPOAllocation.expected_date)
             .select_from(SPOAllocation)
-            .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+            # OI-SUPPLIER-FROM-PO: the source PO's supplier, as `_target_facts`.
+            .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
             .filter(SPOAllocation.id == link.spo_allocation_id)
             .first()
         )

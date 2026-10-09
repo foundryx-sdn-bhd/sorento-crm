@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import copy as _copy
 import logging
 import time
 
@@ -29,6 +30,7 @@ from app.services.chatbot import copy as reply_copy
 from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
+from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import report_ask
@@ -579,6 +581,26 @@ def _top_selling_ask_who(who: dict[str, Any]) -> str:
 def _top_selling_ask_category(codes: list[str]) -> str:
     """The category question: the codes only (owner, 26 Sep ~07:40Z, code only)."""
     return f"Which category do you mean? Reply with one code: {', '.join(codes)}"
+
+
+def _nothing_live_of_kind(
+    semantic_input: dict[str, Any], db: Any, services: Any, tier_source: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """AC-21, the ONE decision for every exit (the tier-ask probe arm, the bridge, and a
+    single-level contact's straight fetch): a kind + brand ask with nothing live of that kind
+    for that brand. The fixed reply fragment (flagged `kind_none`), else None when this is not a
+    kind + brand ask."""
+    if not (semantic_input.get("promotion_types") and semantic_input.get("brand_ids") and db is not None):
+        return None
+    from app.services.chatbot.answer_bridge import no_live_kind_reply
+
+    text = no_live_kind_reply(
+        db,
+        {"promotion_types": semantic_input["promotion_types"], "brand_ids": semantic_input["brand_ids"]},
+        tier_source,
+        services.mcp_call,
+    )
+    return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
 def _fixed_reply(
@@ -1368,6 +1390,20 @@ def run_fetch(
     semantic_input = _fetch_semantic_input(
         parse_output, tier_gate=tier_gate, contact_id=contact_id, space_id=space_id
     )
+    # PROMO-SUBJECT-FILTER: the class words the parser named narrow a promotions fetch
+    # (probe and main call alike); carried across a tier pick by the parse output.
+    from app.services.chatbot import turn_runtime as _turn_runtime
+
+    # On a turn that ANSWERED the tier pick the menu turn's filter is the base; the pick
+    # turn's own reads only fill the keys it actually has (it re-reads the kind but names no
+    # brand). A new ask that states its own level while the menu is open inherits nothing.
+    picked = bool((tier_gate or {}).get("tier_pick"))
+    narrow = {
+        **{k: v for k, v in (parse_output.get("promo_filter") or {}).items() if v and picked},
+        **{k: v for k, v in _turn_runtime.promo_filter(parse_output, db, gate).items() if v},
+    }
+    for key, values in narrow.items():
+        semantic_input[key] = list(values)
     # PLAN-chatbot-customer-scope-29sep.md D3/D4: a customer-scoped contact's turn
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
@@ -1615,6 +1651,13 @@ def run_fetch(
         collected = fetch_mod.tier_probe_collect(
             tier_gate or payload, plan_items=plan_items, probe_results=probe_results
         )
+        if db is not None:
+            collected["live_brands"] = _turn_runtime.active_brands(db)  # for the menu's brand echo
+        seen = collected.get("tier_availability")
+        if isinstance(seen, dict) and seen and not any(seen.values()) and not collected.get("tier_probe_failed"):
+            none_live = _nothing_live_of_kind(semantic_input, db, services, collected)
+            if none_live is not None:
+                return {**none_live, "tier_probe": collected}
         item = fetch_mod.fetch_result({**payload, **collected})
         return {
             "kind": "tier_ask",
@@ -2117,6 +2160,8 @@ def run_fetch(
         # always None, so every restricted field stays hidden by construction.
         "access": ctx.get("access"),
         "localizer": ctx.get("localizer"),
+        # PHOTO-SEND-CAP: the contact's link mode (`turn_runtime.make_tool_runner`).
+        "files_as_links": bool(ctx.get("files_as_links")),
         # E2 (attribute-first asks): the resolver's `predicate` block, carried
         # through the gate untouched (`resolved`/`gate` are the same mutated dict,
         # `gate.py`'s own C4 bypass reads it off `resolver.get("predicate")` the
@@ -2223,6 +2268,55 @@ def run_fetch(
     envelope = brand_guard.guard_result(
         tool_name, fetch_mod.parse_mcp_content(raw), semantic_input.get("scope_brand_ids"), db
     )
+    if tool_name == fetch_mod.TIER_PROBE_TOOL and semantic_input.get("promotion_types"):
+        # A kind ask is served by the same serving rule as every promotion (AC-22).
+        if (
+            isinstance(envelope, dict)
+            and envelope.get("has_result") is False
+            and not (tier_gate or {}).get("tier_pick")
+            and len(jsc.array((tier_gate or {}).get("entitled_tiers"))) == 1
+        ):
+            # a contact holding exactly ONE access level: the same decision the menu path makes.
+            # A multi-level contact who named one level gets the ordinary empty-at-that-level reply.
+            none_live = _nothing_live_of_kind(semantic_input, db, services, tier_gate)
+            if none_live is not None:
+                return none_live
+    if tool_name == fetch_mod.TIER_PROBE_TOOL and isinstance(envelope, dict) and isinstance(envelope.get("items"), list):
+        # One line per promotion: the same promotion (title and dates) copied under two
+        # companies is one promotion to the customer (owner hand test, 8 Oct 2026); the same
+        # title with other dates is another promotion.
+        seen_titles: set[tuple[str, ...]] = set()
+        kept: list[Any] = []
+        for it in envelope["items"]:
+            title = jsc.nullish_str(jsc.get(it, "title")).strip().casefold() if isinstance(it, dict) else ""
+            dates = {
+                jsc.nullish_str(f.get("label")): jsc.nullish_str(f.get("value"))
+                for f in jsc.array(jsc.get(it, "fields"))
+                if isinstance(f, dict) and f.get("label") in ("Start Date", "End Date")
+            }
+            key = (title, dates.get("Start Date", ""), dates.get("End Date", ""))
+            if title and key in seen_titles:
+                continue
+            if title:
+                seen_titles.add(key)
+            kept.append(it)
+        envelope = {**envelope, "items": kept}
+    picked_tier = (tier_gate or {}).get("tier_pick")
+    if (
+        tool_name == fetch_mod.TIER_PROBE_TOOL
+        and picked_tier
+        and semantic_input.get("scope_terms")
+        and isinstance(envelope, dict)
+        and envelope.get("has_result") is False
+    ):
+        # PROMO-SUBJECT-FILTER owner hand test: a picked level with nothing for the subject is
+        # one line, the same fact the menu stamped ("- no promotion"); never a miss sentence.
+        from app.services.chatbot.lanes.business.answer import TIER_DISPLAY
+
+        tiers = picked_tier if isinstance(picked_tier, list) else [picked_tier]
+        levels = " or ".join(TIER_DISPLAY.get(str(t), str(t).replace("_", " ")) for t in tiers)
+        subject = ", ".join(str(t) for t in semantic_input["scope_terms"])
+        return _fixed_reply(f"No {levels} promotion for {subject}.")
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
@@ -2248,7 +2342,153 @@ def run_fetch(
             return _fixed_reply(refusal)
         return _error_fragment(envelope["error"])
 
+    # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
+    # that is discontinued and has a stored alternative gets the SAME tool's answer for the
+    # alternative folded in (`alternatives.py`), one call per alternative through the same
+    # seam and brand guard. Best-effort end to end: any failure (the lookup included) leaves
+    # the reply exactly as the first call made it.
+    alternative_tail: list[str] = []
+    alternative_found = False
+    alternative_pairs: list[Any] = []
+    main_missed = not jsc.array(envelope.get("items")) if isinstance(envelope, dict) else True
+    if isinstance(envelope, dict) and not jsc.array(envelope.get("groups")) and db is not None:
+        savepoint = None
+        try:
+            # One savepoint around the lookup AND the second calls' brand guard, so a failed
+            # statement in either is rolled back here and never aborts the turn.
+            savepoint = db.begin_nested()
+            alternative_pairs = alternatives_mod.plan(
+                db,
+                tool_name,
+                entities,
+                predicate=trigger.get("predicate"),
+                scope_brand_ids=semantic_input.get("scope_brand_ids"),
+            )
+            requested = jsc.array(semantic_input.get("requested_attributes"))
+            status_only = (
+                alternatives_mod.TOOL_KINDS.get(tool_name) == "product"
+                and bool(requested)
+                and all(fetch_mod._asks_discontinued([a]) for a in requested)
+            )
+            answers: list[tuple[str, Any, Any]] = []
+            for old_code, alternative in alternative_pairs:
+                if status_only:
+                    # The status line names the code alone; nothing to fetch for it.
+                    answers.append((old_code, alternative, None))
+                    continue
+                alternative_args = fetch_mod.entity_ids_transformer(
+                    alternatives_mod.alternative_trigger(trigger, alternative), space_id=space_id
+                )
+                if (
+                    tool_name in policy_rows.ENTITY_FILTER_REQUIRED_TOOLS
+                    and not fetch_mod.has_narrowing_filter(alternative_args, tool_name=tool_name)
+                ):
+                    continue
+                _alt_started = time.perf_counter()
+                alternative_envelope = brand_guard.guard_result(
+                    tool_name,
+                    fetch_mod.parse_mcp_content(
+                        fetch_mod.call_tool(tool_name, alternative_args, mcp=_McpSeam(services.mcp_call))
+                    ),
+                    semantic_input.get("scope_brand_ids"),
+                    db,
+                )
+                if trace is not None:
+                    trace.add(
+                        "tool",
+                        {
+                            "name": tool_name,
+                            "args": alternative_args,
+                            "envelope": alternative_envelope,
+                            "ms": int((time.perf_counter() - _alt_started) * 1000),
+                            "alternative_of": old_code,
+                        },
+                    )
+                if isinstance(alternative_envelope, dict) and not isinstance(
+                    alternative_envelope.get("error"), str
+                ):
+                    answers.append((old_code, alternative, alternative_envelope))
+            savepoint.commit()
+            if answers:
+                folded = _copy.deepcopy(envelope)
+                # An alternative's rows placed in this envelope are filtered by ITS
+                # restricted fields too, not only the asked product's.
+                restricted = dict(folded.get("restricted_fields") or {})
+                for _old, _alt, alt_envelope in answers:
+                    if isinstance(alt_envelope, dict) and isinstance(alt_envelope.get("restricted_fields"), dict):
+                        restricted = {**alt_envelope["restricted_fields"], **restricted}
+                if restricted:
+                    folded["restricted_fields"] = restricted
+
+                def _render(alt_envelope: Any, rows: list, alternative: Any) -> str:
+                    rendered = fetch_mod.output_structurer(
+                        {**alt_envelope, "items": rows, "intro": ""},
+                        alternatives_mod.alternative_trigger(trigger, alternative),
+                    )
+                    return jsc.js_string(rendered.get("response") or "")
+
+                alternative_tail, alternative_found = alternatives_mod.fold(
+                    tool_name,
+                    folded,
+                    answers,
+                    fmt_value=fetch_mod._fmt_value,
+                    render=_render,
+                    status_only=status_only,
+                    loc=trigger.get("localizer") if tool_name in fetch_mod._LOCALIZED_TOOLS else None,
+                    dealer=any(
+                        isinstance(env, dict) and env.get("result_type") == "incoming_dealer"
+                        for env in [envelope] + [a[2] for a in answers]
+                    ),
+                    subject_label=next(
+                        (
+                            jsc.nullish_str(e.get("display_name") or e.get("code")).strip() or None
+                            for e in jsc.array(entities)
+                            if isinstance(e, dict) and e.get("entity_type") == "attachment_type"
+                        ),
+                        None,
+                    ),
+                )
+                envelope = folded
+        except Exception as exc:  # noqa: BLE001 - the alternative never costs the asked answer
+            if savepoint is not None and savepoint.is_active:
+                savepoint.rollback()
+            logger.warning("chatbot: alternative fetch for %s failed", tool_name, exc_info=True)
+            if trace is not None:
+                trace.add("alternatives", {"tool": tool_name, "failed": str(exc)[:200]})
+            alternative_tail, alternative_found = [], False
+
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if (
+        tool_name == fetch_mod.TIER_PROBE_TOOL
+        and args.get("scope_terms")
+        and isinstance(structured, dict)
+        and structured.get("has_result")
+    ):
+        # The subject word was satisfied by the filter (promotions linked to products of that
+        # class): the resolver not placing it as an entity is no miss (`answer_bridge._miss_triggers`).
+        structured["subject_filtered"] = True
+    if alternative_tail and isinstance(structured, dict):
+        response = jsc.js_string(structured.get("response") or "").strip()
+        if main_missed:
+            old_codes = list(dict.fromkeys(old for old, _alt in alternative_pairs))
+            # The same miss sentence compose would print, in the contact's language.
+            miss = alternatives_mod.miss_sentence(tool_name, old_codes)
+            localizer = trigger.get("localizer")
+            structured["response"] = (
+                (localizer.sentence(miss) if localizer is not None else miss)
+                + "\n"
+                + "\n".join(alternative_tail)
+            )
+            if alternative_found:
+                # Only an alternative that actually had rows turns a miss into an answer;
+                # a bare "No promotion." keeps the miss handling (rerun, escalation offer).
+                structured["has_result"] = True
+            else:
+                # Still a miss: the miss reply (`answer_bridge.answer_for`) replaces this
+                # text, and prints these lines before its escalate offer (owner, 9 Oct).
+                structured["alternative_lines"] = list(alternative_tail)
+        else:
+            structured["response"] = response + "\n\n" + "\n".join(alternative_tail)
     # LOWSTOCK-FILTER-ASK (owner hand test, 3 Oct 2026): EVERY low stock reply - ready,
     # pending, busy, empty, error - opens with the filters it was built with, "Low stock
     # report (water closet, supplier X, by supplier)", so a narrowed file never reads as

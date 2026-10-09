@@ -41,3 +41,29 @@ describe('mapSettingsFromApi (AC-S3-7)', () => {
     expect(mapped.priceTagAutoCollectDays).toBe(AUTO_COLLECT_DAYS_DEFAULT);
   });
 });
+
+describe('mapSettingsFromApi chatbot file link expiry', () => {
+  it('carries the number of days the server sent', () => {
+    const mapped = mapSettingsFromApi({
+      name: 'ZZT Co',
+      chatbot_file_link_expiry_days: 30,
+    } as never);
+
+    expect(mapped?.chatbotFileLinkExpiryDays).toBe(30);
+  });
+
+  it('keeps null, which means the links never expire', () => {
+    const mapped = mapSettingsFromApi({
+      name: 'ZZT Co',
+      chatbot_file_link_expiry_days: null,
+    } as never);
+
+    expect(mapped?.chatbotFileLinkExpiryDays).toBeNull();
+  });
+
+  it('reads a row that predates the column as never expires', () => {
+    const mapped = mapSettingsFromApi({ name: 'ZZT Co' } as never);
+
+    expect(mapped?.chatbotFileLinkExpiryDays).toBeNull();
+  });
+});

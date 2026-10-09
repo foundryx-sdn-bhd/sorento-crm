@@ -94,10 +94,16 @@ export function mapSettingsFromApi(
       typeof raw.price_tag_auto_collect_days === 'number'
         ? raw.price_tag_auto_collect_days
         : AUTO_COLLECT_DAYS_DEFAULT,
+    // Null is a real answer (links never expire), so the check is on the TYPE.
+    chatbotFileLinkExpiryDays:
+      typeof raw.chatbot_file_link_expiry_days === 'number'
+        ? raw.chatbot_file_link_expiry_days
+        : null,
     planGrain: raw.plan_grain === 'location' ? 'location' : 'product',
     // A new settings column reaches the FE only if it is in this manual mapper too
     // (PLAN-local-buy-routing-toggle.md). Off by default.
     localBuyRoutingEnabled: Boolean(raw.local_buy_routing_enabled),
+    borrowFromOrderEnabled: Boolean(raw.borrow_from_order_enabled),
     purchaseRequestDefaultApproverUserId:
       (raw.purchase_request_default_approver_user_id as string | null) ?? null,
     purchaseRequestDefaultApproverName:
@@ -217,8 +223,10 @@ function createDefaultSettings(): SystemSetting {
     deferredDeleteSeconds: 10,
     deferredActionSeconds: 5,
     priceTagAutoCollectDays: AUTO_COLLECT_DAYS_DEFAULT,
+    chatbotFileLinkExpiryDays: null,
     planGrain: 'product',
     localBuyRoutingEnabled: false,
+    borrowFromOrderEnabled: false,
     purchaseRequestDefaultApproverUserId: null,
     purchaseRequestDefaultApproverName: null,
     purchaseRequestDefaultApproverEmail: null,

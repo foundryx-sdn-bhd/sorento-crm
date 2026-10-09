@@ -1110,6 +1110,7 @@ class ProductService:
             triggered_by=created_by,
         )
         self._reconcile_variant_links(product.id)
+        self._reconcile_alternatives([product.id])
         return product
     
     def update_product(self, product_id: str, product_data: ProductUpdate, updated_by: str):
@@ -1246,6 +1247,24 @@ class ProductService:
                 f"This product is named as a host in a \"supplied with\" rule "
                 f"for {companion_code}. Delete the rule first."
             )
+
+    def _reconcile_alternatives(self, product_ids) -> None:
+        """PRODUCT-ALTERNATIVES: the -NEW rule for each written product, after its row
+        committed. Best-effort per product (`reconcile_new_alternatives_safely` never
+        raises), one commit at the end."""
+        from app.services.product_alternative_service import (
+            reconcile_new_alternatives_safely,
+        )
+
+        for product_id in product_ids:
+            reconcile_new_alternatives_safely(self.db, product_id)
+        try:
+            self.db.commit()
+        except Exception:
+            import logging
+
+            self.db.rollback()
+            logging.getLogger(__name__).warning("product alternatives commit failed", exc_info=True)
 
     def _reconcile_variant_links(self, code_or_id: str) -> None:
         """Best-effort post-commit variant-graph reconcile. Never raises - a
@@ -1972,6 +1991,7 @@ class ProductService:
                 .all()
             )
             self._bulk_publish_product_embedding_events(touched, user_id)
+            self._reconcile_alternatives([row.id for row in touched])
         return {
             "created": created,
             "updated": updated,

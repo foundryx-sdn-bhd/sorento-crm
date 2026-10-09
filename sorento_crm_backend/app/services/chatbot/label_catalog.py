@@ -102,6 +102,21 @@ LABELS: dict[str, dict[str, str]] = {
     "*Discontinued:* ⚠️ Yes": {"ms": "*Dihentikan:* ⚠️ Ya", "zh": "*已停产:* ⚠️ 是"},
     "*Discontinued:* ✅ No": {"ms": "*Dihentikan:* ✅ Tidak", "zh": "*已停产:* ✅ 否"},
     "Alternative": {"ms": "Alternatif", "zh": "替代型号"},
+    # PRODUCT-ALTERNATIVES (card Q4, owner 8 Oct 2026): the two refer-bearing verdicts without
+    # their refer (it drops when an alternative printed under the line has stock); the
+    # `Alternative` label itself is DISCONTINUED-ASK's entry above. The ms and zh are the
+    # lane's rendering, flagged on PR #1533 for the owner to confirm.
+    "No stock and no incoming.": {
+        "ms": "Tiada stok dan tiada stok masuk.",
+        "zh": "没有库存，也没有到货。",
+    },
+    # PRODUCT-ALTERNATIVES round B (owner, 9 Oct 2026): what an alternative's own search
+    # found when it found nothing, on the incoming line (the one localised tool it reaches).
+    "No incoming stock.": {"ms": "Tiada stok masuk.", "zh": "没有到货。"},
+    "the quantity is more than what I can confirm here.": {
+        "ms": "kuantiti ini melebihi apa yang boleh saya sahkan di sini.",
+        "zh": "这个数量超出我在这里可以确认的范围。",
+    },
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
@@ -193,6 +208,9 @@ LABELS: dict[str, dict[str, str]] = {
     "DO Qty": {"ms": "Kuantiti DO", "zh": "DO 数量"},
     "Category": {"ms": "Kategori", "zh": "类别"},
     "Sales agent": {"ms": "Ejen jualan", "zh": "销售代理"},
+    # REPORT-DRILLDOWN: the sales ranking header's own labels (one fact per line).
+    "Period": {"ms": "Tempoh", "zh": "期间"},
+    "Customers assigned to": {"ms": "Pelanggan di bawah", "zh": "所属客户的业务员"},
     "Channel": {"ms": "Saluran", "zh": "渠道"},
     "Delivery date": {"ms": "Tarikh penghantaran", "zh": "送货日期"},
     "Ranked by": {"ms": "Disusun mengikut", "zh": "排名依据"},

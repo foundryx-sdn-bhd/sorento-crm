@@ -172,7 +172,25 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # without MEMORY_ADDENDUM, so CEILING is 50,185 (+4).
 # Merge of main (#1528 SO-PO-REF, PO_REFS_ADDENDUM) with PR #1447 (report engine): 50,469 est. tokens
 # without MEMORY_ADDENDUM, so CEILING is 50,473 (+4).
-CEILING = 50_473
+# REPORT-DRILLDOWN (PR #1531, card rev 3, owner 8 Oct 2026): the `ranking_drill` reading in
+# REPORT_ASK_ADDENDUM (scoped / global / unsure, the reply to the unsure question): 50,759 est.
+# tokens without MEMORY_ADDENDUM (+290), so CEILING is 50,763 (+4). Nothing else grew.
+# Review round 1 (same PR): products and categories reach the drill (the top_selling exception)
+# and the unsure reply's count exception: 50,863 (+100), so CEILING is 50,867 (+4).
+# Crew live-pass round (same PR): a different ranked noun is never a refine, "global" only when
+# said, doubt is "unsure": 51,040 (+177), so CEILING is 51,044 (+4).
+# Merge of main (#1531 REPORT-DRILLDOWN) with PROMO-SUBJECT-FILTER (PROMOTION_KIND_ADDENDUM with its
+# PROMOTION SUBJECT section, after CANONICAL_CODE_ADDENDUM): 51,321 est. tokens without MEMORY_ADDENDUM,
+# so CEILING is 51,325 (+4).
+# PROMO-SUBJECT-FILTER final nits: PROMOTION KIND says a bare number or a numbered-list reply is
+# never a kind: 51,363 est. tokens without MEMORY_ADDENDUM, so CEILING is 51,367 (+4).
+# PROMO-SUBJECT-FILTER round 3 (AC-29): PROMOTION KIND and PROMOTION SUBJECT answer from the
+# Known brands / Product types / Promotion kinds lines, typo to the listed name, unplaced word
+# unresolved: 51,454 est. tokens without MEMORY_ADDENDUM (+91), so CEILING is 51,458 (+4).
+# PROMO-SUBJECT-FILTER round 3b (AC-36): PROMOTION SUBJECT emits a listed qualifier as a
+# specification entity from the Product details line: 51,600 est. tokens without
+# MEMORY_ADDENDUM (+142), so CEILING is 51,604 (+4).
+CEILING = 51_604
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

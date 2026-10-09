@@ -820,6 +820,20 @@ PERMISSION_REGISTRY.extend([
 ])
 
 
+# Chat analytics CA-1 - migration `chat_facts_0001_tables` creates this and sweeps it onto
+# whoever already holds `system.chat_history.view`. Declared here for the same reason the
+# reporting-foundation block above is: a database built with create_all + sync_permissions
+# never runs a migration body. Separate from `chat_history.view`, which reads one customer's
+# words: this one reads counts only.
+PERMISSION_REGISTRY.extend([
+    {
+        "slug": "chatbot.analytics.view",
+        "name": "View Chat Overview",
+        "description": "Permission to open the Chat overview report: how the chatbot answered, by outcome, week and product. Covers every company's customers.",
+    },
+])
+
+
 # Saved views (segments) - migration 455 creates this one and sweeps it onto whoever
 # already holds `scm.recommendation.manage` (S4, PLAN-scm-reorder-oi-feedback-1sep.md).
 # Declared here for the same reason the reporting-foundation block above is: a database
@@ -917,5 +931,17 @@ PERMISSION_REGISTRY.extend([
         "slug": "sales.reports.view",
         "name": "View sales reports",
         "description": "Open the sales reports (Yearly comparison, Sales report), export them and ask for them on WhatsApp.",
+    },
+])
+
+
+# claude.ai connector (CLAUDE-CONNECTOR, contract section 3). Granted to NO role by the migration:
+# admins and superadmins do not get it by bypass either (owner ruling Q1 (a)); the connector checks
+# the role grants directly. Grant listing and revoke live in the shared service.
+PERMISSION_REGISTRY.extend([
+    {
+        "slug": "analytics.connector.use",
+        "name": "Use the Claude connector",
+        "description": "Connect claude.ai to read CRM data as yourself. Chat tools also need View Chat History.",
     },
 ])

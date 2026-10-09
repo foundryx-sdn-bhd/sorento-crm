@@ -46,6 +46,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_sign_in_at = Column(DateTime(timezone=False), nullable=True)
+    # claude.ai connector: consents older than this are refused (set by revoke_all_for_user).
+    connector_revoked_at = Column(DateTime(timezone=False), nullable=True)
     email_verified_at = Column(DateTime(timezone=False), nullable=True)
     is_trashed = Column(Boolean, default=False, nullable=False)
     avatar = Column(String, nullable=True)
@@ -416,6 +418,9 @@ class SystemSetting(Base):
     # Global default grace window for form-SLA actions (PLAN-form-sla-undo.md). 0 =
     # every action fires immediately, i.e. today's behaviour; a stage may override it.
     form_sla_grace_seconds = Column(Integer, nullable=False, server_default="0", default=0)
+    # PHOTO-SEND-CAP round 2 (owner Q1, 9 Oct 2026): how many days a chatbot file short link
+    # (`chatbot_file_links`) stays open. NULL = never expires, which is what the owner chose.
+    chatbot_file_link_expiry_days = Column(Integer, nullable=True)
 
     # The two windows a deferred RECORD action waits out (D7/D16, S6): the product has
     # no confirmation dialogs, so the countdown is the way back and its length is the
@@ -624,6 +629,10 @@ class SystemSetting(Base):
     # PLAN-local-buy-routing-toggle.md (18 Sep 2026): local-supplier Buy routing is a
     # switch, not a hard rule. Default off, since off is the shipped state the owner ruled.
     local_buy_routing_enabled = Column(Boolean, nullable=False, server_default="false", default=False)
+    # PLAN-borrow-location-only-8oct.md D1 (8 Oct 2026): "Borrow from another order" is a
+    # switch. Off (the default) borrows a location's stock and orders it back on the
+    # borrowing line; on is the donor-named borrow the board offered before.
+    borrow_from_order_enabled = Column(Boolean, nullable=False, server_default="false", default=False)
     # AC-304 (D5): the ONE list the owner has actually changed, so it is a column and not
     # a table. `not_supported` is decided against this instead of the two literals the JS
     # carries. A6 (chatbot-growth-r1, AC-911, migration 488) removed `spo_allocation` from

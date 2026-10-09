@@ -91,6 +91,8 @@ export interface ReportColumn {
 
 export interface ReportCatalogColumn extends ReportColumn {
   tag: ReportColumnTag;
+  /** Values of the report's dataset param whose dataset lacks this column. */
+  unavailable_for?: string[];
 }
 
 /**
@@ -262,6 +264,8 @@ export interface ReportMeta {
   can_publish: boolean;
   /** The tab the screen opens on. */
   opens_on?: 'detail' | 'summary';
+  /** The select param that picks the row set; null/absent when the report reads one. */
+  dataset_param?: string | null;
 }
 
 export interface ReportExportResult {

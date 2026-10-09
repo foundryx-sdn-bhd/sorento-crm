@@ -289,12 +289,21 @@ def _build_json_schema() -> dict[str, Any]:
             # that this message only refines the sales ranking on screen, and the ranking's
             # measure. Same shape and exemption as `rank_direction`.
             "ranking_refine": {"type": ["boolean", "null"]},
+            # REPORT-DRILLDOWN (owner 8 Oct 2026, semantic only): a follow-up ranking on a new
+            # axis read as about the rows the last ranking printed ("scoped"), its own ask
+            # ("global"), or either ("unsure", asked). Same exemption as `ranking_refine`.
+            "ranking_drill": {"type": ["string", "null"], "enum": ["scoped", "global", "unsure", None]},
             "measure": {"type": ["string", "null"], "enum": ["qty", "amount", None]},
             # PLAN-retail-sales-reports-26sep S1: the sales analysis's basis and the
             # company named. Required for strict mode and tolerated absent, exactly as
             # `sales_channel` above (no recorded emission carries them).
             "sales_basis": {"type": ["string", "null"], "enum": ["ordered", "delivered", "invoiced", None]},
             "sales_company": string_or_null,
+            # PROMO-SUBJECT-FILTER R5: the promotion KIND the message names (a
+            # `promotion_types.type_code` the prompt lists at runtime), null for none or
+            # for a word that fits no listed kind. Required for strict mode, tolerated
+            # absent (no recorded emission carries it).
+            "promotion_kind": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -543,9 +552,11 @@ def _build_json_schema() -> dict[str, Any]:
             "sort_by",
             "sort_dir",
             "ranking_refine",
+            "ranking_drill",
             "measure",
             "sales_basis",
             "sales_company",
+            "promotion_kind",
             "correction",
             "self_reference",
             "routing",
@@ -606,9 +617,11 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "sort_by",
         "sort_dir",
         "ranking_refine",
+        "ranking_drill",
         "measure",
         "sales_basis",
         "sales_company",
+        "promotion_kind",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",

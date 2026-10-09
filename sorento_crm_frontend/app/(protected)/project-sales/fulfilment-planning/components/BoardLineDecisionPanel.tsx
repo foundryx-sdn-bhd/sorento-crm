@@ -400,6 +400,33 @@ export function BoardLineDecisionPanel({
     });
   };
   const setBorrow = (borrow: DraftBorrow[]) => editComposition({ ...draft, borrow });
+  // One or several borrow rows appended in ONE change: a merged bin's split arrives as
+  // several (BORROW-LOCATION-ONLY R2), and appending them one by one off the same `draft`
+  // would keep only the last.
+  const addBorrows = (
+    parts: { candidate: BorrowCandidate; qty: string }[],
+    borrowReason: string,
+  ) =>
+    setBorrow([
+      ...draft.borrow,
+      ...parts.map(({ candidate, qty }, index) => ({
+        key: `borrow-${candidate.warehouse_id}-${draft.borrow.length + index}`,
+        source: candidate.source,
+        warehouse_code: candidate.warehouse_code,
+        warehouse_id: candidate.warehouse_id,
+        donor_project_ref: candidate.donor_project_ref,
+        donor_project_id: candidate.donor_project_id,
+        qty,
+        reason: borrowReason,
+        donor_impact: candidate.donor_impact,
+        donor_core_line_id: candidate.donor_core_line_id,
+        donor_so_number: candidate.donor_so_number,
+        donor_line_no: candidate.donor_line_no,
+        donor_agent_code: candidate.donor_agent_code,
+        same_agent: candidate.same_agent,
+        donor_required_date: candidate.donor_required_date,
+      })),
+    ]);
 
   /**
    * The switch means WHOLLY bought, not "no mix allowed" - a stock-and-Buy mix is a legal
@@ -1228,26 +1255,9 @@ export function BoardLineDecisionPanel({
           candidates={candidates}
           onDone={() => setAdding(false)}
           onAdd={(candidate: BorrowCandidate, qty, borrowReason) =>
-            setBorrow([
-              ...draft.borrow,
-              {
-                key: `borrow-${candidate.warehouse_id}-${draft.borrow.length}`,
-                source: candidate.source,
-                warehouse_code: candidate.warehouse_code,
-                warehouse_id: candidate.warehouse_id,
-                donor_project_ref: candidate.donor_project_ref,
-                donor_project_id: candidate.donor_project_id,
-                qty,
-                reason: borrowReason,
-                donor_impact: candidate.donor_impact,
-                donor_core_line_id: candidate.donor_core_line_id,
-                donor_so_number: candidate.donor_so_number,
-                donor_line_no: candidate.donor_line_no,
-                donor_agent_code: candidate.donor_agent_code,
-                same_agent: candidate.same_agent,
-              },
-            ])
+            addBorrows([{ candidate, qty }], borrowReason)
           }
+          onAddMany={addBorrows}
         />
       )}
 

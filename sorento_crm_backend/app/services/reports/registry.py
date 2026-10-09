@@ -394,6 +394,21 @@ class ReportDefinition:
         extra = list(self.datasets_by[1].values()) if self.datasets_by else []
         return [self.dataset] + [d for d in extra if d is not self.dataset]
 
+    def unavailable_for(self, db: Any) -> Dict[str, List[str]]:
+        """Per column key, the values of the dataset-picking param whose dataset lacks it.
+        Empty lists throughout when the report reads one dataset."""
+        lacking: Dict[str, List[str]] = {c.key: [] for c in self.catalog()}
+        if self.datasets_by is None:
+            return lacking
+        key = self.datasets_by[0]
+        param = next(p for p in self.params if isinstance(p, SelectParam) and p.key == key)
+        for value, _label in param.options(db):
+            have = {c.key for c in self.dataset_for({key: [value]}).columns}
+            for column_key, values in lacking.items():
+                if column_key not in have:
+                    values.append(value)
+        return lacking
+
     def catalog(self) -> List[Column]:
         """Every column of every dataset, once per key, `dataset`'s own first: what the
         Columns panel offers. A column the chosen dataset lacks is left out of that run."""

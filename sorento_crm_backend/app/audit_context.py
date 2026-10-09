@@ -312,6 +312,8 @@ def source_for(actor: Optional[AuditActor], ctx: Optional[AuditContext]) -> Opti
         return None
     if actor.auth_method in _PORTAL_AUTH_METHODS:
         return "portal"
+    if actor.auth_method == "connector":
+        return "connector"  # an SS-signed claude.ai connector call (CLAUDE-CONNECTOR)
     return _SOURCE_BY_ACTOR_TYPE.get(actor.actor_type)
 
 

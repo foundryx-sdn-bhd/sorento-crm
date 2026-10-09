@@ -50,6 +50,7 @@ from app.api.v1 import api_router
 from app.services.error_handler import AppException
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.middleware.idempotency_middleware import IdempotencyMiddleware
+from app.middleware.connector_preflight_middleware import ConnectorPreflightMiddleware
 from app.middleware.api_call_log_middleware import ApiCallLogMiddleware
 from app.middleware.impersonation_ended_middleware import (
     IMPERSONATION_ENDED_HEADER,
@@ -125,6 +126,10 @@ app.add_middleware(IdempotencyMiddleware)
 # Telemetry for /api/v1/external/* - total coverage by construction, so a new
 # external route is logged the day it is added rather than opt-in per endpoint.
 app.add_middleware(ApiCallLogMiddleware)
+# claude.ai connector: a `Connector` token is verified, and its body capped at 1 MB, before any body
+# is read (CLAUDE-CONNECTOR contract 9.4). Added after (so outside) the api-call log and idempotency,
+# which buffer bodies and write rows: a refused call reaches neither. Other requests pass through.
+app.add_middleware(ConnectorPreflightMiddleware)
 
 # Compress JSON responses. List endpoints (products, attachments) return 50-70KB
 # of JSON per page; uncompressed transfer was ~1s of "content download" on prod.
@@ -306,8 +311,16 @@ _register_activities_adapters()
 # company / X-API-Key contact / system) and stamps it onto the request DB session so
 # the do_orm_execute filter enforces isolation without editing each route. It shares
 # the route's session (get_db is cached per-request) and never 500s (fail-closed).
+# The claude.ai connector gate goes first: an `Authorization: Connector` call (CLAUDE-CONNECTOR,
+# signed by the shared service) is verified and its user stamped before the scope resolves, and
+# it is a no-op for every other request.
 from app.services.company_scope_resolver import apply_company_scope
-app.include_router(api_router, prefix="/api/v1", dependencies=[Depends(apply_company_scope)])
+from app.services.analytics_connector.access import connector_call_gate
+app.include_router(
+    api_router,
+    prefix="/api/v1",
+    dependencies=[Depends(connector_call_gate, scope="function"), Depends(apply_company_scope)],
+)
 
 # Initialize scheduler for background tasks
 scheduler = None

@@ -288,11 +288,17 @@ def tier_probe_collect(
             rows = jsc.get(j, "answers") if isinstance(jsc.get(j, "answers"), list) else []
             availability[tier] = jsc.get(j, "has_result") is True or len(rows) > 0
 
+    # PROMO-SUBJECT-FILTER AC-11: a probe call that raised is `None`, not an empty answer.
+    # The ask names it instead of stamping "no promotion" over a tier nobody checked.
+    probe_failed = any(r is None for r in results)
+
     # `None` availability means "we could not determine this", NOT "nothing is available".
     # The renderer and the router both read it that way.
     any_available = any(availability.values()) if availability is not None else True
     return {
         **base,
+        # present only when a probe raised, so a recorded n8n capture stays byte-equal
+        **({"tier_probe_failed": True} if probe_failed else {}),
         "tier_availability": availability,
         "tier_available_list": (
             [t for t in default_policy().tier_order if availability.get(t)]
@@ -725,6 +731,30 @@ def entity_ids_transformer(
     for key in ("contact_id", "space_id", "access_levels", "is_active"):
         if jsc.has(semantic_input, key):
             out[key] = semantic_input[key]
+
+    # PROMO-SUBJECT-FILTER AC-4: the class the parser named narrows a promotion ask to
+    # promotions LINKED to products of that class. `scope_terms` is set only when the parser
+    # named no product (`turn_runtime.promo_filter`), so any product ids here are the set the
+    # resolver described from the brand / class words, never the subject: they are dropped.
+    # A typed product code carries no `scope_terms` and keeps the product_ids path alone.
+    if tool_name == TIER_PROBE_TOOL and jsc.array(jsc.get(semantic_input, "scope_terms")):
+        out.pop("product_ids", None)
+    if tool_name == TIER_PROBE_TOOL and (
+        jsc.array(jsc.get(semantic_input, "scope_terms")) or jsc.array(jsc.get(semantic_input, "promotion_types"))
+    ):
+        # Promotions the resolver matched by NAME off other words are never the subject: a
+        # subject or kind ask is answered by explicit links and the kind (AC-22, owner rule).
+        # A promotion the customer named and the resolver placed (`promo_filter`) stays.
+        named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
+        if named:
+            out["promotion_ids"] = named
+        else:
+            out.pop("promotion_ids", None)
+    if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
+        for key in ("scope_terms", "promotion_types", "brand_ids"):
+            narrowed = jsc.get(semantic_input, key)
+            if isinstance(narrowed, list) and narrowed:
+                out[key] = list(narrowed)
 
     # S4 points 2/7/9 (PLAN-chatbot-outstanding-report.md): crm_outstanding_report's
     # OWN contract (`product_code` a string, `scope`, `customer_ids`, `warehouse_codes`
@@ -2727,8 +2757,16 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
     if note and text:
         text = f"{note}\n\n{text}"
+    # REPORT-DRILLDOWN: the rows the ranking printed, with their keys, ride on the frame
+    # (`shown`), so "these agents" next turn means exactly them. Never a route param.
+    drill = envelope.get("drill_rows")
+    frame = dict(args) if text and isinstance(args, dict) else None
+    if frame is not None:
+        frame.pop("shown", None)
+        if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
+            frame["shown"] = drill
     return {
-        "sales_ranking_frame": dict(args) if text and isinstance(args, dict) else None,
+        "sales_ranking_frame": frame,
         "response": text or _REPORT_ASK_ERROR_TEXT,
         "response_intro": None,
         "answers": [],
@@ -2772,6 +2810,101 @@ def _field_label(loc: Localizer, f: Any) -> str:
     return loc.label(f) if isinstance(f, dict) and "label" in f else label
 
 
+#: PHOTO-SEND-CAP (round 1 rule 1, kept by the owner in round 2): a product file row's
+#: fields that describe the PRODUCT. The rest describe the file, so rows of one product
+#: merge into one numbered block with each file's lines under it.
+_PRODUCT_LEVEL_LABELS = frozenset({"Company", "Product Code", "Product Name", "Description", "Dimensions"})
+_FILE_LEVEL_LABELS = frozenset({"Attachment Type", "File Name", "File Link"})
+
+
+def _field_value(fields: list[Any], label: str) -> str:
+    for f in fields:
+        if isinstance(f, dict) and f.get("label") == label:
+            return jsc.nullish_str(f.get("value")).strip()
+    return ""
+
+
+def _link_fields(it: Any, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """`*Link:* <url>` under a file, link mode only. Unkeyed on purpose: the key-based
+    projections below never drop it. The url is still the stored one here; the engine
+    swaps it for the short link (`chatbot/file_links.links_for`) or, if it cannot, drops
+    the line and sends the file as before.
+
+    A row with no File Name field of its own (a promotion: owner hand test, Vixx Loo, 9 Oct
+    2026) gets `*File:* <name>` above each link, so two links under one row can be told
+    apart. `names` is the envelope's own url -> filename (`attachments`)."""
+    fields = jsc.get(it, "fields") or []
+    named_row = any(isinstance(f, dict) and f.get("label") == "File Name" for f in fields)
+    out: list[dict[str, Any]] = []
+    for u in jsc.array(jsc.get(it, "file_urls")):
+        if not isinstance(u, str) or not u:
+            continue
+        name = (names or {}).get(u)
+        if not named_row and name:
+            out.append({"label": "File", "value": name})
+        out.append({"label": "Link", "value": u})
+    return out
+
+
+def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
+    """Product file rows grouped by product (both modes), and each file's link under it
+    (link mode). Every other envelope passes through as it is.
+
+    A row groups only when every field is a product or a plain file field and no flag is
+    about the FILE (an expired or expiring certificate): a certificate row keeps its own
+    number, its validity and its own marker. `items` is replaced by the grouped rows, so
+    the header count, the numbered list and a positional pick all read products.
+    """
+    items = e.get("items")
+    if not isinstance(items, list) or not items:
+        return e
+    product_rows = jsc.js_string(e.get("result_type") or "") == "product_attachments" and not e.get("groups")
+    if not product_rows and not links:
+        return e
+    out: list[Any] = []
+    by_product: dict[tuple[str, str], dict[str, Any]] = {}
+    names = {
+        jsc.nullish_str(a.get("url")): jsc.nullish_str(a.get("filename")).strip()
+        for a in jsc.array(e.get("attachments"))
+        if isinstance(a, dict) and a.get("url") and a.get("filename")
+    }
+    for it in items:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
+        fields = [f for f in (it.get("fields") or []) if isinstance(f, dict)]
+        flags = it.get("flags") if isinstance(it.get("flags"), dict) else {}
+        code = _field_value(fields, "Product Code")
+        groupable = (
+            product_rows
+            and bool(code)
+            and all(f.get("label") in _PRODUCT_LEVEL_LABELS | _FILE_LEVEL_LABELS for f in fields)
+            and not flags.get("expired")
+            and not flags.get("expiring_soon")
+        )
+        if not groupable:
+            out.append({**it, "fields": [*fields, *(_link_fields(it, names) if links else [])]})
+            continue
+        key = (_field_value(fields, "Company"), code)
+        group = by_product.get(key)
+        if group is None:
+            group = {
+                **it,
+                "fields": [f for f in fields if f.get("label") in _PRODUCT_LEVEL_LABELS],
+                "flags": dict(flags),
+                "file_urls": [],
+            }
+            by_product[key] = group
+            out.append(group)
+        group["fields"].extend(f for f in fields if f.get("label") in _FILE_LEVEL_LABELS)
+        if links:
+            group["fields"].extend(_link_fields(it, names))
+        group["file_urls"].extend(jsc.array(it.get("file_urls")))
+        if flags.get("discontinued"):
+            group["flags"]["discontinued"] = True
+    return {**e, "items": out}
+
+
 def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]:
     """The MCP render envelope becomes a WhatsApp message. Deterministic, no LLM (H7).
 
@@ -2798,7 +2931,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
         }
-    e = _extract_envelope(result)
+    e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
     # localizer only rewrites the strings printed below (absent = identity, byte-identical).
     # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
@@ -3250,6 +3383,15 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 return field_lines
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
             line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
+        # PRODUCT-ALTERNATIVES (card Q4 (a), owner 8 Oct 2026): the stored alternatives,
+        # under the marker. A dealer line carries each alternative's own judged verdict
+        # (`alternative_lines`, the presenter's "<code> x <Q>: <verdict>"); a staff block
+        # names the code (`alternatives`), its own block following in the list.
+        if jsc.truthy(flags):
+            for alternative_line in jsc.array(jsc.get(flags, "alternative_lines")):
+                line += f"\n{loc.text('Alternative')}: {loc.tail(jsc.nullish_str(alternative_line))}"
+            for alternative_code in jsc.array(jsc.get(flags, "alternatives")):
+                line += f"\n*{loc.text('Alternative')}:* {jsc.nullish_str(alternative_code)}"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
             line += f"\n⚠️  *({loc.text('EXPIRED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "unallocated")):

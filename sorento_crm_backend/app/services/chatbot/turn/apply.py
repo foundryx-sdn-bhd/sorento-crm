@@ -933,7 +933,9 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
         # replay: T4's reply printed "Transporter: Sorento" alongside the correct
         # "Customer: Sorento", and `escalate_offered` got stamped onto a question with
         # nothing left to ask).
-        if pending.kind != "kind_pick" and is_roster(pending.kind):
+        # PROMO-SUBJECT-FILTER: the promotion "Which cabinet do you mean?" (`category_pick`) is
+        # one question with one answer, closed by it like a kind_pick.
+        if pending.kind not in ("kind_pick", "category_pick") and is_roster(pending.kind):
             return focus, with_answered_positions(pending, positions), None, not own_domain
         return focus, None, None, not own_domain
 
