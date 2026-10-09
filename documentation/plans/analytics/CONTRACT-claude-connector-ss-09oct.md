@@ -100,3 +100,25 @@ Consent endpoints add `request_expired`, `request_used`, `impersonation_not_allo
 3. Revocation on sign-out-everywhere: sorento refuses with `reconsent_required` via the `consented_at` claim (rec, no callback) vs sorento calling an SS revoke endpoint. Rec claim check: no new inbound surface on SS; SS revokes on the 403.
 4. Manifest: sorento-hosted manifest (rec) vs SS hard-coding the tool list per product. Rec manifest: the product owns its tools and route allowlist in one place.
 5. Who keeps the RO DB role + views: sorento (rec; the data lives in sorento's DB, SS never gets DB credentials).
+
+## 7. Resolutions while writing sorento's red tests (9 Oct 2026, relayed on SS #117)
+
+1. `req_hash` = base64url (no padding) of SHA-256 over `METHOD\nPATH\nCANONICAL_QUERY\nhex(sha256(body))`.
+   PATH = the raw request path, still percent-encoded, without the query. CANONICAL_QUERY = pairs sorted
+   by (key, value), each part encoded with `quote(safe="-_.~")`, joined by `&` (empty string when none).
+   An empty body hashes as `sha256(b"")`.
+2. `consented_at`, `iat`, `exp` are integer unix seconds. A call token whose `exp - iat` exceeds 60 s is
+   refused; 5 s clock skew is tolerated on `iat`/`exp`.
+3. 401 `invalid_signature` covers: bad signature, `req_hash` mismatch, wrong `typ`/`iss`/`connection_id`,
+   a missing claim, an over-long token. 401 `wrong_audience` for a wrong `aud`. An RBAC refusal on a
+   reused route is 403 `permission_required` (SS keeps the grant).
+4. Allowed non-GET calls are exactly the manifest's POSTs: `/api/v1/connector/query` and
+   `/api/v1/lookup/resolve` (`crm_lookup_resolve`, a read-only POST).
+5. `path_template` is the real route path including any trailing slash (e.g. `/api/v1/master-data/brands/`);
+   SS must call it verbatim, because a 307 redirect would change PATH and break `req_hash`.
+6. Consent: `bad_request`, `request_expired`, `request_used` are 400; `connector_access_removed`,
+   `impersonation_not_allowed` are 403. Inspect does not consume the `jti`; approve and deny do; a refused
+   approve does not burn the request. inspect/approve/deny all return `request_id`; inspect's `expires_at`
+   is ISO 8601 UTC.
+7. `/api/v1/connector/*` data routes accept only `Authorization: Connector`; a staff Bearer session gets 401.
+8. `revoke_all_for_user` stamps `users.connector_revoked_at` on every call, including "log out other devices".
