@@ -273,6 +273,18 @@ def test_a_partial_category_word_is_never_fuzzy(console, monkeypatch) -> None:
     assert _chat_calls(calls) == [] and "I couldn't find" in text, (text, calls)
 
 
+@pytest.mark.parametrize("word", ["zzt toilet seat", "big zzt basin", "zzt closet seat cover"])
+def test_a_category_word_that_only_contains_a_label_or_synonym_resolves_to_nothing(
+    console, monkeypatch, word
+) -> None:
+    """Reviewer blocker: exact match only, no whole-word containment (a silent widening)."""
+    _seed_categories(console)
+    _fake_extractor(monkeypatch, lambda t, o: {**FULL, "group_by": "product", "category_words": [word]})
+    text, calls = console.say(_chat(group_by="product"), f"top discussed {word} in 2026")
+    assert _chat_calls(calls) == [], calls
+    assert "I couldn't find" in text and word in text and "\n" not in text.strip(), text
+
+
 # --------------------------------------------------------------------------- D4
 
 
