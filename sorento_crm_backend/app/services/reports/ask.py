@@ -33,6 +33,7 @@ DATASETS = ("sales", "chat")
 #: The chat words (CA-3). Every word is named the same as the column or param key behind it.
 CHAT_DIMENSIONS = (
     "topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language",
+    "asker", "salesperson", "category", "brand",
 )
 CHAT_MEASURES = ("asks", "failed", "failure_rate", "contacts")
 #: The dimensions that are a run of time: a trend lists every bucket, oldest first.
@@ -59,7 +60,7 @@ CATALOGUE: dict[str, dict[str, dict[str, Any]]] = {
             "definition": chat_report_ask.DEFINITIONS[basis],
             "label": label,
             "dimensions": CHAT_DIMENSIONS,
-            "filters": ("subject", "product", "customer"),
+            "filters": ("subject", "product", "customer", "asker", "category", "brand"),
         }
         for basis, label in (("asks", "asks"), ("turns", "turns"))
     },
@@ -91,8 +92,19 @@ CHAT_GROUP_LABELS = {
     "month": "Month",
     "day": "Day",
     "language": "Language",
+    "asker": "Asked by",
+    "salesperson": "Salesperson",
+    "category": "Category",
+    "brand": "Brand",
 }
-CHAT_FILTER_LABELS = {"subject": "Subject", "product": "Product", "customer": "Customer"}
+CHAT_FILTER_LABELS = {
+    "subject": "Subject", "product": "Product", "customer": "Customer", "asker": "Asked by",
+    "category": "Category", "brand": "Brand",
+}
+#: The axes whose blank bucket (no reason, no customer, no salesperson, no brand) is not a row.
+CHAT_NAMED_AXES = frozenset({"failure_reason", "customer", "salesperson", "brand", "category"})
+#: The axes read through the item grain (one row per product an ask NAMED).
+CHAT_ITEM_AXES = frozenset({"product", "category", "brand"})
 
 #: The filter words' labels, as the route echoes them: the dimensions' own, plus the customer
 #: card link a drill down uses (REPORT-DRILLDOWN, owner 8 Oct 2026), named so the reply says it.
@@ -332,11 +344,21 @@ def _run_chat(
         "date_basis": "asked_at",
         "period": {"kind": "custom", "from": date_from.isoformat(), "to": date_to.isoformat()},
     }
+    asker_split = group_by in ("asker", "salesperson") or "asker" in filters
+    body["unclassified_askers"] = 0 if asker_split else None
     for word, values in filters.items():
         if not values:  # a filter resolving to nothing is zero rows, never "no filter"
             body["message"] = NO_ASKS
             return body
         params[word] = list(values)
+    unclassified = (
+        chat_report_ask.unclassified_contacts(db, definition, params) if asker_split else None
+    )
+    body["unclassified_askers"] = unclassified
+    if "asker" not in params:
+        # The default asker filter (read now, so one switch changes it): staff testing out. A
+        # salesperson ranking is of salespeople only.
+        params["asker"] = ["salesperson"] if group_by == "salesperson" else list(chat_report_ask.DEFAULT_ASKERS)
     coverage_ctx = engine.resolve(db, definition, params)
     percent, version = chat_asks.topics_coverage(coverage_ctx)
     body["coverage"] = {
@@ -346,7 +368,7 @@ def _run_chat(
         body["message"] = NO_ASKS
         return body
 
-    if group_by == "product":
+    if group_by in CHAT_ITEM_AXES:
         params["grain"] = ["products"]
     measures = list(dict.fromkeys([measure, "asks", *(("failed",) if measure == "failure_rate" else ())]))
     view = ReportViewConfig.model_validate(
@@ -368,8 +390,8 @@ def _run_chat(
 
     ranked = []
     for name in pivot.row_values:
-        if group_by == "failure_reason" and name == engine.BLANK_VALUE:
-            continue  # only a failed ask has a reason
+        if group_by in CHAT_NAMED_AXES and name == engine.BLANK_VALUE:
+            continue  # no row for "nobody": only a failed ask has a reason, only some asks name a customer, a brand
         figures = _chat_value(measure, pivot.row_totals.get(name) or {})
         if figures is not None:
             ranked.append((name, figures))
@@ -380,6 +402,10 @@ def _run_chat(
         ranked.sort(key=lambda r: (sign * r[1]["value"], r[0]))
     shown = ranked[:top_n] if top_n else ranked
     body["rows"] = [{"rank": i, "name": name, **figures} for i, (name, figures) in enumerate(shown, start=1)]
+    if group_by == "customer":
+        agents = chat_report_ask.card_agents(db, [r["name"] for r in body["rows"]])
+        for row in body["rows"]:
+            row["agent"] = agents.get(row["name"])
     body["total_count"] = len(ranked)
     body["more"] = len(ranked) - len(shown)
     return body

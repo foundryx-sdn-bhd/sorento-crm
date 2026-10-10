@@ -30,6 +30,7 @@ from app.models.company import RespondContactCompany
 from app.models.order import Customer
 from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
+from app.services import contact_asker
 from app.schemas.report_ask import ReportAskChatResponse, ReportAskResponse
 from app.services.contact_brand_scope import contact_brand_scope
 from app.services.error_handler import AppException, handle_not_found
@@ -64,7 +65,7 @@ _PARAMS = frozenset(
 _CHAT_PARAMS = frozenset(
     {
         "dataset", "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort", "subjects",
-        "product_ids", "customer_ids", "contact_id", "space_id",
+        "product_ids", "customer_ids", "contact_id", "space_id", "askers", "category_ids", "brand_ids",
     }
 )
 CHAT_GRANT = "chatbot.analytics"
@@ -216,6 +217,7 @@ def report_ask(
     channel: Optional[str] = Query(None, description="dealer | project"),
     dataset: str = Query("sales", description="sales (default) | chat."),
     subjects: Optional[list[str]] = Query(None, description="Chat only: subject (domain) codes."),
+    askers: Optional[list[str]] = Query(None, description="Chat only: dealer | salesperson | staff | unclassified."),
     contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
     space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
     current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
@@ -240,7 +242,8 @@ def report_ask(
         return _chat_report_ask(
             request, db, date_from=date_from, date_to=date_to, basis=basis, measure=measure,
             group_by=group_by, top_n=top_n, sort=sort, subjects=subjects, product_ids=product_ids,
-            customer_ids=customer_ids, contact_id=contact_id, space_id=space_id,
+            customer_ids=customer_ids, contact_id=contact_id, space_id=space_id, askers=askers,
+            category_ids=category_ids, brand_ids=brand_ids,
         )
     for key in request.query_params.keys():
         if key not in _PARAMS:
@@ -480,6 +483,9 @@ def _chat_report_ask(
     customer_ids: Optional[list[str]],
     contact_id: str,
     space_id: str,
+    askers: Optional[list[str]] = None,
+    category_ids: Optional[list[str]] = None,
+    brand_ids: Optional[list[str]] = None,
 ):
     """`dataset=chat`: the bot's chat analytics (asks, turns, failures, contacts). Same gates
     as the sales report in the same order, with the `chatbot.analytics` reveal in place of the
@@ -519,7 +525,18 @@ def _chat_report_ask(
     ]
     named_customers = parse_uuid_list(customer_ids, param_name="customer_ids")
     named_products = parse_uuid_list(product_ids, param_name="product_ids")
-    for name, values in (("subjects", subject_codes), ("customer_ids", named_customers), ("product_ids", named_products)):
+    asker_words = [
+        p.strip().lower() for item in (askers or []) for p in str(item or "").split(",") if p.strip()
+    ]
+    for word in asker_words:
+        if word not in contact_asker.ASKERS:
+            raise _unprocessable(f"Unknown asker '{word}'", "unknown_asker", _allowed(contact_asker.ASKERS))
+    named_categories = parse_uuid_list(category_ids, param_name="category_ids")
+    named_brands = parse_uuid_list(brand_ids, param_name="brand_ids")
+    for name, values in (
+        ("subjects", subject_codes), ("customer_ids", named_customers), ("product_ids", named_products),
+        ("askers", asker_words), ("category_ids", named_categories), ("brand_ids", named_brands),
+    ):
         if name in present and not values:
             raise _unprocessable(f"'{name}' was given but names nothing", "empty_filter", name)
         if len(values or []) > _MAX_VALUES:
@@ -570,22 +587,28 @@ def _chat_report_ask(
             }
         )
 
-    # A dealer is forced to its own customers (a named one outside them is the helper's own
-    # 403) and to the dealer's breakdowns; a salesman to the customers whose card agent is theirs.
-    scoped = enforce_customer_scope(
-        db, contact_id=contact_id, space_id=space_id, customer_ids=named_customers, customer_query=None
-    )
-    if scoped is not None and group_norm is not None and group_norm not in ask.CHAT_DEALER_KEYS:
-        raise AppException(403, _DEALER_MESSAGE, code="report_dimension_not_allowed")
+    # The asking contact is scoped by the one asker rule (`contact_asker`): a dealer is forced to
+    # its own customers (a named one outside them is the helper's own 403) and to the dealer's
+    # breakdowns; a salesperson to the customers whose card agent is theirs; staff, and a contact
+    # nobody classified that holds the grant, see all.
+    asker = contact_asker.classify(db, str(resolved))
+    scoped = None
+    if asker == "dealer":
+        scoped = enforce_customer_scope(
+            db, contact_id=contact_id, space_id=space_id, customer_ids=named_customers, customer_query=None
+        )
+        if scoped is not None and group_norm is not None and group_norm not in ask.CHAT_DEALER_KEYS:
+            raise AppException(403, _DEALER_MESSAGE, code="report_dimension_not_allowed")
     customers = scoped if scoped is not None else named_customers
-    if scoped is None:
+    scoped_book = asker == "salesperson"
+    if scoped_book:
         with company_scope(db, None):
             agent_ids = [str(i) for (i,) in db.query(SalesAgent.id).filter(SalesAgent.contact_id == str(resolved)).all()]
-            if agent_ids:
-                own = {
-                    str(i) for (i,) in db.query(Customer.id).filter(Customer.sales_agent_id.in_(agent_ids)).all()
-                }
-                customers = [c for c in (named_customers or own) if c in own]
+            own = (
+                {str(i) for (i,) in db.query(Customer.id).filter(Customer.sales_agent_id.in_(agent_ids)).all()}
+                if agent_ids else set()
+            )
+            customers = [c for c in (named_customers or own) if c in own]
 
     grants = {
         str(c)
@@ -613,8 +636,17 @@ def _chat_report_ask(
         filters["subject"] = subject_codes
     if named_products:
         filters["product"] = named_products
-    if scoped is not None or named_customers or customers != named_customers:
+    if scoped is not None or named_customers or customers != named_customers or scoped_book:
         filters["customer"] = customers
+    if asker_words:
+        filters["asker"] = asker_words
+        echo.append(("asker", [w.capitalize() for w in asker_words]))
+    if named_categories:
+        filters["category"] = named_categories
+        echo.append(("category", _lookup(db, ProductCategory, ProductCategory.category_name, named_categories, grants, "Category")))
+    if named_brands:
+        filters["brand"] = named_brands
+        echo.append(("brand", _lookup(db, Brand, Brand.brand_name, named_brands, grants, "Brand")))
 
     data = ask.run_ask(
         db,

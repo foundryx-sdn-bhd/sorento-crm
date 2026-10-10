@@ -27,9 +27,15 @@ logger = logging.getLogger(__name__)
 
 PROMPT_KEY = "chat_report_extractor"
 SCHEMA_NAME = "chat_report_extraction"
-GROUP_BY = ("topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language")
+GROUP_BY = (
+    "topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language",
+    "asker", "salesperson", "category", "brand",
+)
+ASKERS = ("dealer", "salesperson", "staff", "unclassified")
 MEASURES = ("asks", "failed", "failure_rate", "contacts")
-KEYS = ("group_by", "measure", "subject", "top_n", "date_from", "date_to")
+KEYS = (
+    "group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+)
 MAX_TOP_N = 1000
 
 
@@ -66,6 +72,9 @@ def _schema(domains: list[str]) -> dict[str, Any]:
             "top_n": {"type": ["integer", "null"]},
             "date_from": {"type": ["string", "null"]},
             "date_to": {"type": ["string", "null"]},
+            "askers": {"type": "array", "items": {"type": "string", "enum": list(ASKERS)}},
+            "category_words": {"type": "array", "items": {"type": "string"}},
+            "brand_words": {"type": "array", "items": {"type": "string"}},
         },
     }
 
@@ -81,7 +90,7 @@ def _valid_date(value: Any) -> bool:
 
 
 def _checked(data: Any, domains: list[str]) -> dict[str, Any] | None:
-    """The six keys, or None when the output is outside the contract."""
+    """The nine keys, or None when the output is outside the contract."""
     if not isinstance(data, dict) or set(data) != set(KEYS):
         return None
     if data["group_by"] is not None and data["group_by"] not in GROUP_BY:
@@ -93,6 +102,11 @@ def _checked(data: Any, domains: list[str]) -> dict[str, Any] | None:
     top_n = data["top_n"]
     if top_n is not None and (isinstance(top_n, bool) or not isinstance(top_n, int) or not 1 <= top_n <= MAX_TOP_N):
         return None
+    if not isinstance(data["askers"], list) or any(a not in ASKERS for a in data["askers"]):
+        return None
+    for key in ("category_words", "brand_words"):
+        if not isinstance(data[key], list) or not all(isinstance(w, str) for w in data[key]):
+            return None
     if not (_valid_date(data["date_from"]) and _valid_date(data["date_to"])):
         return None
     return {k: data[k] for k in KEYS}

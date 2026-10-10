@@ -3309,6 +3309,7 @@ def _report_ask(body: dict) -> str:
 _CHAT_MEASURE_WORDS = {"asks": "asks", "failed": "failed turns", "failure_rate": "failure rate", "contacts": "contacts"}
 #: A trend lists every bucket, so its head is "<measure> by week", never "Top N weeks".
 _CHAT_TRENDS = ("week", "month", "day")
+_CHAT_PLURALS = {"category": "categories", "salesperson": "salespeople"}
 _CHAT_COVERAGE_FLOOR = 80
 
 
@@ -3363,13 +3364,20 @@ def _chat_report_ask(body: dict) -> str:
         lines = [f"{phrase.capitalize()} by {label}", *facts]
     else:
         lead = "Bottom" if body.get("sort") == "asc" else "Top"
-        lines = [f"{lead} {len(rows)} {label if len(rows) == 1 else label + 's'} by {phrase}", *facts]
+        noun = label if len(rows) == 1 else _CHAT_PLURALS.get(label, label + "s")
+        lines = [f"{lead} {len(rows)} {noun} by {phrase}", *facts]
     for row in rows:
-        lines.append(f"{row.get('rank')}. {row.get('name')}: {_chat_figure(row, body)}")
+        # A customer ranking prints each customer's card agent (a row without the key prints plain).
+        agent = ""
+        if group_by == "customer" and "agent" in row:
+            agent = f" (agent {row['agent']})" if row.get("agent") else " (no agent)"
+        lines.append(f"{row.get('rank')}. {row.get('name')}{agent}: {_chat_figure(row, body)}")
     more = int(body.get("more") or 0)
     if more > 0:
         lines.append(f"and {more} more")
     lines.append(f"Total: {_chat_figure(body.get('total') or {}, body)}")
+    if body.get("unclassified_askers") is not None:
+        lines.append(f"Unclassified askers: {int(body['unclassified_askers']):,}")
     coverage = body.get("coverage") or {}
     if coverage.get("line"):
         if int(coverage.get("percent") or 0) < _CHAT_COVERAGE_FLOOR:

@@ -42,14 +42,16 @@ GIVE_UP = (
 COULDNT_READ = "I couldn't read that report request. Try: top 5 questions this week."
 NOT_ENABLED = "Chat analytics is not enabled for your account."
 CATALOGUE_LINE = (
-    "I can rank questions by topic, subject, product, customer, outcome, failure reason, week, month, "
-    "day or language."
+    "I can rank questions by topic, subject, product, category, brand, customer, who asked, "
+    "salesperson, outcome, failure reason, week, month, day or language."
 )
 
 #: The ten ranking axes the route takes (`reports.ask.CHAT_DIMENSIONS`); the parser's enum is the same.
 GROUP_BY = (
     "topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language",
+    "asker", "salesperson", "category", "brand",
 )
+ASKERS = ("dealer", "salesperson", "staff", "unclassified")
 MEASURES = ("asks", "failed", "failure_rate", "contacts")
 #: A trend lists every bucket of the period: never asked "How many?".
 TRENDS = ("week", "month", "day")
@@ -97,15 +99,60 @@ def is_chat_report(parse_output: dict[str, Any]) -> bool:
     ).strip() in ("", ASK_NAME)
 
 
-def names_its_own_ask(verdict: dict[str, Any]) -> bool:
-    """Engine seam before `required_fields.reply_verdict`: a verdict that is a chat report in
-    its own right (the parser filled `chat_report` with an axis, a measure or a subject) is a
-    NEW ask, so an open period / how many question is dropped, not answered by it. A reply to
-    the question carries `chat_report` null."""
+def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None = None) -> bool:
+    """Engine seam before `required_fields.reply_verdict`: a verdict that is a chat report in its
+    own right is a NEW ask, so an open period / how many question is dropped, not answered by it.
+    Read off the parser's fields only, against what the open ask already holds (UAC-32): a
+    different axis, measure or subject, a period of its own, or asker / category / brand words
+    make it new; the same axis re-read with no period of its own is the answer. A reply to the
+    question carries `chat_report` null."""
     if not (is_chat_report(verdict) or jsc.js_string(verdict.get("intent_hint") or "").strip() == ASK_NAME):
         return False
     report = _dict(verdict.get("chat_report"))
-    return any(report.get(k) for k in ("group_by", "measure", "subject"))
+    if not any(report.get(k) for k in ("group_by", "measure", "subject")):
+        return False
+    held = _dict(_dict(_dict(open_slot).get("extras")).get("args"))
+    for key in ("group_by", "measure"):
+        said = jsc.js_string(report.get(key) or "").strip().lower()
+        if said and said != jsc.js_string(held.get(key) or "").strip().lower():
+            return True
+    subject = jsc.js_string(report.get("subject") or "").strip().lower()
+    if subject and subject not in [jsc.js_string(x).lower() for x in jsc.array(held.get("subjects"))]:
+        return True
+    if verdict.get("date_filter_start"):
+        return True
+    return any(report.get(k) for k in ("askers", "category_words", "brand_words"))
+
+
+def take_words(verdict: dict[str, Any]) -> dict[str, Any]:
+    """Engine seam, a FRESH chat report: the product, category and brand words the parser put on
+    the entity list move to `chat_report_products` (raw words), away from the generic resolver.
+    The report filters by the extractor's own words; a parser word the report did not use as a
+    filter must not turn into an entity-resolution miss line (UAC-33). Customer words stay: the
+    resolver and the dealer gate read them."""
+    if not is_chat_report(verdict) or verdict.get("required_ask"):
+        return verdict
+    kept: list[Any] = []
+    words: list[str] = []
+    for e in jsc.array(verdict.get("entities")):
+        hint = jsc.js_string(_dict(e).get("hint") or "").strip().lower()
+        if hint not in ("product", "category", "brand"):
+            kept.append(e)
+            continue
+        raw = " ".join(jsc.js_string(_dict(e).get("raw") or "").split())
+        if raw and _dict(e).get("current_message") is not False and raw not in words:
+            words.append(raw)
+    return {**verdict, "entities": kept, "chat_report_products": words}
+
+
+def _product_words(parse_output: dict[str, Any]) -> list[str]:
+    held = parse_output.get("chat_report_products")
+    if isinstance(held, list):
+        return [jsc.js_string(w) for w in held]
+    return [
+        " ".join(jsc.js_string(e.get("raw") or "").split())
+        for e in report_ask._current_entities(parse_output, "product")
+    ]
 
 
 def _needs_top_n(args: dict[str, Any]) -> bool:
@@ -165,14 +212,43 @@ def _args(
     if subject:
         args["subjects"] = [subject]
 
+    askers = [a for a in jsc.array(report.get("askers")) if a in ASKERS]
+    if askers:
+        args["askers"] = askers
+    # The extractor's category and brand words, through the existing resolvers (no new matcher).
+    # A word that resolves to nothing is said, never an empty ranking that looks like data.
+    for kind, words_key, param, resolver in (
+        ("category", "category_words", "category_ids", "resolve_category_token"),
+        ("brand", "brand_words", "brand_ids", "resolve_brand_token"),
+    ):
+        found_ids: list[str] = []
+        for word in jsc.array(report.get(words_key)):
+            word = " ".join(jsc.js_string(word).split())
+            if not word:
+                continue
+            found = [str(row[0]) for row in getattr(business_services, resolver)(db, word)] if db is not None else []
+            if not found:
+                return None, f"I couldn't find the {kind} '{word}'."
+            found_ids.extend(i for i in found if i not in found_ids)
+        if found_ids:
+            args[param] = found_ids[:MAX_IDS]
+
     # This message's customer and product words, through the existing resolvers (a customer
     # whose name carries the words, a product code by prefix, as the sales report's own).
     # A word that resolves to nothing is said, never an empty ranking that looks like data.
     for kind, param in (("customer", "customer_ids"), ("product", "product_ids")):
         ids: list[str] = []
-        for entity in report_ask._current_entities(parse_output, kind):
-            word = " ".join(jsc.js_string(entity.get("raw") or "").split())
+        words = (
+            _product_words(parse_output) if kind == "product"
+            else [
+                " ".join(jsc.js_string(e.get("raw") or "").split())
+                for e in report_ask._current_entities(parse_output, kind)
+            ]
+        )
+        for word in words:
             found = _resolve_word(db, kind, word)
+            if not found and kind == "product":
+                continue  # a parser word the report cannot use is not a filter, and not a miss line
             if dealer and kind == "customer":
                 # A dealer's word only ever names its own customers: another dealer's name
                 # gets the same line as a name that does not exist.
@@ -195,7 +271,9 @@ def _read_fresh(db: Any, parse_output: dict[str, Any], message_text: str) -> dic
         return None
     return {
         **parse_output,
-        "chat_report": {k: got.get(k) for k in ("group_by", "measure", "subject")},
+        "chat_report": {
+            k: got.get(k) for k in ("group_by", "measure", "subject", "askers", "category_words", "brand_words")
+        },
         "top_n": got.get("top_n"),
         "date_filter_start": got.get("date_from"),
         "date_filter_end": got.get("date_to"),

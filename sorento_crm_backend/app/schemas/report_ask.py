@@ -58,6 +58,8 @@ class ReportAskChatRow(BaseModel):
     # Failure rate only: failed turns and the non-noise turns they are a share of.
     numerator: Optional[int] = None
     denominator: Optional[int] = None
+    # A customer ranking only: the customer card's agent (None = no agent).
+    agent: Optional[str] = None
 
 
 class ReportAskChatTotal(BaseModel):
@@ -92,3 +94,5 @@ class ReportAskChatResponse(BaseModel):
     total_count: int = 0
     total: ReportAskChatTotal
     coverage: Optional[ReportAskChatCoverage] = None
+    # Distinct unclassified contacts, only when the reply splits or filters by asker.
+    unclassified_askers: Optional[int] = None

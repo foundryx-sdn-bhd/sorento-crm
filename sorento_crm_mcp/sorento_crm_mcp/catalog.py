@@ -854,9 +854,13 @@ CATALOG: tuple[ToolSpec, ...] = (
             "stock'. `basis` asks (every ask) | turns (each message once; use it for failed and "
             "failure_rate). `measure` asks | failed | failure_rate | contacts (distinct "
             "contacts). `group_by` topic | subject | product | customer | outcome | "
-            "failure_reason | week | month | day | language; a week, month or day trend lists "
-            "every bucket and needs no `top_n`. Filters: `subjects` (domain codes such as "
-            "inventory), `product_ids`, `customer_ids`. Chat bases and sales params do not mix "
+            "failure_reason | week | month | day | language | asker (dealer / salesperson / staff / "
+            "unclassified) | salesperson (the asking salesperson by name) | category | brand; a "
+            "week, month or day trend lists every bucket and needs no `top_n`. Filters: `subjects` "
+            "(domain codes such as inventory), `product_ids`, `customer_ids`, `askers` (any of "
+            "dealer, salesperson, staff, unclassified; default is dealer, salesperson and "
+            "unclassified), `category_ids`, `brand_ids` (through the products the question "
+            "named). A customer ranking prints each customer's agent. Chat bases and sales params do not mix "
             "(422 `unknown_param`). Needs the Chat analytics reveal (403 "
             "`chat_analytics_not_enabled`, say it is not enabled for the account). A dealer sees "
             "its own customers' asks and may group by topic, subject, product and month only. "
@@ -868,7 +872,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
             "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
-            "customer_agent_ids", "dataset", "subjects",
+            "customer_agent_ids", "dataset", "subjects", "askers",
         ),
         domain="orders",
         related_tools=("crm_sales_report", "crm_top_selling_report"),

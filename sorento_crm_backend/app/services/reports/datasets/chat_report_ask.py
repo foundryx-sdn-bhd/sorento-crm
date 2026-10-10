@@ -19,6 +19,10 @@ from typing import Any, List, Tuple
 
 import sqlalchemy as sa
 
+from app.models.access import RespondContact
+from app.models.product import Brand, ProductCategory
+from app.models.sales_agent import SalesAgent
+from app.services import contact_asker
 from app.services.reports import registry as reg
 from app.services.reports.datasets import chat_ask_items as items_ds
 from app.services.reports.datasets import chat_asks as asks_ds
@@ -31,13 +35,47 @@ MODULE_KEY = "chatbot"
 
 _ONE = sa.literal_column("1")
 
+_PRODUCTS = items_ds._PRODUCTS
+_CATEGORIES = ProductCategory.__table__
+_BRANDS = Brand.__table__
+_CONTACTS = RespondContact.__table__
+_AGENTS = SalesAgent.__table__
+
+#: Who asks (`contact_asker`, the one rule), as the words a reader meets. Staff testing the bot
+#: stays out of a run unless named; unclassified asks are IN as their own row. Removing
+#: `unclassified` here is the one switch that excludes them everywhere by default (UAC-29). Read
+#: at run time (`ask._run_chat`), so a change takes effect without a restart of the definitions.
+DEFAULT_ASKERS: Tuple[str, ...] = ("dealer", "salesperson", "unclassified")
+ASKER_LABELS: Tuple[Tuple[str, str], ...] = (
+    ("dealer", "Dealer"), ("salesperson", "Salesperson"), ("staff", "Staff"), ("unclassified", "Unclassified"),
+)
+_ASKER_WORD = contact_asker.sql_expr(ASKS.c.contact_respond_id)
+_ASKER = asks_ds._words(_ASKER_WORD, ASKER_LABELS)
+#: The asking salesperson's name (`sales_agents`), only for a contact the rule reads as one.
+_SALESPERSON = sa.case(
+    (
+        _ASKER_WORD == "salesperson",
+        sa.select(_AGENTS.c.sales_agent)
+        .select_from(_AGENTS.join(_CONTACTS, _CONTACTS.c.id == _AGENTS.c.contact_id))
+        .where(_CONTACTS.c.respond_io_id == ASKS.c.contact_respond_id)
+        .order_by(_AGENTS.c.sales_agent)
+        .limit(1)
+        .correlate(ASKS)
+        .scalar_subquery(),
+    ),
+    else_=sa.null(),
+)
+
 
 def _day(ctx) -> Any:
     return sa.func.to_char(sa.func.date_trunc("day", ctx.date_basis), "YYYY-MM-DD")
 
 
-#: The report-only columns: the day bucket, the single-total axis, and the two new measures.
+#: The report-only columns: the day bucket, the single-total axis, the asker axes and the two
+#: new measures.
 _EXTRA: Tuple[reg.Column, ...] = (
+    reg.Column("asker", "Asked by", "text", "dimension", lambda c: _ASKER, size=110),
+    reg.Column("salesperson", "Salesperson", "text", "dimension", lambda c: _SALESPERSON, size=140),
     reg.Column("day", "Day", "text", "dimension", _day, size=100),
     reg.Column("all", "All", "text", "dimension", lambda c: sa.cast(sa.literal("all"), sa.Text), size=80),
     reg.Column(
@@ -58,11 +96,19 @@ def _with_extra(columns: Tuple[reg.Column, ...]) -> Tuple[reg.Column, ...]:
 ASKS_DATASET = dataclasses.replace(asks_ds.DATASET, key="chat_report_asks", columns=_with_extra(asks_ds.COLUMNS))
 
 _failure_reason = next(c for c in asks_ds.COLUMNS if c.key == "failure_reason")
+_ITEMS_FROM = (
+    items_ds._FROM.outerjoin(_CATEGORIES, _CATEGORIES.c.id == _PRODUCTS.c.category_id)
+    .outerjoin(_BRANDS, _BRANDS.c.id == _PRODUCTS.c.brand_id)
+)
+_ITEM_AXES: Tuple[reg.Column, ...] = (
+    reg.Column("category", "Category", "text", "dimension", lambda c: _CATEGORIES.c.category_name, size=160),
+    reg.Column("brand", "Brand", "text", "dimension", lambda c: _BRANDS.c.brand_name, size=140),
+)
 ITEMS_DATASET = dataclasses.replace(
     items_ds.DATASET,
     key="chat_report_items",
-    columns=_with_extra(items_ds.COLUMNS + (_failure_reason,)),
-    base=lambda ctx: items_ds.DATASET.base(ctx).where(_ITEMS.c.role == "named"),
+    columns=_with_extra(items_ds.COLUMNS + (_failure_reason,)) + _ITEM_AXES,
+    base=lambda ctx: sa.select().select_from(_ITEMS_FROM).where(_ITEMS.c.kind == "product", _ITEMS.c.role == "named"),
 )
 
 #: The `grain` values: the ask grain is the default, products reads the item grain.
@@ -89,6 +135,73 @@ def product_condition(ctx, values: List[str]) -> Any:
     )
 
 
+def asker_condition(ctx, values: List[str]) -> Any:
+    return _ASKER_WORD.in_(values)
+
+
+def _named_product_of(column: Any, values: List[str]) -> Any:
+    """Asks that NAMED a product whose `column` (category / brand id) is one of `values`."""
+    return sa.exists().where(
+        _ITEMS.c.ask_id == ASKS.c.id,
+        _ITEMS.c.kind == "product",
+        _ITEMS.c.role == "named",
+        sa.cast(_PRODUCTS.c.id, sa.Text) == _ITEMS.c.ref_id,
+        column.in_(values),
+    )
+
+
+def category_condition(ctx, values: List[str]) -> Any:
+    if _is_items(ctx):
+        return _PRODUCTS.c.category_id.in_(values)
+    return _named_product_of(_PRODUCTS.c.category_id, values)
+
+
+def brand_condition(ctx, values: List[str]) -> Any:
+    if _is_items(ctx):
+        return _PRODUCTS.c.brand_id.in_(values)
+    return _named_product_of(_PRODUCTS.c.brand_id, values)
+
+
+def unclassified_contacts(db: Any, definition: Any, params: dict) -> int:
+    """Distinct unclassified contacts with a counted ask in the period and every filter but the
+    asker one (so "dealers only" still says how many unclassified contacts are not in it)."""
+    from app.services.reports import engine
+
+    ctx = engine.resolve(db, definition, {k: v for k, v in params.items() if k not in ("asker", "grain")})
+    preds = [ctx.date_basis >= ctx.period.start, ctx.date_basis < ctx.period.end_exclusive]
+    for param in ctx.definition.params:
+        chosen = ctx.values.get(param.key) or []
+        if isinstance(param, reg.SelectParam) and chosen:
+            condition = param.condition(ctx, chosen)
+            if condition is not None:
+                preds.append(condition)
+    return int(
+        db.execute(
+            sa.select(sa.func.count(sa.distinct(ASKS.c.contact_respond_id)))
+            .select_from(ASKS)
+            .where(*preds, _ASKER_WORD == "unclassified")
+        ).scalar()
+        or 0
+    )
+
+
+def card_agents(db: Any, customer_names: List[str]) -> dict:
+    """customer name -> the customer card's agent name (None when it has none)."""
+    from app.models.order import Customer
+
+    customers = Customer.__table__
+    rows = db.execute(
+        sa.select(customers.c.customer_name, _AGENTS.c.sales_agent)
+        .select_from(customers.outerjoin(_AGENTS, _AGENTS.c.id == customers.c.sales_agent_id))
+        .where(customers.c.customer_name.in_(customer_names))
+        .order_by(_AGENTS.c.sales_agent.desc().nullslast())
+    ).all()
+    out: dict = {}
+    for name, agent in rows:
+        out[name] = agent
+    return out
+
+
 def _no_options(db: Any) -> List[Any]:
     return []
 
@@ -107,6 +220,11 @@ def _params() -> tuple:
         reg.SelectParam("subject", "Subject", True, (), asks_ds.subject_options, asks_ds.subject_condition),
         reg.SelectParam("customer", "Customer", True, (), _no_options, customer_condition),
         reg.SelectParam("product", "Product", True, (), _no_options, product_condition),
+        reg.SelectParam(
+            "asker", "Asked by", True, (), lambda db: list(ASKER_LABELS), asker_condition
+        ),
+        reg.SelectParam("category", "Category", True, (), _no_options, category_condition),
+        reg.SelectParam("brand", "Brand", True, (), _no_options, brand_condition),
         reg.SelectParam(
             "grain", "Grain", False, (GRAIN_OPTIONS[0][0],), lambda db: list(GRAIN_OPTIONS),
             lambda ctx, values: None, clearable=False,  # picks the dataset, filters nothing

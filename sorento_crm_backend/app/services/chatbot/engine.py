@@ -4709,7 +4709,7 @@ def _run_stages_body(  # noqa: PLR0915
         state_in.focus.required_ask = None
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
             open_ask = None  # a new sales ranking ask, not the answer to the open question
-        if (open_ask or {}).get("ask") == chat_report.ASK_NAME and chat_report.names_its_own_ask(verdict):
+        if (open_ask or {}).get("ask") == chat_report.ASK_NAME and chat_report.names_its_own_ask(verdict, open_ask):
             open_ask = None  # a new chat report, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
         if required_rule:
@@ -4719,6 +4719,8 @@ def _run_stages_body(  # noqa: PLR0915
         # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
         # words, kept away from the generic resolver for the lane (`report_ask_words`).
         verdict = report_ask.take_words(verdict, _message_text)
+        # CA-3: a fresh chat report's product words are the lane's, not the generic resolver's.
+        verdict = chat_report.take_words(verdict)
         # LOWSTOCK-SEMANTIC: the low stock ask's own words ride the parser's `low_stock`
         # key; only the entities that scope the RUN stay, and the last settled report's
         # frame rides along for a refinement.
