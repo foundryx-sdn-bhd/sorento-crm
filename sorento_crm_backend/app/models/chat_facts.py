@@ -173,9 +173,17 @@ class ChatTopic(Base):
 
     __tablename__ = "chat_topics"
     __audit_skip__ = "reference rows written only by migration"
-    __table_args__ = ({"schema": "chatbot"},)
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_chat_topics_code"),
+        {"schema": "chatbot"},
+    )
 
-    code = Column(Text, primary_key=True)
+    # Surrogate uuid id (the uuid-id principle); `code` stays the business key the
+    # parent_code and corrected_topic FKs point at.
+    id = Column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid_str, server_default=text("gen_random_uuid()")
+    )
+    code = Column(Text, nullable=False)
     parent_code = Column(Text, ForeignKey("chatbot.chat_topics.code"), nullable=True)
     label = Column(Text, nullable=False)
     definition = Column(Text, nullable=False)
