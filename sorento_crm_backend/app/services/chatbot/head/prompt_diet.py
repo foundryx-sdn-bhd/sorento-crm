@@ -12,7 +12,7 @@ Data files (the registry fallback and the migration seed) are produced by
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -149,18 +149,45 @@ def missing(parsed: dict[str, Any], loaded: set[str]) -> set[str]:
     return needed_areas(parsed) & set(CARD_ORDER) - set(loaded)
 
 
-def embed_text(db: Session | None, text: str) -> list[float]:
-    """The text's embedding through the backend's one embedding provider path.
+@dataclass(frozen=True)
+class EmbeddingAccess:
+    """The embedding credentials, resolved in the engine's config session so the provider
+    call holds no database session. The key never reaches a log or the trace."""
 
-    `db` is accepted for the contract and unused: the engine calls this with no session
-    open, because a provider call must never hold one.
+    api_key: str = field(repr=False)
+    model: str
+
+
+class NoEmbeddingKey(Exception):
+    """The assistant configuration holds no OpenAI key to embed with."""
+
+
+def resolve_embedding_access(db: Session) -> EmbeddingAccess:
+    """The key from `ai_assistant_configs` (the chatbot's configured provider key), through
+    the shared resolver. An empty key is carried, and `embed_text` refuses it."""
+    from app.services.ai_assistant_service import AIAssistantConfigService
+    from app.services.llm_provider import resolve_api_key
+
+    config = AIAssistantConfigService(db).get()
+    return EmbeddingAccess(
+        api_key=resolve_api_key(config, "openai"), model=settings.embedding_model_name
+    )
+
+
+def embed_text(access: EmbeddingAccess, text: str) -> list[float]:
+    """The text's embedding through the provider class and the configured key.
+
+    Cassette-aware (`OpenAIProvider.embed`). Called with no session open. Note the provider
+    sends its own embedding model name, which equals `embedding_model_name`'s default.
     """
-    from app.services.embedding_worker import _embed_text_chunks
+    from app.services.llm_provider import OpenAIProvider
 
-    vectors = _embed_text_chunks([text])
-    if not vectors or not vectors[0]:
+    if not access.api_key:
+        raise NoEmbeddingKey("no embedding key")
+    vector = OpenAIProvider(access.api_key, access.model).embed(text)
+    if not vector:
         raise ValueError("embedding provider returned an empty vector")
-    return list(vectors[0])
+    return list(vector)
 
 
 def nearest_examples(db: Session, vector: list[float], k: int = 5) -> list[Example]:

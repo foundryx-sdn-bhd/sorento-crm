@@ -77,16 +77,11 @@ def test_resolve_embedding_access_reads_the_config_row(monkeypatch) -> None:
 
 @pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
 def test_engine_hands_the_config_key_to_embed_text(monkeypatch, session_factory, seeded, stub_access) -> None:
-    from app.services.ai_assistant_service import AIAssistantConfigService
-
-    monkeypatch.setattr(settings, "openai_api_key", "")
-    db = session_factory()
-    row = AIAssistantConfigService(db).get()
-    row.provider = "openai"
-    row.api_key_ciphertext = "sk-config-engine"
-    db.commit()
-    db.close()
-
+    # Resolution is tested above against a real config row; a configured key in this DB
+    # would also switch on the pipeline's other provider calls, so it is stubbed here.
+    monkeypatch.setattr(
+        _m(), "resolve_embedding_access", lambda db: _m().EmbeddingAccess(api_key="sk-config-engine", model="m")
+    )
     h = DietHarness(monkeypatch, [emission(domain_hint="inventory")])
     h.diet_on(example_areas=["inventory"])
     seen = []

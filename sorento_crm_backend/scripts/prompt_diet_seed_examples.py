@@ -114,6 +114,24 @@ def build_examples(data_dir: Path) -> list[dict]:
     return rows
 
 
+def config_openai_key(url: str) -> str:
+    """The OpenAI key from the assistant configuration, read only. Never printed, never the env."""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SET TRANSACTION READ ONLY"))
+            row = conn.execute(
+                text("SELECT provider, api_key_ciphertext FROM ai_assistant_configs ORDER BY created_at LIMIT 1")
+            ).first()
+    finally:
+        engine.dispose()
+    if row is None or (row.provider or "").strip().casefold() != "openai" or not row.api_key_ciphertext:
+        raise SystemExit("refused: no OpenAI key in ai_assistant_configs at --config-db-url")
+    return row.api_key_ciphertext
+
+
 def sql_text(value: str | None) -> str:
     return "NULL" if value is None else "'" + value.replace("'", "''") + "'"
 
@@ -138,6 +156,10 @@ def main() -> int:
     ap.add_argument("--data-dir", required=True, type=Path)
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--embed", action="store_true", help="fill each row's embedding (provider calls)")
+    ap.add_argument(
+        "--config-db-url",
+        help="database whose ai_assistant_configs row holds the OpenAI key (read only); required with --embed",
+    )
     args = ap.parse_args()
 
     reason = check_data_dir(args.data_dir)
@@ -145,12 +167,14 @@ def main() -> int:
         return refuse(reason)
     rows = build_examples(args.data_dir)
     if args.embed:
-        from app.services.embedding_worker import _embed_text_chunks
+        if not args.config_db_url:
+            return refuse("--embed needs --config-db-url (the key is read from ai_assistant_configs, never the env)")
+        from app.config import settings
+        from app.services.llm_provider import OpenAIProvider
 
+        provider = OpenAIProvider(config_openai_key(args.config_db_url), settings.embedding_model_name)
         for row in rows:
-            row["embedding"] = _embed_text_chunks(
-                ["\n".join(part for part in (row["context"], row["message"]) if part)]
-            )[0]
+            row["embedding"] = provider.embed("\n".join(part for part in (row["context"], row["message"]) if part))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     (args.out_dir / "examples.jsonl").write_text(

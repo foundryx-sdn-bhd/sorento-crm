@@ -1583,6 +1583,7 @@ def _parse_with_diet(
     user_block: str,
     *,
     core: tuple[str, int | None],
+    access: prompt_diet.EmbeddingAccess | None,
     cards: dict[str, str],
     state_in: Any,
     open_question: Any,
@@ -1602,7 +1603,7 @@ def _parse_with_diet(
     """
     core_text, core_version = core
     try:
-        vector = prompt_diet.embed_text(None, embed_input)
+        vector = prompt_diet.embed_text(access, embed_input)
         with _session(session_factory) as retrieval_db:
             examples = prompt_diet.nearest_examples(retrieval_db, vector, k=5)
         retrieved = {example.area for example in examples}
@@ -4469,6 +4470,7 @@ def _run_stages_body(  # noqa: PLR0915
     }
     diet_core: tuple[str, int | None] | None = None
     diet_cards: dict[str, str] | None = None
+    diet_access: prompt_diet.EmbeddingAccess | None = None
 
     # Resolved HERE, not inside the `received` session block above: a media-denied
     # turn returned before this line and never needed a provider configured for a
@@ -4492,6 +4494,7 @@ def _run_stages_body(  # noqa: PLR0915
                 diet_core = render_prompt(db, "chatbot_parser_core", current_date=_current_date_directive())
                 cards_text, _cards_version = render_prompt(db, "chatbot_parser_cards")
                 diet_cards = prompt_diet.parse_cards(cards_text)
+                diet_access = prompt_diet.resolve_embedding_access(db)
             except Exception as exc:  # noqa: BLE001 - the static prompt is the fallback
                 diet_core = diet_cards = None
                 diet_facts["fallback"] = f"{type(exc).__name__}: {exc}"
@@ -4553,6 +4556,7 @@ def _run_stages_body(  # noqa: PLR0915
                 parser_config,
                 user_block,
                 core=diet_core,
+                access=diet_access,
                 cards=diet_cards,
                 state_in=state_in,
                 open_question=open_question,
