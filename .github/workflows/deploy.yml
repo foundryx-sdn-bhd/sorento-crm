@@ -16,15 +16,13 @@ on:
   # re-run against a new head). One label runs anything; every root job below
   # gates on it, so labeling with anything else is a no-op:
   #
-  #   `ci`      the CHEAP gate: the fast gates (alembic head, PII guard,
-  #             gitleaks, changed areas), validate imports, typecheck and
-  #             vitest when the frontend changed, the SCM shards when SCM
-  #             paths changed, and the import-selected changed tests
-  #             (`test-backend-changed`). The six main backend shards NEVER
-  #             run here, whatever the selection's size (CI-MINUTES-CUT,
-  #             5 Oct 2026: on a metered plan the over-budget escape of
-  #             CI-SPEED ran all six shards plus the SCM shards on most PRs,
-  #             about 200 job-minutes a run, 59% of all minutes).
+  #   `ci`      the PR gate (CI-LEAN, 10 Oct 2026): the four one-minute fast
+  #             gates (alembic head, PII guard, gitleaks, changed areas) and
+  #             ONE job, `PR gate` (`lean-gate`), that runs the import
+  #             checks, the import-selected changed backend tests on Postgres
+  #             (tests/scm included), the MCP suite when MCP changed, and
+  #             tsc plus the related vitest files when the frontend changed.
+  #             No shard ever runs on a PR.
   #   `ci-full` REFUSED (owner, 9 Oct 2026: no full suite per PR; CI-LEAN):
   #             it runs one job, `refuse-ci-full`, which removes the label and
   #             fails with the reason. The full suite runs on a release only.
@@ -33,13 +31,14 @@ on:
   # the account's 20 concurrent job slots and queuing push-to-main deploys
   # behind them for 30-50+ minutes (2026-09-25: runs 36103575754/
   # 36105804527/36107711150 all queued behind one PR run). A PR with no label
-  # therefore shows NO checks. The `protect-main-branch` ruleset requires the
-  # five fast-gate names only ("Single alembic head (fast gate)", "Changed
-  # areas", "Validate backend imports", "Validate MCP imports", "Type-check
-  # frontend"; crew, 5 Oct 2026), which a `ci` run reports; a path-filtered
-  # job reports "skipped", which a ruleset accepts. The gate job at the
-  # bottom reports as `CI gate` on a `ci` run and as `CI gate (full)` on the
-  # queue and a release.
+  # therefore shows NO checks. The `protect-main-branch` ruleset is to require
+  # one check, `PR gate` (owner Q3, 10 Oct 2026; crew switches it once this is
+  # green on main). Until then it requires the five old fast-gate names
+  # ("Single alembic head (fast gate)", "Changed areas", "Validate backend
+  # imports", "Validate MCP imports", "Type-check frontend"): the first two
+  # still run on a PR and the other three report "skipped" there, which a
+  # ruleset accepts, so the switch can happen after the merge. `CI gate
+  # (full)` reports on a merge-queue entry only.
   pull_request:
     branches:
       - main
@@ -329,9 +328,8 @@ jobs:
   #    dispatcher's call, made per release; nothing here infers it.
   #
   # 4. `backend_tests`: the backend test FILES a PULL REQUEST changes
-  #    (`BACKEND_TESTS_RE`: `sorento_crm_backend/tests/**/test_*.py`, minus
-  #    `tests/scm/`, which the SCM shards already run), space-separated, for
-  #    `test-backend-changed`. The six main backend shards never run on a
+  #    (`BACKEND_TESTS_RE`: `sorento_crm_backend/tests/**/test_*.py`, tests/scm
+  #    included since CI-LEAN), space-separated, for the PR gate (`lean-gate`). The six main backend shards never run on a
   #    PR (owner ruling 2026-09-29), so before this a PR that only changed
   #    `tests/test_media_job_lifecycle.py` (#1387, run 36665697605) ran the
   #    alembic gate, this job and validate-backend (collect-only plus the
@@ -557,16 +555,15 @@ jobs:
             flag scm      "$SCM_RE"
           } | tee -a "$GITHUB_OUTPUT"
           # BACKEND_TESTS_RE: the backend test files this PR changes, for
-          # `test-backend-changed` (point 4 of the job comment). `test_*.py`
-          # only, pytest's own collection pattern: a helper module or a
-          # fixture file handed to pytest collects nothing and exits 5. Not
-          # tests/scm/: the SCM shards run those whenever `scm` is true. The
+          # the PR gate (point 4 of the job comment). `test_*.py` only,
+          # pytest's own collection pattern: a helper module or a fixture
+          # file handed to pytest collects nothing and exits 5. tests/scm/
+          # included: the SCM shards no longer run on a PR (CI-LEAN). The
           # character class is deliberate: the list becomes a pytest
           # argument line, so a path holding anything a shell would parse
           # (a space, a quote, a backtick) is simply not in it.
           BACKEND_TESTS_RE='^sorento_crm_backend/tests/([A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_.-]*\.py$'
           backend_tests=$(printf '%s\n' "$files" | { grep -E "$BACKEND_TESTS_RE" || true; } \
-                            | { grep -Ev '^sorento_crm_backend/tests/scm/' || true; } \
                             | tr '\n' ' ' | sed 's/ $//')
           echo "backend_tests=$backend_tests" | tee -a "$GITHUB_OUTPUT"
           # BACKEND_CODE_RE: the backend .py modules this PR changes (app/,
@@ -599,15 +596,16 @@ jobs:
         env:
           BACKEND_CODE: ${{ steps.filter.outputs.backend_code }}
           BACKEND_TESTS: ${{ steps.filter.outputs.backend_tests }}
-          SCM: ${{ steps.filter.outputs.scm }}
+        # `--scm false`: tests/scm stays in the selection, the SCM shards no
+        # longer run on a PR (CI-LEAN).
         run: |
           printf '%s\n' $BACKEND_CODE $BACKEND_TESTS \
-            | python3 sorento_crm_backend/scripts/ci_select_tests.py --root sorento_crm_backend --scm "$SCM"
+            | python3 sorento_crm_backend/scripts/ci_select_tests.py --root sorento_crm_backend --scm false
 
   validate-backend:
     name: Validate backend imports
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -697,7 +695,7 @@ jobs:
   validate-mcp:
     name: Validate MCP imports
     needs: [changes]
-    if: needs.changes.outputs.mcp == 'true'
+    if: needs.changes.outputs.mcp == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -809,7 +807,7 @@ jobs:
   test-backend-scm:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
-    if: needs.changes.outputs.scm == 'true'
+    if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -1005,7 +1003,7 @@ jobs:
   # never for a PR (`ci-full` is refused, owner 9 Oct 2026). A skipped job still
   # reports, as "skipped", which a ruleset's required status check accepts.
   # The test files a `ci` PR changes, and the files that import what it
-  # changes, run on the PR: `test-backend-changed` below. The CI-SPEED
+  # changes, run on the PR: the `PR gate` job (`lean-gate`) below. The CI-SPEED
   # exception (1 Oct 2026: a selection above 3600 CPU-s ran these six shards
   # on the PR) is gone with CI-MINUTES-CUT (5 Oct 2026): it fired on most
   # backend PRs and was the single biggest cost; the selection now runs in
@@ -1253,51 +1251,54 @@ jobs:
             -m serial_ddl --ignore-glob='tests/test_migration_*.py' \
             $IGNORES --ignore=tests/scm tests/
 
-  # The backend test files a `ci`-labelled PR changes, executed on the PR.
+  # THE PR GATE (CI-LEAN, 10 Oct 2026): one job, check name `PR gate`, which
+  # the `protect-main-branch` ruleset requires (owner Q3). Before it, a `ci`
+  # PR ran up to 15 jobs (validate backend and MCP images, the SCM shards,
+  # four vitest shards, the type-check, the changed tests, a label job and a
+  # gate job), each billed rounded up and each paying its own setup. Now the
+  # four one-minute fast gates (alembic head, PII guard, gitleaks, changed
+  # areas) run as before, and everything else runs here, in sequence, on one
+  # runner:
   #
-  # `test-backend` never runs on a pull_request (above), so until this job a
-  # PR that changed a test outside tests/scm never executed it before the
-  # merge queue or the release: #1387 changed only
-  # tests/test_media_job_lifecycle.py (a de-flake of a test that had just
-  # failed a release run) and its `ci` run (36665697605) was the alembic
-  # gate, `changes` and validate-backend's collect-only. `changes` lists the
-  # changed `tests/**/test_*.py` files (`backend_tests`, point 4 of its
-  # comment); this job runs exactly those, on the same Postgres + Redis
-  # bootstrap as the shards (in the shards' two-pass split, see below).
-  # The list is trimmed first: a deleted
-  # or renamed-away path is in the PR's file list but not in the checkout,
-  # and a ci_excluded.txt entry asserts against business data an empty
-  # database does not hold (that file says why); either would fail pytest on
-  # collection, not on the test. An empty list after trimming is a pass with
-  # nothing run, printed as such.
+  # - the `ci` label is removed first (one-shot trigger: adding it again
+  #   re-runs on the PR's current head; a push alone never does);
+  # - backend changed: the app and worker import chains, `pytest
+  #   --collect-only` over every test file (import errors anywhere), the
+  #   in-image regression guards;
+  # - the backend tests `changes` selected (`backend_tests`: the changed test
+  #   files plus every test file that imports a changed module, tests/scm
+  #   included, up to 3600 estimated CPU-s; above that the PR's own changed
+  #   test files, and the whole selection runs in the release), on Postgres +
+  #   Redis, in the shards' two-pass split (see the run step);
+  # - MCP changed: its import chain and its test suite;
+  # - frontend changed: `tsc --noEmit` and `vitest run --changed <base>`, the
+  #   vitest files related to what the PR changed (vitest's own module
+  #   graph), instead of four shards of the whole suite.
   #
-  # Off a PR the list is empty by construction and the full shards cover
-  # every file, so this job is skipped there; the label gating and the area
-  # flags are untouched.
+  # The image builds the old validate jobs did are not repeated per PR: the
+  # release builds every changed image (build-images) before it deploys.
   #
-  # Since CI-SPEED (1 Oct 2026) the list is the import-based selection
-  # (point 5 of `changes`): the changed test files plus every test file
-  # that imports a changed backend module, up to 3600 estimated CPU-s.
-  # Above that (CI-MINUTES-CUT, 5 Oct 2026) the list is the changed test
-  # files alone, so this job stays one runner and about 15 min at most, and
-  # the whole selection runs in the release. So the run step
-  # splits like the shards: tests/scm and the rest in separate sessions,
-  # xdist `--dist loadfile` for the bulk, then the `serial_ddl` and
-  # tests/test_migration_*.py files serially. `ci` only: off a PR the
-  # shards run every file and `changes` lists nothing here anyway.
+  # `always()` plus the first step: a red fast gate must turn this check red,
+  # never "skipped" (a ruleset accepts a skipped required check).
+  #
+  # The list is trimmed first: a deleted or renamed-away path is in the PR's
+  # file list but not in the checkout, and a ci_excluded.txt entry asserts
+  # against business data an empty database does not hold (that file says
+  # why); either would fail pytest on collection, not on the test. An empty
+  # list after trimming is a pass with nothing run, printed as such.
   #
   # timeout-minutes 60: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
-  # plus 2 min of setup; the cap is for a hung runner, sized like the
-  # shards' (see test-backend).
-  test-backend-changed:
-    name: Backend changed tests (Postgres)
-    needs: [changes]
-    if: >-
-      github.event_name == 'pull_request'
-      && github.event.label.name == 'ci'
-      && needs.changes.outputs.backend_tests != ''
+  # plus setup and the frontend checks; the cap is for a hung runner, sized
+  # like the shards' (see test-backend).
+  lean-gate:
+    name: ${{ github.event_name == 'pull_request' && 'PR gate' || 'Release tests' }}
+    needs: [changes, check-migration-heads, pii-guard, gitleaks]
+    if: always() && github.event_name == 'pull_request' && github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -1325,18 +1326,46 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-dummy-secret
       JWT_ALGORITHM: HS256
-      # No frontend in this job either - see the same note on `test-backend`.
       DEALER_KIT_RENDER_TESTS: skip
       BACKEND_TESTS: ${{ needs.changes.outputs.backend_tests }}
     steps:
+      - name: Remove the ci label so a future add re-triggers CI
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label ci
+
+      # Allow-list, like the CI gate's: a fast gate passes only as `success`
+      # (`skipped` for the PII guard and gitleaks, which a release skips by
+      # design). Anything else, `abandoned` included, is red.
+      - name: Fail when a fast gate did not pass
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = []
+          for job, info in needs.items():
+              result = info.get("result", "")
+              print(f"{job}: {result}")
+              ok = ("success", "skipped") if job in ("pii-guard", "gitleaks") else ("success",)
+              if result not in ok:
+                  bad.append(f"{job} {result or 'missing'}")
+          if bad:
+              sys.exit("a fast gate did not pass: " + ", ".join(bad))
+          PY
+
+      # Full history only when the frontend changed: `vitest --changed` diffs
+      # against the base commit.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ needs.changes.outputs.frontend == 'true' && 0 || 1 }}
 
-      # Before the Python setup on purpose: a list that trims to nothing
-      # (every changed test file deleted, or excluded) needs no database.
-      # Asserted by sorento_crm_backend/tests/test_ci_docs_only_filter.py
-      # (test_changed_tests_step_*), which runs this step's shell against a
-      # scratch checkout.
       - name: Select the changed test files to run
         id: select
         run: |
@@ -1365,20 +1394,40 @@ jobs:
           echo "files=$run" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        if: steps.select.outputs.files != ''
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.mcp == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: sorento_crm_backend/requirements.txt
+          cache-dependency-path: |
+            sorento_crm_backend/requirements.txt
+            sorento_crm_mcp/pyproject.toml
 
       - name: Install dependencies
-        if: steps.select.outputs.files != ''
+        if: needs.changes.outputs.backend == 'true'
         working-directory: sorento_crm_backend
         run: pip install -r requirements.txt
 
-      # Same as the shards: durability off for a throwaway database, and the
-      # lock table sized for the scratch schemas the fixtures create.
+      # The two import chains validate-backend checked inside the image: the
+      # worker's order differs from app.main's, and a circular import can pass
+      # one and kill APScheduler in the other (2026-06, email_outbox stuck).
+      - name: Smoke import app.main and the worker entrypoint
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: sorento_crm_backend
+        run: |
+          python -c "from app.main import app; print('import ok')"
+          python -c "import worker; from app.scheduler.task_scheduler import start_scheduler; print('worker import chain ok')"
+
+      - name: Pytest collect-only (catches import errors in tests)
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: sorento_crm_backend
+        run: python -m pytest --collect-only -q -p no:cacheprovider
+
+      - name: Pytest regression guards (executing gate)
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: sorento_crm_backend
+        run: python -m pytest -q -p no:cacheprovider tests/test_lessons_learnt_regressions.py
+
       - name: Relax Postgres durability for the test run
         if: steps.select.outputs.files != ''
         run: |
@@ -1435,10 +1484,53 @@ jobs:
           [ -z "$migrations" ] || run -p no:xdist --durations=10 $migrations
           exit "$rc"
 
+      # validate-mcp's checks without the image: the package in this Python,
+      # its real entrypoint's imports, then its test suite.
+      - name: MCP imports and test suite (executing gate)
+        if: needs.changes.outputs.mcp == 'true'
+        env:
+          CRM_BASE_URL: http://localhost:8000
+          EXTERNAL_API_KEY: ci-dummy
+        run: |
+          pip install -e "sorento_crm_mcp[dev]"
+          python -c "from importlib.metadata import version; from sorento_crm_mcp.server import create_mcp_app; print('mcp', version('mcp'), 'entrypoint imports ok')"
+          python -m pytest sorento_crm_mcp/tests -q -p no:cacheprovider
+
+      - name: Set up Node
+        if: needs.changes.outputs.frontend == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sorento_crm_frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: sorento_crm_frontend
+        run: npm ci --force
+
+      # Same as typecheck-frontend: route types first (tsc otherwise checks
+      # nothing for those files), and the raised heap (private runners, 10 Oct).
+      - name: Type-check the frontend
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: sorento_crm_frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          npx next typegen
+          npm run typecheck
+
+      - name: Run the vitest files related to the change (executing gate)
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: sorento_crm_frontend
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npx vitest run --changed "$BASE_SHA"
+
   validate-frontend:
     name: Validate frontend (vitest)
     needs: [changes]
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # A shard measured about 8.5 min over 29 Sep-5 Oct.
     timeout-minutes: 20
@@ -1493,7 +1585,7 @@ jobs:
   typecheck-frontend:
     name: Type-check frontend
     needs: [changes]
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1910,32 +2002,6 @@ jobs:
           body: |
             https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-  # Makes the `ci` label a one-shot trigger rather than a standing state:
-  # the instant a `pull_request labeled` event with it fires (which is also
-  # what let every other job above run this time), this job removes it
-  # again. GitHub fires a fresh `labeled`
-  # event every time the label is ADDED, even if it was already present and
-  # removed since, so the orchestrator re-labels the PR to re-run CI against
-  # its current head - a push alone never does, per the trigger comment
-  # above. `always()` plus no `needs` means this runs independently of
-  # whether the gated jobs above passed or failed; the label removal itself
-  # must not block on their result.
-  release-ci-label:
-    name: Release ci label (one-shot trigger)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: always() && github.event_name == 'pull_request' && github.event.label.name == 'ci'
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Remove the ci label so a future add re-triggers CI
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr edit "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --remove-label ci
-
   # `ci-full` on a PR is refused (owner, 9 Oct 2026: no full suite per PR;
   # CI-LEAN, documentation/plans/ci/PLAN-ci-lean-10oct.md). It is the only
   # job a `ci-full` label runs: every other job gates on `ci`, so no suite,
@@ -2003,15 +2069,11 @@ jobs:
         validate-mcp,
         test-backend-scm,
         test-backend,
-        test-backend-changed,
+        lean-gate,
         validate-frontend,
         typecheck-frontend,
       ]
-    if: >-
-      always()
-      && github.event_name != 'push'
-      && github.event_name != 'workflow_dispatch'
-      && (github.event_name != 'pull_request' || github.event.label.name == 'ci')
+    if: always() && github.event_name == 'merge_group'
     steps:
       - name: Fail when a needed job failed or was cancelled
         env:

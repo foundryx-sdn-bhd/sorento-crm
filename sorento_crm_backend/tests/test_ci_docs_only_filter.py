@@ -459,9 +459,6 @@ def test_changed_test_files_are_listed_beside_code_changes(tmp_path):
 @pytest.mark.parametrize(
     "path",
     [
-        # the SCM shards' job runs these whenever `scm` is true
-        "sorento_crm_backend/tests/scm/test_committed_v.py",
-        "sorento_crm_backend/tests/scm/nested/test_x.py",
         # harness and helper modules: pytest collects nothing from them (exit 5)
         "sorento_crm_backend/tests/conftest.py",
         "sorento_crm_backend/tests/_pg_fixture.py",
@@ -490,6 +487,8 @@ def test_scm_test_change_runs_in_the_pr_gate(tmp_path):
     is listed like any other (the run step keeps tests/scm in its own session)."""
     out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/test_committed_v.py"])
     assert out["backend_tests"] == "sorento_crm_backend/tests/scm/test_committed_v.py"
+    nested = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/nested/test_x.py"])
+    assert nested["backend_tests"] == "sorento_crm_backend/tests/scm/nested/test_x.py"
     both = run_step(tmp_path, "pull_request", [
         "sorento_crm_backend/tests/scm/test_committed_v.py", "sorento_crm_backend/tests/test_rbac.py",
     ])
