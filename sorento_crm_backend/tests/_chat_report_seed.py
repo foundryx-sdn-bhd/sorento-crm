@@ -159,6 +159,12 @@ def seed_world(db) -> SimpleNamespace:
 
 
 def add_unlabelled(db, n: int) -> None:
-    """`n` more counted asks with no topic (each its own contact), to push coverage under 80%."""
+    """`n` more counted asks with no topic (each its own contact, an ordinary dealer with its own
+    respond_contacts row and customer link), to push coverage under 80%."""
+    from tests._pg_fixture import unique_code
+    from tests._sales_report_do_seed import seed_customer
+
+    cust = seed_customer(db, name=unique_code("CustU"))
     for i in range(n):
+        _dealer_contact(db, f"u{i}", cust)
         add_fact(db, when=day(9, 17), contact=f"u{i}", turn=_uid(), domain="inventory")
