@@ -17,6 +17,7 @@ it again.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from typing import Any, Optional
@@ -69,12 +70,18 @@ def _env(name: str) -> Any:
 # without this an unauthenticated flood would cost one database read each (security review H1).
 # `update` clears it in this process; another worker sees a change within CACHE_TTL_SECONDS.
 CACHE_TTL_SECONDS = 5.0
-_cache: dict[str, Any] = {}
 _READ_FAILED = object()
+# (generation, read at, snapshot), swapped whole so a reader never sees half of it. A save bumps
+# the generation, and a read that started before the save does not write its older snapshot
+# back (security re-check N1, N2).
+_cache: tuple[int, float, Any] = (0, float("-inf"), None)
+_cache_lock = threading.Lock()
 
 
 def clear_cache() -> None:
-    _cache.clear()
+    global _cache
+    with _cache_lock:
+        _cache = (_cache[0] + 1, float("-inf"), None)
 
 
 def _snapshot(row: Optional[SystemSetting]) -> dict[str, Any]:
@@ -126,9 +133,11 @@ def _read(db: Optional[Session]) -> Any:
         except Exception:  # noqa: BLE001 - see _resolve: secrets fail closed, the rest use env
             logger.exception("runtime_settings: could not read system_settings")
             return _READ_FAILED
+    global _cache
+    generation, at, cached = _cache
     now = time.monotonic()
-    if _cache and now - _cache["at"] < CACHE_TTL_SECONDS:
-        return _cache["snap"]
+    if now - at < CACHE_TTL_SECONDS:
+        return cached
     try:
         session = SessionLocal()
         try:
@@ -138,7 +147,9 @@ def _read(db: Optional[Session]) -> Any:
     except Exception:  # noqa: BLE001
         logger.exception("runtime_settings: could not read system_settings")
         snap = _READ_FAILED  # cached too, so an outage is not one attempt per request
-    _cache.update(at=now, snap=snap)
+    with _cache_lock:
+        if _cache[0] == generation:
+            _cache = (generation, now, snap)
     return snap
 
 

@@ -603,3 +603,34 @@ def test_older_settings_puts_never_echo_stored_secrets(api, db, actor, path):
     assert not [k for k in data if k.endswith("_ciphertext")]
     assert "smtp_password" not in data
     assert cipher not in resp.text and "ZztSmtpPass0001" not in resp.text
+
+
+def test_a_read_that_started_before_a_save_does_not_cache_the_old_value(db, actor, monkeypatch):
+    """Security re-check N2: a sessionless read in flight while a save commits must not write
+    its older snapshot back over the cleared cache."""
+    from app.services import runtime_settings as rs
+
+    class _Keep:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+        def close(self):
+            pass
+
+    rs.update(db, {"connector_connection_id": "zzt-old"}, actor.id)
+    real_snapshot = rs._snapshot
+
+    def _slow_snapshot(row):
+        snap = real_snapshot(row)  # the old value, read before the save below
+        rs.update(db, {"connector_connection_id": "zzt-new"}, actor.id)
+        return snap
+
+    monkeypatch.setattr(rs, "SessionLocal", lambda: _Keep(db))
+    monkeypatch.setattr(rs, "_snapshot", _slow_snapshot)
+    assert rs.get("connector_connection_id") == "zzt-old"  # this one read is allowed to be old
+
+    monkeypatch.setattr(rs, "_snapshot", real_snapshot)
+    assert rs.get("connector_connection_id") == "zzt-new"  # but it was not cached
