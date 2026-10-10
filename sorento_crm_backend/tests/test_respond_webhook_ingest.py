@@ -25,7 +25,7 @@ from tests._pg_fixture import blank_session
 
 WEBHOOK_URL = "/api/v1/public/respond/webhook"
 INGEST_URL = "/api/v1/external/chat-history/messages"
-SECRET = "zzt-webhook-secret"
+SECRET = "zzt-webhook-secret-not-real-0001"  # made up; keys under 24 chars are ignored
 CONTACT_ID = "ZZT100000001"
 MESSAGE_ID = 1786751891000000
 
@@ -260,6 +260,28 @@ def test_a_setting_with_only_separators_is_503(client, db, monkeypatch, configur
     r = _post(client, _event())
     assert r.status_code == 503
     assert _rows(db) == []
+
+
+@pytest.mark.parametrize("short", ["key", "message.received:", "x" * 23])
+def test_a_short_token_in_the_setting_is_not_a_key(client, db, monkeypatch, short):
+    # Security review: a stray word pasted with the keys must not become a secret anyone
+    # can guess, by HMAC or by the shared-secret header.
+    monkeypatch.setattr(settings, "respond_webhook_secret", f"{short}\n{KEY_TWO}")
+    raw, headers = _signed(_event(), secret=short)
+    assert client.post(WEBHOOK_URL, content=raw, headers=headers).status_code == 401
+    shared = client.post(
+        WEBHOOK_URL,
+        content=raw,
+        headers={"x-respond-webhook-secret": short, "content-type": "application/json"},
+    )
+    assert shared.status_code == 401
+    assert _rows(db) == []
+
+
+def test_a_setting_with_only_short_tokens_is_503(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "respond_webhook_secret", "short-secret, key")
+    r = _post(client, _event())
+    assert r.status_code == 503
 
 
 # ---------------------------------------------------------------------------

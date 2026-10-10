@@ -634,3 +634,41 @@ def test_a_read_that_started_before_a_save_does_not_cache_the_old_value(db, acto
 
     monkeypatch.setattr(rs, "_snapshot", real_snapshot)
     assert rs.get("connector_connection_id") == "zzt-new"  # but it was not cached
+
+
+RESPOND_KEY_ONE = "k9/Fq+2Zr8LmW1x/Pt7+eD4uYc0sHn6vJb3aTq5oRg8="  # made up base64 keys
+RESPOND_KEY_TWO = "Zx+7mP/2Qw9eLr4/Tn6+Ya1cVb8uKd3sHj5gFo0iEk4="
+
+
+def test_put_takes_several_respond_signing_keys(api, db):
+    client, allow = api
+    allow.add(SECRETS_SLUG)
+
+    resp = client.put(
+        ENDPOINT, json={"respond_webhook_secret": f"{RESPOND_KEY_ONE}\n{RESPOND_KEY_TWO}\n"}
+    )
+
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("short", ["key", "message.received:", "x" * 23])
+def test_put_refuses_a_respond_key_under_24_characters_without_echoing_it(api, short):
+    client, allow = api
+    allow.add(SECRETS_SLUG)
+
+    resp = client.put(ENDPOINT, json={"respond_webhook_secret": f"{RESPOND_KEY_ONE}\n{short}"})
+
+    assert resp.status_code == 422
+    assert "respond_webhook_secret" in resp.text
+    assert short not in resp.text
+    assert RESPOND_KEY_ONE not in resp.text
+
+
+def test_put_refuses_more_than_ten_respond_keys(api):
+    client, allow = api
+    allow.add(SECRETS_SLUG)
+    keys = [f"zzt-made-up-signing-key-{i:04d}" for i in range(11)]
+
+    assert client.put(ENDPOINT, json={"respond_webhook_secret": "\n".join(keys)}).status_code == 422
+    ok = client.put(ENDPOINT, json={"respond_webhook_secret": "\n".join(keys[:10])})
+    assert ok.status_code == 200, ok.text
