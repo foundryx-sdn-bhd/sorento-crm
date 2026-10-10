@@ -30,7 +30,10 @@ throws them away. No new matcher and no new query: keep them.
 
 - D1 Candidates only for a line with no exact match. Matched lines unchanged.
 - D2 Candidates = `tr.alternatives` with entity_type `product`, filtered to `is_active` products
-  (same filter as the manual Item picker, `tag_data_service.search_products`), top 3.
+  (same filter as the manual Item picker, `tag_data_service.search_products`), top 3. The active
+  filter runs inside the resolver BEFORE its cap of 5 (`resolve_references(...,
+  alternatives_active_only=True)`, off by default for every other caller), so inactive near
+  matches cannot push an active one out (crew audit, 10 Oct).
 - D3 Products only. Trigger to add sets: the first real misread set code.
 - D4 Ambiguous exact (2+ scoped hits): unchanged (no candidates).
 - D5 Floor: the resolver's shared 0.30.

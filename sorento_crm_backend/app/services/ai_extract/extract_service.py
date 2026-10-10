@@ -1044,7 +1044,8 @@ class AIExtractService:
         `alternatives` the same resolver call already computed for a miss
         (company-scoped trigram neighbours, `entity_resolver.resolve_references`),
         products only, active only (the manual Item picker's own filter,
-        `tag_data_service.search_products`), at most `_MAX_SUGGESTIONS`. No
+        `tag_data_service.search_products`; applied inside the resolver before
+        its cap of 5, `alternatives_active_only`), at most `_MAX_SUGGESTIONS`. No
         second lookup and no auto-apply: the user confirms one in the dialog.
         """
         cleaned = [c for c in (codes or []) if c]
@@ -1066,6 +1067,7 @@ class AIExtractService:
                     enable_prefix_fallback=False,
                     enable_embedding_fallback=False,
                     max_candidates=len(chunk),
+                    alternatives_active_only=suggestions_out is not None,
                 )
             except Exception:
                 # A resolver failure must not turn an LLM extract that already
@@ -1113,36 +1115,21 @@ class AIExtractService:
         misses: list[TokenResolution],
         suggestions_out: dict[str, list[ExtractedProductSuggestion]],
     ) -> None:
-        """Writes each missed token's active product `alternatives` (in the
-        resolver's own ranking) into `suggestions_out`. One bounded IN query for
-        the active check across the chunk."""
-        candidates = {
-            tr.token: [
-                a for a in tr.alternatives if a.entity_type == "product" and a.uuid
-            ]
-            for tr in misses
-        }
-        ids = {a.uuid for alts in candidates.values() for a in alts}
-        if not ids:
-            return
-        active = {
-            str(pid)
-            for (pid,) in self.db.query(Product.id)
-            .filter(Product.id.in_(ids), Product.is_active.is_(True))
-            .all()
-        }
-        for token, alts in candidates.items():
+        """Writes each missed token's product `alternatives` (in the resolver's
+        own ranking, already active-only via `alternatives_active_only`, so the
+        filter ran before the resolver's cap of 5) into `suggestions_out`."""
+        for tr in misses:
             picked = [
                 ExtractedProductSuggestion(
                     product_id=str(a.uuid),
                     product_code=a.canonical_code,
                     product_name=(a.display or {}).get("product_name"),
                 )
-                for a in alts
-                if str(a.uuid) in active
+                for a in tr.alternatives
+                if a.entity_type == "product" and a.uuid
             ][: self._MAX_SUGGESTIONS]
             if picked:
-                suggestions_out[token] = picked
+                suggestions_out[tr.token] = picked
 
     def _extract_products(self, parsed: dict[str, Any]) -> list[ExtractedProductLine]:
         raw = parsed.get("products")
