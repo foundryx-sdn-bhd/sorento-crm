@@ -63,6 +63,24 @@ def _brands(db: Session) -> list[str]:
     return [r[0] for r in rows if r[0] and r[0].strip()]
 
 
+MAX_CATEGORY_KINDS = 80
+
+
+def _category_kinds(db: Session) -> list[str]:
+    """The distinct product category class labels the company holds, sorted and capped (the same scope as the session)."""
+    from app.models.product import ProductCategory
+
+    rows = (
+        db.query(ProductCategory.class_label)
+        .filter(ProductCategory.class_label.isnot(None))
+        .distinct()
+        .order_by(ProductCategory.class_label)
+        .limit(MAX_CATEGORY_KINDS)
+        .all()
+    )
+    return [r[0] for r in rows if r[0] and r[0].strip()]
+
+
 def _describe(domain: tuple[str, str, list[str]]) -> str:
     """`code (label; words: w1, w2)`, the words part left out when there are none."""
     code, label, words = domain
@@ -157,6 +175,7 @@ def extract_chat_report(
         system, _version = ai_prompt_registry.render(db, PROMPT_KEY)
         system = system.replace("{today}", today.isoformat()).replace("{domains}", "; ".join(_describe(d) for d in domains))
         system = system.replace("{brands}", "; ".join(_brands(db)))
+        system = system.replace("{categories}", "; ".join(_category_kinds(db)))
         provider = get_provider(provider_name, api_key, model=model)
         result = provider.chat(
             [

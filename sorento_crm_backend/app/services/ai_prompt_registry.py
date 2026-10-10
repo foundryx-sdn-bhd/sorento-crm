@@ -120,7 +120,7 @@ def _semantic_parser_fallback() -> str:
 
 def _chat_report_extractor_fallback() -> str:
     """System prompt for the chat report extractor (CA-3, `chat_report_extractor`). `{today}` and
-    `{domains}` and `{brands}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
+    `{domains}`, `{brands}` and `{categories}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
     return (
         "You read ONE staff message asking for statistics about the WhatsApp chatbot's "
         "conversations (what customers asked the bot, how it answered) and fill a report "
@@ -146,7 +146,9 @@ def _chat_report_extractor_fallback() -> str:
         "staff, unclassified. Otherwise [].\n"
         "- category_words / brand_words: the product category words and brand names the message "
         "limits the questions to, each as written; [] when none. A brand name is a brand word, "
-        "never a product word. The brand names held: {brands}.\n"
+        "never a product word. The brand names held: {brands}. A kind of product (a category label held, or its plain words such as "
+        "water closet, basin, toilet) is a category word, never a product word. The product kinds "
+        "held: {categories}.\n"
         "- customer_words / product_words: the customer names and product codes or names the "
         "message limits the questions to, each as written; [] when none. A role or a kind of "
         "thing (salespeople, dealers, a product category) is never a customer or product word.\n"
