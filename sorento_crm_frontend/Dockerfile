@@ -30,8 +30,10 @@ ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
 # Set Node.js options for faster builds
-# Increase memory and enable parallel garbage collection
-ENV NODE_OPTIONS="--max-old-space-size=4096 --max-semi-space-size=128"
+# Increase memory and enable parallel garbage collection. 6144 MB since the
+# repo went private: private-repo runners have less RAM and the CI image
+# build hit the 4096 MB heap limit (10 Oct 2026).
+ENV NODE_OPTIONS="--max-old-space-size=6144 --max-semi-space-size=128"
 
 # Skip tsc here: the `typecheck-frontend` CI job already runs `npm run
 # typecheck` on the runner, in parallel with the test jobs, and gates the
