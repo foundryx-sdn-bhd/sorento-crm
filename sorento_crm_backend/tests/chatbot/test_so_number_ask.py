@@ -471,3 +471,18 @@ class TestCloudPassParserCopiesThePreviousSo:
         reply, captured = _turn(session_factory, monkeypatch, qf, "status of SO421624")
         assert reply.strip() == _card("SO421624", "Open", "partly delivered"), reply
         assert _calls(captured, ORDERS) == [], captured
+
+
+class TestDashedSoNumberGetsItsCard:
+    """REF-PROBES AC-15: AutoCount stores dashed SO numbers ("SO2610-0127"); the lookup used
+    to compare the dash-stripped key against the stored dashed number and missed every one."""
+
+    @pytest.mark.parametrize("typed", ["SO2610-0127", "so2610-0127", "so 2610-0127", "SO 2610 - 0127"])
+    def test_dashed_so_number_gets_its_card(self, session_factory, typed) -> None:
+        from app.services.chatbot import so_status
+
+        _seed_so(session_factory, "SO2610-0127", customer_id=None, lines=[(4, 0)])
+        out = so_status.lookup(session_factory(), [typed], linked=None)
+        assert out.missing == [], out
+        assert len(out.cards) == 1, out
+        assert out.cards[0].startswith("*SO2610-0127*"), out.cards
