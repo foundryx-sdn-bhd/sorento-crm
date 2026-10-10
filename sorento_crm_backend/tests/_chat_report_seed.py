@@ -15,12 +15,11 @@ Facts (all UTC; Malaysia is +8 so none crosses a day). Weeks are Monday weeks.
     F10  Sep 21  C3      t6   2   inventory.other       answered  -            (none)
     F6   Sep 10  C4      noise                          noise     -            (none)   excluded
     F7   Sep 10  C5      staff contact (an active CRM user is linked), availability   excluded
-    F8   Sep  2  C6      before the traces begin (5 Sep)                       clipped
     F9   Oct  3  C7      after the September window                            outside
 
 Who asks (the one asker rule): C1 C2 C3 C4 each have a respond_contacts row linked to a customer
 (cust_a, cust_b, cust_a, cust_a), so they read dealer; C5 is staff (an active CRM user is linked);
-C6 and C7 have no row (unclassified, outside the window anyway).
+C7 has no row (unclassified, outside the window anyway). (F8, a 2 Sep trace fact, was removed 11 Oct: under CA-4 facts before 5 Sep are history and count.)
 
 Counted for Sep 1 to Sep 30 (clipped to Sep 5): asks 7, turns (ask 1) 5, failed turns 2,
 distinct contacts 3. Named items: P1 on F1 F2 (named) and F4 (shown), P2 on F3 (named);
@@ -142,7 +141,6 @@ def seed_world(db) -> SimpleNamespace:
     f6 = add_fact(db, when=day(9, 10), contact="c4", turn=t["t7"], outcome="noise")
     f7 = add_fact(db, when=day(9, 10), contact="c5", turn=t["t8"], domain="inventory", topic=av, contact_type="office",
                   audience="staff")
-    add_fact(db, when=day(9, 2), contact="c6", turn=t["t9"], domain="inventory", topic=av)
     add_fact(db, when=day(10, 3), contact="c7", turn=t["t10"], domain="inventory", topic=av)
     w.c1 = _dealer_contact(db, "c1", w.cust_a)
     w.c2 = _dealer_contact(db, "c2", w.cust_b)

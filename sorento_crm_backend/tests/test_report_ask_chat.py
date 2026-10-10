@@ -215,7 +215,8 @@ def test_coverage_names_percent_version_and_the_traces_note(db):
 
 
 def test_a_period_before_the_traces_is_clipped_in_the_counts(db):
-    """F8 sits on 2 Sep: a period opening 1 Sep counts it never. owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
+    """A period opening before the earliest fact is clipped to it (lead sign-off 11 Oct: the 2 Sep
+    F8 fact is gone from the seed; CA-4 history counts). owner override 10 Oct: every class shown by default."""
     seed_world(db)
     opened_early = _run(db, group_by="topic", top_n=10, date_from=date(2026, 8, 1))
     assert D(str(opened_early["total"]["value"])) == 8
