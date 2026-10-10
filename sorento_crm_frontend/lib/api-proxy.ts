@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 import { sessionTokenCookieName } from '@/lib/auth-cookie';
+import { forwardedForHeader } from '@/lib/forwarded-for';
 
 /**
  * Base URL for server-side calls from Next.js to FastAPI (not browser-facing).
@@ -95,6 +96,9 @@ export async function proxyToFastAPI(
     'Content-Type': 'application/json',
   };
   
+  // SORENTO-CLIENT-IP: the browser's forwarded chain, so per-IP limits see the real client.
+  Object.assign(headers, forwardedForHeader(request.headers));
+
   // Forward X-API-Key header if present (for API key authentication)
   const apiKey = request.headers.get('X-API-Key');
   if (apiKey) {
