@@ -601,11 +601,22 @@ def test_extractor_is_not_called_on_the_answering_turn(console, monkeypatch) -> 
 
 
 def test_extractor_topic_without_a_count_asks_how_many_and_keeps_the_period(console, monkeypatch) -> None:
-    seen = _extractor(monkeypatch, {**EXTRACTED, "top_n": None})
+    """Lead sign-off 10 Oct (owner live D2): the reply is read with the open ask, so the count
+    reply is a second extractor call carrying `open_ask`."""
+    from app.services.chatbot.analytics import chat_report_extractor
+
+    seen: list[tuple[str, object]] = []
+
+    def fake(db, text, *args, open_ask=None, **kwargs):
+        seen.append((text, open_ask))
+        return {**EXTRACTED, "top_n": None if open_ask is None else 5}
+
+    monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)
     text, calls = console.say(_chat(), "top failed topics this week")
     assert text.strip() == COUNT_Q and calls == [], (text, calls)
     _text, calls = console.say(_reply(top_n=5), "5")
-    assert len(seen) == 1, seen
+    assert [t for t, _ in seen] == ["top failed topics this week", "5"], seen
+    assert isinstance(seen[1][1], dict), seen
     (args,) = _chat_calls(calls)
     assert args["top_n"] == 5 and args["date_from"] == "2026-10-05" and args["date_to"] == "2026-10-11", args
 
