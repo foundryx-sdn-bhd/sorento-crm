@@ -39,6 +39,7 @@ def _req(peer: str | None, xff: str | list[str] | None = None) -> Request:
         "method": "GET",
         "path": "/",
         "headers": headers,
+        "query_string": b"",
         "client": (peer, 1234) if peer else None,
     }
     return Request(scope)
@@ -83,6 +84,11 @@ def test_every_hop_trusted_returns_the_leftmost():
     assert client_ip(_req(PROXY, "192.168.1.20, 10.0.0.2")) == "192.168.1.20"
 
 
+@pytest.mark.parametrize("peer", ["192.168.1.1", "fd00::5", "fe80::1"])
+def test_private_and_ula_peers_are_trusted_by_default(peer):
+    assert client_ip(_req(peer, "6.6.6.6, 203.0.113.7")) == "203.0.113.7"
+
+
 def test_ipv6_loopback_peer_is_trusted_and_ipv6_client_returned():
     assert client_ip(_req("::1", "2001:db8::1")) == "2001:db8::1"
 
@@ -113,6 +119,76 @@ def test_services_logging_has_no_hand_rolled_xff_parse():
     from app.services import logging as svc_logging
 
     assert "x-forwarded-for" not in inspect.getsource(svc_logging).lower()
+
+
+class _Stop(Exception):
+    status_code = 418
+
+
+class _Db:
+    def __init__(self):
+        self.rows = []
+
+    def add(self, row):
+        self.rows.append(row)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+
+def test_staff_signature_records_the_proxied_client_ip(monkeypatch):
+    import asyncio
+
+    from app.api.v1.projects import quotation_documents as route
+
+    seen = {}
+    monkeypatch.setattr(route, "validate_uuid_path", lambda *a, **k: None)
+    monkeypatch.setattr(route, "_editable_project", lambda *a, **k: None)
+    monkeypatch.setattr(route.svc, "get_document_or_404", lambda *a, **k: object())
+
+    def _sign(db, *, document, actor_user_id, payload):
+        seen.update(payload)
+        raise _Stop()
+
+    monkeypatch.setattr(route.svc, "sign_as_sorento", _sign)
+    payload = type("P", (), {"model_dump": lambda self, **k: {}})()
+    with pytest.raises(_Stop):
+        asyncio.run(route.sign_quotation_document(
+            "p", "d", payload, _req(PROXY, "6.6.6.6, 203.0.113.7"), {"id": "u"}, _Db(),
+        ))
+    assert seen["ip_address"] == "203.0.113.7"
+
+
+def test_customer_acceptance_records_the_proxied_client_ip(monkeypatch):
+    import asyncio
+
+    from app.api.v1.public import quotation_sign as route
+
+    seen = {}
+    monkeypatch.setattr(route.svc, "get_issue_by_sign_token", lambda *a, **k: object())
+
+    def _accept(db, **kw):
+        seen.update(kw)
+        raise _Stop()
+
+    monkeypatch.setattr(route.svc, "accept_issue", _accept)
+    payload = type("P", (), {"signer_name": "S", "mode": "typed", "image_data_uri": None, "gps_lat": None, "gps_lng": None})()
+    with pytest.raises(_Stop):
+        asyncio.run(route.accept_quotation("t", payload, _req(PROXY, "6.6.6.6, 203.0.113.7"), _Db()))
+    assert seen["ip_address"] == "203.0.113.7"
+
+
+def test_api_request_log_records_the_proxied_client_ip():
+    import asyncio
+
+    from app.services.logging import log_api_request
+
+    db = _Db()
+    asyncio.run(log_api_request(_req(PROXY, "6.6.6.6, 203.0.113.7"), None, db))
+    assert db.rows and db.rows[0].ip_address == "203.0.113.7"
 
 
 # --- auth throttles per real client ---------------------------------------------------------
@@ -185,3 +261,38 @@ def test_auth_rate_limits_key_on_the_real_client_behind_the_proxy(proxied_client
     res = proxied_client.post(path, json=body, headers={"X-Forwarded-For": "6.6.6.6, 203.0.113.9"})
     assert res.status_code == 429, res.text
     assert idents[0] == "203.0.113.9"
+
+
+# --- security review round: a floor that does not depend on the IP -------------------------
+
+
+def test_bad_trusted_proxies_value_fails_at_startup_not_per_request():
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(trusted_proxies="10.0.0.0/8, not-a-cidr")
+
+
+def test_a_per_email_ceiling_locks_whatever_ip_the_attempts_claim():
+    from app.services import login_throttle
+
+    email = f"floor-{uuid.uuid4().hex[:8]}@example.com"
+    for i in range(login_throttle.EMAIL_MAX_ATTEMPTS):
+        login_throttle.record_failure(email, f"203.0.{i // 250}.{i % 250 + 1}")
+    gate = login_throttle.check(email, "198.51.100.200")  # a never-seen IP
+    assert not gate.allowed
+    assert gate.retry_after_seconds and gate.retry_after_seconds > 0
+    # Another account is untouched.
+    assert login_throttle.check(f"other-{email}", "198.51.100.200").allowed
+
+
+def test_ipv6_addresses_share_one_bucket_per_64():
+    from app.services import login_throttle
+
+    email = f"v6-{uuid.uuid4().hex[:8]}@example.com"
+    for i in range(login_throttle.MAX_ATTEMPTS):
+        login_throttle.record_failure(email, f"2001:db8:1:2::{i + 1:x}")
+    assert not login_throttle.check(email, "2001:db8:1:2:ffff::9").allowed
+    assert login_throttle.check(email, "2001:db8:1:3::1").allowed

@@ -599,9 +599,8 @@ def phone_verify(payload: PhoneVerifyRequest, request: Request, db: Session = De
     """The right code for an eligible number mints a session (AC-24).
 
     Security round S4 (#1280): no per-IP rate limit here. NextAuth's
-    `phone-otp` provider calls this route server-to-server; the Next server now
-    forwards the browser's `X-Forwarded-For` (SORENTO-CLIENT-IP), but a per-IP
-    bucket would still be weaker than the bound below. The per-number atomic reservation (B2,
+    `phone-otp` provider calls this route server-to-server, and a per-IP bucket
+    is weaker than the bound below. The per-number atomic reservation (B2,
     `reserve_verify_attempt` + `PortalService.reserve_attempt`) is the real
     bound: it caps guesses per TYPED NUMBER regardless of which IP they came
     from, which is the bound that actually matters here.

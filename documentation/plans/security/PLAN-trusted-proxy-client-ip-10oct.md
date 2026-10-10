@@ -33,6 +33,17 @@ Next.js server, so every user shared one bucket: a lockout DoS.
   `FORWARDED_ALLOW_IPS` (default 127.0.0.1); the docker peer is not 127.0.0.1, so the app sees
   the raw proxy peer.
 
+Prod prerequisites (UNVERIFIED until someone runs `sudo nginx -T | grep -n -i forwarded` on the
+server and records the result here):
+1. Every host nginx `location` for `sorento_backend` / `sorento_frontend` sets
+   `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (or `$remote_addr`), never
+   `$http_x_forwarded_for`. If it passes the header through untouched, the client chooses the
+   per-IP key; the per-email login ceiling below is the floor that still holds.
+2. No CDN / public-address proxy in front of the host nginx. If there is one, `TRUSTED_PROXIES`
+   must list its ranges PLUS loopback and the docker subnet (the value replaces the default).
+3. Published container ports bind `127.0.0.1` only (`blue_green_deploy.sh:9-11` says so).
+4. The Next port is reachable only through the image's own nginx, which appends.
+
 So the default trust set is loopback + RFC1918 + IPv6 loopback/ULA/link-local, overridable with
 `TRUSTED_PROXIES` (comma-separated CIDRs) when the topology differs (e.g. a CDN in front).
 
@@ -55,6 +66,12 @@ on its server-to-server auth calls (`authorize()` for credentials + phone OTP, a
 `proxyToFastAPI` for signup / reset), so the backend sees the real client behind the trusted
 Next server.
 
+Security review round: the login throttle gains an IP-independent per-email ceiling (40 failures
+per 15 minutes, `login_throttle.EMAIL_MAX_ATTEMPTS`) next to the per-(email, ip) bucket, and IPv6
+addresses count per /64, so a caller who can vary the IP still hits a floor. A bad
+`TRUSTED_PROXIES` value fails at startup (`Settings` validator). The dead, left-most
+`getClientIP` in `sorento_crm_frontend/lib/api.ts` is deleted.
+
 Out of scope (named, not built): session/impersonation audit IP in `dependencies.py`,
 `impersonation.py`, `portal.py`, `approval.py`, logging middleware; they keep the peer address.
 Trigger to do them: a report or audit needing per-client IP there.
@@ -68,4 +85,8 @@ Trigger to do them: a report or audit needing per-client IP there.
 - malformed hop stops the walk;
 - `TRUSTED_PROXIES` override honoured;
 - two users behind the proxy get separate login throttle buckets (login route, via TestClient);
-- quotation_documents no longer carries its own `_client_ip`.
+- quotation_documents no longer carries its own `_client_ip`;
+- staff signature, customer acceptance and the API request log store the proxied client IP;
+- per-email ceiling locks whatever IP the attempts claim; IPv6 /64 shares a bucket;
+- bad `TRUSTED_PROXIES` raises at `Settings` construction;
+- FE: `authorize()` (credentials, phone-otp) and `proxyToFastAPI` forward `X-Forwarded-For`.

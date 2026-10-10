@@ -70,6 +70,17 @@ class Settings(BaseSettings):
             return ','.join(v)
         return v
     
+    @field_validator('trusted_proxies')
+    @classmethod
+    def validate_trusted_proxies(cls, v: str) -> str:
+        """A bad CIDR fails at startup, not as a 500 on every sign-in."""
+        import ipaddress
+
+        for entry in (v or "").split(","):
+            if entry.strip():
+                ipaddress.ip_network(entry.strip(), strict=False)
+        return v
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Get CORS origins as a list."""
@@ -231,8 +242,10 @@ class Settings(BaseSettings):
     # fail-open if Redis down) - see PLAN-fix-security-cluster Sub-plan A. All
     # env-overridable; set max<=0 to disable a given limiter.
     # SORENTO-CLIENT-IP: proxies whose `X-Forwarded-For` is believed (comma-separated CIDRs).
-    # Empty = loopback + private ranges (app/services/client_ip.py); set it when a proxy with a
-    # public address (a CDN) sits in front, and the default ranges are then no longer trusted.
+    # Empty = loopback + private ranges (app/services/client_ip.py). A value REPLACES that
+    # default, so it must list loopback and the docker network subnet too, e.g.
+    # "127.0.0.0/8,172.18.0.0/16,<cdn ranges>"; leaving the subnet out puts every user back in
+    # the proxy's one bucket.
     trusted_proxies: str = ""                   # TRUSTED_PROXIES
     rate_limit_signup_max: int = 3              # signups per window per IP
     rate_limit_signup_window_seconds: int = 3600
