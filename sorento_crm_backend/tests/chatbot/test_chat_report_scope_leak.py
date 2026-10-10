@@ -185,3 +185,135 @@ def test_scope_for_fails_closed_for_an_unresolved_or_unknown_asker(asker) -> Non
     from app.services.chatbot.lanes.business import chat_report
 
     assert chat_report.scope_for("chat_analytics", SCOPE, asker=asker, granted=True) == SCOPE
+
+
+def _linked_ids(session_factory) -> list[str]:
+    db = session_factory()
+    try:
+        return [str(r[0]) for r in db.execute(text(
+            "SELECT customer_id FROM respond_contact_customers WHERE contact_id = "
+            "(SELECT id FROM respond_contacts WHERE respond_io_id = :c)"), {"c": str(CONTACT_ID)})]
+    finally:
+        db.close()
+
+
+def test_a_chat_plus_orders_turn_forces_the_links_on_the_orders_call(session_factory, monkeypatch) -> None:
+    """Guard A (lanes/business/__init__.py `is_chat_report(parse_output)` at the scope relaxation):
+    no foreign word, so the engine gate refuses nothing; the ORDER fetch must still carry the
+    strict scope (the contact's linked customers) while the chat report runs."""
+    _setup(session_factory)
+    _fake_extractor(monkeypatch)
+    verdict = _parser_output(
+        domain_hint=None, intent_hint=None, order_status=None, entities=[],
+        date_filter_start="2026-09-01", date_filter_end="2026-09-30", top_n=5,
+        asks=[
+            {"domain": "chat_analytics", "intent": "chat_report"},
+            {"domain": "order", "intent": "check_order"},
+        ],
+    )
+    reply, captured = _turn(
+        session_factory, monkeypatch, verdict, "top 5 questions this year and my outstanding",
+        attributes=(OUTSTANDING_KEY, GRANT), mcp_response={"has_result": False},
+    )
+    names = [n for n, _a in captured]
+    assert "crm_report_ask" in names, ("the chat report runs", captured)
+    orders = [a for n, a in captured if n != "crm_report_ask"]
+    assert orders, ("the orders ask runs", captured)
+    linked = _linked_ids(session_factory)
+    assert linked and all(a.get("customer_ids") == linked for a in orders), (linked, orders)
+
+
+def _replan_to_orders(monkeypatch) -> list[int]:
+    """Seam patched: `engine.turn_apply`. The first call (the plan, 3 args) is the real one; the
+    re-entry with the resolver's results (more args) is re-planned as a non-chat orders ask,
+    which is what a reconciled kind does to a carried chat topic."""
+    from app.services.chatbot import engine as engine_mod
+
+    real = engine_mod.turn_apply
+    calls: list[int] = []
+
+    def wrapped(state_in, verdict, *args, **kwargs):
+        calls.append(len(args))
+        if len(args) > 1:
+            verdict = {**verdict, "domain_hint": "order", "intent_hint": "check_order",
+                       "order_status": "outstanding_both", "asks": None}
+        return real(state_in, verdict, *args, **kwargs)
+
+    monkeypatch.setattr(engine_mod, "turn_apply", wrapped)
+    return calls
+
+
+def _chat_with_foreign_word(session_factory, monkeypatch):
+    foreign_id = _setup(session_factory)
+    _fake_extractor(monkeypatch)
+    calls = _replan_to_orders(monkeypatch)
+    reply, captured = _turn(
+        session_factory, monkeypatch, _chat(_e(FOREIGN, "customer")), f"top 5 questions from {FOREIGN} this week",
+        attributes=(OUTSTANDING_KEY, GRANT), matches=_matches(foreign_id), mcp_response={"has_result": False},
+    )
+    return foreign_id, reply, captured, calls
+
+
+def test_a_chat_plan_replanned_to_orders_is_regated_by_the_links(session_factory, monkeypatch) -> None:
+    """Guard B (engine re-plan strict re-gate): the first plan is chat-only so the relaxed gate
+    lets the foreign word through; the re-plan (patched `engine.turn_apply` re-entry) is an orders
+    fetch, so the strict gate decides again and refuses."""
+    foreign_id, reply, captured, calls = _chat_with_foreign_word(session_factory, monkeypatch)
+    assert any(n > 1 for n in calls), ("the re-plan did not happen", calls)
+    assert REFUSAL in reply, reply
+    assert foreign_id not in str(captured), captured
+
+
+def test_after_the_regate_refusal_the_next_turn_does_not_carry_the_foreign_customer(
+    session_factory, monkeypatch
+) -> None:
+    """Should-fix C: a refusal at the re-gate drops the refused customer like the first gate's
+    refusal does, so a follow-up that names nobody is not refused again and never reaches it."""
+    foreign_id, reply, _captured, _calls = _chat_with_foreign_word(session_factory, monkeypatch)
+    assert REFUSAL in reply, reply
+    from tests.chatbot.test_outstanding_lane import _session_of
+
+    assert foreign_id not in str(_session_of(session_factory)), "the refused customer is not left on the session"
+    followup = _parser_output(
+        message_type="business_query", domain_hint="order", intent_hint="check_order",
+        order_status="outstanding_both", entities=[],
+    )
+    reply2, captured2 = _turn(
+        session_factory, monkeypatch, followup, "and the outstanding?",
+        attributes=(OUTSTANDING_KEY,), mcp_response={"has_result": False},
+    )
+    assert REFUSAL not in reply2, reply2
+    assert foreign_id not in str(captured2), captured2
+
+
+def test_only_the_chat_fetch_of_a_chat_plus_orders_turn_is_relaxed(session_factory, monkeypatch) -> None:
+    """Guard A, discriminating form: the order fetch's own `customer_ids` equal the links anyway
+    (the "own accounts" rule), so the relaxation is observed at its seam. Every relaxed scope the
+    turn produced (`enforced` False) must be asked for by exactly one fetch, the chat report;
+    the order fetch must never be handed `scope_for("chat_analytics", ...)`."""
+    from app.services.chatbot.lanes.business import chat_report
+
+    real = chat_report.scope_for
+    seen: list[tuple[str, bool]] = []
+
+    def spy(fetch_domain, scope, **kw):
+        out = real(fetch_domain, scope, **kw)
+        seen.append((fetch_domain, bool(out.get("enforced"))))
+        return out
+
+    monkeypatch.setattr(chat_report, "scope_for", spy)
+    _setup(session_factory)
+    _fake_extractor(monkeypatch)
+    verdict = _parser_output(
+        domain_hint=None, intent_hint=None, order_status=None, entities=[],
+        date_filter_start="2026-09-01", date_filter_end="2026-09-30", top_n=5,
+        asks=[
+            {"domain": "chat_analytics", "intent": "chat_report"},
+            {"domain": "order", "intent": "check_order"},
+        ],
+    )
+    _turn(
+        session_factory, monkeypatch, verdict, "top 5 questions this year and my outstanding",
+        attributes=(OUTSTANDING_KEY, GRANT), mcp_response={"has_result": False},
+    )
+    assert seen.count(("chat_analytics", False)) == 1, seen
