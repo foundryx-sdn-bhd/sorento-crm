@@ -18,7 +18,7 @@ ENDPOINT = "/api/v1/user-management/settings/runtime"
 SECRETS_SLUG = "user_management.settings.secrets"
 EDIT_SLUG = "user_management.settings.edit"
 
-SECRET_20 = "ZztSecret0123456789A"  # 20 chars, last four "789A"
+SECRET_20 = "test-secret-not-real-0000"  # made up, never a real key; last four "0000"
 SECRET_8 = "abcd1234"
 ENV_VALUE = "zzt-env-fallback-value-0001"
 
@@ -245,7 +245,7 @@ def test_describe_masks_secrets_and_shows_non_secrets(db, actor, monkeypatch):
     out = rs.describe(db)
 
     assert set(out) == set(ALL_FIELDS)
-    assert out["respond_webhook_secret"]["masked"] == "****789A"
+    assert out["respond_webhook_secret"]["masked"] == "****0000"
     assert out["respond_webhook_secret"]["source"] == "db"
     assert out["respond_webhook_secret"]["secret"] is True
     assert out["respond_webhook_secret"]["value"] is None
@@ -271,7 +271,7 @@ def test_describe_masks_an_env_secret_too(db, monkeypatch):
     out = rs.describe(db)
 
     assert out["respond_webhook_secret"]["source"] == "env"
-    assert out["respond_webhook_secret"]["masked"] == "****789A"
+    assert out["respond_webhook_secret"]["masked"] == "****0000"
     assert SECRET_20 not in json.dumps(out)
 
 
@@ -426,7 +426,7 @@ def test_get_answers_with_the_slug_and_carries_the_webhook_hints(api, db, actor)
     assert body["respond_webhook_path"] == "/api/v1/public/respond/webhook"
     assert body["respond_signature_headers"] == ["x-respond-signature", "x-webhook-signature"]
     assert body["respond_shared_secret_header"] == "X-Respond-Webhook-Secret"
-    assert body["fields"]["respond_webhook_secret"]["masked"] == "****789A"
+    assert body["fields"]["respond_webhook_secret"]["masked"] == "****0000"
     assert body["fields"]["respond_webhook_secret"]["source"] == "db"
     assert body["fields"]["connector_connection_id"]["value"] == "zzt-conn"
     assert body["fields"]["connector_product_to_ss_secret"]["source"] == "unset"
@@ -441,7 +441,7 @@ def test_put_sets_a_secret_returns_the_same_shape_and_never_echoes_it(api, db):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["fields"]["respond_webhook_secret"]["masked"] == "****789A"
+    assert body["fields"]["respond_webhook_secret"]["masked"] == "****0000"
     assert body["respond_webhook_path"] == "/api/v1/public/respond/webhook"
     assert SECRET_20 not in resp.text
     from app.utils.field_encryption import decrypt_secret
