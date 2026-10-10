@@ -58,6 +58,7 @@ from app.services.chatbot.turn.state import (
     Profile,
     State,
     focus_from_wire,
+    is_staff_profile,
     reads_customer_po_refs,
     token_key,
 )
@@ -3505,12 +3506,26 @@ def make_tool_runner(
         # by the lane from `sales_orders` (`lanes/business/run_fetch`'s `so_numbers` arm),
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
+        so_numbers = list(dict.fromkeys([*so_numbers, *_placed_reference_words(db, entities)["so_numbers"]]))
         envelope_unplaced = unplaced
         if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}
         po_words = _po_ref_words(lane_out.get("po_refs"), unplaced)
+        placed_refs = _placed_reference_words(db, entities)
+        if placed_refs["po_refs"]:
+            # REF-PROBES: a customer PO ref the resolver PLACED is answered for staff too
+            # (their own "PO" is the supplier PO path, which is `purchase_order`).
+            lane_out = {
+                **lane_out,
+                "po_refs": list(dict.fromkeys([*(lane_out.get("po_refs") or []), *placed_refs["po_refs"]])),
+            }
+        for lane_key in ("po_numbers", "pr_numbers"):
+            if placed_refs[lane_key]:
+                lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
+        if is_staff_profile(profile):
+            lane_out = {**lane_out, "ref_staff": True}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to
@@ -4733,6 +4748,32 @@ def _po_ref_words(po_refs: Any, unplaced: dict[str, str]) -> list[str]:
     if not keys:
         return []
     return [w for w in unplaced.values() if po_ref_key(w) in keys]
+
+
+def _placed_reference_words(db: Session, entities: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """REF-PROBES: the reference numbers the RESOLVER placed this turn, as the words each
+    lane arm reads: a sales order by its number, a customer PO ref by the ref its sales
+    orders carry, our PO and a purchase request by their numbers."""
+    out: dict[str, list[str]] = {"so_numbers": [], "po_refs": [], "po_numbers": [], "pr_numbers": []}
+    ref_uuids: list[str] = []
+    for e in entities:
+        kind = e.get("entity_type")
+        code = jsc.nullish_str(e.get("code") or e.get("canonical_code")).strip()
+        if kind == "sales_order" and code:
+            out["so_numbers"].append(code)
+        elif kind == "purchase_order" and code:
+            out["po_numbers"].append(code)
+        elif kind == "purchase_request" and code:
+            out["pr_numbers"].append(code)
+        elif kind == "customer_po_ref" and e.get("uuid"):
+            ref_uuids.append(str(e["uuid"]))
+    if ref_uuids:
+        from app.models.order import SalesOrder
+
+        out["po_refs"] = [
+            r for (r,) in db.query(SalesOrder.po_ref).filter(SalesOrder.id.in_(ref_uuids)).all() if r
+        ]
+    return {k: list(dict.fromkeys(v)) for k, v in out.items()}
 
 
 def _so_numbers_asked(domain: str, verdict: dict[str, Any], unplaced: dict[str, str]) -> list[str]:
