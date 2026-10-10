@@ -379,6 +379,31 @@ def test_with_no_types_configured_an_ended_promotion_never_prices(db):
     assert resolve_prices(db, [product], DEALER, flyer.id)[product.id].offer_price is None
 
 
+def test_latest_wins_across_audience_lists_after_the_viewers_filter(db, types):
+    """Crew audit on dev data (SRT1000-CR): a dealer was offered the two
+    DEALER flyers that ended 30 Sep AND an all-audience A3 flyer that ended
+    31 May, because latest-wins ran per exact audience list. Once the viewer's
+    own audience filter has run, an older flyer of the same type is history
+    whatever audiences it named; an exact end-date tie keeps both."""
+    product = _product(db, list_price="84.00")
+    dealer_a = _promotion(
+        db, [(product, "69.00")], promo_type=types["a3_flyer"], end=SEP_30,
+        access_levels=["dealer"],
+    )
+    dealer_b = _promotion(
+        db, [(product, "70.00")], promo_type=types["a3_flyer"], end=SEP_30,
+        access_levels=["dealer"],
+    )
+    may = _promotion(
+        db, [(product, "60.00")], promo_type=types["a3_flyer"], end=date(2026, 5, 31),
+        access_levels=["dealer", "end_user"],
+    )
+
+    ids = {o["id"] for o in _price(db, product, viewer=DEALER)["promotion_options"]}
+    assert ids == {dealer_a.id, dealer_b.id}
+    assert may.id not in ids
+
+
 def test_among_ended_flyers_the_latest_end_date_wins(db, types):
     product = _product(db, list_price="84.00")
     older = _promotion(
