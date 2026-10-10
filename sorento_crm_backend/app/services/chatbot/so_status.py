@@ -172,7 +172,7 @@ def lookup(
     rows = (
         db.query(SalesOrder, Customer.customer_name)
         .outerjoin(Customer, Customer.id == SalesOrder.customer_id)
-        .filter(SalesOrder.so_number.in_(keys))
+        .filter(func.upper(func.regexp_replace(SalesOrder.so_number, r"[\s-]+", "", "g")).in_(keys))
         .all()
     )
     allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
@@ -180,7 +180,7 @@ def lookup(
         rows = [(so, name) for so, name in rows if str(so.id) in allowed]
     by_number: dict[str, list[tuple[SalesOrder, str | None]]] = {}
     for so, master_name in rows:
-        by_number.setdefault(so.so_number.upper(), []).append((so, master_name))
+        by_number.setdefault(so_key(so.so_number), []).append((so, master_name))
     lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
     _in_scope = _scope_check(db, [so for so, _ in rows], linked)
 
@@ -219,11 +219,12 @@ def lookup_po_refs(
     db: Session,
     refs: Iterable[str],
     *,
-    linked: Iterable[tuple[str, str, str]],
+    linked: Iterable[tuple[str, str, str]] | None,
 ) -> PoRefLookup:
     """Answer a dealer/customer's PO number from `sales_orders.po_ref_key` (the same fold at
     write and here, `scm.po_ref.po_ref_key`; exact, never partial), inside their own links.
-    `linked` is the contact's customer scope: none linked sees nothing."""
+    `linked` is the contact's customer scope: none linked sees nothing. `linked=None` is no
+    scope enforced (staff), as in `lookup`."""
     typed = [r.strip() for r in refs if isinstance(r, str) and po_ref_key(r)]
     out = PoRefLookup()
     if not typed:
@@ -239,7 +240,7 @@ def lookup_po_refs(
     allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
     if allowed is not None:
         rows = [(so, name) for so, name in rows if str(so.id) in allowed]
-    in_scope = _scope_check(db, [so for so, _ in rows], list(linked))
+    in_scope = _scope_check(db, [so for so, _ in rows], None if linked is None else list(linked))
     rows = [(so, name) for so, name in rows if in_scope(so)]
     lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
     for so, master_name in rows:
