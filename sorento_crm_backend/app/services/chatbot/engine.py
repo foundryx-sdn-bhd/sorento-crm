@@ -5235,6 +5235,11 @@ def _run_stages_body(  # noqa: PLR0915
                     ),
                     roster_caps=roster_caps,
                     enforced_scope=bool((customer_scope or {}).get("enforced")),
+                    scope_customer_ids=(
+                        list((customer_scope or {}).get("ids") or [])
+                        if (customer_scope or {}).get("enforced")
+                        else None
+                    ),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds

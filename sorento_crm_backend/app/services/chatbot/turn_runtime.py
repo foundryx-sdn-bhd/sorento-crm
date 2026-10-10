@@ -24,7 +24,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -2334,6 +2334,50 @@ class ResolveOutcome:
     not_checked: dict[str, str] = field(default_factory=dict)
 
 
+_CUSTOMER_OWNED_REF_KINDS = frozenset({"sales_order", "customer_po_ref"})
+
+
+def _without_foreign_sales_orders(payload: dict[str, Any], customer_ids: Collection[str]) -> dict[str, Any]:
+    """REF-PROBES S3: a dealer's reference number that also names ANOTHER customer's sales
+    order (or PO ref) must not become a picker option or an answer: those matches are
+    dropped from the resolutions and the gate's compatible entities, as a silent miss."""
+    allowed = {str(c) for c in customer_ids}
+    dropped: set[str] = set()
+
+    def _foreign(match: Any) -> bool:
+        if jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower() not in _CUSTOMER_OWNED_REF_KINDS:
+            return False
+        owner = jsc.get(jsc.get(match, "display"), "customer_id")
+        if owner is not None and str(owner) in allowed:
+            return False
+        dropped.add(str(jsc.get(match, "uuid")))
+        return True
+
+    resolved = payload.get("resolved")
+    if not isinstance(resolved, dict):
+        return payload
+    resolutions = [
+        {**r, "matches": [m for m in jsc.array(r.get("matches")) if not _foreign(m)]}
+        if isinstance(r, dict)
+        else r
+        for r in jsc.array(resolved.get("resolutions"))
+    ]
+    if not dropped:
+        return payload
+    out = {**payload, "resolved": {**resolved, "resolutions": resolutions}}
+    gate = payload.get("gate")
+    if isinstance(gate, dict):
+        out["gate"] = {
+            **gate,
+            "compatible_entities": [
+                e
+                for e in jsc.array(gate.get("compatible_entities"))
+                if not (isinstance(e, dict) and str(e.get("uuid")) in dropped)
+            ],
+        }
+    return out
+
+
 def resolve_kinds(
     db: Session,
     *,
@@ -2347,6 +2391,7 @@ def resolve_kinds(
     stamp_purchase_order: bool = False,
     roster_caps: Mapping[str, int] | None = None,
     enforced_scope: bool = False,
+    scope_customer_ids: Collection[str] | None = None,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2539,6 +2584,8 @@ def resolve_kinds(
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
+    if scope_customer_ids is not None:
+        payload = _without_foreign_sales_orders(payload, scope_customer_ids)
     resolved = payload.get("resolved")
     # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
     # resolver's answer MEANS for each token the parser hinted, before the pure core
