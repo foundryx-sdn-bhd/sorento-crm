@@ -1,11 +1,12 @@
 """Who is asking: the one asker rule (CA-3 owner hand test round).
 
-`documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`, "one asker rule".
-For a WhatsApp contact the first match of:
+`documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`, "one asker rule" and
+"Ruling 10 Oct 2026 (owner override, crew)". For a WhatsApp contact the first match of:
 
-    staff        an ACTIVE, not trashed CRM user is linked (`users.respond_contact_id`), or an ACTIVE office access
-                 type (the `contact_customer_scope.is_office_staff` test)
-    salesperson  `sales_agents.contact_id`
+    salesperson  an ACTIVE, not trashed CRM user is linked (`users.respond_contact_id`) and holds
+                 the role with slug `salesperson`
+    staff        any other ACTIVE, not trashed linked user, or an ACTIVE office access type
+    salesperson  `sales_agents.contact_id` (reached only when the contact has no active user)
     dealer       a `respond_contact_customers` link
     unclassified none of the above
 
@@ -31,12 +32,19 @@ def _word_for(contact_id: Any) -> Any:
     """CASE over an INTERNAL `respond_contacts.id` expression."""
     from app.models.access import ContactAccessType, RespondContactCustomer, respond_contact_access_types
     from app.models.sales_agent import SalesAgent
-    from app.models.user import User
+    from app.models.user import User, UserRole, UserRoleAssignment
 
     users = User.__table__
     # A live user only: a trashed or not ACTIVE user's link says nothing about who asks.
-    user_linked = sa.exists().where(
-        users.c.respond_contact_id == contact_id, users.c.status == "ACTIVE", users.c.is_trashed.is_(False)
+    live = [users.c.respond_contact_id == contact_id, users.c.status == "ACTIVE", users.c.is_trashed.is_(False)]
+    user_linked = sa.exists().where(*live)
+    roles, assigned = UserRole.__table__, UserRoleAssignment.__table__
+    salesperson_user = sa.exists().where(
+        *live,
+        assigned.c.user_id == users.c.id,
+        assigned.c.role_id == roles.c.id,
+        roles.c.slug == "salesperson",
+        roles.c.is_trashed.is_(False),
     )
     kinds = ContactAccessType.__table__
     held = respond_contact_access_types
@@ -53,6 +61,7 @@ def _word_for(contact_id: Any) -> Any:
     agent = sa.exists().where(SalesAgent.__table__.c.contact_id == contact_id)
     dealer = sa.exists().where(RespondContactCustomer.__table__.c.contact_id == contact_id)
     return sa.case(
+        (salesperson_user, "salesperson"),
         (sa.or_(user_linked, office), "staff"),
         (agent, "salesperson"),
         (dealer, "dealer"),

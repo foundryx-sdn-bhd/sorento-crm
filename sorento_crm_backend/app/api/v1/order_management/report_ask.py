@@ -600,10 +600,14 @@ def _chat_report_ask(
         if scoped is not None and group_norm is not None and group_norm not in ask.CHAT_DEALER_KEYS:
             raise AppException(403, _DEALER_MESSAGE, code="report_dimension_not_allowed")
     customers = scoped if scoped is not None else named_customers
-    scoped_book = asker == "salesperson"
-    if scoped_book:
+    scoped_book = False
+    if asker == "salesperson":
+        # Narrowed to its own book only when it has an agent link; a salesperson without one sees all.
         with company_scope(db, None):
             agent_ids = [str(i) for (i,) in db.query(SalesAgent.id).filter(SalesAgent.contact_id == str(resolved)).all()]
+        scoped_book = bool(agent_ids)
+    if scoped_book:
+        with company_scope(db, None):
             own = (
                 {str(i) for (i,) in db.query(Customer.id).filter(Customer.sales_agent_id.in_(agent_ids)).all()}
                 if agent_ids else set()

@@ -41,11 +41,11 @@ _BRANDS = Brand.__table__
 _CONTACTS = RespondContact.__table__
 _AGENTS = SalesAgent.__table__
 
-#: Who asks (`contact_asker`, the one rule), as the words a reader meets. Staff testing the bot and
-#: unclassified contacts stay out of a run unless named (owner ruling 10 Oct); the reply says how many
-#: unclassified were left out. Adding `unclassified` here is the one switch that brings them in (UAC-29). Read
+#: Who asks (`contact_asker`, the one rule), as the words a reader meets. Every asker class is in a
+#: run by default (owner override 10 Oct); removing a word here is the one switch that leaves a class
+#: out, and the reply then says how many unclassified contacts were left out (UAC-29). Read
 #: at run time (`ask._run_chat`), so a change takes effect without a restart of the definitions.
-DEFAULT_ASKERS: Tuple[str, ...] = ("dealer", "salesperson")
+DEFAULT_ASKERS: Tuple[str, ...] = ("dealer", "salesperson", "staff", "unclassified")
 ASKER_LABELS: Tuple[Tuple[str, str], ...] = (
     ("dealer", "Dealer"), ("salesperson", "Salesperson"), ("staff", "Staff"), ("unclassified", "Unclassified"),
 )
