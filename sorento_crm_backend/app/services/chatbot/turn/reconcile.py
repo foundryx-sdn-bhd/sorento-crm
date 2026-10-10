@@ -6,7 +6,26 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.chatbot.contracts import REFERENCE_NARROW
 from app.services.chatbot.turn.state import token_key as _key
+
+# REF-PROBES: the words a kind picker and a narrowed-miss line print for a reference kind.
+_KIND_WORDS = {"customer_order": "delivery order", "customer_po_ref": "PO ref"}
+
+
+def kind_word(kind: str) -> str:
+    return _KIND_WORDS.get(kind) or kind.replace("_", " ")
+
+
+def narrowed_miss_lines(reconciled: list[tuple[str, str, str]]) -> list[str]:
+    """"No sales order X." for every token the asker NAMED a kind of that the data placed
+    as a kind outside it. An unnamed ("order") rewrite says nothing."""
+    lines: list[str] = []
+    for raw, old, new in reconciled:
+        narrow = REFERENCE_NARROW.get(old)
+        if narrow is not None and new not in narrow:
+            lines.append(f"No {kind_word(old)} {raw}.")
+    return lines
 
 
 def hits_for_token(resolved: dict[str, dict[str, int]] | None, raw: Any) -> dict[str, int] | None:
@@ -78,6 +97,14 @@ def apply_reconciliation(
         # options the same way without a priority tuned to one transcript.
         if len(matched) > 1:
             matched = sorted(matched, key=lambda k: (-hits[k], k))
+        # REF-PROBES: a hint that names a kind keeps only that kind's hits when it has any
+        # (the named kind first), so a number that is also another kind is not asked about.
+        narrow = REFERENCE_NARROW.get(e.get("hint"))
+        if narrow is not None:
+            inside = [k for k in matched if k in narrow]
+            if inside:
+                hint_kind = e.get("hint")
+                matched = sorted(inside, key=lambda k: (k != hint_kind, -hits[k], k))
         if len(matched) == 0:
             result.entities.append(e)
         elif len(matched) == 1:
@@ -94,7 +121,7 @@ def apply_reconciliation(
             options = [
                 {
                     "position": i + 1,
-                    "label": f"{raw} ({k.replace('_', ' ')})",
+                    "label": f"{raw} ({kind_word(k)})",
                     # #1262 slice 7 (F1b): the label above is display only - `apply.py`'s
                     # pick arm falls back to it when neither `code` nor a uuid is on the
                     # option, which is how the PRINTED "Sorento (customer)" ended up
