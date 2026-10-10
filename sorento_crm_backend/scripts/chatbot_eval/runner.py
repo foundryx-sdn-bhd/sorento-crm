@@ -90,8 +90,8 @@ def run_case(
     verdict = grade(case.expect, final, prev_bot)
     if verdict.needs_judge and judge is not None and judge_calibrated:
         result = judge.score(case, final)
-        spend(result.tokens)
-        verdict = apply_judge(verdict, result, True)
+        if result is not None:
+            verdict = apply_judge(verdict, result, True)
     return CaseResult(
         case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
         variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,

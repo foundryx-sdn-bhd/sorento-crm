@@ -35,7 +35,10 @@ class Judge(Protocol):
 def calibrate(judge: Judge, items: list[tuple[Any, Any, bool]]) -> float:
     if not items:
         return 0.0
-    agree = sum(1 for case, outcome, human in items if judge.score(case, outcome).passed == human)
+    agree = 0
+    for case, outcome, human in items:
+        res = judge.score(case, outcome)
+        agree += res is not None and res.passed == human
     return agree / len(items)
 
 
@@ -85,9 +88,9 @@ class OpenAIJudge:
 
 
 class AnthropicJudge:
-    def __init__(self, model: str | None = None, api_key: str | None = None, timeout: float = 60):
-        self.model = model or os.environ["EVAL_JUDGE_MODEL"]
-        self.api_key = api_key or os.environ["ANTHROPIC_API_KEY"]
+    def __init__(self, model: str | None = None, timeout: float = 60):
+        self.model = model or os.environ.get("EVAL_JUDGE_MODEL") or "claude-sonnet-5-5"
+        self.api_key = os.environ["ANTHROPIC_API_KEY"]
         self.timeout = timeout
 
     def score(self, case: Any, outcome: Any) -> JudgeResult:
@@ -104,7 +107,8 @@ class AnthropicJudge:
         resp.raise_for_status()
         body = resp.json()
         use = body.get("usage") or {}
-        tokens = {"prompt": use.get("input_tokens", 0), "cached": 0, "output": use.get("output_tokens", 0)}
+        read = use.get("cache_read_input_tokens", 0) or 0
+        tokens = {"prompt": (use.get("input_tokens", 0) or 0) + read, "cached": read, "output": use.get("output_tokens", 0)}
         return _parse(body["content"][0]["text"], tokens)
 
 
@@ -117,3 +121,26 @@ def load_judge(name: str) -> Judge | None:
         module, _, cls = name.partition(":")
         return getattr(importlib.import_module(module), cls)()
     return None
+
+
+class GuardedJudge:
+    """Own spend cap for the judge. Returns None (no verdict) once over the cap or on a judge error."""
+
+    def __init__(self, judge: Judge, usd_cap: float):
+        from .budget import PRICES, Budget
+
+        model = getattr(judge, "model", None) or os.environ.get("EVAL_JUDGE_MODEL") or "gpt-5.4-mini"
+        self.judge = judge
+        self.budget = Budget(usd_cap, model if model in PRICES else "gpt-5.4-mini")
+        self.stopped: str | None = None
+
+    def score(self, case: Any, outcome: Any) -> JudgeResult | None:
+        if self.budget.exceeded:
+            self.stopped = "budget"
+            return None
+        try:
+            res = self.judge.score(case, outcome)
+        except Exception:  # noqa: BLE001  error text may carry request details, so none is kept
+            return None
+        self.budget.add(res.tokens)
+        return res

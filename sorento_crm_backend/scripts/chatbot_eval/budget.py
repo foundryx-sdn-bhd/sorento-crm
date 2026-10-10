@@ -8,6 +8,8 @@ import threading
 PRICES = {
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
     "gpt-4.1-mini": (0.40, 0.10, 1.60),
+    # https://platform.claude.com/docs/en/about-claude/pricing, read 11 Oct 2026
+    "claude-sonnet-5-5": (2.00, 0.10, 10.00),
 }
 
 

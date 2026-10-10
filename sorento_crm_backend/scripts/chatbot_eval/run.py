@@ -15,7 +15,7 @@ from .budget import PRICES, Budget
 from .cases import DataDirInRepoError, Case, _repo_root, load_cases, parse_case
 from .engine import load_engine
 from .engine import Outcome
-from .judge import CALIBRATION_MIN, calibrate, load_judge
+from .judge import CALIBRATION_MIN, GuardedJudge, calibrate, load_judge
 from .report import build_report, render_summary
 from .trace import DbContactReset, DbTraceReader
 from .grade import grade
@@ -34,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--budget-model", choices=sorted(PRICES), default="gpt-5.4-mini")
     p.add_argument("--prompt-version")
     p.add_argument("--regrade", metavar="RUN_DIR")
+    p.add_argument("--judge-budget-usd", type=float, default=2.0)
     p.add_argument("--baseline")
     p.add_argument("--out")
     p.add_argument("--seed", type=int, default=0)
@@ -75,19 +76,6 @@ def _calibration_items(data_dir: str) -> list[tuple[Case, Outcome, bool]]:
         raw = json.loads(f.read_text())
         items.append((parse_case(raw["case"]), Outcome(reply_text=raw["reply_text"]), bool(raw["human_passed"])))
     return items
-
-
-class _Counting:
-    """Charges calibration judge calls to the budget."""
-
-    def __init__(self, judge, budget):
-        self.judge, self.budget = judge, budget
-
-    def score(self, case, outcome):
-        res = self.judge.score(case, outcome)
-        if self.budget is not None:
-            self.budget.add(res.tokens)
-        return res
 
 
 def _regrade(args, cases: list[Case]) -> int:
@@ -180,10 +168,12 @@ def main(argv: list[str] | None = None) -> int:
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     judge = load_judge(args.judge)
+    if judge is not None:
+        judge = GuardedJudge(judge, args.judge_budget_usd)
     calibrated = False
     if judge is not None:
         items = _calibration_items(args.data_dir)
-        agreement = calibrate(_Counting(judge, budget), items)
+        agreement = calibrate(judge, items)
         calibrated = bool(items) and agreement >= CALIBRATION_MIN
     run_id = f"eval-{uuid.uuid4().hex[:8]}"
     started_at = datetime.now(timezone.utc).isoformat()
@@ -200,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
     report.update(
         engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
         prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
+        judge_stopped=judge.stopped if judge is not None else None,
+        judge_usd=judge.budget.spent if judge is not None else 0.0,
     )
     if args.out:
         _write(args.out, report, run)
