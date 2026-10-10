@@ -1,6 +1,6 @@
 # PLAN: CI-LEAN (Enterprise budget: release <= ~60 billed min, PR gate ~10-15 with DB tests, no nightly, no ci-full per PR)
 
-Status: Build. Slices 1-2 done on PR #1562; card re-planned 10 Oct for the Enterprise budget.
+Status: In review (PR #1562). Slices 1-5 and the test-only speedups done; first PR gate run 38074897990 green at 18 billed min (the old workflow: ~150). Open: the lean release's first real run, the ruleset switch after merge, the owner calls on the billing-batch and spec-golden tests, the .test_durations refresh, and the proposed lanes (router mounting, company-scope hook, chatbot replay merge). Track: small fix track for the workflow slices (no migration, no auth/RBAC, no ingest).
 Track: small fix track for the workflow slices (no migration, no auth/RBAC, no ingest). The
 app-code speedups found while measuring (router mounting, company-scope hook) are separate lanes,
 see "Out of this PR".
