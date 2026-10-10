@@ -177,3 +177,11 @@ def test_scope_for_never_mutates_its_input() -> None:
     chat_report.scope_for("chat_analytics", SCOPE, asker="salesperson", granted=True)
     chat_report.scope_for("order", SCOPE, asker="salesperson", granted=True)
     assert SCOPE == before
+
+
+@pytest.mark.parametrize("asker", [None, "", "unknown", "Dealer ", "admin"])
+def test_scope_for_fails_closed_for_an_unresolved_or_unknown_asker(asker) -> None:
+    """Security nit at ef8efcc3b: relaxed only for asker in {staff, salesperson, unclassified}."""
+    from app.services.chatbot.lanes.business import chat_report
+
+    assert chat_report.scope_for("chat_analytics", SCOPE, asker=asker, granted=True) == SCOPE
