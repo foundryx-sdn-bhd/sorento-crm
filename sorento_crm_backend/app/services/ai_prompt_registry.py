@@ -888,6 +888,14 @@ def _chatbot_semantic_parser_fallback() -> str:
     return SEMANTIC_PARSER_PROMPT
 
 
+def _prompt_diet_fallback(filename: str) -> str:
+    """PROMPT-DIET core / cards text: the committed output of `scripts/prompt_diet_cut.py`."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "chatbot" / "head" / "prompt_diet_data" / filename
+    return path.read_text(encoding="utf-8")
+
+
 def _chatbot_clarifier_fallback() -> str:
     """System prompt for the WhatsApp chatbot's clarifier (`chatbot_clarifier`).
 
@@ -1001,6 +1009,25 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         variables=["current_date"],
         fallback=_chatbot_semantic_parser_fallback,
         registry_variables=chatbot_prompt_vars.VARIABLE_NAMES,
+    ),
+    # --- PROMPT-DIET: the parser prompt cut into a stable core and per-area cards, read when
+    #     CHATBOT_PROMPT_DIET is on. The cards document holds every card under a
+    #     `<<card:NAME>>` marker line. ---
+    "chatbot_parser_core": PromptKeySpec(
+        name="chatbot_parser_core",
+        role="Chatbot parser core - the stable part of the parser prompt (prompt diet)",
+        active=True,
+        activates_in=None,
+        variables=["current_date"],
+        fallback=lambda: _prompt_diet_fallback("core.txt"),
+    ),
+    "chatbot_parser_cards": PromptKeySpec(
+        name="chatbot_parser_cards",
+        role="Chatbot parser cards - the per-area parts of the parser prompt (prompt diet)",
+        active=True,
+        activates_in=None,
+        variables=[],
+        fallback=lambda: _prompt_diet_fallback("cards.txt"),
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---
