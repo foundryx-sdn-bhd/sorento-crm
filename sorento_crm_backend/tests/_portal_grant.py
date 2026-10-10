@@ -72,3 +72,18 @@ def link_contact_segment(db: Session, contact_id: str, code: str) -> None:
         )
     )
     db.flush()
+
+
+def link_contact_company(
+    db: Session, contact_id: str, company_id: str = "00000000-0000-0000-0000-000000000001"
+) -> None:
+    """Tag the contact into a company (default: Sorento, the incumbent).
+
+    The price tag portal and AI Extract resolve their company from the contact's own
+    ``respond_contact_companies`` and refuse a contact with none (PRICE-TAG-COMPANY),
+    so every seed that drives those routes links one.
+    """
+    from app.models.company import RespondContactCompany
+
+    db.add(RespondContactCompany(respond_contact_id=contact_id, company_id=company_id))
+    db.flush()

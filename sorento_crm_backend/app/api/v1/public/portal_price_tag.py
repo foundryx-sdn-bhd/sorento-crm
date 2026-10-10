@@ -238,8 +238,10 @@ def portal_get_price_tag_design(
     # L3: same company scope as the sibling lookups (portal_lookup_tag_items,
     # portal_lookup_promotions) - unscoped, a two-company contact's line
     # resolution could read the OTHER company's product row for a duplicated
-    # code instead of the one this request actually points at.
-    with company_scope(db, frozenset({_resolve_company(db, token)})):
+    # code instead of the one this request actually points at. The request's
+    # OWN company, like the update route: it was stamped at create, and a
+    # contact re-tagged since must still see the design they were sent.
+    with company_scope(db, frozenset({req.company_id})):
         # The SAME resolver the PDF reads, media included (r9 S1/D1): without
         # `assets`/`images`/`fonts` every image layer here painted a grey box
         # and every brand face fell back to a system sans.
@@ -957,17 +959,54 @@ def _detail_body(db: Session, req) -> dict:
 
 
 def _resolve_company(db: Session, token: PortalToken) -> str:
-    """Resolve the company_id for a portal contact.
+    """The one company this contact's price tag work runs under.
 
-    Price tag requests are company-scoped. For now, use the default company id
-    (single-tenant stub). In multi-tenant, this would resolve from the contact's
-    workspace or access type.
+    Every price tag route and AI Extract (``ai_extract.py``) scope their reads
+    with this and stamp new requests with it, so it is the single place the
+    rule lives. It is the token's own contact's ACTIVE companies
+    (``respond_contact_companies``, the "Companies" field on Edit Contact):
+
+    - one company: that company;
+    - several, the incumbent default among them: the default, the same
+      "never an arbitrary pick" rule ``company_routing_service`` applies;
+    - several without the default: 409, the contact must be narrowed first;
+    - none: 422, an admin has to link the contact to a company.
+
+    It used to be ``Company.first()`` with no ``ORDER BY``, so physical row order
+    picked the company and a Sorento salesman searched Mocha's catalogue
+    (PRICE-TAG-COMPANY).
     """
-    # The Sorento company is the only one in the current single-tenant setup.
-    from app.models.company import Company
+    from app.models.company import Company, RespondContactCompany
+    from app.services.company_scope import DEFAULT_COMPANY_ID
 
-    company = db.query(Company).filter(Company.is_active.is_(True)).first()
-    if company:
-        return company.id
-    # Fallback: use the hardcoded default.
-    return "00000000-0000-0000-0000-000000000001"
+    company_ids = {
+        str(cid)
+        for (cid,) in db.query(RespondContactCompany.company_id)
+        .join(Company, Company.id == RespondContactCompany.company_id)
+        .filter(
+            RespondContactCompany.respond_contact_id == str(token.contact_id),
+            Company.is_active.is_(True),
+        )
+        .all()
+    }
+    if len(company_ids) == 1:
+        return next(iter(company_ids))
+    if DEFAULT_COMPANY_ID in company_ids:
+        return DEFAULT_COMPANY_ID
+    if company_ids:
+        raise AppException(
+            status_code=409,
+            message=(
+                "Your account belongs to more than one company. Ask your admin "
+                "to set the one company your price tag requests are for."
+            ),
+            code="CONTACT_COMPANY_AMBIGUOUS",
+        )
+    raise AppException(
+        status_code=422,
+        message=(
+            "Your account is not linked to a company yet. Ask your admin to add "
+            "your company on your contact, then try again."
+        ),
+        code="CONTACT_HAS_NO_COMPANY",
+    )
