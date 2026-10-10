@@ -70,7 +70,7 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 ## Failure paths (never stuck)
 
 - **UAC-19** Period with no asks: "No asks in that period. Chat data starts 5 Sep 2026."
-- **UAC-20** Period starting before 5 Sep 2026: answered from 5 Sep; Period line shows 5 Sep.
+- **UAC-20** Period starting before the earliest chat fact: answered from that day (5 Sep 2026 while no history is loaded; earlier once the CA-4 backfill loads history), the Period line and the empty message name it (`chat_asks.default_period`, the same day the screens open on).
 - **UAC-21** Route 422 / 5xx / timeout: one clear line (the existing technical reply), turn
   closes.
 - **UAC-22** Rate limit shared with the sales report: "Too many reports in the last N minutes."
