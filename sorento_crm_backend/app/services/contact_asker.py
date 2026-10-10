@@ -3,7 +3,7 @@
 `documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`, "one asker rule".
 For a WhatsApp contact the first match of:
 
-    staff        a CRM user is linked (`users.respond_contact_id`), or an ACTIVE office access
+    staff        an ACTIVE, not trashed CRM user is linked (`users.respond_contact_id`), or an ACTIVE office access
                  type (the `contact_customer_scope.is_office_staff` test)
     salesperson  `sales_agents.contact_id`
     dealer       a `respond_contact_customers` link
@@ -33,7 +33,11 @@ def _word_for(contact_id: Any) -> Any:
     from app.models.sales_agent import SalesAgent
     from app.models.user import User
 
-    user_linked = sa.exists().where(User.__table__.c.respond_contact_id == contact_id)
+    users = User.__table__
+    # A live user only: a trashed or not ACTIVE user's link says nothing about who asks.
+    user_linked = sa.exists().where(
+        users.c.respond_contact_id == contact_id, users.c.status == "ACTIVE", users.c.is_trashed.is_(False)
+    )
     kinds = ContactAccessType.__table__
     held = respond_contact_access_types
     office = sa.exists().where(

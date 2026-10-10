@@ -3309,7 +3309,8 @@ def _report_ask(body: dict) -> str:
 _CHAT_MEASURE_WORDS = {"asks": "asks", "failed": "failed turns", "failure_rate": "failure rate", "contacts": "contacts"}
 #: A trend lists every bucket, so its head is "<measure> by week", never "Top N weeks".
 _CHAT_TRENDS = ("week", "month", "day")
-_CHAT_PLURALS = {"category": "categories", "salesperson": "salespeople"}
+_CHAT_PLURALS = {"category": "categories", "salesperson": "salespeople", "asked by": "askers"}
+_CHAT_SINGULARS = {"asked by": "asker"}
 _CHAT_COVERAGE_FLOOR = 80
 
 
@@ -3364,7 +3365,7 @@ def _chat_report_ask(body: dict) -> str:
         lines = [f"{phrase.capitalize()} by {label}", *facts]
     else:
         lead = "Bottom" if body.get("sort") == "asc" else "Top"
-        noun = label if len(rows) == 1 else _CHAT_PLURALS.get(label, label + "s")
+        noun = _CHAT_SINGULARS.get(label, label) if len(rows) == 1 else _CHAT_PLURALS.get(label, label + "s")
         lines = [f"{lead} {len(rows)} {noun} by {phrase}", *facts]
     for row in rows:
         # A customer ranking prints each customer's card agent (a row without the key prints plain).

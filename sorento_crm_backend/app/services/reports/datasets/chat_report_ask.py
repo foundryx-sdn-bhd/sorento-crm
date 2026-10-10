@@ -51,6 +51,15 @@ ASKER_LABELS: Tuple[Tuple[str, str], ...] = (
 )
 _ASKER_WORD = contact_asker.sql_expr(ASKS.c.contact_respond_id)
 _ASKER = asks_ds._words(_ASKER_WORD, ASKER_LABELS)
+#: A customer as `name US id`: two customers sharing a name stay two rows (and each its own agent).
+CUSTOMER_SEP = "\x1f"
+_CUSTOMER_REF = sa.case(
+    (
+        ASKS.c.customer_id.isnot(None),
+        sa.func.coalesce(asks_ds._CUSTOMER, sa.literal("")) + sa.literal(CUSTOMER_SEP) + sa.cast(ASKS.c.customer_id, sa.Text),
+    ),
+    else_=sa.null(),
+)
 #: The asking salesperson's name (`sales_agents`), only for a contact the rule reads as one.
 _SALESPERSON = sa.case(
     (
@@ -74,6 +83,7 @@ def _day(ctx) -> Any:
 #: The report-only columns: the day bucket, the single-total axis, the asker axes and the two
 #: new measures.
 _EXTRA: Tuple[reg.Column, ...] = (
+    reg.Column("customer_ref", "Customer", "text", "dimension", lambda c: _CUSTOMER_REF, size=200),
     reg.Column("asker", "Asked by", "text", "dimension", lambda c: _ASKER, size=110),
     reg.Column("salesperson", "Salesperson", "text", "dimension", lambda c: _SALESPERSON, size=140),
     reg.Column("day", "Day", "text", "dimension", _day, size=100),
@@ -104,10 +114,21 @@ _ITEM_AXES: Tuple[reg.Column, ...] = (
     reg.Column("category", "Category", "text", "dimension", lambda c: _CATEGORIES.c.category_name, size=160),
     reg.Column("brand", "Brand", "text", "dimension", lambda c: _BRANDS.c.brand_name, size=140),
 )
+# On the item grain an ask naming two products of one category would count twice: the report's
+# `asks` and `failed` count DISTINCT asks (a failed ask once), so a bucket is a number of asks.
+_DISTINCT_ASKS = (
+    reg.Column("asks", "Asks", "integer", "measure", lambda c: ASKS.c.id, size=80, agg="count_distinct"),
+    reg.Column(
+        "failed", "Failed", "integer", "measure",
+        lambda c: sa.case((ASKS.c.failure_reason.isnot(None), ASKS.c.id), else_=sa.null()), size=80,
+        agg="count_distinct",
+    ),
+)
+_ITEM_COLUMNS = tuple(c for c in items_ds.COLUMNS if c.key not in ("asks", "failed")) + _DISTINCT_ASKS
 ITEMS_DATASET = dataclasses.replace(
     items_ds.DATASET,
     key="chat_report_items",
-    columns=_with_extra(items_ds.COLUMNS + (_failure_reason,)) + _ITEM_AXES,
+    columns=_with_extra(_ITEM_COLUMNS + (_failure_reason,)) + _ITEM_AXES,
     base=lambda ctx: sa.select().select_from(_ITEMS_FROM).where(_ITEMS.c.kind == "product", _ITEMS.c.role == "named"),
 )
 
@@ -185,21 +206,17 @@ def unclassified_contacts(db: Any, definition: Any, params: dict) -> int:
     )
 
 
-def card_agents(db: Any, customer_names: List[str]) -> dict:
-    """customer name -> the customer card's agent name (None when it has none)."""
+def card_agents(db: Any, customer_ids: List[str]) -> dict:
+    """customer id -> the customer card's agent name (None when it has none)."""
     from app.models.order import Customer
 
     customers = Customer.__table__
     rows = db.execute(
-        sa.select(customers.c.customer_name, _AGENTS.c.sales_agent)
+        sa.select(sa.cast(customers.c.id, sa.Text), _AGENTS.c.sales_agent)
         .select_from(customers.outerjoin(_AGENTS, _AGENTS.c.id == customers.c.sales_agent_id))
-        .where(customers.c.customer_name.in_(customer_names))
-        .order_by(_AGENTS.c.sales_agent.desc().nullslast())
+        .where(sa.cast(customers.c.id, sa.Text).in_(customer_ids))
     ).all()
-    out: dict = {}
-    for name, agent in rows:
-        out[name] = agent
-    return out
+    return {cid: agent for cid, agent in rows}
 
 
 def _no_options(db: Any) -> List[Any]:
@@ -210,9 +227,11 @@ def _params() -> tuple:
     return (
         reg.DateBasisParam(key="date_basis", label="Date basis", default="asked_at"),
         reg.PeriodParam(key="period", label="Period", default=asks_ds.default_period),
+        # No default: `DEFAULT_ASKERS` is the one switch of a chat run (crew ruling 10 Oct). The
+        # writer stamps every unlinked contact office, so the screens' office-out default would
+        # hide exactly the unclassified askers this report names.
         reg.SelectParam(
-            "contact_type", "Contact type", True, asks_ds.DEFAULT_CONTACT_TYPES,
-            asks_ds.contact_type_options, asks_ds.contact_type_condition,
+            "contact_type", "Contact type", True, (), asks_ds.contact_type_options, asks_ds.contact_type_condition,
         ),
         reg.SelectParam(
             "outcome", "Outcome", True, asks_ds.DEFAULT_OUTCOMES, asks_ds.outcome_options, asks_ds.outcome_condition

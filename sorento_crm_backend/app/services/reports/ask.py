@@ -375,7 +375,13 @@ def _run_chat(
         {
             "params": params,
             "detail": {"columns": [], "order": []},
-            "pivot": {"rows": group_by or "month", "cols": "all", "measures": measures},
+            "pivot": {
+                # A customer axis groups by customer (name and id), so two customers sharing a
+                # name stay two rows; the printed name is the part before the separator.
+                "rows": "customer_ref" if group_by == "customer" else (group_by or "month"),
+                "cols": "all",
+                "measures": measures,
+            },
         }
     )
     pivot = engine.run_summary(db, definition, params, view)
@@ -401,11 +407,15 @@ def _run_chat(
     else:
         ranked.sort(key=lambda r: (sign * r[1]["value"], r[0]))
     shown = ranked[:top_n] if top_n else ranked
-    body["rows"] = [{"rank": i, "name": name, **figures} for i, (name, figures) in enumerate(shown, start=1)]
     if group_by == "customer":
-        agents = chat_report_ask.card_agents(db, [r["name"] for r in body["rows"]])
-        for row in body["rows"]:
-            row["agent"] = agents.get(row["name"])
+        refs = [name.partition(chat_report_ask.CUSTOMER_SEP) for name, _f in shown]
+        agents = chat_report_ask.card_agents(db, [ref[2] for ref in refs])
+        body["rows"] = [
+            {"rank": i, "name": ref[0], **figures, "agent": agents.get(ref[2])}
+            for i, ((_n, figures), ref) in enumerate(zip(shown, refs), start=1)
+        ]
+    else:
+        body["rows"] = [{"rank": i, "name": name, **figures} for i, (name, figures) in enumerate(shown, start=1)]
     body["total_count"] = len(ranked)
     body["more"] = len(ranked) - len(shown)
     return body
