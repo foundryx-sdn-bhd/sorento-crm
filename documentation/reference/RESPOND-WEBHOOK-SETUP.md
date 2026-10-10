@@ -42,7 +42,10 @@ RESPOND_WEBHOOK_SECRET=<key of webhook 1>,<key of webhook 2>
 ```
 
 Keys may be separated by new lines, commas or spaces (a base64 key contains none of them);
-empty entries are ignored. Until at least one key is set the endpoint answers `503` and
+empty entries are ignored. Each key must be at least 24 characters (a Respond.io key is
+44) and at most 10 keys are kept: Settings refuses a save that breaks either rule, and a
+shorter token in the env value is ignored, so a stray word pasted with the keys never
+becomes a key. Until at least one key is set the endpoint answers `503` and
 writes nothing, so the order of steps 1 and 2 does not matter.
 
 ## 3. How a delivery is checked

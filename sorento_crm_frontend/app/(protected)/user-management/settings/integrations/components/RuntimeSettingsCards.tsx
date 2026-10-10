@@ -293,6 +293,7 @@ function RuntimeSettingsCard({
                       rows={3}
                       autoComplete="off"
                       spellCheck={false}
+                      aria-describedby={hint ? `${id}-hint` : undefined}
                       className="font-mono text-xs"
                       value={shownValue}
                       placeholder={fieldPlaceholder}
@@ -313,7 +314,12 @@ function RuntimeSettingsCard({
                   {clearButton}
                 </div>
                 {hint && (
-                  <p className="text-sm text-muted-foreground">{hint}</p>
+                  <p
+                    id={`${id}-hint`}
+                    className="text-sm text-muted-foreground"
+                  >
+                    {hint}
+                  </p>
                 )}
               </div>
             );

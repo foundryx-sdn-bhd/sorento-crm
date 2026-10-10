@@ -61,6 +61,11 @@ INTEGRATION_CHANNEL = "respond_webhook"
 # A Respond message event is a few KB. The body is buffered before the signature can be
 # checked, so the cap is what stops an unauthenticated caller from spending API memory.
 MAX_BODY_BYTES = 256 * 1024
+# A Respond.io signing key is 44 base64 characters. Anything shorter than this is a stray
+# word pasted with the keys, and a guessable word must never verify (security review).
+MIN_KEY_LENGTH = 24
+# Each key is one HMAC over the body per unauthenticated request; Settings refuses more.
+MAX_KEYS = 10
 
 
 # ---------------------------------------------------------------------------
@@ -89,10 +94,16 @@ def _any_same(presented: str, candidates: set[bytes]) -> bool:
     return any([_same(presented, expected) for expected in candidates])
 
 
-def webhook_keys(secret: Optional[str]) -> list[str]:
-    """Every signing key in the setting. Separators are commas and whitespace, which a
-    base64 key never contains (its alphabet is letters, digits, ``+``, ``/`` and ``=``)."""
+def split_keys(secret: Optional[str]) -> list[str]:
+    """Every token in the setting. Separators are commas and whitespace, which a base64
+    key never contains (its alphabet is letters, digits, ``+``, ``/`` and ``=``)."""
     return [key for key in re.split(r"[\s,]+", secret or "") if key]
+
+
+def webhook_keys(secret: Optional[str]) -> list[str]:
+    """The keys a request may verify against: tokens of at least MIN_KEY_LENGTH, so an env
+    value or an older saved value with a stray short word fails closed on that word."""
+    return [key for key in split_keys(secret) if len(key) >= MIN_KEY_LENGTH][:MAX_KEYS]
 
 
 def verify_request(raw: bytes, headers: Any, secret: Optional[str]) -> bool:
