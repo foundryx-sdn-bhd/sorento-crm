@@ -5829,10 +5829,15 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(resolver_payload, dict)
             and isinstance(resolver_payload.get("tier_gate"), dict)
             and len(resolver_payload["tier_gate"].get("entitled_tiers") or []) > 1
-            # A level the message itself names is answered, never asked
-            # (`tier_gate.needs_tier_ask`): the narrower reads no tier off the parser's
-            # `access_levels`, so its plan may still carry a tier ask the gate settled.
-            and not resolver_payload["tier_gate"].get("tier_stated")
+            # A level the message itself names is answered on a turn that fetches
+            # (`continue`): the gate proceeds on it (`tier_gate.needs_tier_ask`), but the
+            # narrower reads no tier off the parser's `access_levels`, so its plan may
+            # still carry the ask. Only a turn that shows the plan's menu anyway (a
+            # `not_found` subject) has it stamped here.
+            and not (
+                resolver_payload["tier_gate"].get("tier_stated")
+                and resolver_payload.get("_exit_kind") == "continue"
+            )
         )
         if (
             answer is None
