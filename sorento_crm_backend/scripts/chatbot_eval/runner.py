@@ -37,6 +37,8 @@ class CaseResult:
     latency_ms: int
     tokens: dict
     previous_bot_reply: str | None = None
+    trace_digest: dict | None = None
+    replay_digests: list = field(default_factory=list)
 
 
 @dataclass
@@ -58,6 +60,7 @@ def run_case(
     judge_calibrated: bool = False,
 ) -> CaseResult:
     total = {"prompt": 0, "cached": 0, "output": 0}
+    replay_digests: list = []
     state: dict | None = {}
     prev_bot = next((h.get("text") for h in reversed(case.history) if h.get("role") == "bot"), None)
     reset = getattr(engine, "reset_contact", None)
@@ -86,6 +89,7 @@ def run_case(
             if out.state is not None:
                 state = out.state
             prev_bot = out.reply_text
+            replay_digests.append(out.trace_digest)
     final = step(text)
     verdict = grade(case.expect, final, prev_bot)
     if verdict.needs_judge and judge is not None and judge_calibrated:
@@ -95,7 +99,7 @@ def run_case(
     return CaseResult(
         case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
         variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,
-        previous_bot_reply=prev_bot,
+        previous_bot_reply=prev_bot, trace_digest=final.trace_digest, replay_digests=replay_digests,
     )
 
 

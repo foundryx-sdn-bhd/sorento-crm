@@ -60,6 +60,7 @@ def _write(out: str, report: dict, run) -> None:
                 "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors, "lane_notes": r.outcome.lane_notes,
                 "delegated": (r.outcome.raw or {}).get("reply") is None and bool((r.outcome.raw or {}).get("delegate")),
                 "previous_bot_reply": r.previous_bot_reply,
+                "trace_digest": r.trace_digest, "replay_digests": r.replay_digests,
             }
             fh.write(json.dumps(row) + "\n")
 
@@ -110,6 +111,7 @@ def _regrade(args, cases: list[Case]) -> int:
                 variant_kind=row.get("variant_kind"), verdict=grade(case.expect, out, row.get("previous_bot_reply")),
                 outcome=out, latency_ms=row.get("latency_ms", 0), tokens=row.get("tokens") or {},
                 previous_bot_reply=row.get("previous_bot_reply"),
+                trace_digest=row.get("trace_digest"), replay_digests=row.get("replay_digests") or [],
             )
         )
     src_path = Path(args.regrade) / "report.json"

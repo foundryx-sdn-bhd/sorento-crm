@@ -41,6 +41,26 @@ def parse_trace(trace: list | None) -> tuple[dict, list[str], list[str]]:
     return tokens, errors, notes
 
 
+def build_digest(trace: list | None, reply_text: str, branch_kind: str | None) -> dict:
+    """Stage summary kept per turn, so a failure can be traced after the turn row is reset."""
+    parser: dict = {}
+    resolved: list[dict] = []
+    tools: list[dict] = []
+    for entry in trace or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("stage") == "understood" and not parser:
+            facts = entry.get("facts") or {}
+            parser = {k: facts.get(k) for k in ("domain", "intent", "entities", "prompt_version")}
+        if entry.get("stage") == "looked_up":
+            for env in (entry.get("raw") or {}).get("envelopes") or []:
+                if isinstance(env, dict):
+                    resolved.append({k: env.get(k) for k in ("tool", "entities", "miss", "unresolved", "error")})
+        if entry.get("tool"):
+            tools.append({"tool": entry["tool"], "args": entry.get("args")})
+    return {"parser": parser, "resolved": resolved, "tools": tools, "branch_kind": branch_kind, "reply_text": reply_text}
+
+
 class DbTraceReader:
     """Reads chatbot.turns.trace over a read-only psycopg2 connection, opened on first use."""
 

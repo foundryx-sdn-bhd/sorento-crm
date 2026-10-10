@@ -89,8 +89,13 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
         return Verdict("error", ["delegated"])
     if not reply.strip():
         return Verdict("error", ["blank_reply"])
-    if previous_bot_reply is not None and _norm(reply) == _norm(previous_bot_reply):
+    verdict = _rubric(expect, reply)
+    if verdict.label == "wrong" and previous_bot_reply is not None and _norm(reply) == _norm(previous_bot_reply):
         return Verdict("stuck", ["same_as_previous_reply"])
+    return verdict
+
+
+def _rubric(expect: Expect, reply: str) -> Verdict:
     low = reply.lower()
     for rule in expect.must_not:
         if rule == "uuid":

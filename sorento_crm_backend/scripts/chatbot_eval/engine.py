@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from .trace import parse_trace
+from .trace import build_digest, parse_trace
 
 MAX_TRIES = 5
 RETRY_STATUS = (429, 502, 503, 504)
@@ -23,6 +23,7 @@ class Outcome:
     dry_run: bool = True
     tool_errors: list[str] = field(default_factory=list)
     lane_notes: list[str] = field(default_factory=list)
+    trace_digest: dict | None = None
     tokens: dict = field(default_factory=lambda: {"prompt": 0, "cached": 0, "output": 0})
     latency_ms: int = 0
     state: dict | None = None
@@ -82,8 +83,9 @@ class HttpTurnEngine:
         """Tokens and tool errors from the turns row when a trace reader is set, else None."""
         if self.trace_reader is None or not turn_id:
             return None
-        tokens, errors, notes = parse_trace(self.trace_reader.fetch(turn_id))
-        return {"tokens": tokens, "tool_errors": errors, "lane_notes": notes}
+        entries = self.trace_reader.fetch(turn_id)
+        tokens, errors, notes = parse_trace(entries)
+        return {"tokens": tokens, "tool_errors": errors, "lane_notes": notes, "entries": entries or []}
 
     def reset_contact(self, case: Any) -> None:
         """Clear the contact's earlier test memory (private eval DB only); no-op without a reset handle."""
@@ -128,8 +130,10 @@ class HttpTurnEngine:
         trace = self.fetch_trace(body.get("turn_id", "")) or {}
         tokens = body.get("tokens") or trace.get("tokens") or {}
         tool_errors = list(body.get("tool_errors") or []) + list(trace.get("tool_errors") or [])
+        reply_text = (body.get("reply") or {}).get("text") or ""
         return Outcome(
-            reply_text=((body.get("reply") or {}).get("text") or ""),
+            trace_digest=build_digest(trace.get("entries"), reply_text, body.get("branch_kind")),
+            reply_text=reply_text,
             branch_kind=body.get("branch_kind"),
             dry_run=dry,
             tool_errors=tool_errors,
