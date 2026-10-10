@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 EXPIRED = "This link has expired."
+#: The in-browser sheet preview refuses a file bigger than this; `?download=1` still serves it.
+MAX_SHEET_PREVIEW_BYTES = 10 * 1024 * 1024
+TOO_BIG = "This file is too big to show here."
 #: How long the signed url a click receives stays usable.
 SIGNED_URL_SECONDS = 3600
 
@@ -131,7 +134,7 @@ def open_file_link(code: str, request: Request, db: Session = Depends(get_db)) -
 
 
 @router.get("/{code}/content")
-def file_link_content(code: str, request: Request, db: Session = Depends(get_db)) -> Response:
+def file_link_content(code: str, request: Request, download: int = 0, db: Session = Depends(get_db)) -> Response:
     """A spreadsheet's bytes, same-origin, for the in-browser preview (a signed CDN url has
     no CORS headers, so the page cannot read it directly). Spreadsheets only."""
     _rate_limited(request)
@@ -143,6 +146,8 @@ def file_link_content(code: str, request: Request, db: Session = Depends(get_db)
     except Exception:  # noqa: BLE001 - storage detail never reaches a public caller
         logger.warning("file link %s: download failed", link.id, exc_info=True)
         raise HTTPException(status_code=502, detail="The file is not available right now. Please try again.")
+    if not download and len(content) > MAX_SHEET_PREVIEW_BYTES:
+        raise HTTPException(status_code=413, detail=TOO_BIG)
     filename = link.filename or "file"
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     return Response(
