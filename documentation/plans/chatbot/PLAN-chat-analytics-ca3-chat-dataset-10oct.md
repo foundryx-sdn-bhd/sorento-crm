@@ -170,7 +170,7 @@ Owner hand test: 0 of 12 owner questions passed (PR #1553 comments). Crew ruled:
 G1, G3, G4 in CA-3; one asker rule; unclassified askers shown as their own row by default,
 excludable with one switch; Q4 (customer x topic) noted for CA-5.
 
-**One asker rule** (`app/services/chatbot/analytics/asker.py`, the only copy): for a contact,
+**One asker rule** (`app/services/contact_asker.py`, beside `contact_customer_scope.py`, the only copy; outside the chatbot package because the route and the report dataset may not import it, `tests/chatbot/test_import_boundary.py`): for a contact,
 first match: `staff` (a CRM user is linked, `users.respond_contact_id`, or an active access type
 matching office, the `contact_customer_scope.is_office_staff` test), `salesperson`
 (`sales_agents.contact_id`), `dealer` (a `respond_contact_customers` link), else `unclassified`.
@@ -180,8 +180,8 @@ column, no backfill) and a Python function for the route.
 
 - **Route scope (B1)**: the chat branch of `/report-ask` scopes the ASKING contact by this rule:
   `dealer` -> own customers + the 4 dealer dims (as today); `salesperson` -> customers whose card
-  agent is theirs (as today); `staff` -> all. `unclassified` -> refused like a contact without
-  the grant (it holds the grant only if someone granted it). The sales report keeps its rule.
+  agent is theirs (as today); `staff` -> all. `unclassified` -> sees all, like staff: it reaches
+  the route only with the grant, which the owner gives per contact (behaviour card Q5 a). The sales report keeps its rule.
 - **Asked-by axis and filter (G1)**: group_by `asker` (Dealer / Salesperson / Staff /
   Unclassified) and group_by `salesperson` (the asking salesperson's name, `sales_agents`);
   filter `askers` (any of the four). Default filter: dealer + salesperson + unclassified (staff
