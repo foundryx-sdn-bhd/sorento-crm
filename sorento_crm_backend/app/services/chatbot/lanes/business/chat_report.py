@@ -239,7 +239,7 @@ def _args(
             found = [str(row[0]) for row in getattr(business_services, resolver)(db, word)] if db is not None else []
             if kind == "category" and db is not None:
                 # The owner's vocabulary (class label, synonyms): exact, every category with that label.
-                found += [i for i in business_services.resolve_category_class(db, word)[0] if i not in found]
+                found += [i for i in business_services.resolve_category_class_exact(db, word) if i not in found]
             if not found:
                 return None, f"I couldn't find the {kind} '{word}'."
             found_ids.extend(i for i in found if i not in found_ids)
