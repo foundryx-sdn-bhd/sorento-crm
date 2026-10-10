@@ -11,7 +11,8 @@ class ResizeObserverStub {
   unobserve() {}
   disconnect() {}
 }
-(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
+(globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver =
+  ResizeObserverStub;
 
 const mockQuery = vi.fn();
 const mockMutate = vi.fn();
@@ -36,7 +37,11 @@ const unset: RuntimeSettingField = {
   unreadable: false,
 };
 
-function data(overrides: Partial<Record<RuntimeSettingName, Partial<RuntimeSettingField>>> = {}) {
+function data(
+  overrides: Partial<
+    Record<RuntimeSettingName, Partial<RuntimeSettingField>>
+  > = {},
+) {
   const secret = { ...unset, secret: true };
   const fields: Record<RuntimeSettingName, RuntimeSettingField> = {
     chat_topic_labeller_enabled: { ...unset, value: false },
@@ -48,7 +53,10 @@ function data(overrides: Partial<Record<RuntimeSettingName, Partial<RuntimeSetti
     respond_webhook_secret: secret,
   };
   for (const [k, v] of Object.entries(overrides)) {
-    fields[k as RuntimeSettingName] = { ...fields[k as RuntimeSettingName], ...v };
+    fields[k as RuntimeSettingName] = {
+      ...fields[k as RuntimeSettingName],
+      ...v,
+    };
   }
   const result: RuntimeSettings = {
     fields,
@@ -82,14 +90,22 @@ describe('RuntimeSettingsCards', () => {
   });
 
   it('renders the three cards, the webhook URL and the signature header', () => {
-    mockQuery.mockReturnValue({ isLoading: false, isError: false, data: data() });
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data(),
+    });
     render(<RuntimeSettingsCards />);
     expect(screen.getByText('Chat analytics')).toBeTruthy();
     expect(screen.getByText('Claude connector')).toBeTruthy();
     expect(screen.getByText('Respond.io webhook')).toBeTruthy();
     const url = screen.getByLabelText('Webhook URL') as HTMLInputElement;
-    expect(url.value).toBe(`${window.location.origin}/api/v1/public/respond/webhook`);
-    expect(screen.getByText('x-respond-signature or x-webhook-signature')).toBeTruthy();
+    expect(url.value).toBe(
+      `${window.location.origin}/api/v1/public/respond/webhook`,
+    );
+    expect(
+      screen.getByText('x-respond-signature or x-webhook-signature'),
+    ).toBeTruthy();
     expect(screen.getByText('X-Respond-Webhook-Secret')).toBeTruthy();
   });
 
@@ -100,7 +116,11 @@ describe('RuntimeSettingsCards', () => {
       data: data({
         respond_webhook_secret: { source: 'db', masked: '****9f3c' },
         connector_connection_id: { source: 'env', value: 'conn-env-1' },
-        connector_ss_to_product_secret: { source: 'db', unreadable: true, masked: null },
+        connector_ss_to_product_secret: {
+          source: 'db',
+          unreadable: true,
+          masked: null,
+        },
       }),
     });
     render(<RuntimeSettingsCards />);
@@ -110,35 +130,57 @@ describe('RuntimeSettingsCards', () => {
     expect(secret.placeholder).toContain('****9f3c');
     expect(screen.getAllByText('Saved in CRM').length).toBeGreaterThan(0);
     expect(screen.getByText('Server env')).toBeTruthy();
-    expect((screen.getByLabelText('Connection ID') as HTMLInputElement).placeholder).toBe(
-      'conn-env-1',
-    );
-    expect(screen.getByText('Saved value unreadable, enter it again')).toBeTruthy();
+    expect(
+      (screen.getByLabelText('Connection ID') as HTMLInputElement).placeholder,
+    ).toBe('conn-env-1');
+    expect(
+      screen.getByText('Saved value unreadable, enter it again'),
+    ).toBeTruthy();
   });
 
   it('saves only the fields that changed', () => {
-    mockQuery.mockReturnValue({ isLoading: false, isError: false, data: data() });
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data(),
+    });
     render(<RuntimeSettingsCards />);
-    fireEvent.change(screen.getByLabelText('Connection ID'), { target: { value: 'conn-42' } });
+    fireEvent.change(screen.getByLabelText('Connection ID'), {
+      target: { value: 'conn-42' },
+    });
     const saves = screen.getAllByRole('button', { name: 'Save' });
     // Cards in order: Chat analytics, Claude connector, Respond.io webhook.
     fireEvent.click(saves[1]);
-    expect(mockMutate).toHaveBeenCalledWith({ connector_connection_id: 'conn-42' }, expect.anything());
+    expect(mockMutate).toHaveBeenCalledWith(
+      { connector_connection_id: 'conn-42' },
+      expect.anything(),
+    );
   });
 
   it('turns the labeller on', () => {
-    mockQuery.mockReturnValue({ isLoading: false, isError: false, data: data() });
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data(),
+    });
     render(<RuntimeSettingsCards />);
-    fireEvent.click(screen.getByRole('switch', { name: 'Nightly topic labeller' }));
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'Nightly topic labeller' }),
+    );
     fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]);
-    expect(mockMutate).toHaveBeenCalledWith({ chat_topic_labeller_enabled: true }, expect.anything());
+    expect(mockMutate).toHaveBeenCalledWith(
+      { chat_topic_labeller_enabled: true },
+      expect.anything(),
+    );
   });
 
   it('clears a saved value back to the server env', () => {
     mockQuery.mockReturnValue({
       isLoading: false,
       isError: false,
-      data: data({ respond_webhook_secret: { source: 'db', masked: '****9f3c' } }),
+      data: data({
+        respond_webhook_secret: { source: 'db', masked: '****9f3c' },
+      }),
     });
     render(<RuntimeSettingsCards />);
     fireEvent.click(screen.getByRole('button', { name: 'Clear saved value' }));

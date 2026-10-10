@@ -11,7 +11,10 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 
-import { useRuntimeSettings, useSaveRuntimeSettings } from '../hooks/useRuntimeSettings';
+import {
+  useRuntimeSettings,
+  useSaveRuntimeSettings,
+} from '../hooks/useRuntimeSettings';
 import type {
   RuntimeSettingField,
   RuntimeSettingName,
@@ -35,14 +38,22 @@ const CARDS: CardSpec[] = [
   {
     key: 'chat-analytics',
     title: 'Chat analytics',
-    fields: [{ name: 'chat_topic_labeller_enabled', label: 'Nightly topic labeller' }],
+    fields: [
+      { name: 'chat_topic_labeller_enabled', label: 'Nightly topic labeller' },
+    ],
   },
   {
     key: 'claude-connector',
     title: 'Claude connector',
     fields: [
-      { name: 'connector_ss_to_product_secret', label: 'Shared service to CRM secret' },
-      { name: 'connector_product_to_ss_secret', label: 'CRM to shared service secret' },
+      {
+        name: 'connector_ss_to_product_secret',
+        label: 'Shared service to CRM secret',
+      },
+      {
+        name: 'connector_product_to_ss_secret',
+        label: 'CRM to shared service secret',
+      },
       { name: 'connector_connection_id', label: 'Connection ID' },
       {
         name: 'connector_ss_callback_url',
@@ -69,7 +80,10 @@ const SOURCE_LABEL: Record<RuntimeSettingField['source'], string> = {
   unset: 'Not set',
 };
 
-const SOURCE_VARIANT: Record<RuntimeSettingField['source'], 'success' | 'info' | 'secondary'> = {
+const SOURCE_VARIANT: Record<
+  RuntimeSettingField['source'],
+  'success' | 'info' | 'secondary'
+> = {
   db: 'success',
   env: 'info',
   unset: 'secondary',
@@ -108,7 +122,12 @@ function RespondWebhookFacts({ data }: { data: RuntimeSettings }) {
       <div className="space-y-1.5">
         <Label>Webhook URL</Label>
         <div className="flex items-center gap-2">
-          <Input value={url} readOnly className="font-mono text-xs" aria-label="Webhook URL" />
+          <Input
+            value={url}
+            readOnly
+            className="font-mono text-xs"
+            aria-label="Webhook URL"
+          />
           <Button
             type="button"
             variant="outline"
@@ -125,7 +144,9 @@ function RespondWebhookFacts({ data }: { data: RuntimeSettings }) {
       <div className="space-y-1">
         <Label>Signature header</Label>
         <p className="text-muted-foreground">
-          <span className="font-mono">{data.respond_signature_headers.join(' or ')}</span>
+          <span className="font-mono">
+            {data.respond_signature_headers.join(' or ')}
+          </span>
           {' (HMAC-SHA256 of the raw body), or custom header '}
           <span className="font-mono">{data.respond_shared_secret_header}</span>
         </p>
@@ -134,7 +155,13 @@ function RespondWebhookFacts({ data }: { data: RuntimeSettings }) {
   );
 }
 
-function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSettings }) {
+function RuntimeSettingsCard({
+  spec,
+  data,
+}: {
+  spec: CardSpec;
+  data: RuntimeSettings;
+}) {
   const save = useSaveRuntimeSettings();
   const [draft, setDraft] = useState<RuntimeSettingsUpdate>({});
   const dirty = Object.keys(draft).length > 0;
@@ -158,7 +185,9 @@ function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSett
           }}
           className="space-y-6 lg:max-w-[640px] mx-auto"
         >
-          {spec.key === 'respond-webhook' && <RespondWebhookFacts data={data} />}
+          {spec.key === 'respond-webhook' && (
+            <RespondWebhookFacts data={data} />
+          )}
           {spec.fields.map(({ name, label, placeholder }) => {
             const field = data.fields[name];
             if (!field) return null;
@@ -179,9 +208,14 @@ function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSett
 
             if (name === 'chat_topic_labeller_enabled') {
               const checked =
-                typeof draft[name] === 'boolean' ? (draft[name] as boolean) : field.value === true;
+                typeof draft[name] === 'boolean'
+                  ? (draft[name] as boolean)
+                  : field.value === true;
               return (
-                <div key={name} className="flex flex-wrap items-center justify-between gap-3">
+                <div
+                  key={name}
+                  className="flex flex-wrap items-center justify-between gap-3"
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <Label htmlFor={id}>{label}</Label>
                     <SourceBadge field={field} />
@@ -191,7 +225,9 @@ function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSett
                     <Switch
                       id={id}
                       checked={checked}
-                      onCheckedChange={(v) => setDraft((d) => ({ ...d, [name]: v }))}
+                      onCheckedChange={(v) =>
+                        setDraft((d) => ({ ...d, [name]: v }))
+                      }
                       aria-label={label}
                     />
                   </div>
@@ -199,10 +235,14 @@ function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSett
               );
             }
 
-            const draftValue = typeof draft[name] === 'string' ? (draft[name] as string) : undefined;
+            const draftValue =
+              typeof draft[name] === 'string'
+                ? (draft[name] as string)
+                : undefined;
             const shownValue = field.secret
               ? (draftValue ?? '')
-              : (draftValue ?? (field.source === 'db' ? String(field.value ?? '') : ''));
+              : (draftValue ??
+                (field.source === 'db' ? String(field.value ?? '') : ''));
             const fieldPlaceholder = field.secret
               ? field.masked
                 ? `${field.masked} (leave blank to keep)`
@@ -224,7 +264,9 @@ function RuntimeSettingsCard({ spec, data }: { spec: CardSpec; data: RuntimeSett
                     value={shownValue}
                     placeholder={fieldPlaceholder}
                     title={fieldPlaceholder}
-                    onChange={(e) => setDraft((d) => ({ ...d, [name]: e.target.value }))}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, [name]: e.target.value }))
+                    }
                   />
                   {clearButton}
                 </div>
@@ -251,7 +293,12 @@ export default function RuntimeSettingsCards() {
   const query = useRuntimeSettings();
 
   if (query.isLoading) {
-    return <Skeleton className="h-48 w-full" aria-label="Loading integration settings" />;
+    return (
+      <Skeleton
+        className="h-48 w-full"
+        aria-label="Loading integration settings"
+      />
+    );
   }
   if (query.isError || !query.data) {
     return (
@@ -262,7 +309,11 @@ export default function RuntimeSettingsCards() {
               ? query.error.message
               : 'Integration settings could not be loaded.'}
           </p>
-          <Button variant="outline" onClick={() => query.refetch()} disabled={query.isFetching}>
+          <Button
+            variant="outline"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+          >
             Retry
           </Button>
         </CardContent>

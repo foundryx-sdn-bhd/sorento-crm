@@ -47,14 +47,18 @@ export interface RuntimeSettings {
   respond_shared_secret_header: string;
 }
 
-export type RuntimeSettingsUpdate = Partial<Record<RuntimeSettingName, string | boolean | null>>;
+export type RuntimeSettingsUpdate = Partial<
+  Record<RuntimeSettingName, string | boolean | null>
+>;
 
 const ENDPOINT = '/api/user-management/settings/runtime';
 
 export async function getRuntimeSettings(): Promise<RuntimeSettings> {
   const response = await apiFetch(ENDPOINT);
   if (!response.ok) {
-    throw new Error(await extractApiError(response, 'Failed to load integration settings'));
+    throw new Error(
+      await extractApiError(response, 'Failed to load integration settings'),
+    );
   }
   return (await response.json()) as RuntimeSettings;
 }
@@ -68,7 +72,9 @@ export async function saveRuntimeSettings(
     body: JSON.stringify(update),
   });
   if (!response.ok) {
-    throw new Error(await extractApiError(response, 'Failed to save integration settings'));
+    throw new Error(
+      await extractApiError(response, 'Failed to save integration settings'),
+    );
   }
   return (await response.json()) as RuntimeSettings;
 }

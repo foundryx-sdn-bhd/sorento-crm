@@ -27,6 +27,7 @@ export function useSaveRuntimeSettings() {
       queryClient.setQueryData(RUNTIME_SETTINGS_KEY, data);
       toast.success('Integration settings saved');
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to save settings'),
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to save settings'),
   });
 }
