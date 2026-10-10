@@ -1,6 +1,6 @@
 # PLAN: prod env switches move to DB settings (SETTINGS-IN-DB-SORENTO)
 
-Status: Build (behaviour card posted as crew-ask on PR #1561; building on the recommended answers).
+Status: Build (behaviour card answered (a) on all five by crew, 10 Oct; Phase 2 red tests).
 Track: full lane (new permission + secrets at rest + external ingest auth source).
 
 Owner ask (10 Oct 11:20): "for these prod steps, can we make it UI configurable and store in DB,
@@ -10,9 +10,8 @@ I am reluctant to set .env variables".
 
 ### Fields
 
-Priority (owner, 10 Oct): labeller switch and connector first; the Respond.io webhook secret is
-lowest priority (n8n + `chat_history_reconcile` keep chat history current) and rides along only
-because it is the same mechanism.
+Priority (owner correction, 10 Oct): all fields are full priority, the Respond.io webhook secret
+included (with the webhook URL and the expected signature header shown in the UI).
 
 
 | Setting (env name) | Added by | DB column on `system_settings` | Secret | UI home (existing component) |
@@ -58,8 +57,11 @@ comes from. Saving a value overrides env; clearing it falls back to env.
 
 ### Permission
 
-New slug `user_management.settings.secrets` ("Manage integration secrets"), granted to `admin`
-only by the migration (superadmin passes by bypass). Gates both the GET and the PUT of the new
+New slug `user_management.settings.secrets` ("Manage integration secrets"), registered and
+granted to NO role: `admin` and `superadmin` already pass every slug by bypass
+(`UserPermissionService.check_user_has_permission`, `app/services/user_service.py:1551`), so an
+ungranted slug is exactly admin-only, and a role can still be granted it on User management >
+Roles if the owner ever wants to. Gates both the GET and the PUT of the new
 endpoint. Reason: `user_management.settings.edit` is also held by `warehouse_manager` and the
 three integration (API key) roles, and the webhook secret decides who may write chat history.
 
@@ -98,7 +100,7 @@ setting names; a secret field omitted = keep, `""` = clear, a string = set.
 - `FIELD_ENCRYPTION_KEY` (#1537, not merged): the master key; must stay env by design.
 - `N8N_CRM_WEBHOOK_SECRET`, `EXTERNAL_API_KEY*`: older than 9 Oct, out of scope.
 
-### Questions (answers pending; building on the recommendations)
+### Questions (answered (a) on all five, crew 10 Oct)
 
 1. Precedence: DB wins, env fallback (rec) / env wins.
 2. Permission: new admin-only slug (rec) / reuse `user_management.settings.edit`.
@@ -106,3 +108,42 @@ setting names; a secret field omitted = keep, `""` = clear, a string = set.
 4. `ANALYTICS_RO_DATABASE_URL`: move it too, encrypted (rec) / leave env-only.
 5. Labeller switch home: Integrations tab "Chat analytics" card (rec, one screen for all
    prod steps) / Chatbot tab "Switches" card.
+
+## Contract (Phase 2)
+
+`app/services/runtime_settings.py`
+
+- `FIELDS`: the seven setting names, in screen order: `chat_topic_labeller_enabled`,
+  `connector_ss_to_product_secret`, `connector_product_to_ss_secret`, `connector_connection_id`,
+  `connector_ss_callback_url`, `analytics_ro_database_url`, `respond_webhook_secret`. Each name is
+  also the `app.config.settings` attribute holding its env fallback.
+- `SECRET_FIELDS`: `connector_ss_to_product_secret`, `connector_product_to_ss_secret`,
+  `analytics_ro_database_url`, `respond_webhook_secret`. Stored in `<name>_ciphertext`.
+  Non-secret fields are stored in a column of the same name.
+- `get(name, db=None)`: effective value. DB value if non-null (secret: decrypted; an unreadable
+  ciphertext counts as null), else `getattr(settings, name)`, else None (labeller: False).
+  `db=None` opens and closes its own `SessionLocal()` (module attribute `SessionLocal`, so tests
+  can monkeypatch it).
+- `describe(db)`: `{name: {"source": "db"|"env"|"unset", "secret": bool, "value": <non-secret
+  effective value or None for secrets>, "masked": <secret: "****" + last 4 of the effective
+  value, "****" when 8 chars or fewer, None when unset>, "unreadable": bool}}`.
+- `update(db, payload, actor_user_id)`: payload keys = field names (unknown keys refused by the
+  schema). Omitted = keep. Secret / string: `None` or `""` (after strip) = clear, else set.
+  Bool: `None` = clear (back to env), True/False = set. Commits. Writes ONE audit row
+  (`log_audit(db, "system_settings", <row id>, "UPDATE", event="RUNTIME_SETTINGS",
+  new_values={"changes": {<non-secret name>: {"old": .., "new": ..}}, "secrets_set": [names],
+  "secrets_cleared": [names]}, user_id=actor)`) when anything changed, none otherwise. Secret
+  names travel as list VALUES because the audit redactor drops keys ending in `_secret`.
+  Creates the singleton row if none exists.
+
+API: `GET` / `PUT /api/v1/user-management/settings/runtime`, both
+`require_permission("user_management.settings.secrets")`. Response = `{"fields": describe(db),
+"respond_webhook_path": "/api/v1/public/respond/webhook", "respond_signature_headers":
+["x-respond-signature", "x-webhook-signature"], "respond_shared_secret_header":
+"X-Respond-Webhook-Secret"}`. PUT returns the same shape. `connector_ss_callback_url` must start
+with `https://` (422 otherwise).
+
+Readers switched to `runtime_settings.get`: `respond_webhook.respond_message_webhook` (request
+db), `task_scheduler._chat_topic_labeller_tick`, `analytics_connector.access.verify_token`,
+`analytics_connector.consent._configured` / `verify_request` / `approve`,
+`analytics_connector.datasets._ro_engine` (cached per DSN).
