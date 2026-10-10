@@ -27,7 +27,20 @@ export interface LinePricingPromotionOption {
   expired_on?: string | null;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 /**
  * The promotion's name as the dropdown and the line text show it:
@@ -35,7 +48,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * Parsed by hand, not through `Date`, so a browser west of UTC cannot show
  * the day before.
  */
-export function promotionOptionName(option: LinePricingPromotionOption): string {
+export function promotionOptionName(
+  option: LinePricingPromotionOption,
+): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(option.expired_on ?? '');
   if (!match) return option.description;
   const [, year, month, day] = match;
