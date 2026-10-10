@@ -108,3 +108,10 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 - **UAC-32** A period read on the first message survives the "How many?" reply.
 - **UAC-33** No entity-resolution miss line on a chat report reply for a word it did not filter
   on.
+
+- **UAC-34** (owner 11 Oct) A "customer" in a question is the dealer class (a contact with a
+  linked customer); "customers" / "dealers" (any language) filters askers to dealer only;
+  unclassified askers are not customers. A contact with a customer link AND an active
+  salesperson user is a salesperson. With no class named, every class is still counted.
+- **UAC-35** Brand names the contact's companies hold are given to the extractor, so a brand in a
+  question is read as a brand filter, never a product word; a brand echo names each brand once.
