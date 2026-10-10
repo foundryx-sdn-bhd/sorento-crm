@@ -178,6 +178,8 @@ describe('PriceTagRequestForm - AI extract did-you-mean (AI-EXTRACT-DYM)', () =>
 
   it('AC-F2: Apply without a pick adds no line and names the code as not found', async () => {
     await mountAndExtract([MISREAD]);
+    // Open, so "no line" is a real absence, not a collapsed section.
+    openSalesOrderSection();
 
     await act(async () => {
       captured.onApply?.({ productLines: [MISREAD] });
@@ -213,6 +215,7 @@ describe('PriceTagRequestForm - AI extract did-you-mean (AI-EXTRACT-DYM)', () =>
 
   it('AC-F4: a pick shows the row as matched; clearing it returns the row to Not found', async () => {
     await mountAndExtract([MISREAD]);
+    openSalesOrderSection();
 
     const { getByTestId, rerender } = render(cell(MISREAD));
     await act(async () => {
@@ -237,6 +240,9 @@ describe('PriceTagRequestForm - AI extract did-you-mean (AI-EXTRACT-DYM)', () =>
       captured.onApply?.({ productLines: [MISREAD] });
     });
     expect(screen.queryByLabelText('Quantity for line 1')).toBeNull();
+    await waitFor(() =>
+      expect(toasts.error).toHaveBeenCalledWith(expect.stringContaining(MISREAD.product_code)),
+    );
   });
 
   it('AC-F5: a not-found row with no suggestions shows plain Not found and no picker', async () => {

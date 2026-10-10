@@ -42,7 +42,7 @@ from app.services.ai_extract.form_schema_registry import (
     ExtractFieldSpec,
     get_form_schema,
 )
-from app.services.entity_resolver import resolve_references
+from app.services.entity_resolver import TokenResolution, resolve_references
 from app.services.error_handler import AppException
 from app.services.llm_provider import (
     ChatResult,
@@ -1110,7 +1110,7 @@ class AIExtractService:
 
     def _collect_suggestions(
         self,
-        misses: list[Any],
+        misses: list[TokenResolution],
         suggestions_out: dict[str, list[ExtractedProductSuggestion]],
     ) -> None:
         """Writes each missed token's active product `alternatives` (in the
