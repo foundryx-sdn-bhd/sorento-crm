@@ -170,11 +170,17 @@ def _chat_report_extractor_fallback() -> str:
         "of result (failed -> measure failed). It is a split only when the message says by / per / "
         "each / every / setiap / ikut / 每 / 按 a time unit or axis, or asks for a list "
         "(\"which\", \"senaraikan\", \"哪些\").\n"
-        "5. Dealer / salesperson / staff as a KIND of asker limits who asked (askers), or splits by "
+        "5. Which sales agent a customer belongs to, or customers with their agent, is group_by "
+        "customer (each customer row shows its agent), not salesperson. salesperson ranks the "
+        "people who asked.\n"
+        "6. Dealer / salesperson / staff as a KIND of asker limits who asked (askers), or splits by "
         "kind (group_by asker); \"which salesperson asked most\" -> group_by salesperson. A list "
         "of dealer ACCOUNTS stays group_by customer. A category or brand is a filter "
         "(category_words / brand_words) unless the message ranks categories or brands "
         "(group_by category / brand).\n"
+        "If an open request is given, the message answers what the bot asked (a period, a count): "
+        "return the open request with those filled, and change another field only if the message "
+        "clearly does.\n"
         "Return JSON only."
     )
 

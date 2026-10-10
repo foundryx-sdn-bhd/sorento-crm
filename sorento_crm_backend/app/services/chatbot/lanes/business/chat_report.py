@@ -109,6 +109,16 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     if not (is_chat_report(verdict) or jsc.js_string(verdict.get("intent_hint") or "").strip() == ASK_NAME):
         return False
     report = _dict(verdict.get("chat_report"))
+    reading = verdict.get("chat_report_reading")
+    if isinstance(reading, dict) and reading:
+        # The extractor read the reply WITH the open ask: it is a new ask only when the merged
+        # reading names another axis, measure or subject than the one held.
+        held = _held(_dict(_dict(open_slot).get("extras")), _dict(_dict(open_slot).get("values")))
+        for key in ("group_by", "measure", "subject"):
+            said, kept = reading.get(key), held.get(key)
+            if said and kept and said != kept:
+                return True
+        return False
     if not any(report.get(k) for k in ("group_by", "measure", "subject")):
         return False
     held = _dict(_dict(_dict(open_slot).get("extras")).get("args"))
@@ -227,6 +237,9 @@ def _args(
             if not word:
                 continue
             found = [str(row[0]) for row in getattr(business_services, resolver)(db, word)] if db is not None else []
+            if kind == "category" and db is not None:
+                # The owner's vocabulary (class label, synonyms): exact, every category with that label.
+                found += [i for i in business_services.resolve_category_class(db, word)[0] if i not in found]
             if not found:
                 return None, f"I couldn't find the {kind} '{word}'."
             found_ids.extend(i for i in found if i not in found_ids)
@@ -280,6 +293,48 @@ def _read_fresh(db: Any, parse_output: dict[str, Any], message_text: str) -> dic
     }
 
 
+HELD_KEYS = (
+    "group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+)
+
+
+def _held(extras: dict[str, Any], values: dict[str, Any]) -> dict[str, Any]:
+    """The fields the open question holds: the first reading, with the period and count the
+    slot has settled since."""
+    held = dict(_dict(extras.get("held")))
+    period = _dict(_dict(values.get("period")).get("value"))
+    if period:
+        held["date_from"], held["date_to"] = period.get("from"), period.get("to")
+    count = _dict(values.get("top_n")).get("value")
+    if isinstance(count, int):
+        held["top_n"] = count
+    return {k: held.get(k) for k in HELD_KEYS}
+
+
+def read_reply(db: Any, open_slot: dict[str, Any], message_text: str) -> dict[str, Any] | None:
+    """The extractor's MERGED reading of a reply to the open question: the held fields kept,
+    what the reply fills added. None when it could not read the message."""
+    extras = _dict(open_slot.get("extras"))
+    today = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
+    return chat_report_extractor.extract_chat_report(
+        db, message_text, today=today, open_ask=_held(extras, _dict(open_slot.get("values")))
+    )
+
+
+def dealer_scope(db: Any, scope: dict[str, Any], contact_respond_id: Any, space_id: Any) -> dict[str, Any]:
+    """A chat analytics turn's customer scope, enforced only for a DEALER by the asker rule
+    (`contact_asker`): a staff or salesperson contact with customer links is not a dealer, and the
+    route scopes chat by the same rule."""
+    from app.services import contact_asker
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    contact_id = resolve_contact_with_null_workspace_fallback(
+        db, contact_id=str(contact_respond_id).strip(), space_id=(str(space_id).strip() or None) if space_id else None
+    )
+    dealer = bool(contact_id) and contact_asker.classify(db, str(contact_id)) == "dealer"
+    return {**scope, "enforced": bool(scope.get("enforced")) and dealer}
+
+
 def settle(
     db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, own_ids: Any = None,
     message_text: str = "",
@@ -289,6 +344,27 @@ def settle(
     word or an axis the ask cannot run with."""
     slot = parse_output.get("required_ask")
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME:
+        # The reply is read with the open ask (once: the engine seam may have read it already);
+        # the parser's re-guess of the axis or the dates never overrides the held fields.
+        reading = (
+            parse_output["chat_report_reading"]
+            if "chat_report_reading" in parse_output
+            else read_reply(db, slot, message_text)
+        )
+        if reading:
+            held_period = bool(_dict(_dict(_dict(slot.get("values")).get("period")).get("value")))
+            if reading.get("date_from"):
+                dates = (reading.get("date_from"), reading.get("date_to"))
+            elif held_period:
+                dates = (None, None)  # the period is held: a date the parser guessed on the reply is not it
+            else:
+                dates = (parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
+            parse_output = {
+                **parse_output,
+                "top_n": reading.get("top_n") or parse_output.get("top_n"),
+                "date_filter_start": dates[0],
+                "date_filter_end": dates[1],
+            }
         return _answer(db, parse_output, slot), None
 
     # A fresh report: the focused extractor reads it, not the parser (revision 10 Oct 2026).
@@ -304,7 +380,13 @@ def settle(
     period = report_ask.period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end"))
     if period is not None:
         given["period"] = period
-    outcome = rf.collect(db, CHAT_REPORT_ASK, given=given, extras={"args": args, "top_n": top_n})
+    held = {
+        **{k: _dict(parse_output.get("chat_report")).get(k) for k in HELD_KEYS},
+        "top_n": top_n,
+        "date_from": parse_output.get("date_filter_start"),
+        "date_to": parse_output.get("date_filter_end"),
+    }
+    outcome = rf.collect(db, CHAT_REPORT_ASK, given=given, extras={"args": args, "top_n": top_n, "held": held})
     return _both_questions(outcome, given), None
 
 

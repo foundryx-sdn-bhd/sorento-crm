@@ -112,8 +112,20 @@ def _checked(data: Any, domains: list[str]) -> dict[str, Any] | None:
     return {k: data[k] for k in KEYS}
 
 
-def extract_chat_report(db: Session, message_text: str, *, today: date) -> dict[str, Any] | None:
-    """Read one staff message into a chat report request, or None. Never raises."""
+def _open_block(open_ask: dict[str, Any]) -> str:
+    held = {k: open_ask.get(k) for k in KEYS}
+    return (
+        "Open request so far (keep every field unless the message below clearly changes it; the "
+        "message answers what was asked, such as a period or a count): " + json.dumps(held, ensure_ascii=False)
+    )
+
+
+def extract_chat_report(
+    db: Session, message_text: str, *, today: date, open_ask: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Read one staff message into a chat report request, or None. Never raises. With `open_ask`
+    (the fields held by a question the bot asked) the message is read as its reply and the
+    result is the MERGED request: held fields kept, what the reply fills added."""
     raw = (message_text or "").strip()
     if not raw:
         return None
@@ -132,7 +144,10 @@ def extract_chat_report(db: Session, message_text: str, *, today: date) -> dict[
         system = system.replace("{today}", today.isoformat()).replace("{domains}", "; ".join(_describe(d) for d in domains))
         provider = get_provider(provider_name, api_key, model=model)
         result = provider.chat(
-            [{"role": "system", "content": system}, {"role": "user", "content": raw}],
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"{_open_block(open_ask)}\n\nMessage: {raw}" if open_ask else raw},
+            ],
             temperature=0.0,
             model=model,
             max_tokens=256,

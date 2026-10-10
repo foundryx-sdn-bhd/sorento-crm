@@ -4709,6 +4709,10 @@ def _run_stages_body(  # noqa: PLR0915
         state_in.focus.required_ask = None
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
             open_ask = None  # a new sales ranking ask, not the answer to the open question
+        if (open_ask or {}).get("ask") == chat_report.ASK_NAME and not verdict.get("order_status"):
+            # The reply to a chat report question is read ONCE by the extractor, with the open ask;
+            # the lane reuses the reading (`chat_report_reading`, empty when it could not read).
+            verdict = {**verdict, "chat_report_reading": chat_report.read_reply(db, open_ask, _message_text) or {}}
         if (open_ask or {}).get("ask") == chat_report.ASK_NAME and chat_report.names_its_own_ask(verdict, open_ask):
             open_ask = None  # a new chat report, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
@@ -4999,6 +5003,13 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        if customer_scope is not None and "chat_analytics" in {
+            *(plan.domains or ()), *(spec.domain for spec in plan.fetch)
+        }:
+            # A chat analytics turn is scoped by the asker rule (dealer only), not by customer links.
+            from app.services.chatbot.lanes.business import chat_report as _chat_report
+
+            customer_scope = _chat_report.dealer_scope(db, customer_scope, contact_respond_id, space_id_for_turn)
 
         # Grant before roster (SF-1, PLAN-chatbot-answer-half-reattach.md slice R2):
         # an ungranted contact's sales-report ask is refused HERE, before the resolver
