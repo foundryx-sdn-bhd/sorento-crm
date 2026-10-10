@@ -1206,7 +1206,11 @@ LABEL_JOBS = {"refuse-ci-full"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
-    """Backend test jobs 60 min, everything else 20; the deploy jobs are out of this lane's scope.
+    """Backend test jobs 90 min, everything else 20; the deploy jobs are out of this lane's scope.
+
+    90, not 60 (11 Oct 2026): on the private-repo runners the main shards ran 29-59 min of
+    pytest and three hit the 60-minute cap (release 38071049191 shards 2 and 6, release
+    38091974895 shard 1, nightly 38091972809 shards 1 and 2).
 
     The caps bound run time only, at about twice the worst observed run:
     on run 37369427779 (5 Oct 2026) a 35-minute cap cut a healthy shard at
@@ -1226,7 +1230,7 @@ def test_every_test_and_gate_job_carries_a_timeout():
     for job_id, minutes in timeouts.items():
         if job_id in DEPLOY_JOBS:
             continue
-        assert minutes == (60 if job_id in shards else 20), (job_id, minutes)
+        assert minutes == (90 if job_id in shards else 20), (job_id, minutes)
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request'" in text
 
 
@@ -1633,10 +1637,12 @@ def test_serial_ddl_steps_have_their_own_matrix_entry_off_the_balanced_shards():
     measured as the release's critical path (43.8 min vs 14-22 for shards 2-6)."""
     text = _workflow_text()
     block = re.search(r"\n  test-backend:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
-    assert re.search(r"^        shard: \[1, 2, 3, 4, 5, 6, serial\]$", block, re.M)
+    # Ten balanced shards since 11 Oct 2026: six ran 29-59 min (about 290 runner-minutes in
+    # all) on the private-repo runners, so ten land near 30 each.
+    assert re.search(r"^        shard: \[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, serial\]$", block, re.M)
     steps = {s.splitlines()[0]: s for s in re.split(r"\n      - name: ", block)[1:]}
     xdist = steps["Run backend suite under xdist (executing gate)"]
-    assert "        if: matrix.shard != 'serial'" in xdist and "--splits 6 --group ${{ matrix.shard }}" in xdist
+    assert "        if: matrix.shard != 'serial'" in xdist and "--splits 10 --group ${{ matrix.shard }}" in xdist
     assert "matrix.shard != 'serial'" in steps["Upload backend shard durations artifact"]
     for name in ("Run migration tests serially (executing gate)", "Run view/DDL tests serially (executing gate)"):
         assert "        if: matrix.shard == 'serial'" in steps[name], name
