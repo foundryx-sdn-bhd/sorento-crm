@@ -278,7 +278,9 @@ def test_describe_masks_an_env_secret_too(db, monkeypatch):
 # --------------------------------------------------------------------------- AC-7 unreadable
 
 
-def test_unreadable_ciphertext_reads_as_unset_and_never_raises(db, actor, monkeypatch):
+def test_unreadable_ciphertext_fails_closed_and_never_raises(db, actor, monkeypatch):
+    """Security review M2: an undecryptable saved secret does NOT fall back to env, which may
+    hold the very secret the saved one replaced."""
     from app.services import runtime_settings as rs
 
     rs.update(db, {"respond_webhook_secret": SECRET_20}, actor.id)
@@ -287,11 +289,14 @@ def test_unreadable_ciphertext_reads_as_unset_and_never_raises(db, actor, monkey
     db.commit()
     _pin_env(monkeypatch, respond_webhook_secret=ENV_VALUE)
 
-    assert rs.get("respond_webhook_secret", db=db) == ENV_VALUE
+    assert rs.get("respond_webhook_secret", db=db) is None
     out = rs.describe(db)
     assert out["respond_webhook_secret"]["unreadable"] is True
-    assert out["respond_webhook_secret"]["source"] == "env"
-    assert out["respond_webhook_secret"]["masked"] == "****" + ENV_VALUE[-4:]
+    assert out["respond_webhook_secret"]["source"] == "db"
+    assert out["respond_webhook_secret"]["masked"] is None
+
+    rs.update(db, {"respond_webhook_secret": ""}, actor.id)  # clearing it is what re-opens env
+    assert rs.get("respond_webhook_secret", db=db) == ENV_VALUE
 
 
 # --------------------------------------------------------------------------- AC-5 audit
@@ -486,3 +491,53 @@ def test_labeller_reads_unset_not_env_when_the_env_var_is_absent(db, monkeypatch
 
     assert out["source"] == "unset"
     assert out["value"] is False
+
+
+def test_a_failed_read_fails_closed_for_secrets_only(monkeypatch):
+    """M2: when system_settings cannot be read, a secret is unset (no env fallback) while a
+    non-secret still uses env."""
+    from app.services import runtime_settings as rs
+
+    class _Broken:
+        def query(self, *_a, **_k):
+            raise RuntimeError("database down")
+
+        def close(self):
+            pass
+
+    _pin_env(monkeypatch, respond_webhook_secret=ENV_VALUE, connector_connection_id="zzt-env-conn")
+    monkeypatch.setattr(rs, "SessionLocal", lambda: _Broken())
+
+    assert rs.get("respond_webhook_secret") is None
+    assert rs.get("connector_connection_id") == "zzt-env-conn"
+
+
+def test_sessionless_reads_are_cached_and_a_save_clears_the_cache(db, actor, monkeypatch):
+    """H1: readers without a session (the connector preflight) read the database at most once per
+    CACHE_TTL_SECONDS; a save in this process is visible at once."""
+    from app.services import runtime_settings as rs
+
+    opened = []
+
+    class _Keep:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+        def close(self):
+            pass
+
+    def _factory():
+        opened.append(1)
+        return _Keep(db)
+
+    monkeypatch.setattr(rs, "SessionLocal", _factory)
+
+    for _ in range(5):
+        assert rs.get("connector_connection_id") is None
+    assert len(opened) == 1
+
+    rs.update(db, {"connector_connection_id": "zzt-after-save"}, actor.id)
+    assert rs.get("connector_connection_id") == "zzt-after-save"

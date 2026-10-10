@@ -5,16 +5,19 @@ Plan: documentation/plans/system/PLAN-settings-in-db-sorento.md ("Contract (Phas
 Each setting is a column on the `system_settings` singleton and keeps its env var as a
 fallback: a value saved here wins; NULL means the env var of the same name (an attribute of
 `app.config.settings`) applies; neither means unset. Readers call ``get`` on every use, so a
-value saved on Settings > Integrations takes effect without a restart.
+value saved on Settings > Integrations takes effect without a restart (within
+``CACHE_TTL_SECONDS`` on another worker process).
 
 Secrets are stored as `encrypt_secret` ciphertext in ``<name>_ciphertext`` and never leave
 ``describe`` in full. The encryption key itself stays in env (``app/utils/field_encryption.py``):
-if it changes, a saved secret no longer decrypts and reads as unset here (env fallback), and
-``describe`` reports it as ``unreadable`` so the screen can ask for it again.
+if it changes, a saved secret no longer decrypts and reads as unset here, WITHOUT the env
+fallback (fail closed), and ``describe`` reports it as ``unreadable`` so the screen can ask for
+it again.
 """
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -60,15 +63,32 @@ def _env(name: str) -> Any:
     return value or None
 
 
-def _stored(row: Optional[SystemSetting], name: str) -> tuple[Any, bool]:
-    """(the saved value or None, unreadable). A ciphertext no key opens counts as None."""
-    raw = getattr(row, _column(name), None) if row is not None else None
+# A snapshot of the stored columns, for readers that pass no session. The connector check runs
+# for any request carrying `Authorization: Connector ...`, before a signature is verified, so
+# without this an unauthenticated flood would cost one database read each (security review H1).
+# `update` clears it in this process; another worker sees a change within CACHE_TTL_SECONDS.
+CACHE_TTL_SECONDS = 5.0
+_cache: dict[str, Any] = {}
+_READ_FAILED = object()
+
+
+def clear_cache() -> None:
+    _cache.clear()
+
+
+def _snapshot(row: Optional[SystemSetting]) -> dict[str, Any]:
+    return {_column(name): getattr(row, _column(name), None) for name in FIELDS} if row else {}
+
+
+def _stored(snap: Any, name: str) -> tuple[Any, bool]:
+    """(the saved value or None, unreadable)."""
+    raw = snap.get(_column(name)) if isinstance(snap, dict) else None
     if raw is None or name not in SECRET_FIELDS:
         return raw, False
     try:
         return decrypt_secret(raw) or None, False
     except ValueError:
-        logger.warning("runtime_settings: %s does not decrypt (key changed?); using the env fallback", name)
+        logger.warning("runtime_settings: %s does not decrypt (key changed?); treated as unset", name)
         return None, True
 
 
@@ -76,35 +96,58 @@ def _row(db: Session) -> Optional[SystemSetting]:
     return db.query(SystemSetting).first()
 
 
-def _resolve(name: str, row: Optional[SystemSetting]) -> tuple[Any, str, bool]:
-    """(effective value, source, unreadable)."""
-    stored, unreadable = _stored(row, name)
+def _resolve(name: str, snap: Any) -> tuple[Any, str, bool]:
+    """(effective value, source, unreadable).
+
+    Secrets fail closed (security review M2): a saved secret that no longer decrypts, or a
+    failed read, never falls back to env, because the env value may be the one the saved
+    secret replaced. Only a secret that was never saved (or was cleared) uses env."""
+    secret = name in SECRET_FIELDS
+    if snap is _READ_FAILED and secret:
+        return None, "unset", False
+    stored, unreadable = _stored(snap, name)
     if stored is not None:
-        return stored, "db", unreadable
+        return stored, "db", False
+    if unreadable:
+        return None, "db", True
     env = _env(name)
     if env is not None:
-        return env, "env", unreadable
-    return (False if name in BOOL_FIELDS else None), "unset", unreadable
+        return env, "env", False
+    return (False if name in BOOL_FIELDS else None), "unset", False
+
+
+def _read(db: Optional[Session]) -> Any:
+    """The stored snapshot, or _READ_FAILED. ``db=None`` uses the short cache, else its own
+    session."""
+    if db is not None:
+        try:
+            return _snapshot(_row(db))
+        except Exception:  # noqa: BLE001 - see _resolve: secrets fail closed, the rest use env
+            logger.exception("runtime_settings: could not read system_settings")
+            return _READ_FAILED
+    now = time.monotonic()
+    if _cache and now - _cache["at"] < CACHE_TTL_SECONDS:
+        return _cache["snap"]
+    try:
+        session = SessionLocal()
+        try:
+            snap = _snapshot(_row(session))
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("runtime_settings: could not read system_settings")
+        return _READ_FAILED
+    _cache.update(at=now, snap=snap)
+    return snap
 
 
 def get_many(names: tuple[str, ...], db: Optional[Session] = None) -> dict[str, Any]:
-    """The effective values of several settings from one read. ``db=None`` opens (and closes)
-    its own session. A failed read is logged and answered from env, so a reader never breaks."""
+    """The effective values of several settings from one read (see ``_read``)."""
     unknown = set(names) - set(FIELDS)
     if unknown:
         raise KeyError(sorted(unknown))
-    own = db is None
-    try:
-        session = SessionLocal() if own else db
-        try:
-            row = _row(session)
-        finally:
-            if own:
-                session.close()
-    except Exception:  # noqa: BLE001 - fall back to env rather than fail the caller
-        logger.exception("runtime_settings: could not read system_settings")
-        row = None
-    return {name: _resolve(name, row)[0] for name in names}
+    snap = _read(db)
+    return {name: _resolve(name, snap)[0] for name in names}
 
 
 def get(name: str, db: Optional[Session] = None) -> Any:
@@ -120,10 +163,10 @@ def _mask(value: Optional[str]) -> Optional[str]:
 
 def describe(db: Session) -> dict[str, dict[str, Any]]:
     """Every setting with its source; secrets masked, never in full."""
-    row = _row(db)
+    snap = _snapshot(_row(db))
     out: dict[str, dict[str, Any]] = {}
     for name in FIELDS:
-        value, source, unreadable = _resolve(name, row)
+        value, source, unreadable = _resolve(name, snap)
         secret = name in SECRET_FIELDS
         out[name] = {
             "source": source,
@@ -175,7 +218,7 @@ def update(db: Session, payload: dict[str, Any], actor_user_id: Optional[str]) -
                 setattr(row, column, None)
                 secrets_cleared.append(name)
             else:
-                old, _unreadable = _stored(row, name)
+                old, _unreadable = _stored(_snapshot(row), name)
                 if old == new:
                     continue
                 setattr(row, column, encrypt_secret(new))
@@ -202,4 +245,5 @@ def update(db: Session, payload: dict[str, Any], actor_user_id: Optional[str]) -
             user_id=actor_user_id,
         )
     db.commit()
+    clear_cache()
     return changed
