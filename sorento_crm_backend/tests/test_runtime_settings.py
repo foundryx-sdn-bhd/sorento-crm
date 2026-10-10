@@ -651,7 +651,9 @@ def test_put_takes_several_respond_signing_keys(api, db):
     assert resp.status_code == 200, resp.text
 
 
-@pytest.mark.parametrize("short", ["key", "message.received:", "x" * 23])
+# Distinctive tokens, so "not in resp.text" proves the value is not echoed (a bare
+# "key" would match the message's own wording).
+@pytest.mark.parametrize("short", ["zztkey", "message.received:", "x" * 23])
 def test_put_refuses_a_respond_key_under_24_characters_without_echoing_it(api, short):
     client, allow = api
     allow.add(SECRETS_SLUG)
