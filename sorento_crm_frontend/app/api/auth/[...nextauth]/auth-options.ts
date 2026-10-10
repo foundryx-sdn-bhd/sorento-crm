@@ -2,6 +2,7 @@ import { NextAuthOptions, Session, User } from 'next-auth';
 import { JWT } from 'next-auth/jwt';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
+import { forwardedForHeader } from '@/lib/forwarded-for';
 import { sessionTokenCookieName } from '@/lib/auth-cookie';
 import {
   devLoginAllowed,
@@ -139,7 +140,7 @@ const authOptions: NextAuthOptions = {
         email: { label: 'Email', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials || !credentials.email || !credentials.password) {
           throw new Error(
             JSON.stringify({ code: 400, message: 'Please enter both email and password.' }),
@@ -150,7 +151,7 @@ const authOptions: NextAuthOptions = {
         try {
           res = await fetch(`${backendBaseUrl()}/api/v1/auth/login`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...forwardedForHeader(req?.headers) },
             body: JSON.stringify({
               email: credentials.email,
               password: credentials.password,
@@ -196,7 +197,7 @@ const authOptions: NextAuthOptions = {
         phone: { label: 'Phone', type: 'text' },
         code: { label: 'Code', type: 'text' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.phone || !credentials?.code) {
           throw new Error(
             JSON.stringify({ code: 400, message: 'Enter the verification code.' }),
@@ -207,7 +208,7 @@ const authOptions: NextAuthOptions = {
         try {
           res = await fetch(`${backendBaseUrl()}/api/v1/auth/phone/verify`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...forwardedForHeader(req?.headers) },
             body: JSON.stringify({
               phone: credentials.phone,
               code: credentials.code,
