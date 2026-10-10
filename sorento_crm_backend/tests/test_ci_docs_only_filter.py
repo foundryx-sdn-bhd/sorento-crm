@@ -15,9 +15,10 @@ Three rules live in that workflow and are pinned here:
 3. Cheap gate + merge gate (the jobs' `if` lines and the workflow
    `concurrency`): a `ci`-labelled PR runs the fast gates, the changed
    tests and the SCM shards only when SCM paths changed, never the six
-   backend shards; a `ci-full`-labelled PR, a merge-queue entry, the nightly
-   schedule and a release run the full suite; only a `ci` / `ci-full` label
-   run joins the per-PR concurrency group; every test job carries a
+   backend shards; a merge-queue entry and a release run the full suite;
+   a `ci-full` label on a PR is refused (owner, 9 Oct 2026: no full suite
+   per PR) and there is no nightly (owner, 10 Oct 2026, CI-LEAN); only a
+   `ci` label run joins the per-PR concurrency group; every test job carries a
    timeout; the `CI gate` job reports the run as one check (CI-MINUTES-CUT).
 4. Changed tests on a PR (`backend_tests` output of `changes`, and job
    `test-backend-changed` with its "Select the changed test files to run"
@@ -149,9 +150,6 @@ def _run_shell(tmp_path: Path, script: str, env: dict, fixtures: dict, *, gh_fai
 AREA_KEYS = {"docs_only", "backend", "frontend", "mcp", "scm", "backend_tests", "backend_code"}
 
 
-NIGHTLY_RUNS = "repos/jayson-odoo/sorento-crm/actions/workflows/deploy.yml/runs?branch=main&event=schedule&status=success&per_page=1"
-
-
 def run_step(
     tmp_path: Path,
     event: str,
@@ -161,15 +159,13 @@ def run_step(
     before: str = BEFORE,
     skip_tests: str = "",
     label: str = "ci",
-    nightly_last: str = "",
 ) -> dict[str, str]:
     """Run the real step with `files` as the API answer; return $GITHUB_OUTPUT.
 
     Each entry of `files` is a path, or a (new_path, previous_path) pair for a
     rename, shaped into the PR-files array or the compare object exactly as the
     GitHub API returns them. `label` is the label just added on a
-    pull_request event; `nightly_last` is the head the last green nightly
-    tested (the schedule case asks the API for it; empty means none).
+    pull_request event.
     """
     entries = []
     for f in files:
@@ -181,7 +177,6 @@ def run_step(
         "repos/jayson-odoo/sorento-crm/pulls/1/files": entries,
         f"repos/jayson-odoo/sorento-crm/compare/{before}...{SHA}": {"files": entries},
         f"repos/jayson-odoo/sorento-crm/compare/{'c' * 40}...{'d' * 40}": {"files": entries},
-        NIGHTLY_RUNS: {"workflow_runs": [{"head_sha": nightly_last}] if nightly_last else []},
     }
     env = {
         "EVENT": event, "LABEL": label if event == "pull_request" else "", "PR": "1",
@@ -222,23 +217,26 @@ def test_docs_only_change_skips_everything(tmp_path, event):
     assert run_step(tmp_path, event, DOCS_ONLY) == DOCS_SKIP
 
 
-def test_docs_only_change_skips_everything_under_ci_full_too(tmp_path):
-    """Owner ruling 29 Sep 2026 holds for the merge gate: docs need no suite."""
-    assert run_step(tmp_path, "pull_request", DOCS_ONLY, label="ci-full") == DOCS_SKIP
+def _triggers() -> str:
+    text = _workflow_text()
+    return text[text.index("\non:\n"):text.index("\nconcurrency:\n")]
 
 
-def test_ci_full_label_counts_every_area_as_changed(tmp_path):
-    """CI-MINUTES-CUT: `ci-full` is the merge gate, the full suite like a queue entry."""
-    for files in ([ "sorento_crm_frontend/app/page.tsx"], TESTS_ONLY_1387, ["sorento_crm_mcp/pyproject.toml"]):
-        assert run_step(tmp_path, "pull_request", files, label="ci-full") == FULL_PIPELINE, files
+def test_there_is_no_nightly(tmp_path):
+    """CI-LEAN, owner 10 Oct 2026: "i don't need the nightly test". No
+    schedule trigger, and the `changes` step carries no schedule branch."""
+    assert not re.search(r"^  schedule:", _triggers(), re.M)
+    assert "event=schedule" not in _step_script("Detect changed areas")
+    assert "nightly_done" not in _step_script("Detect changed areas")
 
 
-def test_nightly_tests_main_unless_the_last_green_nightly_tested_this_head(tmp_path):
-    """The schedule has no diff: every area, unless main has not moved."""
-    assert run_step(tmp_path, "schedule", []) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", [], nightly_last="e" * 40) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", [], nightly_last=SHA) == {"docs_only": "false", **NO_AREA}
-    assert run_step(tmp_path, "schedule", [], gh_fails=True) == FULL_PIPELINE, "a failed lookup runs everything"
+def test_ci_full_is_never_a_label_the_area_step_honours(tmp_path):
+    """No full suite per PR (owner, 9 Oct 2026): the step has no ci-full branch,
+    so a stray ci-full label reads like any other PR (the job never runs then:
+    see test_ci_full_label_is_refused_on_a_pull_request)."""
+    assert "ci-full" not in _step_script("Detect changed areas")
+    out = run_step(tmp_path, "pull_request", ["sorento_crm_frontend/app/page.tsx"], label="ci-full")
+    assert out["backend"] == "false" and out["frontend"] == "true"
 
 
 NON_DOCS = [
@@ -399,10 +397,8 @@ def test_fail_safes_land_on_the_full_pipeline(tmp_path):
     assert run_step(tmp_path, "push", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     assert run_step(tmp_path, "merge_group", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     assert run_step(tmp_path, "pull_request", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
-    assert run_step(tmp_path, "pull_request", DOCS_ONLY, gh_fails=True, label="ci-full") == FULL_PIPELINE
     assert run_step(tmp_path, "push", []) == FULL_PIPELINE
     assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     many = [f"documentation/plans/x/{i}.md" for i in range(300)]
     assert run_step(tmp_path, "push", many) == FULL_PIPELINE, "300 files is the compare cap"
     assert run_step(tmp_path, "push", many[:299]) == DOCS_SKIP
@@ -524,17 +520,11 @@ def test_rename_of_a_test_file_lists_both_ends(tmp_path):
     )
 
 
-@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch", "schedule"])
+@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch"])
 def test_changed_tests_are_never_listed_off_a_pull_request(tmp_path, event):
     """The full shards run there; the list must not make the changed-files job run twice."""
     out = run_step(tmp_path, event, TESTS_ONLY_1387)
     assert out["backend_tests"] == ""
-    assert out["backend"] == "true"
-
-
-def test_changed_tests_are_never_listed_under_ci_full(tmp_path):
-    out = run_step(tmp_path, "pull_request", TESTS_ONLY_1387, label="ci-full")
-    assert out["backend_tests"] == "" and out["backend_code"] == ""
     assert out["backend"] == "true"
 
 
@@ -797,24 +787,25 @@ def test_ci_label_never_runs_the_six_shards_whatever_changes_reports():
         assert results["test-backend"] == "skipped", outputs
 
 
-def test_ci_full_label_runs_the_full_suite_and_never_deploys():
-    """The merge gate: every job a merge-queue entry runs, plus the PR-only jobs."""
-    results = _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)
-    assert _ran(results) == FULL_SUITE | {"gitleaks", "release-ci-label"}
-    assert results["test-backend-changed"] == "skipped"
-    assert results["build-images"] == "skipped"
-    assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
-    assert _ran(_simulate("pull_request", label="ci-full", outputs={**NO_AREA, "docs_only": "true"})) == GATES_ON_PR
+def test_ci_full_label_is_refused_on_a_pull_request():
+    """Owner, 9 Oct 2026: no ci-full per PR. The label runs ONE job, which
+    removes it and fails the run with the reason; nothing else runs, so no
+    suite, no build and no deploy, whatever `changes` would have said."""
+    for outputs in (FULL_PIPELINE, {**NO_AREA, "docs_only": "true"}):
+        results = _simulate("pull_request", label="ci-full", outputs=outputs)
+        assert _ran(results) == {"refuse-ci-full"}, results
+    for label in ("ci", "needs-hand-test", "lane-running"):
+        assert _simulate("pull_request", label=label)["refuse-ci-full"] == "skipped", label
+    for event in ("push", "merge_group", "workflow_dispatch"):
+        assert _simulate(event, outputs=FULL_PIPELINE)["refuse-ci-full"] == "skipped", event
 
 
-def test_nightly_runs_the_full_suite_or_nothing_and_never_deploys():
-    results = _simulate("schedule", outputs=FULL_PIPELINE)
-    assert _ran(results) == FULL_SUITE
-    assert results["gitleaks"] == "skipped" and results["build-images"] == "skipped"
-    assert results["build-and-deploy"] == "skipped" and results["notify-owner"] == "skipped"
-    idle = _simulate("schedule", outputs={"docs_only": "false", **NO_AREA})
-    assert _ran(idle) == {"check-migration-heads", "pii-guard", "changes", "ci-gate"}
+def test_refuse_ci_full_job_removes_the_label_and_fails_with_the_reason():
+    block = _job_block("refuse-ci-full")
+    assert "pull-requests: write" in block
+    assert "--remove-label ci-full" in block
+    assert "release-only" in block and "exit 1" in block
+    assert re.search(r"^    timeout-minutes: \d+$", block, re.M)
 
 
 def test_pull_request_fast_gate_backend_without_scm_paths():
@@ -861,7 +852,7 @@ def test_pull_request_with_code_and_a_test_file_runs_both_gates():
 
 
 def test_changed_tests_job_never_runs_off_a_pull_request_or_with_another_label():
-    for event in ("merge_group", "workflow_dispatch", "push", "schedule"):
+    for event in ("merge_group", "workflow_dispatch", "push"):
         results = _simulate(event, outputs={**FULL_PIPELINE, "backend_tests": "sorento_crm_backend/tests/test_x.py", "backend_code": ""})
         assert results["test-backend-changed"] == "skipped", (event, results)
     for label in ("needs-hand-test", "lane-running", "ci-full"):
@@ -960,17 +951,16 @@ def _job_block(job_id: str) -> str:
 
 
 def test_release_label_job_removes_the_label_that_fired_the_run():
-    """`ci` and `ci-full` are both one-shot: the job removes whichever was added."""
+    """`ci` is one-shot: the job removes it (`ci-full` has its own refusing job)."""
     block = _job_block("release-ci-label")
-    assert "LABEL: ${{ github.event.label.name }}" in block
-    assert '--remove-label "$LABEL"' in block
-    assert "--remove-label ci\n" not in block
-    for label in ("ci", "ci-full"):
-        assert _simulate("pull_request", label=label)["release-ci-label"] == "success", label
-    assert _simulate("pull_request", label="needs-hand-test")["release-ci-label"] == "skipped"
+    assert "--remove-label ci\n" in block or '--remove-label "ci"' in block
+    assert _simulate("pull_request", label="ci")["release-ci-label"] == "success"
+    for label in ("ci-full", "needs-hand-test"):
+        assert _simulate("pull_request", label=label)["release-ci-label"] == "skipped", label
 
 
 DEPLOY_JOBS = {"build-images", "build-and-deploy", "notify-owner"}
+LABEL_JOBS = {"release-ci-label", "refuse-ci-full"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
@@ -1000,22 +990,21 @@ def test_every_test_and_gate_job_carries_a_timeout():
 
 def test_ci_gate_needs_every_test_and_validate_job():
     jobs = _job_ifs()
-    expected = set(jobs) - DEPLOY_JOBS - {"release-ci-label", "ci-gate"}
+    expected = set(jobs) - DEPLOY_JOBS - LABEL_JOBS - {"ci-gate"}
     assert set(jobs["ci-gate"]["needs"]) == expected, jobs["ci-gate"]["needs"]
 
 
 def test_ci_gate_reports_a_different_name_for_the_full_suite():
-    """A ruleset reads the latest check of a name on the head: `ci` must not
-    stand in for `ci-full`, so the full run reports as `CI gate (full)`."""
+    """A ruleset reads the latest check of a name on the head: a `ci` run must
+    not stand in for a full-suite run, so the full run reports as `CI gate (full)`."""
     name = _expression(re.search(r"^    name: (.*)$", _job_block("ci-gate"), re.M).group(1))
     github = lambda event, label=None: {"github": {"event_name": event, "event": {"label": {"name": label}} if label else {}}}
     assert _gh_eval(name, github("pull_request", "ci")) == "CI gate"
-    assert _gh_eval(name, github("pull_request", "ci-full")) == "CI gate (full)"
-    for event in ("merge_group", "schedule", "workflow_dispatch"):
+    for event in ("merge_group", "workflow_dispatch"):
         assert _gh_eval(name, github(event)) == "CI gate (full)", event
 
 
-def test_changes_job_token_can_read_the_pr_files_and_the_nightly_runs():
+def test_changes_job_token_can_read_the_pr_files_and_the_actions_api():
     """Private repo: a restricted default token would fail both `gh api` calls
     and the fail-safe would turn every `ci` run into every area changed."""
     block = _job_block("changes")
@@ -1025,9 +1014,9 @@ def test_changes_job_token_can_read_the_pr_files_and_the_nightly_runs():
 
 def test_ci_gate_runs_on_every_gated_event_and_on_nothing_else():
     assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "success"
-    assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "success"
+    assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "skipped"
     assert _simulate("pull_request", label="ci", outputs={**NO_AREA, "docs_only": "true"})["ci-gate"] == "success"
-    for event in ("merge_group", "workflow_dispatch", "schedule"):
+    for event in ("merge_group", "workflow_dispatch"):
         assert _simulate(event, outputs=FULL_PIPELINE)["ci-gate"] == "success", event
     assert _simulate("push", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "a push to main is the alembic gate alone"
     for label in ("needs-hand-test", "lane-running", "needs-decision"):
@@ -1114,16 +1103,7 @@ def test_concurrency_ci_label_runs_share_the_pr_group_and_cancel():
     assert other_pr[0] != first[0], "one PR's ci run must not cancel another PR's"
 
 
-def test_concurrency_ci_full_shares_the_pr_group_with_ci_and_cancels():
-    """One group for both labels: a new label event on a PR supersedes its live run."""
-    ci = _resolve(_event("pull_request", label="ci", pr=1370, run_id=1))
-    full = _resolve(_event("pull_request", label="ci-full", pr=1370, run_id=2))
-    assert full == ("ci-Build and Deploy Sorento-1370", True)
-    assert full[0] == ci[0]
-    assert _resolve(_event("pull_request", label="ci-full", pr=1371, run_id=3))[0] != full[0]
-
-
-@pytest.mark.parametrize("label", ["needs-hand-test", "lane-running", "needs-decision", "ready-for-agent"])
+@pytest.mark.parametrize("label", ["ci-full", "needs-hand-test", "lane-running", "needs-decision", "ready-for-agent"])
 def test_concurrency_other_label_events_join_no_group_and_cancel_nothing(label):
     ci_group, _ = _resolve(_event("pull_request", label="ci", pr=1370, run_id=1))
     group, cancel = _resolve(_event("pull_request", label=label, pr=1370, run_id=2))
@@ -1132,7 +1112,7 @@ def test_concurrency_other_label_events_join_no_group_and_cancel_nothing(label):
     assert cancel is False
 
 
-@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch", "schedule"])
+@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch"])
 def test_concurrency_non_pr_events_are_unique_and_never_cancel(event):
     group, cancel = _resolve(_event(event, run_id=77))
     assert group == "ci-Build and Deploy Sorento-77"
