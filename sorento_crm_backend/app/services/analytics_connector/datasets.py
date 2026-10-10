@@ -8,11 +8,11 @@ Anything outside the catalog raises `QueryError`, which the route answers with 4
 from __future__ import annotations
 
 import json
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from functools import lru_cache
 from typing import Any, Iterator, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -197,30 +197,40 @@ class QuerySpec(BaseModel):
 # ------------------------------------------------------------------ engine
 
 
+# The one live read-only engine and its DSN. A changed DSN replaces it and the old pool is
+# disposed (security review L2), so connections under an old password or host do not linger.
+_ro_current: dict[str, Any] = {}
+_ro_lock = threading.Lock()
+
+
 def _ro_engine():
     """The read-only role's engine for the DSN saved on Settings > Integrations (env
-    ANALYTICS_RO_DATABASE_URL as the fallback), read per call; one engine per DSN, so a changed
-    DSN takes effect on the next call without a restart."""
+    ANALYTICS_RO_DATABASE_URL as the fallback), read per call, so a changed DSN takes effect on
+    the next call without a restart."""
     from app.services import runtime_settings
 
     url = runtime_settings.get("analytics_ro_database_url")
-    if not url:
-        return None
-    return _engine_for(url)
-
-
-@lru_cache(maxsize=4)
-def _engine_for(url: str):
-    return create_engine(
-        url,
-        pool_size=2,
-        max_overflow=3,
-        pool_pre_ping=True,
-        connect_args={
-            "options": f"-c statement_timeout={int(STATEMENT_TIMEOUT[:-1]) * 1000} "
-            "-c default_transaction_read_only=on -c timezone=utc"
-        },
-    )
+    with _ro_lock:
+        current = _ro_current.get("engine")
+        if current is not None and _ro_current.get("url") == url:
+            return current
+        _ro_current.clear()
+        if current is not None:
+            current.dispose()
+        if not url:
+            return None
+        engine = create_engine(
+            url,
+            pool_size=2,
+            max_overflow=3,
+            pool_pre_ping=True,
+            connect_args={
+                "options": f"-c statement_timeout={int(STATEMENT_TIMEOUT[:-1]) * 1000} "
+                "-c default_transaction_read_only=on -c timezone=utc"
+            },
+        )
+        _ro_current.update(url=url, engine=engine)
+        return engine
 
 
 @contextmanager

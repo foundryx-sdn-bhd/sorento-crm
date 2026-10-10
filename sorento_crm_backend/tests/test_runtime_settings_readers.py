@@ -257,3 +257,21 @@ def test_ro_engine_follows_the_dsn_saved_in_the_db_one_engine_per_dsn(db, save):
         for e in engines:
             if e is not None:
                 e.dispose()
+
+
+def test_a_replaced_ro_engine_is_disposed(db, save, monkeypatch):
+    """Security review L2: the old pool (old password / host) is closed when the DSN changes."""
+    from app.services.analytics_connector import datasets
+
+    save(analytics_ro_database_url=_dsn())
+    first = datasets._ro_engine()
+    disposed = []
+    monkeypatch.setattr(first, "dispose", lambda *a, **k: disposed.append(1))
+    try:
+        save(analytics_ro_database_url=_dsn())
+        second = datasets._ro_engine()
+        assert second is not first and disposed == [1]
+        save(analytics_ro_database_url="")
+        assert datasets._ro_engine() is None
+    finally:
+        datasets._ro_current.clear()
