@@ -33,7 +33,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
 from app.database import get_db
 from app.models.access import RespondContact
 from app.schemas.integration import IntegrationLogCreate
@@ -295,11 +294,14 @@ def _handle(db: Session, request: Request, raw: bytes) -> dict:
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def respond_message_webhook(request: Request, db: Session = Depends(get_db)):
     """Store one Respond.io message event (see the module docstring)."""
-    secret = settings.respond_webhook_secret
+    from app.services import runtime_settings
+
+    # Settings > Integrations first, RESPOND_WEBHOOK_SECRET as the fallback; read per request.
+    secret = await run_in_threadpool(runtime_settings.get, "respond_webhook_secret", db)
     if not secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Respond.io webhook is not configured (RESPOND_WEBHOOK_SECRET).",
+            detail="Respond.io webhook is not configured (Settings > Integrations).",
         )
     raw = await _read_capped_body(request)
     if not verify_request(raw, request.headers, secret):

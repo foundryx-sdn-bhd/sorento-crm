@@ -20,7 +20,6 @@ from sqlalchemy import Integer, column, create_engine, distinct, func, select, t
 from sqlalchemy import cast as sa_cast
 from sqlalchemy.exc import DBAPIError
 
-from app.config import settings
 from app.services.analytics_connector.views import SCHEMA
 
 MAX_ROWS = 1000
@@ -198,11 +197,20 @@ class QuerySpec(BaseModel):
 # ------------------------------------------------------------------ engine
 
 
-@lru_cache(maxsize=1)
 def _ro_engine():
-    url = settings.analytics_ro_database_url
+    """The read-only role's engine for the DSN saved on Settings > Integrations (env
+    ANALYTICS_RO_DATABASE_URL as the fallback), read per call; one engine per DSN, so a changed
+    DSN takes effect on the next call without a restart."""
+    from app.services import runtime_settings
+
+    url = runtime_settings.get("analytics_ro_database_url")
     if not url:
         return None
+    return _engine_for(url)
+
+
+@lru_cache(maxsize=4)
+def _engine_for(url: str):
     return create_engine(
         url,
         pool_size=2,

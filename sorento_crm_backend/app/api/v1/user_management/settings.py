@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.database import get_db
 from app.dependencies import get_current_user, require_permission
 from app.models.access import RespondContact
@@ -533,6 +533,79 @@ async def get_app_config(
         )
     except Exception as e:
         raise handle_internal_error(str(e))
+
+
+# SETTINGS-IN-DB-SORENTO: the settings that used to be prod env vars. Their own slug, not
+# `.edit`: that one is also held by warehouse_manager and the integration API-key roles, and
+# the webhook secret decides who may write chat history. See app/services/runtime_settings.py.
+RUNTIME_SETTINGS_PERMISSION = "user_management.settings.secrets"
+
+
+class RuntimeSettingsUpdate(BaseModel):
+    """Omitted = keep; null or "" = clear (env applies again); a value = save it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chat_topic_labeller_enabled: Optional[bool] = None
+    connector_ss_to_product_secret: Optional[str] = Field(None, max_length=1000)
+    connector_product_to_ss_secret: Optional[str] = Field(None, max_length=1000)
+    connector_connection_id: Optional[str] = Field(None, max_length=255)
+    connector_ss_callback_url: Optional[str] = Field(None, max_length=2048)
+    analytics_ro_database_url: Optional[str] = Field(None, max_length=2000)
+    respond_webhook_secret: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("connector_ss_callback_url")
+    @classmethod
+    def _https_only(cls, value: Optional[str]) -> Optional[str]:
+        if value and value.strip() and not value.strip().lower().startswith("https://"):
+            raise ValueError("The callback URL must start with https://")
+        return value
+
+    @field_validator("analytics_ro_database_url")
+    @classmethod
+    def _postgres_dsn(cls, value: Optional[str]) -> Optional[str]:
+        if value and value.strip() and not value.strip().lower().startswith(("postgresql://", "postgresql+psycopg2://", "postgres://")):
+            raise ValueError("The read-only database URL must be a postgresql:// URL")
+        return value
+
+
+def _runtime_settings_body(db: Session) -> dict:
+    from app.api.v1.public.respond_webhook import SIGNATURE_HEADERS
+    from app.services import runtime_settings
+
+    return {
+        "fields": runtime_settings.describe(db),
+        "respond_webhook_path": "/api/v1/public/respond/webhook",
+        "respond_signature_headers": list(SIGNATURE_HEADERS),
+        # `respond_webhook.SHARED_SECRET_HEADER`, in the casing Respond.io's form is given.
+        "respond_shared_secret_header": "X-Respond-Webhook-Secret",
+    }
+
+
+@router.get("/runtime")
+async def get_runtime_settings(
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
+    db: Session = Depends(get_db),
+):
+    """The env-fallback runtime settings with their source; secrets masked (last 4 only)."""
+    return _runtime_settings_body(db)
+
+
+@router.put("/runtime")
+async def update_runtime_settings(
+    payload: RuntimeSettingsUpdate,
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
+    db: Session = Depends(get_db),
+):
+    """Save the provided runtime settings; one audit row per save, never a secret value."""
+    from app.audit_context import get_actor
+    from app.services import runtime_settings
+
+    # The person at the keyboard: the admin, not the target, under impersonation.
+    actor = get_actor(db)
+    actor_id = (actor.real_user_id or actor.user_id) if actor else None
+    runtime_settings.update(db, payload.model_dump(exclude_unset=True), actor_id or current_user["id"])
+    return _runtime_settings_body(db)
 
 
 def _chatbot_memory_own_level_count(db: Session) -> int:

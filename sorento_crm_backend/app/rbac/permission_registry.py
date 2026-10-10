@@ -38,6 +38,10 @@ PERMISSION_REGISTRY.extend(_crud("user_management", "teams", "Teams"))
 PERMISSION_REGISTRY.extend([
     {"slug": "user_management.settings.view", "name": "View Settings", "description": "Permission to view system settings."},
     {"slug": "user_management.settings.edit", "name": "Edit Settings", "description": "Permission to edit system settings."},
+    # SETTINGS-IN-DB-SORENTO: the secrets and switches that used to be prod env vars (Respond.io
+    # webhook secret, Claude connector, nightly labeller). Granted to no role: admin and
+    # superadmin pass by bypass, so it is admin-only until someone grants it on purpose.
+    {"slug": "user_management.settings.secrets", "name": "Manage integration secrets", "description": "View and change the integration secrets and switches on Settings > Integrations."},
     {"slug": "user_management.logs.view", "name": "View Logs", "description": "Permission to view system logs."},
     {"slug": "user_management.account.view", "name": "View Account", "description": "Permission to view own account."},
 ])
