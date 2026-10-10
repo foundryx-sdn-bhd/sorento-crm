@@ -667,10 +667,14 @@ def _aggregates(ctx: QueryContext, measure: reg.Column, index: int) -> List[Any]
     distinct values, or (a ratio) the sums of its numerator and denominator."""
     if measure.ratio_of is not None:
         num, den = (_measure(ctx.dataset, key) for key in measure.ratio_of)
-        return [
-            func.sum(num.expr(ctx)).label(f"__n{index}"),
-            func.sum(den.expr(ctx)).label(f"__d{index}"),
-        ]
+
+        def part(column: reg.Column) -> Any:
+            # Each part is aggregated by ITS OWN agg: a distinct count is never summed.
+            if column.agg == "count_distinct":
+                return func.count(distinct(column.expr(ctx)))
+            return func.sum(column.expr(ctx))
+
+        return [part(num).label(f"__n{index}"), part(den).label(f"__d{index}")]
     if measure.agg == "count_distinct":
         return [func.count(distinct(measure.expr(ctx))).label(f"__m{index}")]
     return [func.sum(measure.expr(ctx)).label(f"__m{index}")]
@@ -769,6 +773,27 @@ def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotL
             for key, count in _distinct_by(ctx, measure, index, expr):
                 sums.setdefault(key, {})[measure.key] = count
         grand[measure.key] = _distinct_by(ctx, measure, index, None)[0][1] if grouped else Decimal(0)
+
+    # A ratio whose part is a distinct count: that part's totals are counted over their own row
+    # sets too, never added across cells (the other part keeps its sum).
+    for index, measure in enumerate(measures):
+        if measure.ratio_of is None:
+            continue
+        parts = [_measure(dataset, key) for key in measure.ratio_of]
+        for slot, part in enumerate(parts):
+            if part.agg != "count_distinct":
+                continue
+
+            def put(sums: Dict[str, Dict[str, Any]], key: str, count: Decimal) -> None:
+                current = sums.setdefault(key, {}).get(measure.key) or (None, None)
+                sums[key][measure.key] = tuple(count if i == slot else v for i, v in enumerate(current))
+
+            for expr, sums in ((row_expr, row_sums), (col_expr, col_sums)):
+                for key, count in _distinct_by(ctx, part, index, expr):
+                    put(sums, key, count)
+            grand_count = _distinct_by(ctx, part, index, None)[0][1] if grouped else Decimal(0)
+            current = grand.get(measure.key) or (None, None)
+            grand[measure.key] = tuple(grand_count if i == slot else v for i, v in enumerate(current))
 
     row_values = _axis_values(ctx, row_column, row_values, rows=True)
     col_values = _axis_values(ctx, col_column, present_cols, rows=False)
