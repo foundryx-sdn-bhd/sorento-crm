@@ -206,3 +206,14 @@ column, no backfill) and a Python function for the route.
   says "Ask what a customer asked as a follow-up."
 - Live LLM calls are paused (crew, API key check): golden / held-out / owner questions are
   re-run live only when crew resumes.
+
+## Ruling 10 Oct 2026 (owner override, crew): salesperson by role, nothing excluded
+
+Prod snapshot (read-only, PR #1553): September 5,749 asks from 79 contacts; the agent link marked
+almost no salesperson, the user role does (31 contacts, 74% of asks). Rule, first match:
+salesperson = active, not-trashed user with role slug `salesperson`
+(`alembic/versions/identity_0001_s0_model.py:22`); staff = any other active user or office
+access type; salesperson = `sales_agents.contact_id` when there is no active user; dealer =
+customer link; else unclassified. Route: a salesperson is narrowed to its book only with an agent
+link (Q5). Default: every class counted and shown, `DEFAULT_ASKERS` = all four; the "left out"
+line goes; `Unclassified askers: N` stays on asker splits.

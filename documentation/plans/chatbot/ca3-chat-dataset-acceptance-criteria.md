@@ -86,9 +86,10 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 
 ## Owner hand test round (10 Oct 2026, crew rulings)
 
-- **UAC-25** One asker rule, first match staff (CRM user or active office access type) >
-  salesperson (sales agent link) > dealer (customer link) > unclassified; facts and route read
-  the same rule; owner contact A (user + agent + customer links) is staff.
+- **UAC-25** One asker rule, first match: salesperson (active user holding role slug
+  `salesperson`) > staff (any other active user, or an active office access type) > salesperson
+  (sales agent link, no active user) > dealer (customer link) > unclassified; facts and route
+  read the same rule (crew ruling 10 Oct, prod snapshot: 31 role salespeople ask 74%).
 - **UAC-26** Chat route scope by that rule: dealer -> own customers + topic/subject/product/month
   only; salesperson -> own book; staff -> all.
 - **UAC-27** "which salesperson asked the most questions" ranks asking salespeople by name;
@@ -97,8 +98,9 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 - **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`;
   every reply whose run leaves unclassified askers out by default (any axis) has the line
   `Unclassified askers left out: N` when N > 0 (distinct contacts in the period and other filters).
-- **UAC-29** (owner, 10 Oct: "just leave it") By default staff AND unclassified asks are out;
-  `DEFAULT_ASKERS` = dealer + salesperson; a message can still ask for unclassified or staff.
+- **UAC-29** (owner override 10 Oct: "i dont want to keep anything out") By default every
+  asker class (salesperson, dealer, staff, unclassified) is counted and shown as its own row;
+  nothing is excluded; a question can still ask for one class.
 - **UAC-30** Category and brand: "top categories asked by salesperson for sorento" ranks product
   categories, asker salesperson, brand Sorento; "top discussed water closet and basin for sorento
   in 2026" ranks products filtered to those categories and that brand.
