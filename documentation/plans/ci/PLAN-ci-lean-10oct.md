@@ -1,173 +1,120 @@
-# PLAN: CI-LEAN (release run <= 30 billed min, PR gate <= 3, no nightly, no ci-full per PR)
+# PLAN: CI-LEAN (Enterprise budget: release <= ~60 billed min, PR gate ~10-15 with DB tests, no nightly, no ci-full per PR)
 
-Status: Plan card posted, waiting on owner answers (no test deletions before them). Track: small
-fix track for the workflow slices (no migration, no auth/RBAC, no ingest); test deletions are a
-separate slice gated on the owner. PR #1562.
+Status: Build. Slices 1-2 done on PR #1562; card re-planned 10 Oct for the Enterprise budget.
+Track: small fix track for the workflow slices (no migration, no auth/RBAC, no ingest). The
+app-code speedups found while measuring (router mounting, company-scope hook) are separate lanes,
+see "Out of this PR".
 
-## Owner rulings this plan implements
+## Owner rulings
 
 - 9 Oct: no `ci-full` per PR.
-- 10 Oct ~12:00: "i don't need the nightly test, that just adds extra overhead, i want to see if
-  we can get billed 15 minutes per release run, is it possible, i want to keep our test case lean".
-- 10 Oct budget: 3,000 CI min/month (private-repo allowance), 2-3 deployments/day (60-90
-  releases/month). Targets: release <= 30 billed min, PR gate <= 3 billed min per run, no
-  nightly, no `ci-full` on PRs.
+- 10 Oct ~12:00: no nightly; "keep our test case lean"; asked whether a release can bill 15.
+- 10 Oct ~14:30 answers: Q1 the never-stuck smoke becomes manual-only. Q3 the ruleset
+  `protect-main-branch` requires one check, `PR gate` (crew applies it after this merges and
+  `PR gate` is green on main). Q4 a release runs its whole selection, no cap. Q5 speed up every
+  slow test now; delete only a test that tests nothing.
+- 10 Oct, moving to GitHub Enterprise (50,000 min/month): release <= ~60 billed min; the PR
+  gate may include Postgres tests for the changed code (~10-15 min); still no nightly and no
+  `ci-full` on PRs.
 
-## Measured today
+## Measured
 
-Release run 38017372957 (main 347826eb, 10 Oct), per job, ceil to the minute (GitHub's rule):
+Release run 38017372957 (10 Oct), billed per job, rounded up to the minute: **280**. Backend
+shards 177, SCM shards 40, vitest 33, validate 8, images 13 (FE 10, BE 2, MCP 1), deploy 4,
+notify 1, gates 4.
 
-| Job | Wall | Billed |
-| --- | ---: | ---: |
-| Backend shards 1-6 + serial | 22.9 / 29.6 / 20.6 / 28.0 / 31.7 / 35.4 / 6.1 | 177 |
-| SCM shards 1-3 | 12.6 / 14.5 / 11.9 | 40 |
-| Vitest shards 1-4 | 6.6 / 7.0 / 8.3 / 8.6 | 33 |
-| Validate backend imports (builds the backend image a 2nd time) | 4.3 | 5 |
-| Type-check frontend | 1.4 | 2 |
-| Validate MCP imports | 0.8 | 1 |
-| Build images: frontend / backend / mcp | 9.8 / 1.5 / 0.7 | 13 |
-| build-and-deploy (blue/green 2.2) | 3.2 | 4 |
-| Notify owner (SMTP secrets unset: it prints a warning and mails nothing) | 0.1 | 1 |
-| Alembic gate, PII guard, Changed areas, CI gate (full) | <1 each | 4 |
-| **Total** | 39 wall | **280** |
+- `never-stuck-nightly.yml`: ~30 billed every night, red 7 nights in a row since 3 Oct.
+- 30-day failure mining (126 of 162 failed `deploy.yml` runs): 111 distinct test files failed.
+  The most frequent failures were not code: the PII guard (21 runs), the two stopwatch tests
+  (`test_sales_achievement_perf`, `test_sales_targets_s1::...fast_at_scale`, 11 runs), and
+  migration single-head tests on stale branches. Raw data: crew-note on #1562.
+- Suite: 2,199 backend test files, 512 CPU-min, of which ~505 is database tests (crew-note (a)).
+- Importing the app takes 28 s per process (7,242 FastAPI route builds for 1,852 routes), paid
+  by every pytest worker: 4 workers x 7 shards = ~13 runner-min a release.
 
-(The crew's 216 for "backend 7 shards" counts the SCM shards with them; same data.)
+## Budget (Enterprise, 50,000 min/month)
 
-Other recurring spend found:
+PR gate, one job `PR gate` on the `ci` label:
 
-- `never-stuck-nightly.yml`: one ~25-32 min job every night (runs 37073113768..38001648406),
-  RED on 7 of 8 nights since 3 Oct. ~900 min/month by itself, and nobody acts on the red.
-- `deploy.yml` nightly schedule: the full suite (~250 billed) whenever main moved.
-- `outline-user-guides-sync.yml`: cron every 6 h, ~4 x 1 min/day = ~120 min/month.
+| Step | Billed |
+| --- | ---: |
+| checkout, alembic single head, PII guard, gitleaks, changed areas | ~1 |
+| Postgres + Redis, pip from cache, bootstrap, collect-only (import errors in every test file) | ~4 |
+| backend tests: changed test files + import selection, tests/scm included, xdist -n 4, cap 3,600 CPU-s | 0-15 |
+| frontend changed: `tsc --noEmit` + `vitest run --changed <base sha>` | 0-3 |
+| **Total** | **~5 (docs or FE-light) to ~20 (cap)**, typical ~10 |
 
-Suite: backend 2,199 test files (499 under `tests/chatbot`, 352 under `tests/scm`), committed
-`.test_durations` = 26,410 tests / 1,716 files / 512 CPU-min; 486 files have NO duration history
-(stale file, hence the 20-35 min shard spread). 107 `roundN` / `rN` / `htN` replay files = 83
-CPU-min (16% of the suite): attribute_asks rounds 34.5, top_selling rounds 20.6, stock_ask_ht26
-7.4, rearch r* 6.2 (29 files). `test_sales_achievement_perf.py` alone is 9.4 CPU-min.
-Vitest: 1,489 files, ~27 runner-min.
-
-## The floor (what a release costs with ZERO tests)
-
-builds 13 + deploy 4 + gates 2 = **~19 billed today**; after the build/deploy savings below:
-
-| Release kind | Gates | Images | Deploy | Floor |
-| --- | ---: | ---: | ---: | ---: |
-| Frontend changed since last release | 2 | ~11 (one job, FE 7.6 + BE 0.9 + MCP 0.3 + setup) | 4 | **~17** |
-| Backend/MCP only (FE image retagged, not rebuilt) | 2 | ~3 | 4 | **~9** |
-| Nothing rebuilt (re-dispatch after a rejected approval) | 2 | 1 | 4 | **~7** |
-
-So **15 is reachable only for a release that does not rebuild the frontend AND runs no more than
-~6 min of tests.** A release that rebuilds the frontend cannot reach 15 even with no tests at all:
-the Next.js build is 7.6 min of real work and the deploy's blue/green wait is 2.2. The owner's
-own budget line (<= 30) is reachable with a meaningful test tier; see next.
-
-## Budget after the plan
-
-Release (target <= 30):
+Release (`workflow_dispatch` on main):
 
 | Job | Billed |
 | --- | ---: |
-| `changes` + alembic head (PII guard dropped at release: the push to main already ran it on the same tree) | 2 |
-| **Release tests** (one job): pip/npm from cache + Postgres + migrate (~2.5), collect-only for import errors (1.6), release core tier + tests import-selected by the diff since the last release under xdist -n 4 (~6), `vitest run --changed <last release sha>` (~1-2) | **~12** |
-| Images (one job, rebuild only a service whose directory tree changed; typecheck moves INTO the frontend build: `NEXT_SKIP_TYPECHECK` off, +~1 min) | ~11 / ~3 |
-| build-and-deploy (+ the notify step folded in) | 4 |
-| **Total** | **~29 (FE changed) / ~21 (backend only) / ~17 (same tree already passed, tests skipped)** |
+| alembic head + changes (diff since the last successful release, selection, core tier) | 2 |
+| `release-tests`: core tier + selection since the last release, collect-only, tsc + vitest `--changed` when the frontend changed | ~10-25 |
+| images (one job; an unchanged service tree is retagged, not rebuilt) | ~3 (no FE change) / ~11 |
+| build-and-deploy (+ the mail step) | 4 |
+| **Total** | **~20-42**, under the ~60 line; a selection above 3,600 CPU-s runs the full sharded suite instead (Q4: no cap), ~250, expected rarely |
 
-PR gate (target <= 3): ONE job, `PR gate`: release the `ci` label, alembic head, PII guard,
-gitleaks, `py_compile` of every changed .py, and `tsc --noEmit` only when the frontend changed.
-No Postgres, no pytest, no vitest on a PR (that cannot fit in 3 min: Postgres + migrate alone is
-~2). Expected 2-3 billed; the slice measures it and reports the real number.
+A re-dispatch of a tree whose release tests already passed skips the tests (a 1-byte
+`validated-tree-<tree sha>` artifact): ~17.
 
-Monthly (30 days):
+Month: 75 releases x ~35 = ~2,600; 30 PR runs/day x ~10 = ~9,000; never-stuck by hand. **About
+12,000 of 50,000.**
 
-| Item | Count | Each | Month |
-| --- | ---: | ---: | ---: |
-| Releases (2.5/day) | 75 | ~25 avg (mix of 29 / 21 / 17) | ~1,875 |
-| PR gate runs | 10/day | 3 | 900 |
-| Outline sync (if kept at 6 h) | 120 | 1 | 120 |
-| Nightlies (both removed) | 0 | | 0 |
-| **Total** | | | **~2,895 of 3,000** |
+What it buys: every PR runs the Postgres tests its change reaches (one import step, crew-note
+(b)) plus a type-check and the related vitest; every release runs a fixed core tier plus every
+test the merged batch reaches. The full suite runs only when a release's selection is over the
+cap, or by hand (`full_suite=true`).
 
-Ten PR runs a day is the ceiling at that release rate; last week ran 262 full-suite PR runs
-(37/day), so crew labels `ci` once per PR head that is ready to merge, not per push. Outline sync
-to every 24 h frees 90 more.
+## Release core tier (`sorento_crm_backend/tests/release_core.txt`, <= 600 CPU-s)
 
-What that coverage buys per release: imports of every test file (collect-only), a fixed core tier
-(~25 CPU-min, list below), every backend test file that imports what changed since the last
-release (the CI-SPEED import selection, already in `scripts/ci_select_tests.py`, pointed at the
-release diff instead of the PR diff), every vitest file related to a changed frontend file, the
-frontend typecheck, the single alembic head. What it gives up: the other ~480 backend CPU-min and
-~25 vitest min only run when something they import changes. A full run stays available by hand
-(`workflow_dispatch` with `full_suite=true`, ~250 billed, ~8% of the month), never scheduled.
+Picked from the 30-day failure data (files that caught a real regression on a release or more
+than one branch) plus the money and security paths:
 
-## Test tiers
+- auth / sessions / integration auth / RBAC / company scope: `test_auth_login`,
+  `test_user_session_service`, `test_integration_auth_dependencies`,
+  `test_integration_auth_resolver`, `test_company_scope`
+- money paths that failed a release in 30 days: `test_stock_visibility_policy`,
+  `test_cost_price_apply`, `test_ladder_v5_edges`, `test_contacts_access_filters`
+- contracts: `test_audit_actor_contract`, `test_conversation_n8n_contract`,
+  `chatbot/test_contracts`, `chatbot/test_import_boundary`
+- chatbot core golden: `chatbot/test_turn_replay`
+- schema guard: `test_schema_uuid_id_principle`
 
-**Release core tier** (`sorento_crm_backend/tests/release_core.txt`, ~25 CPU-min, ~6 runner-min):
+## Slow tests (Q5): speed up, nothing deleted
 
-- alembic: the serial migration round-trip (`tests/test_migration_*.py` heads only; today 2.5 min)
-- imports / API contract: `pytest --collect-only` (all files), `tests/test_audit_actor_contract.py`,
-  `tests/test_conversation_n8n_contract.py`, `tests/chatbot/test_contracts.py`
-- money paths: pricing / orders / stock, the files that failed CI in the last 30 days first
-  (filled from the failure data, section below), capped so the tier stays <= 25 CPU-min
-- security: `test_auth_login`, `test_user_session_service`, `test_integration_auth_*`,
-  `test_rbac`, `test_company_scope`, `test_dev_login` (the one that keeps the bypass out of
-  deployed env files)
-- chatbot core golden: `tests/chatbot/test_turn_replay.py` (231 cases, 2.7 CPU-min)
+Every test over 20 s in `.test_durations` (24 tests, 16 files, 24 CPU-min), with cause and fix,
+is in the crew-note on #1562. The big levers are not single slow tests but per-test setup:
 
-**Everything else** runs when the diff imports it. **DELETE / MERGE** proposals (owner says yes
-per line before anything is removed; every file that failed CI in the last 30 days is named as
-such):
+1. Seed fixtures that rebuild the same world for every test (perf volume, chained round worlds):
+   build once per file.
+2. Tree-scan guard tests that re-parse the whole backend (`test_ci_select_tests`,
+   `test_cost_price_round3_no_direct_writes`, ...): one cached parse per session.
+3. Stopwatch tests (11 CI failures in 30 days, no code defect): plan/query-count assertions
+   instead of seconds.
+4. Per-round chatbot replay files: one golden file per feature (crew-note (d)).
 
-1. `test_sales_achievement_perf.py` (9.4 CPU-min, 487 s setup): a perf benchmark, not a
-   correctness gate. Delete; keep the query-count assertion if it has one, as a unit test.
-2. 107 round / rN / htN replay files (83 CPU-min) merged into one golden file per feature
-   (attribute_asks, top_selling, stock_ask, rearch, ...) driven by a cases table, dropping cases
-   that are byte-identical in input and expectation. Expected 83 -> ~25 CPU-min.
-3. Tests that re-check the repo instead of the product: the PII guard tree scan in pytest (the
-   `pii_guard.py` job already runs it), spec/doc golden checks, the ci-meta subprocess tests that
-   re-run workflow shell (keep `test_ci_docs_only_filter` / `test_ci_select_tests`, they guard
-   this very workflow; trim the rest).
-4. `.test_durations` refreshed (486 files missing) so selection cost estimates are real.
+## Out of this PR (own lanes, measured here)
 
-The failure data behind each line is appended below when the 30-day mining finishes.
+- **Router mounting:** each of 1,852 routes is built ~4 times (nested `include_router`); app
+  import 28 s. Flattening saves most of it in every pytest worker, the API's cold start and the
+  RQ worker. Touches `app/api/v1/__init__.py` and the module guards: needs its own review.
+- **Company-scope hook fallback** (`app/services/company_scope.py:266-317`): a statement whose
+  mappers it cannot read gets a loader option for all ~158 scoped models (79,041 predicate builds
+  for 825 queries in one chatbot test). Security-sensitive (multi-company scoping): own lane with
+  security-reviewer.
+- **Chatbot replay merge** (83 -> ~20 CPU-min): its own chatbot lane, mechanical, every distinct
+  assertion kept.
 
-## Build / deploy savings
+## Slices on this PR
 
-- One `build-images` job instead of a 3-leg matrix (saves 2 roundings).
-- Tag every image also by its service directory's git tree hash; when that tag already exists,
-  `imagetools create` retags it to the commit sha in seconds instead of rebuilding. Frontend
-  build-arg secret (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`) is not in the tree hash; a rotated key needs
-  a `rebuild_all=true` dispatch (input added).
-- `validate-backend` / `validate-mcp` do not run at release (their image builds duplicate
-  `build-images`; collect-only moves into the release tests job).
-- `notify-owner` job folded into a final `if: always()` step of build-and-deploy (SMTP is unset
-  today; GitHub's own failed-workflow mail still covers a failed gate).
-- `CI gate (full)` does not run at release (build-and-deploy already checks every need).
-- Skip tests at release when the exact tree already passed: a green release-tests job uploads a
-  1-byte artifact `validated-tree-<git tree sha>`; `changes` on a later dispatch finds it and
-  marks every test area false. Covers re-dispatch after a rejected approval or a deploy hiccup.
-
-## Workflow rulings to implement (no owner question needed)
-
-- Remove `schedule:` from `deploy.yml` and the schedule branch of `changes`.
-- `ci-full` refused: a `ci-full` label on a PR runs one job that removes the label and fails
-  with "ci-full is release-only (owner, 9 Oct)". The full suite is `workflow_dispatch` only.
-- Red-first: `tests/test_ci_docs_only_filter.py` gets the new expectations before the workflow
-  changes (nightly cases removed, `ci-full` refused, release tiers).
-
-## Slices (one PR, commits in order)
-
-1. Red tests for slice 2, then: drop the `deploy.yml` nightly, refuse `ci-full`.
-2. Release budget: single images job + tree-hash reuse, notify folded, CI gate and validate-* off
-   at release, validated-tree skip.
-3. Release tests job: core tier file + release-diff selection + `vitest --changed`; full suite
-   behind `full_suite=true`.
-4. PR gate: one job (needs the ruleset's required-check list changed by the owner, Q3).
-5. Deletions / merges, only the lines the owner approved.
-6. Measure: one release-equivalent dispatch on this branch (tests only, no build/deploy off main)
-   plus a PR-gate run; report billed minutes from the jobs API.
-
-## Questions (posted as crew-ask)
-
-See PR #1562 comments.
+1. Done: no `deploy.yml` nightly; `ci-full` refused on a PR.
+2. Done: one images job with tree-hash reuse; mail as a deploy step; no PII guard / CI gate at
+   release.
+3. Never-stuck smoke manual-only (Q1).
+4. `PR gate`: one job replacing the PR side of every other job; required check name for the
+   ruleset (JSON for crew in the PR).
+5. `release-tests`: core tier + selection since the last release; validated-tree skip;
+   `full_suite` input; the old shards only for `full_suite` or an over-cap selection.
+6. Test speedups that need no app change (perf volume once per file, tree-scan cache, stopwatch
+   tests, ingest cap tests, durations refresh).
+7. Measure a real PR gate run and a release-equivalent dispatch; report billed minutes.

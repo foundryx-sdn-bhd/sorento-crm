@@ -1515,3 +1515,16 @@ def test_serial_ddl_steps_have_their_own_matrix_entry_off_the_balanced_shards():
     for name in ("Run migration tests serially (executing gate)", "Run view/DDL tests serially (executing gate)"):
         assert "        if: matrix.shard == 'serial'" in steps[name], name
     assert "matrix.shard == 1" not in block
+
+
+def test_no_test_workflow_runs_on_a_schedule():
+    """CI-LEAN (owner, 10 Oct 2026): no nightly test of any kind. The never-stuck smoke
+    (about 30 billed minutes a night) is manual-only, like the deploy.yml full suite."""
+    smoke = WORKFLOW.parent / "never-stuck-nightly.yml"
+    if not smoke.exists():
+        pytest.skip(f"{smoke} not present (in-image run)")
+    text = smoke.read_text(encoding="utf-8")
+    triggers = text[text.index("\non:\n"):text.index("\nconcurrency:\n")]
+    assert not re.search(r"^  schedule:", triggers, re.M)
+    assert re.search(r"^  workflow_dispatch:", triggers, re.M)
+    assert not re.search(r"^  schedule:", _triggers(), re.M)
