@@ -873,11 +873,15 @@ def test_merge_group_runs_the_full_suite_and_never_deploys():
     }
 
 
-RELEASE_ONLY = {"check-migration-heads", "pii-guard", "changes", "build-images", "build-and-deploy", "notify-owner", "ci-gate"}
+# CI-LEAN: a release runs neither the PII guard (the push to main already ran
+# it on the same tree) nor the CI gate (build-and-deploy judges every need
+# itself), and the owner mail is a step of build-and-deploy, not a job.
+RELEASE_ONLY = {"check-migration-heads", "changes", "build-images", "build-and-deploy"}
 FULL_SUITE = {
     "check-migration-heads", "pii-guard", "changes", "validate-backend", "validate-mcp",
     "test-backend-scm", "test-backend", "validate-frontend", "typecheck-frontend", "ci-gate",
 }
+RELEASE_TESTS = FULL_SUITE - {"pii-guard", "ci-gate"}
 
 
 def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
@@ -888,12 +892,11 @@ def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
         assert results["changes"] == "skipped"
         assert results["build-images"] == "skipped"
         assert results["build-and-deploy"] == "skipped"
-        assert results["notify-owner"] == "skipped"
 
 
 def test_release_runs_the_full_suite_then_builds_and_deploys():
     ran = _ran(_simulate("workflow_dispatch", outputs=FULL_PIPELINE))
-    assert ran == FULL_SUITE | RELEASE_ONLY
+    assert ran == RELEASE_TESTS | RELEASE_ONLY
 
 
 def test_release_with_skip_tests_builds_and_deploys_only():
@@ -903,18 +906,133 @@ def test_release_with_skip_tests_builds_and_deploys_only():
 
 def test_release_dispatched_on_another_ref_tests_but_never_ships():
     results = _simulate("workflow_dispatch", outputs=FULL_PIPELINE, ref="refs/heads/crew/ci-fast-gate")
-    assert _ran(results) == FULL_SUITE
+    assert _ran(results) == RELEASE_TESTS
     assert results["build-images"] == "skipped"
     assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
 
 
 @pytest.mark.parametrize("failed", ["test-backend", "test-backend-scm", "validate-frontend", "typecheck-frontend",
                                     "validate-backend", "validate-mcp", "check-migration-heads", "build-images"])
-def test_release_with_a_failed_gate_does_not_deploy_but_still_notifies(failed):
+def test_release_with_a_failed_gate_does_not_deploy(failed):
+    """A failed gate fails the run, and GitHub's own failed-workflow mail goes
+    to whoever dispatched it; there is no separate notify job any more."""
     results = _simulate("workflow_dispatch", outputs=FULL_PIPELINE, forced={failed: "failure"})
     assert results["build-and-deploy"] == "skipped", failed
-    assert results["notify-owner"] == "success", "the owner is mailed about the failed release"
+
+
+def test_owner_mail_is_the_last_step_of_the_deploy_job():
+    """CI-LEAN: the notify job billed a minute per release to print that the
+    SMTP secrets are unset (run 38017372957). It is a step now: `always()`,
+    so a failed deploy still mails once SMTP is configured."""
+    assert "notify-owner" not in _job_ifs()
+    block = _job_block("build-and-deploy")
+    steps = re.findall(r"^      - name: (.*)$", block, re.M)
+    assert steps[-1] == "Mail the owner the deploy result", steps
+    tail = block[block.index("- name: Mail the owner the deploy result"):]
+    assert "if: always()" in tail and "dawidd6/action-send-mail" in tail
+
+
+def test_release_runs_neither_the_pii_guard_nor_the_ci_gate():
+    for outputs in (FULL_PIPELINE, {"docs_only": "false", **NO_AREA}):
+        results = _simulate("workflow_dispatch", outputs=outputs)
+        assert results["pii-guard"] == "skipped" and results["ci-gate"] == "skipped", results
+    for event, label in (("push", None), ("pull_request", "ci"), ("merge_group", None)):
+        assert _simulate(event, label=label, outputs=FULL_PIPELINE)["pii-guard"] == "success", event
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: one images job, reusing an image whose service tree is unchanged.
+# ---------------------------------------------------------------------------
+
+DOCKER_STUB = """\
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_LOG"
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+  grep -qxF "$4" "$DOCKER_EXISTING" && exit 0
+  echo "ERROR: $4: not found" >&2; exit 1
+fi
+exit 0
+"""
+
+
+def _run_decide(tmp_path: Path, *, existing: list[str], rebuild_all: str = "false") -> tuple[dict, list[str], dict]:
+    """Run the real "Decide which images to build" step in a scratch git repo
+    holding the three service trees, with a stub `docker`; return the step's
+    outputs, the docker calls and each service's tree hash."""
+    repo = tmp_path / "repo"
+    for svc in ("frontend", "backend", "mcp"):
+        (repo / f"sorento_crm_{svc}").mkdir(parents=True)
+        (repo / f"sorento_crm_{svc}" / "Dockerfile").write_text(f"FROM scratch # {svc}\n")
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x")
+    trees = {svc: git("rev-parse", f"HEAD:sorento_crm_{svc}") for svc in ("frontend", "backend", "mcp")}
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(DOCKER_STUB)
+    (bin_dir / "docker").chmod(0o755)
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("".join(
+        f"jayson1004/sorento-crm:{svc}-tree-{trees[svc]}\n" for svc in existing
+    ))
+    log = tmp_path / "docker.log"
+    log.write_text("")
+    output = tmp_path / "output.txt"
+    output.write_text("")
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Decide which images to build")],
+        cwd=repo,
+        env={"PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}", "GITHUB_OUTPUT": str(output),
+             "GITHUB_SHA": SHA, "IMAGE_REPO": "jayson1004/sorento-crm", "REBUILD_ALL": rebuild_all,
+             "DOCKER_LOG": str(log), "DOCKER_EXISTING": str(existing_file)},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines() if "=" in line)
+    return outputs, log.read_text().splitlines(), trees
+
+
+def test_build_images_is_one_job():
+    """Three matrix legs billed three roundings plus three setups (run
+    38017372957: 2 + 10 + 1); one job builds what changed in sequence."""
+    block = _job_block("build-images")
+    assert "matrix:" not in block
+    assert re.search(r"^    timeout-minutes: \d+$", block, re.M)
+
+
+def test_an_unchanged_service_tree_is_retagged_not_rebuilt(tmp_path):
+    outputs, calls, trees = _run_decide(tmp_path, existing=["backend", "mcp"])
+    assert outputs["build_frontend"] == "true"
+    assert outputs["build_backend"] == "false" and outputs["build_mcp"] == "false"
+    for svc in ("backend", "mcp"):
+        assert (f"docker buildx imagetools create -t jayson1004/sorento-crm:{svc}-{SHA} "
+                f"jayson1004/sorento-crm:{svc}-tree-{trees[svc]}") in calls, calls
+        assert outputs[f"{svc}_tree"] == trees[svc]
+    assert not any("create" in c and "frontend" in c for c in calls), "a changed tree is never retagged"
+
+
+def test_nothing_in_the_registry_builds_everything(tmp_path):
+    outputs, calls, _ = _run_decide(tmp_path, existing=[])
+    assert {outputs[f"build_{s}"] for s in ("frontend", "backend", "mcp")} == {"true"}
+    assert not any("imagetools create" in c for c in calls)
+
+
+def test_rebuild_all_ignores_the_registry(tmp_path):
+    """A rotated build-arg secret (NEXT_PUBLIC_VAPID_PUBLIC_KEY) is not in the
+    tree hash: `rebuild_all` is the release input that forces a build."""
+    outputs, calls, _ = _run_decide(tmp_path, existing=["frontend", "backend", "mcp"], rebuild_all="true")
+    assert {outputs[f"build_{s}"] for s in ("frontend", "backend", "mcp")} == {"true"}
+    assert not any("imagetools" in c for c in calls)
+    assert re.search(r"^      rebuild_all:$", _triggers(), re.M)
+
+
+def test_every_build_pushes_the_sha_tag_and_the_tree_tag():
+    block = _job_block("build-images")
+    for svc in ("frontend", "backend", "mcp"):
+        assert f"${{{{ env.IMAGE_REPO }}}}:{svc}-${{{{ github.sha }}}}" in block, svc
+        assert f"${{{{ env.IMAGE_REPO }}}}:{svc}-tree-${{{{ steps.decide.outputs.{svc}_tree }}}}" in block, svc
+        assert f"if: steps.decide.outputs.build_{svc} == 'true'" in block, svc
 
 
 def test_release_with_skip_tests_and_a_failed_build_does_not_deploy():
@@ -928,7 +1046,7 @@ def test_deploy_job_carries_the_production_environment():
     text = _workflow_text()
     block = re.search(r"\n  build-and-deploy:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
     assert re.search(r"^    environment:\n      name: production$", block, re.M), block
-    for other in ("build-images", "notify-owner", "test-backend", "changes"):
+    for other in ("build-images", "test-backend", "changes"):
         other_block = re.search(rf"\n  {other}:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
         assert "environment:" not in other_block, other
 
@@ -937,7 +1055,6 @@ def test_merge_group_never_deploys_whatever_the_flags():
     results = _simulate("merge_group", outputs=FULL_PIPELINE)
     assert results["build-images"] == "skipped"
     assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
 
 
 # ---------------------------------------------------------------------------
@@ -959,7 +1076,7 @@ def test_release_label_job_removes_the_label_that_fired_the_run():
         assert _simulate("pull_request", label=label)["release-ci-label"] == "skipped", label
 
 
-DEPLOY_JOBS = {"build-images", "build-and-deploy", "notify-owner"}
+DEPLOY_JOBS = {"build-images", "build-and-deploy"}
 LABEL_JOBS = {"release-ci-label", "refuse-ci-full"}
 
 
@@ -1016,8 +1133,8 @@ def test_ci_gate_runs_on_every_gated_event_and_on_nothing_else():
     assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "success"
     assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "skipped"
     assert _simulate("pull_request", label="ci", outputs={**NO_AREA, "docs_only": "true"})["ci-gate"] == "success"
-    for event in ("merge_group", "workflow_dispatch"):
-        assert _simulate(event, outputs=FULL_PIPELINE)["ci-gate"] == "success", event
+    assert _simulate("merge_group", outputs=FULL_PIPELINE)["ci-gate"] == "success"
+    assert _simulate("workflow_dispatch", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "build-and-deploy judges the needs"
     assert _simulate("push", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "a push to main is the alembic gate alone"
     for label in ("needs-hand-test", "lane-running", "needs-decision"):
         assert _simulate("pull_request", label=label)["ci-gate"] == "skipped", label
