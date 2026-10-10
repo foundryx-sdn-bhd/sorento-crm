@@ -99,3 +99,38 @@ def test_the_prompt_teaches_customers_and_dealers_mean_the_dealer_asker_only():
     near = text[max(0, at - 500): at + 500]
     assert '["dealer"]' in near or "askers dealer" in near or "dealer only" in near or "only dealer" in near, near
     assert "unclassified" in near and ("never" in near or "not" in near), near
+
+
+# --------------------------------------------------------------------------- product kinds in the prompt (live Q12)
+
+
+def test_the_system_prompt_lists_the_category_kinds_the_company_holds(configured):
+    """Pinned design: like the brand names, the extractor reads the DISTINCT class labels of the
+    product categories from the `db` it is given. Two rows sharing a label list it once."""
+    import uuid
+
+    from app.models.product import ProductCategory
+
+    tag = uuid.uuid4().hex[:6].upper()
+    wc, wb = f"ZZT Water Closet {tag}", f"ZZT Wash Basin {tag}"
+    for label in (wc, wc, wb):
+        code = f"ZZ{uuid.uuid4().hex[:8].upper()}"
+        configured.add(ProductCategory(id=str(uuid.uuid4()), category_code=code, category_name=code, class_label=label))
+    configured.commit()
+    provider = _Provider(json.dumps(GOOD))
+    _run(configured, provider)
+    system = _system(provider)
+    assert wc.lower() in system and wb.lower() in system, "category class labels missing"
+    assert system.count(wc.lower()) == 1, system.count(wc.lower())
+
+
+def test_the_prompt_teaches_a_product_kind_goes_to_category_words_never_product_words():
+    """Structural pin, loose wording."""
+    text = PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+    hits = [i for i in range(len(text)) if text.startswith("category label", i) or text.startswith("kind of product", i)]
+    assert hits, "no teaching about product kinds / category labels"
+    assert any(
+        "category_words" in (near := text[max(0, at - 300): at + 400])
+        and "product_words" in near and ("never" in near or "not" in near)
+        for at in hits
+    ), text
