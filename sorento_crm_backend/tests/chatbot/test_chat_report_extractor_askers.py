@@ -26,11 +26,13 @@ from tests.chatbot.test_chat_report_extractor import (  # noqa: F401  (fixtures 
 
 NEW_GROUP_BY = {"asker", "salesperson", "category", "brand"}
 ASKERS = {"dealer", "salesperson", "staff", "unclassified"}
-NINE = {"group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words"}
+NINE = {"group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+        "customer_words", "product_words"}  # lead sign-off 10 Oct (owner live round 3: customer_words / product_words): nine keys became eleven
 GOOD9 = {
     "group_by": "category", "measure": "asks", "subject": None, "top_n": 5,
     "date_from": "2026-01-01", "date_to": "2026-12-31",
     "askers": ["salesperson"], "category_words": ["water closet"], "brand_words": ["sorento"],
+    "customer_words": [], "product_words": [],
 }
 
 
@@ -40,7 +42,8 @@ def test_a_valid_reply_returns_the_nine_keys(configured):
 
 
 def test_empty_lists_are_a_valid_reading(configured):
-    plain = {**GOOD9, "group_by": "topic", "askers": [], "category_words": [], "brand_words": []}
+    plain = {**GOOD9, "group_by": "topic", "askers": [], "category_words": [], "brand_words": [],
+             "customer_words": [], "product_words": []}
     assert _run(configured, _Provider(json.dumps(plain))) == plain
 
 

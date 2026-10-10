@@ -645,6 +645,12 @@ def _extractor_reads_the_parser_verdict(request, monkeypatch):
             "top_n": verdict.get("top_n"),
             "date_from": verdict.get("date_filter_start"),
             "date_to": verdict.get("date_filter_end"),
+            # lead sign-off 10 Oct (owner live round 3: customer_words / product_words): the stub
+            # stands in for the extractor, so it reads the two arrays off the parser's entities.
+            "customer_words": [e["raw"] for e in verdict.get("entities") or []
+                               if e.get("hint") == "customer" and e.get("raw")],
+            "product_words": [e["raw"] for e in verdict.get("entities") or []
+                              if e.get("hint") == "product" and e.get("raw")],
         }
 
     monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)

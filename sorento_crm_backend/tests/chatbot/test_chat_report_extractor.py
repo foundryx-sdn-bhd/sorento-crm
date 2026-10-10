@@ -35,11 +35,12 @@ MODULE = "app.services.chatbot.analytics.chat_report_extractor"
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 GROUP_BY = {"topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language"}
 MEASURE = {"asks", "failed", "failure_rate", "contacts"}
-KEYS = {"group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words"}
+KEYS = {"group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+        "customer_words", "product_words"}  # lead sign-off 10 Oct (owner live round 3: customer_words / product_words)
 TODAY = date(2026, 10, 10)
 GOOD = {"group_by": "topic", "measure": "asks", "subject": None, "top_n": 5,
         "date_from": "2026-10-05", "date_to": "2026-10-11",
-        "askers": [], "category_words": [], "brand_words": []}
+        "askers": [], "category_words": [], "brand_words": [], "customer_words": [], "product_words": []}
 
 
 @pytest.fixture
@@ -88,14 +89,14 @@ def _run(db, provider, text="top 5 questions this week"):
 
 
 def test_a_valid_reply_returns_exactly_the_six_keys(configured):
-    """Nine keys per lead 10 Oct (owner hand-test round): the old six plus askers, category_words, brand_words."""
+    """Eleven keys, lead sign-off 10 Oct (owner live round 3: customer_words / product_words): the old six plus askers, category_words, brand_words, customer_words, product_words."""
     out = _run(configured, _Provider(json.dumps(GOOD)))
     assert out == GOOD and set(out) == KEYS
 
 
 def test_a_total_with_nothing_else_is_allowed(configured):
     nothing = {"group_by": None, "measure": None, "subject": None, "top_n": None, "date_from": None, "date_to": None,
-               "askers": [], "category_words": [], "brand_words": []}
+               "askers": [], "category_words": [], "brand_words": [], "customer_words": [], "product_words": []}
     assert _run(configured, _Provider(json.dumps(nothing))) == nothing
 
 
