@@ -115,3 +115,98 @@ def test_e2_count_reply_runs_with_categories_and_brand_and_no_product_miss(
     (args,) = _chat_calls(calls)
     assert sorted(args["category_ids"]) == sorted([ids["closet_a"], ids["closet_b"], ids["basin_a"], ids["basin_b"]]), args
     assert args["brand_ids"] == ["brand-s"] and "product_ids" not in args and args["group_by"] == "product", args
+
+
+# --------------------------------------------------------------------------- E2 rebuilt from the live trace
+
+
+def _seed_live_vocabulary(console) -> dict[str, list[str]]:
+    """Categories whose class labels / synonyms are the live words, and a brand row Sorento."""
+    import uuid
+
+    from app.models.product import Brand, ProductCategory
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    tag = uuid.uuid4().hex[:6].upper()
+    db = console.session_factory()
+    try:
+        cats: dict[str, list[str]] = {"water closet": [], "basin": []}
+        for word, label, syn in (("water closet", "Water Closet", ["water closet", "wc", "toilet"]),
+                                 ("basin", "Wash Basin", ["basin", "wash basin"])):
+            for pre in ("SRT", "BRT"):
+                row = ProductCategory(id=str(uuid.uuid4()), category_code=f"{pre}-{word[:2].upper()}-{tag}",
+                                      category_name=f"{pre}-{word[:2].upper()}-{tag}", class_label=label,
+                                      search_synonyms=syn, is_searchable=True, company_id=DEFAULT_COMPANY_ID)
+                db.add(row)
+                cats[word].append(row.id)
+        brand = Brand(id=str(uuid.uuid4()), brand_code="SORENTO", brand_name="Sorento", company_id=DEFAULT_COMPANY_ID)
+        db.add(brand)
+        db.commit()
+        return {**cats, "brand": [brand.id]}
+    finally:
+        db.close()
+
+
+LIVE_FIRST = "what is the top discussed water closet and basin for sorento in 2026"
+
+
+def _live_entities():
+    return [_e("water closet", "category"), _e("basin", "category"),
+            {**_e("Sorento", "brand"), "canonical_code": "SORENTO"}]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        pytest.param(lambda: _reply(chat_report={"group_by": None, "measure": None}, top_n=5), id="a_null_axis"),
+        pytest.param(lambda: _reply(intent_hint="check_order", chat_report={"group_by": "topic", "measure": "asks"},
+                                    top_n=5), id="b_check_order_intent"),
+        pytest.param(lambda: _reply(intent_hint="chat_report", domain_hint="chat_analytics",
+                                    chat_report={"group_by": "topic", "measure": "asks"}, top_n=5),
+                     id="c_chat_report_topic"),
+    ],
+)
+def test_e2_live_trace_count_reply_runs_with_categories_and_brand(console, monkeypatch, reply) -> None:
+    seeded = _seed_live_vocabulary(console)
+    held = {**READING, "group_by": "topic", "askers": [], "top_n": None,
+            "category_words": ["water closet", "basin"], "brand_words": ["sorento"]}
+    _fake_extractor(monkeypatch, lambda t, o: held if t == LIVE_FIRST else {**held, "top_n": 5})
+    first = _chat(*_live_entities(), group_by="topic", top_n=None)
+    text, calls = console.say(first, LIVE_FIRST)
+    assert text.strip() == COUNT_Q and calls == [], (text, calls)
+    text, calls = console.say(reply(), "top 5")
+    assert "couldn't find" not in text.lower(), text
+    (args,) = _chat_calls(calls)
+    assert set(seeded["water closet"] + seeded["basin"]) <= set(args["category_ids"]), args
+    assert seeded["brand"][0] in args["brand_ids"] and "product_ids" not in args, args
+    assert args["top_n"] == 5 and args["date_from"] == "2026-01-01", args
+
+
+def test_e2_a_category_word_that_prefixes_a_product_code_never_becomes_a_product_filter(console, monkeypatch) -> None:
+    """The live difference: the owner's catalogue has product codes that START with the typed
+    words (`_resolve_products` matches by code prefix), so the parser's category / brand tags were
+    resolved as PRODUCTS and the route answered 404 'Product not found' ("I couldn't find that
+    product."). The category and brand words are the extractor's; no product filter is built."""
+    import uuid
+
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._mc_lookup_seed import product
+
+    db = console.session_factory()
+    try:
+        tag = uuid.uuid4().hex[:5].upper()
+        for prefix in ("BASIN", "WATER CLOSET", "SORENTO"):
+            product(db, company_id=DEFAULT_COMPANY_ID, code=f"{prefix} {tag}")
+        db.commit()
+    finally:
+        db.close()
+    seeded = _seed_live_vocabulary(console)
+    held = {**READING, "group_by": "topic", "askers": [], "top_n": None,
+            "category_words": ["water closet", "basin"], "brand_words": ["sorento"]}
+    _fake_extractor(monkeypatch, lambda t, o: held if t == LIVE_FIRST else {**held, "top_n": 5})
+    text, calls = console.say(_chat(*_live_entities(), group_by="topic", top_n=None), LIVE_FIRST)
+    assert text.strip() == COUNT_Q, text
+    _text, calls = console.say(_reply(chat_report={"group_by": None, "measure": None}, top_n=5), "top 5")
+    (args,) = _chat_calls(calls)
+    assert "product_ids" not in args, args
+    assert seeded["brand"][0] in args["brand_ids"], args
