@@ -172,3 +172,16 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - A regraded report keeps the source run's `prompt_version`, `engine`, `run_id`, `started_at`, `wall_s` and
   `variants` from `RUN_DIR/report.json` (when present) and adds `regraded_from` (the RUN_DIR path) and
   `regraded_at`. `split` is the regrade's `--split`.
+
+## Round 9 (Claude judge, 11 Oct)
+- `AnthropicJudge` default model `claude-sonnet-5-5` (env `EVAL_JUDGE_MODEL` overrides); key from env
+  `ANTHROPIC_API_KEY` only (the crew gate script loads it from the crew secrets file at runtime; never in the repo,
+  never printed). Token mapping from the Messages API usage: prompt = input_tokens + cache_read_input_tokens,
+  cached = cache_read_input_tokens, output = output_tokens.
+- `PRICES["claude-sonnet-5-5"] = (2.00, 0.10, 10.00)` per 1M tokens
+  (https://platform.claude.com/docs/en/about-claude/pricing, read 11 Oct 2026).
+- `--judge-budget-usd` (default 2.0): the judge has its own Budget priced on the judge model; calibration and
+  scoring calls are charged to it (no longer to the chatbot budget). Before each judge call, if it is exceeded
+  the judge is not called for the rest of the run (verdicts stay deterministic, those cases count as unverified)
+  and the report says `judge_stopped: "budget"`. The run itself continues. Report adds `judge_usd`.
+- The >= 0.9 calibration rule is unchanged; with no calibration items the judge is never called.
