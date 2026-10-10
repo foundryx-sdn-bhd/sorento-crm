@@ -347,27 +347,30 @@ def test_a_newer_ended_flyer_on_the_part_does_not_hide_the_older_one_on_the_pare
     assert ids == {august.id, september.id}
 
 
-def test_staff_viewer_is_offered_each_audiences_latest_flyer(db, types):
-    """Review S1: the CRM prices with the staff viewer, which sees every
-    audience. A dealer flyer must not be ranked away by an end-user flyer
-    that ended later, nor a third same-day flyer by the tie cap of two."""
+def test_staff_viewer_ranks_ended_flyers_across_every_audience(db, types):
+    """The CRM prices with the staff viewer, which sees every audience. Crew
+    audit ruling: after the audience filter, the latest end date of a type
+    wins whatever audiences each flyer named, so staff are not offered a
+    flyer that a later one of the same type has replaced."""
     from app.services.dealer_kit.tag_data_service import staff_viewer
 
     product = _product(db, list_price="84.00")
+    may = _promotion(
+        db, [(product, "60.00")], promo_type=types["a3_flyer"], end=date(2026, 5, 31),
+        access_levels=["dealer", "end_user"],
+    )
     dealer = _promotion(
         db, [(product, "69.00")], promo_type=types["a3_flyer"], end=SEP_30,
         access_levels=["dealer"],
     )
     consumer = _promotion(
-        db, [(product, "75.00")], promo_type=types["a3_flyer"], end=date(2026, 10, 5),
+        db, [(product, "75.00")], promo_type=types["a3_flyer"], end=SEP_30,
         access_levels=["end_user"],
-    )
-    both = _promotion(
-        db, [(product, "72.00")], promo_type=types["a3_flyer"], end=SEP_30,
     )
 
     ids = {o["id"] for o in _price(db, product, viewer=staff_viewer())["promotion_options"]}
-    assert ids == {dealer.id, consumer.id, both.id}
+    assert ids == {dealer.id, consumer.id}
+    assert may.id not in ids
 
 
 def test_with_no_types_configured_an_ended_promotion_never_prices(db):

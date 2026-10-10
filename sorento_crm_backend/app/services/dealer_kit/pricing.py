@@ -345,18 +345,19 @@ def _covering_promotions(
     Live promotions, plus ended ones the serving rule still allows
     (PRICE-TAG-A3-EXPIRED). Which ended promotion is ``promotion_serving``'s
     call, not this function's: the type's bound, the latest end date of each
-    type wins, and a live promotion of a type suppresses that type's ended
-    ones. That rule ranks the set it is GIVEN, so it is given one product's
-    promotions for one audience at a time:
+    type wins (an exact end-date tie keeps both), and a live promotion of a
+    type suppresses that type's ended ones. That rule ranks the set it is
+    GIVEN, so it is given:
 
-    * per product, because a line carries parts and candidates, and a live
-      (or newer) flyer on the part must not hide the ended flyer that is the
-      only offer on the parent - the scoping `promotion_serving` itself warns
-      about;
-    * per audience, after the viewer's own audience filter, because a dealer
-      must not lose the DEALER flyer to an end-user flyer ending later, and a
-      staff viewer (who sees every audience) must still be offered each
-      audience's own latest flyer.
+    * only what this viewer may see: the audience filter runs first, so a
+      dealer never loses the DEALER flyer to an end-user flyer ending later.
+      After it, the audience list a flyer names plays no part: an older A3
+      flyer is history whichever audiences it named (crew audit on dev data,
+      where a 31 May all-audience flyer sat beside the 30 Sep DEALER ones);
+    * one product at a time, because a line carries parts and candidates,
+      and a live (or newer) flyer on the part must not hide the ended flyer
+      that is the only offer on the parent - the scoping `promotion_serving`
+      itself warns about.
 
     On top of it, live beats ended across types for the SAME product: an
     ended promotion is offered only when it covers a product no live
@@ -376,14 +377,13 @@ def _covering_promotions(
     )
     promotions: dict[str, Promotion] = {}
     covers: dict[str, set[str]] = {}
-    groups: dict[tuple, dict[str, Promotion]] = {}
+    groups: dict[str, dict[str, Promotion]] = {}
     for promotion, product_id in rows:
         if not _may_see_offer(promotion.access_levels, viewer):
             continue
         promotions[promotion.id] = promotion
         covers.setdefault(promotion.id, set()).add(product_id)
-        audience = tuple(sorted(promotion.access_levels or []))
-        groups.setdefault((product_id, audience), {})[promotion.id] = promotion
+        groups.setdefault(product_id, {})[promotion.id] = promotion
     if not promotions:
         return []
 
