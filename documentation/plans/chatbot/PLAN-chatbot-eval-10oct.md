@@ -59,6 +59,11 @@ in the CRM UI.
 - Strict pass rate counts only passes that need no judge; 279 of 642 results carry a judge_note or have no
   deterministic criteria. A calibrated judge (Claude, owner decision) turns those into real passes or fails.
 
+## Gate (crew ruling 10 Oct)
+
+PR gate = all 214 hidden originals (~389 live calls, ~$2) on crew's budget; hidden main baseline for that
+config: 78.0% pass, strict 34.6%. Rewordings weekly or on owner request. Lanes: 300 live calls/day cap.
+
 ## Known gaps
 
 Media and ideation turns excluded; relative-date asks carry no period numbers; labels are from the 6 Oct

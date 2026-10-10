@@ -116,9 +116,12 @@ EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL
 # --engine pkg.module:Class runs the same cases through another engine
 ```
 
-- The PR gate is crew's: it runs the hidden split (200+ originals, one variant each, ~10 min) with
-  the runner from a trusted checkout and posts `crew-note: eval hidden ...` with the delta against
-  the main baseline. Only aggregates leave the crew dir.
+- The PR gate is crew's: it runs all 214 hidden originals (~389 live calls incl. replayed history,
+  ~$2, ~5 min, on crew's budget) with the runner from a trusted checkout and posts
+  `crew-note: eval hidden ...` with the delta against the main baseline. Only aggregates leave the
+  crew dir. Rewordings (the overfit check) run weekly or on owner request.
+- Live-call rules: estimate calls x tokens before a run; a lane's own dev runs count toward its
+  300 calls/day cap (a turn is about one parser call, ~40k prompt tokens).
 - Verdicts: correct, good_clarify, wrong, stuck, error. Underfit = pass rate on originals; overfit
   gaps = dev minus hidden, originals minus variants. A fix that only passes the reported phrasing
   shows up as a variant gap.
