@@ -10,13 +10,14 @@ comments are the authority on the mechanics; this page is the operator's view.
 | Trigger | Runs | Job-minutes (typical) |
 | --- | --- | --- |
 | PR labelled `ci` | The cheap gate: alembic single head, PII guard, gitleaks, changed areas, validate backend and MCP imports, type-check and vitest only when the frontend changed, the SCM shards only when SCM paths changed, and the changed backend tests (the PR's changed test files plus the files that import a changed module, up to 3600 estimated CPU-s). The six main backend shards never run here. | 12 to 25 for a backend-only change, up to about 90 when frontend and SCM both changed |
-| PR labelled `ci-full` | The full suite, the merge gate: the fast gates and validate imports, plus the six main backend shards and the serial entry, the three SCM shards, the four vitest shards and the type-check, whatever changed (the changed-tests job skips: the shards cover every file). Deploys nothing. | 190 to 230 |
+| PR labelled `ci-full` | REFUSED (owner, 9 Oct 2026: no full suite per PR; CI-LEAN). One job removes the label and fails with the reason; nothing else runs. | 1 |
 | `workflow_dispatch` on main (the release) | The full suite, then build images and the owner-approved deploy. With `skip_tests=true`, the build and the deploy only. | 230, or about 15 with `skip_tests` |
-| `schedule` (nightly, 03:17 Malaysia time) | The full suite on main's head, unless the last green nightly already tested that head (then the fast gates only, under a minute). Deploys nothing. | 200 on a day main moved, under 2 otherwise |
 | Push to main | The alembic single-head gate, PII guard and gitleaks. No tests, no deploy. | under 2 |
 | Any other label | Nothing (every job skips). | under 1 |
 
-Every labelled, queued, nightly or release run also reports one gate job that passes only
+There is no nightly (owner, 10 Oct 2026; CI-LEAN, `documentation/plans/ci/PLAN-ci-lean-10oct.md`).
+
+Every `ci`-labelled, queued or release run also reports one gate job that passes only
 when every needed job is `success` or `skipped` (a path filter) and fails on anything else:
 `failure`, `cancelled`, the `abandoned` GitHub reports for a job it never found a runner for
 or a matrix whose shard hit its cap, or any new value. It reports as `CI gate` on a `ci` run
@@ -25,30 +26,25 @@ with the fast gates alone. A push to main or any other label reports no gate.
 
 ## The labels
 
-Both labels are one-shot: the run removes the label it was fired by, so adding it again
-re-runs against the PR's current head. A push to the PR branch never starts a run. Both labels
-share one concurrency group per PR with cancel-in-progress on: adding either label while a run
-is live cancels that run (a `ci-full` makes the cheap run redundant; a `ci` after `ci-full`
-means the head moved). Never change labels while a run you want is live; to re-run, remove the
-label, wait ten seconds, add it alone.
+`ci` is one-shot: the run removes it, so adding it again re-runs against the PR's current
+head. A push to the PR branch never starts a run. `ci` runs share one concurrency group per PR
+with cancel-in-progress on: adding `ci` while a `ci` run is live cancels that run (the head
+moved). A `ci-full` label is refused by its own job and joins no group, so it cancels nothing.
+Never change labels while a run you want is live; to re-run, remove the label, wait ten
+seconds, add it alone.
 
-- `ci` while a lane is being built: cheap, as often as needed.
-- `ci-full` once per PR, right before merge, after the head has settled. A PR is merge-ready
-  when its `ci-full` run is green on the head being merged.
+- `ci` once per PR head that is ready to merge (CI-LEAN budget: about ten PR runs a day).
 
 Above the 3600 CPU-s selection budget the `ci` run executes the PR's own changed test files
 only and says so in the "Select backend tests by import" step of the `Changed areas` job; the
-whole selection then runs under `ci-full`. That replaces the earlier behaviour (CI-SPEED,
+whole selection then runs in the release. That replaces the earlier behaviour (CI-SPEED,
 1 Oct 2026) of running all six shards on the PR, which fired on most backend PRs and was 59% of
 all minutes in the week of 29 Sep to 5 Oct 2026.
 
 The ruleset `protect-main-branch` requires five check names: `Single alembic head (fast
 gate)`, `Changed areas`, `Validate backend imports`, `Validate MCP imports` and `Type-check
-frontend`. Both labels report all five (a path-filtered one reports "skipped", which a ruleset
-accepts). The ruleset does not require any shard, so a merge on a `ci`-only PR is possible by
-hand; the `ci-full` run before merge is crew discipline, or the owner adds `CI gate (full)` to
-the required checks, which makes a green `ci-full` on the head being merged a condition of the
-merge (a `ci` run reports `CI gate`, a different name, so it cannot stand in).
+frontend`. A `ci` run reports all five (a path-filtered one reports "skipped", which a ruleset
+accepts).
 
 ## Timeouts
 
@@ -73,6 +69,11 @@ has drained (or to run fewer runs at once, or to add runners). Read the annotati
 job before blaming a cap.
 
 ## The budget
+
+The CI-LEAN budget (owner, 10 Oct 2026: 3,000 minutes a month, 2-3 releases a day, release
+<= 30 billed minutes, PR gate <= 3, no nightly, no `ci-full` on PRs) is in
+`documentation/plans/ci/PLAN-ci-lean-10oct.md`; this section is updated with its measured
+numbers when that lane lands. The history below is what led to it.
 
 Measured 29 Sep to 5 Oct 2026 (701 runs): 85,687 minutes in seven days, 512 of them
 `ci`-labelled PR runs at 126 minutes each. At that pace, about 73 PR runs a day:
