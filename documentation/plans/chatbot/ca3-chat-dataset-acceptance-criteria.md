@@ -83,3 +83,24 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
   different periods and groupings), each asserting the parser route; live-checked 3 times
   each against the provider before hand test. Parser parity script shows no regression on the
   existing sales/stock set.
+
+## Owner hand test round (10 Oct 2026, crew rulings)
+
+- **UAC-25** One asker rule, first match staff (CRM user or active office access type) >
+  salesperson (sales agent link) > dealer (customer link) > unclassified; facts and route read
+  the same rule; owner contact A (user + agent + customer links) is staff.
+- **UAC-26** Chat route scope by that rule: dealer -> own customers + topic/subject/product/month
+  only; salesperson -> own book; staff -> all.
+- **UAC-27** "which salesperson asked the most questions" ranks asking salespeople by name;
+  "top categories asked by dealers" filters asker dealer; group by asker gives Dealer /
+  Salesperson / Staff / Unclassified rows.
+- **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`.
+- **UAC-29** By default staff asks are out and unclassified asks are IN as their own row; one
+  constant switches unclassified out.
+- **UAC-30** Category and brand: "top categories asked by salesperson for sorento" ranks product
+  categories, asker salesperson, brand Sorento; "top discussed water closet and basin for sorento
+  in 2026" ranks products filtered to those categories and that brand.
+- **UAC-31** A customer ranking shows each customer's card agent on its line.
+- **UAC-32** A period read on the first message survives the "How many?" reply.
+- **UAC-33** No entity-resolution miss line on a chat report reply for a word it did not filter
+  on.

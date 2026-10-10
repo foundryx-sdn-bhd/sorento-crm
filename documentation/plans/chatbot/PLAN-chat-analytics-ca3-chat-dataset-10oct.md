@@ -163,3 +163,45 @@ migration on the single chain; main parser golden set run before and after the r
 addendum, both posted; clear failure line when the second call errors (no hang); the zh "most"
 case (most asked with no number reads top_n null, never 1) fixed; held-out messages never used
 as prompt examples.
+
+## Revision 10 Oct 2026 (owner hand test, crew rulings): asked-by, category, brand
+
+Owner hand test: 0 of 12 owner questions passed (PR #1553 comments). Crew ruled: all of B1-B3,
+G1, G3, G4 in CA-3; one asker rule; unclassified askers shown as their own row by default,
+excludable with one switch; Q4 (customer x topic) noted for CA-5.
+
+**One asker rule** (`app/services/chatbot/analytics/asker.py`, the only copy): for a contact,
+first match: `staff` (a CRM user is linked, `users.respond_contact_id`, or an active access type
+matching office, the `contact_customer_scope.is_office_staff` test), `salesperson`
+(`sales_agents.contact_id`), `dealer` (a `respond_contact_customers` link), else `unclassified`.
+Exposed twice from the same module: a SQL expression for the chat dataset (computed at query
+time from the links as they are now, so linking a contact reclassifies its history; no new
+column, no backfill) and a Python function for the route.
+
+- **Route scope (B1)**: the chat branch of `/report-ask` scopes the ASKING contact by this rule:
+  `dealer` -> own customers + the 4 dealer dims (as today); `salesperson` -> customers whose card
+  agent is theirs (as today); `staff` -> all. `unclassified` -> refused like a contact without
+  the grant (it holds the grant only if someone granted it). The sales report keeps its rule.
+- **Asked-by axis and filter (G1)**: group_by `asker` (Dealer / Salesperson / Staff /
+  Unclassified) and group_by `salesperson` (the asking salesperson's name, `sales_agents`);
+  filter `askers` (any of the four). Default filter: dealer + salesperson + unclassified (staff
+  testing stays out, as office did). The one switch: `DEFAULT_ASKERS` in the chat dataset;
+  removing `unclassified` there excludes them everywhere by default; a message can still name
+  them.
+- **Unclassified line**: every reply that splits or filters by asker carries
+  `Unclassified askers: N` (distinct contacts in the period and filters), even when 0.
+- **Category and brand (G4)**: group_by `category` / `brand` and filters `category_ids` /
+  `brand_ids`, through the asked products (`chat_ask_items` role named -> products ->
+  category / brand). The extractor gains `category_words` and `brand_words`; the lane resolves
+  them with the existing `business_services.resolve_category_token` / `resolve_brand_token`
+  (no new matcher); a word that resolves to nothing is said in one line.
+- **Agent on customer rows (G3)**: a customer ranking prints each customer's card agent:
+  `1. <customer> (agent <name>): 12 asks`; `(no agent)` when none.
+- **B2**: the period the extractor read on the first message is kept in the slot; the count
+  reply never re-runs the extractor's period away.
+- **B3**: a chat report turn adds no entity-resolution miss line for words the chat report
+  did not use as a filter.
+- **Q4** (customer x topic in one answer): CA-5 note; today the customer ranking answers and
+  says "Ask what a customer asked as a follow-up."
+- Live LLM calls are paused (crew, API key check): golden / held-out / owner questions are
+  re-run live only when crew resumes.
