@@ -60,17 +60,21 @@ _CUSTOMER_REF = sa.case(
     ),
     else_=sa.null(),
 )
-#: The asking salesperson's name (`sales_agents`), only for a contact the rule reads as one.
+#: The asking salesperson's name, only for a contact the rule reads as one: the role user's own name,
+#: else the linked sales agent's (`sales_agents`) for a contact with no active user.
 _SALESPERSON = sa.case(
     (
         _ASKER_WORD == "salesperson",
-        sa.select(_AGENTS.c.sales_agent)
-        .select_from(_AGENTS.join(_CONTACTS, _CONTACTS.c.id == _AGENTS.c.contact_id))
-        .where(_CONTACTS.c.respond_io_id == ASKS.c.contact_respond_id)
-        .order_by(_AGENTS.c.sales_agent)
-        .limit(1)
-        .correlate(ASKS)
-        .scalar_subquery(),
+        sa.func.coalesce(
+            contact_asker.salesperson_user_name(ASKS.c.contact_respond_id),
+            sa.select(_AGENTS.c.sales_agent)
+            .select_from(_AGENTS.join(_CONTACTS, _CONTACTS.c.id == _AGENTS.c.contact_id))
+            .where(_CONTACTS.c.respond_io_id == ASKS.c.contact_respond_id)
+            .order_by(_AGENTS.c.sales_agent)
+            .limit(1)
+            .correlate(ASKS)
+            .scalar_subquery(),
+        ),
     ),
     else_=sa.null(),
 )

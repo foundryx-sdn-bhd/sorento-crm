@@ -28,24 +28,49 @@ ASKERS = ("dealer", "salesperson", "staff", "unclassified")
 _OFFICE_SQL = r"^(sorento|cabana|mocha) office$"
 
 
+def _salesperson_user_clauses(contact_id: Any) -> list:
+    """WHERE clauses (over `users`, `user_role_assignments`, `user_roles`) for an ACTIVE, not
+    trashed user linked to `contact_id` that holds the non-trashed role slug `salesperson`."""
+    from app.models.user import User, UserRole, UserRoleAssignment
+
+    users, roles, assigned = User.__table__, UserRole.__table__, UserRoleAssignment.__table__
+    return [
+        users.c.respond_contact_id == contact_id,
+        users.c.status == "ACTIVE",
+        users.c.is_trashed.is_(False),
+        assigned.c.user_id == users.c.id,
+        assigned.c.role_id == roles.c.id,
+        roles.c.slug == "salesperson",
+        roles.c.is_trashed.is_(False),
+    ]
+
+
+def salesperson_user_name(contact_respond_id_column: Any) -> Any:
+    """The name of the role-salesperson user behind a fact's contact (NULL when there is none)."""
+    from app.models.access import RespondContact
+    from app.models.user import User
+
+    rc = RespondContact.__table__
+    return (
+        sa.select(User.__table__.c.name)
+        .where(rc.c.respond_io_id == contact_respond_id_column, *_salesperson_user_clauses(rc.c.id))
+        .order_by(User.__table__.c.name)
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
 def _word_for(contact_id: Any) -> Any:
     """CASE over an INTERNAL `respond_contacts.id` expression."""
     from app.models.access import ContactAccessType, RespondContactCustomer, respond_contact_access_types
     from app.models.sales_agent import SalesAgent
-    from app.models.user import User, UserRole, UserRoleAssignment
+    from app.models.user import User
 
     users = User.__table__
     # A live user only: a trashed or not ACTIVE user's link says nothing about who asks.
     live = [users.c.respond_contact_id == contact_id, users.c.status == "ACTIVE", users.c.is_trashed.is_(False)]
     user_linked = sa.exists().where(*live)
-    roles, assigned = UserRole.__table__, UserRoleAssignment.__table__
-    salesperson_user = sa.exists().where(
-        *live,
-        assigned.c.user_id == users.c.id,
-        assigned.c.role_id == roles.c.id,
-        roles.c.slug == "salesperson",
-        roles.c.is_trashed.is_(False),
-    )
+    salesperson_user = sa.exists().where(*_salesperson_user_clauses(contact_id))
     kinds = ContactAccessType.__table__
     held = respond_contact_access_types
     office = sa.exists().where(
