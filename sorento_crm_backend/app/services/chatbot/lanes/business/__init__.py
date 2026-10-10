@@ -1454,7 +1454,11 @@ def run_fetch(
                     },
                 )
             fragment = _fixed_reply(
-                so_status.reply_text(looked, refusal=str(customer_scope.get("refusal") or ""))
+                so_status.reply_text(
+                    looked,
+                    refusal=str(customer_scope.get("refusal") or ""),
+                    kind_word="Sales order" if parse_output.get("so_placed") is True else None,
+                )
             )
             # The reply names its own missing numbers, so the resolver's own `not_found`
             # exit (nothing placed the SO words) is not a second miss to compose

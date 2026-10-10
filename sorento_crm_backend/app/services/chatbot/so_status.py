@@ -272,9 +272,11 @@ def po_ref_reply_text(result: PoRefLookup, ref: str) -> str:
     return "\n\n".join([head, *cards])
 
 
-def reply_text(result: SoLookup, *, refusal: str) -> str:
-    """Cards, then the scope refusal, then one miss line - each its own paragraph."""
-    parts = list(result.cards)
+def reply_text(result: SoLookup, *, refusal: str, kind_word: str | None = None) -> str:
+    """Cards, then the scope refusal, then one miss line - each its own paragraph.
+    `kind_word` ("Sales order") names the kind in each card's head when the resolver placed
+    the number (REF-PROBES): `*Sales order SO421624* - NAME`."""
+    parts = [c.replace("*", f"*{kind_word} ", 1) if kind_word and c.startswith("*") else c for c in result.cards]
     if result.refused and refusal:
         parts.append(refusal)
     if result.missing:
@@ -424,7 +426,8 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, li
 
 _WORDS_RE = re.compile(r"[0-9a-z]+")
 _UPPER_SO_RE = re.compile(r"(?<![0-9A-Za-z])SOs?(?![0-9A-Za-z])")
-_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}", re.IGNORECASE)
+# The trailing `(?:-\d+)?` is AutoCount's dashed number ("SO2610-0127").
+_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}(?:-\d+)?", re.IGNORECASE)
 
 
 def says_outstanding(text: str) -> bool:

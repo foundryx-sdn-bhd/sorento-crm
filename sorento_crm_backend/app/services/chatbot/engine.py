@@ -51,6 +51,7 @@ from app.services.chatbot.contracts import (
     visible_reference_kinds,
 )
 from app.services.chatbot.delegate import enabled_lanes_from
+from app.services.chatbot.turn.reconcile import narrowed_miss_lines
 from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
@@ -6432,6 +6433,13 @@ def _run_stages_body(  # noqa: PLR0915
                             db=db,
                             ctx=ctx,
                         )
+                        # REF-PROBES: a kind the asker NAMED that the data placed as another
+                        # kind is said first ("No sales order X."), then the true kind's answer.
+                        narrowed_misses = narrowed_miss_lines(plan.trace.reconciled)
+                        if narrowed_misses and answer.text:
+                            answer = dataclasses_replace(
+                                answer, text="\n".join(narrowed_misses) + "\n\n" + answer.text
+                            )
             except Exception as fetch_error:  # noqa: BLE001 - a lane failure, not a crash
                 logger.exception("chatbot turn %s: fetch or compose failed", turn_id)
                 lane_error_text = f"{type(fetch_error).__name__}: {fetch_error}"

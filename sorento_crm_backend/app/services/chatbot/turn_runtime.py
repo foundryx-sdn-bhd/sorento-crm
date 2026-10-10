@@ -63,6 +63,7 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 from app.services.chatbot import session_state
+from app.services.chatbot.contracts import REFERENCE_NARROW
 # BRAND-PROMO-EXPAND: the resolver's own fan-out table (brand / category -> promotion), read
 # here so `resolve_kinds` can tell a hit that CONFIRMS a hint from one that re-types it. One
 # copy, the resolver's; never a second table of the same pairs in this module.
@@ -2357,15 +2358,37 @@ def _without_foreign_sales_orders(payload: dict[str, Any], customer_ids: Collect
     resolved = payload.get("resolved")
     if not isinstance(resolved, dict):
         return payload
+
+    def _kept(matches: Any) -> list[Any]:
+        return [m for m in jsc.array(matches) if not _foreign(m)]
+
     resolutions = [
-        {**r, "matches": [m for m in jsc.array(r.get("matches")) if not _foreign(m)]}
-        if isinstance(r, dict)
-        else r
+        {**r, "matches": _kept(r.get("matches"))} if isinstance(r, dict) else r
         for r in jsc.array(resolved.get("resolutions"))
     ]
+    intersection = _kept(resolved.get("intersection"))
+    by_entity_type = {
+        k: (_kept(v) if isinstance(v, list) else v)
+        for k, v in (resolved.get("by_entity_type") or {}).items()
+    }
     if not dropped:
         return payload
-    out = {**payload, "resolved": {**resolved, "resolutions": resolutions}}
+    # A token left with no match is a miss like any other (said as "could not find").
+    emptied = [r.get("token") for r in resolutions if isinstance(r, dict) and not r.get("matches")]
+    tokens = [t for t in jsc.array(resolved.get("tokens")) if isinstance(t, str)]
+    if not resolutions and len(tokens) == 1 and not intersection:
+        emptied = tokens
+    unresolved = [*jsc.array(resolved.get("unresolved_tokens")), *[t for t in emptied if isinstance(t, str)]]
+    out = {
+        **payload,
+        "resolved": {
+            **resolved,
+            "resolutions": resolutions,
+            "intersection": intersection,
+            "by_entity_type": by_entity_type,
+            "unresolved_tokens": list(dict.fromkeys(unresolved)),
+        },
+    }
     gate = payload.get("gate")
     if isinstance(gate, dict):
         out["gate"] = {
@@ -2653,6 +2676,16 @@ def resolve_kinds(
                 kind = hinted
             hits[kind] = hits.get(kind, 0) + 1
 
+    # REF-PROBES: a lone token resolved in AND mode comes back as an `intersection`, with no
+    # `resolutions`. A reference number's kind is read off it the same way.
+    lone_tokens = [t for t in jsc.array(jsc.get(resolved, "tokens")) if isinstance(t, str)]
+    if not jsc.array(jsc.get(resolved, "resolutions")) and len(lone_tokens) == 1:
+        if hint_by_key.get(_token_key(lone_tokens[0])) in REFERENCE_NARROW:
+            hits = by_token.setdefault(lone_tokens[0], {})
+            for match in jsc.array(jsc.get(resolved, "intersection")):
+                kind = jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower()
+                if kind:
+                    hits[kind] = hits.get(kind, 0) + 1
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = named_unplaced(entities, resolved)
@@ -3506,21 +3539,32 @@ def make_tool_runner(
         # by the lane from `sales_orders` (`lanes/business/run_fetch`'s `so_numbers` arm),
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
-        so_numbers = list(dict.fromkeys([*so_numbers, *_placed_reference_words(db, entities)["so_numbers"]]))
+        placed_so = _placed_reference_words(db, entities)["so_numbers"]
+        so_numbers = list(dict.fromkeys([*so_numbers, *placed_so]))
         envelope_unplaced = unplaced
         if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}
-        po_words = _po_ref_words(lane_out.get("po_refs"), unplaced)
         placed_refs = _placed_reference_words(db, entities)
-        if placed_refs["po_refs"]:
-            # REF-PROBES: a customer PO ref the resolver PLACED is answered for staff too
-            # (their own "PO" is the supplier PO path, which is `purchase_order`).
+        # REF-PROBES: a customer PO ref the resolver PLACED is answered for staff too (their
+        # own "PO" is the supplier PO path, which is `purchase_order`); one the asker NAMED
+        # as a PO ref that nothing placed goes to the same arm, which says it was not found.
+        named_unplaced_refs = [
+            unplaced[_token_key(raw)]
+            for e in jsc.array(jsc.get(verdict, "entities"))
+            if isinstance(e, dict)
+            and e.get("hint") == "customer_po_ref"
+            and e.get("current_message") is not False
+            and _token_key(raw := jsc.nullish_str(e.get("raw")).strip()) in unplaced
+        ]
+        extra_refs = [*placed_refs["po_refs"], *named_unplaced_refs]
+        if extra_refs:
             lane_out = {
                 **lane_out,
-                "po_refs": list(dict.fromkeys([*(lane_out.get("po_refs") or []), *placed_refs["po_refs"]])),
+                "po_refs": list(dict.fromkeys([*(lane_out.get("po_refs") or []), *extra_refs])),
             }
+        po_words = _po_ref_words(lane_out.get("po_refs"), unplaced)
         for lane_key in ("po_numbers", "pr_numbers"):
             if placed_refs[lane_key]:
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
@@ -3537,7 +3581,7 @@ def make_tool_runner(
                 [{"entity_type": kind, "raw": w} for w in po_words for kind in ("product", "order")],
             )
         if so_numbers:
-            lane_out = {**lane_out, "so_numbers": so_numbers}
+            lane_out = {**lane_out, "so_numbers": so_numbers, **({"so_placed": True} if placed_so else {})}
             envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}
             # Answered here, so never carried: a word left on `focus.extra["order"]` without a
             # uuid is handed to the resolver again on the next order turn and named as a miss
