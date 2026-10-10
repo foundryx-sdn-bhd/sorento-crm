@@ -58,7 +58,7 @@ REPORT = reg.register(
         dataset=TURNS,
         params=(
             reg.DateBasisParam(key="date_basis", label="Date basis", default="asked_at"),
-            reg.PeriodParam(key="period", label="Period", default=ds.default_period),
+            reg.PeriodParam(key="period", label="Period", default=ds.default_period, default_reads_db=True),
             reg.SelectParam(
                 key="contact_type",
                 label="Contact type",
@@ -100,7 +100,7 @@ REPORT = reg.register(
             },
             "pivot": {"rows": "outcome", "cols": "week", "measures": ["asks", "failed"]},
         },
-        note=lambda ctx: ds.COVERAGE_NOTE,
+        note=ds.overview_note,
         opens_on="summary",
         datasets_by=("count_by", {"products": ITEM_TURNS}),
         workbook=reg.WorkbookSpec(

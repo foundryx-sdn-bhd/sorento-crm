@@ -23,10 +23,13 @@ rebuild any row.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import (
     REAL,
+    BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -54,6 +57,10 @@ class ChatAskFact(Base):
     __audit_skip__ = "derived analytics fact, rebuilt from chatbot.turns by the sweep"
     __table_args__ = (
         UniqueConstraint("turn_id", "ask_seq", name="uq_chat_ask_facts_turn_seq"),
+        UniqueConstraint("history_id", "ask_seq", name="uq_chat_ask_facts_history_seq"),
+        CheckConstraint(
+            "(turn_id IS NULL) <> (history_id IS NULL)", name="ck_chat_ask_facts_one_source"
+        ),
         Index("ix_chat_ask_facts_asked_at", "asked_at"),
         Index("ix_chat_ask_facts_contact", "contact_respond_id"),
         Index("ix_chat_ask_facts_outcome", "outcome"),
@@ -61,10 +68,13 @@ class ChatAskFact(Base):
     )
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
-    # `trace` for everything CA-1 writes; CA-4 adds a source for pre-trace history.
+    # `trace` (CA-1, from a turn) or `history_backfill` (CA-4, from a `chat_histories` row).
     source = Column(Text, nullable=False)
     # The `chatbot.turns` row. Not an FK: a fact is a log line and survives its turn.
-    turn_id = Column(UUID(as_uuid=False), nullable=False)
+    turn_id = Column(UUID(as_uuid=False), nullable=True)
+    # The incoming `chat_histories.id` of a backfilled message (CA-4). Exactly one of this and
+    # `turn_id` is set. Not an FK, for the same reason.
+    history_id = Column(BigInteger, nullable=True)
     ask_seq = Column(SmallInteger, nullable=False, server_default=text("1"), default=1)
 
     contact_respond_id = Column(Text, nullable=False)
@@ -161,6 +171,54 @@ class ChatEpisodeFact(Base):
     # Null until CA-2 judges them.
     resolved = Column(Boolean, nullable=True)
     asked_again = Column(Boolean, nullable=True)
+
+
+#: The pre-trace eras CA-4 backfills: `(first day, day after the last)`, Malaysia dates. Era D
+#: is only the 5 to 22 Sep messages the engine never traced (crew ruling Q5); from 5 Sep every
+#: traced message has its facts from the trace. Shared by the extractor and the report notes.
+HISTORY_ERAS: dict[str, tuple[date, date]] = {
+    "A": (date(2026, 4, 17), date(2026, 7, 22)),
+    "B": (date(2026, 7, 22), date(2026, 8, 19)),
+    "C": (date(2026, 8, 19), date(2026, 9, 5)),
+    "D": (date(2026, 9, 5), date(2026, 9, 23)),
+}
+
+
+class ChatBackfillRun(Base):
+    """One run of the history backfill over one era (chat analytics CA-4).
+
+    Counts, tokens and a progress cursor only: no column holds what a customer or the bot
+    wrote. `messages_eligible` is the era's whole eligible count when the run started, which
+    is what the report's coverage line divides by.
+    """
+
+    __tablename__ = "chat_backfill_runs"
+    __audit_skip__ = "the run table is itself the record of the job"
+    __table_args__ = ({"schema": "chatbot"},)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    era = Column(Text, nullable=False)
+    # running | done | failed
+    status = Column(Text, nullable=False)
+    messages_eligible = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    messages_read = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    messages_skipped = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    asks_written = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    calls = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    failed_calls = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_in = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_out = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_cached = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    model = Column(Text, nullable=True)
+    prompt_version = Column(Text, nullable=True)
+    taxonomy_version = Column(SmallInteger, nullable=True)
+    row_limit = Column(Integer, nullable=True)
+    # The highest `chat_histories.id` of the last committed batch.
+    last_history_id = Column(BigInteger, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    # The exception class of a run that stopped, never its message (it may quote a prompt).
+    error = Column(Text, nullable=True)
 
 
 class ChatTopic(Base):

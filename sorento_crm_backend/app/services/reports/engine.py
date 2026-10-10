@@ -331,7 +331,7 @@ def resolve(
             date_basis_param = param.key
             values[param.key] = basis_key
         elif isinstance(param, reg.PeriodParam):
-            period = resolve_period(given if given is not None else param.resolved_default())
+            period = resolve_period(given if given is not None else param.resolved_default(db))
             values[param.key] = period
         elif isinstance(param, reg.SelectParam):
             chosen = _as_list(given) if given is not None else list(param.default)
@@ -943,7 +943,7 @@ def _variance(
 # ----------------------------------------------------------------------------- run
 
 
-def view_config(definition: reg.ReportDefinition) -> ReportViewConfig:
+def view_config(definition: reg.ReportDefinition, db: Any = None) -> ReportViewConfig:
     """The definition's own default view, as the wire shape.
 
     A param the default view does not name falls back to the PARAM's default, resolved
@@ -954,7 +954,7 @@ def view_config(definition: reg.ReportDefinition) -> ReportViewConfig:
     params = dict(raw.get("params") or {})
     for param in definition.params:
         if params.get(param.key) is None:
-            params[param.key] = reg.default_value(param)
+            params[param.key] = reg.default_value(param, db)
     raw["params"] = params
     return ReportViewConfig.model_validate(raw)
 
@@ -1025,7 +1025,7 @@ def run(
 ) -> ReportResult:
     """Both layouts over one row set. ``cap=False`` is the export path (AC-A7)."""
     ctx = resolve(db, definition, params, company_grants=company_grants)
-    effective = view or view_config(definition)
+    effective = view or view_config(definition, db)
 
     with _unscoped(ctx):
         detail = _detail(ctx, effective, cap)
@@ -1195,7 +1195,7 @@ def run_workbook(
     the screen the user exported it from.
     """
     ctx = resolve(db, definition, params, company_grants=company_grants)
-    effective = view or view_config(definition)
+    effective = view or view_config(definition, db)
     with _unscoped(ctx):
         summary = _pivot(ctx, effective, cap=False)
         sheets = _month_sheets(ctx, effective) if definition.workbook.month_sheets else []

@@ -52,6 +52,10 @@ services:
       
       # Gunicorn workers (optional, defaults to 4 in gunicorn.conf.py)
       WORKERS: ${WORKERS:-4}
+
+      # Proxies whose X-Forwarded-For is believed (empty = none, use the socket peer).
+      # Set only when the nginx in front appends: see sorento_crm_backend/app/config.py.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       
       # AWS S3 (if used for attachments)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}

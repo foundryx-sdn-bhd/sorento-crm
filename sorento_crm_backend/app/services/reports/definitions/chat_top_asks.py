@@ -66,7 +66,7 @@ def _roles_condition(ctx, values):
 def params() -> tuple:
     return (
         reg.DateBasisParam(key="date_basis", label="Date basis", default="asked_at"),
-        reg.PeriodParam(key="period", label="Period", default=ds.default_period),
+        reg.PeriodParam(key="period", label="Period", default=ds.default_period, default_reads_db=True),
         reg.SelectParam(
             key="contact_type",
             label="Contact type",
