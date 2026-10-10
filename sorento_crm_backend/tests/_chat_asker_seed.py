@@ -96,9 +96,11 @@ def seed_asker_world(db) -> SimpleNamespace:
     from app.services.company_scope import DEFAULT_COMPANY_ID
 
     w = seed_world(db)
-    w.c1, w.c2, w.c3 = (_respond_contact(db, n) for n in ("c1", "c2", "c3"))
-    link_customer(db, w.c1, w.cust_a)
-    link_customer(db, w.c2, w.cust_b)
+    # c1 (cust_a) and c2 (cust_b) are already linked dealers from seed_world; c3 is meant unclassified here
+    from app.models.access import RespondContactCustomer
+
+    db.query(RespondContactCustomer).filter(RespondContactCustomer.contact_id == w.c3.id).delete()
+    db.flush()
     w.agent_two = link_agent(db, w.c2, "ZZT Agent Two")
     w.cust_a.sales_agent_id = w.agent_two.id
 

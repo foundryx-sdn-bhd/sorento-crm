@@ -9,6 +9,11 @@ Pinned where the plan is silent (the coder follows, or asks the captain to chang
 * asker row names are exactly `Dealer`, `Salesperson`, `Staff`, `Unclassified`; a bucket with no
   asks has no row; `salesperson` rows are the asking salespeople's `sales_agents.sales_agent`
   name and carry no `Dealer` / `Unclassified` row;
+* owner 10 Oct ("just leave it"): `DEFAULT_ASKERS == ("dealer", "salesperson")`, so a default run
+  excludes staff AND unclassified; an explicit `askers` naming unclassified still counts them;
+* `unclassified_left_out` (int): set whenever the run's asker filter came from the default (any
+  axis); counts distinct unclassified contacts with a counted ask in the period and the OTHER
+  filters; null when unclassified is included, or when the message named its own `askers`;
 * `DEFAULT_ASKERS` lives in `app.services.reports.datasets.chat_report_ask` (the chat dataset
   module) as a tuple of asker words, read at run time so a monkeypatch takes effect;
 * response field `unclassified_askers` (int): present when group_by is `asker` or `salesperson`
@@ -52,13 +57,14 @@ def _granted(db):
 
 
 def test_a_user_linked_and_customer_linked_contact_is_staff_not_dealer_scoped(client, db):
+    """owner 10 Oct: unclassified out by default."""
     w = seed_asker_world(db)
     contact = _granted(db)
     link_user(db, contact)
     link_customer(db, contact, w.cust_b)
     db.commit()
     body = _ok(client, contact, group_by="customer", top_n=10)
-    assert D(str(body["total"]["value"])) == 8, "staff sees every customer's asks, not its own link's"
+    assert D(str(body["total"]["value"])) == 6, "staff sees every customer's asks, not its own link's"
     assert {r["name"] for r in body["rows"]} == {w.cust_a.customer_name, w.cust_b.customer_name}, body["rows"]
 
 
@@ -73,13 +79,14 @@ def test_a_user_linked_contact_may_name_a_customer_outside_its_links(client, db)
 
 
 def test_an_office_access_type_and_customer_link_is_staff_too(client, db):
+    """owner 10 Oct: unclassified out by default."""
     w = seed_asker_world(db)
     contact = _granted(db)
     give_office_type(db, contact)
     link_customer(db, contact, w.cust_b)
     db.commit()
     body = _ok(client, contact, group_by="customer", top_n=10)
-    assert D(str(body["total"]["value"])) == 8, body
+    assert D(str(body["total"]["value"])) == 6, body
 
 
 def test_a_pure_dealer_is_still_scoped_to_its_own_customers(client, db):
@@ -107,10 +114,11 @@ def test_a_salesperson_with_a_customer_link_is_narrowed_to_its_book_not_its_link
 
 
 def test_group_by_asker_has_the_four_words_and_staff_is_out_by_default(client, db):
+    """owner 10 Oct: unclassified out by default (shown only when asked, see the all-askers test)."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="asker", top_n=10)
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(2)}, body["rows"]
-    assert body["group_by"] == "asker" and D(str(body["total"]["value"])) == 8, body
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4)}, body["rows"]
+    assert body["group_by"] == "asker" and D(str(body["total"]["value"])) == 6, body
     assert body["unclassified_askers"] == 1, body
 
 
@@ -148,10 +156,11 @@ def test_an_unclassified_only_filter_counts_only_them(client, db):
 
 
 def test_no_asker_split_or_filter_carries_no_unclassified_count(client, db):
+    """owner 10 Oct: unclassified out by default."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="topic", top_n=10)
     assert body.get("unclassified_askers") is None, body
-    assert D(str(body["total"]["value"])) == 8, "the default still excludes staff"
+    assert D(str(body["total"]["value"])) == 6, "the default excludes staff and unclassified"
 
 
 def test_the_unclassified_count_is_zero_when_there_are_none(client, db):
@@ -165,16 +174,19 @@ def test_the_unclassified_count_is_zero_when_there_are_none(client, db):
 
 
 def test_default_askers_is_the_one_switch_for_unclassified(client, db, monkeypatch):
+    """owner 10 Oct: unclassified out by default; adding it to DEFAULT_ASKERS brings it back."""
     from app.services.reports.datasets import chat_report_ask
 
-    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson", "unclassified")
+    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson")
     seed_asker_world(db)
-    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson"))
     body = _ok(client, _granted(db), group_by="asker", top_n=10)
     assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4)}, body["rows"]
     assert D(str(body["total"]["value"])) == 6 and body["unclassified_askers"] == 1, body
     named = _ok(client, _granted(db), group_by="asker", top_n=10, askers=["unclassified"])
     assert _rows(named) == {"Unclassified": D(2)}, "a message can still name them"
+    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson", "unclassified"))
+    body = _ok(client, _granted(db), group_by="asker", top_n=10)
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(2)}, body["rows"]
 
 
 def test_run_ask_takes_the_asker_filter_word(db):
@@ -270,6 +282,7 @@ def test_customer_rows_carry_the_card_agent(client, db):
 
 
 def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db):
+    """owner 10 Oct: unclassified out by default, so they are asked for by name here."""
     """The prod-copy blocker: unlinked contacts are stamped contact_type office by the writer."""
     from tests._chat_asker_seed import _respond_contact
     from tests._chat_report_seed import _uid, add_fact, day
@@ -281,7 +294,7 @@ def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db
                  topic="inventory.availability", contact_type="office", audience="unknown")
     db.commit()
     contact = _granted(db)
-    body = _ok(client, contact, group_by="asker", top_n=10)
+    body = _ok(client, contact, group_by="asker", top_n=10, askers=["dealer", "salesperson", "unclassified"])
     assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(4)}, body["rows"]
     assert body["unclassified_askers"] == 2, "c3 and c11, both unlinked"
     body = _ok(client, contact, group_by="salesperson", top_n=10)
@@ -391,12 +404,13 @@ def test_failure_rate_counts_an_ask_once_per_category_even_naming_two_products(c
 
 
 def test_a_customer_ranking_never_has_a_null_or_empty_label(client, db):
-    seed_asker_world(db)  # F5 and F10 (contact c3) name no customer
+    """owner 10 Oct: unclassified out by default."""
+    seed_asker_world(db)  # F5 and F10 (contact c3, unclassified) name no customer
     body = _ok(client, _granted(db), group_by="customer", top_n=10)
     for row in body["rows"]:
         assert isinstance(row["name"], str) and row["name"].strip(), body["rows"]
         assert "\x1f" not in row["name"] and row["name"] != "(blank)", body["rows"]
-    assert D(str(body["total"]["value"])) == 8, "asks with no customer still count in the total"
+    assert D(str(body["total"]["value"])) == 6, "the total is the default askers' asks"
 
 
 # ======================================================================== engine guard: ratio totals over a distinct part
@@ -445,3 +459,51 @@ def test_engine_ratio_totals_count_an_ask_once_not_once_per_item(db):
     answered = next(v for k, v in cols.items() if k.lower().startswith("answered"))
     assert num(answered, "asks") == 2, "F1 and F3, F1 counted once though it names two categories"
     assert num(answered, "failure_rate") == 0 and num(grand, "failure_rate") == pytest.approx(1 / 3, abs=0.001), (answered, grand)
+
+
+# ======================================================================== owner 10 Oct: unclassified out by default
+
+
+def test_default_askers_is_dealer_and_salesperson_only():
+    from app.services.reports.datasets import chat_report_ask
+
+    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson")
+
+
+def test_a_default_run_excludes_staff_and_unclassified_on_any_axis(client, db):
+    seed_asker_world(db)
+    contact = _granted(db)
+    body = _ok(client, contact, group_by="topic", top_n=10)
+    assert D(str(body["total"]["value"])) == 6, body
+    assert _ok(client, contact, askers=["dealer", "salesperson", "unclassified"], group_by="topic", top_n=10)[
+        "total"]["value"] == 8, "an explicit filter naming unclassified still counts them"
+
+
+def test_unclassified_left_out_is_set_on_every_default_run(client, db):
+    seed_asker_world(db)
+    contact = _granted(db)
+    assert _ok(client, contact, group_by="topic", top_n=10)["unclassified_left_out"] == 1
+    assert _ok(client, contact, group_by="asker", top_n=10)["unclassified_left_out"] == 1
+    assert _ok(client, contact, group_by="product", top_n=10)["unclassified_left_out"] == 1
+    assert _ok(client, contact)["unclassified_left_out"] == 1, "a bare total too"
+
+
+def test_unclassified_left_out_respects_the_other_filters(client, db):
+    w = seed_asker_world(db)
+    body = _ok(client, _granted(db), group_by="topic", top_n=10, customer_ids=[w.cust_a.id])
+    assert body["unclassified_left_out"] == 0, "c3's asks name no customer: none left out under that filter"
+
+
+def test_unclassified_left_out_is_null_when_included_or_chosen_by_the_message(client, db, monkeypatch):
+    from app.services.reports.datasets import chat_report_ask
+
+    seed_asker_world(db)
+    contact = _granted(db)
+    for askers in (["unclassified"], ["dealer", "unclassified"]):
+        body = _ok(client, contact, group_by="topic", top_n=10, askers=askers)
+        assert body.get("unclassified_left_out") is None, (askers, body)
+    body = _ok(client, contact, group_by="topic", top_n=10, askers=["dealer"])
+    assert body.get("unclassified_left_out") is None, "the message chose its own askers"
+    assert body["unclassified_askers"] == 1, "the existing field is unchanged for a filter"
+    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson", "unclassified"))
+    assert _ok(client, contact, group_by="topic", top_n=10).get("unclassified_left_out") is None

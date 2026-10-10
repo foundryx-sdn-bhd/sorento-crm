@@ -108,3 +108,22 @@ def test_a_customer_row_for_asks_with_no_customer_prints_its_label():
             {"rank": 2, "name": "(no customer)", "value": 3, "agent": None}]
     lines = _lines(_body(rows=rows))
     assert "2. (no customer) (no agent): 3 asks" in lines or "2. (no customer): 3 asks" in lines, lines
+
+
+# owner 10 Oct: unclassified out by default -> the left-out line
+
+
+def test_the_left_out_line_prints_when_some_were_left_out():
+    lines = _lines(_body(unclassified_left_out=33))
+    assert lines.count("Unclassified askers left out: 33") == 1, lines
+
+
+@pytest.mark.parametrize("value", [0, None])
+def test_no_left_out_line_for_zero_or_null(value):
+    assert "left out" not in _report_ask(_body(unclassified_left_out=value))
+    assert "left out" not in _report_ask(_body())
+
+
+def test_the_existing_split_line_is_unchanged_beside_the_left_out_line():
+    lines = _lines(_body(unclassified_askers=2, unclassified_left_out=5))
+    assert "Unclassified askers: 2" in lines and "Unclassified askers left out: 5" in lines, lines
