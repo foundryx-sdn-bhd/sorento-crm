@@ -334,12 +334,15 @@ def asker_of(db: Any, contact_respond_id: Any, space_id: Any) -> str | None:
     return contact_asker.classify(db, str(contact_id)) if contact_id else None
 
 
+_NON_DEALER_ASKERS = tuple(a for a in ASKERS if a != "dealer")
+
+
 def scope_for(fetch_domain: str, scope: dict[str, Any], *, asker: str | None, granted: bool) -> dict[str, Any]:
     """The customer scope ONE fetch runs under. Only a `chat_analytics` fetch whose contact holds
     the reveal is relaxed, and only for a non-dealer (the route scopes chat by the asker rule, so
-    customer links make a salesperson or staff contact no dealer); every other fetch keeps the
-    strict scope. A new dict: the turn's own scope is never replaced."""
-    if fetch_domain == DOMAIN and granted and asker != "dealer":
+    customer links make a salesperson or staff contact no dealer); an unresolved contact or an unknown
+    asker class fails closed (strict). Every other fetch keeps the strict scope. A new dict: the turn's own scope is never replaced."""
+    if fetch_domain == DOMAIN and granted and asker in _NON_DEALER_ASKERS:
         return {**scope, "enforced": False}
     return {**scope}
 
