@@ -10,3 +10,5 @@ in `definitions/` and are imported here so the registry is populated wherever it
 from app.services.reports.definitions import sponsorship  # noqa: E402,F401
 from app.services.reports.definitions import sales_yearly  # noqa: E402,F401
 from app.services.reports.definitions import chat_overview  # noqa: E402,F401
+from app.services.reports.definitions import chat_top_asks  # noqa: E402,F401
+from app.services.reports.definitions import chat_bot_failures  # noqa: E402,F401

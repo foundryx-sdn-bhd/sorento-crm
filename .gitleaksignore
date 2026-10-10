@@ -5,3 +5,7 @@
 # bce2ef4c test_bearer_auth.py:19 is a fake MCP bearer-token test fixture ("t0k3n-for-tests-..."), never a real
 # token; replaced with "x" * 40 at 81774ef84 (MCP-LOCKDOWN, PR #1548).
 bce2ef4c521b380f7339db922bdf7f9aec395d50:sorento_crm_mcp/tests/test_bearer_auth.py:generic-api-key:19
+# 6a8cf09c test_runtime_settings.py:21 was the made-up test fixture "ZztSecret0123456789A" (never a
+# real or dev key, never copied from any env or DB); replaced by test-secret-not-real-0000 in e5aee456.
+# Confirmation: https://github.com/jayson-odoo/sorento-crm/pull/1561#issuecomment-6093881308
+6a8cf09c7e40eb12406d2db93b08a03635a6ab47:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:21

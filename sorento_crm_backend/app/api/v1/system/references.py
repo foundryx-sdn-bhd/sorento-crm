@@ -3338,6 +3338,13 @@ def resolve_reference_post(
             log_usage=not payload.dry_run,
         )
         specs = _with_parser_brand(specs, payload.brand_tokens)
+        if understanding is None and not specs and not payload.scope_terms and not payload.free_terms:
+            # Nothing describes a set: the message held only predicate words ("Stock") and
+            # no spec, brand or class word grounded. A set built off the looked-up ids
+            # alone would be one over a CARRIED word of a kind the domain may not take
+            # (R13 hotfix, AC-1790..1792: a product_set carry then "Stock" is refused
+            # with the scope-needed sentence), so this answers as a plain resolution.
+            return _stamp_brand_on_products(db, result)
         # D3: a brand scopes the WHOLE set - kept OUT of `specs`' union-membership
         # role (a brand binding there would union in every OTHER certified product
         # of that brand, not just the described ones) and applied only as the
@@ -3356,7 +3363,13 @@ def resolve_reference_post(
         # every bound phrase out of the remainder before anything reads it
         # again. Digits are already dropped by `_content_words` downstream,
         # so "250mm" needs no handling here.
-        bound_words = [phrase for phrases in understanding.bound_phrases.values() for phrase in phrases]
+        # An empty phrase beside grounded specs has no understanding to read (the specs alone
+        # describe the set).
+        bound_words = [
+            phrase
+            for phrases in (understanding.bound_phrases if understanding else {}).values()
+            for phrase in phrases
+        ]
         if bound_words:
             query_text = _strip_predicate_words(query_text, bound_words)
 

@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 EXPIRED = "This link has expired."
+#: The in-browser sheet preview refuses a file bigger than this; `?download=1` still serves it.
+MAX_SHEET_PREVIEW_BYTES = 10 * 1024 * 1024
+TOO_BIG = "This file is too big to show here."
 #: How long the signed url a click receives stays usable.
 SIGNED_URL_SECONDS = 3600
 
@@ -87,11 +90,9 @@ def _rate_limited(request: Request) -> None:
 
     # Behind nginx (and the Next proxy when `NEXT_PUBLIC_API_URL` is unset) the socket peer
     # is the proxy, so keying on it would put every dealer in ONE bucket (security review
-    # M2). The repo's one rule for public routes is the left-most `X-Forwarded-For` entry,
-    # else the peer, and only a valid IP is used as the key. That entry is client-supplied,
-    # so this limit spreads honest load per client; resistance to guessing comes from the
-    # 80-bit code, not from this limit. The `/f/{code}` page calls this route on the API
-    # host directly, never through the Next proxy, which forwards no client address.
+    # M2). `client_ip` reads `X-Forwarded-For` right to left from trusted proxies only
+    # (SORENTO-CLIENT-IP), so a rotated fake header no longer escapes the bucket. Resistance
+    # to guessing still comes from the 80-bit code, not from this limit.
     ip = _as_ip(client_ip(request)) or (request.client.host if request.client else None)
     gate = rate_limit.hit(
         "chatbot_file_link",
@@ -131,7 +132,7 @@ def open_file_link(code: str, request: Request, db: Session = Depends(get_db)) -
 
 
 @router.get("/{code}/content")
-def file_link_content(code: str, request: Request, db: Session = Depends(get_db)) -> Response:
+def file_link_content(code: str, request: Request, download: int = 0, db: Session = Depends(get_db)) -> Response:
     """A spreadsheet's bytes, same-origin, for the in-browser preview (a signed CDN url has
     no CORS headers, so the page cannot read it directly). Spreadsheets only."""
     _rate_limited(request)
@@ -143,6 +144,8 @@ def file_link_content(code: str, request: Request, db: Session = Depends(get_db)
     except Exception:  # noqa: BLE001 - storage detail never reaches a public caller
         logger.warning("file link %s: download failed", link.id, exc_info=True)
         raise HTTPException(status_code=502, detail="The file is not available right now. Please try again.")
+    if not download and len(content) > MAX_SHEET_PREVIEW_BYTES:
+        raise HTTPException(status_code=413, detail=TOO_BIG)
     filename = link.filename or "file"
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     return Response(

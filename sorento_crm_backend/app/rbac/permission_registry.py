@@ -38,6 +38,10 @@ PERMISSION_REGISTRY.extend(_crud("user_management", "teams", "Teams"))
 PERMISSION_REGISTRY.extend([
     {"slug": "user_management.settings.view", "name": "View Settings", "description": "Permission to view system settings."},
     {"slug": "user_management.settings.edit", "name": "Edit Settings", "description": "Permission to edit system settings."},
+    # SETTINGS-IN-DB-SORENTO: the secrets and switches that used to be prod env vars (Respond.io
+    # webhook secret, Claude connector, nightly labeller). Granted to no role: admin and
+    # superadmin pass by bypass, so it is admin-only until someone grants it on purpose.
+    {"slug": "user_management.settings.secrets", "name": "Manage integration secrets", "description": "View and change the integration secrets and switches on Settings > Integrations."},
     {"slug": "user_management.logs.view", "name": "View Logs", "description": "Permission to view system logs."},
     {"slug": "user_management.account.view", "name": "View Account", "description": "Permission to view own account."},
 ])
@@ -931,5 +935,17 @@ PERMISSION_REGISTRY.extend([
         "slug": "sales.reports.view",
         "name": "View sales reports",
         "description": "Open the sales reports (Yearly comparison, Sales report), export them and ask for them on WhatsApp.",
+    },
+])
+
+
+# claude.ai connector (CLAUDE-CONNECTOR, contract section 3). Granted to NO role by the migration:
+# admins and superadmins do not get it by bypass either (owner ruling Q1 (a)); the connector checks
+# the role grants directly. Grant listing and revoke live in the shared service.
+PERMISSION_REGISTRY.extend([
+    {
+        "slug": "analytics.connector.use",
+        "name": "Use the Claude connector",
+        "description": "Connect claude.ai to read CRM data as yourself. Chat tools also need View Chat History.",
     },
 ])

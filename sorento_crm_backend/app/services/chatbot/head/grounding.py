@@ -473,6 +473,69 @@ def _names_a_class_not_a_code(raw: str, vocab: Vocabulary) -> bool:
     return bool(_covered_by_class(tokens, vocab))
 
 
+def _whole_spec_value(raw: str, vocab: Vocabulary) -> Grounded | None:
+    """The one registry value whose phrase IS `raw`, word for word, else None (no key, or
+    several keys, say it)."""
+    phrase = " ".join(_words(raw))
+    hits = [(entry, entry.phrases[phrase]) for entry in vocab.keys if phrase in entry.phrases]
+    if len(hits) != 1:
+        return None
+    entry, value = hits[0]
+    return Grounded(entry.key, entry.label, raw, value, entry.unit if entry.data_type == "numeric" else None, words=phrase)
+
+
+def several_values(raw: str, vocab: Vocabulary) -> list[str]:
+    """PROMO-SUBJECT-FILTER AC-25: the values a registry key's phrases END with `raw`, when
+    `raw` is one word that heads two or more of them ("cabinet": basin cabinet, side
+    cabinet, ...), shown the way the registry shows them. Empty otherwise."""
+    words = _words(raw)
+    if len(words) != 1 or _whole_spec_value(raw, vocab) is not None:
+        return []
+    head = words[0]
+    for entry in vocab.keys:
+        if head not in entry.heads:
+            continue
+        shown: list[str] = []
+        for phrase, value in entry.phrases.items():
+            if phrase.split()[-1] == head and len(phrase.split()) >= 2:
+                label = _display(entry, value)
+                if label not in shown:
+                    shown.append(label)
+        if len(shown) >= 2:
+            return shown
+    return []
+
+
+def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
+    """Does `text`, word for word, name a class, a product type or one registry value?"""
+    from app.services.product_class_signal import resolve_classes_for_term
+
+    said = " ".join(_words(text))
+    return bool(said) and (
+        said in vocab.class_phrases
+        or said in vocab.type_phrases
+        or _whole_spec_value(text, vocab) is not None
+        or bool(resolve_classes_for_term(db, text))
+    )
+
+
+def names_a_class_label(db: "Session", raw: str) -> bool:
+    """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
+    a class of the built-in vocabulary), never one of its synonyms?"""
+    said = " ".join(_words(raw))
+    return any(" ".join(_words(label)) == said for label in class_label_names(db))
+
+
+def class_label_names(db: "Session") -> list[str]:
+    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+
+    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
+    return labels
+
+
 def _names_two_types(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     """Does `raw` name two different product types word for word, and no type phrase of
     the registry as a whole (`product_spec_search._exact_classes` is None)?"""
@@ -650,6 +713,20 @@ def ground(
             continue
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
+        canonical = str(entity.get("canonical_code") or "").strip()
+        if (
+            hint in _CLASS_HINTS
+            and canonical
+            and _words(canonical) != _words(raw)
+            and not _names_a_type(db, raw, vocab)
+            and _names_a_type(db, canonical, vocab)
+        ):
+            # The parser hinted a class and named the catalogue's own name for what the
+            # customer typed ("seat cover" -> "toilet seat"): when the typed words name no type
+            # themselves, that name grounds, read like any typed one. Otherwise the raw grounds.
+            notes.append({"from": hint, "raw": raw, "to": canonical})
+            entity = {**entity, "raw": canonical, "canonical_code": None}
+            raw = canonical
         if hint == _PRODUCT_HINT and _names_a_class_not_a_code(raw, vocab):
             # Fix round 10 on PR #833 (owner, 28 Sep 2026: "i tried to search like gunmetal
             # basin, there is no such thing and it gives me flexible trap"): words with no
@@ -665,10 +742,22 @@ def ground(
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
+            if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
+                # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
+                # holds is an unknown descriptor, asked back as typed, never dropped.
+                grounded = [Grounded("", "", raw)]
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
             continue
         if hint in _CLASS_HINTS and raw and _names_two_types(db, raw, vocab):
+            whole = _whole_spec_value(raw, vocab)
+            if whole is not None:
+                # PROMO-SUBJECT-FILTER AC-24: the words name two types, but the whole phrase
+                # is one value of a registry key, said word for word ("basin cabinet",
+                # furniture_type basin_cabinet): that value is what was asked for.
+                add([whole], entity)
+                notes.append({"from": hint, "raw": raw, "to": [whole.__dict__]})
+                continue
             # Fix round 10 on PR #833: "water tap basin" holds two product types word for
             # word ("water tap", a tap, and "basin", a wash basin). No one product is
             # both, and reading it as either or as both would be a guess at what was

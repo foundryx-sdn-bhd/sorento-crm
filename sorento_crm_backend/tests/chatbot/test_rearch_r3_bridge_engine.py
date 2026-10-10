@@ -127,7 +127,7 @@ class TestPromotionAskUsesProductionCopy:
             resolve_services=_one_tier_resolve_services(
                 access_names=["Sorento Dealer", "Sorento Office"]
             ),
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         reply = (result.reply or {}).get("text") or ""
         assert reply.startswith(f"Which access level do you need for {PRODUCT_CODE}?"), reply
@@ -153,7 +153,7 @@ class TestPromotionAskUsesProductionCopy:
             resolve_services=_one_tier_resolve_services(
                 access_names=["Sorento Dealer", "Sorento Office"]
             ),
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         session = _session_of(session_factory)
         open_question = session.get("open_question") or {}
@@ -228,7 +228,7 @@ class TestPromotionAskMultiSelect:
             text_body=f"promo for {PRODUCT_CODE}",
             msg_id="zzt-r3-promo-ms-ask",
             resolve_services=resolve_services,
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         # The ask turn's own captured calls must be ONLY the per-tier promotion
         # probe - one call per entitled tier ("Sorento Dealer", "Sorento Office"),
@@ -281,7 +281,7 @@ class TestPromotionAskMultiSelect:
             text_body=answer_text,
             msg_id="zzt-r3-promo-ms-answer",
             resolve_services=resolve_services,
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         promo_calls = [c for c in captured2 if "promotion" in c[0]]
         assert promo_calls, f"{answer_text!r} must run at least one promotion fetch: {captured2}"
@@ -321,7 +321,7 @@ class TestOneEntitledTierNeverAsks:
             text_body=f"promo for {PRODUCT_CODE}",
             msg_id="zzt-r3-promo-one-tier",
             resolve_services=_one_tier_resolve_services(access_names=["Sorento Dealer"]),
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         session = _session_of(session_factory)
         open_question = session.get("open_question")

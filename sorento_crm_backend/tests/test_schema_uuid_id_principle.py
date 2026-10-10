@@ -55,6 +55,10 @@ EXEMPTIONS: dict[str, str] = {
     # One row per project, keyed BY the project. A surrogate uuid would invite a
     # second row per project, which is exactly what the PK is there to prevent.
     "projects.sales_profile": "JUNCTION - 1:1 extension, PK is project_id",
+    # One snapshot per closed episode, keyed BY its frame (a uuid, no FK: retention trims
+    # the frame and the fact stays). The writer's ON CONFLICT (frame_id) DO NOTHING is the
+    # idempotency; a surrogate id would allow a second row per episode.
+    "chatbot.chat_episode_facts": "JUNCTION - 1:1 extension, PK is frame_id (uuid)",
     # --- EXTERNAL (schema owned elsewhere) ---
     "verification_tokens": "EXTERNAL - NextAuth composite PK (identifier + token)",
     "chat_histories": "EXTERNAL - Respond/n8n ingest, BigInteger id by their design",

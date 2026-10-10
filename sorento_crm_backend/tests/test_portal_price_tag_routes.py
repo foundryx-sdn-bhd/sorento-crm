@@ -34,7 +34,7 @@ def _seed_contact_who_can_see_the_form(db: Session) -> str:
     """A contact whose market segment grants ``price_tag_request``
     (PLAN-portal-forms-market-segment D1: the grant moved off access types)."""
     from app.models.access import RespondContact
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     contact = RespondContact(
         id=str(uuid.uuid4()),
@@ -45,6 +45,7 @@ def _seed_contact_who_can_see_the_form(db: Session) -> str:
     db.flush()
     segment = seed_segment(db, kinds=["price_tag_request"])
     link_contact_segment(db, contact.id, segment.code)
+    link_contact_company(db, contact.id)
     return contact.id
 
 

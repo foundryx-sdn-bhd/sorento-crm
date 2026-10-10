@@ -288,11 +288,17 @@ def tier_probe_collect(
             rows = jsc.get(j, "answers") if isinstance(jsc.get(j, "answers"), list) else []
             availability[tier] = jsc.get(j, "has_result") is True or len(rows) > 0
 
+    # PROMO-SUBJECT-FILTER AC-11: a probe call that raised is `None`, not an empty answer.
+    # The ask names it instead of stamping "no promotion" over a tier nobody checked.
+    probe_failed = any(r is None for r in results)
+
     # `None` availability means "we could not determine this", NOT "nothing is available".
     # The renderer and the router both read it that way.
     any_available = any(availability.values()) if availability is not None else True
     return {
         **base,
+        # present only when a probe raised, so a recorded n8n capture stays byte-equal
+        **({"tier_probe_failed": True} if probe_failed else {}),
         "tier_availability": availability,
         "tier_available_list": (
             [t for t in default_policy().tier_order if availability.get(t)]
@@ -725,6 +731,30 @@ def entity_ids_transformer(
     for key in ("contact_id", "space_id", "access_levels", "is_active"):
         if jsc.has(semantic_input, key):
             out[key] = semantic_input[key]
+
+    # PROMO-SUBJECT-FILTER AC-4: the class the parser named narrows a promotion ask to
+    # promotions LINKED to products of that class. `scope_terms` is set only when the parser
+    # named no product (`turn_runtime.promo_filter`), so any product ids here are the set the
+    # resolver described from the brand / class words, never the subject: they are dropped.
+    # A typed product code carries no `scope_terms` and keeps the product_ids path alone.
+    if tool_name == TIER_PROBE_TOOL and jsc.array(jsc.get(semantic_input, "scope_terms")):
+        out.pop("product_ids", None)
+    if tool_name == TIER_PROBE_TOOL and (
+        jsc.array(jsc.get(semantic_input, "scope_terms")) or jsc.array(jsc.get(semantic_input, "promotion_types"))
+    ):
+        # Promotions the resolver matched by NAME off other words are never the subject: a
+        # subject or kind ask is answered by explicit links and the kind (AC-22, owner rule).
+        # A promotion the customer named and the resolver placed (`promo_filter`) stays.
+        named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
+        if named:
+            out["promotion_ids"] = named
+        else:
+            out.pop("promotion_ids", None)
+    if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
+        for key in ("scope_terms", "promotion_types", "brand_ids"):
+            narrowed = jsc.get(semantic_input, key)
+            if isinstance(narrowed, list) and narrowed:
+                out[key] = list(narrowed)
 
     # S4 points 2/7/9 (PLAN-chatbot-outstanding-report.md): crm_outstanding_report's
     # OWN contract (`product_code` a string, `scope`, `customer_ids`, `warehouse_codes`

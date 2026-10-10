@@ -37,6 +37,12 @@ class _NoMessagesRespondClient:
     """No Respond.io network calls - the window falls back to 'no incoming,
     closed' immediately (matches test_intervention_ticket_detail.py)."""
 
+    api_key = "x"
+
+    @classmethod
+    def for_identifier(cls, db, identifier):
+        return cls()
+
     def list_messages(self, identifier, limit=50, cursor=None):
         return {"items": []}
 
@@ -48,7 +54,7 @@ def db(monkeypatch):
     monkeypatch.setattr(queue_service, "enqueue_job", lambda *a, **k: None)
     monkeypatch.setattr(
         "app.services.integration_service.RespondClient",
-        lambda *a, **k: _NoMessagesRespondClient(),
+        _NoMessagesRespondClient,
     )
     with blank_session() as session:
         schema = session.get_bind()._execution_options["schema_translate_map"][None]
@@ -220,10 +226,10 @@ def test_unknown_tracking_id_is_also_404(client, db):
 
 
 def test_conversation_thread_route_offloads_to_a_threadpool(client, db, monkeypatch):
-    """The drawer's OTHER Respond call. GET .../{id}/conversation is `async def`
-    and ran ``fetch_respond_conversation_for_tracking`` -> ``RespondClient.
-    list_messages`` (a synchronous 15s-timeout HTTP call) INLINE, so opening a
-    drawer blocked the event loop twice: once here and once in .../ticket.
+    """GET .../{id}/conversation is `async def` over a synchronous service read
+    (``fetch_respond_conversation_for_tracking`` -> the local-first thread page,
+    which may do one live Respond read when the contact has no stored rows), so
+    it must run via ``run_in_threadpool`` rather than inline on the event loop.
     Same offload as its two siblings."""
     seed = _seed(db)
     tracking = _create_ticket(db, seed)

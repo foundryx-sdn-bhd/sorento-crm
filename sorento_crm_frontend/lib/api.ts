@@ -1,5 +1,3 @@
-import { NextRequest } from 'next/server';
-
 import { impersonationStore } from '@/lib/impersonation-store';
 import { REQUEST_TIMED_OUT_MESSAGE } from '@/lib/api-client';
 import {
@@ -705,13 +703,4 @@ export async function apiFetch(
     }
   }
   return response;
-}
-
-export function getClientIP(request: NextRequest): string {
-  return (
-    request.headers.get('x-forwarded-for') ||
-    request.headers.get('x-real-ip') ||
-    //|| request.socket.remoteAddress
-    'unknown'
-  );
 }

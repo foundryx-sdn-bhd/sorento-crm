@@ -137,7 +137,7 @@ def _product(db, stem: str, *, company_id: str = SORENTO, class_label=None, list
 
 def _contact(db):
     from app.models.access import RespondContact
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     contact = RespondContact(
         id=_uid(), phone_number=f"+60{uuid.uuid4().hex[:9]}", name=unique_code("contact")
@@ -146,6 +146,7 @@ def _contact(db):
     db.flush()
     segment = seed_segment(db, kinds=["price_tag_request"])
     link_contact_segment(db, contact.id, segment.code)
+    link_contact_company(db, contact.id)
     return contact
 
 

@@ -295,6 +295,20 @@ def _handler_chat_message_resolver(db, task):
     return resolve_pending(db, limit=limit)
 
 
+def _handler_chat_history_reconcile(db, task):
+    """One Respond.io delta read per recently active contact (lane CHAT-LOCAL-FIRST, R4).
+
+    The thread renders from `chat_histories`; this is what keeps that table honest when
+    the n8n or webhook feed missed a message. Enqueued on the `respond_io` RQ queue rather
+    than run inline: this heartbeat runs handlers one after another, and a few hundred
+    Respond calls here would stall every scheduled task behind them (review B5). Knobs on
+    the task's `metadata`: `activity_days` (7), `concurrency` per workspace key (2),
+    `batch_limit` (500). The run's own counts are in the worker log."""
+    from app.tasks.chat_reconcile_tasks import enqueue_reconcile
+
+    return enqueue_reconcile(getattr(task, "metadata_", None))
+
+
 def _handler_chat_latency_watchdog(db, task):
     """Evaluate the WhatsApp round-trip p99 and the per-turn hard ceiling."""
     from app.services.system_health_alert_service import run_chat_latency_watchdog
@@ -579,6 +593,22 @@ def _chat_facts_sweep_tick():
         logger.error("Chat facts sweep tick failed: %s", e, exc_info=True)
 
 
+def _chat_topic_labeller_tick():
+    """APScheduler tick: queue the nightly chat topic labeller on `analytics` (CA-2). The job
+    runs on the worker (minutes of model calls); this only enqueues. Off unless
+    switched on (Settings > Integrations, CHAT_TOPIC_LABELLER_ENABLED as the fallback; read per
+    tick, so no restart). Never raises."""
+    try:
+        from app.services import runtime_settings
+        from app.tasks import chat_turns
+
+        if not runtime_settings.get("chat_topic_labeller_enabled"):
+            return
+        chat_turns.enqueue_chat_topic_labeller()
+    except Exception as e:
+        logger.error("Chat topic labeller tick failed: %s", e, exc_info=True)
+
+
 def _spo_container_relink_sweep_tick():
     """APScheduler tick: relink SPO allocations whose shipment arrived after
     they did (S5, review re-check, 2026-09-06). Owns its own DB session;
@@ -716,6 +746,7 @@ def register_task_handlers():
     register_handler("api_call_log_prune", _handler_api_call_log_prune)
     register_handler("import_job_rows_prune", _handler_import_job_rows_prune)
     register_handler("chat_latency_watchdog", _handler_chat_latency_watchdog)
+    register_handler("chat_history_reconcile", _handler_chat_history_reconcile)
     register_handler("project_staleness_sweep", _handler_project_staleness_sweep)
     register_handler("scm_analytics", _handler_scm_analytics)
     register_handler("scm_reorder_run", _handler_scm_reorder_run)
@@ -778,6 +809,17 @@ def start_scheduler():
         trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
         id="chat_facts_sweep",
         name="Chat analytics facts sweep",
+        replace_existing=True,
+    )
+
+    # Chat topic labeller (CA-2): nightly at 02:15 Malaysia, beside the facts sweep. Labels
+    # only asks with no topic or a stale taxonomy version; does nothing before taxonomy v1
+    # has leaves. An ask the sweep adds tonight is labelled the next night.
+    scheduler.add_job(
+        _chat_topic_labeller_tick,
+        trigger=CronTrigger(hour=2, minute=15, timezone="Asia/Kuala_Lumpur"),
+        id="chat_topic_labeller",
+        name="Chat topic labeller",
         replace_existing=True,
     )
 

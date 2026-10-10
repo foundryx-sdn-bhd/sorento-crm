@@ -197,7 +197,7 @@ def test_handover_remark_raised_rows_use_the_verb_label():
     )
     assert (
         handover_remark("raised", _row(verb=IV_PRE_ORDERED), None)
-        == "PRE-ORDERED, DO NOT ORDER"
+        == "PRE-ORDERED"  # owner, 9 Oct (Q-B)
     )
     assert (
         handover_remark("raised", _row(verb=IV_ALREADY_INBOUND), None)
@@ -207,18 +207,20 @@ def test_handover_remark_raised_rows_use_the_verb_label():
     order_back = handover_remark(
         "raised", _row(verb=IV_ORDER_BACK, cited_document="SPO-2026/08-0061"), None
     )
-    assert order_back.startswith("ORDER BACK")
-    assert "SPO-2026/08-0061" in order_back
+    # Owner, 9 Oct (Q-A): ORDER BACK, no document number.
+    assert order_back == "ORDER BACK"
 
 
-def test_handover_remark_appends_a_cs_note_after_the_verb():
-    """AC-H2: "`note` appended after ' - ' when present" (PLAN 3.3)."""
+def test_handover_remark_never_appends_the_row_note():
+    """AC-H2 as OI-EMAIL-PRINT (owner, 9 Oct) restated it: the row's note is an internal
+    stamp bag and stays in the CRM; REMARK is the verb alone
+    (`PLAN-oi-email-print-09oct.md` rule 1, AC-P1/AC-P2)."""
     from app.services.project_order_inquiry_service import handover_remark
 
     remark = handover_remark(
         "raised", _row(verb=IV_ORDER, note="Confirmed by WhatsApp"), None
     )
-    assert remark == "ORDER - Confirmed by WhatsApp"
+    assert remark == "ORDER"
 
 
 @pytest.mark.parametrize(
@@ -245,7 +247,7 @@ def test_handover_remark_settle_qty_down_cancel_balance_up_order():
         "settled", _row(verb=IV_ORDER, qty=Decimal("6"), delivery_date=WAS),
         {"qty": Decimal("10")},
     )
-    assert down == "CANCEL BALANCE 4 NOS"
+    assert down == "CANCEL 4"  # owner, 9 Oct (Q-D)
 
     up = handover_remark(
         "settled", _row(verb=IV_ORDER, qty=Decimal("15"), delivery_date=WAS),
@@ -274,7 +276,7 @@ def test_handover_remark_settle_to_zero_is_cancel_balance():
     remark = handover_remark(
         "cancelled", _row(verb=IV_ORDER, qty=Decimal("0")), {"qty": Decimal("10")}
     )
-    assert remark == "CANCEL BALANCE 10 NOS"
+    assert remark == "CANCEL ALL"  # owner, 9 Oct (Q-D)
 
 
 # --------------------------------------------------------------------------- #
@@ -375,7 +377,8 @@ def test_raised_rows_no_was_and_order_back_carries_cited_document(api, monkeypat
     assert plain["was"] is None
     order_back = next(l for l in lines if l["remark"].startswith("ORDER BACK"))
     assert order_back["was"] is None
-    assert "SPO-2026/08-0061" in order_back["remark"]
+    # Owner, 9 Oct (Q-A): the document stays on the row, not in REMARK.
+    assert order_back["remark"] == "ORDER BACK"
 
 
 # --------------------------------------------------------------------------- #
@@ -408,7 +411,7 @@ def test_settle_date_earlier_is_advance_later_is_delay(api, monkeypatch, new_dat
 
 @pytest.mark.parametrize(
     ("new_qty", "expected_remark"),
-    [("6", "CANCEL BALANCE 4 NOS"), ("15", "ORDER 5")],
+    [("6", "CANCEL 4"), ("15", "ORDER 5")],
 )
 def test_settle_qty_down_cancel_balance_up_order(api, monkeypatch, new_qty, expected_remark):
     client, world = api
@@ -445,7 +448,7 @@ def test_settle_to_zero_prints_cancel_balance(api, monkeypatch):
     line = matches[-1]["context"]["handover"]["lines"][0]
     assert line["qty"] == "0"
     assert line["was"]["qty"] == "10"
-    assert line["remark"] == "CANCEL BALANCE 10 NOS"
+    assert line["remark"] == "CANCEL ALL"
 
 
 # --------------------------------------------------------------------------- #
@@ -610,7 +613,7 @@ def test_retired_row_prints_cancelled_line(api, monkeypatch):
     `test_order_inquiry_changed_with_links_automation.py`'s
     `test_a_dropped_lines_cascade_linked_row_dispatches_when_retired` drives) - not a
     settle and not a same-line supersede. The retired row must still print as a CANCEL
-    BALANCE line: `qty` "0", `was.qty` the old qty, remark "CANCEL BALANCE <old> NOS".
+    BALANCE line: `qty` "0", `was.qty` the old qty, remark "CANCEL ALL" (owner, 9 Oct).
 
     The PLAN's revised rule (16 Sep, after AC-H19 was added) is that a retire prints
     ALWAYS, with no pairing to whatever else the same commit raises - a cross-reference
@@ -665,7 +668,7 @@ def test_retired_row_prints_cancelled_line(api, monkeypatch):
     assert matches, "the retire must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
 
-    cancelled = [l for l in lines if l["remark"] == "CANCEL BALANCE 10 NOS"]
+    cancelled = [l for l in lines if l["remark"] == "CANCEL ALL"]
     assert cancelled, f"no cancelled line for the retired row in {lines}"
     assert cancelled[0]["qty"] == "0"
     assert cancelled[0]["was"] == {"qty": "10"}
@@ -1076,8 +1079,8 @@ def test_named_changed_raised_row_settles_with_one_line(api, monkeypatch):
     S2 widens the `drafted` predicate to ALSO admit exactly this shape - a single
     still-owed ORDER/ORDER_BACK row, no links, not redirected, same verb the reconfirm
     would raise - so it settles in place instead: same row id, new qty, one `settled`
-    handover line (`CANCEL BALANCE 2 NOS`, not a `CANCEL BALANCE 10 NOS` + `ORDER 8`
-    pair)."""
+    handover line (`CANCEL 2`, not a `CANCEL ALL` + `ORDER 8` pair; wording per the
+    owner, 9 Oct)."""
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -1115,7 +1118,7 @@ def test_named_changed_raised_row_settles_with_one_line(api, monkeypatch):
     assert len(lines) == 1, (
         f"AC-R2-11: exactly one settled line, never a cancel+order pair, got {lines}"
     )
-    assert lines[0]["remark"] == "CANCEL BALANCE 2 NOS"
+    assert lines[0]["remark"] == "CANCEL 2"
     assert lines[0]["was"] == {"qty": "10"}
     assert lines[0]["qty"] == "8"
 
@@ -1183,7 +1186,7 @@ def test_named_verb_switch_supersedes(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    assert any(l["remark"].startswith("CANCEL BALANCE") for l in lines), lines
+    assert any(l["remark"] == "CANCEL ALL" for l in lines), lines
     assert any(l["remark"].startswith("ORDER BACK") for l in lines), lines
 
 
@@ -1235,7 +1238,7 @@ def test_named_two_live_rows_supersede(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    cancelled = [l for l in lines if l["remark"].startswith("CANCEL BALANCE")]
+    cancelled = [l for l in lines if l["remark"] == "CANCEL ALL"]
     assert len(cancelled) == 2, f"AC-R2-12: both still-owed rows must print cancelled, got {lines}"
 
 

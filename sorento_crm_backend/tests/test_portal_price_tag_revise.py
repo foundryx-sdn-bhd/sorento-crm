@@ -74,7 +74,7 @@ def _seed_ptag_config(
 
 def _seed_contact(db):
     from app.models.access import RespondContact
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     contact = RespondContact(
         id=str(uuid.uuid4()),
@@ -85,6 +85,7 @@ def _seed_contact(db):
     db.flush()
     segment = seed_segment(db, kinds=["price_tag_request"])
     link_contact_segment(db, contact.id, segment.code)
+    link_contact_company(db, contact.id)
     db.commit()
     return contact
 

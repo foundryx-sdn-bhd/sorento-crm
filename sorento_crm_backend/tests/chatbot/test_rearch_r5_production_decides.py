@@ -1105,7 +1105,7 @@ class TestRegressionGuardsMustStayGreen:
         result, captured = _run_turn(
             session_factory, monkeypatch, qf=qf, text_body="promo for ZZTNOPROMO",
             msg_id="zzt-r5-guard-promo-3tier", resolve_services=resolve_services,
-            mcp_response={"has_result": False, "items": []},
+            mcp_response={"has_result": True, "items": [{"description": "Fake promo"}]},
         )
         reply = (result.reply or {}).get("text") or ""
         assert reply.startswith("Which access level do you need for ZZTNOPROMO?"), reply
