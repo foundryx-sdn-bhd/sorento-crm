@@ -649,10 +649,10 @@ def _chat_report_ask(
         echo.append(("asker", [w.capitalize() for w in asker_words]))
     if named_categories:
         filters["category"] = named_categories
-        echo.append(("category", _lookup(db, ProductCategory, ProductCategory.category_name, named_categories, grants, "Category")))
+        echo.append(("category", sorted(set(_lookup(db, ProductCategory, ProductCategory.category_name, named_categories, grants, "Category")))))
     if named_brands:
         filters["brand"] = named_brands
-        echo.append(("brand", _lookup(db, Brand, Brand.brand_name, named_brands, grants, "Brand")))
+        echo.append(("brand", sorted(set(_lookup(db, Brand, Brand.brand_name, named_brands, grants, "Brand")))))
 
     data = ask.run_ask(
         db,

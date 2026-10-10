@@ -52,6 +52,17 @@ def _domains(db: Session) -> list[tuple[str, str, list[str]]]:
     return [(r[0], r[1] or "", [w for w in (r[2] or []) if w]) for r in rows if r[0] and r[0] != "chat_analytics"]
 
 
+MAX_BRANDS = 80
+
+
+def _brands(db: Session) -> list[str]:
+    """The distinct brand names the company holds, sorted and capped (the same scope as the session)."""
+    from app.models.product import Brand
+
+    rows = db.query(Brand.brand_name).filter(Brand.brand_name.isnot(None)).distinct().order_by(Brand.brand_name).limit(MAX_BRANDS).all()
+    return [r[0] for r in rows if r[0] and r[0].strip()]
+
+
 def _describe(domain: tuple[str, str, list[str]]) -> str:
     """`code (label; words: w1, w2)`, the words part left out when there are none."""
     code, label, words = domain
@@ -145,6 +156,7 @@ def extract_chat_report(
         codes = [d[0] for d in domains]
         system, _version = ai_prompt_registry.render(db, PROMPT_KEY)
         system = system.replace("{today}", today.isoformat()).replace("{domains}", "; ".join(_describe(d) for d in domains))
+        system = system.replace("{brands}", "; ".join(_brands(db)))
         provider = get_provider(provider_name, api_key, model=model)
         result = provider.chat(
             [

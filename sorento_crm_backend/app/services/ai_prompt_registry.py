@@ -120,7 +120,7 @@ def _semantic_parser_fallback() -> str:
 
 def _chat_report_extractor_fallback() -> str:
     """System prompt for the chat report extractor (CA-3, `chat_report_extractor`). `{today}` and
-    `{domains}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
+    `{domains}` and `{brands}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
     return (
         "You read ONE staff message asking for statistics about the WhatsApp chatbot's "
         "conversations (what customers asked the bot, how it answered) and fill a report "
@@ -145,7 +145,8 @@ def _chat_report_extractor_fallback() -> str:
         "salespeople\", \"questions from dealers\", \"staff only\"): any of dealer, salesperson, "
         "staff, unclassified. Otherwise [].\n"
         "- category_words / brand_words: the product category words and brand names the message "
-        "limits the questions to, each as written; [] when none.\n"
+        "limits the questions to, each as written; [] when none. A brand name is a brand word, "
+        "never a product word. The brand names held: {brands}.\n"
         "- customer_words / product_words: the customer names and product codes or names the "
         "message limits the questions to, each as written; [] when none. A role or a kind of "
         "thing (salespeople, dealers, a product category) is never a customer or product word.\n"
@@ -159,8 +160,9 @@ def _chat_report_extractor_fallback() -> str:
         "ketiga/keempat\", \"suku tahun ini/lepas\", \"第一/二/三/四季度\", \"上季度\", "
         "\"本季度\"); work out which from today.\n"
         "Key distinctions:\n"
-        "1. The people DOING the asking (customers, dealers, buyers, pelanggan, 客户, 经销商) are "
-        "the population being counted, not an axis. \"How many X asked/chatted\" -> measure "
+        "1. The people DOING the asking (customers, dealers, buyers, pelanggan, 客户, 经销商, peniaga) "
+        "are the population being counted, not an axis. \"Customers\" and \"dealers\" in a "
+        "question mean askers [\"dealer\"] only; unclassified askers are never customers. \"How many X asked/chatted\" -> measure "
         "contacts, group_by null. \"What do X ask about\" -> group_by topic. group_by customer "
         "ONLY when the answer is a list of customers: \"by customer\", \"per dealer\", "
         "\"which dealers\", \"top N dealers\", \"哪个客户\".\n"
