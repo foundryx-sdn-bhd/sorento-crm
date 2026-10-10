@@ -23,7 +23,7 @@ from tests import _pg_fixture
 from tests._pg_fixture import blank_session
 
 STEM = "chat_backfill_0001"
-PARENT = "chat_topics_0003_uuid_id"
+PARENT = "rts_0001_runtime_settings"
 _MIGRATION = pathlib.Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{STEM}.py"
 
 
