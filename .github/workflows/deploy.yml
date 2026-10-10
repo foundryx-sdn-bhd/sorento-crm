@@ -1559,8 +1559,13 @@ jobs:
         working-directory: sorento_crm_frontend
         run: npx next typegen
 
+      # Private-repo runners have less RAM than public ones and tsc died
+      # with "JavaScript heap out of memory" (exit 134) on the default heap
+      # once the repo went private (10 Oct 2026).
       - name: Run tsc --noEmit
         working-directory: sorento_crm_frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run typecheck
 
   # Builds and pushes all three images in parallel with the test/validate gates
