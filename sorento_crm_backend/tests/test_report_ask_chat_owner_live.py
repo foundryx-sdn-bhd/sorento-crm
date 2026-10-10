@@ -154,3 +154,63 @@ def test_a_category_filter_of_one_name_in_two_companies_echoes_the_name_once(cli
     body = _ok(client, contact, group_by="topic", top_n=5, category_ids=[a.id, b.id])
     echoed = [f for f in body["filters"] if f["label"] == "Category"]
     assert len(echoed) == 1 and echoed[0]["values"] == [name], body["filters"]
+
+
+# --------------------------------------------------------------------------- CA-4 history before 5 Sep (merge follow-through)
+
+
+def _history_fact(db, when):
+    from app.models.chat_facts import ChatAskFact
+    from tests._chat_report_seed import _uid
+
+    row = ChatAskFact(
+        id=_uid(), source="history_backfill", turn_id=None, history_id=990000123, ask_seq=1,
+        contact_respond_id="ZZT-hist-1", audience="dealer", contact_type="dealer", asked_at=when,
+        channel="whatsapp", outcome="answered", is_media=False, phantom_dropped=False, tools=[],
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _run_august(db, date_to=None, date_from=None):
+    from datetime import date
+
+    from app.services.reports import ask
+
+    return ask.run_ask(
+        db, dataset="chat", basis="asks", measure="asks", group_by="topic", date_from=date_from or date(2026, 8, 1),
+        date_to=date_to or date(2026, 8, 31), filters={}, warehouse_codes=[], policy=None,
+        company_grants=None, sort="desc", top_n=5,
+    )
+
+
+def test_with_history_loaded_an_august_report_is_not_clipped_to_5_sep(db):
+    from tests._chat_report_seed import day
+
+    seed_world(db)
+    _history_fact(db, day(8, 20))
+    body = _run_august(db)
+    assert body["date_from"] == "2026-08-20", "the period opens where the facts start"
+    assert int(body["total"]["value"]) == 1, body
+
+
+def test_with_history_loaded_the_empty_message_names_the_earliest_day(db):
+    from datetime import date
+
+    from tests._chat_report_seed import day
+
+    seed_world(db)
+    _history_fact(db, day(8, 20))
+    body = _run_august(db, date_from=date(2026, 8, 21), date_to=date(2026, 8, 25))
+    assert body["rows"] == [] and body["message"] == "No asks in that period. Chat data starts 20 Aug 2026.", body
+
+
+def test_with_no_history_an_august_report_is_unchanged(db):
+    from datetime import date
+
+    seed_world(db)
+    body = _run_august(db, date_to=date(2026, 9, 6))
+    assert body["date_from"] == "2026-09-05", body
+    body = _run_august(db, date_from=date(2026, 10, 20), date_to=date(2026, 10, 25))
+    assert body["message"] == NO_ASKS, body

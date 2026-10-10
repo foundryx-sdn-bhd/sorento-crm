@@ -160,9 +160,12 @@ def test_ranking_by_topic_body(client, db):
     assert D(str(body["total"]["value"])) == 8, body["total"]
     assert body["rows"][0].get("numerator") is None and body["total"].get("numerator") is None
     assert body["coverage"]["percent"] == 88 and body["coverage"]["taxonomy_version"] == 2, body["coverage"]
-    assert body["coverage"]["line"] == (
-        "Topics labelled: 88% of asks (taxonomy v2). From bot traces, 5 Sep 2026 on."
-    ), body["coverage"]
+    # lead sign-off 11 Oct: CA-4 era lines in the coverage line
+    from tests.test_report_ask_chat import expected_coverage_line
+
+    base, eras = expected_coverage_line(db, 88, 2)
+    line = body["coverage"]["line"]
+    assert line.startswith(base) and all(era in line[len(base):] for era in eras), body["coverage"]
 
 
 def test_unlabelled_asks_rank_as_not_labelled_yet(client, db):

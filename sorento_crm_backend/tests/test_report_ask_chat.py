@@ -188,12 +188,30 @@ def test_failure_rate_by_topic_leaves_out_a_row_with_no_turns(db):
 # ------------------------------------------------------------------------ UAC-12 / 13 / 20
 
 
+def expected_coverage_line(db, percent, version, date_from=date(2026, 9, 5), date_to=date(2026, 9, 30)):
+    """The CA-3 coverage line followed by the CA-4 era lines the same run's ctx yields
+    (lead sign-off 11 Oct: CA-4 era lines in the coverage line); CA-4's wording is not copied here."""
+    from app.services.reports import engine
+    from app.services.reports.datasets import chat_asks
+    from app.services.reports.ask import CATALOGUE
+
+    params = {"date_basis": "asked_at",
+              "period": {"kind": "custom", "from": date_from.isoformat(), "to": date_to.isoformat()}}
+    ctx = engine.resolve(db, CATALOGUE["chat"]["asks"]["definition"], params)
+    base = f"Topics labelled: {percent}% of asks (taxonomy v{version}). From bot traces, 5 Sep 2026 on."
+    return base, chat_asks.history_lines(ctx)
+
+
 def test_coverage_names_percent_version_and_the_traces_note(db):
-    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts).
+    lead sign-off 11 Oct: CA-4 era lines in the coverage line."""
     seed_world(db)
     cov = _run(db, group_by="topic", top_n=10)["coverage"]
     assert cov["percent"] == 88 and cov["taxonomy_version"] == 2, cov
-    assert cov["line"] == "Topics labelled: 88% of asks (taxonomy v2). From bot traces, 5 Sep 2026 on.", cov
+    base, eras = expected_coverage_line(db, 88, 2)
+    assert cov["line"].startswith(base), cov
+    rest = cov["line"][len(base):]
+    assert all(line in rest for line in eras), (eras, cov)
 
 
 def test_a_period_before_the_traces_is_clipped_in_the_counts(db):
