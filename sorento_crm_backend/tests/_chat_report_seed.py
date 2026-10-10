@@ -14,7 +14,7 @@ Facts (all UTC; Malaysia is +8 so none crosses a day). Weeks are Monday weeks.
     F5   Sep 16  C3      t5   1   (none)                technical technical    (none)
     F10  Sep 21  C3      t6   2   inventory.other       answered  -            (none)
     F6   Sep 10  C4      noise                          noise     -            (none)   excluded
-    F7   Sep 10  C5      office contact, availability                          excluded
+    F7   Sep 10  C5      staff contact (an active CRM user is linked), availability   excluded
     F8   Sep  2  C6      before the traces begin (5 Sep)                       clipped
     F9   Oct  3  C7      after the September window                            outside
 
@@ -83,6 +83,21 @@ def add_item(db, fact, product, *, role="named", kind="product"):
     db.flush()
 
 
+def _staff_contact(db, n: str):
+    from app.models.access import RespondContact
+    from app.models.user import User
+
+    row = RespondContact(id=_uid(), phone_number=f"+6{uuid.uuid4().int % 10**10:010d}", respond_io_id=f"ZZT-{n}")
+    db.add(row)
+    db.flush()
+    user = User(id=_uid(), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name="ZZT Staff User",
+                status="ACTIVE", respond_contact_id=row.id)
+    user.is_trashed = False
+    db.add(user)
+    db.flush()
+    return row
+
+
 def seed_world(db) -> SimpleNamespace:
     from app.services.company_scope import DEFAULT_COMPANY_ID
     from tests._mc_lookup_seed import product
@@ -112,6 +127,7 @@ def seed_world(db) -> SimpleNamespace:
                   audience="staff")
     add_fact(db, when=day(9, 2), contact="c6", turn=t["t9"], domain="inventory", topic=av)
     add_fact(db, when=day(10, 3), contact="c7", turn=t["t10"], domain="inventory", topic=av)
+    w.c5 = _staff_contact(db, "c5")  # F7's asker: a linked CRM user, so the asker rule reads staff
     add_item(db, f1, w.p1)
     add_item(db, f2, w.p1)
     add_item(db, f3, w.p2)

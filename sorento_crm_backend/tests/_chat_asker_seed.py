@@ -112,8 +112,6 @@ def seed_asker_world(db) -> SimpleNamespace:
              customer_id=w.cust_a.id)
     add_fact(db, when=day(9, 13), contact="c10", turn=_uid(), domain="order", topic="order.status")
 
-    w.c5 = _respond_contact(db, "c5")
-    link_user(db, w.c5)
     _stamp(db, office=("c3", "c5", "c8", "c10"), dealer=("c1", "c2", "c9"))
 
     w.cat_wc = ProductCategory(id=str(uuid.uuid4()), category_code=f"ZZTWC{uuid.uuid4().hex[:6]}",
