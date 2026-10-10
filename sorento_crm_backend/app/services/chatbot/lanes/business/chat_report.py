@@ -150,7 +150,9 @@ def take_words(verdict: dict[str, Any]) -> dict[str, Any]:
             kept.append(e)
             continue
         raw = " ".join(jsc.js_string(_dict(e).get("raw") or "").split())
-        if raw and _dict(e).get("current_message") is not False and raw not in words:
+        # Only a word tagged `product` is kept as a product word; a category or brand tag is dropped
+        # (the extractor's category_words / brand_words are the filters), never resolved as a product.
+        if hint == "product" and raw and _dict(e).get("current_message") is not False and raw not in words:
             words.append(raw)
     return {**verdict, "entities": kept, "chat_report_products": words}
 
@@ -251,16 +253,25 @@ def _args(
     # A word that resolves to nothing is said, never an empty ranking that looks like data.
     for kind, param in (("customer", "customer_ids"), ("product", "product_ids")):
         ids: list[str] = []
-        words = (
-            _product_words(parse_output) if kind == "product"
-            else [
+        # The filter words are the extractor's (`customer_words`, `product_words`); what the parser
+        # tagged never filters a chat report and never makes a miss line. A reading without the key
+        # (an older shape) falls back to the parser's own words.
+        words_key = f"{kind}_words"
+        from_extractor = words_key in report
+        if from_extractor:
+            words = [" ".join(jsc.js_string(w).split()) for w in jsc.array(report.get(words_key))]
+        elif kind == "product":
+            words = _product_words(parse_output)
+        else:
+            words = [
                 " ".join(jsc.js_string(e.get("raw") or "").split())
                 for e in report_ask._current_entities(parse_output, kind)
             ]
-        )
         for word in words:
+            if not word:
+                continue
             found = _resolve_word(db, kind, word)
-            if not found and kind == "product":
+            if not found and kind == "product" and not from_extractor:
                 continue  # a parser word the report cannot use is not a filter, and not a miss line
             if dealer and kind == "customer":
                 # A dealer's word only ever names its own customers: another dealer's name
@@ -285,7 +296,12 @@ def _read_fresh(db: Any, parse_output: dict[str, Any], message_text: str) -> dic
     return {
         **parse_output,
         "chat_report": {
-            k: got.get(k) for k in ("group_by", "measure", "subject", "askers", "category_words", "brand_words")
+            k: got.get(k)
+            for k in (
+                "group_by", "measure", "subject", "askers", "category_words", "brand_words",
+                "customer_words", "product_words",
+            )
+            if k in got
         },
         "top_n": got.get("top_n"),
         "date_filter_start": got.get("date_from"),
@@ -295,6 +311,7 @@ def _read_fresh(db: Any, parse_output: dict[str, Any], message_text: str) -> dic
 
 HELD_KEYS = (
     "group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+    "customer_words", "product_words",
 )
 
 

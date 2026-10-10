@@ -35,6 +35,7 @@ ASKERS = ("dealer", "salesperson", "staff", "unclassified")
 MEASURES = ("asks", "failed", "failure_rate", "contacts")
 KEYS = (
     "group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words",
+    "customer_words", "product_words",
 )
 MAX_TOP_N = 1000
 
@@ -75,6 +76,8 @@ def _schema(domains: list[str]) -> dict[str, Any]:
             "askers": {"type": "array", "items": {"type": "string", "enum": list(ASKERS)}},
             "category_words": {"type": "array", "items": {"type": "string"}},
             "brand_words": {"type": "array", "items": {"type": "string"}},
+            "customer_words": {"type": "array", "items": {"type": "string"}},
+            "product_words": {"type": "array", "items": {"type": "string"}},
         },
     }
 
@@ -104,7 +107,7 @@ def _checked(data: Any, domains: list[str]) -> dict[str, Any] | None:
         return None
     if not isinstance(data["askers"], list) or any(a not in ASKERS for a in data["askers"]):
         return None
-    for key in ("category_words", "brand_words"):
+    for key in ("category_words", "brand_words", "customer_words", "product_words"):
         if not isinstance(data[key], list) or not all(isinstance(w, str) for w in data[key]):
             return None
     if not (_valid_date(data["date_from"]) and _valid_date(data["date_to"])):

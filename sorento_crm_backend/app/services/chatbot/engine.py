@@ -5193,7 +5193,7 @@ def _run_stages_body(  # noqa: PLR0915
                 scope_ids, scope_refused, gate_refusal = None, True, None
                 account_question = f"Which customer is Account {unnamed_account} for?"
             else:
-                gate_input = resolver_parse_output
+                gate_input = resolver_parse_output  # the strict re-gate after a re-plan reads the words as typed
                 resolver_parse_output, scope_ids, scope_refused, gate_refusal = _customer_scope_gate(
                     gate_scope, verdict, state_out.focus, resolver_parse_output, plan.domains
                 )
@@ -5465,6 +5465,19 @@ def _run_stages_body(  # noqa: PLR0915
                     account_question = _strict_line
                     resolved_kinds, resolved_candidates, unplaced_tokens, predicate = {}, {}, {}, None
                     turn_trace.add("customer_scope", {"refused": "customer_not_permitted", "reason": "replanned_fetch"})
+            if (
+                plan.fetch
+                and all(spec.domain == "chat_analytics" for spec in plan.fetch)
+                and not (gate_scope or {}).get("enforced")
+                and not customer_scope_refused
+                and isinstance(resolver_payload, dict)
+            ):
+                # A chat report is filtered by the extractor's customer words, not by what the parser
+                # tagged: a tag the resolver could not place is no miss line for this turn (a dealer,
+                # scope enforced, keeps its words for the gate).
+                unplaced_tokens = {}
+                if resolver_payload.get("_exit_kind") == "not_found":
+                    resolver_payload = {**resolver_payload, "_exit_kind": "continue"}
             if (
                 scope_ids is not None
                 and plan.ask is not None

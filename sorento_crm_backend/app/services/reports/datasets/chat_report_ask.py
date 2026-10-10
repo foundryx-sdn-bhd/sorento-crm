@@ -210,6 +210,22 @@ def unclassified_contacts(db: Any, definition: Any, params: dict) -> int:
     )
 
 
+def period_has_asks(db: Any, definition: Any, period: dict) -> bool:
+    """Is there a counted ask in the period at all, whatever the user's filters? (The defaults of the
+    report, such as noise out, still apply.)"""
+    from app.services.reports import engine
+
+    ctx = engine.resolve(db, definition, {"date_basis": "asked_at", "period": period})
+    preds = [ctx.date_basis >= ctx.period.start, ctx.date_basis < ctx.period.end_exclusive]
+    for param in ctx.definition.params:
+        chosen = ctx.values.get(param.key) or []
+        if isinstance(param, reg.SelectParam) and chosen:
+            condition = param.condition(ctx, chosen)
+            if condition is not None:
+                preds.append(condition)
+    return bool(db.execute(sa.select(sa.literal(1)).select_from(ASKS).where(*preds).limit(1)).first())
+
+
 def card_agents(db: Any, customer_ids: List[str]) -> dict:
     """customer id -> the customer card's agent name (None when it has none)."""
     from app.models.order import Customer

@@ -295,6 +295,7 @@ def run_ask(
 # ----------------------------------------------------------------------- chat (CA-3)
 
 NO_ASKS = f"No asks in that period. Chat data starts {chat_asks.TRACES_BEGIN.day} Sep 2026."
+NO_MATCH = "No asks match those filters in that period."
 
 
 def _chat_value(measure: str, totals: dict) -> Optional[dict[str, Any]]:
@@ -308,6 +309,13 @@ def _chat_value(measure: str, totals: dict) -> Optional[dict[str, Any]]:
         return {"value": float(pct), "numerator": num, "denominator": den}
     value = int(Decimal(totals.get(measure) or 0))
     return {"value": value} if value else None
+
+
+def _none_found(db: Session, definition: Any, period: dict, filters: dict[str, list[str]]) -> str:
+    """Nothing to show: the period holds asks but the filters match none, or the period is empty."""
+    if filters and chat_report_ask.period_has_asks(db, definition, period):
+        return NO_MATCH
+    return NO_ASKS
 
 
 def _run_chat(
@@ -348,7 +356,7 @@ def _run_chat(
     body["unclassified_askers"] = 0 if asker_split else None
     for word, values in filters.items():
         if not values:  # a filter resolving to nothing is zero rows, never "no filter"
-            body["message"] = NO_ASKS
+            body["message"] = _none_found(db, definition, params["period"], filters)
             return body
         params[word] = list(values)
     unclassified = (
@@ -360,7 +368,9 @@ def _run_chat(
         # The default asker filter (read now, so one switch changes it): staff and unclassified
         # out. A salesperson ranking is of salespeople only.
         params["asker"] = ["salesperson"] if group_by == "salesperson" else list(chat_report_ask.DEFAULT_ASKERS)
-        if "unclassified" not in params["asker"]:
+        # Only a default that itself leaves unclassified out says so (the salesperson axis narrows to
+        # salespeople by its nature, which is not a default exclusion).
+        if "unclassified" not in chat_report_ask.DEFAULT_ASKERS:
             # How many unclassified contacts the default left out, under the other filters.
             body["unclassified_left_out"] = chat_report_ask.unclassified_contacts(db, definition, params)
     coverage_ctx = engine.resolve(db, definition, params)
@@ -392,7 +402,7 @@ def _run_chat(
 
     grand = pivot.grand_total or {}
     if not int(Decimal(grand.get("asks") or 0)):
-        body["message"] = NO_ASKS
+        body["message"] = _none_found(db, definition, params["period"], filters)
         return body
     body["total"] = _chat_value(measure, grand) or {"value": 0}
     if not group_by:
