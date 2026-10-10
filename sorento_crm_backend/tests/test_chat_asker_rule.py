@@ -19,6 +19,8 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
+from app.services import contact_asker as asker
+
 from tests._chat_asker_seed import (
     _respond_contact,
     give_office_type,
@@ -147,3 +149,45 @@ def test_linking_a_contact_reclassifies_its_history(db):
     link_user(db, contact)
     db.commit()
     assert db.execute(query).scalar_one() == "staff"
+
+
+# ------------------------------------------------------------------ review round: a user link must be live
+
+
+def _classify_pair(db, contact, key):
+    from app.models.chat_facts import ChatAskFact
+
+    add_fact(db, when=day(9, 10), contact=key, turn=_uid(), domain="inventory")
+    db.commit()
+    facts = ChatAskFact.__table__
+    sql = db.execute(
+        sa.select(asker.sql_expr(facts.c.contact_respond_id)).where(facts.c.contact_respond_id == f"ZZT-{key}")
+    ).scalar_one()
+    return asker.classify(db, contact.id), sql
+
+
+@pytest.mark.parametrize(
+    ("kind", "status", "trashed"),
+    [("trashed", "ACTIVE", True), ("inactive", "INACTIVE", False), ("suspended", "SUSPENDED", False)],
+)
+def test_a_trashed_or_not_active_user_link_is_not_staff_and_falls_through(db, kind, status, trashed):
+    cust = seed_customer(db, name=unique_code("AskerCust"))
+    dealer = _respond_contact(db, f"{kind}_d")
+    link_user(db, dealer, status=status, trashed=trashed)
+    link_customer(db, dealer, cust)
+    alone = _respond_contact(db, f"{kind}_a")
+    link_user(db, alone, status=status, trashed=trashed)
+    salesperson = _respond_contact(db, f"{kind}_s")
+    link_user(db, salesperson, status=status, trashed=trashed)
+    link_agent(db, salesperson, f"ZZT Agent {kind}")
+    db.commit()
+    assert _classify_pair(db, dealer, f"{kind}_d") == ("dealer", "dealer")
+    assert _classify_pair(db, alone, f"{kind}_a") == ("unclassified", "unclassified")
+    assert _classify_pair(db, salesperson, f"{kind}_s") == ("salesperson", "salesperson")
+
+
+def test_an_active_user_link_is_still_staff(db):
+    contact = _respond_contact(db, "live")
+    link_user(db, contact)
+    db.commit()
+    assert _classify_pair(db, contact, "live") == ("staff", "staff")

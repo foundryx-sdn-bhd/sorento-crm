@@ -11,14 +11,16 @@ behind its facts an identity, then adds a few more asks. A fact's `contact_respo
     c8       a CRM user linked (users.respond_contact_id) -> staff    Sep 11 availability           1
     c9       active office access type + link cust_a -> staff         Sep 12 availability           1
     c10      agent "ZZT Agent Ten", no link    -> salesperson Sep 13 order.status                   1
-    c5       (no row; the office-typed F7, excluded by the contact type default, unchanged)
+    c5       a CRM user linked -> staff                            F7 Sep 10 availability       1
 
-c8 and c9 are stored with contact_type "dealer" on purpose: the pinned rule is that the
-`contact_type` default (office out) stays exactly as it is and the asker filter is a second,
-independent filter, so staff asks are kept out by DEFAULT_ASKERS alone.
+Every fact is stamped the way `facts._who` writes it: a user-linked contact is audience staff /
+contact_type office; else a customer link is dealer / dealer; else (no links, an agent link
+alone included) unknown / office. Crew ruling 10 Oct: DEFAULT_ASKERS is the ONE switch for chat
+runs, so the office stamp must not hide anyone. c5 (the office-typed F7) is given a user link so
+it is staff and DEFAULT_ASKERS alone keeps it out; naming staff brings back c5, c8, c9 (3 asks).
 
 Default (dealer + salesperson + unclassified): 8 asks, Dealer 2, Salesperson 4, Unclassified 2,
-Staff 0 shown. With every asker: 10 asks, Staff 2. Distinct unclassified contacts: 1 (c3).
+Staff 0 shown. With every asker: 11 asks, Staff 3. Distinct unclassified contacts: 1 (c3).
 cust_a's card agent is "ZZT Agent Two"; cust_b has none.
 
 Products: p1 (named on F1 F2) is category "ZZT Water Closet", brand "ZZT Sorento"; p2 (named on
@@ -51,12 +53,15 @@ def link_customer(db, contact, cust):
     db.flush()
 
 
-def link_user(db, contact):
+def link_user(db, contact, *, status: str = "ACTIVE", trashed: bool = False):
     from app.models.user import User
 
-    db.add(User(id=str(uuid.uuid4()), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name="ZZT Staff User",
-                status="ACTIVE", respond_contact_id=contact.id))
+    row = User(id=str(uuid.uuid4()), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name="ZZT Staff User",
+               status=status, respond_contact_id=contact.id)
+    row.is_trashed = trashed
+    db.add(row)
     db.flush()
+    return row
 
 
 def link_agent(db, contact, name: str):
@@ -72,6 +77,18 @@ def give_office_type(db, contact):
     from tests.test_top_selling_report import _access
 
     _access(db, contact, "Sorento Office")
+
+
+def _stamp(db, *, office, dealer):
+    """Re-stamp the facts' contact_type / audience the way `facts._who` would write them."""
+    from app.models.chat_facts import ChatAskFact
+
+    for tag, ctype, audience in (*((n, "office", None) for n in office), *((n, "dealer", "dealer") for n in dealer)):
+        audience = audience or ("staff" if tag in ("c5", "c8") else "unknown")
+        db.query(ChatAskFact).filter(ChatAskFact.contact_respond_id == f"ZZT-{tag}").update(
+            {"contact_type": ctype, "audience": audience}
+        )
+    db.flush()
 
 
 def seed_asker_world(db) -> SimpleNamespace:
@@ -94,6 +111,10 @@ def seed_asker_world(db) -> SimpleNamespace:
     add_fact(db, when=day(9, 12), contact="c9", turn=_uid(), domain="inventory", topic="inventory.availability",
              customer_id=w.cust_a.id)
     add_fact(db, when=day(9, 13), contact="c10", turn=_uid(), domain="order", topic="order.status")
+
+    w.c5 = _respond_contact(db, "c5")
+    link_user(db, w.c5)
+    _stamp(db, office=("c3", "c5", "c8", "c10"), dealer=("c1", "c2", "c9"))
 
     w.cat_wc = ProductCategory(id=str(uuid.uuid4()), category_code=f"ZZTWC{uuid.uuid4().hex[:6]}",
                                category_name="ZZT Water Closet", company_id=DEFAULT_COMPANY_ID)

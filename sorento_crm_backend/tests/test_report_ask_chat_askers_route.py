@@ -16,7 +16,9 @@ Pinned where the plan is silent (the coder follows, or asks the captain to chang
   counted ask in the period and the OTHER filters, ignoring the asker filter itself (so "dealers
   only" still says how many unclassified contacts are not in it), and it ignores DEFAULT_ASKERS
   for the same reason;
-* the `contact_type` default (office out) is unchanged and independent of the asker filter;
+* DEFAULT_ASKERS is the ONE switch (crew ruling 10 Oct): facts are stamped as `facts._who` writes
+  them (unlinked and user-linked contacts are contact_type "office"), and a chat run must still
+  count the unclassified ones. So the `contact_type` default must not apply to chat runs;
 * a customer row carries `agent` (the card agent's name, or null); other rows need not.
 CONFLICT flagged: the plan says an `unclassified` asking contact is refused like a contact
 without the grant, but existing UAC-17 tests (an unlinked contact holding the grant sees all)
@@ -113,8 +115,8 @@ def test_group_by_asker_has_the_four_words_and_staff_is_out_by_default(client, d
 def test_all_four_askers_named_adds_the_staff_row(client, db):
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="asker", top_n=10, askers=ALL)
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Staff": D(2), "Unclassified": D(2)}, body["rows"]
-    assert D(str(body["total"]["value"])) == 10 and body["unclassified_askers"] == 1, body
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Staff": D(3), "Unclassified": D(2)}, body["rows"]
+    assert D(str(body["total"]["value"])) == 11 and body["unclassified_askers"] == 1, body
 
 
 def test_group_by_salesperson_ranks_asking_salespeople_by_name(client, db):
@@ -132,7 +134,7 @@ def test_the_askers_filter_narrows_to_those_askers(client, db):
     body = _ok(client, _granted(db), group_by="topic", top_n=10, askers=["dealer"])
     assert D(str(body["total"]["value"])) == 2 and body["unclassified_askers"] == 1, body
     body = _ok(client, _granted(db), group_by="topic", top_n=10, askers=["staff"])
-    assert D(str(body["total"]["value"])) == 2, "naming staff brings the staff asks back"
+    assert D(str(body["total"]["value"])) == 3, "naming staff brings the staff asks back"
     body = _ok(client, _granted(db), group_by="topic", top_n=10, askers=["dealer", "salesperson"])
     assert D(str(body["total"]["value"])) == 6, body
 
@@ -182,7 +184,7 @@ def test_run_ask_takes_the_asker_filter_word(db):
         date_to=date(2026, 9, 30), filters={"asker": ["dealer", "staff"]}, warehouse_codes=[], policy=None,
         company_grants=None, sort="desc", top_n=10,
     )
-    assert {r["name"]: r["value"] for r in body["rows"]} == {"Dealer": 2, "Staff": 2}, body["rows"]
+    assert {r["name"]: r["value"] for r in body["rows"]} == {"Dealer": 2, "Staff": 3}, body["rows"]
 
 
 # ======================================================================== category and brand (UAC-30)
@@ -263,3 +265,64 @@ def test_customer_rows_carry_the_card_agent(client, db):
     by_name = {r["name"]: r for r in body["rows"]}
     assert by_name[w.cust_a.customer_name]["agent"] == "ZZT Agent Two", body["rows"]
     assert "agent" in by_name[w.cust_b.customer_name] and by_name[w.cust_b.customer_name]["agent"] is None, body["rows"]
+
+
+def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db):
+    """The prod-copy blocker: unlinked contacts are stamped contact_type office by the writer."""
+    from tests._chat_asker_seed import _respond_contact
+    from tests._chat_report_seed import _uid, add_fact, day
+
+    seed_asker_world(db)
+    _respond_contact(db, "c11")
+    for hour in (3, 4):
+        add_fact(db, when=day(9, 14, hour), contact="c11", turn=_uid(), domain="inventory",
+                 topic="inventory.availability", contact_type="office", audience="unknown")
+    db.commit()
+    contact = _granted(db)
+    body = _ok(client, contact, group_by="asker", top_n=10)
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(4)}, body["rows"]
+    assert body["unclassified_askers"] == 2, "c3 and c11, both unlinked"
+    body = _ok(client, contact, group_by="salesperson", top_n=10)
+    assert _rows(body)["ZZT Agent Ten"] == 1, "a salesperson with no customer link is stamped office too"
+
+
+# ======================================================================== review round: asks not items, agent by id
+
+
+def test_a_category_and_a_brand_count_asks_not_items(client, db):
+    from tests._chat_report_seed import add_item
+    from tests._mc_lookup_seed import product
+    from tests._pg_fixture import unique_code
+    from app.models.chat_facts import ChatAskFact
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    w = seed_asker_world(db)
+    before = _ok(client, _granted(db), group_by="category", top_n=10)
+    p3 = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("PC"))
+    p3.category_id, p3.brand_id = w.cat_wc.id, w.brand_s.id
+    f1 = db.query(ChatAskFact).filter(ChatAskFact.contact_respond_id == "ZZT-c1").order_by(ChatAskFact.asked_at).first()
+    add_item(db, f1, p3)  # the same ask now names two products of one category and brand
+    db.commit()
+    body = _ok(client, _granted(db), group_by="category", top_n=10)
+    assert _rows(body) == {"ZZT Water Closet": D(2), "ZZT Basin": D(1)}, body["rows"]
+    assert body["total"] == before["total"], "the total stays the ask count"
+    body = _ok(client, _granted(db), group_by="brand", top_n=10)
+    assert _rows(body) == {"ZZT Sorento": D(2), "ZZT Other": D(1)}, body["rows"]
+
+
+def test_same_named_customers_in_two_companies_each_show_their_own_agent(client, db):
+    from tests._chat_report_seed import _uid, add_fact, day
+    from tests._mc_lookup_seed import MOCHA_ID, customer, seed_mocha
+
+    w = seed_asker_world(db)
+    seed_mocha(db)
+    twin = customer(db, company_id=MOCHA_ID, name=w.cust_a.customer_name)  # no card agent
+    for hour in range(5):
+        add_fact(db, when=day(9, 18, hour), contact="c1", turn=_uid(), domain="inventory",
+                 topic="inventory.availability", customer_id=twin.id)
+    db.commit()
+    body = _ok(client, _granted(db), group_by="customer", top_n=10)
+    same = [r for r in body["rows"] if r["name"] == w.cust_a.customer_name]
+    assert sorted(((int(r["value"]), r["agent"]) for r in same), key=lambda t: t[0]) == [
+        (2, "ZZT Agent Two"), (5, None),
+    ], body["rows"]

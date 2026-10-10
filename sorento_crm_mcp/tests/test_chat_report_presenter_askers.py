@@ -94,3 +94,10 @@ def test_the_line_survives_a_low_coverage_reorder():
 def test_no_dash_or_middot_in_the_new_lines():
     text = _report_ask(_body(unclassified_askers=2))
     assert " · " not in text and chr(0x2014) not in text and chr(0x2013) not in text, text
+
+
+def test_the_asker_ranking_head_reads_askers_never_asked_bys():
+    rows = [{"rank": 1, "name": "Dealer", "value": 4}, {"rank": 2, "name": "Salesperson", "value": 3}]
+    head = _lines(_body(group_by="asker", group_label="Asked by", rows=rows, total_count=2,
+                        total={"value": 7}, unclassified_askers=1))[0]
+    assert "asked bys" not in head.lower() and "askers" in head.lower(), head
