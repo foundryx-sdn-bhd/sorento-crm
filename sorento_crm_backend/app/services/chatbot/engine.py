@@ -5003,10 +5003,14 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
-        if customer_scope is not None and "chat_analytics" in {
-            *(plan.domains or ()), *(spec.domain for spec in plan.fetch)
-        }:
-            # A chat analytics turn is scoped by the asker rule (dealer only), not by customer links.
+        if (
+            customer_scope is not None
+            and plan.fetch
+            and all(spec.domain == "chat_analytics" for spec in plan.fetch)
+            and "chatbot.analytics" in set(access.get("attributes") or [])
+        ):
+            # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer
+            # only), not by customer links. Any other fetch keeps the generic customer scope.
             from app.services.chatbot.lanes.business import chat_report as _chat_report
 
             customer_scope = _chat_report.dealer_scope(db, customer_scope, contact_respond_id, space_id_for_turn)
