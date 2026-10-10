@@ -8,61 +8,62 @@ current and the reconcile job (`chat_history_reconcile`, every 5 minutes) covers
 both missed.
 
 Nothing here is configured by the CRM: the steps below are done once, by the owner, in
-Respond.io and in the deployment's environment.
+Respond.io and in the CRM's settings.
 
-## 1. Choose a secret
+## 1. Respond.io: create the two webhooks
 
-Any long random string, for example:
-
-```
-openssl rand -hex 32
-```
-
-It is entered in two places (steps 2 and 3) and never anywhere else.
-
-## 2. Deployment: `RESPOND_WEBHOOK_SECRET`
-
-Add to the backend environment (`sorento_crm_backend/.env`, or the compose / secrets file
-the deploy uses):
-
-```
-RESPOND_WEBHOOK_SECRET=<the secret from step 1>
-```
-
-Restart the API containers. Until this is set the endpoint answers `503` and writes
-nothing, so the order of steps 2 and 3 does not matter.
-
-## 3. Respond.io: create the webhook
+Respond.io makes one webhook per event type, and generates each webhook's signing key
+itself (a base64 string such as `k9/Fq+2Zr8...Rg8=`); the key cannot be chosen or edited.
+So there are two webhooks and two keys.
 
 In Respond.io: **Settings -> Integrations -> Developer API -> Webhooks -> Add webhook**
 (the menu names are Respond.io's and may move; the page is the one that lists webhook
-subscriptions for the workspace).
+subscriptions for the workspace). Create both:
 
-| Field | Value |
-| --- | --- |
-| URL | `https://<crm host>/api/v1/public/respond/webhook` |
-| Events | `Incoming Message` (`message.received`) and `Outgoing Message` (`message.sent`) |
-| Signing key / secret | the secret from step 1 |
+| Webhook | URL | Event |
+| --- | --- | --- |
+| 1 | `https://<crm host>/api/v1/public/respond/webhook` | New Incoming Message (`message.received`) |
+| 2 | the same URL | New Outgoing Message (`message.sent`) |
 
-The CRM verifies each delivery as HMAC-SHA256 of the raw request body with that secret,
-read from the `x-respond-signature` header (also accepted: `x-webhook-signature`; hex or
-base64). If the Respond.io webhook page offers no signing key but does offer a custom
-header, add the header `X-Respond-Webhook-Secret` with the secret as its value instead:
-the CRM accepts either proof. One is required; a delivery with neither is refused with
-`401` and nothing is stored.
+Copy each webhook's signing key.
 
-Please confirm on the Respond.io page which of the two the webhook form offers, and the
-exact header name it documents, and note it on the PR: the sandbox that built this lane
-cannot reach `docs.respond.io`, so the header names above are the documented convention,
-not a live check.
+## 2. CRM: paste both keys
+
+**Settings -> Integrations -> Respond.io webhook -> Signing keys**: paste each webhook's
+signing key, one per line, and Save. The saved value is never shown again (only its last
+four characters); to change it, paste the full list again.
+
+Fallback for a deploy without the settings row: `RESPOND_WEBHOOK_SECRET` in the backend
+environment (`sorento_crm_backend/.env`, or the compose / secrets file the deploy uses),
+the keys separated by commas:
+
+```
+RESPOND_WEBHOOK_SECRET=<key of webhook 1>,<key of webhook 2>
+```
+
+Keys may be separated by new lines, commas or spaces (a base64 key contains none of them);
+empty entries are ignored. Until at least one key is set the endpoint answers `503` and
+writes nothing, so the order of steps 1 and 2 does not matter.
+
+## 3. How a delivery is checked
+
+The CRM verifies each delivery as HMAC-SHA256 of the raw request body, read from the
+`x-respond-signature` header (also accepted: `x-webhook-signature`; hex or base64), and
+accepts it when the signature matches ANY of the configured keys. A webhook configured
+with a custom header instead of a signing key may send `X-Respond-Webhook-Secret` with one
+of the keys as its value: the CRM accepts either proof. One is required; a delivery with
+neither, or signed with a key that is not in the list, is refused with `401` and nothing is
+stored.
+
+Adding a third webhook later (another event type) means adding its key as another line.
 
 ## 4. Verify
 
 1. Send a WhatsApp message from a phone to the business number.
 2. In the CRM, open **System -> Integration logs** and filter channel `respond_webhook`:
    one inbound row per delivery, status `success`, and the body of the message in the
-   payload column. A `failed` row with `Bad webhook signature` means the secret in step 2
-   and step 3 differ.
+   payload column. A `failed` row with `Bad webhook signature` means that webhook's signing
+   key is missing from the list in step 2.
 3. Open the contact's thread in the portal or the Conversations inbox: the message is
    there without a Respond.io read (`GET /api/v1/system/chat-history/respond-io-calls`
    shows the per-minute Respond.io call count; a webhook delivery adds none).
