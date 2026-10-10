@@ -186,11 +186,13 @@ def test_judge_calibrated_is_called(tmp_path):
     assert _report(out)["judge_status"] == "calibrated"
 
 
-def test_judge_cost_counts_against_budget(tmp_path):
-    d = _judge_data(tmp_path, agree=True)
+def test_judge_cost_not_charged_to_chatbot_budget(tmp_path):
+    # round 9: the judge has its own budget; a tiny chatbot --budget-usd is not tripped by judge tokens
+    d, out = _judge_data(tmp_path, agree=True), tmp_path / "o"
     fakes.JUDGE_CFG["tokens"] = {"prompt": 1_000_000, "cached": 0, "output": 0}
-    rc = main(["--data-dir", str(d), "--engine", ENGINE, "--judge", "tests.chatbot_eval.fakes:FakeJudge", "--budget-usd", "0.5"])
-    assert rc == 3
+    rc = main(["--data-dir", str(d), "--engine", ENGINE, "--judge", "tests.chatbot_eval.fakes:FakeJudge", "--budget-usd", "0.5", "--out", str(out)])
+    assert rc == 0
+    assert _report(out)["stopped_reason"] is None
 
 
 # 7
