@@ -233,6 +233,9 @@ class PriceTagRequestLineResponse(BaseModel):
     # ``code``/``name`` are - a bare id is never shown (AC-X-2).
     promotion_id: Optional[str] = None
     promotion_name: Optional[str] = None
+    # PRICE-TAG-A3-EXPIRED: the promotion's end date once it has ended (null
+    # while live), so the read-only line reads "<name> (expired <date>)".
+    promotion_expired_on: Optional[date] = None
     manual_sell_price: Optional[Decimal] = None
     # D3 (S7): why `sell_price` is what it is - `manual` | `promotion` |
     # `list`. Resolved alongside `list_price`/`sell_price`, same reason.
@@ -1112,6 +1115,10 @@ class LinePricingPromotionOption(BaseModel):
     id: str
     description: str
     sell_price: float
+    # PRICE-TAG-A3-EXPIRED: the end date of an ended A3 flyer still pricing
+    # tags inside its type's bound; null for a live promotion. The dropdown
+    # labels the option "(expired <date>)" from it.
+    expired_on: Optional[date] = None
 
 
 class LinePricingCandidateOut(BaseModel):

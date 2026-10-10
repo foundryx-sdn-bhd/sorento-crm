@@ -111,6 +111,7 @@ import {
 } from '../lib/portal-client';
 import type { TagSheetDesignPayload } from '@/lib/dealer-kit/design-payload';
 import { cn } from '@/lib/utils';
+import { promotionOptionName } from '@/lib/dealer-kit/line-pricing-types';
 
 /** Where an AI-extracted product line stands against the catalogue lookup
  *  (D7/AC-S6-2), shown in the extract dialog's own result table. */
@@ -304,8 +305,14 @@ function viewPromotionCell(line: PriceTagRequestLine, withLabel: boolean) {
         </div>
       )}
       <div className="text-sm font-medium">
-        {line.promotion_name ??
-          (line.sell_price_basis === 'manual' ? 'Manual price' : '-')}
+        {line.promotion_name != null
+          ? promotionOptionName({
+              description: line.promotion_name,
+              expired_on: line.promotion_expired_on,
+            })
+          : line.sell_price_basis === 'manual'
+            ? 'Manual price'
+            : '-'}
       </div>
     </div>
   );
@@ -3160,7 +3167,7 @@ function LineRow({
   const promotionOptions: SearchableSelectOption[] = (pricing?.promotion_options ?? []).map(
     (option) => ({
       value: option.id,
-      label: `${option.description} - ${formatRM(option.sell_price)}`,
+      label: `${promotionOptionName(option)} - ${formatRM(option.sell_price)}`,
     }),
   );
   // The last open (unresolved) part row - AC-S2-3's copy sits under it,
