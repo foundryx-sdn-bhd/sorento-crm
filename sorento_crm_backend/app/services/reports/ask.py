@@ -355,10 +355,14 @@ def _run_chat(
         chat_report_ask.unclassified_contacts(db, definition, params) if asker_split else None
     )
     body["unclassified_askers"] = unclassified
+    body["unclassified_left_out"] = None
     if "asker" not in params:
-        # The default asker filter (read now, so one switch changes it): staff testing out. A
-        # salesperson ranking is of salespeople only.
+        # The default asker filter (read now, so one switch changes it): staff and unclassified
+        # out. A salesperson ranking is of salespeople only.
         params["asker"] = ["salesperson"] if group_by == "salesperson" else list(chat_report_ask.DEFAULT_ASKERS)
+        if "unclassified" not in params["asker"]:
+            # How many unclassified contacts the default left out, under the other filters.
+            body["unclassified_left_out"] = chat_report_ask.unclassified_contacts(db, definition, params)
     coverage_ctx = engine.resolve(db, definition, params)
     percent, version = chat_asks.topics_coverage(coverage_ctx)
     body["coverage"] = {

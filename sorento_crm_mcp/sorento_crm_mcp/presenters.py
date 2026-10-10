@@ -3379,6 +3379,8 @@ def _chat_report_ask(body: dict) -> str:
     lines.append(f"Total: {_chat_figure(body.get('total') or {}, body)}")
     if body.get("unclassified_askers") is not None:
         lines.append(f"Unclassified askers: {int(body['unclassified_askers']):,}")
+    if int(body.get("unclassified_left_out") or 0) > 0:
+        lines.append(f"Unclassified askers left out: {int(body['unclassified_left_out']):,}")
     coverage = body.get("coverage") or {}
     if coverage.get("line"):
         if int(coverage.get("percent") or 0) < _CHAT_COVERAGE_FLOOR:

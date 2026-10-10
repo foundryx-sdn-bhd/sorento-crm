@@ -96,3 +96,6 @@ class ReportAskChatResponse(BaseModel):
     coverage: Optional[ReportAskChatCoverage] = None
     # Distinct unclassified contacts, only when the reply splits or filters by asker.
     unclassified_askers: Optional[int] = None
+    # Distinct unclassified contacts the default asker filter left out; null when they are in or the
+    # message chose its own askers.
+    unclassified_left_out: Optional[int] = None
