@@ -39,7 +39,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.services.chatbot import jsc
-from app.services.chatbot.contracts import EXIT_CONTRACT_FIELDS
+from app.services.chatbot.contracts import EXIT_CONTRACT_FIELDS, REFERENCE_NARROW
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import pickers
 from app.services.chatbot.lanes.business.gate import run_gate
@@ -574,6 +574,24 @@ def brand_tokens(entities: list[Any], brand_entities: Mapping[int, str] | None) 
     return out
 
 
+def _visible_reference_kinds(ctx: dict[str, Any]) -> list[str]:
+    """The reference kinds the engine put on `ctx["reference_kinds"]`; delivery orders only
+    when it put none (the closed default, never a kind the asker may not see)."""
+    kinds = ctx.get("reference_kinds")
+    return list(kinds) if isinstance(kinds, list) and kinds else ["customer_order"]
+
+
+def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]:
+    """The entities' hints, with every reference hint (a typed number whose kind may be any
+    visible one) replaced by the kinds this asker may probe."""
+    hints = [jsc.get(x, "hint") for x in entities]
+    if not any(h in REFERENCE_NARROW for h in hints):
+        return hints
+    out = [h for h in hints if h not in REFERENCE_NARROW]
+    out += [k for k in _visible_reference_kinds(ctx) if k not in out]
+    return out
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -670,7 +688,7 @@ def resolve_entity_body(
         # parallel (the route's own `raw_tokens` contract), so the shared resolver's code
         # reader is asked about "TAP SRTWT5608" and not only the folded "TAPSRTWT5608".
         "raw_tokens": [jsc.nullish_str(jsc.get(x, "raw")) for x in entities],
-        "allowed_entity_types": [jsc.get(x, "hint") for x in entities],
+        "allowed_entity_types": _allowed_entity_types(ctx, entities),
         "access_levels": (
             recomposed_access_levels
             if isinstance(recomposed_access_levels, list) and recomposed_access_levels
@@ -698,6 +716,8 @@ def resolve_entity_body(
     }
     if dry_run:
         body["dry_run"] = True
+    if any(jsc.get(x, "hint") in REFERENCE_NARROW for x in entities):
+        body["reference_kinds"] = _visible_reference_kinds(ctx)
     # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026, dev turn 4d18caff "any basin with thickness
     # 1.0mm" -> "Which one do you mean? 1. basin (promotion) 2. basin (customer)"): the
     # tokens whose kind the resolver must keep. Without it the resolver's cross-type rerun

@@ -48,8 +48,10 @@ from app.services.chatbot.contracts import (
     TURN_FAILURE_STAGES,
     Envelope,
     named_count,
+    visible_reference_kinds,
 )
 from app.services.chatbot.delegate import enabled_lanes_from
+from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
@@ -5188,6 +5190,11 @@ def _run_stages_body(  # noqa: PLR0915
             resolver_ctx = {
                 **ctx,
                 "parse": {**(ctx.get("parse") or {}), "output": resolver_parse_output},
+                # REF-PROBES: the reference kinds this asker may have probed.
+                "reference_kinds": visible_reference_kinds(
+                    (ctx.get("access") or {}).get("attributes"),
+                    is_staff_profile(state_out.profile),
+                ),
             }
             resolve_outcome = (
                 turn_runtime.resolve_kinds(
