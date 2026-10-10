@@ -43,7 +43,7 @@ _SORENTO_COMPANY_ID = "00000000-0000-0000-0000-000000000001"
 
 def _seed_contact_who_can_see_the_form(db) -> str:
     from app.models.access import RespondContact
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     contact = RespondContact(
         id=str(uuid.uuid4()),
@@ -54,6 +54,7 @@ def _seed_contact_who_can_see_the_form(db) -> str:
     db.flush()
     segment = seed_segment(db, kinds=["price_tag_request"])
     link_contact_segment(db, contact.id, segment.code)
+    link_contact_company(db, contact.id)
     return contact.id
 
 
