@@ -43,7 +43,7 @@ def env(monkeypatch):
             "app.api.v1.public.file_links.download_bytes", lambda url: b"col1,col2\n1,2\n"
         )
         try:
-            yield TestClient(app, raise_server_exceptions=False), db, signed
+            yield TestClient(app, raise_server_exceptions=False, client=("10.0.0.1", 50000)), db, signed
         finally:
             app.dependency_overrides.clear()
 

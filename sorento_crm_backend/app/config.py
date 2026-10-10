@@ -230,6 +230,10 @@ class Settings(BaseSettings):
     # Per-IP rate limits on unauthenticated/abuse-prone endpoints (fixed window,
     # fail-open if Redis down) - see PLAN-fix-security-cluster Sub-plan A. All
     # env-overridable; set max<=0 to disable a given limiter.
+    # SORENTO-CLIENT-IP: proxies whose `X-Forwarded-For` is believed (comma-separated CIDRs).
+    # Empty = loopback + private ranges (app/services/client_ip.py); set it when a proxy with a
+    # public address (a CDN) sits in front, and the default ranges are then no longer trusted.
+    trusted_proxies: str = ""                   # TRUSTED_PROXIES
     rate_limit_signup_max: int = 3              # signups per window per IP
     rate_limit_signup_window_seconds: int = 3600
     rate_limit_reset_max: int = 5              # password-reset requests per window per IP
