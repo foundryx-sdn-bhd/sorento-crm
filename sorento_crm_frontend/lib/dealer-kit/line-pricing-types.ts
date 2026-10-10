@@ -22,6 +22,24 @@ export interface LinePricingPromotionOption {
   id: string;
   description: string;
   sell_price: number;
+  /** `YYYY-MM-DD` when the promotion has ended but still prices inside its
+   * type's grace (PRICE-TAG-A3-EXPIRED); null while it is live. */
+  expired_on?: string | null;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The promotion's name as the dropdown and the line text show it:
+ * `<description> (expired 30 Sep 2026)` for an ended one still in its grace.
+ * Parsed by hand, not through `Date`, so a browser west of UTC cannot show
+ * the day before.
+ */
+export function promotionOptionName(option: LinePricingPromotionOption): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(option.expired_on ?? '');
+  if (!match) return option.description;
+  const [, year, month, day] = match;
+  return `${option.description} (expired ${Number(day)} ${MONTHS[Number(month) - 1]} ${year})`;
 }
 
 export interface LinePricingCandidate {
