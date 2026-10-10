@@ -296,6 +296,18 @@ def run_ask(
 # ----------------------------------------------------------------------- chat (CA-3)
 
 NO_ASKS = f"No asks in that period. Chat data starts {chat_asks.TRACES_BEGIN.day} Sep 2026."
+
+
+def _earliest_day(db: Session) -> date:
+    """The day chat data starts: the earliest fact's day (CA-4's own `default_period`)."""
+    return date.fromisoformat(chat_asks.default_period(db)["from"])
+
+
+def _no_asks(db: Session) -> str:
+    d = _earliest_day(db)
+    return f"No asks in that period. Chat data starts {d.day} {d.strftime('%b %Y')}."
+
+
 NO_MATCH = "No asks match those filters in that period."
 
 
@@ -319,7 +331,7 @@ def _none_found(
     "Holds asks" is read inside the caller's own scope, never across other customers."""
     if filters and chat_report_ask.period_has_asks(db, definition, period, scope_customers):
         return NO_MATCH
-    return NO_ASKS
+    return _no_asks(db)
 
 
 def _run_chat(
@@ -340,7 +352,7 @@ def _run_chat(
     from app.schemas.report import ReportViewConfig
     from app.services.reports import engine
 
-    date_from = max(date_from, chat_asks.TRACES_BEGIN)
+    date_from = max(date_from, _earliest_day(db))
     body: dict[str, Any] = {
         "status": "ok",
         "message": None,
@@ -384,7 +396,7 @@ def _run_chat(
         "percent": percent, "taxonomy_version": version, "line": chat_asks.coverage_line(percent, version, ctx=coverage_ctx)
     }
     if date_to < date_from:
-        body["message"] = NO_ASKS
+        body["message"] = _no_asks(db)
         return body
 
     if group_by in CHAT_ITEM_AXES:
