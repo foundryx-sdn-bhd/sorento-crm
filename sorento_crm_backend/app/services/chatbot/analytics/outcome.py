@@ -79,6 +79,16 @@ def _verdict(turn: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def message_type(turn: dict[str, Any]) -> str | None:
+    """The parser's message type (`casual`, `business_query`, ...): the apply event's verdict,
+    else the `understood` stage's facts (the labeller's noise rule, CA-2)."""
+    value = _verdict(turn).get("message_type")
+    if not _present(value):
+        understood = _stage(turn, "understood")
+        value = _dict(understood.get("facts")).get("message_type") if understood else None
+    return str(value) if _present(value) else None
+
+
 def _plan(turn: dict[str, Any]) -> dict[str, Any]:
     return _dict(_apply(turn).get("plan"))
 

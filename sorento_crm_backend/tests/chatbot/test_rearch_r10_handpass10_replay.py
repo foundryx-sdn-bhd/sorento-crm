@@ -71,6 +71,12 @@ def _position_of_tier(options: list[dict], label: str):
     )
 
 
+# PROMO-SUBJECT-FILTER AC-10 (#1527): a tier menu is only raised over levels the availability
+# probe found a promotion at; with every level empty the reply is "No current promotion for X."
+# The probe double answers one promotion, the same fixture #1527 gave the r3 / r6 tier tests.
+_PROMO_FOUND = {"has_result": True, "items": [{"description": "Fake promo"}]}
+
+
 class TestHandPass10PromotionAskRepeatsAfterATierPick:
     """Hand pass 10, owner ruling 21 Sep 2026: `decide.py`'s NEW_ASK must drop the
     carried tier the same way it already drops every other non-subject axis."""
@@ -93,7 +99,7 @@ class TestHandPass10PromotionAskRepeatsAfterATierPick:
         )
         result1, _c1 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf1, text_body=f"promo for {code}",
-            msg_id="zzt-hp10-tier-ask", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp10-tier-ask", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         open_question1 = _session_of(session_factory).get("open_question") or {}
@@ -115,7 +121,7 @@ class TestHandPass10PromotionAskRepeatsAfterATierPick:
         )
         result2, _c2 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf2, text_body=str(dealer_position),
-            msg_id="zzt-hp10-tier-pick-dealer", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp10-tier-pick-dealer", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         assert result2.status == "done", result2.error
@@ -129,7 +135,7 @@ class TestHandPass10PromotionAskRepeatsAfterATierPick:
         )
         result3, _c3 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf3, text_body=str(end_user_position),
-            msg_id="zzt-hp10-tier-pick-enduser", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp10-tier-pick-enduser", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         assert result3.status == "done", result3.error
@@ -161,7 +167,7 @@ class TestHandPass10PromotionAskRepeatsAfterATierPick:
         )
         result5, _c5 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf5, text_body=f"promo for {code}",
-            msg_id="zzt-hp10-tier-ask-2", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp10-tier-ask-2", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         reply5 = (result5.reply or {}).get("text") or ""
@@ -209,7 +215,7 @@ class TestHandPass10PromotionAskRepeatsAfterATierPick:
         )
         result, _c = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf, text_body=f"dealer promo for {code}",
-            msg_id="zzt-hp10-tier-named", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp10-tier-named", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         assert result.status == "done", result.error
