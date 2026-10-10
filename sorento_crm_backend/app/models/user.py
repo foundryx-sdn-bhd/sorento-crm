@@ -411,6 +411,17 @@ class SystemSetting(Base):
     smtp_password = Column(String(255), nullable=True)
     smtp_from = Column(String(255), nullable=True)  # sender address or "Name <email>"
 
+    # Runtime settings that used to be prod env vars (SETTINGS-IN-DB-SORENTO). Read through
+    # `app/services/runtime_settings.py`: a value here wins, NULL falls back to the env var of
+    # the same name. Secrets are `encrypt_secret` ciphertext and never leave the API in full.
+    chat_topic_labeller_enabled = Column(Boolean, nullable=True)  # NULL = CHAT_TOPIC_LABELLER_ENABLED
+    connector_ss_to_product_secret_ciphertext = Column(Text, nullable=True)
+    connector_product_to_ss_secret_ciphertext = Column(Text, nullable=True)
+    connector_connection_id = Column(String(255), nullable=True)
+    connector_ss_callback_url = Column(String(2048), nullable=True)
+    analytics_ro_database_url_ciphertext = Column(Text, nullable=True)
+    respond_webhook_secret_ciphertext = Column(Text, nullable=True)
+
     # Takeover cooldown: seconds between a takeover confirm and the actual reassignment,
     # during which the original assignee can reject and the initiator can cancel.
     # 0 = disabled (takeover commits instantly, pre-feature behavior). See PLAN-takeover-cooldown.

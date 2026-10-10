@@ -8,6 +8,7 @@ does the rest. Every other request passes straight through.
 """
 from __future__ import annotations
 
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -34,7 +35,9 @@ class ConnectorPreflightMiddleware:
             await self.app(scope, receive, send)
             return
         try:
-            claims = verify_token(token)
+            # Off the event loop: the check may read the connector settings from the database
+            # (SETTINGS-IN-DB-SORENTO, security review H1).
+            claims = await run_in_threadpool(verify_token, token)
         except ConnectorError as exc:
             await JSONResponse(exc.detail, status_code=exc.status_code)(scope, receive, send)
             return
