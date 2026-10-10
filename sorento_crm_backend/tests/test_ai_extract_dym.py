@@ -190,3 +190,26 @@ def test_resolver_failure_answers_plain_miss_with_no_suggestions(db, monkeypatch
     assert len(out) == 1
     assert out[0].match is None
     assert out[0].suggestions == []
+
+
+# The public route's `response_model=ExtractResult` keeps the field (a field the
+# model does not declare is dropped from the response in silence).
+def test_suggestions_survive_the_route_response_model():
+    from app.services.ai_extract.extract_service import (
+        ExtractedProductLine,
+        ExtractedProductSuggestion,
+        ExtractResult,
+    )
+
+    line = ExtractedProductLine(
+        product_code="SRTK1632SS",
+        suggestions=[
+            ExtractedProductSuggestion(
+                product_id="p1", product_code="SRTKT1632SS", product_name="ZZT"
+            )
+        ],
+    )
+    dumped = ExtractResult(values={}, products=[line]).model_dump(mode="json")
+    assert dumped["products"][0]["suggestions"] == [
+        {"product_id": "p1", "product_code": "SRTKT1632SS", "product_name": "ZZT"}
+    ]
