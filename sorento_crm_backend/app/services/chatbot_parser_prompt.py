@@ -855,6 +855,30 @@ every other key as you would without it. A message with no PO number: null. Neve
 a number, never take one from an earlier turn.
 """
 
+# REF-PROBES (owner, 11 Oct 2026): the KIND a typed reference number is, read from the words
+# HERE and nowhere else. The code never pattern-matches a number's shape; the resolver reads
+# the data. ADDITIVE ONLY, right beneath PO_REFS_ADDENDUM, published as a new UNLABELLED
+# version by migration `rkind_0001_parser_ref_kinds`.
+REF_KINDS_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFERENCE KINDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A reference number the CURRENT message types is one entity whose "hint" is the KIND of
+document the person NAMED, in any language or mix:
+  "DO" / "delivery order" -> "delivery_order"
+  "SO" / "sales order" -> "sales_order"
+  "PO ref" / "customer PO" / "their PO" -> "customer_po_ref"
+  "PO" / "purchase order" / "our PO" -> "purchase_order"
+  "PR" / "purchase request" -> "purchase_request"
+Put the number as typed WITHOUT the kind word ("PO 4500123" -> raw "4500123", hint
+"purchase_order"). A number typed with NO kind word keeps hint "order". Do not guess a kind
+from the number's shape. A status-of-a-number ask ("status of DO 202610-0838", "SO2610-0127
+status", "where is PR12") is domain_hint "order" whatever the kind word, and keep every
+other key as you would without it.
+"""
+
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
 # is peeled off, TOP_SELLING_ADDENDUM goes on beneath it, and it is put back as the tail.
 SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(ESCALATION_CONFIRMATION_ADDENDUM)
@@ -866,6 +890,7 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += REF_KINDS_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code
