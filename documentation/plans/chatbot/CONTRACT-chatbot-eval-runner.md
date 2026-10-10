@@ -187,3 +187,15 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - The >= 0.9 calibration rule is unchanged; with no calibration items the judge is never called.
 - Round 9b: a requested judge whose model has no entry in `PRICES` -> exit 2 naming the model, before the
   engine is built or the judge is called (a cap priced on the wrong model is not a cap).
+
+## Round 10 (crew analysis of the hidden baseline, 11 Oct)
+- Trace digest: `DbContactReset` deletes each case's turns, so a failure could not be traced to a stage. For
+  every engine turn the HttpTurnEngine keeps a digest from the trace it already reads, before the next reset:
+  `parser` (stage `understood` facts: domain, intent, entities, prompt_version), `resolved` (stage `looked_up`
+  `raw.envelopes[*]`: tool, entities, miss, unresolved, error), `tools` (trace entries with a `tool` key: tool +
+  args), `branch_kind`, `reply_text`. `Outcome.trace_digest` holds it; each results row carries `trace_digest`
+  (final turn) and `replay_digests` (history turns, in order). Missing stages give empty fields, never an error.
+- Stuck: the previous reply compared is already the bot's own previous turn in this run (verified on cand-0068,
+  0256, 0258, 0306: the replayed history re-asked the same thing and the bot correctly answered the same way).
+  Fix: the rubric is checked first; `stuck` only replaces a failing verdict (wrong) when the reply equals the
+  previous one. A repeat that meets the rubric is correct. Tool errors / blank stay first. GRADER_VERSION 8.
