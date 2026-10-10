@@ -321,18 +321,27 @@ def read_reply(db: Any, open_slot: dict[str, Any], message_text: str) -> dict[st
     )
 
 
-def dealer_scope(db: Any, scope: dict[str, Any], contact_respond_id: Any, space_id: Any) -> dict[str, Any]:
-    """A chat analytics turn's customer scope, enforced only for a DEALER by the asker rule
-    (`contact_asker`): a staff or salesperson contact with customer links is not a dealer, and the
-    route scopes chat by the same rule."""
+def asker_of(db: Any, contact_respond_id: Any, space_id: Any) -> str | None:
+    """The asker class (`contact_asker`) of the Respond.io contact, None when it resolves to no one."""
     from app.services import contact_asker
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
+    if not contact_respond_id or not str(contact_respond_id).strip():
+        return None
     contact_id = resolve_contact_with_null_workspace_fallback(
         db, contact_id=str(contact_respond_id).strip(), space_id=(str(space_id).strip() or None) if space_id else None
     )
-    dealer = bool(contact_id) and contact_asker.classify(db, str(contact_id)) == "dealer"
-    return {**scope, "enforced": bool(scope.get("enforced")) and dealer}
+    return contact_asker.classify(db, str(contact_id)) if contact_id else None
+
+
+def scope_for(fetch_domain: str, scope: dict[str, Any], *, asker: str | None, granted: bool) -> dict[str, Any]:
+    """The customer scope ONE fetch runs under. Only a `chat_analytics` fetch whose contact holds
+    the reveal is relaxed, and only for a non-dealer (the route scopes chat by the asker rule, so
+    customer links make a salesperson or staff contact no dealer); every other fetch keeps the
+    strict scope. A new dict: the turn's own scope is never replaced."""
+    if fetch_domain == DOMAIN and granted and asker != "dealer":
+        return {**scope, "enforced": False}
+    return {**scope}
 
 
 def settle(

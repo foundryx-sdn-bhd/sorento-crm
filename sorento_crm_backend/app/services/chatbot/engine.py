@@ -5003,17 +5003,22 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
+        # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
+        # every other use (the lane applies `chat_report.scope_for` to its own fetch).
+        gate_scope = customer_scope
         if (
             customer_scope is not None
             and plan.fetch
             and all(spec.domain == "chat_analytics" for spec in plan.fetch)
-            and "chatbot.analytics" in set(access.get("attributes") or [])
         ):
-            # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer
-            # only), not by customer links. Any other fetch keeps the generic customer scope.
             from app.services.chatbot.lanes.business import chat_report as _chat_report
 
-            customer_scope = _chat_report.dealer_scope(db, customer_scope, contact_respond_id, space_id_for_turn)
+            gate_scope = _chat_report.scope_for(
+                "chat_analytics", customer_scope,
+                asker=_chat_report.asker_of(db, contact_respond_id, space_id_for_turn),
+                granted=_chat_report.GRANT in set(access.get("attributes") or []),
+            )
 
         # Grant before roster (SF-1, PLAN-chatbot-answer-half-reattach.md slice R2):
         # an ungranted contact's sales-report ask is refused HERE, before the resolver
@@ -5058,6 +5063,7 @@ def _run_stages_body(  # noqa: PLR0915
 
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
+        gate_input: dict[str, Any] | None = None
         account_question: str | None = None
         resolved_kinds: dict[str, dict[str, int]] = {}
         compatible_entities: list[dict[str, Any]] = []
@@ -5169,7 +5175,7 @@ def _run_stages_body(  # noqa: PLR0915
             # REPORT-ENGINE 1b fix round F1: a dealer's sales ranking never has a location
             # word looked up (the resolver's miss line would probe warehouse codes); the
             # lane refuses the ask off the word itself (`report_ask._dealer_outside`).
-            if (customer_scope or {}).get("enforced"):
+            if (gate_scope or {}).get("enforced"):
                 resolver_parse_output = report_ask.dealer_location_words(resolver_parse_output)
             gate_refusal: str | None = None
             staff_level_refused = False
@@ -5187,8 +5193,9 @@ def _run_stages_body(  # noqa: PLR0915
                 scope_ids, scope_refused, gate_refusal = None, True, None
                 account_question = f"Which customer is Account {unnamed_account} for?"
             else:
+                gate_input = resolver_parse_output
                 resolver_parse_output, scope_ids, scope_refused, gate_refusal = _customer_scope_gate(
-                    customer_scope, verdict, state_out.focus, resolver_parse_output, plan.domains
+                    gate_scope, verdict, state_out.focus, resolver_parse_output, plan.domains
                 )
             scope_ids = _drill_offer_subject(scope_ids, state_out.focus, plan.trace)
             if (
@@ -5246,7 +5253,7 @@ def _run_stages_body(  # noqa: PLR0915
                         plan.ask is not None and "purchase_order" in plan.domains
                     ),
                     roster_caps=roster_caps,
-                    enforced_scope=bool((customer_scope or {}).get("enforced")),
+                    enforced_scope=bool((gate_scope or {}).get("enforced")),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds
@@ -5289,7 +5296,7 @@ def _run_stages_body(  # noqa: PLR0915
                     turn_trace.add("exact_codes_only", {"kept": [e.get("code") for e in compatible_entities]})
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
-            if staff_account_refusal and not (customer_scope or {}).get("enforced"):
+            if staff_account_refusal and not (gate_scope or {}).get("enforced"):
                 account_question, scope_refused, staff_level_refused = str(staff_account_refusal), True, True
             elif gate_refusal:
                 account_question = gate_refusal
@@ -5297,10 +5304,10 @@ def _run_stages_body(  # noqa: PLR0915
             # reason and the ids it dropped, so a refusal explains itself.
             screened_refused = False
             screened_dropped: list[str] = []
-            if customer_scope and customer_scope.get("enforced"):
+            if gate_scope and gate_scope.get("enforced"):
                 screened_refused, compatible_entities, resolved_candidates, screened_dropped = (
                     _screen_resolver_for_scope(
-                        customer_scope, resolver_payload, compatible_entities, resolved_candidates
+                        gate_scope, resolver_payload, compatible_entities, resolved_candidates
                     )
                 )
                 scope_refused = scope_refused or screened_refused
@@ -5329,7 +5336,7 @@ def _run_stages_body(  # noqa: PLR0915
                 resolver_payload = _pass_scope_gate(resolver_payload, [], force=True)
             elif scope_ids is not None:
                 # D3: the linked customers are this turn's customers.
-                compatible_entities = _scoped_compatible(customer_scope, scope_ids, compatible_entities)
+                compatible_entities = _scoped_compatible(gate_scope, scope_ids, compatible_entities)
                 resolver_payload = _pass_scope_gate(resolver_payload, compatible_entities, force=False)
                 turn_trace.add(
                     "customer_scope",
@@ -5442,6 +5449,22 @@ def _run_stages_body(  # noqa: PLR0915
                     resolved_candidates,
                     frozenset(unplaced_tokens),
                 )
+            if (
+                gate_scope is not customer_scope
+                and gate_input is not None
+                and not customer_scope_refused
+                and not all(spec.domain == "chat_analytics" for spec in plan.fetch)
+            ):
+                # The re-plan turned the chat report into another fetch: the relaxed gate does not
+                # speak for it. The strict gate decides again, and a refusal stands for the turn.
+                _, _strict_ids, _strict_refused, _strict_line = _customer_scope_gate(
+                    customer_scope, verdict, state_out.focus, gate_input, plan.domains
+                )
+                if _strict_refused or _strict_line:
+                    customer_scope_refused = True
+                    account_question = _strict_line
+                    resolved_kinds, resolved_candidates, unplaced_tokens, predicate = {}, {}, {}, None
+                    turn_trace.add("customer_scope", {"refused": "customer_not_permitted", "reason": "replanned_fetch"})
             if (
                 scope_ids is not None
                 and plan.ask is not None

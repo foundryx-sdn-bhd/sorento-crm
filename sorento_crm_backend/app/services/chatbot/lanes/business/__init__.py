@@ -1413,6 +1413,14 @@ def run_fetch(
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
     customer_scope = ctx.get("customer_scope") if isinstance(ctx.get("customer_scope"), dict) else {}
+    if chat_report.is_chat_report(parse_output) and db is not None:
+        # CA-3: THIS fetch is a chat report, scoped by the asker rule (dealer only), not by customer
+        # links; applied here, at fetch time, so no other fetch of the turn sees the relaxation.
+        customer_scope = chat_report.scope_for(
+            chat_report.DOMAIN, customer_scope,
+            asker=chat_report.asker_of(db, contact_id, space_id),
+            granted=chat_report.GRANT in set((ctx.get("access") or {}).get("attributes") or []),
+        )
     scoped_to_links = bool(customer_scope.get("enforced") and customer_scope.get("ids"))
     if scoped_to_links:
         semantic_input["scope_customer_ids"] = list(customer_scope["ids"])
