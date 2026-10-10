@@ -305,8 +305,14 @@ function viewPromotionCell(line: PriceTagRequestLine, withLabel: boolean) {
         </div>
       )}
       <div className="text-sm font-medium">
-        {line.promotion_name ??
-          (line.sell_price_basis === 'manual' ? 'Manual price' : '-')}
+        {line.promotion_name != null
+          ? promotionOptionName({
+              description: line.promotion_name,
+              expired_on: line.promotion_expired_on,
+            })
+          : line.sell_price_basis === 'manual'
+            ? 'Manual price'
+            : '-'}
       </div>
     </div>
   );

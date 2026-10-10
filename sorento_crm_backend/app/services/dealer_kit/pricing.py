@@ -78,7 +78,13 @@ def business_today() -> date:
     return datetime.now(timezone.utc).astimezone(_MY_TZ).date()
 
 
-def promotion_may_price(db: Session, promotion: Promotion, today: Optional[date] = None) -> bool:
+def promotion_may_price(
+    db: Session,
+    promotion: Promotion,
+    today: Optional[date] = None,
+    *,
+    types: Optional[tuple] = None,
+) -> bool:
     """Whether ``promotion`` may price a tile or a tag today, judged on its own.
 
     Live, or ended but still inside its TYPE's expired bound (owner ruling
@@ -93,13 +99,16 @@ def promotion_may_price(db: Session, promotion: Promotion, today: Optional[date]
     it ends (``marketing_service.sync_promotion_active_by_calendar_window``), so
     an ended promotion is always ``is_active=f`` and the type decides. Switched
     off INSIDE its window is still off: that is somebody pulling an offer.
+
+    ``types`` is ``promotion_serving.load_types(db)`` when the caller already
+    holds it, so a loop over many lines reads the type table once.
     """
     today = today or business_today()
     if promotion_window.is_live(
         promotion.is_active, promotion.start_date, promotion.end_date, today
     ):
         return True
-    types_by_id, default = promotion_serving.load_types(db)
+    types_by_id, default = types if types is not None else promotion_serving.load_types(db)
     verdict = promotion_serving.evaluate([promotion], types_by_id, default, today)
     return _ended_may_price(verdict, promotion.id)
 
@@ -337,9 +346,17 @@ def _covering_promotions(
     (PRICE-TAG-A3-EXPIRED). Which ended promotion is ``promotion_serving``'s
     call, not this function's: the type's bound, the latest end date of each
     type wins, and a live promotion of a type suppresses that type's ended
-    ones. Audience goes FIRST, because that rule ranks the set it is given: a
-    dealer must not lose the DEALER flyer to an OFFICE flyer ending later that
-    the dealer cannot see.
+    ones. That rule ranks the set it is GIVEN, so it is given one product's
+    promotions for one audience at a time:
+
+    * per product, because a line carries parts and candidates, and a live
+      (or newer) flyer on the part must not hide the ended flyer that is the
+      only offer on the parent - the scoping `promotion_serving` itself warns
+      about;
+    * per audience, after the viewer's own audience filter, because a dealer
+      must not lose the DEALER flyer to an end-user flyer ending later, and a
+      staff viewer (who sees every audience) must still be offered each
+      audience's own latest flyer.
 
     On top of it, live beats ended across types for the SAME product: an
     ended promotion is offered only when it covers a product no live
@@ -359,28 +376,35 @@ def _covering_promotions(
     )
     promotions: dict[str, Promotion] = {}
     covers: dict[str, set[str]] = {}
+    groups: dict[tuple, dict[str, Promotion]] = {}
     for promotion, product_id in rows:
         if not _may_see_offer(promotion.access_levels, viewer):
             continue
         promotions[promotion.id] = promotion
         covers.setdefault(promotion.id, set()).add(product_id)
+        audience = tuple(sorted(promotion.access_levels or []))
+        groups.setdefault((product_id, audience), {})[promotion.id] = promotion
     if not promotions:
         return []
 
     types_by_id, default = promotion_serving.load_types(db)
-    verdict = promotion_serving.evaluate(
-        list(promotions.values()), types_by_id, default, today
-    )
-    live_ids = verdict.served_ids - verdict.expired_but_usable_ids
+    live_ids: set[str] = set()
+    ended_ok: set[str] = set()
+    for group in groups.values():
+        verdict = promotion_serving.evaluate(list(group.values()), types_by_id, default, today)
+        live_ids |= verdict.served_ids - verdict.expired_but_usable_ids
+        ended_ok |= {pid for pid in group if _ended_may_price(verdict, pid)}
     live_covered = set().union(*(covers[pid] for pid in live_ids)) if live_ids else set()
 
     chosen = []
     for promotion_id, promotion in promotions.items():
         if promotion_id in live_ids:
             chosen.append(promotion)
-        elif _ended_may_price(verdict, promotion_id) and covers[promotion_id] - live_covered:
+        elif promotion_id in ended_ok and covers[promotion_id] - live_covered:
             chosen.append(promotion)
-        elif promotion_id == keep_id and promotion_may_price(db, promotion, today):
+        elif promotion_id == keep_id and promotion_may_price(
+            db, promotion, today, types=(types_by_id, default)
+        ):
             chosen.append(promotion)
     return chosen
 

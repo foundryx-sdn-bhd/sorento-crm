@@ -72,6 +72,10 @@ def _check_promotion_expired(db: Session, request: PriceTagRequest) -> None:
         for promo in db.query(Promotion).filter(Promotion.id.in_(promotion_ids)).all()
     }
     today = business_today()
+    # The type table read once for the whole request, not once per line.
+    from app.services import promotion_serving
+
+    types = promotion_serving.load_types(db)
 
     for index, line in enumerate(lines, start=1):
         if not line.promotion_id:
@@ -93,7 +97,7 @@ def _check_promotion_expired(db: Session, request: PriceTagRequest) -> None:
             # stands. Checked
             # before `is_active` because the hourly window task switches an
             # ended promotion off, so the flag would refuse every one of them.
-            if promotion_may_price(db, promo, today):
+            if promotion_may_price(db, promo, today, types=types):
                 continue
             raise AppException(
                 status_code=409,

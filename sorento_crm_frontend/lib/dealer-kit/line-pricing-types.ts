@@ -49,7 +49,7 @@ const MONTHS = [
  * the day before.
  */
 export function promotionOptionName(
-  option: LinePricingPromotionOption,
+  option: Pick<LinePricingPromotionOption, 'description' | 'expired_on'>,
 ): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(option.expired_on ?? '');
   if (!match) return option.description;

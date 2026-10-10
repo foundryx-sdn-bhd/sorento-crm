@@ -202,7 +202,9 @@ def test_a3_grace_is_the_types_180_days_inclusive(db, types):
     day_180 = _promotion(
         db, [(product, "69.00")], promo_type=types["a3_flyer"], end=TODAY - timedelta(days=180)
     )
-    assert _price(db, product)["auto_promotion_id"] == day_180.id
+    row = _price(db, product)
+    assert row["auto_promotion_id"] == day_180.id
+    assert row["sell_price"] == Decimal("69.00")
 
     day_180.end_date = TODAY - timedelta(days=181)
     db.flush()
@@ -301,6 +303,80 @@ def test_auto_pick_prefers_a_live_option_over_a_cheaper_ended_one_on_a_combo_lin
     assert totals == {live.id: Decimal("780.00"), ended.id: Decimal("700.00")}
     assert row["auto_promotion_id"] == live.id
     assert row["sell_price"] == Decimal("780.00")
+
+
+def _line(db, parent, part, *, viewer=DEALER):
+    return line_pricing(
+        db,
+        lines=[
+            {
+                "key": "L1",
+                "product_id": parent.id,
+                "part_product_ids": [part.id],
+                "candidate_product_ids": [],
+                "promotion_id": None,
+            }
+        ],
+        viewer=viewer,
+    )[0]
+
+
+def test_a_live_flyer_on_the_part_does_not_hide_the_ended_flyer_on_the_parent(db, types):
+    """Review B1: the same-type suppression is per PRODUCT. October's live A3
+    covers only the part; September's ended A3 is the parent's only offer."""
+    parent = _product(db, list_price="500.00")
+    part = _product(db, list_price="300.00")
+    ended = _promotion(db, [(parent, "200.00")], promo_type=types["a3_flyer"], end=SEP_30)
+    live = _promotion(
+        db, [(part, "290.00")], promo_type=types["a3_flyer"], end=TODAY + timedelta(days=60)
+    )
+
+    totals = {o["id"]: o["sell_price"] for o in _line(db, parent, part)["promotion_options"]}
+    assert totals == {live.id: Decimal("790.00"), ended.id: Decimal("500.00")}
+
+
+def test_a_newer_ended_flyer_on_the_part_does_not_hide_the_older_one_on_the_parent(db, types):
+    parent = _product(db, list_price="500.00")
+    part = _product(db, list_price="300.00")
+    august = _promotion(
+        db, [(parent, "200.00")], promo_type=types["a3_flyer"], end=date(2026, 8, 31)
+    )
+    september = _promotion(db, [(part, "250.00")], promo_type=types["a3_flyer"], end=SEP_30)
+
+    ids = {o["id"] for o in _line(db, parent, part)["promotion_options"]}
+    assert ids == {august.id, september.id}
+
+
+def test_staff_viewer_is_offered_each_audiences_latest_flyer(db, types):
+    """Review S1: the CRM prices with the staff viewer, which sees every
+    audience. A dealer flyer must not be ranked away by an end-user flyer
+    that ended later, nor a third same-day flyer by the tie cap of two."""
+    from app.services.dealer_kit.tag_data_service import staff_viewer
+
+    product = _product(db, list_price="84.00")
+    dealer = _promotion(
+        db, [(product, "69.00")], promo_type=types["a3_flyer"], end=SEP_30,
+        access_levels=["dealer"],
+    )
+    consumer = _promotion(
+        db, [(product, "75.00")], promo_type=types["a3_flyer"], end=date(2026, 10, 5),
+        access_levels=["end_user"],
+    )
+    both = _promotion(
+        db, [(product, "72.00")], promo_type=types["a3_flyer"], end=SEP_30,
+    )
+
+    ids = {o["id"] for o in _price(db, product, viewer=staff_viewer())["promotion_options"]}
+    assert ids == {dealer.id, consumer.id, both.id}
+
+
+def test_with_no_types_configured_an_ended_promotion_never_prices(db):
+    """Money fails closed where the chatbot's fallback serves everything."""
+    product = _product(db, list_price="84.00")
+    flyer = _promotion(db, [(product, "69.00")], end=SEP_30)
+    row = _price(db, product)
+    assert row["promotion_options"] == []
+    assert resolve_prices(db, [product], DEALER, flyer.id)[product.id].offer_price is None
 
 
 def test_among_ended_flyers_the_latest_end_date_wins(db, types):
@@ -412,6 +488,21 @@ def test_route_serialises_expired_on(db, types):
     _promotion(db, [(product, "69.00")], promo_type=types["a3_flyer"], end=SEP_30)
     payload = LinePricingRow(**_price(db, product)).model_dump(mode="json")
     assert payload["promotion_options"][0]["expired_on"] == "2026-09-30"
+
+
+def test_request_line_reports_when_its_promotion_ended(db, types):
+    """Review S2: the portal's read-only line labels the saved promotion too."""
+    from app.services.price_tag_request_service import PriceTagRequestService
+
+    product = _product(db, list_price="84.00")
+    flyer = _promotion(db, [(product, "69.00")], promo_type=types["a3_flyer"], end=SEP_30)
+    request = _request(db, product=product, promotion_id=flyer.id)
+
+    response = PriceTagRequestService.response_with_resolved_lines(db, request)
+    [line] = response.lines
+    assert line.promotion_name == flyer.description
+    assert line.promotion_expired_on == SEP_30
+    assert response.model_dump(mode="json")["lines"][0]["promotion_expired_on"] == "2026-09-30"
 
 
 # ------------------------------------------------------------------ export
