@@ -269,6 +269,9 @@ jobs:
             range="$HEAD_SHA"
           fi
           echo "Scanning $range"
+          # gitleaks reports "no leaks found" and exits 0 when git cannot
+          # resolve the range (e.g. a force-pushed `before`), so check it.
+          git rev-list --count "$range" >/dev/null
           gitleaks git --no-banner -v --redact \
             --config .gitleaks.toml --gitleaks-ignore-path . \
             --log-opts="--no-merges --first-parent $range" .
