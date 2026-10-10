@@ -680,6 +680,8 @@ def _dealer_args(monkeypatch, found, own, entity_words=("Zzt Dealer",)):
 
     monkeypatch.setattr(chat_report, "_resolve_word", lambda db, kind, word: list(found))
     verdict = _chat(*[_e(w, "customer") for w in entity_words])
+    # lead sign-off 10 Oct: customer word via the extractor reading
+    verdict["chat_report"] = {**verdict["chat_report"], "customer_words": list(entity_words)}
     return chat_report._args(None, verdict, verdict["entities"], dealer=True, own_ids=own)
 
 

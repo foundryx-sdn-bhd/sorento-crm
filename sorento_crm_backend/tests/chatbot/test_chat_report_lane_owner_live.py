@@ -103,7 +103,8 @@ def test_a_staff_contact_with_links_naming_another_customer_is_not_refused_by_th
     _link_dealer(console)
     _make_staff(console)
     other = _other_customer(console, "ZZT STAFF LOOKUP SDN BHD")
-    _fake_extractor(monkeypatch, lambda t, o: FULL)
+    # lead sign-off 10 Oct: customer word via the extractor reading
+    _fake_extractor(monkeypatch, lambda t, o: {**FULL, "customer_words": ["ZZT STAFF LOOKUP SDN BHD"]})
     text, calls = console.say(
         _chat(_e("ZZT STAFF LOOKUP SDN BHD", "customer")), "top 5 questions from ZZT STAFF LOOKUP SDN BHD in 2026"
     )
