@@ -177,6 +177,10 @@ class Settings(BaseSettings):
     # not arrived. When true the request enqueues on the `chat` queue and waits for the
     # result, the pattern `/external/media` already uses. CHATBOT_TURN_ON_WORKER.
     chatbot_turn_on_worker: bool = False
+    # PROMPT-DIET (documentation/plans/chatbot/PLAN-prompt-diet-11oct.md): the parser reads a core
+    # prompt plus the cards a turn needs instead of the one static prompt. Lane-only switch this
+    # step; off means today's static prompt, byte for byte. CHATBOT_PROMPT_DIET.
+    chatbot_prompt_diet: bool = False
     # Chat analytics CA-2: the nightly topic labeller (02:15 Malaysia, `analytics` queue) calls
     # the LLM, so it is off until switched on. Owner, 9 Oct 2026: labelling on dev only for now.
     # CHAT_TOPIC_LABELLER_ENABLED.

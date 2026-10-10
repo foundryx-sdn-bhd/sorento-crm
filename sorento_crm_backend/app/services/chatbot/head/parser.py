@@ -907,7 +907,7 @@ def assert_emission(emission: dict) -> None:
         )
 
 
-def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
+def parse(config: ParserConfig, user_block: str, *, prompt_cache_key: str | None = None) -> ParsedOutput:
     """One structured-output call. Raises `ParserError`; never returns a default.
 
     The return is the parser's 26 keys; `.usage` on it carries provider, model and token
@@ -937,7 +937,7 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
-            prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
+            prompt_cache_key=prompt_cache_key or f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc

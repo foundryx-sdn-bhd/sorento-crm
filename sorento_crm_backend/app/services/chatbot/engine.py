@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.ai_prompt_registry import render as render_prompt
 from app.models.base import set_brand_scope, set_company_scope
 from app.models.chatbot_turn import ChatbotTurn
 from app.services import llm_cassette
@@ -53,7 +54,7 @@ from app.services.chatbot.delegate import enabled_lanes_from
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
-from app.services.chatbot.head import grounding, parser
+from app.services.chatbot.head import grounding, parser, prompt_diet
 from app.services.chatbot.head.access import check_access, default_space_id
 from app.services.chatbot.head.build_ctx import build_ctx
 from app.services.chatbot.lanes import business, canned as canned_lanes, casual
@@ -1567,6 +1568,94 @@ def _close_turn(
         except Exception:  # noqa: BLE001 - analytics must never fail a turn
             db.rollback()
             logger.warning("chat facts: recording turn %s failed", turn_id, exc_info=True)
+
+
+def _sum_usage(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """Two parser calls on one turn are one spend: the token counts add, the rest is the second's."""
+    summed = dict(second)
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens"):
+        summed[key] = int(first.get(key) or 0) + int(second.get(key) or 0)
+    return summed
+
+
+def _parse_with_diet(
+    parser_config: parser.ParserConfig,
+    user_block: str,
+    *,
+    core: tuple[str, int | None],
+    cards: dict[str, str],
+    state_in: Any,
+    open_question: Any,
+    embed_input: str,
+    session_factory: Callable[[], Session],
+    facts: dict[str, Any],
+) -> tuple[Any, dict[str, Any] | None, bool]:
+    """PROMPT-DIET parse: core + the cards this turn needs + retrieved examples.
+
+    Returns `(emission, summed usage, True)`, or `(None, None, False)` when anything before
+    the first provider call failed, in which case the caller runs today's static prompt and
+    `facts["fallback"]` says why. A `ParserError` from a parse itself is the turn's failure,
+    exactly as on the static path. At most two parser calls: when the emission names an
+    area whose card was not loaded, the same prompt plus that card is asked once more and
+    the second emission is the one used. No DB session is open across the embedding or the
+    parser calls.
+    """
+    core_text, core_version = core
+    try:
+        vector = prompt_diet.embed_text(None, embed_input)
+        with _session(session_factory) as retrieval_db:
+            examples = prompt_diet.nearest_examples(retrieval_db, vector, k=5)
+        retrieved = {example.area for example in examples}
+        focus = state_in.focus
+        pinned = prompt_diet.pinned_areas(
+            focus_domains=focus.domains,
+            pending_kind=state_in.pending.kind if state_in.pending is not None else None,
+            open_question=open_question,
+            tasks=focus.tasks,
+        )
+        available = set(cards)
+        selected = prompt_diet.select_cards(retrieved_areas=retrieved, pinned=pinned, available=available)
+        system_prompt = prompt_diet.build_system_prompt(core_text, cards, selected, examples)
+    except Exception as exc:  # noqa: BLE001 - never stuck: the static prompt answers
+        logger.warning("prompt diet fell back to the static prompt: %s", exc, exc_info=True)
+        facts["fallback"] = f"{type(exc).__name__}: {exc}"
+        return None, None, False
+
+    def cache_key(names: list[str]) -> str:
+        return f"chatbot_parser_core:v{core_version or 'fallback'}:{'+'.join(names)}"
+
+    facts.update(
+        cards=list(selected),
+        pinned=sorted(pinned),
+        examples=[(example.id or "")[:8] or example.area for example in examples],
+    )
+    emission = parser.parse(
+        dataclasses_replace(parser_config, system_prompt=system_prompt),
+        user_block,
+        prompt_cache_key=cache_key(selected),
+    )
+    usage = dict(emission.usage)
+    absent = prompt_diet.missing(emission, set(selected))
+    if absent:
+        facts.update(missing=sorted(absent), recalled=True)
+        selected = prompt_diet.select_cards(
+            retrieved_areas=retrieved | absent, pinned=pinned, available=available
+        )
+        facts["cards"] = list(selected)
+        try:
+            emission = parser.parse(
+                dataclasses_replace(
+                    parser_config,
+                    system_prompt=prompt_diet.build_system_prompt(core_text, cards, selected, examples),
+                ),
+                user_block,
+                prompt_cache_key=cache_key(selected),
+            )
+        except parser.ParserError as exc:
+            exc.usage = _sum_usage(usage, exc.usage)
+            raise
+        usage = _sum_usage(usage, emission.usage)
+    return emission, usage, True
 
 
 def _record_parser_usage(
@@ -4364,6 +4453,23 @@ def _run_stages_body(  # noqa: PLR0915
         # the transcript verbatim - never the url, never the envelope's own text.
         latest_user_message = outcome.rendered_text or ""
 
+    # G6: a dry run may supply the emission instead of paying for it.
+    parser_bypassed = dry_run and "mock_reformulator_output" in harness_present
+    # PROMPT-DIET: the traced facts, and the core + cards read in the config session below.
+    # Any failure on the way to the parse leaves `diet_cards` None and the turn on today's
+    # static prompt, with the reason recorded in `fallback`.
+    diet_facts: dict[str, Any] = {
+        "on": prompt_diet.enabled() and not parser_bypassed,
+        "cards": [],
+        "pinned": [],
+        "examples": [],
+        "missing": [],
+        "recalled": False,
+        "fallback": None,
+    }
+    diet_core: tuple[str, int | None] | None = None
+    diet_cards: dict[str, str] | None = None
+
     # Resolved HERE, not inside the `received` session block above: a media-denied
     # turn returned before this line and never needed a provider configured for a
     # parser it will not call (AC-1810's "no parser call" reading extended to setup).
@@ -4381,6 +4487,14 @@ def _run_stages_body(  # noqa: PLR0915
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
+        if diet_facts["on"]:
+            try:
+                diet_core = render_prompt(db, "chatbot_parser_core", current_date=_current_date_directive())
+                cards_text, _cards_version = render_prompt(db, "chatbot_parser_cards")
+                diet_cards = prompt_diet.parse_cards(cards_text)
+            except Exception as exc:  # noqa: BLE001 - the static prompt is the fallback
+                diet_core = diet_cards = None
+                diet_facts["fallback"] = f"{type(exc).__name__}: {exc}"
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4428,16 +4542,33 @@ def _run_stages_body(  # noqa: PLR0915
     # rendered - added here rather than inside `context.assemble` since that
     # module renders layers, it does not resolve levels.
     context_report["level_source"] = memory_intake["level_source"]
-    # G6: a dry run may supply the emission instead of paying for it.
-    parser_bypassed = dry_run and "mock_reformulator_output" in harness_present
     parse_started = time.perf_counter()
+    prompt_version_used = parser_config.prompt_version
+    diet_usage: dict[str, Any] | None = None
     try:
         if parser_bypassed:
             parser_raw = _harness_value(envelope, "mock_reformulator_output")
+        elif diet_cards is not None and diet_core is not None:
+            parser_raw, diet_usage, diet_ran = _parse_with_diet(
+                parser_config,
+                user_block,
+                core=diet_core,
+                cards=diet_cards,
+                state_in=state_in,
+                open_question=open_question,
+                embed_input="\n".join(part for part in (previous_reply, latest_user_message) if part),
+                session_factory=session_factory,
+                facts=diet_facts,
+            )
+            if diet_ran:
+                prompt_version_used = diet_core[1]
+            else:
+                parser_raw = parser.parse(parser_config, user_block)
+                diet_usage = None
         else:
             parser_raw = parser.parse(parser_config, user_block)
         # Empty on a bypassed parse: no call, no spend to record.
-        parser_usage = getattr(parser_raw, "usage", {}) or {}
+        parser_usage = diet_usage or getattr(parser_raw, "usage", {}) or {}
         if not isinstance(parser_raw, dict) or not parser_raw:
             raise parser.ParserError("parser returned no usable emission")
         if parser_bypassed:
@@ -4467,8 +4598,9 @@ def _run_stages_body(  # noqa: PLR0915
             summary="Could not understand the message.",
             why="The parser did not return a usable answer, so the turn was not routed.",
             facts={
-                "prompt_version": parser_config.prompt_version,
+                "prompt_version": prompt_version_used,
                 "model": parser_config.model,
+                "prompt_diet": diet_facts,
                 # A replay miss fails here: the console check must not read it as a live
                 # spend (LLM-TEST-COST).
                 "llm_cassette": llm_cassette.mode_label(),
@@ -4534,7 +4666,8 @@ def _run_stages_body(  # noqa: PLR0915
             "domain": verdict.get("domain_hint"),
             "intent": verdict.get("intent_hint"),
             "entities": len(verdict.get("entities") or []),
-            "prompt_version": parser_config.prompt_version,
+            "prompt_version": prompt_version_used,
+            "prompt_diet": diet_facts,
             "tokens": int(parser_usage.get("total_tokens") or 0),
             # Chatbot memory lane A (contract section 6): the provider's own split,
             # alongside the total the trace already carried.
