@@ -134,3 +134,28 @@ def test_the_prompt_teaches_a_product_kind_goes_to_category_words_never_product_
         and "product_words" in near and ("never" in near or "not" in near)
         for at in hits
     ), text
+
+
+# --------------------------------------------------------------------------- "kind" belongs to the asker rule (live regression, prompt v7)
+
+
+def test_the_prompt_teaches_asked_by_a_role_sets_askers_whatever_the_axis():
+    """'top categories asked by salesperson' ranks categories AND limits who asked: askers is set
+    whatever the group_by. Structural pin on the askers bullet, loose wording."""
+    text = PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+    at = text.find("- askers:")
+    assert at != -1, "no askers bullet"
+    end = text.find("\n- ", at + 1)
+    bullet = text[at: end if end != -1 else at + 600]
+    assert any(w in bullet for w in ("whatever", "any group_by", "also when", "even when")) and "categor" in bullet, bullet
+
+
+def test_the_product_type_teaching_does_not_reuse_the_asker_word_kind():
+    """The asker rule owns the word 'kind'; the category-label / plain-product-word sentence must
+    not reuse it (v7 did, and 'asked by salesperson' stopped reading as askers)."""
+    text = PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+    hits = [i for i in range(len(text)) if text.startswith("category label", i)]
+    assert hits, "no teaching about category labels"
+    for at in hits:
+        near = text[max(0, at - 120): at + 120]
+        assert "kind" not in near, near
