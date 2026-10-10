@@ -135,3 +135,45 @@ def test_baseline_an_orders_only_turn_is_refused_for_a_customer_outside_the_link
         attributes=(OUTSTANDING_KEY,), matches=_matches(foreign_id), mcp_response={"has_result": False},
     )
     assert REFUSAL in reply and _calls(captured, REPORT) == [], (reply, captured)
+
+
+# --------------------------------------------------------------------------- the pure seam
+
+import copy  # noqa: E402
+
+import pytest  # noqa: E402
+
+SCOPE = {"ids": ["c1"], "names": {"c1": "ZZT OWN"}, "linked": [["c1", "ZZT OWN", "ZZT-1"]],
+         "staff": False, "enforced": True, "refusal": "Sorry, that isn't under your account."}
+
+
+@pytest.mark.parametrize("asker", ["salesperson", "staff", "unclassified", "dealer"])
+@pytest.mark.parametrize("granted", [True, False])
+def test_scope_for_chat_analytics_is_relaxed_only_for_a_granted_non_dealer(asker, granted) -> None:
+    """The engine must apply `scope_for` per fetch at fetch time, against the final plan
+    (security should-fix at e6e93c5d4: re-plan after the relaxation)."""
+    from app.services.chatbot.lanes.business import chat_report
+
+    got = chat_report.scope_for("chat_analytics", SCOPE, asker=asker, granted=granted)
+    relaxed = granted and asker != "dealer"
+    assert got["enforced"] is (not relaxed), (asker, granted, got)
+    assert {k: v for k, v in got.items() if k != "enforced"} == {k: v for k, v in SCOPE.items() if k != "enforced"}
+
+
+@pytest.mark.parametrize("domain", ["order", "sales", "inventory", "incoming", "purchase_order"])
+@pytest.mark.parametrize("asker", ["salesperson", "staff", "unclassified", "dealer"])
+def test_scope_for_any_other_fetch_domain_is_unchanged_whatever_the_asker(domain, asker) -> None:
+    """The engine must apply `scope_for` per fetch at fetch time, against the final plan
+    (security should-fix at e6e93c5d4: re-plan after the relaxation)."""
+    from app.services.chatbot.lanes.business import chat_report
+
+    assert chat_report.scope_for(domain, SCOPE, asker=asker, granted=True) == SCOPE
+
+
+def test_scope_for_never_mutates_its_input() -> None:
+    from app.services.chatbot.lanes.business import chat_report
+
+    before = copy.deepcopy(SCOPE)
+    chat_report.scope_for("chat_analytics", SCOPE, asker="salesperson", granted=True)
+    chat_report.scope_for("order", SCOPE, asker="salesperson", granted=True)
+    assert SCOPE == before
