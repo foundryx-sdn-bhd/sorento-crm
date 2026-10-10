@@ -600,6 +600,7 @@ def _chat_report_ask(
         if scoped is not None and group_norm is not None and group_norm not in ask.CHAT_DEALER_KEYS:
             raise AppException(403, _DEALER_MESSAGE, code="report_dimension_not_allowed")
     customers = scoped if scoped is not None else named_customers
+    scope_customers: list[str] | None = list(scoped) if scoped is not None else None
     scoped_book = False
     if asker == "salesperson":
         # Narrowed to its own book only when it has an agent link; a salesperson without one sees all.
@@ -613,6 +614,7 @@ def _chat_report_ask(
                 if agent_ids else set()
             )
             customers = [c for c in (named_customers or own) if c in own]
+        scope_customers = sorted(own)
 
     grants = {
         str(c)
@@ -665,6 +667,7 @@ def _chat_report_ask(
         policy=None,
         sort=sort_norm,
         top_n=top_n,
+        scope_customers=scope_customers,
     )
     return _chat_response(
         {

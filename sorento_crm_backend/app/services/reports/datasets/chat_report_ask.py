@@ -210,12 +210,19 @@ def unclassified_contacts(db: Any, definition: Any, params: dict) -> int:
     )
 
 
-def period_has_asks(db: Any, definition: Any, period: dict) -> bool:
+def period_has_asks(db: Any, definition: Any, period: dict, scope_customers: Any = None) -> bool:
     """Is there a counted ask in the period at all, whatever the user's filters? (The defaults of the
-    report, such as noise out, still apply.)"""
+    report, such as noise out, still apply.) `scope_customers` is the caller's own scope (a dealer's
+    customers, a salesperson's book): None = unscoped, a list (even empty) limits the probe to those
+    customers, so a scoped caller never learns that others asked."""
     from app.services.reports import engine
 
-    ctx = engine.resolve(db, definition, {"date_basis": "asked_at", "period": period})
+    if scope_customers is not None and not scope_customers:
+        return False
+    params: dict[str, Any] = {"date_basis": "asked_at", "period": period}
+    if scope_customers is not None:
+        params["customer"] = list(scope_customers)
+    ctx = engine.resolve(db, definition, params)
     preds = [ctx.date_basis >= ctx.period.start, ctx.date_basis < ctx.period.end_exclusive]
     for param in ctx.definition.params:
         chosen = ctx.values.get(param.key) or []

@@ -214,6 +214,7 @@ def run_ask(
     company_grants: Any = None,
     sort: str = "desc",
     top_n: Optional[int] = None,
+    scope_customers: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """The ranked rows, their cut and the whole set's total. `filters` maps a spec word to
     RESOLVED ids (channel: `dealer` / `project`); `warehouse_codes` are the raw codes named.
@@ -224,7 +225,7 @@ def run_ask(
     if dataset == "chat":
         return _run_chat(
             db, basis=basis, measure=measure, group_by=group_by, date_from=date_from, date_to=date_to,
-            filters=filters, sort=sort, top_n=top_n,
+            filters=filters, sort=sort, top_n=top_n, scope_customers=scope_customers,
         )
     entry = CATALOGUE["sales"][basis]
     definition = entry["definition"]
@@ -311,9 +312,12 @@ def _chat_value(measure: str, totals: dict) -> Optional[dict[str, Any]]:
     return {"value": value} if value else None
 
 
-def _none_found(db: Session, definition: Any, period: dict, filters: dict[str, list[str]]) -> str:
-    """Nothing to show: the period holds asks but the filters match none, or the period is empty."""
-    if filters and chat_report_ask.period_has_asks(db, definition, period):
+def _none_found(
+    db: Session, definition: Any, period: dict, filters: dict[str, list[str]], scope_customers: Any = None
+) -> str:
+    """Nothing to show: the period holds asks but the filters match none, or the period is empty.
+    "Holds asks" is read inside the caller's own scope, never across other customers."""
+    if filters and chat_report_ask.period_has_asks(db, definition, period, scope_customers):
         return NO_MATCH
     return NO_ASKS
 
@@ -329,6 +333,7 @@ def _run_chat(
     filters: dict[str, list[str]],
     sort: str,
     top_n: Optional[int],
+    scope_customers: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """The chat dataset's ranked rows, their cut and the whole set's total, with the coverage
     of topic labels. The period opens no earlier than the traces do."""
@@ -356,7 +361,7 @@ def _run_chat(
     body["unclassified_askers"] = 0 if asker_split else None
     for word, values in filters.items():
         if not values:  # a filter resolving to nothing is zero rows, never "no filter"
-            body["message"] = _none_found(db, definition, params["period"], filters)
+            body["message"] = _none_found(db, definition, params["period"], filters, scope_customers)
             return body
         params[word] = list(values)
     unclassified = (
@@ -402,7 +407,7 @@ def _run_chat(
 
     grand = pivot.grand_total or {}
     if not int(Decimal(grand.get("asks") or 0)):
-        body["message"] = _none_found(db, definition, params["period"], filters)
+        body["message"] = _none_found(db, definition, params["period"], filters, scope_customers)
         return body
     body["total"] = _chat_value(measure, grand) or {"value": 0}
     if not group_by:
