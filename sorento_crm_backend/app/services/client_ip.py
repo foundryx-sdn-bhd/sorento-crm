@@ -6,10 +6,14 @@ trusted proxy is the client. Anything to the left of it is what the client typed
 A malformed hop stops the walk at the last trusted address. When every hop is trusted (an
 internal caller) the left-most one is returned.
 
-Trusted proxies default to loopback + private ranges, which is where nginx, the Next server and
-the docker bridge sit in this deploy (documentation/plans/security/
-PLAN-trusted-proxy-client-ip-10oct.md). `TRUSTED_PROXIES` (comma-separated CIDRs) replaces the
-default when the topology differs, e.g. a CDN in front.
+Trust is opt-in. With `TRUSTED_PROXIES` unset no proxy is trusted and the socket peer is the
+answer: behind nginx that is one shared address per proxy, but nothing a client sends can change
+it. That is the safe state while the edge nginx is not confirmed to append the address it saw
+(`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`); if it passed the header through
+untouched, trusting it would let the client pick its own key. Once it is confirmed, set
+`TRUSTED_PROXIES` to the proxies' CIDRs (`RECOMMENDED_TRUSTED_PROXIES` for this deploy: loopback,
+where the host nginx connects from, plus the private ranges the docker network uses). See
+documentation/plans/security/PLAN-trusted-proxy-client-ip-10oct.md.
 """
 from __future__ import annotations
 
@@ -20,15 +24,14 @@ from fastapi import Request
 
 _Network = ipaddress.IPv4Network | ipaddress.IPv6Network
 
-_DEFAULT_TRUSTED = (
-    "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-    "::1/128", "fc00::/7", "fe80::/10",
+RECOMMENDED_TRUSTED_PROXIES = (
+    "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7,fe80::/10"
 )
 
 
 @lru_cache(maxsize=8)
 def _networks(configured: str) -> tuple[_Network, ...]:
-    entries = [e.strip() for e in configured.split(",") if e.strip()] or list(_DEFAULT_TRUSTED)
+    entries = [e.strip() for e in configured.split(",") if e.strip()]
     return tuple(ipaddress.ip_network(e, strict=False) for e in entries)
 
 
@@ -48,6 +51,8 @@ def client_ip(request: Request) -> str | None:
     if peer is None:
         return None
     trusted = _networks(settings.trusted_proxies or "")
+    if not trusted:
+        return peer
 
     def _is_trusted(ip) -> bool:
         return any(ip in net for net in trusted if ip.version == net.version)

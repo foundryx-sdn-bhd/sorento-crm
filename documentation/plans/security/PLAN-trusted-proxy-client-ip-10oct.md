@@ -22,7 +22,7 @@ Next.js server, so every user shared one bucket: a lockout DoS.
   `127.0.0.1:<port>` (`scripts/blue_green_deploy.sh:5-11`, upstreams at `:80-82`). Inside the
   container the peer is the docker bridge gateway (RFC1918). UNVERIFIED: the host nginx site
   config is not in the repo (`/etc/nginx/...` on the server), so whether it sets
-  `X-Forwarded-For $proxy_add_x_forwarded_for` and whether a CDN sits in front is UNVERIFIED.
+  `X-Forwarded-For $proxy_add_x_forwarded_for` is UNVERIFIED (no CDN: see crew facts below).
 - Compose image: the frontend image's own nginx sets `X-Forwarded-For
   $proxy_add_x_forwarded_for` for `/api/auth` and `/api/v1/` (`sorento_crm_frontend/nginx.conf:32,48`)
   and proxies to `backend:8000` on the compose bridge network (`sorento_crm/docker-compose.yml:93-96`).
@@ -33,26 +33,47 @@ Next.js server, so every user shared one bucket: a lockout DoS.
   `FORWARDED_ALLOW_IPS` (default 127.0.0.1); the docker peer is not 127.0.0.1, so the app sees
   the raw proxy peer.
 
-Prod prerequisites (UNVERIFIED until someone runs `sudo nginx -T | grep -n -i forwarded` on the
-server and records the result here):
-1. Every host nginx `location` for `sorento_backend` / `sorento_frontend` sets
-   `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (or `$remote_addr`), never
-   `$http_x_forwarded_for`. If it passes the header through untouched, the client chooses the
-   per-IP key; the per-email login ceiling below is the floor that still holds.
-2. No CDN / public-address proxy in front of the host nginx. If there is one, `TRUSTED_PROXIES`
-   must list its ranges PLUS loopback and the docker subnet (the value replaces the default).
-3. Published container ports bind `127.0.0.1` only (`blue_green_deploy.sh:9-11` says so).
-4. The Next port is reachable only through the image's own nginx, which appends.
+Crew facts (10 Oct): `fe-sorento.foundryx.my` resolves straight to 72.62.195.20 and answers with
+`server: nginx/1.24.0 (Ubuntu)`, no `cf-ray` / `via`: NO CDN, the host nginx is the edge.
+UNVERIFIED: its `proxy_set_header` lines (`sudo nginx -T` output pending from the owner).
 
-So the default trust set is loopback + RFC1918 + IPv6 loopback/ULA/link-local, overridable with
-`TRUSTED_PROXIES` (comma-separated CIDRs) when the topology differs (e.g. a CDN in front).
+### Trust is opt-in (safe default)
+
+`TRUSTED_PROXIES` unset (the default) = no proxy is trusted, `X-Forwarded-For` is ignored
+everywhere, and every per-IP limit / IP record uses the socket peer. Behind nginx that is the
+proxy's one address (the pre-lane behaviour for the throttles), but nothing a client sends can
+change it. So a missing nginx line can never make the key spoofable.
+
+### Deploy prerequisite (owner, in this order)
+
+1. Host nginx, in every `location` that proxies to `sorento_backend` or `sorento_frontend`:
+
+   ```nginx
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Real-IP       $remote_addr;
+   ```
+
+   Never `$http_x_forwarded_for` (that passes the typed value through). Check with
+   `sudo nginx -T | grep -n -i -e forwarded -e real-ip`, then `sudo nginx -t && sudo nginx -s reload`.
+2. Only then set, in the backend's env in the prod compose (`/opt/sorento-crm2/docker-compose.yml`,
+   edited by hand on the server):
+   `TRUSTED_PROXIES=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7,fe80::/10`
+   (`app.services.client_ip.RECOMMENDED_TRUSTED_PROXIES`: loopback plus the private ranges the
+   docker network and its gateway use). Recreate the backend container.
+3. Keep: published container ports on `127.0.0.1` only (`blue_green_deploy.sh:9-11`), and the Next
+   port reachable only through the image's own nginx, which appends (`nginx.conf:32,48`).
+4. A CDN added later must have its ranges added to `TRUSTED_PROXIES` (the value is the whole list).
+
+Merging and deploying with step 2 skipped is safe: behaviour stays per proxy address, with the
+per-email login ceiling on top.
 
 ## Design
 
 One resolver, `app.services.client_ip.client_ip(request)` (mirrors foundryx-shared-service
 #120 `throttle.client_ip`):
 
-1. Peer = `request.client.host`. If the peer is not a trusted proxy, return it; XFF is ignored.
+1. Peer = `request.client.host`. If no proxy is configured, or the peer is not a trusted proxy,
+   return it; XFF is ignored.
 2. Otherwise walk the `X-Forwarded-For` hops right to left. The first hop that is not a trusted
    proxy is the client. A malformed hop stops the walk: the last trusted address is returned.
 3. Every hop trusted: return the leftmost (an internal caller).
@@ -83,7 +104,8 @@ Trigger to do them: a report or audit needing per-client IP there.
 - proxied request: rightmost untrusted hop returned, a forged leftmost hop ignored;
 - multi-proxy chain of trusted hops skipped;
 - malformed hop stops the walk;
-- `TRUSTED_PROXIES` override honoured;
+- `TRUSTED_PROXIES` unset: XFF ignored from every peer, loopback included;
+- `TRUSTED_PROXIES` is the whole trust list;
 - two users behind the proxy get separate login throttle buckets (login route, via TestClient);
 - quotation_documents no longer carries its own `_client_ip`;
 - staff signature, customer acceptance and the API request log store the proxied client IP;

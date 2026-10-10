@@ -242,10 +242,10 @@ class Settings(BaseSettings):
     # fail-open if Redis down) - see PLAN-fix-security-cluster Sub-plan A. All
     # env-overridable; set max<=0 to disable a given limiter.
     # SORENTO-CLIENT-IP: proxies whose `X-Forwarded-For` is believed (comma-separated CIDRs).
-    # Empty = loopback + private ranges (app/services/client_ip.py). A value REPLACES that
-    # default, so it must list loopback and the docker network subnet too, e.g.
-    # "127.0.0.0/8,172.18.0.0/16,<cdn ranges>"; leaving the subnet out puts every user back in
-    # the proxy's one bucket.
+    # Empty = none: every per-IP limit and IP record uses the socket peer, which a client cannot
+    # forge (behind nginx that is the proxy's one address). Set it only once the edge nginx sets
+    # `X-Forwarded-For $proxy_add_x_forwarded_for`; for this deploy use
+    # `app.services.client_ip.RECOMMENDED_TRUSTED_PROXIES` (loopback + the docker private ranges).
     trusted_proxies: str = ""                   # TRUSTED_PROXIES
     rate_limit_signup_max: int = 3              # signups per window per IP
     rate_limit_signup_window_seconds: int = 3600

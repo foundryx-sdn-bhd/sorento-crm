@@ -183,6 +183,10 @@ def test_content_type_comes_from_the_extension_not_the_upload(env):
 def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     """Crew audit item 6: behind nginx every socket peer is the proxy; the bucket key is
     the forwarded client, so two dealers never share one limit."""
+    from app.config import settings
+    from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
+
+    monkeypatch.setattr(settings, "trusted_proxies", RECOMMENDED_TRUSTED_PROXIES)
     client, db, _ = env
     _link(db, "PHOTO00006", "https://cdn.test/a.jpg", "a.jpg")
     idents: list[str | None] = []

@@ -30,6 +30,22 @@ from tests._pg_fixture import blank_session
 PROXY = "172.18.0.5"  # a docker-network peer: the frontend container or the host nginx gateway
 
 
+@pytest.fixture(autouse=True)
+def _trust_this_deploys_proxies(monkeypatch):
+    """Trust is opt-in; these tests run with the value prod sets once the edge nginx appends."""
+    from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
+
+    monkeypatch.setattr(settings, "trusted_proxies", RECOMMENDED_TRUSTED_PROXIES)
+
+
+@pytest.mark.parametrize("peer", [PROXY, "127.0.0.1", "::1"])
+def test_unset_trusted_proxies_ignores_xff_from_every_peer(monkeypatch, peer):
+    # The safe default: if the edge nginx passes a typed header through untouched, nothing a
+    # client sends picks its key, because no proxy is believed until one is configured.
+    monkeypatch.setattr(settings, "trusted_proxies", "")
+    assert client_ip(_req(peer, "6.6.6.6, 203.0.113.7")) == peer
+
+
 def _req(peer: str | None, xff: str | list[str] | None = None) -> Request:
     headers = []
     for value in ([xff] if isinstance(xff, str) else (xff or [])):
@@ -85,7 +101,7 @@ def test_every_hop_trusted_returns_the_leftmost():
 
 
 @pytest.mark.parametrize("peer", ["192.168.1.1", "fd00::5", "fe80::1"])
-def test_private_and_ula_peers_are_trusted_by_default(peer):
+def test_private_and_ula_peers_are_trusted_in_the_recommended_list(peer):
     assert client_ip(_req(peer, "6.6.6.6, 203.0.113.7")) == "203.0.113.7"
 
 
@@ -97,11 +113,11 @@ def test_an_oversized_header_cannot_produce_an_oversized_ip():
     assert client_ip(_req(PROXY, "x" * 4000)) == PROXY
 
 
-def test_trusted_proxies_setting_overrides_the_default(monkeypatch):
+def test_trusted_proxies_setting_is_the_whole_trust_list(monkeypatch):
     # A CDN in front: its edge address is public, so it has to be named to be trusted.
     monkeypatch.setattr(settings, "trusted_proxies", "198.51.100.0/24, 127.0.0.1/32")
     assert client_ip(_req("198.51.100.4", "6.6.6.6, 203.0.113.7")) == "203.0.113.7"
-    # ...and the default private ranges are no longer trusted once the list is explicit.
+    # ...and a private range left off the list is not trusted.
     assert client_ip(_req(PROXY, "203.0.113.7")) == PROXY
 
 
