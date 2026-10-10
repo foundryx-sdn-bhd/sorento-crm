@@ -277,3 +277,13 @@ def test_the_prompt_describes_each_domain_with_its_label_and_switch_words(config
     for words in (("order", "orders", "delivery", "penghantaran"), ("promotion", "promotions", "promo")):
         for word in words:
             assert word in system, word
+
+
+def test_the_prompt_teaches_that_the_agent_of_the_asking_customer_is_a_customer_row_not_a_salesperson_ranking():
+    """Prompt-teaching pin, loose wording: "which sales agent does the customer belong to that
+    asked the most" is group_by customer (each customer row shows its agent), not salesperson."""
+    text = _prompt()
+    at = text.find("agent")
+    assert at != -1, "the prompt never mentions a customer's sales agent"
+    near = text[max(0, at - 300): at + 300]
+    assert "customer" in near and ("row" in near or "shown" in near or "shows" in near), near

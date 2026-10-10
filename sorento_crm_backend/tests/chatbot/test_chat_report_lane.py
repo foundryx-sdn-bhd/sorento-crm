@@ -576,11 +576,25 @@ def test_extractor_none_says_one_line_runs_nothing_and_opens_no_question(console
 
 
 def test_extractor_is_not_called_on_the_answering_turn(console, monkeypatch) -> None:
-    seen = _extractor(monkeypatch, {**EXTRACTED, "date_from": None, "date_to": None})
+    """Lead sign-off 10 Oct (owner live D2): the reply is read with the open ask. The answering
+    turn calls the extractor ONCE more, with `open_ask` set to the held fields."""
+    from app.services.chatbot.analytics import chat_report_extractor
+
+    seen: list[tuple[str, object]] = []
+    held = {**EXTRACTED, "date_from": None, "date_to": None}
+
+    def fake(db, text, *args, open_ask=None, **kwargs):
+        seen.append((text, open_ask))
+        if open_ask is None:
+            return dict(held)
+        return {**held, "date_from": "2026-09-01", "date_to": "2026-09-30"}
+
+    monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)
     text, calls = console.say(_chat(), "top 5 failed topics about stock")
     assert text.strip() == PERIOD_Q and calls == [] and len(seen) == 1, (text, calls, seen)
     _text, calls = console.say(_reply(**SEP), "September")
-    assert len(seen) == 1, "the reply to 'Which period?' is read by the parser, not the extractor"
+    assert len(seen) == 2 and seen[1][0] == "September", seen
+    assert isinstance(seen[1][1], dict) and seen[1][1].get("group_by") == "topic", seen
     (args,) = _chat_calls(calls)
     assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
     assert args["group_by"] == "topic" and args["measure"] == "failed", "the extracted ask is kept"
@@ -721,7 +735,8 @@ def test_extractor_a_count_reply_keeps_the_period_the_first_message_gave(console
     assert PERIOD_Q not in text, "the period was given in the first message: never asked"
     (args,) = _chat_calls(calls)
     assert args["top_n"] == 5 and args["date_from"] == "2026-10-07" and args["date_to"] == "2026-10-10", args
-    assert seen == [first], "the reply is not re-read by the extractor"
+    # Lead sign-off 10 Oct (owner live D2): the reply is read with the open ask.
+    assert seen == [first, "top 5"], "the reply is read once more, with the open ask"
 
 
 MISS_LINES = ("couldn't find", "could not find", "did you mean")
