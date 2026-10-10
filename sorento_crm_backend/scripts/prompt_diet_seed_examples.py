@@ -27,7 +27,7 @@ REPO_ROOT = BACKEND.parent
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-CARDS_FILE = BACKEND / "app" / "services" / "chatbot" / "head" / "prompt_diet_data" / "cards.txt"
+CARDS_FILE = BACKEND / "alembic" / "data" / "chatbot_parser_cards.v1.txt"
 #: `order_status` values that mean a sales ask (same list as `prompt_diet.SALES_ORDER_STATUSES`;
 #: this script may not import the chatbot package, `tests/chatbot/test_import_boundary.py`).
 SALES_ORDER_STATUSES = {"sales_report", "sales_analysis", "top_selling", "sales_ranking"}

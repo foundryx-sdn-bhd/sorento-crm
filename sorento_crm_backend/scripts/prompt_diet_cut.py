@@ -1,14 +1,14 @@
 """PROMPT-DIET: cut the v50 parser prompt into a stable core and per-area cards.
 
-Move only: every v50 section lands, verbatim, in exactly one place (core.txt or one card in
-cards.txt). Sections are assigned by heading TEXT from the table below, so the cut does not
+Move only: every v50 section lands, verbatim, in exactly one place (the core file or one card in
+the cards file). Sections are assigned by heading TEXT from the table below, so the cut does not
 depend on line numbers. The one addition is the `== AREAS ==` block in core, the list the
 parser reads to name an area. `== DECISIVE DOMAIN TERMS ==` is kept verbatim at the end of
 core this step (plan: removal is the trim round).
 
 Run once, commit the output (documentation/plans/chatbot/PLAN-prompt-diet-11oct.md):
   venv/bin/python scripts/prompt_diet_cut.py --src alembic/data/chatbot_semantic_parser.v50.txt \
-      --out-dir app/services/chatbot/head/prompt_diet_data
+      --out-dir alembic/data
 """
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 
 HEADING = re.compile(r"^==+ .* ==+$")
+CORE_FILE = "chatbot_parser_core.v1.txt"
+CARDS_FILE = "chatbot_parser_cards.v1.txt"
 DECISIVE = "== DECISIVE DOMAIN TERMS =="
 
 #: One line per retrievable area, plain English. The card names are the values the parser
@@ -203,8 +205,8 @@ def main() -> int:
     args = ap.parse_args()
     core, cards = build(args.src.read_text(encoding="utf-8"))
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    (args.out_dir / "core.txt").write_text(core, encoding="utf-8")
-    (args.out_dir / "cards.txt").write_text(cards, encoding="utf-8")
+    (args.out_dir / CORE_FILE).write_text(core, encoding="utf-8")
+    (args.out_dir / CARDS_FILE).write_text(cards, encoding="utf-8")
     return 0
 
 

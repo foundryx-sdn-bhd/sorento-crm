@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text as sql_text
@@ -21,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 
-DATA_DIR = Path(__file__).resolve().parent / "prompt_diet_data"
 
 CARD_MARKER_OPEN = "<<card:"
 CARD_MARKER_CLOSE = ">>"

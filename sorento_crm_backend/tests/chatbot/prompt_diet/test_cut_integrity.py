@@ -1,6 +1,6 @@
 """AC-5, AC-6, AC-7 (file half): the cut is move-only and the data files are reproducible.
 
-Red now: `prompt_diet_data/` and `scripts/prompt_diet_cut.py` do not exist, and
+Red now: the `alembic/data` parser core and cards files and `scripts/prompt_diet_cut.py` do not exist, and
 `prompt_diet.parse_cards` is not importable.
 """
 from __future__ import annotations
@@ -82,8 +82,8 @@ def test_ac7_the_cut_script_reproduces_the_committed_files(tmp_path) -> None:
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
-    assert (out / "core.txt").read_text(encoding="utf-8") == CORE_TXT.read_text(encoding="utf-8")
-    assert (out / "cards.txt").read_text(encoding="utf-8") == CARDS_TXT.read_text(encoding="utf-8")
+    assert (out / "chatbot_parser_core.v1.txt").read_text(encoding="utf-8") == CORE_TXT.read_text(encoding="utf-8")
+    assert (out / "chatbot_parser_cards.v1.txt").read_text(encoding="utf-8") == CARDS_TXT.read_text(encoding="utf-8")
 
 
 def test_ac6_parse_cards_returns_one_entry_per_marker() -> None:

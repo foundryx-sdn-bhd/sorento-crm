@@ -892,7 +892,7 @@ def _prompt_diet_fallback(filename: str) -> str:
     """PROMPT-DIET core / cards text: the committed output of `scripts/prompt_diet_cut.py`."""
     from pathlib import Path
 
-    path = Path(__file__).resolve().parent / "chatbot" / "head" / "prompt_diet_data" / filename
+    path = Path(__file__).resolve().parents[2] / "alembic" / "data" / filename
     return path.read_text(encoding="utf-8")
 
 
@@ -1019,7 +1019,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         active=True,
         activates_in=None,
         variables=["current_date"],
-        fallback=lambda: _prompt_diet_fallback("core.txt"),
+        fallback=lambda: _prompt_diet_fallback("chatbot_parser_core.v1.txt"),
     ),
     "chatbot_parser_cards": PromptKeySpec(
         name="chatbot_parser_cards",
@@ -1027,7 +1027,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         active=True,
         activates_in=None,
         variables=[],
-        fallback=lambda: _prompt_diet_fallback("cards.txt"),
+        fallback=lambda: _prompt_diet_fallback("chatbot_parser_cards.v1.txt"),
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---

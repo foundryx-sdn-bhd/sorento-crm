@@ -26,10 +26,10 @@ down_revision = "chat_backfill_0001"
 branch_labels = None
 depends_on = None
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "app" / "services" / "chatbot" / "head" / "prompt_diet_data"
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PROMPTS = (
-    ("chatbot_parser_core", "core.txt", '["current_date"]'),
-    ("chatbot_parser_cards", "cards.txt", "[]"),
+    ("chatbot_parser_core", "chatbot_parser_core.v1.txt", '["current_date"]'),
+    ("chatbot_parser_cards", "chatbot_parser_cards.v1.txt", "[]"),
 )
 COMMIT_MESSAGE = "pdiet_0001_examples: prompt diet text, cut from v50"
 
