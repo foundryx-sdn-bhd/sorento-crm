@@ -26,12 +26,19 @@ COMPANY = "Quixley Trading Sdn Bhd"
 def _case(case_id: str, text: str, *, history: list[dict] | None = None) -> dict:
     return {
         "id": case_id,
-        "contact": {"name": NAME, "first_name": "Zorblat", "company": COMPANY, "labels": [COMPANY]},
+        "contact": {
+            "respond_id": f"ZZT-{case_id}",
+            "name": NAME,
+            "first_name": "Zorblat",
+            "company": COMPANY,
+            "labels": [COMPANY],
+        },
         "message": {"text": text},
         "history": history or [],
         "topic_code": "price_check",
         "split": "dev",
-        "expect": {"domain_hint": "master_products"},
+        # The real DEV shape: `expect` is the GRADING spec, not a parser emission.
+        "expect": {"outcome": "answers", "must": ["price"], "options": [], "must_not": [], "judge_note": ""},
     }
 
 
@@ -42,16 +49,34 @@ def _write_cases(directory: Path) -> None:
         _case(
             "c2",
             "and SRT-TEST-2?",
-            history=[{"role": "assistant", "text": f"Hello {NAME}, SRT-TEST-1 is in stock."}],
+            history=[{"role": "bot", "text": f"Hello {NAME}, SRT-TEST-1 is in stock."}],
         ),
     ]
     for case in cases:
         (directory / f"{case['id']}.json").write_text(json.dumps(case), encoding="utf-8")
+    # The eval side files (emissions, results) ride in the same scratch dir; the glob is *.json only.
+    emissions = []
+    results = []
+    for case in cases:
+        emission = {"domain_hint": "master_products", "intent_hint": "check_product", "order_status": None}
+        emissions.append({"id": case["id"], "contact": case["contact"]["respond_id"], "text": case["message"]["text"],
+                          "created": "2026-10-01T00:00:00", "understood": None})
+        emissions.append({"id": case["id"], "contact": case["contact"]["respond_id"], "text": case["message"]["text"],
+                          "created": "2026-10-01T00:00:01", "understood": emission})
+        results.append({"case_id": case["id"], "label": "correct"})
+    (directory / "emissions.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in emissions), encoding="utf-8")
+    (directory / "results.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in results), encoding="utf-8")
 
 
 def _run(data_dir: Path, out_dir: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(SEED_SCRIPT), "--data-dir", str(data_dir), "--out-dir", str(out_dir)],
+        [
+            sys.executable, str(SEED_SCRIPT), "--data-dir", str(data_dir), "--out-dir", str(out_dir),
+            "--emissions", str(data_dir / "emissions.jsonl"),
+            "--results", str(data_dir / "results.jsonl"),
+        ],
         cwd=BACKEND,
         capture_output=True,
         text=True,
