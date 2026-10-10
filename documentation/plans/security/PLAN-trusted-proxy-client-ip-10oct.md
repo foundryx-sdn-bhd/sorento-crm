@@ -1,6 +1,6 @@
 # PLAN: trusted-proxy client IP (SORENTO-CLIENT-IP)
 
-Status: in progress (small fix track: backend resolver + call-site swap + FE header forward, no migration, no RBAC change; reviewer + security reviewer per lane brief)
+Status: PR #1563 open, review done, merge-ready pending CI (small fix track: backend resolver + call-site swap + FE header forward, no migration, no RBAC change)
 
 ## Problem
 
@@ -22,7 +22,7 @@ Next.js server, so every user shared one bucket: a lockout DoS.
   `127.0.0.1:<port>` (`scripts/blue_green_deploy.sh:5-11`, upstreams at `:80-82`). Inside the
   container the peer is the docker bridge gateway (RFC1918). UNVERIFIED: the host nginx site
   config is not in the repo (`/etc/nginx/...` on the server), so whether it sets
-  `X-Forwarded-For $proxy_add_x_forwarded_for` is UNVERIFIED (no CDN: see crew facts below).
+  `X-Forwarded-For $proxy_add_x_forwarded_for` is now confirmed (see crew facts below).
 - Compose image: the frontend image's own nginx sets `X-Forwarded-For
   $proxy_add_x_forwarded_for` for `/api/auth` and `/api/v1/` (`sorento_crm_frontend/nginx.conf:32,48`)
   and proxies to `backend:8000` on the compose bridge network (`sorento_crm/docker-compose.yml:93-96`).
@@ -35,7 +35,27 @@ Next.js server, so every user shared one bucket: a lockout DoS.
 
 Crew facts (10 Oct): `fe-sorento.foundryx.my` resolves straight to 72.62.195.20 and answers with
 `server: nginx/1.24.0 (Ubuntu)`, no `cf-ray` / `via`: NO CDN, the host nginx is the edge.
-UNVERIFIED: its `proxy_set_header` lines (`sudo nginx -T` output pending from the owner).
+Confirmed from the owner's `nginx -T` (10 Oct): every location for `fe-sorento.foundryx.my` to
+`sorento_frontend` and to `sorento_backend` (and the default `server_name _` block to `sorento_mcp`)
+sets `X-Real-IP $remote_addr`, `X-Forwarded-For $proxy_add_x_forwarded_for` and
+`X-Forwarded-Proto $scheme`. So deploy prerequisite step 1 is already met; only step 2 remains.
+
+Resolved IP per prod path (pinned in `tests/test_client_ip.py`, `PROD_PATHS`):
+- A, browser to host nginx to backend (every browser `/api/v1` call: prod builds carry no
+  `/api/v1` rewrite, `next.config.mjs:54-58`, and `NEXT_PUBLIC_API_URL` is built empty,
+  `Dockerfile:22`): peer = docker gateway, XFF = `<typed>, <client>`, resolved = `<client>`.
+- B, browser to host nginx to frontend (image nginx appends the gateway when it is in the path)
+  to the Next server to backend (sign-in, phone verify, signup, reset; Next forwards XFF
+  unchanged): peer = the frontend container, XFF = `<typed>, <client>[, <gateway>]`, resolved =
+  `<client>`.
+- With `TRUSTED_PROXIES` unset both resolve to the peer (one shared bucket, not forgeable).
+
+UNVERIFIED, one residual: what `FASTAPI_INTERNAL_URL` the prod frontend container carries. Unset
+means `http://backend:8000` over the docker network (path B above). If it points at the public
+domain instead, the Next hop goes back out through the host nginx, which appends the server's own
+address (72.62.195.20) and that becomes the resolved IP for sign-in: one shared bucket again,
+safe but not per client. Fix in that case: point it at the backend container, or add
+`72.62.195.20/32` to `TRUSTED_PROXIES`.
 
 ### Trust is opt-in (safe default)
 

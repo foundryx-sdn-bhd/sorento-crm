@@ -312,3 +312,58 @@ def test_ipv6_addresses_share_one_bucket_per_64():
         login_throttle.record_failure(email, f"2001:db8:1:2::{i + 1:x}")
     assert not login_throttle.check(email, "2001:db8:1:2:ffff::9").allowed
     assert login_throttle.check(email, "2001:db8:1:3::1").allowed
+
+
+# --- the two prod paths, as the owner's host nginx (`nginx -T`, 10 Oct) builds them ---------
+#
+# Host nginx is the edge (no CDN) and sets `X-Forwarded-For $proxy_add_x_forwarded_for` on every
+# location. Containers publish on 127.0.0.1, so the container sees the docker gateway as peer.
+#   A: browser -> host nginx -> backend: peer = gateway, XFF = "<typed>, <client>".
+#   B: browser -> host nginx -> frontend [-> image nginx, which appends the gateway] -> Next
+#      server -> backend (sign-in, signup, reset; Next forwards XFF unchanged, lib/forwarded-for.ts):
+#      peer = the frontend container, XFF = "<typed>, <client>[, <gateway>]".
+CLIENT = "203.0.113.7"
+GATEWAY = "172.18.0.1"
+FRONTEND_CONTAINER = "172.18.0.3"
+
+PROD_PATHS = pytest.mark.parametrize(
+    "peer, xff",
+    [
+        (GATEWAY, f"6.6.6.6, {CLIENT}"),
+        (GATEWAY, CLIENT),
+        (FRONTEND_CONTAINER, f"6.6.6.6, {CLIENT}"),
+        (FRONTEND_CONTAINER, f"6.6.6.6, {CLIENT}, {GATEWAY}"),
+    ],
+    ids=["A_nginx_backend_forged", "A_nginx_backend", "B_via_next", "B_via_image_nginx_and_next"],
+)
+
+
+def _login_ip_seen(monkeypatch, peer: str, xff: str) -> str | None:
+    from app.services import login_throttle
+
+    seen: list = []
+
+    def _check(email, ip):
+        seen.append(ip)
+        return login_throttle.ThrottleResult(allowed=False, retry_after_seconds=60)
+
+    monkeypatch.setattr(login_throttle, "check", _check)
+    with TestClient(app, client=(peer, 40000)) as c:
+        res = c.post(
+            "/api/v1/auth/login",
+            json={"email": "path@example.com", "password": "x"},
+            headers={"X-Forwarded-For": xff},
+        )
+    assert res.status_code == 429, res.text
+    return seen[0]
+
+
+@PROD_PATHS
+def test_prod_paths_resolve_to_the_real_client_with_trusted_proxies_set(monkeypatch, peer, xff):
+    assert _login_ip_seen(monkeypatch, peer, xff) == CLIENT
+
+
+@PROD_PATHS
+def test_prod_paths_fall_back_to_the_peer_with_trusted_proxies_unset(monkeypatch, peer, xff):
+    monkeypatch.setattr(settings, "trusted_proxies", "")
+    assert _login_ip_seen(monkeypatch, peer, xff) == peer
