@@ -381,7 +381,7 @@ def _run_chat(
     coverage_ctx = engine.resolve(db, definition, params)
     percent, version = chat_asks.topics_coverage(coverage_ctx)
     body["coverage"] = {
-        "percent": percent, "taxonomy_version": version, "line": chat_asks.coverage_line(percent, version)
+        "percent": percent, "taxonomy_version": version, "line": chat_asks.coverage_line(percent, version, ctx=coverage_ctx)
     }
     if date_to < date_from:
         body["message"] = NO_ASKS

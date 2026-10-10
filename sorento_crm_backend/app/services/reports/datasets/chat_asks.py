@@ -149,12 +149,14 @@ def topics_coverage(ctx, *, skip: Tuple[str, ...] = ()) -> Tuple[int, Any]:
 
 def topics_note(ctx, *, skip: Tuple[str, ...] = ()) -> str:
     """`Topics labelled: 71% of asks (taxonomy v2).` plus the coverage line."""
-    return coverage_line(*topics_coverage(ctx, skip=skip))
+    return coverage_line(*topics_coverage(ctx, skip=skip), ctx=ctx)
 
 
-def coverage_line(percent: int, version: Any) -> str:
+def coverage_line(percent: int, version: Any, *, ctx: Any = None) -> str:
+    """The labelled share, then (given a run's ctx) the CA-4 history era lines."""
     tail = f" (taxonomy v{version})" if version is not None else ""
-    return _with_history(ctx, f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}")
+    line = f"Topics labelled: {percent}% of asks{tail}. {TRACES_NOTE}"
+    return _with_history(ctx, line) if ctx is not None else line
 
 
 def overview_note(ctx) -> str:
