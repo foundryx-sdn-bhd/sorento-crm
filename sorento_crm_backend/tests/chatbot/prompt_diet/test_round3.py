@@ -241,3 +241,49 @@ def test_seed_skips_other_labels_missing_emissions_and_unknown_areas(tmp_path) -
     rows, proc = _run(tmp_path, cases, emissions, results)
     assert [r["area"] for r in rows] == ["sales"]
     assert "noarea" in proc.stderr
+
+
+# -- round 4 -------------------------------------------------------------------- #
+@pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
+def test_fallback_reason_is_capped_and_carries_no_parameter_dump(
+    monkeypatch, session_factory, seeded, stub_access
+) -> None:
+    h = DietHarness(monkeypatch, [emission()])
+    dump = "[SQL: SELECT 1] [parameters: {'vec': '[" + ",".join(["0.123456"] * 4000) + "]'}]"
+    h.diet_on(example_areas=["inventory"], nearest_error=RuntimeError("could not run\n" + dump))
+    stub_access()
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    fallback = h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]["fallback"]
+    assert len(fallback) <= 300
+    assert fallback.startswith("RuntimeError: could not run")
+    assert "parameters" not in fallback
+
+
+def test_seed_exclude_drops_listed_messages(tmp_path) -> None:
+    cases = [_case("keep", "keep me"), _case("drop1", "drop by pair"), _case("drop2", "drop by row")]
+    emissions = [_emit(c["id"], c["message"]["text"], "2026-10-01T00:00:00", {"domain_hint": "order"}) for c in cases]
+    results = [{"case_id": c["id"], "label": "correct"} for c in cases]
+    exclude = tmp_path / "x.jsonl"
+    exclude.write_text(json.dumps({"message": "drop by row"}) + "\n", encoding="utf-8")
+    pairs = tmp_path / "pairs.json"
+    pairs.write_text(json.dumps([["R-drop1", "drop by pair"]]), encoding="utf-8")
+    for ex in (exclude, pairs):
+        out = tmp_path / ("o_" + ex.name)
+        data = tmp_path / "dev"
+        if not data.exists():
+            data.mkdir()
+            for c in cases:
+                (data / f"{c['id']}.json").write_text(json.dumps(c), encoding="utf-8")
+            (tmp_path / "e.jsonl").write_text("".join(json.dumps(r) + "\n" for r in emissions), encoding="utf-8")
+            (tmp_path / "r.jsonl").write_text("".join(json.dumps(r) + "\n" for r in results), encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(SEED_SCRIPT), "--data-dir", str(data), "--out-dir", str(out),
+             "--emissions", str(tmp_path / "e.jsonl"), "--results", str(tmp_path / "r.jsonl"),
+             "--exclude", str(ex)],
+            cwd=BACKEND, capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        got = {json.loads(l)["message"] for l in (out / "examples.jsonl").read_text().splitlines()}
+        dropped = {"drop by row"} if ex is exclude else {"drop by pair"}
+        assert got == {"keep me", "drop by row", "drop by pair"} - dropped
+        assert "excluded (near-duplicate of hidden)" in proc.stderr
