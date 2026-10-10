@@ -671,3 +671,68 @@ def test_extractor_a_total_with_a_subject_runs_straight_to_the_route_asking_no_c
     assert args["subjects"] == ["promotion"] and args["measure"] == "failed" and args["basis"] == "turns", args
     assert not args.get("group_by"), args
     assert COUNT_Q not in text and PERIOD_Q not in text, text
+
+
+# --------------------------------------------------------------------------- owner hand test (period lost, entity leak)
+
+PERIOD_OCT = {"group_by": "product", "measure": "asks", "subject": None, "top_n": None,
+              "date_from": "2026-10-07", "date_to": "2026-10-10"}
+
+
+def _extractor_by_text(monkeypatch, readings: dict[str, dict | None]):
+    """Like `_extractor`, but answers per message text (a second call would see the bare reply)."""
+    from app.services.chatbot.analytics import chat_report_extractor
+
+    seen: list[str] = []
+
+    def fake(db, text, *args, **kwargs):
+        seen.append(text)
+        got = readings.get(text)
+        return dict(got) if got is not None else None
+
+    monkeypatch.setattr(chat_report_extractor, "extract_chat_report", fake)
+    return seen
+
+
+@pytest.mark.parametrize(
+    "reply_verdict",
+    [
+        pytest.param(lambda: _reply(top_n=5), id="plain_reply"),
+        pytest.param(
+            lambda: _chat(group_by=None, measure=None, top_n=5, date_filter_start=None, date_filter_end=None),
+            id="parser_reads_the_reply_as_a_chat_report_with_nothing_set",
+        ),
+        pytest.param(
+            lambda: _chat(group_by="product", measure="asks", top_n=5, date_filter_start=None, date_filter_end=None),
+            id="parser_reguesses_the_axis_on_the_reply",
+        ),
+    ],
+)
+def test_extractor_a_count_reply_keeps_the_period_the_first_message_gave(console, monkeypatch, reply_verdict) -> None:
+    first = "top products customers ask about from 7 to 10 Oct"
+    seen = _extractor_by_text(monkeypatch, {
+        first: PERIOD_OCT,
+        "top 5": {"group_by": "product", "measure": "asks", "subject": None, "top_n": 5,
+                  "date_from": None, "date_to": None},
+    })
+    text, calls = console.say(_chat(group_by="product", top_n=None, **{"date_filter_start": "2026-10-07", "date_filter_end": "2026-10-10"}), first)
+    assert text.strip() == COUNT_Q and calls == [], (text, calls)
+    text, calls = console.say(reply_verdict(), "top 5")
+    assert PERIOD_Q not in text, "the period was given in the first message: never asked"
+    (args,) = _chat_calls(calls)
+    assert args["top_n"] == 5 and args["date_from"] == "2026-10-07" and args["date_to"] == "2026-10-10", args
+    assert seen == [first], "the reply is not re-read by the extractor"
+
+
+MISS_LINES = ("couldn't find", "could not find", "did you mean")
+
+
+def test_extractor_parser_product_entities_add_no_product_line_to_a_chat_report(console, monkeypatch) -> None:
+    _extractor(monkeypatch, {"group_by": "topic", "measure": "asks", "subject": None, "top_n": None,
+                             "date_from": "2026-01-01", "date_to": "2026-12-31"})
+    verdict = _chat(_e("water closet", "product"), _e("basin", "product"), _e("salesperson", "product"), top_n=None)
+    text, calls = console.say(verdict, "What is the top discussed water closet and basin for sorento in 2026")
+    assert text.strip() == COUNT_Q, ("only the chat report's own question", text)
+    lowered = text.lower()
+    assert not any(m in lowered for m in MISS_LINES), text
+    assert calls == []
