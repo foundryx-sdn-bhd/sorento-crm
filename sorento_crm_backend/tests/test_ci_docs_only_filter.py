@@ -148,6 +148,11 @@ def _run_shell(tmp_path: Path, script: str, env: dict, fixtures: dict, *, gh_fai
 # ---------------------------------------------------------------------------
 
 AREA_KEYS = {"docs_only", "backend", "frontend", "mcp", "scm", "backend_tests", "backend_code"}
+# Written by a lean release only (CI-LEAN): the diff base and the lean flag.
+LEAN_KEYS = {"lean", "base_sha"}
+LAST_RELEASE = "e" * 40
+TREE = "f" * 40
+RELEASE_RUNS = "repos/jayson-odoo/sorento-crm/actions/workflows/deploy.yml/runs?branch=main&event=workflow_dispatch&status=success&per_page=1"
 
 
 def run_step(
@@ -159,13 +164,19 @@ def run_step(
     before: str = BEFORE,
     skip_tests: str = "",
     label: str = "ci",
+    full_suite: str = "",
+    last_release: str | None = None,
+    validated: bool = False,
 ) -> dict[str, str]:
     """Run the real step with `files` as the API answer; return $GITHUB_OUTPUT.
 
     Each entry of `files` is a path, or a (new_path, previous_path) pair for a
     rename, shaped into the PR-files array or the compare object exactly as the
     GitHub API returns them. `label` is the label just added on a
-    pull_request event.
+    pull_request event. On a dispatch, `last_release` is the head of the
+    last successful release (None: the lookup finds none) and `files` is the
+    compare from it to the head; `validated` says a validated-tree artifact
+    exists for the head's tree.
     """
     entries = []
     for f in files:
@@ -177,14 +188,21 @@ def run_step(
         "repos/jayson-odoo/sorento-crm/pulls/1/files": entries,
         f"repos/jayson-odoo/sorento-crm/compare/{before}...{SHA}": {"files": entries},
         f"repos/jayson-odoo/sorento-crm/compare/{'c' * 40}...{'d' * 40}": {"files": entries},
+        RELEASE_RUNS: {"workflow_runs": [{"head_sha": last_release}] if last_release else []},
+        f"repos/jayson-odoo/sorento-crm/git/commits/{SHA}": {"sha": SHA, "tree": {"sha": TREE}},
+        f"repos/jayson-odoo/sorento-crm/actions/artifacts?name=validated-tree-{TREE}&per_page=5": {
+            "artifacts": [{"name": f"validated-tree-{TREE}", "expired": False}] if validated else []
+        },
     }
+    if last_release:
+        fixtures[f"repos/jayson-odoo/sorento-crm/compare/{last_release}...{SHA}"] = {"files": entries}
     env = {
         "EVENT": event, "LABEL": label if event == "pull_request" else "", "PR": "1",
         "PUSH_BEFORE": before, "PUSH_AFTER": SHA,
-        "MG_BASE": "c" * 40, "MG_HEAD": "d" * 40, "SKIP_TESTS": skip_tests,
+        "MG_BASE": "c" * 40, "MG_HEAD": "d" * 40, "SKIP_TESTS": skip_tests, "FULL_SUITE": full_suite,
     }
     outputs = _run_shell(tmp_path, _step_script("Detect changed areas"), env, fixtures, gh_fails=gh_fails)
-    assert set(outputs) == AREA_KEYS, outputs
+    assert AREA_KEYS <= set(outputs) <= AREA_KEYS | LEAN_KEYS, outputs
     return outputs
 
 
@@ -404,10 +422,56 @@ def test_fail_safes_land_on_the_full_pipeline(tmp_path):
     assert run_step(tmp_path, "push", many[:299]) == DOCS_SKIP
 
 
-def test_release_always_tests_the_whole_head(tmp_path):
-    """A dispatch has no diff: every area counts, docs_only is never true."""
+def test_release_with_no_release_to_diff_against_tests_the_whole_head(tmp_path):
+    """No successful release found (or full_suite): every area counts, the full
+    sharded suite runs, docs_only is never true."""
     assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY) == FULL_PIPELINE
     assert run_step(tmp_path, "workflow_dispatch", [], skip_tests="false") == FULL_PIPELINE
+    assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE, full_suite="true") == FULL_PIPELINE
+    assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE, gh_fails=True) == FULL_PIPELINE
+
+
+RELEASE_BATCH = [
+    "sorento_crm_backend/app/services/inventory_service.py",
+    "sorento_crm_backend/tests/test_rbac.py",
+    "sorento_crm_backend/tests/scm/test_committed_v.py",
+    "documentation/plans/ci/PLAN-ci-lean-10oct.md",
+]
+
+
+def test_a_release_diffs_against_the_last_successful_release(tmp_path):
+    """CI-LEAN: the lean release tests what the merged batch reaches. Backend
+    always counts (the core tier runs on every release); the frontend and MCP
+    flags follow the batch; tests/scm is listed like any other test."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE)
+    assert out == {
+        "docs_only": "false", "backend": "true", "frontend": "false", "mcp": "false", "scm": "true",
+        "backend_tests": "sorento_crm_backend/tests/scm/test_committed_v.py sorento_crm_backend/tests/test_rbac.py",
+        "backend_code": "sorento_crm_backend/app/services/inventory_service.py",
+        "lean": "true", "base_sha": LAST_RELEASE,
+    }
+    fe = run_step(tmp_path, "workflow_dispatch", ["sorento_crm_frontend/app/page.tsx"], last_release=LAST_RELEASE)
+    assert fe["frontend"] == "true" and fe["backend"] == "true" and fe["lean"] == "true"
+
+
+def test_a_docs_only_release_still_runs_the_core_tier(tmp_path):
+    out = run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE)
+    assert out["docs_only"] == "false" and out["backend"] == "true" and out["lean"] == "true"
+    assert out["backend_tests"] == "" and out["frontend"] == "false"
+
+
+def test_a_release_batch_at_the_compare_cap_runs_the_full_suite(tmp_path):
+    many = [f"sorento_crm_backend/app/x{i}.py" for i in range(300)]
+    assert run_step(tmp_path, "workflow_dispatch", many, last_release=LAST_RELEASE) == FULL_PIPELINE
+
+
+def test_a_tree_whose_release_tests_passed_is_not_tested_again(tmp_path):
+    """A re-dispatch (a rejected approval, a deploy hiccup) of a tree whose
+    release tests already passed builds and deploys only."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE, validated=True)
+    assert out == {"docs_only": "false", **NO_AREA}
+    assert run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE,
+                    validated=True, full_suite="true") == FULL_PIPELINE, "full_suite wins"
 
 
 def test_release_with_skip_tests_zeroes_every_area_but_is_not_docs_only(tmp_path):
@@ -1590,3 +1654,78 @@ def test_no_test_workflow_runs_on_a_schedule():
     assert not re.search(r"^  schedule:", triggers, re.M)
     assert re.search(r"^  workflow_dispatch:", triggers, re.M)
     assert not re.search(r"^  schedule:", _triggers(), re.M)
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: the lean release (core tier + what the batch reaches, one job).
+# ---------------------------------------------------------------------------
+
+LEAN_RELEASE = {
+    "docs_only": "false", "backend": "true", "frontend": "false", "mcp": "false", "scm": "true",
+    "backend_tests": "sorento_crm_backend/tests/test_rbac.py", "backend_code": "", "lean": "true",
+}
+
+
+def test_a_lean_release_runs_the_release_tests_job_never_the_shards():
+    ran = _ran(_simulate("workflow_dispatch", outputs=LEAN_RELEASE))
+    assert ran == {"check-migration-heads", "changes", "lean-gate", "build-images", "build-and-deploy"}
+    over = _ran(_simulate("workflow_dispatch", outputs={**LEAN_RELEASE, "lean": "false"}))
+    assert "lean-gate" not in over and {"test-backend", "test-backend-scm"} <= over, "over the cap: the full shards"
+
+
+def test_a_red_release_tests_job_blocks_the_deploy():
+    assert "lean-gate" in _job_ifs()["build-and-deploy"]["needs"]
+    results = _simulate("workflow_dispatch", outputs=LEAN_RELEASE, forced={"lean-gate": "failure"})
+    assert results["build-and-deploy"] == "skipped"
+
+
+def test_the_release_tests_job_reports_as_release_tests():
+    name = _expression(re.search(r"^    name: (.*)$", _job_block("lean-gate"), re.M).group(1))
+    assert _gh_eval(name, {"github": {"event_name": "workflow_dispatch", "event": {}}}) == "Release tests"
+
+
+def test_the_lean_flag_drops_to_the_shards_when_the_selection_is_over_the_cap():
+    block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
+    lean = _expression(re.search(r"^      lean: (.*)$", block, re.M).group(1))
+    ctx = lambda flt, full: {"steps": {"filter": {"outputs": {"lean": flt}}, "select": {"outputs": {"full": full}}}}
+    assert str(_gh_eval(lean, ctx("true", "false"))).lower() == "true"
+    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("", ""))).lower() == "false"
+
+
+def test_a_passed_release_tests_job_marks_its_tree_validated():
+    steps = _lean_gate_steps()
+    mark = steps["Mark this tree as validated"]
+    assert "github.event_name == 'workflow_dispatch'" in mark and "success()" in mark
+    assert "validated-tree-" in "\n".join(steps.values())
+
+
+def test_the_core_tier_lists_existing_test_files_only():
+    core = REPO / "sorento_crm_backend" / "tests" / "release_core.txt"
+    lines = [l.strip() for l in core.read_text(encoding="utf-8").splitlines() if l.strip() and not l.strip().startswith("#")]
+    assert len(lines) >= 20
+    for rel in lines:
+        assert re.match(r"^tests/([A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_.-]*\.py$", rel), rel
+        assert (REPO / "sorento_crm_backend" / rel).is_file(), rel
+
+
+def test_the_select_step_adds_the_core_tier_on_a_lean_release(tmp_path):
+    output = tmp_path / "select.txt"
+    output.write_text("")
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Select backend tests by import")],
+        cwd=REPO,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "GITHUB_OUTPUT": str(output),
+             "BACKEND_CODE": "", "BACKEND_TESTS": "", "LEAN": "true"},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert "sorento_crm_backend/tests/chatbot/test_turn_replay.py" in outputs["tests"].split()
+    assert outputs["full"] == "false"
+    block = re.search(r"\n  changes:\n(.*?)\n  [a-z][\w-]*:\n", _workflow_text(), re.S).group(1)
+    assert "steps.filter.outputs.lean == 'true'" in block, "the checkout and select steps run on a lean release"
+
+
+def test_full_suite_is_a_release_input():
+    assert re.search(r"^      full_suite:$", _triggers(), re.M)
