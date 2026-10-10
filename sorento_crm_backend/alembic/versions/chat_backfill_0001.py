@@ -14,7 +14,7 @@ Idempotent: the constraints are dropped if present and re-added, the column and 
 upgrades cleanly. The drop and re-add is cheap at this table's size.
 
 Revision ID: chat_backfill_0001
-Revises: chat_topics_0003_uuid_id
+Revises: rts_0001_runtime_settings
 """
 import sqlalchemy as sa
 from alembic import op
@@ -22,7 +22,7 @@ from sqlalchemy.dialects import postgresql
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "chat_backfill_0001"
-down_revision = "chat_topics_0003_uuid_id"
+down_revision = "rts_0001_runtime_settings"
 branch_labels = None
 depends_on = None
 
