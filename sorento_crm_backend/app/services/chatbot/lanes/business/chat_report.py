@@ -157,16 +157,6 @@ def take_words(verdict: dict[str, Any]) -> dict[str, Any]:
     return {**verdict, "entities": kept, "chat_report_products": words}
 
 
-def _product_words(parse_output: dict[str, Any]) -> list[str]:
-    held = parse_output.get("chat_report_products")
-    if isinstance(held, list):
-        return [jsc.js_string(w) for w in held]
-    return [
-        " ".join(jsc.js_string(e.get("raw") or "").split())
-        for e in report_ask._current_entities(parse_output, "product")
-    ]
-
-
 def _needs_top_n(args: dict[str, Any]) -> bool:
     return bool(args.get("group_by")) and args["group_by"] not in TRENDS
 
@@ -253,26 +243,13 @@ def _args(
     # A word that resolves to nothing is said, never an empty ranking that looks like data.
     for kind, param in (("customer", "customer_ids"), ("product", "product_ids")):
         ids: list[str] = []
-        # The filter words are the extractor's (`customer_words`, `product_words`); what the parser
-        # tagged never filters a chat report and never makes a miss line. A reading without the key
-        # (an older shape) falls back to the parser's own words.
-        words_key = f"{kind}_words"
-        from_extractor = words_key in report
-        if from_extractor:
-            words = [" ".join(jsc.js_string(w).split()) for w in jsc.array(report.get(words_key))]
-        elif kind == "product":
-            words = _product_words(parse_output)
-        else:
-            words = [
-                " ".join(jsc.js_string(e.get("raw") or "").split())
-                for e in report_ask._current_entities(parse_output, kind)
-            ]
+        # The filter words are the extractor's alone (`customer_words`, `product_words`); what the
+        # parser tagged never filters a chat report and never makes a miss line. A missing key is none.
+        words = [" ".join(jsc.js_string(w).split()) for w in jsc.array(report.get(f"{kind}_words"))]
         for word in words:
             if not word:
                 continue
             found = _resolve_word(db, kind, word)
-            if not found and kind == "product" and not from_extractor:
-                continue  # a parser word the report cannot use is not a filter, and not a miss line
             if dealer and kind == "customer":
                 # A dealer's word only ever names its own customers: another dealer's name
                 # gets the same line as a name that does not exist.
