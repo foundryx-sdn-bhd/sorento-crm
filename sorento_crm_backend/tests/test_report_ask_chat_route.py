@@ -121,7 +121,8 @@ def test_an_unknown_dataset_is_422(client, db):
     assert resp.json().get("detail") != "dataset", "'dataset' is a declared param: the VALUE is what is refused"
 
 
-@pytest.mark.parametrize("group_by", ["brand", "sales_agent", "category", "location", "channel", "nonsense"])
+# brand, category valid chat axes since the owner hand-test round (lead, 10 Oct)
+@pytest.mark.parametrize("group_by", ["sales_agent", "location", "channel", "nonsense"])
 def test_a_sales_or_unknown_group_by_is_422(client, db, group_by):
     seed_world(db)
     resp = _ask(client, _staff(db), group_by=group_by, top_n=5)
