@@ -2179,18 +2179,24 @@ Marketing's own work is not part of the form's payload, so it is captured
             line.promotion_id for line in request.lines if line.promotion_id
         }
         promotion_names: dict[str, str] = {}
+        promotion_ends: dict[str, object] = {}
         if promotion_ids:
             from app.models.marketing import Promotion
+            from app.services.dealer_kit.pricing import business_today
 
-            promotion_names = {
-                promo.id: promo.description or ""
-                for promo in db.query(Promotion.id, Promotion.description)
+            today = business_today()
+            for promo in (
+                db.query(Promotion.id, Promotion.description, Promotion.end_date)
                 .filter(Promotion.id.in_(promotion_ids))
                 .all()
-            }
+            ):
+                promotion_names[promo.id] = promo.description or ""
+                if promo.end_date is not None and promo.end_date < today:
+                    promotion_ends[promo.id] = promo.end_date
         for line in response.lines:
             if line.promotion_id:
                 line.promotion_name = promotion_names.get(line.promotion_id)
+                line.promotion_expired_on = promotion_ends.get(line.promotion_id)
 
         PriceTagRequestService._fill_line_parts(db, request, response)
 

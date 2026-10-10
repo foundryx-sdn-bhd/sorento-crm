@@ -111,10 +111,11 @@ import {
 } from '../lib/portal-client';
 import type { TagSheetDesignPayload } from '@/lib/dealer-kit/design-payload';
 import { cn } from '@/lib/utils';
+import { promotionOptionName } from '@/lib/dealer-kit/line-pricing-types';
 
 /** Where an AI-extracted product line stands against the catalogue lookup
  *  (D7/AC-S6-2), shown in the extract dialog's own result table. */
-type AIMatchStatus = 'loading' | 'matched_product' | 'matched_set' | 'not_found';
+type AIMatchStatus = 'loading' | 'matched_product' | 'matched_set' | 'not_found' | 'picked';
 
 // ---------------------------------------------------------------------------
 // Draft line (client-side, before persisting)
@@ -304,8 +305,14 @@ function viewPromotionCell(line: PriceTagRequestLine, withLabel: boolean) {
         </div>
       )}
       <div className="text-sm font-medium">
-        {line.promotion_name ??
-          (line.sell_price_basis === 'manual' ? 'Manual price' : '-')}
+        {line.promotion_name != null
+          ? promotionOptionName({
+              description: line.promotion_name,
+              expired_on: line.promotion_expired_on,
+            })
+          : line.sell_price_basis === 'manual'
+            ? 'Manual price'
+            : '-'}
       </div>
     </div>
   );
@@ -576,6 +583,10 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
   // already knows.
   const [aiMatchStatuses, setAiMatchStatuses] = useState<Record<string, AIMatchStatus>>({});
   const aiMatchesRef = useRef<Record<string, TagItemOption | null>>({});
+  // AI-EXTRACT-DYM: the "did you mean" suggestion the user picked per code
+  // (product id), keyed like `aiMatchStatuses`. Empty after every extraction:
+  // nothing is picked for the user.
+  const [aiPicks, setAiPicks] = useState<Record<string, string>>({});
   const normalizeAiCode = (raw: string | null | undefined) => (raw ?? '').trim().toLowerCase();
 
 
@@ -1045,6 +1056,34 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
       });
 
       setAiMatchStatuses(statuses);
+      setAiPicks({});
+    },
+    [],
+  );
+
+  /** AI-EXTRACT-DYM: the user confirms (or clears) one suggestion for a row
+   *  with no match. A pick reads exactly like a matched product from here on,
+   *  so Apply needs no branch of its own; a clear puts the row back to
+   *  not found. */
+  const handleAIPick = useCallback(
+    (p: AIExtractedProductLine, productId: string) => {
+      const code = normalizeAiCode(p.product_code);
+      const pick = (p.suggestions ?? []).find((s) => s.product_id === productId);
+      aiMatchesRef.current[code] = pick
+        ? {
+            kind: 'product',
+            id: pick.product_id,
+            code: pick.product_code,
+            name: pick.product_name || pick.product_code,
+          }
+        : null;
+      setAiMatchStatuses((prev) => ({ ...prev, [code]: pick ? 'picked' : 'not_found' }));
+      setAiPicks((prev) => {
+        const next = { ...prev };
+        if (pick) next[code] = pick.product_id;
+        else delete next[code];
+        return next;
+      });
     },
     [],
   );
@@ -2904,7 +2943,12 @@ export function PriceTagRequestForm({ requestId, slug }: Props) {
         onApply={handleAIExtractApply}
         onExtracted={handleAIExtracted}
         renderRowStatus={(p) => (
-          <AIMatchStatusLabel status={aiMatchStatuses[normalizeAiCode(p.product_code)]} />
+          <AIMatchCell
+            product={p}
+            status={aiMatchStatuses[normalizeAiCode(p.product_code)]}
+            picked={aiPicks[normalizeAiCode(p.product_code)] ?? ''}
+            onPick={handleAIPick}
+          />
         )}
         initialFiles={aiExtractFiles}
       />
@@ -3160,7 +3204,7 @@ function LineRow({
   const promotionOptions: SearchableSelectOption[] = (pricing?.promotion_options ?? []).map(
     (option) => ({
       value: option.id,
-      label: `${option.description} - ${formatRM(option.sell_price)}`,
+      label: `${promotionOptionName(option)} - ${formatRM(option.sell_price)}`,
     }),
   );
   // The last open (unresolved) part row - AC-S2-3's copy sits under it,
@@ -3473,9 +3517,49 @@ function AIMatchStatusLabel({ status }: { status: AIMatchStatus | undefined }) {
       return <span className="text-emerald-700">Matched set</span>;
     case 'not_found':
       return <span className="text-destructive">Not found</span>;
+    case 'picked':
+      return <span className="text-emerald-700">Matched (picked)</span>;
     default:
       return <span className="text-muted-foreground">Checking...</span>;
   }
+}
+
+/** AI-EXTRACT-DYM: a row with no match but with "did you mean" suggestions
+ *  adds a picker under its status. Nothing is pre-selected; the row only
+ *  becomes a line once the user picks one. */
+function AIMatchCell({
+  product,
+  status,
+  picked,
+  onPick,
+}: {
+  product: AIExtractedProductLine;
+  status: AIMatchStatus | undefined;
+  picked: string;
+  onPick: (product: AIExtractedProductLine, productId: string) => void;
+}) {
+  const suggestions = product.suggestions ?? [];
+  if ((status !== 'not_found' && status !== 'picked') || suggestions.length === 0) {
+    return <AIMatchStatusLabel status={status} />;
+  }
+  return (
+    <div className="flex min-w-48 flex-col gap-1">
+      <AIMatchStatusLabel status={status} />
+      <SearchableSelect
+        value={picked}
+        onChange={(v) => onPick(product, v)}
+        options={suggestions.map((s) => ({
+          value: s.product_id,
+          label: s.product_name ? `${s.product_code} - ${s.product_name}` : s.product_code,
+        }))}
+        placeholder="Did you mean?"
+        aria-label={`Did you mean, for ${product.product_code ?? 'this row'}`}
+        size="sm"
+        wrapOptions
+        clearable
+      />
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

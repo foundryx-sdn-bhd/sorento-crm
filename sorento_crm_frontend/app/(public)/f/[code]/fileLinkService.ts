@@ -12,7 +12,7 @@
  *     404 -> { detail: "This link has expired." }
  *     429 -> too many requests
  * GET /api/v1/public/file-links/{code}/content
- *     -> the file bytes, only for "sheet".
+ *     -> the file bytes, only for "sheet". 413 when over the preview cap, unless `?download=1`.
  * ---------------------------------------------------------------------------
  */
 
@@ -68,8 +68,16 @@ export async function readFileLink(code: string): Promise<FileLinkResult> {
 }
 
 /** `fetchBytes` for AttachmentPreviewModal and the Download button on a sheet link. */
-export function fetchFileLinkContent(code: string): Promise<Response> {
-  return fetch(absoluteApiUrl(`${linkPath(code)}/content`));
+export function fetchFileLinkContent(
+  code: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(absoluteApiUrl(`${linkPath(code)}/content`), { signal });
+}
+
+/** The whole file for the Download button; the plain route refuses a sheet over the preview cap. */
+export function fetchFileLinkDownload(code: string): Promise<Response> {
+  return fetch(absoluteApiUrl(`${linkPath(code)}/content?download=1`));
 }
 
 export function fileLinkContentPath(code: string): string {

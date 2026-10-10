@@ -23,7 +23,6 @@ from fastapi.exceptions import RequestValidationError
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.database import get_db
 from app.services.analytics_connector.reused_tools import REUSED_TOOLS
 from app.services.error_handler import AppException
@@ -113,8 +112,11 @@ def request_hash(method: str, raw_path: str, query: str, body: bytes) -> str:
 def verify_token(token: str) -> dict:
     """The verified claims of a call token, or ConnectorError 401 / 503. Needs no body: the
     request's own binding (``req_hash``) is checked by ``check_request_hash`` once the body is read."""
-    secret = settings.connector_ss_to_product_secret
-    connection_id = settings.connector_connection_id
+    from app.services import runtime_settings
+
+    config = runtime_settings.get_many(("connector_ss_to_product_secret", "connector_connection_id"))
+    secret = config["connector_ss_to_product_secret"]
+    connection_id = config["connector_connection_id"]
     if not secret or not connection_id:
         raise _not_configured()
     if not token or len(token) > MAX_TOKEN_CHARS:

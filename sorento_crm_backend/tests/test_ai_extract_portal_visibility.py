@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.main import app  # noqa: E402
 
 from tests._pg_fixture import blank_session
-from tests._portal_grant import grant_portal_forms
+from tests._portal_grant import grant_portal_forms, link_contact_company
 
 _TINY_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
@@ -51,6 +51,7 @@ def _contact(db):
     )
     db.add(contact)
     db.flush()
+    link_contact_company(db, contact.id)
     return contact
 
 

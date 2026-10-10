@@ -42,7 +42,7 @@ from app.services.ai_extract.form_schema_registry import (
     ExtractFieldSpec,
     get_form_schema,
 )
-from app.services.entity_resolver import resolve_references
+from app.services.entity_resolver import TokenResolution, resolve_references
 from app.services.error_handler import AppException
 from app.services.llm_provider import (
     ChatResult,
@@ -115,6 +115,15 @@ class ExtractFieldMeta(BaseModel):
     source: str | None = None  # "llm", "lookup_resolved", "product_master"
 
 
+class ExtractedProductSuggestion(BaseModel):
+    """One "did you mean" candidate for a code with no exact match
+    (AI-EXTRACT-DYM). Never applied by the server: the user picks it."""
+
+    product_id: str
+    product_code: str
+    product_name: str | None = None
+
+
 class ExtractedProductLine(BaseModel):
     product_code: str | None = None
     product_name: str | None = None
@@ -130,6 +139,10 @@ class ExtractedProductLine(BaseModel):
     match: Literal["product", "product_set"] | None = None
     product_id: str | None = None
     product_set_id: str | None = None
+    # AI-EXTRACT-DYM: only on a line with no match - the resolver's own trigram
+    # neighbours for the misread code, active products only, best first. A
+    # suggestion never sets `match` / `product_id`; the user confirms one.
+    suggestions: list[ExtractedProductSuggestion] = []
 
 
 class TokenUsage(BaseModel):
@@ -169,6 +182,10 @@ class AIExtractService:
     # batch cap (`_resolve_product_codes`) - a plain sales order this long is
     # not a real extract, so 100 is the bound.
     _MAX_RESOLVE_CANDIDATES = 100
+    # AI-EXTRACT-DYM: "did you mean" candidates shown per misread line. The
+    # right code ranked first in all four real misreads (9 Oct), and more rows
+    # make the Match cell tall at 375px.
+    _MAX_SUGGESTIONS = 3
 
     def __init__(self, db: Session):
         self.db = db
@@ -990,6 +1007,7 @@ class AIExtractService:
         codes: list[str],
         *,
         allowed_entity_types: frozenset[str] = frozenset({"product", "product_set"}),
+        suggestions_out: dict[str, list[ExtractedProductSuggestion]] | None = None,
     ) -> dict[
         str,
         tuple[str, Literal["product", "product_set"] | None, str | None, str | None, str | None],
@@ -1020,6 +1038,15 @@ class AIExtractService:
         the price tag / portal code to defer to for the chunk size, and
         `resolve_references` exposes no switch to skip that pass on its own -
         simplest is to bound the batch, not add one).
+
+        AI-EXTRACT-DYM: when `suggestions_out` is given, every code left out of
+        the map gets its "did you mean" candidates written there - the
+        `alternatives` the same resolver call already computed for a miss
+        (company-scoped trigram neighbours, `entity_resolver.resolve_references`),
+        products only, active only (the manual Item picker's own filter,
+        `tag_data_service.search_products`; applied inside the resolver before
+        its cap of 5, `alternatives_active_only`), at most `_MAX_SUGGESTIONS`. No
+        second lookup and no auto-apply: the user confirms one in the dialog.
         """
         cleaned = [c for c in (codes or []) if c]
         if not cleaned:
@@ -1040,6 +1067,7 @@ class AIExtractService:
                     enable_prefix_fallback=False,
                     enable_embedding_fallback=False,
                     max_candidates=len(chunk),
+                    alternatives_active_only=suggestions_out is not None,
                 )
             except Exception:
                 # A resolver failure must not turn an LLM extract that already
@@ -1075,7 +1103,33 @@ class AIExtractService:
                 elif match.entity_type == "product_set":
                     name = (match.display or {}).get("name")
                     out[tr.token] = (match.canonical_code, "product_set", None, match.uuid, name)
+            if suggestions_out is not None:
+                self._collect_suggestions(
+                    [tr for tr in result.resolutions if tr.token not in out],
+                    suggestions_out,
+                )
         return out
+
+    def _collect_suggestions(
+        self,
+        misses: list[TokenResolution],
+        suggestions_out: dict[str, list[ExtractedProductSuggestion]],
+    ) -> None:
+        """Writes each missed token's product `alternatives` (in the resolver's
+        own ranking, already active-only via `alternatives_active_only`, so the
+        filter ran before the resolver's cap of 5) into `suggestions_out`."""
+        for tr in misses:
+            picked = [
+                ExtractedProductSuggestion(
+                    product_id=str(a.uuid),
+                    product_code=a.canonical_code,
+                    product_name=(a.display or {}).get("product_name"),
+                )
+                for a in tr.alternatives
+                if a.entity_type == "product" and a.uuid
+            ][: self._MAX_SUGGESTIONS]
+            if picked:
+                suggestions_out[tr.token] = picked
 
     def _extract_products(self, parsed: dict[str, Any]) -> list[ExtractedProductLine]:
         raw = parsed.get("products")
@@ -1083,7 +1137,10 @@ class AIExtractService:
             return []
         items = [item for item in raw if isinstance(item, dict)]
         raw_codes = [str(item.get("product_code") or "").strip() for item in items]
-        resolved = self._resolve_product_codes([c for c in raw_codes if c])
+        suggestions: dict[str, list[ExtractedProductSuggestion]] = {}
+        resolved = self._resolve_product_codes(
+            [c for c in raw_codes if c], suggestions_out=suggestions
+        )
 
         def _coerce_float(raw: Any) -> float | None:
             if raw is None or raw == "":
@@ -1122,6 +1179,7 @@ class AIExtractService:
                     match=match,
                     product_id=product_id,
                     product_set_id=product_set_id,
+                    suggestions=[] if match else suggestions.get(raw_code, []),
                 )
             )
         return out

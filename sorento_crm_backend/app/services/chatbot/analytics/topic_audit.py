@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.chat_facts import ChatAskFact, ChatAskItem, ChatLabelAudit, ChatTopic
+from app.models.chat_history import ChatHistory
 from app.models.chatbot_turn import ChatbotTurn
 from app.models.product import Product
 from app.models.user import User
@@ -210,6 +211,18 @@ def _names(db: Session, user_ids: set[str]) -> dict[str, str]:
     }
 
 
+def _history_words(db: Session, history_ids: set[int]) -> dict[int, str]:
+    """A backfilled ask's words (CA-4), read from its `chat_histories` row for this response
+    only, as a traced ask's are read from its turn envelope; never stored."""
+    if not history_ids:
+        return {}
+    table = ChatHistory.__table__
+    return {
+        int(hid): message or ""
+        for hid, message in db.execute(sa.select(table.c.id, table.c.message).where(table.c.id.in_(history_ids)))
+    }
+
+
 def _rows(db: Session, audits: list[tuple[ChatLabelAudit, ChatAskFact, Optional[ChatbotTurn]]]) -> list[dict[str, Any]]:
     codes: set[str] = set()
     for audit, fact, _turn in audits:
@@ -217,6 +230,7 @@ def _rows(db: Session, audits: list[tuple[ChatLabelAudit, ChatAskFact, Optional[
     labels = _labels(db, {c for c in codes if c})
     products = _product_codes(db, [str(a.ask_id) for a, _f, _t in audits])
     names = _names(db, {a.reviewed_by for a, _f, _t in audits if a.reviewed_by})
+    history = _history_words(db, {f.history_id for _a, f, _t in audits if f.history_id is not None})
     rows = []
     for audit, fact, turn in audits:
         subject = fact.domain or "general"
@@ -224,7 +238,9 @@ def _rows(db: Session, audits: list[tuple[ChatLabelAudit, ChatAskFact, Optional[
             {
                 "id": str(audit.id),
                 "asked_at": fact.asked_at,
-                "message": _message_text(turn) if turn is not None else "",
+                "message": (
+                    _message_text(turn) if turn is not None else history.get(fact.history_id, "")
+                ),
                 "subject": subject,
                 "subject_label": labels.get(subject, subject),
                 "topic": fact.topic_code or "",

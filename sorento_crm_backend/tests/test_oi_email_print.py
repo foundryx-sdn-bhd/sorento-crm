@@ -303,8 +303,12 @@ def test_migration_is_the_single_head():
 
     module = _load(REVISION)
     assert module.revision == REVISION and len(REVISION) <= 32
-    heads = list(ScriptDirectory.from_config(Config("alembic.ini")).get_heads())
-    assert heads == [REVISION], heads
+    # Later migrations stack on top, so the property is one head with this revision on its
+    # ancestry, not this revision being the head forever.
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    heads = list(script.get_heads())
+    assert len(heads) == 1, heads
+    assert REVISION in {r.revision for r in script.walk_revisions(base="base", head=heads[0])}
 
 
 def test_upgrade_converts_0004_document_in_place_idempotent_and_reversible():

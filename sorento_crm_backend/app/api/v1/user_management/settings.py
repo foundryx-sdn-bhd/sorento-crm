@@ -1,6 +1,6 @@
 """System settings API routes."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Literal, Optional
@@ -535,6 +535,110 @@ async def get_app_config(
         raise handle_internal_error(str(e))
 
 
+# SETTINGS-IN-DB-SORENTO: the settings that used to be prod env vars. Their own slug, not
+# `.edit`: that one is also held by warehouse_manager and the integration API-key roles, and
+# the webhook secret decides who may write chat history. See app/services/runtime_settings.py.
+RUNTIME_SETTINGS_PERMISSION = "user_management.settings.secrets"
+
+
+_RUNTIME_MAX_LENGTH = {
+    "connector_ss_to_product_secret": 1000,
+    "connector_product_to_ss_secret": 1000,
+    "connector_connection_id": 255,
+    "connector_ss_callback_url": 2048,
+    "analytics_ro_database_url": 2000,
+    "respond_webhook_secret": 1000,
+}
+_RO_DSN_SCHEMES = ("postgresql://", "postgresql+psycopg2://", "postgres://")
+
+
+def _row_without_secrets(settings: SystemSetting) -> dict:
+    """The settings row for a PUT's echo, minus every stored secret: the runtime secrets'
+    ciphertext (SETTINGS-IN-DB-SORENTO review) and the SMTP password. Returning the ORM row
+    itself serialised every column to any caller of these routes."""
+    from sqlalchemy import inspect as sa_inspect
+
+    return {
+        attr.key: getattr(settings, attr.key)
+        for attr in sa_inspect(SystemSetting).column_attrs
+        if not attr.key.endswith("_ciphertext") and attr.key != "smtp_password"
+    }
+
+
+def _validate_runtime_payload(payload: Any) -> dict:
+    """Omitted = keep; null or "" = clear (env applies again); a value = save it.
+
+    Checked here rather than by a Pydantic model on purpose: the app's 422 handler logs each
+    Pydantic error with its `input`, which for these fields is a secret or a DSN carrying a
+    password (security review M1). Every refusal below names the field, never the value."""
+    def _refuse(message: str) -> HTTPException:
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
+
+    if not isinstance(payload, dict):
+        raise _refuse("Expected a JSON object.")
+    from app.services import runtime_settings
+
+    unknown = sorted(k for k in payload if k not in runtime_settings.FIELDS)
+    if unknown:
+        raise _refuse(f"Unknown settings: {', '.join(str(k)[:64] for k in unknown)}")
+    for name, value in payload.items():
+        if value is None:
+            continue
+        if name in runtime_settings.BOOL_FIELDS:
+            if not isinstance(value, bool):
+                raise _refuse(f"{name} must be true, false or null.")
+            continue
+        if not isinstance(value, str):
+            raise _refuse(f"{name} must be text or null.")
+        if len(value) > _RUNTIME_MAX_LENGTH[name]:
+            raise _refuse(f"{name} is longer than {_RUNTIME_MAX_LENGTH[name]} characters.")
+        text = value.strip().lower()
+        if text and name == "connector_ss_callback_url" and not text.startswith("https://"):
+            raise _refuse("The callback URL must start with https://")
+        if text and name == "analytics_ro_database_url" and not text.startswith(_RO_DSN_SCHEMES):
+            raise _refuse("The read-only database URL must be a postgresql:// URL.")
+    return payload
+
+
+def _runtime_settings_body(db: Session) -> dict:
+    from app.api.v1.public.respond_webhook import SIGNATURE_HEADERS
+    from app.services import runtime_settings
+
+    return {
+        "fields": runtime_settings.describe(db),
+        "respond_webhook_path": "/api/v1/public/respond/webhook",
+        "respond_signature_headers": list(SIGNATURE_HEADERS),
+        # `respond_webhook.SHARED_SECRET_HEADER`, in the casing Respond.io's form is given.
+        "respond_shared_secret_header": "X-Respond-Webhook-Secret",
+    }
+
+
+@router.get("/runtime")
+async def get_runtime_settings(
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
+    db: Session = Depends(get_db),
+):
+    """The env-fallback runtime settings with their source; secrets masked (last 4 only)."""
+    return _runtime_settings_body(db)
+
+
+@router.put("/runtime")
+async def update_runtime_settings(
+    payload: Any = Body(...),
+    current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
+    db: Session = Depends(get_db),
+):
+    """Save the provided runtime settings; one audit row per save, never a secret value."""
+    from app.audit_context import get_actor
+    from app.services import runtime_settings
+
+    # The person at the keyboard: the admin, not the target, under impersonation.
+    actor = get_actor(db)
+    actor_id = (actor.real_user_id or actor.user_id) if actor else None
+    runtime_settings.update(db, _validate_runtime_payload(payload), actor_id or current_user["id"])
+    return _runtime_settings_body(db)
+
+
 def _chatbot_memory_own_level_count(db: Session) -> int:
     """Read-only: how many contacts carry their own `chatbot_memory_level`, for the
     Memory card's "Contacts with their own level" line (chatbot memory lane A,
@@ -912,7 +1016,7 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
 
     db.commit()
     db.refresh(settings)
-    return {"message": "General settings updated successfully", "data": settings}
+    return {"message": "General settings updated successfully", "data": _row_without_secrets(settings)}
 
 
 @router.put("/general", status_code=status.HTTP_200_OK)
@@ -1019,7 +1123,7 @@ async def update_notification_settings(
         
         db.commit()
         db.refresh(settings)
-        return {"message": "Notification settings updated successfully", "data": settings}
+        return {"message": "Notification settings updated successfully", "data": _row_without_secrets(settings)}
     except HTTPException:
         raise
     except Exception as e:
