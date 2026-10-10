@@ -94,9 +94,11 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
 - **UAC-27** "which salesperson asked the most questions" ranks asking salespeople by name;
   "top categories asked by dealers" filters asker dealer; group by asker gives Dealer /
   Salesperson / Staff / Unclassified rows.
-- **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`.
-- **UAC-29** By default staff asks are out and unclassified asks are IN as their own row; one
-  constant switches unclassified out.
+- **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`;
+  every reply whose run leaves unclassified askers out by default (any axis) has the line
+  `Unclassified askers left out: N` when N > 0 (distinct contacts in the period and other filters).
+- **UAC-29** (owner, 10 Oct: "just leave it") By default staff AND unclassified asks are out;
+  `DEFAULT_ASKERS` = dealer + salesperson; a message can still ask for unclassified or staff.
 - **UAC-30** Category and brand: "top categories asked by salesperson for sorento" ranks product
   categories, asker salesperson, brand Sorento; "top discussed water closet and basin for sorento
   in 2026" ranks products filtered to those categories and that brand.

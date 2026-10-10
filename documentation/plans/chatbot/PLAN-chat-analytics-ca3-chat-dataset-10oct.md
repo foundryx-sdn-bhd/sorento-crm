@@ -184,12 +184,13 @@ column, no backfill) and a Python function for the route.
   the route only with the grant, which the owner gives per contact (behaviour card Q5 a). The sales report keeps its rule.
 - **Asked-by axis and filter (G1)**: group_by `asker` (Dealer / Salesperson / Staff /
   Unclassified) and group_by `salesperson` (the asking salesperson's name, `sales_agents`);
-  filter `askers` (any of the four). Default filter: dealer + salesperson + unclassified (staff
-  testing stays out, as office did). The one switch: `DEFAULT_ASKERS` in the chat dataset;
+  filter `askers` (any of the four). Default filter (owner 10 Oct, "just leave it"): dealer + salesperson; staff and unclassified
+  stay out unless the message names them. The one switch: `DEFAULT_ASKERS` in the chat dataset;
   removing `unclassified` there excludes them everywhere by default; a message can still name
   them.
 - **Unclassified line**: every reply that splits or filters by asker carries
-  `Unclassified askers: N` (distinct contacts in the period and filters), even when 0.
+  `Unclassified askers: N` (distinct contacts in the period and filters), even when 0; every reply
+  whose run leaves them out by default carries `Unclassified askers left out: N` when N > 0.
 - **Category and brand (G4)**: group_by `category` / `brand` and filters `category_ids` /
   `brand_ids`, through the asked products (`chat_ask_items` role named -> products ->
   category / brand). The extractor gains `category_words` and `brand_words`; the lane resolves
