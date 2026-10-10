@@ -190,6 +190,79 @@ def test_a_wrong_shared_secret_is_401(client, db):
 
 
 # ---------------------------------------------------------------------------
+# RESPOND-MULTI-KEY: Respond.io makes one webhook per event type, each with its own
+# auto-generated base64 signing key, so the setting holds several keys and any one passes.
+# ---------------------------------------------------------------------------
+
+KEY_ONE = "k9/Fq+2Zr8LmW1x/Pt7+eD4uYc0sHn6vJb3aTq5oRg8="
+KEY_TWO = "Zx+7mP/2Qw9eLr4/Tn6+Ya1cVb8uKd3sHj5gFo0iEk4="
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        f"{KEY_ONE}\n{KEY_TWO}",
+        f"{KEY_ONE},{KEY_TWO}",
+        f"  {KEY_ONE} ,\n\n , {KEY_TWO}\r\n",
+        f"{KEY_ONE} {KEY_TWO}",
+    ],
+)
+def test_a_request_signed_with_the_second_key_passes(client, db, monkeypatch, configured):
+    monkeypatch.setattr(settings, "respond_webhook_secret", configured)
+    raw, headers = _signed(_event(), secret=KEY_TWO)
+    r = client.post(WEBHOOK_URL, content=raw, headers=headers)
+    assert r.status_code == 200, r.text
+    assert len(_rows(db)) == 1
+
+
+def test_a_request_signed_with_the_first_key_passes(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "respond_webhook_secret", f"{KEY_ONE}\n{KEY_TWO}")
+    raw, headers = _signed(_event(), secret=KEY_ONE, encoding="base64")
+    r = client.post(WEBHOOK_URL, content=raw, headers=headers)
+    assert r.status_code == 200, r.text
+
+
+def test_a_request_signed_with_an_unknown_key_is_401(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "respond_webhook_secret", f"{KEY_ONE}\n{KEY_TWO}")
+    raw, headers = _signed(_event(), secret="Qm9ndXMva2V5K3dpdGgvc2xhc2hlcz09")
+    r = client.post(WEBHOOK_URL, content=raw, headers=headers)
+    assert r.status_code == 401
+    assert _rows(db) == []
+
+
+def test_the_whole_key_list_is_not_itself_a_key(client, db, monkeypatch):
+    configured = f"{KEY_ONE}\n{KEY_TWO}"
+    monkeypatch.setattr(settings, "respond_webhook_secret", configured)
+    raw, headers = _signed(_event(), secret=configured)
+    assert client.post(WEBHOOK_URL, content=raw, headers=headers).status_code == 401
+    shared = client.post(
+        WEBHOOK_URL,
+        content=raw,
+        headers={"x-respond-webhook-secret": configured, "content-type": "application/json"},
+    )
+    assert shared.status_code == 401
+
+
+def test_the_shared_secret_header_matches_any_configured_key(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "respond_webhook_secret", f"{KEY_ONE}, {KEY_TWO}")
+    raw = json.dumps(_event()).encode()
+    r = client.post(
+        WEBHOOK_URL,
+        content=raw,
+        headers={"x-respond-webhook-secret": KEY_TWO, "content-type": "application/json"},
+    )
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("configured", [" ", ",", " ,\n, \t"])
+def test_a_setting_with_only_separators_is_503(client, db, monkeypatch, configured):
+    monkeypatch.setattr(settings, "respond_webhook_secret", configured)
+    r = _post(client, _event())
+    assert r.status_code == 503
+    assert _rows(db) == []
+
+
+# ---------------------------------------------------------------------------
 # AC-WH1: the same row as n8n, deduped either way round
 # ---------------------------------------------------------------------------
 
