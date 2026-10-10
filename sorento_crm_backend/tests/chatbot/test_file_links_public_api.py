@@ -259,3 +259,76 @@ def test_a_stored_url_off_the_list_is_never_handed_out(env, monkeypatch):
     resp = client.get(f"{BASE}/PROMO00000000002")
     assert resp.status_code == 502
     assert "cdn-sorento.com" not in resp.text
+
+
+# --------------------------------------------------------------------------- #
+# LINK-XLSX-VIEWER: a sheet over 10 MB is not sent to the in-browser viewer.
+# --------------------------------------------------------------------------- #
+
+CAP = 10 * 1024 * 1024
+TOO_BIG = "This file is too big to show here."
+
+
+def _sized(monkeypatch, size: int) -> bytes:
+    payload = b"x" * size
+    monkeypatch.setattr("app.api.v1.public.file_links.download_bytes", lambda url: payload)
+    return payload
+
+
+def test_ac_b1_a_sheet_at_the_cap_answers_200_with_the_bytes(env, monkeypatch):
+    client, db, _ = env
+    payload = _sized(monkeypatch, CAP)
+    _link(db, "SHEETCAP001", "https://cdn.test/r.xlsx", "r.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP001/content")
+    assert resp.status_code == 200, resp.text[:200]
+    assert resp.content == payload
+
+
+def test_ac_b2_a_sheet_over_the_cap_answers_413_and_no_bytes(env, monkeypatch):
+    client, db, _ = env
+    _sized(monkeypatch, CAP + 1)
+    _link(db, "SHEETCAP002", "https://cdn.test/r.xlsx", "r.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP002/content")
+    assert resp.status_code == 413, resp.status_code
+    assert resp.json() == {"detail": TOO_BIG}
+    assert len(resp.content) < 1000
+
+
+def test_ac_b3_download_flag_serves_an_over_cap_sheet_in_full(env, monkeypatch):
+    client, db, _ = env
+    payload = _sized(monkeypatch, CAP + 1)
+    _link(db, "SHEETCAP003", "https://cdn.test/Big Sheet.xlsx", "Big Sheet.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP003/content?download=1")
+    assert resp.status_code == 200, resp.status_code
+    assert resp.content == payload
+    assert "Big Sheet.xlsx" in resp.headers["content-disposition"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("query", ["", "?download=1"])
+def test_ac_b4_unknown_and_expired_codes_still_404_with_download_flag(env, monkeypatch, query):
+    client, db, _ = env
+    _sized(monkeypatch, CAP + 1)
+    _link(
+        db,
+        "OLDCAP00001",
+        "https://cdn.test/old.xlsx",
+        "old.xlsx",
+        expires_at=datetime.utcnow() - timedelta(seconds=1),
+    )
+    for code in ("OLDCAP00001", "NOSUCHCODE"):
+        resp = client.get(f"{BASE}/{code}/content{query}")
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": EXPIRED}
+
+
+def test_ac_b4_the_rate_limit_applies_with_download_flag(env, monkeypatch):
+    client, db, _ = env
+    _link(db, "SHEETCAP004", "https://cdn.test/r.xlsx", "r.xlsx")
+    monkeypatch.setattr(
+        rate_limit, "hit", lambda bucket, ident, **kw: rate_limit.RateResult(allowed=False, retry_after_seconds=30)
+    )
+    resp = client.get(f"{BASE}/SHEETCAP004/content?download=1")
+    assert resp.status_code == 429
+    assert resp.headers["retry-after"] == "30"
