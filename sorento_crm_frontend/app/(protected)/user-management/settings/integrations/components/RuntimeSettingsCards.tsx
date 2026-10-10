@@ -226,7 +226,16 @@ function RuntimeSettingsCard({
                       id={id}
                       checked={checked}
                       onCheckedChange={(v) =>
-                        setDraft((d) => ({ ...d, [name]: v }))
+                        setDraft((d) => {
+                          // Back to the live value: nothing to save (an explicit save
+                          // would pin it over the server env).
+                          if (v === (field.value === true)) {
+                            const rest = { ...d };
+                            delete rest[name];
+                            return rest;
+                          }
+                          return { ...d, [name]: v };
+                        })
                       }
                       aria-label={label}
                     />

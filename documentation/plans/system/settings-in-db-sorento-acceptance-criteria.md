@@ -7,9 +7,11 @@
   column value is not the plaintext and `decrypt_secret` returns it.
 - AC-3 Precedence: DB value wins over env; cleared DB value falls back to env; neither = unset.
 - AC-4 GET and PUT need `user_management.settings.secrets`; a user with only
-  `user_management.settings.edit` gets 403. The migration grants the slug to `admin` only.
-- AC-5 Each PUT that changes something writes one audit row naming the actor and the changed
-  fields; secret fields show `set` / `cleared`, never the value.
+  `user_management.settings.edit` gets 403. The migration registers the slug and grants it to
+  no role: admin and superadmin pass by bypass, so it is admin-only.
+- AC-5 Each PUT that changes something writes exactly one `system_settings` audit row (the
+  generic listener's duplicate is suppressed) naming the actor and the changed fields; secret
+  fields show `set` / `cleared`, never the value. No other settings route echoes a stored secret.
 - AC-6 No restart: the labeller tick, the connector token check, the consent flow and the
   Respond.io webhook read the effective value per call (a DB value saved after boot is honoured).
 - AC-7 An unreadable ciphertext (key changed) reads as unset for the reader (env fallback) and

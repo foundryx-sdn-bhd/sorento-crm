@@ -206,4 +206,22 @@ describe('RuntimeSettingsCards', () => {
     fireEvent.click(save);
     expect(mockMutate).not.toHaveBeenCalled();
   });
+
+  it('switching the labeller on and off again leaves nothing to save', () => {
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data(),
+    });
+    render(<RuntimeSettingsCards />);
+    const toggle = screen.getByRole('switch', {
+      name: 'Nightly topic labeller',
+    });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    const save = screen.getAllByRole('button', {
+      name: 'Save',
+    })[0] as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+  });
 });
