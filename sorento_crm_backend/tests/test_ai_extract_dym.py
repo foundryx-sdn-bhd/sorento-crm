@@ -168,6 +168,20 @@ def test_inactive_product_is_not_suggested(db):
     assert codes == [active.product_code]
 
 
+# AC-B6b (crew audit): the active filter runs BEFORE the resolver's cap of 5, so
+# inactive near-matches cannot push an active one out. Five inactive prefix
+# extensions of the misread code rank first in the trigram pass (`is_variant`);
+# capped first, they would fill all 5 slots and leave nothing to suggest.
+def test_inactive_near_matches_do_not_crowd_out_an_active_one(db):
+    for suffix in "ABCDE":
+        _product(db, f"SRTK1632SS-{suffix}", is_active=False)
+    real = _product(db, "SRTKT1632SS")
+
+    out = _extract(db, "SRTK1632SS")
+
+    assert [s.product_code for s in out[0].suggestions][:1] == [real.product_code]
+
+
 # AC-B7: nothing near enough -> no suggestions, plain miss.
 def test_no_neighbour_means_no_suggestions(db):
     _product(db, "SRTKT1632SS")
