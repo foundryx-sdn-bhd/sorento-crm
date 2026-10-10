@@ -59,10 +59,24 @@ in the CRM UI.
 - Strict pass rate counts only passes that need no judge; 279 of 642 results carry a judge_note or have no
   deterministic criteria. A calibrated judge (Claude, owner decision) turns those into real passes or fails.
 
+## Regrade 11 Oct (grader v8 + label fixes, no new calls)
+
+Crew's analysis of the hidden baseline found: traces lost to the per-case reset (now kept as a digest per turn,
+round 10); correct repeated answers graded stuck (rubric now checked before stuck); 34 cases whose allowed
+alternate had no criteria (labels filled, cand-0006 left as acknowledgement-only); cand-0198 label doubt and the
+cand-0002 / cand-0233 conflict sent to the owner. Re-scored stored runs:
+
+| run | pass | strict | was (v7) |
+| --- | --- | --- | --- |
+| main v50, all + 1 variant | 82.2% | 37.1% | 79.9% |
+| snapshot label v49, same | 83.0% | 37.7% | 80.4% |
+| gate config, hidden originals, main v50 | 80.8% | 36.0% | 78.0% |
+| dev originals, main v50 | 85.0% | 41.1% | 83.2% |
+
 ## Gate (crew ruling 10 Oct)
 
 PR gate = all 214 hidden originals (~389 live calls, ~$2) on crew's budget; hidden main baseline for that
-config: 78.0% pass, strict 34.6%. Rewordings weekly or on owner request. Lanes: 300 live calls/day cap.
+config: 80.8% pass, strict 36.0% (grader v8; was 78.0% at v7). Rewordings weekly or on owner request. Lanes: 300 live calls/day cap.
 
 ## Judge (11 Oct)
 
