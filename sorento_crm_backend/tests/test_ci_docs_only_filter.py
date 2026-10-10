@@ -21,7 +21,7 @@ Three rules live in that workflow and are pinned here:
    `ci` label run joins the per-PR concurrency group; every test job carries a
    timeout; the `CI gate` job reports the run as one check (CI-MINUTES-CUT).
 4. Changed tests on a PR (`backend_tests` output of `changes`, and job
-   `test-backend-changed` with its "Select the changed test files to run"
+   `lean-gate` (the `PR gate` check) with its "Select the changed test files to run"
    step): the backend test files a `ci`-labelled PR changes run on the PR
    itself, serially, minus tests/scm (the SCM shards' job), minus what the
    checkout no longer holds and minus tests/ci_excluded.txt. #1387 changed
@@ -485,13 +485,70 @@ def test_paths_that_are_not_a_runnable_backend_test_file_are_not_listed(tmp_path
     assert out["backend_tests"] == "", out
 
 
-def test_scm_test_change_runs_the_scm_shards_not_the_changed_files_job(tmp_path):
+def test_scm_test_change_runs_in_the_pr_gate(tmp_path):
+    """CI-LEAN: the SCM shards no longer run on a PR, so a changed tests/scm file
+    is listed like any other (the run step keeps tests/scm in its own session)."""
     out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/test_committed_v.py"])
-    assert out["scm"] == "true" and out["backend_tests"] == ""
+    assert out["backend_tests"] == "sorento_crm_backend/tests/scm/test_committed_v.py"
     both = run_step(tmp_path, "pull_request", [
         "sorento_crm_backend/tests/scm/test_committed_v.py", "sorento_crm_backend/tests/test_rbac.py",
     ])
-    assert both["scm"] == "true" and both["backend_tests"] == "sorento_crm_backend/tests/test_rbac.py"
+    assert both["backend_tests"] == "sorento_crm_backend/tests/scm/test_committed_v.py sorento_crm_backend/tests/test_rbac.py"
+
+
+def test_the_import_selection_on_a_pr_keeps_tests_scm():
+    """The selector drops tests/scm only when the SCM shards run anyway; on a PR
+    they never do now."""
+    script = _step_script("Select backend tests by import")
+    assert '--scm false' in script and "$SCM" not in script
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: the PR gate, one job doing all the PR's work.
+# ---------------------------------------------------------------------------
+
+
+def test_the_pr_gate_reports_as_pr_gate_on_a_pull_request():
+    """The one check the ruleset requires (owner Q3, 10 Oct 2026)."""
+    name = _expression(re.search(r"^    name: (.*)$", _job_block("lean-gate"), re.M).group(1))
+    assert _gh_eval(name, {"github": {"event_name": "pull_request", "event": {"label": {"name": "ci"}}}}) == "PR gate"
+
+
+def test_the_pr_gate_runs_whatever_the_fast_gates_did_and_fails_with_them(tmp_path):
+    """`always()` so a red fast gate never turns the required check into a
+    "skipped" (which a ruleset accepts); its first step fails on such a need."""
+    jobs = _job_ifs()
+    assert set(jobs["lean-gate"]["needs"]) == {"changes", "check-migration-heads", "pii-guard", "gitleaks"}
+    for forced in ({"gitleaks": "failure"}, {"changes": "failure"}, {"pii-guard": "failure"}):
+        results = _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS, forced=forced)
+        assert results["lean-gate"] == "success", "the job runs (its step then fails)"
+    script = _step_script("Fail when a fast gate did not pass")
+    green = {"changes": "success", "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success"}
+    def run(needs):
+        return subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                 "NEEDS": json.dumps({k: {"result": v, "outputs": {}} for k, v in needs.items()})},
+            capture_output=True, text=True,
+        )
+    assert run(green).returncode == 0
+    for job in green:
+        bad = run({**green, job: "failure"})
+        assert bad.returncode != 0 and f"{job} failure" in bad.stdout + bad.stderr, job
+
+
+def test_the_pr_gate_carries_the_frontend_and_mcp_checks():
+    steps = _lean_gate_steps()
+    joined = "\n".join(steps.values())
+    # frontend: the type-check and the vitest files related to what changed
+    assert "npm run typecheck" in joined and "--max-old-space-size=6144" in joined
+    assert "npx vitest run --changed" in joined
+    assert "needs.changes.outputs.frontend == 'true'" in joined
+    # backend imports for every test file, and the app and worker import chains
+    assert "pytest --collect-only" in joined
+    assert "import worker; from app.scheduler.task_scheduler import start_scheduler" in joined
+    # mcp
+    assert "sorento_crm_mcp/tests" in joined and "needs.changes.outputs.mcp == 'true'" in joined
 
 
 def test_area_flags_do_not_race_grep_q_on_a_long_file_list(tmp_path):
@@ -534,7 +591,7 @@ def test_changed_tests_list_is_empty_on_every_early_exit(tmp_path):
     assert run_step(tmp_path, "workflow_dispatch", [], skip_tests="true")["backend_tests"] == ""
 
 
-# The "Select the changed test files to run" step of `test-backend-changed`,
+# The "Select the changed test files to run" step of `lean-gate`,
 # run against a scratch checkout: the workflow's own ci_excluded.txt, and the
 # files each case says exist.
 
@@ -625,16 +682,20 @@ def test_changed_tests_step_with_nothing_left_passes_and_runs_nothing(tmp_path):
     assert "no changed test file left to run" in stdout
 
 
-def test_changed_tests_job_steps_after_select_gate_on_its_output():
-    """Every step after the select step, pytest included, skips on an empty list."""
-    text = _workflow_text()
-    block = re.search(r"\n  test-backend-changed:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
+def _lean_gate_steps() -> dict[str, str]:
+    block = _job_block("lean-gate")
     steps = re.split(r"\n      - name: ", block)[1:]
-    names = [s.splitlines()[0] for s in steps]
-    assert names[:2] == ["Checkout", "Select the changed test files to run"], names
-    for step in steps[2:]:
-        assert "        if: steps.select.outputs.files != ''" in step, step.splitlines()[0]
-    assert "--dist loadfile" in steps[-1] and "$FILES" in steps[-1], "runs the selected files via env, under xdist"
+    return {s.splitlines()[0]: s for s in steps}
+
+
+def test_changed_tests_job_steps_after_select_gate_on_its_output():
+    """The database steps, pytest included, skip on an empty list."""
+    steps = _lean_gate_steps()
+    for name in ("Relax Postgres durability for the test run", "Bootstrap the database",
+                 "Run the changed test files (executing gate)"):
+        assert "        if: steps.select.outputs.files != ''" in steps[name], name
+    run = steps["Run the changed test files (executing gate)"]
+    assert "--dist loadfile" in run and "$FILES" in run, "runs the selected files via env, under xdist"
 
 
 # ---------------------------------------------------------------------------
@@ -771,12 +832,15 @@ def _ran(results: dict[str, str]) -> set[str]:
     return {job for job, r in results.items() if r != "skipped"}
 
 
-GATES_ON_PR = {"check-migration-heads", "changes", "release-ci-label", "pii-guard", "gitleaks", "ci-gate"}
+# CI-LEAN: a `ci` PR runs the four one-minute fast gates and ONE job that does
+# everything else (`lean-gate`, check name `PR gate`): no image builds, no SCM
+# or main shards, no vitest shards, no separate label or gate job.
+GATES_ON_PR = {"check-migration-heads", "changes", "pii-guard", "gitleaks", "lean-gate"}
 
 
 def test_pull_request_fast_gate_backend_with_scm_paths():
     ran = _ran(_simulate("pull_request", outputs={"backend": "true", "scm": "true", "frontend": "false", "mcp": "false", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-scm"}
+    assert ran == GATES_ON_PR
     assert "test-backend" not in ran, "the six backend shards never run on a pull_request"
 
 
@@ -810,12 +874,12 @@ def test_refuse_ci_full_job_removes_the_label_and_fails_with_the_reason():
 
 def test_pull_request_fast_gate_backend_without_scm_paths():
     ran = _ran(_simulate("pull_request", outputs={"backend": "true", "scm": "false", "frontend": "false", "mcp": "false", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-backend"}
+    assert ran == GATES_ON_PR
 
 
 def test_pull_request_fast_gate_frontend_and_mcp():
     ran = _ran(_simulate("pull_request", outputs={"backend": "false", "scm": "false", "frontend": "true", "mcp": "true", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-frontend", "typecheck-frontend", "validate-mcp"}
+    assert ran == GATES_ON_PR
 
 
 def test_pull_request_docs_only_runs_the_root_jobs_only():
@@ -839,25 +903,23 @@ def test_pull_request_that_changes_a_test_file_runs_it(tmp_path):
     outputs = run_step(tmp_path, "pull_request", TESTS_ONLY_1387)
     assert outputs == TESTS_ONLY_OUTPUTS
     ran = _ran(_simulate("pull_request", outputs=outputs))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-changed"}
+    assert ran == GATES_ON_PR
     assert "test-backend" not in ran
 
 
 def test_pull_request_with_code_and_a_test_file_runs_both_gates():
     outputs = {**TESTS_ONLY_OUTPUTS, "scm": "true", "frontend": "true"}
     ran = _ran(_simulate("pull_request", outputs=outputs))
-    assert ran == GATES_ON_PR | {
-        "validate-backend", "test-backend-scm", "test-backend-changed", "validate-frontend", "typecheck-frontend",
-    }
+    assert ran == GATES_ON_PR
 
 
 def test_changed_tests_job_never_runs_off_a_pull_request_or_with_another_label():
-    for event in ("merge_group", "workflow_dispatch", "push"):
+    for event in ("merge_group", "push"):
         results = _simulate(event, outputs={**FULL_PIPELINE, "backend_tests": "sorento_crm_backend/tests/test_x.py", "backend_code": ""})
-        assert results["test-backend-changed"] == "skipped", (event, results)
+        assert results["lean-gate"] == "skipped", (event, results)
     for label in ("needs-hand-test", "lane-running", "ci-full"):
         results = _simulate("pull_request", label=label, outputs=TESTS_ONLY_OUTPUTS)
-        assert results["test-backend-changed"] == "skipped", label
+        assert results["lean-gate"] == "skipped", label
 
 
 def test_pull_request_with_another_label_runs_nothing():
@@ -1067,17 +1129,17 @@ def _job_block(job_id: str) -> str:
     return re.search(rf"\n  {job_id}:\n(.*?)(?=\n  [a-z][\w-]*:\n|\Z)", text, re.S).group(1)
 
 
-def test_release_label_job_removes_the_label_that_fired_the_run():
-    """`ci` is one-shot: the job removes it (`ci-full` has its own refusing job)."""
-    block = _job_block("release-ci-label")
-    assert "--remove-label ci\n" in block or '--remove-label "ci"' in block
-    assert _simulate("pull_request", label="ci")["release-ci-label"] == "success"
-    for label in ("ci-full", "needs-hand-test"):
-        assert _simulate("pull_request", label=label)["release-ci-label"] == "skipped", label
+def test_the_pr_gate_removes_the_ci_label_that_fired_the_run():
+    """`ci` is one-shot: the PR gate's first steps remove it (it was its own job,
+    a billed minute per PR; `ci-full` has its own refusing job)."""
+    assert "release-ci-label" not in _job_ifs()
+    step = _lean_gate_steps()["Remove the ci label so a future add re-triggers CI"]
+    assert "--remove-label ci" in step and "github.event_name == 'pull_request'" in step
+    assert "pull-requests: write" in _job_block("lean-gate")
 
 
 DEPLOY_JOBS = {"build-images", "build-and-deploy"}
-LABEL_JOBS = {"release-ci-label", "refuse-ci-full"}
+LABEL_JOBS = {"refuse-ci-full"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
@@ -1097,7 +1159,7 @@ def test_every_test_and_gate_job_carries_a_timeout():
     for job_id in jobs:
         m = re.search(r"^    timeout-minutes: (\d+)$", _job_block(job_id), re.M)
         timeouts[job_id] = int(m.group(1)) if m else None
-    shards = {"test-backend", "test-backend-scm", "test-backend-changed"}
+    shards = {"test-backend", "test-backend-scm", "lean-gate"}
     for job_id, minutes in timeouts.items():
         if job_id in DEPLOY_JOBS:
             continue
@@ -1130,9 +1192,10 @@ def test_changes_job_token_can_read_the_pr_files_and_the_actions_api():
 
 
 def test_ci_gate_runs_on_every_gated_event_and_on_nothing_else():
-    assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "success"
+    """On a PR the `PR gate` job is the one check (CI-LEAN, Q3); `CI gate (full)`
+    stays for the merge queue."""
+    assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "skipped"
     assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "skipped"
-    assert _simulate("pull_request", label="ci", outputs={**NO_AREA, "docs_only": "true"})["ci-gate"] == "success"
     assert _simulate("merge_group", outputs=FULL_PIPELINE)["ci-gate"] == "success"
     assert _simulate("workflow_dispatch", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "build-and-deploy judges the needs"
     assert _simulate("push", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "a push to main is the alembic gate alone"
@@ -1153,7 +1216,7 @@ def _run_gate(tmp_path: Path, needs: dict[str, str]) -> tuple[int, str]:
 GATE_NEEDS_GREEN = {
     "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success", "changes": "success",
     "validate-backend": "success", "validate-mcp": "skipped", "test-backend-scm": "skipped",
-    "test-backend": "skipped", "test-backend-changed": "success", "validate-frontend": "skipped",
+    "test-backend": "skipped", "lean-gate": "skipped", "validate-frontend": "skipped",
     "typecheck-frontend": "skipped",
 }
 
@@ -1166,7 +1229,7 @@ def test_ci_gate_step_passes_when_every_need_succeeded_or_was_path_filtered(tmp_
 
 @pytest.mark.parametrize("job,result", [
     ("test-backend", "failure"), ("test-backend-scm", "cancelled"), ("validate-frontend", "failure"),
-    ("test-backend-changed", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
+    ("lean-gate", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
     # Run 37369427779 (5 Oct 2026): GitHub reports `abandoned` for a job it
     # never found a runner for and for a matrix whose shard hit its cap; a
     # deny-list of failure/cancelled passed that run green.
@@ -1440,7 +1503,7 @@ def test_changes_job_outputs_prefer_the_selection_and_fall_back_above_the_budget
 def test_selection_runs_only_the_changed_files_job_on_a_ci_pr():
     """Under or above the budget alike: the changed-files job, never the shards."""
     ran = _ran(_simulate("pull_request", outputs=TESTS_ONLY_OUTPUTS))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-changed"}
+    assert ran == GATES_ON_PR
 
 
 STUB_PYTHON = """#!/usr/bin/env bash
