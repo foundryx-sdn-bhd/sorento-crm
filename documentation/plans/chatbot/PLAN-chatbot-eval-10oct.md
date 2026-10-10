@@ -64,8 +64,14 @@ in the CRM UI.
 PR gate = all 214 hidden originals (~389 live calls, ~$2) on crew's budget; hidden main baseline for that
 config: 78.0% pass, strict 34.6%. Rewordings weekly or on owner request. Lanes: 300 live calls/day cap.
 
+## Judge (11 Oct)
+
+Owner provided a dedicated Anthropic eval key (crew secrets only). Judge = claude-sonnet-5-5 at $2 / $0.10
+cached / $10 per MTok; own cap `--judge-budget-usd` default $2; unknown-price models refused. Still gated on
+>= 0.9 agreement: the owner's spot check (Q2: is today's main reply PASS or FAIL) becomes the first
+calibration set (crew script `eval/build/calibration_from_spotcheck.py` -> `eval/hidden/calibration/`).
+
 ## Known gaps
 
 Media and ideation turns excluded; relative-date asks carry no period numbers; labels are from the 6 Oct
-snapshot (some prod replies were right at ask time); judge uncalibrated (no calibration set yet; build it from
-the owner spot check); eval clone excludes bulk log tables and some embedding source types (resolver types kept).
+snapshot (some prod replies were right at ask time); judge calibration pending the owner spot check; eval clone excludes bulk log tables and some embedding source types (resolver types kept).

@@ -125,5 +125,9 @@ EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL
 - Verdicts: correct, good_clarify, wrong, stuck, error. Underfit = pass rate on originals; overfit
   gaps = dev minus hidden, originals minus variants. A fix that only passes the reported phrasing
   shows up as a variant gap.
+- Judge: Claude (`claude-sonnet-5-5`, `--judge anthropic`) scores wording only for cases the fixed
+  checks cannot settle, and only once it agrees with human verdicts (`calibration/*.json`) on at least
+  90%. It has its own spend cap (`--judge-budget-usd`, default $2) and sends the masked case text and
+  the bot reply to Anthropic. The key is never in the repo; crew's gate loads it at runtime.
 - Known gaps (v1): media (photo) turns and ideation turns are excluded; relative-date asks ("this
   month") carry no period numbers because the replay date is not the ask date.

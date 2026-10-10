@@ -185,3 +185,5 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   the judge is not called for the rest of the run (verdicts stay deterministic, those cases count as unverified)
   and the report says `judge_stopped: "budget"`. The run itself continues. Report adds `judge_usd`.
 - The >= 0.9 calibration rule is unchanged; with no calibration items the judge is never called.
+- Round 9b: a requested judge whose model has no entry in `PRICES` -> exit 2 naming the model, before the
+  engine is built or the judge is called (a cap priced on the wrong model is not a cap).
