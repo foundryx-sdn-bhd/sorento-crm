@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.models.marketing import Promotion, PromotionProduct
 from app.models.product import Product
+from app.services import promotion_serving, promotion_window
 from app.services.dealer_kit.product_images import PUBLIC_ACCESS_CODE
 from app.services.dealer_kit.viewer import ViewerContext
 
@@ -75,6 +76,46 @@ class PriceView:
 def business_today() -> date:
     """The calendar day a promotion window is measured against."""
     return datetime.now(timezone.utc).astimezone(_MY_TZ).date()
+
+
+def promotion_may_price(db: Session, promotion: Promotion, today: Optional[date] = None) -> bool:
+    """Whether ``promotion`` may price a tile or a tag today, judged on its own.
+
+    Live, or ended but still inside its TYPE's expired bound (owner ruling
+    10 Oct 2026, PRICE-TAG-A3-EXPIRED): an A3 flyer for 180 days, a standard,
+    PP or focus-item promotion until the end of the year it ended in, a special
+    never. The bound is ``promotion_serving``'s, read from the type row, so the
+    chatbot and the price on a tag cannot disagree about whether an ended
+    offer still counts.
+
+    ``is_active`` is NOT the test once the end date has passed: the hourly
+    ``promotion_active_window`` task switches every promotion off the day after
+    it ends (``marketing_service.sync_promotion_active_by_calendar_window``), so
+    an ended promotion is always ``is_active=f`` and the type decides. Switched
+    off INSIDE its window is still off: that is somebody pulling an offer.
+    """
+    today = today or business_today()
+    if promotion_window.is_live(
+        promotion.is_active, promotion.start_date, promotion.end_date, today
+    ):
+        return True
+    types_by_id, default = promotion_serving.load_types(db)
+    verdict = promotion_serving.evaluate([promotion], types_by_id, default, today)
+    return _ended_may_price(verdict, promotion.id)
+
+
+def _ended_may_price(verdict: promotion_serving.ServingVerdict, promotion_id: str) -> bool:
+    """Whether the serving verdict lets this ENDED promotion still price.
+
+    One difference from the chatbot, and only for money: with no type at all
+    (no types configured, so no default either) the serving rule serves every
+    ended row, keeping the bot's old answer. A price fails closed instead, the
+    way it did before types existed.
+    """
+    return (
+        verdict.is_expired_but_usable(promotion_id)
+        and verdict.type_by_promotion.get(str(promotion_id)) is not None
+    )
 
 
 def _as_decimal(value) -> Optional[Decimal]:
@@ -136,10 +177,12 @@ def _offer_prices(
 ) -> dict[str, Decimal]:
     """``{product_id: promo price}`` for the products this offer covers today.
 
-    ONE statement for the whole page. An expired, switched-off, unknown or
-    wrong-audience promotion simply yields nothing, which is what makes "no
-    applicable offer" and "the promotion ended mid-session" the same code path:
-    the list price, with no offer styling.
+    ONE statement for the whole page. An offer that may not price today
+    (``promotion_may_price``: not started, switched off, ended beyond its
+    type's bound), an unknown one or a wrong-audience one simply yields
+    nothing, which is what makes "no applicable offer" and "the promotion
+    ended mid-session" the same code path: the list price, with no offer
+    styling.
     """
     today = business_today()
 
@@ -148,16 +191,13 @@ def _offer_prices(
         .join(Promotion, Promotion.id == PromotionProduct.promotion_id)
         .filter(PromotionProduct.promotion_id == promotion_id)
         .filter(PromotionProduct.product_id.in_(list(product_ids)))
-        # Switched off wins over a window that still says the promotion runs:
-        # `is_active` is how somebody pulls a live offer in a hurry.
-        .filter(Promotion.is_active.is_(True))
-        # Inclusive at both ends, unbounded on whichever side has no date. A
-        # promotion advertised as running "until the 31st" that stops honouring
-        # its price on the 31st is an argument at a counter.
-        .filter(or_(Promotion.start_date.is_(None), Promotion.start_date <= today))
-        .filter(or_(Promotion.end_date.is_(None), Promotion.end_date >= today))
         .all()
     )
+    # Same promotion on every row: judged once. Inclusive at both ends and
+    # unbounded on a blank side (`promotion_window`), so a promotion running
+    # "until the 31st" still honours its price on the 31st.
+    if rows and not promotion_may_price(db, rows[0][1], today):
+        return {}
 
     offers: dict[str, Decimal] = {}
     for offer, promotion in rows:
@@ -280,29 +320,81 @@ _LINE_MONEY = Decimal("0.01")
 
 
 def _covering_promotions(
-    db: Session, product_ids: Sequence[str], viewer: ViewerContext
+    db: Session,
+    product_ids: Sequence[str],
+    viewer: ViewerContext,
+    *,
+    keep_id: Optional[str] = None,
 ) -> list[Promotion]:
-    """Every active, in-window, audience-visible promotion pricing ANY of
-    ``product_ids`` today (AC-S7-2).
+    """Every audience-visible promotion that may price ANY of ``product_ids``
+    today (AC-S7-2).
 
     A promotion covering only a choice group's CANDIDATE still counts - the
     salesperson may pick that candidate, so the line genuinely benefits from
     it (D3/AC-S7-2).
+
+    Live promotions, plus ended ones the serving rule still allows
+    (PRICE-TAG-A3-EXPIRED). Which ended promotion is ``promotion_serving``'s
+    call, not this function's: the type's bound, the latest end date of each
+    type wins, and a live promotion of a type suppresses that type's ended
+    ones. Audience goes FIRST, because that rule ranks the set it is given: a
+    dealer must not lose the DEALER flyer to an OFFICE flyer ending later that
+    the dealer cannot see.
+
+    On top of it, live beats ended across types for the SAME product: an
+    ended promotion is offered only when it covers a product no live
+    promotion covers. ``keep_id`` is the line's saved promotion, kept whenever
+    it may still price on its own: the salesperson committed to it, and a
+    newer flyer appearing does not silently reprice a saved line.
     """
     if not product_ids:
         return []
     today = business_today()
     rows = (
-        db.query(Promotion)
+        db.query(Promotion, PromotionProduct.product_id)
         .join(PromotionProduct, PromotionProduct.promotion_id == Promotion.id)
         .filter(PromotionProduct.product_id.in_(list(product_ids)))
-        .filter(Promotion.is_active.is_(True))
         .filter(or_(Promotion.start_date.is_(None), Promotion.start_date <= today))
-        .filter(or_(Promotion.end_date.is_(None), Promotion.end_date >= today))
-        .distinct()
         .all()
     )
-    return [row for row in rows if _may_see_offer(row.access_levels, viewer)]
+    promotions: dict[str, Promotion] = {}
+    covers: dict[str, set[str]] = {}
+    for promotion, product_id in rows:
+        if not _may_see_offer(promotion.access_levels, viewer):
+            continue
+        promotions[promotion.id] = promotion
+        covers.setdefault(promotion.id, set()).add(product_id)
+    if not promotions:
+        return []
+
+    types_by_id, default = promotion_serving.load_types(db)
+    verdict = promotion_serving.evaluate(
+        list(promotions.values()), types_by_id, default, today
+    )
+    live_ids = verdict.served_ids - verdict.expired_but_usable_ids
+    live_covered = set().union(*(covers[pid] for pid in live_ids)) if live_ids else set()
+
+    chosen = []
+    for promotion_id, promotion in promotions.items():
+        if promotion_id in live_ids:
+            chosen.append(promotion)
+        elif _ended_may_price(verdict, promotion_id) and covers[promotion_id] - live_covered:
+            chosen.append(promotion)
+        elif promotion_id == keep_id and promotion_may_price(db, promotion, today):
+            chosen.append(promotion)
+    return chosen
+
+
+def promotion_expired_on(promotion: Promotion, today: Optional[date] = None) -> Optional[date]:
+    """The end date of a promotion that has ended, else ``None``.
+
+    What the dropdown labels "(expired <date>)": a promotion that reaches a
+    line after its end date only does so through its type's grace.
+    """
+    today = today or business_today()
+    if promotion.end_date is not None and promotion.end_date < today:
+        return promotion.end_date
+    return None
 
 
 def _line_total_under(
@@ -399,7 +491,10 @@ def line_pricing(
             list_price += price
         list_price = list_price.quantize(_LINE_MONEY)
 
-        covering = _covering_promotions(db, lookup_ids, viewer)
+        covering = _covering_promotions(
+            db, lookup_ids, viewer, keep_id=given_promotion_id
+        )
+        today = business_today()
         promotion_options = []
         totals_by_promotion: dict[str, tuple[Decimal, list[str]]] = {}
         for promo in covering:
@@ -408,15 +503,27 @@ def line_pricing(
             )
             totals_by_promotion[promo.id] = (total, parts_at_list_for_promo)
             promotion_options.append(
-                {"id": promo.id, "description": promo.description or "", "sell_price": total}
+                {
+                    "id": promo.id,
+                    "description": promo.description or "",
+                    "sell_price": total,
+                    "expired_on": promotion_expired_on(promo, today),
+                }
             )
         # R12 (security review): sorted on total ALONE, a tie's winner was
         # whatever order `_covering_promotions`' un-ordered `.distinct()`
         # query happened to return - the SAME two promotions could auto-pick
         # a different one from one call to the next. `description` then
         # `id` breaks the tie deterministically.
+        # PRICE-TAG-A3-EXPIRED: a live option is auto-picked over an ended
+        # one even when the ended flyer is cheaper - live always wins.
         promotion_options.sort(
-            key=lambda option: (option["sell_price"], option["description"], option["id"])
+            key=lambda option: (
+                option["expired_on"] is not None,
+                option["sell_price"],
+                option["description"],
+                option["id"],
+            )
         )
 
         auto_promotion_id = promotion_options[0]["id"] if promotion_options else None

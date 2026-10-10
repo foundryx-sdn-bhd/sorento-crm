@@ -1112,6 +1112,10 @@ class LinePricingPromotionOption(BaseModel):
     id: str
     description: str
     sell_price: float
+    # PRICE-TAG-A3-EXPIRED: the end date of an ended A3 flyer still pricing
+    # tags inside its type's bound; null for a live promotion. The dropdown
+    # labels the option "(expired <date>)" from it.
+    expired_on: Optional[date] = None
 
 
 class LinePricingCandidateOut(BaseModel):
