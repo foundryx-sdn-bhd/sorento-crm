@@ -53,10 +53,10 @@ def link_customer(db, contact, cust):
     db.flush()
 
 
-def link_user(db, contact, *, status: str = "ACTIVE", trashed: bool = False):
+def link_user(db, contact, *, status: str = "ACTIVE", trashed: bool = False, name: str = "ZZT Staff User"):
     from app.models.user import User
 
-    row = User(id=str(uuid.uuid4()), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name="ZZT Staff User",
+    row = User(id=str(uuid.uuid4()), email=f"zzt-{uuid.uuid4().hex[:8]}@test.com", name=name,
                status=status, respond_contact_id=contact.id)
     row.is_trashed = trashed
     db.add(row)
@@ -132,13 +132,14 @@ def seed_asker_world(db) -> SimpleNamespace:
     return w
 
 
-def give_role(db, user, slug: str):
+def give_role(db, user, slug: str, *, role_trashed: bool = False):
     """Assign the user the role with `slug` (created on first use)."""
     from app.models.user import UserRole, UserRoleAssignment
 
     role = db.query(UserRole).filter(UserRole.slug == slug).first()
     if role is None:
         role = UserRole(id=str(uuid.uuid4()), slug=slug, name=f"ZZT {slug}")
+        role.is_trashed = role_trashed
         db.add(role)
         db.flush()
     db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))

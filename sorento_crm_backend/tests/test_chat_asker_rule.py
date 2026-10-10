@@ -246,3 +246,10 @@ def test_a_role_on_a_trashed_or_inactive_user_does_not_count(db, kind, status, t
     db.commit()
     assert _classify_pair(db, dealer, f"{kind}_d") == ("dealer", "dealer")
     assert _classify_pair(db, alone, f"{kind}_a") == ("unclassified", "unclassified")
+
+
+def test_a_user_whose_only_salesperson_role_is_trashed_is_staff(db):
+    contact = _respond_contact(db, "trashedrole")
+    give_role(db, link_user(db, contact), "salesperson", role_trashed=True)
+    db.commit()
+    assert _classify_pair(db, contact, "trashedrole") == ("staff", "staff")

@@ -512,3 +512,28 @@ def test_a_role_salesperson_without_an_agent_link_sees_all(client, db):
     db.commit()
     body = _ok(client, contact, group_by="customer", top_n=10)
     assert D(str(body["total"]["value"])) == 11, "a link only narrows (Q5)"
+
+
+# ======================================================================== re-review: role salespeople by name
+
+
+def test_group_by_salesperson_names_role_users_with_no_agent_link(client, db):
+    """UAC-27 on prod data: salespeople are users holding the role, mostly with no sales_agents link.
+    The row name is the linked active user's name; an agent-linked contact with no user keeps the
+    agent's name; none is dropped."""
+    from tests._chat_asker_seed import _respond_contact
+    from tests._chat_report_seed import _uid, add_fact, day
+
+    seed_asker_world(db)
+    for key, name, hours in (("c12", "ZZT Role Ann", (3, 4)), ("c13", "ZZT Role Bob", (3,))):
+        contact = _respond_contact(db, key)
+        give_role(db, link_user(db, contact, name=name), "salesperson")
+        for hour in hours:
+            add_fact(db, when=day(9, 19, hour), contact=key, turn=_uid(), domain="inventory",
+                     topic="inventory.availability", contact_type="office", audience="staff")
+    db.commit()
+    body = _ok(client, _granted(db), group_by="salesperson", top_n=10)
+    rows = _rows(body)
+    assert rows["ZZT Role Ann"] == 2 and rows["ZZT Role Bob"] == 1, body["rows"]
+    assert rows["ZZT Agent Two"] == 3 and rows["ZZT Agent Ten"] == 1, "agent-linked contacts keep the agent's name"
+    assert len(rows) == 4 and "(blank)" not in rows, body["rows"]
