@@ -9,7 +9,7 @@ edited by hand. The insert helper is repeated, not imported: a migration module 
 depend on another migration's module staying importable.
 
 Revision ID: ca3_0001_chat_report_prompt
-Revises: ppl_0001_parser_candidate
+Revises: chat_topics_0003_uuid_id
 """
 import logging
 
@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 
 revision = "ca3_0001_chat_report_prompt"
-down_revision = "ppl_0001_parser_candidate"
+down_revision = "chat_topics_0003_uuid_id"
 branch_labels = None
 depends_on = None
 
