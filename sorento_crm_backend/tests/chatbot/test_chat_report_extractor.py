@@ -35,10 +35,11 @@ MODULE = "app.services.chatbot.analytics.chat_report_extractor"
 VERSIONS = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 GROUP_BY = {"topic", "subject", "product", "customer", "outcome", "failure_reason", "week", "month", "day", "language"}
 MEASURE = {"asks", "failed", "failure_rate", "contacts"}
-KEYS = {"group_by", "measure", "subject", "top_n", "date_from", "date_to"}
+KEYS = {"group_by", "measure", "subject", "top_n", "date_from", "date_to", "askers", "category_words", "brand_words"}
 TODAY = date(2026, 10, 10)
 GOOD = {"group_by": "topic", "measure": "asks", "subject": None, "top_n": 5,
-        "date_from": "2026-10-05", "date_to": "2026-10-11"}
+        "date_from": "2026-10-05", "date_to": "2026-10-11",
+        "askers": [], "category_words": [], "brand_words": []}
 
 
 @pytest.fixture
@@ -87,12 +88,14 @@ def _run(db, provider, text="top 5 questions this week"):
 
 
 def test_a_valid_reply_returns_exactly_the_six_keys(configured):
+    """Nine keys per lead 10 Oct (owner hand-test round): the old six plus askers, category_words, brand_words."""
     out = _run(configured, _Provider(json.dumps(GOOD)))
     assert out == GOOD and set(out) == KEYS
 
 
 def test_a_total_with_nothing_else_is_allowed(configured):
-    nothing = {"group_by": None, "measure": None, "subject": None, "top_n": None, "date_from": None, "date_to": None}
+    nothing = {"group_by": None, "measure": None, "subject": None, "top_n": None, "date_from": None, "date_to": None,
+               "askers": [], "category_words": [], "brand_words": []}
     assert _run(configured, _Provider(json.dumps(nothing))) == nothing
 
 
@@ -111,7 +114,7 @@ def test_the_schema_sent_is_strict_with_the_contract_enums(configured):
     schema = schema.get("schema", schema)
     assert schema["additionalProperties"] is False and set(schema["required"]) == KEYS, schema
     props = schema["properties"]
-    assert {v for v in props["group_by"]["enum"] if v} == GROUP_BY and None in props["group_by"]["enum"]
+    assert {v for v in props["group_by"]["enum"] if v} == GROUP_BY | {"asker", "salesperson", "category", "brand"} and None in props["group_by"]["enum"]
     assert {v for v in props["measure"]["enum"] if v} == MEASURE and None in props["measure"]["enum"]
     subject = props["subject"]["enum"]
     assert {"inventory", "promotion"} <= set(subject) and None in subject, "chatbot domain names plus null"
@@ -128,7 +131,7 @@ def test_the_schema_sent_is_strict_with_the_contract_enums(configured):
         _Provider(error=TimeoutError("slow")),
         _Provider(content="not json at all"),
         _Provider(content=""),
-        _Provider(content=json.dumps({**GOOD, "group_by": "brand"})),
+        _Provider(content=json.dumps({**GOOD, "group_by": "nonsense"})),
         _Provider(content=json.dumps({**GOOD, "measure": "amount"})),
         _Provider(content=json.dumps({**GOOD, "top_n": 0})),
         _Provider(content=json.dumps({**GOOD, "top_n": "five"})),
