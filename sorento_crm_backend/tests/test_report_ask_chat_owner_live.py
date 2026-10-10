@@ -45,3 +45,53 @@ def test_e4_a_truly_empty_period_keeps_the_chat_data_starts_line(client, db):
     seed_world(db)
     body = _ok(client, _granted(db), group_by="topic", top_n=5, date_from="2026-11-01", date_to="2026-11-30")
     assert body["rows"] == [] and body["message"] == NO_ASKS, body
+
+
+# --------------------------------------------------------------------------- existence probe (security blocker at b84f46771)
+# "No asks match those filters" is decided INSIDE the caller's own scope: a dealer (or a salesperson
+# narrowed to its book) whose own customers had no asks must not learn that other customers asked.
+
+
+def _lonely_customer(db):
+    from tests._pg_fixture import unique_code
+
+    return seed_customer(db, name=unique_code("ZZT Lonely"))
+
+
+def test_a_dealer_with_no_asks_of_its_own_never_learns_that_others_asked(client, db):
+    from tests.test_report_ask_chat_route import _dealer
+
+    w = seed_world(db)
+    lonely = _lonely_customer(db)
+    db.commit()
+    body = _ok(client, _dealer(db, w, lonely), group_by="topic", top_n=5)
+    assert body["rows"] == [] and body["message"] == NO_ASKS, body
+    body = _ok(client, _dealer(db, w, lonely), group_by="topic", top_n=5, subjects=["order"])
+    assert body["message"] == NO_ASKS, "a filter does not turn it into 'others asked' either"
+
+
+def test_a_salesperson_narrowed_to_a_book_with_no_asks_never_learns_that_others_asked(client, db):
+    from tests._chat_asker_seed import link_agent
+
+    seed_world(db)
+    contact = _granted(db)
+    agent = link_agent(db, contact, "ZZT Agent Quiet")
+    lonely = _lonely_customer(db)
+    lonely.sales_agent_id = agent.id
+    db.commit()
+    body = _ok(client, contact, group_by="topic", top_n=5)
+    assert body["rows"] == [] and body["message"] == NO_ASKS, body
+
+
+def test_a_dealer_with_asks_whose_filter_matches_none_gets_no_match(client, db):
+    from tests.test_report_ask_chat_route import _dealer
+
+    w = seed_world(db)
+    body = _ok(client, _dealer(db, w, w.cust_a), group_by="topic", top_n=5, subjects=["order"])
+    assert body["rows"] == [] and body["message"] == NO_MATCH, body
+
+
+def test_staff_with_a_filter_matching_none_still_gets_no_match(client, db):
+    seed_world(db)
+    body = _ok(client, _granted(db), group_by="topic", top_n=5, subjects=["promotion"])
+    assert body["rows"] == [] and body["message"] == NO_MATCH, body
