@@ -146,3 +146,7 @@ class LaneNoteEngine(RecordingEngine):
     def turn(self, case, text, state, run_id):
         self.n += 1
         return make_outcome("TESTCODE-1 ok", state={"n": self.n}, lane_notes=["note one"])
+
+
+class UnknownModelJudge(FakeJudge):
+    model = "claude-unknown-9"
