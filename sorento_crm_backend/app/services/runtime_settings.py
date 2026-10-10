@@ -54,7 +54,9 @@ def _column(name: str) -> str:
 def _env(name: str) -> Any:
     value = getattr(settings, name, None)
     if name in BOOL_FIELDS:
-        return None if value is None else bool(value)
+        # The Settings default is False, so False cannot say whether the env var was set; it
+        # is the same effective value as unset, and reported as unset.
+        return True if value else None
     return value or None
 
 

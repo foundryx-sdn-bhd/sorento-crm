@@ -472,3 +472,17 @@ def test_unknown_key_is_422(api):
     resp = client.put(ENDPOINT, json={"not_a_setting": "x"})
 
     assert resp.status_code == 422
+
+
+def test_labeller_reads_unset_not_env_when_the_env_var_is_absent(db, monkeypatch):
+    """The Settings default is False; with no env var set the switch is 'unset', not 'env'
+    (found in the browser pass: a fresh install showed 'Server env')."""
+    from app.config import settings
+    from app.services import runtime_settings as rs
+
+    monkeypatch.setattr(settings, "chat_topic_labeller_enabled", False, raising=False)
+
+    out = rs.describe(db)["chat_topic_labeller_enabled"]
+
+    assert out["source"] == "unset"
+    assert out["value"] is False
