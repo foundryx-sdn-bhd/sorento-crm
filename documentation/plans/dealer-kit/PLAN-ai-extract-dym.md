@@ -1,7 +1,7 @@
 # PLAN: AI Extract did-you-mean for misread product codes (AI-EXTRACT-DYM)
 
-Status: Build (behaviour card filed as crew-ask on PR #1558; building on its recommendations
-until answered). Track: small fix (expected diff under ~300 lines, no migration, no auth/RBAC
+Status: In review on PR #1558, awaiting the owner's answers to the behaviour card (crew-ask);
+built on its recommendations, reviewer + kill test + browser pass done. Track: small fix (expected diff under ~300 lines, no migration, no auth/RBAC
 change, no new ingest surface).
 
 UAC: `ai-extract-dym-acceptance-criteria.md` alongside.
