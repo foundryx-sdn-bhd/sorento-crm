@@ -604,7 +604,7 @@ def test_the_pr_gate_carries_the_frontend_and_mcp_checks():
     steps = _lean_gate_steps()
     joined = "\n".join(steps.values())
     # frontend: the type-check and the vitest files related to what changed
-    assert "npm run typecheck" in joined and "--max-old-space-size=6144" in joined
+    assert "npm run typecheck" in joined and "--max-old-space-size=4096" in joined
     assert "npx vitest run --changed" in joined
     assert "needs.changes.outputs.frontend == 'true'" in joined
     # backend imports for every test file, and the app and worker import chains

@@ -1598,12 +1598,13 @@ jobs:
         run: npm ci --force
 
       # Same as typecheck-frontend: route types first (tsc otherwise checks
-      # nothing for those files), and the raised heap (private runners, 10 Oct).
+      # nothing for those files), and the same pinned heap (4096: the private
+      # runners have ~7 GB in total, #1567).
       - name: Type-check the frontend
         if: needs.changes.outputs.frontend == 'true'
         working-directory: sorento_crm_frontend
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           npx next typegen
           npm run typecheck
@@ -1723,11 +1724,12 @@ jobs:
 
       # Private-repo runners have less RAM than public ones and tsc died
       # with "JavaScript heap out of memory" (exit 134) on the default heap
-      # once the repo went private (10 Oct 2026).
+      # once the repo went private (10 Oct 2026). 4096, not more: those
+      # runners have ~7 GB in total.
       - name: Run tsc --noEmit
         working-directory: sorento_crm_frontend
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run typecheck
 
   # Builds and pushes the three images in parallel with the test/validate
@@ -1805,37 +1807,11 @@ jobs:
             fi
           done
 
-      # Frontend only, UAC-19 (provisional): restores the `.next/cache`
-      # BuildKit mount across separate CI runs (a BuildKit cache mount
-      # otherwise lives only on the runner that created it, and GitHub-hosted
-      # runners are ephemeral). `.next/cache` ONLY, not npm: the whole repo
-      # shares a single 10 GB `actions/cache` quota, and an eviction there can
-      # push out the `type=gha` layer-cache scopes the frontend/backend/mcp
-      # builds all read via `cache-from` - a much bigger loss than the npm
-      # mount, whose `npm ci` layer is already a `type=gha` cache hit unless
-      # package-lock.json changed.
-      - name: Restore frontend buildkit cache directory
-        if: steps.decide.outputs.build_frontend == 'true'
-        id: fe-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.buildkit-cache/next
-          key: ${{ runner.os }}-fe-buildkit-${{ hashFiles('sorento_crm_frontend/package-lock.json') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-fe-buildkit-${{ hashFiles('sorento_crm_frontend/package-lock.json') }}-
-            ${{ runner.os }}-fe-buildkit-
-
-      - name: Inject frontend buildkit cache mounts
-        if: steps.decide.outputs.build_frontend == 'true'
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.setup-buildx.outputs.name }}
-          cache-map: |
-            {
-              ".buildkit-cache/next": "/app/.next/cache"
-            }
-          skip-extraction: ${{ steps.fe-cache.outputs.cache-hit }}
-
+      # No `.next/cache` restore (UAC-19's buildkit-cache-dance was dropped,
+      # 11 Oct 2026, #1567): on the private-repo runners its post step ran the
+      # disk out ("No space left on device", release run 38071049191) after
+      # the image had already pushed. The `type=gha` layer cache below stays.
+      #
       # SHA tag plus tree tag here, never the moving `<svc>-${RELEASE_TAG}`
       # tag: the server compose defaults to `${IMAGE_TAG:-1.0.1}`, so a manual
       # `docker compose up` on the server with no IMAGE_TAG set pulls
