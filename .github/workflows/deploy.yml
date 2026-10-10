@@ -883,8 +883,8 @@ jobs:
   # On a `ci` PR this runs only when SCM paths changed (`scm` flag, see
   # `changes`); a merge-queue entry and a release run it regardless (`changes` sets every area there).
   #
-  # timeout-minutes 60: a shard measured 10-16 min over 29 Sep-5 Oct; the
-  # cap is for a hung runner (the default is 6 hours, billed), sized like
+  # timeout-minutes 90: a shard measured 10-16 min over 29 Sep-5 Oct and
+  # 10-25 min on the private runners (11 Oct 2026); the cap is for a hung runner (the default is 6 hours, billed), sized like
   # the main shards' (see test-backend). A job that never got a runner is a
   # different thing, also there.
   test-backend-scm:
@@ -892,7 +892,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -1092,16 +1092,22 @@ jobs:
   # backend PRs and was the single biggest cost; the selection now runs in
   # full in the release instead.
   #
-  # timeout-minutes 60: a shard measured 18-24 min typical, 29 min worst
+  # timeout-minutes 90 (was 60 until 11 Oct 2026): on the private-repo
+  # runners six shards ran 29-59 min of pytest and three hit the 60 cap
+  # (release 38071049191 shards 2 and 6, release 38091974895 shard 1,
+  # nightly 38091972809 shards 1 and 2), so the suite now has ten shards
+  # (about 30 min each) and the cap stays twice a slow shard. Before the
+  # repo went private a shard measured 18-24 min typical, 29 min worst
   # (run 37158487882, shards 1 and 6) over 29 Sep-5 Oct, and the cap is
-  # for a hung runner (the default is 6 hours, billed), not a target. It is
+  # for a hung runner (the default is 6 hours, billed), not a target. It was
   # twice the worst run because a cap at 35 cut a HEALTHY shard: on run
   # 37369427779 shard 2 was at 94% with progress every 10-40 s when the
   # cap fired at 33:55 of pytest (35:13 of job), a shard that took 22 min
   # two days earlier. Run-to-run variance is about 1.6x, so every cap in
-  # this file is about twice the worst observed run time: 60 on the three
-  # backend test jobs, 20 on everything else (vitest's worst is 9 min). A
-  # hung shard still costs 60 billed minutes instead of 360.
+  # this file is about twice the worst observed run time: 90 on the three
+  # backend test jobs, 20 on everything else (vitest's worst is 19 min on
+  # the private runners). A hung shard still costs 90 billed minutes
+  # instead of 360.
   #
   # A `cancelled` job with no runner and no steps is NOT this cap. Run
   # 37369427779 (a full-suite PR run, 5 Oct 2026) lost gitleaks, the
@@ -1122,13 +1128,14 @@ jobs:
       && github.event_name != 'pull_request'
       && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
     # standard runner has 4 vCPUs, so one job takes ~29 min no matter how the
-    # database is tuned. Six runners in parallel, each still xdist across its
-    # own 4 cores, is 6x the CPU. pytest-split assigns every collected test to
-    # exactly one group, so the six groups together are the full suite and no
-    # test runs twice or is dropped.
+    # database is tuned. Ten runners in parallel (six until 11 Oct 2026, when
+    # six shards ran 29-59 min each on the private-repo runners), each still
+    # xdist across its own 4 cores. pytest-split assigns every collected test
+    # to exactly one group, so the ten groups together are the full suite and
+    # no test runs twice or is dropped.
     #
     # Shards are balanced by the committed `sorento_crm_backend/.test_durations`
     # (see the "Run backend suite under xdist" step below), not by test count -
@@ -1148,7 +1155,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, serial]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, serial]
     services:
       postgres:
         # pgvector image, not plain postgres: the embedding tables need the
@@ -1253,9 +1260,9 @@ jobs:
         working-directory: sorento_crm_backend
         run: |
           IGNORES=$(grep -vE '^\s*#|^\s*$' tests/ci_excluded.txt | sed 's|^|--ignore=|' | tr '\n' ' ')
-          echo "excluding $(echo "$IGNORES" | wc -w) path(s) plus tests/scm, tests/test_migration_*.py and the serial_ddl tests; shard ${{ matrix.shard }} of 6"
+          echo "excluding $(echo "$IGNORES" | wc -w) path(s) plus tests/scm, tests/test_migration_*.py and the serial_ddl tests; shard ${{ matrix.shard }} of 10"
           python -m pytest -q -p no:cacheprovider -n auto --dist loadfile --durations=30 \
-            --splits 6 --group ${{ matrix.shard }} \
+            --splits 10 --group ${{ matrix.shard }} \
             --store-durations --durations-path .test_durations \
             --ignore-glob='tests/test_migration_*.py' \
             -m "not serial_ddl" \
@@ -1371,9 +1378,10 @@ jobs:
   # why); either would fail pytest on collection, not on the test. An empty
   # list after trimming is a pass with nothing run, printed as such.
   #
-  # timeout-minutes 60: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
-  # plus setup and the frontend checks; the cap is for a hung runner, sized
-  # like the shards' (see test-backend).
+  # timeout-minutes 90: 3600 CPU-s under xdist on 4 vCPUs is about 15 min
+  # (more on the slower private runners) plus setup and the frontend
+  # checks; the cap is for a hung runner, sized like the shards' (see
+  # test-backend).
   lean-gate:
     name: ${{ github.event_name == 'pull_request' && 'PR gate' || 'Release tests' }}
     needs: [changes, check-migration-heads, pii-guard, gitleaks]
@@ -1382,7 +1390,7 @@ jobs:
       && ((github.event_name == 'pull_request' && github.event.label.name == 'ci')
       || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.lean == 'true'))
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: read
       pull-requests: write
