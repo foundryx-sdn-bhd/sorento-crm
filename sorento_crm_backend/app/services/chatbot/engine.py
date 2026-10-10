@@ -5461,7 +5461,7 @@ def _run_stages_body(  # noqa: PLR0915
                     customer_scope, verdict, state_out.focus, gate_input, plan.domains
                 )
                 if _strict_refused or _strict_line:
-                    customer_scope_refused = True
+                    customer_scope_refused = scope_refused = True  # the same clearing path as the first gate
                     account_question = _strict_line
                     resolved_kinds, resolved_candidates, unplaced_tokens, predicate = {}, {}, {}, None
                     turn_trace.add("customer_scope", {"refused": "customer_not_permitted", "reason": "replanned_fetch"})
