@@ -23,7 +23,7 @@ from tests import _pg_fixture
 from tests._pg_fixture import blank_session
 
 STEM = "chat_backfill_0001"
-PARENT = "chat_topics_0002_audit"
+PARENT = "chat_topics_0003_uuid_id"
 _MIGRATION = pathlib.Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{STEM}.py"
 
 
@@ -47,7 +47,7 @@ def _run(db, *, twice: bool = False) -> None:
             _module().upgrade()
 
 
-def test_the_revision_fits_the_version_column_and_chains_onto_the_audit_table():
+def test_the_revision_fits_the_version_column_and_chains_onto_main_head():
     module = _module()
     assert module.revision == STEM
     assert len(module.revision) <= 32

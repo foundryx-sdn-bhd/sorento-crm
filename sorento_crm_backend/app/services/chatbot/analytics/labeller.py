@@ -48,6 +48,12 @@ PROMPT_VERSION = "ca2-1"
 #: Asks per model call (owner ruling: batches of 40).
 BATCH_SIZE = 40
 
+#: One labelling attempt's wall clock, and the whole call's with rate-limit waits. Wider than
+#: a turn's (`llm_call.ATTEMPT_TIMEOUT_SECONDS`): forty labels are a longer answer, and a
+#: nightly batch has no dealer waiting on it.
+LABEL_ATTEMPT_TIMEOUT_SECONDS = 120.0
+LABEL_CALL_DEADLINE_SECONDS = 180.0
+
 #: The model's own score a product word needs before the resolver is asked (card answer 5).
 PRODUCT_CONFIDENCE_FLOOR = 0.8
 
@@ -551,11 +557,15 @@ def production_call(db: Session, *, schema_name: str, cache_key: str) -> tuple[C
     provider, api_key, model = configured_model(db)
 
     def chat(messages: list[dict], schema: dict) -> Any:
+        # The budget is wider than a turn's: a batch of 40 is a longer answer and nobody is
+        # waiting on it.
         return llm_call.chat(
             provider,
             api_key,
             model,
             messages,
+            deadline_seconds=LABEL_CALL_DEADLINE_SECONDS,
+            timeout=LABEL_ATTEMPT_TIMEOUT_SECONDS,
             temperature=0.0,
             json_schema=schema,
             json_schema_name=schema_name,

@@ -343,6 +343,12 @@ class TestPhotoRosterStaysAnswerableAndNamesThePickedProduct:
 # --------------------------------------------------------------------------- #
 
 
+# PROMO-SUBJECT-FILTER AC-10 (#1527): a tier menu is only raised over levels the availability
+# probe found a promotion at; with every level empty the reply is "No current promotion for X."
+# The probe double answers one promotion, the same fixture #1527 gave the r3 / r6 tier tests.
+_PROMO_FOUND = {"has_result": True, "items": [{"description": "Fake promo"}]}
+
+
 class TestPromotionTierRosterStaysAnswerableAcrossMultiplePicks:
     """See module docstring measurement note 1 - `tier_pick` shares the same
     "answered but still open" gap main's own `_picker_carry` never draws a
@@ -365,7 +371,7 @@ class TestPromotionTierRosterStaysAnswerableAcrossMultiplePicks:
         )
         result1, _c1 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf1, text_body=f"promo for {code}",
-            msg_id="zzt-hp9-tier-ask", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp9-tier-ask", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         open_question = _session_of(session_factory).get("open_question") or {}
@@ -382,7 +388,7 @@ class TestPromotionTierRosterStaysAnswerableAcrossMultiplePicks:
         )
         result2, captured2 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf2, text_body="1",
-            msg_id="zzt-hp9-tier-pick-1", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp9-tier-pick-1", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         promo_calls_2 = [c for c in captured2 if c[0] == fetch_mod.TIER_PROBE_TOOL]
@@ -401,7 +407,7 @@ class TestPromotionTierRosterStaysAnswerableAcrossMultiplePicks:
         )
         result3, captured3 = _run_turn_engine_real(
             session_factory, monkeypatch, qf=qf3, text_body="2",
-            msg_id="zzt-hp9-tier-pick-2", mcp_response={"has_result": False, "items": []},
+            msg_id="zzt-hp9-tier-pick-2", mcp_response=_PROMO_FOUND,
             real_entitlement=True,
         )
         promo_calls_3 = [c for c in captured3 if c[0] == fetch_mod.TIER_PROBE_TOOL]
