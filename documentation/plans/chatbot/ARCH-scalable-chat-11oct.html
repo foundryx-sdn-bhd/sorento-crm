@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scalable chat architecture</title>
+<style>
+:root{
+  --bg:#ffffff;--fg:#09090b;--muted:#71717a;--border:#e8e8ec;--card:#fafafa;--primary:#3b82f6;--primary-soft:#eff6ff;
+  --ok:#16a34a;--ok-soft:#f0fdf4;--warn:#d97706;--warn-soft:#fffbeb;--bad:#dc2626;--bad-soft:#fef2f2;--code:#f4f4f5;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#09090b;--fg:#fafafa;--muted:#a1a1aa;--border:#27272a;--card:#111113;--primary:#60a5fa;--primary-soft:#172554;
+    --ok:#4ade80;--ok-soft:#052e16;--warn:#fbbf24;--warn-soft:#2a1d05;--bad:#f87171;--bad-soft:#2a0b0b;--code:#18181b;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#09090b;--fg:#fafafa;--muted:#a1a1aa;--border:#27272a;--card:#111113;--primary:#60a5fa;--primary-soft:#172554;
+  --ok:#4ade80;--ok-soft:#052e16;--warn:#fbbf24;--warn-soft:#2a1d05;--bad:#f87171;--bad-soft:#2a0b0b;--code:#18181b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:20px;margin:40px 0 10px;padding-top:12px;border-top:1px solid var(--border)}
+h3{font-size:16px;margin:22px 0 8px}
+p,li{max-width:900px}
+.sub{color:var(--muted);margin:0 0 18px}
+code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
+nav{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 20px}
+nav a{font-size:13px;text-decoration:none;color:var(--fg);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
+nav a:hover{border-color:var(--primary);color:var(--primary)}
+.card{border:1px solid var(--border);background:var(--card);border-radius:10px;padding:14px 16px;margin:12px 0}
+.callout{border-left:4px solid var(--primary);background:var(--primary-soft);padding:12px 14px;border-radius:6px;margin:12px 0}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.callout.bad{border-color:var(--bad);background:var(--bad-soft)}
+.callout.ok{border-color:var(--ok);background:var(--ok-soft)}
+.tw{overflow-x:auto;margin:10px 0;border:1px solid var(--border);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border-bottom:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:var(--card);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.same{background:var(--code);color:var(--muted)}
+.chg{background:var(--warn-soft);color:var(--warn)}
+.new{background:var(--ok-soft);color:var(--ok)}
+.rem{background:var(--bad-soft);color:var(--bad)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+svg.d{width:100%;height:auto;display:block;margin:8px 0}
+svg.d .bx{fill:var(--card);stroke:var(--border);stroke-width:1.5}
+svg.d .bx.llm{fill:var(--primary-soft);stroke:var(--primary)}
+svg.d .bx.rigid{fill:var(--bad-soft);stroke:var(--bad)}
+svg.d .bx.mcp{fill:var(--ok-soft);stroke:var(--ok)}
+svg.d .bx.newb{fill:var(--warn-soft);stroke:var(--warn)}
+svg.d text{fill:var(--fg);font:12px Inter,ui-sans-serif,system-ui,sans-serif}
+svg.d text.s{fill:var(--muted);font-size:10.5px}
+svg.d .ar{stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#ah)}
+svg.d .dash{stroke-dasharray:4 3}
+.legend{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:12px}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px;border:1.5px solid var(--border);background:var(--card)}
+.legend .l1::before{background:var(--primary-soft);border-color:var(--primary)}
+.legend .l2::before{background:var(--bad-soft);border-color:var(--bad)}
+.legend .l3::before{background:var(--ok-soft);border-color:var(--ok)}
+.legend .l4::before{background:var(--warn-soft);border-color:var(--warn)}
+.chat{border:1px solid var(--border);border-radius:10px;margin:14px 0;overflow:hidden}
+.chat h4{margin:0;padding:9px 14px;background:var(--card);border-bottom:1px solid var(--border);font-size:14px}
+.chat .turns{padding:8px 14px;font-size:13.5px}
+.chat .u{color:var(--primary);font-weight:600}
+.chat .b{color:var(--muted)}
+.chat .x{color:var(--bad);font-weight:600}
+.small{font-size:12.5px;color:var(--muted)}
+.rec{border:2px solid var(--ok);border-radius:10px;padding:14px 16px;background:var(--ok-soft)}
+ol.q li{margin-bottom:8px}
+@media (max-width:600px){h1{font-size:22px}th{white-space:normal}}
+</style>
+</head>
+<body>
+<main>
+<h1>Scalable chat architecture: review</h1>
+<p class="sub">AGENT-LOOP-SPIKE design lane, 11 Oct 2026. Reads code on branch base <code>43b11a99a</code> and the 107 DEV eval cases (customer names masked). No live LLM calls were made. Every figure marked <b>est.</b> is an estimate to be measured on the eval set before any switch.</p>
+
+<nav>
+<a href="#tldr">Summary</a><a href="#today">1. Today</a><a href="#rigid">Where it is rigid</a><a href="#crew">2. Crew proposal</a><a href="#mcpvar">MCP-only variant</a>
+<a href="#market">What the market does</a><a href="#counter">3. Counter-proposals</a><a href="#controls">Where controls live</a><a href="#walk">4. Chats walked through</a><a href="#numbers">5. Numbers</a><a href="#rec">6. Recommendation</a>
+</nav>
+
+<section id="tldr">
+<div class="rec">
+<b>Recommendation (short).</b> Keep the parser as a router and MCP as the only execution layer. Change three things, area by area, gated on the hidden eval:
+<ol>
+<li><b>Prompt diet first:</b> a small core prompt plus only the cards for the areas this message touches, plus 3 to 5 retrieved worked examples. This replaces the one 37k-token static prompt. Tokens drop by about 65% (est.) and it needs no tool change.</li>
+<li><b>The parser emits the MCP call itself:</b> tool plus typed params taken from the MCP catalogue, instead of 54 hand-written schema keys and per-area transform code. Follow-ups patch the held call. Today already does exactly this for one area: the sales ranking frame.</li>
+<li><b>The conversation layer is keyed by param type, not by domain:</b> a <code>product_ids</code> param brings the resolver, did-you-mean, picker and stamps with it, and a <code>customer_ids</code> param brings the customer roster and scope. A new area is then a new MCP tool with typed params plus an area card and examples, with no new chatbot code.</li>
+</ol>
+To the owner's challenge "this looks like what we have": yes, about 70% is the same, and that is on purpose because what works stays. Only the three items above are new. Without them it is a rename (see <a href="#crew">section 2</a>).
+</div>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="today">1. Today's architecture (from the code)</h2>
+<div class="legend"><span class="l1">LLM call</span><span class="l2">rigid point</span><span class="l3">MCP / backend</span><span>deterministic code</span></div>
+<svg class="d" viewBox="0 0 1140 430" role="img" aria-label="Today's turn pipeline">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a1a1aa"/></marker></defs>
+<rect class="bx" x="10" y="40" width="110" height="64" rx="8"/><text x="22" y="66">WhatsApp msg</text><text class="s" x="22" y="84">run_turn :2926</text>
+<rect class="bx llm" x="150" y="20" width="180" height="104" rx="8"/><text x="162" y="44">Semantic parser (1 call)</text><text class="s" x="162" y="62">head/parser.py:910</text><text class="s" x="162" y="78">~37k-token system prompt</text><text class="s" x="162" y="94">54 required output keys</text><text class="s" x="162" y="110">asks[] = multi-domain fan-out</text>
+<rect class="bx" x="360" y="20" width="170" height="104" rx="8"/><text x="372" y="44">Post-pass + apply</text><text class="s" x="372" y="62">grounding.ground eng :4634</text><text class="s" x="372" y="78">turn/apply.py:3280</text><text class="s" x="372" y="94">domain choice :3560</text><text class="s" x="372" y="110">FetchSpec per domain :2284</text>
+<rect class="bx" x="560" y="20" width="170" height="104" rx="8"/><text x="572" y="44">Resolver + gate</text><text class="s" x="572" y="62">resolve_gate.py:1228</text><text class="s" x="572" y="78">references.py:3150 (+code</text><text class="s" x="572" y="94">reader / spec LLM, sometimes)</text><text class="s" x="572" y="110">gate.py:376 rosters</text>
+<rect class="bx" x="760" y="20" width="150" height="104" rx="8"/><text x="772" y="44">decide + route</text><text class="s" x="772" y="62">decide.py:603</text><text class="s" x="772" y="78">route.py:73</text><text class="s" x="772" y="94">ANSWER/REFINE/</text><text class="s" x="772" y="110">NEW_ASK/CARRY</text>
+<rect class="bx rigid" x="940" y="20" width="190" height="104" rx="8"/><text x="952" y="44">Domain row picks tool</text><text class="s" x="952" y="62">policy_rows.py:55</text><text class="s" x="952" y="78">select_tool = tools[0]</text><text class="s" x="952" y="94">fetch.py:156</text><text class="s" x="952" y="110">args: fetch.py:650</text>
+<path class="ar" d="M120,72 L150,72"/><path class="ar" d="M330,72 L360,72"/><path class="ar" d="M530,72 L560,72"/><path class="ar" d="M730,72 L760,72"/><path class="ar" d="M910,72 L940,72"/>
+<rect class="bx mcp" x="940" y="170" width="190" height="104" rx="8"/><text x="952" y="194">MCP tool (50 in catalogue)</text><text class="s" x="952" y="212">services.py:226 _mcp_call</text><text class="s" x="952" y="228">presenters.py:1831 per mode</text><text class="s" x="952" y="244">scope: company_scope_resolver</text><text class="s" x="952" y="260">stock_visibility, eta_policy</text>
+<path class="ar" d="M1035,124 L1035,170"/>
+<rect class="bx" x="700" y="170" width="210" height="104" rx="8"/><text x="712" y="194">Structure + compose</text><text class="s" x="712" y="212">fetch.output_structurer :2908</text><text class="s" x="712" y="228">turn/compose.py:503</text><text class="s" x="712" y="244">tail/reply_ladder.py:79</text><text class="s" x="712" y="260">templates, no LLM</text>
+<path class="ar" d="M940,222 L910,222"/>
+<rect class="bx" x="470" y="170" width="200" height="104" rx="8"/><text x="482" y="194">Did-you-mean + stamps</text><text class="s" x="482" y="212">miss_suggest.py:1401</text><text class="s" x="482" y="228">answer.py:4609</text><text class="s" x="482" y="244">stamps turn_runtime :2690</text><text class="s" x="482" y="260">tier_gate.py:127</text>
+<path class="ar" d="M700,222 L670,222"/>
+<rect class="bx" x="250" y="170" width="190" height="104" rx="8"/><text x="262" y="194">Reply + memory write</text><text class="s" x="262" y="212">_run_answer eng :7235</text><text class="s" x="262" y="228">Focus turn/state.py:121</text><text class="s" x="262" y="244">pending.py:76 (11 kinds)</text><text class="s" x="262" y="260">tail.persist :216</text>
+<path class="ar" d="M470,222 L440,222"/>
+<rect class="bx rigid" x="10" y="310" width="260" height="104" rx="8"/><text x="22" y="334">Per-area code paths</text><text class="s" x="22" y="352">report_ask.py settle :564, _refine :641</text><text class="s" x="22" y="368">_drill :710; so_status.py:155</text><text class="s" x="22" y="384">promo_filter turn_runtime :580</text><text class="s" x="22" y="400">required_fields.py (ask loops)</text>
+<rect class="bx llm" x="300" y="310" width="200" height="104" rx="8"/><text x="312" y="334">Clarifier (low signal)</text><text class="s" x="312" y="352">lanes/casual.py:296</text><text class="s" x="312" y="368">only LLM-written reply</text><text class="s" x="312" y="384">topic menu on "why?"</text>
+<rect class="bx" x="530" y="310" width="200" height="104" rx="8"/><text x="542" y="334">Escalation lane</text><text class="s" x="542" y="352">apply.py:2049 _lane</text><text class="s" x="542" y="368">lanes/escalation.py:533</text><text class="s" x="542" y="384">escalation_control.py:62</text><text class="s" x="542" y="400">member_offer.py:147</text>
+<rect class="bx rigid" x="760" y="310" width="370" height="104" rx="8"/><text x="772" y="334">Prompt addenda per area (chars)</text><text class="s" x="772" y="352">GROWTH_R1 13,161; TOP_SELLING 10,690; STOCK_TASK 7,501</text><text class="s" x="772" y="368">REPORT_ASK 7,461; SALES_REPORT 7,198; TRAP_SPECS 5,915</text><text class="s" x="772" y="384">ESCALATION 5,198; PO_SPO 4,100; LOW_STOCK 3,945</text><text class="s" x="772" y="400">chatbot_parser_prompt.py:98 to :984</text>
+</svg>
+<div class="card small">
+<b>Measured.</b> Code fallback prompt 148,593 chars (about 37.1k tokens). Prod snapshot of 1 Oct 132,040 chars (33.0k). Candidate of 10 Oct 152,918 chars (38.2k) plus DB policy blocks. The JSON schema sent on each call is 7,329 chars. The per-turn user block is capped at about 1.8k tokens (<code>turn/context.py:29</code>). Total is about 37k to 42k tokens a turn, which matches the owner's 39k. Almost all of it is the static system prompt. A typical business turn makes <b>1 LLM call</b> (eng :4513). It can make up to 3: resolver code reader <code>resolver_code_reader.py:49</code>, spec read <code>references.py:3588</code>, clarifier <code>casual.py:296</code>. Business reply text is all templates. Baseline: p50 3.9 s, p95 7.9 s, about $0.010 per case (98% of prompt tokens cached).
+</div>
+
+<h3 id="rigid">Where it becomes rigid</h3>
+<div class="grid2">
+<div class="callout bad"><b>R1. One prompt for everything.</b> Every new kind of question adds an addendum: the report and ranking addenda alone are about 33k chars (about 8k tokens). All of it is sent on every turn, even "SRT359C stock". Rules start competing with each other (cases 0185, 0258 below).</div>
+<div class="callout bad"><b>R2. Hand-written parser keys per area.</b> 54 required keys (<code>parser.py:84-578</code>), such as <code>ranking_refine</code>, <code>ranking_drill</code>, <code>top_n</code>, <code>order_status</code>, <code>low_stock</code>, <code>po_refs</code>. Each must then be translated into tool args by area code (<code>fetch.py:650</code>, <code>report_ask.py:564</code>).</div>
+<div class="callout bad"><b>R3. One tool per domain.</b> <code>select_tool</code> takes <code>tools[0]</code> of the domain row (<code>fetch.py:156</code>). A second question shape in the same domain needs a new domain or new special-case code.</div>
+<div class="callout bad"><b>R4. Follow-ups exist for one area only.</b> "Shrink it down" works for sales ranking because <code>Focus.sales_ranking_frame</code> holds the last call (<code>state.py:176</code>, <code>report_ask.py:641/710</code>). Other areas carry a subject (product, customer), not the last call, so they carry the wrong thing or ask again (cases p9ob, 0228).</div>
+<div class="callout bad"><b>R5. Missing filters live nowhere.</b> No MCP tool has a spec-attribute filter or a "has active promotion" filter today. <code>include_specs</code> only adds output columns (<code>catalog.py:94</code>). So "exposed shower that has stock" or "which basins are on promo" cannot be one query (case 0277).</div>
+<div class="callout bad"><b>R6. Compound asks fall into required-field loops.</b> "Stock + DO for two months + ETA" in one message triggers "how many units?" from <code>required_fields.py</code> and drops the DO half (case 0058).</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="crew">2. Crew's proposal: few generic capabilities, many described datasets</h2>
+<svg class="d" viewBox="0 0 1140 190" role="img" aria-label="Crew proposal flow">
+<rect class="bx llm" x="10" y="30" width="200" height="110" rx="8"/><text x="22" y="54">Model: message to</text><text x="22" y="72">structured query spec</text><text class="s" x="22" y="92">dataset, filters (spec attrs),</text><text class="s" x="22" y="108">joins (promotions),</text><text class="s" x="22" y="124">group / sort / limit</text>
+<rect class="bx newb" x="240" y="30" width="200" height="110" rx="8"/><text x="252" y="54">Dataset descriptions</text><text class="s" x="252" y="74">one per area, replaces addenda</text><text class="s" x="252" y="90">seed: report registry</text><text class="s" x="252" y="106">reports/registry.py:551</text><text class="s" x="252" y="122">(CA-3 dataset not built)</text>
+<rect class="bx newb" x="470" y="30" width="210" height="110" rx="8"/><text x="482" y="54">Generic executor</text><text class="s" x="482" y="74">compiles spec, scope enforced</text><text class="s" x="482" y="90">SQL over datasets?</text><text class="s" x="482" y="106">or MCP?  (decides everything,</text><text class="s" x="482" y="122">see MCP constraint)</text>
+<rect class="bx" x="710" y="30" width="200" height="110" rx="8"/><text x="722" y="54">Shared conversation layer</text><text class="s" x="722" y="74">resolver, DYM, picker,</text><text class="s" x="722" y="90">focus holds query spec,</text><text class="s" x="722" y="106">stamps, escalation,</text><text class="s" x="722" y="122">never stuck</text>
+<rect class="bx" x="940" y="30" width="190" height="110" rx="8"/><text x="952" y="54">Lookups unchanged</text><text class="s" x="952" y="74">stock, ETA, SO status stay</text><text class="s" x="952" y="90">on today's flow</text>
+<path class="ar" d="M210,85 L240,85"/><path class="ar" d="M440,85 L470,85"/><path class="ar" d="M680,85 L710,85"/>
+</svg>
+<div class="tw"><table>
+<tr><th>Component</th><th>Today</th><th>Crew proposal</th><th>Verdict</th></tr>
+<tr><td>Parser as router</td><td>1 call, <code>parser.py:910</code></td><td>Same model, emits a query spec</td><td><span class="pill chg">changed</span> the output shape only</td></tr>
+<tr><td>Structured parameters</td><td>54 keys incl. <code>group_by</code>, <code>top_n</code>, <code>rank_by</code>, dates</td><td>Generic spec: dataset, filters, joins, group, sort, limit</td><td><span class="pill chg">changed</span> generalised. Today already emits structured params; this is not a new idea</td></tr>
+<tr><td>Focus holds last query</td><td>Only <code>sales_ranking_frame</code> (<code>state.py:176</code>)</td><td>For every query</td><td><span class="pill chg">changed</span> a generalisation of an existing mechanism</td></tr>
+<tr><td>Dataset descriptions</td><td>Prompt addenda + domain rows</td><td>Per-area description</td><td><span class="pill new">new</span> the real gain, if the prompt is assembled per turn</td></tr>
+<tr><td>Executor</td><td>MCP tools + backend routes</td><td>Generic compiler</td><td><span class="pill new">new</span> and risky: if it is SQL it bypasses MCP (did-you-mean alternatives, presenters, stock/ETA policy, restricted fields)</td></tr>
+<tr><td>Spec / promo filters</td><td>Do not exist</td><td>Filters + joins</td><td><span class="pill new">new</span> needed under any option</td></tr>
+<tr><td>Resolver, DYM, picker, stamps, escalation</td><td>Exist (see <a href="#controls">table</a>)</td><td>"Shared across queries"</td><td><span class="pill same">same</span> unless they are re-keyed off domain-specific code, which the proposal does not say how to do</td></tr>
+<tr><td>Lookups</td><td>Today's flow</td><td>Today's flow</td><td><span class="pill same">same</span></td></tr>
+<tr><td>Per-area lanes (report_ask settle/refine, promo_filter)</td><td>Hand code</td><td>Implied removed</td><td><span class="pill rem">removed</span> only if the executor really covers them</td></tr>
+</table></div>
+<div class="callout warn"><b>Answering "that looks pretty similar to what we have today", head on.</b> It is. Today's parser already turns a message into structured parameters, and today's sales ranking already keeps the last call and patches it. As written, the proposal is a <b>refactor that generalises two existing mechanisms</b>. It becomes more than a rename only if (a) the prompt stops being one static 37k block, (b) the emitted params are the tool's own typed params so no per-area translation code is written, and (c) the picker, did-you-mean and stamps trigger from the param type instead of from domain code. Its weak point is the executor: a raw query layer would have to re-implement five layers of per-mode control that MCP and the routes already own. So it should not bypass MCP. That leads to the variant below.</div>
+
+<h3 id="mcpvar">Owner/crew variant: MCP stays the only execution layer</h3>
+<svg class="d" viewBox="0 0 1140 170" role="img" aria-label="MCP-only variant">
+<rect class="bx llm" x="10" y="30" width="180" height="100" rx="8"/><text x="22" y="54">Parser (router)</text><text class="s" x="22" y="74">areas + raw entities</text><text class="s" x="22" y="90">+ conversation act</text><text class="s" x="22" y="106">(new / refine / pick / switch)</text>
+<rect class="bx" x="220" y="30" width="170" height="100" rx="8"/><text x="232" y="54">Resolver / picker</text><text class="s" x="232" y="74">UUIDs only from here</text><text class="s" x="232" y="90">never invented</text>
+<rect class="bx llm" x="420" y="30" width="200" height="100" rx="8"/><text x="432" y="54">Param filler (call 2)</text><text class="s" x="432" y="74">sees the area's 2 to 5 tools</text><text class="s" x="432" y="90">emits 1 to 3 MCP calls</text><text class="s" x="432" y="106">or a patch of the held call</text>
+<rect class="bx mcp" x="650" y="30" width="200" height="100" rx="8"/><text x="662" y="54">MCP tools</text><text class="s" x="662" y="74">+ new params: spec_constraints,</text><text class="s" x="662" y="90">has_active_promotion</text><text class="s" x="662" y="106">DYM, presenters, scope kept</text>
+<rect class="bx" x="880" y="30" width="250" height="100" rx="8"/><text x="892" y="54">Focus holds last call(s)</text><text class="s" x="892" y="74">"shrink down" = edit params</text><text class="s" x="892" y="90">compose = today's templates</text>
+<path class="ar" d="M190,80 L220,80"/><path class="ar" d="M390,80 L420,80"/><path class="ar" d="M620,80 L650,80"/><path class="ar" d="M850,80 L880,80"/>
+</svg>
+<div class="grid2">
+<div class="card"><b>Pros.</b> Every control that works today keeps working: did-you-mean alternatives (<code>inventory_service.py:1147</code>), presenters per mode (<code>presenters.py:1831</code>), dealer ETA padding (<code>eta_policy.py:400</code>), customer scope (<code>_contact_scope.py:32</code>). The model chooses among 2 to 5 tools, not 44, which avoids the n8n failure and is within OpenAI's under-20 tools guidance. "Shrink down" becomes uniform.</div>
+<div class="card"><b>Cons.</b> Two sequential model calls on most business turns, so p95 sits close to the 8 s bar (est. 6.5 to 8.5 s). The tools are still shaped per area (orders list, outstanding, sales report, top selling and report ask are five report tools with overlapping params), so the filler still has to pick within an overlapping set. Market warning: "if a human can't say which tool, the agent can't".</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="market">What the market does</h2>
+<p class="small">Crew research of 11 Oct (<code>crew/state/files/market-research-chatbot-11oct.md</code>). Primary sources were read by crew; items marked UNVERIFIED were summaries only.</p>
+<div class="tw"><table>
+<tr><th>#</th><th>Pattern</th><th>Source</th><th>Today</th></tr>
+<tr><td>1</td><td>Router workflow, not a free agent</td><td><a href="https://www.anthropic.com/research/building-effective-agents">anthropic.com/research/building-effective-agents</a>, <a href="https://developers.openai.com/api/docs/guides/function-calling">OpenAI function calling</a>, <a href="https://www.uber.com/blog/query-gpt/">Uber QueryGPT</a></td><td>Yes (parser). The spiked free agent loop matched the owner's n8n experience and is dropped.</td></tr>
+<tr><td>2</td><td>Few generic tools, typed params / enums, concise vs detailed output</td><td><a href="https://www.anthropic.com/engineering/writing-tools-for-agents">anthropic.com/engineering/writing-tools-for-agents</a></td><td>No: 50 narrow tools, 5 of them overlapping report tools</td></tr>
+<tr><td>3</td><td>Semantic / metrics layer compiles the query; out of coverage means "cannot answer"</td><td><a href="https://docs.getdbt.com/blog/semantic-layer-vs-text-to-sql-2026">dbt 2026</a>, Cube AI API guide (cube.dev)</td><td>Partly: <code>reports/ask.py</code> DIMENSIONS/FILTERS :27 is a small semantic layer for sales</td></tr>
+<tr><td>4</td><td>Query understanding into facet filters; the tool owns did-you-mean</td><td>Instacart intent engine (tech.instacart.com)</td><td>Partly: the stock route returns alternatives; the rest of DYM is chatbot code</td></tr>
+<tr><td>5</td><td>Refinement = a patch of the last structured query held in state</td><td>Anthropic context engineering, dbt</td><td>Sales ranking only</td></tr>
+<tr><td>6</td><td>Small core prompt, per-domain instructions loaded after routing; tool search / allowed_tools</td><td><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">context engineering</a>, <a href="https://www.anthropic.com/engineering/advanced-tool-use">advanced tool use</a>; Shopify "death by a thousand instructions" UNVERIFIED</td><td>No: one static prompt</td></tr>
+<tr><td>7</td><td>Retrieve 3 to 5 nearest few-shot examples from a golden set</td><td>LangChain few-shot (UNVERIFIED)</td><td>No; the golden set now exists (CHATBOT-EVAL)</td></tr>
+<tr><td>8</td><td>Procedures per domain + a bounded fallback loop of 2 to 3 calls for no-match or compound asks</td><td><a href="https://decagon.ai/blog/why-we-built-aop">Decagon AOP</a>, <a href="https://sierra.ai/blog/constellation-of-models">Sierra</a></td><td>No fallback loop</td></tr>
+<tr><td>9</td><td>Code renders the reply; the model writes one line at most</td><td>DoorDash (UNVERIFIED)</td><td>Yes (templates)</td></tr>
+<tr><td>10</td><td>Cheaper router models only after evals</td><td><a href="https://qwen.readthedocs.io/">Qwen function call</a>; DeepSeek pricing UNVERIFIED</td><td>gpt-5.4-mini, 98% cached</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="counter">3. Options compared (including counter-proposals)</h2>
+<p>Five options. A and B are crew's. C is the market set (1)+(2)+(5)+(6)+(7) that crew asked to evaluate. D and E are mine. D is the recommendation and is built on top of C.</p>
+
+<div class="grid2">
+<div class="card"><h3 style="margin-top:0">A. Datasets + generic executor (crew, as written)</h3>Markets: 3, 5. See section 2. <b>Rejected as written:</b> it bypasses MCP controls.</div>
+<div class="card"><h3 style="margin-top:0">B. MCP-only, router + param filler (owner/crew variant)</h3>Markets: 1, 5, partly 2. Two model calls. See above.</div>
+</div>
+
+<h3>C. Market pattern set (1)+(2)+(5)+(6)+(7), evaluated as one option</h3>
+<svg class="d" viewBox="0 0 1140 180" role="img" aria-label="Market pattern set">
+<rect class="bx" x="10" y="30" width="170" height="110" rx="8"/><text x="22" y="54">Retrieve (no LLM)</text><text class="s" x="22" y="74">embed message (pgvector</text><text class="s" x="22" y="90">exists) to 3-5 nearest golden</text><text class="s" x="22" y="106">examples + their areas</text>
+<rect class="bx llm" x="210" y="30" width="230" height="110" rx="8"/><text x="222" y="54">One parser call, assembled prompt</text><text class="s" x="222" y="74">core ~6-8k (acts, scope, style)</text><text class="s" x="222" y="90">+ cards of matched areas ~2-4k</text><text class="s" x="222" y="106">+ examples ~1-2k + tool schemas</text><text class="s" x="222" y="122">emits call(s) or a patch</text>
+<rect class="bx mcp" x="470" y="30" width="220" height="110" rx="8"/><text x="482" y="54">~3 generic MCP tools + lookups</text><text class="s" x="482" y="74">report(metrics, dims, filters,</text><text class="s" x="482" y="90">sort, top, period)</text><text class="s" x="482" y="106">product_search(facets, spec, sort)</text><text class="s" x="482" y="122">promo_match(items, customer)</text>
+<rect class="bx" x="720" y="30" width="190" height="110" rx="8"/><text x="732" y="54">Today's conversation layer</text><text class="s" x="732" y="74">resolver, DYM, picker,</text><text class="s" x="732" y="90">stamps, escalation as today</text>
+<rect class="bx" x="940" y="30" width="190" height="110" rx="8"/><text x="952" y="54">Focus: held calls</text><text class="s" x="952" y="74">patch = refine</text><text class="s" x="952" y="90">new call = topic switch</text>
+<path class="ar" d="M180,85 L210,85"/><path class="ar" d="M440,85 L470,85"/><path class="ar" d="M690,85 L720,85"/><path class="ar" d="M910,85 L940,85"/>
+</svg>
+<div class="grid2">
+<div class="card"><b>Pros.</b> One LLM call (the router and param filler fused into one call, with the routing done cheaply by retrieval), so it is the fastest option with tools. The prompt diet comes for free. Consolidating the 5 overlapping report tools into one <code>report</code> tool removes the hardest "which tool" choice. Refinement is uniform.</div>
+<div class="card"><b>Cons.</b> If retrieval picks the wrong areas, the card is missing and the model has to say "area not loaded", which costs a second call (est. under 10% of turns, UNVERIFIED). Building <code>report</code>, <code>product_search</code> and <code>promo_match</code> is backend work: the spec and promo filters are new. The conversation layer stays domain-coded, so a new area still needs chatbot code for its pickers and stamps.</div>
+</div>
+
+<h3>D. (mine, recommended) C + a param-type conversation layer</h3>
+<svg class="d" viewBox="0 0 1140 220" role="img" aria-label="Param-type conversation layer">
+<rect class="bx llm" x="10" y="20" width="240" height="90" rx="8"/><text x="22" y="44">Option C parser call</text><text class="s" x="22" y="64">emits {tool, params} or a patch</text><text class="s" x="22" y="80">raw words in typed slots,</text><text class="s" x="22" y="96">never UUIDs</text>
+<rect class="bx newb" x="290" y="20" width="300" height="190" rx="8"/><text x="302" y="44">Param-type registry (from MCP ToolSpec)</text><text class="s" x="302" y="66">product_ids: resolver + DYM + product picker</text><text class="s" x="302" y="82">    + stamp per tool (has promo / has PO / has stock)</text><text class="s" x="302" y="98">customer_ids: customer roster, has-DO stamp, scope</text><text class="s" x="302" y="114">period: period ask ("this month / last month")</text><text class="s" x="302" y="130">quantity: asked only when the TOOL requires it</text><text class="s" x="302" y="146">tier: tier probe + tier picker</text><text class="s" x="302" y="162">enum (metric, group_by, basis): from catalogue enums</text><text class="s" x="302" y="178">spec_constraints: spec registry (grounding.py)</text><text class="s" x="302" y="194">declared once; every tool that uses the type gets it</text>
+<rect class="bx mcp" x="630" y="20" width="230" height="90" rx="8"/><text x="642" y="44">MCP (only execution layer)</text><text class="s" x="642" y="64">presenters, scope, policy</text><text class="s" x="642" y="80">unchanged</text>
+<rect class="bx" x="900" y="20" width="230" height="90" rx="8"/><text x="912" y="44">Compose = today's templates</text><text class="s" x="912" y="64">reply ladder, quick replies</text>
+<rect class="bx" x="630" y="130" width="500" height="80" rx="8"/><text x="642" y="154">New area = MCP tool with typed params + area card + ~10 golden examples</text><text class="s" x="642" y="174">no new parser keys, no new lane, no new picker or stamp code</text><text class="s" x="642" y="190">until a genuinely new param type appears (then one registry entry)</text>
+<path class="ar" d="M250,65 L290,65"/><path class="ar" d="M590,65 L630,65"/><path class="ar" d="M860,65 L900,65"/>
+</svg>
+<div class="grid2">
+<div class="card"><b>Pros.</b> This is what removes "every new kind of question needs a new tool + new domain + new code". Today the conversation layer is wired per domain: <code>stamp_promotion</code>/<code>stamp_purchase_order</code> flags (eng :5202-5227), the customer has-DO annotator (<code>pickers.py:82</code>), and <code>required_fields.py</code>. In D it is wired per <i>param type</i>, declared once. It fixes R6: quantity is asked only when the chosen tool marks it as required, so "stock + DO + ETA" never asks for quantity for the DO half. It keeps MCP and today's templates.</div>
+<div class="card"><b>Cons.</b> The foundation is the largest build here (est. 3 to 5 weeks before the first area moves). The registry must reproduce today's special cases (the dealer did-you-mean without escalation, <code>dealer_stock.py:77</code>; the tier picker with stamps, eng :5824). Every special case needs a red test from today's corpus before it moves.</div>
+</div>
+
+<h3>E. (mine, conservative) Prompt diet only, on today's pipeline</h3>
+<div class="card">Keep the 54-key parser and everything behind it. Replace the static prompt with core + addenda for retrieved areas + 3 to 5 retrieved examples (patterns 6 and 7 only). <b>Pros:</b> 1 to 2 weeks, low risk, est. 60 to 70% fewer prompt tokens and a faster parser call. It is also step 1 of C and D, so the work is not lost. <b>Cons:</b> it does not fix R2 to R6. Every new area still costs a new addendum, new schema keys and new lane code. It is a diet, not a scaling fix.</div>
+
+<div class="callout"><b>Not recommended: the free tool-calling agent</b> (the first half of this lane). The owner saw a model choosing from many tools pick wrong tools and get slower in n8n. The market agrees: pattern 1, with free loops only as a bounded fallback (pattern 8). The red tests and plan from that spike were removed from this branch.</div>
+
+<!-- ============================================================ -->
+<h2 id="controls">Where the controls live: today vs after</h2>
+<div class="tw"><table>
+<tr><th>Control</th><th>Today (file:line)</th><th>A datasets</th><th>B MCP + filler</th><th>C market set</th><th>D param-type</th><th>E diet</th></tr>
+<tr><td>Did-you-mean</td><td>Chatbot: <code>miss_suggest.py:1401</code>, <code>answer.py:4609</code>, dealer <code>dealer_stock.py:77</code>, per code <code>compose.py:388</code>. Candidates: resolver <code>entity_resolver.py:541</code>, stock route <code>inventory_service.py:1147</code>, printed by <code>presenters.py:1548</code></td><td>Must be rebuilt in the executor</td><td>Same as today</td><td>Same; new generic tools return <code>alternatives</code> like the stock route (pattern 4)</td><td>Triggered by the <code>product_ids</code> type; the code moves out of domain branches</td><td>Same as today</td></tr>
+<tr><td>Per-mode presentation (dealer / staff / end user, levels)</td><td>MCP <code>server.py:144</code> forced params, <code>presenters.py:1831</code>, <code>_stock_mode</code> :1791; backend <code>stock_visibility.py:229</code>, <code>eta_policy.py:400</code>, <code>field_access.py:549</code>; chatbot <code>fetch.py:2908</code></td><td><b>Lost</b> unless the executor calls the same services, at which point it is MCP again</td><td>Same</td><td>Same; new tools must declare <code>restricted_fields</code> (<code>catalog.py:52</code>)</td><td>Same</td><td>Same</td></tr>
+<tr><td>Scope</td><td>Company <code>company_scope_resolver.py:368</code> + ORM listener <code>company_scope.py:266</code>; brand <code>contact_brand_scope.py:68</code>; customer <code>_contact_scope.py:32</code> + chatbot <code>fetch.py:1251</code></td><td>Must be re-proven</td><td>Same</td><td>Same</td><td>Same; the <code>customer_ids</code> type carries the chatbot check</td><td>Same</td></tr>
+<tr><td>Picker / pending</td><td><code>pending.py:76</code>, <code>gate.py:376</code>, <code>compose.py:1084</code>, <code>question.py:129</code></td><td>Shared, how unstated</td><td>Same</td><td>Same</td><td>Raised by an ambiguous typed param</td><td>Same</td></tr>
+<tr><td>Stamping</td><td><code>turn_runtime.py:2690</code>, <code>resolve_gate.py:1514/1542</code>, <code>pickers.py:82/261</code>, tier eng :5824</td><td>Unstated</td><td>Same</td><td>Same</td><td>Declared per (type, tool): "promo tool stamps has-promo"</td><td>Same</td></tr>
+<tr><td>Escalation</td><td><code>apply.py:2049</code>, <code>lanes/escalation.py:533</code>, <code>escalation_control.py:62</code>, <code>member_offer.py:147</code></td><td>Same</td><td>Same</td><td>Same</td><td>Same (message_type stays in the core prompt)</td><td>Same</td></tr>
+<tr><td>Follow-up (shrink / switch)</td><td><code>Focus.sales_ranking_frame</code> <code>state.py:176</code>, <code>report_ask.py:641/710</code></td><td>Spec in focus</td><td>Held call in focus</td><td>Held call, patch</td><td>Held call, patch</td><td>As today</td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2 id="walk">4. Real chats walked through each option</h2>
+<p class="small">DEV eval cases, customer names masked. "Today" is the prod reply on the 6 Oct snapshot; the baseline run shows the same failure types on main. A to E are the expected behaviour by design, not yet measured.</p>
+
+<div class="chat"><h4>0309 (dealer): browse, shrink down, then a topic switch to reports. Shows what works today.</h4><div class="turns">
+<p><span class="u">T1</span> "How about p trap" <span class="b">today: P trap water closets (182), split by brand</span><br><span class="u">T2</span> "Sorento" <span class="b">today: Sorento P trap (128), list 1 to 50: works</span><br><span class="u">T3 to T5</span> "[Customer S] overdue how much" / "account statement" / "Top 20 [Customer S] order products" <span class="b">today: last turn "Sales report is not enabled for your account" (expected: correct, dealer has no grant)</span></p>
+<p><b>A</b> same, but the grant check moves into the executor (risk). <b>B</b> T2 = patch <code>brand_ids</code> on the held product list; T5 = new call, refused by the MCP grant. <b>C</b> as B in one call. <b>D</b> as C; refusal from <code>restricted_fields</code> unchanged. <b>E</b> as today. <i>No option may regress this.</i></p></div></div>
+
+<div class="chat"><h4>p9ob (staff): report ask, clarify, answer. A stale subject is carried into the report.</h4><div class="turns">
+<p><span class="u">T1</span> "CBDR4003 stock"<br><span class="u">T2</span> "Top sales Sorento and Mocha water closet this month" <span class="b">today: asks which brand(s)</span><br><span class="u">T3</span> "Sorento and mocha" <span class="x">today: "No sales for BK007A"</span> (a product nobody named)</p>
+<p><b>A, B, C, D</b>: T2 = <code>report(metric=sales, group_by=product, filters={category: water closet}, period=this month)</code>; brand ambiguity becomes a picker on <code>brand_ids</code>; T3 fills <code>brand_ids</code> on the held call. The held call has no product slot, so the carried product cannot leak in. <b>E</b>: unchanged risk; the subject carry is still per domain.</p></div></div>
+
+<div class="chat"><h4>0058 (dealer): compound ask, stock + DO for two months + ETA</h4><div class="turns">
+<p><span class="u">T1 to T2</span> "any DO for this SRTKT71SS" / "this month" <span class="b">today: period ask, then DO list (works)</span><br><span class="u">T3</span> "srtksw302-bl check stock, any DO for this month and last month" <span class="x">today: "How many units do you need?"</span><br><span class="u">T4</span> "x 2, any DO for sep and oct" <span class="x">today: stock line only, DO half dropped</span><br><span class="u">T5</span> "any ETA, any DO for sep and oct 2026" <span class="x">today: "No incoming ... How many units do you need?"</span></p>
+<p><b>B, C</b>: a plan of 3 calls (stock, orders list for Sep to Oct, incoming); quantity is still asked if the stock tool path keeps <code>required_fields.py</code>. <b>D</b>: quantity is optional on <code>stock_balance_list</code> (availability mode works without it; UNVERIFIED for every mode), so no ask; three blocks answered. <b>A</b>: same as D if the executor knows optionality. <b>E</b>: unchanged.</p></div></div>
+
+<div class="chat"><h4>0277 (dealer): spec match ("exposed shower"), then promo match + cost, then a tier pick</h4><div class="turns">
+<p><span class="u">T1</span> "what model exposed shower got stock?" <span class="x">today: "How many units for each?" over 7 codes with blank stock</span><br><span class="u">T2</span> "sorento branch exposed shower set" <span class="x">today: same list again</span><br><span class="u">T3</span> "9612-gm any offer and cost" <span class="b">today: dealer / office / end user picker</span><br><span class="u">T4</span> "what different" <span class="x">today: generic clarifier</span><br><span class="u">T5</span> "dealer" <span class="x">today: expired flyers listed</span> (expected: dealer flyer flagged expired, or none current; cost refused)</p>
+<p><b>A</b>: <code>products where type=exposed shower join stock</code>, but presentation must be rebuilt. <b>B, C, D</b>: T1 = <code>product_search(spec={type: exposed shower}, has_stock=true)</code>, which needs the new spec param; T2 = patch <code>brand_ids</code>; T3 = <code>promo_match(items=[SRTWT9612-GM])</code> with the tier from the contact (a dealer is not offered office) plus cost refused by the grant; T4 answered from the held call. <b>E</b>: unchanged; no spec filter exists.</p></div></div>
+
+<div class="chat"><h4>0258 (dealer): user insists on the description and size; the bot loops on attachment type</h4><div class="turns">
+<p><span class="u">T1 to T4</span> "drawing" / "CB1512ASS drawing" / "size?" / photo <span class="x">today: "Please provide the attachment type" three times</span><br><span class="u">T5</span> "I want the DESCRIPTION SIZE!!!" <span class="x">today: same question again</span></p>
+<p><b>B, C, D</b>: "size?" is a switch from the attachments tool to the products list (<code>include_specs</code>), so no attachment type is needed; the reply says no dimensions are on record. <b>E</b>: helps only if the retrieved examples cover this exact switch.</p></div></div>
+
+<div class="chat"><h4>0228 / 0230 (dealer): delivery follow-ups carry the wrong product</h4><div class="turns">
+<p><span class="u">T1</span> "202610-1130 SRT390-BL when deliver?" <span class="b">today: order card</span><br><span class="u">T2 to T3</span> "estimate delivery time?" <span class="x">today: switches to SRT391-GM outstanding DO</span><br><span class="u">T4</span> "[Customer H] 7/10/2026 有送货吗?" <span class="x">today: "no order matched, reply with another month"</span> (expected: say none, mention the outstanding DO)<br><span class="u">T5 to T6</span> "SRT391-GM 几时会安排送货?" / "十月" <span class="b">today: period ask, then summary (works)</span></p>
+<p><b>B, C, D</b>: T2 re-reads the held call (<code>order_ids=[202610-1130]</code>), so no product swap is possible; T4 = new call with <code>actual_delivery_date=7 Oct</code> plus an outstanding block. <b>E</b>: unchanged.</p></div></div>
+
+<div class="chat"><h4>0185 (dealer): a descriptive product line read as four entity types</h4><div class="turns">
+<p><span class="u">T1</span> "SORENTO SRTWB1515 COUNTER TOP &amp; WALL HUNG BASIN" <span class="x">today: picker "SORENTO (promotion / customer / form / transporter)"</span></p>
+<p><b>C, D</b>: retrieval finds product examples; "SORENTO" lands in the <code>brand_ids</code> slot of <code>product_search</code>, so the resolver is asked for a brand, not "any entity". <b>B</b>: same after the router. <b>E</b>: helped by examples, entity confusion still possible.</p></div></div>
+
+<div class="chat"><h4>0318 (staff): low stock report, then "stock and last in" answered only half</h4><div class="turns">
+<p><span class="u">T1</span> "Low stock reports" <span class="b">today: stock summary</span><br><span class="u">T2</span> "Stock srtss5728 and last in" <span class="x">today: only the last SPO line</span> (expected: stock 174 plus last in SPO, 300 units)</p>
+<p><b>B, C, D</b>: a plan of 2 calls (stock balance + last receipt), both blocks shown. <b>Today</b> already has <code>asks[]</code> fan-out, so this is a fan-out bug, not a design limit. <b>E</b>: fixable as a bug.</p></div></div>
+
+<!-- ============================================================ -->
+<h2 id="numbers">5. Numbers per option</h2>
+<div class="tw"><table>
+<tr><th>Option</th><th>Prompt tokens / turn</th><th>Model calls / turn</th><th>p95 latency</th><th>Cost / turn</th><th>Cost of a NEW area</th><th>Migration without regression</th><th>Main risks</th></tr>
+<tr><td>Today</td><td>37k to 42k (measured), 98% cached</td><td>1 (up to 3)</td><td>7.9 s (measured)</td><td>~$0.010 (measured)</td><td>Domain row + addendum (3k to 13k chars) + schema keys + lane / composer code: est. 5 to 10 days, 8 to 15 files</td><td>n/a</td><td>Prompt keeps growing; rules collide</td></tr>
+<tr><td>A datasets + executor</td><td>est. 12k to 18k, grows with datasets</td><td>1 to 2</td><td>est. 6 to 8 s</td><td>est. $0.005 to $0.008</td><td>Description: 1 to 2 days, 2 to 3 files, after a 4 to 8 week executor build</td><td>Hard: every per-mode control must be re-proven</td><td>Bypasses MCP; scope or presentation regressions</td></tr>
+<tr><td>B MCP + filler</td><td>est. 10k to 14k over two calls</td><td>2</td><td>est. 6.5 to 8.5 s</td><td>est. $0.006 to $0.009</td><td>Existing tool: 1 to 2 days (card + examples); a new filter param: +2 to 4 days of backend work</td><td>Area by area behind the eval gate</td><td>p95 over the bar; overlapping report tools</td></tr>
+<tr><td>C market set</td><td>est. 10k to 14k in one call</td><td>1 (+1 on a retrieval miss)</td><td>est. 5 to 7 s</td><td>est. $0.004 to $0.007</td><td>Card + examples 1 to 2 days, plus chatbot picker/stamp code when the area is new: 2 to 4 days</td><td>Area by area; lookups stay on today's flow until each area reaches parity</td><td>Retrieval misroute; building 3 generic tools</td></tr>
+<tr><td><b>D param-type (rec.)</b></td><td>as C</td><td>as C</td><td>as C</td><td>as C</td><td><b>1 to 2 days, 0 chatbot files</b> when the param types exist; foundation 3 to 5 weeks</td><td>E first, then C per area, then the registry replaces domain branches area by area with corpus red tests</td><td>Foundation size; reproducing special cases</td></tr>
+<tr><td>E diet only</td><td>est. 10k to 14k</td><td>1</td><td>est. 5 to 7 s</td><td>est. $0.004 to $0.007</td><td>Same as today (5 to 10 days)</td><td>Easy: same pipeline, prompt swapped behind the prompt registry and evaluated</td><td>Does not fix R2 to R6</td></tr>
+</table></div>
+<p class="small">How the estimates were made: per-call latency today is 2.6 to 4.1 s with a 37k prompt (<code>llm_call.py</code> header, prod trace of 1 Oct). Smaller prompts are assumed at 1.2 to 2.5 s per call, tools at 0.3 to 1 s each, run in parallel. Prices: gpt-5.4-mini at $0.75 / $0.075 cached / $4.50 per 1M tokens (<code>chatbot_eval/budget.py</code>). Measuring each with E as the first experiment costs about 400 live calls (one hidden gate run).</p>
+
+<!-- ============================================================ -->
+<h2 id="rec">6. Recommendation and questions</h2>
+<div class="rec">
+<b>Do D, in this order, each step behind the hidden eval gate (per topic, p95, tokens):</b>
+<ol>
+<li><b>Step 1, E (1 to 2 weeks):</b> core prompt + per-area cards + 3 to 5 retrieved examples on today's parser. This is the prompt diet, at the lowest risk, and it gives real latency and token numbers to plan the rest on.</li>
+<li><b>Step 2, reports first (C):</b> the parser emits <code>report_ask</code> params directly, the 5 report tools merge behind one <code>report</code> MCP tool, and the held call plus patch is generalised from <code>sales_ranking_frame</code>. This removes the largest addenda (about 8k tokens) and the most rigid area.</li>
+<li><b>Step 3, product_search and promo_match:</b> add <code>spec_constraints</code> and <code>has_active_promotion</code> to MCP (backend routes, declared <code>restricted_fields</code>). This covers spec match, promo match and scenario asks.</li>
+<li><b>Step 4, param-type registry (D):</b> move did-you-mean, picker, stamps and the quantity ask from domain branches to param types, one area at a time, each with red tests from today's corpus.</li>
+<li>Lookups (stock, ETA, SO status) move last, and only once each matches today on the eval. A bounded fallback loop (pattern 8) only after that, if the eval still shows compound misses.</li>
+</ol>
+Honest expectation: today is at 78% and the switch bar is 95%. Steps 1 and 2 should move cost and p95 measurably. Whether 95% is reachable is not knowable from code reading; the eval after step 2 is the first real signal.
+</div>
+
+<h3>Questions for the owner (at most 5)</h3>
+<ol class="q">
+<li><b>MCP as the only execution layer: confirm, and rule out a raw query or SQL executor (option A as written)?</b> Recommendation: yes. MCP and the routes own five layers of per-mode control.</li>
+<li><b>Start with the prompt diet (E) as its own step before any tool change?</b> Recommendation: yes. It is low risk, measurable within a week, and needed by every option.</li>
+<li><b>First area to restructure: reports, or product search with spec and promo match?</b> Recommendation: reports. A held-call refine already exists there, the addenda are the largest, and the 5 tools overlap the most.</li>
+<li><b>OK to add two new MCP filter params (<code>spec_constraints</code> on product search, <code>has_active_promotion</code>) as backend work inside the area lanes?</b> Recommendation: yes. No option answers spec or promo match without them.</li>
+<li><b>Gate per step: a step ships only if no topic gets worse on the hidden eval and p95 stays at or under 8 s; the 95% bar applies to the final switch?</b> Recommendation: yes. It keeps "never regress what works" testable.</li>
+</ol>
+
+<p class="small">Sources in code: pipeline map and MCP-side map built from file reads on this branch (11 Oct). Prompt sizes measured from <code>chatbot_parser_prompt.py</code> and <code>alembic/data/chatbot_semantic_parser.*.txt</code>. Market patterns from crew research of 11 Oct.</p>
+</main>
+</body>
+</html>

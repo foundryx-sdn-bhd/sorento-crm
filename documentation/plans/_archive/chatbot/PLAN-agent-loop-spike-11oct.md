@@ -1,6 +1,6 @@
 # PLAN: AGENT-LOOP-SPIKE (tool-calling agent engine, test turns only)
 
-Status: building S1 (11 Oct 2026). Track: M spike, lead pattern. No migration, no auth/RBAC change
+Status: superseded (11 Oct 2026): owner paused the free tool-calling agent (n8n history); lane re-briefed as a design lane, see ARCH-scalable-chat-11oct.html. No engine code was written. Track: M spike, lead pattern. No migration, no auth/RBAC change
 (scope is REUSED, not changed). UAC: `agent-loop-spike-acceptance-criteria.md`.
 
 ## Why
