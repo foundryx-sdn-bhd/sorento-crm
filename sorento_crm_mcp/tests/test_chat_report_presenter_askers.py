@@ -101,3 +101,10 @@ def test_the_asker_ranking_head_reads_askers_never_asked_bys():
     head = _lines(_body(group_by="asker", group_label="Asked by", rows=rows, total_count=2,
                         total={"value": 7}, unclassified_askers=1))[0]
     assert "asked bys" not in head.lower() and "askers" in head.lower(), head
+
+
+def test_a_customer_row_for_asks_with_no_customer_prints_its_label():
+    rows = [{"rank": 1, "name": "ZZT Trading Sdn Bhd", "value": 12, "agent": "ZZT Agent Two"},
+            {"rank": 2, "name": "(no customer)", "value": 3, "agent": None}]
+    lines = _lines(_body(rows=rows))
+    assert "2. (no customer) (no agent): 3 asks" in lines or "2. (no customer): 3 asks" in lines, lines

@@ -29,6 +29,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from tests._chat_asker_seed import give_office_type, link_agent, link_customer, link_user, seed_asker_world
 from tests._sales_report_do_seed import (  # noqa: F401  (client / db are fixtures)
     _as_contact,
@@ -326,3 +328,72 @@ def test_same_named_customers_in_two_companies_each_show_their_own_agent(client,
     assert sorted(((int(r["value"]), r["agent"]) for r in same), key=lambda t: t[0]) == [
         (2, "ZZT Agent Two"), (5, None),
     ], body["rows"]
+
+
+# ======================================================================== re-review: failure rate on the item grain
+
+
+def _rate_rows(body):
+    return {r["name"]: (float(r["value"]), r["numerator"], r["denominator"]) for r in body["rows"]}
+
+
+def _expected_rate(w, group_by):
+    first, second = {
+        "category": ("ZZT Water Closet", "ZZT Basin"),
+        "brand": ("ZZT Sorento", "ZZT Other"),
+        "product": (w.p1.product_code, w.p2.product_code),
+    }[group_by]
+    # F1 answered + F2 missed name p1 (1 failed of 2 turns); F3 answered names p2 (0 of 1).
+    return {first: (50.0, 1, 2), second: (0.0, 0, 1)}
+
+
+@pytest.mark.parametrize("group_by", ["category", "brand", "product"])
+def test_failure_rate_by_an_item_axis_runs_through_the_route(client, db, group_by):
+    w = seed_asker_world(db)
+    resp = _ask(client, _granted(db), basis="turns", measure="failure_rate", group_by=group_by, top_n=10)
+    assert resp.status_code == 200, resp.text  # today: function sum(uuid) does not exist
+    body = resp.json()
+    assert body["unit"] == "%" and body["basis"] == "turns", body
+    assert _rate_rows(body) == _expected_rate(w, group_by), body["rows"]
+
+
+@pytest.mark.parametrize("group_by", ["category", "brand", "product"])
+def test_failure_rate_by_an_item_axis_runs_through_run_ask(db, group_by):
+    from app.services.reports import ask
+
+    w = seed_asker_world(db)
+    body = ask.run_ask(
+        db, dataset="chat", basis="turns", measure="failure_rate", group_by=group_by, date_from=date(2026, 9, 1),
+        date_to=date(2026, 9, 30), filters={}, warehouse_codes=[], policy=None, company_grants=None,
+        sort="desc", top_n=10,
+    )
+    assert _rate_rows(body) == _expected_rate(w, group_by), body["rows"]
+
+
+def test_failure_rate_counts_an_ask_once_per_category_even_naming_two_products(client, db):
+    from app.models.chat_facts import ChatAskFact
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._chat_report_seed import add_item
+    from tests._mc_lookup_seed import product
+    from tests._pg_fixture import unique_code
+
+    w = seed_asker_world(db)
+    p3 = product(db, company_id=DEFAULT_COMPANY_ID, code=unique_code("PC"))
+    p3.category_id, p3.brand_id = w.cat_wc.id, w.brand_s.id
+    f2 = db.query(ChatAskFact).filter(ChatAskFact.failure_reason == "missed").one()
+    add_item(db, f2, p3)  # the failed ask now names two Water Closet products
+    db.commit()
+    body = _ok(client, _granted(db), basis="turns", measure="failure_rate", group_by="category", top_n=10)
+    assert _rate_rows(body)["ZZT Water Closet"] == (50.0, 1, 2), body["rows"]
+
+
+# ======================================================================== re-review: customer label when asks have none
+
+
+def test_a_customer_ranking_never_has_a_null_or_empty_label(client, db):
+    seed_asker_world(db)  # F5 and F10 (contact c3) name no customer
+    body = _ok(client, _granted(db), group_by="customer", top_n=10)
+    for row in body["rows"]:
+        assert isinstance(row["name"], str) and row["name"].strip(), body["rows"]
+        assert "\x1f" not in row["name"] and row["name"] != "(blank)", body["rows"]
+    assert D(str(body["total"]["value"])) == 8, "asks with no customer still count in the total"
