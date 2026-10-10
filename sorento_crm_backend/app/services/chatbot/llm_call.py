@@ -1,6 +1,7 @@
 """The ONE seam every model call in a chatbot turn goes through: the semantic parser
 (`head/parser.parse`, and so its recall re-parse), the clarifier
-(`lanes/casual.call_clarifier`) and the nightly topic labeller (`analytics/labeller`). Nothing else in `app/services/chatbot` calls a provider.
+(`lanes/casual.call_clarifier`) and the nightly topic labeller (`analytics/labeller`).
+Nothing else in `app/services/chatbot` calls a provider.
 
 Owner console test of round 4 (26 Sep 2026, PR #1247, ruling 3): two turns failed with
 "Error code: 429 - Rate limit reached for gpt-5.4-mini ... tokens per min (TPM): Limit
