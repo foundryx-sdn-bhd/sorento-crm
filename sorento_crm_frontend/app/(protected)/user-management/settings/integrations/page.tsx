@@ -19,7 +19,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { LoaderCircleIcon } from 'lucide-react';
+import { useHasPermission } from '@/hooks/usePermissions';
 import { useSettings } from '../components/settings-context';
+import RuntimeSettingsCards from './components/RuntimeSettingsCards';
+import { RUNTIME_SETTINGS_PERMISSION } from './services/runtimeSettingsService';
 
 const IntegrationsSchema = z.object({
   n8nAttachmentWebhookUrl: z.string(),
@@ -32,6 +35,7 @@ type IntegrationsForm = z.infer<typeof IntegrationsSchema>;
 
 export default function IntegrationsSettingsPage() {
   const { settings } = useSettings();
+  const canManageSecrets = useHasPermission(RUNTIME_SETTINGS_PERMISSION);
   const queryClient = useQueryClient();
 
   const form = useForm<IntegrationsForm>({
@@ -82,6 +86,7 @@ export default function IntegrationsSettingsPage() {
   });
 
   return (
+    <div className="space-y-6">
     <Card>
       <CardHeader className="border-b border-border">
         <CardTitle>Integrations</CardTitle>
@@ -178,5 +183,7 @@ export default function IntegrationsSettingsPage() {
         </Form>
       </CardContent>
     </Card>
+    {canManageSecrets && <RuntimeSettingsCards />}
+    </div>
   );
 }
