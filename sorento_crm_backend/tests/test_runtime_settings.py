@@ -541,3 +541,29 @@ def test_sessionless_reads_are_cached_and_a_save_clears_the_cache(db, actor, mon
 
     rs.update(db, {"connector_connection_id": "zzt-after-save"}, actor.id)
     assert rs.get("connector_connection_id") == "zzt-after-save"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"analytics_ro_database_url": "postgresql+asyncpg://ro:ZztLeakPw0001@db/sorento"},
+        {"respond_webhook_secret": "ZztLeakPw0001" + "x" * 1000},
+        {"respond_webhook_secret": 12345678901, "connector_connection_id": "ZztLeakPw0001"},
+    ],
+)
+def test_a_refused_value_never_reaches_the_logs(api, caplog, body):
+    """Security review M1: the app's 422 handler logs Pydantic's `input`; a refusal here must
+    name the field only, in the response and in every log line."""
+    import logging
+
+    client, allow = api
+    allow.add(SECRETS_SLUG)
+    caplog.set_level(logging.DEBUG)
+
+    resp = client.put(ENDPOINT, json=body)
+
+    assert resp.status_code == 422
+    assert "ZztLeakPw0001" not in resp.text
+    assert "12345678901" not in resp.text
+    assert "ZztLeakPw0001" not in caplog.text
+    assert "12345678901" not in caplog.text

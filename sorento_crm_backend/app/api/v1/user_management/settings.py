@@ -1,10 +1,10 @@
 """System settings API routes."""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field
 from app.database import get_db
 from app.dependencies import get_current_user, require_permission
 from app.models.access import RespondContact
@@ -541,32 +541,50 @@ async def get_app_config(
 RUNTIME_SETTINGS_PERMISSION = "user_management.settings.secrets"
 
 
-class RuntimeSettingsUpdate(BaseModel):
-    """Omitted = keep; null or "" = clear (env applies again); a value = save it."""
+_RUNTIME_MAX_LENGTH = {
+    "connector_ss_to_product_secret": 1000,
+    "connector_product_to_ss_secret": 1000,
+    "connector_connection_id": 255,
+    "connector_ss_callback_url": 2048,
+    "analytics_ro_database_url": 2000,
+    "respond_webhook_secret": 1000,
+}
+_RO_DSN_SCHEMES = ("postgresql://", "postgresql+psycopg2://", "postgres://")
 
-    model_config = ConfigDict(extra="forbid")
 
-    chat_topic_labeller_enabled: Optional[bool] = None
-    connector_ss_to_product_secret: Optional[str] = Field(None, max_length=1000)
-    connector_product_to_ss_secret: Optional[str] = Field(None, max_length=1000)
-    connector_connection_id: Optional[str] = Field(None, max_length=255)
-    connector_ss_callback_url: Optional[str] = Field(None, max_length=2048)
-    analytics_ro_database_url: Optional[str] = Field(None, max_length=2000)
-    respond_webhook_secret: Optional[str] = Field(None, max_length=1000)
+def _validate_runtime_payload(payload: Any) -> dict:
+    """Omitted = keep; null or "" = clear (env applies again); a value = save it.
 
-    @field_validator("connector_ss_callback_url")
-    @classmethod
-    def _https_only(cls, value: Optional[str]) -> Optional[str]:
-        if value and value.strip() and not value.strip().lower().startswith("https://"):
-            raise ValueError("The callback URL must start with https://")
-        return value
+    Checked here rather than by a Pydantic model on purpose: the app's 422 handler logs each
+    Pydantic error with its `input`, which for these fields is a secret or a DSN carrying a
+    password (security review M1). Every refusal below names the field, never the value."""
+    def _refuse(message: str) -> HTTPException:
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
 
-    @field_validator("analytics_ro_database_url")
-    @classmethod
-    def _postgres_dsn(cls, value: Optional[str]) -> Optional[str]:
-        if value and value.strip() and not value.strip().lower().startswith(("postgresql://", "postgresql+psycopg2://", "postgres://")):
-            raise ValueError("The read-only database URL must be a postgresql:// URL")
-        return value
+    if not isinstance(payload, dict):
+        raise _refuse("Expected a JSON object.")
+    from app.services import runtime_settings
+
+    unknown = sorted(k for k in payload if k not in runtime_settings.FIELDS)
+    if unknown:
+        raise _refuse(f"Unknown settings: {', '.join(str(k)[:64] for k in unknown)}")
+    for name, value in payload.items():
+        if value is None:
+            continue
+        if name in runtime_settings.BOOL_FIELDS:
+            if not isinstance(value, bool):
+                raise _refuse(f"{name} must be true, false or null.")
+            continue
+        if not isinstance(value, str):
+            raise _refuse(f"{name} must be text or null.")
+        if len(value) > _RUNTIME_MAX_LENGTH[name]:
+            raise _refuse(f"{name} is longer than {_RUNTIME_MAX_LENGTH[name]} characters.")
+        text = value.strip().lower()
+        if text and name == "connector_ss_callback_url" and not text.startswith("https://"):
+            raise _refuse("The callback URL must start with https://")
+        if text and name == "analytics_ro_database_url" and not text.startswith(_RO_DSN_SCHEMES):
+            raise _refuse("The read-only database URL must be a postgresql:// URL.")
+    return payload
 
 
 def _runtime_settings_body(db: Session) -> dict:
@@ -593,7 +611,7 @@ async def get_runtime_settings(
 
 @router.put("/runtime")
 async def update_runtime_settings(
-    payload: RuntimeSettingsUpdate,
+    payload: Any = Body(...),
     current_user: dict = Depends(require_permission(RUNTIME_SETTINGS_PERMISSION)),
     db: Session = Depends(get_db),
 ):
@@ -604,7 +622,7 @@ async def update_runtime_settings(
     # The person at the keyboard: the admin, not the target, under impersonation.
     actor = get_actor(db)
     actor_id = (actor.real_user_id or actor.user_id) if actor else None
-    runtime_settings.update(db, payload.model_dump(exclude_unset=True), actor_id or current_user["id"])
+    runtime_settings.update(db, _validate_runtime_payload(payload), actor_id or current_user["id"])
     return _runtime_settings_body(db)
 
 
