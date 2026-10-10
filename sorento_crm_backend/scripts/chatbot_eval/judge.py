@@ -13,6 +13,7 @@ import httpx
 from .grade import Verdict
 
 CALIBRATION_MIN = 0.9
+DEFAULT_JUDGE_MODEL = "gpt-5.4-mini"  # the OpenAI judge default; a custom judge with no model is priced as it
 
 _PROMPT = (
     "You grade a customer-service chatbot reply. Criterion: {note}\n"
@@ -129,9 +130,11 @@ class GuardedJudge:
     def __init__(self, judge: Judge, usd_cap: float):
         from .budget import PRICES, Budget
 
-        model = getattr(judge, "model", None) or os.environ.get("EVAL_JUDGE_MODEL") or "gpt-5.4-mini"
+        model = getattr(judge, "model", None) or os.environ.get("EVAL_JUDGE_MODEL") or DEFAULT_JUDGE_MODEL
+        if model not in PRICES:
+            raise ValueError(f"judge model {model!r} has no known price in budget.PRICES")
         self.judge = judge
-        self.budget = Budget(usd_cap, model if model in PRICES else "gpt-5.4-mini")
+        self.budget = Budget(usd_cap, model)
         self.stopped: str | None = None
 
     def score(self, case: Any, outcome: Any) -> JudgeResult | None:

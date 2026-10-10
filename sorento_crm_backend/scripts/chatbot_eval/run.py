@@ -164,12 +164,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
     if args.prompt_version:
         kw["prompt_version"] = args.prompt_version
+    judge = load_judge(args.judge)
+    if judge is not None:
+        try:
+            judge = GuardedJudge(judge, args.judge_budget_usd)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
-    judge = load_judge(args.judge)
-    if judge is not None:
-        judge = GuardedJudge(judge, args.judge_budget_usd)
     calibrated = False
     if judge is not None:
         items = _calibration_items(args.data_dir)
