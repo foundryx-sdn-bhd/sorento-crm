@@ -37,13 +37,13 @@ def test_only_final_turn_graded():
 
 def test_stuck_uses_last_replayed_reply():
     eng = RecordingEngine(replies={"u1": "same reply", "final q": "same reply"})
-    res = run_case(eng, mk_case(history=[{"role": "user", "text": "u1"}]), "final q", "r")
+    res = run_case(eng, mk_case(history=[{"role": "user", "text": "u1"}], must=[{"code": "NOPE-1"}]), "final q", "r")
     assert res.verdict.label == "stuck"
 
 
 def test_stuck_uses_history_bot_text_without_replay():
     eng = RecordingEngine(replies={"final q": "Same Reply"})
-    res = run_case(eng, mk_case(history=[{"role": "bot", "text": "same reply"}]), "final q", "r")
+    res = run_case(eng, mk_case(history=[{"role": "bot", "text": "same reply"}], must=[{"code": "NOPE-1"}]), "final q", "r")
     assert res.verdict.label == "stuck"
 
 

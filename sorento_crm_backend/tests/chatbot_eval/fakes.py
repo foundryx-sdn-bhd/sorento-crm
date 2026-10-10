@@ -8,8 +8,10 @@ from pathlib import Path
 from scripts.chatbot_eval.engine import Outcome
 
 
-def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, state=None, latency_ms=10, branch_kind=None, lane_notes=None):
+def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, state=None, latency_ms=10, branch_kind=None, lane_notes=None, trace_digest=None):
     extra = {"lane_notes": list(lane_notes)} if lane_notes else {}
+    if trace_digest is not None:
+        extra["trace_digest"] = trace_digest
     return Outcome(
         reply_text=reply,
         branch_kind=branch_kind,
@@ -150,3 +152,9 @@ class LaneNoteEngine(RecordingEngine):
 
 class UnknownModelJudge(FakeJudge):
     model = "claude-unknown-9"
+
+
+class DigestEngine(RecordingEngine):
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n}, trace_digest={"parser": {"intent": f"i{self.n}"}, "resolved": [], "tools": []})

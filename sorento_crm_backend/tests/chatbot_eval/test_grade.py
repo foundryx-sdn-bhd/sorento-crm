@@ -30,7 +30,7 @@ def test_error_beats_stuck():
 
 
 def test_stuck_normalised():
-    assert g(ex(), "Hello   There\n", prev="hello there").label == "stuck"
+    assert g(ex(must=[{"code": "NOPE-1"}]), "Hello   There\n", prev="hello there").label == "stuck"
 
 
 def test_stuck_beats_must_not():
