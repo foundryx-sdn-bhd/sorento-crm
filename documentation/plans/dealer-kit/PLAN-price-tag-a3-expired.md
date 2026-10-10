@@ -1,6 +1,6 @@
 # PLAN: ended promotions keep pricing tags and tiles within their type's grace (PRICE-TAG-A3-EXPIRED)
 
-Status: Build (small fix track: no migration, no auth/RBAC change, no new ingest surface). PR #1559.
+Status: Review clean, awaiting CI + owner hand test (small fix track: no migration, no auth/RBAC change, no new ingest surface). PR #1559.
 
 UAC: `price-tag-a3-expired-acceptance-criteria.md` (alongside).
 
@@ -45,17 +45,28 @@ type's existing 180-day rule.
   default) fails closed, where the chatbot serves it.
 - `_offer_prices` (so `resolve_prices`, so every tile and tag render) judges the promotion
   through it instead of SQL window filters.
-- `_covering_promotions`: audience filter (`_may_see_offer`) FIRST, then
-  `promotion_serving.evaluate` on that set (type bound, latest end per type, a live row of a
-  type suppresses that type's ended rows), then live beats ended per product across types (an
-  ended promotion is offered only if it covers a product no live promotion covers). The
-  line's saved promotion (`keep_id`) is kept while `promotion_may_price` says so.
+- `_covering_promotions`: the viewer's audience filter (`_may_see_offer`) FIRST, then
+  `promotion_serving.evaluate` once per PRODUCT on what the viewer may see (type bound,
+  latest end per type with exact ties kept up to the rule's cap of 2, a live row of a type
+  suppresses that type's ended rows). The audience list a flyer names plays no part after
+  the filter (crew audit ruling: a 31 May all-audience A3 flyer must not sit beside the
+  30 Sep DEALER ones), staff viewer included. Then live beats ended per product across
+  types (an ended promotion is offered only if it covers a product no live promotion
+  covers). The line's saved promotion (`keep_id`) is kept while `promotion_may_price` says
+  so. Per product, not per line, so a live or newer flyer on a part never hides the ended
+  flyer that is the parent's only offer (review B1).
 - `line_pricing`: options carry `expired_on`; auto-pick sorts live before ended, then the
   existing (total, description, id).
 - Export guard: an ended promotion passes when `promotion_may_price`; otherwise the existing
   409s.
 - FE: `promotionOptionName` in `lib/dealer-kit/line-pricing-types.ts`, used by the CRM detail
-  dropdown + read-only line text and the portal form dropdown.
+  dropdown + read-only line text, the portal form dropdown and the portal read-only line
+  (request lines carry `promotion_expired_on`).
+
+## Known consequence (owner Q1, unified)
+
+Public catalogue / brochure / bundle / collection tiles bound to a promotion that ended
+earlier this year (standard or unclassified type) show its SP again until 31 Dec.
 
 ## Not changed
 

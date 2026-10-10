@@ -28,3 +28,8 @@ Plan: `PLAN-price-tag-a3-expired.md`. Tests: `sorento_crm_backend/tests/test_pri
   `PROMOTION_EXPIRED` after it.
 - AC-15 The dropdown and the read-only line text read `<description> (expired 30 Sep 2026)`
   for an ended option, the description alone for a live one.
+- AC-16 After the viewer's audience filter, the latest end date of a type wins whatever
+  audience list each flyer names (crew audit): a dealer is offered the two DEALER flyers that
+  ended 30 Sep, not the all-audience flyer that ended 31 May; staff likewise.
+- AC-17 Ranking is per product: a live or newer flyer on a part never hides the ended flyer
+  that is the parent's only offer.
