@@ -130,3 +130,17 @@ def seed_asker_world(db) -> SimpleNamespace:
     w.p2.category_id, w.p2.brand_id = w.cat_basin.id, w.brand_o.id
     db.flush()
     return w
+
+
+def give_role(db, user, slug: str):
+    """Assign the user the role with `slug` (created on first use)."""
+    from app.models.user import UserRole, UserRoleAssignment
+
+    role = db.query(UserRole).filter(UserRole.slug == slug).first()
+    if role is None:
+        role = UserRole(id=str(uuid.uuid4()), slug=slug, name=f"ZZT {slug}")
+        db.add(role)
+        db.flush()
+    db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
+    db.flush()
+    return role

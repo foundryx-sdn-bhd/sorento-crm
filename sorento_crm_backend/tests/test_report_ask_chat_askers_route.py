@@ -9,11 +9,9 @@ Pinned where the plan is silent (the coder follows, or asks the captain to chang
 * asker row names are exactly `Dealer`, `Salesperson`, `Staff`, `Unclassified`; a bucket with no
   asks has no row; `salesperson` rows are the asking salespeople's `sales_agents.sales_agent`
   name and carry no `Dealer` / `Unclassified` row;
-* owner 10 Oct ("just leave it"): `DEFAULT_ASKERS == ("dealer", "salesperson")`, so a default run
-  excludes staff AND unclassified; an explicit `askers` naming unclassified still counts them;
-* `unclassified_left_out` (int): set whenever the run's asker filter came from the default (any
-  axis); counts distinct unclassified contacts with a counted ask in the period and the OTHER
-  filters; null when unclassified is included, or when the message named its own `askers`;
+* owner override 10 Oct: `DEFAULT_ASKERS == ("dealer", "salesperson", "staff", "unclassified")`:
+  every class is shown by default as its own row, nothing is left out, so
+  `unclassified_left_out` is null on every default run; a message can still ask for one class;
 * `DEFAULT_ASKERS` lives in `app.services.reports.datasets.chat_report_ask` (the chat dataset
   module) as a tuple of asker words, read at run time so a monkeypatch takes effect;
 * response field `unclassified_askers` (int): present when group_by is `asker` or `salesperson`
@@ -36,7 +34,7 @@ from decimal import Decimal
 
 import pytest
 
-from tests._chat_asker_seed import give_office_type, link_agent, link_customer, link_user, seed_asker_world
+from tests._chat_asker_seed import give_office_type, give_role, link_agent, link_customer, link_user, seed_asker_world
 from tests._sales_report_do_seed import (  # noqa: F401  (client / db are fixtures)
     _as_contact,
     client,
@@ -57,36 +55,37 @@ def _granted(db):
 
 
 def test_a_user_linked_and_customer_linked_contact_is_staff_not_dealer_scoped(client, db):
-    """owner 10 Oct: unclassified out by default."""
+    """owner override 10 Oct: every class shown by default."""
     w = seed_asker_world(db)
     contact = _granted(db)
     link_user(db, contact)
     link_customer(db, contact, w.cust_b)
     db.commit()
     body = _ok(client, contact, group_by="customer", top_n=10)
-    assert D(str(body["total"]["value"])) == 6, "staff sees every customer's asks, not its own link's"
+    assert D(str(body["total"]["value"])) == 11, "staff sees every customer's asks, not its own link's"
     assert {r["name"] for r in body["rows"]} == {w.cust_a.customer_name, w.cust_b.customer_name}, body["rows"]
 
 
 def test_a_user_linked_contact_may_name_a_customer_outside_its_links(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_asker_world(db)
     contact = _granted(db)
     link_user(db, contact)
     link_customer(db, contact, w.cust_b)
     db.commit()
     body = _ok(client, contact, group_by="topic", top_n=10, customer_ids=[w.cust_a.id])
-    assert D(str(body["total"]["value"])) == 2, body
+    assert D(str(body["total"]["value"])) == 3, body
 
 
 def test_an_office_access_type_and_customer_link_is_staff_too(client, db):
-    """owner 10 Oct: unclassified out by default."""
+    """owner override 10 Oct: every class shown by default."""
     w = seed_asker_world(db)
     contact = _granted(db)
     give_office_type(db, contact)
     link_customer(db, contact, w.cust_b)
     db.commit()
     body = _ok(client, contact, group_by="customer", top_n=10)
-    assert D(str(body["total"]["value"])) == 6, body
+    assert D(str(body["total"]["value"])) == 11, body
 
 
 def test_a_pure_dealer_is_still_scoped_to_its_own_customers(client, db):
@@ -100,6 +99,7 @@ def test_a_pure_dealer_is_still_scoped_to_its_own_customers(client, db):
 
 
 def test_a_salesperson_with_a_customer_link_is_narrowed_to_its_book_not_its_links(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_asker_world(db)
     contact = _granted(db)
     agent = link_agent(db, contact, "ZZT Agent Book")
@@ -107,18 +107,18 @@ def test_a_salesperson_with_a_customer_link_is_narrowed_to_its_book_not_its_link
     link_customer(db, contact, w.cust_b)  # a link elsewhere does not widen or replace the book
     db.commit()
     body = _ok(client, contact, group_by="topic", top_n=10)
-    assert D(str(body["total"]["value"])) == 2, "only cust_a's counted asks (F1 F2), the book"
+    assert D(str(body["total"]["value"])) == 3, "only cust_a's counted asks (F1 F2 and the staff c9), the book"
 
 
 # ======================================================================== asker axis (UAC-27, 29)
 
 
-def test_group_by_asker_has_the_four_words_and_staff_is_out_by_default(client, db):
-    """owner 10 Oct: unclassified out by default (shown only when asked, see the all-askers test)."""
+def test_group_by_asker_has_the_four_words_by_default(client, db):
+    """owner override 10 Oct: every class shown by default."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="asker", top_n=10)
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4)}, body["rows"]
-    assert body["group_by"] == "asker" and D(str(body["total"]["value"])) == 6, body
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Staff": D(3), "Unclassified": D(2)}, body["rows"]
+    assert body["group_by"] == "asker" and D(str(body["total"]["value"])) == 11, body
     assert body["unclassified_askers"] == 1, body
 
 
@@ -156,11 +156,11 @@ def test_an_unclassified_only_filter_counts_only_them(client, db):
 
 
 def test_no_asker_split_or_filter_carries_no_unclassified_count(client, db):
-    """owner 10 Oct: unclassified out by default."""
+    """owner override 10 Oct: every class shown by default."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="topic", top_n=10)
     assert body.get("unclassified_askers") is None, body
-    assert D(str(body["total"]["value"])) == 6, "the default excludes staff and unclassified"
+    assert D(str(body["total"]["value"])) == 11, "the default excludes nobody"
 
 
 def test_the_unclassified_count_is_zero_when_there_are_none(client, db):
@@ -174,19 +174,19 @@ def test_the_unclassified_count_is_zero_when_there_are_none(client, db):
 
 
 def test_default_askers_is_the_one_switch_for_unclassified(client, db, monkeypatch):
-    """owner 10 Oct: unclassified out by default; adding it to DEFAULT_ASKERS brings it back."""
+    """owner override 10 Oct: every class shown by default. Removing one from DEFAULT_ASKERS takes it out."""
     from app.services.reports.datasets import chat_report_ask
 
-    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson")
+    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson", "staff", "unclassified")
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="asker", top_n=10)
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4)}, body["rows"]
-    assert D(str(body["total"]["value"])) == 6 and body["unclassified_askers"] == 1, body
-    named = _ok(client, _granted(db), group_by="asker", top_n=10, askers=["unclassified"])
-    assert _rows(named) == {"Unclassified": D(2)}, "a message can still name them"
-    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson", "unclassified"))
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Staff": D(3), "Unclassified": D(2)}, body["rows"]
+    assert D(str(body["total"]["value"])) == 11 and body["unclassified_askers"] == 1, body
+    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson"))
     body = _ok(client, _granted(db), group_by="asker", top_n=10)
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(2)}, body["rows"]
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4)}, body["rows"]
+    named = _ok(client, _granted(db), group_by="asker", top_n=10, askers=["unclassified"])
+    assert _rows(named) == {"Unclassified": D(2)}, "a message can still name one class"
 
 
 def test_run_ask_takes_the_asker_filter_word(db):
@@ -205,30 +205,34 @@ def test_run_ask_takes_the_asker_filter_word(db):
 
 
 def test_group_by_category_ranks_the_categories_of_the_named_products(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="category", top_n=10)
-    assert _rows(body) == {"ZZT Water Closet": D(2), "ZZT Basin": D(1)}, body["rows"]
+    assert _rows(body) == {"ZZT Water Closet": D(3), "ZZT Basin": D(1)}, body["rows"]
     assert body["group_by"] == "category" and body["group_label"], body
 
 
 def test_group_by_brand_ranks_the_brands_of_the_named_products(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="brand", top_n=10)
-    assert _rows(body) == {"ZZT Sorento": D(2), "ZZT Other": D(1)}, body["rows"]
+    assert _rows(body) == {"ZZT Sorento": D(3), "ZZT Other": D(1)}, body["rows"]
 
 
 def test_shown_products_never_count_toward_a_category(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_asker_world(db)
     w.p1.category_id = w.cat_basin.id  # F4 only SHOWED p1: it adds nothing; F1 F2 now count as Basin
     db.commit()
     body = _ok(client, _granted(db), group_by="category", top_n=10)
-    assert _rows(body) == {"ZZT Basin": D(3)}, body["rows"]
+    assert _rows(body) == {"ZZT Basin": D(4)}, body["rows"]
 
 
 def test_the_category_filter_narrows_to_asks_naming_a_product_of_it(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="topic", top_n=10, category_ids=[w.cat_wc.id])
-    assert D(str(body["total"]["value"])) == 2, body
+    assert D(str(body["total"]["value"])) == 3, body
 
 
 def test_the_brand_filter_narrows_to_asks_naming_a_product_of_it(client, db):
@@ -246,9 +250,10 @@ def test_categories_asked_by_salespeople_for_one_brand(client, db):
 
 
 def test_a_category_and_brand_together_narrow_both_ways(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_asker_world(db)
     body = _ok(client, _granted(db), group_by="product", top_n=10, category_ids=[w.cat_wc.id], brand_ids=[w.brand_s.id])
-    assert _rows(body) == {w.p1.product_code: D(2)}, body["rows"]
+    assert _rows(body) == {w.p1.product_code: D(3)}, body["rows"]
     body = _ok(client, _granted(db), group_by="product", top_n=10, category_ids=[w.cat_wc.id], brand_ids=[w.brand_o.id])
     assert body["rows"] == [], body
 
@@ -282,7 +287,7 @@ def test_customer_rows_carry_the_card_agent(client, db):
 
 
 def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db):
-    """owner 10 Oct: unclassified out by default, so they are asked for by name here."""
+    """owner override 10 Oct: every class shown by default."""
     """The prod-copy blocker: unlinked contacts are stamped contact_type office by the writer."""
     from tests._chat_asker_seed import _respond_contact
     from tests._chat_report_seed import _uid, add_fact, day
@@ -294,8 +299,8 @@ def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db
                  topic="inventory.availability", contact_type="office", audience="unknown")
     db.commit()
     contact = _granted(db)
-    body = _ok(client, contact, group_by="asker", top_n=10, askers=["dealer", "salesperson", "unclassified"])
-    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Unclassified": D(4)}, body["rows"]
+    body = _ok(client, contact, group_by="asker", top_n=10)
+    assert _rows(body) == {"Dealer": D(2), "Salesperson": D(4), "Staff": D(3), "Unclassified": D(4)}, body["rows"]
     assert body["unclassified_askers"] == 2, "c3 and c11, both unlinked"
     body = _ok(client, contact, group_by="salesperson", top_n=10)
     assert _rows(body)["ZZT Agent Ten"] == 1, "a salesperson with no customer link is stamped office too"
@@ -305,6 +310,7 @@ def test_unlinked_contacts_stamped_office_still_count_as_unclassified(client, db
 
 
 def test_a_category_and_a_brand_count_asks_not_items(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     from tests._chat_report_seed import add_item
     from tests._mc_lookup_seed import product
     from tests._pg_fixture import unique_code
@@ -319,13 +325,14 @@ def test_a_category_and_a_brand_count_asks_not_items(client, db):
     add_item(db, f1, p3)  # the same ask now names two products of one category and brand
     db.commit()
     body = _ok(client, _granted(db), group_by="category", top_n=10)
-    assert _rows(body) == {"ZZT Water Closet": D(2), "ZZT Basin": D(1)}, body["rows"]
+    assert _rows(body) == {"ZZT Water Closet": D(3), "ZZT Basin": D(1)}, body["rows"]
     assert body["total"] == before["total"], "the total stays the ask count"
     body = _ok(client, _granted(db), group_by="brand", top_n=10)
-    assert _rows(body) == {"ZZT Sorento": D(2), "ZZT Other": D(1)}, body["rows"]
+    assert _rows(body) == {"ZZT Sorento": D(3), "ZZT Other": D(1)}, body["rows"]
 
 
 def test_same_named_customers_in_two_companies_each_show_their_own_agent(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     from tests._chat_report_seed import _uid, add_fact, day
     from tests._mc_lookup_seed import MOCHA_ID, customer, seed_mocha
 
@@ -339,7 +346,7 @@ def test_same_named_customers_in_two_companies_each_show_their_own_agent(client,
     body = _ok(client, _granted(db), group_by="customer", top_n=10)
     same = [r for r in body["rows"] if r["name"] == w.cust_a.customer_name]
     assert sorted(((int(r["value"]), r["agent"]) for r in same), key=lambda t: t[0]) == [
-        (2, "ZZT Agent Two"), (5, None),
+        (3, "ZZT Agent Two"), (5, None),
     ], body["rows"]
 
 
@@ -356,8 +363,9 @@ def _expected_rate(w, group_by):
         "brand": ("ZZT Sorento", "ZZT Other"),
         "product": (w.p1.product_code, w.p2.product_code),
     }[group_by]
-    # F1 answered + F2 missed name p1 (1 failed of 2 turns); F3 answered names p2 (0 of 1).
-    return {first: (50.0, 1, 2), second: (0.0, 0, 1)}
+    # owner override 10 Oct: every class shown by default. F1 answered, F2 missed and the staff F7
+    # answered name p1 (1 failed of 3 turns); F3 answered names p2 (0 of 1).
+    return {first: (33.3, 1, 3), second: (0.0, 0, 1)}
 
 
 @pytest.mark.parametrize("group_by", ["category", "brand", "product"])
@@ -397,20 +405,20 @@ def test_failure_rate_counts_an_ask_once_per_category_even_naming_two_products(c
     add_item(db, f2, p3)  # the failed ask now names two Water Closet products
     db.commit()
     body = _ok(client, _granted(db), basis="turns", measure="failure_rate", group_by="category", top_n=10)
-    assert _rate_rows(body)["ZZT Water Closet"] == (50.0, 1, 2), body["rows"]
+    assert _rate_rows(body)["ZZT Water Closet"] == (33.3, 1, 3), body["rows"]  # owner override 10 Oct: F7 counts
 
 
 # ======================================================================== re-review: customer label when asks have none
 
 
 def test_a_customer_ranking_never_has_a_null_or_empty_label(client, db):
-    """owner 10 Oct: unclassified out by default."""
+    """owner override 10 Oct: every class shown by default."""
     seed_asker_world(db)  # F5 and F10 (contact c3, unclassified) name no customer
     body = _ok(client, _granted(db), group_by="customer", top_n=10)
     for row in body["rows"]:
         assert isinstance(row["name"], str) and row["name"].strip(), body["rows"]
         assert "\x1f" not in row["name"] and row["name"] != "(blank)", body["rows"]
-    assert D(str(body["total"]["value"])) == 6, "the total is the default askers' asks"
+    assert D(str(body["total"]["value"])) == 11, "asks with no customer still count in the total"
 
 
 # ======================================================================== engine guard: ratio totals over a distinct part
@@ -422,9 +430,10 @@ def test_engine_ratio_totals_count_an_ask_once_not_once_per_item(db):
     as a pivot measure, rows = category, cols = outcome. F1 (answered) names products in TWO
     categories, F2 (missed) names a Water Closet, F3 (answered) names a Basin:
 
-        row WC 1 failed of 2 asks, row Basin 0 of 2; col answered 0 of 2, col missed 1 of 1;
-        grand 1 of 3. Counted once per item the answered column would read 3 asks and the
-        grand total 4 (rate 0.25 instead of 0.3333).
+        row WC 1 failed of 3 asks (F1 F2 and the staff F7), row Basin 0 of 2; col answered 0 of 3,
+        col missed 1 of 1; grand 1 of 4. Counted once per item the answered column would read 4
+        asks and the grand total 5 (rate 0.2 instead of 0.25). owner override 10 Oct: every class
+        shown by default, so the staff F7 is in.
     """
     from app.models.chat_facts import ChatAskFact
     from app.schemas.report import ReportViewConfig
@@ -453,57 +462,53 @@ def test_engine_ratio_totals_count_an_ask_once_not_once_per_item(db):
         return float(totals[key])
 
     rows, cols, grand = pivot.row_totals, pivot.col_totals, pivot.grand_total
-    assert num(grand, "asks") == 3 and num(grand, "failed") == 1, grand
-    assert num(rows["ZZT Water Closet"], "asks") == 2 and num(rows["ZZT Basin"], "asks") == 2, rows
-    assert num(rows["ZZT Water Closet"], "failure_rate") == pytest.approx(0.5, abs=0.001), rows
+    assert num(grand, "asks") == 4 and num(grand, "failed") == 1, grand
+    assert num(rows["ZZT Water Closet"], "asks") == 3 and num(rows["ZZT Basin"], "asks") == 2, rows
+    assert num(rows["ZZT Water Closet"], "failure_rate") == pytest.approx(1 / 3, abs=0.001), rows
     answered = next(v for k, v in cols.items() if k.lower().startswith("answered"))
-    assert num(answered, "asks") == 2, "F1 and F3, F1 counted once though it names two categories"
-    assert num(answered, "failure_rate") == 0 and num(grand, "failure_rate") == pytest.approx(1 / 3, abs=0.001), (answered, grand)
+    assert num(answered, "asks") == 3, "F1, F3 and F7; F1 counted once though it names two categories"
+    assert num(answered, "failure_rate") == 0 and num(grand, "failure_rate") == pytest.approx(0.25, abs=0.001), (answered, grand)
 
 
-# ======================================================================== owner 10 Oct: unclassified out by default
+# ======================================================================== owner override 10 Oct: every class shown by default
 
 
-def test_default_askers_is_dealer_and_salesperson_only():
+def test_default_askers_is_every_class():
     from app.services.reports.datasets import chat_report_ask
 
-    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson")
+    assert tuple(chat_report_ask.DEFAULT_ASKERS) == ("dealer", "salesperson", "staff", "unclassified")
 
 
-def test_a_default_run_excludes_staff_and_unclassified_on_any_axis(client, db):
+def test_a_default_run_shows_unclassified_and_leaves_nothing_out(client, db):
     seed_asker_world(db)
     contact = _granted(db)
     body = _ok(client, contact, group_by="topic", top_n=10)
-    assert D(str(body["total"]["value"])) == 6, body
-    assert _ok(client, contact, askers=["dealer", "salesperson", "unclassified"], group_by="topic", top_n=10)[
-        "total"]["value"] == 8, "an explicit filter naming unclassified still counts them"
+    assert D(str(body["total"]["value"])) == 11 and body.get("unclassified_left_out") is None, body
+    for params in ({"group_by": "asker"}, {"group_by": "product"}, {}):
+        assert _ok(client, contact, top_n=10, **params).get("unclassified_left_out") is None, params
+    body = _ok(client, contact, group_by="asker", top_n=10)
+    assert body["unclassified_askers"] == 1, "the existing field is unchanged for a split"
 
 
-def test_unclassified_left_out_is_set_on_every_default_run(client, db):
-    seed_asker_world(db)
-    contact = _granted(db)
-    assert _ok(client, contact, group_by="topic", top_n=10)["unclassified_left_out"] == 1
-    assert _ok(client, contact, group_by="asker", top_n=10)["unclassified_left_out"] == 1
-    assert _ok(client, contact, group_by="product", top_n=10)["unclassified_left_out"] == 1
-    assert _ok(client, contact)["unclassified_left_out"] == 1, "a bare total too"
+# ======================================================================== owner override: role-salesperson user (route scope)
 
 
-def test_unclassified_left_out_respects_the_other_filters(client, db):
+def test_a_role_salesperson_with_an_agent_link_is_narrowed_to_its_book(client, db):
     w = seed_asker_world(db)
-    body = _ok(client, _granted(db), group_by="topic", top_n=10, customer_ids=[w.cust_a.id])
-    assert body["unclassified_left_out"] == 0, "c3's asks name no customer: none left out under that filter"
+    contact = _granted(db)
+    user = link_user(db, contact)
+    give_role(db, user, "salesperson")
+    agent = link_agent(db, contact, "ZZT Agent Role")
+    w.cust_a.sales_agent_id = agent.id
+    db.commit()
+    body = _ok(client, contact, group_by="topic", top_n=10)
+    assert D(str(body["total"]["value"])) == 3, "only cust_a's counted asks (F1 F2 and the staff c9): the book"
 
 
-def test_unclassified_left_out_is_null_when_included_or_chosen_by_the_message(client, db, monkeypatch):
-    from app.services.reports.datasets import chat_report_ask
-
+def test_a_role_salesperson_without_an_agent_link_sees_all(client, db):
     seed_asker_world(db)
     contact = _granted(db)
-    for askers in (["unclassified"], ["dealer", "unclassified"]):
-        body = _ok(client, contact, group_by="topic", top_n=10, askers=askers)
-        assert body.get("unclassified_left_out") is None, (askers, body)
-    body = _ok(client, contact, group_by="topic", top_n=10, askers=["dealer"])
-    assert body.get("unclassified_left_out") is None, "the message chose its own askers"
-    assert body["unclassified_askers"] == 1, "the existing field is unchanged for a filter"
-    monkeypatch.setattr(chat_report_ask, "DEFAULT_ASKERS", ("dealer", "salesperson", "unclassified"))
-    assert _ok(client, contact, group_by="topic", top_n=10).get("unclassified_left_out") is None
+    give_role(db, link_user(db, contact), "salesperson")
+    db.commit()
+    body = _ok(client, contact, group_by="customer", top_n=10)
+    assert D(str(body["total"]["value"])) == 11, "a link only narrows (Q5)"

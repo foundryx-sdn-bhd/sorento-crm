@@ -146,6 +146,7 @@ def test_an_unknown_basis_is_422(client, db):
 
 
 def test_ranking_by_topic_body(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), basis="asks", measure="asks", group_by="topic", top_n=2)
     assert body["status"] == "ok" and body["dataset"] == "chat", body
@@ -154,13 +155,13 @@ def test_ranking_by_topic_body(client, db):
     assert body["date_from"] == "2026-09-05", "a period opening before the traces is clipped to 5 Sep"
     assert body["date_to"] == "2026-09-30", body
     assert [(r["rank"], r["name"]) for r in body["rows"]][0] == (1, "Availability"), body["rows"]
-    assert D(str(body["rows"][0]["value"])) == 4 and len(body["rows"]) == 2, body["rows"]
+    assert D(str(body["rows"][0]["value"])) == 5 and len(body["rows"]) == 2, body["rows"]
     assert body["more"] == 2 and body["total_count"] == 4, body
-    assert D(str(body["total"]["value"])) == 7, body["total"]
+    assert D(str(body["total"]["value"])) == 8, body["total"]
     assert body["rows"][0].get("numerator") is None and body["total"].get("numerator") is None
-    assert body["coverage"]["percent"] == 86 and body["coverage"]["taxonomy_version"] == 2, body["coverage"]
+    assert body["coverage"]["percent"] == 88 and body["coverage"]["taxonomy_version"] == 2, body["coverage"]
     assert body["coverage"]["line"] == (
-        "Topics labelled: 86% of asks (taxonomy v2). From bot traces, 5 Sep 2026 on."
+        "Topics labelled: 88% of asks (taxonomy v2). From bot traces, 5 Sep 2026 on."
     ), body["coverage"]
 
 
@@ -170,37 +171,41 @@ def test_unlabelled_asks_rank_as_not_labelled_yet(client, db):
 
 
 def test_by_product_names_are_the_product_codes(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_world(db)
     body = _ok(client, _staff(db), group_by="product", top_n=10)
-    assert _rows(body) == {w.p1.product_code: D(2), w.p2.product_code: D(1)}, body["rows"]
+    assert _rows(body) == {w.p1.product_code: D(3), w.p2.product_code: D(1)}, body["rows"]
 
 
 def test_failure_rate_rows_carry_numerator_and_denominator(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), basis="turns", measure="failure_rate", group_by="week")
     assert body["unit"] == "%" and body["basis"] == "turns" and body["measure"] == "failure_rate", body
     rows = {r["name"]: r for r in body["rows"]}
     assert set(rows) == {"2026-09-07", "2026-09-14"}, rows
-    assert (rows["2026-09-07"]["numerator"], rows["2026-09-07"]["denominator"]) == (1, 3), rows
-    assert float(rows["2026-09-07"]["value"]) == pytest.approx(33.3, abs=0.05), rows
+    assert (rows["2026-09-07"]["numerator"], rows["2026-09-07"]["denominator"]) == (1, 4), rows
+    assert float(rows["2026-09-07"]["value"]) == pytest.approx(25.0, abs=0.05), rows
     total = body["total"]
-    assert (total["numerator"], total["denominator"]) == (2, 5), total
-    assert float(total["value"]) == pytest.approx(40.0, abs=0.05), total
+    assert (total["numerator"], total["denominator"]) == (2, 6), total
+    assert float(total["value"]) == pytest.approx(33.3, abs=0.05), total
 
 
 def test_trend_by_week_needs_no_top_n(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), group_by="week")
-    assert _rows(body) == {"2026-09-07": D(4), "2026-09-14": D(2), "2026-09-21": D(1)}, body["rows"]
+    assert _rows(body) == {"2026-09-07": D(5), "2026-09-14": D(2), "2026-09-21": D(1)}, body["rows"]
     assert body["more"] == 0, body
 
 
 def test_contacts_total_is_distinct_not_the_sum_of_rows(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), measure="contacts", group_by="topic", top_n=10)
     assert body["unit"] == "contacts", body
-    assert D(str(body["total"]["value"])) == 3, body["total"]
-    assert _rows(body)["Availability"] == 2, body["rows"]
+    assert D(str(body["total"]["value"])) == 4, body["total"]
+    assert _rows(body)["Availability"] == 3, body["rows"]
 
 
 def test_failed_turns_unit_is_turns(client, db):
@@ -210,17 +215,19 @@ def test_failed_turns_unit_is_turns(client, db):
 
 
 def test_a_total_has_no_rows(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db))
-    assert body["rows"] == [] and body["group_by"] is None and D(str(body["total"]["value"])) == 7, body
+    assert body["rows"] == [] and body["group_by"] is None and D(str(body["total"]["value"])) == 8, body
 
 
 def test_coverage_line_percent_under_80_is_reported_for_the_presenter(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     add_unlabelled(db, 3)
     db.commit()
     cov = _ok(client, _staff(db), group_by="topic", top_n=10)["coverage"]
-    assert cov["percent"] == 60 and cov["line"].startswith("Topics labelled: 60% of asks"), cov
+    assert cov["percent"] == 64 and cov["line"].startswith("Topics labelled: 64% of asks"), cov
 
 
 def test_no_asks_in_the_period(client, db):
@@ -251,9 +258,10 @@ def test_no_message_text_contact_or_phone_in_the_body(client, db):
 
 
 def test_the_subject_filter_narrows_to_that_subject(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), group_by="topic", top_n=10, subjects=["inventory"])
-    assert D(str(body["total"]["value"])) == 6 and "Order status" not in _rows(body), body
+    assert D(str(body["total"]["value"])) == 7 and "Order status" not in _rows(body), body
 
 
 def test_the_customer_filter_narrows_and_is_echoed_by_name(client, db):
@@ -264,9 +272,10 @@ def test_the_customer_filter_narrows_and_is_echoed_by_name(client, db):
 
 
 def test_the_product_filter_narrows_to_asks_that_named_it(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     w = seed_world(db)
     body = _ok(client, _staff(db), group_by="topic", top_n=10, product_ids=[w.p1.id])
-    assert D(str(body["total"]["value"])) == 2, body
+    assert D(str(body["total"]["value"])) == 3, body
 
 
 # ======================================================================== audiences
@@ -326,9 +335,10 @@ def test_a_salesman_sees_only_customers_whose_card_agent_is_theirs(client, db):
 
 
 def test_a_staff_contact_with_the_grant_and_no_agent_link_sees_everything(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), group_by="topic", top_n=10)
-    assert D(str(body["total"]["value"])) == 7, body
+    assert D(str(body["total"]["value"])) == 8, body
 
 
 # ======================================================================== rate limit, sales unchanged
@@ -384,8 +394,9 @@ def test_review_a_salesman_naming_another_agents_customer_gets_no_echo_of_it(cli
 
 
 def test_review_failure_rate_on_the_asks_basis_runs_as_turns(client, db):
+    """owner override 10 Oct: every class shown by default (F7, the staff ask, now counts)."""
     seed_world(db)
     body = _ok(client, _staff(db), basis="asks", measure="failure_rate", group_by="week")
     assert body["basis"] == "turns" and body["unit"] == "%", body
     total = body["total"]
-    assert (total["numerator"], total["denominator"]) == (2, 5), total
+    assert (total["numerator"], total["denominator"]) == (2, 6), total

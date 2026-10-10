@@ -24,6 +24,7 @@ from app.services import contact_asker as asker
 from tests._chat_asker_seed import (
     _respond_contact,
     give_office_type,
+    give_role,
     link_agent,
     link_customer,
     link_user,
@@ -191,3 +192,57 @@ def test_an_active_user_link_is_still_staff(db):
     link_user(db, contact)
     db.commit()
     assert _classify_pair(db, contact, "live") == ("staff", "staff")
+
+
+# ------------------------------------------------------------------ owner override: salespeople are users with the role
+
+
+def _role_user(db, key, *, status="ACTIVE", trashed=False, role=True):
+    contact = _respond_contact(db, key)
+    user = link_user(db, contact, status=status, trashed=trashed)
+    if role:
+        give_role(db, user, "salesperson")
+    return contact
+
+
+def test_an_active_user_holding_the_salesperson_role_is_a_salesperson(db):
+    contact = _role_user(db, "role")
+    db.commit()
+    assert _classify_pair(db, contact, "role") == ("salesperson", "salesperson")
+
+
+def test_the_role_wins_over_an_office_access_type_and_a_customer_link(db):
+    cust = seed_customer(db, name=unique_code("AskerCust"))
+    contact = _role_user(db, "role_office")
+    give_office_type(db, contact)
+    link_customer(db, contact, cust)
+    db.commit()
+    assert _classify_pair(db, contact, "role_office") == ("salesperson", "salesperson")
+
+
+def test_an_active_user_without_the_role_is_staff_even_with_an_agent_link(db):
+    contact = _role_user(db, "norole", role=False)
+    link_agent(db, contact, "ZZT Agent NR")
+    db.commit()
+    assert _classify_pair(db, contact, "norole") == ("staff", "staff")
+
+
+def test_an_agent_link_counts_only_when_the_contact_has_no_active_user(db):
+    contact = _respond_contact(db, "agent_free")
+    link_agent(db, contact, "ZZT Agent Free")
+    gone = _role_user(db, "agent_trashed", trashed=True, role=False)
+    link_agent(db, gone, "ZZT Agent Gone")
+    db.commit()
+    assert _classify_pair(db, contact, "agent_free") == ("salesperson", "salesperson")
+    assert _classify_pair(db, gone, "agent_trashed") == ("salesperson", "salesperson")
+
+
+@pytest.mark.parametrize(("kind", "status", "trashed"), [("rtrashed", "ACTIVE", True), ("rinactive", "INACTIVE", False)])
+def test_a_role_on_a_trashed_or_inactive_user_does_not_count(db, kind, status, trashed):
+    cust = seed_customer(db, name=unique_code("AskerCust"))
+    dealer = _role_user(db, f"{kind}_d", status=status, trashed=trashed)
+    link_customer(db, dealer, cust)
+    alone = _role_user(db, f"{kind}_a", status=status, trashed=trashed)
+    db.commit()
+    assert _classify_pair(db, dealer, f"{kind}_d") == ("dealer", "dealer")
+    assert _classify_pair(db, alone, f"{kind}_a") == ("unclassified", "unclassified")
