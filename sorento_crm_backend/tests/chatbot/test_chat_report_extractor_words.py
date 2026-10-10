@@ -53,3 +53,49 @@ def test_the_prompt_teaches_top_discussed_kind_ranks_products_filtered_by_catego
     assert at != -1, "no 'top discussed / most discussed' teaching"
     near = text[max(0, at - 300): at + 400]
     assert "product" in near and "category" in near, near
+
+
+# --------------------------------------------------------------------------- brand names in the prompt (final live Q11)
+
+
+def _system(provider) -> str:
+    return next(m for m in provider.calls[0]["messages"] if m["role"] == "system")["content"].lower()
+
+
+def test_the_system_prompt_lists_the_brand_names_the_company_holds(configured):
+    """Pinned design: the extractor reads the brand names ITSELF from the `db` it is given (the
+    way it reads `chatbot_domains`); the signature does not change. A brand row's name is in the
+    system prompt it sends."""
+    import uuid
+
+    from app.models.product import Brand
+
+    tag = uuid.uuid4().hex[:6].upper()
+    for name in (f"ZZT Sorento {tag}", f"ZZT Cabana {tag}"):
+        configured.add(Brand(id=str(uuid.uuid4()), brand_code=f"ZB{uuid.uuid4().hex[:6]}", brand_name=name))
+    configured.commit()
+    provider = _Provider(json.dumps(GOOD))
+    _run(configured, provider)
+    system = _system(provider)
+    assert f"zzt sorento {tag}".lower() in system and f"zzt cabana {tag}".lower() in system, "brand names missing"
+
+
+def test_the_prompt_teaches_a_brand_name_goes_to_brand_words_never_product_words():
+    """Structural pin, loose wording."""
+    text = PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+    at = text.find("brand name")
+    assert at != -1, "no teaching about brand names"
+    near = text[max(0, at - 300): at + 400]
+    assert "brand_words" in near and "product_words" in near and ("never" in near or "not" in near), near
+
+
+def test_the_prompt_teaches_customers_and_dealers_mean_the_dealer_asker_only():
+    """Owner ruling 11 Oct: a "customer" is a contact with a linked customer (the dealer class);
+    unclassified askers are not customers. Structural pin, loose wording."""
+    text = PROMPT_KEYS["chat_report_extractor"].fallback().lower()
+    for word in ("pelanggan", "客户", "经销商", "peniaga"):
+        assert word in text, word
+    at = text.find("pelanggan")
+    near = text[max(0, at - 500): at + 500]
+    assert '["dealer"]' in near or "askers dealer" in near or "dealer only" in near or "only dealer" in near, near
+    assert "unclassified" in near and ("never" in near or "not" in near), near

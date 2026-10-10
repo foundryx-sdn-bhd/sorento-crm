@@ -95,3 +95,62 @@ def test_staff_with_a_filter_matching_none_still_gets_no_match(client, db):
     seed_world(db)
     body = _ok(client, _granted(db), group_by="topic", top_n=5, subjects=["promotion"])
     assert body["rows"] == [] and body["message"] == NO_MATCH, body
+
+
+# --------------------------------------------------------------------------- one name, two companies (Q12 echo)
+
+
+def _in_both_companies(db):
+    """A granted contact that holds both companies (so both same-named rows are its own)."""
+    from app.models.company import RespondContactCompany
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._mc_lookup_seed import MOCHA_ID
+
+    contact = _granted(db)
+    held = {str(r[0]) for r in db.query(RespondContactCompany.company_id).filter(
+        RespondContactCompany.respond_contact_id == str(contact.id)).all()}
+    for company in (DEFAULT_COMPANY_ID, MOCHA_ID):
+        if str(company) not in held:
+            db.add(RespondContactCompany(respond_contact_id=str(contact.id), company_id=company))
+    db.commit()
+    return contact
+
+
+def test_a_brand_filter_of_one_name_in_two_companies_echoes_the_name_once(client, db):
+    """Live: 'Brand: SORENTO, SORENTO'. Resolved ids that share a name echo that name once."""
+    import uuid
+
+    from app.models.product import Brand
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
+
+    seed_world(db)
+    seed_mocha(db)
+    tag = uuid.uuid4().hex[:6].upper()
+    a = Brand(id=str(uuid.uuid4()), brand_code=f"ZB{tag}", brand_name=f"ZZT TWIN {tag}", company_id=DEFAULT_COMPANY_ID)
+    b = Brand(id=str(uuid.uuid4()), brand_code=f"ZB{tag}", brand_name=f"ZZT TWIN {tag}", company_id=MOCHA_ID)
+    db.add_all([a, b])
+    contact = _in_both_companies(db)
+    body = _ok(client, contact, group_by="topic", top_n=5, brand_ids=[a.id, b.id])
+    echoed = [f for f in body["filters"] if f["label"] == "Brand"]
+    assert len(echoed) == 1 and echoed[0]["values"] == [f"ZZT TWIN {tag}"], body["filters"]
+
+
+def test_a_category_filter_of_one_name_in_two_companies_echoes_the_name_once(client, db):
+    import uuid
+
+    from app.models.product import ProductCategory
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._mc_lookup_seed import MOCHA_ID, seed_mocha
+
+    seed_world(db)
+    seed_mocha(db)
+    tag = uuid.uuid4().hex[:6].upper()
+    name = f"ZZT-TWIN-CAT-{tag}"
+    a = ProductCategory(id=str(uuid.uuid4()), category_code=name, category_name=name, company_id=DEFAULT_COMPANY_ID)
+    b = ProductCategory(id=str(uuid.uuid4()), category_code=name, category_name=name, company_id=MOCHA_ID)
+    db.add_all([a, b])
+    contact = _in_both_companies(db)
+    body = _ok(client, contact, group_by="topic", top_n=5, category_ids=[a.id, b.id])
+    echoed = [f for f in body["filters"] if f["label"] == "Category"]
+    assert len(echoed) == 1 and echoed[0]["values"] == [name], body["filters"]

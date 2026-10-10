@@ -305,3 +305,11 @@ def test_the_word_salesperson_as_a_product_entity_never_yields_a_miss_line_on_th
     lowered = text.lower()
     assert not any(m in lowered for m in ("couldn't find", "could not find", "did you mean", "i don't know")), text
     assert len(_chat_calls(calls)) == 1, (text, calls)
+
+
+def test_guard_a_dealer_only_reading_runs_the_route_with_askers_dealer_only(console, monkeypatch) -> None:
+    """Owner ruling 11 Oct: "customers" means the dealer class, never unclassified."""
+    _fake_extractor(monkeypatch, lambda t, o: {**FULL, "askers": ["dealer"]})
+    _text, calls = console.say(_chat(), "top 5 questions customers asked in 2026")
+    (args,) = _chat_calls(calls)
+    assert args["askers"] == ["dealer"], args

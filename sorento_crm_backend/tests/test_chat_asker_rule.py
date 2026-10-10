@@ -253,3 +253,13 @@ def test_a_user_whose_only_salesperson_role_is_trashed_is_staff(db):
     give_role(db, link_user(db, contact), "salesperson", role_trashed=True)
     db.commit()
     assert _classify_pair(db, contact, "trashedrole") == ("staff", "staff")
+
+
+def test_guard_a_customer_link_plus_a_salesperson_role_user_is_a_salesperson(db):
+    """Owner ruling 11 Oct: a "customer" is the dealer class (a linked customer). A contact with
+    BOTH a customer link and an active user holding the role `salesperson` is a salesperson."""
+    cust = seed_customer(db, name=unique_code("AskerCust2"))
+    contact = _role_user(db, "role_cust")
+    link_customer(db, contact, cust)
+    db.commit()
+    assert _classify_pair(db, contact, "role_cust") == ("salesperson", "salesperson")
