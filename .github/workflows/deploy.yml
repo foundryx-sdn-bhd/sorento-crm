@@ -56,20 +56,33 @@ on:
   # run that tests main's head as a whole.
   # THE RELEASE. Run on main by the orchestrator after the owner has merged a
   # batch:
-  #   gh workflow run deploy.yml --repo jayson-odoo/sorento-crm --ref main
-  #   gh workflow run deploy.yml --repo jayson-odoo/sorento-crm --ref main -f skip_tests=true
-  # It runs the full suite on main's head (unless skip_tests), then
-  # build-images, then build-and-deploy, which carries `environment:
-  # production` and therefore PAUSES until the owner approves the deployment
-  # in GitHub (environment "production", required reviewer jayson-odoo,
-  # deployment branches: main only). On any other ref a dispatch runs the
-  # suite only: build-images and build-and-deploy also require main.
-  # skip_tests=true goes straight to build + deploy; only for a head whose
-  # tests already passed (a re-dispatch of the same commit).
+  #   gh workflow run deploy.yml --repo foundryx-sdn-bhd/sorento-crm --ref main
+  #   ... -f full_suite=true   the full sharded suite instead (~250 billed)
+  #   ... -f skip_tests=true   build + deploy only
+  #   ... -f rebuild_all=true  build every image even if its tree is in the registry
+  # The LEAN release (CI-LEAN, 10 Oct 2026, the default): `changes` diffs main's
+  # head against the last successful release and one job, `Release tests`
+  # (`lean-gate`), runs the core tier (sorento_crm_backend/tests/release_core.txt)
+  # plus every backend test file the batch reaches (the PR gate's import
+  # selection), the MCP suite and tsc + the related vitest files when those
+  # changed. A selection over the cap, a changed tests/conftest.py, no earlier
+  # release, a failed lookup or `full_suite` runs the full shards instead
+  # (owner Q4: never cut a selection). A tree whose release tests already
+  # passed is not tested again. In parallel build-images builds what changed,
+  # then build-and-deploy, which carries `environment: production` and
+  # therefore PAUSES until the owner approves the deployment in GitHub
+  # (environment "production", required reviewer jayson-odoo, deployment
+  # branches: main only). On any other ref a dispatch runs the tests only:
+  # build-images and build-and-deploy also require main.
   workflow_dispatch:
     inputs:
       skip_tests:
         description: "Skip the test suite and go straight to build + deploy (main's head was already validated, e.g. a re-dispatch of a commit whose release tests passed)"
+        required: false
+        default: false
+        type: boolean
+      full_suite:
+        description: "Run the full sharded suite instead of the lean release tests (core tier + what the batch since the last release reaches); about 250 billed minutes"
         required: false
         default: false
         type: boolean
@@ -416,6 +429,13 @@ jobs:
       # `select`), else the changed test files alone (also the fallback when
       # the selection is above its budget: the script writes no list then).
       backend_tests: ${{ steps.select.outputs.tests || steps.filter.outputs.backend_tests }}
+      # A lean release (CI-LEAN): `release-tests` (`lean-gate`) runs the
+      # core tier plus the selection, and the shards stay off. A selection
+      # over the cap (or a changed tests/conftest.py) turns it off, and the
+      # full shards run the whole suite instead (owner Q4: no cap).
+      lean: ${{ steps.filter.outputs.lean == 'true' && steps.select.outputs.full != 'true' }}
+      # The last successful release's head: what `vitest --changed` diffs to.
+      base_sha: ${{ steps.filter.outputs.base_sha }}
     steps:
       - name: Detect changed areas
         id: filter
@@ -426,8 +446,9 @@ jobs:
           # job does not run on any other label).
           LABEL: ${{ github.event.label.name }}
           PR: ${{ github.event.pull_request.number }}
-          # Release input (workflow_dispatch only; empty on every other event).
+          # Release inputs (workflow_dispatch only; empty on every other event).
           SKIP_TESTS: ${{ inputs.skip_tests }}
+          FULL_SUITE: ${{ inputs.full_suite }}
           # push: the range main moved by. `before` is the zero SHA only on a
           # branch-creation push, which main never sees; guarded anyway.
           PUSH_BEFORE: ${{ github.event.before }}
@@ -466,6 +487,41 @@ jobs:
               files=$(compare "$MG_BASE" "$MG_HEAD") \
                 || { files=""; why="compare $MG_BASE...$MG_HEAD failed"; }
               ;;
+            workflow_dispatch)
+              # THE LEAN RELEASE (CI-LEAN): the diff since the last
+              # successful release, so the release tests what the merged
+              # batch reaches plus the core tier. Every failed lookup is the
+              # fail-safe direction: no lean flag, every area, the full
+              # sharded suite. So are `full_suite` and the absence of any
+              # earlier release.
+              why="$EVENT with no release to diff against: every area counts as changed"
+              if [ "$FULL_SUITE" = "true" ]; then
+                why="full_suite requested: every area counts as changed"
+              elif [ "$SKIP_TESTS" != "true" ]; then
+                # A tree whose release tests already passed (a re-dispatch
+                # after a rejected approval or a deploy hiccup) is not tested
+                # again: the release-tests job leaves a validated-tree-<tree>
+                # artifact when it passes.
+                tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$PUSH_AFTER" --jq '.tree.sha') || tree=""
+                if [ -n "$tree" ] \
+                    && n=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=validated-tree-$tree&per_page=5" \
+                             --jq '[.artifacts[] | select(.expired | not)] | length') \
+                    && [ "${n:-0}" -gt 0 ]; then
+                  validated=true
+                else
+                  last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&event=workflow_dispatch&status=success&per_page=1" \
+                           --jq '.workflow_runs[0].head_sha // ""') || last=""
+                  if [ -n "$last" ]; then
+                    if files=$(compare "$last" "$PUSH_AFTER"); then
+                      why=""; lean=true; base_sha="$last"
+                      echo "lean release: the batch since the last successful release, $last"
+                    else
+                      files=""; why="compare $last...$PUSH_AFTER failed: every area counts as changed"
+                    fi
+                  fi
+                fi
+              fi
+              ;;
             *)
               why="$EVENT never skips: every area counts as changed"
               ;;
@@ -488,8 +544,15 @@ jobs:
             printf '%s\n' "$files" | grep -E "$NOT_DOCS_RE" || true
           } | sort -u)
           docs_only=false
+          if [ "${lean:-false}" = "true" ] && [ "$count" -ge 300 ]; then
+            # The compare API caps its file list at 300: the batch may be
+            # truncated, so it cannot pick the tests. Full suite.
+            lean=false; files=""; why="$count files reaches the compare API's 300-file cap: every area counts as changed"
+          fi
           if [ -n "$why" ]; then
             echo "docs_only=false: $why"
+          elif [ "${lean:-false}" = "true" ]; then
+            echo "docs_only=false: a release always runs its core tier"
           elif [ -z "$files" ]; then
             echo "docs_only=false: no changed files reported"
           elif [ "$count" -ge 300 ]; then
@@ -521,6 +584,12 @@ jobs:
             echo "release with skip_tests=true: no test job runs"
             exit 0
           fi
+          if [ "${validated:-false}" = "true" ]; then
+            for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+            printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
+            echo "tree $tree already passed its release tests (validated-tree artifact): no test job runs"
+            exit 0
+          fi
           # Off a PR (a merge-queue entry, a release) every area counts as
           # changed and the changed-tests job has nothing to add (the shards
           # run every file). A PR whose file list could not be fetched is
@@ -528,7 +597,7 @@ jobs:
           # the failed call failed this job (and skipped every gate with it,
           # red); a swallowed failure must never turn into an all-flags-false
           # green run.
-          if [ "$EVENT" != "pull_request" ] || [ -n "$why" ]; then
+          if { [ "$EVENT" != "pull_request" ] && [ "${lean:-false}" != "true" ]; } || [ -n "$why" ]; then
             for area in backend frontend mcp scm; do echo "$area=true"; done | tee -a "$GITHUB_OUTPUT"
             printf '%s\n' "backend_tests=" "backend_code=" >> "$GITHUB_OUTPUT"
             echo "${why:-$EVENT is not a pull_request}: every area counts as changed"
@@ -548,11 +617,15 @@ jobs:
           # exclusion list, the durations file). A backend change outside
           # these is covered by the release run, not by the `ci` run.
           SCM_RE='^(sorento_crm_backend/(app/(api/v1/scm|services/scm|modules/scm)/|app/models/scm|app/schemas/scm_|tests/scm/|tests/conftest\.py$|tests/_pg_fixture\.py$|tests/ci_excluded\.txt$|\.test_durations$|scripts/bootstrap_env\.py$|requirements\.txt$|alembic/versions/[^/]*scm)|\.github/workflows/deploy\.yml$)'
+          # A lean release: the core tier always runs, so backend counts
+          # whatever the batch holds, and `scm` is true so that a selection
+          # over the cap lands on the full shards, SCM ones included.
           {
-            flag backend  '^(sorento_crm_backend/|\.github/workflows/deploy\.yml$)'
+            if [ "${lean:-false}" = "true" ]; then echo "backend=true"; else
+              flag backend '^(sorento_crm_backend/|\.github/workflows/deploy\.yml$)'; fi
             flag frontend '^(sorento_crm_frontend/|\.github/workflows/deploy\.yml$)'
             flag mcp      '^(sorento_crm_mcp/|\.github/workflows/deploy\.yml$)'
-            flag scm      "$SCM_RE"
+            if [ "${lean:-false}" = "true" ]; then echo "scm=true"; else flag scm "$SCM_RE"; fi
           } | tee -a "$GITHUB_OUTPUT"
           # BACKEND_TESTS_RE: the backend test files this PR changes, for
           # the PR gate (point 4 of the job comment). `test_*.py` only,
@@ -575,12 +648,16 @@ jobs:
                            | { grep -Ev "$BACKEND_TESTS_RE" || true; } \
                            | tr '\n' ' ' | sed 's/ $//')
           echo "backend_code=$backend_code" | tee -a "$GITHUB_OUTPUT"
+          # The select step below adds the core tier on a lean release.
+          if [ "${lean:-false}" = "true" ]; then
+            printf '%s\n' "lean=true" "base_sha=$base_sha" | tee -a "$GITHUB_OUTPUT"
+          fi
 
       # Only on a PR that changes backend code: the selection reads the
       # backend sources, and nothing else in this job needs a checkout.
       # Sparse: app/, scripts/ and tests/ are all the script parses.
       - name: Checkout backend sources for test selection
-        if: steps.filter.outputs.backend_code != ''
+        if: steps.filter.outputs.backend_code != '' || steps.filter.outputs.lean == 'true'
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -592,20 +669,26 @@ jobs:
       # python3; it prints the selection, so the job log shows what runs.
       - name: Select backend tests by import
         id: select
-        if: steps.filter.outputs.backend_code != ''
+        if: steps.filter.outputs.backend_code != '' || steps.filter.outputs.lean == 'true'
         env:
           BACKEND_CODE: ${{ steps.filter.outputs.backend_code }}
           BACKEND_TESTS: ${{ steps.filter.outputs.backend_tests }}
+          LEAN: ${{ steps.filter.outputs.lean }}
         # `--scm false`: tests/scm stays in the selection, the SCM shards no
-        # longer run on a PR (CI-LEAN).
+        # longer run on a PR or a lean release (CI-LEAN). On a lean release
+        # the core tier (tests/release_core.txt) joins as if changed.
         run: |
-          printf '%s\n' $BACKEND_CODE $BACKEND_TESTS \
+          core=""
+          if [ "$LEAN" = "true" ]; then
+            core=$(grep -vE '^\s*#|^\s*$' sorento_crm_backend/tests/release_core.txt | sed 's|^|sorento_crm_backend/|')
+          fi
+          printf '%s\n' $BACKEND_CODE $BACKEND_TESTS $core \
             | python3 sorento_crm_backend/scripts/ci_select_tests.py --root sorento_crm_backend --scm false
 
   validate-backend:
     name: Validate backend imports
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.backend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -695,7 +778,7 @@ jobs:
   validate-mcp:
     name: Validate MCP imports
     needs: [changes]
-    if: needs.changes.outputs.mcp == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.mcp == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -807,7 +890,7 @@ jobs:
   test-backend-scm:
     name: Backend test suite - SCM (Postgres, xdist)
     needs: [changes]
-    if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.scm == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -1037,6 +1120,7 @@ jobs:
     if: >-
       needs.changes.outputs.backend == 'true'
       && github.event_name != 'pull_request'
+      && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # The suite is CPU-bound (~3 s of CPU per test across 9k tests) and a
@@ -1293,12 +1377,16 @@ jobs:
   lean-gate:
     name: ${{ github.event_name == 'pull_request' && 'PR gate' || 'Release tests' }}
     needs: [changes, check-migration-heads, pii-guard, gitleaks]
-    if: always() && github.event_name == 'pull_request' && github.event.label.name == 'ci'
+    if: >-
+      always()
+      && ((github.event_name == 'pull_request' && github.event.label.name == 'ci')
+      || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.lean == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
       pull-requests: write
+      actions: read
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -1524,13 +1612,33 @@ jobs:
         if: needs.changes.outputs.frontend == 'true'
         working-directory: sorento_crm_frontend
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: npx vitest run --changed "$BASE_SHA"
+          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.changes.outputs.base_sha }}
+        run: npx vitest run --changed "$BASE_SHA" --passWithNoTests
+
+      # A release whose tests passed leaves a marker for its tree, so a
+      # re-dispatch of the same tree (a rejected approval, a deploy hiccup)
+      # skips the tests (`changes`, the workflow_dispatch case). One byte,
+      # kept 30 days.
+      - name: Mark this tree as validated
+        id: tree
+        if: success() && github.event_name == 'workflow_dispatch'
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$GITHUB_SHA" > validated-tree.txt
+
+      - name: Upload the validated-tree marker
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-tree-${{ steps.tree.outputs.tree }}
+          path: validated-tree.txt
+          retention-days: 30
 
   validate-frontend:
     name: Validate frontend (vitest)
     needs: [changes]
-    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     # A shard measured about 8.5 min over 29 Sep-5 Oct.
     timeout-minutes: 20
@@ -1585,7 +1693,7 @@ jobs:
   typecheck-frontend:
     name: Type-check frontend
     needs: [changes]
-    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request'
+    if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1791,6 +1899,7 @@ jobs:
         test-backend-scm,
         build-images,
         typecheck-frontend,
+        lean-gate,
       ]
     # A release only: workflow_dispatch on main. Never a push to main (owner
     # decision 2026-09-29: a merge does not deploy), never a merge-queue
