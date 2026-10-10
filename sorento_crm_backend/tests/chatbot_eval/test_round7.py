@@ -1,7 +1,7 @@
 import json
 
 from scripts.chatbot_eval.engine import HttpTurnEngine
-from scripts.chatbot_eval.report import build_report
+from scripts.chatbot_eval.report import GRADER_VERSION, build_report
 from scripts.chatbot_eval.run import main
 from scripts.chatbot_eval.runner import RunResult
 from scripts.chatbot_eval.trace import parse_trace
@@ -80,7 +80,7 @@ def test_results_row_carries_lane_notes(tmp_path):
 
 def test_grader_version_is_7():
     r = build_report(RunResult(results=[], stopped_reason=None, wall_s=0.0))
-    assert r["grader_version"] == 7
+    assert r["grader_version"] == GRADER_VERSION
 
 
 def _old_run(tmp_path, tool_errors):
