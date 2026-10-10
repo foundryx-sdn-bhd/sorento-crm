@@ -593,3 +593,35 @@ def test_the_draw_follows_volume_not_an_equal_split(client, taxonomy, session_fa
     order = sum(1 for r in rows if r["subject"] == "order")
     assert inventory + order == 300
     assert inventory > 2 * order, f"inventory {inventory} vs order {order}: an equal split would give 150 each"
+
+
+# --------------------------------------------------------------------------- CA-4 backfill rows
+
+
+def test_a_backfilled_ask_is_shown_with_its_history_message_read_live(client, taxonomy, session_factory):
+    """CA-4 review round 1: a `history_backfill` fact has no turn; the screen reads the words from
+    its `chat_histories` row at request time (never stored), not a blank."""
+    from app.models.chat_facts import ChatAskFact
+    from app.models.chat_history import ChatHistory
+
+    db = session_factory()
+    history = ChatHistory(
+        channel="whatsapp", contact_id="ZZT-audit-hist", phone_number="+60100000000",
+        message="ZZT backfilled words", sent_at=datetime(2026, 5, 2, 3, 0), type="incoming",
+        created_at=datetime(2026, 5, 2, 3, 0),
+    )
+    db.add(history)
+    db.flush()
+    db.add(
+        ChatAskFact(
+            id=str(uuid.uuid4()), source="history_backfill", turn_id=None, history_id=history.id, ask_seq=1,
+            contact_respond_id="ZZT-audit-hist", audience="dealer", contact_type="dealer",
+            asked_at=datetime(2026, 5, 2, 3, 0, tzinfo=UTC), channel="whatsapp", domain="inventory",
+            outcome="answered", tools=[], topic_code="inventory.availability", taxonomy_version=VERSION,
+            label_confidence=0.9, language="en", is_media=False, phantom_dropped=False,
+        )
+    )
+    db.commit()
+    assert _draw(client).status_code == 201
+    (row,) = _rows(client)
+    assert row["message"] == "ZZT backfilled words"

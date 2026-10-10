@@ -352,6 +352,13 @@ def _reset_global_state():
         _cache_clear()
     except Exception:
         pass
+    # The runtime settings snapshot (SETTINGS-IN-DB-SORENTO, 5s TTL): a value one test saved
+    # in its scratch schema must not answer the next test's sessionless read.
+    import sys
+
+    _runtime_settings = sys.modules.get("app.services.runtime_settings")
+    if _runtime_settings is not None:
+        _runtime_settings.clear_cache()
     try:
         # The 24h-window lookup keeps a short per-identifier TTL cache. Tests
         # reuse identifiers ("id:123", "900000008") across files with different

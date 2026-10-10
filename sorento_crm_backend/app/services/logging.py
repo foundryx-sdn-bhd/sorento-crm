@@ -42,11 +42,9 @@ async def log_api_request(
     try:
         # Get IP address from request if not provided
         if not ip_address:
-            ip_address = (
-                request.headers.get("x-forwarded-for", "").split(",")[0].strip() or
-                request.headers.get("x-real-ip") or
-                request.client.host if request.client else "unknown"
-            )
+            from app.services.client_ip import client_ip
+
+            ip_address = client_ip(request) or "unknown"
         
         # Determine event type from request method if not provided
         if not event:

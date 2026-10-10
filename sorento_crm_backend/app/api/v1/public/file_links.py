@@ -90,11 +90,9 @@ def _rate_limited(request: Request) -> None:
 
     # Behind nginx (and the Next proxy when `NEXT_PUBLIC_API_URL` is unset) the socket peer
     # is the proxy, so keying on it would put every dealer in ONE bucket (security review
-    # M2). The repo's one rule for public routes is the left-most `X-Forwarded-For` entry,
-    # else the peer, and only a valid IP is used as the key. That entry is client-supplied,
-    # so this limit spreads honest load per client; resistance to guessing comes from the
-    # 80-bit code, not from this limit. The `/f/{code}` page calls this route on the API
-    # host directly, never through the Next proxy, which forwards no client address.
+    # M2). `client_ip` reads `X-Forwarded-For` right to left from trusted proxies only
+    # (SORENTO-CLIENT-IP), so a rotated fake header no longer escapes the bucket. Resistance
+    # to guessing still comes from the 80-bit code, not from this limit.
     ip = _as_ip(client_ip(request)) or (request.client.host if request.client else None)
     gate = rate_limit.hit(
         "chatbot_file_link",

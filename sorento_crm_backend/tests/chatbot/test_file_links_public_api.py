@@ -43,7 +43,7 @@ def env(monkeypatch):
             "app.api.v1.public.file_links.download_bytes", lambda url: b"col1,col2\n1,2\n"
         )
         try:
-            yield TestClient(app, raise_server_exceptions=False), db, signed
+            yield TestClient(app, raise_server_exceptions=False, client=("10.0.0.1", 50000)), db, signed
         finally:
             app.dependency_overrides.clear()
 
@@ -183,6 +183,10 @@ def test_content_type_comes_from_the_extension_not_the_upload(env):
 def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     """Crew audit item 6: behind nginx every socket peer is the proxy; the bucket key is
     the forwarded client, so two dealers never share one limit."""
+    from app.config import settings
+    from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
+
+    monkeypatch.setattr(settings, "trusted_proxies", RECOMMENDED_TRUSTED_PROXIES)
     client, db, _ = env
     _link(db, "PHOTO00006", "https://cdn.test/a.jpg", "a.jpg")
     idents: list[str | None] = []
@@ -194,7 +198,9 @@ def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     monkeypatch.setattr(rate_limit, "hit", _hit)
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "198.51.100.9"})
-    assert idents == ["203.0.113.7", "198.51.100.9"]
+    # SORENTO-CLIENT-IP: a forged left-most hop is not the key; the hop the proxy appended is.
+    client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "6.6.6.6, 203.0.113.8"})
+    assert idents == ["203.0.113.7", "198.51.100.9", "203.0.113.8"]
 
 
 def test_a_forwarded_value_that_is_not_an_ip_never_becomes_a_key(env, monkeypatch):

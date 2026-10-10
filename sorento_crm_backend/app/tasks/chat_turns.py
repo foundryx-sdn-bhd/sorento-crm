@@ -91,6 +91,39 @@ def label_chat_topics_job(limit: int | None = None) -> dict[str, Any]:
     return result
 
 
+def backfill_chat_history_job(
+    era: str, *, limit: int | None = None, estimate: bool = False, relabel: bool = False
+) -> dict[str, Any]:
+    """The CA-4 history backfill of one era, in this process (no schedule: run by hand from
+    `scripts/chat_backfill.py`). `estimate` counts and projects tokens and calls no model. A
+    doorway like the labeller above; the rules live in
+    `app.services.chatbot.analytics.backfill`."""
+    from app.database import SessionLocal
+    from app.services.chatbot.analytics import backfill, labeller
+
+    db = SessionLocal()
+    try:
+        if estimate:
+            result = backfill.estimate(db, era, relabel=relabel)
+        else:
+            chat, model = labeller.production_call(
+                db, schema_name="chat_history_backfill", cache_key="chat-history-backfill"
+            )
+            result = backfill.run(
+                db,
+                era=era,
+                chat=chat,
+                resolve=labeller.production_resolve(SessionLocal),
+                model=model,
+                limit=limit,
+                relabel=relabel,
+            )
+    finally:
+        db.close()
+    logger.info("chat history backfill: %s", result)
+    return result
+
+
 def enqueue_chat_topic_labeller() -> Any:
     """Queue `label_chat_topics_job` on `analytics` (the scheduler's 02:15 tick)."""
     from app.services.queue_service import enqueue_job

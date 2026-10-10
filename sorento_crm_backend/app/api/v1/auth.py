@@ -25,6 +25,7 @@ from app.schemas.auth import (
 )
 from app.dependencies import get_current_user, get_actor_user_id
 from app.services import user_session_service
+from app.services.client_ip import client_ip
 from app.services.error_handler import handle_internal_error
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     from app.services import login_throttle
     from app.services.user_session_service import mint_session
 
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
 
     # Brute-force throttle (per email+ip). Fails open if Redis is down.
     gate = login_throttle.check(payload.email, ip)
@@ -159,7 +160,7 @@ async def signup(
         "Please check your inbox to verify your account."
     )
     try:
-        ip = request.client.host if request.client else None
+        ip = client_ip(request)
         from app.services import rate_limit
         gate = rate_limit.hit(
             "signup", ip,
@@ -258,7 +259,7 @@ async def reset_password(
     # account is found, but the caller can't tell the difference.
     _GENERIC_RESET_MSG = "If an account exists for this email, a password reset link has been sent."
     try:
-        ip = request.client.host if request.client else None
+        ip = client_ip(request)
         from app.services import rate_limit
         gate = rate_limit.hit(
             "reset", ip,
@@ -558,7 +559,7 @@ def phone_request_code(
     from app.services.queue_service import enqueue_job
     from app.tasks.respond_io_tasks import dispatch_phone_signin_code
 
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
     num = svc.normalize(payload.phone)
 
     ip_gate = rate_limit.hit(
@@ -598,17 +599,15 @@ def phone_verify(payload: PhoneVerifyRequest, request: Request, db: Session = De
     """The right code for an eligible number mints a session (AC-24).
 
     Security round S4 (#1280): no per-IP rate limit here. NextAuth's
-    `phone-otp` provider calls this route server-to-server, so
-    `request.client.host` is the Next.js server's own address for EVERY
-    signed-in user - a shared bucket an attacker could exhaust to lock every
-    real sign-in out at once. The per-number atomic reservation (B2,
+    `phone-otp` provider calls this route server-to-server, and a per-IP bucket
+    is weaker than the bound below. The per-number atomic reservation (B2,
     `reserve_verify_attempt` + `PortalService.reserve_attempt`) is the real
     bound: it caps guesses per TYPED NUMBER regardless of which IP they came
     from, which is the bound that actually matters here.
     """
     from app.services import phone_signin_service as svc
 
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
     num = svc.normalize(payload.phone)
 
     reservation = svc.reserve_verify_attempt(num)
