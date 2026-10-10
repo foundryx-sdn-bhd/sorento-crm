@@ -552,6 +552,19 @@ _RUNTIME_MAX_LENGTH = {
 _RO_DSN_SCHEMES = ("postgresql://", "postgresql+psycopg2://", "postgres://")
 
 
+def _row_without_secrets(settings: SystemSetting) -> dict:
+    """The settings row for a PUT's echo, minus every stored secret: the runtime secrets'
+    ciphertext (SETTINGS-IN-DB-SORENTO review) and the SMTP password. Returning the ORM row
+    itself serialised every column to any caller of these routes."""
+    from sqlalchemy import inspect as sa_inspect
+
+    return {
+        attr.key: getattr(settings, attr.key)
+        for attr in sa_inspect(SystemSetting).column_attrs
+        if not attr.key.endswith("_ciphertext") and attr.key != "smtp_password"
+    }
+
+
 def _validate_runtime_payload(payload: Any) -> dict:
     """Omitted = keep; null or "" = clear (env applies again); a value = save it.
 
@@ -1003,7 +1016,7 @@ def _update_general_settings_impl(settings_data: SystemSettingUpdate, db: Sessio
 
     db.commit()
     db.refresh(settings)
-    return {"message": "General settings updated successfully", "data": settings}
+    return {"message": "General settings updated successfully", "data": _row_without_secrets(settings)}
 
 
 @router.put("/general", status_code=status.HTTP_200_OK)
@@ -1110,7 +1123,7 @@ async def update_notification_settings(
         
         db.commit()
         db.refresh(settings)
-        return {"message": "Notification settings updated successfully", "data": settings}
+        return {"message": "Notification settings updated successfully", "data": _row_without_secrets(settings)}
     except HTTPException:
         raise
     except Exception as e:

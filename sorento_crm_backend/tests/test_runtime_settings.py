@@ -567,3 +567,39 @@ def test_a_refused_value_never_reaches_the_logs(api, caplog, body):
     assert "12345678901" not in resp.text
     assert "ZztLeakPw0001" not in caplog.text
     assert "12345678901" not in caplog.text
+
+
+def test_a_save_writes_exactly_one_system_settings_audit_row(db, actor):
+    """Review finding 2 / AC-5: the generic audit listener adds no second (blank) row."""
+    from app.models.audit import AuditLog
+    from app.services import runtime_settings as rs
+
+    rs.update(db, {"respond_webhook_secret": SECRET_20}, actor.id)
+
+    db.expire_all()
+    rows = db.query(AuditLog).filter(AuditLog.entity_type == "system_settings").all()
+    assert [r.event for r in rows] == ["RUNTIME_SETTINGS"]
+
+
+@pytest.mark.parametrize("path", ["/api/v1/user-management/settings/notifications", "/api/v1/user-management/settings/general"])
+def test_older_settings_puts_never_echo_stored_secrets(api, db, actor, path):
+    """Review blocker: the older PUTs returned the raw row, so any caller received every
+    `*_ciphertext` column (and the SMTP password)."""
+    from app.services import runtime_settings as rs
+
+    client, allow = api
+    allow.add(EDIT_SLUG)
+    rs.update(db, {"respond_webhook_secret": SECRET_20}, actor.id)
+    row = _row(db)
+    row.smtp_password = "ZztSmtpPass0001"
+    db.commit()
+    cipher = row.respond_webhook_secret_ciphertext
+
+    resp = client.put(path, json={})
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data, "the echo is still the settings row"
+    assert not [k for k in data if k.endswith("_ciphertext")]
+    assert "smtp_password" not in data
+    assert cipher not in resp.text and "ZztSmtpPass0001" not in resp.text

@@ -275,3 +275,30 @@ def test_a_replaced_ro_engine_is_disposed(db, save, monkeypatch):
         assert datasets._ro_engine() is None
     finally:
         datasets._ro_current.clear()
+
+
+def test_consent_approve_signs_the_assertion_with_the_db_held_secret(db, save):
+    """Review finding 3: `approve` must sign with the CRM-to-SS secret saved in the database
+    (env holds none here); a regression to the env value would sign with an empty key."""
+    from jose import jwt
+
+    from app.services.analytics_connector import consent
+    from tests.analytics_connector import _helpers as h
+
+    save(
+        connector_ss_to_product_secret=h.SS_TO_PRODUCT,
+        connector_product_to_ss_secret=h.PRODUCT_TO_SS,
+        connector_connection_id=h.CONNECTION_ID,
+        connector_ss_callback_url=h.SS_CALLBACK,
+    )
+    user = h.make_user(db, "rsr-approve", perms=(h.USE,))
+    req, claims = h.consent_request()
+
+    out = consent.approve(db, req, {"id": user.id, "name": user.name, "email": user.email})
+
+    decoded = jwt.decode(
+        out["assertion"], h.PRODUCT_TO_SS, algorithms=["HS256"],
+        options={"verify_aud": False},
+    )
+    assert decoded["request_id"] == claims["request_id"]
+    assert decoded["sub"] == str(user.id)

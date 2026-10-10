@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -136,7 +137,7 @@ def _read(db: Optional[Session]) -> Any:
             session.close()
     except Exception:  # noqa: BLE001
         logger.exception("runtime_settings: could not read system_settings")
-        return _READ_FAILED
+        snap = _READ_FAILED  # cached too, so an outage is not one attempt per request
     _cache.update(at=now, snap=snap)
     return snap
 
@@ -196,54 +197,63 @@ def update(db: Session, payload: dict[str, Any], actor_user_id: Optional[str]) -
     if unknown:
         raise ValueError(f"Unknown runtime settings: {sorted(unknown)}")
 
+    # This save's audit is the one RUNTIME_SETTINGS row below; the generic listener would add a
+    # second, blank row for the same flush (the secret columns are redacted from it), and an
+    # INSERT row when the singleton is created here.
     row = _row(db)
     if row is None:
-        row = SystemSetting()
+        row = SystemSetting(id=str(uuid.uuid4()))
         db.add(row)
-        db.flush()
+    skip = ("system_settings", str(row.id))
+    db.info.setdefault("skip_audit_for", []).append(skip)
+    try:
 
-    changes: dict[str, dict[str, Any]] = {}
-    secrets_set: list[str] = []
-    secrets_cleared: list[str] = []
-    for name in FIELDS:
-        if name not in payload:
-            continue
-        new = _normalise(name, payload[name])
-        column = _column(name)
-        if name in SECRET_FIELDS:
-            old_raw = getattr(row, column)
-            if new is None:
-                if old_raw is None:
-                    continue
-                setattr(row, column, None)
-                secrets_cleared.append(name)
+        changes: dict[str, dict[str, Any]] = {}
+        secrets_set: list[str] = []
+        secrets_cleared: list[str] = []
+        for name in FIELDS:
+            if name not in payload:
+                continue
+            new = _normalise(name, payload[name])
+            column = _column(name)
+            if name in SECRET_FIELDS:
+                old_raw = getattr(row, column)
+                if new is None:
+                    if old_raw is None:
+                        continue
+                    setattr(row, column, None)
+                    secrets_cleared.append(name)
+                else:
+                    old, _unreadable = _stored(_snapshot(row), name)
+                    if old == new:
+                        continue
+                    setattr(row, column, encrypt_secret(new))
+                    secrets_set.append(name)
             else:
-                old, _unreadable = _stored(_snapshot(row), name)
+                old = getattr(row, column)
                 if old == new:
                     continue
-                setattr(row, column, encrypt_secret(new))
-                secrets_set.append(name)
-        else:
-            old = getattr(row, column)
-            if old == new:
-                continue
-            setattr(row, column, new)
-            changes[name] = {"old": old, "new": new}
+                setattr(row, column, new)
+                changes[name] = {"old": old, "new": new}
 
-    changed = list(changes) + secrets_set + secrets_cleared
-    if changed:
-        from app.services.audit_service import log_audit
+        changed = list(changes) + secrets_set + secrets_cleared
+        if changed:
+            from app.services.audit_service import log_audit
 
-        log_audit(
-            db, "system_settings", str(row.id), "UPDATE",
-            event=AUDIT_EVENT,
-            new_values={
-                "changes": changes,
-                "secrets_set": secrets_set,
-                "secrets_cleared": secrets_cleared,
-            },
-            user_id=actor_user_id,
-        )
-    db.commit()
+            log_audit(
+                db, "system_settings", str(row.id), "UPDATE",
+                event=AUDIT_EVENT,
+                new_values={
+                    "changes": changes,
+                    "secrets_set": secrets_set,
+                    "secrets_cleared": secrets_cleared,
+                },
+                user_id=actor_user_id,
+            )
+        db.commit()
+    finally:
+        skips = db.info.get("skip_audit_for") or []
+        if skip in skips:
+            skips.remove(skip)
     clear_cache()
     return changed
