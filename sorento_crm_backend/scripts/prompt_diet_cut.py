@@ -22,20 +22,24 @@ CORE_FILE = "chatbot_parser_core.v1.txt"
 CARDS_FILE = "chatbot_parser_cards.v1.txt"
 DECISIVE = "== DECISIVE DOMAIN TERMS =="
 
-#: One line per retrievable area, plain English. The card names are the values the parser
-#: puts in domain_hint and asks[].domain.
+#: Exactly the domain_hint values v50 allows (its INTENT & DOMAIN enum plus purchase_order from
+#: its PURCHASE ORDERS section), one line each. No area is invented here.
 AREAS_BLOCK = """== AREAS ==
+Areas this bot answers (the domain_hint values):
 master_products: product information, specifications, dimensions, brands and categories
 product_attachment: a product's photos, certificates, technical drawings and installation guides
 promotion: promotions and the flyers that go with them
+forms: forms
 inventory: stock on hand and low stock reports
-order: customer orders, outstanding deliveries and order status
-sales: sales reports, sales analysis, top selling and sales ranking
-resource_attachment: forms and other shared resource files
-spo_allocation: last receipt and allocation of a supplier purchase order
+order: customer orders, delivery status, outstanding orders, and the sales report, sales analysis, top selling and sales ranking asks
+incoming: incoming shipments and containers, with their ETA
+portal_link: a link to the complaint, stock inquiry, product inquiry, purchase request or sponsorship form
+resource_attachment: shared documents and resources such as catalogues, warranty papers and tag templates
+goods_receive: goods receive notes (GRN)
+spo_allocation: the last receipt of a supplier purchase order (SPO)
+ideate: an idea, feature request or improvement from the user
 purchase_order: outstanding purchase orders
-purchase_cost: last purchase cost of a product
-ideate: ideas and suggestions for new products
+purchase_cost: what was last paid a supplier for a product
 """
 
 #: Heading text -> destination. Generated from the plan's Cut table (v50 baseline).

@@ -61,6 +61,10 @@ def test_engine_env_key_set_and_config_empty_falls_back_without_a_provider_call(
 
     monkeypatch.setattr(settings, "openai_api_key", "sk-env-must-not-be-used")
     monkeypatch.setattr(llm_provider, "OpenAIProvider", Boom)
+    # the pipeline's own entity resolver embeds with the env key; keep it off the network
+    from app.services import embedding_worker
+
+    monkeypatch.setattr(embedding_worker, "_embed_text_chunks", lambda chunks: [[0.0] * 1536 for _ in chunks])
     real_embed = _m().embed_text
     h = DietHarness(monkeypatch, [emission()])
     h.diet_on(example_areas=["inventory"])

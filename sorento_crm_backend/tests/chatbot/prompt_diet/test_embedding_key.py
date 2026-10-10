@@ -31,7 +31,7 @@ class _FakeOpenAI:
         self.api_key = api_key
         _FakeOpenAI.instances.append(self)
 
-    def embed(self, text):
+    def embed(self, text, **kwargs):
         return [0.5] * 1536
 
 

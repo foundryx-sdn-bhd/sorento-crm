@@ -12,13 +12,14 @@ Data files (the registry fallback and the migration seed) are produced by
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.services.chatbot.head.embedding_access import EmbeddingAccess, resolve_embedding_access  # noqa: F401
 
 
 CARD_MARKER_OPEN = "<<card:"
@@ -54,6 +55,9 @@ ESCALATION_PENDING_KINDS = frozenset({"team_pick", "member_offer", "company_pick
 
 #: `order_status` values that mean a sales ask even when `domain_hint` says otherwise.
 SALES_ORDER_STATUSES = frozenset({"sales_report", "sales_analysis", "top_selling", "sales_ranking"})
+
+#: The embedding call sits on a customer's turn: a slow provider is a fallback, not a wait.
+EMBED_TIMEOUT_SECONDS = 5.0
 
 EXAMPLES_HEADING = "== WORKED EXAMPLES =="
 
@@ -111,6 +115,20 @@ def select_cards(*, retrieved_areas: set[str], pinned: set[str], available: set[
     return ordered + sorted(wanted - set(CARD_ORDER))
 
 
+def compact(value: Any) -> Any:
+    """`value` without the keys whose value is null, false, "", [] or {} (nested too)."""
+    if isinstance(value, dict):
+        kept = {key: compact(item) for key, item in value.items()}
+        return {key: item for key, item in kept.items() if not _empty(item)}
+    if isinstance(value, list):
+        return [compact(item) for item in value]
+    return value
+
+
+def _empty(value: Any) -> bool:
+    return value is None or value is False or value == "" or value == [] or value == {}
+
+
 def build_system_prompt(
     core: str, cards: dict[str, str], selected: list[str], examples: list[Example]
 ) -> str:
@@ -122,7 +140,7 @@ def build_system_prompt(
             lines = [f"Message: {example.message}"]
             if example.context:
                 lines.append(f"Context: {example.context}")
-            lines.append("Output: " + json.dumps(example.expected_output, sort_keys=True, ensure_ascii=False))
+            lines.append("Output: " + json.dumps(compact(example.expected_output), sort_keys=True, ensure_ascii=False))
             shots.append("\n".join(lines))
         parts.append(EXAMPLES_HEADING + "\n" + "\n\n".join(shots))
     return "\n\n".join(parts) + "\n"
@@ -143,33 +161,13 @@ def needed_areas(parsed: dict[str, Any]) -> set[str]:
     return needed
 
 
-def missing(parsed: dict[str, Any], loaded: set[str]) -> set[str]:
-    return needed_areas(parsed) & set(CARD_ORDER) - set(loaded)
-
-
-@dataclass(frozen=True)
-class EmbeddingAccess:
-    """The embedding credentials, resolved in the engine's config session so the provider
-    call holds no database session. The key never reaches a log or the trace."""
-
-    api_key: str = field(repr=False)
-    model: str
+def missing(parsed: dict[str, Any], loaded: set[str], available: set[str] | None = None) -> set[str]:
+    """Needed areas that have a card in `available` (default: every known card) and are not loaded."""
+    return needed_areas(parsed) & set(CARD_ORDER if available is None else available) - set(loaded)
 
 
 class NoEmbeddingKey(Exception):
     """The assistant configuration holds no OpenAI key to embed with."""
-
-
-def resolve_embedding_access(db: Session) -> EmbeddingAccess:
-    """The key from `ai_assistant_configs` (the chatbot's configured provider key), through
-    the shared resolver. An empty key is carried, and `embed_text` refuses it."""
-    from app.services.ai_assistant_service import AIAssistantConfigService
-    from app.services.llm_provider import resolve_api_key
-
-    config = AIAssistantConfigService(db).get()
-    return EmbeddingAccess(
-        api_key=resolve_api_key(config, "openai"), model=settings.embedding_model_name
-    )
 
 
 def embed_text(access: EmbeddingAccess, text: str) -> list[float]:
@@ -182,7 +180,9 @@ def embed_text(access: EmbeddingAccess, text: str) -> list[float]:
 
     if not access.api_key:
         raise NoEmbeddingKey("no embedding key")
-    vector = OpenAIProvider(access.api_key, access.model).embed(text)
+    vector = OpenAIProvider(access.api_key, access.model).embed(
+        text, timeout=EMBED_TIMEOUT_SECONDS, max_retries=0
+    )
     if not vector:
         raise ValueError("embedding provider returned an empty vector")
     return list(vector)

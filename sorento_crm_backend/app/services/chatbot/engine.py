@@ -1636,7 +1636,7 @@ def _parse_with_diet(
         prompt_cache_key=cache_key(selected),
     )
     usage = dict(emission.usage)
-    absent = prompt_diet.missing(emission, set(selected))
+    absent = prompt_diet.missing(emission, set(selected), available)
     if absent:
         facts.update(missing=sorted(absent), recalled=True)
         selected = prompt_diet.select_cards(
@@ -4475,11 +4475,15 @@ def _run_stages_body(  # noqa: PLR0915
     # Resolved HERE, not inside the `received` session block above: a media-denied
     # turn returned before this line and never needed a provider configured for a
     # parser it will not call (AC-1810's "no parser call" reading extended to setup).
+    parser_override_id = _prompt_override(envelope, parser.PROMPT_KEY, dry_run=dry_run)
+    if diet_facts["on"] and parser_override_id:
+        # A pinned prompt version is the static prompt by definition.
+        diet_facts["fallback"] = "prompt override"
     with _session(session_factory) as db:
         parser_config = parser.resolve_config(
             db,
             current_date=_current_date_directive(),
-            override_version_id=_prompt_override(envelope, parser.PROMPT_KEY, dry_run=dry_run),
+            override_version_id=parser_override_id,
         )
         # #1262 slice 9 (F1a): the live brand list for the `Known brands:` line,
         # read in the SAME session as the config above (already scoped to this
@@ -4489,7 +4493,7 @@ def _run_stages_body(  # noqa: PLR0915
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
-        if diet_facts["on"]:
+        if diet_facts["on"] and not parser_override_id:
             try:
                 diet_core = render_prompt(db, "chatbot_parser_core", current_date=_current_date_directive())
                 cards_text, _cards_version = render_prompt(db, "chatbot_parser_cards")

@@ -1,18 +1,23 @@
 """PROMPT-DIET: turn crew DEV cases into worked examples for `chatbot_examples`.
 
 Reads every `*.json` case under --data-dir (the crew dev directory, never a path inside the
-repo, never a hidden set), masks the customer's name and company out of the message and the
-context, and writes two files into --out-dir for crew to load:
+repo, never a hidden set). A case becomes an example only when its eval label (--results,
+`results.jsonl` rows with `case_id` and `label`) is "correct" or "good_clarify" AND the parser
+emitted something for it (--emissions, JSONL lines `{id, contact, text, created, understood}`;
+for one (contact, text) the latest non-null `understood` wins). The example is the case's
+message, the last `bot` history turn as context, and that emission compacted. The customer's
+name and company are masked out of all three.
 
+Writes into --out-dir:
   examples.jsonl   one example per line
   examples.sql     idempotent INSERTs (WHERE NOT EXISTS), same rows
 
-A case supplies the expected parser emission as `expect`; a case without one is skipped.
 Output is deterministic (sorted by case id) so a rerun changes nothing. Embeddings are filled
-only with --embed (one embedding provider call per example); without it the rows carry no
-vector and retrieval skips them.
+only with --embed (one provider call per example, key read from ai_assistant_configs at
+--config-db-url); without it the rows carry no vector and retrieval skips them.
 
-  venv/bin/python scripts/prompt_diet_seed_examples.py --data-dir D --out-dir O [--embed]
+  venv/bin/python scripts/prompt_diet_seed_examples.py --data-dir D --emissions E --results R \
+      --out-dir O [--embed --config-db-url URL]
 """
 from __future__ import annotations
 
@@ -70,7 +75,7 @@ def mask(text: str, terms: list[tuple[str, str]]) -> str:
 
 def previous_reply(history: list[dict]) -> str | None:
     for turn in reversed(history or []):
-        if turn.get("role") == "assistant" and (turn.get("text") or "").strip():
+        if turn.get("role") == "bot" and (turn.get("text") or "").strip():
             return turn["text"].strip()
     return None
 
@@ -90,17 +95,59 @@ def area_of(expect: dict, cards: set[str]) -> str | None:
     return hint if hint in cards else None
 
 
-def build_examples(data_dir: Path) -> list[dict]:
+GOOD_LABELS = {"correct", "good_clarify"}
+
+
+def compact(value):
+    """Same rule as `prompt_diet.compact`: drop null, false, "", [] and {} (nested too)."""
+    if isinstance(value, dict):
+        kept = {key: compact(item) for key, item in value.items()}
+        return {k: v for k, v in kept.items() if not (v is None or v is False or v == "" or v == [] or v == {})}
+    if isinstance(value, list):
+        return [compact(item) for item in value]
+    return value
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def latest_emissions(path: Path) -> dict[tuple[str, str], dict]:
+    """(contact, text) -> the latest non-null parser emission."""
+    best: dict[tuple[str, str], tuple[str, dict]] = {}
+    for row in read_jsonl(path):
+        understood = row.get("understood")
+        if not isinstance(understood, dict) or not understood:
+            continue
+        key = (str(row.get("contact")), str(row.get("text")))
+        created = str(row.get("created") or "")
+        if key not in best or created >= best[key][0]:
+            best[key] = (created, understood)
+    return {key: emission for key, (_, emission) in best.items()}
+
+
+def build_examples(data_dir: Path, emissions_path: Path, results_path: Path) -> list[dict]:
     rows: list[dict] = []
     cards = card_names()
+    labels = {str(r.get("case_id")): r.get("label") for r in read_jsonl(results_path)}
+    emissions = latest_emissions(emissions_path)
     for path in sorted(data_dir.glob("*.json")):
         case = json.loads(path.read_text(encoding="utf-8"))
-        expect = case.get("expect")
-        area = area_of(expect, cards) if isinstance(expect, dict) else None
-        if area is None:
-            print(f"skipped {path.name}: no usable expected emission", file=sys.stderr)
+        case_id = str(case.get("id") or path.stem)
+        if labels.get(case_id) not in GOOD_LABELS:
             continue
-        terms = mask_terms(case.get("contact") or {})
+        contact = case.get("contact") or {}
+        text = str((case.get("message") or {}).get("text") or "")
+        expect = emissions.get((str(contact.get("respond_id")), text))
+        if expect is None:
+            print(f"skipped {case_id}: no parser emission for this message", file=sys.stderr)
+            continue
+        area = area_of(expect, cards)
+        if area is None:
+            print(f"skipped {case_id}: emission has no usable area ({expect.get('domain_hint')!r})", file=sys.stderr)
+            continue
+        expect = compact(expect)
+        terms = mask_terms(contact)
         context = previous_reply(case.get("history") or [])
         rows.append(
             {
@@ -154,6 +201,8 @@ def sql_insert(row: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--data-dir", required=True, type=Path)
+    ap.add_argument("--emissions", required=True, type=Path, help="JSONL of parser emissions per case message")
+    ap.add_argument("--results", required=True, type=Path, help="eval results.jsonl (case_id, label)")
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--embed", action="store_true", help="fill each row's embedding (provider calls)")
     ap.add_argument(
@@ -165,7 +214,7 @@ def main() -> int:
     reason = check_data_dir(args.data_dir)
     if reason:
         return refuse(reason)
-    rows = build_examples(args.data_dir)
+    rows = build_examples(args.data_dir, args.emissions, args.results)
     if args.embed:
         if not args.config_db_url:
             return refuse("--embed needs --config-db-url (the key is read from ai_assistant_configs, never the env)")
