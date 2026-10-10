@@ -186,4 +186,24 @@ describe('RuntimeSettingsCards', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear saved value' }));
     expect(mockMutate).toHaveBeenCalledWith({ respond_webhook_secret: null });
   });
+
+  it('typing a secret and erasing it keeps the saved value', () => {
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data({
+        respond_webhook_secret: { source: 'db', masked: '****9f3c' },
+      }),
+    });
+    render(<RuntimeSettingsCards />);
+    const secret = screen.getByLabelText('Webhook secret');
+    fireEvent.change(secret, { target: { value: 'abc' } });
+    fireEvent.change(secret, { target: { value: '' } });
+    const save = screen.getAllByRole('button', {
+      name: 'Save',
+    })[2] as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
 });

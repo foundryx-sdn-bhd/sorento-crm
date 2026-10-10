@@ -1,6 +1,6 @@
 # PLAN: prod env switches move to DB settings (SETTINGS-IN-DB-SORENTO)
 
-Status: Build (behaviour card answered (a) on all five by crew, 10 Oct; Phase 2 red tests).
+Status: Review (Phase 3: security fixes H1/M1/M2/L2/L3 in; M3 owner ruling (a)).
 Track: full lane (new permission + secrets at rest + external ingest auth source).
 
 Owner ask (10 Oct 11:20): "for these prod steps, can we make it UI configurable and store in DB,
@@ -43,12 +43,19 @@ comes from. Saving a value overrides env; clearing it falls back to env.
 - Encrypted at rest with the existing helper `app/utils/field_encryption.py`
   (`encrypt_secret` / `decrypt_secret`). PR #1537 (AI-KEY-ENCRYPT) keeps that API and swaps the
   key for `FIELD_ENCRYPTION_KEY`, so this lane needs nothing from #1537 to merge first. When both
-  have merged, the four new `*_ciphertext` columns join #1537's re-encrypt script list.
+  have merged, the four new `*_ciphertext` columns (`connector_ss_to_product_secret_ciphertext`,
+  `connector_product_to_ss_secret_ciphertext`, `analytics_ro_database_url_ciphertext`,
+  `respond_webhook_secret_ciphertext`) MUST join #1537's re-encrypt script list, or they become
+  unreadable at the key switch (fail closed: webhook and connector answer 503 until re-entered).
 - Implication, stated plainly: ONE master key must stay in env. Today that is `JWT_SECRET`
   (the helper derives its key from it); after #1537 it is `FIELD_ENCRYPTION_KEY`. If that key
   changes without a re-encrypt, the saved secrets cannot be decrypted: they read as unset
-  (falling back to env), the screen says "saved value unreadable, enter it again", and nothing
-  crashes.
+  WITHOUT the env fallback (fail closed, security review M2: the env value may be the secret
+  the saved one replaced), the screen says "saved value unreadable, enter it again", and nothing
+  crashes. A failed `system_settings` read fails closed for secrets the same way.
+- Once a value is saved in the CRM, remove its env var from the prod env: env stays only as
+  the fallback for a value never saved, and a stale env secret becomes live again if the saved
+  one is cleared.
 - Never returned in full: the API returns `****` + last 4 (values of 8 chars or fewer show
   `****`). Inputs are update-only and never prefilled.
 - Every change audited: one `system_settings` audit row per save naming the actor and the
@@ -65,10 +72,22 @@ Roles if the owner ever wants to. Gates both the GET and the PUT of the new
 endpoint. Reason: `user_management.settings.edit` is also held by `warehouse_manager` and the
 three integration (API key) roles, and the webhook secret decides who may write chat history.
 
+### Owner ruling M3 (10 Oct): admins hold the connector secrets
+
+Security review M3: with the two connector HMAC secrets editable on screen, an admin who sets
+them can sign connector calls as any user holding `analytics.connector.use`, and the connector's
+own audit row names that user, not the admin. Owner ruling (a): accepted. Admins may edit both
+secrets in Settings. Mitigations that stand: the save writes a `RUNTIME_SETTINGS` audit row
+naming the admin and `secrets_set`, and changing the secret breaks the live shared-service
+connection, so the change is visible.
+
 ### Effect without restart
 
 Every reader goes through one resolver (`app/services/runtime_settings.py`) that reads the row
-per call (webhook per request, labeller per nightly tick, connector per request). The read-only
+per call (webhook per request on the request's session, labeller per nightly tick, connector per
+request). Readers with no session (the connector preflight, which runs before any signature
+check) share a 5 second snapshot, cleared on save, so a flood of junk connector headers costs no
+database read each (security review H1); another worker process sees a save within 5 seconds. The read-only
 analytics engine is cached per DSN, so a changed DSN builds a new engine on the next call.
 
 ### Endpoint

@@ -264,9 +264,19 @@ function RuntimeSettingsCard({
                     value={shownValue}
                     placeholder={fieldPlaceholder}
                     title={fieldPlaceholder}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, [name]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDraft((d) => {
+                        // An emptied secret box means "keep", never "clear": clearing is
+                        // the explicit button (security review L3).
+                        if (field.secret && next === '') {
+                          const rest = { ...d };
+                          delete rest[name];
+                          return rest;
+                        }
+                        return { ...d, [name]: next };
+                      });
+                    }}
                   />
                   {clearButton}
                 </div>
