@@ -397,3 +397,51 @@ def test_a_customer_ranking_never_has_a_null_or_empty_label(client, db):
         assert isinstance(row["name"], str) and row["name"].strip(), body["rows"]
         assert "\x1f" not in row["name"] and row["name"] != "(blank)", body["rows"]
     assert D(str(body["total"]["value"])) == 8, "asks with no customer still count in the total"
+
+
+# ======================================================================== engine guard: ratio totals over a distinct part
+
+
+def test_engine_ratio_totals_count_an_ask_once_not_once_per_item(db):
+    """Guard for the engine loop that recounts a ratio's count_distinct part per row, column and
+    grand total (`engine.run_summary`, not reachable through `run_ask`). Item grain, failure_rate
+    as a pivot measure, rows = category, cols = outcome. F1 (answered) names products in TWO
+    categories, F2 (missed) names a Water Closet, F3 (answered) names a Basin:
+
+        row WC 1 failed of 2 asks, row Basin 0 of 2; col answered 0 of 2, col missed 1 of 1;
+        grand 1 of 3. Counted once per item the answered column would read 3 asks and the
+        grand total 4 (rate 0.25 instead of 0.3333).
+    """
+    from app.models.chat_facts import ChatAskFact
+    from app.schemas.report import ReportViewConfig
+    from app.services.reports import engine
+    from app.services.reports.datasets import chat_report_ask
+    from tests._chat_report_seed import add_item
+
+    w = seed_asker_world(db)
+    f1 = db.query(ChatAskFact).filter(ChatAskFact.contact_respond_id == "ZZT-c1").order_by(ChatAskFact.asked_at).first()
+    add_item(db, f1, w.p2)  # F1 now names p1 (Water Closet) and p2 (Basin)
+    db.commit()
+    definition = chat_report_ask.DEFINITIONS["turns"]
+    params = {
+        "date_basis": "asked_at",
+        "period": {"kind": "custom", "from": "2026-09-05", "to": "2026-09-30"},
+        "grain": ["products"],
+        "asker": list(chat_report_ask.DEFAULT_ASKERS),  # run_ask adds this; the engine does not
+    }
+    view = ReportViewConfig.model_validate({
+        "params": params, "detail": {"columns": [], "order": []},
+        "pivot": {"rows": "category", "cols": "outcome", "measures": ["failure_rate", "asks", "failed"]},
+    })
+    pivot = engine.run_summary(db, definition, params, view)
+
+    def num(totals, key):
+        return float(totals[key])
+
+    rows, cols, grand = pivot.row_totals, pivot.col_totals, pivot.grand_total
+    assert num(grand, "asks") == 3 and num(grand, "failed") == 1, grand
+    assert num(rows["ZZT Water Closet"], "asks") == 2 and num(rows["ZZT Basin"], "asks") == 2, rows
+    assert num(rows["ZZT Water Closet"], "failure_rate") == pytest.approx(0.5, abs=0.001), rows
+    answered = next(v for k, v in cols.items() if k.lower().startswith("answered"))
+    assert num(answered, "asks") == 2, "F1 and F3, F1 counted once though it names two categories"
+    assert num(answered, "failure_rate") == 0 and num(grand, "failure_rate") == pytest.approx(1 / 3, abs=0.001), (answered, grand)
