@@ -19,7 +19,6 @@ from jose import JWTError, jwt
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.services.analytics_connector.access import USE, ConnectorError, has_connector_permission
 
 REQUEST_TYP = "connector_consent_request"
@@ -40,25 +39,34 @@ def _bad(message: str = "This connection request is not valid.") -> ConnectorErr
     return ConnectorError(400, "bad_request", message)
 
 
-def _configured() -> bool:
-    return all((
-        settings.connector_ss_to_product_secret,
-        settings.connector_product_to_ss_secret or "",
-        settings.connector_connection_id,
-        settings.connector_ss_callback_url,
+def _config() -> dict[str, Any]:
+    """The four connector settings, from Settings > Integrations with env as the fallback.
+    Read per call so a saved change needs no restart (SETTINGS-IN-DB-SORENTO)."""
+    from app.services import runtime_settings
+
+    return runtime_settings.get_many((
+        "connector_ss_to_product_secret",
+        "connector_product_to_ss_secret",
+        "connector_connection_id",
+        "connector_ss_callback_url",
     ))
+
+
+def _configured() -> bool:
+    return all(_config().values())
 
 
 def verify_request(req: str) -> dict:
     """The verified claims of a consent request, or ConnectorError (400 / 503)."""
-    if not _configured():
+    config = _config()
+    if not all(config.values()):
         raise ConnectorError(503, "upstream_error", "The Claude connector is not configured.")
     if not isinstance(req, str) or not req or len(req) > 4096:
         raise _bad()
     try:
         claims = jwt.decode(
             req,
-            settings.connector_ss_to_product_secret or "",
+            config["connector_ss_to_product_secret"],
             algorithms=["HS256"],
             options={
                 "verify_aud": False, "verify_exp": False, "verify_iat": False, "verify_nbf": False,
@@ -75,8 +83,8 @@ def verify_request(req: str) -> dict:
         claims["typ"] != REQUEST_TYP
         or claims["iss"] != REQUEST_ISSUER
         or claims["aud"] != REQUEST_AUDIENCE
-        or claims["connection_id"] != settings.connector_connection_id
-        or claims["return_url"] != settings.connector_ss_callback_url
+        or claims["connection_id"] != config["connector_connection_id"]
+        or claims["return_url"] != config["connector_ss_callback_url"]
     ):
         raise _bad()
     now = time.time()
@@ -154,7 +162,7 @@ def approve(db: Session, req: str, user: dict) -> dict[str, Any]:
             "exp": now + ASSERTION_TTL,
             "jti": uuid.uuid4().hex,
         },
-        settings.connector_product_to_ss_secret or "",
+        _config()["connector_product_to_ss_secret"] or "",
         algorithm="HS256",
     )
     return {"request_id": claims["request_id"], "return_url": claims["return_url"], "assertion": assertion}
