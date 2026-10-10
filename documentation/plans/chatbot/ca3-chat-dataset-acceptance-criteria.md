@@ -92,12 +92,12 @@ Every example is synthetic (public repo): fixtures seed their own topics, contac
   read the same rule (crew ruling 10 Oct, prod snapshot: 31 role salespeople ask 74%).
 - **UAC-26** Chat route scope by that rule: dealer -> own customers + topic/subject/product/month
   only; salesperson -> own book; staff -> all.
-- **UAC-27** "which salesperson asked the most questions" ranks asking salespeople by name;
+- **UAC-27** "which salesperson asked the most questions" ranks asking salespeople by name (the
+  role salesperson's user name, else the sales agent's name);
   "top categories asked by dealers" filters asker dealer; group by asker gives Dealer /
   Salesperson / Staff / Unclassified rows.
-- **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`;
-  every reply whose run leaves unclassified askers out by default (any axis) has the line
-  `Unclassified askers left out: N` when N > 0 (distinct contacts in the period and other filters).
+- **UAC-28** Every reply that splits or filters by asker has the line `Unclassified askers: N`.
+  (The "left out" line of the earlier ruling is gone: by default nothing is left out, UAC-29.)
 - **UAC-29** (owner override 10 Oct: "i dont want to keep anything out") By default every
   asker class (salesperson, dealer, staff, unclassified) is counted and shown as its own row;
   nothing is excluded; a question can still ask for one class.
