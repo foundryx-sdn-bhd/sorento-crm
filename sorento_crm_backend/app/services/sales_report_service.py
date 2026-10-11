@@ -124,7 +124,7 @@ def _as_date(v: DateLike) -> Optional[date]:
     return v
 
 
-def _resolve_products(db: Session, product_code: Optional[str]) -> list[Product]:
+def _resolve_products(db: Session, product_code: Optional[str], *, exact: bool = False) -> list[Product]:
     """S19 (owner ruling from live testing, 19 Sep 2026): `product_code` matches
     the typed code AND every product whose code STARTS WITH it, case-
     insensitively - "Srt5674 August total sale quantity" answered "No sales
@@ -136,6 +136,8 @@ def _resolve_products(db: Session, product_code: Optional[str]) -> list[Product]
     code = (product_code or "").strip()
     if not code:
         return []
+    if exact:
+        return db.query(Product).filter(func.lower(Product.product_code) == code.lower()).all()
     pattern = _escape_like(code.lower()) + "%"
     return (
         db.query(Product)

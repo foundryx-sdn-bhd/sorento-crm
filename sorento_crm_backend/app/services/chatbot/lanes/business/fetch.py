@@ -833,6 +833,9 @@ def entity_ids_transformer(
         picked_code = sales_report_product_code(entities, semantic_input)
         if jsc.truthy(picked_code):
             out["product_code"] = picked_code
+            if jsc.get(semantic_input, "sales_report_narrowed") is True:
+                # A held report narrowed to one product counts that code alone, not its longer siblings.
+                out["product_code_exact"] = True
         warehouse_codes = jsc.get(semantic_input, "outstanding_warehouse_codes")
         if isinstance(warehouse_codes, list) and warehouse_codes:
             out["warehouse_codes"] = warehouse_codes

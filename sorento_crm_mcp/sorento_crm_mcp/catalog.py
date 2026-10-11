@@ -780,7 +780,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "and replacement (REP...) DOs never count.\n\n"
             "SUBJECT: a product, a customer, or both - at least one of `product_code` / "
             "`customer_ids` / `customer_query` is REQUIRED (422 `subject_required` otherwise). "
-            "`product_code` is a PREFIX, case-insensitive (at least 3 characters). "
+            "`product_code` is a PREFIX, case-insensitive (at least 3 characters); "
+            "`product_code_exact` true reads it as that one whole code (no longer siblings). "
             "`customer_query` - partial match on customer NAME only. `customer_ids` - canonical "
             "customer UUIDs (csv/JSON/repeated).\n\n"
             "FILTERS: `channel` - dealer | project (the account's market segment class; an "
@@ -801,8 +802,8 @@ CATALOG: tuple[ToolSpec, ...] = (
         "/api/v1/order-management/sales-report",
         (),
         (
-            "product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
-            "location_token", "date_from", "date_to", "group_by",
+            "product_code", "product_code_exact", "customer_query", "customer_ids", "channel",
+            "warehouse_codes", "location_token", "date_from", "date_to", "group_by",
             "contact_id", "space_id",
         ),
         domain="orders",
@@ -902,7 +903,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
             "customer_agent_ids", "carried", "scope", "basis", "company", "customer_query",
             "categories", "suppliers", "order_date_from", "order_date_to", "product_codes",
-            "location_token", "detail", "so_refused",
+            "location_token", "detail", "so_refused", "product_code_exact",
         ),
         domain="orders",
         related_tools=("crm_report_ask", "crm_sales_report"),

@@ -243,8 +243,10 @@ def delivered_sales_report(
     group_by: Optional[str] = None,
     policy: Any = None,
     capped_by_policy: bool = False,
+    product_code_exact: bool = False,
 ) -> dict[str, Any]:
-    """The route's body. `channel` is `dealer` / `project` / None, `group_by` one of
+    """The route's body. `product_code_exact` reads `product_code` as one whole code (a narrowing
+    to a single product), not the prefix that also covers its longer siblings. `channel` is `dealer` / `project` / None, `group_by` one of
     `GROUP_BYS` or None (both validated by the route). `capped_by_policy` says a contact
     asked: `policy` is then that contact's stock visibility policy, and None (nobody
     resolved) answers nothing (fail closed)."""
@@ -252,7 +254,7 @@ def delivered_sales_report(
     named_codes = [str(c).strip() for c in (warehouse_codes or []) if str(c).strip()]
 
     code = (product_code or "").strip()
-    products = _resolve_products(db, code) if code else []
+    products = _resolve_products(db, code, exact=product_code_exact) if code else []
     if code and not products:
         raise handle_not_found("Product", product_code)
     product_ids = [str(p.id) for p in products]

@@ -108,6 +108,7 @@ def _delivered_sales(db: Session, *, params: dict, contact_id: str, space_id: st
     response = asyncio.run(
         get_sales_report(
             product_code=_one(params, "product_code"),
+            product_code_exact=_flag(params, "product_code_exact"),
             customer_query=_one(params, "customer_query"),
             customer_ids=_many(params, "customer_ids"),
             channel=_one(params, "channel"),
@@ -244,8 +245,8 @@ for _row in (
         basis="delivered", figure="amount", dimensions=("customer", "product", "delivery_order", "sales_agent"),
         grant="sales_orders.sales_report", dealer_dimensions=("customer", "product", "delivery_order"),
         run=_delivered_sales, kind="sales_report",
-        params=frozenset({"product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
-                          "location_token", "date_from", "date_to", "group_by"}),
+        params=frozenset({"product_code", "product_code_exact", "customer_query", "customer_ids", "channel",
+                          "warehouse_codes", "location_token", "date_from", "date_to", "group_by"}),
     ),
     Measure(
         key="sales_value", label="Sales value", synonyms=("sales analysis", "sales by month"),
