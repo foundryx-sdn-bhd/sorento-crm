@@ -87,8 +87,8 @@ Loop breaker (P3) covers every row, including the asks that store no pending tod
    has promotion 2. End user - has promotion". Expected: no live dealer promotion, say so. A dealer
    gets its own tier (Q2); the "has promotion" probe disagreeing with the file is a separate data
    defect (UNVERIFIED cause, out of scope unless Q2 (a) fixes it).
-4. cand-0216 (staff, 6 Oct). "DAcfirst ceramics SDN BHD 有下单MBF97521 吗" -> "Which period for
-   ACFIRST CERAMICS SDN BHD? - This month (Oct 2026) - Last month (Sep 2026)". Expected order
+4. cand-0216 (staff, 6 Oct). "[customer] 有下单MBF97521 吗" -> "Which period for
+   [customer]? - This month (Oct 2026) - Last month (Sep 2026)". Expected order
    M2609-0749 (September). A "this month" default would miss it; "latest for the subject" finds it.
 5. cand-0036 (staff). "how can i ask marketing about bidet seat cover?" after "escalate marketing"
    -> prod: generic topic menu. Expected: offer the marketing handover. Main v50 passes.
