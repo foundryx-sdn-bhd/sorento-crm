@@ -123,6 +123,20 @@ def test_review_order_outstanding_without_the_grant_serves_the_do_block_only(cli
     assert _without_kind(new.json()) == old.json()
 
 
+@pytest.mark.parametrize("scope", ["SO", "Both", " so", "BOTH "])
+def test_review_scope_case_cannot_bypass_the_outstanding_grant(client, db, scope):
+    """The grant check normalises `scope` first: any spelling of so / both still gets the DO block only."""
+    cust, _prod = _outstanding_world(db)
+    contact = _staff(db, SALES_GRANT)
+    lower = _get(client, REPORT, contact, measure="order_outstanding", customer_ids=cust.id, scope="so")
+    resp = _get(client, REPORT, contact, measure="order_outstanding", customer_ids=cust.id, scope=scope)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "so" not in body and body.get("so_refused") is True, body
+    assert "so_by_customer" not in body and "so_by_product" not in body, body
+    assert body == lower.json(), (body, lower.json())
+
+
 def test_review_so_count_without_the_grant_is_403(client, db):
     cust, _prod = _outstanding_world(db)
     resp = _get(client, REPORT, _staff(db, SALES_GRANT), measure="so_count", customer_ids=cust.id)
