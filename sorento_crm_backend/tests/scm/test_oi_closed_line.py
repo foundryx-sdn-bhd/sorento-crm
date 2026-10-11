@@ -377,3 +377,140 @@ def uuid_hex() -> str:
     import uuid
 
     return uuid.uuid4().hex[:8]
+
+
+# ------------------------------------------------------------------ round 2 (reviewer)
+
+
+def _order_with_line(world, *, ordered, delivered="0", line_no=10):
+    db = world.db
+    core_so = _core_so(db, world.company_id)
+    core_line = _core_line(
+        db, core_so, world.product, world.own_wh, qty_ordered=ordered,
+        qty_delivered=delivered, required_date=IN_WINDOW,
+    )
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    line = _project_line(db, order, line_no=line_no, product=world.product, core_line=core_line)
+    db.commit()
+    return order, line
+
+
+def _holder_world(api, *, holder_qty, ordered_a, delivered_a):
+    """Pool on hand 10; ANOTHER order B confirms a real Reserve of `holder_qty` there (the
+    holder is an allocation, not `quantity_reserved`), then line A is set up."""
+    client, world = api
+    _stock(world.db, world.product, world.pool_wh, on_hand=10)
+    order_b, line_b = _order_with_line(world, ordered=holder_qty, line_no=1)
+    held = _reserve(client, world, order_b, line_b, holder_qty)
+    assert held.status_code == 200, held.text
+    order_a, line_a = _order_with_line(world, ordered=ordered_a, delivered=delivered_a)
+    return client, world, order_a, line_a
+
+
+def test_ac_6_r14_guard_exempts_the_delivered_part_when_another_order_holds_the_pool(api):
+    """AC-6 via the R14 on-hand guard: order B holds all 10 on hand; closed line A (ordered 10,
+    delivered 10) Reserve 10 must still confirm."""
+    client, world, order_a, line_a = _holder_world(
+        api, holder_qty="10", ordered_a="10", delivered_a="10"
+    )
+
+    response = _reserve(client, world, order_a, line_a, "10")
+
+    assert response.status_code == 200, response.text
+
+
+def test_ac_7_r14_guard_partial_delivery_with_six_left_by_the_holder_succeeds(api):
+    """AC-7 via R14: A ordered 10 delivered 4; holder B leaves 6 on hand free: Reserve 10 ok."""
+    client, world, order_a, line_a = _holder_world(
+        api, holder_qty="4", ordered_a="10", delivered_a="4"
+    )
+
+    response = _reserve(client, world, order_a, line_a, "10")
+
+    assert response.status_code == 200, response.text
+
+
+def test_ac_7_r14_guard_partial_delivery_with_five_left_by_the_holder_is_refused(api):
+    """AC-7 via R14: holder B leaves only 5 free, 6 undelivered units need stock: refused."""
+    client, world, order_a, line_a = _holder_world(
+        api, holder_qty="5", ordered_a="10", delivered_a="4"
+    )
+
+    response = _reserve(client, world, order_a, line_a, "10")
+
+    assert response.status_code in (409, 422), response.text
+
+
+def _holds_by_warehouse(db, line):
+    db.expire_all()
+    out = {}
+    for a in db.query(SOLineAllocation).filter(SOLineAllocation.so_line_id == line.id):
+        out[a.warehouse_id] = out.get(a.warehouse_id, Decimal("0")) + a.qty
+    return out
+
+
+def _reserve_and_borrow_world(api, *, pool_free, donor_free):
+    client, world = api
+    db = world.db
+    _stock(db, world.product, world.pool_wh, on_hand=10, reserved=10 - pool_free)
+    donor = _warehouse(db, f"ZZT-DON-{line_tag()}", segment="dealer")
+    _stock(db, world.product, donor, on_hand=10, reserved=10 - donor_free)
+    order, line = _order_with_line(world, ordered="10", delivered="4")
+    body = {"lines": [_line_payload(
+        line.id,
+        reserve=[{"warehouse_id": world.pool_wh.id, "qty": "6"}],
+        borrow=[{
+            "source": "other_location", "warehouse_id": donor.id, "qty": "4",
+            "reason": "Take the rest from the other location.",
+        }],
+        amend_reason="Mixed composition.",
+    )]}
+    return client, world, donor, line, client.post(f"{BASE}/sales-orders/{order.id}/confirm", json=body)
+
+
+def test_credit_front_first_the_written_holds_match_what_was_checked(api):
+    """Ordered 10, delivered 4, Reserve 6 (pool 2 free) + Borrow 4 (donor 10 free). The 4
+    delivered units are credited to the Reserve first, so the recheck judged Reserve 2 and
+    Borrow 4; the holds written must be pool 2 and donor 4 (not pool 6, donor 0)."""
+    client, world, donor, line, response = _reserve_and_borrow_world(
+        api, pool_free=2, donor_free=10
+    )
+
+    assert response.status_code == 200, response.text
+    holds = _holds_by_warehouse(world.db, line)
+    assert holds.get(world.pool_wh.id) == Decimal("2"), holds
+    assert holds.get(donor.id) == Decimal("4"), holds
+
+
+def test_credit_front_first_borrow_beyond_the_donor_is_refused(api):
+    """Same shape, donor has only 3 free for the 4 borrowed: refused (consistent check)."""
+    client, world, donor, line, response = _reserve_and_borrow_world(
+        api, pool_free=2, donor_free=3
+    )
+
+    assert response.status_code in (409, 422), response.text
+
+
+def test_ac_9_an_adopted_unowned_hold_never_pushes_the_total_hold_past_what_is_owed(api):
+    """AC-9: line owes 6 (ordered 10, delivered 4) and already holds 6 under no revision
+    (a reallocation). Reserve 10 adopts that hold; the total held must stay <= 6."""
+    from app.models.project_so import ALLOC_SOURCE_BRW
+
+    client, world = api
+    db = world.db
+    _stock(db, world.product, world.pool_wh, on_hand=20)
+    order, line = _order_with_line(world, ordered="10", delivered="4")
+    from datetime import datetime
+
+    db.add(SOLineAllocation(
+        company_id=world.company_id, so_line_id=line.id, source_type=ALLOC_SOURCE_BRW,
+        warehouse_id=world.pool_wh.id, qty=Decimal("6"), decision_id=None,
+        reason="Reallocated from ZZT-OTHER line 1", confirmed_by=world.actor,
+        confirmed_at=datetime.utcnow(),
+    ))
+    db.commit()
+
+    response = _reserve(client, world, order, line, "10")
+
+    assert response.status_code == 200, response.text
+    assert _held_qty(db, line) <= Decimal("6"), _held_qty(db, line)

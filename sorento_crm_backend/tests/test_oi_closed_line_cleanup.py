@@ -23,7 +23,7 @@ World (one OI, raised on a project SO, every FK seeded here, fake codes only):
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -81,6 +81,7 @@ def _world(api, monkeypatch):
     db.add(inquiry)
     batch = PlanningChangeBatch(
         id=str(uuid.uuid4()), company_id=world.company_id, source_kind="so_book_upload",
+        applied_at=datetime(2026, 10, 6, 3, 0),
     )
     db.add(batch)
     db.flush()
@@ -91,7 +92,8 @@ def _world(api, monkeypatch):
     n = [0]
 
     def add(key, *, verb=IV_ORDER, state=INQUIRY_RAISED, superseded=False, core_status="open",
-            item_code=None, qty="40", ordered="40", delivered="0"):
+            item_code=None, qty="40", ordered="40", delivered="0",
+            row_created_at=datetime(2026, 10, 1, 9, 0)):
         n[0] += 1
         core = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=ordered,
                           qty_delivered=delivered, required_date=date(2027, 3, 1))
@@ -101,6 +103,7 @@ def _world(api, monkeypatch):
             id=str(uuid.uuid4()), company_id=world.company_id, order_inquiry_id=inquiry.id,
             so_line_id=pline.id, item_code=item_code or f"ZZT-IT-{key}", qty=Decimal(qty),
             verb=verb, state=state, ack_state="awaiting", note=f"ZZT note {key}",
+            created_at=row_created_at,
         )
         db.add(row)
         if superseded:
@@ -109,6 +112,7 @@ def _world(api, monkeypatch):
                 project_sales_order_id=order.id, project_line_id=pline.id, core_line_id=core.id,
                 line_no=n[0], item_code=row.item_code, kind="delayed", facts_json={},
                 decision="confirm", applied_state="superseded", applied_reason=CLOSED_REASON,
+                created_at=datetime(2026, 10, 6, 3, 0),
             ))
         db.flush()
         w.rows[key] = row
@@ -232,3 +236,88 @@ def test_cli_requires_an_inquiry_number():
     with pytest.raises(SystemExit) as exc:
         oi_closed_line_cleanup.main([])
     assert exc.value.code not in (0, None)
+
+
+def test_a_row_raised_after_the_dropped_decision_was_applied_is_not_cancelled(api, monkeypatch):
+    """Scoping: CS later re-decided the line with Buy > 0, so a NEW raised ORDER row exists on a
+    line that still carries the old superseded-closed batch row. Only rows raised before that
+    dropped decision belong to the clean-up."""
+    from scripts.oneoff import oi_closed_line_cleanup  # noqa: F401
+
+    w = _world(api, monkeypatch)
+    # Reuse line D's superseded row: a second ORDER row on a line whose dropped decision is
+    # older than the row (batch applied 6 Oct 03:00, row raised 9 Oct).
+    line_id = w.rows["D"].so_line_id
+    fresh = OrderInquiryRow(
+        id=str(uuid.uuid4()), company_id=w.world.company_id, order_inquiry_id=w.inquiry.id,
+        so_line_id=line_id, item_code="ZZT-IT-NEW", qty=Decimal("25"), verb=IV_ORDER,
+        state=INQUIRY_RAISED, ack_state="awaiting", note="ZZT re-decided",
+        created_at=datetime(2026, 10, 9, 9, 0),
+    )
+    w.db.add(fresh)
+    w.db.commit()
+    w.calls.clear()
+
+    out = _run(w, apply=True)
+
+    w.db.expire_all()
+    assert w.db.get(OrderInquiryRow, fresh.id).state == INQUIRY_RAISED
+    assert str(fresh.id) not in _cancelled_ids(out)
+    assert _cancelled_ids(out) == {str(w.rows["A"].id), str(w.rows["B"].id)}
+
+
+def test_the_cancel_note_is_appended_to_the_existing_note(api, monkeypatch):
+    w = _world(api, monkeypatch)
+
+    _run(w, apply=True)
+
+    w.db.expire_all()
+    note = w.db.get(OrderInquiryRow, w.rows["A"].id).note
+    assert "ZZT note A" in note, note
+    assert "dropped" in note, note
+
+
+def test_an_inquiry_number_shared_by_two_companies_is_refused_without_a_company(api, monkeypatch):
+    from app.models.base import set_company_scope
+    from app.models.company import Company
+    from app.models.project_so import ProjectSalesOrder
+    from scripts.oneoff import oi_closed_line_cleanup
+
+    w = _world(api, monkeypatch)
+    db = w.db
+    other_id = str(uuid.uuid4())
+    db.add(Company(id=other_id, name="ZZT Other Co", code=f"ZZC{other_id[:6]}"))
+    db.flush()
+    other_pso = ProjectSalesOrder(
+        provisional_ref=f"ZZT-PSO-{_hex()}", company_id=other_id,
+    )
+    db.add(other_pso)
+    db.flush()
+    db.add(OrderInquiry(
+        id=str(uuid.uuid4()), company_id=other_id, project_sales_order_id=other_pso.id,
+        inquiry_no=w.inquiry.inquiry_no, state=INQUIRY_RAISED,
+    ))
+    db.commit()
+    company_ids = frozenset({w.world.company_id, other_id})
+    set_company_scope(db, None)
+    try:
+        with pytest.raises((Exception, SystemExit)):
+            oi_closed_line_cleanup.run(db, w.inquiry.inquiry_no, apply=False)
+        out = oi_closed_line_cleanup.run(
+            db, w.inquiry.inquiry_no, apply=False, company_code="SRT"
+        )
+        assert _cancelled_ids(out) == {str(w.rows["A"].id), str(w.rows["B"].id)}
+    finally:
+        set_company_scope(db, frozenset({w.world.company_id}))
+
+
+def test_cli_accepts_a_company_argument(api, monkeypatch):
+    from scripts.oneoff import oi_closed_line_cleanup
+
+    w = _world(api, monkeypatch)
+
+    code = oi_closed_line_cleanup.main(
+        ["--inquiry", w.inquiry.inquiry_no, "--company", "SRT"], db=w.db
+    )
+
+    assert code in (0, None)
