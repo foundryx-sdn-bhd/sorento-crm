@@ -69,7 +69,7 @@ def _write(out: str, report: dict, run) -> None:
                 "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors, "lane_notes": r.outcome.lane_notes,
                 "delegated": (r.outcome.raw or {}).get("reply") is None and bool((r.outcome.raw or {}).get("delegate")),
                 "previous_bot_reply": r.previous_bot_reply,
-                "trace_digest": r.trace_digest, "replay_digests": r.replay_digests, "layers": r.layers,
+                "trace_digest": r.trace_digest, "replay_digests": r.replay_digests, "layers": r.layers, "needs_judge": bool(r.verdict.needs_judge),
             }
             fh.write(json.dumps(row) + "\n")
 

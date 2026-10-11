@@ -56,6 +56,12 @@ def build_digest(trace: list | None, reply_text: str, branch_kind: str | None) -
             for env in (entry.get("raw") or {}).get("envelopes") or []:
                 if isinstance(env, dict):
                     resolved.append({k: env.get(k) for k in ("tool", "entities", "miss", "unresolved", "error")})
+                    if env.get("tool") and env.get("tool_ran") is True:
+                        args: dict = {}
+                        for part in ((env.get("lane_ask") or {}).get("filters"), env.get("sales_ranking_frame"), env.get("low_stock_frame")):
+                            if isinstance(part, dict):
+                                args.update(part)
+                        tools.append({"tool": env["tool"], "args": args})
         if entry.get("tool"):
             tools.append({"tool": entry["tool"], "args": entry.get("args")})
     return {"parser": parser, "resolved": resolved, "tools": tools, "branch_kind": branch_kind, "reply_text": reply_text}
