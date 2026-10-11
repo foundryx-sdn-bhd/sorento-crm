@@ -1866,6 +1866,12 @@ def lane_parse_output(
         out["order_status"] = _DOCUMENT_STATUS_TO_ORDER_STATUS.get(key, status)
     else:
         out.setdefault("order_status", None)
+        if jsc.js_string(out.get("order_status") or "").strip() == "outstanding" and document:
+            # A raw "outstanding" the parser sent with no projected `status` is read through the document
+            # axis exactly as a projected one is (SO -> so_outstanding, DO -> do_outstanding).
+            out["order_status"] = _DOCUMENT_STATUS_TO_ORDER_STATUS.get(
+                (",".join(sorted(document)), "outstanding"), "outstanding"
+            )
     # Contract 38: an outstanding ask that named NO document is asked which one before
     # anything is fetched. The lane's gate reads this flag and adds the grant check it
     # is the only place able to make; the flag itself was set by the retired

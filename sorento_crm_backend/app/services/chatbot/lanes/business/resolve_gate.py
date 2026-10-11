@@ -574,6 +574,25 @@ def brand_tokens(entities: list[Any], brand_entities: Mapping[int, str] | None) 
     return out
 
 
+def _holds_several_asks(parse_output: dict[str, Any]) -> bool:
+    domains = {a.get("domain") for a in jsc.array(parse_output.get("asks")) if isinstance(a, dict) and a.get("domain")}
+    return len(domains) > 1
+
+
+def _allowed_entity_types(entities: list[Any], parse_output: dict[str, Any]) -> list[Any]:
+    """The resolver's type filter: the parser's hint per token, or, when the message holds SEVERAL asks
+    (REPORTS-STEP2 S3a, "<code> got stock? got outstanding for scr"), those hints plus the kinds each
+    ask's domain allows, so a token hinted as a product is still probed as the customer the other ask
+    needs. A single ask is unchanged."""
+    hints = [jsc.get(x, "hint") for x in entities]
+    domains = [a.get("domain") for a in jsc.array(parse_output.get("asks")) if isinstance(a, dict) and a.get("domain")]
+    if len(set(domains)) < 2:
+        return hints
+    from app.services.chatbot.lanes.business.gate import ALLOWED
+
+    return list(dict.fromkeys([*hints, *(t for d in domains for t in (ALLOWED.get(d) or []))]))
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -670,7 +689,7 @@ def resolve_entity_body(
         # parallel (the route's own `raw_tokens` contract), so the shared resolver's code
         # reader is asked about "TAP SRTWT5608" and not only the folded "TAPSRTWT5608".
         "raw_tokens": [jsc.nullish_str(jsc.get(x, "raw")) for x in entities],
-        "allowed_entity_types": [jsc.get(x, "hint") for x in entities],
+        "allowed_entity_types": _allowed_entity_types(entities, parse_output),
         "access_levels": (
             recomposed_access_levels
             if isinstance(recomposed_access_levels, list) and recomposed_access_levels
@@ -707,9 +726,13 @@ def resolve_entity_body(
     # Basin never ran. Present only when non-empty, so every body with nothing to lock is
     # byte-identical to today and every other caller of the route is untouched.
     locked = hint_locked_tokens(entities, brand_entities=brand_entities)
+    brands = brand_tokens(entities, brand_entities)
+    if _holds_several_asks(parse_output):
+        # Several asks (REPORTS-STEP2 S3a): a word hinted as a product may be the customer of the other ask,
+        # so only the decided brands stay locked.
+        locked = [t for t in locked if t in brands]
     if locked:
         body["hint_locked_tokens"] = locked
-    brands = brand_tokens(entities, brand_entities)
     if brands:
         body["brand_tokens"] = brands
     grounded_specs = [
