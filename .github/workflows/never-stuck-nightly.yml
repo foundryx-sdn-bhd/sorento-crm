@@ -1,21 +1,20 @@
-name: Never-stuck smoke (nightly)
+name: Never-stuck smoke (manual)
 
 # Guard G4 of documentation/reports/AUDIT-never-stuck-2026-10-01.md: open every app route
 # as an admin, a restricted user and an expired session, and fail on anything still loading
 # after 15 s, an expired session not on sign-in within 5 s, a refusal rendered as empty, or
 # raw permission text. Standard: documentation/reference/NEVER-STUCK-UI.md.
 #
-# Nightly and by hand only. Never on a PR or a push: about 1100 page visits plus a
-# production frontend build is too slow and too costly for every change (CI cap). One job,
-# and it skips itself when main has not moved since the last successful run.
+# By hand only (`gh workflow run never-stuck-nightly.yml --ref main`): the nightly schedule
+# was dropped by the owner on 10 Oct 2026 (CI-LEAN, documentation/plans/ci/PLAN-ci-lean-10oct.md;
+# ~30 billed minutes a night, red 3-9 Oct with nobody acting on it). Never on a PR or a push:
+# about 1100 page visits plus a production frontend build is too slow and too costly for every
+# change. One job, and it skips itself when main has not moved since the last successful run
+# unless dispatched with force=true.
 #
 # Failures are reported in the run's summary page (new failures first, then known failures
-# that now pass), with screenshots in the `never-stuck-report` artifact. A scheduled run
-# that fails emails the owner through GitHub's standard workflow-failure notice.
+# that now pass), with screenshots in the `never-stuck-report` artifact.
 on:
-  schedule:
-    # 02:47 Malaysia time (18:47 UTC), off the hour so it does not queue behind :00 crons.
-    - cron: "47 18 * * *"
   workflow_dispatch:
     inputs:
       force:

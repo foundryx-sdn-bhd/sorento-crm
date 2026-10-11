@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import json
 import os
 import re
@@ -150,6 +151,20 @@ def _sources(root: Path) -> dict[str, str]:
     return out
 
 
+@functools.lru_cache(maxsize=8)
+def _index_at(root: str) -> tuple[dict[str, str], dict[str, set[str]]]:
+    sources = _sources(Path(root))
+    return sources, {rel: _references(rel, text) for rel, text in sources.items()}
+
+
+def _index(root: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Every source file and the names it references, parsed once per root per process.
+
+    The CLI selects once, so this changes nothing there; the tests select over the real
+    backend more than once, and each parse of ~3,000 files is about 25 s (CI-LEAN)."""
+    return _index_at(str(root.resolve()))
+
+
 def select(
     changed: list[str],
     root: Path,
@@ -171,8 +186,7 @@ def select(
         for r in rel_changed if r.startswith("scripts/") and r.endswith(".py")
     }
     if changed_modules or conftest_dirs:
-        sources = _sources(root)
-        refs = {rel: _references(rel, text) for rel, text in sources.items()}
+        sources, refs = _index(root)
         targets = set(changed_modules)
         for rel, names in refs.items():
             if not _is_test_file(rel) and names & changed_modules:
