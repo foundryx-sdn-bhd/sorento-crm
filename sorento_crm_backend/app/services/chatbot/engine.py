@@ -46,6 +46,7 @@ from app.services.chatbot.contracts import (
     SALES_DOMAIN,
     SELF_CLOSING_BRANCH_KINDS,
     TURN_FAILURE_STAGES,
+    UNSUPPORTED_TOPIC_COPY,
     Envelope,
     named_count,
 )
@@ -5544,6 +5545,12 @@ def _run_stages_body(  # noqa: PLR0915
         # so every arm has it (`run_tail` carries `item["reply_language"]` to the next turn);
         # the business lane below recomputes it once its codes and names are known.
         item["reply_language"] = _turn_language(latest_user_message, remembered_before, profile)
+        if branch_kind == "not_supported" and verdict.get("domain_hint") in UNSUPPORTED_TOPIC_COPY:
+            # The fixed line for a topic the bot cannot answer is told in the contact's own language (the
+            # conversation's, else the saved one), whatever words the question used.
+            item["reply_language"] = language_mod.choose(
+                None, remembered_before.get("reply_language"), getattr(profile, "language", None)
+            )
 
         # Owner ruling, hand pass 10 (21 Sep 2026, `test_rearch_r10_handpass10_
         # replay.py::TestHandPass10PromotionAskRepeatsAfterATierPick`): a fresh
