@@ -388,3 +388,15 @@ def test_r4_detail_members_stay_in_the_products_company_without_a_scope(db, refs
     set_company_scope(db, None)  # an all-companies / API-key call
     body = client.get(f"{BASE}/{me}").json()
     assert [m["id"] for m in body["family_members"]] == [mine], body["family_members"]
+
+
+def test_family_members_carry_the_description(client, db, refs):
+    me = _mk(db, refs, "ZZTFAM8420-RL", family="ZZTFAM8420")
+    member = _mk(db, refs, "ZZTFAM8420-A", family="ZZTFAM8420")
+    plain = _mk(db, refs, "ZZTFAM8420-B", family="ZZTFAM8420")
+    db.execute(text("UPDATE products SET description = 'ZZT ONE PIECE TOILET 200MM' WHERE id = :i"), {"i": member})
+    db.expire_all()
+    body = client.get(f"{BASE}/{me}").json()
+    by_id = {m["id"]: m for m in body["family_members"]}
+    assert by_id[member]["description"] == "ZZT ONE PIECE TOILET 200MM"
+    assert "description" in by_id[plain] and by_id[plain]["description"] in (None, "")

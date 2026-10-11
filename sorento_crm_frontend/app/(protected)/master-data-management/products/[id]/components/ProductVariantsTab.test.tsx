@@ -432,3 +432,35 @@ describe('ProductVariantsTab - Family section', () => {
     expect(container.textContent).not.toContain('f-1-uuid');
   });
 });
+
+describe('ProductVariantsTab - Family member second line', () => {
+  it('shows the description under the code', () => {
+    renderFamily({
+      familyMembers: [
+        {
+          id: 'f-9-uuid',
+          product_code: 'SRTWC8357-RL-P',
+          product_name: 'SRTWC8357-RL-P',
+          description: 'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)',
+        },
+      ],
+    });
+    const link = familySection().getByRole('link', { name: /SRTWC8357-RL-P/ });
+    expect(link).toHaveTextContent('SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 200MM)');
+  });
+
+  it('falls back to the product name when the description is empty', () => {
+    renderFamily({
+      familyMembers: [
+        {
+          id: 'f-8-uuid',
+          product_code: 'SRTWC8357-300-RL',
+          product_name: 'WC 8357 300 RL name',
+          description: '',
+        },
+      ],
+    });
+    const link = familySection().getByRole('link', { name: /SRTWC8357-300-RL/ });
+    expect(link).toHaveTextContent('WC 8357 300 RL name');
+  });
+});
