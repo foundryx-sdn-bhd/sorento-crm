@@ -19,7 +19,7 @@ except ImportError:
     _DB_ERRORS = ()
 from pathlib import Path
 
-from .budget import PRICES, Budget
+from .budget import PRICES, Budget, cost_usd
 from .cases import DataDirInRepoError, Case, _repo_root, load_cases, parse_case
 from .engine import load_engine
 from .engine import Outcome
@@ -44,6 +44,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--prompt-version")
     p.add_argument("--regrade", metavar="RUN_DIR")
     p.add_argument("--judge-budget-usd", type=float, default=2.0)
+    p.add_argument("--topics")
+    p.add_argument("--ids-file")
+    p.add_argument("--estimate-only", action="store_true")
     p.add_argument("--baseline")
     p.add_argument("--out")
     p.add_argument("--seed", type=int, default=0)
@@ -85,6 +88,54 @@ def _git_provenance() -> tuple[str | None, bool | None]:
     except (OSError, subprocess.SubprocessError):
         return os.environ.get("EVAL_APP_SHA") or None, None
     return os.environ.get("EVAL_APP_SHA") or sha, dirty
+
+
+def _select(cases: list[Case], topics: str | None, ids_file: str | None) -> list[Case]:
+    if not topics and not ids_file:
+        return cases
+    keep: set[str] = set()
+    for prefix in [t.strip() for t in (topics or "").split(",") if t.strip()]:
+        hit = [c.id for c in cases if c.topic_code == prefix or (c.topic_code or "").startswith(prefix + ".")]
+        if not hit:
+            raise ValueError(f"unknown topic {prefix!r}: no case matches")
+        keep.update(hit)
+    if ids_file:
+        raw = json.loads(Path(ids_file).read_text())
+        ids = raw.get("ids", []) if isinstance(raw, dict) else raw
+        known = {c.id for c in cases}
+        for cid in ids:
+            if cid not in known:
+                raise ValueError(f"unknown case id {cid!r}")
+        keep.update(ids)
+    return [c for c in cases if c.id in keep]
+
+
+def _load_baseline(path: str | None, results: list) -> dict | None:
+    """A report.json file as is; a run dir is cut to the rows this run also has."""
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_dir():
+        return json.loads(p.read_text())
+    base = json.loads((p / "report.json").read_text())
+    mine = {(r.case_id, r.variant_kind) for r in results}
+    rows = [
+        r for r in (json.loads(x) for x in (p / "results.jsonl").read_text().splitlines() if x.strip())
+        if (r["case_id"], r.get("variant_kind")) in mine
+    ]
+    passed = [r["label"] in ("correct", "good_clarify") for r in rows]
+    strict = [ok and not r.get("needs_judge") for ok, r in zip(passed, rows)]
+    topics: dict[str, list[bool]] = {}
+    for ok, r in zip(passed, rows):
+        topics.setdefault(str(r.get("topic_code")), []).append(ok)
+    return {
+        **base,
+        "pass_rate": sum(passed) / len(passed) if passed else None,
+        "strict_pass_rate": sum(strict) / len(strict) if strict else None,
+        "pass_rate_by_topic": {t: sum(v) / len(v) for t, v in topics.items()},
+        "_restricted": True,
+        "_matched": len(rows),
+    }
 
 
 def _inside_repo(path: str) -> bool:
@@ -141,7 +192,7 @@ def _regrade(args, cases: list[Case]) -> int:
     src_path = Path(args.regrade) / "report.json"
     src = json.loads(src_path.read_text()) if src_path.exists() else {}
     run = RunResult(results=results, stopped_reason=None, wall_s=src.get("wall_s", 0.0))
-    baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
+    baseline = _load_baseline(args.baseline, results)
     report = build_report(run, baseline, args.budget_model)
     report.update(
         engine=src.get("engine", "regrade"), split=args.split, variants=src.get("variants", args.variants),
@@ -174,6 +225,21 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.regrade:
         return _regrade(args, loaded.cases)
+    try:
+        selected = _select(loaded.cases, args.topics, args.ids_file)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    calls = sum(
+        (1 + sum(1 for h in c.history if h.get("role") == "user"))
+        * (1 + {"none": 0, "one": min(1, len(c.variants)), "all": len(c.variants)}[args.variants])
+        for c in selected
+    )
+    per_call = cost_usd({"prompt": 40_000, "cached": 38_000, "output": 400}, args.budget_model)
+    print(f"selected {len(selected)} cases, ~{calls} calls, ~${calls * per_call:.2f}", file=sys.stderr)
+    if args.estimate_only:
+        return 0
+    loaded.cases = selected
     if args.out and _inside_repo(args.out):
         print("--out must be outside the git work tree", file=sys.stderr)
         return 2
@@ -214,7 +280,6 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     engine = load_engine(args.engine, **kw)
     budget = Budget(args.budget_usd, args.budget_model) if args.budget_usd is not None else None
-    baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     calibrated = False
     if judge is not None:
         items = _calibration_items(args.data_dir)
@@ -239,10 +304,12 @@ def main(argv: list[str] | None = None) -> int:
             seen[key] = seen.get(key, 0) + 1
     mismatch = prompt["source"] != "unknown" and any(k != str(prompt["version"]) for k in seen)
     git_sha, git_dirty = _git_provenance()
+    baseline = _load_baseline(args.baseline, run.results)
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
         engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
         prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
+        selection={"topics": args.topics.split(",") if args.topics else None, "ids_file": args.ids_file, "cases": len(loaded.cases)},
         prompt=prompt, prompt_versions_seen=seen, git_sha=git_sha, git_dirty=git_dirty,
         judge_stopped=judge.stopped if judge is not None else None,
         judge_usd=judge.budget.spent if judge is not None else 0.0,

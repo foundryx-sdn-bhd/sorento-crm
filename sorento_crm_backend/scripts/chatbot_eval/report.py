@@ -107,6 +107,8 @@ def build_report(
             "total": _diff(report["pass_rate"], baseline.get("pass_rate")),
             "strict_total": _diff(report["strict_pass_rate"], baseline.get("strict_pass_rate")),
             "comparable": baseline.get("grader_version") == GRADER_VERSION,
+            "restricted": bool(baseline.get("_restricted")),
+            "matched": baseline.get("_matched"),
             "by_topic": {
                 t: _diff(rate, base_topics.get(t)) for t, rate in by_topic_rate.items() if t in base_topics
             },
