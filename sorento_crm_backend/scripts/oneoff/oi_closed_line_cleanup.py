@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Sequence
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.models.base import company_scope, set_company_scope  # noqa: E402
-from app.models.company import Company
+from app.models.company import Company  # noqa: E402
 from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow  # noqa: E402
 from app.models.project_so import (  # noqa: E402
     INQUIRY_CANCELLED,
@@ -46,6 +46,7 @@ from app.models.project_so import (  # noqa: E402
     OrderInquiry,
     OrderInquiryRow,
     ProjectSalesOrderLine,
+    SOSupplyDecision,
 )
 from app.models.order import SalesOrderLine  # noqa: E402
 from app.services.project_order_inquiry_service import ProjectOrderInquiryService  # noqa: E402
@@ -74,6 +75,24 @@ def _report(row, verb_note, core, reason) -> Dict[str, Any]:
         "reason": reason,
         "action": "cancel",
     }
+
+
+def _redecided_after(db, project_sales_order_id, project_line_id, cutoff) -> bool:
+    """An ACTIVE supply decision confirmed after `cutoff` whose snapshots name the line."""
+    decisions = (
+        db.query(SOSupplyDecision)
+        .filter(
+            SOSupplyDecision.project_sales_order_id == project_sales_order_id,
+            SOSupplyDecision.state == "active",
+            SOSupplyDecision.confirmed_at > cutoff,
+        )
+        .all()
+    )
+    return any(
+        str(snap.get("project_line_id")) == str(project_line_id)
+        for decision in decisions
+        for snap in (decision.line_snapshots or [])
+    )
 
 
 def run(
@@ -140,6 +159,12 @@ def run(
                 cutoff = applied_at or candidate.created_at
                 if cutoff is None or row.created_at is None or row.created_at <= cutoff:
                     dropped = candidate
+                    # CS re-decided the line after the drop: the row may have been updated
+                    # in place (keeping its old created_at), so it is live, not stranded.
+                    if cutoff is not None and _redecided_after(
+                        db, candidate.project_sales_order_id, row.so_line_id, cutoff
+                    ):
+                        dropped = None
                     break
         reason: Optional[str] = None
         if row.verb in (IV_ORDER, IV_ORDER_BACK):
