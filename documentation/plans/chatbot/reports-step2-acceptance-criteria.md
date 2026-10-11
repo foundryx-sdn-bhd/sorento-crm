@@ -152,3 +152,28 @@ Acceptance:
 - AC-26 A contact without `sales_orders.outstanding` asking outstanding still gets the DO-only reply it gets today.
 - AC-27 MCP: `present_response("crm_report", <full low_stock body>)` gives a reply with "As of:", the low item count and
   item lines; no supplier names when the body has no supplier column; never the could-not-run text.
+
+## S3a: the six report failure shapes from the DEV slice (crew go 11 Oct; reply/tool layer first)
+
+Measured on the 13 DEV report cases on the branch (parser v50 pinned). Six fail by their expectation notes. Each AC
+below is one shape; the case id is the DEV evidence. No keyword or regex rules on the user's text: the parser's
+reading drives every decision; code changes are in resolution, tool args, state and reply copy.
+
+- AC-28 (rpt-025) A product code shared by two companies the contact belongs to (e.g. Sorento and Mocha twins):
+  outstanding and the delivered sales report count the lines of EVERY same-code product in the contact's companies,
+  not one arbitrary row (`outstanding_report_service._resolve_products` :97-120 keeps one row per code today; check
+  `sales_report_service._resolve_products` :127 and `sales_report_delivered` for the same pattern).
+- AC-29 (rpt-012) An outstanding ask naming two locations ("for location BRW-IB & BRW-AM") answers both: the call
+  carries both warehouses and the reply shows each location's figure and the total (the report's by-location
+  breakdown), not only the first location.
+- AC-30 (rpt-018) After an outstanding summary that offered the delivery order list, a message that asks for that
+  list in other words ("Delivery order list") returns the DO rows of the SAME held report (detail do), not a fresh
+  summary.
+- AC-31 (rpt-032, rpt-035) An ask the bot cannot answer from its data, read by the parser as such: overdue /
+  receivable / payment balance / account statement -> wording line 1; dealer locator ("nearby dealer") -> line 2
+  (draft wording filed for the owner; zh/ms via the label catalog). No figures shown, never stuck. Needs the parser
+  to classify these asks (prompt rule in a new parser version for the eval; the switch to production is the owner's).
+- AC-32 (rpt-015) A compound message "<code> got stock? got outstanding for <customer>": both halves are answered;
+  the code resolves to the one product the customer typed (CB88SS/diy -> CB88SS-DIY), not a family of 20; the
+  outstanding half is filtered by the named customer.
+- AC-33 The 7 DEV report cases that pass today still pass (no regression), measured live on the slice.
