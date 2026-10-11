@@ -131,6 +131,10 @@ EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL
   checks cannot settle, and only once it agrees with human verdicts (`calibration/*.json`) on at least
   90%. It has its own spend cap (`--judge-budget-usd`, default $2) and sends the masked case text and
   the bot reply to Anthropic. The key is never in the repo; crew's gate loads it at runtime.
+- Per-step gate (owner ruling 11 Oct): the hidden cases of the topics a PR touches plus a fixed 30-case
+  cross-topic smoke (`--topics <topic_code prefixes> --ids-file <smoke list>`; crew's `eval-gate.sh --topics ...
+  --smoke`). The full hidden set only for big decisions. Every run prints `selected N cases, ~C calls, ~$X` first;
+  `--estimate-only` stops there. A baseline given as a run dir is compared on the same case ids only.
 - Per layer: each result also scores understood (parser domain / intent / entities), resolved (records),
   tool (name + params) and reply, wherever the case label carries `understood`, `expected_resolved` or `tool`
   (filled over time). The report's `by_layer` and `first_failing_layer` say which layer broke.
