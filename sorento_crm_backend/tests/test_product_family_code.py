@@ -205,7 +205,14 @@ _USER = {"id": str(uuid.uuid4()), "email": "family@example.com"}
 
 
 @pytest.fixture()
-def client(db):
+def client(db, monkeypatch):
+    from app.services.user_service import UserPermissionService
+
+    # The family routes are gated on master_data.products.edit; this caller holds it.
+    monkeypatch.setattr(
+        UserPermissionService, "check_user_has_permission",
+        lambda self, uid, slug: slug == "master_data.products.edit",
+    )
     from app.main import app
     from app.database import get_db
     from app.dependencies import get_current_user, get_current_user_or_api_key
