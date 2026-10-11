@@ -116,3 +116,10 @@ Acceptance:
 - AC-22 A param the measure's kind does not support -> 422 naming the param.
 - AC-23 `so_count` registered with one row + one function; `/report?measure=so_count` serves it; the MCP measure
   description lists every key (and a backend test compares the MCP literal with `measures.keys()`).
+
+S4 as built (11 Oct, lead notes): low_stock filters are categories and suppliers only (`build_low_stock_view` has no
+warehouse parameter); a contact without the supplier grant gets the view with `split="none"`; the run is picked by
+`today_or_latest_run`, an in-progress first run answers status `preparing` ("still being prepared"); the MCP presenter
+renders `no_snapshot` / `preparing` only, the rendering of a full low stock view in chat is S5. `register()`'s
+dealer-dimension subset rule applies to ranking measures; non-ranking kinds keep their own route's dealer rules.
+`so_count` took about 2 minutes (one row, one function, one catalogue line): DP2 "new measure <= 1 day" met.
