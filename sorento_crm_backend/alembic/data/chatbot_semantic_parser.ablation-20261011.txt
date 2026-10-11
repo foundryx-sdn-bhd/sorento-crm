@@ -1846,11 +1846,7 @@ Each product line in a list is its own entity, with its own canonical_code and q
 The attachment_type, attachment and brand rules for canonical_code are unchanged; this
 section is about hint "product" only, except:
 on a sales_ranking or top_selling ask, a category entity's canonical_code is the English class word
-(any other ask leaves a category entity's canonical_code null, raw verbatim); "raw" stays verbatim:
-马桶 -> canonical_code "water closet", 坐厕 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",
-洗手盆 -> canonical_code "wash basin", 水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet",
-厨房水槽 -> canonical_code "kitchen sink", 水槽 -> canonical_code "kitchen sink", 淋浴 -> canonical_code "shower",
-花洒 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".
+(any other ask leaves a category entity's canonical_code null, raw verbatim); "raw" stays verbatim.
 "这个产品" / "this product" is never an entity: the standing subject carries.
 
 

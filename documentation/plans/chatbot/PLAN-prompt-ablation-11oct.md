@@ -9,8 +9,9 @@ Q1 (a) one DEV run with every cut at once; trace flips to blocks through the par
 trace; restore only guilty blocks. Q2 (a) a cut is guilty only when a case passes on v50, fails on
 the trim, fails again on a re-run, and its parser JSON changed in a field the cut governs. Q3 (a)
 cap ~450 live calls today (dev key). Q4 (a) cut the grammar-particles block; if "de" comes back as
-a warehouse, restore it and record that as evidence. Q5 (a) KEEP the Chinese -> English class map
-(our taxonomy). Drop the 2 duplicate sections. Crew runs the hidden gate before any promotion.
+a warehouse, restore it and record that as evidence. Q5 overruled by the OWNER (11 Oct): the class map is CUT too (C57); the system has more
+categories than a static prompt holds, and matching a mention in any language belongs to the
+resolver (investigation in Results). Drop the 2 duplicate sections. Crew runs the hidden gate before any promotion.
 
 ## Shape (simplest thing)
 
@@ -72,7 +73,8 @@ teaching, number / ordinal / yes-no words, honorifics, grammar particles, relati
 | C39 | ACCOUNT 1746-1748 | account spelling list -> one line (any spelling; Roman numerals are integers) |
 | C40 | LOW STOCK FILTERS 1772-1818 | translation lists, "semua", "全部", "ikut ...", "按...", the Malay and Chinese examples, "batal"; KEEP "categories in English" |
 | C41 | SALES RANKING 1834-1845, 1865 | Chinese words in the business-model line and examples, Chinese basis line; KEEP "a dealer IS our customer" |
-| C42 | PRODUCT CODE 1931, 1940-1941 | "paip", "龙头" in the type-word list and the Malay example; KEEP the Chinese -> English class map (Q5) |
+| C42 | PRODUCT CODE 1931, 1940-1941 | "paip", "龙头" in the type-word list and the Malay example |
+| C57 | PRODUCT CODE 1958-1961 | the Chinese -> English class map (owner 11 Oct); keep the rule "on sales_ranking / top_selling a category canonical_code is the English class word" |
 | C43 | TRAP SPECS 2010-2013, 2027, 2033 | "tandas", "jamban", "马桶", "坐厕", "ada stok", "有货", the Malay example, "s trap pula", "P弯呢" |
 | C44 | PROMOTION KIND 1973 | "传单" |
 | C45 | MEMORY 2075 | Malay / Chinese examples |

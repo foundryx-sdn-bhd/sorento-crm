@@ -44,14 +44,14 @@ CUTS: list[tuple[str, str, str]] = [
     # C03 DECISIVE DOMAIN TERMS: any-language boilerplate, resource_attachment and ideate lists.
     (
         "C03a",
-        """ — in ANY
-language, paraphrase, or misspelling, matched by MEANING not spelling — SET that""",
+        """ \u2014 in ANY
+language, paraphrase, or misspelling, matched by MEANING not spelling \u2014 SET that""",
         """, SET that""",
     ),
     (
         "C03b",
         """DECISIVE in any language,
-      paraphrase, or misspelling — "warranty", "katalog", "warranty Sorento", "price
+      paraphrase, or misspelling \u2014 "warranty", "katalog", "warranty Sorento", "price
       tag template", "container status list", "senarai status kontena", "shipping schedule".""",
         """DECISIVE: "warranty", "warranty Sorento", "price tag template", "container status list", "shipping schedule".""",
     ),
@@ -118,8 +118,8 @@ language, paraphrase, or misspelling, matched by MEANING not spelling — SET th
     # C07 MESSAGE TYPE.
     (
         "C07a",
-        """"escalate to <team>", "eskalasi", "升级" — the""",
-        """"escalate to <team>" — the""",
+        """"escalate to <team>", "eskalasi", "升级" \u2014 the""",
+        """"escalate to <team>" \u2014 the""",
     ),
     (
         "C07b",
@@ -153,17 +153,17 @@ never appear in entities[] under any hint.
     # follows is kept whole under its own header so it is not part of the confidence body.
     (
         "C10",
-        """Each entity also carries a "confident" boolean — your certainty that entity.raw is ONE
+        """Each entity also carries a "confident" boolean \u2014 your certainty that entity.raw is ONE
 cleanly-typed referent, and NOT a mash of several concepts forced together.
   - confident: true  → entity.raw is a single clean referent: a single word, a multi-word
     phrase that names ONE thing ("water closet", "skind enterprise sdn bhd"), or a part
-    the USER explicitly labeled. This is the DEFAULT — when unsure, prefer true.
+    the USER explicitly labeled. This is the DEFAULT \u2014 when unsure, prefer true.
   - confident: false → you had to cram MORE THAN ONE concept/type into a single
     entity.raw because the user gave NO separation or label, so you cannot split it
     without guessing. Example: "one siew srtkt72ss" = quantity + a customer-ish name +
     a product code mashed together with no labels → ONE order entity, confident:false.
   A lone code or single token is ONE clean referent → confident:true EVEN IF you doubt it
-  exists in the system — existence is the resolver's job, not yours. Set confident:false
+  exists in the system \u2014 existence is the resolver's job, not yours. Set confident:false
   ONLY when you had to cram MORE THAN ONE untyped concept into a single raw because the
   user gave no separation or label.
   When the user DOES label the parts, SPLIT into separate entities, each confident:true:
@@ -814,6 +814,16 @@ could mean two different spans ("last quarter" in January) -> ask, as for any da
         """, and neither one absorbs the month into
 nothing.""",
         """.""",
+    ),
+    # C57 (owner ruling 11 Oct, overrides Q5): the Chinese -> English class map.
+    (
+        "C57",
+        """:
+马桶 -> canonical_code "water closet", 坐厕 -> canonical_code "water closet", 面盆 -> canonical_code "wash basin",
+洗手盆 -> canonical_code "wash basin", 水龙头 -> canonical_code "tap", 浴室柜 -> canonical_code "bathroom cabinet",
+厨房水槽 -> canonical_code "kitchen sink", 水槽 -> canonical_code "kitchen sink", 淋浴 -> canonical_code "shower",
+花洒 -> canonical_code "shower", 浴缸 -> canonical_code "bathtub", 小便斗 -> canonical_code "urinal".""",
+        ".",
     ),
     # D01 / D02: duplicate sections (already stated under MESSAGE TYPE and REQUESTED ATTRIBUTES).
     (
