@@ -4711,7 +4711,7 @@ def _run_stages_body(  # noqa: PLR0915
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
             held_group = ((open_ask.get("extras") or {}).get("args") or {}).get("group_by")
             raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
-            if open_ask.get("asking") == "period" and held_group and report_ask.GROUP_BY.get(raw_group, raw_group) == held_group:
+            if open_ask.get("asking") == "period" and (not raw_group or report_ask.GROUP_BY.get(raw_group, raw_group) == held_group):
                 # The same ranking restated with still no period: the lane re-asks it once, in
                 # other words, and counts the miss against the same bound a slot answer has. Another
                 # ranking starts its own period question at zero.
