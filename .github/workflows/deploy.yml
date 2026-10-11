@@ -400,7 +400,8 @@ jobs:
             pull_request)
               # A merge tree whose PR gate already passed (a re-label with no
               # new commit on either side) tests nothing (CI-COST round 2:
-              # 1.15 runs per head, 4-11 Oct). `PUSH_AFTER` is the merge
+              # 1.15 runs per head, 4-11 Oct; the PR gate still runs its
+              # secret scan). `PUSH_AFTER` is the merge
               # commit here. The marker's own prefix keeps a release, which
               # looks up `validated-tree-`, running its own tests. A failed
               # lookup tests.
@@ -1411,7 +1412,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ ((github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true') || needs.changes.outputs.frontend == 'true') && 0 || 1 }}
+          fetch-depth: ${{ (github.event_name == 'pull_request' || needs.changes.outputs.frontend == 'true') && 0 || 1 }}
 
       # The four fast gates, folded into this job on a PR (CI-COST round 2):
       # as separate jobs each billed a whole minute for 16-54 s of work (run
@@ -1427,8 +1428,12 @@ jobs:
         if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
         run: python3 scripts/pii_guard.py
 
+      # Not skipped on a validated tree: the marker is keyed on the merge
+      # TREE, the scan reads commit HISTORY (a commit adding a secret and one
+      # reverting it leave a tree that already passed; a merge commit lands
+      # both).
       - name: Secret scan (gitleaks)
-        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
+        if: github.event_name == 'pull_request'
         env:
           RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
         run: bash scripts/ci_gitleaks.sh
