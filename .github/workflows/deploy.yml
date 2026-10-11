@@ -57,7 +57,7 @@ on:
   # THE RELEASE. Run on main by the orchestrator after the owner has merged a
   # batch:
   #   gh workflow run deploy.yml --repo foundryx-sdn-bhd/sorento-crm --ref main
-  #   ... -f full_suite=true   the full sharded suite instead (~250 billed)
+  #   ... -f full_suite=true   the full sharded suite instead (~470 billed)
   #   ... -f skip_tests=true   build + deploy only
   #   ... -f rebuild_all=true  build every image even if its tree is in the registry
   # The LEAN release (CI-LEAN, 10 Oct 2026, the default): `changes` diffs main's
@@ -65,9 +65,13 @@ on:
   # (`lean-gate`), runs the core tier (sorento_crm_backend/tests/release_core.txt)
   # plus every backend test file the batch reaches (the PR gate's import
   # selection), the MCP suite and tsc + the related vitest files when those
-  # changed. A selection over the cap, a changed tests/conftest.py, no earlier
-  # release, a failed lookup or `full_suite` runs the full shards instead
-  # (owner Q4: never cut a selection). A tree whose release tests already
+  # changed. A selection over the budget or a changed tests/conftest.py stays
+  # in that one job with the core tier plus the batch's changed test files
+  # (CI-COST, 11 Oct 2026: owner target <= ~60 billed per release; Q4's "no
+  # cap" sent release 38099410256 to the full shards, ~468 billed). Only
+  # `full_suite`, no earlier release, a failed lookup, a batch at the compare
+  # API's 300-file cap or a batch that changes the test harness
+  # (tests/conftest.py, tests/_pg_fixture.py) run the full shards. A tree whose release tests already
   # passed is not tested again. In parallel build-images builds what changed,
   # then build-and-deploy, which carries `environment: production` and
   # therefore PAUSES until the owner approves the deployment in GitHub
@@ -82,7 +86,7 @@ on:
         default: false
         type: boolean
       full_suite:
-        description: "Run the full sharded suite instead of the lean release tests (core tier + what the batch since the last release reaches); about 250 billed minutes"
+        description: "Run the full sharded suite instead of the lean release tests (core tier + what the batch since the last release reaches); about 470 billed minutes (release 38099410256)"
         required: false
         default: false
         type: boolean
@@ -431,9 +435,15 @@ jobs:
       backend_tests: ${{ steps.select.outputs.tests || steps.filter.outputs.backend_tests }}
       # A lean release (CI-LEAN): `release-tests` (`lean-gate`) runs the
       # core tier plus the selection, and the shards stay off. A selection
-      # over the cap (or a changed tests/conftest.py) turns it off, and the
-      # full shards run the whole suite instead (owner Q4: no cap).
-      lean: ${{ steps.filter.outputs.lean == 'true' && steps.select.outputs.full != 'true' }}
+      # over the budget stays lean and runs
+      # the core tier plus the batch's changed test files (the select step's
+      # `tests`). It used to read `select.full` here and drop to the full
+      # shards: release 38099410256 reached 2076 files through
+      # app/models/__init__.py and billed ~468 minutes (CI-COST, 11 Oct 2026).
+      # The full shards run only on full_suite, a diff that cannot be
+      # established, or a test harness change (the filter step leaves `lean`
+      # unset then).
+      lean: ${{ steps.filter.outputs.lean == 'true' }}
       # The last successful release's head: what `vitest --changed` diffs to.
       base_sha: ${{ steps.filter.outputs.base_sha }}
     steps:
@@ -549,6 +559,12 @@ jobs:
             # truncated, so it cannot pick the tests. Full suite.
             lean=false; files=""; why="$count files reaches the compare API's 300-file cap: every area counts as changed"
           fi
+          # A harness change alters how every test runs, so no selection can
+          # scope it: full shards (CI-COST owner ruling, 11 Oct 2026; rare).
+          if [ "${lean:-false}" = "true" ] \
+              && grep -Eq '^sorento_crm_backend/tests/(conftest|_pg_fixture)\.py$' <<< "$files"; then
+            lean=false; files=""; why="the batch changes the test harness (tests/conftest.py or tests/_pg_fixture.py): every area counts as changed"
+          fi
           if [ -n "$why" ]; then
             echo "docs_only=false: $why"
           elif [ "${lean:-false}" = "true" ]; then
@@ -618,8 +634,8 @@ jobs:
           # these is covered by the release run, not by the `ci` run.
           SCM_RE='^(sorento_crm_backend/(app/(api/v1/scm|services/scm|modules/scm)/|app/models/scm|app/schemas/scm_|tests/scm/|tests/conftest\.py$|tests/_pg_fixture\.py$|tests/ci_excluded\.txt$|\.test_durations$|scripts/bootstrap_env\.py$|requirements\.txt$|alembic/versions/[^/]*scm)|\.github/workflows/deploy\.yml$)'
           # A lean release: the core tier always runs, so backend counts
-          # whatever the batch holds, and `scm` is true so that a selection
-          # over the cap lands on the full shards, SCM ones included.
+          # whatever the batch holds. `scm` is true for the record only: the
+          # SCM shards gate on `lean` and stay off.
           {
             if [ "${lean:-false}" = "true" ]; then echo "backend=true"; else
               flag backend '^(sorento_crm_backend/|\.github/workflows/deploy\.yml$)'; fi
