@@ -1368,6 +1368,20 @@ def record_top_selling_asked(focus: Focus, envelopes: list[dict[str, Any]]) -> N
                 slot.pop("ranked_codes", None)
 
 
+def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
+    """The parser read a ranking ("top 10 sorento dealer") as `sales_report`: a count or a
+    direction and no product or customer to total. That is the top selling ask (the lane asks
+    quantity or amount), never the per-subject sales report, which needs a subject."""
+    order_status = verdict.get("order_status")
+    if not (isinstance(order_status, str) and order_status.strip() == "sales_report"):
+        return False
+    if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
+        return False
+    return not any(
+        isinstance(e, dict) and e.get("hint") in ("product", "customer") for e in (verdict.get("entities") or [])
+    )
+
+
 def _top_selling_rules(
     focus: Focus, verdict: dict[str, Any], decision: Decision, trace: Trace, *, was_ranking: bool = False
 ) -> None:
@@ -1392,7 +1406,9 @@ def _top_selling_rules(
       customer, `entity_resolver._DOMAIN_HINT_EXPANSIONS`).
     """
     order_status = verdict.get("order_status")
-    asked = isinstance(order_status, str) and order_status.strip() == TOP_SELLING_STATUS
+    asked = (isinstance(order_status, str) and order_status.strip() == TOP_SELLING_STATUS) or _is_unsubjected_sales_ranking(
+        verdict
+    )
     # A verdict the parser itself named a sales ranking is a new ask (owner held-state rule:
     # a new intent always wins), never an answer inside an open top selling question.
     new_sales_ranking = isinstance(order_status, str) and order_status.strip() == "sales_ranking"

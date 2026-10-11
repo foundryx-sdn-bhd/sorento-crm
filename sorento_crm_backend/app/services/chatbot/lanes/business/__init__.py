@@ -684,6 +684,15 @@ def _sales_report_not_enabled() -> dict[str, Any]:
     }
 
 
+#: A report that needs a product or a customer and was given neither (a 422 `subject_required`
+#: from the route, or the same case caught before the call).
+SUBJECT_REQUIRED_ASK = "Which product or customer is this for?"
+
+#: A permanent 4xx from a report route: the ask as worded cannot run, and asking again will not
+#: change that, so the retry sentence is the wrong thing to say.
+REPORT_REFUSED_LINE = "I can't run that report as asked."
+
+
 def _which_customer_ask() -> dict[str, Any]:
     """#1262 slice 2 (F1c), AC-S2-3: the turn's only customer subject is a stored id
     that never resolved to a real uuid (a kind-pick's printed label, never re-typed) -
@@ -1272,15 +1281,24 @@ def _resolve_report_product_and_location(
             if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
         }
         typed_codes.discard("")
+        matched: list[str] = []
         for e in jsc.array(entities):
             if not isinstance(e, dict) or e.get("entity_type") != "product":
                 continue
             code = e.get("code") or e.get("canonical_code")
             if jsc.truthy(code) and jsc.js_string(code).strip().casefold() in typed_codes:
-                semantic_input["outstanding_product_code"] = jsc.js_string(code)
-                break
+                matched.append(jsc.js_string(code))
+        matched = list(dict.fromkeys(matched))
+        if len(matched) > 1:
+            # Every typed code answers (the fetch sends `product_codes`), not just the first.
+            semantic_input["outstanding_product_codes"] = matched
+        elif matched:
+            semantic_input["outstanding_product_code"] = matched[0]
 
-        if not jsc.truthy(semantic_input.get("outstanding_product_code")):
+        if not (
+            jsc.truthy(semantic_input.get("outstanding_product_code"))
+            or semantic_input.get("outstanding_product_codes")
+        ):
             for e in jsc.array(parse_output.get("outstanding_refinement_entities")):
                 if not isinstance(e, dict) or jsc.js_string(e.get("hint") or "") != "product":
                     continue
@@ -2145,6 +2163,20 @@ def run_fetch(
             semantic_input["order_status"] = "outstanding"
             semantic_input["so_bucket_refused"] = True
 
+    # REPORTS-STEP2 gate fix: the sales report route answers 422 `subject_required` without a
+    # product or a customer, so a call with neither (a brand-only ask the parser filed as a
+    # sales report) is a question to ask, never a call that fails. The linked-customer path
+    # above has already put the contact's links into `entities` as customers.
+    if tool_name == "crm_sales_report" and not (
+        has_product
+        or has_customer
+        or carried_subject
+        or any(isinstance(e, dict) and e.get("entity_type") in ("product", "customer") for e in entities)
+    ):
+        if trace is not None:
+            trace.add("sales_report", {"asked": "subject_required"})
+        return _fixed_reply(SUBJECT_REQUIRED_ASK)
+
     # DO-ASK-SIMPLIFY security S1 (PR #1433): a transporter named on a DO list ask would
     # filter the rows by it, telling the contact who carried each one. Without the
     # `delivery_orders.transporter` reveal the ask is refused before any fetch (review S5:
@@ -2341,11 +2373,25 @@ def run_fetch(
     if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
         # REPORT-ENGINE slice 1b: the route's own refusal (the audience check is the
         # route's) is said as its message, a 404 as one line.
-        refusal = report_ask.error_line(envelope) if tool_name == report_ask.TOOL else None
+        refusal = (
+            report_ask.error_line(envelope)
+            if tool_name == report_ask.TOOL or tool_name in business_services.REPORT_MEASURE_OF
+            else None
+        )
         if refusal:
             if trace is not None:
                 trace.add("report_ask", {"refused": envelope.get("status_code")})
             return _fixed_reply(refusal)
+        status_code = envelope.get("status_code")
+        if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in (408, 429):
+            # A permanent refusal, not a failure to retry. The route's own words are never echoed.
+            if trace is not None:
+                trace.add("report_refused", {"tool": tool_name, "status_code": status_code})
+            detail = envelope.get("detail")
+            code = detail.get("code") if isinstance(detail, dict) else None
+            if status_code == 422 and code == "subject_required":
+                return _fixed_reply(SUBJECT_REQUIRED_ASK)
+            return _fixed_reply(REPORT_REFUSED_LINE)
         return _error_fragment(envelope["error"])
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
