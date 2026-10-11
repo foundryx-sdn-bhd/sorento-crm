@@ -83,3 +83,17 @@ AC-10 Product detail, Variants tab: a Family section (approved mock,
 `documentation/mockups/code-variants/index.html`) showing the family code or an empty state,
 a Manual badge when manual, Edit (inline input, Save / Cancel), Reset to auto when manual, and
 the same-family products as links to their detail pages. Usable at 375px and 1280px.
+
+## Slice 2 (owner, 11 Oct 2026): DIY / -N / -PP alternatives, like -NEW
+
+Crew rulings 11 Oct: Q1 (a) PP-for-NL rule; Q2 (a) base -> suffixed for all, CB55CR-N named for a
+hand unlink after the prod run; Q3 (b) no attachment fallback in this lane.
+
+AC-11 The existing code rule (`product_alternative_service.py`, source `auto_new`) also links Y as
+the alternative of X (same company, both exist) when removing exactly one whole `DIY`, `N` or `PP`
+segment from Y gives X, or replacing exactly one whole `PP` segment of Y with `NL` gives X. No
+description parsing, no fuzzy, no new source value, no migration.
+AC-12 `scripts/backfill_product_alternatives.py`: dry run by default (counts + every pair, writes
+nothing), `--apply` writes, idempotent; output names CB55CR-N as the known reverse case.
+AC-13 The product_attachment not-found reply prints the resolved product's stored code
+(SRT207-DIY) when it equals the parser's raw text under the token fold; otherwise the raw.

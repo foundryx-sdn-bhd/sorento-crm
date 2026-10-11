@@ -53,3 +53,13 @@ S4 Screen (AC-10)
 Red-first commit `test(red):`, kill test, reviewer + security-reviewer (L), crew eval gate
 (touched topics inventory.* + 30 smoke), agent-browser 1280/375 on the crew test copy, hand test
 with before/after cases `cbs208-bl`, `SRTUB206-BACK INLET`, `SRTWC8357-SH-150`.
+
+## Slice 2 (DIY / -N / -PP, owner 11 Oct)
+
+Generalise `new_base_codes` / `_new_codes_for` / the backfill filter in
+`app/services/product_alternative_service.py` to the markers NEW, DIY, N, PP plus PP-for-NL;
+reuse source `auto_new` (the CHECK allows only auto_new/manual; the screen shows non-manual as
+"Auto"). Script prints the CB55CR-N note. `answer.py` product_attachment miss maps the raw to the
+stored code. Tests: `tests/test_product_alternatives_suffix_rule.py`,
+`tests/chatbot/test_attachment_miss_prints_stored_code.py`. Prod backfill is the owner's step
+(command in the PR body).
