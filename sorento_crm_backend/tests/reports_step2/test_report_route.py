@@ -189,8 +189,11 @@ def test_ac5_a_dealer_outside_the_fake_measures_dealer_dimensions_is_403(client,
     assert fake_measure.calls == []
 
 
-def test_review_a_measures_own_grant_is_enforced(client, db, register_fake):
+def test_review_a_measures_own_grant_is_enforced(client, db, register_fake, monkeypatch):
     """A contact holding the sales report grant but not the measure's grant is refused."""
+    from app.services.reports import measures
+
+    monkeypatch.setattr(measures, "KNOWN_GRANTS", measures.KNOWN_GRANTS | {"zzt.other"})
     m = register_fake("zzt_other_grant", grant="zzt.other")
     resp = _report(client, _full(db), measure=m.key)
     assert resp.status_code == 403 and _code(resp) == "sales_report_not_enabled", resp.text
