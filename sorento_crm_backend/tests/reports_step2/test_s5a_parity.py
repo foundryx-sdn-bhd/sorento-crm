@@ -151,3 +151,72 @@ def test_review_a_ranking_with_filters_carried_and_a_link_param_equals_report_as
     assert new.status_code == 200, new.text
     assert new.json()["rows"] == old.json()["rows"] and new.json()["total"] == old.json()["total"]
     assert new.json()["carried"] == ["brand_ids", "date_from", "date_to"], new.json()
+
+
+# ------------------------------------------------------------------ the old routes' Query() constraints
+
+
+def test_review_query_constraints_were_enumerated_from_the_old_signatures():
+    """The only declared `Query()` constraint on a param a measure accepts is `location_token`
+    `max_length=32` (outstanding-report and sales-report); sales analysis and low stock declare none.
+    If a route gains one, this fails and the parametrized cases below must grow."""
+    import inspect
+
+    from app.api.v1.order_management import orders
+    from app.api.v1.sales import analysis
+    from app.api.v1.scm import low_stock_report
+
+    found = {}
+    for label, fn in (("outstanding", orders.get_outstanding_report), ("sales_report", orders.get_sales_report),
+                      ("sales_analysis", analysis.sales_analysis), ("low_stock", low_stock_report.low_stock_report)):
+        for name, param in inspect.signature(fn).parameters.items():
+            for meta in getattr(param.default, "metadata", None) or []:
+                for attr in ("max_length", "min_length", "pattern", "ge", "le", "gt", "lt"):
+                    value = getattr(meta, attr, None)
+                    if value is not None:
+                        found[(label, name, attr)] = value
+    assert found == {("outstanding", "location_token", "max_length"): 32,
+                     ("sales_report", "location_token", "max_length"): 32}, found
+
+
+CONSTRAINT_CASES = {
+    "outstanding_location_token_33_chars": (
+        "order_outstanding", OUTSTANDING, (SALES_GRANT, OUT_GRANT), "cust", dict(location_token="X" * 33)),
+    "outstanding_location_token_exactly_32_is_fine": (
+        "order_outstanding", OUTSTANDING, (SALES_GRANT, OUT_GRANT), "cust", dict(location_token="X" * 32)),
+    "sales_location_token_33_chars": (
+        "delivered_sales", SALES_REPORT, (SALES_GRANT,), "cust", dict(location_token="X" * 33)),
+    "sales_location_token_exactly_32_is_fine": (
+        "delivered_sales", SALES_REPORT, (SALES_GRANT,), "cust", dict(location_token="X" * 32)),
+    # type constraints FastAPI applies to the old signatures (bool / date / int), part of the same contract
+    "outstanding_so_refused_not_a_bool": (
+        "order_outstanding", OUTSTANDING, (SALES_GRANT, OUT_GRANT), "cust", dict(so_refused="banana")),
+}
+
+
+@pytest.mark.parametrize("case", sorted(CONSTRAINT_CASES))
+def test_review_report_enforces_the_old_routes_query_constraints(client, db, case):
+    measure, path, grants, _subject, bad = CONSTRAINT_CASES[case]
+    cust, _p1, _p2 = _outstanding_world(db)
+    contact = _staff(db, *grants)
+    old = _get(client, path, contact, customer_ids=cust.id, **bad)
+    new = _get(client, REPORT, contact, measure=measure, customer_ids=cust.id, **bad)
+    assert new.status_code == old.status_code, (case, new.status_code, old.status_code, new.text)
+
+
+def test_review_sales_value_invalid_date_is_422_like_the_old_route(client, db, monkeypatch):
+    from app.api.v1.sales import analysis
+    from app.services import queue_service
+
+    async def _no_wait(download_id):
+        return None
+
+    monkeypatch.setattr(analysis, "_await_download", _no_wait)
+    monkeypatch.setattr(queue_service, "enqueue_job", lambda *a, **k: type("J", (), {"id": "job"})())
+    contact = _staff(db, SALES_GRANT)
+    old = _get(client, "/api/v1/sales/analysis", contact, rows="channel", cols="year", basis="ordered",
+               date_from="not-a-date")
+    new = _get(client, REPORT, contact, measure="sales_value", group_by="channel", basis="ordered",
+               date_from="not-a-date", date_to="2026-09-30")
+    assert old.status_code == 422, old.text
+    assert new.status_code == 422, new.text
