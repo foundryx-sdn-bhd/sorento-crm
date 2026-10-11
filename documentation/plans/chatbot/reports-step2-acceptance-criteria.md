@@ -76,4 +76,5 @@ Acceptance:
   entry (no held filters leak); drill behaviour (`ranking_drill` scoped / unsure / global) is unchanged.
 - AC-17 Dealer: a held entry is re-checked on refine exactly as today (report_ask.py:647-657); a dealer refine that
   asks for a staff-only dimension is refused, never served.
-- AC-18 A non-report message does not read or clear `Focus.report`; the next report refine still finds it.
+- AC-18 Same lifetime as today's ranking entry (engine.py:6600-6604): a turn that is not a report ask clears
+  `Focus.report`, so a later "top 5" after a stock question is a fresh ask, never a stale refine.
