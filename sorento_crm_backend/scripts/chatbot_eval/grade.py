@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -46,14 +47,33 @@ def _has_date(reply: str, iso: str) -> bool:
     return any(re.search(rf"(?<![\d/-]){re.escape(f)}(?![\d/-])", reply) for f in forms)
 
 
-def _must_ok(reply: str, item: dict) -> bool:
+HEADER_LINE = re.compile(r"^(?:[A-Za-z ]{1,40}:|\*[A-Za-z ]{1,40}:\*)\s*\S")
+
+
+def _body(reply: str) -> str | None:
+    """The reply after its leading `label: value` header lines; None when it has no header block."""
+    lines = reply.split("\n")
+    n = 0
+    while n < len(lines) and HEADER_LINE.match(lines[n]):
+        n += 1
+    return "\n".join(lines[n:]) if n >= 2 else None
+
+
+def _must_ok(reply: str, item: dict, user_texts: list[str] | None = None) -> tuple[bool, bool]:
+    """(matched, header_only_echo): the echo flag marks a code/text found only in the header and in the user text."""
     low = reply.lower()
+    body = _body(reply)
+    body_low = body.lower() if body is not None else low
+    echoed = " ".join(user_texts or []).lower()
+    header_only = False
     for key, want in item.items():
         if key == "near":
             continue
         want = str(want)
         if key in ("code", "text"):
             ok = want.lower() in low
+            if ok and want.lower() in echoed and want.lower() not in body_low:
+                header_only = True
         elif key == "number":
             ok = _has_number(reply, want)
         elif key == "date":
@@ -61,22 +81,29 @@ def _must_ok(reply: str, item: dict) -> bool:
         else:
             ok = False
         if not ok:
-            return False
-    return True
+            return False, False
+    return True, header_only
 
 
 def _vacuous(kind: str, expect: Expect) -> bool:
     return not expect.options if kind == "clarify" else not expect.must
 
 
-def _passes(outcome: str, expect: Expect, reply: str) -> str | None:
+def _passes(outcome: str, expect: Expect, reply: str, user_texts: list[str] | None = None) -> str | None:
     if outcome == "clarify":
         low = reply.lower()
         return "good_clarify" if all(o.lower() in low for o in expect.options) else None
-    return "correct" if all(_must_ok(reply, m) for m in expect.must) else None
+    results = [_must_ok(reply, m, user_texts) for m in expect.must]
+    if not all(ok for ok, _ in results):
+        return None
+    if results and all(echo for _, echo in results):
+        return None
+    return "correct"
 
 
-def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> Verdict:
+def grade(
+    expect: Expect, outcome: Outcome, previous_bot_reply: str | None, user_texts: list[str] | None = None
+) -> Verdict:
     reply = outcome.reply_text or ""
     if outcome.tool_errors:
         return Verdict("error", ["tool_error"])
@@ -89,13 +116,13 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
         return Verdict("error", ["delegated"])
     if not reply.strip():
         return Verdict("error", ["blank_reply"])
-    verdict = _rubric(expect, reply)
+    verdict = _rubric(expect, reply, user_texts)
     if verdict.label == "wrong" and previous_bot_reply is not None and _norm(reply) == _norm(previous_bot_reply):
         return Verdict("stuck", ["same_as_previous_reply"])
     return verdict
 
 
-def _rubric(expect: Expect, reply: str) -> Verdict:
+def _rubric(expect: Expect, reply: str, user_texts: list[str] | None = None) -> Verdict:
     low = reply.lower()
     for rule in expect.must_not:
         if rule == "uuid":
@@ -112,7 +139,59 @@ def _rubric(expect: Expect, reply: str) -> Verdict:
     for i, kind in enumerate(kinds):
         if i > 0 and has_criteria and _vacuous(kind, expect):
             continue
-        label = _passes(kind, expect, reply)
+        label = _passes(kind, expect, reply, user_texts)
         if label:
             return Verdict(label, [], bool(expect.judge_note) or _vacuous(kind, expect))
     return Verdict("wrong", ["expectation_not_met"])
+
+
+LAYERS = ("understood", "resolved", "tool", "reply")
+
+
+def _eq(want: object, got: object) -> bool:
+    if isinstance(want, str) and isinstance(got, str):
+        return want.lower() == got.lower()
+    return want == got
+
+
+def _contains_all(wanted: list, blob: object) -> bool:
+    text = json.dumps(blob, default=str, ensure_ascii=False).lower()
+    return all(str(w).lower() in text for w in wanted)
+
+
+def score_layers(expect: Expect, digest: dict | None, verdict: Verdict) -> dict:
+    """pass | fail | na (label has no field) | no_trace (label has it, digest lacks the stage)."""
+    digest = digest or {}
+    layers = {"understood": "na", "resolved": "na", "tool": "na"}
+    if expect.understood:
+        parser = digest.get("parser") or {}
+        if not parser:
+            layers["understood"] = "no_trace"
+        else:
+            want = expect.understood
+            ok = all(_eq(want[k], parser.get(k)) for k in ("domain", "intent") if k in want)
+            ok = ok and _contains_all(want.get("entities") or [], parser.get("entities"))
+            layers["understood"] = "pass" if ok else "fail"
+    if expect.expected_resolved:
+        resolved = digest.get("resolved") or []
+        if not resolved:
+            layers["resolved"] = "no_trace"
+        else:
+            ok = _contains_all(expect.expected_resolved, [r.get("entities") for r in resolved])
+            layers["resolved"] = "pass" if ok else "fail"
+    if expect.tool:
+        tools = digest.get("tools") or []
+        if not tools:
+            layers["tool"] = "no_trace"
+        else:
+            name, params = expect.tool.get("name"), expect.tool.get("params") or {}
+
+            def match(t: dict) -> bool:
+                args = t.get("args") or {}
+                return (name is None or _eq(name, t.get("tool"))) and all(
+                    k in args and _eq(v, args[k]) for k, v in params.items()
+                )
+
+            layers["tool"] = "pass" if any(match(t) for t in tools) else "fail"
+    layers["reply"] = "pass" if verdict.label in ("correct", "good_clarify") else "fail"
+    return {k: layers[k] for k in LAYERS}

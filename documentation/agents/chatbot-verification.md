@@ -112,7 +112,9 @@ cd sorento_crm_backend
 EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL=<same dsn> \
   venv/bin/python -m scripts.chatbot_eval --data-dir "$EVAL_DATA_DIR" --split dev --variants one \
   --engine http --base-url http://localhost:<be port> --budget-usd 3 --out <dir outside the repo>
-# --prompt-version <ai_prompt_versions.id> pins an unpromoted parser prompt (dry run only)
+# --prompt-version <version number or ai_prompt_versions.id> pins a parser prompt (dry run only);
+# it is resolved read-only via EVAL_TRACE_DB_URL and fails (exit 2) if it matches nothing; report.json records
+# the prompt id, version and template md5, and a run whose traces show another version exits 5
 # --engine pkg.module:Class runs the same cases through another engine
 ```
 
@@ -129,5 +131,12 @@ EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL
   checks cannot settle, and only once it agrees with human verdicts (`calibration/*.json`) on at least
   90%. It has its own spend cap (`--judge-budget-usd`, default $2) and sends the masked case text and
   the bot reply to Anthropic. The key is never in the repo; crew's gate loads it at runtime.
+- Per-step gate (owner ruling 11 Oct): the hidden cases of the topics a PR touches plus a fixed 30-case
+  cross-topic smoke (`--topics <topic_code prefixes> --ids-file <smoke list>`; crew's `eval-gate.sh --topics ...
+  --smoke`). The full hidden set only for big decisions. Every run prints `selected N cases, ~C calls, ~$X` first;
+  `--estimate-only` stops there. A baseline given as a run dir is compared on the same case ids only.
+- Per layer: each result also scores understood (parser domain / intent / entities), resolved (records),
+  tool (name + params) and reply, wherever the case label carries `understood`, `expected_resolved` or `tool`
+  (filled over time). The report's `by_layer` and `first_failing_layer` say which layer broke.
 - Known gaps (v1): media (photo) turns and ideation turns are excluded; relative-date asks ("this
   month") carry no period numbers because the replay date is not the ask date.

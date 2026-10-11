@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from .budget import cost_usd
 from .runner import CaseResult, RunResult
 
-GRADER_VERSION = 8  # bump on any grading-rule change
+GRADER_VERSION = 11  # bump on any grading-rule change
 PASS = ("correct", "good_clarify")
 
 
@@ -42,6 +42,30 @@ def _group(results: list[CaseResult], attr: str) -> dict[str, dict[str, int]]:
     return {k: dict(v) for k, v in out.items()}
 
 
+LAYER_ORDER = ("understood", "resolved", "tool", "reply")
+
+
+def _by_layer(results: list[CaseResult]) -> dict:
+    out = {}
+    for layer in LAYER_ORDER:
+        counts = {s: 0 for s in ("pass", "fail", "na", "no_trace")}
+        for r in results:
+            counts[r.layers.get(layer, "na")] += 1
+        scored = counts["pass"] + counts["fail"]
+        out[layer] = {**counts, "pass_rate": counts["pass"] / scored if scored else None}
+    return out
+
+
+def _first_failing(results: list[CaseResult]) -> dict:
+    out = {layer: 0 for layer in LAYER_ORDER}
+    for r in results:
+        if r.layers.get("reply") != "fail":
+            continue
+        first = next((layer for layer in LAYER_ORDER if r.layers.get(layer) == "fail"), "reply")
+        out[first] += 1
+    return out
+
+
 def build_report(
     run: RunResult, baseline: dict | None = None, model: str = "gpt-5.4-mini", judge_status: str = "uncalibrated"
 ) -> dict:
@@ -62,6 +86,8 @@ def build_report(
         ),
         "gap_original_variant": _diff(_rate(originals), _rate(variants)),
         "grader_version": GRADER_VERSION,
+        "by_layer": _by_layer(res),
+        "first_failing_layer": _first_failing(res),
         "pass_rate": _rate(res),
         "strict_pass_rate": _strict(res),
         "strict_underfit": _strict(originals),
@@ -81,6 +107,8 @@ def build_report(
             "total": _diff(report["pass_rate"], baseline.get("pass_rate")),
             "strict_total": _diff(report["strict_pass_rate"], baseline.get("strict_pass_rate")),
             "comparable": baseline.get("grader_version") == GRADER_VERSION,
+            "restricted": bool(baseline.get("_restricted")),
+            "matched": baseline.get("_matched"),
             "by_topic": {
                 t: _diff(rate, base_topics.get(t)) for t, rate in by_topic_rate.items() if t in base_topics
             },

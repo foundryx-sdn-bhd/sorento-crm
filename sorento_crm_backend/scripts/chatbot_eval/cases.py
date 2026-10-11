@@ -22,6 +22,9 @@ class Expect:
     options: list[str] = field(default_factory=list)
     must_not: list[str] = field(default_factory=list)
     judge_note: str | None = None
+    understood: dict = field(default_factory=dict)
+    expected_resolved: list[str] = field(default_factory=list)
+    tool: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -85,6 +88,9 @@ def parse_case(raw: object) -> Case:
             options=list(exp.get("options") or []),
             must_not=list(exp.get("must_not") or []),
             judge_note=exp.get("judge_note"),
+            understood=dict(exp.get("understood") or {}),
+            expected_resolved=list(exp.get("expected_resolved") or []),
+            tool=dict(exp.get("tool") or {}),
         ),
     )
 

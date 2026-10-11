@@ -11,7 +11,7 @@ from typing import Any
 from .budget import Budget
 from .cases import Case
 from .engine import Engine, Outcome
-from .grade import Verdict, grade
+from .grade import Verdict, grade, score_layers
 from .judge import Judge, apply_judge
 
 
@@ -39,6 +39,7 @@ class CaseResult:
     previous_bot_reply: str | None = None
     trace_digest: dict | None = None
     replay_digests: list = field(default_factory=list)
+    layers: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -91,7 +92,8 @@ def run_case(
             prev_bot = out.reply_text
             replay_digests.append(out.trace_digest)
     final = step(text)
-    verdict = grade(case.expect, final, prev_bot)
+    user_texts = [h["text"] for h in case.history if h.get("role") == "user"] + [text]
+    verdict = grade(case.expect, final, prev_bot, user_texts)
     if verdict.needs_judge and judge is not None and judge_calibrated:
         result = judge.score(case, final)
         if result is not None:
@@ -100,6 +102,7 @@ def run_case(
         case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
         variant_kind=variant_kind, verdict=verdict, outcome=final, latency_ms=final.latency_ms, tokens=total,
         previous_bot_reply=prev_bot, trace_digest=final.trace_digest, replay_digests=replay_digests,
+        layers=score_layers(case.expect, final.trace_digest, verdict),
     )
 
 
@@ -146,9 +149,10 @@ def run_all(
                 aborted = True
                 raise
             except Exception as exc:  # noqa: BLE001
+                verdict = Verdict("error", [f"harness: {type(exc).__name__}"])
                 results[idx] = CaseResult(
                     case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
-                    variant_kind=kind, verdict=Verdict("error", [f"harness: {type(exc).__name__}"]),
+                    variant_kind=kind, verdict=verdict, layers=score_layers(case.expect, None, verdict),
                     outcome=Outcome(reply_text=""), latency_ms=0, tokens={"prompt": 0, "cached": 0, "output": 0},
                 )
 
