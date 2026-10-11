@@ -9,6 +9,13 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
+
+try:
+    from psycopg2 import Error as _PgError
+
+    _DB_ERRORS: tuple = (_PgError,)
+except ImportError:
+    _DB_ERRORS = ()
 from pathlib import Path
 
 from .budget import PRICES, Budget
@@ -173,11 +180,11 @@ def main(argv: list[str] | None = None) -> int:
     if trace_dsn:
         try:
             prompt = resolve_prompt(trace_dsn, args.prompt_version)
-        except LookupError as exc:
+        except (LookupError, ImportError, *_DB_ERRORS) as exc:
             if args.prompt_version:
-                print(str(exc), file=sys.stderr)
+                print(f"cannot resolve --prompt-version {args.prompt_version}: {type(exc).__name__}", file=sys.stderr)
                 return 2
-            print(f"production label not resolved: {exc}", file=sys.stderr)
+            print(f"production label not resolved: {type(exc).__name__}", file=sys.stderr)
     if args.prompt_version:
         kw["prompt_version"] = prompt["id"]
     judge = load_judge(args.judge)
@@ -208,9 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         run = exc.run
     seen: dict[str, int] = {}
     for r in run.results:
-        v = ((r.trace_digest or {}).get("parser") or {}).get("prompt_version")
-        if v is not None:
-            seen[str(v)] = seen.get(str(v), 0) + 1
+        parser = (r.trace_digest or {}).get("parser")
+        if parser:
+            key = "none" if parser.get("prompt_version") is None else str(parser["prompt_version"])
+            seen[key] = seen.get(key, 0) + 1
     mismatch = prompt["source"] != "unknown" and any(k != str(prompt["version"]) for k in seen)
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
