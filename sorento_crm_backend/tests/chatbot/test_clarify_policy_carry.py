@@ -187,18 +187,38 @@ def test_ac145_mode_drop_drops_the_subject_with_no_ask(dealer, session_factory, 
 # --- AC-146: cand-0230 shape ------------------------------------------------------------------ #
 
 
-def test_ac146_customer_then_product_then_a_bare_month_never_lists_rows_filtered_by_both(office, session_factory):  # noqa: F811
-    """An office contact: a dealer's own linked customer never triggers a carry ask (guard below)."""
+def _bare_month(month: str = "october") -> dict[str, Any]:
+    """How the live parser reads a bare month word: no domain, not a domain-in-message, a month mode."""
+    return verdict(
+        message_type="casual", domain_hint=None, domain_in_message=False, entities=[], date_mode="month",
+        date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+    )
+
+
+def test_ac146_customer_then_product_then_a_bare_month_asks_the_carry_question_again(office, session_factory):  # noqa: F811
+    """An office contact: a dealer's own linked customer never triggers a carry ask (guard below).
+    The open carry_scope question is not answered by a bare month, so it is asked AGAIN (same
+    copy), never answered with a fetch filtered by customer AND product."""
     dealer = office
-    _ask_unclear(session_factory)
     dealer.say("delivery for zzt dealer", _customer_ask())
     dealer.calls.clear()
     second = dealer.say(f"delivery for {CODE}", _product_ask())
-    assert "(from earlier)" in second, second
-    third = dealer.say("september", _today_ask())
-    assert "(from earlier)" in third, third
+    assert "(from earlier)" in second and ((dealer.state or {}).get("open_question") or {}).get("kind") == "carry_scope", second
+    third = dealer.say("october", _bare_month())
+    assert third == second, (second, third)
     both = [a for a in _orders(dealer) if a.get("product_ids") and a.get("customer_ids")]
     assert both == [], dealer.calls
+
+
+def test_ac146_an_open_carry_question_and_two_non_answers_ends_in_the_loop_breaker(dealer, session_factory):  # noqa: F811
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    first = dealer.say("delivery today", _today_ask())
+    second = dealer.say("october", _bare_month())
+    third = dealer.say("october", _bare_month("october again"))
+    assert first == Q_UNCLEAR and second == Q_UNCLEAR, (first, second)
+    assert third != Q_UNCLEAR and "(from earlier)" not in third, third
+    assert _orders(dealer) == [], dealer.calls
 
 
 def test_ac146_the_carry_asks_count_for_the_loop_breaker(dealer, session_factory):  # noqa: F811
@@ -304,3 +324,28 @@ def test_fresh_reading_with_entity_op_replace_and_a_new_customer_still_asks(deal
     reply = dealer.say("delivery for zzt dealer", _fresh(_customer_ask(), entity_op="replace"))
     assert reply == Q_COMBINE, reply
     assert _orders(dealer) == [], dealer.calls
+
+
+# --- review round: translations (ms / zh keep the code, translate the question) ----------------- #
+
+
+@pytest.mark.parametrize("text", ["ada penghantaran hari ini?", "今天有送货吗"], ids=["ms", "zh"])
+def test_the_carry_question_and_its_options_are_translated_and_keep_the_code(dealer, session_factory, text):  # noqa: F811
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    reply = dealer.say(text, _today_ask())
+    assert CODE in reply, reply
+    assert "from earlier" not in reply and "All products" not in reply and "Delivery today" not in reply, reply
+    assert "1." in reply and "2." in reply, reply
+
+
+@pytest.mark.parametrize("text", ["ada penghantaran hari ini?", "今天有送货吗"], ids=["ms", "zh"])
+def test_the_break_line_is_translated_and_keeps_the_code(dealer, session_factory, text):  # noqa: F811
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    dealer.say(text, _today_ask())
+    dealer.say(text, _today_ask())
+    third = dealer.say(text, _today_ask())
+    assert "I still need" not in third and "Please refer to your salesman" not in third, third
+    assert "escalate this to our team" not in third, third
+    assert CODE in third, third

@@ -178,3 +178,68 @@ def test_ac116_repeat_limit_1_breaks_on_the_second_identical_ask(dealer, session
     second = dealer.say("my deliveries", bare)
     assert first.startswith("Which period"), first
     assert not second.startswith("Which period"), second
+
+
+# --- review round ----------------------------------------------------------------------------- #
+
+
+def test_ac113_one_turn_reads_the_policy_table_at_most_once(dealer):  # noqa: F811
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    reads: list[str] = []
+
+    def _count(conn, cursor, statement, *a):
+        if "chatbot_clarify_policy" in statement and statement.lstrip().upper().startswith("SELECT"):
+            reads.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _count)
+    try:
+        dealer.say("delivery to zzt dealer", _ask())
+    finally:
+        event.remove(Engine, "before_cursor_execute", _count)
+    assert len(reads) <= 1, len(reads)
+
+
+def test_ac111_a_row_whose_mode_is_outside_its_allowed_modes_is_ignored_by_the_loader():
+    class _Rows:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return [{"ask_kind": "do_period", "label": "x", "mode": "carry",
+                     "allowed_modes": ["ask", "default"], "default_note": "", "repeat_limit": 2}]
+
+    class _Nested:
+        is_active = True
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    class _Db:
+        def begin_nested(self):
+            return _Nested()
+
+        def execute(self, *a, **k):
+            return _Rows()
+
+    assert _cp().load_clarify_policy(_Db())["do_period"].mode == "ask"
+
+
+def test_ac110_the_migration_seed_is_frozen_equal_to_the_seed_constant():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "alembic" / "versions" / "clp_0001_clarify_policy.py"
+    spec = importlib.util.spec_from_file_location("clp_0001_clarify_policy", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    frozen = [(k, l, m, tuple(a), n) for k, l, m, a, n in mod._SEED_ROWS]
+    live = [
+        (r["ask_kind"], r["label"], r["mode"], tuple(r["allowed_modes"]), r["default_note"])
+        for r in _cp().CLARIFY_POLICY_ROWS
+    ]
+    assert frozen == live

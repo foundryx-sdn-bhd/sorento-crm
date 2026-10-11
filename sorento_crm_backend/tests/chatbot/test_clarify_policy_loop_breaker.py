@@ -10,6 +10,7 @@ bare ask, which then names a subject and is no longer the repeated question.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -106,7 +107,11 @@ def _third_reply(console) -> str:
     return console.say("my deliveries", BARE)
 
 
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")  # our own reply text, not user text
+
+
 def _assert_breaks(third: str) -> None:
+    assert not _UUID.search(third), third
     assert not _is_period_ask(third), third
     assert "I still need" in third and "period" in third.lower(), third  # AC-120: the missing line
     assert "Order Number" not in third and "This month" not in third, third  # no fetched data, no guess
@@ -134,3 +139,28 @@ def test_ac120_the_breaking_reply_is_not_a_clarification_and_arms_no_pending(dea
     assert not _is_period_ask(third), third
     state = dealer.state or {}
     assert not (state.get("open_question") or {}), state.get("open_question")
+
+
+def test_ac120_the_break_line_for_a_carried_product_names_its_code(dealer, session_factory):  # noqa: F811
+    from tests.chatbot.test_clarify_policy_carry import CODE, _ask_unclear, _carried_product, _today_ask
+
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    dealer.say("delivery today", _today_ask())
+    dealer.say("delivery today", _today_ask())
+    third = dealer.say("delivery today", _today_ask())
+    assert CODE in third and "I still need" in third, third
+    assert not _UUID.search(third), third
+
+
+def test_ac122_a_focus_customer_row_with_only_a_uuid_never_leaks_the_uuid(dealer):  # noqa: F811
+    import uuid
+
+    first = dealer.say("my deliveries", BARE)
+    assert _is_period_ask(first), first
+    focus = (dealer.state or {}).setdefault("focus", {})
+    focus["customers"] = [{"uuid": str(uuid.uuid4())}]
+    dealer.say("my deliveries", BARE)
+    third = dealer.say("my deliveries", BARE)
+    assert not _is_period_ask(third), third
+    assert not _UUID.search(third), third
