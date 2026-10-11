@@ -124,8 +124,7 @@ describe('RuntimeSettingsCards', () => {
       }),
     });
     render(<RuntimeSettingsCards />);
-    const secret = screen.getByLabelText('Webhook secret') as HTMLInputElement;
-    expect(secret.type).toBe('password');
+    const secret = screen.getByLabelText('Signing keys') as HTMLTextAreaElement;
     expect(secret.value).toBe('');
     expect(secret.placeholder).toContain('****9f3c');
     expect(screen.getAllByText('Saved in CRM').length).toBeGreaterThan(0);
@@ -196,7 +195,7 @@ describe('RuntimeSettingsCards', () => {
       }),
     });
     render(<RuntimeSettingsCards />);
-    const secret = screen.getByLabelText('Webhook secret');
+    const secret = screen.getByLabelText('Signing keys');
     fireEvent.change(secret, { target: { value: 'abc' } });
     fireEvent.change(secret, { target: { value: '' } });
     const save = screen.getAllByRole('button', {
@@ -223,5 +222,32 @@ describe('RuntimeSettingsCards', () => {
       name: 'Save',
     })[0] as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+  });
+
+  it('takes one Respond.io signing key per line in a box that is never prefilled', () => {
+    mockQuery.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: data({
+        respond_webhook_secret: { source: 'db', masked: '****Ek4=' },
+      }),
+    });
+    render(<RuntimeSettingsCards />);
+    const keys = screen.getByLabelText('Signing keys') as HTMLTextAreaElement;
+    expect(keys.tagName).toBe('TEXTAREA');
+    expect(keys.value).toBe('');
+    expect(keys.placeholder).toContain('****Ek4=');
+    expect(
+      screen.getByText(
+        "Paste each Respond.io webhook's signing key, one per line.",
+      ),
+    ).toBeTruthy();
+    const typed = 'k9/Fq+2Zr8Lm=\nZx+7mP/2Qw9e=';
+    fireEvent.change(keys, { target: { value: typed } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[2]);
+    expect(mockMutate).toHaveBeenCalledWith(
+      { respond_webhook_secret: typed },
+      expect.anything(),
+    );
   });
 });
