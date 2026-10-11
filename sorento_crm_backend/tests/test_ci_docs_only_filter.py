@@ -1690,13 +1690,63 @@ def test_the_release_tests_job_reports_as_release_tests():
     assert _gh_eval(name, {"github": {"event_name": "workflow_dispatch", "event": {}}}) == "Release tests"
 
 
-def test_the_lean_flag_drops_to_the_shards_when_the_selection_is_over_the_cap():
+def _changes_outputs() -> dict[str, str]:
     block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
-    lean = _expression(re.search(r"^      lean: (.*)$", block, re.M).group(1))
+    outputs = block[block.index("\n    outputs:\n"):]
+    return {k: _expression(v) for k, v in re.findall(r"^      ([a-z_]+): (.*)$", outputs, re.M)}
+
+
+def test_the_lean_flag_survives_a_selection_over_the_budget():
+    """CI-COST: release run 38099410256 (main f7e48144b) printed lean=true, but the
+    import selection reached 2076 files (32731 CPU-s, over the 3600 budget), the
+    `lean` job output read `select.full`, turned false, and the 10 main shards,
+    3 SCM shards, 4 vitest shards and the serial shard ran: ~468 billed minutes.
+    The full shards now run only when the filter step itself says not lean
+    (full_suite, or a release whose diff cannot be established)."""
+    lean = _changes_outputs()["lean"]
     ctx = lambda flt, full: {"steps": {"filter": {"outputs": {"lean": flt}}, "select": {"outputs": {"full": full}}}}
     assert str(_gh_eval(lean, ctx("true", "false"))).lower() == "true"
-    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "true", "over the budget is still a lean release"
     assert str(_gh_eval(lean, ctx("", ""))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("", "true"))).lower() == "false"
+
+
+def test_a_lean_release_over_the_budget_runs_core_tier_and_changed_tests_in_one_job(tmp_path):
+    """The batch of release 38099410256 reaches every test through app/models/__init__.py.
+    Over the budget, the release-tests job gets the core tier and the batch's changed test
+    files (each PR already ran its own import selection in its PR gate), and no shard runs."""
+    output = tmp_path / "select.txt"
+    output.write_text("")
+    changed_test = "sorento_crm_backend/tests/chatbot/test_chat_backfill.py"
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Select backend tests by import")],
+        cwd=REPO,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "GITHUB_OUTPUT": str(output),
+             "BACKEND_CODE": "sorento_crm_backend/app/models/__init__.py", "BACKEND_TESTS": changed_test,
+             "LEAN": "true"},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    step = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert step["full"] == "true", "app/models/__init__.py reaches the whole suite"
+    tests = step["tests"].split()
+    assert changed_test in tests
+    assert "sorento_crm_backend/tests/test_rbac.py" in tests, "the core tier runs"
+    assert len(tests) < 100, f"core tier + changed tests only, got {len(tests)} files"
+    ctx = {"steps": {"filter": {"outputs": {"lean": "true", "backend_tests": changed_test}},
+                     "select": {"outputs": step}}}
+    rendered = {k: str(_gh_eval(v, ctx)).lower() if k == "lean" else str(_gh_eval(v, ctx))
+                for k, v in _changes_outputs().items() if k in ("lean", "backend_tests")}
+    assert rendered["lean"] == "true"
+    assert rendered["backend_tests"] == step["tests"]
+    ran = _ran(_simulate("workflow_dispatch", outputs={**LEAN_RELEASE, **rendered}))
+    assert ran == {"check-migration-heads", "changes", "lean-gate", "build-images", "build-and-deploy"}
+
+
+def test_full_suite_input_states_the_measured_cost():
+    """The last full run (38099410256) billed ~468 minutes, not the ~250 the input claimed."""
+    desc = re.search(r"^      full_suite:\n        description: \"(.*)\"$", _triggers(), re.M).group(1)
+    assert "470 billed minutes" in desc
 
 
 def test_a_passed_release_tests_job_marks_its_tree_validated():
