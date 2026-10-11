@@ -39,12 +39,14 @@ def _today(monkeypatch):
     monkeypatch.setattr(do_ask, "today_myt", lambda: date(2026, 10, 2))
 
 
-def _run(*, start=None, end=None, dealer=True, entities=None, requested=None, order_status=None):
+def _run(*, start=None, end=None, dealer=True, entities=None, requested=None, order_status=None, rows=None):
     calls: list[str] = []
+    _run.args = []  # CLARIFY-POLICY: the arguments of each order fetch, for the default-window asserts
 
     def mcp_call(name, args):
         calls.append(name)
-        return _ORDER_ROWS
+        _run.args.append(dict(args))
+        return rows if rows is not None else _ORDER_ROWS
 
     output = {
         "message_type": "business_query",
@@ -92,17 +94,36 @@ def _fetched(calls: list[str]) -> bool:
 # --- rule 3: no range ------------------------------------------------------------------ #
 
 
-def test_a_dealer_ask_with_no_range_fetches_nothing_and_asks_which_period():
+DISCLOSE = "Another month? Reply with the month."
+_DATE_KEYS = ("actual_delivery_date_from", "actual_delivery_date_to")
+
+
+def test_a_dealer_ask_naming_a_customer_with_no_range_fetches_newest_5_and_discloses():
+    """CLARIFY-POLICY AC-17 (was: fetches nothing and asks which period)."""
     said, calls = _run()
+    assert _fetched(calls), calls
+    assert "Which period" not in said, said
+    assert DISCLOSE in said, said
+    args = _run.args[0]
+    assert not any(args.get(k) for k in _DATE_KEYS), args
+    assert args.get("limit") == 5, args
+    assert args.get("dir") != "asc", args  # newest first
+
+
+def test_a_dealer_bare_ask_with_no_subject_still_asks_which_period():
+    """AC-19 (the old dealer test, now with no subject named)."""
+    said, calls = _run(entities=[])
     assert not _fetched(calls), calls
     assert "Which period" in said, said
     assert "This month (Oct 2026)" in said, said
     assert "Last month (Sep 2026)" in said, said
 
 
-def test_the_period_question_names_the_customer_once():
-    said, _calls = _run()
-    assert "Which period for HANLIM TRADING SDN BHD [A/C I]?" in said, said
+def test_a_bare_ask_period_question_names_no_customer():
+    """AC-19 (the old "names the customer once" test: with no subject the question has none)."""
+    said, _calls = _run(entities=[])
+    assert "Which period?" in said, said
+    assert "HANLIM" not in said, said
 
 
 def test_naming_an_order_number_needs_no_range():
@@ -110,12 +131,28 @@ def test_naming_an_order_number_needs_no_range():
     assert _fetched(calls), said
 
 
-def test_a_non_dealer_ask_with_no_range_fetches_nothing_and_asks_which_period():
-    """Owner ruling 4 Oct 2026: the range rules apply to ALL contacts, not just dealers."""
+def test_a_non_dealer_ask_naming_a_customer_with_no_range_fetches_newest_5_and_discloses():
+    """AC-17 for every contact (was: owner ruling 4 Oct 2026, ask which period)."""
     said, calls = _run(dealer=False)
+    assert _fetched(calls), calls
+    assert "Which period" not in said and DISCLOSE in said, said
+    assert not any(_run.args[0].get(k) for k in _DATE_KEYS), _run.args
+
+
+def test_a_non_dealer_bare_ask_with_no_subject_still_asks_which_period():
+    """AC-19: owner ruling 4 Oct 2026 kept for a bare ask."""
+    said, calls = _run(dealer=False, entities=[])
     assert not _fetched(calls), calls
     assert "Which period" in said, said
     assert "This month (Oct 2026)" in said, said
+
+
+def test_a_named_subject_default_that_finds_nothing_says_so_plus_the_disclose_line():
+    """AC-23: an empty default answers "No delivery orders found for <subject>." not the question."""
+    said, calls = _run(rows='{"intro": "", "items": [], "has_result": false}')
+    assert _fetched(calls), calls
+    assert "No delivery orders found for HANLIM TRADING SDN BHD" in said, said
+    assert DISCLOSE in said and "Which period" not in said, said
 
 
 def test_a_quantity_ask_needs_no_range():

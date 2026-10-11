@@ -93,10 +93,20 @@ def test_ac9_on_and_a_start_with_no_end_far_back_is_fetched():
     assert calls and "I can show up to" not in said, said
 
 
-def test_ac7_off_and_no_dates_still_asks_which_period():
+def test_ac7_off_and_no_dates_for_a_named_customer_fetches_newest_5_and_discloses():
+    """CLARIFY-POLICY AC-17/AC-21 (was: still asks which period). The switch OFF now gets the
+    named-subject default (newest 5 + disclose line); the switch ON keeps newest 20 and no line."""
     said, calls = _run(_ctx(skip=False))
-    assert not calls, calls
-    assert "Which period for ZETAWARE TILES SDN BHD [A/C I]?" in said, said
+    assert calls, said
+    assert "Which period" not in said, said
+    assert "Another month? Reply with the month." in said, said
+    assert calls[0][1].get("limit") == 5, calls[0]
+    assert not any(v for k, v in calls[0][1].items() if "date" in k.lower()), calls[0]
+
+
+def test_ac21_on_and_no_dates_gets_no_disclose_line():
+    said, calls = _run(_ctx(skip=True))
+    assert calls and "Another month?" not in said, said
 
 
 def test_ac7_off_and_a_nine_month_range_still_gets_the_cap_reply():
@@ -107,7 +117,8 @@ def test_ac7_off_and_a_nine_month_range_still_gets_the_cap_reply():
 
 def test_ac7_a_ctx_with_no_access_behaves_as_off():
     said, calls = _run(_ctx(skip=True, access=None))
-    assert not calls and "Which period" in said, said
+    assert calls and "Which period" not in said, said  # AC-17: off + named customer = the default fetch
+    assert "Another month? Reply with the month." in said, said
 
 
 def test_ac8_range_reply_returns_none_when_the_helper_is_true_and_the_reply_when_false():

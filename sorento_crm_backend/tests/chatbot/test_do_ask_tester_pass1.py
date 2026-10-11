@@ -96,6 +96,7 @@ def test_the_period_answer_keeps_the_customer_the_ask_named(dealer):
         "delivery to zzt dealer",
         verdict(domain_hint="order", intent_hint="check_order", entities=[entity("ZZT Dealer", hint="customer")]),
     )
+    dealer.calls.clear()  # CLARIFY-POLICY AC-17: the first ask now fetches (no window); count the answer's
     dealer.say(
         "this month",
         verdict(
