@@ -42,7 +42,7 @@ KEYS: dict[str, tuple[str, ...]] = {
 }
 EN = {
     "report_subject_ask": "Which {{missing}} is this for?",
-    "report_refused": "I can't run that report as asked. Tell me the product, customer or period you want.",
+    "report_refused": "I can't run {{report}} as asked. Tell me the product, customer or period you want.",
     "report_period_missing": "I still need a period for {{asked}}.",
     "report_period_give_up": "I still need a period. Ask again in one message, e.g. {{example}}.",
 }

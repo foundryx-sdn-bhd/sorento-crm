@@ -185,7 +185,8 @@ def test_p4_a_restate_without_group_by_keeps_the_held_ranking(console) -> None:
     console.say(_rank(_e("Sorento", "brand"), top_n=10, **NO_PERIOD), "top 10 salesman for sorento")
     text, calls = console.say(_rank(_e("Sorento", "brand"), group_by=None, top_n=20, **NO_PERIOD), "top 20")
     assert calls == [], calls
-    assert text.startswith("I still need a period for that."), text
+    assert text.startswith("I still need a period for "), text
+    assert "20" in text and "Sorento" in text, text  # names the held ask
     pending = _pending(console)
     assert (pending.get("extras") or {}).get("top_n") == 20, pending
     assert int(pending.get("misses") or 0) == 1, pending
