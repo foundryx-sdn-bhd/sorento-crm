@@ -1128,7 +1128,9 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
         # CLARIFY-POLICY S4: the carried-subject ask names the new subject as the turn's
         # focus has it once resolved (a customer's own name), never the typed word.
         verbatim = clarify_policy.carry_scope_text(
-            carry_parts, carry_parts.get("new_subject") or _carry_new_subject(carry_parts, state)
+            carry_parts,
+            carry_parts.get("new_subject") or _carry_new_subject(carry_parts, state),
+            localizer,
         )
     if verbatim:
         body = verbatim

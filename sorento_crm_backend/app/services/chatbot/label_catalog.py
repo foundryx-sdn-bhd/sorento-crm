@@ -443,6 +443,32 @@ LABELS: dict[str, dict[str, str]] = {
     "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak pasti yang mana satu anda maksudkan. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法确定您指的是哪一个。请再次索取低库存报告，并提供类别或 \"all\"。"},
     # CLARIFY-POLICY S3 (AC-130): the generic menu's subject answer ends with this line.
     "Something else? Tell me what you need about {subject}.": {"ms": "Perkara lain? Beritahu saya apa yang anda perlukan tentang {subject}.", "zh": "还需要别的吗？请告诉我您需要 {subject} 的什么信息。"},
+    # CLARIFY-POLICY S4: the carried-subject question, filled by `clarify_policy.carry_scope_text`
+    # (DIRECT_ONLY); codes and names ride in the tokens verbatim.
+    "{label} for {named}: only {subject} (from earlier) or all {plural}?": {"ms": "{label} untuk {named}: hanya {subject} (yang disebut tadi) atau semua {plural}?", "zh": "{named} 的{label}：只看 {subject}（之前提到的）还是全部{plural}？"},
+    "{label} {when}: for {subject} (from earlier) or all {plural}?": {"ms": "{label} {when}: untuk {subject} (yang disebut tadi) atau semua {plural}?", "zh": "{when}{label}：只看 {subject}（之前提到的）还是全部{plural}？"},
+    "{label}: for {subject} (from earlier) or all {plural}?": {"ms": "{label}: untuk {subject} (yang disebut tadi) atau semua {plural}?", "zh": "{label}：只看 {subject}（之前提到的）还是全部{plural}？"},
+    "Only {subject}": {"ms": "Hanya {subject}", "zh": "只看 {subject}"},
+    "All {plural}": {"ms": "Semua {plural}", "zh": "全部{plural}"},
+    "Delivery": {"ms": "Penghantaran", "zh": "送货"},
+    "products": {"ms": "produk", "zh": "产品"},
+    "customers": {"ms": "pelanggan", "zh": "客户"},
+    "today": {"ms": "hari ini", "zh": "今天"},
+    "yesterday": {"ms": "semalam", "zh": "昨天"},
+    "tomorrow": {"ms": "esok", "zh": "明天"},
+    "this week": {"ms": "minggu ini", "zh": "本周"},
+    "last week": {"ms": "minggu lepas", "zh": "上周"},
+    "this month": {"ms": "bulan ini", "zh": "本月"},
+    "last month": {"ms": "bulan lepas", "zh": "上个月"},
+    # CLARIFY-POLICY S1 (AC-120): the loop breaker's line naming what is missing.
+    "I still need the period for {subject}.": {"ms": "Saya masih perlukan tempoh untuk {subject}.", "zh": "我仍需要 {subject} 的时间段。"},
+    "I still need the attachment type for {subject}.": {"ms": "Saya masih perlukan jenis lampiran untuk {subject}.", "zh": "我仍需要 {subject} 的附件类型。"},
+    "I still need which products to include for {subject}.": {"ms": "Saya masih perlu tahu produk mana yang disertakan untuk {subject}.", "zh": "我仍需要知道 {subject} 要包括哪些产品。"},
+    "I still need more detail for {subject}.": {"ms": "Saya masih perlukan butiran lanjut untuk {subject}.", "zh": "我仍需要 {subject} 的更多详情。"},
+    "I still need the period.": {"ms": "Saya masih perlukan tempoh.", "zh": "我仍需要时间段。"},
+    "I still need the attachment type.": {"ms": "Saya masih perlukan jenis lampiran.", "zh": "我仍需要附件类型。"},
+    "I still need which products to include.": {"ms": "Saya masih perlu tahu produk mana yang disertakan.", "zh": "我仍需要知道要包括哪些产品。"},
+    "I still need more detail.": {"ms": "Saya masih perlukan butiran lanjut.", "zh": "我仍需要更多详情。"},
 }
 
 #: Presenter field key -> English label (slices 1 and 2).
@@ -630,7 +656,18 @@ INLINE = frozenset(
 
 #: Sentences too generic to match inside running text ("I have checked with the warehouse."): the
 #: composer that owns one fills it with `Localizer.fill`.
-DIRECT_ONLY = frozenset({"I have {names}.", "{code} has no {types}."})
+DIRECT_ONLY = frozenset(
+    {
+        "I have {names}.",
+        "{code} has no {types}.",
+        # CLARIFY-POLICY S4: the carried-subject question's pieces.
+        "{label} for {named}: only {subject} (from earlier) or all {plural}?",
+        "{label} {when}: for {subject} (from earlier) or all {plural}?",
+        "{label}: for {subject} (from earlier) or all {plural}?",
+        "Only {subject}",
+        "All {plural}",
+    }
+)
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.

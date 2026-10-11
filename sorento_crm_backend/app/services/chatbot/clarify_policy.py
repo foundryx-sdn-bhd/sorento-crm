@@ -16,6 +16,7 @@ ask, the attachment type ask, the domain menu, the LLM clarifier).
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -157,10 +158,23 @@ def seed_mode(kind: str) -> str:
     return rule.mode if rule is not None else "ask"
 
 
-def mode(db: Any, kind: str) -> str:
-    """The mode the bot uses for `kind` this turn (`load_clarify_policy`)."""
-    rule = load_clarify_policy(db).get(kind)
-    return rule.mode if rule is not None else "ask"
+def mode_of(ctx: Any, kind: str) -> str:
+    """The mode for `kind` from the turn's one policy read, carried on the lane ctx
+    (`turn_runtime.make_tool_runner`, AC-113); a ctx without it reads the seed, never the DB."""
+    modes = ctx.get("clarify_modes") if isinstance(ctx, dict) else None
+    if isinstance(modes, dict) and kind in modes:
+        return str(modes[kind])
+    return seed_mode(kind)
+
+
+#: The turn's `repeat_limit` per kind, set by the engine from its one policy read
+#: (`remember_turn_limits`) and read by the loop breaker at the reply choke point.
+_TURN_LIMITS: ContextVar[dict[str, int] | None] = ContextVar("clarify_turn_limits", default=None)
+
+
+def remember_turn_limits(limits: Any) -> None:
+    """Called once per turn by the engine with `Policy.clarify_limits` (None clears it)."""
+    _TURN_LIMITS.set(dict(limits) if limits is not None else None)
 
 
 def ask_fingerprint(kind: str, param: str, subject: str | None) -> str:
@@ -287,9 +301,13 @@ def break_reply(profile: Any, kind: str | None, subject: str | None = None) -> s
 _ESCALATE_OFFER = "Would you like me to escalate?"
 
 
-def repeat_limit(db: Any, kind: str | None) -> int:
-    """The loop breaker's limit for this ask kind (AC-116): its policy row, else the seed."""
-    rule = load_clarify_policy(db).get(kind or "")
+def repeat_limit(kind: str | None) -> int:
+    """The loop breaker's limit for this ask kind (AC-116): this turn's policy read
+    (`remember_turn_limits`), else the seed. Never a table read of its own (AC-113)."""
+    limits = _TURN_LIMITS.get()
+    if isinstance(limits, dict) and kind in limits:
+        return int(limits[kind] or MAX_IDENTICAL_ASKS)
+    rule = _SEED.get(kind or "")
     return rule.repeat_limit if rule is not None else MAX_IDENTICAL_ASKS
 
 
@@ -320,7 +338,7 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
                 _rewrite(db, row, result, f"{old_text.rstrip()}\n\n{something_else_line(menu_subject)}", {})
                 db.commit()
             return
-        limit = repeat_limit(db, kind)
+        limit = repeat_limit(kind)
         previous = previous_fingerprints(
             db,
             contact_respond_id=row.contact_respond_id,
@@ -592,22 +610,36 @@ def carry_conflict(
     return None
 
 
-def carry_scope_text(parts: dict[str, Any], new_subject: str | None = None) -> str:
-    """The carried-subject question, exactly (AC-140, AC-141). `new_subject` is the newly named
-    subject as the turn's focus names it once resolved (`turn/compose.py`), else the code
-    the ask stored."""
-    label = str(parts.get("label") or "")
+def carry_scope_text(parts: dict[str, Any], new_subject: str | None = None, localizer: Any = None) -> str:
+    """The carried-subject question, exactly (AC-140, AC-141), in the reply's language through
+    the label catalog (`localizer`; English when None). Codes and names stay verbatim.
+    `new_subject` is the newly named subject as the turn's focus names it once resolved
+    (`turn/compose.py`), else the code the ask stored."""
+    from app.services.chatbot.label_catalog import IDENTITY
+
+    loc = localizer if localizer is not None else IDENTITY
+    label = loc.sentence(str(parts.get("label") or ""))
     subject = str(parts.get("subject") or "")
-    plural = str(parts.get("plural") or "")
+    plural = loc.sentence(str(parts.get("plural") or ""))
+    every = loc.fill("All {plural}", plural=plural)
     if parts.get("new_kinds"):
         named = new_subject or str(parts.get("new_subject") or "")
-        return (
-            f"{label} for {named}: only {subject} (from earlier) or all {plural}?\n"
-            f"1. Only {subject}\n2. All {plural}"
+        question = loc.fill(
+            "{label} for {named}: only {subject} (from earlier) or all {plural}?",
+            label=label, named=named, subject=subject, plural=plural,
         )
+        return f"{question}\n1. {loc.fill('Only {subject}', subject=subject)}\n2. {every}"
     words = str(parts.get("date_words") or "")
-    lead = f"{label} {words}" if words else label
-    return f"{lead}: for {subject} (from earlier) or all {plural}?\n1. {subject}\n2. All {plural}"
+    if words:
+        question = loc.fill(
+            "{label} {when}: for {subject} (from earlier) or all {plural}?",
+            label=label, when=loc.sentence(words), subject=subject, plural=plural,
+        )
+    else:
+        question = loc.fill(
+            "{label}: for {subject} (from earlier) or all {plural}?", label=label, subject=subject, plural=plural
+        )
+    return f"{question}\n1. {subject}\n2. {every}"
 
 
 def _named_label(entity: dict[str, Any], focus: Any, candidates: dict[str, list[dict[str, Any]]] | None) -> str:

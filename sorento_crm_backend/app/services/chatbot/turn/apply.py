@@ -741,6 +741,20 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
             focus.domains = list(pending.payload.get("domains") or focus.domains)
             trace.rules_fired.append("carry_scope_kept" if keeps else "carry_scope_dropped")
             return focus, None, None, True
+        names_own = any(
+            isinstance(e, dict) and e.get("current_message") is True for e in (verdict or {}).get("entities") or []
+        )
+        if not names_own and (verdict or {}).get("domain_in_message") is not True:
+            # CLARIFY-POLICY AC-146: a message that neither answers the open carry question nor
+            # asks something of its own (a bare month) gets the SAME question again, never a
+            # fetch over both subjects; the repeat counts for the loop breaker.
+            trace.rules_fired.append("carry_scope_asked_again")
+            return (
+                state.focus,
+                pending,
+                Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace),
+                False,
+            )
 
     if pending.kind in OUTSTANDING_KINDS:
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to

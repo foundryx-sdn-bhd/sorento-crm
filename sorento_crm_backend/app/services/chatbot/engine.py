@@ -3321,6 +3321,7 @@ def _run_turn(
                     switches=switches,
                 )
             media_box: dict[str, Any] = {"send_order": send_order_facts} if send_order_facts else {}
+            clarify_policy.remember_turn_limits(None)  # this turn's own policy read sets it
             result = _run_stages(
                 envelope,
                 session_factory=session_factory,
@@ -4146,6 +4147,8 @@ def _run_stages_body(  # noqa: PLR0915
         latest_user_message = build_latest_user_message(envelope, session_block)
         # -- stage A's three shelves (PLAN "State: three shelves, one writer each") --- #
         policy = load_policy(db)
+        # CLARIFY-POLICY AC-113: the loop breaker reads this turn's limits, not the table.
+        clarify_policy.remember_turn_limits(dict(policy.clarify_limits))
         # Roster cap (PLAN-chatbot-answer-half-reattach.md, owner ruling 20 Sep 2026):
         # `{entity kind: chatbot_entity_kinds.roster_cap}`, read off the SAME policy
         # object every other per-kind fact (`did_you_mean`, `default_narrowing`) comes

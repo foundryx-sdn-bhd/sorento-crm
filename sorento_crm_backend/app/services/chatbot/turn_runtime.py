@@ -3411,6 +3411,9 @@ def make_tool_runner(
             # PHOTO-SEND-CAP: link mode prints each file's link under its row
             # (`fetch.output_structurer`); the engine turns it into a short link.
             "files_as_links": bool(getattr(profile, "files_as_links", False)),
+            # CLARIFY-POLICY AC-113: the turn's one read of the clarify policy, for the lane's
+            # period and outstanding-scope modes (`lanes.business.run_fetch`).
+            "clarify_modes": dict(getattr(policy, "clarify_modes", None) or ()),
         }
         if page_predicate is not None:
             entities = [

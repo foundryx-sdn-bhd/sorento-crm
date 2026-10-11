@@ -1533,7 +1533,7 @@ def run_fetch(
         start = do_ask._parse(parse_output.get("date_filter_start"))
         end = do_ask._parse(parse_output.get("date_filter_end"))
         # CLARIFY-POLICY AC-114: `so_period` set to `default` takes the skip switch's path.
-        skip_period = do_ask.skips_period_questions(ctx) or clarify_policy.mode(db, "so_period") == "default"
+        skip_period = do_ask.skips_period_questions(ctx) or clarify_policy.mode_of(ctx, "so_period") == "default"
         asked = None if skip_period else so_status.period_reply(start, end, family_words(list(names_by_id.values())))
         if skip_period:
             if start is not None and end is None:
@@ -1613,7 +1613,7 @@ def run_fetch(
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
         # CLARIFY-POLICY AC-115: `outstanding_scope` set to `default` never asks (scope both).
-        if _OUTSTANDING_SO_GRANT in granted and clarify_policy.mode(db, "outstanding_scope") != "default":
+        if _OUTSTANDING_SO_GRANT in granted and clarify_policy.mode_of(ctx, "outstanding_scope") != "default":
             return _outstanding_scope_ask_from_filters(reask_filters, db=db)
 
     # ── the tier ask, with its per-tier probe ────────────────────────────────
@@ -1953,7 +1953,7 @@ def run_fetch(
             and jsc.truthy(parse_output.get("outstanding_scope_ask_candidate"))
             and has_so_grant
             # CLARIFY-POLICY AC-115: `default` asks nothing; the scope below is both.
-            and clarify_policy.mode(db, "outstanding_scope") != "default"
+            and clarify_policy.mode_of(ctx, "outstanding_scope") != "default"
         ):
             return _outstanding_scope_ask(entities, semantic_input, db=db)
 
@@ -2206,7 +2206,7 @@ def run_fetch(
     # names a customer outside the contact's links.
     # CLARIFY-POLICY AC-114: `do_period` set to `default` is the skip switch's path (no ask, no
     # window) for every contact; the seed `ask` is today's question.
-    range_line = None if clarify_policy.mode(db, "do_period") == "default" else do_ask.range_reply(
+    range_line = None if clarify_policy.mode_of(ctx, "do_period") == "default" else do_ask.range_reply(
         ctx=ctx,
         tool_name=tool_name,
         order_tools=fetch_mod.ORDER_TOOLS,
