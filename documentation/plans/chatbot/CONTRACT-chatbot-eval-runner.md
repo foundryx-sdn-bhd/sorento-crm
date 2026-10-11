@@ -214,3 +214,11 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
 - Evidence from the traces: `prompt_versions_seen` = count of the parser's `prompt_version` across final-turn digests.
   A pinned or label-resolved run where any seen version differs from the resolved version sets `prompt_mismatch:
   true`, prints it on stderr and exits 5 after writing the report.
+- Round 11 review: a backend that falls back to the code prompt writes `facts.prompt_version` None
+  (`app/services/chatbot/engine.py:4470`, registry `_fallback`). When the prompt was resolved (source pin or label),
+  a final-turn digest whose `parser` stage is present but has `prompt_version` None counts as `"none"` in
+  `prompt_versions_seen` and is a mismatch (exit 5). A digest with no parser stage is skipped (no false alarm).
+- A DB error while resolving (psycopg2 error, driver missing) is handled like no match: exit 2 when pinned; otherwise a
+  stderr warning and source `unknown`.
+- Exit precedence: a stop code (3 budget, 4 not_dry_run, 130 interrupted) wins over 5; the mismatch still shows in
+  report.json.
