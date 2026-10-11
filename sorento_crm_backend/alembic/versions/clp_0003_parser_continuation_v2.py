@@ -4,7 +4,7 @@ a message with its own date window or a whole list is not a continuation).
 
 The base is `alembic/data/chatbot_semantic_parser.ablation-20261011.txt`, read VERBATIM the way
 `pab_0001_parser_ablation` reads it (the owner adopted v56 as the base, #1574). The block,
-`app/services/chatbot_parser_prompt.CONTINUATION_ADDENDUM`, is inserted as its own section right
+`CONTINUATION_ADDENDUM` below (a frozen copy of the code constant as of this revision), is inserted as its own section right
 before `== MEMORY ==` (how #1574's PR body re-applies another lane's new section onto v56), else
 before the CURRENT DATE tail, else at the end. Never built from production, the newest version
 or the code constant. `clp_0002_parser_continuation` (the first wording) is left as it is.

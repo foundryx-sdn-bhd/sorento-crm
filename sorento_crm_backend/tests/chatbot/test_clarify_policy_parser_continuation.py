@@ -70,7 +70,9 @@ def test_each_revision_publishes_its_own_frozen_block_not_the_code_constant():
     assert first.CONTINUATION_ADDENDUM.strip("\n") in first.with_continuation_block("base text")
     amended = _load("clp_0003_parser_continuation_v2.py")
     assert PARAGRAPH in amended.CONTINUATION_ADDENDUM
-    assert amended.CONTINUATION_ADDENDUM == CONTINUATION_ADDENDUM  # today's constant, until it moves
+    # Today the frozen copy equals the code constant. When the constant is next edited this line
+    # goes red: edit THIS TEST (drop the line), never the applied migration's literal.
+    assert amended.CONTINUATION_ADDENDUM == CONTINUATION_ADDENDUM
 
 
 def test_clp_0003_publishes_the_amended_paragraph_as_a_new_unlabelled_version():

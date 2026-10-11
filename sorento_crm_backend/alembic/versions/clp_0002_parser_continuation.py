@@ -1,9 +1,11 @@
 """Publish the chatbot parser prompt with SAME SUBJECT OR A NEW ONE as a NEW version, label
 unmoved (CLARIFY-POLICY S5, owner ruling Q10, documentation/plans/chatbot/PLAN-clarify-policy-11oct.md).
 
-`app/services/chatbot_parser_prompt.CONTINUATION_ADDENDUM` defines the `continuation` key (the
-schema carried it undefined) as the parser's own "same subject" signal, word for word from
-INTENT-FRAMES (#1473); the carried-subject rule reads it (`clarify_policy.carry_conflict`).
+The block (`CONTINUATION_ADDENDUM` below, frozen at its first wording; the code constant of the
+same name has since been amended, see `clp_0003_parser_continuation_v2`) defines the
+`continuation` key (the schema carried it undefined) as the parser's own "same subject" signal,
+word for word from INTENT-FRAMES (#1473); the carried-subject rule reads it
+(`clarify_policy.carry_conflict`).
 
 The mechanism is #1473's `if_0001_parser_frames`: the block is added once to the
 wording-layer text (PROMPT-DYNAMIC #1405: production when production is one, else the newest
