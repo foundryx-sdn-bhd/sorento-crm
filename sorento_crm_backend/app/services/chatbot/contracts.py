@@ -681,8 +681,8 @@ class Focus(BaseModel):
     # LOWSTOCK-FILTER-ASK: the question `required_fields` left open, one turn long
     # (`turn/state.py::Focus.required_ask`).
     required_ask: dict[str, Any] | None = None
-    # REPORT-ENGINE: the last sales ranking's route args (`turn/state.py::Focus.sales_ranking_frame`).
-    sales_ranking_frame: dict[str, Any] | None = None
+    # REPORT-ENGINE: the last sales ranking's measure key and route args (`turn/state.py::Focus.report`).
+    report: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the last low stock report's filters (`turn/state.py::Focus.low_stock`).
     low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling

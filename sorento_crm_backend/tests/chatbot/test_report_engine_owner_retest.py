@@ -72,7 +72,7 @@ def _lane_out(v, focus):
 
 
 def test_c2_fresh_ranking_takes_no_channel_from_the_focus():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     v = verdict(order_status="sales_ranking", ranking_refine=False, sales_channel=None, group_by="customer",
                 domain_hint="order")
@@ -81,11 +81,11 @@ def test_c2_fresh_ranking_takes_no_channel_from_the_focus():
 
 
 def test_c2_refine_on_a_held_dealer_ranking_still_runs_with_dealer():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     frame = dict(HELD, channel="dealer")
     v = verdict(order_status="sales_ranking", ranking_refine=True, sales_channel=None, top_n=5, domain_hint="order")
-    out = _lane_out(v, Focus(sales_channel="dealer", sales_ranking_frame=frame))
+    out = _lane_out(v, Focus(sales_channel="dealer", report=report_from_frame(frame)))
     assert _args(out).get("channel") == "dealer"
 
 

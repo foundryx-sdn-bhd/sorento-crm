@@ -28,7 +28,7 @@ from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import services as business_services
 
 ASK_NAME = "sales_ranking"
-TOOL = "crm_report_ask"
+TOOL = "crm_report"
 
 PERIOD_QUESTION = "Which period? For example this month, September, 2026, or 1 to 15 Sep."
 TOP_N_QUESTION = "How many? For example top 5."
@@ -656,6 +656,7 @@ def _refine(
         ):
             return None, DEALER_REFUSAL
     args = {k: v for k, v in frame.items() if k not in _FRAME_ONLY}
+    held = dict(args)
     channel = parse_output.get("sales_channel")
     if channel in ("dealer", "project"):
         if dealer:
@@ -683,7 +684,13 @@ def _refine(
             given[name] = rf.Resolved("ok", value=args.get(key), label=args.get(key) or "")
     if period is not None:
         given["period"] = period
-    return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n}), None
+    # Provenance: the params whose value is the held entry's, not said in this message.
+    carried = [k for k, v in args.items() if k not in _NON_FILTER_ARGS and held.get(k) == v and v not in (None, [], "")]
+    if period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) is None:
+        carried += [k for k in ("date_from", "date_to") if frame.get(k)]
+    return rf.collect(
+        db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n, "carried": carried}
+    ), None
 
 
 def _named_words(parse_output: dict[str, Any], axis: str) -> list[str]:
@@ -847,6 +854,9 @@ def route_args(outcome: rf.Outcome) -> dict[str, Any]:
     top_n = (outcome.values.get("top_n") or {}).get("value")
     if args.get("group_by") and isinstance(top_n, int):
         args["top_n"] = top_n
+    carried = outcome.extras.get("carried")
+    if carried:
+        args["carried"] = list(carried)
     return args
 
 

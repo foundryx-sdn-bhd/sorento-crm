@@ -6597,9 +6597,9 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 # The frame lives only through sales ranking turns (one that ran replaces it,
                 # one that asked a required field keeps it); any other ask clears it.
-                state_out.focus.sales_ranking_frame = next(
-                    (e["sales_ranking_frame"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("sales_ranking_frame"), dict)),
-                    state_out.focus.sales_ranking_frame
+                state_out.focus.report = next(
+                    (e["report"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("report"), dict)),
+                    state_out.focus.report
                     if jsc.js_string(parsed_output.get("order_status") or "").strip() == "sales_ranking"
                     else None,
                 )

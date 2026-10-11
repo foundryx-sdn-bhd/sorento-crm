@@ -43,6 +43,7 @@ from tests.chatbot.test_report_ask_lane import (  # noqa: F401 - fixtures + help
     THIS_YEAR,
     TOPN_Q,
     _e,
+    _split_key,
     _hit,
     _refine,
     _rank,
@@ -142,8 +143,8 @@ def test_c_the_basis_answer_outstanding_runs_with_the_first_messages_ask(console
     console.say(_answer_keys(rank_by="quantity"), "qty")
     text, log = _say_all(console, monkeypatch, _answer_keys(basis="outstanding"), "outstanding")
     _assert_no_top_selling(log, text)
-    args = _run_args([a for n, a in log if n == "crm_report_ask"])
-    assert args["measure"] == "qty" and args["basis"] == "outstanding", args
+    args = _run_args([a for n, a in log if n == "crm_report"])
+    assert _split_key(args)["measure"] == "qty" and _split_key(args)["basis"] == "outstanding", args
     assert args["group_by"] == "sales_agent" and args["top_n"] == 3, args
     assert args["brand_ids"] == [console.ids["brand"]], args
     assert args["category_ids"] == [wt["category"]], args
@@ -166,7 +167,7 @@ def test_the_metric_binds_from_either_parser_key(console, keys, measure) -> None
     text, calls = console.say(_answer_keys(**keys), "x")
     assert text.strip() == BASIS_Q and calls == [], (text, calls)
     _text, calls = console.say(_answer_keys(basis="delivered"), "delivered")
-    assert _run_args(calls)["measure"] == measure, calls
+    assert _split_key(_run_args(calls))["measure"] == measure, calls
 
 
 @pytest.mark.parametrize("basis", ["delivered", "ordered", "outstanding"])
@@ -176,7 +177,7 @@ def test_the_basis_binds_from_the_parsers_basis_key(console, basis) -> None:
     console.say(_answer_keys(rank_by="amount"), "amount")
     _text, calls = console.say(_answer_keys(basis=basis), basis)
     args = _run_args(calls)
-    assert args["basis"] == basis and args["measure"] == "amount", args
+    assert _split_key(args)["basis"] == basis and _split_key(args)["measure"] == "amount", args
 
 
 def test_the_answer_text_is_never_read_only_the_parsers_keys(console) -> None:
@@ -197,7 +198,7 @@ def test_d_one_reply_carrying_the_metric_and_the_basis_runs_at_once(console) -> 
     console.say(_sorento_wc(), OWNER_MESSAGE)
     text, calls = console.say(_answer_keys(rank_by="quantity", basis="delivered"), "qty delivered")
     args = _run_args(calls)
-    assert args["measure"] == "qty" and args["basis"] == "delivered", args
+    assert _split_key(args)["measure"] == "qty" and _split_key(args)["basis"] == "delivered", args
     assert args["group_by"] == "sales_agent" and args["top_n"] == 3, args
     assert BASIS_Q not in text and METRIC_Q not in text, text
 
@@ -208,7 +209,7 @@ def test_e_a_first_message_naming_everything_runs_at_once(console) -> None:
         _sorento_wc(measure="qty", basis="delivered"), OWNER_MESSAGE + " by qty delivered"
     )
     args = _run_args(calls)
-    assert args["measure"] == "qty" and args["basis"] == "delivered", args
+    assert _split_key(args)["measure"] == "qty" and _split_key(args)["basis"] == "delivered", args
     assert args["category_ids"] == [wt["category"]], args
     assert BASIS_Q not in text and METRIC_Q not in text, text
 
@@ -243,7 +244,7 @@ def test_the_questions_come_period_then_how_many_then_metric_then_basis(console)
     assert text.strip() == BASIS_Q and calls == [], text
     _text, calls = console.say(_answer_keys(basis="ordered"), "ordered")
     args = _run_args(calls)
-    assert args["top_n"] == 5 and args["measure"] == "amount" and args["basis"] == "ordered", args
+    assert args["top_n"] == 5 and _split_key(args)["measure"] == "amount" and _split_key(args)["basis"] == "ordered", args
     assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
     assert args["brand_ids"] == [console.ids["brand"]], args
 
@@ -267,7 +268,7 @@ def test_f_a_plain_total_asks_only_the_basis(console) -> None:
     assert text.strip() == BASIS_Q and calls == [], (text, calls)
     _text, calls = console.say(_answer_keys(basis="delivered"), "delivered")
     args = _run_args(calls)
-    assert not args.get("group_by") and "top_n" not in args and args["basis"] == "delivered", args
+    assert not args.get("group_by") and "top_n" not in args and _split_key(args)["basis"] == "delivered", args
 
 
 def test_f_a_month_trend_asks_only_the_basis(console) -> None:
@@ -277,7 +278,7 @@ def test_f_a_month_trend_asks_only_the_basis(console) -> None:
     assert text.strip() == BASIS_Q and calls == [], (text, calls)
     _text, calls = console.say(_answer_keys(basis="ordered"), "ordered")
     args = _run_args(calls)
-    assert args["group_by"] == "month" and args["basis"] == "ordered", args
+    assert args["group_by"] == "month" and _split_key(args)["basis"] == "ordered", args
 
 
 @pytest.mark.parametrize("group_by", [None, "month"])
@@ -285,7 +286,7 @@ def test_f_a_total_or_trend_with_the_basis_named_runs_at_once(console, group_by)
     _text, calls = console.say(
         _fresh(_hit("sorento", "brand"), group_by=group_by, top_n=None, basis="ordered"), "sorento sales ordered"
     )
-    assert _run_args(calls)["basis"] == "ordered", calls
+    assert _split_key(_run_args(calls))["basis"] == "ordered", calls
 
 
 # --------------------------------------------------------------------------- #
@@ -297,7 +298,7 @@ def test_g_a_refine_never_asks_the_held_frame_has_both(console) -> None:
     _t1(console)
     text, calls = console.say(_refine(top_n=5), "5")
     args = _run_args(calls)
-    assert args["top_n"] == 5 and args["measure"] == "amount" and args["basis"] == "delivered", args
+    assert args["top_n"] == 5 and _split_key(args)["measure"] == "amount" and _split_key(args)["basis"] == "delivered", args
     assert METRIC_Q not in text and BASIS_Q not in text, text
 
 
@@ -309,7 +310,7 @@ def test_g_a_ranking_settled_by_answers_is_refined_without_asking(console) -> No
     assert calls, "setup: the ranking did not run"
     text, calls = console.say(_refine(top_n=5), "5")
     args = _run_args(calls)
-    assert args["measure"] == "qty" and args["basis"] == "outstanding" and args["top_n"] == 5, args
+    assert _split_key(args)["measure"] == "qty" and _split_key(args)["basis"] == "outstanding" and args["top_n"] == 5, args
     assert METRIC_Q not in text and BASIS_Q not in text, text
 
 
@@ -368,7 +369,7 @@ def test_i_a_dealer_is_asked_the_same_questions(dealer) -> None:
     assert text.strip() == BASIS_Q and calls == [], (text, calls)
     _text, calls = dealer.say(_answer_keys(basis="delivered"), "delivered")
     args = _run_args(calls)
-    assert args["measure"] == "qty" and args["basis"] == "delivered" and args["group_by"] == "product", args
+    assert _split_key(args)["measure"] == "qty" and _split_key(args)["basis"] == "delivered" and args["group_by"] == "product", args
     assert args["brand_ids"] == [dealer.ids["brand"]], args
 
 
@@ -471,7 +472,7 @@ def test_n_a_first_message_naming_delivered_sends_it_explicitly(session_factory,
     _seed_contact(session_factory, variables={})
     _reply, captured = _top_selling(session_factory, monkeypatch, _ts(rank_by="amount", basis="delivered", top_n=10), "top 10 delivered by amount")
     (args,) = ts_calls(captured)
-    assert args["basis"] == "delivered", args
+    assert _split_key(args)["basis"] == "delivered", args
 
 
 def test_n_a_fetch_with_no_settled_basis_makes_no_call(session_factory) -> None:

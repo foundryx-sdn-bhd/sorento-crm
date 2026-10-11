@@ -1920,9 +1920,11 @@ def lane_parse_output(
         jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
         and out.get("ranking_drill") != "global"
         and focus is not None
-        and focus.sales_ranking_frame
+        and focus.report
     ):
-        out["sales_ranking_frame"] = dict(focus.sales_ranking_frame)
+        from app.services.chatbot.turn.state import frame_from_report
+
+        out["sales_ranking_frame"] = frame_from_report(focus.report)
     # Fix lane round 8 (owner hand test, 28 Sep 2026): an outstanding ask after a ranking
     # is the ORDINARY outstanding ask with the ranked codes as its products
     # (`apply._hop_to_report` wrote them on the hop). The same carried keys an answering
@@ -5276,7 +5278,7 @@ def envelope_of(
         # `focus.required_ask` by `engine.py` for the next message only.
         "required_ask": fetched.get("required_ask"),
         # REPORT-ENGINE: the route args of a sales ranking that ran, held on the focus by `engine.py`.
-        "sales_ranking_frame": fetched.get("sales_ranking_frame"),
+        "report": fetched.get("report"),
         # LOWSTOCK-SEMANTIC: the filters a low stock report ran with, recorded on
         # `focus.low_stock` by `engine.py` so a refinement narrows that report.
         "low_stock_frame": fetched.get("low_stock_frame"),

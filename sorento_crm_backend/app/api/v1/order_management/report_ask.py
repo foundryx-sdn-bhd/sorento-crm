@@ -173,7 +173,11 @@ def _echo(
 
 
 def _response(data: dict) -> JSONResponse:
-    return JSONResponse(content=ReportAskResponse(**data).model_dump(mode="json"))
+    out = ReportAskResponse(**data).model_dump(mode="json")
+    for key in ("measure_key", "carried"):  # /report only: /report-ask's body stays as it was
+        if out[key] is None:
+            del out[key]
+    return JSONResponse(content=out)
 
 
 @dataclass(frozen=True)
@@ -187,6 +191,7 @@ class _Spec:
     dealer_dimensions: frozenset[str]
     grant: str
     run: Callable
+    measure_key: Optional[str] = None
 
 
 def _serve(
@@ -211,6 +216,7 @@ def _serve(
     channel: Optional[str],
     contact_id: Optional[str],
     space_id: Optional[str],
+    carried: Optional[list[str]] = None,
 ):
     """Every gate and the shared param handling for `/report-ask` and `/report`; the two
     routes differ only in how `resolve` turns their measure params into a `_Spec`."""
@@ -312,6 +318,11 @@ def _serve(
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
     }
+    if spec.measure_key:
+        common["measure_key"] = spec.measure_key
+    if carried:
+        # Provenance from the chatbot: the params whose value came from an earlier turn.
+        common["carried"] = [p.strip() for item in carried for p in str(item or "").split(",") if p.strip()]
 
     from app.services import rate_limit
 
@@ -515,6 +526,7 @@ def report(
     channel: Optional[str] = Query(None, description="dealer | project"),
     contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
     space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
+    carried: Optional[list[str]] = Query(None, description="Param names whose value came from an earlier turn."),
     current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
@@ -525,13 +537,13 @@ def report(
         if key not in measures.MEASURES:
             raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(measures.keys()))
         m = measures.get(key)
-        return _Spec(m.basis, m.label, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run)
+        return _Spec(m.basis, m.label, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run, m.key)
 
     return _serve(
-        request, db, resolve, _PARAMS - {"basis"},
+        request, db, resolve, _PARAMS - {"basis"} | {"carried"},
         date_from=date_from, date_to=date_to, group_by=group_by, top_n=top_n, sort=sort,
         product_code=product_code, product_ids=product_ids, brand_ids=brand_ids,
         category_ids=category_ids, sales_agent_ids=sales_agent_ids, customer_ids=customer_ids,
         customer_agent_ids=customer_agent_ids, warehouse_codes=warehouse_codes, channel=channel,
-        contact_id=contact_id, space_id=space_id,
+        contact_id=contact_id, space_id=space_id, carried=carried,
     )

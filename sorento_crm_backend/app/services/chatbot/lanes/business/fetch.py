@@ -62,6 +62,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.policy import default_policy
+from app.services.chatbot.turn.state import report_from_frame
 from app.services.chatbot.turn import policy_rows
 from app.services.product_spec_registry import display_spec_value
 
@@ -1056,8 +1057,12 @@ def entity_ids_transformer(
     # entities of its own); nothing else the generic steps above built travels with them
     # but the entity ids. The customer scope tail below and `contact_id` / `space_id`
     # still apply.
-    if tool_name == "crm_report_ask":
+    if tool_name in ("crm_report_ask", "crm_report"):
         args = jsc.get(semantic_input, "report_ask_args")
+        if tool_name == "crm_report" and isinstance(args, dict):
+            # The lane works in basis + figure; the route takes the registry key.
+            key = f"{args.get('basis')}_{args.get('measure')}"
+            args = {**{k: v for k, v in args.items() if k not in ("basis", "measure")}, "measure": key}
         out = {
             "_diagnostics": out["_diagnostics"],
             "view": "render",
@@ -2752,7 +2757,7 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     for ...") is an answer, never the miss lane (the top selling ruling, 27 Sep 2026)."""
     envelope = result if isinstance(result, dict) else {}
     text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
-    # The args a ranking that ran was asked with, held for a refine (`Focus.sales_ranking_frame`).
+    # The args a ranking that ran was asked with, held for a refine (`Focus.report`).
     semantic_input = (ctx or {}).get("semantic_input")
     args = semantic_input.get("report_ask_args") if isinstance(semantic_input, dict) else None
     note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
@@ -2762,12 +2767,16 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     # (`shown`), so "these agents" next turn means exactly them. Never a route param.
     drill = envelope.get("drill_rows")
     frame = dict(args) if text and isinstance(args, dict) else None
+    report = None
     if frame is not None:
         frame.pop("shown", None)
+        frame.pop("carried", None)
+        shown = None
         if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
-            frame["shown"] = drill
+            shown = drill
+        report = report_from_frame({**frame, "shown": shown})
     return {
-        "sales_ranking_frame": frame,
+        "report": report,
         "response": text or _REPORT_ASK_ERROR_TEXT,
         "response_intro": None,
         "answers": [],
@@ -2922,7 +2931,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return _low_stock_report_output(result)
     if jsc.js_string(ctx.get("tool") or "") == "crm_top_selling_report":
         return _top_selling_output(result, ctx)
-    if jsc.js_string(ctx.get("tool") or "") == "crm_report_ask":
+    if jsc.js_string(ctx.get("tool") or "") in ("crm_report_ask", "crm_report"):
         return _report_ask_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_sales_analysis":
         # The same envelope: the presenter's text and, when there is one, the Excel. It

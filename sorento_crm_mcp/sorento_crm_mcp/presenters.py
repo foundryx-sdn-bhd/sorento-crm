@@ -3267,17 +3267,35 @@ def _ask_pcs(value: Any) -> str:
         return "0 pcs"
 
 
+#: The route param a `/report` filter line stands for, where it is not `<key>_ids`.
+_REPORT_ASK_FILTER_PARAMS = {
+    "product": ("product_ids", "product_code"),
+    "location": ("warehouse_codes",),
+    "channel": ("channel",),
+}
+
+
 def _report_ask(body: dict) -> str:
     """The whole reply for `crm_report_ask`: a head line, then one fact per line (`Label: value`
     per filter, then the period; owner rule, REPORT-DRILLDOWN), the ranked rows, `and N more`,
     the whole set's total; for the number shape the total alone."""
     if body.get("status") in ("refused", "busy"):
         return str(body.get("message") or "")
+    # REPORTS-STEP2: a fact whose value came from an earlier turn ends " (from earlier)".
+    carried = set(body.get("carried") or [])
+    earlier = " (from earlier)"
+
+    def _mark(line: str, *params: str) -> str:
+        return line + earlier if carried.intersection(params) else line
+
     facts = [
-        f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
+        _mark(
+            f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}",
+            *_REPORT_ASK_FILTER_PARAMS.get(str(f.get("key")), (f"{f.get('key')}_ids",)),
+        )
         for f in body.get("filters") or []
     ]
-    facts.append(f"Period: {body.get('date_from')} to {body.get('date_to')}")
+    facts.append(_mark(f"Period: {body.get('date_from')} to {body.get('date_to')}", "date_from", "date_to"))
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
     basis = body.get("basis_label")

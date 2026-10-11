@@ -28,6 +28,7 @@ from tests.chatbot.test_report_ask_lane import (  # noqa: F401  (console is a fi
     SEP,
     TOPN_Q,
     _e,
+    _split_key,
     _parser_output,
     _rank,
     _reply,
@@ -102,7 +103,7 @@ def test_scoped_customers_of_these_agents_keep_every_filter_and_use_the_card_lin
     assert "sales_agent_ids" not in args, args
     assert args["product_code"] == PRODUCT_CODE, args
     assert args["date_from"] == SEP["date_filter_start"] and args["date_to"] == SEP["date_filter_end"], args
-    assert args["basis"] == "delivered" and args["measure"] == "amount" and args["sort"] == "desc", args
+    assert _split_key(args)["basis"] == "delivered" and _split_key(args)["measure"] == "amount" and args["sort"] == "desc", args
     assert "shown" not in args and "drill_rows" not in args, args
     assert PERIOD_Q not in text and TOPN_Q not in text, text
 
@@ -140,7 +141,7 @@ def test_the_message_own_basis_measure_and_period_replace_the_held_ones(console)
         "bottom 10 customers of these agents by quantity, ordered, first half",
     )
     (args,) = calls
-    assert args["basis"] == "ordered" and args["measure"] == "qty" and args["sort"] == "asc", args
+    assert _split_key(args)["basis"] == "ordered" and _split_key(args)["measure"] == "qty" and args["sort"] == "asc", args
     assert args["date_from"] == "2026-01-01" and args["date_to"] == "2026-06-30", args
     assert args["customer_agent_ids"] == [AG1, AG2, "none"], args
 
@@ -306,10 +307,10 @@ def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:
     rows = {"group_by": "customer", "rows": [{"name": "X", "keys": ["c"]}]}
     args = {"group_by": "sales_agent", "basis": "delivered"}
     out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": rows}, {"semantic_input": {"report_ask_args": args}})
-    assert "shown" not in out["sales_ranking_frame"], out["sales_ranking_frame"]
+    assert not out["report"]["shown"], out["report"]
     same = {**rows, "group_by": "sales_agent"}
     out = _report_ask_output({"response": "Top 1 sales agent", "drill_rows": same}, {"semantic_input": {"report_ask_args": args}})
-    assert out["sales_ranking_frame"]["shown"] == same, out
+    assert out["report"]["shown"] == same, out
 
 
 # ============================================================================ review round 2
@@ -320,7 +321,7 @@ def test_the_same_axis_keeps_the_held_count_and_direction(console) -> None:
     _text, calls = console.say(_drill(group_by="sales_agent", top_n=None, rank_direction=None, measure="qty"),
                                "these agents by quantity")
     (args,) = calls
-    assert args["top_n"] == 3 and args["sort"] == "asc" and args["measure"] == "qty", args
+    assert args["top_n"] == 3 and args["sort"] == "asc" and _split_key(args)["measure"] == "qty", args
     assert args["sales_agent_ids"] == [AG1, AG2, "none"], args
 
 
@@ -432,7 +433,7 @@ def test_a_carried_filter_on_the_target_dimension_does_not_carry(console) -> Non
     assert args["group_by"] == "product" and args["customer_ids"] == [CU1, CU2], args
     assert "product_code" not in args and "product_ids" not in args, args
     assert args["brand_ids"] == [console.ids["brand"]], args
-    assert args["date_from"] == SEP["date_filter_start"] and args["basis"] == "delivered", args
+    assert args["date_from"] == SEP["date_filter_start"] and _split_key(args)["basis"] == "delivered", args
 
 
 def test_a_carried_filter_on_another_dimension_still_carries(console) -> None:

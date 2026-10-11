@@ -173,7 +173,10 @@ class Focus:
     # the changed keys. Written by `engine.py` from the lane's envelope, read through
     # `turn_runtime` into `semantic_input["sales_ranking_frame"]`, applied by
     # `lanes/business/report_ask.settle` and only when the verdict says it refines.
-    sales_ranking_frame: dict[str, Any] | None = None
+    # REPORTS-STEP2: `{"measure": registry key, "args": crm_report params without contact/space,
+    # "shown": drill rows or None}`. A stored session's old flat `sales_ranking_frame` is mapped
+    # to this on read (`focus_from_wire`).
+    report: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the filters the last low stock report was built with
     # (`low_stock_ask.route_filters` "frame"), so a refinement narrows it.
     low_stock: dict[str, Any] | None = None
@@ -289,6 +292,23 @@ FOCUS_LIST_FIELDS = (
 )
 
 
+def report_from_frame(frame: dict[str, Any]) -> dict[str, Any]:
+    """The `Focus.report` entry for a flat ranking frame (basis, measure and the route args)."""
+    basis = frame.get("basis") or "delivered"
+    figure = frame.get("measure") or "amount"
+    args = {k: v for k, v in frame.items() if k not in ("basis", "measure", "shown")}
+    return {"measure": f"{basis}_{figure}", "args": args, "shown": frame.get("shown")}
+
+
+def frame_from_report(report: dict[str, Any]) -> dict[str, Any]:
+    """The flat frame the lane's refine / drill logic reads, off a `Focus.report` entry."""
+    basis, _, figure = str(report.get("measure") or "").partition("_")
+    frame = {**(report.get("args") or {}), "basis": basis, "measure": figure}
+    if report.get("shown"):
+        frame["shown"] = report["shown"]
+    return frame
+
+
 def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire: dict[str, Any] = {name: list(getattr(focus, name)) for name in FOCUS_LIST_FIELDS}
     wire["status"] = focus.status
@@ -299,7 +319,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["set_clarify"] = focus.set_clarify
     wire["top_selling"] = dict(focus.top_selling) if focus.top_selling else None
     wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
-    wire["sales_ranking_frame"] = dict(focus.sales_ranking_frame) if focus.sales_ranking_frame else None
+    wire["report"] = dict(focus.report) if focus.report else None
     wire["low_stock"] = dict(focus.low_stock) if focus.low_stock else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
@@ -362,8 +382,14 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.top_selling = dict(top_selling) if isinstance(top_selling, dict) else None
     required_ask = raw.get("required_ask")
     focus.required_ask = dict(required_ask) if isinstance(required_ask, dict) else None
-    frame = raw.get("sales_ranking_frame")
-    focus.sales_ranking_frame = dict(frame) if isinstance(frame, dict) else None
+    report = raw.get("report")
+    old = raw.get("sales_ranking_frame")
+    if isinstance(report, dict):
+        focus.report = dict(report)
+    elif isinstance(old, dict):
+        focus.report = report_from_frame(old)
+    else:
+        focus.report = None
     low_stock = raw.get("low_stock")
     focus.low_stock = dict(low_stock) if isinstance(low_stock, dict) else None
     tasks = raw.get("tasks")

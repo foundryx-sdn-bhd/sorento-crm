@@ -19,25 +19,25 @@ def _lane_out(v, focus):
 
 # AC-HT8-11
 def test_refine_never_takes_the_focus_channel():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     v = verdict(order_status="sales_ranking", ranking_refine=True, sales_channel=None, top_n=10, domain_hint="order")
-    out = _lane_out(v, Focus(sales_channel="dealer", sales_ranking_frame=dict(HELD)))
+    out = _lane_out(v, Focus(sales_channel="dealer", report=report_from_frame(dict(HELD))))
     assert not out.get("sales_channel")
     assert _args(out).get("channel") is None
 
 
 def test_refine_keeps_the_held_frame_channel():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     frame = dict(HELD, channel="dealer")
     v = verdict(order_status="sales_ranking", ranking_refine=True, sales_channel=None, top_n=10, domain_hint="order")
-    out = _lane_out(v, Focus(sales_channel="dealer", sales_ranking_frame=frame))
+    out = _lane_out(v, Focus(sales_channel="dealer", report=report_from_frame(frame)))
     assert _args(out).get("channel") == "dealer"
 
 
 def test_sales_report_still_gets_the_focus_channel():
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     v = verdict(order_status="sales_report", sales_channel=None, domain_hint="order")
     assert _lane_out(v, Focus(sales_channel="dealer")).get("sales_channel") == "dealer"
@@ -48,7 +48,7 @@ def _top_selling_words(canonical):
     from app.services.chatbot.turn import apply as ap
     from app.services.chatbot.turn.decide import CARRY, Decision
     from app.services.chatbot.turn.plan import Trace
-    from app.services.chatbot.turn.state import Focus
+    from app.services.chatbot.turn.state import Focus, report_from_frame
 
     focus = Focus(status="top_selling", top_selling={"rank_by": "quantity"})
     e = entity("马桶", "category", canonical_code=canonical)
