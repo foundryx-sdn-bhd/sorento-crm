@@ -23,12 +23,12 @@ changed `tests/conftest.py`, the harness of every test, reports `full=true`.
 The cap is time, not file count (crew ruling, 1 Oct 2026): the selection's
 estimated CPU seconds, summed per file from the committed `.test_durations` (the
 file the shards balance on; a file it does not hold counts at the median file),
-above BUDGET_SECONDS reports `full=true` and no list. The workflow then falls
-back to the PR's own changed test files for the `ci` run, and the whole
-selection runs with the full suite under the `ci-full` label before merge
-(CI-MINUTES-CUT, 5 Oct 2026; until then `full=true` ran the six main shards
-and the SCM shards on the PR, which on a metered plan was the single biggest
-cost). #1411 selects 216 files at ~2668 CPU-s, under the budget; one
+above BUDGET_SECONDS reports `full=true` and, as the list, only the test files
+named on stdin: a PR's own changed test files, or on a lean release the batch's
+changed test files plus the core tier (CI-COST, 11 Oct 2026: release
+38099410256 selected 2076 files through app/models/__init__.py, and `full=true`
+sent it to the full shards, ~468 billed minutes; each PR of the batch already
+ran its own selection in its PR gate). #1411 selects 216 files at ~2668 CPU-s, under the budget; one
 changed-files runner under xdist -n 4 takes it in ~12 min. Files under
 tests/scm/ are left out when the SCM shards run anyway (`--scm true`).
 
@@ -62,7 +62,8 @@ DOTTED_RE = re.compile(r"(?<![\w.])((?:app|scripts|tests)(?:\.[A-Za-z_]\w*)+)")
 @dataclass
 class Selection:
     tests: list[str]  # the whole selection, also when `full` (printed, never run)
-    full: bool  # above the budget: no list goes out, the workflow falls back to the changed files
+    full: bool  # above the budget: only `named` goes out
+    named: list[str]  # the test files named on stdin, what runs when `full`
     count: int
     seconds: float  # estimated CPU seconds of `tests`
 
@@ -175,6 +176,7 @@ def select(
 ) -> Selection:
     rel_changed = [p[len(PREFIX):] for p in changed if p.startswith(PREFIX)]
     picked = {r for r in rel_changed if _is_test_file(r)}
+    named = set(picked)
     changed_modules = {
         m for r in rel_changed
         if r.split("/", 1)[0] in SOURCE_DIRS and not _is_test_file(r)
@@ -202,13 +204,15 @@ def select(
             rel for rel in sources
             if _is_test_file(rel) and any(rel.startswith(d + "/") for d in conftest_dirs)
         }
-    if scm_runs:
-        picked = {r for r in picked if not r.startswith("tests/scm/")}
-    picked = {r for r in picked if SAFE_TEST_RE.match(r)}
-    tests = sorted(PREFIX + r for r in picked)
+    def runnable(rels: set[str]) -> list[str]:
+        keep = {r for r in rels if SAFE_TEST_RE.match(r) and not (scm_runs and r.startswith("tests/scm/"))}
+        return sorted(PREFIX + r for r in keep)
+
+    tests = runnable(picked)
     seconds = estimate_seconds(tests, file_durations(root) if durations is None else durations)
     harness = "tests" in conftest_dirs
-    return Selection(tests=tests, full=harness or seconds > budget, count=len(tests), seconds=seconds)
+    return Selection(tests=tests, full=harness or seconds > budget, count=len(tests), seconds=seconds,
+                     named=runnable(named))
 
 
 def main() -> int:
@@ -220,7 +224,7 @@ def main() -> int:
     changed = [line.strip() for line in sys.stdin if line.strip()]
     result = select(changed, Path(args.root), scm_runs=args.scm == "true", budget=args.budget)
     summary = f"{result.count} test files, estimated {result.seconds:.0f} CPU-s (budget {args.budget:.0f})"
-    fallback = "the ci run executes the changed test files alone; the whole suite runs under ci-full before merge"
+    fallback = "only the test files named directly run (a PR's changed tests; on a release, plus the core tier)"
     if result.full and f"{PREFIX}tests/conftest.py" in changed:
         print(f"tests/conftest.py changed, the harness of every test: {fallback}")
     elif result.full:
@@ -236,9 +240,8 @@ def main() -> int:
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with open(output, "a", encoding="utf-8") as fh:
-            # Above the budget no list goes out: the workflow falls back to the
-            # changed test files on `ci`, and `ci-full` runs everything.
-            fh.write(f"tests={'' if result.full else ' '.join(result.tests)}\n")
+            # Above the budget only the test files named on stdin go out.
+            fh.write(f"tests={' '.join(result.named if result.full else result.tests)}\n")
             fh.write(f"full={'true' if result.full else 'false'}\n")
     return 0
 
