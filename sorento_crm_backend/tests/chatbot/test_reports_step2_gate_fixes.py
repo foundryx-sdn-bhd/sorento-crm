@@ -360,3 +360,32 @@ def test_family_c_the_resolver_seam_marks_every_token_it_covers() -> None:
     si: dict[str, Any] = {}
     _resolve_report_product_and_location(parse, gated, si, db=None)
     assert sorted(si.get("outstanding_product_codes") or []) == sorted([*FAMILY, EXACT]), si
+
+
+# ================================================================================ sales report, family beside exact
+
+
+def _sales_product_call(session_factory, typed: tuple[str, ...], gated_codes: tuple[str, ...]) -> dict[str, Any]:
+    parse = {
+        "entities": [{"raw": c, "hint": "product", "canonical_code": c, "current_message": True} for c in typed]
+    }
+    gated = [
+        {"uuid": str(uuid.uuid4()), "entity_type": "product", "code": c, "canonical_code": c} for c in gated_codes
+    ]
+    payload = _payload(order_status="sales_report", entities=gated, parse=parse)
+    _fragment, calls = _run(session_factory, payload, lambda n, a: json.dumps({"has_result": False, "items": []}))
+    sent = [a for n, a in calls if n == "crm_sales_report"]
+    assert sent, [n for n, _ in calls]
+    return sent[0]
+
+
+@pytest.mark.parametrize("typed", [("CWC7601", EXACT), (EXACT, "CWC7601")], ids=["family_first", "exact_first"])
+def test_sales_a_a_family_stem_beside_an_exact_code_reports_the_exact_code(session_factory, typed) -> None:
+    args = _sales_product_call(session_factory, typed, (*FAMILY, EXACT))
+    assert args.get("product_code") == EXACT, args
+
+
+def test_sales_b_codes_sharing_a_prefix_still_fold(session_factory) -> None:
+    """Guard (passes now): two typed codes sharing 3 or more characters travel as their common prefix."""
+    args = _sales_product_call(session_factory, ("CWC7601", "CWC7609"), ("CWC7601", "CWC7609"))
+    assert args.get("product_code") == "CWC760", args
