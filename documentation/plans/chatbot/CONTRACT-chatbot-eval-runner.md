@@ -222,3 +222,20 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   stderr warning and source `unknown`.
 - Exit precedence: a stop code (3 budget, 4 not_dry_run, 130 interrupted) wins over 5; the mismatch still shows in
   report.json.
+
+## Round 12 (per-layer scoring, owner ruling 11 Oct)
+Score each layer the label allows, from the final-turn `trace_digest` (round 10), so a failure is attributed to
+the layer that broke. All new label fields are optional and start empty; they are filled over time.
+- `Expect` gains `understood` (dict, optional keys `domain`, `intent`, `entities`: list of strings),
+  `expected_resolved` (list of strings: record codes/names the resolver must land on) and `tool` (dict, optional
+  keys `name`, `params`: dict).
+- Layer checks (case-insensitive): understood = `parser.domain` equals, `parser.intent` equals, each entity string
+  appears in the JSON of `parser.entities`; resolved = each string appears in the JSON of `resolved[*].entities`;
+  tool = some `tools[*]` has `tool` equal to `name` and, for each params key, `args[key]` equal (strings
+  case-insensitive; other values exact); reply = the existing verdict (pass = correct | good_clarify).
+- Per layer per result: `pass` | `fail` | `na` (label has no field for it) | `no_trace` (label has it, digest has no
+  such stage). Results rows carry `layers: {understood, resolved, tool, reply}`.
+- Report: `by_layer: {layer: {pass, fail, na, no_trace, pass_rate}}` (pass_rate over pass + fail, None when 0) and
+  `first_failing_layer`: for results whose reply failed, a count of the first layer in order understood -> resolved
+  -> tool -> reply that is `fail` (`reply` when no earlier layer was scored). `--regrade` recomputes layers from the
+  stored digests. The verdict itself is unchanged by layers. GRADER_VERSION stays 8 (verdicts unchanged).
