@@ -5032,6 +5032,7 @@ def resolve_references(
     domain_hint: Optional[str] = None,
     entity_pins: Optional[dict[str, str]] = None,
     raw_tokens: Optional[list[str]] = None,
+    family_raw_by_token: Optional[dict[str, str]] = None,
     regions=None,
     code_reader: Optional[Callable[[list[tuple[str, Optional[str]]]], dict[str, Any]]] = None,
     alternatives_active_only: bool = False,
@@ -5583,7 +5584,11 @@ def resolve_references(
         ]
         # CODE-VARIANTS: the typed code's own model family leads, exempt from the floor.
         family_key = (
-            family_code_for(raw_by_token.get(tr.token) or tr.token)
+            family_code_for(
+                raw_by_token.get(tr.token)
+                or (family_raw_by_token or {}).get(tr.token)
+                or tr.token
+            )
             if not tr.matches and (tok_types is None or "product" in tok_types)
             else None
         )

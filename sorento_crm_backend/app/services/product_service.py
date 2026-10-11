@@ -868,6 +868,7 @@ class ProductService:
             self.db.query(Product)
             .filter(
                 Product.family_code == product.family_code,
+                Product.company_id == product.company_id,
                 Product.id != product.id,
                 Product.is_active.is_(True),
             )

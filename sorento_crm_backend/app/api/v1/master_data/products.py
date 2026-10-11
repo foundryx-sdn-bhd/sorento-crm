@@ -4,11 +4,11 @@ import time
 from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Body
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from app.database import get_db
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import get_current_user, get_current_user_or_api_key, require_permission
 from app.services.product_service import ProductService
 from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
@@ -520,14 +520,14 @@ async def reset_variant_auto(
 
 
 class _FamilyCodeBody(BaseModel):
-    family_code: Optional[str] = None
+    family_code: Optional[str] = Field(None, max_length=100)
 
 
 @router.put("/{product_id}/family-code", response_model=ProductResponse)
 async def set_family_code(
     product_id: str,
     body: _FamilyCodeBody,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("master_data.products.edit")),
     db: Session = Depends(get_db),
 ):
     """Hand-set a product's model family (sticky until "Reset to auto")."""
@@ -542,7 +542,7 @@ async def set_family_code(
 @router.post("/{product_id}/family-code-reset", response_model=ProductResponse)
 async def reset_family_code(
     product_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission("master_data.products.edit")),
     db: Session = Depends(get_db),
 ):
     """Clear the manual family and re-derive it from the product code."""
