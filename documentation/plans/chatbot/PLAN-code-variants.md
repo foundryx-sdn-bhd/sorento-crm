@@ -1,6 +1,6 @@
 # PLAN - CODE-VARIANTS (product family relation in did-you-mean)
 
-Status: building (track L: migration). Card answered 11 Oct 2026. UAC:
+Status: building (track L: migration). Mock v1 approved by the owner 11 Oct 2026 ("ok"). Card answered 11 Oct 2026. UAC:
 `code-variants-acceptance-criteria.md`. Branch `crew/code-variants`.
 
 ## Slices (one lane, one PR)
