@@ -67,4 +67,5 @@ stored code. Tests: `tests/test_product_alternatives_suffix_rule.py`,
 Risk notes (slice 2 review, 11 Oct): a marker in the FIRST segment also counts (`N-FH12` would
 link to `FH12`), the literal rule; 0 such pairs on the dev copy's dry run. CB55CR-N is the one
 known reverse pair (hand unlink after the prod run). In the attachment miss, two resolved products
-folding to the same text print the last one (none on the dev copy).
+folding to the same text print the last one; 5 such code pairs exist on the dev copy (e.g.
+`SRT-FH15-CR-DIY` / `SRTFH15-CR-DIY`, `CB 8113A` / `CB8113A`), where either stored spelling is printed.
