@@ -59,7 +59,8 @@ code); every other candidate keeps today's order after them. The `ENTITY_MISS_SU
 does not drop a same-family candidate. The cap stays `_ALTERNATIVES_CAP` (5); the roster still
 prints its current count.
 
-AC-8 No change when the key is null, when the family has no other member, for non-product
+AC-8 No change when the key is null, when no product carries that family code (a family of ONE
+product still leads, see `cbs208-bl`), for non-product
 tokens, for matched tokens, and for the data-miss neighbour probe
 (`find_entity_neighbours_with_data`): alternatives are identical to today.
 
