@@ -1,0 +1,234 @@
+"""OI-CLOSED-LINE one-off clean-up script (Phase 2 red tests, AC-11 to AC-14).
+
+Contract: `documentation/plans/scm/oi-closed-line-acceptance-criteria.md` and
+`PLAN-oi-closed-line.md` change 4. Interface under test (does not exist yet, so these fail
+on the missing module until the coder lands it):
+
+    scripts.oneoff.oi_closed_line_cleanup.run(
+        db, inquiry_no: str, apply: bool, cancel_balance_items: Sequence[str] = ()
+    ) -> {"rows": [{row_id, item_code, verb, qty, ordered, delivered, reason, action}],
+          "applied": bool}
+    scripts.oneoff.oi_closed_line_cleanup.main(argv)   # --inquiry, --apply, --cancel-balance
+
+`rows` lists the rows the run changes (or, in a dry run, would change) with `action ==
+"cancel"`; a row the script leaves alone is never reported with that action.
+
+World (one OI, raised on a project SO, every FK seeded here, fake codes only):
+  A  ORDER raised, its line has a planning-change row superseded "the sales-order line is closed"
+  B  ORDER_BACK raised, its core line is `cancelled`
+  C  ORDER raised on a plain open line (nothing superseded)          -> untouched
+  D  ORDER placed / E partly_linked / F actioned on closed-superseded lines -> never touched
+  G  CANCEL_BALANCE raised + H ORDER placed, both of item CB          -> only G with --cancel-balance
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow
+from app.models.project_so import (
+    INQUIRY_ACTIONED,
+    INQUIRY_CANCELLED,
+    INQUIRY_PARTLY_LINKED,
+    INQUIRY_PLACED,
+    INQUIRY_RAISED,
+    IV_CANCEL_BALANCE,
+    IV_ORDER,
+    IV_ORDER_BACK,
+    OrderInquiry,
+    OrderInquiryRow,
+)
+
+from tests.test_order_inquiry_handover_automation import (
+    _captured_dispatches,
+    _handover_calls,
+    _register,
+)
+from tests.test_planning_changes import (  # noqa: F401  (api is the fixture)
+    _core_line,
+    _core_so,
+    _project_line,
+    _project_so,
+    api,
+)
+
+CLOSED_REASON = "the sales-order line is closed"
+CB_ITEM = "ZZT-CB-ITEM"
+
+
+def _hex() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+class _Cleanup:
+    pass
+
+
+def _world(api, monkeypatch):
+    client, world = api
+    db = world.db
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    core_so = _core_so(db, world.company_id)
+    order = _project_so(db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    inquiry = OrderInquiry(
+        id=str(uuid.uuid4()), company_id=world.company_id,
+        project_sales_order_id=order.id, inquiry_no=f"OI-ZZT-{_hex()}", state=INQUIRY_RAISED,
+    )
+    db.add(inquiry)
+    batch = PlanningChangeBatch(
+        id=str(uuid.uuid4()), company_id=world.company_id, source_kind="so_book_upload",
+    )
+    db.add(batch)
+    db.flush()
+
+    w = _Cleanup()
+    w.client, w.world, w.db, w.calls, w.inquiry, w.order = client, world, db, calls, inquiry, order
+    w.rows = {}
+    n = [0]
+
+    def add(key, *, verb=IV_ORDER, state=INQUIRY_RAISED, superseded=False, core_status="open",
+            item_code=None, qty="40", ordered="40", delivered="0"):
+        n[0] += 1
+        core = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=ordered,
+                          qty_delivered=delivered, required_date=date(2027, 3, 1))
+        core.line_status = core_status
+        pline = _project_line(db, order, line_no=n[0], product=world.product, core_line=core)
+        row = OrderInquiryRow(
+            id=str(uuid.uuid4()), company_id=world.company_id, order_inquiry_id=inquiry.id,
+            so_line_id=pline.id, item_code=item_code or f"ZZT-IT-{key}", qty=Decimal(qty),
+            verb=verb, state=state, ack_state="awaiting", note=f"ZZT note {key}",
+        )
+        db.add(row)
+        if superseded:
+            db.add(PlanningChangeRow(
+                id=str(uuid.uuid4()), company_id=world.company_id, batch_id=batch.id,
+                project_sales_order_id=order.id, project_line_id=pline.id, core_line_id=core.id,
+                line_no=n[0], item_code=row.item_code, kind="delayed", facts_json={},
+                decision="confirm", applied_state="superseded", applied_reason=CLOSED_REASON,
+            ))
+        db.flush()
+        w.rows[key] = row
+
+    add("A", superseded=True, core_status="closed", delivered="40")
+    add("B", verb=IV_ORDER_BACK, core_status="cancelled")
+    add("C")
+    add("D", state=INQUIRY_PLACED, superseded=True, core_status="closed", delivered="40")
+    add("E", state=INQUIRY_PARTLY_LINKED, superseded=True, core_status="closed", delivered="40")
+    add("F", state=INQUIRY_ACTIONED, superseded=True, core_status="closed", delivered="40")
+    add("G", verb=IV_CANCEL_BALANCE, item_code=CB_ITEM, qty="12")
+    add("H", state=INQUIRY_PLACED, item_code=CB_ITEM)
+    db.commit()
+    calls.clear()
+    return w
+
+
+def _snapshot(db, w):
+    db.expire_all()
+    return {
+        k: (r.state, r.qty, r.note, r.ack_state, r.verb) for k, r in w.rows.items()
+    }
+
+
+def _run(w, **kwargs):
+    from scripts.oneoff import oi_closed_line_cleanup
+
+    out = oi_closed_line_cleanup.run(w.db, w.inquiry.inquiry_no, **kwargs)
+    w.db.commit()
+    return out
+
+
+def _cancelled_ids(out):
+    return {str(r["row_id"]) for r in out["rows"] if r["action"] == "cancel"}
+
+
+def _handover_item_codes(calls):
+    return sorted(
+        entry["item_code"]
+        for call in _handover_calls(calls)
+        for entry in call["context"]["handover"]["lines"]
+    )
+
+
+def test_ac_11_dry_run_writes_nothing_and_reports_each_row_it_would_change(api, monkeypatch):
+    w = _world(api, monkeypatch)
+    before = _snapshot(w.db, w)
+
+    out = _run(w, apply=False)
+
+    assert out["applied"] is False
+    assert _snapshot(w.db, w) == before
+    assert _handover_calls(w.calls) == []
+    assert _cancelled_ids(out) == {str(w.rows["A"].id), str(w.rows["B"].id)}
+    a = next(r for r in out["rows"] if str(r["row_id"]) == str(w.rows["A"].id))
+    assert a["item_code"] == w.rows["A"].item_code
+    assert a["verb"] == IV_ORDER
+    assert Decimal(str(a["qty"])) == Decimal("40")
+    assert Decimal(str(a["ordered"])) == Decimal("40")
+    assert Decimal(str(a["delivered"])) == Decimal("40")
+    assert a["reason"], a
+    b = next(r for r in out["rows"] if str(r["row_id"]) == str(w.rows["B"].id))
+    assert b["verb"] == IV_ORDER_BACK
+
+
+def test_ac_12_apply_cancels_dropped_order_rows_and_hands_them_over_in_one_email(
+    api, monkeypatch
+):
+    w = _world(api, monkeypatch)
+    before = _snapshot(w.db, w)
+
+    out = _run(w, apply=True)
+
+    assert out["applied"] is True
+    after = _snapshot(w.db, w)
+    for key in ("A", "B"):
+        state, _qty, note, _ack, _verb = after[key]
+        assert state == INQUIRY_CANCELLED, key
+        assert "dropped" in (note or ""), (key, note)
+    # Placed, partly linked, actioned, plain open, and the CANCEL_BALANCE pair: untouched.
+    for key in ("C", "D", "E", "F", "G", "H"):
+        assert after[key] == before[key], key
+    handover = _handover_calls(w.calls)
+    assert len(handover) == 1, [c["trigger_type"] for c in w.calls]
+    assert _handover_item_codes(w.calls) == sorted(
+        [w.rows["A"].item_code, w.rows["B"].item_code]
+    )
+
+
+def test_ac_13_cancel_balance_item_also_cancels_its_cancel_balance_row_only(api, monkeypatch):
+    w = _world(api, monkeypatch)
+
+    out = _run(w, apply=True, cancel_balance_items=[CB_ITEM])
+
+    after = _snapshot(w.db, w)
+    assert after["G"][0] == INQUIRY_CANCELLED, "the CANCEL_BALANCE row of the item"
+    assert after["H"][0] == INQUIRY_PLACED, "the placed ORDER row of the same item stays"
+    assert after["H"][2] == f"ZZT note H"
+    assert str(w.rows["G"].id) in _cancelled_ids(out)
+    assert after["A"][0] == INQUIRY_CANCELLED and after["B"][0] == INQUIRY_CANCELLED
+    assert len(_handover_calls(w.calls)) == 1
+    assert CB_ITEM in _handover_item_codes(w.calls)
+
+
+def test_ac_14_a_second_apply_changes_nothing(api, monkeypatch):
+    w = _world(api, monkeypatch)
+    _run(w, apply=True, cancel_balance_items=[CB_ITEM])
+    settled = _snapshot(w.db, w)
+    w.calls.clear()
+
+    again = _run(w, apply=True, cancel_balance_items=[CB_ITEM])
+
+    assert _snapshot(w.db, w) == settled
+    assert _cancelled_ids(again) == set()
+    assert _handover_calls(w.calls) == []
+
+
+def test_cli_requires_an_inquiry_number():
+    from scripts.oneoff import oi_closed_line_cleanup
+
+    with pytest.raises(SystemExit) as exc:
+        oi_closed_line_cleanup.main([])
+    assert exc.value.code not in (0, None)
