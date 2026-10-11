@@ -2620,10 +2620,12 @@ def resolve_kinds(
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = named_unplaced(entities, resolved)
+    compatible = _without_guesses(compatible, resolved, unplaced)
     if unplaced and db is not None:
         # A location word the lane places itself (`resolve_warehouse_token`, the outstanding
         # report's `outstanding_warehouse_codes`) is not one the resolver missed: the generic
         # resolver never looks in `warehouses`, so its echo of the word is not a "not found".
+        # Dropped AFTER the guesses it drew are, so those never reach the call.
         from app.services.chatbot.lanes.business.services import resolve_warehouse_token
 
         for e in entities:
@@ -2633,7 +2635,6 @@ def resolve_kinds(
             key = _token_key(jsc.nullish_str(e.get("raw")).strip() or word)
             if key in unplaced and resolve_warehouse_token(db, word):
                 unplaced.pop(key)
-    compatible = _without_guesses(compatible, resolved, unplaced)
     if is_order_domain and live_brands_read:
         # #1262 fix lane round 3, S5: a brand word that is NOT on the live list, typed
         # beside one that is ("Sorento and XYZ"), must be said back like any other
