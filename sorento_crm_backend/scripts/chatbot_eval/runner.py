@@ -92,7 +92,8 @@ def run_case(
             prev_bot = out.reply_text
             replay_digests.append(out.trace_digest)
     final = step(text)
-    verdict = grade(case.expect, final, prev_bot)
+    user_texts = [h["text"] for h in case.history if h.get("role") == "user"] + [text]
+    verdict = grade(case.expect, final, prev_bot, user_texts)
     if verdict.needs_judge and judge is not None and judge_calibrated:
         result = judge.score(case, final)
         if result is not None:

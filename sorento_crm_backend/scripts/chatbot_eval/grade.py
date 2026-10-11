@@ -47,14 +47,29 @@ def _has_date(reply: str, iso: str) -> bool:
     return any(re.search(rf"(?<![\d/-]){re.escape(f)}(?![\d/-])", reply) for f in forms)
 
 
-def _must_ok(reply: str, item: dict) -> bool:
+HEADER_LINE = re.compile(r"^[^*:]{1,40}:\s*\S")
+
+
+def _body(reply: str) -> str | None:
+    """The reply after its leading `label: value` header lines; None when it has no header block."""
+    lines = reply.split("\n")
+    n = 0
+    while n < len(lines) and HEADER_LINE.match(lines[n]):
+        n += 1
+    return "\n".join(lines[n:]) if n else None
+
+
+def _must_ok(reply: str, item: dict, user_texts: list[str] | None = None) -> bool:
     low = reply.lower()
+    body = _body(reply)
+    body_low = body.lower() if body is not None else low
+    echoed = " ".join(user_texts or []).lower()
     for key, want in item.items():
         if key == "near":
             continue
         want = str(want)
         if key in ("code", "text"):
-            ok = want.lower() in low
+            ok = want.lower() in (body_low if want.lower() in echoed else low)
         elif key == "number":
             ok = _has_number(reply, want)
         elif key == "date":
@@ -70,14 +85,16 @@ def _vacuous(kind: str, expect: Expect) -> bool:
     return not expect.options if kind == "clarify" else not expect.must
 
 
-def _passes(outcome: str, expect: Expect, reply: str) -> str | None:
+def _passes(outcome: str, expect: Expect, reply: str, user_texts: list[str] | None = None) -> str | None:
     if outcome == "clarify":
         low = reply.lower()
         return "good_clarify" if all(o.lower() in low for o in expect.options) else None
-    return "correct" if all(_must_ok(reply, m) for m in expect.must) else None
+    return "correct" if all(_must_ok(reply, m, user_texts) for m in expect.must) else None
 
 
-def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> Verdict:
+def grade(
+    expect: Expect, outcome: Outcome, previous_bot_reply: str | None, user_texts: list[str] | None = None
+) -> Verdict:
     reply = outcome.reply_text or ""
     if outcome.tool_errors:
         return Verdict("error", ["tool_error"])
@@ -90,13 +107,13 @@ def grade(expect: Expect, outcome: Outcome, previous_bot_reply: str | None) -> V
         return Verdict("error", ["delegated"])
     if not reply.strip():
         return Verdict("error", ["blank_reply"])
-    verdict = _rubric(expect, reply)
+    verdict = _rubric(expect, reply, user_texts)
     if verdict.label == "wrong" and previous_bot_reply is not None and _norm(reply) == _norm(previous_bot_reply):
         return Verdict("stuck", ["same_as_previous_reply"])
     return verdict
 
 
-def _rubric(expect: Expect, reply: str) -> Verdict:
+def _rubric(expect: Expect, reply: str, user_texts: list[str] | None = None) -> Verdict:
     low = reply.lower()
     for rule in expect.must_not:
         if rule == "uuid":
@@ -113,7 +130,7 @@ def _rubric(expect: Expect, reply: str) -> Verdict:
     for i, kind in enumerate(kinds):
         if i > 0 and has_criteria and _vacuous(kind, expect):
             continue
-        label = _passes(kind, expect, reply)
+        label = _passes(kind, expect, reply, user_texts)
         if label:
             return Verdict(label, [], bool(expect.judge_note) or _vacuous(kind, expect))
     return Verdict("wrong", ["expectation_not_met"])

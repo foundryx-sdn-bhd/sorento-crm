@@ -122,6 +122,10 @@ class DbContactReset:
                     "DELETE FROM chatbot.turns WHERE is_test = true AND contact_respond_id = %s", (respond_id,)
                 )
                 cur.execute(
+                    "UPDATE scm.reorder_run SET status = 'failed' "
+                    "WHERE requested_via = 'chat' AND status IN ('queued', 'running')"
+                )
+                cur.execute(
                     "DELETE FROM conversation_frames WHERE is_test = true AND contact_respond_id = %s",
                     (respond_id,),
                 )

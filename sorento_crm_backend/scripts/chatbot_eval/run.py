@@ -178,7 +178,11 @@ def _regrade(args, cases: list[Case]) -> int:
             reply_text=row.get("reply_text") or "", branch_kind=row.get("branch_kind"),
             tool_errors=errors, lane_notes=notes, latency_ms=row.get("latency_ms", 0), raw=raw,
         )
-        verdict = grade(case.expect, out, row.get("previous_bot_reply"))
+        final_text = next(
+            (v["text"] for v in case.variants if v.get("kind") == row.get("variant_kind")), case.message["text"]
+        )
+        user_texts = [h["text"] for h in case.history if h.get("role") == "user"] + [final_text]
+        verdict = grade(case.expect, out, row.get("previous_bot_reply"), user_texts)
         results.append(
             CaseResult(
                 case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
