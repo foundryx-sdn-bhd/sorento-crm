@@ -5868,6 +5868,9 @@ class ProjectSupplyService:
         reserve_locations = self._reserve_ladder_locations(fact)
         by_id = {str(w.id): code for code, w in reserve_locations.items()}
         allowed = ", ".join(sorted(reserve_locations))
+        # One credit, consumed across Reserve then Borrow components in payload order.
+        delivered_left = min(_dec(fact.core.qty_delivered), _dec(fact.open_qty))
+        delivered_left = max(delivered_left, _ZERO)
         for item in entry.reserve or []:
             warehouse = by_id.get(str(item.warehouse_id))
             qty = _dec(item.qty)
@@ -5922,6 +5925,16 @@ class ProjectSupplyService:
             # (`test_a_hold_the_same_order_carries_forward_is_netted_by_the_confirm_as_
             # the_board_nets_it`). `carried` is read above the location gate.
             ask = qty - carried if qty > carried else _ZERO
+            if ask <= _ZERO:
+                continue
+            # OI-CLOSED-LINE (owner Q1, 11 Oct 2026): what the customer already received
+            # needs no free stock to be "reserved", so the delivered quantity is credited
+            # first and only the remainder is judged against live capacity. The hold cap
+            # stays `_open_of`, so nothing is held for the delivered part.
+            covered = min(delivered_left, ask)
+            delivered_left -= covered
+            ask -= covered
+            qty -= covered
             if ask <= _ZERO:
                 continue
             # TEMPORARY LIFT (the captain, 8 Sep 2026): an ownership group's net can be
@@ -6050,6 +6063,12 @@ class ProjectSupplyService:
                     }
 
         for item in entry.borrow or []:
+            covered = min(delivered_left, _dec(item.qty))
+            if covered > _ZERO:
+                delivered_left -= covered
+                if covered == _dec(item.qty):
+                    continue
+                item = item.model_copy(update={"qty": _dec(item.qty) - covered})
             self._check_borrow(item, fact, borrow_left, refuse, stale, invalid, carried_holds)
 
         total = timely + reserve_total + borrow_total + buy
@@ -8357,6 +8376,9 @@ class ProjectSupplyService:
         by_id = {str(w.id): code for code, w in reserve_locations.items()}
         siblings = self._group_sibling_warehouses(fact)
         unowned = self._unowned_holds(line)
+        # OI-CLOSED-LINE AC-9: a hold is never wider than what is still owed. The delivered
+        # part of a Reserve or Borrow was credited at the recheck and holds nothing.
+        hold_left = _open_of(fact.core)
         for item in entry.reserve or []:
             qty = _dec(item.qty)
             if qty <= _ZERO:
@@ -8373,6 +8395,10 @@ class ProjectSupplyService:
                 qty -= adopted
                 if qty <= _ZERO:
                     continue
+            qty = min(qty, hold_left)
+            if qty <= _ZERO:
+                continue
+            hold_left -= qty
             location = self._warehouse_of(fact, str(item.warehouse_id)) or by_id.get(
                 str(item.warehouse_id)
             )
@@ -8417,6 +8443,10 @@ class ProjectSupplyService:
                 # LINK (`_place_supply_borrows`), which `assign()` reads as pinned supply on
                 # the document itself (PLAN 3.3).
                 continue
+            qty = min(qty, hold_left)
+            if qty <= _ZERO:
+                continue
+            hold_left -= qty
             claim_id = None
             donor_project_id = None
             if item.source == ALLOC_SOURCE_OTHER_PROJECT and item.donor_project_id:
