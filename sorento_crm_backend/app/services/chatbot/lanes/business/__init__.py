@@ -2167,7 +2167,7 @@ def run_fetch(
     # product or a customer, so a call with neither (a brand-only ask the parser filed as a
     # sales report) is a question to ask, never a call that fails. The linked-customer path
     # above has already put the contact's links into `entities` as customers.
-    if tool_name == "crm_sales_report" and not (
+    if tool_name == "crm_sales_report" and not scoped_to_links and not (
         has_product
         or has_customer
         or carried_subject
@@ -2381,9 +2381,16 @@ def run_fetch(
         if refusal:
             if trace is not None:
                 trace.add("report_ask", {"refused": envelope.get("status_code")})
-            return _fixed_reply(refusal)
+            localizer = ctx.get("localizer")
+            return _fixed_reply(localizer.lines(refusal) if localizer is not None else refusal)
         status_code = envelope.get("status_code")
-        if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in (408, 429):
+        is_report_tool = tool_name == report_ask.TOOL or tool_name in business_services.REPORT_MEASURE_OF
+        if (
+            is_report_tool
+            and isinstance(status_code, int)
+            and 400 <= status_code < 500
+            and status_code not in (401, 408, 429)
+        ):
             # A permanent refusal, not a failure to retry. The route's own words are never echoed.
             if trace is not None:
                 trace.add("report_refused", {"tool": tool_name, "status_code": status_code})
