@@ -6,6 +6,7 @@ import argparse
 import dataclasses
 import json
 import os
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -73,6 +74,19 @@ def _write(out: str, report: dict, run) -> None:
             fh.write(json.dumps(row) + "\n")
 
 
+def _git_provenance() -> tuple[str | None, bool | None]:
+    """HEAD sha (EVAL_APP_SHA overrides) and whether tracked files are modified; None when git is unavailable."""
+    here = Path(__file__).resolve().parent
+    try:
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here, text=True).strip()
+        dirty = bool(
+            subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=here, text=True).strip()
+        )
+    except (OSError, subprocess.SubprocessError):
+        return os.environ.get("EVAL_APP_SHA") or None, None
+    return os.environ.get("EVAL_APP_SHA") or sha, dirty
+
+
 def _inside_repo(path: str) -> bool:
     repo = _repo_root()
     target = Path(path).resolve()
@@ -134,6 +148,7 @@ def _regrade(args, cases: list[Case]) -> int:
         run_id=src.get("run_id", f"regrade-{uuid.uuid4().hex[:8]}"),
         prompt_version=src.get("prompt_version", "stored"), cases=len(results), regrade_dropped=dropped,
         started_at=src.get("started_at", datetime.now(timezone.utc).isoformat()),
+        git_sha=src.get("git_sha"), git_dirty=src.get("git_dirty"),
         regraded_from=args.regrade, regraded_at=datetime.now(timezone.utc).isoformat(),
     )
     if args.out:
@@ -222,11 +237,12 @@ def main(argv: list[str] | None = None) -> int:
             key = "none" if parser.get("prompt_version") is None else str(parser["prompt_version"])
             seen[key] = seen.get(key, 0) + 1
     mismatch = prompt["source"] != "unknown" and any(k != str(prompt["version"]) for k in seen)
+    git_sha, git_dirty = _git_provenance()
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
         engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
         prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
-        prompt=prompt, prompt_versions_seen=seen,
+        prompt=prompt, prompt_versions_seen=seen, git_sha=git_sha, git_dirty=git_dirty,
         judge_stopped=judge.stopped if judge is not None else None,
         judge_usd=judge.budget.spent if judge is not None else 0.0,
     )
