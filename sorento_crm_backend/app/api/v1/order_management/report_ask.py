@@ -66,6 +66,9 @@ _FILTER_PARAMS = (
     "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids",
     "warehouse_codes", "channel", "customer_agent_ids",
 )
+#: The param names `carried` may name (the report's filters and period); others are dropped.
+_CARRIED_NAMES = frozenset(_FILTER_PARAMS) | {"date_from", "date_to"}
+_MAX_CARRIED = 20
 #: The echo's name for the "(no agent)" key in an agent filter (REPORT-DRILLDOWN).
 _NO_AGENT_NAME = "(no agent)"
 
@@ -322,7 +325,10 @@ def _serve(
         common["measure_key"] = spec.measure_key
     if carried:
         # Provenance from the chatbot: the params whose value came from an earlier turn.
-        common["carried"] = [p.strip() for item in carried for p in str(item or "").split(",") if p.strip()]
+        names = [p.strip() for item in carried for p in str(item or "").split(",") if p.strip()]
+        known = [p for p in names if p in _CARRIED_NAMES][:_MAX_CARRIED]
+        if known:
+            common["carried"] = known
 
     from app.services import rate_limit
 

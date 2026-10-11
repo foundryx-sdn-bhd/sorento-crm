@@ -70,7 +70,8 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_project_forecast",
     "crm_project_quotations_list",
     "crm_projects_list",
-    # No policy row until the chatbot routes to it (REPORTS-STEP2 S2); allow-listed here meanwhile.
+    # The chatbot routes sales rankings to it since REPORTS-STEP2 S2; the order-domain policy row
+    # still lists crm_report_ask until S4 removes the old tools, so it is undomained until then.
     "crm_report",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",

@@ -472,7 +472,7 @@ def test_n_a_first_message_naming_delivered_sends_it_explicitly(session_factory,
     _seed_contact(session_factory, variables={})
     _reply, captured = _top_selling(session_factory, monkeypatch, _ts(rank_by="amount", basis="delivered", top_n=10), "top 10 delivered by amount")
     (args,) = ts_calls(captured)
-    assert _split_key(args)["basis"] == "delivered", args
+    assert args["basis"] == "delivered", args
 
 
 def test_n_a_fetch_with_no_settled_basis_makes_no_call(session_factory) -> None:

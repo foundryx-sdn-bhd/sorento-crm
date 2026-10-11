@@ -1052,7 +1052,7 @@ def entity_ids_transformer(
             space_id if space_id is not None else jsc.get(semantic_input, "space_id")
         )
 
-    # REPORT-ENGINE slice 1b: `crm_report_ask`'s params are settled whole by the lane
+    # REPORT-ENGINE slice 1b: `crm_report`'s (and `crm_report_ask`'s) params are settled whole by the lane
     # (`report_ask.route_args`, put on `semantic_input` by `run_fetch`, which hands no
     # entities of its own); nothing else the generic steps above built travels with them
     # but the entity ids. The customer scope tail below and `contact_id` / `space_id`

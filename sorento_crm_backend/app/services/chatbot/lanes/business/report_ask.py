@@ -1,7 +1,7 @@
 """The `sales_ranking` ask: sales ranked or totalled by one dimension (REPORT-ENGINE slice 1b).
 
 `documentation/plans/chatbot/PLAN-report-engine.md` section 11. The lane half of
-`crm_report_ask` (`GET /api/v1/order-management/report-ask`): every gate (grant, audience,
+`crm_report` (`GET /api/v1/order-management/report`, REPORTS-STEP2 S2; it was `crm_report_ask`): every gate (grant, audience,
 company, location policy) is the ROUTE's, from `contact_id`; this module only turns the
 parser's reading into the route's params, and asks for the two fields the route requires
 (the period and how many, then, for a ranking, the metric, and always the basis) through the
@@ -685,7 +685,9 @@ def _refine(
     if period is not None:
         given["period"] = period
     # Provenance: the params whose value is the held entry's, not said in this message.
-    carried = [k for k, v in args.items() if k not in _NON_FILTER_ARGS and held.get(k) == v and v not in (None, [], "")]
+    # Built from what THIS message set, never by comparing values: a held brand named again is said now.
+    said = set(filters) | ({"channel"} if channel in ("dealer", "project") else set())
+    carried = [k for k, v in args.items() if k not in _NON_FILTER_ARGS and k not in said and held.get(k) == v and v not in (None, [], "")]
     if period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) is None:
         carried += [k for k in ("date_from", "date_to") if frame.get(k)]
     return rf.collect(
@@ -842,7 +844,7 @@ def _scope_answer(db: Any, parse_output: dict[str, Any], slot: dict[str, Any]) -
 
 
 def route_args(outcome: rf.Outcome) -> dict[str, Any]:
-    """The settled ask as `crm_report_ask`'s params (the route's names)."""
+    """The settled ask in the lane's words (basis + measure figure; `fetch` turns them into `crm_report`'s registry key), plus `carried` on a refine."""
     args = dict(_dict(outcome.extras.get("args")))
     for name, key in (("metric", "measure"), ("basis", "basis")):
         settled = _dict(outcome.values.get(name)).get("value")
