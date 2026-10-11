@@ -185,14 +185,15 @@ def test_a_matched_token_carries_no_family_alternatives(db, refs):
     assert not any(a.display.get("same_family") for a in tr.alternatives)
 
 
-def test_family_with_no_other_member_is_unchanged(db, refs):
+def test_a_one_product_family_still_leads(db, refs):
+    """Lead ruling (UAC AC-8): a family of one still leads; the rest keep today's order."""
     _p(db, refs, "SRTLONE9100-RL", family="SRTLONE9100")
     for c in ("SRTLONE9101-SH-150", "SRTLONE9102-SH-150"):
         _p(db, refs, c, family=c.split("-")[0])
     got, base = _baseline_vs_family(db, "SRTLONE9100SH150", "SRTLONE9100-SH-150")
-    assert _codes(got) == _codes(base)
-    # the lone member is the only family row; it appears only where today's ranking put it
-    assert [a.canonical_code for a in got.alternatives] == [a.canonical_code for a in base.alternatives]
+    assert got.alternatives[0].canonical_code == "SRTLONE9100-RL"
+    assert got.alternatives[0].display.get("same_family") is True
+    assert _codes(got)[1:] == [c for c in _codes(base) if c != "SRTLONE9100-RL"]
 
 
 # --------------------------------------------------------------------------- AC-9 route
