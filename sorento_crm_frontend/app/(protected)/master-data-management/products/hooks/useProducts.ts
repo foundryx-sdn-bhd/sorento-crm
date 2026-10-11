@@ -22,6 +22,8 @@ import {
   setVariantParent,
   unlinkVariant,
   resetVariantAuto,
+  setFamilyCode,
+  resetFamilyCode,
   type GetProductsParams,
   type ProductBulkUpdates,
 } from '../services/productService';
@@ -236,6 +238,45 @@ export function useResetVariantAuto() {
       toast.error(error.message || 'Failed to reset variant link', {
         position: 'top-center',
       });
+    },
+  });
+}
+
+/**
+ * Hook for hand-setting a product's model family.
+ */
+export function useSetFamilyCode() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ productId, familyCode }: { productId: string; familyCode: string | null }) =>
+      setFamilyCode(productId, familyCode),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product', variables.productId] });
+      toast.success('Family updated', { position: 'top-center' });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to set family', { position: 'top-center' });
+    },
+  });
+}
+
+/**
+ * Hook for resetting a hand-set family back to the code-derived one.
+ */
+export function useResetFamilyCode() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ productId }: { productId: string }) => resetFamilyCode(productId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product', variables.productId] });
+      toast.success('Family reset to auto', { position: 'top-center' });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to reset family', { position: 'top-center' });
     },
   });
 }
