@@ -244,3 +244,70 @@ def test_iii_c_the_outgoing_outstanding_args_carry_both_codes(session_factory) -
     sent = [a for n, a in calls if n == "crm_outstanding_report"]
     assert sent, [n for n, _ in calls]
     assert sent[0].get("product_codes") == list(PRODUCT_CODES), sent[0]
+
+
+# ================================================================================ review round
+
+
+REPORT_TOOLS = ("crm_sales_report", "crm_outstanding_report", "crm_report", "crm_report_ask")
+OWN_ACCOUNT_LINE = "You can only see sales for your own account."
+
+
+def _order_list_payload() -> dict[str, Any]:
+    """An ask in a non-report domain (the product master): its tool is not a report tool."""
+    pid = str(uuid.uuid4())
+    return _payload(
+        order_status="",
+        entities=[{"uuid": pid, "entity_type": "product", "code": "ZZT-P", "canonical_code": "ZZT-P"}],
+        parse={
+            "domain_hint": "master_products", "intent_hint": "check_product",
+            "entities": [{"raw": "ZZT-P", "hint": "product", "canonical_code": "ZZT-P", "current_message": True}],
+        },
+    )
+
+
+def test_r1_a_422_on_a_non_report_tool_keeps_the_error_arm(session_factory) -> None:
+    body = _http_error(422, "validation_error", "bad filter")
+    fragment, calls = _run(session_factory, _order_list_payload(), lambda n, a: body)
+    assert calls, "no tool was called, so the 4xx path is not exercised"
+    assert not {n for n, _ in calls} & set(REPORT_TOOLS), calls
+    assert fragment.get("kind") == "error", fragment
+
+
+def test_r2_a_401_on_the_sales_report_is_the_error_arm(session_factory) -> None:
+    body = _http_error(401, "unauthorized", "Not authenticated.")
+    fragment, calls = _run(session_factory, _sales_payload(), lambda n, a: body)
+    assert [n for n, _ in calls] == ["crm_sales_report"], calls
+    assert fragment.get("kind") == "error", fragment
+
+
+def _forbidden() -> str:
+    return _http_error(403, "customer_not_permitted", OWN_ACCOUNT_LINE)
+
+
+def test_r3_a_403_route_line_is_said_as_the_route_wrote_it(session_factory) -> None:
+    fragment, calls = _run(session_factory, _sales_payload(), lambda n, a: _forbidden())
+    assert [n for n, _ in calls] == ["crm_sales_report"], calls
+    assert fragment.get("kind") != "error", fragment
+    assert _reply_text(fragment) == OWN_ACCOUNT_LINE, fragment
+
+
+def test_r3_a_ms_contact_gets_the_route_line_localized(session_factory) -> None:
+    from app.services.chatbot.label_catalog import Localizer
+
+    malay = "Anda hanya boleh melihat jualan untuk akaun anda sendiri."
+    payload = _sales_payload()
+    payload["ctx"]["localizer"] = Localizer("ms", {OWN_ACCOUNT_LINE: malay})
+    fragment, _calls = _run(session_factory, payload, lambda n, a: _forbidden())
+    assert _reply_text(fragment) == malay, fragment
+
+
+def test_r4_a_scoped_dealer_with_no_named_subject_still_gets_the_report(session_factory) -> None:
+    link = str(uuid.uuid4())
+    payload = _payload(order_status="sales_report", entities=[], parse={"domain_hint": "sales"})
+    payload["ctx"]["customer_scope"] = {
+        "ids": [link], "enforced": True, "refusal": "Sorry, that isn't under your account.",
+    }
+    fragment, calls = _run(session_factory, payload, lambda n, a: json.dumps({"has_result": False, "items": []}))
+    assert "crm_sales_report" in [n for n, _ in calls], (calls, _reply_text(fragment))
+    assert "which product or customer" not in _reply_text(fragment).lower(), fragment
