@@ -179,22 +179,23 @@ def should_break(previous: list[str | None], current: str | None, limit: int = M
     return all(f == current for f in previous[-limit:])
 
 
-def _subject_code(focus: Any) -> str | None:
-    """The turn's subject, as codes off the focus the turn ended with (products first, then
-    customers): resolved codes, never the message text."""
+def _subject_code(focus: Any, *, printable: bool = False) -> str | None:
+    """The turn's subject off the focus the turn ended with (products first, then customers):
+    resolved values, never the message text. The fingerprint key may fall back to a row's
+    uuid; the PRINTED subject (`printable`) never does: only a code or a name, else None
+    (security review, CLARIFY-POLICY round 4)."""
     if not isinstance(focus, dict):
         return None
     for key in ("products", "customers"):
-        codes = sorted(
-            {
-                str(row.get("canonical_code") or row.get("uuid") or "").strip()
-                for row in focus.get(key) or []
-                if isinstance(row, dict)
-            }
-            - {""}
-        )
-        if codes:
-            return ",".join(codes)
+        values = set()
+        for row in focus.get(key) or []:
+            if not isinstance(row, dict):
+                continue
+            label = row.get("canonical_code") or row.get("name") or row.get("display_name")
+            values.add(str(label if printable else (row.get("canonical_code") or row.get("uuid")) or "").strip())
+        values -= {""}
+        if values:
+            return ",".join(sorted(values))
     return None
 
 
@@ -225,8 +226,7 @@ def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
         kind, param = "llm_clarify", "topic"
     if kind is None:
         return None, None, None
-    subject = _subject_code(focus)
-    return ask_fingerprint(kind, param or "", subject), kind, subject
+    return ask_fingerprint(kind, param or "", _subject_code(focus)), kind, _subject_code(focus, printable=True)
 
 
 #: A turn plan's `ask` name -> its policy kind (`CLARIFY_POLICY_ROWS`).
@@ -488,6 +488,24 @@ def _date_words(verdict: dict[str, Any]) -> str:
     return str(date_mode).replace("_", " ").strip() if isinstance(date_mode, str) and date_mode else ""
 
 
+#: Report and ranking asks (`order_status` values, `focus.status`): a filter carried into a
+#: report or a ranking drill is that report's own scope, not a subject this ask covers.
+_REPORT_STATUSES = frozenset(
+    {"sales_ranking", "sales_report", "sales_analysis", "top_selling", "low_stock", "low_stock_report"}
+)
+
+
+def _is_report(verdict: dict[str, Any], focus: Any, domain: str) -> bool:
+    """Is this turn a report or a ranking (parsed fields and the held status only)? The
+    `sales` domain is reports throughout; a ranking ask carries `group_by` / `top_n` /
+    `ranking_drill`."""
+    if domain == "sales":
+        return True
+    if verdict.get("order_status") in _REPORT_STATUSES or getattr(focus, "status", None) in _REPORT_STATUSES:
+        return True
+    return any(verdict.get(key) for key in ("group_by", "top_n", "ranking_drill"))
+
+
 def carry_conflict(
     focus: Any,
     verdict: dict[str, Any],
@@ -499,9 +517,9 @@ def carry_conflict(
     answers_task: bool = False,
     own_customer_ids: tuple[str, ...] | None = None,
 ) -> CarryOutcome | None:
-    """The one check (AC-140..AC-145): does this turn carry a subject of kind A from an earlier
-    question into a new ask without the message saying so? Called by `turn/apply.py` once the
-    focus rules have built the turn's focus, so "carried" means today's carry actually kept A.
+    """The one check (AC-140..AC-145): does the contact HOLD a subject of kind A from an earlier
+    question (`focus` is the focus before this message) that the new ask could use, without
+    the message restating it or saying so? Called by `turn/apply.py` before the focus rules.
 
     Clear (None, today's carry): the parser read an explicit reference
     (`anaphora.backward_reference`), a follow-up on the same subject (`continuation`), the
@@ -517,7 +535,7 @@ def carry_conflict(
         return None
     domain = verdict.get("domain_hint")
     domain_row = policy.domain(domain) if isinstance(domain, str) and domain else None
-    if domain_row is None:
+    if domain_row is None or _is_report(verdict, focus, domain_row.name):
         return None
     named = [e for e in verdict.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is True]
     named_kinds = {str(e.get("hint") or "") for e in named}
@@ -530,7 +548,10 @@ def carry_conflict(
         carried = _carried_rows(getattr(focus, field, None) or [], own)
         if not carried:
             continue
-        others = [e for e in named if str(e.get("hint") or "") != kind]
+        # The new subject B is another carried-subject kind (a product or a customer); a
+        # container or an order number named alone narrows the ask, it is no second subject.
+        carry_kinds = {k for k, _f, _p in _CARRY_KINDS}
+        others = [e for e in named if str(e.get("hint") or "") != kind and str(e.get("hint") or "") in carry_kinds]
         if not others and verdict.get("domain_in_message") is False:
             # No new subject and no domain of its own ("this month", "50"): the message goes
             # on with the question already held (the period ask's answer is such a message,

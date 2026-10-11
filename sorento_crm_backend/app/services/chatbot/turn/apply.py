@@ -3535,6 +3535,21 @@ def _apply(
     # PR #1401 fix round 4: the word that settled a sales report drill pick is not a
     # subject, so it never reaches the focus to be carried into the next turn.
     entities = without_the_drill_pick_words(entities, state.pending, trace)
+    # CLARIFY-POLICY S4 (R2, Q9; AC-140..AC-145): decided on the subject the contact HELD
+    # before this message (`state.focus`), before the focus rules below decide what to keep:
+    # a held subject the new ask could use, that the message neither restated nor clearly
+    # referred to, is asked about before anything is fetched (rows `carry_combine` /
+    # `carry_unclear`). `carry` mode leaves today's rules to decide, byte for byte.
+    carry = clarify_policy.carry_conflict(
+        state.focus,
+        verdict,
+        decision,
+        policy,
+        turn_no=state.turn_no,
+        candidates=candidates,
+        answers_task=task_outcome.fetch is not None or bool(task_outcome.closed_kinds),
+        own_customer_ids=getattr(state.profile, "own_customer_ids", None),
+    )
     focus = _focus_rules(
         focus_after_pending,
         verdict,
@@ -3544,25 +3559,15 @@ def _apply(
         domain_override=domain_override,
         trace=trace,
     )
-    # CLARIFY-POLICY S4 (R2, Q9; AC-140..AC-145): a subject today's carry kept from an earlier
-    # question, beside a new ask that did not say so, is asked about before anything is
-    # fetched (rows `carry_combine` / `carry_unclear`). Read on the focus the rules above just
-    # built, so "carried" is what today's carry actually kept.
-    carry = clarify_policy.carry_conflict(
-        focus,
-        verdict,
-        decision,
-        policy,
-        turn_no=state.turn_no,
-        candidates=candidates,
-        answers_task=task_outcome.fetch is not None or bool(task_outcome.closed_kinds),
-        own_customer_ids=getattr(state.profile, "own_customer_ids", None),
-    )
     if carry is not None:
         trace.rules_fired.append(f"carry_{carry.action}")
         if carry.action == "drop":
             _set_kind_field(focus, carry.kind, [])
         elif carry.action == "ask":
+            # The held subject stays on the focus beside the new one (today's rules may have
+            # dropped it), so the answer can keep it (1) or drop it (2).
+            if not getattr(focus, carry.field, None):
+                _set_kind_field(focus, carry.kind, copy.deepcopy(getattr(state.focus, carry.field, None) or []))
             return replace(state, focus=focus, pending=None), Plan(
                 domains=[], fetch=[], ask=carry.pending, denied=[], trace=trace
             )
