@@ -638,6 +638,8 @@ def test_the_pr_gate_runs_the_fast_gates_as_its_first_steps():
         assert needle in steps[name], name
         assert "github.event_name == 'pull_request'" in steps[name], name
         assert names.index(name) < names.index("Install dependencies"), name
+    rng = re.search(r"^\s*RANGE: (.*)$", steps["Secret scan (gitleaks)"], re.M).group(1).strip()
+    assert rng == "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}", rng
     checkout = _lean_gate_steps()["Checkout"]
     assert "github.event_name == 'pull_request'" in checkout and "fetch-depth" in checkout, "gitleaks reads base..head"
 
@@ -968,8 +970,8 @@ def _ran(results: dict[str, str]) -> set[str]:
     return {job for job, r in results.items() if r != "skipped"}
 
 
-# CI-LEAN: a `ci` PR runs the four one-minute fast gates and ONE job that does
-# everything else (`lean-gate`, check name `PR gate`): no image builds, no SCM
+# CI-LEAN + CI-COST round 2: a `ci` PR runs `changes` and ONE job that does
+# everything else, fast gates first (`lean-gate`, check name `PR gate`): no image builds, no SCM
 # or main shards, no vitest shards, no separate label or gate job.
 GATES_ON_PR = {"changes", "lean-gate"}
 
