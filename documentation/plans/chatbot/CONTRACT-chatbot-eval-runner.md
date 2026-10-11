@@ -260,3 +260,20 @@ the layer that broke. All new label fields are optional and start empty; they ar
 ## Round 15 (regrade keeps prompt provenance, 11 Oct)
 - `--regrade` also copies `prompt` (id, version, template_md5, source), `prompt_versions_seen` and `prompt_mismatch`
   from the source report.json (found when saving the reports gate baseline: the regraded file had no `prompt`).
+
+## Round 16 (per-step gates: topic subsets + fixed smoke, owner ruling 11 Oct)
+Per-step gate = hidden cases of the topics a PR touches + a fixed 30-case cross-topic smoke; the full hidden set only
+for big decisions.
+- `--topics a,b` keeps cases whose `topic_code` equals a prefix or starts with `prefix + "."` (so `purchase_order`
+  matches `purchase_order.outstanding`, `inventory.availability` matches only itself). Unknown prefix (matches no
+  case) -> exit 2 naming it.
+- `--ids-file PATH` keeps the case ids listed (JSON array, or a JSON object with an `ids` array). An id not in the data
+  dir -> exit 2 naming it. `--topics` and `--ids-file` combine as a union. Neither -> all cases (as today).
+- Before any engine call the run prints to stderr one line: `selected N cases, ~C calls, ~$X` where C = sum over
+  selected cases of (1 + replayed history user turns) x (1 + variants per case) and $X = C x the per-turn estimate
+  (40,000 prompt tokens of which 95% cached, 400 output, priced with `--budget-model`). `--estimate-only` prints it and
+  exits 0 without building the engine.
+- `--baseline` accepts a run DIR (report.json + results.jsonl) as well as a report.json file. With a dir the delta is
+  computed only on rows whose (case_id, variant_kind) are in this run (`delta.restricted: true`, `delta.matched` =
+  count); a file keeps today's whole-report delta (`delta.restricted: false`).
+- Report records `selection: {topics, ids_file, cases}`.
