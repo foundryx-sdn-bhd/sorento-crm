@@ -11,17 +11,17 @@ mechanics; this page is the operator's view. The design and its measurements:
 
 | Trigger | Runs | Billed minutes (target) |
 | --- | --- | --- |
-| PR labelled `ci` | The four one-minute fast gates (alembic single head, PII guard, gitleaks, changed areas) and ONE job, `PR gate`: the app and worker import chains and `pytest --collect-only` when the backend changed, the changed backend test files plus every test file that imports a changed module (tests/scm included, up to 3,600 estimated CPU-s) on Postgres, the MCP suite when MCP changed, and `tsc` plus `vitest run --changed` when the frontend changed. No shard runs on a PR. | ~5 docs-only, ~10 typical, ~20 at the selection cap |
+| PR labelled `ci` | Two jobs (CI-COST round 2): `Changed areas`, then `PR gate`, whose first steps are the alembic single-head, PII and gitleaks gates, then the app and worker import chains when the backend changed, the changed backend test files plus every test file that imports a changed module (tests/scm included, up to 3,600 estimated CPU-s) on Postgres, the MCP suite when MCP changed, and `tsc` plus `vitest run --changed` when the frontend changed. No shard runs on a PR. A merge tree whose PR gate already passed is not tested again. | ~2 docs-only or re-label, ~10 typical, ~20 at the selection cap |
 | PR labelled `ci-full` | REFUSED (owner, 9 Oct 2026: no full suite per PR). One job removes the label and fails with the reason; nothing else runs. | 1 |
-| `workflow_dispatch` on main (the release) | The lean release: the core tier (`sorento_crm_backend/tests/release_core.txt`) plus every test the batch since the last successful release reaches, in one `Release tests` job; build only the images whose service tree changed (an unchanged one is retagged); the owner-approved deploy. `full_suite=true`, a selection over the cap, a changed `tests/conftest.py` or no earlier release runs the full shards instead. A tree whose release tests already passed is not tested again. `skip_tests=true`: build and deploy only. | ~20-42 lean; ~250 full |
-| Push to main | The alembic single-head gate, PII guard and gitleaks. No tests, no deploy. | under 3 |
+| `workflow_dispatch` on main (the release) | The lean release: the core tier (`sorento_crm_backend/tests/release_core.txt`) plus every test the batch since the last successful release reaches, in one `Release tests` job; build only the images whose service tree changed (an unchanged one is retagged); the owner-approved deploy. A selection over the cap stays in that job with the core tier plus the batch's changed test files (CI-COST). `full_suite=true`, a batch changing `tests/conftest.py` or `tests/_pg_fixture.py`, a batch at the compare API's 300-file cap or no earlier release runs the full shards instead. A tree whose release tests already passed is not tested again. `skip_tests=true`: build and deploy only. | ~25-50 lean; ~470 full (38099410256) |
+| Push to main | The alembic single-head gate only (PII and gitleaks ran on the same commits in the PR gate). No tests, no deploy. | 1 |
 | Any other label | Nothing (every job skips). | under 1 |
 
 There is no nightly of any kind (owner, 10 Oct 2026): the deploy.yml schedule is gone and the
 never-stuck smoke (`never-stuck-nightly.yml`) runs by hand only.
 
-`PR gate` is the one check a PR needs: its first step fails when any fast gate did not pass,
-and it runs with `always()` so a red fast gate never turns it into "skipped". The ruleset
+`PR gate` is the one check a PR needs: it runs the fast gates itself and fails when `Changed
+areas` did not pass, and it runs with `always()` so a red root job never turns it into "skipped". The ruleset
 `protect-main-branch` requires it once crew switches the ruleset (owner Q3). A merge-queue
 entry reports `CI gate (full)`.
 

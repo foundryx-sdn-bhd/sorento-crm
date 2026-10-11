@@ -1,9 +1,9 @@
 name: Build and Deploy Sorento
 
 on:
-  # A push to main runs ONLY the fast gates (`check-migration-heads`, the
-  # PII guard and gitleaks, about a minute): no test suite, no image build,
-  # no deploy. Owner
+  # A push to main runs ONLY the alembic head check (`check-migration-heads`,
+  # one job; the PII guard and gitleaks ran on the same commits in the PR
+  # gate, CI-COST round 2): no test suite, no image build, no deploy. Owner
   # decision 2026-09-29 23:05: "control the running of main branch CI so not
   # every merge will trigger the CI automatically", and a live deploy waits
   # for the owner's approval. A release is the `workflow_dispatch` below.
@@ -16,9 +16,9 @@ on:
   # re-run against a new head). One label runs anything; every root job below
   # gates on it, so labeling with anything else is a no-op:
   #
-  #   `ci`      the PR gate (CI-LEAN, 10 Oct 2026): the four one-minute fast
-  #             gates (alembic head, PII guard, gitleaks, changed areas) and
-  #             ONE job, `PR gate` (`lean-gate`), that runs the import
+  #   `ci`      the PR gate (CI-LEAN, 10 Oct 2026; CI-COST round 2): two
+  #             jobs, `Changed areas` and `PR gate` (`lean-gate`), which
+  #             runs the alembic head, PII and gitleaks gates first, then the import
   #             checks, the import-selected changed backend tests on Postgres
   #             (tests/scm included), the MCP suite when MCP changed, and
   #             tsc plus the related vitest files when the frontend changed.
@@ -35,9 +35,9 @@ on:
   # one check, `PR gate` (owner Q3, 10 Oct 2026; crew switches it once this is
   # green on main). Until then it requires the five old fast-gate names
   # ("Single alembic head (fast gate)", "Changed areas", "Validate backend
-  # imports", "Validate MCP imports", "Type-check frontend"): the first two
-  # still run on a PR and the other three report "skipped" there, which a
-  # ruleset accepts, so the switch can happen after the merge. `CI gate
+  # imports", "Validate MCP imports", "Type-check frontend"): only `Changed
+  # areas` still runs on a PR, the other four report "skipped" there, which
+  # a ruleset accepts, so the switch can happen after the merge. `CI gate
   # (full)` reports on a merge-queue entry only.
   pull_request:
     branches:
@@ -163,7 +163,11 @@ jobs:
     # The job NAME is what the ruleset's required-status-check list matches
     # (this is one of the five required names, see the trigger comment); a
     # PR with neither label simply never reports this check.
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    # Not on a pull request (CI-COST round 2): the PR gate runs the same
+    # script as its first step, so a PR bills one job for all four fast
+    # gates instead of four one-minute jobs. On a PR this job is skipped,
+    # which a required-status-check rule reads as passing.
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -172,117 +176,28 @@ jobs:
       # comment): a fork of the migration graph is reported within a minute
       # of the merge that caused it, and nothing else runs until a release.
       - name: Assert exactly one migration head
-        run: |
-          python3 - <<'PY'
-          import ast, pathlib, sys
-
-          versions = pathlib.Path("sorento_crm_backend/alembic/versions")
-          revs, downs = set(), set()
-          for f in sorted(versions.glob("*.py")):
-              # encoding is explicit: ten migrations hold non-ASCII literals
-              # (151, 154, 155, 258, 259, 260, 305, 306, 307, 311m), and a bare
-              # read_text() decodes with the runner's locale, which is ASCII
-              # whenever LANG is unset. The gate then dies on a
-              # UnicodeDecodeError instead of reporting the head count.
-              tree = ast.parse(f.read_text(encoding="utf-8"))
-              for node in tree.body:
-                  if isinstance(node, ast.Assign) and len(node.targets) == 1 \
-                          and isinstance(node.targets[0], ast.Name):
-                      name, value = node.targets[0].id, node.value
-                  elif isinstance(node, ast.AnnAssign) \
-                          and isinstance(node.target, ast.Name) and node.value is not None:
-                      name, value = node.target.id, node.value
-                  else:
-                      continue
-                  if name not in ("revision", "down_revision"):
-                      continue
-                  val = ast.literal_eval(value)
-                  if name == "revision":
-                      revs.add(val)
-                  elif val is not None:
-                      downs.update([val] if isinstance(val, str) else val)
-          heads = sorted(revs - downs)
-          print(f"{len(revs)} revisions, {len(heads)} head(s): {heads}")
-          if len(heads) != 1:
-              sys.exit(
-                  "the migration graph must have exactly one head: merge main "
-                  "and add a merge revision joining these heads"
-              )
-          PY
+        run: python3 scripts/ci_alembic_heads.py
 
   # The repo is public: fail on a real Malaysian mobile number or lorry plate,
   # or a tracked raw capture (.playwright-mcp/, *.har, *.rdb), in any tracked
   # file. Stdlib only, a few seconds. Fake values to use instead are listed in
   # scripts/pii_guard.py. Runs on docs-only changes too (docs are where
-  # evidence captures land). Not on a release (CI-LEAN): every commit on main
-  # got here through a push, which ran this guard on the same tree.
+  # evidence captures land). A merge-queue entry only (CI-COST round 2): on a
+  # PR it is a step of the PR gate, and a push to main or a release carries
+  # only commits that passed it there.
   pii-guard:
     name: PII guard (fast gate)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: github.event_name == 'push' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.label.name == 'ci')
+    if: github.event_name == 'merge_group'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: No personal data in tracked files
         run: python3 scripts/pii_guard.py
 
-  # Secret scan over the PR's commits (base..head) or the pushed range
-  # (before..after), rules in .gitleaks.toml, .gitleaksignore honoured. Runs
-  # on push and on a `ci` labelled PR; never on merge_group or
-  # workflow_dispatch (the release).
-  # The gitleaks CLI runs directly, not gitleaks/gitleaks-action: the action
-  # demands a paid license key once the repo belongs to an organization
-  # ("[foundryx-sdn-bhd] is an organization. License key is required.",
-  # 10 Oct 2026). The binary is pinned and its sha256 checked against the
-  # release's checksums file. Log opts match what the action passed
-  # (`--no-merges --first-parent`).
-  gitleaks:
-    name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.label.name == 'ci')
-    env:
-      GITLEAKS_VERSION: 8.30.1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install gitleaks
-        run: |
-          set -euo pipefail
-          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          cd "$RUNNER_TEMP"
-          curl -sSfLO "$base/$tarball"
-          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          grep " ${tarball}\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
-          tar -xzf "$tarball" gitleaks
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Scan commits for secrets
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
-          elif [ -n "$PUSH_BEFORE" ] && ! [[ "$PUSH_BEFORE" =~ ^0+$ ]]; then
-            range="${PUSH_BEFORE}..${HEAD_SHA}"
-          else
-            range="$HEAD_SHA"
-          fi
-          echo "Scanning $range"
-          # gitleaks reports "no leaks found" and exits 0 when git cannot
-          # resolve the range (e.g. a force-pushed `before`), so check it.
-          git rev-list --count "$range" >/dev/null
-          gitleaks git --no-banner -v --redact \
-            --config .gitleaks.toml --gitleaks-ignore-path . \
-            --log-opts="--no-merges --first-parent $range" .
+  # The secret scan (gitleaks) is a step of the PR gate since CI-COST round
+  # 2: scripts/ci_gitleaks.sh over the PR's commits (base..head).
 
   # Which areas a change touches, so the multi-minute jobs below only run
   # when the code they test can have changed. Before this, every job ran on
@@ -446,6 +361,8 @@ jobs:
       lean: ${{ steps.filter.outputs.lean == 'true' }}
       # The last successful release's head: what `vitest --changed` diffs to.
       base_sha: ${{ steps.filter.outputs.base_sha }}
+      # A PR whose merge tree already passed a PR gate (CI-COST round 2).
+      validated: ${{ steps.filter.outputs.validated }}
     steps:
       - name: Detect changed areas
         id: filter
@@ -481,6 +398,23 @@ jobs:
           }
           case "$EVENT" in
             pull_request)
+              # A merge tree whose PR gate already passed (a re-label with no
+              # new commit on either side) tests nothing (CI-COST round 2:
+              # 1.15 runs per head, 4-11 Oct; the PR gate still runs its
+              # secret scan). `PUSH_AFTER` is the merge
+              # commit here. The marker's own prefix keeps a release, which
+              # looks up `validated-tree-`, running its own tests. A failed
+              # lookup tests.
+              tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$PUSH_AFTER" --jq '.tree.sha') || tree=""
+              if [ -n "$tree" ] \
+                  && n=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pr-validated-tree-$tree&per_page=5" \
+                           --jq '[.artifacts[] | select(.expired | not)] | length') \
+                  && [ "${n:-0}" -gt 0 ]; then
+                for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+                printf '%s\n' "docs_only=false" "backend_tests=" "backend_code=" "validated=true" >> "$GITHUB_OUTPUT"
+                echo "merge tree $tree already passed a PR gate (pr-validated-tree artifact): nothing to test"
+                exit 0
+              fi
               files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate \
                         --jq '.[] | .filename, (.previous_filename // empty)') \
                 || { files=""; why="PR file list call failed"; }
@@ -1362,16 +1296,16 @@ jobs:
   # the `protect-main-branch` ruleset requires (owner Q3). Before it, a `ci`
   # PR ran up to 15 jobs (validate backend and MCP images, the SCM shards,
   # four vitest shards, the type-check, the changed tests, a label job and a
-  # gate job), each billed rounded up and each paying its own setup. Now the
-  # four one-minute fast gates (alembic head, PII guard, gitleaks, changed
-  # areas) run as before, and everything else runs here, in sequence, on one
-  # runner:
+  # gate job), each billed rounded up and each paying its own setup. Now
+  # `Changed areas` runs first and everything else runs here, in sequence, on
+  # one runner, the alembic head, PII and gitleaks gates first (CI-COST
+  # round 2):
   #
   # - the `ci` label is removed first (one-shot trigger: adding it again
   #   re-runs on the PR's current head; a push alone never does);
   # - backend changed: the app and worker import chains, `pytest
-  #   --collect-only` over every test file (import errors anywhere), the
-  #   in-image regression guards;
+  #   --collect-only` over every test file on a release only (on a PR the
+  #   selected files' own run collects them), the in-image regression guards;
   # - the backend tests `changes` selected (`backend_tests`: the changed test
   #   files plus every test file that imports a changed module, tests/scm
   #   included, up to 3600 estimated CPU-s; above that the PR's own changed
@@ -1400,7 +1334,7 @@ jobs:
   # test-backend).
   lean-gate:
     name: ${{ github.event_name == 'pull_request' && 'PR gate' || 'Release tests' }}
-    needs: [changes, check-migration-heads, pii-guard, gitleaks]
+    needs: [changes, check-migration-heads]
     if: >-
       always()
       && ((github.event_name == 'pull_request' && github.event.label.name == 'ci')
@@ -1450,33 +1384,61 @@ jobs:
             --repo "${{ github.repository }}" \
             --remove-label ci
 
-      # Allow-list, like the CI gate's: a fast gate passes only as `success`
-      # (`skipped` for the PII guard and gitleaks, which a release skips by
-      # design). Anything else, `abandoned` included, is red.
+      # Allow-list, like the CI gate's: a root job passes only as `success`
+      # (`skipped` for the alembic head job on a PR, where the step below
+      # runs it instead). Anything else, `abandoned` included, is red.
       - name: Fail when a fast gate did not pass
         env:
           NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
         run: |
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
+          folded = os.environ.get("EVENT") == "pull_request"
           bad = []
           for job, info in needs.items():
               result = info.get("result", "")
               print(f"{job}: {result}")
-              ok = ("success", "skipped") if job in ("pii-guard", "gitleaks") else ("success",)
+              ok = ("success", "skipped") if folded and job == "check-migration-heads" else ("success",)
               if result not in ok:
                   bad.append(f"{job} {result or 'missing'}")
           if bad:
               sys.exit("a fast gate did not pass: " + ", ".join(bad))
           PY
 
-      # Full history only when the frontend changed: `vitest --changed` diffs
-      # against the base commit.
+      # Full history on a PR (gitleaks scans base..head) or when the frontend
+      # changed (`vitest --changed` diffs against the base commit). '0' is
+      # quoted: a bare 0 is falsy in an expression, so the unquoted form was
+      # always 1 (run 38124709009: gitleaks "Invalid revision range").
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ needs.changes.outputs.frontend == 'true' && 0 || 1 }}
+          fetch-depth: ${{ (github.event_name == 'pull_request' || needs.changes.outputs.frontend == 'true') && '0' || '1' }}
+
+      # The four fast gates, folded into this job on a PR (CI-COST round 2):
+      # as separate jobs each billed a whole minute for 16-54 s of work (run
+      # 38122622280). They run before the dependency install, so a red gate
+      # still fails the PR gate in about a minute. Off a PR the alembic head
+      # job runs instead, and a release skips PII and gitleaks by design (its
+      # commits passed both in their PR gates).
+      - name: Single alembic head
+        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
+        run: python3 scripts/ci_alembic_heads.py
+
+      - name: No personal data in tracked files
+        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
+        run: python3 scripts/pii_guard.py
+
+      # Not skipped on a validated tree: the marker is keyed on the merge
+      # TREE, the scan reads commit HISTORY (a commit adding a secret and one
+      # reverting it leave a tree that already passed; a merge commit lands
+      # both).
+      - name: Secret scan (gitleaks)
+        if: github.event_name == 'pull_request'
+        env:
+          RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci_gitleaks.sh
 
       - name: Select the changed test files to run
         id: select
@@ -1530,8 +1492,12 @@ jobs:
           python -c "from app.main import app; print('import ok')"
           python -c "import worker; from app.scheduler.task_scheduler import start_scheduler; print('worker import chain ok')"
 
+      # Release only (CI-COST round 2): on a PR the selected files' own run
+      # collects them, and the whole-suite collect billed ~1.8 min of every
+      # PR gate (38074897990). On a release it is the import check for every
+      # test file, selected or not.
       - name: Pytest collect-only (catches import errors in tests)
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.changes.outputs.backend == 'true' && github.event_name != 'pull_request'
         working-directory: sorento_crm_backend
         run: python -m pytest --collect-only -q -p no:cacheprovider
 
@@ -1642,21 +1608,24 @@ jobs:
 
       # A release whose tests passed leaves a marker for its tree, so a
       # re-dispatch of the same tree (a rejected approval, a deploy hiccup)
-      # skips the tests (`changes`, the workflow_dispatch case). One byte,
-      # kept 30 days.
+      # skips the tests (`changes`, the workflow_dispatch case). A PR gate
+      # that passed does the same for its merge tree under its own prefix,
+      # `pr-validated-tree-` (CI-COST round 2), so a re-label on that tree
+      # is a no-op and a release never reads it. `success()`: every step
+      # above passed. One byte, kept 30 days.
       - name: Mark this tree as validated
         id: tree
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'))
         run: |
           tree=$(git rev-parse 'HEAD^{tree}')
           echo "tree=$tree" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$GITHUB_SHA" > validated-tree.txt
 
       - name: Upload the validated-tree marker
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'))
         uses: actions/upload-artifact@v4
         with:
-          name: validated-tree-${{ steps.tree.outputs.tree }}
+          name: ${{ github.event_name == 'pull_request' && 'pr-validated-tree-' || 'validated-tree-' }}${{ steps.tree.outputs.tree }}
           path: validated-tree.txt
           retention-days: 30
 
@@ -2172,7 +2141,6 @@ jobs:
       [
         check-migration-heads,
         pii-guard,
-        gitleaks,
         changes,
         validate-backend,
         validate-mcp,
