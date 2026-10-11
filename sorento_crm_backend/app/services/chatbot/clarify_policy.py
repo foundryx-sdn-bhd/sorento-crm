@@ -149,6 +149,12 @@ def load_clarify_policy(db: Any) -> dict[str, ClarifyRule]:
     return rules
 
 
+def seed_mode(kind: str) -> str:
+    """The seeded mode for `kind` (a policy built with no clarify rows reads this)."""
+    rule = _SEED.get(kind)
+    return rule.mode if rule is not None else "ask"
+
+
 def mode(db: Any, kind: str) -> str:
     """The mode the bot uses for `kind` this turn (`load_clarify_policy`)."""
     rule = load_clarify_policy(db).get(kind)
@@ -286,11 +292,14 @@ def repeat_limit(db: Any, kind: str | None) -> int:
 
 
 def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_run: bool) -> None:
-    """The one choke point (`engine._run_turn`, after the arms have finished): stamp this
-    turn's ask fingerprint on its stored response and, on a third identical ask, replace the
-    reply with `break_reply`, disarm any pending question and store no fingerprint (the
-    breaking reply is not a clarification, AC-1). Best effort: a failure leaves the turn as
-    composed."""
+    """The one choke point (`engine._run_turn`, after the arms have finished). Two jobs:
+
+    * the loop breaker (AC-120): stamp this turn's ask fingerprint on its stored response and,
+      on a repeat past `repeat_limit`, replace the reply with `break_reply`, disarm any pending
+      question and store no fingerprint (the breaking reply is not a clarification);
+    * the generic menu's subject answer (AC-130): add the "Something else?" line.
+
+    Best effort: a failure leaves the turn as composed."""
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import turn_runtime
 
@@ -303,6 +312,11 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
             return
         current, kind, subject = turn_fingerprint(row.trace)
         if current is None:
+            menu_subject = _menu_subject(row.trace)
+            old_text = jsc_text((result.reply or {}).get("text"))
+            if menu_subject and old_text:
+                _rewrite(db, row, result, f"{old_text.rstrip()}\n\n{something_else_line(menu_subject)}", {})
+                db.commit()
             return
         limit = repeat_limit(db, kind)
         previous = previous_fingerprints(
@@ -318,40 +332,17 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
             db.commit()
             return
         profile, _recall = turn_runtime.load_profile(db, str(row.contact_respond_id or ""))
-        text = break_reply(profile, kind, subject)
-        old_text = (result.reply or {}).get("text")
-        reply = {**result.reply, "text": text, "quick_replies": None}
-        actions = [
-            {**a, "text": text, "quick_replies": None}
-            if isinstance(a, dict) and a.get("kind") == "send_message" and a.get("text") == old_text
-            else a
-            for a in (result.actions or [])
-        ]
-        stored = row.response
-        row.response = {
-            **stored,
-            **({"reply": {**(stored.get("reply") or {}), **reply}} if "reply" in stored else {}),
-            **({"actions": actions} if "actions" in stored else {}),
-            RESPONSE_KEY: None,
-            "loop_broken": current,
-        }
-        trace = [dict(r) if isinstance(r, dict) else r for r in (row.trace or [])]
-        for record in trace:
-            if not isinstance(record, dict) or record.get("stage") not in ("sent", "replied"):
-                continue
-            raw = record.get("raw")
-            if not isinstance(raw, dict):
-                continue
-            if isinstance(raw.get("reply"), dict):
-                record["raw"] = raw = {**raw, "reply": {**raw["reply"], "text": text}}
-            if isinstance(raw.get("actions"), list):
-                record["raw"] = {**raw, "actions": actions}
-        trace.append({"kind": "loop_breaker", "fingerprint": current, "previous": previous})
-        row.trace = trace
+        _rewrite(
+            db,
+            row,
+            result,
+            break_reply(profile, kind, subject),
+            {RESPONSE_KEY: None, "loop_broken": current},
+            trace_entry={"kind": "loop_breaker", "fingerprint": current, "previous": previous},
+        )
         if not dry_run:
             _disarm_pending(db, row)
         db.commit()
-        result.reply, result.actions = reply, actions
         if isinstance(result.session_patch, dict) and result.session_patch.get("open_question"):
             result.session_patch = {**result.session_patch, "open_question": None}
     except Exception:  # noqa: BLE001 - the breaker never fails a turn that answered
@@ -359,6 +350,82 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
         logger.warning("chatbot: the loop breaker did not run", exc_info=True)
     finally:
         db.close()
+
+
+def jsc_text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+#: AC-130: the line a generic menu's subject answer ends with.
+SOMETHING_ELSE = "Something else? Tell me what you need about {subject}."
+
+
+def something_else_line(subject: str) -> str:
+    return SOMETHING_ELSE.replace("{subject}", subject)
+
+
+def _menu_subject(trace: Any) -> str | None:
+    """The subject code a generic menu turn was answered for instead (`turn/apply.py`
+    `SUBJECT_DEFAULT_RULE` on the `apply` record), read off the parsed verdict."""
+    from app.services.chatbot.turn.apply import SUBJECT_DEFAULT_RULE
+
+    for rec in trace or []:
+        if not isinstance(rec, dict) or rec.get("kind") != "apply":
+            continue
+        if SUBJECT_DEFAULT_RULE not in (rec.get("rules_fired") or []):
+            return None
+        verdict = rec.get("verdict") if isinstance(rec.get("verdict"), dict) else {}
+        codes = [
+            str(e.get("canonical_code"))
+            for e in verdict.get("entities") or []
+            if isinstance(e, dict) and e.get("current_message") is True and e.get("canonical_code")
+        ]
+        return ", ".join(dict.fromkeys(codes)) or None
+    return None
+
+
+def _rewrite(
+    db: Any,
+    row: Any,
+    result: Any,
+    text: str,
+    response_extra: dict[str, Any],
+    *,
+    trace_entry: dict[str, Any] | None = None,
+) -> None:
+    """Replace the turn's reply text everywhere it is held: the result, the stored response
+    and the `sent` / `replied` trace records (the same three `engine._localize_result`
+    brings in line)."""
+    old_text = (result.reply or {}).get("text")
+    reply = {**result.reply, "text": text, "quick_replies": None}
+    actions = [
+        {**a, "text": text, "quick_replies": None}
+        if isinstance(a, dict) and a.get("kind") == "send_message" and a.get("text") == old_text
+        else a
+        for a in (result.actions or [])
+    ]
+    stored = row.response
+    row.response = {
+        **stored,
+        **({"reply": {**(stored.get("reply") or {}), **reply}} if "reply" in stored else {}),
+        **({"actions": actions} if "actions" in stored else {}),
+        **response_extra,
+    }
+    trace = [dict(r) if isinstance(r, dict) else r for r in (row.trace or [])]
+    for record in trace:
+        if not isinstance(record, dict) or record.get("stage") not in ("sent", "replied"):
+            continue
+        raw = record.get("raw")
+        if not isinstance(raw, dict):
+            continue
+        if isinstance(raw.get("reply"), dict):
+            record["raw"] = raw = {**raw, "reply": {**raw["reply"], "text": text}}
+        if isinstance(raw.get("actions"), list):
+            record["raw"] = {**raw, "actions": actions}
+    if trace_entry is not None:
+        trace.append(trace_entry)
+    row.trace = trace
+    result.reply, result.actions = reply, actions
 
 
 def _disarm_pending(db: Any, row: Any) -> None:

@@ -2147,6 +2147,37 @@ def _lane_of(verdict: dict[str, Any], domains: list[str], policy: Policy) -> str
     return None
 
 
+#: CLARIFY-POLICY AC-130: the rule a generic menu answered for its subject records.
+SUBJECT_DEFAULT_RULE = "generic_menu_answers_the_subject"
+
+#: The lane each generic menu row governs (AC-130, AC-132).
+_MENU_LANE_ROWS = {"entities_only": "entities_only", "clarification": "generic_menu"}
+
+
+def _subject_default_domain(verdict: dict[str, Any], lane: str | None, policy: Policy) -> str | None:
+    """The domain a generic menu turn is answered in instead (AC-130), or None to keep the menu:
+    the lane is a generic menu, its row is `default`, and the message named a RESOLVED subject
+    (a `canonical_code`) whose kind narrows a domain. Parsed fields only."""
+    row = _MENU_LANE_ROWS.get(lane or "")
+    if row is None or policy.clarify_mode(row) != "default":
+        return None
+    for e in verdict.get("entities") or []:
+        if (
+            isinstance(e, dict)
+            and e.get("current_message") is True
+            and e.get("canonical_code")
+            and e.get("confident") is not False  # an unsure read is no resolved subject
+        ):
+            # The kind's own resolver domain when it is one (a product's is master_products,
+            # the product card), else the first domain that narrows on the kind.
+            kind = policy.kind(str(e.get("hint") or ""))
+            source = kind.resolver_source if kind is not None else ""
+            domain = source if policy.domain(source) is not None else _domain_of_kind(policy, e.get("hint"))
+            if domain:
+                return domain
+    return None
+
+
 def is_product_shaped_entity(entity: dict[str, Any]) -> bool:
     """A current-message entity this arm should resolve: `hint == "product"`, or no
     hint at all but a raw token SHAPED like a product code - letters and digits both
@@ -3623,6 +3654,17 @@ def _apply(
         ideation=state.ideation,
     )
     trace.lane = _lane(verdict, domains, policy, barred=escalation_barred(state.profile))
+    # Not while a question is open: an entity-bearing reply to it keeps today's handling.
+    subject_domain = _subject_default_domain(verdict, trace.lane, policy) if pending_after is None else None
+    if subject_domain is not None:
+        # CLARIFY-POLICY AC-130 (Q5, rows `entities_only` / `generic_menu` = default): a
+        # resolved subject and no domain is answered in the subject kind's own domain, not a
+        # menu; the reply's "Something else?" line is added at the reply choke point
+        # (`clarify_policy.apply_loop_breaker`), which reads this rule.
+        domains = [subject_domain]
+        focus.domains = [subject_domain]
+        trace.lane = None
+        trace.rules_fired.append(SUBJECT_DEFAULT_RULE)
 
     if _continues_open_draft(state.ideation, verdict, decision, focus, trace.lane, policy):
         # Issue #1178: a question about the intake's own question ("what do you mean

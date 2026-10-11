@@ -50,6 +50,18 @@ class Policy:
     domains: tuple[DomainPolicy, ...]
     kinds: tuple[EntityKindPolicy, ...]
     tier_order: tuple[str, ...] = ()
+    #: CLARIFY-POLICY (AC-113): `chatbot_clarify_policy`'s mode per ask kind, read once per
+    #: turn with the rest of the policy. Empty (a test's `from_rows`) reads the seed.
+    clarify_modes: tuple[tuple[str, str], ...] = ()
+
+    def clarify_mode(self, kind: str) -> str:
+        """The mode the bot uses for this ask kind: the row's, else the seed's."""
+        for name, mode in self.clarify_modes:
+            if name == kind:
+                return mode
+        from app.services.chatbot.clarify_policy import seed_mode
+
+        return seed_mode(kind)
 
     def domain(self, name: str) -> DomainPolicy | None:
         for row in self.domains:
@@ -70,6 +82,7 @@ class Policy:
         domains: list[dict[str, Any]],
         kinds: list[dict[str, Any]],
         tier_order: list[str] | None = None,
+        clarify_modes: dict[str, str] | None = None,
     ) -> "Policy":
         domain_rows = tuple(
             DomainPolicy(
@@ -101,7 +114,12 @@ class Policy:
             )
             for row in kinds
         )
-        return cls(domains=domain_rows, kinds=kind_rows, tier_order=tuple(tier_order or ()))
+        return cls(
+            domains=domain_rows,
+            kinds=kind_rows,
+            tier_order=tuple(tier_order or ()),
+            clarify_modes=tuple(sorted((clarify_modes or {}).items())),
+        )
 
 
 def load_policy(db: "Session") -> Policy:
@@ -132,11 +150,13 @@ def load_policy(db: "Session") -> Policy:
         tier_order = []
 
     from app.modules.chatbot.lane_vocabulary import default_tier_order
+    from app.services.chatbot.clarify_policy import load_clarify_policy
 
     return Policy.from_rows(
         domains=domain_rows or _default_domain_rows(),
         kinds=kind_rows or [dict(row) for row in policy_rows.DEFAULT_KIND_ROWS],
         tier_order=tier_order or default_tier_order(),
+        clarify_modes={kind: rule.mode for kind, rule in load_clarify_policy(db).items()},
     )
 
 

@@ -441,6 +441,8 @@ LABELS: dict[str, dict[str, str]] = {
     "No grouping": {"ms": "Tanpa pengasingan", "zh": "不分组"},
     "How should the low stock report be grouped?": {"ms": "Bagaimana laporan stok rendah patut diasingkan?", "zh": "低库存报告要如何分组？"},
     "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak pasti yang mana satu anda maksudkan. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法确定您指的是哪一个。请再次索取低库存报告，并提供类别或 \"all\"。"},
+    # CLARIFY-POLICY S3 (AC-130): the generic menu's subject answer ends with this line.
+    "Something else? Tell me what you need about {subject}.": {"ms": "Perkara lain? Beritahu saya apa yang anda perlukan tentang {subject}.", "zh": "还需要别的吗？请告诉我您需要 {subject} 的什么信息。"},
 }
 
 #: Presenter field key -> English label (slices 1 and 2).
