@@ -82,8 +82,8 @@ def test_ac7_the_cut_script_reproduces_the_committed_files(tmp_path) -> None:
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
-    assert (out / "chatbot_parser_core.v1.txt").read_text(encoding="utf-8") == CORE_TXT.read_text(encoding="utf-8")
-    assert (out / "chatbot_parser_cards.v1.txt").read_text(encoding="utf-8") == CARDS_TXT.read_text(encoding="utf-8")
+    assert (out / CORE_TXT.name).read_text(encoding="utf-8") == CORE_TXT.read_text(encoding="utf-8")
+    assert (out / CARDS_TXT.name).read_text(encoding="utf-8") == CARDS_TXT.read_text(encoding="utf-8")
 
 
 def test_ac6_parse_cards_returns_one_entry_per_marker() -> None:

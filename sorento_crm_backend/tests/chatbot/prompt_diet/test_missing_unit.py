@@ -43,8 +43,8 @@ def test_ac15_other_order_status_does_not_need_sales() -> None:
 def test_ac14_missing_is_needed_and_a_card_and_not_loaded() -> None:
     m = _m()
     parsed = {"domain_hint": "promotion", "asks": [{"domain": "order"}], "order_status": None}
-    assert m.missing(parsed, {"order"}) == {"promotion"}
-    assert m.missing(parsed, {"order", "promotion"}) == set()
+    assert m.missing(parsed, {"orders"}) == {"product"}
+    assert m.missing(parsed, {"orders", "product"}) == set()
 
 
 def test_ac17_an_area_without_a_card_is_never_missing() -> None:
@@ -53,7 +53,13 @@ def test_ac17_an_area_without_a_card_is_never_missing() -> None:
     assert m.missing(parsed, set()) == set()
 
 
+def test_ac15_a_sales_status_needs_the_orders_bundle() -> None:
+    m = _m()
+    parsed = {"domain_hint": "inventory", "asks": [], "order_status": "sales_report"}
+    assert m.missing(parsed, {"stock"}) == {"orders"}
+
+
 def test_ac17_every_needed_card_loaded_means_nothing_missing() -> None:
     m = _m()
     parsed = {"domain_hint": "inventory", "asks": [], "order_status": "sales_report"}
-    assert m.missing(parsed, {"inventory", "sales"}) == set()
+    assert m.missing(parsed, {"stock", "orders"}) == set()

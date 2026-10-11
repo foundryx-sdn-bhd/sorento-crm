@@ -20,87 +20,53 @@ def _m():
     return prompt_diet
 
 
-ALL = {
-    "open_question", "escalation", "account", "master_products", "sales", "order", "promotion",
-    "resource_attachment", "purchase_order", "spo_allocation", "purchase_cost", "inventory",
-    "ideate", "product_attachment",
-}
+ALL = {"product", "stock", "orders"}
 
 
 def test_ac8_constants_are_pinned() -> None:
     m = _m()
-    assert m.COMPANIONS == {"order": ("account",), "sales": ("account", "order")}
-    assert set(m.STATE_CARDS) == {"open_question", "escalation"}
+    assert m.CARD_ORDER == ("product", "stock", "orders")
+    assert m.AREA_BUNDLE == {
+        "master_products": "product", "product_attachment": "product", "promotion": "product",
+        "resource_attachment": "product", "ideate": "product",
+        "inventory": "stock", "purchase_order": "stock", "spo_allocation": "stock", "purchase_cost": "stock",
+        "order": "orders", "sales": "orders", "account": "orders",
+    }
+    assert set(m.STATE_CARDS) == set()
 
 
-def test_ac8_retrieved_plus_pinned_union() -> None:
+def test_ac8_retrieved_plus_pinned_union_of_bundles() -> None:
     m = _m()
     got = m.select_cards(retrieved_areas={"inventory"}, pinned={"promotion"}, available=ALL)
-    assert set(got) == {"inventory", "promotion"}
+    assert got == ["product", "stock"]
 
 
-def test_ac8_order_brings_account() -> None:
+@pytest.mark.parametrize("area", ["order", "sales", "account"])
+def test_ac8_order_sales_account_are_the_orders_bundle(area: str) -> None:
     m = _m()
-    got = m.select_cards(retrieved_areas={"order"}, pinned=set(), available=ALL)
-    assert set(got) == {"order", "account"}
+    assert m.select_cards(retrieved_areas={area}, pinned=set(), available=ALL) == ["orders"]
+    assert m.select_cards(retrieved_areas=set(), pinned={area}, available=ALL) == ["orders"]
 
 
-def test_ac8_sales_brings_account_and_order() -> None:
+def test_ac8_areas_without_a_bundle_select_nothing() -> None:
     m = _m()
-    got = m.select_cards(retrieved_areas={"sales"}, pinned=set(), available=ALL)
-    assert set(got) == {"sales", "account", "order"}
+    got = m.select_cards(retrieved_areas={"forms", "incoming", "portal_link", "goods_receive"}, pinned=set(), available=ALL)
+    assert got == []
 
 
-def test_ac8_a_pinned_area_also_brings_its_companions() -> None:
+def test_ac8_bundles_not_available_are_dropped() -> None:
     m = _m()
-    got = m.select_cards(retrieved_areas=set(), pinned={"sales"}, available=ALL)
-    assert set(got) == {"sales", "account", "order"}
+    got = m.select_cards(retrieved_areas={"order", "inventory", "no_such_card"}, pinned=set(), available={"orders"})
+    assert got == ["orders"]
 
 
-def test_ac8_names_not_available_are_dropped() -> None:
+def test_ac9_only_the_focus_domains_pin() -> None:
+    """Round 5: the open question and escalation text is always in core, so state pins nothing."""
     m = _m()
-    got = m.select_cards(retrieved_areas={"order", "no_such_card"}, pinned=set(), available={"order"})
-    assert got == ["order"]
-
-
-def test_ac9_open_question_pins_the_open_question_card() -> None:
-    m = _m()
-    got = m.pinned_areas(
-        focus_domains=[], pending_kind=None, open_question={"question": "which one?"}, tasks=[]
-    )
-    assert got == {"open_question"}
-
-
-@pytest.mark.parametrize("kind", ["product_pick", "customer_pick", "member_offer", "outstanding_scope"])
-def test_ac9_a_pending_pick_or_offer_pins_open_question(kind: str) -> None:
-    m = _m()
-    got = m.pinned_areas(focus_domains=[], pending_kind=kind, open_question=None, tasks=[])
-    assert "open_question" in got
-
-
-def test_ac9_an_open_task_pins_open_question() -> None:
-    m = _m()
-    got = m.pinned_areas(focus_domains=[], pending_kind=None, open_question=None, tasks=[{"id": "t1"}])
-    assert got == {"open_question"}
-
-
-@pytest.mark.parametrize("kind", ["team_pick", "member_offer", "company_pick"])
-def test_ac9_a_pending_escalation_offer_pins_escalation(kind: str) -> None:
-    m = _m()
-    got = m.pinned_areas(focus_domains=[], pending_kind=kind, open_question=None, tasks=[])
-    assert "escalation" in got
-
-
-def test_ac9_a_business_pick_does_not_pin_escalation() -> None:
-    m = _m()
-    got = m.pinned_areas(focus_domains=[], pending_kind="product_pick", open_question=None, tasks=[])
-    assert "escalation" not in got
-
-
-def test_ac9_nothing_open_pins_nothing() -> None:
-    m = _m()
-    got = m.pinned_areas(focus_domains=[], pending_kind=None, open_question=None, tasks=[])
-    assert got == set()
+    assert m.pinned_areas(focus_domains=[], pending_kind=None, open_question=None, tasks=[]) == set()
+    for kind in ("product_pick", "team_pick", "member_offer", "company_pick", "outstanding_scope"):
+        assert m.pinned_areas(focus_domains=[], pending_kind=kind, open_question=None, tasks=[]) == set()
+    assert m.pinned_areas(focus_domains=[], pending_kind=None, open_question={"question": "q"}, tasks=[{"id": "t"}]) == set()
 
 
 def test_ac10_focus_domains_are_pinned() -> None:
@@ -112,28 +78,19 @@ def test_ac10_focus_domains_are_pinned() -> None:
 
 
 def test_ac10_pinned_focus_survives_empty_retrieval() -> None:
-    """A short reply ("2") retrieves nothing; the focus card is still there."""
+    """A short reply ("2") retrieves nothing; the focus bundle is still there."""
     m = _m()
     got = m.select_cards(retrieved_areas=set(), pinned={"master_products"}, available=ALL)
-    assert got == ["master_products"]
-
-
-def test_ac11_card_order_puts_state_cards_first() -> None:
-    m = _m()
-    assert set(m.CARD_ORDER[:2]) == {"open_question", "escalation"}
-    assert len(set(m.CARD_ORDER)) == len(m.CARD_ORDER)
+    assert got == ["product"]
 
 
 def test_ac11_output_follows_card_order_whatever_the_input_order() -> None:
     m = _m()
-    wanted = {"sales", "inventory", "open_question", "promotion"}
-    expected = [c for c in m.CARD_ORDER if c in wanted | {"account", "order"}]
+    wanted = {"sales", "inventory", "promotion"}
     results = set()
     for perm in itertools.permutations(sorted(wanted)):
-        retrieved = set(perm[:2])
-        pinned = set(perm[2:])
-        results.add(tuple(m.select_cards(retrieved_areas=retrieved, pinned=pinned, available=ALL)))
-    assert results == {tuple(expected)}
+        results.add(tuple(m.select_cards(retrieved_areas=set(perm[:2]), pinned=set(perm[2:]), available=ALL)))
+    assert results == {("product", "stock", "orders")}
 
 
 def test_ac11_same_card_set_builds_identical_prompts() -> None:

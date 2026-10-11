@@ -56,8 +56,8 @@ def test_ac2_on_the_prompt_starts_with_core_and_holds_only_selected_cards(
     system = h.system_of(h.parser_calls[0])
     assert system != STATIC_PROMPT
     assert system.startswith(CORE_TXT.read_text(encoding="utf-8")[:3000])
-    assert card_marker("inventory") in system
-    for other in ("sales", "order", "account", "promotion", "master_products", "escalation", "open_question"):
+    assert card_marker("stock") in system
+    for other in ("product", "orders"):
         assert card_marker(other) not in system, f"unselected card {other!r} leaked into the prompt"
     assert len(h.embed_calls) == 1
 
@@ -136,7 +136,7 @@ def test_ac18_trace_carries_the_prompt_diet_facts(monkeypatch, session_factory, 
     diet = facts["prompt_diet"]
     assert set(diet) >= {"on", "cards", "pinned", "examples", "missing", "recalled", "fallback"}
     assert diet["on"] is True
-    assert diet["cards"] == ["inventory"]
+    assert diet["cards"] == ["stock"]
     assert list(diet["pinned"]) == []
     assert len(diet["examples"]) == 2
     assert list(diet["missing"]) == []
@@ -144,6 +144,7 @@ def test_ac18_trace_carries_the_prompt_diet_facts(monkeypatch, session_factory, 
     assert diet["fallback"] is None
     assert facts["prompt_tokens"] == 1200
     assert facts["cached_tokens"] == 400
+    assert facts["cache_hit_pct"] == 33
 
 
 def test_ac18_off_turn_records_on_false(monkeypatch, session_factory, seeded, stub_access) -> None:

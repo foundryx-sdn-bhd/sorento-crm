@@ -14,8 +14,10 @@ REPO_ROOT = BACKEND.parent
 V50 = BACKEND / "alembic" / "data" / "chatbot_semantic_parser.v50.txt"
 HEAD_DIR = BACKEND / "app" / "services" / "chatbot" / "head"
 DATA_DIR = BACKEND / "alembic" / "data"
-CORE_TXT = DATA_DIR / "chatbot_parser_core.v1.txt"
-CARDS_TXT = DATA_DIR / "chatbot_parser_cards.v1.txt"
+from app.services.prompt_diet_files import PARSER_CARDS_FILE, PARSER_CORE_FILE  # noqa: E402
+
+CORE_TXT = DATA_DIR / PARSER_CORE_FILE
+CARDS_TXT = DATA_DIR / PARSER_CARDS_FILE
 MODULE_PY = HEAD_DIR / "prompt_diet.py"
 SEED_SCRIPT = BACKEND / "scripts" / "prompt_diet_seed_examples.py"
 CUT_SCRIPT = BACKEND / "scripts" / "prompt_diet_cut.py"
@@ -23,23 +25,8 @@ CUT_SCRIPT = BACKEND / "scripts" / "prompt_diet_cut.py"
 HEADING = re.compile(r"^==+ .* ==+$")
 CARD_MARKER = re.compile(r"^<<card:([A-Za-z0-9_]+)>>$")
 
-# The 14 cards the plan's "Cut" table names.
-CARD_NAMES = {
-    "open_question",
-    "escalation",
-    "account",
-    "master_products",
-    "sales",
-    "order",
-    "promotion",
-    "resource_attachment",
-    "purchase_order",
-    "spo_allocation",
-    "purchase_cost",
-    "inventory",
-    "ideate",
-    "product_attachment",
-}
+# Round 5: three fixed bundles; the state text (open question, escalation) lives in core.
+CARD_NAMES = {"product", "stock", "orders"}
 
 
 def split_sections(text: str) -> list[str]:

@@ -117,13 +117,10 @@ def test_embed_has_a_short_timeout_and_no_sdk_retries(monkeypatch) -> None:
 
 # -- 4. pinned wiring ---------------------------------------------------------- #
 @pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
-@pytest.mark.parametrize(
-    "kind,pinned,card",
-    [("product_pick", "open_question", "open_question"), ("team_pick", "escalation", "escalation")],
-)
-def test_engine_pins_the_state_cards(monkeypatch, session_factory, seeded, stub_access, kind, pinned, card) -> None:
-    from tests.chatbot.prompt_diet._common import card_marker
-
+@pytest.mark.parametrize("kind", ["product_pick", "team_pick"])
+def test_engine_open_questions_pin_nothing_their_text_is_in_core(
+    monkeypatch, session_factory, seeded, stub_access, kind
+) -> None:
     h = DietHarness(monkeypatch, [emission()])
     h.diet_on(example_areas=[])
     stub_access()
@@ -132,8 +129,35 @@ def test_engine_pins_the_state_cards(monkeypatch, session_factory, seeded, stub_
         _envelope(is_test=True, previous_conversation_state=state), session_factory=session_factory
     )
     diet = h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]
-    assert card in diet["pinned"] and card in diet["cards"]
-    assert card_marker(card) in h.system_of(h.parser_calls[0])
+    assert diet["pinned"] == [] and diet["cards"] == []
+
+
+@pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
+def test_engine_pins_the_focus_domain_bundle(monkeypatch, session_factory, seeded, stub_access) -> None:
+    from tests.chatbot.prompt_diet._common import card_marker
+
+    h = DietHarness(monkeypatch, [emission(domain_hint="inventory")])
+    h.diet_on(example_areas=[])
+    stub_access()
+    state = {"focus": {"domains": ["inventory"]}}
+    result = engine_mod.run_turn(
+        _envelope(is_test=True, previous_conversation_state=state), session_factory=session_factory
+    )
+    diet = h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]
+    assert diet["pinned"] == ["inventory"] and diet["cards"] == ["stock"]
+    assert card_marker("stock") in h.system_of(h.parser_calls[0])
+
+
+@pytest.mark.usefixtures("_no_real_mcp_calls", "_stub_casual_llm")
+def test_engine_asks_for_at_most_three_examples(monkeypatch, session_factory, seeded, stub_access) -> None:
+    h = DietHarness(monkeypatch, [emission()])
+    h.diet_on(example_areas=[])
+    seen = []
+    prompt_diet = _m()
+    monkeypatch.setattr(prompt_diet, "nearest_examples", lambda db, vector, k=5: seen.append(k) or [])
+    stub_access()
+    engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    assert seen == [3]
 
 
 # -- 5. prompt override -------------------------------------------------------- #
@@ -155,8 +179,8 @@ def test_a_prompt_override_skips_the_diet(monkeypatch, session_factory, seeded, 
 def test_missing_intersects_with_the_available_cards() -> None:
     m = _m()
     parsed = {"domain_hint": "promotion", "asks": [], "order_status": None}
-    assert m.missing(parsed, set(), available={"order"}) == set()
-    assert m.missing(parsed, set(), available={"order", "promotion"}) == {"promotion"}
+    assert m.missing(parsed, set(), available={"orders"}) == set()
+    assert m.missing(parsed, set(), available={"orders", "product"}) == {"product"}
 
 
 # -- 7. compact examples -------------------------------------------------------- #

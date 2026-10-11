@@ -49,14 +49,14 @@ def test_ac14_a_domain_hint_naming_an_unloaded_card_triggers_one_recall(
 
     assert len(h.parser_calls) == 2
     one, two = (h.system_of(c) for c in h.parser_calls)
-    assert card_marker("promotion") not in one
-    assert card_marker("inventory") in one
-    assert card_marker("promotion") in two
-    assert card_marker("inventory") in two, "the re-call ADDS a card, it does not swap"
+    assert card_marker("product") not in one
+    assert card_marker("stock") in one
+    assert card_marker("product") in two
+    assert card_marker("stock") in two, "the re-call ADDS a bundle, it does not swap"
     facts = h.understood(session_factory, result.turn_id)["facts"]
     assert facts["intent"] == "second_emission", "the second emission is the one used"
     diet = facts["prompt_diet"]
-    assert list(diet["missing"]) == ["promotion"]
+    assert list(diet["missing"]) == ["product"]
     assert diet["recalled"] is True
 
 
@@ -71,12 +71,12 @@ def test_ac14_an_ask_domain_naming_an_unloaded_card_triggers_the_recall(
     result = _run(session_factory)
 
     assert len(h.parser_calls) == 2
-    assert card_marker("promotion") in h.system_of(h.parser_calls[1])
-    assert list(h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]["missing"]) == ["promotion"]
+    assert card_marker("product") in h.system_of(h.parser_calls[1])
+    assert list(h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]["missing"]) == ["product"]
 
 
 @pytest.mark.parametrize("status", ["sales_report", "sales_analysis", "top_selling", "sales_ranking"])
-def test_ac15_sales_order_status_without_the_sales_card_recalls_with_sales_and_companions(
+def test_ac15_sales_order_status_without_the_orders_bundle_recalls_with_it(
     monkeypatch, session_factory, seeded, stub_access, status: str
 ) -> None:
     first = emission(domain_hint="inventory", order_status=status)
@@ -88,9 +88,8 @@ def test_ac15_sales_order_status_without_the_sales_card_recalls_with_sales_and_c
 
     assert len(h.parser_calls) == 2
     one, two = (h.system_of(c) for c in h.parser_calls)
-    assert card_marker("sales") not in one
-    for name in ("sales", "account", "order"):
-        assert card_marker(name) in two, f"{name} missing from the re-call"
+    assert card_marker("orders") not in one
+    assert card_marker("orders") in two
 
 
 def test_ac16_never_more_than_two_parser_calls_and_usage_is_summed(
@@ -150,7 +149,7 @@ def test_ac19_cache_key_names_the_core_version_and_the_selected_cards(
     cards = h.understood(session_factory, result.turn_id)["facts"]["prompt_diet"]["cards"]
     assert key.startswith("chatbot_parser_core:v")
     assert key.endswith(":" + "+".join(cards))
-    assert cards == ["inventory"]
+    assert cards == ["stock"]
 
 
 def test_ac19_the_recall_has_a_different_cache_key(monkeypatch, session_factory, seeded, stub_access) -> None:
@@ -162,4 +161,4 @@ def test_ac19_the_recall_has_a_different_cache_key(monkeypatch, session_factory,
 
     first, second = (c["prompt_cache_key"] for c in h.parser_calls)
     assert first != second
-    assert second.endswith("promotion") or "promotion" in second.split(":")[-1].split("+")
+    assert "product" in second.split(":")[-1].split("+")

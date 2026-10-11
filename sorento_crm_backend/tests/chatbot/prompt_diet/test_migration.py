@@ -94,8 +94,9 @@ def test_ac20_about_twenty_synthetic_seeds_without_embeddings() -> None:
         assert {r.source for r in rows} == {"synthetic"}
         assert all(r.enabled for r in rows)
         assert all(r.no_vec for r in rows), "seeds carry no embedding; the seed script fills them"
-        cards = set(split_cards(CARDS_TXT.read_text(encoding="utf-8")))
-        assert {r.area for r in rows} <= cards, "every seed belongs to a real card"
+        from app.services.chatbot.head.prompt_diet import AREA_BUNDLE
+
+        assert {r.area for r in rows} <= set(AREA_BUNDLE), "every seed names an area that selects a bundle"
         assert len({r.area for r in rows}) >= 5, "seeds cover several areas"
         assert len({r.message for r in rows}) == len(rows), "no duplicate seeds"
 
