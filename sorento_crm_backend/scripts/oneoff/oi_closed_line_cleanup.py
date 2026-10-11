@@ -77,22 +77,39 @@ def _report(row, verb_note, core, reason) -> Dict[str, Any]:
     }
 
 
-def _redecided_after(db, project_sales_order_id, project_line_id, cutoff) -> bool:
-    """An ACTIVE supply decision confirmed after `cutoff` whose snapshots name the line."""
-    decisions = (
+def _fresh_decision_times(db, project_sales_order_id, project_line_id) -> Optional[List[Any]]:
+    """When CS actually decided the line: the `confirmed_at` of every revision whose snapshot
+    of it differs from the previous revision's (or the previous one did not cover it).
+
+    A revision that only CARRIES a line copies its old snapshot verbatim (`_write_decision`)
+    and cancels-and-re-raises its raised row under the new revision, so neither "some later
+    revision names the line" nor the live row's `created_at` says CS looked at it again.
+    None when no revision covers the line at all.
+    """
+    revisions = (
         db.query(SOSupplyDecision)
-        .filter(
-            SOSupplyDecision.project_sales_order_id == project_sales_order_id,
-            SOSupplyDecision.state == "active",
-            SOSupplyDecision.confirmed_at > cutoff,
-        )
+        .filter(SOSupplyDecision.project_sales_order_id == project_sales_order_id)
+        .order_by(SOSupplyDecision.revision_no)
         .all()
     )
-    return any(
-        str(snap.get("project_line_id")) == str(project_line_id)
-        for decision in decisions
-        for snap in (decision.line_snapshots or [])
-    )
+    times: List[Any] = []
+    covered = False
+    previous: Optional[Dict[str, Any]] = None
+    for decision in revisions:
+        snap = next(
+            (
+                s
+                for s in (decision.line_snapshots or [])
+                if str((s or {}).get("project_line_id")) == str(project_line_id)
+            ),
+            None,
+        )
+        if snap is not None:
+            covered = True
+            if snap != previous:
+                times.append(decision.confirmed_at)
+        previous = snap
+    return times if covered else None
 
 
 def run(
@@ -143,8 +160,9 @@ def run(
                 .filter(ProjectSalesOrderLine.id == row.so_line_id)
                 .first()
             )
-            # Only a row raised at or before the dropped decision was applied belongs to
-            # this clean-up: a later raise is a fresh decision on the same line.
+            # Only a line nobody re-decided after the dropped decision was applied belongs
+            # to this clean-up. Read off the line's decision history; a line no revision
+            # covers falls back to the row's own raise time.
             candidates = (
                 db.query(PlanningChangeRow, PlanningChangeBatch.applied_at)
                 .join(PlanningChangeBatch, PlanningChangeBatch.id == PlanningChangeRow.batch_id)
@@ -155,16 +173,21 @@ def run(
                 .order_by(PlanningChangeRow.created_at.desc())
                 .all()
             )
+            fresh = (
+                _fresh_decision_times(db, candidates[0][0].project_sales_order_id, row.so_line_id)
+                if candidates
+                else None
+            )
             for candidate, applied_at in candidates:
                 cutoff = applied_at or candidate.created_at
-                if cutoff is None or row.created_at is None or row.created_at <= cutoff:
+                if cutoff is None:
+                    in_scope = True
+                elif fresh is not None:
+                    in_scope = not any(t is not None and t > cutoff for t in fresh)
+                else:
+                    in_scope = row.created_at is None or row.created_at <= cutoff
+                if in_scope:
                     dropped = candidate
-                    # CS re-decided the line after the drop: the row may have been updated
-                    # in place (keeping its old created_at), so it is live, not stranded.
-                    if cutoff is not None and _redecided_after(
-                        db, candidate.project_sales_order_id, row.so_line_id, cutoff
-                    ):
-                        dropped = None
                     break
         reason: Optional[str] = None
         if row.verb in (IV_ORDER, IV_ORDER_BACK):
