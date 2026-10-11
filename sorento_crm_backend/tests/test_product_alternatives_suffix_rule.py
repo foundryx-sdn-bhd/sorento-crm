@@ -316,3 +316,29 @@ def test_script_dry_run_is_the_default_prints_pairs_and_writes_nothing(db, monke
         assert f"{base.product_code} -> {alt.product_code}" in out, key
     assert "would_add" in out
     assert all(_links(db, base.id) == [] for base, _ in rows.values())
+
+
+# ---------------------------------------------------------------- any position (guards)
+@pytest.mark.parametrize("which", ["base", "variant"])
+@pytest.mark.parametrize(
+    "base_code, var_code",
+    [
+        ("MWCX7605-S10", "MWCX7605-N-S10"),   # mid-code N (real dev pair shape)
+        ("MWCX7606-BL", "MWCX7606-DIY-BL"),   # mid-code DIY
+    ],
+)
+def test_marker_in_the_middle_of_a_code_links(db, base_code, var_code, which):
+    stem = _stem("")
+    base = _p(db, f"{stem}{base_code}")
+    var = _p(db, f"{stem}{var_code}")
+    reconcile_new_alternatives(db, base if which == "base" else var)
+    assert _links(db, base.id) == [(var.id, SOURCE_AUTO_NEW)]
+
+
+@pytest.mark.parametrize("which", ["nl", "pp"])
+def test_mid_code_nl_gets_its_pp_twin_with_a_trailing_segment(db, which):
+    stem = _stem("CB6636")
+    nl = _p(db, f"{stem}-NL-BL")
+    pp = _p(db, f"{stem}-PP-BL")
+    reconcile_new_alternatives(db, nl if which == "nl" else pp)
+    assert _links(db, nl.id) == [(pp.id, SOURCE_AUTO_NEW)]
