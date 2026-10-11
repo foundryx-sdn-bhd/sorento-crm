@@ -35,9 +35,18 @@ def test_a_a_restated_ask_without_a_period_is_not_answered_word_for_word(console
     assert "period" in again.lower(), again
 
 
+def _pending(console) -> dict[str, Any]:
+    from tests.chatbot.test_reports_step2_lane import _wire
+
+    return _wire(console).get("required_ask") or {}
+
+
 def test_a_b_the_new_value_is_kept_when_the_period_finally_comes(console) -> None:
     console.say(_rank(_e("Sorento", "brand"), top_n=10, **NO_PERIOD), "top 10 salesman for sorento")
     _restated(console, top_n=20)
+    # The restated branch alone puts the new count on the open question.
+    pending = _pending(console)
+    assert (pending.get("extras") or {}).get("top_n") == 20, pending
     _text, calls = console.say(lane._reply(**SEP), "last month")
     (args,) = calls
     assert args["top_n"] == 20, args
@@ -51,6 +60,16 @@ def test_a_c_the_re_ask_is_bounded(console) -> None:
     text, calls = _restated(console, top_n=30)
     assert calls == [], calls
     assert "Which period?" not in text, text
+
+
+def test_p2_a_new_ranking_axis_starts_the_period_question_fresh(console) -> None:
+    console.say(_rank(_e("Sorento", "brand"), top_n=10, **NO_PERIOD), "top 10 salesman for sorento")
+    _restated(console, top_n=20)  # one miss is now on the open period question
+    text, calls = console.say(
+        _rank(group_by="customer", top_n=5, ranking_drill="global", **NO_PERIOD), "top 5 customers"
+    )
+    assert calls == [], calls
+    assert text.strip() == PERIOD_Q, text
 
 
 # ================================================================================ (b)
@@ -99,3 +118,63 @@ def test_b_b_a_location_word_nothing_holds_is_still_said(session_factory, monkey
     result, _calls = _outstanding_with_location(session_factory, monkeypatch, "Gudang")
     text = (result.reply or {}).get("text") or ""
     assert "could not find Gudang" in text, text
+
+
+def test_p1_guesses_for_a_placed_location_word_never_reach_the_outstanding_call(session_factory, monkeypatch) -> None:
+    """The warehouse word is the only unplaced token and the generic resolver also guessed products
+    for it: placing the location must not leave those guesses in the call."""
+    import uuid
+
+    from app.models.inventory import Warehouse
+    from tests.chatbot import test_reports_step2_s5a as s5a
+    from tests.chatbot.conftest import validating_resolve_entity
+    from tests.chatbot.test_outstanding_lane import REPORT_HIT, ResolveGateServices, _qf, _run_turn, _seed_contact
+    from tests.chatbot.test_reports_step2_s5a import _harness  # noqa: F401
+
+    guesses = [
+        {"uuid": str(uuid.uuid4()), "entity_type": "product", "canonical_code": f"ZZTGUESS{i}", "similarity": 0.3,
+         "match_tier": "trgm"}
+        for i in (1, 2)
+    ]
+
+    def _resolve_entity(body: dict[str, Any]) -> dict[str, Any]:
+        asked = list(body.get("tokens") or [])
+        resolutions = []
+        for raw in asked:
+            if raw == s5a.PRODUCT_CODE:
+                resolutions.append({"raw": raw, "token": raw, "matches": [s5a.PRODUCT_MATCH[raw]]})
+            else:
+                resolutions.append({"raw": raw, "token": raw, "matches": guesses})
+        return {
+            "tokens": asked, "resolutions": resolutions,
+            "unresolved_tokens": [t for t in asked if t != s5a.PRODUCT_CODE],
+        }
+
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": "Sorento Dealer"}],
+        resolve_entity=validating_resolve_entity(_resolve_entity),
+        probe=lambda **_: None,
+    )
+    _seed_contact(session_factory, variables={})
+    db = session_factory()
+    try:
+        db.add(Warehouse(id=str(uuid.uuid4()), warehouse_code="ZZT-SENTUL", warehouse_name="ZZT SENTUL", is_active=True))
+        db.commit()
+    finally:
+        db.close()
+    ents = [
+        {"raw": s5a.PRODUCT_CODE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},
+        {"raw": "Sentul", "hint": "warehouse", "canonical_code": None, "current_message": True, "confident": True},
+    ]
+    result, calls = _run_turn(
+        session_factory, monkeypatch, qf=_qf(order_status="so_outstanding", entities=ents),
+        text_body="outstanding at location", msg_id="ZZT-polish-p1", attributes=s5a.OUT_ATTRS,
+        resolve_services=services, mcp_response=REPORT_HIT,
+    )
+    sent = [a for n, a in calls if n in ("crm_report", "crm_outstanding_report")]
+    assert sent, calls
+    assert "ZZTGUESS" not in str(sent) and not any(g["uuid"] in str(sent) for g in guesses), sent
+    # Only the typed product reaches the transformer: the two guesses are dropped.
+    assert sent[0]["_diagnostics"]["entities_in"] == 1, sent[0]["_diagnostics"]
+    text = (result.reply or {}).get("text") or ""
+    assert "could not find" not in text.lower(), text
