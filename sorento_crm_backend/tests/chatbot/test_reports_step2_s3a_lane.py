@@ -103,17 +103,19 @@ def test_ac30_the_do_list_asked_in_other_words_returns_the_do_rows_of_the_held_r
     assert sent[0][1].get("product_code") == PRODUCT_CODE, sent[0][1]
 
 
-def test_ac30_a_do_list_ask_with_no_entity_under_the_offer_returns_the_do_rows_of_the_held_report(
+def test_ac30_the_real_parser_emission_for_the_do_list_reruns_the_held_report_with_detail_do(
     session_factory, monkeypatch
 ):
-    """The other emission a parser can give "Delivery order list" under the open offer: a fresh
-    `do_outstanding` outstanding ask that names no product (the held report is the subject). The lane
-    must run the HELD report with detail do, never a new summary of nothing."""
+    """The parser's real reading of "Delivery order list" under the open offer (eval trace, parser v50):
+    business_query, order / check_order, `document: ["DO"]`, `entity_op: reuse`, no entities, no
+    `order_status`. The lane must run the HELD report with detail do, never a fresh summary."""
     s5a._seed_open_outstanding_detail(session_factory)
+    qf = _parser_output(
+        domain_hint="order", intent_hint="check_order", message_type="business_query", document=["DO"],
+        entity_op="reuse", entities=[], order_status=None, open_question_answer=None)
     _result, calls = _run_turn(
-        session_factory, monkeypatch, qf=_qf(order_status="do_outstanding", entities=[]),
-        text_body="Delivery order list", msg_id="ZZT-s3a-30b", attributes=s5a.OUT_ATTRS,
-        matches=s5a.PRODUCT_MATCH, mcp_response=REPORT_HIT)
+        session_factory, monkeypatch, qf=qf, text_body="Delivery order list", msg_id="ZZT-s3a-30b",
+        attributes=s5a.OUT_ATTRS, matches=s5a.PRODUCT_MATCH, mcp_response=REPORT_HIT)
     sent = [c for c in calls if c[0] == "crm_report"]
     assert sent, calls
     assert sent[0][1].get("detail") == "do" and sent[0][1].get("product_code") == PRODUCT_CODE, sent[0][1]
@@ -149,28 +151,32 @@ def test_ac31_an_unsupported_topic_gets_its_own_line_in_the_turn_language(
 # ------------------------------------------------------------------ AC-32
 
 CHEAP = "CB88SS-DIY"
+SCR_CUSTOMER = "SCR MARKETING (M) SDN BHD"
 
 
 def test_ac32_a_compound_ask_answers_both_halves_and_filters_the_outstanding_by_the_customer(
     session_factory, monkeypatch
 ):
-    """Pinned emission: `domain_hint` null, `asks` = inventory + order, `order_status` outstanding, one
-    product entity (the typed code) and one customer entity. Both halves run; the outstanding half
-    carries the customer (a resolved `customer_ids`) and the one product the customer typed."""
+    """The parser's real emission for "Cb88ss/diy got stock? got outstanding for scr" (eval trace, parser
+    v50): `asks` inventory + order, `domain_hint` inventory, `entity_op: replace_combine`, two entities
+    both hinted `product` ("scr" is hinted as a product). The resolver decides from the data that "scr"
+    is the customer; both halves run, the outstanding half filtered by that customer and the typed code."""
     _seed_contact(session_factory, variables={})
     entities = [
-        {"raw": CHEAP, "hint": "product", "canonical_code": None, "current_message": True, "confident": True},
-        {"raw": CUSTOMER_NAME, "hint": "customer", "canonical_code": None, "current_message": True,
+        {"raw": "Cb88ss/diy", "hint": "product", "canonical_code": "Cb88ss/diy", "current_message": True,
          "confident": True},
+        {"raw": "scr", "hint": "product", "canonical_code": "scr", "current_message": True, "confident": True},
     ]
-    qf = _qf(order_status="outstanding", entities=entities, domain_hint=None, intent_hint="check_stock",
-             asks=[{"domain": "inventory"}, {"domain": "order"}])
+    qf = _parser_output(
+        message_type="business_query", domain_hint="inventory", intent_hint="check_stock", order_status=None,
+        asks=[{"domain": "inventory", "intent": "check_stock"}, {"domain": "order", "intent": "check_order"}],
+        entity_op="replace_combine", entities=entities)
     matches = {
-        CHEAP: {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": CHEAP},
-        CUSTOMER_NAME: {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": CUSTOMER_NAME},
+        "Cb88ss/diy": {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": CHEAP},
+        "scr": {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": SCR_CUSTOMER},
     }
     result, calls = _run_turn(
-        session_factory, monkeypatch, qf=qf, text_body="Cb88ss/diy got stock? got outstanding for Dealer A",
+        session_factory, monkeypatch, qf=qf, text_body="Cb88ss/diy got stock? got outstanding for scr",
         msg_id="ZZT-s3a-32", attributes=s5a.OUT_ATTRS, matches=matches, mcp_response=REPORT_HIT)
     names = [n for n, _a in calls]
     assert "crm_report" in names, names

@@ -106,6 +106,26 @@ def test_ac32_a_typed_code_with_a_slash_resolves_to_the_one_product_it_names(db)
     assert not token.ambiguous
 
 
+def test_ac32_scr_is_the_customer_not_a_family_of_products(db):
+    """"scr" matches no product code by exact or prefix, only CONTAINS-after-separators candidates
+    (CB1536SS-CR, ACC-SCREW, BT015-SS-CR), and whole-word matches one customer: the data decides it is the
+    customer. It is never expanded into those products."""
+    from app.services import entity_resolver as er
+
+    for code in ("CB88SS-DIY", "CB1536SS-CR", "ACC-SCREW", "BT015-SS-CR", "CB88-SS-CR"):
+        product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    wanted = customer(db, company_id=DEFAULT_COMPANY_ID, name="SCR MARKETING (M) SDN BHD")
+    customer(db, company_id=DEFAULT_COMPANY_ID, name="ZZT UNRELATED TRADING SDN BHD")
+    db.flush()
+    with company_scope(db, frozenset({DEFAULT_COMPANY_ID})):
+        result = er.resolve_references(db, ["Cb88ss/diy", "scr"])
+    by_token = {r.token: r for r in result.resolutions}
+    assert [m.canonical_code for m in by_token["Cb88ss/diy"].matches] == ["CB88SS-DIY"]
+    scr = by_token["scr"].matches
+    assert [(m.entity_type, m.uuid) for m in scr] == [("customer", wanted.id)], [
+        (m.entity_type, m.canonical_code) for m in scr]
+
+
 # ------------------------------------------------------------------ AC-31 copy
 
 L1 = "Overdue and payment balances are not available in this chat. Please check with your salesman or our accounts team."
