@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from app.services import chatbot_reply_copy as reply_copy_words
 from app.services.chatbot import jsc
 from app.services.chatbot import required_fields as rf
 from app.services.sales_report_service import TOP_SELLING_N_CEILING
@@ -466,7 +467,7 @@ def _word_filters(
 
 
 def _fresh_args(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, say: Any = None
 ) -> tuple[dict[str, Any] | None, str | None]:
     """The route params a fresh ask names (every one but the period and top_n), or the one
     line to say instead of running. `dealer`: the turn's contact is customer-scoped."""
@@ -475,7 +476,7 @@ def _fresh_args(
     if raw_group and group_by is None:
         return None, CATALOGUE_LINE
     if dealer and _dealer_outside(parse_output, group_by):
-        return None, DEALER_REFUSAL
+        return None, _say(say, "report_dimension_denied")
 
     # Neither the basis nor the metric is defaulted: one the message did not name is asked.
     args: dict[str, Any] = {"sort": "asc" if parse_output.get("rank_direction") == "bottom" else "desc"}
@@ -576,24 +577,33 @@ def _plural(group_by: Any) -> str:
     return AXIS_NOUNS.get(GROUP_BY.get(raw, raw), ("", ""))[1]
 
 
+def _held_named(parse_output: dict[str, Any]) -> list[str]:
+    """The values the parser named for this ask (words, then gate entities), once each:
+    whitespace-normalised, deduped case-insensitively, first spelling and order kept."""
+    words = _dict(parse_output.get("report_ask_words"))
+    raw = [w for hint in WORD_HINTS for w in jsc.array(words.get(hint))]
+    raw += [
+        e.get("raw") or ""
+        for e in jsc.array(parse_output.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+    ]
+    named: list[str] = []
+    seen: set[str] = set()
+    for w in raw:
+        text = " ".join(jsc.js_string(w).split())
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            named.append(text)
+    return named
+
+
 def held_ask(parse_output: dict[str, Any]) -> str:
     """The ranking ask this message restates, said in a few words off the parser's fields
     ("top 20 sales agents for Sorento by amount"); empty when it names nothing to say."""
     plural = _plural(parse_output.get("group_by"))
     top_n = parse_output.get("top_n")
     count = int(top_n) if isinstance(top_n, (int, float)) and not isinstance(top_n, bool) and float(top_n).is_integer() else None
-    words = _dict(parse_output.get("report_ask_words"))
-    named = [
-        " ".join(jsc.js_string(w).split())
-        for hint in WORD_HINTS
-        for w in jsc.array(words.get(hint))
-        if " ".join(jsc.js_string(w).split())
-    ]
-    named += [
-        " ".join(jsc.js_string(e.get("raw") or "").split())
-        for e in jsc.array(parse_output.get("entities"))
-        if isinstance(e, dict) and e.get("current_message") is not False and " ".join(jsc.js_string(e.get("raw") or "").split())
-    ]
+    named = _held_named(parse_output)
     if not plural and count is None and not named:
         return ""
     head = f"top {count} {plural}".strip() if count is not None else (plural or "sales")
@@ -613,7 +623,8 @@ def _say(say: Any, name: str, **words: str) -> str:
 
 
 def settle(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, say: Any = None
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, say: Any = None,
+    language: str | None = None,
 ) -> tuple[rf.Outcome | None, str | None]:
     """Every required field settled, or the line to send instead of running. Returns
     `(outcome, None)` (send `outcome.reply` with `outcome.slot` unless `outcome.done`), or
@@ -621,6 +632,7 @@ def settle(
 
     The slot's extras carry the first message's args and its number (`top_n`), so an
     answering turn runs the first message's ask; the period question is asked first."""
+    localized = language in reply_copy_words.REPORT_ASKED_FALLBACK  # ms / zh: no English summary
     slot = parse_output.get("required_ask")
     if isinstance(slot, dict) and slot.get("ask") == ASK_NAME and slot.get("asking") == "scope":
         return _scope_answer(db, parse_output, slot), None
@@ -658,11 +670,11 @@ def settle(
     # is not one, whatever its `ranking_refine` says (crew live pass, 8 Oct 2026).
     new_axis = bool(frame) and bool(raw_group) and GROUP_BY.get(raw_group, raw_group) != frame.get("group_by")
     if parse_output.get("ranking_refine") is True and frame and not new_axis:
-        return _refine(db, parse_output, frame, dealer=dealer)
+        return _refine(db, parse_output, frame, dealer=dealer, say=say)
     if drill in ("scoped", "unsure") or (new_axis and drill != "global" and _dict(frame.get("shown"))):
         # No reading on a new axis right after a ranking is asked, never guessed (owner rule).
         reading = drill if drill in ("scoped", "unsure") else "unsure"
-        drilled = _drill(db, parse_output, frame, entities, reading=reading, dealer=dealer)
+        drilled = _drill(db, parse_output, frame, entities, reading=reading, dealer=dealer, say=say)
         if drilled is not None:
             return drilled
         # Unsure with nothing above to narrow by: the global reading is the only one left.
@@ -670,7 +682,7 @@ def settle(
         # Not a refine (it names another axis): the fresh ask reads it whole, its dates included.
         parse_output = {**parse_output, "ranking_refine": False}
 
-    args, line = _fresh_args(db, parse_output, entities, dealer=dealer)
+    args, line = _fresh_args(db, parse_output, entities, dealer=dealer, say=say)
     if args is None:
         return None, line
     if (
@@ -696,12 +708,24 @@ def settle(
         # miss like a slot answer's, so it ends at the same bound.
         misses = int(restated.get("misses") or 0) + 1
         if misses >= rf.MAX_MISSES:
-            held = held_ask(parse_output)
-            example = f"{held} this month" if held else EXAMPLE_ASK
+            if localized:
+                names = ", ".join(_held_named(parse_output))
+                example = (
+                    f"{names} {reply_copy_words.REPORT_EXAMPLE_PERIOD[language]}"
+                    if names
+                    else reply_copy_words.REPORT_EXAMPLE_FALLBACK[language]
+                )
+            else:
+                held = held_ask(parse_output)
+                example = f"{held} this month" if held else EXAMPLE_ASK
             line = _say(say, "report_period_give_up", example=example)
             return rf.Outcome(values=outcome.values, reply=line, slot=None, extras=outcome.extras), None
         slot = {**outcome.slot, "misses": misses}
-        still = _say(say, "report_period_missing", asked=held_ask(parse_output) or "that")
+        if localized:
+            asked = ", ".join(_held_named(parse_output)) or reply_copy_words.REPORT_ASKED_FALLBACK[language]
+        else:
+            asked = held_ask(parse_output) or "that"
+        still = _say(say, "report_period_missing", asked=asked)
         return rf.Outcome(
             values=outcome.values, reply=f"{still}\n\n{PERIOD_QUESTION}", slot=slot, extras=outcome.extras
         ), None
@@ -709,7 +733,7 @@ def settle(
 
 
 def _refine(
-    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], *, dealer: bool = False
+    db: Any, parse_output: dict[str, Any], frame: dict[str, Any], *, dealer: bool = False, say: Any = None
 ) -> tuple[rf.Outcome | None, str | None]:
     """The parser said this message only refines the sales ranking that ran (`ranking_refine`):
     the held route args re-run with ONLY the keys the verdict changed (count, period, basis,
@@ -724,13 +748,13 @@ def _refine(
             or frame.get("warehouse_codes")
             or frame.get("channel")
         ):
-            return None, DEALER_REFUSAL
+            return None, _say(say, "report_dimension_denied")
     args = {k: v for k, v in frame.items() if k not in _FRAME_ONLY}
     held = dict(args)
     channel = parse_output.get("sales_channel")
     if channel in ("dealer", "project"):
         if dealer:
-            return None, DEALER_REFUSAL
+            return None, _say(say, "report_dimension_denied")
         args["channel"] = channel
     # A brand or category word the refine names replaces that dimension; the rest stays held.
     filters, line = _word_filters(db, parse_output, (("brand", "brand_ids"), ("category", "category_ids")))
@@ -788,7 +812,7 @@ def _unsure_line(group_by: str, top_n: Any, source: str, count: int) -> str:
 
 def _drill(
     db: Any, parse_output: dict[str, Any], frame: dict[str, Any], entities: Any, *, reading: str,
-    dealer: bool = False,
+    dealer: bool = False, say: Any = None,
 ) -> tuple[rf.Outcome | None, str | None] | None:
     """The parser read this ranking as about the rows the last ranking printed
     (`ranking_drill` scoped), or maybe so (unsure, asked; nothing runs). Scoped keeps every
@@ -810,7 +834,7 @@ def _drill(
         return None, NO_RANKING_LINE
 
     # The message's own reading, exactly as a fresh ask reads it (axis, filters, choices).
-    own, line = _fresh_args(db, parse_output, entities, dealer=dealer)
+    own, line = _fresh_args(db, parse_output, entities, dealer=dealer, say=say)
     if own is None:
         return None, line
     group_by = own.get("group_by")
@@ -835,7 +859,7 @@ def _drill(
 
     held = {k: v for k, v in frame.items() if k not in _FRAME_ONLY and k not in _AXIS_FILTERS.get(group_by, ())}
     if dealer and any(held.get(k) for k in ("sales_agent_ids", "customer_agent_ids", "warehouse_codes", "channel")):
-        return None, DEALER_REFUSAL
+        return None, _say(say, "report_dimension_denied")
     message_filters = {k: v for k, v in own.items() if k not in _NON_FILTER_ARGS}
     named = message_filters.get(param)
     if isinstance(named, list):

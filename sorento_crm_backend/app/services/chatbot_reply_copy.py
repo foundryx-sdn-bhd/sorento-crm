@@ -400,6 +400,12 @@ REPORT_NOT_ENABLED = {
     "ms": "Laporan jualan tidak diaktifkan untuk akaun anda.",
     "zh": "您的账户未开通销售报告。",
 }
+# Plain fill words (not registry rows) for the period re-ask / give-up when the contact's reply
+# language is not English: used in place of the English summary of the held ask.
+REPORT_ASKED_FALLBACK = {"ms": "permintaan itu", "zh": "该查询"}
+REPORT_EXAMPLE_FALLBACK = {"ms": "jualan bulan ini", "zh": "本月销售"}
+REPORT_EXAMPLE_PERIOD = {"ms": "bulan ini", "zh": "本月"}
+
 REPORT_CHAT_NOT_ENABLED = {
     "en": "Chat analytics is not enabled for your account.",
     "ms": "Analitik sembang tidak diaktifkan untuk akaun anda.",

@@ -77,7 +77,6 @@ _SALES_REPORT_GRANT = "sales_orders.sales_report"
 #: The one sentence a contact without that key sees, verbatim (AC-1651) - the sibling
 #: of `fetch.SO_NOT_ENABLED_MESSAGE` / `LOW_STOCK_NOT_ENABLED_MESSAGE` above, a
 #: literal for the same reason: one wording, in one place.
-SALES_REPORT_NOT_ENABLED_MESSAGE = "Sales report is not enabled for your account."
 #: PLAN-retail-sales-reports-26sep S1: the sales analysis tool, gated by the SAME key.
 _SALES_ANALYSIS_TOOL = "crm_sales_analysis"
 
@@ -650,7 +649,7 @@ def _so_list_reply(text: str) -> dict[str, Any]:
     return fragment
 
 
-def _sales_report_not_enabled() -> dict[str, Any]:
+def _sales_report_not_enabled(db: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     """S4 wiring point 4 (AC-1651): refuse a sales-report ask BEFORE any fetch, with
     ONE line and nothing else.
 
@@ -660,7 +659,7 @@ def _sales_report_not_enabled() -> dict[str, Any]:
     keeps this OFF the miss lane entirely: no escalate offer, nothing armed.
     """
     structured: dict[str, Any] = {
-        "response": SALES_REPORT_NOT_ENABLED_MESSAGE,
+        "response": _report_line(db, ctx, "report_not_enabled"),
         "answers": [],
         "attachments": [],
         "action_links": [],
@@ -1761,7 +1760,7 @@ def run_fetch(
             if need == _SALES_REPORT_GRANT:
                 # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is refused in the
                 # words every sales figure ask was refused in under `order`.
-                return _sales_report_not_enabled()
+                return _sales_report_not_enabled(db, ctx)
             return _error_fragment(
                 f"{domain} needs the {need} grant, which this contact does not hold",
                 outcome="access_denied",
@@ -1939,7 +1938,7 @@ def run_fetch(
                     "domain_grant",
                     {"domain": domain, "skipped": "not_granted", "needs": _SALES_REPORT_GRANT},
                 )
-            return _sales_report_not_enabled()
+            return _sales_report_not_enabled(db, ctx)
 
     has_customer = (
         any(isinstance(e, dict) and e.get("entity_type") == "customer" for e in entities)
@@ -2095,7 +2094,7 @@ def run_fetch(
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
         if _SALES_REPORT_GRANT not in granted:
-            return _sales_report_not_enabled()
+            return _sales_report_not_enabled(db, ctx)
 
         # -- AC-1119/S4c/D5/R17 (ruling 3): the SAME product-code + location
         # resolution the outstanding override above uses, fixed once at this one
@@ -2204,6 +2203,7 @@ def run_fetch(
         settled, line = report_ask.settle(
             db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
             say=lambda name, **words: _report_line(db, ctx, name, **words),
+            language=getattr(ctx.get("localizer"), "language", None),
         )
         if trace is not None:
             trace.add(

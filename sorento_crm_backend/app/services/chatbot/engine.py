@@ -6786,10 +6786,10 @@ def _run_stages_body(  # noqa: PLR0915
         # nothing else composed it, exactly the shape `stock_denied` handles the
         # same way just above.
         if answer is None and sales_report_grant_refused and completes_here:
-            from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+            from app.services.chatbot.lanes.business import _report_line
 
             stage[0] = "replied"
-            answer = turn_compose.Answer(text=SALES_REPORT_NOT_ENABLED_MESSAGE)
+            answer = turn_compose.Answer(text=_report_line(db, {"localizer": localizer}, "report_not_enabled"))
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,
