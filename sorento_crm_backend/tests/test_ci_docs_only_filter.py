@@ -151,6 +151,8 @@ def _run_shell(tmp_path: Path, script: str, env: dict, fixtures: dict, *, gh_fai
 AREA_KEYS = {"docs_only", "backend", "frontend", "mcp", "scm", "backend_tests", "backend_code"}
 # Written by a lean release only (CI-LEAN): the diff base and the lean flag.
 LEAN_KEYS = {"lean", "base_sha"}
+# Written on a PR whose merge tree already passed a PR gate (CI-COST round 2).
+PR_KEYS = {"validated"}
 LAST_RELEASE = "e" * 40
 TREE = "f" * 40
 RELEASE_RUNS = "repos/jayson-odoo/sorento-crm/actions/workflows/deploy.yml/runs?branch=main&event=workflow_dispatch&status=success&per_page=1"
@@ -168,6 +170,7 @@ def run_step(
     full_suite: str = "",
     last_release: str | None = None,
     validated: bool = False,
+    pr_validated: bool = False,
 ) -> dict[str, str]:
     """Run the real step with `files` as the API answer; return $GITHUB_OUTPUT.
 
@@ -194,6 +197,9 @@ def run_step(
         f"repos/jayson-odoo/sorento-crm/actions/artifacts?name=validated-tree-{TREE}&per_page=5": {
             "artifacts": [{"name": f"validated-tree-{TREE}", "expired": False}] if validated else []
         },
+        f"repos/jayson-odoo/sorento-crm/actions/artifacts?name=pr-validated-tree-{TREE}&per_page=5": {
+            "artifacts": [{"name": f"pr-validated-tree-{TREE}", "expired": False}] if pr_validated else []
+        },
     }
     if last_release:
         fixtures[f"repos/jayson-odoo/sorento-crm/compare/{last_release}...{SHA}"] = {"files": entries}
@@ -203,7 +209,7 @@ def run_step(
         "MG_BASE": "c" * 40, "MG_HEAD": "d" * 40, "SKIP_TESTS": skip_tests, "FULL_SUITE": full_suite,
     }
     outputs = _run_shell(tmp_path, _step_script("Detect changed areas"), env, fixtures, gh_fails=gh_fails)
-    assert AREA_KEYS <= set(outputs) <= AREA_KEYS | LEAN_KEYS, outputs
+    assert AREA_KEYS <= set(outputs) <= AREA_KEYS | LEAN_KEYS | PR_KEYS, outputs
     return outputs
 
 
@@ -1856,3 +1862,50 @@ def test_the_select_step_adds_the_core_tier_on_a_lean_release(tmp_path):
 
 def test_full_suite_is_a_release_input():
     assert re.search(r"^      full_suite:$", _triggers(), re.M)
+
+
+# ---------------------------------------------------------------------------
+# CI-COST round 2 (crew decision (c)): a PR gate that passed marks its merge
+# tree; a re-label on the same tree (1.15 runs per head, 4-11 Oct) is a no-op.
+# ---------------------------------------------------------------------------
+
+def test_a_pr_whose_merge_tree_already_passed_tests_nothing(tmp_path):
+    out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/app/services/inventory_service.py",
+                                              "sorento_crm_frontend/app/page.tsx"], pr_validated=True)
+    assert out == {**NO_AREA, "docs_only": "false", "validated": "true"}
+
+
+def test_a_pr_without_a_marker_is_tested_as_before(tmp_path):
+    out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/app/services/inventory_service.py"])
+    assert out["backend"] == "true" and "validated" not in out
+    failed = run_step(tmp_path, "pull_request", ["sorento_crm_backend/app/services/inventory_service.py"], gh_fails=True)
+    assert failed["backend"] == "true" and "validated" not in failed, "a failed lookup tests"
+
+
+def test_a_pr_marker_never_skips_a_release(tmp_path):
+    """The release keeps its own tests: a PR marker has its own name prefix."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE, pr_validated=True)
+    assert out["lean"] == "true" and out["backend"] == "true" and "validated" not in out
+    upload = _lean_gate_steps()["Upload the validated-tree marker"]
+    assert "'pr-validated-tree-'" in upload and "'validated-tree-'" in upload
+    detect = _step_script("Detect changed areas")
+    assert "name=validated-tree-$tree" in detect and "name=pr-validated-tree-$tree" in detect
+
+
+def test_only_a_fully_green_pr_gate_marks_its_tree():
+    names = list(_lean_gate_steps())
+    steps = _lean_gate_steps()
+    for marker in ("Mark this tree as validated", "Upload the validated-tree marker"):
+        cond = re.search(r"^\s*if: (.*)$", steps[marker], re.M).group(1)
+        assert cond.startswith("success() && "), cond
+        assert "github.event_name == 'pull_request'" in cond and "needs.changes.outputs.validated != 'true'" in cond
+        assert "github.event_name == 'workflow_dispatch'" in cond
+    assert names[-2:] == ["Mark this tree as validated", "Upload the validated-tree marker"], "after every check"
+
+
+def test_a_validated_pr_skips_the_fast_gates_too():
+    block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
+    assert re.search(r"^      validated: \$\{\{ steps\.filter\.outputs\.validated \}\}$", block, re.M)
+    steps = _lean_gate_steps()
+    for name in ("Single alembic head", "No personal data in tracked files", "Secret scan (gitleaks)"):
+        assert "needs.changes.outputs.validated != 'true'" in steps[name], name
