@@ -1909,5 +1909,27 @@ def test_a_validated_pr_skips_the_fast_gates_too():
     block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
     assert re.search(r"^      validated: \$\{\{ steps\.filter\.outputs\.validated \}\}$", block, re.M)
     steps = _lean_gate_steps()
-    for name in ("Single alembic head", "No personal data in tracked files", "Secret scan (gitleaks)"):
+    for name in ("Single alembic head", "No personal data in tracked files"):
         assert "needs.changes.outputs.validated != 'true'" in steps[name], name
+
+
+def test_a_validated_pr_still_scans_its_commits_for_secrets():
+    """The marker is keyed on the merge TREE, gitleaks scans commit HISTORY: a commit
+    adding a secret and a second reverting it leave a tree that already passed, and a
+    merge-commit merge lands both (reviewer, CI-COST round 2). The scan always runs."""
+    steps = _lean_gate_steps()
+    cond = re.search(r"^\s*if: (.*)$", steps["Secret scan (gitleaks)"], re.M).group(1).strip()
+    assert cond == "github.event_name == 'pull_request'", cond
+    checkout = steps["Checkout"]
+    depth = re.search(r"fetch-depth: (.*)$", checkout, re.M).group(1)
+    assert "validated" not in depth, "full history on every PR, the scan needs base..head"
+
+
+def test_the_pr_marker_name_is_never_the_release_marker():
+    upload = _lean_gate_steps()["Upload the validated-tree marker"]
+    name = re.search(r"^\s*name: (.*)$", upload, re.M).group(1).strip()
+    tree = "${{ steps.tree.outputs.tree }}"
+    assert name.endswith(tree), name
+    prefix = _expression(name[: -len(tree)])
+    assert _gh_eval(prefix, {"github": {"event_name": "pull_request"}}) == "pr-validated-tree-"
+    assert _gh_eval(prefix, {"github": {"event_name": "workflow_dispatch"}}) == "validated-tree-"
