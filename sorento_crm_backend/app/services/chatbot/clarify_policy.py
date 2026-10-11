@@ -549,7 +549,15 @@ def carry_conflict(
     if getattr(decision, "kind", None) in (ANSWER, REFINE) or answers_task:
         return None  # it answers or narrows the held question (an open task included)
     anaphora = verdict.get("anaphora") if isinstance(verdict.get("anaphora"), dict) else {}
-    if anaphora.get("backward_reference") is True or verdict.get("continuation") is True:
+    if anaphora.get("backward_reference") is True:
+        return None
+    names_own = any(
+        isinstance(e, dict) and e.get("current_message") is True for e in verdict.get("entities") or []
+    )
+    if verdict.get("continuation") is True and not names_own:
+        # `continuation` is false by its own definition when the message names a subject of
+        # its own (CONTINUATION_ADDENDUM); read live, the parser still set it beside a newly
+        # named product (cand-0230), so it clears only a message that names nothing.
         return None
     domain = verdict.get("domain_hint")
     domain_row = policy.domain(domain) if isinstance(domain, str) and domain else None
@@ -580,6 +588,10 @@ def carry_conflict(
         if mode in ("carry", "drop"):
             return CarryOutcome(action=mode, kind=kind, field=field)
         subject = ", ".join(dict.fromkeys(_row_label(r) for r in carried))
+        if kind == "customer":
+            from app.services.ledger_family import family_words
+
+            subject = family_words(list(dict.fromkeys(_row_label(r) for r in carried))) or subject
         parts = {
             "label": _ASK_LABELS.get(domain_row.name, domain_row.label),
             "subject": subject,
@@ -652,6 +664,14 @@ def _named_label(entity: dict[str, Any], focus: Any, candidates: dict[str, list[
     rows = [r for r in (candidates or {}).get(kind) or [] if isinstance(r, dict)]
     names = [str(r.get("name") or r.get("display_name") or "").strip() for r in rows]
     names = [n for n in names if n]
+    if names and kind == "customer":
+        # One account family named once ("HANLIM TRADING SDN BHD", not each ledger), the
+        # way the SO list names its customers (`ledger_family.family_words`).
+        from app.services.ledger_family import family_words
+
+        words = family_words(list(dict.fromkeys(names)))
+        if words:
+            return words
     if names:
         return ", ".join(dict.fromkeys(names))
     field = KIND_FIELD_MAP.get(kind)
