@@ -453,12 +453,10 @@ class TestHitScopeBlock:
             mcp_response=_order_envelope_json([row]),
         )
         if not date_filter_start and not date_filter_end:
-            # CLARIFY-POLICY AC-17 (was: asks which period and fetches nothing): a dateless DO
-            # list ask that names a product fetches with no date window and discloses.
-            assert captured2 and captured2[0][0] == "crm_order_management_orders_list", captured2
-            assert not captured2[0][1].get("actual_delivery_date_from"), captured2
-            text = (result.reply or {}).get("text") or ""
-            assert "Which period" not in text and "Another month? Reply with the month." in text, text
+            # A dateless DO list ask asks which period first and fetches nothing, so there is
+            # no hit to open with a scope block (DO-ASK-SIMPLIFY, owner 4 Oct 2026).
+            assert captured2 == [], captured2
+            assert "Which period" in ((result.reply or {}).get("text") or ""), result.reply
             return
         assert captured2 and captured2[0][0] == "crm_order_management_orders_list", captured2
         assert payload_calls, "resolve_kinds must have run for this turn"

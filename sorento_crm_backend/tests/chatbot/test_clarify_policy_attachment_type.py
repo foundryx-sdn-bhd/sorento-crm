@@ -1,5 +1,5 @@
-"""CLARIFY-POLICY S3 (AC-13..AC-16): a product attachment ask with NO attachment type answers
-from what the product HAS instead of "Please provide the attachment type ... e.g. product image,
+"""CLARIFY-POLICY AC-103 / AC-125 (owner Q3): a product attachment ask with NO attachment type still asks (no guessed type). Regression guards; the old v1 text was:
+ "Please provide the attachment type ... e.g. product image,
 technical drawing, or certificate." UAC: documentation/plans/chatbot/clarify-policy-acceptance-criteria.md.
 
 Harness: the real engine + real routes + real MCP presenter (`Console`, parser verdict stubbed);
@@ -66,65 +66,35 @@ def _is_the_old_ask(reply: str) -> bool:
     return "provide the attachment type" in reply or "Which kind of file" in reply or OLD_EXAMPLE in reply
 
 
-def test_ac13_one_type_on_record_sends_its_files_and_names_the_type(world):
-    world.add_file(PHOTOS, "zzt-front.jpg")
-    reply = world.say(f"attachment for {CODE}", _ask())
-    assert not _is_the_old_ask(reply), reply
-    assert PHOTOS in reply, reply  # the one-line disclose naming the type
-    assert "zzt-front.jpg" in reply, reply  # the file itself is sent
-
-
-def test_ac14_several_types_lists_the_types_the_product_has(world):
+def test_ac103_no_type_in_the_parse_still_asks_and_never_sends_files(world):
     world.add_file(PHOTOS, "zzt-front.jpg")
     world.add_file(CERT, "zzt-cert.pdf")
     reply = world.say(f"attachment for {CODE}", _ask())
-    assert f"{CODE} has:" in reply, reply
-    assert PHOTOS in reply and CERT in reply, reply
-    assert reply.endswith("Reply with the one you need."), reply
-    assert not _is_the_old_ask(reply), reply
+    assert "Which kind of file do you need?" in reply, reply
+    assert "zzt-front.jpg" not in reply and "zzt-cert.pdf" not in reply, reply  # no guessed type
 
 
-def test_ac14_never_lists_a_type_the_product_lacks(world):
+def test_ac103_a_parse_naming_a_type_sends_that_type(world):
     world.add_file(PHOTOS, "zzt-front.jpg")
     world.add_file(CERT, "zzt-cert.pdf")
-    reply = world.say(f"attachment for {CODE}", _ask())
-    assert f"{CODE} has:" in reply, reply
-    assert DRAWING not in reply, reply  # seeded as a type, but no file on this product
-
-
-def test_ac14_a_file_of_the_same_type_on_another_product_does_not_count(world):
-    world.add_file(PHOTOS, "zzt-front.jpg")
-    other = _other_product(world)
-    world.add_file(CERT, "zzt-other-cert.pdf", product_id=other)
-    reply = world.say(f"attachment for {CODE}", _ask())
-    assert CERT not in reply, reply  # one type on THIS product, so the photos are sent
-    assert PHOTOS in reply, reply
-
-
-def test_ac15_a_product_with_no_files_says_so_and_refers_with_no_type_question(world):
-    reply = world.say(f"attachment for {CODE}", _ask())
-    assert not _is_the_old_ask(reply), reply
-    lowered = reply.lower()
-    assert "no files" in lowered and "on record" in lowered, reply
-    assert "refer" in lowered or "escalate" in lowered, reply
-
-
-def test_ac16_types_are_counted_only_over_files_the_contact_may_see(world):
-    """ASSUMPTION: this contact is not an office audience, so a file whose access_levels is
-    ["office"] only is invisible to it (the existing access level filter on attachments)."""
-    world.add_file(PHOTOS, "zzt-front.jpg")
-    world.add_file(CERT, "zzt-office-only.pdf")
-    from app.models.resources import Attachment
-
-    db = world.sf()
-    set_company_scope(db, frozenset({SORENTO}))
-    db.query(Attachment).filter(Attachment.original_filename == "zzt-office-only.pdf").update(
-        {"access_levels": ["office"]}
+    named = verdict(
+        domain_hint="product_attachment",
+        intent_hint="check_product_attachment",
+        entities=[entity(CODE, hint="product"), entity("photo", hint="attachment_type", canonical_code="photo")],
     )
-    db.commit()
-    reply = world.say(f"attachment for {CODE}", _ask())
-    assert CERT not in reply and "zzt-office-only.pdf" not in reply, reply
-    assert PHOTOS in reply, reply
+    reply = world.say(f"photo for {CODE}", named)
+    assert "zzt-front.jpg" in reply and "zzt-cert.pdf" not in reply, reply
+
+
+def test_ac125_replay_of_dev_cand_0258_never_says_provide_the_attachment_type(world):
+    """Prod history: the attachment-type ask twice, then "I want the DESCRIPTION SIZE!!!"."""
+    replies = [
+        world.say("size?", _ask()),
+        world.say("photo", _ask()),
+        world.say("I want the DESCRIPTION SIZE!!!", _ask()),
+    ]
+    for reply in replies:
+        assert "provide the attachment type" not in reply, reply
 
 
 def _other_product(world) -> str:

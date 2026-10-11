@@ -1,5 +1,4 @@
-"""CLARIFY-POLICY S2 (AC-8..AC-12): the promotion "Which access level" menu is shown only when
-the choice changes the answer. UAC: documentation/plans/chatbot/clarify-policy-acceptance-criteria.md.
+"""CLARIFY-POLICY AC-102 (owner Q2): the promotion access-level menu is UNCHANGED. Regression guards UAC: documentation/plans/chatbot/clarify-policy-acceptance-criteria.md.
 
 Harness: `test_promo_kind_subject`'s route-backed MCP double (the real promotions route over the
 seeded rows) through `test_outstanding_lane._run_turn`. The contact's audience is
@@ -96,42 +95,35 @@ def _last_levels(captured) -> list[str]:
     return [a.get("access_levels") for n, a in captured if n == PROMO_TOOL][-1]
 
 
-def test_ac8_a_dealer_contact_with_two_entitled_levels_gets_its_own_level_not_the_menu(session_factory, monkeypatch):
+def test_ac102_a_dealer_contact_with_two_entitled_levels_still_gets_the_menu(session_factory, monkeypatch):
     brand_id = _world(
         session_factory, linked=True, promos=[(DEALER_PROMO, ["sorento_dealer"]), (END_USER_PROMO, ["end_user"])]
     )
-    reply, captured = _ask(session_factory, monkeypatch, brand_id, DEALER_NAMES)
-    assert "Which access level" not in reply and "Which one do you mean?" not in reply, reply
-    assert reply.startswith("Here are the results"), reply
-    assert _last_levels(captured) == ["Sorento Dealer"], captured
+    reply, _ = _ask(session_factory, monkeypatch, brand_id, DEALER_NAMES)
+    assert reply.startswith("Which access level do you need for Sorento?"), reply
 
 
-def test_ac9_staff_with_exactly_one_live_level_gets_it_with_a_disclose_line_naming_the_level(session_factory, monkeypatch):
+def test_ac102_staff_with_one_live_level_still_gets_the_menu_with_has_and_no_promotion(session_factory, monkeypatch):
     brand_id = _world(session_factory, promos=[(DEALER_PROMO, ["sorento_dealer"])])
-    reply, captured = _ask(session_factory, monkeypatch, brand_id, STAFF_NAMES)
-    assert "Which access level" not in reply, reply
-    assert reply.startswith("Here are the results"), reply
-    assert _last_levels(captured) == ["Sorento Dealer"], captured
-    disclose = [ln for ln in reply.splitlines() if "Another level?" in ln]
-    assert len(disclose) == 1 and "Dealer" in disclose[0], reply
+    reply, _ = _ask(session_factory, monkeypatch, brand_id, STAFF_NAMES)
+    assert reply.startswith("Which access level do you need for Sorento?"), reply
+    assert "Office - no promotion" in reply and "Dealer - has promotion" in reply, reply
 
 
-def test_ac10_staff_with_different_promotions_per_level_keeps_the_menu(session_factory, monkeypatch):
+def test_ac102_staff_with_different_promotions_per_level_keeps_the_menu(session_factory, monkeypatch):
     brand_id = _world(session_factory, promos=[(DEALER_PROMO, ["sorento_dealer"]), (OFFICE_PROMO, ["sorento_office"])])
     reply, _ = _ask(session_factory, monkeypatch, brand_id, STAFF_NAMES)
     assert reply.startswith("Which access level do you need for Sorento?"), reply
     assert "1. " in reply and "2. " in reply, reply
 
 
-def test_ac11_staff_with_the_same_promotion_rows_at_every_level_gets_no_menu_and_the_rows_once(session_factory, monkeypatch):
+def test_ac102_the_same_promotion_at_every_level_still_gets_the_menu(session_factory, monkeypatch):
     brand_id = _world(session_factory, promos=[(SHARED_PROMO, ["sorento_dealer", "sorento_office"])])
     reply, _ = _ask(session_factory, monkeypatch, brand_id, STAFF_NAMES)
-    assert "Which access level" not in reply, reply
-    assert reply.startswith("Here are the results"), reply
-    assert "1." in reply and "2." not in reply, reply  # the one promotion row, sent once
+    assert reply.startswith("Which access level do you need for Sorento?"), reply
 
 
-def test_ac12_every_level_empty_says_no_current_promotion(session_factory, monkeypatch):
+def test_ac102_every_level_empty_says_no_current_promotion(session_factory, monkeypatch):
     """Regression (cand-0265, `answer.py:333-344`). The subject label is the brand word; the UAC's
     <CODE> is whatever label the ask carries."""
     brand_id = _world(session_factory, promos=[])

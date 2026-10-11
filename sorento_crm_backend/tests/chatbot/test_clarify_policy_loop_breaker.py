@@ -1,4 +1,4 @@
-"""CLARIFY-POLICY S1 (AC-1..AC-7): the loop breaker. UAC:
+"""CLARIFY-POLICY S1 (AC-120..AC-124): the loop breaker. UAC:
 documentation/plans/chatbot/clarify-policy-acceptance-criteria.md.
 
 Unit half: the pure functions of the new module `app/services/chatbot/clarify_policy.py`
@@ -106,24 +106,30 @@ def _third_reply(console) -> str:
     return console.say("my deliveries", BARE)
 
 
-def test_ac1_ac5_the_third_identical_period_ask_is_a_handover_not_the_question(dealer):  # noqa: F811
-    third = _third_reply(dealer)
+def _assert_breaks(third: str) -> None:
     assert not _is_period_ask(third), third
+    assert "I still need" in third and "period" in third.lower(), third  # AC-120: the missing line
+    assert "Order Number" not in third and "This month" not in third, third  # no fetched data, no guess
+
+
+def test_ac120_ac124_the_third_identical_period_ask_names_what_is_missing_and_offers_handover(dealer):  # noqa: F811
+    third = _third_reply(dealer)
+    _assert_breaks(third)
     lowered = third.lower()
     assert "escalate" in lowered or "refer to your salesman" in lowered, third
 
 
-def test_ac6_with_escalation_barred_the_handover_is_the_refer_line(dealer, session_factory):  # noqa: F811
+def test_ac120_with_escalation_barred_the_handover_is_the_refer_line(dealer, session_factory):  # noqa: F811
     db = session_factory()
     db.execute(text("UPDATE respond_contacts SET escalation_allowed = false WHERE phone_number = :p"), {"p": PHONE})
     db.commit()
     third = _third_reply(dealer)
-    assert not _is_period_ask(third), third
+    _assert_breaks(third)
     assert "Please refer to your salesman." in third, third
     assert "escalate" not in third.lower(), third
 
 
-def test_ac1_the_breaking_reply_is_not_a_clarification_and_arms_no_pending(dealer):  # noqa: F811
+def test_ac120_the_breaking_reply_is_not_a_clarification_and_arms_no_pending(dealer):  # noqa: F811
     third = _third_reply(dealer)
     assert not _is_period_ask(third), third
     state = dealer.state or {}

@@ -325,13 +325,11 @@ class TestAC1700AnsweringAMemberOfferMiss:
             assert result.error is None, result.error
             return (result.reply or {}).get("text") or "", captured[mark:]
 
-        # 1. "all dates" over the carried customer is a dateless DO list ask that names a subject:
-        # CLARIFY-POLICY AC-17/AC-23 (was: the period question, no fetch). It fetches once with no
-        # date window and, finding nothing, says so with the disclose line.
+        # 1. "all dates" (the dated miss hint no longer offers it; see `test_rearch_r4_miss_engine.py`)
+        # is a dateless DO list ask: the period question, no fetch.
         said, fetched = ask(None, None, "all dates", "zzt-r4-all-dates")
-        assert len(fetched) == 1, f"'all dates' over a carried customer fetches once: {fetched}"
-        assert not fetched[0][1].get("actual_delivery_date_from"), fetched
-        assert "Which period" not in said and "Another month? Reply with the month." in said, said
+        assert fetched == [], f"'all dates' must not fetch: {fetched}"
+        assert "Which period" in said, said
 
         # 2. A dated follow-up re-runs the fetch exactly once for the carried customer.
         _said, fetched = ask("2026-08-01", "2026-08-31", "august", "zzt-r4-august")

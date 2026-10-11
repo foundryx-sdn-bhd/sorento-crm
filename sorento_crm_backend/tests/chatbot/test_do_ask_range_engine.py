@@ -68,35 +68,14 @@ def _period(start: str, end: str) -> dict[str, Any]:
     )
 
 
-DISCLOSE = "Another month? Reply with the month."
-
-
-def _order_calls(console) -> list[dict[str, Any]]:
-    return [args for name, args in console.calls if name == ORDERS_TOOL]
-
-
-def test_a_named_customer_with_no_range_fetches_newest_5_with_no_window_and_discloses(dealer):
-    """CLARIFY-POLICY AC-17 (was: asks which period and fetches nothing)."""
+def test_no_range_asks_which_period_and_fetches_nothing(dealer):
     reply = dealer.say("delivery to zzt dealer", _ask())
-    orders = _order_calls(dealer)
-    assert len(orders) == 1, dealer.calls
-    assert not orders[0].get("actual_delivery_date_from") and not orders[0].get("actual_delivery_date_to"), orders[0]
-    assert orders[0].get("limit") == 5, orders[0]
-    assert orders[0].get("customer_ids"), orders[0]
-    assert "Which period" not in reply, reply
-    assert reply.endswith(DISCLOSE), reply
-
-
-def test_a_bare_ask_with_no_subject_asks_which_period_and_fetches_nothing(dealer):
-    """AC-19: no subject named and no dates keeps today's question."""
-    reply = dealer.say("my deliveries", verdict(domain_hint="order", intent_hint="check_order", entities=[]))
-    assert _order_calls(dealer) == [], dealer.calls
+    assert dealer.calls == [], dealer.calls
     assert "Which period" in reply and "This month (Oct 2026)" in reply, reply
 
 
 def test_the_answer_runs_the_same_ask_over_that_window(dealer):
     dealer.say("delivery to zzt dealer", _ask())
-    dealer.calls.clear()  # CLARIFY-POLICY AC-17: the first turn now fetches (no window); count only the answer's
     dealer.say("this month", _period("2026-10-01", "2026-10-31"))
     orders = [args for name, args in dealer.calls if name == ORDERS_TOOL]
     assert len(orders) == 1, dealer.calls
@@ -165,26 +144,14 @@ def office(session_factory, monkeypatch, stub_access):
         app.dependency_overrides.clear()
 
 
-def test_office_named_customer_with_no_range_fetches_newest_5_and_discloses(office):
-    """AC-17 for an office contact (was: asks which period and fetches nothing)."""
+def test_office_no_range_asks_which_period_and_fetches_nothing(office):
     reply = office.say("delivery to zzt dealer", _ask())
-    orders = [args for name, args in office.calls if name == ORDERS_TOOL]
-    assert len(orders) == 1, office.calls
-    assert not orders[0].get("actual_delivery_date_from") and orders[0].get("limit") == 5, orders[0]
-    assert office.customer_id in str(orders[0].get("customer_ids")), orders[0]
-    assert "Which period" not in reply and reply.endswith(DISCLOSE), reply
-
-
-def test_office_bare_ask_with_no_subject_asks_which_period(office):
-    """AC-19."""
-    reply = office.say("my deliveries", verdict(domain_hint="order", intent_hint="check_order", entities=[]))
     assert office.calls == [], office.calls
     assert "Which period" in reply and "This month (Oct 2026)" in reply, reply
 
 
 def test_office_period_answer_runs_once_over_the_window_scoped_to_the_named_customer(office):
     office.say("delivery to zzt dealer", _ask())
-    office.calls.clear()  # AC-17: the first turn now fetches; count only the answer's
     office.say("this month", _period("2026-10-01", "2026-10-31"))
     orders = [args for name, args in office.calls if name == ORDERS_TOOL]
     assert len(orders) == 1, office.calls
