@@ -123,3 +123,32 @@ warehouse parameter); a contact without the supplier grant gets the view with `s
 renders `no_snapshot` / `preparing` only, the rendering of a full low stock view in chat is S5. `register()`'s
 dealer-dimension subset rule applies to ranking measures; non-ranking kinds keep their own route's dealer rules.
 `so_count` took about 2 minutes (one row, one function, one catalogue line): DP2 "new measure <= 1 day" met.
+
+## S5a: the lane calls crm_report for outstanding and the sales report; low stock read view renders
+
+Crew go 11 Oct. Behaviour-preserving: the customer sees byte-identical replies. Old tools stay on the allow-list.
+Scope decision (lead): only kinds whose chat reply today comes from a presenter alone switch now: outstanding
+(`crm_outstanding_report`) and the delivered sales report (`crm_sales_report`). Sales analysis (the chat path also
+starts the Excel file) and low stock (the chat ask always generates a reorder run) need a parser signal for "show me"
+vs "make the file"; they switch in S3 together with the parser change. Top selling stays on its own tool until S3
+(its presenter differs from the ranking's).
+
+Contract:
+- The lane builds `crm_report` with `measure=order_outstanding` (scope, subject, filters as today's args) wherever it
+  called `crm_outstanding_report`, and `measure=delivered_sales` wherever it called `crm_sales_report`. The SO-grant
+  redirect (scope=do + so_refused) stays where it is today in the lane, and /report applies its own as well.
+- The chatbot render functions for those kinds (`fetch.py` `_outstanding_report_output`, `_sales_report_output`)
+  receive the same envelope as before (the MCP presenter output for `report_kind`).
+- MCP presenter: a full `low_stock` read body (no `status`) renders a proper chat reply: one fact per line ("Label:
+  value"), the run date ("As of: <date>"), the count of low items and the top items by shortage (name and code,
+  supplier only when the contact holds the supplier grant), never the "could not run" line. `no_snapshot` /
+  `preparing` unchanged.
+
+Acceptance:
+- AC-24 For each switched kind, a fresh ask records an MCP call to `crm_report` with the measure key and the reply text
+  is byte-identical to the old tool's reply for the same parser emission and data.
+- AC-25 Follow-ups that work today for those kinds (outstanding detail offer / narrowing reply, sales report detail
+  pick) still produce identical replies through `crm_report`.
+- AC-26 A contact without `sales_orders.outstanding` asking outstanding still gets the DO-only reply it gets today.
+- AC-27 MCP: `present_response("crm_report", <full low_stock body>)` gives a reply with "As of:", the low item count and
+  item lines; no supplier names when the body has no supplier column; never the could-not-run text.
