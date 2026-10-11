@@ -34,7 +34,7 @@ Plan: `PLAN-prompt-ablation-11oct.md`. Paths relative to `sorento_crm_backend/`.
   `Company codes: Sorento = SRT, Mocha = MCH, Cabana = CBN`;
   `"cost" alone is the everyday word for`;
   `A dealer IS our customer`;
-  `马桶 -> canonical_code "water closet"`; `面盆 -> canonical_code "wash basin"`;
+  
   `only a 4-letter + 7-digit`; `"202602-S0002"`;
   `"Sorento Dealer","Mocha Dealer","Mocha Office","Cabana Dealer","Cabana Office","End User","Sorento Office"`;
   `team "customer_service",   agent "order_enquiries"`;
@@ -49,7 +49,7 @@ Plan: `PLAN-prompt-ablation-11oct.md`. Paths relative to `sorento_crm_backend/`.
   `READ FOR MEANING, NOT SPELLING`, `"oustangind`, `"worsr"`, `"salea"`, `Encik/En`,
   `"lah",`, `"tomorrow" (= CURRENT DATE + 1 day)`, `"apa saya tanya tadi"`, `"传单"`,
   `== A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==`, `== THE ATTRIBUTE PHRASE, WHOLE ==`,
-  `before calling the MCP tool`.
+  `before calling the MCP tool`, `马桶 -> canonical_code "water closet"`, `面盆 -> canonical_code "wash basin"`, `小便斗 -> canonical_code "urinal"` (owner 11 Oct: class map cut, translation belongs to the resolver).
 - U8. `== ENTITY CONFIDENCE ==` section body is at most 600 characters (was about 3,400).
 - U9. The trimmed text is at least 9,000 characters shorter than v50 (measured 9,413 after the lead ruled out the business example cuts; the first 12,000 was an unmeasured estimate).
 

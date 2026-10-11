@@ -76,8 +76,6 @@ KEPT_LINES = [
     'Company codes: Sorento = SRT, Mocha = MCH, Cabana = CBN',
     '"cost" alone is the everyday word for',
     'A dealer IS our customer',
-    '马桶 -> canonical_code "water closet"',
-    '面盆 -> canonical_code "wash basin"',
     'only a 4-letter + 7-digit',
     '"202602-S0002"',
     '"Sorento Dealer","Mocha Dealer","Mocha Office","Cabana Dealer","Cabana Office","End User","Sorento Office"',
@@ -120,6 +118,9 @@ GONE_STRINGS = [
     '== A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==',
     '== THE ATTRIBUTE PHRASE, WHOLE ==',
     'before calling the MCP tool',
+    '马桶 -> canonical_code "water closet"',
+    '面盆 -> canonical_code "wash basin"',
+    '小便斗 -> canonical_code "urinal"',
 ]
 
 
