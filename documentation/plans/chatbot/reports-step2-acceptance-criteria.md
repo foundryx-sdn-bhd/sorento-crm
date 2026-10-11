@@ -42,3 +42,38 @@ Acceptance:
 - AC-7 note: the MCP description lists the keys as a literal (no import of the backend registry from the MCP
   package); the sync is checked by a backend test in S4.
 - AC-10 Rate limit and brand scope behave as `/report-ask` (same settings, same stamping).
+
+## S2: the chatbot asks crm_report; one report entry in Focus; refine / switch; provenance
+
+Scope: sales rankings only (the six S1 measures). Top selling, sales report, outstanding, sales analysis and the
+low stock read move in S4. No parser prompt change (S3); the lane maps today's parser keys (order_status
+sales_ranking, basis, measure/rank_by, group_by, top_n, filters, ranking_refine, ranking_drill) as today.
+
+Contract (pinned for tester and coder):
+- `Focus.report` replaces `Focus.sales_ranking_frame`: `{"measure": <registry key>, "args": {<crm_report params
+  without contact/space>}, "shown": <drill rows or absent>}`. Reading a stored session that still has
+  `sales_ranking_frame` maps it to `report` (measure = f"{basis}_{measure}") so a refine after deploy works.
+- The lane calls `crm_report` with `measure=<registry key>` wherever it called `crm_report_ask`; the reply text is
+  the presenter's, as today.
+- `/report` echoes `measure_key` (the registry key) next to the existing `measure` figure; the presenter is unchanged
+  except for provenance below.
+- Provenance: the call carries `carried` (list of param names whose value came from the Focus entry, not from this
+  message); `/report` accepts and echoes it; the presenter appends " (from earlier)" to each fact line whose param is
+  in `carried` (Period, and each filter label). Not sent on a fresh ask.
+
+Acceptance:
+- AC-11 A fresh sales ranking ask calls `crm_report` (not `crm_report_ask`) with the registry key; for the same
+  inputs the reply text equals what the crm_report_ask path printed (no "(from earlier)").
+- AC-12 After a ranking, `Focus.report` holds the measure key, the args and `shown`; `Focus.sales_ranking_frame` is
+  no longer written.
+- AC-13 A stored session with only `sales_ranking_frame` (old shape) still refines: "top 5" re-runs the held args
+  with top_n 5 through `crm_report`.
+- AC-14 Refine patches only what the message changes: "top 5", "amount instead", "ordered instead" (basis),
+  "only dealer" (channel), "last month" (period), a brand / category word; every other held arg is unchanged.
+- AC-15 Provenance: on a refine, each fact line whose value was carried ends with " (from earlier)"; a value said in
+  this message has no mark; a fresh ask has no marks. One fact per line, "Label: value", no " · " joins.
+- AC-16 Switch: a report ask that names a different group_by without a refine or drill reading starts a fresh
+  entry (no held filters leak); drill behaviour (`ranking_drill` scoped / unsure / global) is unchanged.
+- AC-17 Dealer: a held entry is re-checked on refine exactly as today (report_ask.py:647-657); a dealer refine that
+  asks for a staff-only dimension is refused, never served.
+- AC-18 A non-report message does not read or clear `Focus.report`; the next report refine still finds it.
