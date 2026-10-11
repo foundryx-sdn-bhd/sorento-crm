@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports step 2 card</title>
+<style>
+:root{--bg:#fff;--fg:#09090b;--muted:#71717a;--border:#e8e8ec;--card:#fafafa;--primary:#3b82f6;--psoft:#eff6ff;--ok:#16a34a;--oksoft:#f0fdf4;--warn:#d97706;--warnsoft:#fffbeb;--code:#f4f4f5}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#09090b;--fg:#fafafa;--muted:#a1a1aa;--border:#27272a;--card:#111113;--primary:#60a5fa;--psoft:#172554;--ok:#4ade80;--oksoft:#052e16;--warn:#fbbf24;--warnsoft:#2a1d05;--code:#18181b}}
+:root[data-theme="dark"]{--bg:#09090b;--fg:#fafafa;--muted:#a1a1aa;--border:#27272a;--card:#111113;--primary:#60a5fa;--psoft:#172554;--ok:#4ade80;--oksoft:#052e16;--warn:#fbbf24;--warnsoft:#2a1d05;--code:#18181b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 64px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:18px;margin:30px 0 8px;padding-top:10px;border-top:1px solid var(--border)}
+.meta{color:var(--muted);font-size:13px}
+code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
+.wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin:8px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{border-bottom:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top}th{background:var(--card)}tr:last-child td{border-bottom:none}
+.box{border-left:4px solid var(--primary);background:var(--psoft);padding:10px 12px;border-radius:6px;margin:10px 0}
+.box.warn{border-color:var(--warn);background:var(--warnsoft)}
+.case{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--card)}
+.u{color:var(--primary);font-weight:600}.x{color:#dc2626;font-weight:600}
+.q{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:8px 0}
+.rec{color:var(--ok);font-weight:600}
+ol li,ul li{margin-bottom:4px}
+</style>
+</head>
+<body>
+<main>
+<h1>Reports step 2: one report tool, one report frame</h1>
+<p class="meta">AGENT-LOOP-SPIKE, step 2 of the scalable-chat plan (owner Q3: reports first). Size L. Branch <code>crew/reports-step2</code>. Card only, no code yet. 11 Oct 2026.</p>
+
+<h2>What changes for a customer</h2>
+<p>Report questions (top sellers, sales totals, outstanding, sales by month or channel) go through one tool and one held "report frame". A follow-up like "only dealer", "by month instead", "top 5" or "amount instead" changes the last report. It no longer starts over or gets misread as a customer or product. Every value carried from earlier is shown in the reply header, e.g. <b>Period: Oct 2026 (from earlier)</b>. Grants, dealer limits, scope and the look of the reply stay exactly as today.</p>
+
+<h2>Today</h2>
+<div class="wrap"><table>
+<tr><th>Tool</th><th>Computes</th><th>Group by</th><th>Follow-ups today</th></tr>
+<tr><td>Sales ranking (<code>report_ask.py:178</code>, <code>ask.py:152</code>)</td><td>amount, qty on SO lines; delivered / ordered / outstanding</td><td>customer, product, brand, category, agent, location, channel, month</td><td>holds its last call (<code>state.py:176</code>); refine <code>:641</code>, drill <code>:710</code></td></tr>
+<tr><td>Top selling (<code>orders.py:2060</code>)</td><td>qty, amount on SO lines</td><td>item, category</td><td>own slot <code>Focus.top_selling</code></td></tr>
+<tr><td>Sales report (<code>orders.py:1778</code>)</td><td>delivered DO qty, amount by DO date</td><td>customer, product, DO, agent</td><td>detail offer</td></tr>
+<tr><td>Outstanding (<code>orders.py:1545</code>)</td><td>SO outstanding qty, DO pending qty</td><td>customer or product, location</td><td>detail offer</td></tr>
+<tr><td>Sales analysis (<code>analysis.py:436</code>)</td><td>sales value</td><td>month, year, channel</td><td>none</td></tr>
+<tr><td>Low stock (<code>low_stock_report.py:577</code>)</td><td>creates a reorder run + Excel file</td><td>filters</td><td>own slot</td></tr>
+</table></div>
+<p class="meta">The report rules in the parser prompt are about 8.7k of its 37.9k tokens, and 11 parser output keys exist only for reports.</p>
+
+<h2>Proposal</h2>
+<ol>
+<li><b>One read tool <code>crm_report</code></b>, built by extending the existing sales-ranking engine. The report-engine plan (section 7) already plans this fold. Grants, dealer limits, scope and the reply formats stay the services' own.</li>
+<li><b>Low stock stays its own tool.</b> It creates a reorder run and a file, so it is an action: reads generic, actions specific. The sales-analysis Excel stays too.</li>
+<li><b>Old tools stay available</b> until <code>crm_report</code> passes the gate for that kind of report.</li>
+<li><b>One report frame</b> held in memory, owned by the report intent (INTENT-FRAMES rule). A follow-up changes the frame; a different report or subject starts a new one.</li>
+<li><b>Carried values shown</b> in the header. Defaults only where CLARIFY-POLICY allows; rankings still ask for period, metric and top N (owner rule).</li>
+<li><b>Static prompt:</b> one report section replaces the report rules, the same text every turn (lesson of the prompt-diet test: per-message parts break the cache).</li>
+</ol>
+
+<h2>Starting list of measures</h2>
+<div class="wrap"><table>
+<tr><th>Measure</th><th>Comes from (today)</th><th>Group by</th><th>Dealer</th></tr>
+<tr><td>Sales amount / qty (ordered, delivered)</td><td>SO-line dataset <code>sales_order_lines_ask.py:196</code></td><td>8 report dimensions</td><td>product, brand, category, month</td></tr>
+<tr><td>Outstanding qty / amount (SO)</td><td>same, outstanding</td><td>8 report dimensions</td><td>same</td></tr>
+<tr><td>DO pending qty</td><td>outstanding service <code>:175</code></td><td>customer, product, location</td><td>own customers</td></tr>
+<tr><td>Delivered amount / qty by DO date</td><td>DO-line dataset <code>delivery_order_lines.py:271</code></td><td>customer, product, DO, agent, period</td><td>own customers, no agent</td></tr>
+<tr><td>Sales value (ordered, delivered, invoiced)</td><td><code>sales_yearly</code></td><td>month, year, channel</td><td>not allowed (as today)</td></tr>
+</table></div>
+<p>Adding a measure = one row + one function. The model's choices are built from the rows, so no prompt edit is needed. Test for DP2: add <code>so_count</code> in a day or less.</p>
+
+<h2>Two ways for the parser to describe a report (decided by test)</h2>
+<div class="box"><b>F, meaning frame:</b> the parser writes what was asked (new or refine, measure, group by, filters as the user's words, period, top, sort). Code turns it into the tool call.<br><b>T, tool call:</b> the parser writes the tool's own parameters (still the user's words where ids go; the resolver fills ids, the model never invents them).<br>Both use the same static prompt. We compare pass, tokens, cache share and p95. A tie goes to F, because it keeps the tool's details out of the prompt.</div>
+
+<h2>Go-on bar (DP2)</h2>
+<p>Report topics +10 points vs today, p95 at or under 8 s, no other topic worse (30-case smoke), and one new measure added in a day or less.</p>
+<div class="box warn"><b>Problem:</b> the DEV set has only about 6 report questions, so one case is about 17 points. A labelled report test slice is needed first (Q3).</div>
+
+<h2>Real cases (masked)</h2>
+<div class="case"><span class="u">Refine</span> "Srtkt71-ss outstanding" then "Dealer outstanding only" then "Delivery order list". Frame: channel = dealer on the same outstanding report, then show its rows.</div>
+<div class="case"><span class="u">Measure switch</span> "top 200 project hot selling item" then "quantity" then "amount". Frame: top 200, project, then by quantity, then by amount. The header shows the carried period.</div>
+<div class="case"><span class="u">Filter</span> after a ranking: "Sold by [agent]". Frame: add agent = [agent].</div>
+<div class="case"><span class="x">Misread today</span> "[Customer C] outstanding" then "By products o/s brand Sorento". The bot offered "Sorento (customer)" and the user had to type everything again. Frame: group by product, brand = Sorento.</div>
+<div class="case"><span class="x">Stale subject today</span> "CBDR4003 stock" then "Top sales Sorento and Mocha water closet this month" then "Sorento and mocha" got "No sales for BK007A". A new report frame has no product from the stock question, so nothing leaks in.</div>
+<div class="case"><span class="u">Must stay</span> Dealer: "Top 20 [Customer S] order products" gets "Sales report is not enabled for your account." Unchanged.</div>
+<div class="case"><span class="u">Stays separate</span> "generate low stock report until end of the year" stays on the low stock tool.</div>
+
+<h2>Your call (Q1 to Q5)</h2>
+<div class="q"><b>Q1</b> Keep low stock as its own tool (it creates a reorder run and a file), and keep the sales-analysis Excel. <span class="rec">Recommend yes.</span></div>
+<div class="q"><b>Q2</b> Build the report tool by extending today's sales-ranking engine (the fold the report-engine plan already describes), not a new wrapper over five services. <span class="rec">Recommend extend.</span></div>
+<div class="q"><b>Q3</b> Crew labels about 40 report test cases from real report chats in the snapshot (194 report turns, 15 contacts): refine, regroup, switch, scenario. Split dev / hidden 1:2. DP2 is measured on that slice plus the 30-case smoke. <span class="rec">Recommend yes; without it DP2 cannot be measured.</span></div>
+<div class="q"><b>Q4</b> F vs T decided by that test, tie goes to F. <span class="rec">Recommend yes.</span></div>
+<div class="q"><b>Q5</b> Carried values always shown in one header line; new defaults only where CLARIFY-POLICY allows; rankings still ask. <span class="rec">Recommend yes.</span></div>
+
+<p class="meta">Not in this step: grants, scope and reply formats unchanged; no UI; no database change for the measure list (rows in code); the prompt diet stays off.</p>
+</main>
+</body>
+</html>
