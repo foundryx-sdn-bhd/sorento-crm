@@ -178,3 +178,14 @@ def test_p1_guesses_for_a_placed_location_word_never_reach_the_outstanding_call(
     assert sent[0]["_diagnostics"]["entities_in"] == 1, sent[0]["_diagnostics"]
     text = (result.reply or {}).get("text") or ""
     assert "could not find" not in text.lower(), text
+
+
+def test_p4_a_restate_without_group_by_keeps_the_held_ranking(console) -> None:
+    """A real "top 20" restatement parses with no group_by: that is the held axis, not a new one."""
+    console.say(_rank(_e("Sorento", "brand"), top_n=10, **NO_PERIOD), "top 10 salesman for sorento")
+    text, calls = console.say(_rank(_e("Sorento", "brand"), group_by=None, top_n=20, **NO_PERIOD), "top 20")
+    assert calls == [], calls
+    assert text.startswith("I still need a period for that."), text
+    pending = _pending(console)
+    assert (pending.get("extras") or {}).get("top_n") == 20, pending
+    assert int(pending.get("misses") or 0) == 1, pending
