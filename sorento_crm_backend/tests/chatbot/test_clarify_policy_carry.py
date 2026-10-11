@@ -369,3 +369,74 @@ def test_the_month_given_while_the_carry_question_is_open_is_kept_when_it_is_ans
     assert orders[-1].get("actual_delivery_date_from") == "2026-10-01", orders[-1]
     assert orders[-1].get("actual_delivery_date_to") == "2026-10-31", orders[-1]
     assert not orders[-1].get("product_ids"), orders[-1]  # position 2 drops the product
+
+
+# --- round 6b: turns that must not re-ask an open carry_scope question; nits ------------------ #
+
+
+def _open_carry(console) -> str:
+    _carried_product(console)
+    reply = console.say("delivery for zzt dealer", _customer_ask())
+    assert ((console.state or {}).get("open_question") or {}).get("kind") == "carry_scope", console.state
+    return reply
+
+
+def test_a_thanks_under_an_open_carry_question_gets_the_casual_reply_and_keeps_the_question(dealer):  # noqa: F811
+    _open_carry(dealer)
+    reply = dealer.say("thanks", verdict(message_type="casual", domain_hint=None, entities=[], domain_in_message=False))
+    assert "(from earlier)" not in reply, reply
+    assert ((dealer.state or {}).get("open_question") or {}).get("kind") == "carry_scope", dealer.state
+    dealer.calls.clear()
+    dealer.say("2", _answer("pick", 2))
+    orders = _orders(dealer)
+    assert orders and not orders[-1].get("product_ids"), dealer.calls  # the later "2" still answers it
+
+
+def test_an_escalation_request_under_an_open_carry_question_runs_escalation_and_closes_it(dealer):  # noqa: F811
+    _open_carry(dealer)
+    reply = dealer.say(
+        "I want to talk to a person",
+        verdict(message_type="request_for_help", intent_hint="escalation", domain_hint=None, entities=[],
+                domain_in_message=False),
+    )
+    assert "(from earlier)" not in reply, reply
+    assert ((dealer.state or {}).get("open_question") or {}).get("kind") != "carry_scope", dealer.state
+
+
+def test_start_over_under_an_open_carry_question_resets_and_asks_nothing(dealer):  # noqa: F811
+    _open_carry(dealer)
+    reply = dealer.say(
+        "start over",
+        verdict(message_type="business_query", domain_hint=None, entities=[], topic_reset=True,
+                domain_in_message=False),
+    )
+    assert "(from earlier)" not in reply, reply
+    state = dealer.state or {}
+    assert not (state.get("open_question") or {}), state.get("open_question")
+    focus = state.get("focus") or {}
+    assert not focus.get("products") and not focus.get("customers"), focus
+
+
+def test_the_break_line_for_a_carried_customer_names_customers_not_products(office, session_factory):  # noqa: F811
+    _ask_unclear(session_factory)
+    office.say("delivery for zzt dealer", _customer_ask())
+    office.say("delivery today", _today_ask())
+    office.say("delivery today", _today_ask())
+    third = office.say("delivery today", _today_ask())
+    assert "I still need which customers to include for" in third, third
+    assert "which products" not in third, third
+
+
+@pytest.mark.parametrize("text", ["ada penghantaran Oktober?", "十月的送货"], ids=["ms", "zh"])
+@pytest.mark.parametrize("mode,end", [("month", "2026-10-31"), ("range", "2026-10-15")], ids=["month", "range"])
+def test_the_carry_question_date_words_are_translated(dealer, session_factory, text, mode, end):  # noqa: F811
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    ask = verdict(
+        domain_hint="order", intent_hint="check_order", entities=[], date_mode=mode,
+        date_filter_start="2026-10-01", date_filter_end=end,
+    )
+    reply = dealer.say(text, ask)
+    assert CODE in reply, reply
+    lowered = reply.lower()
+    assert "month" not in lowered and "range" not in lowered and "from earlier" not in lowered, reply
