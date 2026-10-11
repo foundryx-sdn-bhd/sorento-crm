@@ -465,6 +465,18 @@ def test_a_release_batch_at_the_compare_cap_runs_the_full_suite(tmp_path):
     assert run_step(tmp_path, "workflow_dispatch", many, last_release=LAST_RELEASE) == FULL_PIPELINE
 
 
+@pytest.mark.parametrize("harness", ["sorento_crm_backend/tests/conftest.py", "sorento_crm_backend/tests/_pg_fixture.py"])
+def test_a_release_batch_touching_the_test_harness_runs_the_full_suite(tmp_path, harness):
+    """CI-COST owner ruling (11 Oct 2026, crew decision (b)): a harness change alters how
+    every test runs, so no selection can scope it (the 9 Oct release caught 6 repo-wide
+    breaks the changed tests missed). Full shards; rare, so the average stays near 60."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH + [harness], last_release=LAST_RELEASE)
+    assert out == FULL_PIPELINE
+    nested = run_step(tmp_path, "workflow_dispatch",
+                      RELEASE_BATCH + ["sorento_crm_backend/tests/chatbot/conftest.py"], last_release=LAST_RELEASE)
+    assert nested["lean"] == "true", "a sub-directory conftest is scoped by the selection, stays lean"
+
+
 def test_a_tree_whose_release_tests_passed_is_not_tested_again(tmp_path):
     """A re-dispatch (a rejected approval, a deploy hiccup) of a tree whose
     release tests already passed builds and deploys only."""
