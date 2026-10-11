@@ -78,3 +78,41 @@ Acceptance:
   asks for a staff-only dimension is refused, never served.
 - AC-18 Same lifetime as today's ranking entry (engine.py:6600-6604): a turn that is not a report ask clears
   `Focus.report`, so a later "top 5" after a stock question is a fresh ask, never a stale refine.
+
+## S4: the remaining measures (backend + MCP only; no lane change)
+
+The chatbot keeps calling the old tools for these kinds until S5 switches the lane per kind after the gate.
+
+Contract:
+- `Measure` gains `kind` (default "ranking" for the six S1 rows). `/report` returns the measure's native body plus
+  `report_kind`; the MCP presenter renders `crm_report` with the presenter that kind uses today (ranking ->
+  `_report_ask`, outstanding -> `_outstanding_report`, sales_report -> `_sales_report`, sales_analysis ->
+  `_sales_analysis_*`, low_stock -> the low stock envelope), so replies are byte-for-byte today's.
+- New rows (each run adapts the S1 signature to its service; params a kind does not support -> 422):
+  - `order_outstanding` (kind outstanding) -> `outstanding_report_service.outstanding_report` (:175); `scope` so | do
+    | both, default both (CLARIFY-POLICY row 14); needs a subject (customer or product) as the route does today;
+    grant `sales_orders.outstanding`; dealer = own customers (enforce_customer_scope as orders.py:1671).
+  - `delivered_sales` (kind sales_report) -> `sales_report_delivered.delivered_sales_report` (:232); group_by customer |
+    product | delivery_order | sales_agent; grant `sales_orders.sales_report`; dealer: own customers, no sales_agent.
+  - `sales_value` (kind sales_analysis) -> the `sales_yearly` engine run as `api/v1/sales/analysis.py` does (:198-331);
+    axes month | year | channel; basis ordered | delivered | invoiced; grant `sales_orders.sales_report`; a contact
+    linked to a customer is refused (as :253-258). The Excel path stays on its own tool.
+  - `low_stock` (kind low_stock, owner Q1 split) -> `low_stock_report_service.build_low_stock_view` (:271) over the run
+    from `reorder_run_service.today_or_latest_run` (:466); filters categories / suppliers / warehouses; grant
+    `scm.low_stock_report`, supplier column under `purchase_orders.supplier`; company from the contact; NEVER creates a
+    run, a download row or a job; the reply says which run date it reads.
+- `KNOWN_GRANTS` gains `sales_orders.outstanding` and `scm.low_stock_report` (reviewed here).
+- DP2 timing: one new measure `so_count` (count of distinct SOs, from the outstanding service's `so_count`) added as
+  a separate commit; its commit message states the time it took.
+
+Acceptance:
+- AC-19 For each new measure, `/report?measure=<key>` with the same inputs returns the same body as today's route for
+  that kind (outstanding-report, sales-report, sales-analysis read, low-stock read view), and the MCP reply text is
+  identical to today's tool's.
+- AC-20 Every guard of today's route for that kind holds on `/report` (grant, dealer scope, linked-customer refusal for
+  sales_value, subject required for outstanding, rate limits where the old route has one).
+- AC-21 `low_stock` writes nothing: the reorder_runs, downloads and job queue counts are unchanged after a call; with
+  no completed run the reply says there is no low stock snapshot yet (never stuck).
+- AC-22 A param the measure's kind does not support -> 422 naming the param.
+- AC-23 `so_count` registered with one row + one function; `/report?measure=so_count` serves it; the MCP measure
+  description lists every key (and a backend test compares the MCP literal with `measures.keys()`).
