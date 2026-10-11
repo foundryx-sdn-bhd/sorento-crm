@@ -29,10 +29,15 @@ def _run(tmp_path, *extra):
     return json.loads(next(out.rglob("*.json")).read_text())
 
 
-def test_cli_prompt_version_passed_to_engine_and_report(tmp_path):
+def test_cli_prompt_version_passed_to_engine_and_report(tmp_path, monkeypatch):
+    # round 11: the pin is resolved to the ai_prompt_versions uuid before the engine is built
+    from scripts.chatbot_eval import prompts
+
+    monkeypatch.setenv("EVAL_TRACE_DB_URL", "postgresql://u:p@127.0.0.1:1/sorento_eval_x")
+    monkeypatch.setattr(prompts, "query_prompt", lambda dsn, value: {"id": "uuid-52", "version": 52, "template_md5": "m"})
     rep = _run(tmp_path, "--prompt-version", "52")
-    assert any(str(kw.get("prompt_version")) == "52" for kw in KwEngine.SEEN)
-    assert rep["prompt_version"] == "52"
+    assert any(kw.get("prompt_version") == "uuid-52" for kw in KwEngine.SEEN)
+    assert rep["prompt"]["version"] == 52
 
 
 def test_report_prompt_version_defaults_to_label(tmp_path):

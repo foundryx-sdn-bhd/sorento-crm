@@ -199,3 +199,106 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   0256, 0258, 0306: the replayed history re-asked the same thing and the bot correctly answered the same way).
   Fix: the rubric is checked first; `stuck` only replaces a failing verdict (wrong) when the reply equals the
   previous one. A repeat that meets the rubric is correct. Tool errors / blank stay first. GRADER_VERSION 8.
+
+## Round 11 (prompt pin resolves or fails, 11 Oct; follow-up PR)
+- Bug (found by the prompt-diet lane): the engine renders a pinned prompt only when `prompt_overrides` holds the
+  `ai_prompt_versions.id`; anything that matches no row (e.g. `"50"`) silently falls back to the code prompt
+  (`app/services/ai_prompt_registry.py:1393-1407`).
+- `--prompt-version X` accepts the version NUMBER or the row UUID. It is resolved before the engine is built,
+  read-only, via `EVAL_TRACE_DB_URL`: `ai_prompt_versions` where `name = 'chatbot_semantic_parser'` and
+  (`id = X` or `version = X`). No DB URL, or no matching row -> exit 2 with a message naming X. The envelope pins
+  the resolved UUID.
+- Without `--prompt-version`, the run resolves the `production` label (`ai_prompt_labels.label = 'production'`) the
+  same way when `EVAL_TRACE_DB_URL` is set (no DB URL: prompt recorded as unknown, run continues).
+- `report.json` gains `prompt: {id, version, template_md5, source: "pin" | "label" | "unknown"}`; `prompt_version` stays.
+- Evidence from the traces: `prompt_versions_seen` = count of the parser's `prompt_version` across final-turn digests.
+  A pinned or label-resolved run where any seen version differs from the resolved version sets `prompt_mismatch:
+  true`, prints it on stderr and exits 5 after writing the report.
+- Round 11 review: a backend that falls back to the code prompt writes `facts.prompt_version` None
+  (`app/services/chatbot/engine.py:4470`, registry `_fallback`). When the prompt was resolved (source pin or label),
+  a final-turn digest whose `parser` stage is present but has `prompt_version` None counts as `"none"` in
+  `prompt_versions_seen` and is a mismatch (exit 5). A digest with no parser stage is skipped (no false alarm).
+- A DB error while resolving (psycopg2 error, driver missing) is handled like no match: exit 2 when pinned; otherwise a
+  stderr warning and source `unknown`.
+- Exit precedence: a stop code (3 budget, 4 not_dry_run, 130 interrupted) wins over 5; the mismatch still shows in
+  report.json.
+
+## Round 12 (per-layer scoring, owner ruling 11 Oct)
+Score each layer the label allows, from the final-turn `trace_digest` (round 10), so a failure is attributed to
+the layer that broke. All new label fields are optional and start empty; they are filled over time.
+- `Expect` gains `understood` (dict, optional keys `domain`, `intent`, `entities`: list of strings),
+  `expected_resolved` (list of strings: record codes/names the resolver must land on) and `tool` (dict, optional
+  keys `name`, `params`: dict).
+- Layer checks (case-insensitive): understood = `parser.domain` equals, `parser.intent` equals, each entity string
+  appears in the JSON of `parser.entities`; resolved = each string appears in the JSON of `resolved[*].entities`;
+  tool = some `tools[*]` has `tool` equal to `name` and, for each params key, `args[key]` equal (strings
+  case-insensitive; other values exact); reply = the existing verdict (pass = correct | good_clarify).
+- Per layer per result: `pass` | `fail` | `na` (label has no field for it) | `no_trace` (label has it, digest has no
+  such stage). Results rows carry `layers: {understood, resolved, tool, reply}`.
+- Report: `by_layer: {layer: {pass, fail, na, no_trace, pass_rate}}` (pass_rate over pass + fail, None when 0) and
+  `first_failing_layer`: for results whose reply failed, a count of the first layer in order understood -> resolved
+  -> tool -> reply that is `fail` (`reply` when no earlier layer was scored). `--regrade` recomputes layers from the
+  stored digests. The verdict itself is unchanged by layers. GRADER_VERSION stays 8 (verdicts unchanged).
+
+## Round 13 (run provenance, 11 Oct)
+- `report.json` records `git_sha` (full HEAD of the checkout the runner runs from, `git rev-parse HEAD` in the
+  package's repo; the crew stack serves the same checkout) and `git_dirty` (true when `git status --porcelain` lists
+  tracked changes). Env `EVAL_APP_SHA` overrides `git_sha` when the backend runs from another checkout. No git
+  available -> both null, run continues. `--regrade` keeps the source run's values. The resolved prompt id is
+  already recorded (`prompt.id`, round 11).
+
+## Round 14 (tool layer reads the real trace, 11 Oct)
+- First reports run: tool layer `no_trace` on all 38. Real traces carry tool calls inside stage `looked_up`
+  `raw.envelopes[*]`: `tool` (name), `tool_ran` (bool) and the parameters in `lane_ask.filters`,
+  `sales_ranking_frame` and `low_stock_frame` (dicts, may be null). Trace entries with a top-level `tool` key are
+  cross-domain probes, not the answer's tool.
+- Digest `tools` = one item per envelope with a `tool` and `tool_ran` true: `{tool, args}` where args is the merge of
+  the non-null dicts `lane_ask.filters`, `sales_ranking_frame`, `low_stock_frame` (later keys win), plus the probe
+  entries as before (kept, they can only add matches).
+- Results rows carry `needs_judge` (bool) so strict rates can be cut by any grouping offline.
+
+## Round 15 (regrade keeps prompt provenance, 11 Oct)
+- `--regrade` also copies `prompt` (id, version, template_md5, source), `prompt_versions_seen` and `prompt_mismatch`
+  from the source report.json (found when saving the reports gate baseline: the regraded file had no `prompt`).
+
+## Round 16 (per-step gates: topic subsets + fixed smoke, owner ruling 11 Oct)
+Per-step gate = hidden cases of the topics a PR touches + a fixed 30-case cross-topic smoke; the full hidden set only
+for big decisions.
+- `--topics a,b` keeps cases whose `topic_code` equals a prefix or starts with `prefix + "."` (so `purchase_order`
+  matches `purchase_order.outstanding`, `inventory.availability` matches only itself). Unknown prefix (matches no
+  case) -> exit 2 naming it.
+- `--ids-file PATH` keeps the case ids listed (JSON array, or a JSON object with an `ids` array). An id not in the data
+  dir -> exit 2 naming it. `--topics` and `--ids-file` combine as a union. Neither -> all cases (as today).
+- Before any engine call the run prints to stderr one line: `selected N cases, ~C calls, ~$X` where C = sum over
+  selected cases of (1 + replayed history user turns) x (1 + variants per case) and $X = C x the per-turn estimate
+  (40,000 prompt tokens of which 95% cached, 400 output, priced with `--budget-model`). `--estimate-only` prints it and
+  exits 0 without building the engine.
+- `--baseline` accepts a run DIR (report.json + results.jsonl) as well as a report.json file. With a dir the delta is
+  computed only on rows whose (case_id, variant_kind) are in this run (`delta.restricted: true`, `delta.matched` =
+  count); a file keeps today's whole-report delta (`delta.restricted: false`).
+- Report records `selection: {topics, ids_file, cases}`.
+
+## Round 17 (AGENT-LOOP-SPIKE reports gate findings, 11 Oct)
+- Header echoes: a report reply opens with a header block (the leading lines before the first blank line, each of the
+  form `<label>: <value>` with a label of at most 40 characters and no `*`), e.g. `Product: X / Customer: all`. A
+  `must` code/text that also appears in the case's own user text (final message or any history user turn,
+  case-insensitive) counts only when it also appears in the reply OUTSIDE that header block. Found on rpt-014:
+  `Product: A, B ... I could not fetch orders just now` passed because both codes were echoed in the header. Numbers
+  and dates are not affected. GRADER_VERSION 9.
+- Report lock: `DbContactReset.reset` also marks chat-requested reorder runs left in flight on the eval DB as failed
+  (`UPDATE scm.reorder_run SET status = 'failed' WHERE requested_via = 'chat' AND status IN ('queued', 'running')`),
+  same transaction, same `sorento_eval_*` guard. The eval stack runs no worker, so a low-stock run never finishes and
+  every later low-stock ask got "a plan is already running" (`app/api/v1/scm/low_stock_report.py:482-498`,
+  `app/services/scm/reorder_run_service.py:167`).
+- Round 17b (regrade of the stored baselines showed the first rule over-triggering: 37 main-set and 9 report flips,
+  e.g. `SRT8308: No ETA` read as a header, and single-product report replies whose code legitimately appears only in
+  `Product:`): (1) a header line's label is letters and spaces only (no digits, at most 40 chars), and a header block
+  needs at least 2 such lines; (2) a header-only echo still counts UNLESS every must item the reply matched is a
+  header-only echo of the user's text (then the reply proved nothing beyond repeating the ask -> not met).
+  GRADER_VERSION 10.
+
+## Round 19 (bold header lines, 11 Oct)
+- Header lines may be bold: `*Label:* value` (WhatsApp bold around the label and colon) counts as a header line
+  exactly like `Label: value` (same word-only label of at most 40 chars, same block rules). Found on rpt-020: a
+  sales-figures reply `*Customer:* all / *Product:* CWC7601-S, ... / *Delivery date:* ...` passed because the echoed
+  code sat in a bold header. GRADER_VERSION 11.
