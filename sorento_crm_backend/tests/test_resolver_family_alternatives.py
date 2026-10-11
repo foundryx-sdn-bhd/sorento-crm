@@ -292,11 +292,16 @@ def test_r3_fallback_rerun_keeps_the_family_for_a_non_product_hint(api, db, refs
 def test_r5_other_company_members_cannot_starve_the_in_scope_family(db, refs):
     """Seven more-similar same-family products in ANOTHER company, two in scope. The SQL
     LIMIT 5 runs before the visibility recheck, so only a scope clause inside the family
-    query keeps the in-scope members."""
+    query keeps the in-scope members. The in-scope codes are far from the token by trigram
+    so the trigram tier cannot rescue them: they must LEAD, flagged same_family."""
     for suffix in ("A", "B", "C", "D", "E", "F", "G"):
         _p(db, refs, f"SRTWC8357-SH-150-{suffix}", family="SRTWC8357", company=MOCHA)
-    _p(db, refs, "SRTWC8357-RL", family="SRTWC8357")
-    _p(db, refs, "SRTWC8357-RL-P", family="SRTWC8357")
-    codes = _codes(_resolve(db, FOLDED, RAW))
-    assert "SRTWC8357-RL" in codes and "SRTWC8357-RL-P" in codes, codes
-    assert not [c for c in codes if c.endswith(("-A", "-B", "-C", "-D", "-E", "-F", "-G"))]
+    far1 = "SRTWC8357-ZQXJVKWYPLMNB-QPLZMXNCBVKJ-WRTYUIOPASDF-GHJKLZXCVBNM-1"
+    far2 = "SRTWC8357-ZQXJVKWYPLMNB-QPLZMXNCBVKJ-WRTYUIOPASDF-GHJKLZXCVBNM-2"
+    _p(db, refs, far1, family="SRTWC8357")
+    _p(db, refs, far2, family="SRTWC8357")
+    tr = _resolve(db, FOLDED, RAW)
+    codes = _codes(tr)
+    assert set(codes[:2]) == {far1, far2}, codes
+    assert all(a.display.get("same_family") is True for a in tr.alternatives[:2])
+    assert not [c for c in codes if c.endswith(("-A", "-B", "-C", "-D", "-E", "-F", "-G"))], codes
