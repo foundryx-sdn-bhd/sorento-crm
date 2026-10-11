@@ -63,6 +63,16 @@ def test_by_number_returns_the_request_and_lines(client_and_db):
     assert number in blob and "ZZT BASIN" in blob and "ZZT Project Sdn Bhd" in blob, blob
 
 
+def test_by_number_folds_case_and_space(client_and_db):
+    client, db = client_and_db
+    number = f"ZZTPR{unique_code()[:5].upper()}"
+    _seed(db, number)
+    typed = " " + number.lower() + " "
+    resp = client.get(PATH.format(number=typed.replace(" ", "%20")))
+    assert resp.status_code == 200, resp.text
+    assert number in json.dumps(resp.json())
+
+
 def test_by_number_unknown_is_404(client_and_db):
     client, _ = client_and_db
     assert client.get(PATH.format(number="ZZT-NO-SUCH-PR")).status_code == 404
