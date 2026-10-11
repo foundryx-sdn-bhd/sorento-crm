@@ -592,6 +592,17 @@ def _validate_runtime_payload(payload: Any) -> dict:
             raise _refuse(f"{name} must be text or null.")
         if len(value) > _RUNTIME_MAX_LENGTH[name]:
             raise _refuse(f"{name} is longer than {_RUNTIME_MAX_LENGTH[name]} characters.")
+        if name == "respond_webhook_secret":
+            from app.api.v1.public.respond_webhook import MAX_KEYS, MIN_KEY_LENGTH, split_keys
+
+            keys = split_keys(value)
+            # Name the field, never the value: the message is echoed to the browser.
+            if any(len(key) < MIN_KEY_LENGTH for key in keys):
+                raise _refuse(
+                    f"{name}: every signing key must be at least {MIN_KEY_LENGTH} characters."
+                )
+            if len(keys) > MAX_KEYS:
+                raise _refuse(f"{name}: at most {MAX_KEYS} signing keys.")
         text = value.strip().lower()
         if text and name == "connector_ss_callback_url" and not text.startswith("https://"):
             raise _refuse("The callback URL must start with https://")

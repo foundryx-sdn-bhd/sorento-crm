@@ -176,12 +176,22 @@ def _workflow() -> dict:
 
 
 def _gitleaks_job():
+    """The gitleaks job and its scan step (the step that runs `gitleaks git`)."""
     jobs = _workflow()["jobs"]
     for name, job in jobs.items():
         for step in job.get("steps", []) or []:
-            if "gitleaks" in str(step.get("uses", "")).lower() or "gitleaks" in str(step.get("run", "")).lower():
+            if re.search(r"^\s*gitleaks git\b", str(step.get("run", "")), re.M):
                 return name, job, step
     return None, None, None
+
+
+def _gitleaks_install_step():
+    _, job, _ = _gitleaks_job()
+    assert job, "no gitleaks job"
+    for step in job.get("steps", []) or []:
+        if "releases/download" in str(step.get("run", "")):
+            return step
+    return None
 
 
 def test_deploy_workflow_has_gitleaks_step():
@@ -189,13 +199,20 @@ def test_deploy_workflow_has_gitleaks_step():
     assert name, "no gitleaks job or step in deploy.yml"
 
 
-def test_gitleaks_action_is_pinned_to_full_version_or_sha():
-    _, _, step = _gitleaks_job()
-    assert step, "no gitleaks step"
-    uses = str(step.get("uses", ""))
-    if uses:
-        ref = uses.split("@", 1)[1] if "@" in uses else ""
-        assert re.fullmatch(r"v\d+\.\d+\.\d+|[0-9a-f]{40}", ref), f"unpinned ref {ref!r}"
+def test_gitleaks_job_keeps_its_check_name():
+    # The CI gate and the ruleset key on job names.
+    _, job, _ = _gitleaks_job()
+    assert job and job.get("name") == "Secret scan (gitleaks)"
+
+
+def test_no_workflow_uses_gitleaks_action():
+    # gitleaks/gitleaks-action needs a paid license on organization repos and
+    # fails every run there; the CLI runs directly instead.
+    for wf in sorted((ROOT / ".github" / "workflows").glob("*.y*ml")):
+        for name, job in (yaml.safe_load(_text(wf)).get("jobs") or {}).items():
+            for step in job.get("steps", []) or []:
+                uses = str(step.get("uses", "")).lower()
+                assert "gitleaks-action" not in uses, f"{wf.name}:{name} uses {uses!r}"
 
 
 def test_gitleaks_skips_merge_group_and_dispatch_but_runs_on_labelled_pr_and_push():
@@ -221,17 +238,30 @@ def test_gitleaks_skips_merge_group_and_dispatch_but_runs_on_labelled_pr_and_pus
     assert run("push")
 
 
-def test_gitleaks_action_is_pinned_to_a_commit_sha():
-    # AC-21 supersedes the older "full version or sha" pin test.
-    _, _, step = _gitleaks_job()
-    uses = str(step.get("uses", ""))
-    assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", uses), f"not a 40-hex SHA pin: {uses!r}"
-
-
 def test_gitleaks_version_env_is_exact():
+    _, job, _ = _gitleaks_job()
+    ver = str((job.get("env") or {}).get("GITLEAKS_VERSION", ""))
+    assert re.fullmatch(r"\d+\.\d+\.\d+", ver), f"GITLEAKS_VERSION={ver!r}"
+
+
+def test_gitleaks_install_verifies_release_sha256():
+    step = _gitleaks_install_step()
+    assert step, "no step downloads the gitleaks release"
+    run = str(step.get("run", ""))
+    assert "set -euo pipefail" in run
+    assert "gitleaks_${GITLEAKS_VERSION}_checksums.txt" in run
+    assert "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" in run
+    assert re.search(r"\|\s*sha256sum -c -", run), "tarball sha256 is not checked"
+
+
+def test_gitleaks_scan_uses_config_ignore_file_and_redacts():
     _, _, step = _gitleaks_job()
-    ver = str((step.get("env") or {}).get("GITLEAKS_VERSION", ""))
-    assert re.fullmatch(r"v?\d+\.\d+\.\d+", ver), f"GITLEAKS_VERSION={ver!r}"
+    run = str(step.get("run", ""))
+    for flag in ("--redact", "--config .gitleaks.toml", "--gitleaks-ignore-path .", "--log-opts="):
+        assert flag in run, f"scan lacks {flag}"
+    assert "--exit-code" not in run, "default exit code 1 must fail the job on findings"
+    # gitleaks passes an unresolvable range as 0 commits; git must reject it first.
+    assert 'git rev-list --count "$range"' in run
 
 
 def test_gitleaks_allowlist_regexes_are_anchored():
