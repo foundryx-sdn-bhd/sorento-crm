@@ -63,3 +63,8 @@ reuse source `auto_new` (the CHECK allows only auto_new/manual; the screen shows
 stored code. Tests: `tests/test_product_alternatives_suffix_rule.py`,
 `tests/chatbot/test_attachment_miss_prints_stored_code.py`. Prod backfill is the owner's step
 (command in the PR body).
+
+Risk notes (slice 2 review, 11 Oct): a marker in the FIRST segment also counts (`N-FH12` would
+link to `FH12`), the literal rule; 0 such pairs on the dev copy's dry run. CB55CR-N is the one
+known reverse pair (hand unlink after the prod run). In the attachment miss, two resolved products
+folding to the same text print the last one (none on the dev copy).
