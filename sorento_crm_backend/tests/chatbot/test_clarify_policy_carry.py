@@ -356,7 +356,8 @@ def test_the_break_line_is_translated_and_keeps_the_code(dealer, session_factory
 
 def test_the_month_given_while_the_carry_question_is_open_is_kept_when_it_is_answered(office):  # noqa: F811
     """cand-0230: customer, then product (carry question), then a bare month (re-asked), then "2".
-    The fetch runs for the customer only over that month, with no "Which period" question."""
+    The carried kind is the customer, so position 2 is "All customers": the fetch runs for the
+    product over that month with the carried customer dropped, and no "Which period" question."""
     office.say("delivery for zzt dealer", _customer_ask())
     office.say(f"delivery for {CODE}", _product_ask())
     again = office.say("十月", _bare_month())
@@ -368,7 +369,8 @@ def test_the_month_given_while_the_carry_question_is_open_is_kept_when_it_is_ans
     assert orders, office.calls
     assert orders[-1].get("actual_delivery_date_from") == "2026-10-01", orders[-1]
     assert orders[-1].get("actual_delivery_date_to") == "2026-10-31", orders[-1]
-    assert not orders[-1].get("product_ids"), orders[-1]  # position 2 drops the product
+    assert not orders[-1].get("customer_ids"), orders[-1]  # position 2 drops the carried customer
+    assert orders[-1].get("product_ids"), orders[-1]  # the product named this ask stays
 
 
 # --- round 6b: turns that must not re-ask an open carry_scope question; nits ------------------ #

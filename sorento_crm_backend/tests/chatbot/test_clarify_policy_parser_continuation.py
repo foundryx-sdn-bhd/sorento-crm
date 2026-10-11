@@ -61,9 +61,12 @@ def test_clp_0002_still_publishes_an_unlabelled_version():
 
 
 def test_clp_0003_publishes_the_amended_paragraph_as_a_new_unlabelled_version():
+    base = _load("clp_0003_parser_continuation_v2.py").SOURCE.read_text(encoding="utf-8")
+
     def check(template: str) -> None:
         assert PARAGRAPH in template
-        assert "how about delivery?" not in template
+        # v56's own domain-hint examples carry the phrase; the amended block adds no copy of it.
+        assert template.count("how about delivery?") == base.count("how about delivery?")
 
     _publishes_unlabelled("clp_0003_parser_continuation_v2.py", check)
 
