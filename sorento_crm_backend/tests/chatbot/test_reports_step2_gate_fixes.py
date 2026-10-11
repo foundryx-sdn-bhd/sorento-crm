@@ -311,3 +311,52 @@ def test_r4_a_scoped_dealer_with_no_named_subject_still_gets_the_report(session_
     fragment, calls = _run(session_factory, payload, lambda n, a: json.dumps({"has_result": False, "items": []}))
     assert "crm_sales_report" in [n for n, _ in calls], (calls, _reply_text(fragment))
     assert "which product or customer" not in _reply_text(fragment).lower(), fragment
+
+
+# ================================================================================ a family beside an exact code
+
+
+FAMILY = ("CWC7601-P-RL", "CWC7601-S", "CWC7601-S-ECO")
+EXACT = "CKS901"
+
+
+def _family_and_exact() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """"outstanding CWC7601 and CKS901": CKS901 is a product, CWC7601 is only a family stem."""
+    parse = {
+        "entities": [
+            {"raw": c, "hint": "product", "canonical_code": c, "current_message": True} for c in ("CWC7601", EXACT)
+        ]
+    }
+    gated = [
+        {"uuid": str(uuid.uuid4()), "entity_type": "product", "code": c, "canonical_code": c}
+        for c in (*FAMILY, EXACT)
+    ]
+    return parse, gated
+
+
+def test_family_a_single_family_ask_sends_every_member_today(session_factory) -> None:
+    """Guard (passes now): one typed stem with no exact match sends the family as `product_codes`."""
+    parse, gated = _family_and_exact()
+    parse["entities"], gated = parse["entities"][:1], gated[:-1]
+    payload = _payload(order_status="outstanding", entities=gated, parse=parse)
+    _fragment, calls = _run(session_factory, payload, lambda n, a: json.dumps({"has_result": False, "items": []}))
+    sent = [a for n, a in calls if n == "crm_outstanding_report"]
+    assert sent and sorted(sent[0].get("product_codes") or []) == sorted(FAMILY), sent
+
+
+def test_family_b_a_family_stem_beside_an_exact_code_keeps_its_family(session_factory) -> None:
+    parse, gated = _family_and_exact()
+    payload = _payload(order_status="outstanding", entities=gated, parse=parse)
+    _fragment, calls = _run(session_factory, payload, lambda n, a: json.dumps({"has_result": False, "items": []}))
+    sent = [a for n, a in calls if n == "crm_outstanding_report"]
+    assert sent, [n for n, _ in calls]
+    assert sorted(sent[0].get("product_codes") or []) == sorted([*FAMILY, EXACT]), sent[0]
+
+
+def test_family_c_the_resolver_seam_marks_every_token_it_covers() -> None:
+    from app.services.chatbot.lanes.business import _resolve_report_product_and_location
+
+    parse, gated = _family_and_exact()
+    si: dict[str, Any] = {}
+    _resolve_report_product_and_location(parse, gated, si, db=None)
+    assert sorted(si.get("outstanding_product_codes") or []) == sorted([*FAMILY, EXACT]), si
