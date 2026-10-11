@@ -62,6 +62,11 @@ def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, f
     return _body(response)
 
 
+def _so_count(db: Session, *, params: dict, contact_id: str, space_id: str):
+    """How many sales orders are outstanding for the subject: the outstanding report, SO side only."""
+    return _outstanding(db, params={**params, "scope": ["so"]}, contact_id=contact_id, space_id=space_id)
+
+
 # ------------------------------------------------------------------------- delivered sales
 
 
@@ -165,6 +170,11 @@ for _row in (
         key="order_outstanding", label="Outstanding orders by subject", synonyms=("outstanding", "backlog"),
         basis="outstanding", figure="qty", dimensions=(), grant="sales_orders.outstanding",
         dealer_dimensions=(), run=_outstanding, kind="outstanding", params=_OUTSTANDING_PARAMS,
+    ),
+    Measure(
+        key="so_count", label="Outstanding sales order count", synonyms=("how many sales orders",),
+        basis="outstanding", figure="count", dimensions=(), grant="sales_orders.outstanding",
+        dealer_dimensions=(), run=_so_count, kind="outstanding", params=_OUTSTANDING_PARAMS - {"scope"},
     ),
     Measure(
         key="delivered_sales", label="Delivered sales", synonyms=("sales report", "delivered"),
