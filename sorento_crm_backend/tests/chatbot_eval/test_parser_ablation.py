@@ -211,5 +211,5 @@ def test_u8_entity_confidence_body_at_most_600_chars():
     assert len(body) <= 600, len(body)
 
 
-def test_u9_at_least_12000_chars_shorter():
-    assert len(_v50()) - len(_out()) >= 12000
+def test_u9_at_least_9000_chars_shorter():
+    assert len(_v50()) - len(_out()) >= 9000

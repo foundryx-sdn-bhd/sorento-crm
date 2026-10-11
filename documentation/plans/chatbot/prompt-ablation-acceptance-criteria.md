@@ -51,7 +51,7 @@ Plan: `PLAN-prompt-ablation-11oct.md`. Paths relative to `sorento_crm_backend/`.
   `== A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==`, `== THE ATTRIBUTE PHRASE, WHOLE ==`,
   `before calling the MCP tool`.
 - U8. `== ENTITY CONFIDENCE ==` section body is at most 600 characters (was about 3,400).
-- U9. The trimmed text is at least 12,000 characters shorter than v50.
+- U9. The trimmed text is at least 9,000 characters shorter than v50 (measured 9,413 after the lead ruled out the business example cuts; the first 12,000 was an unmeasured estimate).
 
 ## Measured (lead, not tests)
 
