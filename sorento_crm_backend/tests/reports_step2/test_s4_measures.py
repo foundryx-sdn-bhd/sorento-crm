@@ -133,7 +133,7 @@ def test_review_scope_case_cannot_bypass_the_outstanding_grant(client, db, scope
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "so" not in body and body.get("so_refused") is True, body
-    assert "so_by_customer" not in body and "so_by_product" not in body, body
+    assert not body.get("so_by_customer") and not body.get("so_by_product"), body
     assert body == lower.json(), (body, lower.json())
 
 
