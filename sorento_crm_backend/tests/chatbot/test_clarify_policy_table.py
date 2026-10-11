@@ -61,7 +61,10 @@ def test_ac110_an_empty_table_loads_the_31_seeded_kinds(session_factory):
 def test_ac110_seed_modes_are_todays_except_the_ruled_ones(session_factory):
     rules = _cp().load_clarify_policy(session_factory())
     assert rules["generic_menu"].mode == "default" and rules["entities_only"].mode == "default"
-    assert rules["carry_combine"].mode == "ask" and rules["carry_unclear"].mode == "ask"
+    assert rules["carry_combine"].mode == "ask"
+    # Round 3: carry_unclear seeds `carry` until the new parser version is promoted (the release
+    # step flips it to `ask`).
+    assert rules["carry_unclear"].mode == "carry"
     assert rules["product_pick"].mode == "collapse"
     for kind in KINDS:
         if kind not in ("generic_menu", "entities_only", "product_pick"):

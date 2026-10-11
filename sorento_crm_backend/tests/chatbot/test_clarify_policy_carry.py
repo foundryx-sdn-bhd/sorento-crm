@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.chatbot._turn_helpers import do_window, entity, verdict
-from tests.chatbot.test_do_ask_range_engine import dealer  # noqa: F401 - fixture
+from tests.chatbot.test_do_ask_range_engine import dealer, office  # noqa: F401 - fixtures
 from tests.chatbot.test_dealer_eta_stock_routing import CODE
 from tests.chatbot.test_engine import stub_access  # noqa: F401 - fixture
 
@@ -52,6 +52,13 @@ def _orders(console) -> list[dict[str, Any]]:
     return [a for n, a in console.calls if n in ORDERS]
 
 
+def _ask_unclear(session_factory) -> None:
+    """AC-141 / carry_unclear cases: the seed is `carry` (round 3), so the row is set to `ask`."""
+    from tests.chatbot.test_clarify_policy_table import _write_all_rows
+
+    _write_all_rows(session_factory(), carry_unclear={"mode": "ask"})
+
+
 def _carried_product(console) -> None:
     console.say(f"delivery for {CODE}", _product_ask())
     console.calls.clear()
@@ -67,7 +74,8 @@ def test_ac140_a_carried_product_and_a_newly_named_customer_asks_before_fetching
     assert _orders(dealer) == [], dealer.calls
 
 
-def test_ac141_a_carried_product_and_no_new_subject_asks_before_fetching(dealer):  # noqa: F811
+def test_ac141_a_carried_product_and_no_new_subject_asks_before_fetching(dealer, session_factory):  # noqa: F811
+    _ask_unclear(session_factory)
     _carried_product(dealer)
     reply = dealer.say("delivery today", _today_ask())
     assert reply == Q_UNCLEAR, reply
@@ -179,7 +187,10 @@ def test_ac145_mode_drop_drops_the_subject_with_no_ask(dealer, session_factory, 
 # --- AC-146: cand-0230 shape ------------------------------------------------------------------ #
 
 
-def test_ac146_customer_then_product_then_a_bare_month_never_lists_rows_filtered_by_both(dealer):  # noqa: F811
+def test_ac146_customer_then_product_then_a_bare_month_never_lists_rows_filtered_by_both(office, session_factory):  # noqa: F811
+    """An office contact: a dealer's own linked customer never triggers a carry ask (guard below)."""
+    dealer = office
+    _ask_unclear(session_factory)
     dealer.say("delivery for zzt dealer", _customer_ask())
     dealer.calls.clear()
     second = dealer.say(f"delivery for {CODE}", _product_ask())
@@ -190,7 +201,8 @@ def test_ac146_customer_then_product_then_a_bare_month_never_lists_rows_filtered
     assert both == [], dealer.calls
 
 
-def test_ac146_the_carry_asks_count_for_the_loop_breaker(dealer):  # noqa: F811
+def test_ac146_the_carry_asks_count_for_the_loop_breaker(dealer, session_factory):  # noqa: F811
+    _ask_unclear(session_factory)
     _carried_product(dealer)
     first = dealer.say("delivery today", _today_ask())
     second = dealer.say("delivery today", _today_ask())
@@ -217,3 +229,35 @@ def test_ac148_a_carried_subject_survives_several_turns_in_between(dealer):  # n
         dealer.say(f"delivery for {CODE} {n}", _product_ask())
     dealer.calls.clear()
     assert dealer.say("delivery for zzt dealer", _customer_ask()) == Q_COMBINE
+
+
+# --- round 3 --------------------------------------------------------------------------------- #
+
+
+def test_the_seed_of_carry_unclear_is_carry_so_delivery_today_keeps_the_product_and_asks_nothing(dealer):  # noqa: F811
+    _carried_product(dealer)
+    reply = dealer.say("delivery today", _today_ask())
+    assert "(from earlier)" not in reply, reply
+    assert _orders(dealer) and _orders(dealer)[0].get("product_ids"), dealer.calls
+
+
+def test_a_dealers_own_linked_customer_on_the_focus_never_triggers_a_carry_ask(dealer):  # noqa: F811
+    dealer.say("delivery for zzt dealer", _customer_ask())
+    dealer.calls.clear()
+    reply = dealer.say(f"delivery for {CODE}", _product_ask())
+    assert "(from earlier)" not in reply, reply
+    assert _orders(dealer), dealer.calls
+
+
+def test_the_same_guard_on_a_session_that_predates_any_focus_mark(dealer):  # noqa: F811
+    """The focus customer row is the plain pre-existing shape (no extra keys), equal to the
+    contact's linked customer."""
+    dealer.say("delivery for zzt dealer", _customer_ask())
+    plain = ("uuid", "raw", "hint", "canonical_code", "current_message", "confident", "display_name")
+    focus = (dealer.state or {}).get("focus") or {}
+    focus["customers"] = [{k: v for k, v in row.items() if k in plain} for row in focus.get("customers") or []]
+    assert focus["customers"], dealer.state
+    dealer.calls.clear()
+    reply = dealer.say(f"delivery for {CODE}", _product_ask())
+    assert "(from earlier)" not in reply, reply
+    assert _orders(dealer), dealer.calls
