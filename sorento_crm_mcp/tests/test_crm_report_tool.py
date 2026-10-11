@@ -45,7 +45,7 @@ def test_ac9_crm_report_carries_the_contact_pair_and_the_filters():
         "channel", "product_code", "contact_id", "space_id",
     ):
         assert p in spec.query_params, p
-    assert "basis" not in spec.query_params
+    assert "basis" in spec.query_params
 
 
 def test_ac9_crm_report_restricts_like_crm_report_ask():
