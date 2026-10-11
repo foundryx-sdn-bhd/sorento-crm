@@ -154,13 +154,7 @@ CHEAP = "CB88SS-DIY"
 SCR_CUSTOMER = "SCR MARKETING (M) SDN BHD"
 
 
-def test_ac32_a_compound_ask_answers_both_halves_and_filters_the_outstanding_by_the_customer(
-    session_factory, monkeypatch
-):
-    """The parser's real emission for "Cb88ss/diy got stock? got outstanding for scr" (eval trace, parser
-    v50): `asks` inventory + order, `domain_hint` inventory, `entity_op: replace_combine`, two entities
-    both hinted `product` ("scr" is hinted as a product). The resolver decides from the data that "scr"
-    is the customer; both halves run, the outstanding half filtered by that customer and the typed code."""
+def _compound(session_factory, monkeypatch, *, order_status, msg_id):
     _seed_contact(session_factory, variables={})
     entities = [
         {"raw": "Cb88ss/diy", "hint": "product", "canonical_code": "Cb88ss/diy", "current_message": True,
@@ -168,19 +162,44 @@ def test_ac32_a_compound_ask_answers_both_halves_and_filters_the_outstanding_by_
         {"raw": "scr", "hint": "product", "canonical_code": "scr", "current_message": True, "confident": True},
     ]
     qf = _parser_output(
-        message_type="business_query", domain_hint="inventory", intent_hint="check_stock", order_status=None,
+        message_type="business_query", domain_hint="inventory", intent_hint="check_stock",
+        order_status=order_status,
         asks=[{"domain": "inventory", "intent": "check_stock"}, {"domain": "order", "intent": "check_order"}],
         entity_op="replace_combine", entities=entities)
     matches = {
         "Cb88ss/diy": {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": CHEAP},
         "scr": {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": SCR_CUSTOMER},
     }
-    result, calls = _run_turn(
+    return _run_turn(
         session_factory, monkeypatch, qf=qf, text_body="Cb88ss/diy got stock? got outstanding for scr",
-        msg_id="ZZT-s3a-32", attributes=s5a.OUT_ATTRS, matches=matches, mcp_response=REPORT_HIT)
+        msg_id=msg_id, attributes=s5a.OUT_ATTRS, matches=matches, mcp_response=REPORT_HIT)
+
+
+def test_ac32_a_compound_ask_answers_both_halves_and_filters_the_outstanding_by_the_customer(
+    session_factory, monkeypatch
+):
+    """The parser's real emission for "Cb88ss/diy got stock? got outstanding for scr" (eval trace) PLUS
+    `order_status: outstanding`, which is what parser v53 must set for the outstanding ask of a multi-ask
+    message (v50 leaves it null; nothing but the message text says "outstanding", and text rules are not
+    allowed). `asks` inventory + order, `domain_hint` inventory, `entity_op: replace_combine`, two
+    entities both hinted `product`. The resolver decides from the data that "scr" is the customer; both
+    halves run, the outstanding half is `crm_report` order_outstanding filtered by that customer and the
+    typed code."""
+    result, calls = _compound(session_factory, monkeypatch, order_status="outstanding", msg_id="ZZT-s3a-32")
     names = [n for n, _a in calls]
     assert "crm_report" in names, names
     report_args = next(a for n, a in calls if n == "crm_report")
+    assert report_args.get("measure") == "order_outstanding", report_args
     assert report_args.get("customer_ids") == [CUSTOMER_UUID], report_args
     assert report_args.get("product_code") == CHEAP, report_args
     assert any(n.startswith("crm_inventory") for n in names), ("the stock half did not run", names)
+
+
+def test_ac32_the_v50_shaped_emission_without_order_status_still_gets_a_clear_reply(session_factory, monkeypatch):
+    """Fallback: the emission as parser v50 gives it (no `order_status`) is today's behaviour: no crash,
+    the stock half answers, no outstanding report is guessed from nothing, and the reply is not empty."""
+    result, calls = _compound(session_factory, monkeypatch, order_status=None, msg_id="ZZT-s3a-32-v50")
+    names = [n for n, _a in calls]
+    assert any(n.startswith("crm_inventory") for n in names), names
+    assert "crm_report" not in names, names
+    assert _reply(result).strip(), "an empty reply is stuck"

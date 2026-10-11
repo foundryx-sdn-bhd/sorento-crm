@@ -76,7 +76,7 @@ domain_hint = ONE of: master_products | product_attachment | promotion | forms |
 == DOMAIN IN MESSAGE ==
 domain_in_message is true when THIS message itself carries a DOMAIN or STATUS word -
 stock, incoming, ETA, delivery, order, outstanding, DO, SO, PO, purchase cost, promo,
-price, spec, photo, catalogue, certificate, installation guide, forms, shipment, GRN, sold the most, 卖得最多, 排名 - in any language.
+price, spec, photo, catalogue, certificate, forms, shipment, GRN, sold the most, 卖得最多, 排名 - in any language.
 It is false when the message only names entities, a date window or a place, and leans
 on the previous turn for what is being asked. It is about the WORDS of this message,
 never about domain_hint (which is carried forward when the message names no domain).
@@ -108,7 +108,7 @@ Only when NO decisive term is present AND the domain is genuinely ambiguous → 
 domain_hint and intent_hint to null.
 
   master_products / check_product
-    → product, product code, description; product details, dimension, size, measurement, width/height/depth,
+    → product, product code, description; dimension, size, measurement, width/height/depth,
       "how big", weight, material, colour, finish; and LIST / normal / RRP price
       ("list price", "normal price", "RRP", or a bare "price" of a product — the
       product's standing price, NOT a promotion price) and asking about discontinue of item.
@@ -118,7 +118,7 @@ domain_hint and intent_hint to null.
       promotion). A flyer/brochure is a PROMOTION resource — never forms, never
       catalogue.
   product_attachment / check_product_attachment
-    → a product's photos, images, installation guide, technical drawings, 3D models, technical specs,
+    → a product's photos, images, technical drawings, 3D models, technical specs,
       certificates ("how does it look", "show me", "Ikram cert").
   resource_attachment / get_resource_attachment
     → product catalogue, warranty / warranty policy / warranty poster, price tag
@@ -166,7 +166,7 @@ domain_hint and intent_hint to null.
       CIDB inspection / CIDB approval / "cleared CIDB", gate pass, warehouse arrival,
       collection informed, collection / "can I collect", loading, ETC, ETD /
       departure / sailed, liner / shipping line, China forwarder, Malaysia or local
-      forwarder, consignee, warehouse, free days, container location,
+      forwarder, consignee, delivery warehouse, free days, container location,
       stacked, COA permit.
       ⚠ "cleared CIDB" / "CIDB cert" on a SHIPMENT or container is THIS domain, NOT
       product_attachment. A CIDB/SPAN/SIRIM certificate DOCUMENT for a product is
@@ -273,7 +273,7 @@ value outside it; if the user's phrasing doesn't map to one, leave it out.
     - "china_forwarder"          ← China forwarder / China agent
     - "malaysia_forwarder"       ← Malaysia forwarder / local forwarder / local agent
     - "consignee"                ← consignee
-    - "delivery_warehouse"       ← warehouse, which warehouse it goes to
+    - "delivery_warehouse"       ← delivery warehouse, which warehouse it goes to
     - "free_days_available"      ← free days, demurrage-free days
     - "loc"                      ← container location, which yard/port it sits in
     - "stacked"                  ← stacked
@@ -334,8 +334,7 @@ is spoken.
   - "videos","actual video"  → attachment_type "video"
   - "drawing","technical drawing","spec","CAD","blueprint" → attachment_type "technical drawing"
   - "cert","certificate","Ikram"                          → attachment_type "certificate"
-  - "installation guide", "installation manual" → attachment_type "installation guide"
-attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate, installation guide), never the customer's own word: "image", "picture", "gambar" are all photo.
+attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate), never the customer's own word: "image", "picture", "gambar" are all photo.
 
 == FLYER FLAG ==
 If the current message asks for a flyer (also "brochure", "promo flyer", "marketing
@@ -385,7 +384,7 @@ record. Each hint means:
       container status sheet / shipping schedule→container status). For ANY other document,
       leave canonical_code null and still emit the entity. Never drop the entity because no
       class fits. Always keep raw as the user's original words
-  - attachment_type → the KIND of document wanted: photo, image, technical drawing/spec, 3D model, certificate, installation guide. Counts when NAMED or IMPLIED — "looks like"/"show me" = photo . ALSO set this entity's canonical_code to the matching English kind (photo | technical drawing | 3D model | certificate | installation guide), translating ANY language or synonym (gambar/foto→photo; imej→image; lukisan teknikal/spec→technical drawing; model 3D→3D model; sijil/cert→certificate). EXCEPTION: for authority/brand-named certificates (SPAN, SIRIM, BOMBA, MS####, Halal, Watermark/WCM/PPS) leave canonical_code null and keep the body name in raw. Always keep raw as the user's original word
+  - attachment_type → the KIND of document wanted: photo, image, technical drawing/spec, 3D model, certificate. Counts when NAMED or IMPLIED — "looks like"/"show me" = photo . ALSO set this entity's canonical_code to the matching English kind (photo | technical drawing | 3D model | certificate), translating ANY language or synonym (gambar/foto→photo; imej→image; lukisan teknikal/spec→technical drawing; model 3D→3D model; sijil/cert→certificate). EXCEPTION: for authority/brand-named certificates (SPAN, SIRIM, BOMBA, MS####, Halal, Watermark/WCM/PPS) leave canonical_code null and keep the body name in raw. Always keep raw as the user's original word
   - form            → a named form or form type the user is requesting
   - inbound_shipment→ an incoming supplier shipment or container number
   - warehouse       → a named warehouse
@@ -396,7 +395,7 @@ into user_goal only; if it can scope a lookup, it belongs in entities.
 
 If there is no concrete identifiable value, entities = [].
 
-Each entity: { "raw": "<exact phrase>", "hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form|order|category|brand|attachment_type", "canonical_code": "usually null; REQUIRED when hint is attachment_type = the normalized English kind, exactly one of: photo|technical drawing|3D model|certificate|installation guide; OPTIONAL when hint is attachment = the normalized English document class when one clearly applies, one of: catalogue|warranty|price tag template|brand guarantee|container status, else null", "current_message": true if the entity is extracted from current message, false if it is from previous context, "confident": true|false }
+Each entity: { "raw": "<exact phrase>", "hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form|order|category|brand|attachment_type", "canonical_code": "usually null; REQUIRED when hint is attachment_type = the normalized English kind, exactly one of: photo|technical drawing|3D model|certificate; OPTIONAL when hint is attachment = the normalized English document class when one clearly applies, one of: catalogue|warranty|price tag template|brand guarantee|container status, else null", "current_message": true if the entity is extracted from current message, false if it is from previous context, "confident": true|false }
 
 == WHAT IS NEVER AN ENTITY, AND WHAT ALWAYS IS ==
 A GRAMMAR PARTICLE or a filler word is never an entity, in any language: "de", "lah",
@@ -412,25 +411,6 @@ entity_op "replace_combine", never "reuse" and never left out.
   - "all wc286 purchase order" -> entities [{"raw":"wc286","hint":"product"}],
     message_type "business_query", domain_hint "purchase_order", intent_hint "check_po".
     A product plus "purchase order" or "PO" is a business query, never casual.
-A DESCRIPTION WITH A CODE INSIDE IT is still ONE product entity: its raw is the customer's
-typed text for that product and its canonical_code is the CODE alone, copied exactly as
-typed. A catalogue line pasted or read off a photo ("SORENTO ONE PIECE WASHDOWN TOILET
-(S-TRAP250MM)-SRTWC8354-SH", "SORENTO S-TRAP 250MM ONE PIECE WC-SRTWC8318-RL-250") names a
-code (the alphanumeric run with digits in it, hyphens and all) beside descriptive words. The
-code is the product entity's canonical_code; the class words are the category entity; a
-property beside them is a specification entity; a word on the Known brands line is its own
-brand entity. canonical_code never carries the brand word, the class words or the property -
-a brand glued to a code in one token is TWO entities: "SORENTO PSJLSRTSC07" is brand {raw:
-"SORENTO"} + product {raw: "SORENTO PSJLSRTSC07", canonical_code: "PSJLSRTSC07"}, never
-canonical_code "SORENTO PSJLSRTSC07".
-  - "SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH" -> product {raw: "SORENTO
-    ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH", canonical_code: "SRTWC8354-SH"},
-    brand {raw: "SORENTO"}, category {raw: "one piece washdown toilet"}, specification
-    {raw: "S-TRAP250MM"} (its spec_key from the Specification lines)
-  - "price SORENTO ONE PIECE WASHDOWN TOILET (S-TRAP250MM)-SRTWC8354-SH" -> the same
-    entities, domain_hint "master_products", requested_attributes ["price"]
-  - photo text "SORENTO PSJLSRTSC07 x50" -> brand {raw: "SORENTO"}, product {raw: "SORENTO
-    PSJLSRTSC07", canonical_code: "PSJLSRTSC07", quantity: 50}
 
 == PRONOUN REFERENCE, NEVER AN ENTITY ==
 A pronoun or demonstrative phrase that points at something OUTSIDE the current message ("this customer", "these", "them", "the previous product", "it") never becomes an entity, in any language, and never invents a value for the kind it stands in for - it is a REFERENCE, not a referent. Set "anaphora": {"backward_reference": true} whenever the message carries one, false otherwise. The kind it points at stays OUT of entities[] entirely - downstream already carries what it points at.
@@ -522,26 +502,6 @@ When broaden_axis is "date" or an entity hint, and a business domain is already 
     domain switch: "all products" during an order enquiry is still an order enquiry, NOT a
     request for the product catalogue. Only ask-the-catalogue phrasing ("product list",
     "catalogue", "spec of X") moves the domain to master_products.
-    A MISS reply never moves the domain either. When the previous response says no order
-    (or no stock, no shipment, no promotion) matched and invites other dates ("Reply with
-    another month or dates"), the next message is still that same enquiry: "all
-    products", "any product", "all customers", "any customer", "any date", "all time" are
-    the one axis named, widened, and NOTHING else. The invite offers other dates; it does
-    not reset the question, and it never turns the enquiry into a stock or ETA question.
-    "all products" is NEVER a stock / incoming / ETA question, whatever the previous reply
-    listed; it is the product filter dropped from the enquiry already in play.
-    WORKED EXAMPLE, over a delivery enquiry for SRTWC286-SH (HANLIM), where the previous
-    response is "But no order from 28/09/2026 to 04/10/2026 matched these. Reply with
-    another month or dates (e.g. August, or 15 Sep to 10 Oct).":
-      - "all products"  -> domain_hint "order", intent_hint "check_order" (unchanged),
-                           broaden_axis "product", broaden_to "all", entities [],
-                           entity_op "reuse", date_mode / date_filter_start /
-                           date_filter_end null (the window stands; code re-runs it
-                           with the product filter dropped).
-      - "all customers" -> the same, broaden_axis "customer".
-      - "any date"      -> the same, broaden_axis "date", broaden_to "all".
-      NEVER domain_hint "incoming" or "inventory" for any of these: nothing in them asks
-      about a shipment or a quantity.
   - Leave scope_intent null. The user narrowed nothing and did not broaden everything.
   - entity_op = "reuse": the rest of the scope stands. Deterministic code drops the widened
     axis; do NOT try to hand-prune entities yourself.
@@ -567,7 +527,7 @@ message_type or on the previous turn.
 Routing signals (match by meaning, any language):
   - domain master_products / product info      → team "purchasing",  agent "general_enquiries"
   - domain incoming                            → team "purchasing",  agent "incoming_stock_enquiries"
-  - domain product_attachment (photo/drawing/installation guide)  → team "marketing_product", agent "general_enquiries"
+  - domain product_attachment (photo/drawing)  → team "marketing_product", agent "general_enquiries"
   - domain product_attachment (certificate)    → team "purchasing_certification",  agent "general_enquiries"
   - domain forms                               → team "marketing_form", agent "marketing_form"
   - domain inventory / warehouse / stock       → team "warehouse",   agent "general_enquiries"
@@ -1371,7 +1331,7 @@ entity, exactly as if they were listed there:
   - A domain word alone after an answer ("cert?", "stock?", "incoming?", "photo?")
     keeps the subject and the specifications of the ask before it: emit only the
     domain's own entity (the document type for "cert?") and entity_op "reuse".
-  - attachment_type is ONLY a kind of document (photo, video, technical drawing, installation guide, 3D model,
+  - attachment_type is ONLY a kind of document (photo, video, technical drawing, 3D model,
     certificate or a certificate body). A colour, finish, size, thickness, mounting, trap
     or any other property of the product is NEVER an attachment_type.
   - Every other entity kind: spec_key null, spec_value null.
@@ -1411,18 +1371,6 @@ entities, never as an entity of its own.
 A message or caption naming no quantity at all leaves "quantity" null, for every
 entity - never guessed, never carried over from an earlier turn, never assumed to
 be 1.
-A COUNT WITH NO CODE BESIDE IT IS A QUANTITY, NEVER A PRODUCT. "x 50 unit", "X 50
-unit", "50 pcs", "x46" typed on their own, or with only a unit word, name no product at
-all - the "x" or "X" is the times sign, not a code, and "unit" / "pcs" is not a product.
-Emit entities [] with entity_op "reuse" (the count is for the product already standing in
-the subject, or answers an open question that asked for one) and the number in demand_qty
-(or in open_question_answer when an Open question is asking for it). Never an entity
-{raw: "X"} and never a product named "unit".
-  - "X 50 unit" after a photo named a product -> entities [], entity_op "reuse",
-    demand_qty 50
-  - "x46 pcs" -> entities [], entity_op "reuse", demand_qty 46
-  - "SRTSC07 50 unit" -> entity {raw: "SRTSC07", hint: "product", quantity: 50},
-    demand_qty null (the code is beside the count, so the rule above applies)
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2124,6 +2072,8 @@ In addition to QUANTITIES and LAST_ANSWER above:
 == ASKS THE BOT CANNOT ANSWER ==
 
 An ask about overdue amounts, receivables, payment balance or an account statement is domain_hint "receivables". An ask for where to find a nearby dealer, or a dealer locator, is domain_hint "dealer_locator". Give no intent_hint and no entities for either, and no order_status. The bot answers these with a fixed line and shows no figures.
+
+When a message holds several asks and one of them is an outstanding / pending order ask, set order_status for it ("outstanding", or so_outstanding / do_outstanding when the message names SO or DO) even though domain_hint names the other ask's domain.
 
 == MEMORY ==
 Two more OUTPUT keys: "message_type" gains "history_question"; "profile_statements": up to 3 {"key","value"} items, or null.
