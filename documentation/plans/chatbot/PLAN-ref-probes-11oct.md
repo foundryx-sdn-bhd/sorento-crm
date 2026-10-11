@@ -1,6 +1,6 @@
 # PLAN: resolver probes for SO number, customer PO ref, our PO number, purchase request (REF-PROBES)
 
-Status: Phase 2 (tester red tests). Track: M feature, LEAD pattern. No UI. Parser prompt publish
+Status: Phase 3 done (reviewer READY, security-reviewer READY, round 2); awaiting crew eval gate + owner hand test. Track: M feature, LEAD pattern. No UI. Parser prompt publish
 migration only (no schema change). Security review required (new read route + MCP tool).
 
 UAC: `ref-probes-acceptance-criteria.md`. Card: `ref-probes-behaviour-card.md`.
