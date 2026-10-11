@@ -53,6 +53,10 @@ from app.services.project_order_inquiry_service import ProjectOrderInquiryServic
 
 CLOSED_REASON = "the sales-order line is closed"
 _ZERO = Decimal("0")
+# Written onto a snapshot without CS re-deciding the line: a planning change stamps
+# `late_days` on the active revision in place, and a carry moves a swapped product's id and
+# code onto its copy.
+_PATCHED_WITHOUT_A_DECISION = frozenset({"late_days", "product_id", "item_code"})
 
 
 def _composition_text(composition: Any) -> str:
@@ -84,7 +88,9 @@ def _fresh_decision_times(db, project_sales_order_id, project_line_id) -> Option
     A revision that only CARRIES a line copies its old snapshot verbatim (`_write_decision`)
     and cancels-and-re-raises its raised row under the new revision, so neither "some later
     revision names the line" nor the live row's `created_at` says CS looked at it again.
-    None when no revision covers the line at all.
+    Keys a writer patches without a decision (`_PATCHED_WITHOUT_A_DECISION`) are ignored.
+    A re-confirm identical in every other key (`open_qty` included) reads as carried; the dry
+    run shows such a row before anything is applied. None when no revision covers the line.
     """
     revisions = (
         db.query(SOSupplyDecision)
@@ -98,7 +104,7 @@ def _fresh_decision_times(db, project_sales_order_id, project_line_id) -> Option
     for decision in revisions:
         snap = next(
             (
-                s
+                {k: v for k, v in s.items() if k not in _PATCHED_WITHOUT_A_DECISION}
                 for s in (decision.line_snapshots or [])
                 if str((s or {}).get("project_line_id")) == str(project_line_id)
             ),
