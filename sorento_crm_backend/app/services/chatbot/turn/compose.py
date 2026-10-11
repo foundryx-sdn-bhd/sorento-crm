@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from app.services.chatbot import label_catalog
+from app.services.chatbot import clarify_policy, label_catalog
 from app.services.chatbot.label_catalog import IDENTITY
 from app.services.chatbot.turn.decide import OUTSTANDING_KINDS
 from app.services.chatbot.turn.fetch import envelope_missed
@@ -1081,6 +1081,19 @@ def _short_question(pending: Any, localizer: Any = IDENTITY) -> str:
     return f"{header} I found {count}, please type a little more of the name."
 
 
+def _carry_new_subject(parts: dict[str, Any], state: State | None) -> str | None:
+    """The newly named subject of a carried-subject ask, read off the turn's focus rows (when
+    the ask stored no resolved name of its own)."""
+    focus = getattr(state, "focus", None)
+    names: list[str] = []
+    for kind in parts.get("new_kinds") or []:
+        attr = KIND_FIELD_MAP.get(str(kind))
+        rows = (getattr(focus, attr, None) or []) if attr else []
+        names.extend(str(focus_row_label(r) or "").strip() for r in rows if isinstance(r, dict))
+    names = [n for n in names if n]
+    return ", ".join(dict.fromkeys(names)) or None
+
+
 def compose_question(pending: Any, state: State | None = None, localizer: Any = None) -> Answer:
     """The ask, as an Answer: the subject line, the header, the numbered roster, and the
     same pending back.
@@ -1110,6 +1123,13 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
     # other kind has no text of its own and reads the header table above.
     offered = (pending.payload or {}).get("filters") or {}
     verbatim = str(offered.get("offer_text") or "").strip() if isinstance(offered, dict) else ""
+    carry_parts = (pending.payload or {}).get("carry_text")
+    if getattr(pending, "kind", None) == clarify_policy.CARRY_SCOPE and isinstance(carry_parts, dict):
+        # CLARIFY-POLICY S4: the carried-subject ask names the new subject as the turn's
+        # focus has it once resolved (a customer's own name), never the typed word.
+        verbatim = clarify_policy.carry_scope_text(
+            carry_parts, carry_parts.get("new_subject") or _carry_new_subject(carry_parts, state)
+        )
     if verbatim:
         body = verbatim
         if pending.kind == "outstanding_detail" and localizer is not None:

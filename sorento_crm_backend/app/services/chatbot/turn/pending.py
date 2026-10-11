@@ -22,6 +22,9 @@ PENDING_KINDS: tuple[str, ...] = (
     "sales_report_detail",
     "kind_pick",
     "top_selling_pick",
+    # CLARIFY-POLICY S4: the carried-subject ask (`clarify_policy.carry_conflict`), a one-off
+    # question answered by its own pick.
+    "carry_scope",
 )
 
 # Stay alive, tracked by `answered_positions`, after their own pick.

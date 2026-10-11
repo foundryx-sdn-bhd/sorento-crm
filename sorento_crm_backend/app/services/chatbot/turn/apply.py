@@ -24,7 +24,7 @@ import copy
 from dataclasses import replace
 from typing import Any
 
-from app.services.chatbot import contracts
+from app.services.chatbot import clarify_policy, contracts
 from app.services.chatbot.turn import refer
 from app.services.chatbot.turn import task as task_mod
 from app.services.chatbot.turn.decide import (
@@ -728,6 +728,19 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
 
     if pending is None:
         return focus, None, None, False
+
+    if pending.kind == clarify_policy.CARRY_SCOPE:
+        # CLARIFY-POLICY AC-143: 1 keeps the carried subject, 2 or the parser's `all` drops it
+        # from this ask; either way the asked question runs in its own domain.
+        keeps = clarify_policy.carry_scope_keeps(
+            pending, verdict or {}, list(decision.positions) if decision.answers else []
+        )
+        if keeps is not None:
+            if not keeps:
+                _set_kind_field(focus, str(pending.payload.get("kind") or ""), [])
+            focus.domains = list(pending.payload.get("domains") or focus.domains)
+            trace.rules_fired.append("carry_scope_kept" if keeps else "carry_scope_dropped")
+            return focus, None, None, True
 
     if pending.kind in OUTSTANDING_KINDS:
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to
@@ -3531,6 +3544,27 @@ def _apply(
         domain_override=domain_override,
         trace=trace,
     )
+    # CLARIFY-POLICY S4 (R2, Q9; AC-140..AC-145): a subject today's carry kept from an earlier
+    # question, beside a new ask that did not say so, is asked about before anything is
+    # fetched (rows `carry_combine` / `carry_unclear`). Read on the focus the rules above just
+    # built, so "carried" is what today's carry actually kept.
+    carry = clarify_policy.carry_conflict(
+        focus,
+        verdict,
+        decision,
+        policy,
+        turn_no=state.turn_no,
+        candidates=candidates,
+        answers_task=task_outcome.fetch is not None or bool(task_outcome.closed_kinds),
+    )
+    if carry is not None:
+        trace.rules_fired.append(f"carry_{carry.action}")
+        if carry.action == "drop":
+            _set_kind_field(focus, carry.kind, [])
+        elif carry.action == "ask":
+            return replace(state, focus=focus, pending=None), Plan(
+                domains=[], fetch=[], ask=carry.pending, denied=[], trace=trace
+            )
     # Ported from PR #1118 (not merged). AFTER the focus rules, never before: a topic
     # reset rebuilds the focus from `RESET_KEEPS` alone, and the tasks it KEEPS (the
     # ones aimed elsewhere, parked by D23) are what the task step above already

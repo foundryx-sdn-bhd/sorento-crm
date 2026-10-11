@@ -228,7 +228,7 @@ def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
 
 
 #: A turn plan's `ask` name -> its policy kind (`CLARIFY_POLICY_ROWS`).
-_PLAN_ASK_KINDS = {"attachment_type_ask": "attachment_type"}
+_PLAN_ASK_KINDS = {"attachment_type_ask": "attachment_type", "carry_scope": "carry_unclear"}
 
 
 def previous_fingerprints(
@@ -437,3 +437,181 @@ def _disarm_pending(db: Any, row: Any) -> None:
     state = session_store.get_for_contact(db, respond_io_id=respond_io_id)
     if state.get("open_question"):
         session_store.overwrite_for_contact(db, respond_io_id=respond_io_id, state={**state, "open_question": None})
+
+
+# --------------------------------------------------------------------------- #
+# CLARIFY-POLICY S4: the carried subject (owner rule R2, Q9, Q10; AC-140..AC-148)
+# --------------------------------------------------------------------------- #
+
+#: The pending kind the carried-subject ask arms (`turn/pending.py`).
+CARRY_SCOPE = "carry_scope"
+
+#: The carried kinds this ask covers, in the order a carried subject is named, with their
+#: plural for "all <A plural>".
+_CARRY_KINDS: tuple[tuple[str, str, str], ...] = (
+    ("product", "products", "products"),
+    ("customer", "customers", "customers"),
+)
+
+#: The ask label per domain ("Delivery for ..."); any other domain uses its policy label.
+_ASK_LABELS = {"order": "Delivery"}
+
+
+@dataclass(frozen=True)
+class CarryOutcome:
+    """What the carried-subject rule does this turn: `ask` (with `pending` and the reply text
+    on its payload), `drop` (the carried kind's focus field is emptied), or `carry` (today)."""
+
+    action: str
+    kind: str
+    field: str
+    pending: Any = None
+
+
+def _row_label(row: dict[str, Any]) -> str:
+    return str(row.get("name") or row.get("display_name") or row.get("canonical_code") or row.get("raw") or "").strip()
+
+
+def _carried_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    """The rows of one focus field that are a subject carried from an earlier question: never
+    a customer row the contact's own customer scope wrote (`scope: True`, `engine.py`)."""
+    return [r for r in rows or [] if isinstance(r, dict) and r.get("scope") is not True and _row_label(r)]
+
+
+def _date_words(verdict: dict[str, Any]) -> str:
+    """The parsed date mode as words for the ask label ("today"), from the parser's own field."""
+    date_mode = verdict.get("date_mode")
+    return str(date_mode).replace("_", " ").strip() if isinstance(date_mode, str) and date_mode else ""
+
+
+def carry_conflict(
+    focus: Any,
+    verdict: dict[str, Any],
+    decision: Any,
+    policy: Any,
+    *,
+    turn_no: int | None,
+    candidates: dict[str, list[dict[str, Any]]] | None = None,
+    answers_task: bool = False,
+) -> CarryOutcome | None:
+    """The one check (AC-140..AC-145): does this turn carry a subject of kind A from an earlier
+    question into a new ask without the message saying so? Called by `turn/apply.py` once the
+    focus rules have built the turn's focus, so "carried" means today's carry actually kept A.
+
+    Clear (None, today's carry): the parser read an explicit reference
+    (`anaphora.backward_reference`), a follow-up on the same subject (`continuation`), the
+    turn REFINEs or answers the held question, or the message restates A. No clock, no turn
+    count (AC-148). Parsed fields only, never the message text."""
+    from app.services.chatbot.turn.decide import ANSWER, REFINE
+    from app.services.chatbot.turn.pending import ask as pending_ask
+
+    if getattr(decision, "kind", None) in (ANSWER, REFINE) or answers_task:
+        return None  # it answers or narrows the held question (an open task included)
+    anaphora = verdict.get("anaphora") if isinstance(verdict.get("anaphora"), dict) else {}
+    if anaphora.get("backward_reference") is True or verdict.get("continuation") is True:
+        return None
+    domain = verdict.get("domain_hint")
+    domain_row = policy.domain(domain) if isinstance(domain, str) and domain else None
+    if domain_row is None:
+        return None
+    named = [e for e in verdict.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is True]
+    named_kinds = {str(e.get("hint") or "") for e in named}
+    for kind, field, plural in _CARRY_KINDS:
+        if kind in named_kinds or kind not in domain_row.narrowing:
+            continue  # restated or replaced (AC-144), or a kind this ask cannot use
+        carried = _carried_rows(getattr(focus, field, None) or [])
+        if not carried:
+            continue
+        others = [e for e in named if str(e.get("hint") or "") != kind]
+        if not others and verdict.get("domain_in_message") is False:
+            # No new subject and no domain of its own ("this month", "50"): the message goes
+            # on with the question already held (the period ask's answer is such a message,
+            # `do_ask.py`), not a new question the earlier subject is carried into.
+            continue
+        row = "carry_combine" if others else "carry_unclear"
+        mode = policy.clarify_mode(row)
+        if mode in ("carry", "drop"):
+            return CarryOutcome(action=mode, kind=kind, field=field)
+        subject = ", ".join(dict.fromkeys(_row_label(r) for r in carried))
+        parts = {
+            "label": _ASK_LABELS.get(domain_row.name, domain_row.label),
+            "subject": subject,
+            "plural": plural,
+            "date_words": "" if others else _date_words(verdict),
+            "new_kinds": sorted({str(e.get("hint") or "") for e in others}),
+            "new_subject": ", ".join(dict.fromkeys(_named_label(e, focus, candidates) for e in others)),
+        }
+        options = [
+            {"position": 1, "label": f"Only {subject}" if others else subject, "entity_type": None, "payload": {"keep": True}},
+            {"position": 2, "label": f"All {plural}", "entity_type": None, "payload": {"keep": False}},
+        ]
+        pending = pending_ask(
+            CARRY_SCOPE,
+            options,
+            team=None,
+            asked_at_turn=turn_no,
+            payload={
+                "row": row,
+                "kind": kind,
+                "field": field,
+                "domain": domain_row.name,
+                "domains": [domain_row.name],
+                "carry_text": parts,
+            },
+        )
+        return CarryOutcome(action="ask", kind=kind, field=field, pending=pending)
+    return None
+
+
+def carry_scope_text(parts: dict[str, Any], new_subject: str | None = None) -> str:
+    """The carried-subject question, exactly (AC-140, AC-141). `new_subject` is the newly named
+    subject as the turn's focus names it once resolved (`turn/compose.py`), else the code
+    the ask stored."""
+    label = str(parts.get("label") or "")
+    subject = str(parts.get("subject") or "")
+    plural = str(parts.get("plural") or "")
+    if parts.get("new_kinds"):
+        named = new_subject or str(parts.get("new_subject") or "")
+        return (
+            f"{label} for {named}: only {subject} (from earlier) or all {plural}?\n"
+            f"1. Only {subject}\n2. All {plural}"
+        )
+    words = str(parts.get("date_words") or "")
+    lead = f"{label} {words}" if words else label
+    return f"{lead}: for {subject} (from earlier) or all {plural}?\n1. {subject}\n2. All {plural}"
+
+
+def _named_label(entity: dict[str, Any], focus: Any, candidates: dict[str, list[dict[str, Any]]] | None) -> str:
+    """The newly named subject as the ask prints it: the resolver's own name for it (this
+    turn's candidates of that kind, a customer's account name), else the focus row this turn
+    settled for it, else the entity's own code."""
+    from app.services.chatbot.turn.state import KIND_FIELD_MAP
+
+    kind = str(entity.get("hint") or "")
+    rows = [r for r in (candidates or {}).get(kind) or [] if isinstance(r, dict)]
+    names = [str(r.get("name") or r.get("display_name") or "").strip() for r in rows]
+    names = [n for n in names if n]
+    if names:
+        return ", ".join(dict.fromkeys(names))
+    field = KIND_FIELD_MAP.get(kind)
+    focus_rows = (getattr(focus, field, None) or []) if field else []
+    for row in focus_rows:
+        if isinstance(row, dict) and row.get("raw") == entity.get("raw") and row.get("name"):
+            return str(row["name"]).strip()
+    return str(entity.get("canonical_code") or entity.get("raw") or "").strip()
+
+
+def carry_scope_keeps(pending: Any, verdict: dict[str, Any], positions: list[int]) -> bool | None:
+    """The answer to a `carry_scope` ask (AC-143): True keeps the carried subject (position 1),
+    False drops it (position 2 or the parser's `all`), None when the message did not answer.
+    Read off the parser's `open_question_answer` and the decided positions, never a word."""
+    answer = verdict.get("open_question_answer") if isinstance(verdict.get("open_question_answer"), dict) else {}
+    if answer.get("mode") == "all":
+        return False
+    picked = [p for p in positions if isinstance(p, int)]
+    if not picked and answer.get("mode") == "pick":
+        picked = [p for p in answer.get("picked") or [] if isinstance(p, int) and not isinstance(p, bool)]
+    for option in getattr(pending, "options", None) or []:
+        if option.get("position") in picked:
+            return bool((option.get("payload") or {}).get("keep"))
+    return None
