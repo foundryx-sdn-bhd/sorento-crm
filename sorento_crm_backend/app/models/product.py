@@ -14,6 +14,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import event
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -257,10 +258,14 @@ class Product(Base, CompanyScopedMixin):
     # clears the flag. See docs/plans/PLAN-variant-manual-curation.md.
     variant_link_manual = Column(Boolean, nullable=False, server_default="false", default=False)
     # PRODUCT-ALTERNATIVES (card Q1 (a)): set once a person adds or unlinks one of this
-    # product's alternatives by hand; the -NEW rule
+    # product's alternatives by hand; the code rule
     # (`product_alternative_service.reconcile_new_alternatives`) then never touches this
     # product's links again until "Reset to auto" clears it.
     alternatives_manual = Column(Boolean, nullable=False, server_default="false", default=False)
+    # CODE-VARIANTS: the model family derived from product_code (app/services/product_family.py),
+    # re-derived on every write unless a person set it by hand (family_code_manual).
+    family_code = Column(String(100), nullable=True)
+    family_code_manual = Column(Boolean, nullable=False, server_default="false", default=False)
     base_uom_id = Column(UUID(as_uuid=False), ForeignKey("units_of_measure.id"), nullable=False)
     item_type = Column(String(50), nullable=True)
     # CRM-owned (PLAN D14, price-tag-feedback-r2): manual entry on the product
@@ -359,8 +364,9 @@ class Product(Base, CompanyScopedMixin):
         Index("ix_products_is_active", "is_active"),
         Index("ix_products_product_code", "product_code"),
         Index("ix_products_barcode", "barcode"),
+        Index("ix_products_company_family_code", "company_id", "family_code"),
         Index("ix_products_variant_of_id", "variant_of_id"),
-        # PRODUCT-ALTERNATIVES: the -NEW rule's per-company normalised-code probe
+        # PRODUCT-ALTERNATIVES: the code rule's per-company normalised-code probe
         # (`product_alternative_service._norm_sql`, migration prod_alt_0001_tables).
         Index(
             "ix_products_company_norm_code",
@@ -389,11 +395,24 @@ class Product(Base, CompanyScopedMixin):
     )
 
 
+@event.listens_for(Product, "before_insert")
+@event.listens_for(Product, "before_update")
+def _derive_family_code(mapper, connection, target):
+    """CODE-VARIANTS AC-3: every ORM write of a product keeps `family_code` in step with
+    its code, unless a person set it by hand."""
+    if target.family_code_manual:
+        return
+    from app.services.product_family import family_code_for
+
+    target.family_code = family_code_for(target.product_code)
+
+
 class ProductAlternative(Base, CompanyScopedMixin):
     """A stored "use this instead" link: `product_id` (the old code) ->
     `alternative_product_id` (its replacement), same company.
 
-    `source` says who made it: `auto_new` by the -NEW code rule
+    `source` says who made it: `auto_new` by the code rule
+    (-NEW, -DIY, -N, -PP, and PP for NL)
     (`app/services/product_alternative_service.py`), `manual` by a person on the product
     page. The chatbot reads these links (`alternatives_for`), never the codes themselves.
     Card: documentation/plans/chatbot/CARD-product-alternatives-08oct.md.

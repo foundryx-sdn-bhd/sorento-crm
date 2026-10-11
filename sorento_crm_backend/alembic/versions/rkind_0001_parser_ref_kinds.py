@@ -16,7 +16,7 @@ Idempotent, and safe on a fresh database: `seed_prompt_registry` runs first, and
 publish is skipped when a version already carries this exact template.
 
 Revision ID: rkind_0001_parser_ref_kinds
-Revises: ca3_0003_chat_report_extractor
+Revises: family_code_0001
 """
 import importlib.util
 import logging
@@ -29,7 +29,7 @@ from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
 
 revision = "rkind_0001_parser_ref_kinds"
-down_revision = "ca3_0003_chat_report_extractor"
+down_revision = "family_code_0001"
 branch_labels = None
 depends_on = None
 
