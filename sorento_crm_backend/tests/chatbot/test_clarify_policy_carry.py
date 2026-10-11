@@ -261,3 +261,46 @@ def test_the_same_guard_on_a_session_that_predates_any_focus_mark(dealer):  # no
     reply = dealer.say(f"delivery for {CODE}", _product_ask())
     assert "(from earlier)" not in reply, reply
     assert _orders(dealer), dealer.calls
+
+
+# --- round 4: the live reading is a FRESH question (domain_in_message true) ------------------ #
+# Live, the parser reads "delivery for HANLIM" / "delivery today" after "SRT391-GM stock" as a new
+# ask: domain_in_message true, no anaphora, no continuation. Today's focus rules then drop the held
+# product silently; R2 / Q9 say ask.
+
+
+def _fresh(ask: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    return {**ask, "domain_in_message": True, "anaphora": {"backward_reference": False}, "continuation": False, **extra}
+
+
+def test_fresh_reading_held_product_and_a_new_customer_asks_and_fetches_nothing(dealer):  # noqa: F811
+    _carried_product(dealer)
+    reply = dealer.say("delivery for zzt dealer", _fresh(_customer_ask()))
+    assert reply == Q_COMBINE, reply
+    assert _orders(dealer) == [], dealer.calls
+
+
+def test_fresh_reading_delivery_today_with_carry_unclear_ask_asks(dealer, session_factory):  # noqa: F811
+    _ask_unclear(session_factory)
+    _carried_product(dealer)
+    reply = dealer.say("delivery today", _fresh(_today_ask()))
+    assert reply == Q_UNCLEAR, reply
+    assert _orders(dealer) == [], dealer.calls
+
+
+def test_fresh_reading_delivery_today_with_the_seed_carry_asks_nothing(dealer):  # noqa: F811
+    """Seed carry_unclear = carry: no ask. MEASURED: with this stubbed fresh verdict (entities [])
+    the held product is KEPT in the fetch, not dropped as the brief expected, so only the no-ask
+    half is pinned."""
+    _carried_product(dealer)
+    reply = dealer.say("delivery today", _fresh(_today_ask()))
+    assert "(from earlier)" not in reply, reply
+    assert _orders(dealer), dealer.calls
+
+
+def test_fresh_reading_with_entity_op_replace_and_a_new_customer_still_asks(dealer):  # noqa: F811
+    """R2: the user did not say to drop the product, so a replace op on the customer still asks."""
+    _carried_product(dealer)
+    reply = dealer.say("delivery for zzt dealer", _fresh(_customer_ask(), entity_op="replace"))
+    assert reply == Q_COMBINE, reply
+    assert _orders(dealer) == [], dealer.calls
