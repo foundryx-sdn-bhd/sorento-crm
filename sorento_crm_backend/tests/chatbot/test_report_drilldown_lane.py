@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from app.services.chatbot_reply_copy import CHATBOT_REPLY_COPY
 
 from tests.chatbot import test_report_ask_lane as lane_tests
 from tests.chatbot.test_report_ask_lane import (  # noqa: F401  (console is a fixture)
@@ -298,7 +299,7 @@ def test_a_dealer_drill_to_a_staff_axis_is_refused() -> None:
     verdict = {"order_status": "sales_ranking", "group_by": "customer", "ranking_drill": "scoped", "top_n": 5,
                "sales_ranking_frame": frame}
     outcome, line = report_ask.settle(None, verdict, [], dealer=True)
-    assert outcome is None and line == report_ask.DEALER_REFUSAL, (outcome, line)
+    assert outcome is None and line == CHATBOT_REPLY_COPY["report_dimension_denied"][1], (outcome, line)
 
 
 def test_the_frame_keeps_shown_rows_only_for_its_own_axis() -> None:

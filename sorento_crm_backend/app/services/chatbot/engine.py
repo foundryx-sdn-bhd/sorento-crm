@@ -6789,7 +6789,9 @@ def _run_stages_body(  # noqa: PLR0915
             from app.services.chatbot.lanes.business import _report_line
 
             stage[0] = "replied"
-            answer = turn_compose.Answer(text=_report_line(db, {"localizer": localizer}, "report_not_enabled"))
+            # `localizer` is unset on this path (the fetch block that resolves it is skipped).
+            refused_localizer = label_catalog.resolve(db, item.get("reply_language") or "en", dry_run=dry_run)
+            answer = turn_compose.Answer(text=_report_line(db, {"localizer": refused_localizer}, "report_not_enabled"))
 
         # -- the REFUSAL: a customer word outside a scoped contact's links -------- #
         # Once for the whole turn, however many domains the plan fans out to; no picker,

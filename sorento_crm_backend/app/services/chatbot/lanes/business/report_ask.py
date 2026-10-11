@@ -41,8 +41,6 @@ GIVE_UP = (
     "I still can't read '{word}'. Ask again in one message, "
     "e.g. top 5 sales agents for Sorento this month by amount, delivered."
 )
-#: The route's own refusal for a dealer's staff breakdown (`report_ask._DEALER_MESSAGE`).
-DEALER_REFUSAL = "That breakdown is not available for your account."
 CATALOGUE_LINE = (
     "I can rank sales by customer, product, brand, category, sales agent, location, channel or month."
 )

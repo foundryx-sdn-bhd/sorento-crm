@@ -187,7 +187,8 @@ def _resolve_word(db: Any, kind: str, word: str) -> list[str]:
 
 
 def _args(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool, own_ids: Any = None
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool, own_ids: Any = None,
+    say: Any = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """The route params a fresh ask names (every one but the period and top_n), or the one
     line to say instead of running."""
@@ -199,7 +200,7 @@ def _args(
         from app.services.reports.ask import CHAT_DEALER_KEYS
 
         if group_by not in CHAT_DEALER_KEYS:
-            return None, report_ask.DEALER_REFUSAL
+            return None, report_ask._say(say, "report_dimension_denied")
     measure = jsc.js_string(report.get("measure") or "").strip().lower() or "asks"
     if measure not in MEASURES:
         return None, CATALOGUE_LINE
@@ -344,7 +345,7 @@ def scope_for(fetch_domain: str, scope: dict[str, Any], *, asker: str | None, gr
 
 def settle(
     db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, own_ids: Any = None,
-    message_text: str = "",
+    message_text: str = "", say: Any = None,
 ) -> tuple[rf.Outcome | None, str | None]:
     """Every required field settled, or the line to send instead of running. `(outcome, None)`
     (send `outcome.reply` with `outcome.slot` unless `outcome.done`), or `(None, line)` for a
@@ -379,7 +380,7 @@ def settle(
     if read is None:
         return None, COULDNT_READ
     parse_output = read
-    args, line = _args(db, parse_output, entities, dealer=dealer, own_ids=own_ids)
+    args, line = _args(db, parse_output, entities, dealer=dealer, own_ids=own_ids, say=say)
     if args is None:
         return None, line
     top_n = parse_output.get("top_n")

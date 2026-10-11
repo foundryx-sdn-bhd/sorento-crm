@@ -74,9 +74,6 @@ _OUTSTANDING_SO_GRANT = "sales_orders.outstanding"
 # here - the report has nothing partial to answer with, so its absence refuses the
 # WHOLE ask before any fetch, with one line and nothing else.
 _SALES_REPORT_GRANT = "sales_orders.sales_report"
-#: The one sentence a contact without that key sees, verbatim (AC-1651) - the sibling
-#: of `fetch.SO_NOT_ENABLED_MESSAGE` / `LOW_STOCK_NOT_ENABLED_MESSAGE` above, a
-#: literal for the same reason: one wording, in one place.
 #: PLAN-retail-sales-reports-26sep S1: the sales analysis tool, gated by the SAME key.
 _SALES_ANALYSIS_TOOL = "crm_sales_analysis"
 
@@ -689,6 +686,7 @@ _REPORT_NAMES = {
     "crm_sales_report": "the sales report",
     "crm_outstanding_report": "the outstanding report",
     report_ask.TOOL: "the sales ranking",
+    chat_report.TOOL: "the chat report",
 }
 
 
@@ -2176,6 +2174,7 @@ def run_fetch(
             message_text=jsc.js_string(
                 jsc.get(jsc.get(jsc.get(jsc.get(ctx, "text"), "message"), "message"), "text") or ""
             ),
+            say=lambda name, **words: _report_line(db, ctx, name, **words),
         )
         if trace is not None:
             trace.add(
