@@ -221,11 +221,13 @@ class TestOrderDebtorUpsert:
         assert again == got
         assert _count(db, code) == 1
 
-    def test_blank_code_keeps_the_name_slug(self, db):
+    def test_blank_code_makes_no_customer(self, db):
+        """DBR-DEBTOR-CLEANUP: a blank code keeps the name as text on the DO and has no customer."""
+        before = db.query(Customer).count()
         a = OrderService(db)._upsert_customer_from_debtor(f"{MARKER} NO CODE", None)
         b = OrderService(db)._upsert_customer_from_debtor(f"{MARKER} NO CODE 2", "")
-        assert a != b
-        assert db.get(Customer, a).customer_code.startswith("DBR-")
+        assert a is None and b is None
+        assert db.query(Customer).count() == before
 
 
 class TestBackCreate:

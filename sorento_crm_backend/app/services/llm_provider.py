@@ -1575,3 +1575,20 @@ def get_provider(provider: str, api_key: str, model: Optional[str] = None) -> LL
     if key == "gemini":
         return GeminiProvider(api_key=api_key, default_model=model or "gemini-2.5-flash")
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def is_timeout(exc: BaseException) -> bool:
+    """A request timeout, however the SDK spells it (shared by the chatbot's `llm_call`
+    and the resolver's code reader, which lives outside the chatbot package) (`openai.APITimeoutError`,
+    `anthropic.APITimeoutError`, `httpx.TimeoutException`, or Gemini's RuntimeError
+    wrapping one). Walks the `from` chain because Gemini re-raises."""
+    seen = 0
+    current: BaseException | None = exc
+    while current is not None and seen < 5:
+        if isinstance(current, TimeoutError) or "Timeout" in type(current).__name__:
+            return True
+        # `__cause__` only (an explicit `raise ... from`): an unrelated error raised while
+        # a timeout was being handled is not a timeout.
+        current = current.__cause__
+        seen += 1
+    return False

@@ -864,7 +864,7 @@ describe('CellStockTable: PO qty and Taken', () => {
     expect(dc1Pills.getByText('Own 15')).toBeInTheDocument();
     fireEvent.click(dc1Pills.getByText('+1'));
     const popover = screen.getByTestId('stock-taken-pills-DC1-BB-popover');
-    expect(within(popover).getByText('Borrow (other) 10')).toBeInTheDocument();
+    expect(within(popover).getByText('Borrow 10')).toBeInTheDocument();
 
     // One kind: the number alone, no pill row at all.
     expect(screen.getByTestId('stock-taken-MWH-BB').textContent).toBe('10');

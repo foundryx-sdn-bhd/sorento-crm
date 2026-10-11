@@ -75,6 +75,8 @@ export async function extractApiError(
     return JSON.stringify(first);
   }
   if (detail && typeof detail === 'object' && detail.message) return String(detail.message);
+  // `{"error": {"code", "message"}}`: the claude.ai connector's shape (CLAUDE-CONNECTOR contract 5).
+  if (error.error && typeof error.error === 'object' && error.error.message) return String(error.error.message);
   if (error.message) return String(error.message);
   if (response.status === 401) return 'Not signed in or session expired. Please sign in again.';
   if (response.status >= 500) return 'Server error. Try again or contact support.';
@@ -103,8 +105,9 @@ export async function codedError(response: Response, fallback: string): Promise<
   const error = new Error(message) as CodedError;
   error.code = null;
   try {
-    const body = (await clone.json()) as { code?: unknown };
+    const body = (await clone.json()) as { code?: unknown; error?: { code?: unknown } };
     if (typeof body?.code === 'string') error.code = body.code;
+    else if (typeof body?.error?.code === 'string') error.code = body.error.code;
   } catch {
     // A refusal with no JSON body carries no code. The message above still stands.
   }

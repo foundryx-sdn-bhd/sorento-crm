@@ -52,7 +52,7 @@ const pending = vi.hoisted(() => ({
 }));
 vi.mock('@/services/pendingActionService', () => pending);
 
-import { formatDateTime } from '@/lib/helpers';
+import { formatDateTimeInMalaysia } from '@/lib/helpers';
 import { IdeaComments } from './IdeaComments';
 
 function serverTime(offsetMs: number): string {
@@ -127,7 +127,7 @@ describe('AC-E-01 thread layout', () => {
     }
   });
 
-  it('shows the author display name, dd/MM/yyyy h:mm AM/PM time and an "edited" tag only when edited', async () => {
+  it('shows the author display name, dd/MM/yyyy h:mm am/pm Malaysia time and an "edited" tag only when edited', async () => {
     renderComments([
       { id: 'c1', authorName: 'Alex Staff', body: 'Plain one', createdAt: '2026-10-01T09:00:00Z' },
       {
@@ -141,7 +141,7 @@ describe('AC-E-01 thread layout', () => {
     await screen.findByText('Plain one');
     expect(screen.getByText('Alex Staff')).toBeInTheDocument();
     expect(screen.getByText('Sam Wong')).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime('2026-10-01T09:00:00Z'))).toBeInTheDocument();
+    expect(screen.getByText(formatDateTimeInMalaysia('2026-10-01T09:00:00Z'))).toBeInTheDocument();
     expect(screen.getAllByText('edited')).toHaveLength(1);
   });
 });

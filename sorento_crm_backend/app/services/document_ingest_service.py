@@ -89,6 +89,7 @@ from app.services.master_ref_resolver import (
     MasterRefResolver,
     dedupe_warnings,
 )
+from app.services.scm.po_ref import po_ref_key
 from app.services.project_label_rules import (
     apply_project_label,
     label_from_note,
@@ -1016,6 +1017,13 @@ class DocumentIngestService(MasterRefResolver):
         transferable = getattr(payload, "transferable", None)
         if transferable is not None:
             values["is_transferable"] = transferable
+        # `po_ref` (SO-PO-REF): written whenever the key is SENT, blank clearing both
+        # columns, and left alone when it is absent (an older shared-service contract).
+        # Separate from `ref`, so it never reaches `_apply_project_label`.
+        if "po_ref" in getattr(payload, "model_fields_set", ()) and hasattr(payload, "po_ref"):
+            po_ref = (payload.po_ref or "").strip() or None
+            values["po_ref"] = po_ref
+            values["po_ref_key"] = po_ref_key(po_ref)
         # PO currency default (D1): only a spec that carries a `currency`
         # header column reaches this, which today is `purchase_orders` alone -
         # so the fill is shape-driven rather than a hardcoded entity check.
@@ -1531,6 +1539,14 @@ class DocumentIngestService(MasterRefResolver):
                                 "new_ref": new_ref,
                             }
                         )
+                if (
+                    spec.entity_type == "sales_orders"
+                    and getattr(row, "cancelled_at", None) is not None
+                ):
+                    # SO-CANCEL-LINE: CS transferred this line to Cancel SO on the board;
+                    # AutoCount does not know that document, so its push (which would
+                    # recompute the status from quantities) must not reopen the line.
+                    values["line_status"] = CANCELLED
                 for column, value in values.items():
                     setattr(row, column, value)
                 counts["updated"] += 1

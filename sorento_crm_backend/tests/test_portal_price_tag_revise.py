@@ -74,7 +74,7 @@ def _seed_ptag_config(
 
 def _seed_contact(db):
     from app.models.access import RespondContact
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     contact = RespondContact(
         id=str(uuid.uuid4()),
@@ -85,6 +85,7 @@ def _seed_contact(db):
     db.flush()
     segment = seed_segment(db, kinds=["price_tag_request"])
     link_contact_segment(db, contact.id, segment.code)
+    link_contact_company(db, contact.id)
     db.commit()
     return contact
 
@@ -612,9 +613,13 @@ class TestPortalRevisionSettingsIncludesPriceTagRequest:
     BASE = "/api/v1/forms-management/revision-configs"
 
     @pytest.fixture
-    def settings_client(self):
+    def settings_client(self, monkeypatch):
         from app.database import get_db
+        from app.services.user_service import UserPermissionService
 
+        # LIST-API-PERMS: GET /revision-configs carries `user_management.settings.view` now;
+        # the office actor has no users row, so answer the role lookup as admin.
+        monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
         with blank_session() as db:
 
             def _override_get_db():

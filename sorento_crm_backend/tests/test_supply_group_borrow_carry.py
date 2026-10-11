@@ -22,6 +22,7 @@ from app.models.project_so import (
     SOSupplyDecision,
 )
 
+from ._borrow_mode import borrow_from_order_on
 from .test_so_supply_confirmation import (  # noqa: F401  (fixtures/helpers, not tests)
     BASE,
     _core_line,
@@ -46,6 +47,7 @@ def _find_component(snapshot, *, kind: str, source_location=None):
 def test_a_carried_group_borrow_line_keeps_its_donor_and_regenerates_one_order_back(api):
     client, world = api
     db = world.db
+    borrow_from_order_on(db)
 
     # The donor: another sales order's own line at the same location, lent to this one.
     donor_cso = _core_so(db, world.company_id)

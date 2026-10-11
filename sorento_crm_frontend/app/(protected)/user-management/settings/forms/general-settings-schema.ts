@@ -61,11 +61,15 @@ export const GeneralSettingsSchema = z.object({
    * run a counter.
    */
   priceTagAutoCollectDays: z.coerce.number().int().min(0).max(90),
+  /** How long a chatbot file link opens, in days. Null = the link never expires. */
+  chatbotFileLinkExpiryDays: z.number().int().min(1).max(3650).nullable(),
   /** SCM front planning: the grain new plans are decided at (AC-F01). */
   planGrain: z.enum(['product', 'location']),
   /** Local-supplier Buy routing (PLAN-local-buy-routing-toggle.md), off by default. Off
    *  means the whole local rule does not run: no pill, every Buy reaches Order Inquiries. */
   localBuyRoutingEnabled: z.boolean(),
+  /** "Borrow from another order" (PLAN-borrow-location-only-8oct.md D1), off by default. */
+  borrowFromOrderEnabled: z.boolean(),
   /** Price tag packages (D2): the product classes a line is warned about when it
    *  reaches marketing without its catalogue package. Empty warns nobody, which
    *  is a legitimate answer, so there is no minimum. */

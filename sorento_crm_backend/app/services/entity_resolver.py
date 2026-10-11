@@ -549,6 +549,12 @@ class TokenResolution:
     # populated, because to the caller that match is as useless as no match at all. Does
     # not affect `resolved`, which still reads `matches` alone.
     alternatives: list[ResolvedEntity] = field(default_factory=list)
+    # RESOLVE-SEMANTIC-FALLBACK: what the code reader said about a product token that
+    # missed every code tier, for the trace - `{"asked": True, "kind": code|family|none|
+    # error, "value": ..., "matched": n}` or `{"asked": False, "kind": "not_asked"}`. None
+    # (and ABSENT from `as_dict`) for every token the reader was never consulted about,
+    # so a call without a reader is byte-identical to before.
+    fallback: Optional[dict[str, Any]] = None
 
     @property
     def resolved(self) -> bool:
@@ -568,6 +574,14 @@ class ResolutionResult:
     tokens: list[str]
     resolutions: list[TokenResolution]
     elapsed_ms: float
+    # Pre-extracted tokens past the call's ceiling (`PRE_EXTRACTED_TOKEN_CEILING`, or the
+    # caller's own `max_candidates`), in order, NEVER looked up: not resolved, not
+    # ambiguous, not unresolved - the caller has to say so rather than answer as if they
+    # had never been asked about. Empty for a free-text query string (extraction stops at
+    # its count, nothing is cut). The resolve route's synthesized alpha-word list
+    # (`references._synthesize_alpha_tokens`, sent with `max_candidates=FREE_TEXT_
+    # CANDIDATES`) IS a list, so the words past 8 are reported here: they were not probed.
+    truncated_tokens: list[str] = field(default_factory=list)
 
     @property
     def unresolved_tokens(self) -> list[str]:
@@ -659,6 +673,7 @@ class ResolutionResult:
             "elapsed_ms": round(self.elapsed_ms, 2),
             "resolutions": [
                 {
+                    **({"fallback": tr.fallback} if tr.fallback is not None else {}),
                     "token": tr.token,
                     "resolved": tr.resolved,
                     "ambiguous": tr.ambiguous,
@@ -696,6 +711,7 @@ class ResolutionResult:
                 for tr in self.resolutions
             ],
             "unresolved_tokens": self.unresolved_tokens,
+            "truncated_tokens": list(self.truncated_tokens),
         }
 
 
@@ -1156,6 +1172,53 @@ def _probe_customer(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEn
     return result
 
 
+def _debtor_display(debtor_name: Any, debtor_code: Any, customer_name: Any) -> dict[str, Any]:
+    """The `display` of a hit on an order's debtor name.
+
+    `customer_name` is the linked customer's own master name, written only when the order
+    reaches a customer (`customer_identity.outerjoin_customer_of_order`). Every reader that
+    names or groups a customer hit (`gate._display_name`, `gate._cust_name`) reads it before
+    `debtor_name`, so a buyer name typed on one DO never becomes a customer of its own
+    (DELIVERY-DEBTOR-GROUP, owner 8 Oct 2026). The DO's own name stays on `debtor_name`.
+    """
+    display: dict[str, Any] = {"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"}
+    if customer_name and str(customer_name).strip():
+        display["customer_name"] = str(customer_name).strip()
+    return display
+
+
+def _one_hit_per_customer(rows: list[Any], *, fold: bool = False) -> list[Any]:
+    """`(debtor_name, debtor_code, customer_id, customer_name)` rows, one per (name, customer).
+
+    An order is linked per DOCUMENT (`customer_identity.outerjoin_customer_of_order`), so one
+    debtor name ("CASH SALES") can belong to several customers; keeping one row per name
+    would answer for whichever customer the database returned first and hide the rest. Each
+    customer stays a hit of its own, so the gate sees them all and asks. A name's unlinked
+    row is dropped only when the same name also reached a customer: it is the same buyer
+    name, and a uuid-less hit beside it adds nothing to choose from.
+    """
+    def _key(name: Any) -> str:
+        text_ = str(name or "")
+        return text_.lower() if fold else text_
+
+    linked = {_key(r[0]) for r in rows if r[0] and r[2]}
+    seen: set[tuple[str, str]] = set()
+    out: list[Any] = []
+    for row in rows:
+        name, _code, customer_id, _cname = row
+        key = _key(name)
+        if not key:
+            continue
+        if not customer_id and key in linked:
+            continue
+        pair = (key, str(customer_id or ""))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        out.append(row)
+    return out
+
+
 def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
     """Resolve a token against the unique `Order.debtor_name` set.
 
@@ -1178,8 +1241,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
     if norm_to_token:
         exact_clauses.append(_ws_insensitive_lower(Order.debtor_name).in_(list(norm_to_token)))
     rows = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(
             Order.deleted_at.is_(None),
@@ -1189,13 +1252,11 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         .distinct()
         .all()
     )
-    for debtor_name, debtor_code, customer_id in rows:
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
         token = name_to_token.get(str(debtor_name).lower()) or norm_to_token.get(
             _strip_all_ws(str(debtor_name)).lower()
         )
         if not token:
-            continue
-        if any(m.canonical_code == debtor_name for m in result[token]):
             continue
         result[token].append(
             ResolvedEntity(
@@ -1203,7 +1264,7 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
                 canonical_code=debtor_name,
                 uuid=str(customer_id) if customer_id else None,
                 match_field="debtor_name",
-                display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                display=_debtor_display(debtor_name, debtor_code, customer_name),
             )
         )
 
@@ -1229,8 +1290,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
             continue
         _DEBTOR_FUZZY_LIMIT = 25
         rows = (
-            customer_identity.outerjoin_customer_by_order_name(
-                db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+            customer_identity.outerjoin_customer_of_order(
+                db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
             )
             .filter(
                 Order.deleted_at.is_(None),
@@ -1243,10 +1304,8 @@ def _probe_customer_debtor_name(db: Session, tokens: list[str]) -> dict[str, lis
         )
         truncated = len(rows) > _DEBTOR_FUZZY_LIMIT
         rows = rows[:_DEBTOR_FUZZY_LIMIT]
-        for debtor_name, debtor_code, customer_id in rows:
-            if any(m.canonical_code == debtor_name for m in result[token]):
-                continue
-            display = {"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"}
+        for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows):
+            display = _debtor_display(debtor_name, debtor_code, customer_name)
             if truncated:
                 display["truncated_more_available"] = True
             result[token].append(
@@ -2025,8 +2084,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     if not token or len(token) < 3:
         return []
     rows = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(
             Order.deleted_at.is_(None),
@@ -2040,8 +2099,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
     tier = "prefix"
     if not rows:
         rows = (
-            customer_identity.outerjoin_customer_by_order_name(
-                db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+            customer_identity.outerjoin_customer_of_order(
+                db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
             )
             .filter(
                 Order.deleted_at.is_(None),
@@ -2062,8 +2121,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
         words = [w for w in token.split() if len(w) >= 3]
         if len(words) >= 2:
             q = (
-                customer_identity.outerjoin_customer_by_order_name(
-                    db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+                customer_identity.outerjoin_customer_of_order(
+                    db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
                 )
                 .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
             )
@@ -2071,13 +2130,8 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
                 q = q.filter(_norm_contains(Order.debtor_name, w))
             rows = q.distinct().limit(PREFIX_LIMIT).all()
             tier = "word"
-    seen: set[str] = set()
     out: list[ResolvedEntity] = []
-    for debtor_name, debtor_code, customer_id in rows:
-        key = (debtor_name or "").lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
+    for debtor_name, debtor_code, customer_id, customer_name in _one_hit_per_customer(rows, fold=True):
         out.append(
             ResolvedEntity(
                 entity_type="customer",
@@ -2085,7 +2139,7 @@ def _prefix_probe_customer_debtor_name(db: Session, token: str) -> list[Resolved
                 uuid=str(customer_id) if customer_id else None,
                 match_field="debtor_name",
                 match_tier=tier,
-                display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                display=_debtor_display(debtor_name, debtor_code, customer_name),
             )
         )
     return out
@@ -2773,6 +2827,20 @@ def _chat_visible_product_ids(db: Session, product_ids: Iterable[str]) -> set[st
     }
 
 
+def _drop_inactive_products(db: Session, hits: list[ResolvedEntity]) -> list[ResolvedEntity]:
+    """`hits` minus inactive products (one bounded IN query); other types pass through."""
+    ids = [str(h.uuid) for h in hits if h.entity_type == "product" and h.uuid]
+    if not ids:
+        return hits
+    active = {
+        str(pid)
+        for (pid,) in db.query(Product.id)
+        .filter(Product.id.in_(ids), Product.is_active.is_(True))
+        .all()
+    }
+    return [h for h in hits if h.entity_type != "product" or str(h.uuid) in active]
+
+
 def _tier3_embedding_lookup(
     db: Session,
     token: str,
@@ -2891,6 +2959,21 @@ ENTITY_MISS_SUGGEST_FLOOR = 0.30
 _ALL_TRGM_TYPES = frozenset({"product", "customer", "customer_order", "promotion", "transporter"})
 # Max fuzzy alternatives surfaced per unresolved token (keep the suggestion tight).
 _ALTERNATIVES_CAP = 5
+
+# RESOLVER-TOKEN-CAP (owner report, 6 Oct 2026): how many PRE-EXTRACTED tokens one
+# `resolve_references` call looks up when the caller sets no `max_candidates` of its
+# own. A pre-extracted list is the caller's decision about what to look up (the chatbot
+# parser's entities, n8n's tokens), so it is never cut to the free-text extraction
+# count (8): a catalogue photo read 19 codes, the parser carried all 19, and the stock
+# reply listed the first 8 with nothing about the other 11. 50 is the stock balance
+# page's own default `limit` (`api/v1/inventory/stock.py::get_stock_balance`) and the
+# chatbot's lookup limit (`lanes/business/resolve_gate._LOOKUP_LIMIT`), so every code
+# the resolver answers has a row the renderer can print. Past it, the remainder is
+# reported in `ResolutionResult.truncated_tokens`, never dropped in silence.
+PRE_EXTRACTED_TOKEN_CEILING = 50
+# How many tokens are EXTRACTED from a free-text query (`extract_candidate_tokens`'s
+# own default), when the caller sets no `max_candidates`.
+FREE_TEXT_CANDIDATES = 8
 
 
 def _trgm_lookup(
@@ -3734,8 +3817,8 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
     blob_o = _concat_ws(Order.debtor_name, Order.debtor_code)
     counts_o = _and_token_match_counts(blob_o, tokens)
     base_o = (
-        customer_identity.outerjoin_customer_by_order_name(
-            db.query(Order.debtor_name, Order.debtor_code, Customer.id), Order
+        customer_identity.outerjoin_customer_of_order(
+            db.query(Order.debtor_name, Order.debtor_code, Customer.id, Customer.customer_name), Order
         )
         .filter(Order.deleted_at.is_(None), Order.debtor_name.isnot(None))
     )
@@ -3746,7 +3829,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
             # The dedup below can shrink the merged list under the cap even
             # though this source hit its LIMIT - mark it at the source.
             out.truncated = True
-        for debtor_name, debtor_code, customer_id in rows:
+        for debtor_name, debtor_code, customer_id, customer_name in rows:
             if (debtor_name or "").lower() in seen_names:
                 continue
             out.append(
@@ -3757,7 +3840,7 @@ def _and_probe_customer(db: Session, tokens: list[str]) -> list[ResolvedEntity]:
                     match_field="debtor_name",
                     match_tier="and",
                     match_blob=" ".join(x for x in (debtor_name, debtor_code) if x),
-                    display={"debtor_name": debtor_name, "debtor_code": debtor_code, "source": "orders"},
+                    display=_debtor_display(debtor_name, debtor_code, customer_name),
                 )
             )
     return out
@@ -4897,7 +4980,7 @@ def resolve_references(
     db: Session,
     query_or_tokens: str | list[str],
     *,
-    max_candidates: int = 8,
+    max_candidates: Optional[int] = None,
     enable_prefix_fallback: bool = True,
     enable_embedding_fallback: bool = True,
     allowed_entity_types: Optional[Iterable[str]] = None,
@@ -4906,8 +4989,28 @@ def resolve_references(
     entity_pins: Optional[dict[str, str]] = None,
     raw_tokens: Optional[list[str]] = None,
     regions=None,
+    code_reader: Optional[Callable[[list[tuple[str, Optional[str]]]], dict[str, Any]]] = None,
+    alternatives_active_only: bool = False,
 ) -> ResolutionResult:
     """Main entry point.
+
+    `alternatives_active_only` (AI-EXTRACT-DYM): drop inactive products from a token's
+    "did you mean" `alternatives` BEFORE the `_ALTERNATIVES_CAP` cut, so inactive near
+    matches cannot push an active one out. Off by default: every other caller's
+    alternatives are unchanged.
+
+    `code_reader` (RESOLVE-SEMANTIC-FALLBACK, owner ruling 6 Oct 2026): a
+    `resolver_code_reader.CodeReader`. When set, a PRE-EXTRACTED product-typed token that
+    missed every code tier (exact, prefix / substring, head-code retry) is put to it ONCE,
+    beside its pre-fold raw text, before the embedding tier runs: a `code` reading re-runs
+    the exact product probe with the value, a `family` reading runs the prefix-then-
+    substring product probe (several rows are the existing ambiguous picker), `none`
+    leaves the miss. The value is guarded to characters inside the typed text
+    (`resolver_code_reader.guard`), so the model can only read a code out, never invent
+    or correct one; the catalogue decides whether it exists. Never consulted on a free-text
+    query (those tokens are regex-extracted, not a parser's decision), never for a token
+    whose allowed types exclude `product`, never when nothing missed. The verdict rides
+    `TokenResolution.fallback`; a reader that raises is a miss, never a failed call.
 
     `regions` (a contact's packing list regions) hides inbound shipments outside them from the
     exact and prefix probes; None = no filter.
@@ -4941,18 +5044,41 @@ def resolve_references(
     the leading code-shaped word of its raw text is exact-probed against
     products only (`match_tier="head_code"` on a hit). Ignored when the two
     lists have different lengths, or when `query_or_tokens` is a plain string.
+
+    `max_candidates` is the caller's own cap. Unset, a free-text query extracts
+    `FREE_TEXT_CANDIDATES` tokens and a pre-extracted list is looked up to
+    `PRE_EXTRACTED_TOKEN_CEILING`. A list cut at either is reported in
+    `ResolutionResult.truncated_tokens` (RESOLVER-TOKEN-CAP): a token the caller
+    handed over and this call never looked up is neither resolved nor unresolved,
+    and the caller must be able to say so.
     """
     t0 = time.perf_counter()
     raw_query: Optional[str] = None
+    truncated_tokens: list[str] = []
+    free_text_cap = max_candidates if max_candidates is not None else FREE_TEXT_CANDIDATES
     # {token: pre-fold raw text} for the head-code retry, built by zipping
     # `query_or_tokens` with `raw_tokens` BEFORE the strip/empty-filter/cap
     # below, so positional alignment survives it. Empty (never populated) when
     # `query_or_tokens` is a plain string or the two lists' lengths differ.
     raw_by_token: dict[str, str] = {}
+    # {token: the caller's own type hint for it}, built the same positional way as
+    # `raw_by_token` when the caller sent one type per token (the chatbot does: one hint
+    # per parser entity). Read only by the code reader below, so a customer- or brand-
+    # hinted miss in a message that also names a product is never asked as a product.
+    hint_by_token: dict[str, str] = {}
     if isinstance(query_or_tokens, list):
         paired_raw = (
             raw_tokens
             if isinstance(raw_tokens, list) and len(raw_tokens) == len(query_or_tokens)
+            else None
+        )
+        allowed_list = list(allowed_entity_types) if allowed_entity_types is not None else None
+        # One hint per token, including the one-token case (positional and set readings
+        # are the same thing there). A caller sending a type SET that happens to equal
+        # the token count only ever loses the reader on a token its hint rules out.
+        paired_hint = (
+            allowed_list
+            if allowed_list is not None and len(allowed_list) == len(query_or_tokens)
             else None
         )
         tokens = []
@@ -4961,14 +5087,22 @@ def resolve_references(
             if not s:
                 continue
             tokens.append(s)
+            # A token typed twice keeps its LAST line's raw text: the rule the head-code
+            # retry below has always read `raw_by_token` by, so a call with no reader
+            # stays byte-identical to before (reviewer, fourth pass, blocker 1). The hint
+            # follows the same rule, one rule for both.
             if paired_raw is not None:
                 raw_by_token[s] = paired_raw[idx]
-        tokens = tokens[:max_candidates]
+            if paired_hint is not None:
+                hint_by_token[s] = _canonical_entity_type(str(paired_hint[idx] or "").strip())
+        ceiling = max_candidates if max_candidates is not None else PRE_EXTRACTED_TOKEN_CEILING
+        truncated_tokens = tokens[ceiling:]
+        tokens = tokens[:ceiling]
         if paired_raw is not None:
             raw_by_token = {t: raw_by_token[t] for t in tokens}
     else:
         raw_query = query_or_tokens or ""
-        tokens = extract_candidate_tokens(raw_query, max_candidates=max_candidates)
+        tokens = extract_candidate_tokens(raw_query, max_candidates=free_text_cap)
 
     # Positional pairing: when caller passed parallel lists of tokens + entity types
     # of equal length, each token resolves ONLY against its paired type. Otherwise
@@ -5152,6 +5286,87 @@ def resolve_references(
             if len(hits) > 1:
                 ambiguous_tokens.add(tok)
 
+    # ----- Code reader (RESOLVE-SEMANTIC-FALLBACK): product tokens still matchless -----
+    # The one model question, after every deterministic tier and before the embedding
+    # tier - see the docstring. Pre-extracted lists only: `raw_query` is set for a
+    # free-text string, whose tokens nobody decided were codes.
+    fallback_by_token: dict[str, dict[str, Any]] = {}
+    if code_reader is not None and raw_query is None:
+        missed: list[tuple[str, Optional[str]]] = []
+        seen_missed: set[str] = set()
+        for tok in tokens:
+            if per_token[tok] or tok in ambiguous_tokens or tok in seen_missed:
+                continue
+            tok_allowed = _types_for(tok)
+            if tok_allowed is not None and "product" not in tok_allowed:
+                continue
+            # The caller's OWN hint for this token, when it sent one per token: only a
+            # product-hinted (or unhinted) token is a product question (reviewer finding 2;
+            # `_types_for` is the request-wide union once pairing is off).
+            if hint_by_token.get(tok, "product") not in ("product", ""):
+                continue
+            seen_missed.add(tok)  # a line typed twice is one question, one of the 5 slots
+            if not raw_by_token.get(tok):
+                # No typed text behind the folded token (a caller without `raw_tokens`): the
+                # guard could accept nothing but the whole token, which the code tiers
+                # already missed on, so the call would buy nothing. Said on the trace.
+                fallback_by_token[tok] = {"asked": False, "kind": "not_asked", "reason": "no_typed_text"}
+                continue
+            missed.append((tok, raw_by_token[tok]))
+        if missed:
+            from app.services import resolver_code_reader as _reader_mod
+
+            try:
+                readings = code_reader(missed)
+            except Exception as exc:  # noqa: BLE001 - a reader failure is a miss, never a failed call
+                logger.warning("resolver code reader raised; the tokens stay unresolved: %s", exc)
+                readings = {
+                    tok: _reader_mod.CodeReading("error", None, reason=_reader_mod.REASON_READER_RAISED)
+                    for tok, _ in missed
+                }
+            if not isinstance(readings, dict):
+                readings = {}
+            for tok, typed in missed:
+                reading = readings.get(tok)
+                if reading is None:
+                    fallback_by_token[tok] = {"asked": False, "kind": "not_asked"}
+                    continue
+                reading = _reader_mod.guard(reading, typed, tok)
+                record: dict[str, Any] = {"asked": reading.kind != "not_asked", "kind": reading.kind}
+                if reading.kind in ("code", "family"):
+                    record["value"] = reading.value
+                    hits: list[ResolvedEntity] = []
+                    try:
+                        if reading.kind == "code":
+                            # The exact tier's probes for a typed code (reviewer, fourth
+                            # pass, should-fix 4): the product row, else the product set (a
+                            # flyer code) when the caller's types reach it. NOT the variant
+                            # siblings Tier 1 adds beside a typed exact hit: the gate's
+                            # AND-mode exactness test and `turn/narrow.typed_exact_settles`
+                            # strip those by comparing the TYPED token with the code, and
+                            # this token ("TAPSRTWT5608") is not the code read out of it, so
+                            # siblings here would turn the owner's found SRTWT5608 (which
+                            # has -FRG and -GM variants) into a "which one?" question.
+                            hits = list(_probe_product(db, [reading.value]).get(reading.value, []))
+                            if not hits and (tok_allowed is None or "product_set" in tok_allowed):
+                                hits = list(_probe_product_set(db, [reading.value]).get(reading.value, []))
+                        else:
+                            hits = list(_prefix_probe_product(db, reading.value))
+                    except Exception:
+                        logger.exception("Code reader re-probe failed for token=%s", tok)
+                        hits = []
+                    record["matched"] = len(hits)
+                    if hits:
+                        per_token[tok] = hits
+                        if len(hits) > 1:
+                            ambiguous_tokens.add(tok)
+                else:
+                    if reading.kind == "none":
+                        record["value"] = None
+                    if reading.reason:
+                        record["reason"] = reading.reason
+                fallback_by_token[tok] = record
+
     # Snapshot which tokens already had matches BEFORE cross-type expansion -
     # used below to flag tokens that grew into multi-type candidate sets so the
     # LLM disambiguates instead of picking the first match.
@@ -5246,7 +5461,7 @@ def resolve_references(
         existing_lower = {t.lower() for t in tokens}
         freeword_candidates = [
             w
-            for w in extract_freeword_candidates(raw_query, max_candidates=max_candidates)
+            for w in extract_freeword_candidates(raw_query, max_candidates=free_text_cap)
             if w.lower() not in existing_lower
         ]
         if freeword_candidates:
@@ -5272,7 +5487,12 @@ def resolve_references(
                     freeword_resolutions.append(TokenResolution(token=tok, matches=matches))
 
     resolutions = [
-        TokenResolution(token=t, matches=per_token[t], ambiguous=(t in ambiguous_tokens))
+        TokenResolution(
+            token=t,
+            matches=per_token[t],
+            ambiguous=(t in ambiguous_tokens),
+            fallback=fallback_by_token.get(t),
+        )
         for t in tokens
     ]
     resolutions.extend(freeword_resolutions)
@@ -5312,6 +5532,8 @@ def resolve_references(
             }
             if member_uuids:
                 hits = [h for h in hits if str(h.uuid) not in member_uuids]
+        if alternatives_active_only:
+            hits = _drop_inactive_products(db, hits)
         tr.alternatives = [
             h for h in hits if (h.similarity or 0.0) >= ENTITY_MISS_SUGGEST_FLOOR
         ][:_ALTERNATIVES_CAP]
@@ -5328,7 +5550,12 @@ def resolve_references(
 
     final_tokens = list(tokens) + [r.token for r in freeword_resolutions]
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
-    return ResolutionResult(tokens=final_tokens, resolutions=resolutions, elapsed_ms=elapsed_ms)
+    return ResolutionResult(
+        tokens=final_tokens,
+        resolutions=resolutions,
+        elapsed_ms=elapsed_ms,
+        truncated_tokens=truncated_tokens,
+    )
 
 
 # --------------------------------------------------------------------------- #

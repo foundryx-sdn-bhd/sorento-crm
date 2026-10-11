@@ -49,6 +49,13 @@ from app.dependencies import require_permission
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.models.chatbot_turn import ChatbotTurn
 from app.schemas.integration import IntegrationLogCreate
+from app.schemas.chat_topic_audit import (
+    AuditResponse,
+    AuditRow,
+    DrawRequest,
+    DrawResponse,
+    VerdictRequest,
+)
 from app.schemas.chatbot_turn import (
     ChatbotTurnDetailResponse,
     ChatbotTurnListResponse,
@@ -61,6 +68,7 @@ from app.schemas.chatbot_turn import (
     RetryTurnResponse,
 )
 from app.services.chatbot import console_service
+from app.services.chatbot.analytics import topic_audit
 from app.services.chatbot.contracts import TURN_STAGES
 from app.services.chatbot.trace_detail import compose_trace_detail
 from app.services.integration_service import IntegrationLogService
@@ -85,6 +93,7 @@ def parser_prompt_key() -> str:
 
 VIEW = "system.chat_history.view"
 MANAGE = "system.chat_history.manage"
+ANALYTICS = "chatbot.analytics.view"
 
 # The engine's own vocabulary. An unknown value is a 422 rather than an empty page,
 # because "no turns are `delivered`" and "there is no such status as `delivered`" are
@@ -655,6 +664,7 @@ def console_turn(
         prompt_version_id=payload.prompt_version_id,
         run_id=payload.run_id,
         media=payload.media.model_dump() if payload.media is not None else None,
+        reply_to=payload.reply_to.model_dump() if payload.reply_to is not None else None,
     )
     return ConsoleTurnResponse(
         turn_id=result.turn_id,
@@ -670,6 +680,7 @@ def console_turn(
         media_error=result.media_error,
         prompt_version=result.prompt_version,
         actions=result.actions,
+        message_id=result.message_id,
     )
 
 
@@ -818,4 +829,50 @@ def prompt_blocks_status(
         published_hash=published_hash,
         published_version=published.version,
         published_at=published.created_at,
+    )
+
+
+# ----------------------------------------------------------------------- topic audit (CA-2)
+#
+# Both slugs, deliberately: `system.chat_history.view` reads the customer's words the page
+# shows, `chatbot.analytics.view` is the analytics grant. Neither alone opens it.
+
+
+@router.get("/topic-audit", response_model=AuditResponse)
+def get_topic_audit(
+    version: int | None = Query(None),
+    show: str = Query("to_review", pattern="^(to_review|reviewed|all)$"),
+    subject: str | None = Query(None),
+    _view: dict = Depends(require_permission(VIEW)),
+    _analytics: dict = Depends(require_permission(ANALYTICS)),
+    db: Session = Depends(get_db),
+):
+    return topic_audit.listing(db, version=version, show=show, subject=subject)
+
+
+@router.post("/topic-audit/sample", response_model=DrawResponse, status_code=status.HTTP_201_CREATED)
+def draw_topic_audit_sample(
+    body: DrawRequest,
+    _view: dict = Depends(require_permission(VIEW)),
+    _analytics: dict = Depends(require_permission(ANALYTICS)),
+    db: Session = Depends(get_db),
+):
+    return DrawResponse(drawn=topic_audit.draw(db, body.version))
+
+
+@router.patch("/topic-audit/{audit_id}", response_model=AuditRow)
+def judge_topic_audit_row(
+    audit_id: str,
+    body: VerdictRequest,
+    _view: dict = Depends(require_permission(VIEW)),
+    analytics_user: dict = Depends(require_permission(ANALYTICS)),
+    db: Session = Depends(get_db),
+):
+    return topic_audit.judge(
+        db,
+        audit_id,
+        verdict=body.verdict,
+        corrected_topic=body.corrected_topic,
+        products_verdict=body.products_verdict,
+        reviewer_id=analytics_user["id"],
     )

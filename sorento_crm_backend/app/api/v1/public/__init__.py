@@ -6,6 +6,7 @@ from app.api.v1.public import (
     branding,
     catalogue,
     dealer_kit_fonts,
+    file_links,
     geo,
     onboarding,
     portal,
@@ -16,6 +17,7 @@ from app.api.v1.public import (
     portal_sales_opportunity,
     print as print_route,
     quotation_sign,
+    respond_webhook,
     supplier_request,
     ticket_drafts,
     view,
@@ -24,6 +26,8 @@ from app.api.v1.public import (
 router = APIRouter()
 router.include_router(approval.router, prefix="/approval", tags=["public-approval"])
 router.include_router(view.router, prefix="/view", tags=["public-view"])
+# PHOTO-SEND-CAP: the chatbot's short file links (`/f/{code}` on the frontend).
+router.include_router(file_links.router, prefix="/file-links", tags=["public-file-links"])
 # BEFORE portal.router, and that ordering is the fix, not a preference (D49).
 # Both are mounted at /portal and Starlette serves the FIRST route whose path
 # matches, and portal.py declares POST/PUT/GET/DELETE `/submissions/{kind}...`.
@@ -56,6 +60,8 @@ router.include_router(
     portal_sales_opportunity.router, prefix="/portal", tags=["public-portal-sales-opportunity"]
 )
 router.include_router(portal.router, prefix="/portal", tags=["public-portal"])
+# Respond.io's direct message webhook (CHAT-LOCAL-FIRST R3), gated by its own signature.
+router.include_router(respond_webhook.router, prefix="/respond", tags=["public-respond-webhook"])
 router.include_router(
     quotation_sign.router, prefix="/quotation-sign", tags=["public-quotation-sign"]
 )

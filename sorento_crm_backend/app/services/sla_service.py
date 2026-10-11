@@ -5888,14 +5888,24 @@ class ConversationSLATrackingService:
     def fetch_respond_conversation_for_tracking(
         self, tracking_id: str, limit: int = 50, cursor: Optional[str] = None
     ) -> dict:
-        tracking = self.get_tracking(tracking_id)
-        ident = self._respond_io_identifier_for_tracking(tracking)
-        if not ident:
-            return {"items": [], "pagination": {}, "error": "No Respond.io contact linked"}
-        from app.services.integration_service import RespondClient
+        """The ticket panel's page: the local-first thread page for the contact.
 
-        client = RespondClient()
-        return client.list_messages(ident, limit=limit, cursor=cursor)
+        Items run oldest to newest and carry ``source: local`` when stored rows
+        exist; one live Respond page is read only when the contact has no stored
+        rows. ``cursor`` maps to ``before`` (a message id, older rows). No
+        Respond.io call on the newest page when stored rows exist; a ``cursor``
+        read past the oldest stored row makes one throttled older read
+        (``_fill_older_if_needed``); the delta read is queued after the response.
+        An unknown tracking id raises 404 from ``get_tracking``.
+        """
+        tracking = self.get_tracking(tracking_id, load_event_logs=False)
+        return self._thread_page_for_contact(
+            self._thread_contact_for_tracking(tracking),
+            before=cursor,
+            after=None,
+            around=None,
+            limit=limit,
+        )
 
     def _thread_contact_for_tracking(self, tracking: ConversationSLATracking):
         """The contact descriptor the thread reads need, or None when unlinked."""

@@ -50,7 +50,7 @@ def _check_promotion_expired(db: Session, request: PriceTagRequest) -> None:
     already treat as over must not export as if it were still running.
     """
     from app.models.marketing import Promotion
-    from app.services.dealer_kit.pricing import business_today
+    from app.services.dealer_kit.pricing import business_today, promotion_may_price
 
     # Queried fresh rather than through `request.lines` - a line's promotion
     # can be changed by the office (S11) between the request being loaded and
@@ -72,6 +72,10 @@ def _check_promotion_expired(db: Session, request: PriceTagRequest) -> None:
         for promo in db.query(Promotion).filter(Promotion.id.in_(promotion_ids)).all()
     }
     today = business_today()
+    # The type table read once for the whole request, not once per line.
+    from app.services import promotion_serving
+
+    types = promotion_serving.load_types(db)
 
     for index, line in enumerate(lines, start=1):
         if not line.promotion_id:
@@ -87,6 +91,14 @@ def _check_promotion_expired(db: Session, request: PriceTagRequest) -> None:
                 code="PROMOTION_MISSING",
             )
         if promo.end_date and promo.end_date < today:
+            # PRICE-TAG-A3-EXPIRED: an ended promotion still inside its type's
+            # bound (A3 180 days, standard/PP/focus to year end) still prices
+            # the tag on screen, so it exports too. Past the bound the refusal
+            # stands. Checked
+            # before `is_active` because the hourly window task switches an
+            # ended promotion off, so the flag would refuse every one of them.
+            if promotion_may_price(db, promo, today, types=types):
+                continue
             raise AppException(
                 status_code=409,
                 message=(

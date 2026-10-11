@@ -12,7 +12,7 @@ Run from sorento_crm_backend/ AFTER `alembic upgrade head`:
     python scripts/backfill_order_master_refs.py [--dry-run] [--batch 500]
 
 For every order it find-or-creates the customer (pair-match on
-lower(btrim(customer_code)) + lower(btrim(customer_name)), blank code -> DBR-<md5>)
+lower(btrim(customer_code)) + lower(btrim(customer_name)), blank code -> no customer)
 and the transporter (normalized_name = lower(btrim(transporter))) via
 `OrderService._upsert_customer_from_debtor` / `._upsert_transporter_from_text`,
 then sets the FK only where it is NULL or points at the wrong master row.

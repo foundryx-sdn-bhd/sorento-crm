@@ -76,6 +76,9 @@ FIELD_REVEAL_KEYS: tuple[tuple[str, str], ...] = (
     # (security S1) so an admin granting it knows it exposes the whole book incl. Dealer
     # o/s, PO and SPO numbers, and does not read it as another narrow field reveal.
     ("scm.low_stock_report", "Low stock report over chat (staff: full workbook incl. Dealer o/s, PO and SPO numbers)"),
+    # CA-3 (Q4 a, owner 10 Oct 2026): gates the chat analytics dataset of the report ask, a
+    # whole tool, not a field. Nobody holds it until the owner grants it here.
+    ("chatbot.analytics", "Chat analytics"),
 )
 
 #: The DO reveal keys, on for every contact until a `granted=False` row says otherwise

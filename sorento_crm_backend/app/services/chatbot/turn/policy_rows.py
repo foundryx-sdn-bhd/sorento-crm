@@ -171,6 +171,9 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
             # the `sales_analysis` override in `run_fetch`, never `tools[0]`. Migration
             # `sales_s1_reports_module` adds it to a seeded database.
             "crm_sales_analysis",
+            # REPORT-ENGINE slice 1b: an allow-list member only, picked by the
+            # `sales_ranking` override in `run_fetch`, never `tools[0]`.
+            "crm_report_ask",
         ],
         escalation_team_code="customer_service",
         switch_words=[
@@ -343,6 +346,23 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
         },
         # answer.DOMAIN_GRANT_REQUIRED["sales"]: the grant every sales figure is read under.
         reveal_key="sales_orders.sales_report",
+        supported=True,
+        ladder=[],
+    ),
+    # CA-3 (chat analytics in the bot): what customers ask the bot, over `crm_report_ask`
+    # `dataset=chat`. No switch words (the parser's `chat_report` intent names it). Seeded
+    # onto a live database by migration `ca3_0002_chat_analytics_domain`; this copy is the
+    # blank-schema fallback, as the `sales` row's is.
+    dict(
+        name="chat_analytics",
+        label="chat analytics",
+        intents=["chat_report"],
+        tools=["crm_report_ask"],
+        escalation_team_code="customer_service",
+        switch_words=[],
+        narrowing={},
+        # answer.DOMAIN_GRANT_REQUIRED["chat_analytics"]: the grant the whole domain is read under.
+        reveal_key="chatbot.analytics",
         supported=True,
         ladder=[],
     ),

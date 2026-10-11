@@ -52,6 +52,8 @@ PINNED_PICK: dict[str, str] = {
     # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain's first tool. A sales status
     # never reaches it (`run_fetch`'s three overrides pick), so no captured turn does.
     "sales": "crm_sales_report",
+    # CA-3: what customers ask the bot; one tool, picked by the `chat_report` override.
+    "chat_analytics": "crm_report_ask",
 }
 
 #: The two domains with an empty `tools` tuple. Nothing can answer them, which is why the

@@ -1110,6 +1110,7 @@ export default function ComplaintDetail({ complaintId }: ComplaintDetailProps) {
         }
       />
 
+
       {/* Complaint Information */}
       <Card>
         <CardHeader>

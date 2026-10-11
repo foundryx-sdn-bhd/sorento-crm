@@ -109,7 +109,7 @@ class TestTheLanePicksTheSalesTools:
         assert captured and captured[0][0] == "crm_sales_report", captured
 
     def test_top_selling_under_sales(self, session_factory) -> None:
-        captured = _picked("sales", "top_selling", [], top_selling={"rank_by": "quantity", "top_n": 5})
+        captured = _picked("sales", "top_selling", [], top_selling={"rank_by": "quantity", "basis": "delivered", "top_n": 5})
         assert captured and captured[0][0] == "crm_top_selling_report", captured
 
     @pytest.mark.parametrize("status", ["outstanding", "so_outstanding", "delivered"])

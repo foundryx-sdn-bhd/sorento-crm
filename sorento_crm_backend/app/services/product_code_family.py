@@ -15,14 +15,19 @@ The rule, in order:
   2. The family is every active product whose code, with separators removed, starts with
      that word, or with the same word with an "X" after its letters (SRTWC7604 and
      SRTWCX7604), and does not go on with another digit (8840 is not 88401).
-  3. The other words of the message are matched against each variant's code, name,
-     description and spec values: first two-word phrases ("p trap", "seat cover"), then
-     single words of three letters or more. A word no variant carries ("price", "need",
-     "eta") picks nothing and is ignored.
+  3. The other words of the code's OWN LINE of the message are matched against each
+     variant's code, name, description and spec values: first two-word phrases ("p trap",
+     "seat cover"), then single words of three letters or more. A word no variant carries
+     ("price", "need", "eta") picks nothing and is ignored. Another line is another ask
+     (NARROW-CODE-OWN-LINE, the owner's 15-line stock check of 6 Oct 2026: the lines
+     "SRTWT5608-FRG x 5" and "SRTWT5608-GM x 10" must not narrow the line "SRTWT5608 x 5").
   4. The variants carrying every matched phrase are the answer. When no variant carries
      all of them, the ones carrying the most are ("Did you mean" prefers the variants
      that match what was said). When nothing was matched, or every variant carries it,
      the family is left alone.
+  5. A bare base code whose variants the message also types as their own tokens is never
+     narrowed: each of those is an ask of its own, and the bare code is one too. A code
+     with its own words beside it ("Srtwc8840 seat cover") is still picked by them.
 
 The answer replaces the code token with the variants' own codes, which the resolver then
 matches exactly, so a code ask never becomes a described set.
@@ -63,7 +68,9 @@ def _code_word_for(token: str, message_words: list[str]) -> str | None:
     return best
 
 
-def _family(db: Session, code_word: str) -> list[Any]:
+def _family_rows(db: Session, code_word: str) -> list[tuple[str, dict[str, Any], str]]:
+    """`(product_code, derived spec values, searchable text)` per variant of the family
+    `code_word` names, one per code, in code order."""
     from app.models.product import Product
     from app.models.product_spec import ProductSpecifications
 
@@ -85,8 +92,9 @@ def _family(db: Session, code_word: str) -> list[Any]:
         if product.product_code in seen:
             continue
         seen.add(product.product_code)
+        values = values if isinstance(values, dict) else {}
         spec_words: list[str] = []
-        for entry in (values or {}).values() if isinstance(values, dict) else []:
+        for entry in values.values():
             value = entry.get("value") if isinstance(entry, dict) else entry
             for v in value if isinstance(value, list) else [value]:
                 if isinstance(v, str):
@@ -94,7 +102,102 @@ def _family(db: Session, code_word: str) -> list[Any]:
         text = " ".join(
             [" ".join(_words(product.product_code)), " ".join(_words(product.product_name)), " ".join(_words(product.description)), *spec_words]
         )
-        out.append((product.product_code, f" {text} "))
+        out.append((product.product_code, values, f" {text} "))
+    return out
+
+
+def _family(db: Session, code_word: str) -> list[Any]:
+    return [(code, text) for code, _values, text in _family_rows(db, code_word)]
+
+
+def _holds(values: dict[str, Any], key: str, wanted: Any) -> bool:
+    """Does a variant's derived spec row carry `wanted` under `key`? A string value
+    compares case-blind; a number as a number; a list value holds it when any member
+    does. A variant with no value under the key does not hold it."""
+    stored = values.get(key) if isinstance(values, dict) else None
+    actual = stored.get("value") if isinstance(stored, dict) else stored
+    if actual is None:
+        return False
+    for candidate in actual if isinstance(actual, list) else [actual]:
+        if isinstance(candidate, str) and isinstance(wanted, str):
+            if candidate.strip().casefold() == wanted.strip().casefold():
+                return True
+            continue
+        if isinstance(candidate, bool) or isinstance(wanted, bool):
+            if candidate == wanted:
+                return True
+            continue
+        try:
+            if float(candidate) == float(wanted):
+                return True
+        except (TypeError, ValueError):
+            if candidate == wanted:
+                return True
+    return False
+
+
+def narrow_code_tokens_by_specs(
+    db: Session,
+    *,
+    tokens: list[str] | None,
+    allowed_types: list[str] | None,
+    specs: list[dict[str, Any]] | None,
+) -> list[str] | None:
+    """`tokens` with each CODE token replaced by the variants of its family that carry
+    every grounded spec in `specs`, or None when nothing changes.
+
+    STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a), 6 Oct 2026 ("How about p trap" after
+    "SRTWC286-SH x 10" counted 182 P trap water closets class-wide): a spec said right
+    after a product answer is that product's VARIANT. The parser decides it carries the
+    product (`entity_op "reuse"` plus the specification entity, the trap-specs addendum);
+    this is the resolver half. `narrow_code_tokens` above reads the variant words OFF THE
+    MESSAGE and needs the code word in it, which a carried product never is, so the
+    grounded spec VALUES (`extracted_specs`, the registry's own keys and choices) pick
+    the variant here instead. No word is read.
+
+    The family rule is `narrow_code_tokens`'s own (rule 2). A code whose family has no
+    variant carrying the spec is left as it is, exactly as a word no variant carries is
+    (rule 3): the product itself is answered, never a silent widening to the class. A
+    family every variant of which carries the spec is left alone too (rule 4).
+    """
+    if not tokens or not specs:
+        return None
+    wanted = [
+        (str(s.get("key")), s.get("value"))
+        for s in specs
+        if isinstance(s, dict) and s.get("key") and s.get("key") != "brand" and s.get("value") is not None
+    ]
+    if not wanted:
+        return None
+    aligned = bool(allowed_types) and len(allowed_types or []) == len(tokens)
+    replaced: dict[int, list[str]] = {}
+    for i, token in enumerate(tokens):
+        kind = str((allowed_types or [])[i] or "").lower() if aligned else ""
+        if kind not in ("", "product"):
+            continue
+        code_word = _fold(token)
+        if not _CODE_WORD.match(code_word):
+            continue
+        family = _family_rows(db, code_word)
+        if len(family) < 2:
+            continue
+        picked = [code for code, values, _text in family if all(_holds(values, key, value) for key, value in wanted)]
+        if not picked or len(picked) == len(family):
+            continue
+        if any(_fold(code) == code_word for code in picked):
+            # The product itself carries the spec ("how about s trap" over an S trap):
+            # it is its own answer, whatever its siblings carry. Replacing an exact code
+            # by itself plus its siblings would turn an answered product into a
+            # which-one pick (reviewer, 6 Oct 2026).
+            continue
+        replaced[i] = picked
+    if not replaced:
+        return None
+    out: list[str] = []
+    for i, token in enumerate(tokens):
+        for code in replaced.get(i, [token]):
+            if code not in out:
+                out.append(code)
     return out
 
 
@@ -126,7 +229,10 @@ def _terms(descriptor: list[str], family: list[tuple[str, str]]) -> list[str]:
 def pick_variants(db: Session, code_word: str, descriptor: list[str]) -> tuple[list[str], list[str]] | None:
     """`(variant codes, the phrases that picked them)`, or None when the descriptor picks
     nothing (no family, or no word of it is carried by any variant)."""
-    family = _family(db, code_word)
+    return _pick(_family(db, code_word), descriptor)
+
+
+def _pick(family: list[tuple[str, str]], descriptor: list[str]) -> tuple[list[str], list[str]] | None:
     if not family:
         return None
     terms = _terms(descriptor, family)
@@ -152,18 +258,44 @@ def narrow_code_tokens(
     if not tokens:
         return None
     # The code is a whole word of the message ("SRTWC8840-SC" is one code, never
-    # SRTWC8840 then "SC"); the descriptor is read word by word around it.
-    message = [_fold(w) for w in str(query or "").split() if _fold(w)]
+    # SRTWC8840 then "SC"); the descriptor is read word by word around it, on the
+    # code's own line only: a multi-line message is one ask per line.
+    lines = [line.split() for line in str(query or "").splitlines()]
+    message = [_fold(w) for words in lines for w in words if _fold(w)]
     if not message:
         return None
+    folded_tokens = [_fold(t) for t in tokens]
     replaced: dict[int, list[str]] = {}
     consumed: set[str] = set()
     for i, token in enumerate(tokens):
+        folded = folded_tokens[i]
         code_word = _code_word_for(str(token or ""), message)
         if not code_word:
             continue
-        descriptor = [w for raw in str(query or "").split() if _fold(raw) != code_word for w in _words(raw) if not _CODE_WORD.match(w)]
-        picked = pick_variants(db, code_word, descriptor)
+        # The code's own line(s): the ones holding the code word and, when the token folds
+        # more than the code (the words typed beside it), the token's words too, so a code
+        # typed on two lines with two descriptors reads each line for its own token. The
+        # bare code leaves the lines where another token typed this code with words beside
+        # it ("SRTWC8840 x 1" over "SRTWC8840 p trap"). A token with no such line (the
+        # parser shortened "white seat cover" to "seat cover") reads every line of its code.
+        code_lines = [words for words in lines if any(_fold(w) == code_word for w in words)]
+        joined = ["".join(_fold(w) for w in words) for words in code_lines]
+        longer = [f for f in folded_tokens if f != code_word and f.startswith(code_word)] if folded == code_word else []
+        own_lines = [
+            words for words, text in zip(code_lines, joined) if folded in text and not any(f in text for f in longer)
+        ] or code_lines
+        descriptor = [
+            w for words in own_lines for raw in words if _fold(raw) != code_word for w in _words(raw) if not _CODE_WORD.match(w)
+        ]
+        family = _family(db, code_word)
+        variants = {_fold(code) for code, _ in family} - {code_word}
+        if folded == code_word and any(f in variants for f in folded_tokens):
+            # "SRTWT5608 x 5" beside "SRTWT5608-FRG x 5" and "SRTWT5608-GM x 10": the
+            # variants are asks of their own, so the bare code is one too, never a
+            # family to pick from. A code with its own words beside it is not bare.
+            picked = None
+        else:
+            picked = _pick(family, descriptor)
         if picked is None:
             if _fold(token) != code_word:
                 # "Srtwc7604ptrap" whose words picked nothing: the code alone, rather

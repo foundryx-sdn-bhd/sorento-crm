@@ -1,0 +1,38 @@
+Product: all
+Customer: Dealer A Sdn Bhd
+Location: all
+Order date: all
+
+*Delivery order outstanding*
+Delivery orders: 148
+DO qty: 1,039
+Delivered: 0
+Outstanding: 1,039
+DO date range: 12/03/2026 to 05/10/2026
+*_By location_*
+BRW-IB: 693 (O/S: 693)
+MWH-IB: 346 (O/S: 346)
+*_By product_*
+SRTWT7001: 96 (O/S: 96)
+SRTWT7002: 60 (O/S: 60)
+SRTWT7003: 48 (O/S: 48)
+SRTWT7004: 40 (O/S: 40)
+SRTWT7005: 36 (O/S: 36)
+SRTWT7006: 30 (O/S: 30)
+SRTWT7007: 24 (O/S: 24)
+SRTWT7008: 20 (O/S: 20)
+SRTWT7009: 18 (O/S: 18)
+SRTWT7010: 16 (O/S: 16)
+SRTWT7011: 15 (O/S: 15)
+SRTWT7012: 14 (O/S: 14)
+SRTWT7013: 12 (O/S: 12)
+SRTWT7014: 12 (O/S: 12)
+SRTWT7015: 10 (O/S: 10)
+SRTWT7016: 10 (O/S: 10)
+SRTWT7017: 8 (O/S: 8)
+SRTWT7018: 8 (O/S: 8)
+SRTWT7019: 6 (O/S: 6)
+SRTWT7020: 4 (O/S: 4)
+... and 292 more products
+
+Reply 1 for the delivery order list.

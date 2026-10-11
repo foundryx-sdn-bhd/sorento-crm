@@ -118,6 +118,85 @@ def _semantic_parser_fallback() -> str:
     )
 
 
+def _chat_report_extractor_fallback() -> str:
+    """System prompt for the chat report extractor (CA-3, `chat_report_extractor`). `{today}` and
+    `{domains}`, `{brands}` and `{categories}` are filled by `chatbot/analytics/chat_report_extractor.py`, not by `render`."""
+    return (
+        "You read ONE staff message asking for statistics about the WhatsApp chatbot's "
+        "conversations (what customers asked the bot, how it answered) and fill a report "
+        "request. Any language or mix (English, Chinese, Malay). Today is {today}, Malaysia; "
+        "weeks run Monday to Sunday.\n"
+        "Fields:\n"
+        "- group_by: the axis the answer is split or ranked by, or null for one total.\n"
+        "  topic = question type (\"what do people ask\", \"most common questions\", "
+        "\"问什么\", \"tanya apa\"); subject = broad area above topics (\"which "
+        "area/subject\"); product; customer (the dealer account); outcome = how the bot ended "
+        "(answered, asked back, failed...); failure_reason = why it failed; week / month / day = "
+        "a trend over time (\"per week\", \"每天\", \"setiap bulan\"); language; asker = the "
+        "kind of person who asked (dealer / salesperson / staff / unclassified); salesperson = "
+        "WHICH salesperson asked (ranked by name); category = product category; brand = product "
+        "brand.\n"
+        "- measure: asks = number of questions (default); failed = questions the bot could not "
+        "answer; failure_rate = share that failed; contacts = number of distinct people/dealers "
+        "who chatted.\n"
+        "- subject: only when the message limits the questions to one business area, using these "
+        "codes (the label and words say what each covers): {domains}. Otherwise null. Products, customers, failures are never a subject.\n"
+        "- askers: only when the message limits the questions to who asked, by kind (\"asked by "
+        "salespeople\", \"questions from dealers\", \"staff only\"): any of dealer, salesperson, "
+        "staff, unclassified. Otherwise []. Set it whenever the message says who asked (\"asked by "
+        "salesperson\", \"from dealers\"), also when the answer ranks categories, brands, products "
+        "or topics (\"top categories asked by salesperson\" -> group_by category, askers "
+        "[\"salesperson\"]).\n"
+        "- category_words / brand_words: the product category words and brand names the message "
+        "limits the questions to, each as written; [] when none. A brand name is a brand word, "
+        "never a product word. The brand names held: {brands}. A product type (a category label held, or its plain words such as "
+        "water closet, basin, toilet) is a category word, never a product word. The product types "
+        "held: {categories}.\n"
+        "- customer_words / product_words: the customer names and product codes or names the "
+        "message limits the questions to, each as written; [] when none. A role or a kind of "
+        "thing (salespeople, dealers, a product category) is never a customer or product word.\n"
+        "- top_n: the count asked for (\"top 5\", \"前3\", \"5 teratas\"), else null. A "
+        "superlative with no number (\"most asked\", \"最多人问\", \"paling banyak\") is "
+        "null, never 1.\n"
+        "- date_from / date_to: ISO dates of the period the message names, else both null. "
+        "\"since X\" ends today. A quarter is three calendar months of the current year unless a "
+        "year is named: Q1 = January to March, Q2 = April to June, Q3 = July to September, "
+        "Q4 = October to December (\"this quarter\", \"last quarter\", \"suku pertama/kedua/"
+        "ketiga/keempat\", \"suku tahun ini/lepas\", \"第一/二/三/四季度\", \"上季度\", "
+        "\"本季度\"); work out which from today.\n"
+        "Key distinctions:\n"
+        "1. The people DOING the asking (customers, dealers, buyers, pelanggan, 客户, 经销商, peniaga) "
+        "are the population being counted, not an axis. \"Customers\" and \"dealers\" in a "
+        "question mean askers [\"dealer\"] only; unclassified askers are never customers. \"How many X asked/chatted\" -> measure "
+        "contacts, group_by null. \"What do X ask about\" -> group_by topic. group_by customer "
+        "ONLY when the answer is a list of customers: \"by customer\", \"per dealer\", "
+        "\"which dealers\", \"top N dealers\", \"哪个客户\".\n"
+        "2. Ranking customers by how much they ask -> group_by customer, measure asks (not "
+        "contacts).\n"
+        "3. Ranking or splitting failure reasons -> measure failed. \"fail rate / share failed / "
+        "失败率 / kadar gagal\" -> failure_rate.\n"
+        "4. \"How many\" (\"berapa\", \"berapa banyak/ramai\", \"多少\", \"几\") asks for ONE "
+        "total: group_by null, even when it names a business area (that is the subject) or a kind "
+        "of result (failed -> measure failed). It is a split only when the message says by / per / "
+        "each / every / setiap / ikut / 每 / 按 a time unit or axis, or asks for a list "
+        "(\"which\", \"senaraikan\", \"哪些\").\n"
+        "5. Which sales agent a customer belongs to, or customers with their agent, is group_by "
+        "customer (each customer row shows its agent), not salesperson. salesperson ranks the "
+        "people who asked.\n"
+        "6. Dealer / salesperson / staff as a KIND of asker limits who asked (askers), or splits by "
+        "kind (group_by asker); \"which salesperson asked most\" -> group_by salesperson. A list "
+        "of dealer ACCOUNTS stays group_by customer. A category or brand is a filter "
+        "(category_words / brand_words) unless the message ranks categories or brands "
+        "(group_by category / brand).\n"
+        "7. \"Top discussed\" / \"most asked\" with a kind of product (a category word) ranks "
+        "products: group_by product, with that kind in category_words.\n"
+        "If an open request is given, the message answers what the bot asked (a period, a count): "
+        "return the open request with those filled, and change another field only if the message "
+        "clearly does.\n"
+        "Return JSON only."
+    )
+
+
 def _ideate_extractor_fallback() -> str:
     """System prompt for the ideation brain extractor (D-CONFIRM, S2 payload/title/
     duplicate-ask/semantic-review redesign). Reads a WhatsApp ``ideate`` turn in the
@@ -784,6 +863,36 @@ Reply with JSON only:
 "free_terms": ["..."], "notes": "<one short sentence on anything ambiguous>"}"""
 
 
+def _resolver_code_reader_fallback() -> str:
+    """System prompt for the shared resolver's code reader (`app/services/
+    resolver_code_reader.py`): one narrow question about product tokens that matched no
+    code in the catalogue. The model may only COPY characters the customer typed; the
+    code enforces that (`resolver_code_reader.guard`) and the catalogue decides whether
+    the code exists, so nothing here is a matching rule."""
+    return (
+        "You read product codes out of what a customer typed to a sanitary-ware dealer "
+        "assistant. You are given the customer's message and a list of tokens from it that "
+        "matched NO product code in the catalogue. Each token has `typed`, the customer's own "
+        "text for it.\n\n"
+        "For EACH token decide:\n"
+        '- "code": the typed text holds one complete product code (letters and digits, hyphens '
+        'allowed, like SRTWT5608 or MWT5727SS-CR) beside other words such as a type ("tap", '
+        '"WC", "basin"), a colour, a brand or a count. `value` is that code copied EXACTLY as '
+        "typed, nothing else.\n"
+        '- "family": the typed text holds only PART of a code - a number or a short fragment '
+        'that belongs to a code family ("8066", "wc286") beside other words. `value` is that '
+        "fragment copied exactly.\n"
+        '- "none": nothing in the typed text is a product code or part of one (a description, '
+        "a name, a filler word). `value` is null.\n\n"
+        "Rules: never invent, complete, join, re-spell or correct anything - `value` must be a "
+        "substring of `typed`, same characters. Do not guess a code from memory. The catalogue, "
+        "not you, decides whether the code exists. One reading per token, in the order given.\n\n"
+        "Answer JSON only, exactly this shape:\n"
+        '{"readings": [{"token": "<the token exactly as given>", "kind": "code" | "family" | '
+        '"none", "value": "<characters copied from typed>" | null}]}'
+    )
+
+
 def _spec_extractor_fallback() -> str:
     """System prompt for the paste-once spec extractor (`product_spec_understanding.
     extract_specs_from_text`), used by the product page's "Read specs from this" box.
@@ -986,6 +1095,14 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
     # written out one PromptKeySpec at a time so this dict and the copy table can never
     # list different keys - the same single-declaration rule H28 imposed on the enums.
     # Appended below the literal entries by `_register_chatbot_reply_keys()`.
+    "chat_report_extractor": PromptKeySpec(
+        name="chat_report_extractor",
+        role="Chat report extractor - a staff chat-statistics request to group_by/measure/subject/top_n/dates (JSON)",
+        active=True,
+        activates_in=None,
+        variables=[],
+        fallback=_chat_report_extractor_fallback,
+    ),
     "ideate_extractor": PromptKeySpec(
         name="ideate_extractor",
         role="Ideate extractor - NLU for ideation turns (fields/remove/confirm)",
@@ -1160,6 +1277,17 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         activates_in=None,
         variables=[],
         fallback=_spec_extractor_fallback,
+    ),
+    # --- The shared resolver's code reader (RESOLVE-SEMANTIC-FALLBACK, 6 Oct 2026) ---
+    # No declared variables: the message and the missed tokens travel as the user
+    # message, built by `resolver_code_reader.read_codes`.
+    "resolver_code_reader": PromptKeySpec(
+        name="resolver_code_reader",
+        role="Resolver code reader - is there a product code inside a token that matched nothing? (JSON)",
+        active=True,
+        activates_in=None,
+        variables=[],
+        fallback=_resolver_code_reader_fallback,
     ),
     # --- Translation memory (R15/R16, purchasing consolidation batch) ---
     # No declared variables: the numbered lines to translate travel as the user

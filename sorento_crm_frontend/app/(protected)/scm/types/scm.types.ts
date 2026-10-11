@@ -6,6 +6,8 @@
  * in M2/M3 (avg-daily-demand, days-of-cover, ROP, low/overstock composition).
  */
 
+import type { PlanningChangeFromTo } from '@/app/(protected)/project-sales/_shared/types/planningChange.types';
+
 /** Health-state vocabulary. Backend-real: stockout (rendered "Out of stock"), dead,
  *  low (rendered "Low stock" - stocked but net <= demand-aware reorder point, M8-B),
  *  healthy, incoming, overstock (days-of-cover over the ceiling, server-computed). */
@@ -373,6 +375,9 @@ export interface SalesOrderLine {
     applied_state: string;
     /** `null` on a row Apply has not written yet. */
     result?: { executed_reallocations: string[]; released_documents: string[] } | null;
+    /** The row's own sides, same shape as the board feed's `from`/`to`. */
+    from?: PlanningChangeFromTo | null;
+    to?: PlanningChangeFromTo | null;
   } | null;
 }
 
@@ -494,6 +499,8 @@ export interface SalesOrder {
   /** Which of the four rules wrote `project_label` - decides the muted word shown next to
    *  it (`Inquiry sheet` / `Note` / `AutoCount ref` / `Delivery address`). */
   project_label_source?: 'inquiry' | 'note' | 'ref' | 'delivery' | null;
+  /** The customer's own PO number as AutoCount printed it; read-only, null when blank. */
+  po_ref?: string | null;
   /** Every distinct location its lines ship from. Plural: one order can land in two. */
   stock_locations?: string[];
   /** The planning class this order was classified into, or `null` when nobody has ever

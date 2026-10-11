@@ -76,6 +76,8 @@ def _parser_output(**overrides: Any) -> dict[str, Any]:
         "continuation": None,
         "group_by": None,
         "top_n": None,
+        "ranking_refine": None,
+        "measure": None,
         "document": None,
         "status": None,
         "answers_open_question": {"resolved": None, "picks": None, "answer": None},

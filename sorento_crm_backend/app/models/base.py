@@ -75,8 +75,10 @@ _BRAND_SCOPE_KEY = "brand_scope"
 def set_brand_scope(db, scope: Optional[FrozenSet[str]]) -> None:
     """Stamp the contact's accessible brand ids on the session (None = every brand).
 
-    CONTACT-BRAND-SCOPE: ``do_orm_execute`` adds a ``Product.brand_id IN scope`` criterion
-    while a frozenset is set; None / absent adds nothing (unscoped is byte-identical)."""
+    CONTACT-BRAND-SCOPE: ``do_orm_execute`` adds the ``contact_brand_scope.brand_predicate``
+    criterion on Product while a frozenset is set (per company: the list restricts only the
+    companies that own a scoped brand, other companies' products pass, a NULL brand inside a
+    restricted company is out); None / absent adds nothing (unscoped is byte-identical)."""
     if scope:
         db.info[_BRAND_SCOPE_KEY] = frozenset(str(b) for b in scope)
     else:

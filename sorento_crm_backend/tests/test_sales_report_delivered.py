@@ -71,14 +71,15 @@ def _world(db, *, name=None):
 
 
 def test_dataset_catalog_dimensions_and_measures():
-    """AC-SR-20/22: the new dataset is importable and its catalog is keyed exactly."""
+    """AC-SR-20/22: the new dataset is importable and its catalog is keyed exactly.
+    `brand` and `category` added by REPORT-ENGINE slice 1a (PLAN-report-engine.md section 10)."""
     from app.services.reports.datasets.delivery_order_lines import DATASET
 
     assert DATASET.key == "delivery_order_lines"
     dims = {c.key for c in DATASET.columns if c.tag == "dimension"}
     measures = {c.key for c in DATASET.columns if c.tag == "measure"}
     assert dims == {
-        "customer", "product", "sales_agent", "location", "channel",
+        "customer", "product", "brand", "category", "sales_agent", "location", "channel",
         "day", "week", "month", "delivery_order", "all",
     }, dims
     assert measures == {"amount", "qty"}, measures

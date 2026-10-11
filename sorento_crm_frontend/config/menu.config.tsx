@@ -64,9 +64,12 @@ import { type MenuConfig } from './types';
 export const MENU_SIDEBAR: MenuConfig = [
   { heading: 'OVERVIEW' },
   {
+    // The home page is the My pending widget (/conversation-sla-tracking/my-pending) over
+    // the SLA KPI dashboard (sla.kpi.view), so either read shows it (MENU-PERM-GATE).
     title: 'Dashboards',
     icon: LayoutGrid,
     path: '/',
+    permissionsAny: ['sla_management.conversation_sla_tracking.view', 'sla.kpi.view'],
   },
   {
     title: 'Ideas',
@@ -229,24 +232,29 @@ export const MENU_SIDEBAR: MenuConfig = [
           {
             title: 'All Promotions',
             path: '/marketing-management/promotions',
+            permission: 'marketing.promotions.view',
           },
           {
             title: 'Promotion Attachments',
             path: '/marketing-management/promotion-attachments',
+            permission: 'marketing.promotion_attachments.view',
           },
           {
             title: 'Promotion Types',
             path: '/marketing-management/promotion-types',
+            permission: 'marketing.promotion_types.view',
           },
           {
             title: 'Promotion Products',
             path: '/marketing-management/promotion-products',
+            permission: 'marketing.promotion_products.view',
           },
         ],
       },
       {
         title: 'Campaigns',
         path: '/marketing-management/campaigns',
+        permission: 'marketing.campaigns.view',
       },
     ],
   },
@@ -600,6 +608,7 @@ export const MENU_SIDEBAR: MenuConfig = [
       {
         title: 'Complaints',
         path: '/complaint-management/complaints',
+        permission: 'complaint_management.complaints.view',
       },
       {
         title: 'Root Causes',
@@ -621,6 +630,7 @@ export const MENU_SIDEBAR: MenuConfig = [
       {
         title: 'SLA Policies',
         path: '/sla-management/sla-policies',
+        permission: 'sla_management.sla_policies.view',
       },
       {
         title: 'Conversations',
@@ -630,22 +640,29 @@ export const MENU_SIDEBAR: MenuConfig = [
       {
         title: 'Conversation SLA Tracking',
         path: '/sla-management/conversation-sla-tracking',
+        permission: 'sla_management.conversation_sla_tracking.view',
       },
       {
+        // The same list as Conversation SLA Tracking with `scope=form`, so the same read.
         title: 'Form SLA Tracking',
         path: '/sla-management/form-sla-tracking',
+        permission: 'sla_management.conversation_sla_tracking.view',
       },
       {
+        // /conversation-sla-tracking/team-pending: the team's slice of the same resource.
         title: 'My Team Tasks',
         path: '/sla-management/team-pending',
+        permission: 'sla_management.conversation_sla_tracking.view',
       },
       {
         title: 'Form SLA Configuration',
         path: '/sla-management/form-sla-config',
+        permission: 'sla_management.form_sla_config.view',
       },
       {
         title: 'SLA Event Logs',
         path: '/sla-management/escalation-logs',
+        permission: 'sla_management.escalation_logs.view',
       },
       {
         title: 'Message Snippets',
@@ -695,6 +712,7 @@ export const MENU_SIDEBAR: MenuConfig = [
       {
         title: 'Forms',
         path: '/forms-management/forms',
+        permission: 'forms.forms.view',
       },
     ],
   },
@@ -716,16 +734,20 @@ export const MENU_SIDEBAR: MenuConfig = [
     moduleKey: 'resources',
     children: [
       {
+        // The drive: the directory tree over the attachments in it, so either read shows it.
         title: 'Files',
         path: '/resource-management/attachment-directories',
+        permissionsAny: ['resource.attachments.view', 'resource.attachment_directories.view'],
       },
       {
         title: 'Trash',
         path: '/resource-management/trash',
+        permission: 'resource.attachments.view',
       },
       {
         title: 'Attachment Types',
         path: '/resource-management/attachment-types',
+        permission: 'resource.attachment_types.view',
       },
     ],
   },
@@ -885,6 +907,7 @@ export const MENU_SIDEBAR: MenuConfig = [
           {
             title: 'Integrations',
             path: '/integration-management/integrations',
+            permission: 'integration.integrations.view',
           },
           {
             title: 'Integration Logs',
@@ -916,6 +939,26 @@ export const MENU_SIDEBAR: MenuConfig = [
           {
             title: 'Chat History',
             path: '/system-management/chat-history',
+            permission: 'system.chat_history.view',
+          },
+          {
+            title: 'Chat Overview',
+            path: '/system-management/chat-overview',
+            permission: 'chatbot.analytics.view',
+          },
+          {
+            title: 'Top Asks',
+            path: '/system-management/top-asks',
+            permission: 'chatbot.analytics.view',
+          },
+          {
+            title: 'Bot Failures',
+            path: '/system-management/bot-failures',
+            permission: 'chatbot.analytics.view',
+          },
+          {
+            title: 'Topic Audit',
+            path: '/system-management/topic-audit',
             permission: 'system.chat_history.view',
           },
           {
@@ -2216,6 +2259,26 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
       {
         title: 'Chat History',
         path: '/system-management/chat-history',
+        permission: 'system.chat_history.view',
+      },
+      {
+        title: 'Chat Overview',
+        path: '/system-management/chat-overview',
+        permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Top Asks',
+        path: '/system-management/top-asks',
+        permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Bot Failures',
+        path: '/system-management/bot-failures',
+        permission: 'chatbot.analytics.view',
+      },
+      {
+        title: 'Topic Audit',
+        path: '/system-management/topic-audit',
         permission: 'system.chat_history.view',
       },
       {

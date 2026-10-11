@@ -314,8 +314,9 @@ _HANDOVER_VERB_LABEL = {
     IV_CHANGE_SO: "CHANGE SO NO",
     IV_CANCEL_BALANCE: "CANCEL BALANCE",
     # OI-PRODUCT-FOLLOW R4 (review S1): a product-only settle earns no qty/date verb, and
-    # the email's headline would otherwise print blank.
-    "CHANGE_ITEM_CODE": "CHANGE ITEM CODE",
+    # the email's headline would otherwise print blank. Worded as REMARK words it
+    # (OI-EMAIL-PRINT, owner 9 Oct).
+    "CHANGE_ITEM_CODE": "NEW ITEM CODE",
 }
 
 
@@ -372,6 +373,16 @@ def _handover_verb_keys(
     return []
 
 
+#: REMARK's words for a product change (owner, 9 Oct): the new code already prints in ITEM
+#: CODE, so the remark only says that it changed.
+_NEW_ITEM_CODE = "NEW ITEM CODE"
+
+#: Where the handover email's REMARK words a verb differently from `REMARK_SPELLING`, which
+#: stays the client's own spelling for the OI worklist and export (`_remark`). Owner, 9 Oct
+#: (Q-B): "PRE-ORDERED" alone; the word already means "do not order".
+_HANDOVER_REMARK_SPELLING = {**REMARK_SPELLING, IV_PRE_ORDERED: "PRE-ORDERED"}
+
+
 def handover_remark(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> str:
@@ -381,37 +392,44 @@ def handover_remark(
     `OrderInquiryRow` or a lightweight stand-in carrying the same attributes, which is
     exactly why this is a pure function rather than a method: it never queries anything.
 
-    * `kind="raised"`: the verb's own spelling (`REMARK_SPELLING`), an `ORDER_BACK`
-      appending its cited document, and any CS `note` appended after " - ".
-    * `kind="settled"`: the date verb (ADVANCE/DELAY) and the qty phrase (`CANCEL BALANCE
-      N NOS` / `ORDER N`), whichever of the two actually moved, joined by ", " when both did.
-    * `kind="cancelled"`: `CANCEL BALANCE <old qty> NOS` - the honest end of a line the book
-      reduced to nothing.
+    Owner, 9 Oct (OI-EMAIL-PRINT, `REMARK-wording-oi-email-print-09oct.md`): "simple and
+    concise, ideally 3 words or fewer". REMARK says what purchasing must do and repeats no
+    number or code another column already shows: ITEM CODE prints the new code, QTY /
+    NEW QTY and DELIVERY / NEW DATE print the moves.
+
+    * `kind="raised"`: the verb's email spelling (`_HANDOVER_REMARK_SPELLING`); a CHANGE SO
+      NO whose target is known reads `MOVED TO <SO>`; an ORDER BACK prints no document (Q-A).
+      `row.note` itself is NEVER printed (OI-EMAIL-PRINT, owner 9 Oct): it is a bag of
+      internal stamps ("Planning keeps this Buy: ...", "Replaces 20 used; ...",
+      "Order-back: ...", "Linked to ...") that made REMARK wrap over several lines and
+      leaked planning notes into a mail purchasing prints. It stays on the row and on the
+      OI worklist, one click away through the email's own button.
+    * `kind="settled"`: the date verb (ADVANCE/DELAY) and the qty phrase (`CANCEL N` /
+      `ORDER N`), whichever of the two actually moved, joined by ", " when both did.
+    * `kind="cancelled"`: `CANCEL ALL` - the honest end of a line the book reduced to
+      nothing (QTY prints 0; the old quantity stays the row's own record).
+    * A product change on either kind adds `NEW ITEM CODE`.
 
     `qty` as `_handover_settle_diff` reads it: the line's new total for a settled line
     told off a row whose own quantity did not move.
     """
     if kind == "raised":
-        label = REMARK_SPELLING.get(row.verb, row.verb or "")
-        if row.verb == IV_ORDER_BACK and getattr(row, "cited_document", None):
-            label = f"{label} {row.cited_document}"
-        note = getattr(row, "note", None)
-        # AC-R2-06: a `was` carrying `qty` or `delivery_date` means the r2 layout
-        # already prints the previous value in its own CHANGE TO columns, so the
-        # note's own ISO-dated sentence ("Was 2026-08-25") would only repeat it in a
-        # different format - the REMARK stays the bare verb. A CHANGE SO row's `was`
-        # carries `so_number`, not a date/qty, so its note (naming the source order)
-        # still prints.
-        skip_note = bool(was) and ("qty" in was or "delivery_date" in was)
-        if note and not skip_note:
-            label = f"{label} - {note}"
-        old_code = (was or {}).get("item_code")
-        if old_code:
-            # OI-PRODUCT-FOLLOW R4: a fresh row raised on the line's new product.
-            label = (
-                f"{label}, CHANGE ITEM CODE TO "
-                f"{getattr(row, 'item_code', None) or '-'} (WAS {old_code})"
+        label = _HANDOVER_REMARK_SPELLING.get(row.verb, row.verb or "")
+        if row.verb == IV_CHANGE_SO:
+            # The one fact a note carries that IS the instruction: where the line moved
+            # (`_change_note`'s "Moved to <SO>" for a repoint). Read back off that fixed
+            # stamp, the way `_amendment_row_was` reads "Was dd/mm/yyyy".
+            # Anchored to one order-number token, so the book re-upload's cascade stamp
+            # ("Moved to the <x> line of <doc> after the book was re-uploaded") never
+            # matches and never leaks into REMARK.
+            moved = re.search(
+                r"(?:^|; )Moved to ([A-Z0-9][^\s;]*)\s*(?:;|$)", getattr(row, "note", None) or ""
             )
+            if moved:
+                label = f"MOVED TO {moved.group(1)}"
+        if (was or {}).get("item_code"):
+            # OI-PRODUCT-FOLLOW R4: a fresh row raised on the line's new product.
+            label = f"{label}, {_NEW_ITEM_CODE}"
         return label
     if kind == "settled":
         date_key, qty_key, qty_diff = _handover_settle_diff(row, was, qty)
@@ -419,20 +437,16 @@ def handover_remark(
         if date_key:
             parts.append(REMARK_SPELLING.get(date_key, date_key))
         if qty_key == IV_CANCEL_BALANCE:
-            parts.append(f"CANCEL BALANCE {_qty_str(qty_diff)} NOS")
+            parts.append(f"CANCEL {_qty_str(qty_diff)}")
         elif qty_key == IV_ORDER:
             parts.append(f"ORDER {_qty_str(qty_diff)}")
         # OI-PRODUCT-FOLLOW R4: AutoCount swapped the line's product and Confirm moved
         # the row onto it - purchasing reads the change in the same REMARK cell.
-        old_code = (was or {}).get("item_code")
-        if old_code:
-            parts.append(
-                f"CHANGE ITEM CODE TO {getattr(row, 'item_code', None) or '-'} (WAS {old_code})"
-            )
+        if (was or {}).get("item_code"):
+            parts.append(_NEW_ITEM_CODE)
         return ", ".join(parts)
     if kind == "cancelled":
-        old_qty = (was or {}).get("qty")
-        return f"CANCEL BALANCE {_qty_str(_dec(old_qty))} NOS"
+        return "CANCEL ALL"
     return ""
 
 
@@ -656,6 +670,19 @@ TIER_SAME_GROUP = 2
 TIER_POOL = 3
 TIER_SIBLING = 4
 TIER_ELSEWHERE = 5
+
+
+def _is_borrow_order_back(row: Any) -> bool:
+    """A BORROW's order-back (`ProjectSupplyService._borrow_shortfalls`, every note it writes
+    opens "Order-back:"), as against the Amend "Order back" Buy row on the same verb. Both can
+    sit on one line once a borrow's order-back hangs on the borrowing line
+    (`PLAN-borrow-location-only-8oct.md` K7), so the line alone no longer tells them apart.
+    A row naming its cover is step 3's and is neither."""
+    return (
+        row.verb == IV_ORDER_BACK
+        and not (row.covered_by or "").strip()
+        and (row.note or "").startswith("Order-back:")
+    )
 
 
 def _also_cited(note: Optional[str]) -> List[str]:
@@ -1035,15 +1062,18 @@ class ProjectOrderInquiryService:
             # `CANCEL_BALANCE` row a book-change wrote for a qty decrease is correctly
             # picked up and retired here too, exactly like one this confirm raised itself
             # - one header, one supersede rule, no second inquiry to leave stale.
-            rows = (
-                self.db.query(OrderInquiryRow)
+            rows = [
+                row
+                for row in self.db.query(OrderInquiryRow)
                 .filter(
                     OrderInquiryRow.order_inquiry_id == inquiry.id,
                     OrderInquiryRow.so_line_id == line.id,
                     OrderInquiryRow.verb.in_(owned_verbs),
                 )
                 .all()
-            )
+                # K7: a borrow's order-back on this line is `_raise_borrow_shortfalls`'s.
+                if not _is_borrow_order_back(row)
+            ]
             # A still-raised CANCEL_BALANCE exception is superseded like a raised ORDER
             # row, or every reconfirm at the same lower need would stack another copy.
             # `placed` sums ORDER rows only: the exception row is a message, not supply.
@@ -1681,8 +1711,8 @@ class ProjectOrderInquiryService:
                 )
                 self.db.add(cancel_balance_row)
                 if not line_total_told:
-                    # EMAIL-HANDOVER-QTY: the settled line's `CANCEL BALANCE n NOS`
-                    # already says what this exception row says.
+                    # EMAIL-HANDOVER-QTY: the settled line's `CANCEL n` already says
+                    # what this exception row says.
                     self._record_handover(
                         cancel_balance_row, kind="raised", actor_user_id=actor_user_id
                     )
@@ -2107,7 +2137,7 @@ class ProjectOrderInquiryService:
                 line["was"] = was
                 line["item_code"] = live[0].item_code
                 item["item_code"] = live[0].item_code
-                phrase = f"CHANGE ITEM CODE TO {live[0].item_code} (WAS {old_code})"
+                phrase = _NEW_ITEM_CODE
                 line["remark"] = f"{line['remark']}, {phrase}" if line.get("remark") else phrase
                 if "CHANGE_ITEM_CODE" not in item["verb_keys"]:
                     item["verb_keys"] = [*item["verb_keys"], "CHANGE_ITEM_CODE"]
@@ -3975,12 +4005,12 @@ class ProjectOrderInquiryService:
         """
         # `ORDER_BACK` is written by TWO paths since part 2 section 4b: this one, for the
         # hole a borrow left at the donor's location, and the Buy line CS marked "Order
-        # back" in Amend. The two never meet on one sales-order LINE - the whole-line rule
-        # (AC-L5) makes a line either wholly stock or wholly Buy - so the line is what
-        # tells them apart, and this method leaves the Buy-line rows to
-        # `refresh_for_decision`, which supersedes and nets them exactly as it does an
-        # ORDER. Without the exclusion every board order-back would be cancelled on the
-        # next confirm and never re-raised.
+        # back" in Amend. This method leaves the Buy-line rows to `refresh_for_decision`,
+        # which supersedes and nets them exactly as it does an ORDER. Without the exclusion
+        # every board order-back would be cancelled on the next confirm and never
+        # re-raised. A borrow's own order-back can hang on that same line (K7,
+        # `PLAN-borrow-location-only-8oct.md`), so it is told apart by its note and stays
+        # here.
         rows = [
             row
             for row in self.db.query(OrderInquiryRow)
@@ -3989,7 +4019,11 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.verb == IV_ORDER_BACK,
             )
             .all()
-            if not (buy_line_ids and str(row.so_line_id) in buy_line_ids)
+            if not (
+                buy_line_ids
+                and str(row.so_line_id) in buy_line_ids
+                and not _is_borrow_order_back(row)
+            )
             # A ROW THAT NAMES ITS COVER IS NOT A HOLE (S4). Ladder v7.1 step 3 raises an
             # ORDER_BACK on the ASKER's own line carrying `covered_by` - the document that
             # already covers the quantity, which is exactly what this column has always
@@ -4073,6 +4107,61 @@ class ProjectOrderInquiryService:
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
             created += 1
         return created
+
+    def retire_rows_for_cancelled_lines(
+        self,
+        cancelled: Sequence[Tuple[Any, str]],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> int:
+        """SO-CANCEL-HANDOVER: CS transferred whole lines to Cancel SO, so each line's live
+        still-owed rows (raised, partly linked or placed; ORDER / ORDER_BACK; not released to
+        stock) are cancelled the way the cancel balance zero-need branch of
+        `_settle_row_in_place` cancels one: placements go back, a reason note is appended,
+        and purchasing hears about it through the post-commit handover queue. `cancelled`
+        is `(core line id, reason)` pairs. Actioned and CANCEL_BALANCE rows are left for
+        `flag_rows_for_cancelled_lines`. In the caller's transaction.
+        """
+        reason_by_core = {str(cid): reason for cid, reason in cancelled if cid}
+        if not reason_by_core:
+            return 0
+        found = (
+            self.db.query(OrderInquiryRow, ProjectSalesOrderLine.core_sales_order_line_id)
+            .join(
+                ProjectSalesOrderLine,
+                ProjectSalesOrderLine.id == OrderInquiryRow.so_line_id,
+            )
+            .filter(
+                ProjectSalesOrderLine.core_sales_order_line_id.in_(list(reason_by_core)),
+                OrderInquiryRow.state.in_(
+                    (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                ),
+                OrderInquiryRow.verb.in_((IV_ORDER, IV_ORDER_BACK)),
+                OrderInquiryRow.redirected_to_pool.is_(False),
+            )
+            .all()
+        )
+        for row, core_id in found:
+            was_qty = _dec(row.qty)
+            links = self._links_of(row.id)
+            if links:
+                self._remove_links(row, links)
+            row.state = INQUIRY_CANCELLED
+            stamp = f"Transferred to Cancel SO: {reason_by_core[str(core_id)]}"
+            row.note = f"{row.note}; {stamp}" if row.note else stamp
+            self._drop_suggested_links([row])
+            self.db.flush()
+            if links:
+                inquiry = (
+                    self.db.query(OrderInquiry)
+                    .filter(OrderInquiry.id == row.order_inquiry_id)
+                    .one()
+                )
+                self._dispatch_changed_with_links(inquiry, row, had_link=True)
+            self._record_handover(
+                row, kind="cancelled", was={"qty": was_qty}, actor_user_id=actor_user_id
+            )
+        return len(found)
 
     def _retire_uncovered_rows(
         self,
@@ -7386,7 +7475,8 @@ class ProjectOrderInquiryService:
             spo_rows = (
                 self.db.query(SPOAllocation, Supplier, Warehouse)
                 .outerjoin(InboundShipment, InboundShipment.id == SPOAllocation.inbound_shipment_id)
-                .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                # OI-SUPPLIER-FROM-PO: the source PO's supplier, not the SPO's own.
+                .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                 .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                 .filter(
                     SPOAllocation.product_id == product_id,
@@ -7567,7 +7657,7 @@ class ProjectOrderInquiryService:
             elif link.spo_allocation_id:
                 found = (
                     self.db.query(SPOAllocation, Supplier, Warehouse)
-                    .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+                    .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
                     .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
                     .filter(SPOAllocation.id == link.spo_allocation_id)
                     .first()
@@ -10903,6 +10993,8 @@ def _build_handover_context(
             orders.append(
                 {
                     "so_number": so_number,
+                    # OI-EMAIL-PRINT: the SO date prints once here, not on every line.
+                    "so_date": (item.get("line") or {}).get("so_date"),
                     "customer": item.get("customer"),
                     "project": item.get("project"),
                 }

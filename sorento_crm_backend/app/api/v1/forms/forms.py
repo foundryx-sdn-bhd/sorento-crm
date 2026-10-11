@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import get_current_user, require_permission_with_api_key
 from app.services.forms_service import FormService
 from app.services.uuid_list_param import parse_uuid_list
 from app.schemas.forms import (
@@ -45,7 +45,7 @@ async def get_forms(
     form_type: Optional[str] = Query(None, description="Filter by form type (e.g. marketing)"),
     sort: Optional[str] = Query(None),
     dir: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("forms.forms.view")),
     db: Session = Depends(get_db)
 ):
     """Get forms with pagination and filtering.
@@ -123,7 +123,7 @@ async def get_forms(
 @router.get("/{form_id}", response_model=FormResponse)
 async def get_form(
     form_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("forms.forms.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single form by ID."""

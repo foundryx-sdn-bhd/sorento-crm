@@ -661,8 +661,9 @@ class TestStructuralCoverage:
         # contacts.view) each joined the package on the same day. 44 since the two
         # reference catalogs opened to every signed-in user (NS-SHARED-LOOKUPS). 45 with the
         # per-contact accessible brands read (`/contacts/{contact_id}/brands`,
-        # CONTACT-BRAND-SCOPE, under contacts.view).
-        assert len(gated_paths) == 45
+        # CONTACT-BRAND-SCOPE, under contacts.view). 46 with the runtime settings read
+        # (`/settings/runtime`, SETTINGS-IN-DB-SORENTO, under user_management.settings.secrets).
+        assert len(gated_paths) == 46
         assert gated_paths == {
             "/api/v1/user-management/teams/",
             "/api/v1/user-management/teams/{team_id}",
@@ -714,6 +715,9 @@ class TestStructuralCoverage:
             # The Chatbot settings screen's lane vocabulary (AC-809). Same slug as the
             # settings blob it is edited beside, and named here rather than counted.
             "/api/v1/user-management/settings/chatbot-lanes",
+            # SETTINGS-IN-DB-SORENTO: the env-fallback runtime settings (masked secrets),
+            # under its own admin-only slug user_management.settings.secrets.
+            "/api/v1/user-management/settings/runtime",
             # --- Q3's two reference catalogs left this set on 1 Oct 2026: the owner
             # opened them to every signed-in user (see the allowlist).
             # --- Found by widening this sweep to the whole package:

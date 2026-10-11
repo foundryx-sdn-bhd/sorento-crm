@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user_or_api_key,
+    require_permission_with_api_key,
+    require_session_or_api_key_permission,
+)
 from app.services.sla_service import SLAPolicyService, SLAPolicyTierService
 from app.schemas.sla import (
     SLAPolicyCreate, SLAPolicyUpdate, SLAPolicyResponse,
@@ -24,7 +28,7 @@ async def get_sla_policies(
     status: Optional[str] = Query(None),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_session_or_api_key_permission("sla_management.sla_policies.view")),
     db: Session = Depends(get_db)
 ):
     """Get SLA policies with pagination, filtering, and sorting."""
@@ -46,7 +50,7 @@ async def get_sla_policies(
 @router.get("/{policy_id}", response_model=SLAPolicyResponse)
 async def get_sla_policy(
     policy_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.sla_policies.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single SLA policy by ID."""
@@ -117,7 +121,7 @@ async def delete_sla_policy(
 @router.get("/{policy_id}/tiers", response_model=list[SLAPolicyTierResponse])
 async def get_sla_policy_tiers(
     policy_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("sla_management.sla_policies.view")),
     db: Session = Depends(get_db)
 ):
     """Get tiers for an SLA policy."""

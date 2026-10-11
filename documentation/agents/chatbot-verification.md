@@ -93,3 +93,50 @@ Two limits worth knowing before reading a red line as a defect:
   If you do set the variable, point it at the CAPTURES worktree
   (`sorento_crm_n8n/.claude/worktrees/captures-rs1a-parser/n8n-workflows-init/tests/fixtures`),
   which is what auto-discovery would have chosen.
+
+## Generalisation eval (CHATBOT-EVAL)
+
+The console check proves named cases still pass. The eval measures how well the chatbot
+generalises: ~320 real, masked conversations from a prod snapshot, each with a rubric (facts from
+the DB, clarify options, must-not), plus 5 rewordings per case (typo, language mix, reorder, extra
+words, follow-up phrasing). Plan and contract: `documentation/plans/chatbot/PLAN-chatbot-eval-10oct.md`,
+`CONTRACT-chatbot-eval-runner.md`.
+
+- The cases are NOT in this repo (it is public). They live in the crew-only state dir; the runner
+  refuses a data dir or `--out` inside the work tree.
+- Split: `dev` (a third; lanes may read and run it) and `hidden` (two thirds; crew only).
+- A lane runs the dev split against its own stack (backend on an eval clone named `sorento_eval_*`):
+
+```bash
+cd sorento_crm_backend
+EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL=<same dsn> \
+  venv/bin/python -m scripts.chatbot_eval --data-dir "$EVAL_DATA_DIR" --split dev --variants one \
+  --engine http --base-url http://localhost:<be port> --budget-usd 3 --out <dir outside the repo>
+# --prompt-version <version number or ai_prompt_versions.id> pins a parser prompt (dry run only);
+# it is resolved read-only via EVAL_TRACE_DB_URL and fails (exit 2) if it matches nothing; report.json records
+# the prompt id, version and template md5, and a run whose traces show another version exits 5
+# --engine pkg.module:Class runs the same cases through another engine
+```
+
+- The PR gate is crew's: it runs all 214 hidden originals (~389 live calls incl. replayed history,
+  ~$2, ~5 min, on crew's budget) with the runner from a trusted checkout and posts
+  `crew-note: eval hidden ...` with the delta against the main baseline. Only aggregates leave the
+  crew dir. Rewordings (the overfit check) run weekly or on owner request.
+- Live-call rules: estimate calls x tokens before a run; a lane's own dev runs count toward its
+  300 calls/day cap (a turn is about one parser call, ~40k prompt tokens).
+- Verdicts: correct, good_clarify, wrong, stuck, error. Underfit = pass rate on originals; overfit
+  gaps = dev minus hidden, originals minus variants. A fix that only passes the reported phrasing
+  shows up as a variant gap.
+- Judge: Claude (`claude-sonnet-5-5`, `--judge anthropic`) scores wording only for cases the fixed
+  checks cannot settle, and only once it agrees with human verdicts (`calibration/*.json`) on at least
+  90%. It has its own spend cap (`--judge-budget-usd`, default $2) and sends the masked case text and
+  the bot reply to Anthropic. The key is never in the repo; crew's gate loads it at runtime.
+- Per-step gate (owner ruling 11 Oct): the hidden cases of the topics a PR touches plus a fixed 30-case
+  cross-topic smoke (`--topics <topic_code prefixes> --ids-file <smoke list>`; crew's `eval-gate.sh --topics ...
+  --smoke`). The full hidden set only for big decisions. Every run prints `selected N cases, ~C calls, ~$X` first;
+  `--estimate-only` stops there. A baseline given as a run dir is compared on the same case ids only.
+- Per layer: each result also scores understood (parser domain / intent / entities), resolved (records),
+  tool (name + params) and reply, wherever the case label carries `understood`, `expected_resolved` or `tool`
+  (filled over time). The report's `by_layer` and `first_failing_layer` say which layer broke.
+- Known gaps (v1): media (photo) turns and ideation turns are excluded; relative-date asks ("this
+  month") carry no period numbers because the replay date is not the ask date.
