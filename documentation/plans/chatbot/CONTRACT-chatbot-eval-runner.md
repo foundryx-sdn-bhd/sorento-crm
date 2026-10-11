@@ -256,3 +256,7 @@ the layer that broke. All new label fields are optional and start empty; they ar
   the non-null dicts `lane_ask.filters`, `sales_ranking_frame`, `low_stock_frame` (later keys win), plus the probe
   entries as before (kept, they can only add matches).
 - Results rows carry `needs_judge` (bool) so strict rates can be cut by any grouping offline.
+
+## Round 15 (regrade keeps prompt provenance, 11 Oct)
+- `--regrade` also copies `prompt` (id, version, template_md5, source), `prompt_versions_seen` and `prompt_mismatch`
+  from the source report.json (found when saving the reports gate baseline: the regraded file had no `prompt`).
