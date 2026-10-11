@@ -24,7 +24,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import status
-from sqlalchemy import and_, false, func
+from sqlalchemy import and_, distinct, false, func
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
@@ -57,6 +57,7 @@ _MONTH_ABBR = (
 )
 
 _TWO_PLACES = Decimal("0.01")
+_RATIO_PLACES = Decimal("0.000001")
 
 #: Every blank dimension value groups here, on both axes, sorted last. Skipping a blank
 #: value is how a Summary grand total ends up smaller than the Detail total it is meant to
@@ -411,10 +412,21 @@ def _measure_value(column: reg.Column, value: Any) -> Optional[str]:
     """A measure as the string the screen and workbook read: a count whole, money to the sen."""
     if value is None:
         return None
+    if column.ratio_of is not None:
+        return _ratio_value(value)
     if column.type == "integer":
         whole = Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
         return str(int(whole))  # int() drops the exponent and a negative zero
     return _money(value)
+
+
+def _ratio_value(parts: Tuple[Optional[Decimal], Optional[Decimal]]) -> Optional[str]:
+    """A ratio measure's accumulator (summed numerator, summed denominator) as the FRACTION
+    num/den to six places; blank when the denominator is nothing (a missing numerator is 0)."""
+    num, den = parts
+    if not den:
+        return None
+    return str((Decimal(str(num or 0)) / Decimal(str(den))).quantize(_RATIO_PLACES))
 
 
 def _cell_value(column: reg.Column, value: Any) -> Any:
@@ -460,11 +472,8 @@ def _totals(
     sums: Dict[str, Optional[Decimal]], measures: List[reg.Column]
 ) -> Dict[str, str]:
     by_key = {m.key: m for m in measures}
-    return {
-        key: _measure_value(by_key[key], total)
-        for key, total in sums.items()
-        if total is not None
-    }
+    shown = {key: _measure_value(by_key[key], total) for key, total in sums.items() if total is not None}
+    return {key: value for key, value in shown.items() if value is not None}
 
 
 # -------------------------------------------------------------------------- detail
@@ -491,6 +500,8 @@ def _select_columns(ctx: QueryContext, keys: List[str]) -> List[reg.Column]:
             if key in catalog:
                 continue
             raise _invalid(f"Unknown detail column '{key}'")
+        if column.agg != "sum" or column.ratio_of is not None:
+            continue  # a distinct count or a ratio has no per-row value: summary only
         columns.append(column)
     return columns
 
@@ -651,6 +662,52 @@ def _measure(dataset: reg.Dataset, key: str) -> reg.Column:
     return column
 
 
+def _aggregates(ctx: QueryContext, measure: reg.Column, index: int) -> List[Any]:
+    """The labelled SQL aggregates one measure needs in a grouped query: a sum, a count of
+    distinct values, or (a ratio) the sums of its numerator and denominator."""
+    if measure.ratio_of is not None:
+        num, den = (_measure(ctx.dataset, key) for key in measure.ratio_of)
+
+        def part(column: reg.Column) -> Any:
+            # Each part is aggregated by ITS OWN agg: a distinct count is never summed.
+            if column.agg == "count_distinct":
+                return func.count(distinct(column.expr(ctx)))
+            return func.sum(column.expr(ctx))
+
+        return [part(num).label(f"__n{index}"), part(den).label(f"__d{index}")]
+    if measure.agg == "count_distinct":
+        return [func.count(distinct(measure.expr(ctx))).label(f"__m{index}")]
+    return [func.sum(measure.expr(ctx)).label(f"__m{index}")]
+
+
+def _accumulate(measure: reg.Column, current: Any, amount: Any) -> Any:
+    """Add one cell to a running total: numbers add, a ratio adds its two parts."""
+    if measure.ratio_of is None:
+        return (current or Decimal(0)) + amount
+    def add(x: Optional[Decimal], y: Optional[Decimal]) -> Optional[Decimal]:
+        return y if x is None else (x if y is None else x + y)
+
+    num, den = current or (None, None)
+    return (add(num, amount[0]), add(den, amount[1]))
+
+
+def _distinct_by(ctx: QueryContext, measure: reg.Column, index: int, group_expr: Any) -> List[Tuple[str, Decimal]]:
+    """`(bucket, distinct count)` per value of `group_expr`, or ONE `("", count)` over the
+    whole set when it is None."""
+    count = _aggregates(ctx, measure, index)[0]
+    if group_expr is None:
+        stmt = ctx.dataset.base(ctx).add_columns(count).where(and_(*_predicates(ctx)))
+        row = ctx.db.execute(stmt).first()
+        return [("", Decimal(str(row[0] if row and row[0] is not None else 0)))]
+    stmt = (
+        ctx.dataset.base(ctx)
+        .add_columns(group_expr.label("__g"), count)
+        .where(and_(*_predicates(ctx)))
+        .group_by(group_expr)
+    )
+    return [(_bucket(r[0]), Decimal(str(r[1]))) for r in ctx.db.execute(stmt).all()]
+
+
 def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotLayout:
     definition = ctx.definition
     dataset = ctx.dataset
@@ -668,15 +725,15 @@ def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotL
     stmt = dataset.base(ctx).add_columns(
         row_expr.label("__row"),
         col_expr.label("__col"),
-        *[func.sum(m.expr(ctx)).label(f"__m{i}") for i, m in enumerate(measures)],
+        *[c for i, m in enumerate(measures) for c in _aggregates(ctx, m, i)],
     )
     stmt = stmt.where(and_(*_predicates(ctx))).group_by(row_expr, col_expr)
     grouped = ctx.db.execute(stmt).mappings().all()
 
     cells: Dict[str, Dict[str, Dict[str, str]]] = {}
-    row_sums: Dict[str, Dict[str, Decimal]] = {}
-    col_sums: Dict[str, Dict[str, Decimal]] = {}
-    grand: Dict[str, Decimal] = {}
+    row_sums: Dict[str, Dict[str, Any]] = {}
+    col_sums: Dict[str, Dict[str, Any]] = {}
+    grand: Dict[str, Any] = {}
     row_values: List[str] = []
     present_cols: List[str] = []
 
@@ -688,16 +745,55 @@ def _pivot(ctx: QueryContext, view: ReportViewConfig, cap: bool) -> ReportPivotL
         if col_value not in present_cols:
             present_cols.append(col_value)
         for index, measure in enumerate(measures):
-            total = group[f"__m{index}"]
-            if total is None:  # every row in this cell was blank; the cell stays blank
-                continue
-            amount = Decimal(str(total))
-            cells.setdefault(row_value, {}).setdefault(col_value, {})[measure.key] = _measure_value(measure, amount)
+            if measure.ratio_of is not None:
+                parts = (group[f"__n{index}"], group[f"__d{index}"])
+                if parts[0] is None and parts[1] is None:
+                    continue
+                amount: Any = tuple(None if x is None else Decimal(str(x)) for x in parts)
+            else:
+                total = group[f"__m{index}"]
+                if total is None:  # every row in this cell was blank; the cell stays blank
+                    continue
+                amount = Decimal(str(total))
+            shown = _measure_value(measure, amount)
+            if shown is not None:
+                cells.setdefault(row_value, {}).setdefault(col_value, {})[measure.key] = shown
             row_sums.setdefault(row_value, {})
-            row_sums[row_value][measure.key] = row_sums[row_value].get(measure.key, Decimal(0)) + amount
+            row_sums[row_value][measure.key] = _accumulate(measure, row_sums[row_value].get(measure.key), amount)
             col_sums.setdefault(col_value, {})
-            col_sums[col_value][measure.key] = col_sums[col_value].get(measure.key, Decimal(0)) + amount
-            grand[measure.key] = grand.get(measure.key, Decimal(0)) + amount
+            col_sums[col_value][measure.key] = _accumulate(measure, col_sums[col_value].get(measure.key), amount)
+            grand[measure.key] = _accumulate(measure, grand.get(measure.key), amount)
+
+    # A distinct count is not additive: its row, column and grand totals are counted over
+    # their own row sets (Alice sits in two regions: two rows, one contact).
+    for index, measure in enumerate(measures):
+        if measure.agg != "count_distinct" or measure.ratio_of is not None:
+            continue
+        for expr, sums in ((row_expr, row_sums), (col_expr, col_sums)):
+            for key, count in _distinct_by(ctx, measure, index, expr):
+                sums.setdefault(key, {})[measure.key] = count
+        grand[measure.key] = _distinct_by(ctx, measure, index, None)[0][1] if grouped else Decimal(0)
+
+    # A ratio whose part is a distinct count: that part's totals are counted over their own row
+    # sets too, never added across cells (the other part keeps its sum).
+    for index, measure in enumerate(measures):
+        if measure.ratio_of is None:
+            continue
+        parts = [_measure(dataset, key) for key in measure.ratio_of]
+        for slot, part in enumerate(parts):
+            if part.agg != "count_distinct":
+                continue
+
+            def put(sums: Dict[str, Dict[str, Any]], key: str, count: Decimal) -> None:
+                current = sums.setdefault(key, {}).get(measure.key) or (None, None)
+                sums[key][measure.key] = tuple(count if i == slot else v for i, v in enumerate(current))
+
+            for expr, sums in ((row_expr, row_sums), (col_expr, col_sums)):
+                for key, count in _distinct_by(ctx, part, index, expr):
+                    put(sums, key, count)
+            grand_count = _distinct_by(ctx, part, index, None)[0][1] if grouped else Decimal(0)
+            current = grand.get(measure.key) or (None, None)
+            grand[measure.key] = tuple(grand_count if i == slot else v for i, v in enumerate(current))
 
     row_values = _axis_values(ctx, row_column, row_values, rows=True)
     col_values = _axis_values(ctx, col_column, present_cols, rows=False)
@@ -832,6 +928,8 @@ def _variance(
     total: Dict[str, Decimal] = {}
     for month in months:
         for measure in measures:
+            if measure.ratio_of is not None or measure.agg != "sum":
+                continue  # a ratio or a distinct count has no meaningful difference of cells
             now = (cells.get(last) or {}).get(month, {}).get(measure.key)
             before = (cells.get(previous) or {}).get(month, {}).get(measure.key)
             if now is None and before is None:
