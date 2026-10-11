@@ -1408,11 +1408,13 @@ jobs:
           PY
 
       # Full history on a PR (gitleaks scans base..head) or when the frontend
-      # changed (`vitest --changed` diffs against the base commit).
+      # changed (`vitest --changed` diffs against the base commit). '0' is
+      # quoted: a bare 0 is falsy in an expression, so the unquoted form was
+      # always 1 (run 38124709009: gitleaks "Invalid revision range").
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ (github.event_name == 'pull_request' || needs.changes.outputs.frontend == 'true') && 0 || 1 }}
+          fetch-depth: ${{ (github.event_name == 'pull_request' || needs.changes.outputs.frontend == 'true') && '0' || '1' }}
 
       # The four fast gates, folded into this job on a PR (CI-COST round 2):
       # as separate jobs each billed a whole minute for 16-54 s of work (run
