@@ -266,3 +266,37 @@ def test_route_fallback_rerun_without_raw_tokens_still_family_first(api, db, ref
     alts = [a for a in res["alternatives"] if a["entity_type"] == "product"]
     assert {a["canonical_code"] for a in alts[:4]} == set(FAMILY), alts
     assert all(a["display"].get("same_family") is True for a in alts[:4])
+
+
+# --------------------------------------------------------------------------- fix round
+@pytest.mark.parametrize("hint_field", ["allowed_entity_types", "domain_hint"])
+def test_r3_fallback_rerun_keeps_the_family_for_a_non_product_hint(api, db, refs, hint_field):
+    """The parser typed the token as something else (inbound_shipment). It matches nothing
+    there, the route's fallback widens to every type and re-runs the token WITHOUT
+    raw_tokens; the family key must still come from the pre-fold text."""
+    _seed_world(db, refs)
+    body = {"query": RAW, "tokens": [FOLDED], "raw_tokens": [RAW], "match_mode": "or",
+            "fallback_to_all_types": True}
+    if hint_field == "allowed_entity_types":
+        body["allowed_entity_types"] = ["inbound_shipment"]
+    else:
+        body["domain_hint"] = "inbound_shipment"
+    r = api.post(_PATH, json=body)
+    assert r.status_code == 200, r.text
+    res = next(x for x in r.json()["resolutions"] if x["token"] == FOLDED)
+    alts = [a for a in res["alternatives"] if a["entity_type"] == "product"]
+    assert {a["canonical_code"] for a in alts[:4]} == set(FAMILY), alts
+    assert all(a["display"].get("same_family") is True for a in alts[:4])
+
+
+def test_r5_other_company_members_cannot_starve_the_in_scope_family(db, refs):
+    """Seven more-similar same-family products in ANOTHER company, two in scope. The SQL
+    LIMIT 5 runs before the visibility recheck, so only a scope clause inside the family
+    query keeps the in-scope members."""
+    for suffix in ("A", "B", "C", "D", "E", "F", "G"):
+        _p(db, refs, f"SRTWC8357-SH-150-{suffix}", family="SRTWC8357", company=MOCHA)
+    _p(db, refs, "SRTWC8357-RL", family="SRTWC8357")
+    _p(db, refs, "SRTWC8357-RL-P", family="SRTWC8357")
+    codes = _codes(_resolve(db, FOLDED, RAW))
+    assert "SRTWC8357-RL" in codes and "SRTWC8357-RL-P" in codes, codes
+    assert not [c for c in codes if c.endswith(("-A", "-B", "-C", "-D", "-E", "-F", "-G"))]

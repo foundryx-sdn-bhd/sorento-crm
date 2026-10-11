@@ -321,3 +321,63 @@ def test_ac5_list_rows_do_not_carry_members(client, db, refs):
     rows = r.json().get("items") or r.json().get("data") or []
     assert rows, r.text
     assert all(not row.get("family_members") for row in rows)
+
+
+# --------------------------------------------------------------------------- fix round
+@pytest.fixture()
+def perm_client(db, monkeypatch):
+    """A signed-in user whose permission set is the returned `allow` set."""
+    from app.main import app
+    from app.database import get_db
+    from app.dependencies import get_current_user, get_current_user_or_api_key
+    from app.services.company_scope_resolver import apply_company_scope
+    from app.services.user_service import UserPermissionService
+
+    allow: set = set()
+    caller = {"id": str(uuid.uuid4()), "email": "fam-perm@example.com"}
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: caller
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: caller
+    app.dependency_overrides[apply_company_scope] = lambda: None
+    monkeypatch.setattr(
+        UserPermissionService, "check_user_has_permission", lambda self, uid, slug: slug in allow
+    )
+    try:
+        yield TestClient(app), allow
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_r1_family_routes_need_master_data_products_edit(perm_client, db, refs):
+    client, allow = perm_client
+    pid = _mk(db, refs, "ZZTFAM8400-RL", family="ZZTFAM8400")
+    allow.add("master_data.products.view")  # a neighbouring slug does not open the writes
+    assert client.put(f"{BASE}/{pid}/family-code", json={"family_code": "X1"}).status_code == 403
+    assert client.post(f"{BASE}/{pid}/family-code-reset").status_code == 403
+    assert _family(db, "ZZTFAM8400-RL") == ("ZZTFAM8400", False)
+    allow.add("master_data.products.edit")
+    assert client.put(f"{BASE}/{pid}/family-code", json={"family_code": "X1"}).status_code == 200
+    assert client.post(f"{BASE}/{pid}/family-code-reset").status_code == 200
+
+
+def test_r2_family_code_over_100_chars_is_422(client, db, refs):
+    pid = _mk(db, refs, "ZZTFAM8401-RL", family="ZZTFAM8401")
+    r = client.put(f"{BASE}/{pid}/family-code", json={"family_code": "A" * 101})
+    assert r.status_code == 422, r.text
+    assert _family(db, "ZZTFAM8401-RL") == ("ZZTFAM8401", False)
+
+
+def test_r4_detail_members_stay_in_the_products_company_without_a_scope(db, refs, client):
+    from app.models.company import Company
+
+    mocha = "00000000-0000-0000-0000-000000000002"
+    if db.query(Company).filter(Company.id == mocha).first() is None:
+        db.add(Company(id=mocha, name="ZZT Mocha", code=unique_code("MCH")[:20], is_active=True))
+        db.flush()
+    me = _mk(db, refs, "ZZTFAM8410-RL", family="ZZTFAM8410")
+    mine = _mk(db, refs, "ZZTFAM8410-B", family="ZZTFAM8410")
+    other = _mk(db, refs, "ZZTFAM8410-MOCHA", family="ZZTFAM8410")
+    db.execute(text("UPDATE products SET company_id = :c WHERE id = :i"), {"c": mocha, "i": other})
+    set_company_scope(db, None)  # an all-companies / API-key call
+    body = client.get(f"{BASE}/{me}").json()
+    assert [m["id"] for m in body["family_members"]] == [mine], body["family_members"]
