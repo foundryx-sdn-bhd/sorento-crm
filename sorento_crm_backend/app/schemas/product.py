@@ -390,6 +390,12 @@ class ProductResponse(ProductBase):
     # Manual-curation flag (plain column; cheap on list rows). Detail page reads it
     # for the "Manual" badge + Reset-to-auto button.
     variant_link_manual: bool = False
+    # CODE-VARIANTS: model family (plain columns) and, on detail only, its other members.
+    family_code: Optional[str] = None
+    family_code_manual: bool = False
+    family_members: Optional[List["ProductVariantRef"]] = Field(
+        default=None, validation_alias="_family_members"
+    )
     # Direct-child count. On list rows populated by two bounded IN-queries (no N+1);
     # on detail rows set from the loaded children by `_populate_variant_graph`.
     variant_child_count: int = Field(default=0, validation_alias="_variant_child_count")

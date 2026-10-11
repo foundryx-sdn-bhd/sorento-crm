@@ -519,6 +519,41 @@ async def reset_variant_auto(
         raise handle_internal_error(str(e))
 
 
+class _FamilyCodeBody(BaseModel):
+    family_code: Optional[str] = None
+
+
+@router.put("/{product_id}/family-code", response_model=ProductResponse)
+async def set_family_code(
+    product_id: str,
+    body: _FamilyCodeBody,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Hand-set a product's model family (sticky until "Reset to auto")."""
+    try:
+        return ProductService(db).set_family_code(product_id, body.family_code)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
+@router.post("/{product_id}/family-code-reset", response_model=ProductResponse)
+async def reset_family_code(
+    product_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Clear the manual family and re-derive it from the product code."""
+    try:
+        return ProductService(db).reset_family_code(product_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_internal_error(str(e))
+
+
 class _FieldLinksBody(BaseModel):
     field_keys: List[str] = []
 

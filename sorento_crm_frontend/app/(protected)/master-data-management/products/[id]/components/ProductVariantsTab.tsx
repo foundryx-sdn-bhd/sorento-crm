@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { GitBranch, CornerLeftUp, Plus, Link2Off, RotateCcw, X } from 'lucide-react';
+import { GitBranch, CornerLeftUp, Pencil, Plus, Link2Off, RotateCcw, X } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +21,8 @@ import {
   useSetVariantParent,
   useUnlinkVariant,
   useResetVariantAuto,
+  useSetFamilyCode,
+  useResetFamilyCode,
 } from '../../hooks/useProducts';
 import type { ProductVariantRef } from '../../types/product.types';
 import ProductVariantPickerDialog from './ProductVariantPickerDialog';
@@ -36,6 +39,12 @@ interface ProductVariantsTabProps {
   variants?: ProductVariantRef[];
   /** True when the variant link is hand-curated (shows Manual badge + Reset action). */
   variantLinkManual?: boolean;
+  /** Model family derived from the code (or hand-set); null when the code has no family part. */
+  familyCode?: string | null;
+  /** True when the family was hand-set (shows Manual badge + Reset action). */
+  familyCodeManual?: boolean;
+  /** Other active products of the same family. */
+  familyMembers?: ProductVariantRef[];
 }
 
 const PRODUCT_BASE_PATH = '/master-data-management/products';
@@ -67,8 +76,36 @@ export default function ProductVariantsTab({
   variantOf,
   variants,
   variantLinkManual,
+  familyCode,
+  familyCodeManual,
+  familyMembers,
 }: ProductVariantsTabProps) {
   const children = variants ?? [];
+  const family = familyMembers ?? [];
+
+  const setFamily = useSetFamilyCode();
+  const resetFamily = useResetFamilyCode();
+  const [editingFamily, setEditingFamily] = useState(false);
+  const [familyDraft, setFamilyDraft] = useState('');
+
+  const startFamilyEdit = () => {
+    setFamilyDraft(familyCode ?? '');
+    setEditingFamily(true);
+  };
+
+  const handleSaveFamily = () => {
+    setFamily.mutate(
+      { productId, familyCode: familyDraft.trim() || null },
+      { onSuccess: () => setEditingFamily(false) },
+    );
+  };
+
+  const handleResetFamily = () => {
+    resetFamily.mutate(
+      { productId },
+      { onSuccess: () => setEditingFamily(false) },
+    );
+  };
 
   const setParent = useSetVariantParent();
   const unlink = useUnlinkVariant();
@@ -133,6 +170,92 @@ export default function ProductVariantsTab({
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Family - the model this code belongs to; feeds the chatbot's did-you-mean */}
+        <div data-testid="family-section">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold">Family</h3>
+            {familyCodeManual && <Badge variant="warning">Manual</Badge>}
+            {!editingFamily && (
+              <div className="ms-auto flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={startFamilyEdit}>
+                  <Pencil className="size-4" />
+                  Edit
+                </Button>
+                {familyCodeManual && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetFamily}
+                    disabled={resetFamily.isPending}
+                  >
+                    <RotateCcw className="size-4" />
+                    Reset to auto
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          {editingFamily ? (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Input
+                aria-label="Family code"
+                className="w-48"
+                value={familyDraft}
+                onChange={(e) => setFamilyDraft(e.target.value)}
+              />
+              <Button size="sm" onClick={handleSaveFamily} disabled={setFamily.isPending}>
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingFamily(false)}
+                disabled={setFamily.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : familyCode ? (
+            <>
+              <div className="text-base font-semibold tracking-wide">{familyCode}</div>
+              {family.length > 0 && (
+                <div className="mb-2 text-xs text-muted-foreground">
+                  {family.length} other {family.length === 1 ? 'product' : 'products'}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed px-3 py-6 text-center">
+              <p className="text-sm">No family</p>
+              <p className="text-sm text-muted-foreground">This code has no family part.</p>
+            </div>
+          )}
+          {family.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {family.map((member) => (
+                <Link
+                  key={member.id}
+                  href={`${PRODUCT_BASE_PATH}/${member.id}`}
+                  className="flex items-center gap-2 rounded-md border px-3 py-2 hover:bg-muted transition-colors"
+                >
+                  <GitBranch className="size-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="truncate"
+                      title={`${member.product_code} - ${member.product_name}`}
+                    >
+                      <span className="font-medium">{member.product_code}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {member.product_name}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Parent - only meaningful when this product is itself a variant */}
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">

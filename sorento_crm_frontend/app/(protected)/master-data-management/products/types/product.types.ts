@@ -105,6 +105,10 @@ export interface Product {
   variant_link_manual?: boolean;
   // Number of direct child variants.
   variant_child_count?: number;
+  // Model family derived from the code (or hand-set); members only on the detail response.
+  family_code?: string | null;
+  family_code_manual?: boolean;
+  family_members?: ProductVariantRef[] | null;
 
   // Relations (populated from API)
   category?: ProductCategory;
