@@ -5,9 +5,9 @@ A clarification is fingerprinted by what the BOT asked (ask kind, parameter, sub
 never by the user's text and never by the reply wording. The fingerprint is stored with the
 bot's own reply (`chatbot.turns.response["ask_fingerprint"]`, beside the `reply` that
 `turn_runtime.previous_reply_text` reads), so there is no session schema change. When a turn
-would send the same clarification a third time in a row, the reply becomes the handover offer
-(or, for a contact who is offered no hand-off, a plain line saying what is missing, and with
-escalation barred "Please refer to your salesman."). Never a guessed answer.
+would send the same clarification a third time in a row, the reply becomes one plain line saying
+what is missing plus the handover offer (with escalation barred, "Please refer to your
+salesman."). Never a guessed answer and no fetched data.
 
 Applied once, at the single exit every turn passes (`engine._run_turn`, `apply_loop_breaker`),
 so every ask site is covered, including those that arm no pending question (the DO / SO period
@@ -28,9 +28,13 @@ MAX_IDENTICAL_ASKS = 2
 #: The key the fingerprint is stored under on the turn's stored response.
 RESPONSE_KEY = "ask_fingerprint"
 
-#: Plain words for what is missing, by ask parameter, for a contact offered no hand-off.
+#: Plain words for what is missing, by ask kind (AC-120: the break line names it).
 _MISSING_WORDS = {
-    "date_range": "the period",
+    "do_period": "the period",
+    "so_period": "the period",
+    "attachment_type": "the attachment type",
+    "carry_combine": "which products to include",
+    "carry_unclear": "which products to include",
 }
 
 
@@ -41,12 +45,13 @@ def ask_fingerprint(kind: str, param: str, subject: str | None) -> str:
     return f"{(kind or '').strip()}|{(param or '').strip()}|{code}"
 
 
-def should_break(previous: list[str | None], current: str | None) -> bool:
-    """True when the bot's last `MAX_IDENTICAL_ASKS` replies all carried `current` (AC-1).
-    `previous` is oldest first; a non-clarification reply is None and resets the count (AC-4)."""
-    if not current or len(previous) < MAX_IDENTICAL_ASKS:
+def should_break(previous: list[str | None], current: str | None, limit: int = MAX_IDENTICAL_ASKS) -> bool:
+    """True when the bot's last `limit` replies all carried `current` (AC-120).
+    `previous` is oldest first; a non-clarification reply is None and resets the count (AC-123)."""
+    limit = max(int(limit or MAX_IDENTICAL_ASKS), 1)
+    if not current or len(previous) < limit:
         return False
-    return all(f == current for f in previous[-MAX_IDENTICAL_ASKS:])
+    return all(f == current for f in previous[-limit:])
 
 
 def _subject_code(focus: Any) -> str | None:
@@ -68,9 +73,9 @@ def _subject_code(focus: Any) -> str | None:
     return None
 
 
-def turn_fingerprint(trace: Any) -> tuple[str | None, str | None]:
-    """`(fingerprint, param)` of the clarification this turn's reply carries, read off the
-    turn's own trace records (what the bot decided, not what it said), else `(None, None)`.
+def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
+    """`(fingerprint, kind, subject)` of the clarification this turn's reply carries, read off
+    the turn's own trace records (what the bot decided, not what it said), else all None.
 
     * `do_range` with `asked` / `so_list` with `period_asked`: the DO / SO period ask;
     * the turn plan's `ask` (`apply` record, e.g. `attachment_type_ask`);
@@ -86,22 +91,33 @@ def turn_fingerprint(trace: Any) -> tuple[str | None, str | None]:
         elif name == "apply" and isinstance(rec.get("plan"), dict):
             plan = rec["plan"]
         elif name == "do_range" and rec.get("asked"):
-            kind, param = "period", "date_range"
+            kind, param = "do_period", "date_range"
         elif name == "so_list" and rec.get("period_asked"):
-            kind, param = "period", "date_range"
+            kind, param = "so_period", "date_range"
     if kind is None and isinstance(plan.get("ask"), str) and plan["ask"]:
-        kind, param = plan["ask"], "ask"
+        kind, param = _PLAN_ASK_KINDS.get(plan["ask"], plan["ask"]), "ask"
     if kind is None and plan.get("lane") == "clarification":
-        kind, param = "clarification", "topic"
+        kind, param = "llm_clarify", "topic"
     if kind is None:
-        return None, None
-    return ask_fingerprint(kind, param or "", _subject_code(focus)), param
+        return None, None, None
+    subject = _subject_code(focus)
+    return ask_fingerprint(kind, param or "", subject), kind, subject
+
+
+#: A turn plan's `ask` name -> its policy kind (`CLARIFY_POLICY_ROWS`).
+_PLAN_ASK_KINDS = {"attachment_type_ask": "attachment_type"}
 
 
 def previous_fingerprints(
-    db: Any, *, contact_respond_id: str, ingress: str | None, is_test: bool, turn_id: Any
+    db: Any,
+    *,
+    contact_respond_id: str,
+    ingress: str | None,
+    is_test: bool,
+    turn_id: Any,
+    limit: int = MAX_IDENTICAL_ASKS,
 ) -> list[str | None]:
-    """The fingerprints stored with this contact's last `MAX_IDENTICAL_ASKS` completed replies,
+    """The fingerprints stored with this contact's last `limit` completed replies,
     oldest first, scoped exactly as `turn_runtime.previous_reply_text` scopes its read."""
     from app.models.chatbot_turn import ChatbotTurn
     from app.services.chatbot import turn_runtime
@@ -116,23 +132,39 @@ def previous_fingerprints(
         query = query.filter(ChatbotTurn.ingress == turn_runtime._CONSOLE_INGRESS)
     else:
         query = query.filter(ChatbotTurn.ingress != turn_runtime._CONSOLE_INGRESS)
-    rows = query.order_by(*turn_runtime._newest_turn_first(ChatbotTurn)).limit(MAX_IDENTICAL_ASKS).all()
+    rows = query.order_by(*turn_runtime._newest_turn_first(ChatbotTurn)).limit(max(int(limit or MAX_IDENTICAL_ASKS), 1)).all()
     out = [(r[0] or {}).get(RESPONSE_KEY) if isinstance(r[0], dict) else None for r in rows]
     return list(reversed(out))
 
 
-def break_reply(profile: Any, param: str | None) -> str:
-    """Q4: never a guessed answer. The handover offer when this contact is offered one, the
-    refer line when its escalation is barred (AC-6), else a plain line naming what is missing."""
+def missing_line(kind: str | None, subject: str | None) -> str:
+    """AC-120: one plain line naming what is still missing, with the subject code."""
+    missing = _MISSING_WORDS.get(kind or "", "more detail")
+    return f"I still need {missing} for {subject}." if subject else f"I still need {missing}."
+
+
+def break_reply(profile: Any, kind: str | None, subject: str | None = None) -> str:
+    """Q4: never a guessed answer, no fetched data. The plain line naming what is missing, then
+    the handover offer when this contact is offered one, or the refer line when its escalation
+    is barred (AC-120)."""
     from app.services.chatbot import escalation_control
     from app.services.chatbot.turn import state as turn_state
-    from app.services.chatbot_reply_copy import CHATBOT_REPLY_ESCALATE_OFFER_NO_TEAM
 
+    line = missing_line(kind, subject)
     if turn_state.escalation_barred(profile):
-        return escalation_control.barred_reply(profile)
+        return f"{line}\n\n{escalation_control.barred_reply(profile)}"
     if turn_state.offers_escalation(profile):
-        return CHATBOT_REPLY_ESCALATE_OFFER_NO_TEAM
-    return f"I still need {_MISSING_WORDS.get(param or '', 'more detail')} to answer this."
+        return f"{line}\n\n{_ESCALATE_OFFER}"
+    return line
+
+
+#: Today's short offer sentence (catalogued in `label_catalog.INLINE`).
+_ESCALATE_OFFER = "Would you like me to escalate?"
+
+
+def repeat_limit(db: Any, kind: str | None) -> int:
+    """The loop breaker's limit for this ask kind (AC-116)."""
+    return MAX_IDENTICAL_ASKS
 
 
 def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_run: bool) -> None:
@@ -151,22 +183,24 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
         row = db.query(ChatbotTurn).filter(ChatbotTurn.id == turn_id).first()
         if row is None or not isinstance(row.response, dict):
             return
-        current, param = turn_fingerprint(row.trace)
+        current, kind, subject = turn_fingerprint(row.trace)
         if current is None:
             return
+        limit = repeat_limit(db, kind)
         previous = previous_fingerprints(
             db,
             contact_respond_id=row.contact_respond_id,
             ingress=row.ingress,
             is_test=bool(row.is_test),
             turn_id=row.id,
+            limit=limit,
         )
-        if not should_break(previous, current):
+        if not should_break(previous, current, limit):
             row.response = {**row.response, RESPONSE_KEY: current}
             db.commit()
             return
         profile, _recall = turn_runtime.load_profile(db, str(row.contact_respond_id or ""))
-        text = break_reply(profile, param)
+        text = break_reply(profile, kind, subject)
         old_text = (result.reply or {}).get("text")
         reply = {**result.reply, "text": text, "quick_replies": None}
         actions = [
