@@ -143,3 +143,26 @@ def test_live_run_rows_carry_layers(tmp_path):
     assert main(["--data-dir", str(d), "--engine", "tests.chatbot_eval.fakes:DigestEngine", "--out", str(out)]) == 0
     r = json.loads((out / "results.jsonl").read_text().splitlines()[0])
     assert set(r["layers"]) == {"understood", "resolved", "tool", "reply"}
+
+
+def test_non_ascii_understood_entity_matches(tmp_path):
+    digest = d_with(parser={"domain": "stock", "intent": "check", "entities": ["水龙头 X1"]})
+    rows, _ = regrade(tmp_path, [label(understood={"entities": ["水龙头"]})], [row("k0", GOOD, digest)])
+    assert rows["k0"]["layers"]["understood"] == "pass"
+
+
+def test_non_ascii_expected_resolved_matches(tmp_path):
+    digest = d_with(resolved=[{"entities": ["Café Sdn Bhd"]}])
+    rows, _ = regrade(tmp_path, [label(expected_resolved=["Café"])], [row("k0", GOOD, digest)])
+    assert rows["k0"]["layers"]["resolved"] == "pass"
+
+
+def test_harness_error_result_has_reply_fail_layer(tmp_path):
+    d, out = tmp_path / "data", tmp_path / "o"
+    write_case(d, case_dict("boom"))
+    main(["--data-dir", str(d), "--engine", "tests.chatbot_eval.fakes:ExplodingEngine", "--out", str(out)])
+    r = json.loads((out / "results.jsonl").read_text().splitlines()[0])
+    assert r["layers"]["reply"] == "fail"
+    rep = json.loads((out / "report.json").read_text())
+    assert rep["by_layer"]["reply"]["fail"] == 1
+    assert rep["first_failing_layer"]["reply"] == 1
