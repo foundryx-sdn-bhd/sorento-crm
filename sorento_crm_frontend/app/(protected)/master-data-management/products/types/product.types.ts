@@ -23,6 +23,7 @@ export interface ProductVariantRef {
   id: string;
   product_code: string;
   product_name: string;
+  description?: string | null;
 }
 
 /**

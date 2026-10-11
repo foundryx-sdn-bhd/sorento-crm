@@ -246,8 +246,11 @@ export default function ProductVariantsTab({
                     >
                       <span className="font-medium">{member.product_code}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {member.product_name}
+                    <div
+                      className="text-xs text-muted-foreground truncate"
+                      title={member.description || member.product_name}
+                    >
+                      {member.description || member.product_name}
                     </div>
                   </div>
                 </Link>
