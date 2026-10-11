@@ -20,6 +20,8 @@ from pathlib import Path
 import sqlalchemy as sa
 from alembic import op
 
+from app.services.prompt_diet_files import PARSER_CARDS_FILE, PARSER_CORE_FILE
+
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "pdiet_0001_examples"
 down_revision = "chat_backfill_0001"
@@ -28,8 +30,8 @@ depends_on = None
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PROMPTS = (
-    ("chatbot_parser_core", "chatbot_parser_core.v1.txt", '["current_date"]'),
-    ("chatbot_parser_cards", "chatbot_parser_cards.v1.txt", "[]"),
+    ("chatbot_parser_core", PARSER_CORE_FILE, '["current_date"]'),
+    ("chatbot_parser_cards", PARSER_CARDS_FILE, "[]"),
 )
 COMMIT_MESSAGE = "pdiet_0001_examples: prompt diet text, cut from v50"
 
@@ -147,12 +149,6 @@ SEEDS: list[tuple[str, str, str | None, dict]] = [
     ("account", "Account 2 of Test Dealer B please", None,
      {"intent_hint": "check_order", "domain_hint": "order", "user_goal": "pick a customer account",
       "entities": [{"raw": "Test Dealer B", "hint": "customer", "canonical_code": None, "current_message": True, "confident": True}]}),
-    ("open_question", "2", "Open question: which product? 1. SRT-DEMO-109  2. SRT-DEMO-110",
-     {"message_type": "clarification", "intent_hint": "check_product", "domain_hint": "master_products",
-      "user_goal": "answer the open question", "reference_positions": [2], "continuation": True}),
-    ("escalation", "yes, please escalate to the team", "Previous reply: Shall I pass this to the team?",
-     {"message_type": "request_for_help", "user_goal": "confirm an escalation",
-      "is_affirmative": True, "escalation": {"is_escalation_confirmation": True, "company_pick": None}}),
 ]
 
 

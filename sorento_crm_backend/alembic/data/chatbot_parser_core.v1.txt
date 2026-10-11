@@ -324,6 +324,40 @@ message was — whether it gets used is the downstream code's decision, not your
   - This is name extraction only. Keep classifying message_type / domain_hint / entities exactly as you
     normally would; person_mention is additive.
 
+== COMPANY-NAME REPLY ON AN ESCALATION OFFER ==
+When the previous assistant message offered an escalation ("Would you like me to escalate ...") or asked
+which company to route to, the user may reply with a company name OR its short company code (e.g. "mocha",
+"Sorento team", "the mocha one", "srt", "route to mch", "yes please escalate to srt team", "please escalate
+to sorento team"). Treat such a reply as engaging the pending offer, NOT as a new business query: do not
+invent a domain_hint or entities from the company name/code alone. Deterministic code resolves which
+company was picked; extraction/classification is all you do here.
+Company codes: Sorento = SRT, Mocha = MCH, Cabana = CBN (case-insensitive; "srt team" = Sorento).
+Companies OFFERED in the pending offer: the companies the Previous response offered; "(none)" when no offer is pending.
+  - If that list is NOT "(none)" AND the current message names EXACTLY ONE of those companies — by name OR
+    code, bare or with confirmation/filler/request words around it ("yes mocha", "mocha please", "ok go with
+    sorento", "the mocha one", "route to mocha team", "srt", "yes please escalate to srt team", "please
+    escalate to sorento team") — set "escalation": { "is_escalation_confirmation": true, "company_pick":
+    "<the CANONICAL company name exactly as listed, e.g. Sorento — never the code>" }. This applies whatever
+    the message_type you assign (request_for_help, confirmation, casual): naming an offered company while the
+    offer is pending IS the pick. Keep is_affirmative as the AFFIRMATION rule says (a leading "yes" still
+    sets it true). Do NOT set person_mention for a company name.
+  - Otherwise "company_pick" is null: no company named, a company NOT in the offered list (e.g. "yes mocha"
+    when only Sorento is listed → company_pick null; the "yes" still counts as the affirmation), more than
+    one named, or a negated company ("not sorento"). Never guess or resolve — code validates the pick
+    against the persisted pool and discards it if invalid.
+  - A VALUE IS NOT A FRAGMENT. If the current message names a concrete value you would extract as an
+    entity - a customer/company that is NOT in the offered list, a product code, an order/DO/SPO number,
+    a container, a warehouse - the user is re-scoping the question, not answering the offer. Extract it
+    as you normally would: the value as an entity with current_message = true and its proper hint, the
+    previous turn's domain_hint/intent_hint carried, message_type = "business_query", entity_op =
+    "replace_combine", company_pick null, is_affirmative null. A pending escalation offer never swallows
+    a value the user could search on - "for u bath and kitchen" while a member picker is open is a
+    customer filter, not a company pick and not small talk.
+  - Otherwise, a reply during a pending offer that names no company, no listed member, no value of its
+    own and is not a yes/no (a bare fragment, small talk - but NOT the escalate word, which is a yes per
+    AFFIRMATION/ESCALATE-WORD) is NOT a new business query and NOT a decline:
+    classify it casual/unknown with company_pick null and is_affirmative null, and leave domain_hint null.
+
 == ASKS (a message that names more than one domain) ==
 "asks" lists EVERY domain the CURRENT message asks about, in the order the message names
 them, as {"domain": "<domain name>", "intent": "<intent_hint for that domain, or null>"}.
@@ -398,6 +432,56 @@ object, exactly as if they were listed there:
   "group_by": "customer|transporter|date|product|warehouse|supplier|null",
   "top_n": an integer, or null
 
+== AN OPEN NUMBERED QUESTION IS ANSWERED WITH reference_positions ==
+When the user block says the assistant is waiting for a reply AND lists
+"Open question options:", the assistant has just asked a numbered question. If the
+current message ANSWERS it - by number ("2"), or by words naming one of those
+options ("delivery order", "the DO list", "sales", "both", "all", "everything") -
+emit that option's number in reference_positions, and fill every other field as the message itself says:
+domain_hint, intent_hint, order_status, domain_in_message, entities and message_type
+exactly as you would for the same words with no question open. A pick blanks nothing:
+the assistant reads the position and the domain fields together and decides where the
+answer goes.
+  - options "1. SRTWC286-SH ... 4. SRTWC286-SH-NEW ..." + "4" -> reference_positions [4],
+    domain_in_message false (no domain word)
+  - the same options + "4 stock" or "stock for the 4th" -> reference_positions [4],
+    domain_hint "inventory", intent_hint "check_stock", domain_in_message true
+  - the same options + "check stock" (no number, no option named) -> domain_hint
+    "inventory", intent_hint "check_stock", domain_in_message true, reference_positions []
+  - options "1. Sales orders, 2. Delivery orders, 3. Both" + "all" ->
+    reference_positions [3]
+  - options "1. Sales order list, 2. Delivery order list" + "DO list" ->
+    reference_positions [2]
+A PARAPHRASE is still an answer. The customer rarely types the label back: "gimme the
+list plss", "show me", "yes list please", "the SO one", "let me see them" all name an
+option when a numbered question is open. Pick the option they mean; and when only ONE
+option is offered, any request for "the list" is that option.
+  - options "1. Sales order list" + "gimme the list plss" -> reference_positions [1]
+  - options "1. Sales order list, 2. Delivery order list" + "show me the DO one" ->
+    reference_positions [2]
+  - options "1. Sales orders, 2. Delivery orders, 3. Both" + "just give me everything"
+    -> reference_positions [3]
+"ALL" WITH NO "ALL" OPTION IS EVERY NUMBER. When the message asks for all of them and no
+option offers "both" / "all" / "everything", emit EVERY option's number in
+reference_positions - one answer, every row, not a widening of the search.
+  - options "1. CHIN CHUN HARDWARE, 2. CHIN CHUN HOMEMART, 3. CHIN CHUN TIMBER, 4. JIMMY"
+    + "All" -> reference_positions [1,2,3,4]
+A message that asks something NEW is NOT an answer to that question, however much it
+sounds like one: a product code or a customer name that is NOT one of the options, an
+order number, or any other topic is a fresh business_query - emit its entities and its domain_hint as usual and
+leave reference_positions EMPTY.
+  - options "1. Sales order list, 2. Delivery order list" + "delivery to hanlim" ->
+    entities [hanlim as customer], reference_positions []
+A CODE OR NAME FROM THE LIST IS ITS POSITION. When the message types one of the offered
+options back (its code, or its name as listed), emit that option's number in
+reference_positions AND the code or name in entities as usual: the typed option is both
+the entity the message names and the position it picks. The domain fields follow the
+message's own words, as above.
+  - options "1. A, 2. B" + "B" -> reference_positions [2], entities [B]
+  - options "1. SRTWC286-SH ... 4. SRTWC286-SH-NEW ..." + "stoick SRTWC286-SH-NEW" ->
+    reference_positions [4], entities [SRTWC286-SH-NEW], domain_hint "inventory",
+    domain_in_message true ("stoick" is "stock", read for meaning)
+
 == A NEW QUESTION IS NEVER A "YES" ==
 When the previous reply offered to escalate ("Would you like me to escalate to ... team?")
 and the current message ASKS SOMETHING - a product, stock, a PO, an SO, a last-in, with or
@@ -439,6 +523,110 @@ state one per product, and each belongs to the product it is written beside.
 demand_qty stays what it always was: the ONE quantity a message states with no product
 of its own beside it. A message that states a quantity per product fills
 entities[].quantity and leaves demand_qty null.
+
+== AN OPEN TASK IS A FACT, AND THE MESSAGE MAY BE ABOUT IT ==
+When the user block carries a line beginning "Open task:", the assistant is still
+collecting something - a stock check waiting on a quantity per product. That line
+names what is noted and what is still needed.
+  - A quantity given for a product the open task names sets entities[].quantity for
+    that product, WHATEVER the current subject is. "MSK11A-QT 110" typed two turns
+    after a promotion question is still that product's quantity.
+  - "add SRTWC8517", "also check SRTWC8517" -> that product as a new entity, normally.
+  - "drop ABC123", "skip ABC123", "forget ABC123" -> entity_op "modify" with ABC123 as
+    the entity, exactly as any other removal.
+  - "make MHS1028 80" -> that product with quantity 80; it REPLACES the earlier one.
+  - "just proceed", "go ahead", "check what you have", "teruskan" -> proceed_anyway
+    true, entities empty.
+  - "never mind the stock check", "forget the stock check" -> topic_reset true with
+    domain_hint "inventory". A "never mind" aimed at something ELSE keeps its own
+    domain.
+  - "back to the stock check", "what were we checking" -> domain_hint "inventory",
+    intent_hint "check_stock", entities empty, no quantity.
+proceed_anyway is null on every turn that does not say it. It is never inferred from a
+short reply, from silence, or from a number.
+
+== A LINE BEGINNING "Last answered:" ==
+When the user block carries a line like "Last answered: SRTGV332-DIY x 20.", the
+assistant has just answered that stock check. A message that only states a NEW
+quantity for it is the SAME product at the new quantity: entities empty, demand_qty
+the new number, correction true, domain_hint "inventory". The number is a quantity,
+never a product code.
+  - "how about 100?", "what about 100", "100 instead", "and if 100?", "kalau 100?",
+    "100 pula?" -> entities [], demand_qty 100, correction true
+  - "how about SRTKT1631SS?" names a product of its own -> that product as an entity,
+    exactly as any new stock question
+  - A bare number on its own ("2", "5 pcs", "make it 2") is that new quantity too:
+    entities [], demand_qty 2, reference_positions []. It is NEVER a position on a
+    list an earlier reply printed: the stock check is the question being answered, so
+    the number is its quantity, even while that list stays on screen for a later pick.
+  - Another product is a new stock question: "check stock SRTWC286" or a code of
+    its own, read exactly as any new stock question.
+
+== THE OPEN QUESTION AND open_question_answer ==
+A line "Open question: {...}" is the ONE question the assistant is waiting on, as an
+object: "kind", "options" (position, code, and label when it differs) or "items" (the
+stock question's numbered lines: position, code, qty; qty null = still owed), "owed"
+(what is still missing) and "qty" (a quantity already given). Kinds:
+  "pick_one" a numbered list to pick from; "choose_brand" the same, of brands;
+  "confirm" a yes or no; "quantities" the stock quantities still asked; "last_answer"
+  a stock check just answered, open to revision; "how_many_to_show" how many to list;
+  "free" a question with no options.
+"Recent exchanges, oldest first" shows the last turns, so read a short reply against
+what was asked. Emit on every object:
+  "open_question_answer": {"mode": "pick"|"yes"|"no"|"fill"|"all"|"done"|"cancel"|null,
+    "picked": [n], "items": [{"position": n|null, "code": "..."|null, "qty": n|null}],
+    "qty_for_all": n|null}
+mode null, picked [], items [], qty_for_all null when there is no Open question line or
+the message does not answer it (it asks something new: read that as usual). Fill
+entities, reference_positions and demand_qty as usual too. A pick never blanks
+domain_hint, intent_hint or domain_in_message: fill them as the message itself says.
+PICKING (pick_one, choose_brand): mode "pick", "picked" the positions chosen, by
+number, ordinal or name: "the first one", "1", "no 1", "yang pertama", "nombor satu",
+"第一个", "yi hao" -> [1]; "the second", "kedua", "dua", "第二个", "di er ge" -> [2];
+"1 and 3", "first and third", "satu dan tiga", "一和三" -> [1, 3]; "both", "dua-dua",
+"两个都要" -> both positions; "all", "semua" -> every position. A code from the list
+is an item with that code. A quantity in the same message is the picked options'
+quantity: "the first one, I need 2", "1, I need 2", "yang pertama, 2 unit",
+"第一个，要两个", "yi hao, liang ge" -> picked [1], qty_for_all 2; "the first 2 and the
+second 5" -> items [{"position": 1, "qty": 2}, {"position": 2, "qty": 5}].
+"none of them", "neither", "bukan", "tak ada", "都不是" -> "no".
+CONFIRM: "yes", "ya", "betul", "ok that one", "对", "是" -> "yes"; "no", "tak", "bukan",
+"不是", "not that one" -> "no".
+QUANTITIES and LAST_ANSWER:
+  - Quantities for some lines ("1. 10, 2. 5", "SRTWC286-SH 10", "first 10, second 5",
+    "satu 10, dua 5", "yi 10 er 5") -> "fill", one item per line. Numbers one per line
+    with no line number ("10 / 20 / 30") are positions in order: the first number is
+    position 1.
+  - The list pasted back with some lines filled and the rest blank, with or without
+    "check stock" in front -> "done", one item per FILLED line; blanks are skipped.
+  - "that's it", "done", "that's all", "itu saja", "cukup" -> "done", items [].
+  - "3 for all", "3 for all of them", "semua 3", "每个三个" -> "all", qty_for_all 3:
+    every line, also over a "last_answer".
+  - A line of a "last_answer" at a new quantity ("make line 2 10", "tukar yang kedua
+    jadi sepuluh", "di san ge yao 8") -> "fill".
+  - "cancel", "never mind the stock check" -> "cancel".
+  - One bare number with no line and no "all": over "quantities" -> mode null,
+    demand_qty the number; over a "last_answer" of two or more items -> mode null,
+    demand_qty the number (the assistant asks which); over one line -> "fill" on it.
+  - A product NOT on the list -> mode null, a new stock question as usual.
+  - "asked_qty" on the object is the number the assistant just asked about ("Is 10
+    for all 3 products, or for one of them?"): "all" -> "all", qty_for_all that
+    number; a line ("2", "the second one") -> "fill", that line at that number.
+Number words are numbers in every language: "satu, dua, tiga" and "yi, er, san" and
+"一, 二, 三" are 1, 2, 3; "two", "dua", "liang ge", "两个" as a quantity are 2.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SALES ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these keys on every
+object, exactly as if they were listed there:
+
+  "sales_basis": "ordered|delivered|invoiced|null"
+  "sales_company": string|null
+
+and group_by may also be "month" or "year".
 
 == QUANTITY: entities[].quantity ==
 A leading or trailing count beside a product code - "x3", "X5", "3 pcs", "5 units",

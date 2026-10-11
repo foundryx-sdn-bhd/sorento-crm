@@ -888,6 +888,9 @@ def _chatbot_semantic_parser_fallback() -> str:
     return SEMANTIC_PARSER_PROMPT
 
 
+from app.services.prompt_diet_files import PARSER_CARDS_FILE, PARSER_CORE_FILE  # noqa: E402
+
+
 def _prompt_diet_fallback(filename: str) -> str:
     """PROMPT-DIET core / cards text: the committed output of `scripts/prompt_diet_cut.py`."""
     from pathlib import Path
@@ -1019,7 +1022,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         active=True,
         activates_in=None,
         variables=["current_date"],
-        fallback=lambda: _prompt_diet_fallback("chatbot_parser_core.v1.txt"),
+        fallback=lambda: _prompt_diet_fallback(PARSER_CORE_FILE),
     ),
     "chatbot_parser_cards": PromptKeySpec(
         name="chatbot_parser_cards",
@@ -1027,7 +1030,7 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         active=True,
         activates_in=None,
         variables=[],
-        fallback=lambda: _prompt_diet_fallback("chatbot_parser_cards.v1.txt"),
+        fallback=lambda: _prompt_diet_fallback(PARSER_CARDS_FILE),
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---

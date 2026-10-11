@@ -1,4 +1,4 @@
-<<card:ideate>>
+<<card:product>>
 == IDEATION CONTINUATION ==
 When the previous turn's domain was "ideate", the assistant is COLLECTING the details
 of an idea and its previous response asked a follow-up question. A short plain answer
@@ -18,7 +18,6 @@ intent_hint = "check_order", message_type = "business_query". If a prior order /
 order number is in context, set entity_op = "reuse" so it binds to that order (do not treat
 "DO" as a new lookup value or a fresh code).
 
-<<card:master_products>>
 == REQUESTED ATTRIBUTES ==
 When the domain exposes several attributes of one record, capture WHICH attribute(s)
 the user asked about, so downstream shows only those — not the whole record.
@@ -80,6 +79,47 @@ value outside it; if the user's phrasing doesn't map to one, leave it out.
   requested_attributes = [] and let the default answer stand.
   (Other domains: leave requested_attributes = [] unless a vocabulary is defined here.)
 
+== ATTACHMENT TYPE EXTRACTION (product_attachment) ==
+When the user names OR IMPLIES a kind of attachment, emit it as a SEPARATE entity
+{hint:"attachment_type"}, IN ADDITION to the product entity. Match by meaning, any
+language/phrasing — a term that implies a type still counts even if no attachment noun
+is spoken.
+  - "photo","actual photo","image","picture", "how does it look","what does it look like",
+    "looks like","appearance","show me","see it"  → attachment_type "photo"
+  - "videos","actual video"  → attachment_type "video"
+  - "drawing","technical drawing","spec","CAD","blueprint" → attachment_type "technical drawing"
+  - "cert","certificate","Ikram"                          → attachment_type "certificate"
+attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate), never the customer's own word: "image", "picture", "gambar" are all photo.
+
+== FLYER FLAG ==
+If the current message asks for a flyer (also "brochure", "promo flyer", "marketing
+flyer") — in any language or phrasing — set top-level "contains_flyer": true.
+Otherwise false. Do NOT emit flyer as an entity; downstream handles it.
+- set domain_hint = promotion, intent_hint = check_promotion
+    brand/category named
+
+== ACCESS LEVELS ==
+access_levels is the access level(s) the user SELECTS IN THE CURRENT MESSAGE, drawn
+ONLY from:
+["Sorento Dealer","Mocha Dealer","Mocha Office","Cabana Dealer","Cabana Office","End User","Sorento Office"]
+Do not invent other strings. Do not treat access levels as entities.
+
+Set access_levels ONLY from the current message:
+- If the current message selects or names an access level / tier → set it.
+- If the current message names NO access level → access_levels = []. Do NOT carry forward or infer from previous turns; downstream handles persistence.
+
+A selection includes a TIER named as a "version" of a resource — "office version", "dealer version", "the office one", "give me the dealer copy". These are access-level selections, NEVER a category/product/other entity, and NEVER request_for_help. Map them
+the same as the explicit words below.
+
+Map the words (the "version"/"copy"/"the X one" phrasings map identically — "office
+version" maps the same as "office"):
+  - "sorento" + "dealer" → "Sorento Dealer";  "sorento" + "office" → "Sorento Office"
+  - "mocha"   + "dealer" → "Mocha Dealer";    "mocha"   + "office" → "Mocha Office"
+  - "cabana"  + "dealer" → "Cabana Dealer";   "cabana"  + "office" → "Cabana Office"
+  - "dealer" with no brand → "Sorento Dealer","Mocha Dealer","Cabana Dealer"
+  - "office" with no brand → "Sorento Office","Mocha Office","Cabana Office"
+  - "end user" → "End User"
+
 == BROADEN AXIS ==
 Users narrow a question one axis at a time, and they widen it the same way. "all time" drops the
 DATE filter. "all products" drops the PRODUCT filter. Neither abandons the rest of the question,
@@ -134,6 +174,50 @@ When broaden_axis is "date" or an entity hint, and a business domain is already 
     axis; do NOT try to hand-prune entities yourself.
 If there is NO business domain in play, "all products" IS a catalogue request — set
 domain_hint = master_products normally, and leave broaden_axis null.
+
+== IS_ACTIVE FILTER ==
+is_active filters records by lifecycle status. Set it ONLY from the CURRENT message's
+own words, matched by meaning in any language; never carry it over from prior state.
+  - false → the user asks for INACTIVE/dead records: "discontinued", "expired",
+    "ended", "obsolete", "no longer available", "old/past promotions",
+    "delisted products". (A product marked discontinued, or a promotion past its end
+    date, is is_active = false.)
+  - true  → the user explicitly asks for ACTIVE/current ones: "active promotions",
+    "current promos", "still available", "ongoing", "valid now".
+  - null  → no lifecycle-status word at all. This is the DEFAULT — most queries don't
+    specify status, and null means "don't filter on status".
+Only a status word sets this. A plain "show me Sorento promotions" → null, NOT true.
+
+== DOCUMENT ==
+"document" is WHICH KIND OF PAPER the message is about, as a list of codes from this
+closed set and nothing else: "SO" (sales order), "DO" (delivery order), "PO" (purchase
+order), "SPO" (supplier purchase order / shipment), "GRN" (goods receive note). Read it
+from the CURRENT message's own words, in any language; never carry it over. Default [].
+  - "sales order", "SO", "sales orders" -> ["SO"]
+  - "delivery order", "DO", "delivery orders", "DO list" -> ["DO"]
+  - "purchase order", "PO" -> ["PO"]
+  - "SPO", "SPO allocation" -> ["SPO"]; "shipment" and "container" are incoming's own
+    words and name no paper -> []
+  - "GRN", "goods receive", "goods received note" -> ["GRN"]
+  - "both", "SO and DO", "sales order and delivery order" -> ["SO", "DO"]
+A message that names NO paper at all -> [].
+THE DOCUMENT WORD COUNTS WHEREVER IT SITS IN THE MESSAGE - before the status word, after
+it, beside the product, in the middle of a long sentence, and through a typo in a
+NEIGHBOURING word. The assistant asks which document only when the message named none, so
+a document word you drop costs the user an extra question they already answered.
+  - "Outstsnding DO for 7445" -> document ["DO"], status "outstanding" (the typo is in
+    the status word, not the document word)
+  - "Srtwc8518-SH dealer delivery order outstanding how many at BRW?" -> document ["DO"]
+  - "SRTWT7443 sales order outstanding for IB" -> document ["SO"]
+  - "how much SRTWT7445 outstanding both at BRW-IB" -> document ["SO", "DO"]
+  - "what is outstanding for SRTWT7445 at BRW" -> document [] (no paper named)
+A message that is ONLY a paper word is still that paper, and it is a business_query -
+never casual, never an empty document. It is how a customer switches the paper they are
+looking at while a question about the other one is on screen.
+  - "Sales order" -> document ["SO"], message_type "business_query", domain_hint "order",
+    intent_hint "check_order"
+  - "DO" / "delivery order" -> document ["DO"], message_type "business_query"
+  - "can show both?" (over an outstanding SO/DO detail offer) -> document ["SO", "DO"], status "outstanding", reference_positions []. "both" over that offer names BOTH PAPERS - it is not a position off the list.
 
 == A BARE "SPEC" ASKS FOR ALL OF THEM ==
 Order matters here. Ask FIRST: does the message name a PARTICULAR property (steel grade,
@@ -204,62 +288,6 @@ Everything below is IN ADDITION to the OUTPUT object above. Emit this key on eve
 entity, exactly as if it were listed there:
 
   "quantity": a number, or null
-
-<<card:product_attachment>>
-== ATTACHMENT TYPE EXTRACTION (product_attachment) ==
-When the user names OR IMPLIES a kind of attachment, emit it as a SEPARATE entity
-{hint:"attachment_type"}, IN ADDITION to the product entity. Match by meaning, any
-language/phrasing — a term that implies a type still counts even if no attachment noun
-is spoken.
-  - "photo","actual photo","image","picture", "how does it look","what does it look like",
-    "looks like","appearance","show me","see it"  → attachment_type "photo"
-  - "videos","actual video"  → attachment_type "video"
-  - "drawing","technical drawing","spec","CAD","blueprint" → attachment_type "technical drawing"
-  - "cert","certificate","Ikram"                          → attachment_type "certificate"
-attachment_type canonical_code is always the taxonomy value (photo, video, technical drawing, 3D model, certificate), never the customer's own word: "image", "picture", "gambar" are all photo.
-
-<<card:promotion>>
-== FLYER FLAG ==
-If the current message asks for a flyer (also "brochure", "promo flyer", "marketing
-flyer") — in any language or phrasing — set top-level "contains_flyer": true.
-Otherwise false. Do NOT emit flyer as an entity; downstream handles it.
-- set domain_hint = promotion, intent_hint = check_promotion
-    brand/category named
-
-== ACCESS LEVELS ==
-access_levels is the access level(s) the user SELECTS IN THE CURRENT MESSAGE, drawn
-ONLY from:
-["Sorento Dealer","Mocha Dealer","Mocha Office","Cabana Dealer","Cabana Office","End User","Sorento Office"]
-Do not invent other strings. Do not treat access levels as entities.
-
-Set access_levels ONLY from the current message:
-- If the current message selects or names an access level / tier → set it.
-- If the current message names NO access level → access_levels = []. Do NOT carry forward or infer from previous turns; downstream handles persistence.
-
-A selection includes a TIER named as a "version" of a resource — "office version", "dealer version", "the office one", "give me the dealer copy". These are access-level selections, NEVER a category/product/other entity, and NEVER request_for_help. Map them
-the same as the explicit words below.
-
-Map the words (the "version"/"copy"/"the X one" phrasings map identically — "office
-version" maps the same as "office"):
-  - "sorento" + "dealer" → "Sorento Dealer";  "sorento" + "office" → "Sorento Office"
-  - "mocha"   + "dealer" → "Mocha Dealer";    "mocha"   + "office" → "Mocha Office"
-  - "cabana"  + "dealer" → "Cabana Dealer";   "cabana"  + "office" → "Cabana Office"
-  - "dealer" with no brand → "Sorento Dealer","Mocha Dealer","Cabana Dealer"
-  - "office" with no brand → "Sorento Office","Mocha Office","Cabana Office"
-  - "end user" → "End User"
-
-== IS_ACTIVE FILTER ==
-is_active filters records by lifecycle status. Set it ONLY from the CURRENT message's
-own words, matched by meaning in any language; never carry it over from prior state.
-  - false → the user asks for INACTIVE/dead records: "discontinued", "expired",
-    "ended", "obsolete", "no longer available", "old/past promotions",
-    "delisted products". (A product marked discontinued, or a promotion past its end
-    date, is is_active = false.)
-  - true  → the user explicitly asks for ACTIVE/current ones: "active promotions",
-    "current promos", "still available", "ongoing", "valid now".
-  - null  → no lifecycle-status word at all. This is the DEFAULT — most queries don't
-    specify status, and null means "don't filter on status".
-Only a status word sets this. A plain "show me Sorento promotions" → null, NOT true.
 
 == PROMOTION KIND ==
 The "Promotion kinds:" line lists the kinds of promotion as `code (name)`. When the current message
@@ -362,42 +390,111 @@ In addition to QUANTITIES and LAST_ANSWER above:
     - the same lines, "10 for all" -> "all", qty_for_all 10
     - only line 2 still owed, "10" -> "fill", items [{"position": 2, "qty": 10}]
 
-<<card:escalation>>
-== COMPANY-NAME REPLY ON AN ESCALATION OFFER ==
-When the previous assistant message offered an escalation ("Would you like me to escalate ...") or asked
-which company to route to, the user may reply with a company name OR its short company code (e.g. "mocha",
-"Sorento team", "the mocha one", "srt", "route to mch", "yes please escalate to srt team", "please escalate
-to sorento team"). Treat such a reply as engaging the pending offer, NOT as a new business query: do not
-invent a domain_hint or entities from the company name/code alone. Deterministic code resolves which
-company was picked; extraction/classification is all you do here.
-Company codes: Sorento = SRT, Mocha = MCH, Cabana = CBN (case-insensitive; "srt team" = Sorento).
-Companies OFFERED in the pending offer: the companies the Previous response offered; "(none)" when no offer is pending.
-  - If that list is NOT "(none)" AND the current message names EXACTLY ONE of those companies — by name OR
-    code, bare or with confirmation/filler/request words around it ("yes mocha", "mocha please", "ok go with
-    sorento", "the mocha one", "route to mocha team", "srt", "yes please escalate to srt team", "please
-    escalate to sorento team") — set "escalation": { "is_escalation_confirmation": true, "company_pick":
-    "<the CANONICAL company name exactly as listed, e.g. Sorento — never the code>" }. This applies whatever
-    the message_type you assign (request_for_help, confirmation, casual): naming an offered company while the
-    offer is pending IS the pick. Keep is_affirmative as the AFFIRMATION rule says (a leading "yes" still
-    sets it true). Do NOT set person_mention for a company name.
-  - Otherwise "company_pick" is null: no company named, a company NOT in the offered list (e.g. "yes mocha"
-    when only Sorento is listed → company_pick null; the "yes" still counts as the affirmation), more than
-    one named, or a negated company ("not sorento"). Never guess or resolve — code validates the pick
-    against the persisted pool and discards it if invalid.
-  - A VALUE IS NOT A FRAGMENT. If the current message names a concrete value you would extract as an
-    entity - a customer/company that is NOT in the offered list, a product code, an order/DO/SPO number,
-    a container, a warehouse - the user is re-scoping the question, not answering the offer. Extract it
-    as you normally would: the value as an entity with current_message = true and its proper hint, the
-    previous turn's domain_hint/intent_hint carried, message_type = "business_query", entity_op =
-    "replace_combine", company_pick null, is_affirmative null. A pending escalation offer never swallows
-    a value the user could search on - "for u bath and kitchen" while a member picker is open is a
-    customer filter, not a company pick and not small talk.
-  - Otherwise, a reply during a pending offer that names no company, no listed member, no value of its
-    own and is not a yes/no (a bare fragment, small talk - but NOT the escalate word, which is a yes per
-    AFFIRMATION/ESCALATE-WORD) is NOT a new business query and NOT a decline:
-    classify it casual/unknown with company_pick null and is_affirmative null, and leave domain_hint null.
+<<card:stock>>
+== PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==
+A question about what WE ordered from a SUPPLIER - never about what a customer ordered
+from us.
+  - "PO", "PO placed", "purchase order", "PO for this item", "ordered from supplier",
+    "supplier order", "采购单", "已下单" -> domain_hint "purchase_order",
+    intent_hint "check_po"
+  - "by supplier" / "by product" on such a question sets group_by as well.
+"DO", "SO", "delivery order", "sales order" and a customer's name are NEVER
+purchase_order: those stay domain_hint "order", intent_hint "check_order".
+"PO" or "purchase order" ALONE, with or without a product, is purchase_order. It is NEVER
+purchase_cost: only the words of COST ("cost", "last purchase cost", "how much did we pay")
+make a message purchase_cost.
+  - "stock, incoming and PO" -> asks [{"domain":"inventory","intent":"check_stock"},
+    {"domain":"incoming","intent":"check_incoming"},
+    {"domain":"purchase_order","intent":"check_po"}], domain_hint "inventory" - the FIRST
+    of the asks, never the last one and never purchase_cost.
 
-<<card:order>>
+== SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==
+"when did this last come in, and how much" is a receiving question, not a stock question.
+  - "last in", "last incoming qty", "last received", "when did it last come in",
+    "上次进货", "terakhir masuk" -> intent_hint "check_spo",
+    domain_hint "spo_allocation"
+  - "last 3 in" sets top_n = 3 as well.
+"how much stock do we have" is still check_stock / inventory; "when is it arriving" is
+still check_incoming / incoming.
+
+== IN A PO ASK, THE CODE IS THE PRODUCT ==
+"PO for SRTWC8517", "PO SRTWC8517", "purchase order of SRTWC8517": the token after "for" /
+"of", or a bare code beside the PO word, is the PRODUCT. Emit it as an entity with
+hint "product" - NEVER "order", "order_number" or "customer_order".
+A PO / SO NUMBER on this system looks like "202602-S0002" (digits, a hyphen, then a
+letter); only a token of THAT shape is an order entity. A product code starts with
+letters ("SRTWC8517", "C-FH14", "MSK11A-QT").
+The same holds for the SPO / last-in ask: "last in for SRTWC8517" names a PRODUCT.
+
+== LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==
+"what did we pay a supplier for this, last time" is a COST question, never a
+selling-price question - it is what WE PAID, not what WE CHARGE.
+  - "last purchase cost", "last cost", "what did we pay", "what did we pay for",
+    "buying price", "purchase price", "cost price", "上次采购价", "成本",
+    "harga belian terakhir", "harga beli" -> intent_hint "check_po_cost",
+    domain_hint "purchase_cost"
+  - "last 3 purchase cost" sets top_n = 3 as well; "by warehouse" / "by location" sets
+    group_by "warehouse".
+"how much do we sell it for", "selling price", "what do we charge", "how much does it cost", "berapa harga", "多少钱" are NEVER purchase_cost: those stay domain_hint
+"master_products" (list price), "promotion" (a promo price), or plain check_stock,
+exactly as PRICE TERMINOLOGY already states - "cost" alone is the everyday word for
+the SELLING price, not a signal for this domain.
+The same code-is-the-product rule as PO / SPO applies: "last purchase cost for
+SRTWC8517" names a PRODUCT, never an order.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOW STOCK REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+== LOW STOCK REPORT: intent_hint "low_stock_report", domain_hint "inventory" ==
+"which items are below their reorder level" is a REPORT the buyer runs, not a stock
+balance question about one product.
+  - "low stock report", "low stock", "reorder report", "stock below level",
+    "what needs reordering", "laporan stok rendah", "低库存报表" ->
+    intent_hint "low_stock_report", domain_hint "inventory"
+  - A LOCATION word in the same message ("low stock report BRW", "low stock for IB")
+    is a warehouse entity - hint "warehouse" - never a product, even though a bare
+    token under this domain usually is one.
+  - A PRODUCT CODE ("low stock for SRTWT7408") is a product entity - hint "product".
+  - A DATE PHRASE ("until 30 Nov", "from September") is the plan's horizon: fill
+    date_filter_start / date_filter_end, exactly as any other date window.
+"how many CB100 in BRW" is NOT this intent - that is plain check_stock. This one is
+asked about the BOOK ("what is low", "what should I order"), never about one item's
+quantity.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SALES REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
+object, exactly as if it were listed there:
+
+  "sales_channel": "dealer|project|null"
+
+== THE WORD SPO IS AN SPO ALLOCATION ASK: domain_hint "spo_allocation", intent_hint "check_spo" ==
+"SPO", "SPO for X", "SPO SRT79-SS", "any SPO", "SPO allocations", "SPO at BRW" and
+"SPO for BRW-BB" are all domain_hint "spo_allocation", intent_hint "check_spo", document
+["SPO"]. NEVER "incoming" for the word SPO. "incoming" needs an ARRIVAL word (ETA, arriving,
+shipment, container, incoming). "last in" keeps its own cue above.
+  - "SPO for BRW-BB" -> domain_hint "spo_allocation", intent_hint "check_spo",
+    entities [{"raw": "BRW-BB", "hint": "warehouse"}]
+  - "SPO SRT79-SS" -> domain_hint "spo_allocation", intent_hint "check_spo",
+    entities [{"raw": "SRT79-SS", "hint": "product"}]
+
+== UNDER A PO OR SPO ASK, A SHORT TOKEN IS A LOCATION TOO ==
+Under domain_hint "purchase_order" or "spo_allocation", a token of either shape below that
+follows "to", "at", "in" or "for", or stands beside the product, is a warehouse entity
+(hint "warehouse"), not a product:
+  (a) at most 4 characters, letters or letters with one digit ("BRW", "HQ", "W2");
+  (b) a hyphenated site code of at most 10 characters ("BRW-BB").
+  - "PO to BRW" -> domain_hint "purchase_order", intent_hint "check_po",
+    entities [{"raw": "BRW", "hint": "warehouse"}], no product
+  - "last in SRTWC286 at BRW" -> entities [{"raw": "SRTWC286", "hint": "product"},
+    {"raw": "BRW", "hint": "warehouse"}]
+
+<<card:orders>>
 == ORDER_STATUS FILTER ==
 order_status filters ORDER records by delivery progress. Set it ONLY from the CURRENT
 message's own words (any language), and ONLY for order / order_enquiries queries; never
@@ -512,346 +609,6 @@ warehouses. A product code carries digits ("SRTWC8517", "MSK11A-QT") and is neit
 == A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==
 request_for_help is ONLY a request for a HUMAN. A message that names a customer or product next to a delivery / order / DO word ("delivery to hanlim", "hantar ke hanlim", "any DO for X") is business_query, intent_hint check_order, domain_hint order, entity = that name with current_message true, is_escalation_confirmation false, even when an escalate offer is open.
 
-== SORT_BY AND SORT_DIR: the order the customer asked for ==
-From the CURRENT message only, never carried. Default null for both.
-  - "latest first", "newest", "most recent", "latest PO" -> sort_by "date", sort_dir "desc"
-  - "oldest first" -> sort_by "date", sort_dir "asc"
-  - "by PO date", "by SPO date", "by doc date", "by date" -> sort_by "date"
-  - "by expected date", "by ETA" -> sort_by "expected_date"
-  - "biggest quantity first", "largest qty", "most quantity" -> sort_by "quantity", sort_dir "desc"
-  - "smallest quantity first" -> sort_by "quantity", sort_dir "asc"
-  - "most outstanding", "by outstanding" -> sort_by "outstanding"
-  - "by GR date", "by received date" -> sort_by "received_date"
-  - "by received qty" -> sort_by "received_quantity"
-  - "by product", "by product code" -> sort_by "product"
-  - "by supplier" -> sort_by "supplier"
-"last in", "last received", "last 3 in" name NO sort (sort_by null): the SPO LAST RECEIPT
-rule above answers them by the SPO date, received or not.
-A direction word alone with no field ("latest first", "oldest first") sorts the document
-date. No direction word -> sort_dir null. "by amount", "by value", "by RM" on a PO or SPO
-ask -> sort_by null, and NEVER rank_by (there is no amount to sort by). Every ask outside
-PO and SPO leaves both keys null.
-  - "latest PO for SRT79-SS" -> domain_hint "purchase_order", intent_hint "check_po",
-    entities [{"raw": "SRT79-SS", "hint": "product"}], sort_by "date", sort_dir "desc"
-  - "SPO biggest quantity first at BRW" -> domain_hint "spo_allocation", intent_hint
-    "check_spo", entities [{"raw": "BRW", "hint": "warehouse"}], sort_by "quantity",
-    sort_dir "desc"
-  - "oldest PO first" -> sort_by "date", sort_dir "asc"
-  - "SPO by GR date" -> sort_by "received_date"
-  - "PO by supplier" -> sort_by "supplier"
-  - "SPO by amount" -> sort_by null
-
-== A SORT WORD ALONE RE-SORTS THE LIST ON SCREEN ==
-When the Previous response is a PO or SPO list and the message only names a sort
-("biggest quantity first", "oldest first", "sort by date"), it is a refinement:
-message_type "business_query", domain_hint null, intent_hint null, domain_in_message false,
-entities [], only sort_by / sort_dir set.
-  - "biggest quantity first" -> {"domain_hint": null, "entities": [], "sort_by": "quantity",
-    "sort_dir": "desc"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CUSTOMER ACCOUNT NUMBER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Every entity object carries one more key, exactly as if it were listed there:
-
-  "account": an integer, or null
-
-<<card:resource_attachment>>
-== DOCUMENT ==
-"document" is WHICH KIND OF PAPER the message is about, as a list of codes from this
-closed set and nothing else: "SO" (sales order), "DO" (delivery order), "PO" (purchase
-order), "SPO" (supplier purchase order / shipment), "GRN" (goods receive note). Read it
-from the CURRENT message's own words, in any language; never carry it over. Default [].
-  - "sales order", "SO", "sales orders" -> ["SO"]
-  - "delivery order", "DO", "delivery orders", "DO list" -> ["DO"]
-  - "purchase order", "PO" -> ["PO"]
-  - "SPO", "SPO allocation" -> ["SPO"]; "shipment" and "container" are incoming's own
-    words and name no paper -> []
-  - "GRN", "goods receive", "goods received note" -> ["GRN"]
-  - "both", "SO and DO", "sales order and delivery order" -> ["SO", "DO"]
-A message that names NO paper at all -> [].
-THE DOCUMENT WORD COUNTS WHEREVER IT SITS IN THE MESSAGE - before the status word, after
-it, beside the product, in the middle of a long sentence, and through a typo in a
-NEIGHBOURING word. The assistant asks which document only when the message named none, so
-a document word you drop costs the user an extra question they already answered.
-  - "Outstsnding DO for 7445" -> document ["DO"], status "outstanding" (the typo is in
-    the status word, not the document word)
-  - "Srtwc8518-SH dealer delivery order outstanding how many at BRW?" -> document ["DO"]
-  - "SRTWT7443 sales order outstanding for IB" -> document ["SO"]
-  - "how much SRTWT7445 outstanding both at BRW-IB" -> document ["SO", "DO"]
-  - "what is outstanding for SRTWT7445 at BRW" -> document [] (no paper named)
-A message that is ONLY a paper word is still that paper, and it is a business_query -
-never casual, never an empty document. It is how a customer switches the paper they are
-looking at while a question about the other one is on screen.
-  - "Sales order" -> document ["SO"], message_type "business_query", domain_hint "order",
-    intent_hint "check_order"
-  - "DO" / "delivery order" -> document ["DO"], message_type "business_query"
-  - "can show both?" (over an outstanding SO/DO detail offer) -> document ["SO", "DO"], status "outstanding", reference_positions []. "both" over that offer names BOTH PAPERS - it is not a position off the list.
-
-<<card:open_question>>
-== AN OPEN NUMBERED QUESTION IS ANSWERED WITH reference_positions ==
-When the user block says the assistant is waiting for a reply AND lists
-"Open question options:", the assistant has just asked a numbered question. If the
-current message ANSWERS it - by number ("2"), or by words naming one of those
-options ("delivery order", "the DO list", "sales", "both", "all", "everything") -
-emit that option's number in reference_positions, and fill every other field as the message itself says:
-domain_hint, intent_hint, order_status, domain_in_message, entities and message_type
-exactly as you would for the same words with no question open. A pick blanks nothing:
-the assistant reads the position and the domain fields together and decides where the
-answer goes.
-  - options "1. SRTWC286-SH ... 4. SRTWC286-SH-NEW ..." + "4" -> reference_positions [4],
-    domain_in_message false (no domain word)
-  - the same options + "4 stock" or "stock for the 4th" -> reference_positions [4],
-    domain_hint "inventory", intent_hint "check_stock", domain_in_message true
-  - the same options + "check stock" (no number, no option named) -> domain_hint
-    "inventory", intent_hint "check_stock", domain_in_message true, reference_positions []
-  - options "1. Sales orders, 2. Delivery orders, 3. Both" + "all" ->
-    reference_positions [3]
-  - options "1. Sales order list, 2. Delivery order list" + "DO list" ->
-    reference_positions [2]
-A PARAPHRASE is still an answer. The customer rarely types the label back: "gimme the
-list plss", "show me", "yes list please", "the SO one", "let me see them" all name an
-option when a numbered question is open. Pick the option they mean; and when only ONE
-option is offered, any request for "the list" is that option.
-  - options "1. Sales order list" + "gimme the list plss" -> reference_positions [1]
-  - options "1. Sales order list, 2. Delivery order list" + "show me the DO one" ->
-    reference_positions [2]
-  - options "1. Sales orders, 2. Delivery orders, 3. Both" + "just give me everything"
-    -> reference_positions [3]
-"ALL" WITH NO "ALL" OPTION IS EVERY NUMBER. When the message asks for all of them and no
-option offers "both" / "all" / "everything", emit EVERY option's number in
-reference_positions - one answer, every row, not a widening of the search.
-  - options "1. CHIN CHUN HARDWARE, 2. CHIN CHUN HOMEMART, 3. CHIN CHUN TIMBER, 4. JIMMY"
-    + "All" -> reference_positions [1,2,3,4]
-A message that asks something NEW is NOT an answer to that question, however much it
-sounds like one: a product code or a customer name that is NOT one of the options, an
-order number, or any other topic is a fresh business_query - emit its entities and its domain_hint as usual and
-leave reference_positions EMPTY.
-  - options "1. Sales order list, 2. Delivery order list" + "delivery to hanlim" ->
-    entities [hanlim as customer], reference_positions []
-A CODE OR NAME FROM THE LIST IS ITS POSITION. When the message types one of the offered
-options back (its code, or its name as listed), emit that option's number in
-reference_positions AND the code or name in entities as usual: the typed option is both
-the entity the message names and the position it picks. The domain fields follow the
-message's own words, as above.
-  - options "1. A, 2. B" + "B" -> reference_positions [2], entities [B]
-  - options "1. SRTWC286-SH ... 4. SRTWC286-SH-NEW ..." + "stoick SRTWC286-SH-NEW" ->
-    reference_positions [4], entities [SRTWC286-SH-NEW], domain_hint "inventory",
-    domain_in_message true ("stoick" is "stock", read for meaning)
-
-== AN OPEN TASK IS A FACT, AND THE MESSAGE MAY BE ABOUT IT ==
-When the user block carries a line beginning "Open task:", the assistant is still
-collecting something - a stock check waiting on a quantity per product. That line
-names what is noted and what is still needed.
-  - A quantity given for a product the open task names sets entities[].quantity for
-    that product, WHATEVER the current subject is. "MSK11A-QT 110" typed two turns
-    after a promotion question is still that product's quantity.
-  - "add SRTWC8517", "also check SRTWC8517" -> that product as a new entity, normally.
-  - "drop ABC123", "skip ABC123", "forget ABC123" -> entity_op "modify" with ABC123 as
-    the entity, exactly as any other removal.
-  - "make MHS1028 80" -> that product with quantity 80; it REPLACES the earlier one.
-  - "just proceed", "go ahead", "check what you have", "teruskan" -> proceed_anyway
-    true, entities empty.
-  - "never mind the stock check", "forget the stock check" -> topic_reset true with
-    domain_hint "inventory". A "never mind" aimed at something ELSE keeps its own
-    domain.
-  - "back to the stock check", "what were we checking" -> domain_hint "inventory",
-    intent_hint "check_stock", entities empty, no quantity.
-proceed_anyway is null on every turn that does not say it. It is never inferred from a
-short reply, from silence, or from a number.
-
-== A LINE BEGINNING "Last answered:" ==
-When the user block carries a line like "Last answered: SRTGV332-DIY x 20.", the
-assistant has just answered that stock check. A message that only states a NEW
-quantity for it is the SAME product at the new quantity: entities empty, demand_qty
-the new number, correction true, domain_hint "inventory". The number is a quantity,
-never a product code.
-  - "how about 100?", "what about 100", "100 instead", "and if 100?", "kalau 100?",
-    "100 pula?" -> entities [], demand_qty 100, correction true
-  - "how about SRTKT1631SS?" names a product of its own -> that product as an entity,
-    exactly as any new stock question
-  - A bare number on its own ("2", "5 pcs", "make it 2") is that new quantity too:
-    entities [], demand_qty 2, reference_positions []. It is NEVER a position on a
-    list an earlier reply printed: the stock check is the question being answered, so
-    the number is its quantity, even while that list stays on screen for a later pick.
-  - Another product is a new stock question: "check stock SRTWC286" or a code of
-    its own, read exactly as any new stock question.
-
-== THE OPEN QUESTION AND open_question_answer ==
-A line "Open question: {...}" is the ONE question the assistant is waiting on, as an
-object: "kind", "options" (position, code, and label when it differs) or "items" (the
-stock question's numbered lines: position, code, qty; qty null = still owed), "owed"
-(what is still missing) and "qty" (a quantity already given). Kinds:
-  "pick_one" a numbered list to pick from; "choose_brand" the same, of brands;
-  "confirm" a yes or no; "quantities" the stock quantities still asked; "last_answer"
-  a stock check just answered, open to revision; "how_many_to_show" how many to list;
-  "free" a question with no options.
-"Recent exchanges, oldest first" shows the last turns, so read a short reply against
-what was asked. Emit on every object:
-  "open_question_answer": {"mode": "pick"|"yes"|"no"|"fill"|"all"|"done"|"cancel"|null,
-    "picked": [n], "items": [{"position": n|null, "code": "..."|null, "qty": n|null}],
-    "qty_for_all": n|null}
-mode null, picked [], items [], qty_for_all null when there is no Open question line or
-the message does not answer it (it asks something new: read that as usual). Fill
-entities, reference_positions and demand_qty as usual too. A pick never blanks
-domain_hint, intent_hint or domain_in_message: fill them as the message itself says.
-PICKING (pick_one, choose_brand): mode "pick", "picked" the positions chosen, by
-number, ordinal or name: "the first one", "1", "no 1", "yang pertama", "nombor satu",
-"第一个", "yi hao" -> [1]; "the second", "kedua", "dua", "第二个", "di er ge" -> [2];
-"1 and 3", "first and third", "satu dan tiga", "一和三" -> [1, 3]; "both", "dua-dua",
-"两个都要" -> both positions; "all", "semua" -> every position. A code from the list
-is an item with that code. A quantity in the same message is the picked options'
-quantity: "the first one, I need 2", "1, I need 2", "yang pertama, 2 unit",
-"第一个，要两个", "yi hao, liang ge" -> picked [1], qty_for_all 2; "the first 2 and the
-second 5" -> items [{"position": 1, "qty": 2}, {"position": 2, "qty": 5}].
-"none of them", "neither", "bukan", "tak ada", "都不是" -> "no".
-CONFIRM: "yes", "ya", "betul", "ok that one", "对", "是" -> "yes"; "no", "tak", "bukan",
-"不是", "not that one" -> "no".
-QUANTITIES and LAST_ANSWER:
-  - Quantities for some lines ("1. 10, 2. 5", "SRTWC286-SH 10", "first 10, second 5",
-    "satu 10, dua 5", "yi 10 er 5") -> "fill", one item per line. Numbers one per line
-    with no line number ("10 / 20 / 30") are positions in order: the first number is
-    position 1.
-  - The list pasted back with some lines filled and the rest blank, with or without
-    "check stock" in front -> "done", one item per FILLED line; blanks are skipped.
-  - "that's it", "done", "that's all", "itu saja", "cukup" -> "done", items [].
-  - "3 for all", "3 for all of them", "semua 3", "每个三个" -> "all", qty_for_all 3:
-    every line, also over a "last_answer".
-  - A line of a "last_answer" at a new quantity ("make line 2 10", "tukar yang kedua
-    jadi sepuluh", "di san ge yao 8") -> "fill".
-  - "cancel", "never mind the stock check" -> "cancel".
-  - One bare number with no line and no "all": over "quantities" -> mode null,
-    demand_qty the number; over a "last_answer" of two or more items -> mode null,
-    demand_qty the number (the assistant asks which); over one line -> "fill" on it.
-  - A product NOT on the list -> mode null, a new stock question as usual.
-  - "asked_qty" on the object is the number the assistant just asked about ("Is 10
-    for all 3 products, or for one of them?"): "all" -> "all", qty_for_all that
-    number; a line ("2", "the second one") -> "fill", that line at that number.
-Number words are numbers in every language: "satu, dua, tiga" and "yi, er, san" and
-"一, 二, 三" are 1, 2, 3; "two", "dua", "liang ge", "两个" as a quantity are 2.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SALES ANALYSIS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Everything below is IN ADDITION to the OUTPUT object above. Emit these keys on every
-object, exactly as if they were listed there:
-
-  "sales_basis": "ordered|delivered|invoiced|null"
-  "sales_company": string|null
-
-and group_by may also be "month" or "year".
-
-<<card:purchase_order>>
-== PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==
-A question about what WE ordered from a SUPPLIER - never about what a customer ordered
-from us.
-  - "PO", "PO placed", "purchase order", "PO for this item", "ordered from supplier",
-    "supplier order", "采购单", "已下单" -> domain_hint "purchase_order",
-    intent_hint "check_po"
-  - "by supplier" / "by product" on such a question sets group_by as well.
-"DO", "SO", "delivery order", "sales order" and a customer's name are NEVER
-purchase_order: those stay domain_hint "order", intent_hint "check_order".
-"PO" or "purchase order" ALONE, with or without a product, is purchase_order. It is NEVER
-purchase_cost: only the words of COST ("cost", "last purchase cost", "how much did we pay")
-make a message purchase_cost.
-  - "stock, incoming and PO" -> asks [{"domain":"inventory","intent":"check_stock"},
-    {"domain":"incoming","intent":"check_incoming"},
-    {"domain":"purchase_order","intent":"check_po"}], domain_hint "inventory" - the FIRST
-    of the asks, never the last one and never purchase_cost.
-
-== IN A PO ASK, THE CODE IS THE PRODUCT ==
-"PO for SRTWC8517", "PO SRTWC8517", "purchase order of SRTWC8517": the token after "for" /
-"of", or a bare code beside the PO word, is the PRODUCT. Emit it as an entity with
-hint "product" - NEVER "order", "order_number" or "customer_order".
-A PO / SO NUMBER on this system looks like "202602-S0002" (digits, a hyphen, then a
-letter); only a token of THAT shape is an order entity. A product code starts with
-letters ("SRTWC8517", "C-FH14", "MSK11A-QT").
-The same holds for the SPO / last-in ask: "last in for SRTWC8517" names a PRODUCT.
-
-== UNDER A PO OR SPO ASK, A SHORT TOKEN IS A LOCATION TOO ==
-Under domain_hint "purchase_order" or "spo_allocation", a token of either shape below that
-follows "to", "at", "in" or "for", or stands beside the product, is a warehouse entity
-(hint "warehouse"), not a product:
-  (a) at most 4 characters, letters or letters with one digit ("BRW", "HQ", "W2");
-  (b) a hyphenated site code of at most 10 characters ("BRW-BB").
-  - "PO to BRW" -> domain_hint "purchase_order", intent_hint "check_po",
-    entities [{"raw": "BRW", "hint": "warehouse"}], no product
-  - "last in SRTWC286 at BRW" -> entities [{"raw": "SRTWC286", "hint": "product"},
-    {"raw": "BRW", "hint": "warehouse"}]
-
-<<card:spo_allocation>>
-== SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==
-"when did this last come in, and how much" is a receiving question, not a stock question.
-  - "last in", "last incoming qty", "last received", "when did it last come in",
-    "上次进货", "terakhir masuk" -> intent_hint "check_spo",
-    domain_hint "spo_allocation"
-  - "last 3 in" sets top_n = 3 as well.
-"how much stock do we have" is still check_stock / inventory; "when is it arriving" is
-still check_incoming / incoming.
-
-== THE WORD SPO IS AN SPO ALLOCATION ASK: domain_hint "spo_allocation", intent_hint "check_spo" ==
-"SPO", "SPO for X", "SPO SRT79-SS", "any SPO", "SPO allocations", "SPO at BRW" and
-"SPO for BRW-BB" are all domain_hint "spo_allocation", intent_hint "check_spo", document
-["SPO"]. NEVER "incoming" for the word SPO. "incoming" needs an ARRIVAL word (ETA, arriving,
-shipment, container, incoming). "last in" keeps its own cue above.
-  - "SPO for BRW-BB" -> domain_hint "spo_allocation", intent_hint "check_spo",
-    entities [{"raw": "BRW-BB", "hint": "warehouse"}]
-  - "SPO SRT79-SS" -> domain_hint "spo_allocation", intent_hint "check_spo",
-    entities [{"raw": "SRT79-SS", "hint": "product"}]
-
-<<card:purchase_cost>>
-== LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==
-"what did we pay a supplier for this, last time" is a COST question, never a
-selling-price question - it is what WE PAID, not what WE CHARGE.
-  - "last purchase cost", "last cost", "what did we pay", "what did we pay for",
-    "buying price", "purchase price", "cost price", "上次采购价", "成本",
-    "harga belian terakhir", "harga beli" -> intent_hint "check_po_cost",
-    domain_hint "purchase_cost"
-  - "last 3 purchase cost" sets top_n = 3 as well; "by warehouse" / "by location" sets
-    group_by "warehouse".
-"how much do we sell it for", "selling price", "what do we charge", "how much does it cost", "berapa harga", "多少钱" are NEVER purchase_cost: those stay domain_hint
-"master_products" (list price), "promotion" (a promo price), or plain check_stock,
-exactly as PRICE TERMINOLOGY already states - "cost" alone is the everyday word for
-the SELLING price, not a signal for this domain.
-The same code-is-the-product rule as PO / SPO applies: "last purchase cost for
-SRTWC8517" names a PRODUCT, never an order.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LOW STOCK REPORT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-<<card:inventory>>
-== LOW STOCK REPORT: intent_hint "low_stock_report", domain_hint "inventory" ==
-"which items are below their reorder level" is a REPORT the buyer runs, not a stock
-balance question about one product.
-  - "low stock report", "low stock", "reorder report", "stock below level",
-    "what needs reordering", "laporan stok rendah", "低库存报表" ->
-    intent_hint "low_stock_report", domain_hint "inventory"
-  - A LOCATION word in the same message ("low stock report BRW", "low stock for IB")
-    is a warehouse entity - hint "warehouse" - never a product, even though a bare
-    token under this domain usually is one.
-  - A PRODUCT CODE ("low stock for SRTWT7408") is a product entity - hint "product".
-  - A DATE PHRASE ("until 30 Nov", "from September") is the plan's horizon: fill
-    date_filter_start / date_filter_end, exactly as any other date window.
-"how many CB100 in BRW" is NOT this intent - that is plain check_stock. This one is
-asked about the BOOK ("what is low", "what should I order"), never about one item's
-quantity.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SALES REPORT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Everything below is IN ADDITION to the OUTPUT object above. Emit this key on every
-object, exactly as if it were listed there:
-
-  "sales_channel": "dealer|project|null"
-
-<<card:sales>>
 == SALES REPORT: order_status "sales_report", domain_hint "order" ==
 "sales report", "sales performance", "how much did X buy", "how much did X order",
 "sales figures for X" is a REPORT of confirmed vs outstanding sales by month - a
@@ -1156,6 +913,232 @@ object, exactly as if it were listed there:
 
   "self_reference": true|false
 
+== SELF_REFERENCE: the asker means their OWN account ==
+true when the message asks about the asker's own orders, delivery, outstanding, account or
+figures, by a first-person word used as the asker's own account (not the company):
+  - "my", "mine", "me", "our", "ours", "us" ("what's my outstanding", "my DO", "where is
+    my shipment", "show me my orders", "what did we order", "our orders in September")
+  - "saya punya", "kami punya", "punya saya", "punya kami" ("outstanding saya punya",
+    "order kami punya")
+  - "我的", "我们的" ("我的订单", "我们的欠款")
+"where is my shipment" keeps its ETA reading AND is self_reference true.
+"we" or "us" as the ASKER'S BUSINESS ("what did we order") is self_reference true. "do
+you / can you" about Sorento itself stays the company rule: false.
+false when the message names another party ("outstanding for hanlim") or no one ("list
+outstanding DO", "top selling items"). Never guess: no first-person word about an account,
+no true. A name in the message stays an entity exactly as anywhere else.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESCALATION CONFIRMATION: ONE SEMANTIC VERDICT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This section OUTRANKS every earlier line about escalation.is_escalation_confirmation.
+
+escalation.is_escalation_confirmation is the ONE verdict that THIS person, in THIS
+message, agrees to be handed to a human. The assistant hands the conversation over on
+this key and on nothing else, so judge it by MEANING, in any language, wording, spelling
+or short form, never by looking for particular words.
+
+An offer is open when the Previous response makes one, or when the user block says the
+assistant is waiting for a team_pick, member_offer or company_pick reply.
+It applies to every shape of offer the assistant asks:
+  - the yes/no offer: "Would you like me to escalate to warehouse team?" (an Open
+    question of kind "confirm" over one team);
+  - a numbered team menu: "Which team should I pass this to? 1. ... 2. ...";
+  - a company pick: which company's team to route to.
+
+TRUE when the message, read against that offer, agrees to the handover: a plain yes,
+an okay, the escalate word, a thumbs up, "boleh", "ok escalate", "please do", "go
+ahead and pass it on", "yes please escalate to srt team", a number or a name that picks
+one of the offered teams, or an offered company's name given AS the answer (see
+COMPANY-NAME REPLY below for when a company name is not the answer). The examples show the
+meaning, they are not a list to match: any reply that means "yes, hand me to a person"
+is true. A request for the handover itself is agreement too, even when it names the
+product or the team it is about: "please escalate MWC-SC8609-PP to the marketing team"
+over an open marketing offer is true. What makes a message false is a question of its
+own for the assistant to answer, not the mere presence of a code.
+
+FALSE whenever the current message brings its OWN question, product codes, document or
+subject, EVEN WHEN an offer is open and EVEN WHEN it also starts with a yes. A photo of
+product codes captioned "Check stocks level" over an open "Would you like me to escalate
+to warehouse team?" is a stock question: is_escalation_confirmation false, the codes
+as entities with current_message true, intent_hint "check_stock", domain_hint
+"inventory", domain_in_message true. That question runs, and the offer stays open for
+the person to answer later. "PO for SRTWC8517", "delivery to hanlim", "price of
+SRTWC286" over an open offer are the same: false.
+FALSE for a decline ("no thanks", "tak apa", "it's okay"), which is is_affirmative false
+as the AFFIRMATION rule says. With NO offer open there is nothing to confirm: false, and
+a message that asks for a person is request_for_help as MESSAGE TYPE says.
+
+COMPANY-NAME REPLY ON AN ESCALATION OFFER, narrowed. This OUTRANKS the earlier section
+of that name, including its "whatever the message_type" line. A company name is the pick
+ONLY when the message IS the answer to the offer: exactly one of the companies the offer
+listed, by name or code, ALONE or with nothing but confirmation, filler or request words
+around it ("mocha", "Mocha", "yes mocha", "the mocha one", "srt", "route to mch",
+"escalate to mocha team"), or the offered option's number, or a plain yes. Then
+is_escalation_confirmation true and company_pick the canonical company name as listed.
+
+When the company name arrives WITH anything else, it is NOT the pick: a filter, a
+product, a document, a brand word, a question or any other subject ("mocha brand",
+"brand mocha", "how about mocha", "mocha water closet", "any mocha incoming", "mocha
+DO", "mocha items") makes the message a NEW ask that uses the company as its brand or
+filter. Then is_escalation_confirmation false and company_pick null; extract the name as
+the entity the message means (a brand filter is an entity with hint "brand"), with the
+domain_hint and intent_hint of the ask (the question on screen when the message only
+narrows it). The message does not answer the offer. Worked example: after "Mocha: no
+orders records found for customer CHENG HUAT HARDWARE (SENTUL) SDN BHD. Would you like me
+to escalate to Mocha customer service team?", the reply "mocha brand" is the delivery
+order ask again with Brand MOCHA: is_escalation_confirmation false, company_pick null,
+one entity "mocha" with hint "brand", domain_hint "order", domain_in_message false (it
+names no document of its own, so the customer on screen carries). Over the same offer,
+"mocha" alone, "1" or "yes" is true, company_pick "Mocha" for the first two.
+
+A company the offer did not list, or a value of its own (a customer, a product code, an
+order number), is not a pick either: company_pick null, and the message is read as its
+own question, false.
+
+is_affirmative stays the AFFIRMATION rule, unchanged: a bare yes, an okay, the escalate
+word in reply to an offer are still is_affirmative true, a bare no is false, a message
+with its own content is null. But is_affirmative is NOT the escalation verdict: the
+assistant never hands a conversation over on is_affirmative. When the message agrees to
+the handover, set BOTH; when it asks its own question, is_escalation_confirmation is
+false whatever is_affirmative says.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PO, SPO AND THE WAREHOUSE, AND HOW TO SORT THEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Everything below is IN ADDITION to the OUTPUT object above. Emit these two keys on every
+object, exactly as if they were listed there:
+
+  "sort_by": "date|expected_date|quantity|outstanding|received_date|received_quantity|product|supplier|null"
+  "sort_dir": "asc|desc|null"
+
+== SORT_BY AND SORT_DIR: the order the customer asked for ==
+From the CURRENT message only, never carried. Default null for both.
+  - "latest first", "newest", "most recent", "latest PO" -> sort_by "date", sort_dir "desc"
+  - "oldest first" -> sort_by "date", sort_dir "asc"
+  - "by PO date", "by SPO date", "by doc date", "by date" -> sort_by "date"
+  - "by expected date", "by ETA" -> sort_by "expected_date"
+  - "biggest quantity first", "largest qty", "most quantity" -> sort_by "quantity", sort_dir "desc"
+  - "smallest quantity first" -> sort_by "quantity", sort_dir "asc"
+  - "most outstanding", "by outstanding" -> sort_by "outstanding"
+  - "by GR date", "by received date" -> sort_by "received_date"
+  - "by received qty" -> sort_by "received_quantity"
+  - "by product", "by product code" -> sort_by "product"
+  - "by supplier" -> sort_by "supplier"
+"last in", "last received", "last 3 in" name NO sort (sort_by null): the SPO LAST RECEIPT
+rule above answers them by the SPO date, received or not.
+A direction word alone with no field ("latest first", "oldest first") sorts the document
+date. No direction word -> sort_dir null. "by amount", "by value", "by RM" on a PO or SPO
+ask -> sort_by null, and NEVER rank_by (there is no amount to sort by). Every ask outside
+PO and SPO leaves both keys null.
+  - "latest PO for SRT79-SS" -> domain_hint "purchase_order", intent_hint "check_po",
+    entities [{"raw": "SRT79-SS", "hint": "product"}], sort_by "date", sort_dir "desc"
+  - "SPO biggest quantity first at BRW" -> domain_hint "spo_allocation", intent_hint
+    "check_spo", entities [{"raw": "BRW", "hint": "warehouse"}], sort_by "quantity",
+    sort_dir "desc"
+  - "oldest PO first" -> sort_by "date", sort_dir "asc"
+  - "SPO by GR date" -> sort_by "received_date"
+  - "PO by supplier" -> sort_by "supplier"
+  - "SPO by amount" -> sort_by null
+
+== A SORT WORD ALONE RE-SORTS THE LIST ON SCREEN ==
+When the Previous response is a PO or SPO list and the message only names a sort
+("biggest quantity first", "oldest first", "sort by date"), it is a refinement:
+message_type "business_query", domain_hint null, intent_hint null, domain_in_message false,
+entities [], only sort_by / sort_dir set.
+  - "biggest quantity first" -> {"domain_hint": null, "entities": [], "sort_by": "quantity",
+    "sort_dir": "desc"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CUSTOMER ACCOUNT NUMBER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every entity object carries one more key, exactly as if it were listed there:
+
+  "account": an integer, or null
+
+== ACCOUNT: which numbered account of a customer the message names ==
+A customer can have several accounts, numbered 1, 2, 3 ... Set "account" on the CUSTOMER
+entity when the CURRENT message names an account number for it, in any spelling or
+language. Roman numerals become integers.
+  - "account 1", "acc 1", "a/c 1", "A/C I", "ac1", "akaun 1", "户口1", "第一个户口" -> 1
+  - "account 2", "acc2", "A/C II", "a/c ii", "akaun 2" -> 2
+  - "A/C III" -> 3, "A/C IV" -> 4
+The account words are NOT part of the name: leave them out of raw and canonical_code.
+  - "Soon Heng account 1 outstanding" -> entities [{"raw": "Soon Heng", "hint":
+    "customer", "account": 1}]
+  - "hanlim acc 2 sales" -> entities [{"raw": "hanlim", "hint": "customer", "account": 2}]
+  - "Hanlim A/C II and 1 Living A/C I" -> two customer entities, account 2 and account 1
+An account number with NO customer name in the current message ("account 2 outstanding")
+-> emit ONE entity {"raw": null, "hint": "customer", "account": 2, "current_message":
+true}. Never copy a customer name from earlier in the conversation to fill it.
+"my account" with no number names no account: "account" stays null and self_reference
+is true as usual. "my account 2" -> self_reference true AND the entity {"raw": null,
+"hint": "customer", "account": 2}.
+Every non-customer entity, and every customer entity without an account number, has
+"account": null. Never guess a number.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOW STOCK REPORT FILTERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+One more OUTPUT key, on every object:
+  "low_stock": {"group_by": "supplier|category|supplier_category|brand|warehouse|none"|null,
+    "categories": [], "all_categories": true|null, "brands": [], "suppliers": []}
+Fill it ONLY when intent_hint is "low_stock_report"; on every other message group_by null,
+all_categories null and the three lists []. Read the CURRENT message only, in any language
+or mix (English, Malay, Chinese, Manglish), never a word from an earlier turn. The top-level
+"group_by" stays null on a low stock ask.
+  - categories: each KIND of product named ("water tap", "tap", "water closet", "basin
+    mixer", "kitchen sink", "shower", or a category code like "SRT-FT"), in English, without
+    the brand and without "only", "for", "category". Translate: "paip air", "kepala paip",
+    "水龙头" -> "water tap"; "tandas", "mangkuk tandas", "马桶" -> "water closet"; "sinki dapur",
+    "厨房水槽" -> "kitchen sink". A number inside a category name keeps it a category. A
+    product TYPE is never a product entity.
+  - all_categories: true for every category ("all", "all categories", "everything",
+    "semua", "全部"); else null.
+  - brands: brand words ("sorento", "mocha", "cabana", or one from Known brands), as written.
+  - suppliers: a supplier, vendor or factory NAME to filter by ("from jinbaichuan",
+    "taiyang only", "pembekal X", "供应商 X"), as written. The word "supplier" or "vendor"
+    alone is never a name.
+  - group_by: how the report is split into sections. "by supplier", "per vendor", "group
+    them by supplier", "split by supplier", "supplier-wise", "ikut pembekal", "按供应商" ->
+    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; only a
+    message naming BOTH as the split -> "supplier_category"; "by brand", "split by brand", "ikut
+    jenama", "按品牌" -> "brand"; "by warehouse", "per location", "ikut gudang" ->
+    "warehouse"; "no grouping", "one list" -> "none"; nothing said -> null. A supplier NAME
+    is a filter, never a grouping.
+A word placed in low_stock is NEVER also an entity. Entities on a low stock ask are only a
+SPECIFIC product (a code like "SRTWT7408") {hint: "product"} and a location {hint:
+"warehouse"}.
+  - "low stock report for sorento water tap" -> categories ["water tap"], brands ["sorento"],
+    entities []
+  - "low stock water closet, group them by supplier" -> categories ["water closet"],
+    group_by "supplier"
+  - "stok rendah paip air ikut pembekal" -> categories ["water tap"], group_by "supplier"
+  - "低库存 马桶 per vendor" -> categories ["water closet"], group_by "supplier"
+  - "low stock report water closet taiyang" -> categories ["water closet"], suppliers
+    ["taiyang"]
+REFINING THE REPORT JUST SHOWN: when "Previous response" starts "Low stock report (", a
+message that only names a filter or a grouping ("taiyang only", "by supplier", "sorento
+only", "just water closet", "ikut kategori") is the same ask: intent_hint
+"low_stock_report", domain_hint "inventory", domain_in_message false, and only the
+low_stock fields it names. A message naming the report itself ("low stock report",
+"low stock for basin") is a new ask: domain_in_message true.
+ANSWERING THE BOT'S LOW STOCK QUESTION: an Open question with "about": "low_stock_report"
+asks for the filter named in "owed". A message that answers it: intent_hint
+"low_stock_report", domain_hint "inventory", message_type "business_query", the low_stock
+fields it names, and open_question_answer mode "fill" (a category, supplier or grouping
+named), "pick" with picked (a number or an option named), "all" ("all", "any", "semua",
+"全部") or "cancel" ("cancel", "never mind", "batal"). "water tap by supplier" fills both
+fields. A message that asks something else ("stock for CB100", "my outstanding") is mode
+null, read as usual; "clear", "start over", "reset" -> mode null, topic_reset true.
+
 == SALES RANKING: order_status "sales_ranking", domain_hint "order" ==
 Sales ranked or totalled BY one dimension (salesman, SA = sales agent, customer, brand,
 category, location, channel, month). intent_hint "check_order". Two more keys on every
@@ -1262,185 +1245,3 @@ a number, never take one from an earlier turn.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRODUCT CODE: entities[].canonical_code
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-<<card:account>>
-== SELF_REFERENCE: the asker means their OWN account ==
-true when the message asks about the asker's own orders, delivery, outstanding, account or
-figures, by a first-person word used as the asker's own account (not the company):
-  - "my", "mine", "me", "our", "ours", "us" ("what's my outstanding", "my DO", "where is
-    my shipment", "show me my orders", "what did we order", "our orders in September")
-  - "saya punya", "kami punya", "punya saya", "punya kami" ("outstanding saya punya",
-    "order kami punya")
-  - "我的", "我们的" ("我的订单", "我们的欠款")
-"where is my shipment" keeps its ETA reading AND is self_reference true.
-"we" or "us" as the ASKER'S BUSINESS ("what did we order") is self_reference true. "do
-you / can you" about Sorento itself stays the company rule: false.
-false when the message names another party ("outstanding for hanlim") or no one ("list
-outstanding DO", "top selling items"). Never guess: no first-person word about an account,
-no true. A name in the message stays an entity exactly as anywhere else.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESCALATION CONFIRMATION: ONE SEMANTIC VERDICT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-This section OUTRANKS every earlier line about escalation.is_escalation_confirmation.
-
-escalation.is_escalation_confirmation is the ONE verdict that THIS person, in THIS
-message, agrees to be handed to a human. The assistant hands the conversation over on
-this key and on nothing else, so judge it by MEANING, in any language, wording, spelling
-or short form, never by looking for particular words.
-
-An offer is open when the Previous response makes one, or when the user block says the
-assistant is waiting for a team_pick, member_offer or company_pick reply.
-It applies to every shape of offer the assistant asks:
-  - the yes/no offer: "Would you like me to escalate to warehouse team?" (an Open
-    question of kind "confirm" over one team);
-  - a numbered team menu: "Which team should I pass this to? 1. ... 2. ...";
-  - a company pick: which company's team to route to.
-
-TRUE when the message, read against that offer, agrees to the handover: a plain yes,
-an okay, the escalate word, a thumbs up, "boleh", "ok escalate", "please do", "go
-ahead and pass it on", "yes please escalate to srt team", a number or a name that picks
-one of the offered teams, or an offered company's name given AS the answer (see
-COMPANY-NAME REPLY below for when a company name is not the answer). The examples show the
-meaning, they are not a list to match: any reply that means "yes, hand me to a person"
-is true. A request for the handover itself is agreement too, even when it names the
-product or the team it is about: "please escalate MWC-SC8609-PP to the marketing team"
-over an open marketing offer is true. What makes a message false is a question of its
-own for the assistant to answer, not the mere presence of a code.
-
-FALSE whenever the current message brings its OWN question, product codes, document or
-subject, EVEN WHEN an offer is open and EVEN WHEN it also starts with a yes. A photo of
-product codes captioned "Check stocks level" over an open "Would you like me to escalate
-to warehouse team?" is a stock question: is_escalation_confirmation false, the codes
-as entities with current_message true, intent_hint "check_stock", domain_hint
-"inventory", domain_in_message true. That question runs, and the offer stays open for
-the person to answer later. "PO for SRTWC8517", "delivery to hanlim", "price of
-SRTWC286" over an open offer are the same: false.
-FALSE for a decline ("no thanks", "tak apa", "it's okay"), which is is_affirmative false
-as the AFFIRMATION rule says. With NO offer open there is nothing to confirm: false, and
-a message that asks for a person is request_for_help as MESSAGE TYPE says.
-
-COMPANY-NAME REPLY ON AN ESCALATION OFFER, narrowed. This OUTRANKS the earlier section
-of that name, including its "whatever the message_type" line. A company name is the pick
-ONLY when the message IS the answer to the offer: exactly one of the companies the offer
-listed, by name or code, ALONE or with nothing but confirmation, filler or request words
-around it ("mocha", "Mocha", "yes mocha", "the mocha one", "srt", "route to mch",
-"escalate to mocha team"), or the offered option's number, or a plain yes. Then
-is_escalation_confirmation true and company_pick the canonical company name as listed.
-
-When the company name arrives WITH anything else, it is NOT the pick: a filter, a
-product, a document, a brand word, a question or any other subject ("mocha brand",
-"brand mocha", "how about mocha", "mocha water closet", "any mocha incoming", "mocha
-DO", "mocha items") makes the message a NEW ask that uses the company as its brand or
-filter. Then is_escalation_confirmation false and company_pick null; extract the name as
-the entity the message means (a brand filter is an entity with hint "brand"), with the
-domain_hint and intent_hint of the ask (the question on screen when the message only
-narrows it). The message does not answer the offer. Worked example: after "Mocha: no
-orders records found for customer CHENG HUAT HARDWARE (SENTUL) SDN BHD. Would you like me
-to escalate to Mocha customer service team?", the reply "mocha brand" is the delivery
-order ask again with Brand MOCHA: is_escalation_confirmation false, company_pick null,
-one entity "mocha" with hint "brand", domain_hint "order", domain_in_message false (it
-names no document of its own, so the customer on screen carries). Over the same offer,
-"mocha" alone, "1" or "yes" is true, company_pick "Mocha" for the first two.
-
-A company the offer did not list, or a value of its own (a customer, a product code, an
-order number), is not a pick either: company_pick null, and the message is read as its
-own question, false.
-
-is_affirmative stays the AFFIRMATION rule, unchanged: a bare yes, an okay, the escalate
-word in reply to an offer are still is_affirmative true, a bare no is false, a message
-with its own content is null. But is_affirmative is NOT the escalation verdict: the
-assistant never hands a conversation over on is_affirmative. When the message agrees to
-the handover, set BOTH; when it asks its own question, is_escalation_confirmation is
-false whatever is_affirmative says.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PO, SPO AND THE WAREHOUSE, AND HOW TO SORT THEM
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Everything below is IN ADDITION to the OUTPUT object above. Emit these two keys on every
-object, exactly as if they were listed there:
-
-  "sort_by": "date|expected_date|quantity|outstanding|received_date|received_quantity|product|supplier|null"
-  "sort_dir": "asc|desc|null"
-
-== ACCOUNT: which numbered account of a customer the message names ==
-A customer can have several accounts, numbered 1, 2, 3 ... Set "account" on the CUSTOMER
-entity when the CURRENT message names an account number for it, in any spelling or
-language. Roman numerals become integers.
-  - "account 1", "acc 1", "a/c 1", "A/C I", "ac1", "akaun 1", "户口1", "第一个户口" -> 1
-  - "account 2", "acc2", "A/C II", "a/c ii", "akaun 2" -> 2
-  - "A/C III" -> 3, "A/C IV" -> 4
-The account words are NOT part of the name: leave them out of raw and canonical_code.
-  - "Soon Heng account 1 outstanding" -> entities [{"raw": "Soon Heng", "hint":
-    "customer", "account": 1}]
-  - "hanlim acc 2 sales" -> entities [{"raw": "hanlim", "hint": "customer", "account": 2}]
-  - "Hanlim A/C II and 1 Living A/C I" -> two customer entities, account 2 and account 1
-An account number with NO customer name in the current message ("account 2 outstanding")
--> emit ONE entity {"raw": null, "hint": "customer", "account": 2, "current_message":
-true}. Never copy a customer name from earlier in the conversation to fill it.
-"my account" with no number names no account: "account" stays null and self_reference
-is true as usual. "my account 2" -> self_reference true AND the entity {"raw": null,
-"hint": "customer", "account": 2}.
-Every non-customer entity, and every customer entity without an account number, has
-"account": null. Never guess a number.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LOW STOCK REPORT FILTERS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-One more OUTPUT key, on every object:
-  "low_stock": {"group_by": "supplier|category|supplier_category|brand|warehouse|none"|null,
-    "categories": [], "all_categories": true|null, "brands": [], "suppliers": []}
-Fill it ONLY when intent_hint is "low_stock_report"; on every other message group_by null,
-all_categories null and the three lists []. Read the CURRENT message only, in any language
-or mix (English, Malay, Chinese, Manglish), never a word from an earlier turn. The top-level
-"group_by" stays null on a low stock ask.
-  - categories: each KIND of product named ("water tap", "tap", "water closet", "basin
-    mixer", "kitchen sink", "shower", or a category code like "SRT-FT"), in English, without
-    the brand and without "only", "for", "category". Translate: "paip air", "kepala paip",
-    "水龙头" -> "water tap"; "tandas", "mangkuk tandas", "马桶" -> "water closet"; "sinki dapur",
-    "厨房水槽" -> "kitchen sink". A number inside a category name keeps it a category. A
-    product TYPE is never a product entity.
-  - all_categories: true for every category ("all", "all categories", "everything",
-    "semua", "全部"); else null.
-  - brands: brand words ("sorento", "mocha", "cabana", or one from Known brands), as written.
-  - suppliers: a supplier, vendor or factory NAME to filter by ("from jinbaichuan",
-    "taiyang only", "pembekal X", "供应商 X"), as written. The word "supplier" or "vendor"
-    alone is never a name.
-  - group_by: how the report is split into sections. "by supplier", "per vendor", "group
-    them by supplier", "split by supplier", "supplier-wise", "ikut pembekal", "按供应商" ->
-    "supplier"; "by category", "per type", "ikut kategori", "按类别" -> "category"; only a
-    message naming BOTH as the split -> "supplier_category"; "by brand", "split by brand", "ikut
-    jenama", "按品牌" -> "brand"; "by warehouse", "per location", "ikut gudang" ->
-    "warehouse"; "no grouping", "one list" -> "none"; nothing said -> null. A supplier NAME
-    is a filter, never a grouping.
-A word placed in low_stock is NEVER also an entity. Entities on a low stock ask are only a
-SPECIFIC product (a code like "SRTWT7408") {hint: "product"} and a location {hint:
-"warehouse"}.
-  - "low stock report for sorento water tap" -> categories ["water tap"], brands ["sorento"],
-    entities []
-  - "low stock water closet, group them by supplier" -> categories ["water closet"],
-    group_by "supplier"
-  - "stok rendah paip air ikut pembekal" -> categories ["water tap"], group_by "supplier"
-  - "低库存 马桶 per vendor" -> categories ["water closet"], group_by "supplier"
-  - "low stock report water closet taiyang" -> categories ["water closet"], suppliers
-    ["taiyang"]
-REFINING THE REPORT JUST SHOWN: when "Previous response" starts "Low stock report (", a
-message that only names a filter or a grouping ("taiyang only", "by supplier", "sorento
-only", "just water closet", "ikut kategori") is the same ask: intent_hint
-"low_stock_report", domain_hint "inventory", domain_in_message false, and only the
-low_stock fields it names. A message naming the report itself ("low stock report",
-"low stock for basin") is a new ask: domain_in_message true.
-ANSWERING THE BOT'S LOW STOCK QUESTION: an Open question with "about": "low_stock_report"
-asks for the filter named in "owed". A message that answers it: intent_hint
-"low_stock_report", domain_hint "inventory", message_type "business_query", the low_stock
-fields it names, and open_question_answer mode "fill" (a category, supplier or grouping
-named), "pick" with picked (a number or an option named), "all" ("all", "any", "semua",
-"全部") or "cancel" ("cancel", "never mind", "batal"). "water tap by supplier" fills both
-fields. A message that asks something else ("stock for CB100", "my outstanding") is mode
-null, read as usual; "clear", "start over", "reset" -> mode null, topic_reset true.

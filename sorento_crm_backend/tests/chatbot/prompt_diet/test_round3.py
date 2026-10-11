@@ -121,7 +121,7 @@ def test_embed_has_a_short_timeout_and_no_sdk_retries(monkeypatch) -> None:
 def test_engine_open_questions_pin_nothing_their_text_is_in_core(
     monkeypatch, session_factory, seeded, stub_access, kind
 ) -> None:
-    h = DietHarness(monkeypatch, [emission()])
+    h = DietHarness(monkeypatch, [emission(domain_hint=None)])
     h.diet_on(example_areas=[])
     stub_access()
     state = {"open_question": {"kind": kind, "options": [{"label": "A", "value": "a"}], "expects": "pick"}}

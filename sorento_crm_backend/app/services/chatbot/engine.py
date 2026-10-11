@@ -1612,7 +1612,7 @@ def _parse_with_diet(
     try:
         vector = prompt_diet.embed_text(access, embed_input)
         with _session(session_factory) as retrieval_db:
-            examples = prompt_diet.nearest_examples(retrieval_db, vector, k=5)
+            examples = prompt_diet.nearest_examples(retrieval_db, vector, k=3)
         retrieved = {example.area for example in examples}
         focus = state_in.focus
         pinned = prompt_diet.pinned_areas(
@@ -1646,9 +1646,7 @@ def _parse_with_diet(
     absent = prompt_diet.missing(emission, set(selected), available)
     if absent:
         facts.update(missing=sorted(absent), recalled=True)
-        selected = prompt_diet.select_cards(
-            retrieved_areas=retrieved | absent, pinned=pinned, available=available
-        )
+        selected = prompt_diet.with_cards(selected, absent)
         facts["cards"] = list(selected)
         try:
             emission = parser.parse(
@@ -4691,6 +4689,11 @@ def _run_stages_body(  # noqa: PLR0915
             # LLM-TEST-COST: the prompt-cache hit, and whether this parse was live,
             # recorded or replayed (`off` everywhere but a test run).
             "cached_tokens": int(parser_usage.get("cached_tokens") or 0),
+            "cache_hit_pct": (
+                round(100 * int(parser_usage.get("cached_tokens") or 0) / int(parser_usage["prompt_tokens"]))
+                if int(parser_usage.get("prompt_tokens") or 0)
+                else 0
+            ),
             "llm_cassette": llm_cassette.mode_label(),
             "parser_bypassed": parser_bypassed,
             "recalled_frames": len(recalled),

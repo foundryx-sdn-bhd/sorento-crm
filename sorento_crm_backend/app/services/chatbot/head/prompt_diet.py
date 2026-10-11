@@ -25,33 +25,28 @@ from app.services.chatbot.head.embedding_access import EmbeddingAccess, resolve_
 CARD_MARKER_OPEN = "<<card:"
 CARD_MARKER_CLOSE = ">>"
 
-#: Cards that carry conversation state: pinned by what is open, never retrieved.
-STATE_CARDS = frozenset({"open_question", "escalation"})
+#: Round 5: the open question and escalation text lives in core (always on), so no card is
+#: state-pinned.
+STATE_CARDS: frozenset[str] = frozenset()
 
-#: An area's card needs these loaded beside it.
-COMPANIONS: dict[str, tuple[str, ...]] = {"order": ("account",), "sales": ("account", "order")}
+#: The three fixed bundles. An area's bundle is what its retrieval or focus selects.
+AREA_BUNDLE: dict[str, str] = {
+    "master_products": "product",
+    "product_attachment": "product",
+    "promotion": "product",
+    "resource_attachment": "product",
+    "ideate": "product",
+    "inventory": "stock",
+    "purchase_order": "stock",
+    "spo_allocation": "stock",
+    "purchase_cost": "stock",
+    "order": "orders",
+    "sales": "orders",
+    "account": "orders",
+}
 
-#: Fixed order, so the same card set always builds the same prompt prefix: state cards
-#: first, then the areas in `chatbot_domains` order (companions ahead of their users).
-CARD_ORDER: tuple[str, ...] = (
-    "open_question",
-    "escalation",
-    "account",
-    "master_products",
-    "product_attachment",
-    "promotion",
-    "inventory",
-    "order",
-    "sales",
-    "resource_attachment",
-    "spo_allocation",
-    "ideate",
-    "purchase_order",
-    "purchase_cost",
-)
-
-#: The pending kinds that are an escalation offer (`turn/pending.py`), not a business pick.
-ESCALATION_PENDING_KINDS = frozenset({"team_pick", "member_offer", "company_pick"})
+#: Fixed order, so the same bundle set always builds the same prompt prefix.
+CARD_ORDER: tuple[str, ...] = ("product", "stock", "orders")
 
 #: `order_status` values that mean a sales ask even when `domain_hint` says otherwise.
 SALES_ORDER_STATUSES = frozenset({"sales_report", "sales_analysis", "top_selling", "sales_ranking"})
@@ -97,22 +92,21 @@ def pinned_areas(
     open_question: Any,
     tasks: Any,
 ) -> set[str]:
-    """Cards the conversation's own state requires, whatever retrieval finds."""
-    pinned = set(focus_domains or ())
-    if open_question or pending_kind or tasks:
-        pinned.add("open_question")
-    if pending_kind in ESCALATION_PENDING_KINDS:
-        pinned.add("escalation")
-    return pinned
+    """The areas the conversation is already on. The open question, pick and escalation text is
+    always in core, so pending state pins nothing (the arguments stay for the engine's call)."""
+    return set(focus_domains or ())
 
 
 def select_cards(*, retrieved_areas: set[str], pinned: set[str], available: set[str]) -> list[str]:
-    wanted = set(retrieved_areas) | set(pinned)
-    for name in list(wanted):
-        wanted.update(COMPANIONS.get(name, ()))
-    wanted &= set(available)
-    ordered = [name for name in CARD_ORDER if name in wanted]
-    return ordered + sorted(wanted - set(CARD_ORDER))
+    """The bundles of (retrieved | pinned) areas that exist, in `CARD_ORDER`."""
+    wanted = {AREA_BUNDLE[area] for area in set(retrieved_areas) | set(pinned) if area in AREA_BUNDLE}
+    return [name for name in CARD_ORDER if name in wanted and name in available]
+
+
+def with_cards(selected: list[str], extra: set[str]) -> list[str]:
+    """`selected` plus the `extra` bundles, in `CARD_ORDER`."""
+    wanted = set(selected) | set(extra)
+    return [name for name in CARD_ORDER if name in wanted]
 
 
 def compact(value: Any) -> Any:
@@ -162,8 +156,9 @@ def needed_areas(parsed: dict[str, Any]) -> set[str]:
 
 
 def missing(parsed: dict[str, Any], loaded: set[str], available: set[str] | None = None) -> set[str]:
-    """Needed areas that have a card in `available` (default: every known card) and are not loaded."""
-    return needed_areas(parsed) & set(CARD_ORDER if available is None else available) - set(loaded)
+    """Bundles the emission's areas need that exist in `available` (default: all) and are not loaded."""
+    needed = {AREA_BUNDLE[area] for area in needed_areas(parsed) if area in AREA_BUNDLE}
+    return needed & set(CARD_ORDER if available is None else available) - set(loaded)
 
 
 class NoEmbeddingKey(Exception):

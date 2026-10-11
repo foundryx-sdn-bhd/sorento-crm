@@ -32,7 +32,6 @@ REPO_ROOT = BACKEND.parent
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-CARDS_FILE = BACKEND / "alembic" / "data" / "chatbot_parser_cards.v1.txt"
 #: `order_status` values that mean a sales ask (same list as `prompt_diet.SALES_ORDER_STATUSES`;
 #: this script may not import the chatbot package, `tests/chatbot/test_import_boundary.py`).
 SALES_ORDER_STATUSES = {"sales_report", "sales_analysis", "top_selling", "sales_ranking"}
@@ -80,19 +79,19 @@ def previous_reply(history: list[dict]) -> str | None:
     return None
 
 
-def card_names() -> set[str]:
-    return {
-        line[len("<<card:") : -len(">>")]
-        for line in CARDS_FILE.read_text(encoding="utf-8").splitlines()
-        if line.startswith("<<card:") and line.endswith(">>")
-    }
+#: Areas that select a bundle (`prompt_diet.AREA_BUNDLE` keys; this script may not import the
+#: chatbot package, `tests/chatbot/test_import_boundary.py`).
+AREAS = {
+    "master_products", "product_attachment", "promotion", "resource_attachment", "ideate",
+    "inventory", "purchase_order", "spo_allocation", "purchase_cost", "order", "sales", "account",
+}
 
 
-def area_of(expect: dict, cards: set[str]) -> str | None:
+def area_of(expect: dict) -> str | None:
     if expect.get("order_status") in SALES_ORDER_STATUSES:
         return "sales"
     hint = expect.get("domain_hint")
-    return hint if hint in cards else None
+    return hint if hint in AREAS else None
 
 
 GOOD_LABELS = {"correct", "good_clarify"}
@@ -142,7 +141,6 @@ def build_examples(
     data_dir: Path, emissions_path: Path, results_path: Path, exclude_path: Path | None = None
 ) -> list[dict]:
     rows: list[dict] = []
-    cards = card_names()
     labels = {str(r.get("case_id")): r.get("label") for r in read_jsonl(results_path)}
     emissions = latest_emissions(emissions_path)
     excluded_pairs, excluded_messages = read_exclusions(exclude_path) if exclude_path else (set(), set())
@@ -160,7 +158,7 @@ def build_examples(
         if (str(contact.get("respond_id")), text) in excluded_pairs or text in excluded_messages:
             print(f"skipped {case_id}: excluded (near-duplicate of hidden)", file=sys.stderr)
             continue
-        area = area_of(expect, cards)
+        area = area_of(expect)
         if area is None:
             print(f"skipped {case_id}: emission has no usable area ({expect.get('domain_hint')!r})", file=sys.stderr)
             continue

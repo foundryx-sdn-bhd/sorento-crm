@@ -1,4 +1,4 @@
-"""PROMPT-DIET: cut the v50 parser prompt into a stable core and per-area cards.
+"""PROMPT-DIET: cut the v50 parser prompt into a stable core and three fixed card bundles.
 
 Move only: every v50 section lands, verbatim, in exactly one place (the core file or one card in
 the cards file). Sections are assigned by heading TEXT from the table below, so the cut does not
@@ -17,9 +17,13 @@ import re
 import sys
 from pathlib import Path
 
+BACKEND = Path(__file__).resolve().parents[1]
 HEADING = re.compile(r"^==+ .* ==+$")
-CORE_FILE = "chatbot_parser_core.v1.txt"
-CARDS_FILE = "chatbot_parser_cards.v1.txt"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+from app.services.prompt_diet_files import PARSER_CARDS_FILE as CARDS_FILE  # noqa: E402
+from app.services.prompt_diet_files import PARSER_CORE_FILE as CORE_FILE  # noqa: E402
+BUNDLES = ("product", "stock", "orders")
 DECISIVE = "== DECISIVE DOMAIN TERMS =="
 
 #: Exactly the domain_hint values v50 allows (its INTENT & DOMAIN enum plus purchase_order from
@@ -42,8 +46,64 @@ purchase_order: outstanding purchase orders
 purchase_cost: what was last paid a supplier for a product
 """
 
-#: Heading text -> destination. Generated from the plan's Cut table (v50 baseline).
+#: Heading text -> destination: core, or one of the three fixed bundles (round 5). Generated from the
+#: plan's Cut table (v50 baseline); the open question and escalation sections moved into core.
 CUT: dict[str, list[str]] = {
+    "product": [
+        '== REQUESTED ATTRIBUTES ==',
+        '== BROADEN AXIS ==',
+        '== A BARE "SPEC" ASKS FOR ALL OF THEM ==',
+        '== THE ATTRIBUTE PHRASE, WHOLE ==',
+        '== THE specification ENTITY ==',
+        '== ATTACHMENT TYPE EXTRACTION (product_attachment) ==',
+        '== FLYER FLAG ==',
+        '== ACCESS LEVELS ==',
+        '== IS_ACTIVE FILTER ==',
+        '== PROMOTION KIND ==',
+        '== PROMOTION SUBJECT ==',
+        '== DOCUMENT ==',
+        '== IDEATION CONTINUATION ==',
+    ],
+    "stock": [
+        '== LOW STOCK REPORT: intent_hint "low_stock_report", domain_hint "inventory" ==',
+        '== PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==',
+        '== IN A PO ASK, THE CODE IS THE PRODUCT ==',
+        '== UNDER A PO OR SPO ASK, A SHORT TOKEN IS A LOCATION TOO ==',
+        '== SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==',
+        '== THE WORD SPO IS AN SPO ALLOCATION ASK: domain_hint "spo_allocation", intent_hint "check_spo" ==',
+        '== LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==',
+    ],
+    "orders": [
+        '== ORDER_STATUS FILTER ==',
+        '== GROUP_BY ==',
+        '== TOP_N ==',
+        '== ORDER_STATUS GAINS "so_outstanding" ==',
+        '== ORDER_STATUS GAINS "do_outstanding" AND "outstanding_both" ==',
+        '== IN AN ORDER OR OUTSTANDING ASK, A SHORT TOKEN IS A LOCATION ==',
+        '== A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==',
+        '== SORT_BY AND SORT_DIR: the order the customer asked for ==',
+        '== A SORT WORD ALONE RE-SORTS THE LIST ON SCREEN ==',
+        '== SALES REPORT: order_status "sales_report", domain_hint "order" ==',
+        '== SALES_CHANNEL: a NEW nullable output key, "dealer" | "project" | null ==',
+        '== A NARROWING REPLY UNDER AN OPEN SALES REPORT / OUTSTANDING DETAIL OFFER ==',
+        '== SALES ANALYSIS: order_status "sales_analysis", domain_hint "order" ==',
+        '== DATES ON A SALES ANALYSIS ==',
+        '== SALES_BASIS: "ordered" | "delivered" | "invoiced" | null ==',
+        '== SALES_COMPANY: the company named, or null ==',
+        '== TOP SELLING: order_status "top_selling", domain_hint "order" ==',
+        '== TOP_N on a top selling ask ==',
+        '== RANK_BY: what the ranking is by ==',
+        '== BASIS: which sale is counted ==',
+        '== RANK_GROUP: what is ranked ==',
+        "== ANSWERING THE BOT'S OWN TOP SELLING QUESTION ==",
+        '== ANSWERING "CUSTOMER OR SALES AGENT?" ==',
+        '== RANK_DIRECTION: most sold first or least sold first ==',
+        '== NARROWING A TOP SELLING ASK ==',
+        '== FROM A RANKING TO ANOTHER ORDER REPORT ==',
+        '== SALES RANKING: order_status "sales_ranking", domain_hint "order" ==',
+        '== SELF_REFERENCE: the asker means their OWN account ==',
+        '== ACCOUNT: which numbered account of a customer the message names ==',
+    ],
     "core": [
         '== PRICE TERMINOLOGY (Sorento-specific, decisive) ==',
         '== AFFIRMATION ==',
@@ -76,88 +136,11 @@ CUT: dict[str, list[str]] = {
         '== KNOWN BRANDS: entities[].hint "brand" ==',
         '== A WORD BESIDE A CODE IS STILL ONE PRODUCT ENTITY ==',
         '== MEMORY ==',
-    ],
-    "open_question": [
         '== AN OPEN NUMBERED QUESTION IS ANSWERED WITH reference_positions ==',
         '== AN OPEN TASK IS A FACT, AND THE MESSAGE MAY BE ABOUT IT ==',
         '== A LINE BEGINNING "Last answered:" ==',
         '== THE OPEN QUESTION AND open_question_answer ==',
-    ],
-    "escalation": [
         '== COMPANY-NAME REPLY ON AN ESCALATION OFFER ==',
-    ],
-    "account": [
-        '== SELF_REFERENCE: the asker means their OWN account ==',
-        '== ACCOUNT: which numbered account of a customer the message names ==',
-    ],
-    "master_products": [
-        '== REQUESTED ATTRIBUTES ==',
-        '== BROADEN AXIS ==',
-        '== A BARE "SPEC" ASKS FOR ALL OF THEM ==',
-        '== THE ATTRIBUTE PHRASE, WHOLE ==',
-        '== THE specification ENTITY ==',
-    ],
-    "sales": [
-        '== SALES REPORT: order_status "sales_report", domain_hint "order" ==',
-        '== SALES_CHANNEL: a NEW nullable output key, "dealer" | "project" | null ==',
-        '== A NARROWING REPLY UNDER AN OPEN SALES REPORT / OUTSTANDING DETAIL OFFER ==',
-        '== SALES ANALYSIS: order_status "sales_analysis", domain_hint "order" ==',
-        '== DATES ON A SALES ANALYSIS ==',
-        '== SALES_BASIS: "ordered" | "delivered" | "invoiced" | null ==',
-        '== SALES_COMPANY: the company named, or null ==',
-        '== TOP SELLING: order_status "top_selling", domain_hint "order" ==',
-        '== TOP_N on a top selling ask ==',
-        '== RANK_BY: what the ranking is by ==',
-        '== BASIS: which sale is counted ==',
-        '== RANK_GROUP: what is ranked ==',
-        "== ANSWERING THE BOT'S OWN TOP SELLING QUESTION ==",
-        '== ANSWERING "CUSTOMER OR SALES AGENT?" ==',
-        '== RANK_DIRECTION: most sold first or least sold first ==',
-        '== NARROWING A TOP SELLING ASK ==',
-        '== FROM A RANKING TO ANOTHER ORDER REPORT ==',
-        '== SALES RANKING: order_status "sales_ranking", domain_hint "order" ==',
-    ],
-    "order": [
-        '== ORDER_STATUS FILTER ==',
-        '== GROUP_BY ==',
-        '== TOP_N ==',
-        '== ORDER_STATUS GAINS "so_outstanding" ==',
-        '== ORDER_STATUS GAINS "do_outstanding" AND "outstanding_both" ==',
-        '== IN AN ORDER OR OUTSTANDING ASK, A SHORT TOKEN IS A LOCATION ==',
-        '== A DELIVERY WORD PLUS A NAME IS AN ORDER ASK ==',
-        '== SORT_BY AND SORT_DIR: the order the customer asked for ==',
-        '== A SORT WORD ALONE RE-SORTS THE LIST ON SCREEN ==',
-    ],
-    "promotion": [
-        '== FLYER FLAG ==',
-        '== ACCESS LEVELS ==',
-        '== IS_ACTIVE FILTER ==',
-        '== PROMOTION KIND ==',
-        '== PROMOTION SUBJECT ==',
-    ],
-    "resource_attachment": [
-        '== DOCUMENT ==',
-    ],
-    "purchase_order": [
-        '== PURCHASE ORDERS: domain_hint "purchase_order", intent_hint "check_po" ==',
-        '== IN A PO ASK, THE CODE IS THE PRODUCT ==',
-        '== UNDER A PO OR SPO ASK, A SHORT TOKEN IS A LOCATION TOO ==',
-    ],
-    "spo_allocation": [
-        '== SPO LAST RECEIPT: intent_hint "check_spo", domain_hint "spo_allocation" ==',
-        '== THE WORD SPO IS AN SPO ALLOCATION ASK: domain_hint "spo_allocation", intent_hint "check_spo" ==',
-    ],
-    "purchase_cost": [
-        '== LAST PURCHASE COST: intent_hint "check_po_cost", domain_hint "purchase_cost" ==',
-    ],
-    "inventory": [
-        '== LOW STOCK REPORT: intent_hint "low_stock_report", domain_hint "inventory" ==',
-    ],
-    "ideate": [
-        '== IDEATION CONTINUATION ==',
-    ],
-    "product_attachment": [
-        '== ATTACHMENT TYPE EXTRACTION (product_attachment) ==',
     ],
 }
 
@@ -197,7 +180,7 @@ def build(text: str) -> tuple[str, str]:
     core.append(by_heading[DECISIVE])
 
     cards_text = "".join(
-        f"<<card:{name}>>\n" + "\n\n".join(parts) + "\n\n" for name, parts in cards.items()
+        f"<<card:{name}>>\n" + "\n\n".join(cards[name]) + "\n\n" for name in BUNDLES
     )
     return "\n\n".join(core) + "\n", cards_text.rstrip("\n") + "\n"
 
