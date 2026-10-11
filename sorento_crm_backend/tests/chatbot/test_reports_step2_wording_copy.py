@@ -222,3 +222,107 @@ def test_the_ms_variant_is_chosen_for_a_malay_contact() -> None:
     ms = canned.render_in("report_subject_ask", "ms", missing="produk")
     assert en == "Which product is this for?", en
     assert ms != en and "produk" in ms and "{{" not in ms, ms
+
+
+# ================================================================================ the seed migration
+
+NEW_KEYS = [f"chatbot_reply_{short}{suffix}" for short in KEYS for suffix in ("", ".ms", ".zh")]
+
+
+def _script():
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    return ScriptDirectory.from_config(cfg)
+
+
+def _head_module():
+    import importlib.util
+
+    script = _script()
+    (head,) = script.get_heads()
+    rev = script.get_revision(head)
+    spec = importlib.util.spec_from_file_location("zzt_wording_seed_migration", rev.path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _upgrade(session) -> None:
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    module = _head_module()
+    with Operations.context(MigrationContext.configure(session.connection())):
+        module.upgrade()
+    session.expire_all()
+
+
+def test_the_chain_has_one_head_and_it_is_the_wording_seed_on_pab_0001() -> None:
+    heads = _script().get_heads()
+    assert len(heads) == 1, heads
+    head = heads[0]
+    assert head != "pab_0001_parser_ablation", "no new revision sits on top of pab_0001_parser_ablation"
+    assert len(head) <= 32, head
+    assert _script().get_revision(head).down_revision == "pab_0001_parser_ablation"
+
+
+def _clear(db) -> None:
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+
+    db.query(AIPromptLabel).filter(AIPromptLabel.name.in_(NEW_KEYS)).delete(synchronize_session=False)
+    db.query(AIPromptVersion).filter(AIPromptVersion.name.in_(NEW_KEYS)).delete(synchronize_session=False)
+    db.commit()
+
+
+def test_the_upgrade_creates_v1_and_the_production_label_for_each_new_key() -> None:
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+    from tests._pg_fixture import blank_session
+
+    with blank_session() as db:
+        _clear(db)
+        _upgrade(db)
+        for key in NEW_KEYS:
+            v1 = db.query(AIPromptVersion).filter_by(name=key, version=1).one()
+            label = db.query(AIPromptLabel).filter_by(name=key, label="production").one()
+            assert label.version_id == v1.id, key
+            assert v1.template == CHATBOT_REPLY_COPY[key.removeprefix("chatbot_reply_")][1], key
+
+
+def test_running_the_upgrade_again_is_a_no_op() -> None:
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+    from tests._pg_fixture import blank_session
+
+    with blank_session() as db:
+        _clear(db)
+        _upgrade(db)
+        _upgrade(db)
+        for key in NEW_KEYS:
+            assert [v.version for v in db.query(AIPromptVersion).filter_by(name=key).all()] == [1], key
+            assert db.query(AIPromptLabel).filter_by(name=key, label="production").count() == 1, key
+
+
+def test_an_edited_row_keeps_its_edited_text_after_the_upgrade() -> None:
+    from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
+    from tests._pg_fixture import blank_session
+
+    key = "chatbot_reply_report_refused"
+    with blank_session() as db:
+        _clear(db)
+        v1 = AIPromptVersion(name=key, version=1, type="text", template="old words", variables=["report"])
+        v2 = AIPromptVersion(name=key, version=2, type="text", template="The owner's edit for {{report}}.", variables=["report"])
+        db.add_all([v1, v2])
+        db.flush()
+        db.add(AIPromptLabel(name=key, label="production", version_id=v2.id))
+        db.commit()
+        _upgrade(db)
+        label = db.query(AIPromptLabel).filter_by(name=key, label="production").one()
+        assert label.version_id == v2.id
+        assert db.query(AIPromptVersion).filter_by(name=key).count() == 2
+        assert db.query(AIPromptVersion).filter_by(id=label.version_id).one().template == "The owner's edit for {{report}}."

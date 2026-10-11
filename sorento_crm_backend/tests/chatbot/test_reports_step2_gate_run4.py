@@ -160,3 +160,59 @@ def test_c_the_narrowed_report_counts_the_exact_code_not_its_longer_sibling(cons
         db.close()
     assert body["product_codes"] == ["CODEX-1"], (body["product_codes"], sent[0])
     assert body["total"]["qty"] == 3, (body["total"], sent[0])
+
+
+# ================================================================================ a dealer unlinked between turns
+
+
+def test_d_a_dealer_unlinked_between_turns_gets_the_own_account_line_not_figures(console, monkeypatch) -> None:
+    """Scope is re-checked by the route on every re-run: the narrowing turn re-sends the held customer, the
+    contact is no longer linked to it, the route answers 403 `customer_not_permitted`, and the reply is that
+    line with no figures (this may already pass; it pins the scope)."""
+    import json
+
+    from sqlalchemy import text as sql
+
+    own = lane._link_dealer(console)
+    hold = _parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_report",
+        entities=[lane._hit("ZZT OWN DEALER SDN BHD", "customer")], **SEP,
+    )
+    text, log = lane._say_all(console, monkeypatch, hold, "sales report for my account")
+    assert [n for n, _ in log] == ["crm_sales_report"], (log, text)
+
+    db = console.session_factory()
+    try:
+        db.execute(sql("DELETE FROM respond_contact_customers WHERE customer_id = :c"), {"c": own})
+        db.commit()
+    finally:
+        db.close()
+
+    real_factory = lane._REAL_FETCH_SERVICES
+    seen: list[tuple[str, dict[str, Any]]] = []
+
+    def _factory(*, mcp_call):
+        def _route(name: str, args: dict[str, Any]) -> Any:
+            seen.append((name, dict(args)))
+            if name == "crm_sales_report" and own in (args.get("customer_ids") or []):
+                return json.dumps({
+                    "result_type": "crm_sales_report", "error": "GET /sales-report returned 403 customer_not_permitted",
+                    "status_code": 403, "detail": {"code": "customer_not_permitted",
+                                                   "message": "You can only see sales for your own account."},
+                    "response": "", "answers": [], "attachments": [], "has_result": False,
+                })
+            return mcp_call(name, args)
+
+        return real_factory(mcp_call=_route)
+
+    monkeypatch.setattr(lane, "FetchServices", _factory)
+    narrow = _parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_ranking", ranking_drill="scoped",
+        entities=[lane._hit(EXACT, "product")], group_by=None, **SEP,
+    )
+    text, _calls = console.say(narrow, "only this one")
+    assert text.strip() in (
+        "You can only see sales for your own account.",
+        "Sorry, that isn't under your account. I can only check on ZZT OWN DEALER SDN BHD.",
+    ) or "your own account" in text or "isn't under your account" in text, (text, seen)
+    assert "No sales found" not in text and "Delivered" not in text, text
