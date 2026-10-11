@@ -60,3 +60,16 @@ Plan: `PLAN-prompt-ablation-11oct.md`. Paths relative to `sorento_crm_backend/`.
   under 450.
 - U11. Every v50-pass -> trim-fail case re-run on both versions; a cut is restored only under the Q2
   rule; each restore and its evidence listed in the PLAN results.
+
+## Publish migration (crew 11 Oct, after the hidden gate PASS: v56 83.2% vs v50 80.8%)
+
+- U12. `alembic/versions/pab_0001_parser_ablation.py` (revision `pab_0001_parser_ablation`, down_revision = the
+  current single head `chat_backfill_0001`) publishes `alembic/data/chatbot_semantic_parser.ablation-20261011.txt`
+  VERBATIM as the next `chatbot_semantic_parser` version: template == file text byte for byte (no policy blocks
+  appended: the graded v50 and v56 carry none), `variables` == `["current_date"]`, `commit_message` == module `MESSAGE`,
+  version = max existing + 1 (1 on an empty table).
+- U13. No label moves: every `ai_prompt_labels` row is unchanged after upgrade (the production label stays where it was).
+- U14. Idempotent: a version whose template already equals the file text publishes nothing (`publish` returns None).
+- U15. downgrade deletes only the row(s) carrying `MESSAGE` that no label points at.
+- U16. `publish(session)` is importable from the migration module and returns the new version number (or None).
+- U17. Single alembic head after the migration (`alembic heads` shows exactly `pab_0001_parser_ablation`).
