@@ -1,6 +1,6 @@
 # PLAN: REPORTS-STEP2 (one crm_report tool, one report entry in Focus)
 
-Status: card filed, awaiting owner rulings Q1-Q5 (11 Oct 2026). Track: L, lead pattern. Card:
+Status: S1 building (owner Q2/Q3/Q4 yes 11 Oct; Q1 low-stock split and Q5 pending). Track: L, lead pattern. Card:
 `CARD-reports-step2-11oct.md` / `.html`. Architecture: `ARCH-scalable-chat-11oct.html` step 2. Prior: PROMPT-DIET
 stopped at DP1 (PR #1568 measurement record).
 
