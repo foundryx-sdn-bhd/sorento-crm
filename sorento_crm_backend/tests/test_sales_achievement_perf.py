@@ -110,16 +110,61 @@ def _weekly_specs(agent_ids: List[str], *, basis: str, scope: str = "all", targe
     ]
 
 
+@pytest.fixture(scope="module")
+def _seeded_volume():
+    """The generated volume, seeded ONCE for the file (CI-LEAN, 10 Oct 2026).
+
+    It used to be seeded per test: 80,000 lines and ANALYZE cost about 8.5 s each time, for
+    seven tests. The seed lives in one blank-schema transaction for the whole module and is
+    discarded with it; each test runs inside its own savepoint on top (`volume`), so what a
+    test writes (a team, a target) never reaches the next one.
+    """
+    from app.services.company_scope import company_scope
+
+    from ._pg_fixture import blank_session
+    from .test_sales_targets_s1 import _sorento
+
+    with blank_session() as db:
+        company_id = _sorento(db)
+        with company_scope(db, frozenset({company_id})):
+            vol = seed_volume(db, company_id, orders=ORDERS)
+            # Production tables carry planner statistics (autovacuum analyzes a table soon
+            # after a sync fills it); these were filled inside the module transaction, so
+            # analyze them here. ANALYZE counts this transaction's own rows, and the
+            # statistics roll back with it.
+            for table in ANALYZED:
+                db.execute(text(f"analyze {table}"))
+            db.commit()
+            yield db, company_id, vol
+
+
 @pytest.fixture
-def volume(api):
-    client, db, company_id = api
-    vol = seed_volume(db, company_id, orders=ORDERS)
-    # Production tables carry planner statistics (autovacuum analyzes a table soon after a
-    # sync fills it); these were filled inside the test transaction, so analyze them here.
-    # ANALYZE counts this transaction's own rows, and the statistics roll back with it.
-    for table in ANALYZED:
-        db.execute(text(f"analyze {table}"))
-    return client, db, company_id, vol
+def volume(_seeded_volume, monkeypatch):
+    """`api` over the module's seeded volume: the same clock pins and client as the S1
+    suite's `world` / `api`, and a savepoint that discards the test's own writes."""
+    from app.services.sales import team_service
+
+    from .test_sales_targets_s1 import ALL, TODAY, _client, _restore
+
+    db, company_id, vol = _seeded_volume
+    monkeypatch.setattr(team_service, "_today", lambda: TODAY)
+    for mod in ("target_service", "achievement_service"):
+        module = __import__(f"app.services.sales.{mod}", fromlist=["_today"])
+        if hasattr(module, "_today"):
+            monkeypatch.setattr(module, "_today", lambda: TODAY)
+    # On the bound connection itself, outside the session: the session's own savepoints
+    # (it joins in "create_savepoint" mode) nest inside this one, so rolling it back
+    # discards whatever the test committed.
+    savepoint = db.bind.begin_nested()
+    client, originals = _client(db, ALL)
+    try:
+        yield client, db, company_id, vol
+    finally:
+        _restore(originals)
+        db.rollback()
+        if savepoint.is_active:
+            savepoint.rollback()
+        db.expunge_all()
 
 
 # --------------------------------------------------------------------------------------- #

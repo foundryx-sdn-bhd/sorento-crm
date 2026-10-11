@@ -15,12 +15,13 @@ Three rules live in that workflow and are pinned here:
 3. Cheap gate + merge gate (the jobs' `if` lines and the workflow
    `concurrency`): a `ci`-labelled PR runs the fast gates, the changed
    tests and the SCM shards only when SCM paths changed, never the six
-   backend shards; a `ci-full`-labelled PR, a merge-queue entry, the nightly
-   schedule and a release run the full suite; only a `ci` / `ci-full` label
-   run joins the per-PR concurrency group; every test job carries a
+   backend shards; a merge-queue entry and a release run the full suite;
+   a `ci-full` label on a PR is refused (owner, 9 Oct 2026: no full suite
+   per PR) and there is no nightly (owner, 10 Oct 2026, CI-LEAN); only a
+   `ci` label run joins the per-PR concurrency group; every test job carries a
    timeout; the `CI gate` job reports the run as one check (CI-MINUTES-CUT).
 4. Changed tests on a PR (`backend_tests` output of `changes`, and job
-   `test-backend-changed` with its "Select the changed test files to run"
+   `lean-gate` (the `PR gate` check) with its "Select the changed test files to run"
    step): the backend test files a `ci`-labelled PR changes run on the PR
    itself, serially, minus tests/scm (the SCM shards' job), minus what the
    checkout no longer holds and minus tests/ci_excluded.txt. #1387 changed
@@ -147,9 +148,11 @@ def _run_shell(tmp_path: Path, script: str, env: dict, fixtures: dict, *, gh_fai
 # ---------------------------------------------------------------------------
 
 AREA_KEYS = {"docs_only", "backend", "frontend", "mcp", "scm", "backend_tests", "backend_code"}
-
-
-NIGHTLY_RUNS = "repos/jayson-odoo/sorento-crm/actions/workflows/deploy.yml/runs?branch=main&event=schedule&status=success&per_page=1"
+# Written by a lean release only (CI-LEAN): the diff base and the lean flag.
+LEAN_KEYS = {"lean", "base_sha"}
+LAST_RELEASE = "e" * 40
+TREE = "f" * 40
+RELEASE_RUNS = "repos/jayson-odoo/sorento-crm/actions/workflows/deploy.yml/runs?branch=main&event=workflow_dispatch&status=success&per_page=1"
 
 
 def run_step(
@@ -161,15 +164,19 @@ def run_step(
     before: str = BEFORE,
     skip_tests: str = "",
     label: str = "ci",
-    nightly_last: str = "",
+    full_suite: str = "",
+    last_release: str | None = None,
+    validated: bool = False,
 ) -> dict[str, str]:
     """Run the real step with `files` as the API answer; return $GITHUB_OUTPUT.
 
     Each entry of `files` is a path, or a (new_path, previous_path) pair for a
     rename, shaped into the PR-files array or the compare object exactly as the
     GitHub API returns them. `label` is the label just added on a
-    pull_request event; `nightly_last` is the head the last green nightly
-    tested (the schedule case asks the API for it; empty means none).
+    pull_request event. On a dispatch, `last_release` is the head of the
+    last successful release (None: the lookup finds none) and `files` is the
+    compare from it to the head; `validated` says a validated-tree artifact
+    exists for the head's tree.
     """
     entries = []
     for f in files:
@@ -181,15 +188,21 @@ def run_step(
         "repos/jayson-odoo/sorento-crm/pulls/1/files": entries,
         f"repos/jayson-odoo/sorento-crm/compare/{before}...{SHA}": {"files": entries},
         f"repos/jayson-odoo/sorento-crm/compare/{'c' * 40}...{'d' * 40}": {"files": entries},
-        NIGHTLY_RUNS: {"workflow_runs": [{"head_sha": nightly_last}] if nightly_last else []},
+        RELEASE_RUNS: {"workflow_runs": [{"head_sha": last_release}] if last_release else []},
+        f"repos/jayson-odoo/sorento-crm/git/commits/{SHA}": {"sha": SHA, "tree": {"sha": TREE}},
+        f"repos/jayson-odoo/sorento-crm/actions/artifacts?name=validated-tree-{TREE}&per_page=5": {
+            "artifacts": [{"name": f"validated-tree-{TREE}", "expired": False}] if validated else []
+        },
     }
+    if last_release:
+        fixtures[f"repos/jayson-odoo/sorento-crm/compare/{last_release}...{SHA}"] = {"files": entries}
     env = {
         "EVENT": event, "LABEL": label if event == "pull_request" else "", "PR": "1",
         "PUSH_BEFORE": before, "PUSH_AFTER": SHA,
-        "MG_BASE": "c" * 40, "MG_HEAD": "d" * 40, "SKIP_TESTS": skip_tests,
+        "MG_BASE": "c" * 40, "MG_HEAD": "d" * 40, "SKIP_TESTS": skip_tests, "FULL_SUITE": full_suite,
     }
     outputs = _run_shell(tmp_path, _step_script("Detect changed areas"), env, fixtures, gh_fails=gh_fails)
-    assert set(outputs) == AREA_KEYS, outputs
+    assert AREA_KEYS <= set(outputs) <= AREA_KEYS | LEAN_KEYS, outputs
     return outputs
 
 
@@ -222,23 +235,26 @@ def test_docs_only_change_skips_everything(tmp_path, event):
     assert run_step(tmp_path, event, DOCS_ONLY) == DOCS_SKIP
 
 
-def test_docs_only_change_skips_everything_under_ci_full_too(tmp_path):
-    """Owner ruling 29 Sep 2026 holds for the merge gate: docs need no suite."""
-    assert run_step(tmp_path, "pull_request", DOCS_ONLY, label="ci-full") == DOCS_SKIP
+def _triggers() -> str:
+    text = _workflow_text()
+    return text[text.index("\non:\n"):text.index("\nconcurrency:\n")]
 
 
-def test_ci_full_label_counts_every_area_as_changed(tmp_path):
-    """CI-MINUTES-CUT: `ci-full` is the merge gate, the full suite like a queue entry."""
-    for files in ([ "sorento_crm_frontend/app/page.tsx"], TESTS_ONLY_1387, ["sorento_crm_mcp/pyproject.toml"]):
-        assert run_step(tmp_path, "pull_request", files, label="ci-full") == FULL_PIPELINE, files
+def test_there_is_no_nightly(tmp_path):
+    """CI-LEAN, owner 10 Oct 2026: "i don't need the nightly test". No
+    schedule trigger, and the `changes` step carries no schedule branch."""
+    assert not re.search(r"^  schedule:", _triggers(), re.M)
+    assert "event=schedule" not in _step_script("Detect changed areas")
+    assert "nightly_done" not in _step_script("Detect changed areas")
 
 
-def test_nightly_tests_main_unless_the_last_green_nightly_tested_this_head(tmp_path):
-    """The schedule has no diff: every area, unless main has not moved."""
-    assert run_step(tmp_path, "schedule", []) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", [], nightly_last="e" * 40) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", [], nightly_last=SHA) == {"docs_only": "false", **NO_AREA}
-    assert run_step(tmp_path, "schedule", [], gh_fails=True) == FULL_PIPELINE, "a failed lookup runs everything"
+def test_ci_full_is_never_a_label_the_area_step_honours(tmp_path):
+    """No full suite per PR (owner, 9 Oct 2026): the step has no ci-full branch,
+    so a stray ci-full label reads like any other PR (the job never runs then:
+    see test_ci_full_label_is_refused_on_a_pull_request)."""
+    assert "ci-full" not in _step_script("Detect changed areas")
+    out = run_step(tmp_path, "pull_request", ["sorento_crm_frontend/app/page.tsx"], label="ci-full")
+    assert out["backend"] == "false" and out["frontend"] == "true"
 
 
 NON_DOCS = [
@@ -399,19 +415,63 @@ def test_fail_safes_land_on_the_full_pipeline(tmp_path):
     assert run_step(tmp_path, "push", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     assert run_step(tmp_path, "merge_group", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     assert run_step(tmp_path, "pull_request", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
-    assert run_step(tmp_path, "pull_request", DOCS_ONLY, gh_fails=True, label="ci-full") == FULL_PIPELINE
     assert run_step(tmp_path, "push", []) == FULL_PIPELINE
     assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY) == FULL_PIPELINE
-    assert run_step(tmp_path, "schedule", DOCS_ONLY, gh_fails=True) == FULL_PIPELINE
     many = [f"documentation/plans/x/{i}.md" for i in range(300)]
     assert run_step(tmp_path, "push", many) == FULL_PIPELINE, "300 files is the compare cap"
     assert run_step(tmp_path, "push", many[:299]) == DOCS_SKIP
 
 
-def test_release_always_tests_the_whole_head(tmp_path):
-    """A dispatch has no diff: every area counts, docs_only is never true."""
+def test_release_with_no_release_to_diff_against_tests_the_whole_head(tmp_path):
+    """No successful release found (or full_suite): every area counts, the full
+    sharded suite runs, docs_only is never true."""
     assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY) == FULL_PIPELINE
     assert run_step(tmp_path, "workflow_dispatch", [], skip_tests="false") == FULL_PIPELINE
+    assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE, full_suite="true") == FULL_PIPELINE
+    assert run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE, gh_fails=True) == FULL_PIPELINE
+
+
+RELEASE_BATCH = [
+    "sorento_crm_backend/app/services/inventory_service.py",
+    "sorento_crm_backend/tests/test_rbac.py",
+    "sorento_crm_backend/tests/scm/test_committed_v.py",
+    "documentation/plans/ci/PLAN-ci-lean-10oct.md",
+]
+
+
+def test_a_release_diffs_against_the_last_successful_release(tmp_path):
+    """CI-LEAN: the lean release tests what the merged batch reaches. Backend
+    always counts (the core tier runs on every release); the frontend and MCP
+    flags follow the batch; tests/scm is listed like any other test."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE)
+    assert out == {
+        "docs_only": "false", "backend": "true", "frontend": "false", "mcp": "false", "scm": "true",
+        "backend_tests": "sorento_crm_backend/tests/scm/test_committed_v.py sorento_crm_backend/tests/test_rbac.py",
+        "backend_code": "sorento_crm_backend/app/services/inventory_service.py",
+        "lean": "true", "base_sha": LAST_RELEASE,
+    }
+    fe = run_step(tmp_path, "workflow_dispatch", ["sorento_crm_frontend/app/page.tsx"], last_release=LAST_RELEASE)
+    assert fe["frontend"] == "true" and fe["backend"] == "true" and fe["lean"] == "true"
+
+
+def test_a_docs_only_release_still_runs_the_core_tier(tmp_path):
+    out = run_step(tmp_path, "workflow_dispatch", DOCS_ONLY, last_release=LAST_RELEASE)
+    assert out["docs_only"] == "false" and out["backend"] == "true" and out["lean"] == "true"
+    assert out["backend_tests"] == "" and out["frontend"] == "false"
+
+
+def test_a_release_batch_at_the_compare_cap_runs_the_full_suite(tmp_path):
+    many = [f"sorento_crm_backend/app/x{i}.py" for i in range(300)]
+    assert run_step(tmp_path, "workflow_dispatch", many, last_release=LAST_RELEASE) == FULL_PIPELINE
+
+
+def test_a_tree_whose_release_tests_passed_is_not_tested_again(tmp_path):
+    """A re-dispatch (a rejected approval, a deploy hiccup) of a tree whose
+    release tests already passed builds and deploys only."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE, validated=True)
+    assert out == {"docs_only": "false", **NO_AREA}
+    assert run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH, last_release=LAST_RELEASE,
+                    validated=True, full_suite="true") == FULL_PIPELINE, "full_suite wins"
 
 
 def test_release_with_skip_tests_zeroes_every_area_but_is_not_docs_only(tmp_path):
@@ -463,9 +523,6 @@ def test_changed_test_files_are_listed_beside_code_changes(tmp_path):
 @pytest.mark.parametrize(
     "path",
     [
-        # the SCM shards' job runs these whenever `scm` is true
-        "sorento_crm_backend/tests/scm/test_committed_v.py",
-        "sorento_crm_backend/tests/scm/nested/test_x.py",
         # harness and helper modules: pytest collects nothing from them (exit 5)
         "sorento_crm_backend/tests/conftest.py",
         "sorento_crm_backend/tests/_pg_fixture.py",
@@ -489,13 +546,72 @@ def test_paths_that_are_not_a_runnable_backend_test_file_are_not_listed(tmp_path
     assert out["backend_tests"] == "", out
 
 
-def test_scm_test_change_runs_the_scm_shards_not_the_changed_files_job(tmp_path):
+def test_scm_test_change_runs_in_the_pr_gate(tmp_path):
+    """CI-LEAN: the SCM shards no longer run on a PR, so a changed tests/scm file
+    is listed like any other (the run step keeps tests/scm in its own session)."""
     out = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/test_committed_v.py"])
-    assert out["scm"] == "true" and out["backend_tests"] == ""
+    assert out["backend_tests"] == "sorento_crm_backend/tests/scm/test_committed_v.py"
+    nested = run_step(tmp_path, "pull_request", ["sorento_crm_backend/tests/scm/nested/test_x.py"])
+    assert nested["backend_tests"] == "sorento_crm_backend/tests/scm/nested/test_x.py"
     both = run_step(tmp_path, "pull_request", [
         "sorento_crm_backend/tests/scm/test_committed_v.py", "sorento_crm_backend/tests/test_rbac.py",
     ])
-    assert both["scm"] == "true" and both["backend_tests"] == "sorento_crm_backend/tests/test_rbac.py"
+    assert both["backend_tests"] == "sorento_crm_backend/tests/scm/test_committed_v.py sorento_crm_backend/tests/test_rbac.py"
+
+
+def test_the_import_selection_on_a_pr_keeps_tests_scm():
+    """The selector drops tests/scm only when the SCM shards run anyway; on a PR
+    they never do now."""
+    script = _step_script("Select backend tests by import")
+    assert '--scm false' in script and "$SCM" not in script
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: the PR gate, one job doing all the PR's work.
+# ---------------------------------------------------------------------------
+
+
+def test_the_pr_gate_reports_as_pr_gate_on_a_pull_request():
+    """The one check the ruleset requires (owner Q3, 10 Oct 2026)."""
+    name = _expression(re.search(r"^    name: (.*)$", _job_block("lean-gate"), re.M).group(1))
+    assert _gh_eval(name, {"github": {"event_name": "pull_request", "event": {"label": {"name": "ci"}}}}) == "PR gate"
+
+
+def test_the_pr_gate_runs_whatever_the_fast_gates_did_and_fails_with_them(tmp_path):
+    """`always()` so a red fast gate never turns the required check into a
+    "skipped" (which a ruleset accepts); its first step fails on such a need."""
+    jobs = _job_ifs()
+    assert set(jobs["lean-gate"]["needs"]) == {"changes", "check-migration-heads", "pii-guard", "gitleaks"}
+    for forced in ({"gitleaks": "failure"}, {"changes": "failure"}, {"pii-guard": "failure"}):
+        results = _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS, forced=forced)
+        assert results["lean-gate"] == "success", "the job runs (its step then fails)"
+    script = _step_script("Fail when a fast gate did not pass")
+    green = {"changes": "success", "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success"}
+    def run(needs):
+        return subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                 "NEEDS": json.dumps({k: {"result": v, "outputs": {}} for k, v in needs.items()})},
+            capture_output=True, text=True,
+        )
+    assert run(green).returncode == 0
+    for job in green:
+        bad = run({**green, job: "failure"})
+        assert bad.returncode != 0 and f"{job} failure" in bad.stdout + bad.stderr, job
+
+
+def test_the_pr_gate_carries_the_frontend_and_mcp_checks():
+    steps = _lean_gate_steps()
+    joined = "\n".join(steps.values())
+    # frontend: the type-check and the vitest files related to what changed
+    assert "npm run typecheck" in joined and "--max-old-space-size=4096" in joined
+    assert "npx vitest run --changed" in joined
+    assert "needs.changes.outputs.frontend == 'true'" in joined
+    # backend imports for every test file, and the app and worker import chains
+    assert "pytest --collect-only" in joined
+    assert "import worker; from app.scheduler.task_scheduler import start_scheduler" in joined
+    # mcp
+    assert "sorento_crm_mcp/tests" in joined and "needs.changes.outputs.mcp == 'true'" in joined
 
 
 def test_area_flags_do_not_race_grep_q_on_a_long_file_list(tmp_path):
@@ -524,17 +640,11 @@ def test_rename_of_a_test_file_lists_both_ends(tmp_path):
     )
 
 
-@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch", "schedule"])
+@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch"])
 def test_changed_tests_are_never_listed_off_a_pull_request(tmp_path, event):
     """The full shards run there; the list must not make the changed-files job run twice."""
     out = run_step(tmp_path, event, TESTS_ONLY_1387)
     assert out["backend_tests"] == ""
-    assert out["backend"] == "true"
-
-
-def test_changed_tests_are_never_listed_under_ci_full(tmp_path):
-    out = run_step(tmp_path, "pull_request", TESTS_ONLY_1387, label="ci-full")
-    assert out["backend_tests"] == "" and out["backend_code"] == ""
     assert out["backend"] == "true"
 
 
@@ -544,7 +654,7 @@ def test_changed_tests_list_is_empty_on_every_early_exit(tmp_path):
     assert run_step(tmp_path, "workflow_dispatch", [], skip_tests="true")["backend_tests"] == ""
 
 
-# The "Select the changed test files to run" step of `test-backend-changed`,
+# The "Select the changed test files to run" step of `lean-gate`,
 # run against a scratch checkout: the workflow's own ci_excluded.txt, and the
 # files each case says exist.
 
@@ -635,16 +745,20 @@ def test_changed_tests_step_with_nothing_left_passes_and_runs_nothing(tmp_path):
     assert "no changed test file left to run" in stdout
 
 
-def test_changed_tests_job_steps_after_select_gate_on_its_output():
-    """Every step after the select step, pytest included, skips on an empty list."""
-    text = _workflow_text()
-    block = re.search(r"\n  test-backend-changed:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
+def _lean_gate_steps() -> dict[str, str]:
+    block = _job_block("lean-gate")
     steps = re.split(r"\n      - name: ", block)[1:]
-    names = [s.splitlines()[0] for s in steps]
-    assert names[:2] == ["Checkout", "Select the changed test files to run"], names
-    for step in steps[2:]:
-        assert "        if: steps.select.outputs.files != ''" in step, step.splitlines()[0]
-    assert "--dist loadfile" in steps[-1] and "$FILES" in steps[-1], "runs the selected files via env, under xdist"
+    return {s.splitlines()[0]: s for s in steps}
+
+
+def test_changed_tests_job_steps_after_select_gate_on_its_output():
+    """The database steps, pytest included, skip on an empty list."""
+    steps = _lean_gate_steps()
+    for name in ("Relax Postgres durability for the test run", "Bootstrap the database",
+                 "Run the changed test files (executing gate)"):
+        assert "        if: steps.select.outputs.files != ''" in steps[name], name
+    run = steps["Run the changed test files (executing gate)"]
+    assert "--dist loadfile" in run and "$FILES" in run, "runs the selected files via env, under xdist"
 
 
 # ---------------------------------------------------------------------------
@@ -781,12 +895,15 @@ def _ran(results: dict[str, str]) -> set[str]:
     return {job for job, r in results.items() if r != "skipped"}
 
 
-GATES_ON_PR = {"check-migration-heads", "changes", "release-ci-label", "pii-guard", "gitleaks", "ci-gate"}
+# CI-LEAN: a `ci` PR runs the four one-minute fast gates and ONE job that does
+# everything else (`lean-gate`, check name `PR gate`): no image builds, no SCM
+# or main shards, no vitest shards, no separate label or gate job.
+GATES_ON_PR = {"check-migration-heads", "changes", "pii-guard", "gitleaks", "lean-gate"}
 
 
 def test_pull_request_fast_gate_backend_with_scm_paths():
     ran = _ran(_simulate("pull_request", outputs={"backend": "true", "scm": "true", "frontend": "false", "mcp": "false", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-scm"}
+    assert ran == GATES_ON_PR
     assert "test-backend" not in ran, "the six backend shards never run on a pull_request"
 
 
@@ -797,34 +914,35 @@ def test_ci_label_never_runs_the_six_shards_whatever_changes_reports():
         assert results["test-backend"] == "skipped", outputs
 
 
-def test_ci_full_label_runs_the_full_suite_and_never_deploys():
-    """The merge gate: every job a merge-queue entry runs, plus the PR-only jobs."""
-    results = _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)
-    assert _ran(results) == FULL_SUITE | {"gitleaks", "release-ci-label"}
-    assert results["test-backend-changed"] == "skipped"
-    assert results["build-images"] == "skipped"
-    assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
-    assert _ran(_simulate("pull_request", label="ci-full", outputs={**NO_AREA, "docs_only": "true"})) == GATES_ON_PR
+def test_ci_full_label_is_refused_on_a_pull_request():
+    """Owner, 9 Oct 2026: no ci-full per PR. The label runs ONE job, which
+    removes it and fails the run with the reason; nothing else runs, so no
+    suite, no build and no deploy, whatever `changes` would have said."""
+    for outputs in (FULL_PIPELINE, {**NO_AREA, "docs_only": "true"}):
+        results = _simulate("pull_request", label="ci-full", outputs=outputs)
+        assert _ran(results) == {"refuse-ci-full"}, results
+    for label in ("ci", "needs-hand-test", "lane-running"):
+        assert _simulate("pull_request", label=label)["refuse-ci-full"] == "skipped", label
+    for event in ("push", "merge_group", "workflow_dispatch"):
+        assert _simulate(event, outputs=FULL_PIPELINE)["refuse-ci-full"] == "skipped", event
 
 
-def test_nightly_runs_the_full_suite_or_nothing_and_never_deploys():
-    results = _simulate("schedule", outputs=FULL_PIPELINE)
-    assert _ran(results) == FULL_SUITE
-    assert results["gitleaks"] == "skipped" and results["build-images"] == "skipped"
-    assert results["build-and-deploy"] == "skipped" and results["notify-owner"] == "skipped"
-    idle = _simulate("schedule", outputs={"docs_only": "false", **NO_AREA})
-    assert _ran(idle) == {"check-migration-heads", "pii-guard", "changes", "ci-gate"}
+def test_refuse_ci_full_job_removes_the_label_and_fails_with_the_reason():
+    block = _job_block("refuse-ci-full")
+    assert "pull-requests: write" in block
+    assert "--remove-label ci-full" in block
+    assert "release-only" in block and "exit 1" in block
+    assert re.search(r"^    timeout-minutes: \d+$", block, re.M)
 
 
 def test_pull_request_fast_gate_backend_without_scm_paths():
     ran = _ran(_simulate("pull_request", outputs={"backend": "true", "scm": "false", "frontend": "false", "mcp": "false", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-backend"}
+    assert ran == GATES_ON_PR
 
 
 def test_pull_request_fast_gate_frontend_and_mcp():
     ran = _ran(_simulate("pull_request", outputs={"backend": "false", "scm": "false", "frontend": "true", "mcp": "true", "docs_only": "false"}))
-    assert ran == GATES_ON_PR | {"validate-frontend", "typecheck-frontend", "validate-mcp"}
+    assert ran == GATES_ON_PR
 
 
 def test_pull_request_docs_only_runs_the_root_jobs_only():
@@ -848,25 +966,23 @@ def test_pull_request_that_changes_a_test_file_runs_it(tmp_path):
     outputs = run_step(tmp_path, "pull_request", TESTS_ONLY_1387)
     assert outputs == TESTS_ONLY_OUTPUTS
     ran = _ran(_simulate("pull_request", outputs=outputs))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-changed"}
+    assert ran == GATES_ON_PR
     assert "test-backend" not in ran
 
 
 def test_pull_request_with_code_and_a_test_file_runs_both_gates():
     outputs = {**TESTS_ONLY_OUTPUTS, "scm": "true", "frontend": "true"}
     ran = _ran(_simulate("pull_request", outputs=outputs))
-    assert ran == GATES_ON_PR | {
-        "validate-backend", "test-backend-scm", "test-backend-changed", "validate-frontend", "typecheck-frontend",
-    }
+    assert ran == GATES_ON_PR
 
 
 def test_changed_tests_job_never_runs_off_a_pull_request_or_with_another_label():
-    for event in ("merge_group", "workflow_dispatch", "push", "schedule"):
+    for event in ("merge_group", "push"):
         results = _simulate(event, outputs={**FULL_PIPELINE, "backend_tests": "sorento_crm_backend/tests/test_x.py", "backend_code": ""})
-        assert results["test-backend-changed"] == "skipped", (event, results)
+        assert results["lean-gate"] == "skipped", (event, results)
     for label in ("needs-hand-test", "lane-running", "ci-full"):
         results = _simulate("pull_request", label=label, outputs=TESTS_ONLY_OUTPUTS)
-        assert results["test-backend-changed"] == "skipped", label
+        assert results["lean-gate"] == "skipped", label
 
 
 def test_pull_request_with_another_label_runs_nothing():
@@ -882,11 +998,15 @@ def test_merge_group_runs_the_full_suite_and_never_deploys():
     }
 
 
-RELEASE_ONLY = {"check-migration-heads", "pii-guard", "changes", "build-images", "build-and-deploy", "notify-owner", "ci-gate"}
+# CI-LEAN: a release runs neither the PII guard (the push to main already ran
+# it on the same tree) nor the CI gate (build-and-deploy judges every need
+# itself), and the owner mail is a step of build-and-deploy, not a job.
+RELEASE_ONLY = {"check-migration-heads", "changes", "build-images", "build-and-deploy"}
 FULL_SUITE = {
     "check-migration-heads", "pii-guard", "changes", "validate-backend", "validate-mcp",
     "test-backend-scm", "test-backend", "validate-frontend", "typecheck-frontend", "ci-gate",
 }
+RELEASE_TESTS = FULL_SUITE - {"pii-guard", "ci-gate"}
 
 
 def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
@@ -897,12 +1017,11 @@ def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
         assert results["changes"] == "skipped"
         assert results["build-images"] == "skipped"
         assert results["build-and-deploy"] == "skipped"
-        assert results["notify-owner"] == "skipped"
 
 
 def test_release_runs_the_full_suite_then_builds_and_deploys():
     ran = _ran(_simulate("workflow_dispatch", outputs=FULL_PIPELINE))
-    assert ran == FULL_SUITE | RELEASE_ONLY
+    assert ran == RELEASE_TESTS | RELEASE_ONLY
 
 
 def test_release_with_skip_tests_builds_and_deploys_only():
@@ -912,18 +1031,133 @@ def test_release_with_skip_tests_builds_and_deploys_only():
 
 def test_release_dispatched_on_another_ref_tests_but_never_ships():
     results = _simulate("workflow_dispatch", outputs=FULL_PIPELINE, ref="refs/heads/crew/ci-fast-gate")
-    assert _ran(results) == FULL_SUITE
+    assert _ran(results) == RELEASE_TESTS
     assert results["build-images"] == "skipped"
     assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
 
 
 @pytest.mark.parametrize("failed", ["test-backend", "test-backend-scm", "validate-frontend", "typecheck-frontend",
                                     "validate-backend", "validate-mcp", "check-migration-heads", "build-images"])
-def test_release_with_a_failed_gate_does_not_deploy_but_still_notifies(failed):
+def test_release_with_a_failed_gate_does_not_deploy(failed):
+    """A failed gate fails the run, and GitHub's own failed-workflow mail goes
+    to whoever dispatched it; there is no separate notify job any more."""
     results = _simulate("workflow_dispatch", outputs=FULL_PIPELINE, forced={failed: "failure"})
     assert results["build-and-deploy"] == "skipped", failed
-    assert results["notify-owner"] == "success", "the owner is mailed about the failed release"
+
+
+def test_owner_mail_is_the_last_step_of_the_deploy_job():
+    """CI-LEAN: the notify job billed a minute per release to print that the
+    SMTP secrets are unset (run 38017372957). It is a step now: `always()`,
+    so a failed deploy still mails once SMTP is configured."""
+    assert "notify-owner" not in _job_ifs()
+    block = _job_block("build-and-deploy")
+    steps = re.findall(r"^      - name: (.*)$", block, re.M)
+    assert steps[-1] == "Mail the owner the deploy result", steps
+    tail = block[block.index("- name: Mail the owner the deploy result"):]
+    assert "if: always()" in tail and "dawidd6/action-send-mail" in tail
+
+
+def test_release_runs_neither_the_pii_guard_nor_the_ci_gate():
+    for outputs in (FULL_PIPELINE, {"docs_only": "false", **NO_AREA}):
+        results = _simulate("workflow_dispatch", outputs=outputs)
+        assert results["pii-guard"] == "skipped" and results["ci-gate"] == "skipped", results
+    for event, label in (("push", None), ("pull_request", "ci"), ("merge_group", None)):
+        assert _simulate(event, label=label, outputs=FULL_PIPELINE)["pii-guard"] == "success", event
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: one images job, reusing an image whose service tree is unchanged.
+# ---------------------------------------------------------------------------
+
+DOCKER_STUB = """\
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_LOG"
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+  grep -qxF "$4" "$DOCKER_EXISTING" && exit 0
+  echo "ERROR: $4: not found" >&2; exit 1
+fi
+exit 0
+"""
+
+
+def _run_decide(tmp_path: Path, *, existing: list[str], rebuild_all: str = "false") -> tuple[dict, list[str], dict]:
+    """Run the real "Decide which images to build" step in a scratch git repo
+    holding the three service trees, with a stub `docker`; return the step's
+    outputs, the docker calls and each service's tree hash."""
+    repo = tmp_path / "repo"
+    for svc in ("frontend", "backend", "mcp"):
+        (repo / f"sorento_crm_{svc}").mkdir(parents=True)
+        (repo / f"sorento_crm_{svc}" / "Dockerfile").write_text(f"FROM scratch # {svc}\n")
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x")
+    trees = {svc: git("rev-parse", f"HEAD:sorento_crm_{svc}") for svc in ("frontend", "backend", "mcp")}
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(DOCKER_STUB)
+    (bin_dir / "docker").chmod(0o755)
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("".join(
+        f"jayson1004/sorento-crm:{svc}-tree-{trees[svc]}\n" for svc in existing
+    ))
+    log = tmp_path / "docker.log"
+    log.write_text("")
+    output = tmp_path / "output.txt"
+    output.write_text("")
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Decide which images to build")],
+        cwd=repo,
+        env={"PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}", "GITHUB_OUTPUT": str(output),
+             "GITHUB_SHA": SHA, "IMAGE_REPO": "jayson1004/sorento-crm", "REBUILD_ALL": rebuild_all,
+             "DOCKER_LOG": str(log), "DOCKER_EXISTING": str(existing_file)},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines() if "=" in line)
+    return outputs, log.read_text().splitlines(), trees
+
+
+def test_build_images_is_one_job():
+    """Three matrix legs billed three roundings plus three setups (run
+    38017372957: 2 + 10 + 1); one job builds what changed in sequence."""
+    block = _job_block("build-images")
+    assert "matrix:" not in block
+    assert re.search(r"^    timeout-minutes: \d+$", block, re.M)
+
+
+def test_an_unchanged_service_tree_is_retagged_not_rebuilt(tmp_path):
+    outputs, calls, trees = _run_decide(tmp_path, existing=["backend", "mcp"])
+    assert outputs["build_frontend"] == "true"
+    assert outputs["build_backend"] == "false" and outputs["build_mcp"] == "false"
+    for svc in ("backend", "mcp"):
+        assert (f"docker buildx imagetools create -t jayson1004/sorento-crm:{svc}-{SHA} "
+                f"jayson1004/sorento-crm:{svc}-tree-{trees[svc]}") in calls, calls
+        assert outputs[f"{svc}_tree"] == trees[svc]
+    assert not any("create" in c and "frontend" in c for c in calls), "a changed tree is never retagged"
+
+
+def test_nothing_in_the_registry_builds_everything(tmp_path):
+    outputs, calls, _ = _run_decide(tmp_path, existing=[])
+    assert {outputs[f"build_{s}"] for s in ("frontend", "backend", "mcp")} == {"true"}
+    assert not any("imagetools create" in c for c in calls)
+
+
+def test_rebuild_all_ignores_the_registry(tmp_path):
+    """A rotated build-arg secret (NEXT_PUBLIC_VAPID_PUBLIC_KEY) is not in the
+    tree hash: `rebuild_all` is the release input that forces a build."""
+    outputs, calls, _ = _run_decide(tmp_path, existing=["frontend", "backend", "mcp"], rebuild_all="true")
+    assert {outputs[f"build_{s}"] for s in ("frontend", "backend", "mcp")} == {"true"}
+    assert not any("imagetools" in c for c in calls)
+    assert re.search(r"^      rebuild_all:$", _triggers(), re.M)
+
+
+def test_every_build_pushes_the_sha_tag_and_the_tree_tag():
+    block = _job_block("build-images")
+    for svc in ("frontend", "backend", "mcp"):
+        assert f"${{{{ env.IMAGE_REPO }}}}:{svc}-${{{{ github.sha }}}}" in block, svc
+        assert f"${{{{ env.IMAGE_REPO }}}}:{svc}-tree-${{{{ steps.decide.outputs.{svc}_tree }}}}" in block, svc
+        assert f"if: steps.decide.outputs.build_{svc} == 'true'" in block, svc
 
 
 def test_release_with_skip_tests_and_a_failed_build_does_not_deploy():
@@ -937,7 +1171,7 @@ def test_deploy_job_carries_the_production_environment():
     text = _workflow_text()
     block = re.search(r"\n  build-and-deploy:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
     assert re.search(r"^    environment:\n      name: production$", block, re.M), block
-    for other in ("build-images", "notify-owner", "test-backend", "changes"):
+    for other in ("build-images", "test-backend", "changes"):
         other_block = re.search(rf"\n  {other}:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
         assert "environment:" not in other_block, other
 
@@ -946,7 +1180,6 @@ def test_merge_group_never_deploys_whatever_the_flags():
     results = _simulate("merge_group", outputs=FULL_PIPELINE)
     assert results["build-images"] == "skipped"
     assert results["build-and-deploy"] == "skipped"
-    assert results["notify-owner"] == "skipped"
 
 
 # ---------------------------------------------------------------------------
@@ -959,22 +1192,25 @@ def _job_block(job_id: str) -> str:
     return re.search(rf"\n  {job_id}:\n(.*?)(?=\n  [a-z][\w-]*:\n|\Z)", text, re.S).group(1)
 
 
-def test_release_label_job_removes_the_label_that_fired_the_run():
-    """`ci` and `ci-full` are both one-shot: the job removes whichever was added."""
-    block = _job_block("release-ci-label")
-    assert "LABEL: ${{ github.event.label.name }}" in block
-    assert '--remove-label "$LABEL"' in block
-    assert "--remove-label ci\n" not in block
-    for label in ("ci", "ci-full"):
-        assert _simulate("pull_request", label=label)["release-ci-label"] == "success", label
-    assert _simulate("pull_request", label="needs-hand-test")["release-ci-label"] == "skipped"
+def test_the_pr_gate_removes_the_ci_label_that_fired_the_run():
+    """`ci` is one-shot: the PR gate's first steps remove it (it was its own job,
+    a billed minute per PR; `ci-full` has its own refusing job)."""
+    assert "release-ci-label" not in _job_ifs()
+    step = _lean_gate_steps()["Remove the ci label so a future add re-triggers CI"]
+    assert "--remove-label ci" in step and "github.event_name == 'pull_request'" in step
+    assert "pull-requests: write" in _job_block("lean-gate")
 
 
-DEPLOY_JOBS = {"build-images", "build-and-deploy", "notify-owner"}
+DEPLOY_JOBS = {"build-images", "build-and-deploy"}
+LABEL_JOBS = {"refuse-ci-full"}
 
 
 def test_every_test_and_gate_job_carries_a_timeout():
-    """Backend test jobs 60 min, everything else 20; the deploy jobs are out of this lane's scope.
+    """Backend test jobs 90 min, everything else 20; the deploy jobs are out of this lane's scope.
+
+    90, not 60 (11 Oct 2026): on the private-repo runners the main shards ran 29-59 min of
+    pytest and three hit the 60-minute cap (release 38071049191 shards 2 and 6, release
+    38091974895 shard 1, nightly 38091972809 shards 1 and 2).
 
     The caps bound run time only, at about twice the worst observed run:
     on run 37369427779 (5 Oct 2026) a 35-minute cap cut a healthy shard at
@@ -990,32 +1226,31 @@ def test_every_test_and_gate_job_carries_a_timeout():
     for job_id in jobs:
         m = re.search(r"^    timeout-minutes: (\d+)$", _job_block(job_id), re.M)
         timeouts[job_id] = int(m.group(1)) if m else None
-    shards = {"test-backend", "test-backend-scm", "test-backend-changed"}
+    shards = {"test-backend", "test-backend-scm", "lean-gate"}
     for job_id, minutes in timeouts.items():
         if job_id in DEPLOY_JOBS:
             continue
-        assert minutes == (60 if job_id in shards else 20), (job_id, minutes)
+        assert minutes == (90 if job_id in shards else 20), (job_id, minutes)
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request'" in text
 
 
 def test_ci_gate_needs_every_test_and_validate_job():
     jobs = _job_ifs()
-    expected = set(jobs) - DEPLOY_JOBS - {"release-ci-label", "ci-gate"}
+    expected = set(jobs) - DEPLOY_JOBS - LABEL_JOBS - {"ci-gate"}
     assert set(jobs["ci-gate"]["needs"]) == expected, jobs["ci-gate"]["needs"]
 
 
 def test_ci_gate_reports_a_different_name_for_the_full_suite():
-    """A ruleset reads the latest check of a name on the head: `ci` must not
-    stand in for `ci-full`, so the full run reports as `CI gate (full)`."""
+    """A ruleset reads the latest check of a name on the head: a `ci` run must
+    not stand in for a full-suite run, so the full run reports as `CI gate (full)`."""
     name = _expression(re.search(r"^    name: (.*)$", _job_block("ci-gate"), re.M).group(1))
     github = lambda event, label=None: {"github": {"event_name": event, "event": {"label": {"name": label}} if label else {}}}
     assert _gh_eval(name, github("pull_request", "ci")) == "CI gate"
-    assert _gh_eval(name, github("pull_request", "ci-full")) == "CI gate (full)"
-    for event in ("merge_group", "schedule", "workflow_dispatch"):
+    for event in ("merge_group", "workflow_dispatch"):
         assert _gh_eval(name, github(event)) == "CI gate (full)", event
 
 
-def test_changes_job_token_can_read_the_pr_files_and_the_nightly_runs():
+def test_changes_job_token_can_read_the_pr_files_and_the_actions_api():
     """Private repo: a restricted default token would fail both `gh api` calls
     and the fail-safe would turn every `ci` run into every area changed."""
     block = _job_block("changes")
@@ -1024,11 +1259,12 @@ def test_changes_job_token_can_read_the_pr_files_and_the_nightly_runs():
 
 
 def test_ci_gate_runs_on_every_gated_event_and_on_nothing_else():
-    assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "success"
-    assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "success"
-    assert _simulate("pull_request", label="ci", outputs={**NO_AREA, "docs_only": "true"})["ci-gate"] == "success"
-    for event in ("merge_group", "workflow_dispatch", "schedule"):
-        assert _simulate(event, outputs=FULL_PIPELINE)["ci-gate"] == "success", event
+    """On a PR the `PR gate` job is the one check (CI-LEAN, Q3); `CI gate (full)`
+    stays for the merge queue."""
+    assert _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS)["ci-gate"] == "skipped"
+    assert _simulate("pull_request", label="ci-full", outputs=FULL_PIPELINE)["ci-gate"] == "skipped"
+    assert _simulate("merge_group", outputs=FULL_PIPELINE)["ci-gate"] == "success"
+    assert _simulate("workflow_dispatch", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "build-and-deploy judges the needs"
     assert _simulate("push", outputs=FULL_PIPELINE)["ci-gate"] == "skipped", "a push to main is the alembic gate alone"
     for label in ("needs-hand-test", "lane-running", "needs-decision"):
         assert _simulate("pull_request", label=label)["ci-gate"] == "skipped", label
@@ -1047,7 +1283,7 @@ def _run_gate(tmp_path: Path, needs: dict[str, str]) -> tuple[int, str]:
 GATE_NEEDS_GREEN = {
     "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success", "changes": "success",
     "validate-backend": "success", "validate-mcp": "skipped", "test-backend-scm": "skipped",
-    "test-backend": "skipped", "test-backend-changed": "success", "validate-frontend": "skipped",
+    "test-backend": "skipped", "lean-gate": "skipped", "validate-frontend": "skipped",
     "typecheck-frontend": "skipped",
 }
 
@@ -1060,7 +1296,7 @@ def test_ci_gate_step_passes_when_every_need_succeeded_or_was_path_filtered(tmp_
 
 @pytest.mark.parametrize("job,result", [
     ("test-backend", "failure"), ("test-backend-scm", "cancelled"), ("validate-frontend", "failure"),
-    ("test-backend-changed", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
+    ("lean-gate", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
     # Run 37369427779 (5 Oct 2026): GitHub reports `abandoned` for a job it
     # never found a runner for and for a matrix whose shard hit its cap; a
     # deny-list of failure/cancelled passed that run green.
@@ -1114,16 +1350,7 @@ def test_concurrency_ci_label_runs_share_the_pr_group_and_cancel():
     assert other_pr[0] != first[0], "one PR's ci run must not cancel another PR's"
 
 
-def test_concurrency_ci_full_shares_the_pr_group_with_ci_and_cancels():
-    """One group for both labels: a new label event on a PR supersedes its live run."""
-    ci = _resolve(_event("pull_request", label="ci", pr=1370, run_id=1))
-    full = _resolve(_event("pull_request", label="ci-full", pr=1370, run_id=2))
-    assert full == ("ci-Build and Deploy Sorento-1370", True)
-    assert full[0] == ci[0]
-    assert _resolve(_event("pull_request", label="ci-full", pr=1371, run_id=3))[0] != full[0]
-
-
-@pytest.mark.parametrize("label", ["needs-hand-test", "lane-running", "needs-decision", "ready-for-agent"])
+@pytest.mark.parametrize("label", ["ci-full", "needs-hand-test", "lane-running", "needs-decision", "ready-for-agent"])
 def test_concurrency_other_label_events_join_no_group_and_cancel_nothing(label):
     ci_group, _ = _resolve(_event("pull_request", label="ci", pr=1370, run_id=1))
     group, cancel = _resolve(_event("pull_request", label=label, pr=1370, run_id=2))
@@ -1132,7 +1359,7 @@ def test_concurrency_other_label_events_join_no_group_and_cancel_nothing(label):
     assert cancel is False
 
 
-@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch", "schedule"])
+@pytest.mark.parametrize("event", ["push", "merge_group", "workflow_dispatch"])
 def test_concurrency_non_pr_events_are_unique_and_never_cancel(event):
     group, cancel = _resolve(_event(event, run_id=77))
     assert group == "ci-Build and Deploy Sorento-77"
@@ -1343,7 +1570,7 @@ def test_changes_job_outputs_prefer_the_selection_and_fall_back_above_the_budget
 def test_selection_runs_only_the_changed_files_job_on_a_ci_pr():
     """Under or above the budget alike: the changed-files job, never the shards."""
     ran = _ran(_simulate("pull_request", outputs=TESTS_ONLY_OUTPUTS))
-    assert ran == GATES_ON_PR | {"validate-backend", "test-backend-changed"}
+    assert ran == GATES_ON_PR
 
 
 STUB_PYTHON = """#!/usr/bin/env bash
@@ -1410,11 +1637,101 @@ def test_serial_ddl_steps_have_their_own_matrix_entry_off_the_balanced_shards():
     measured as the release's critical path (43.8 min vs 14-22 for shards 2-6)."""
     text = _workflow_text()
     block = re.search(r"\n  test-backend:\n(.*?)\n  [a-z][\w-]*:\n", text, re.S).group(1)
-    assert re.search(r"^        shard: \[1, 2, 3, 4, 5, 6, serial\]$", block, re.M)
+    # Ten balanced shards since 11 Oct 2026: six ran 29-59 min (about 290 runner-minutes in
+    # all) on the private-repo runners, so ten land near 30 each.
+    assert re.search(r"^        shard: \[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, serial\]$", block, re.M)
     steps = {s.splitlines()[0]: s for s in re.split(r"\n      - name: ", block)[1:]}
     xdist = steps["Run backend suite under xdist (executing gate)"]
-    assert "        if: matrix.shard != 'serial'" in xdist and "--splits 6 --group ${{ matrix.shard }}" in xdist
+    assert "        if: matrix.shard != 'serial'" in xdist and "--splits 10 --group ${{ matrix.shard }}" in xdist
     assert "matrix.shard != 'serial'" in steps["Upload backend shard durations artifact"]
     for name in ("Run migration tests serially (executing gate)", "Run view/DDL tests serially (executing gate)"):
         assert "        if: matrix.shard == 'serial'" in steps[name], name
     assert "matrix.shard == 1" not in block
+
+
+def test_no_test_workflow_runs_on_a_schedule():
+    """CI-LEAN (owner, 10 Oct 2026): no nightly test of any kind. The never-stuck smoke
+    (about 30 billed minutes a night) is manual-only, like the deploy.yml full suite."""
+    smoke = WORKFLOW.parent / "never-stuck-nightly.yml"
+    if not smoke.exists():
+        pytest.skip(f"{smoke} not present (in-image run)")
+    text = smoke.read_text(encoding="utf-8")
+    triggers = text[text.index("\non:\n"):text.index("\nconcurrency:\n")]
+    assert not re.search(r"^  schedule:", triggers, re.M)
+    assert re.search(r"^  workflow_dispatch:", triggers, re.M)
+    assert not re.search(r"^  schedule:", _triggers(), re.M)
+
+
+# ---------------------------------------------------------------------------
+# CI-LEAN: the lean release (core tier + what the batch reaches, one job).
+# ---------------------------------------------------------------------------
+
+LEAN_RELEASE = {
+    "docs_only": "false", "backend": "true", "frontend": "false", "mcp": "false", "scm": "true",
+    "backend_tests": "sorento_crm_backend/tests/test_rbac.py", "backend_code": "", "lean": "true",
+}
+
+
+def test_a_lean_release_runs_the_release_tests_job_never_the_shards():
+    ran = _ran(_simulate("workflow_dispatch", outputs=LEAN_RELEASE))
+    assert ran == {"check-migration-heads", "changes", "lean-gate", "build-images", "build-and-deploy"}
+    over = _ran(_simulate("workflow_dispatch", outputs={**LEAN_RELEASE, "lean": "false"}))
+    assert "lean-gate" not in over and {"test-backend", "test-backend-scm"} <= over, "over the cap: the full shards"
+
+
+def test_a_red_release_tests_job_blocks_the_deploy():
+    assert "lean-gate" in _job_ifs()["build-and-deploy"]["needs"]
+    results = _simulate("workflow_dispatch", outputs=LEAN_RELEASE, forced={"lean-gate": "failure"})
+    assert results["build-and-deploy"] == "skipped"
+
+
+def test_the_release_tests_job_reports_as_release_tests():
+    name = _expression(re.search(r"^    name: (.*)$", _job_block("lean-gate"), re.M).group(1))
+    assert _gh_eval(name, {"github": {"event_name": "workflow_dispatch", "event": {}}}) == "Release tests"
+
+
+def test_the_lean_flag_drops_to_the_shards_when_the_selection_is_over_the_cap():
+    block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
+    lean = _expression(re.search(r"^      lean: (.*)$", block, re.M).group(1))
+    ctx = lambda flt, full: {"steps": {"filter": {"outputs": {"lean": flt}}, "select": {"outputs": {"full": full}}}}
+    assert str(_gh_eval(lean, ctx("true", "false"))).lower() == "true"
+    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("", ""))).lower() == "false"
+
+
+def test_a_passed_release_tests_job_marks_its_tree_validated():
+    steps = _lean_gate_steps()
+    mark = steps["Mark this tree as validated"]
+    assert "github.event_name == 'workflow_dispatch'" in mark and "success()" in mark
+    assert "validated-tree-" in "\n".join(steps.values())
+
+
+def test_the_core_tier_lists_existing_test_files_only():
+    core = REPO / "sorento_crm_backend" / "tests" / "release_core.txt"
+    lines = [l.strip() for l in core.read_text(encoding="utf-8").splitlines() if l.strip() and not l.strip().startswith("#")]
+    assert len(lines) >= 20
+    for rel in lines:
+        assert re.match(r"^tests/([A-Za-z0-9_.-]+/)*test_[A-Za-z0-9_.-]*\.py$", rel), rel
+        assert (REPO / "sorento_crm_backend" / rel).is_file(), rel
+
+
+def test_the_select_step_adds_the_core_tier_on_a_lean_release(tmp_path):
+    output = tmp_path / "select.txt"
+    output.write_text("")
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Select backend tests by import")],
+        cwd=REPO,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "GITHUB_OUTPUT": str(output),
+             "BACKEND_CODE": "", "BACKEND_TESTS": "", "LEAN": "true"},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert "sorento_crm_backend/tests/chatbot/test_turn_replay.py" in outputs["tests"].split()
+    assert outputs["full"] == "false"
+    block = re.search(r"\n  changes:\n(.*?)\n  [a-z][\w-]*:\n", _workflow_text(), re.S).group(1)
+    assert "steps.filter.outputs.lean == 'true'" in block, "the checkout and select steps run on a lean release"
+
+
+def test_full_suite_is_a_release_input():
+    assert re.search(r"^      full_suite:$", _triggers(), re.M)
