@@ -68,22 +68,19 @@ def _body(args: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _s2_harness(monkeypatch):
-    """Use the worktree's presenter, record `crm_report` calls, serve the S2 route body."""
-    mcp_root = str(Path(__file__).resolve().parents[3] / "sorento_crm_mcp")
-    saved = {k: v for k, v in sys.modules.items() if k == "sorento_crm_mcp" or k.startswith("sorento_crm_mcp.")}
-    for k in saved:
-        del sys.modules[k]
-    sys.path.insert(0, mcp_root)
+    """Record `crm_report` calls and serve the S2 route body. The MCP package comes the way its
+    neighbours import it: the repo's own copy appended to `sys.path`, skipped where absent."""
+    mcp_root = Path(__file__).resolve().parents[3] / "sorento_crm_mcp"
+    if str(mcp_root) not in sys.path:
+        sys.path.append(str(mcp_root))
+    try:
+        import sorento_crm_mcp.presenters  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("sorento_crm_mcp is not importable in this environment")
     monkeypatch.setitem(lane_tests.__dict__, "_orig_fake_body", lane_tests._fake_body)
     monkeypatch.setattr(lane_tests, "_fake_body", _body)
     monkeypatch.setattr(lane_tests, "TOOL", REPORT)
-    try:
-        yield
-    finally:
-        sys.path.remove(mcp_root)
-        for k in [k for k in sys.modules if k == "sorento_crm_mcp" or k.startswith("sorento_crm_mcp.")]:
-            del sys.modules[k]
-        sys.modules.update(saved)
+    yield
 
 
 def _refine(**overrides: Any) -> dict[str, Any]:
