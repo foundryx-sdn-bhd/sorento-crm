@@ -1925,6 +1925,19 @@ def test_a_validated_pr_still_scans_its_commits_for_secrets():
     assert "validated" not in depth, "full history on every PR, the scan needs base..head"
 
 
+def test_the_pr_gate_checkout_really_fetches_full_history_on_a_pr():
+    """Run 38124709009: `cond && 0 || 1` is always 1 (0 is falsy in an Actions
+    expression), so the checkout fetched depth 1 and gitleaks died on
+    "fatal: Invalid revision range"; `vitest --changed` had the same blind spot."""
+    checkout = _lean_gate_steps()["Checkout"]
+    depth = _expression(re.search(r"fetch-depth: (.*)$", checkout, re.M).group(1))
+    ctx = lambda event, fe: {"github": {"event_name": event}, "needs": {"changes": {"outputs": {"frontend": fe}}}}
+    assert str(_gh_eval(depth, ctx("pull_request", "false"))) == "0"
+    assert str(_gh_eval(depth, ctx("workflow_dispatch", "true"))) == "0"
+    assert str(_gh_eval(depth, ctx("workflow_dispatch", "false"))) == "1"
+    assert not re.search(r"&& 0 \|\|", _workflow_text()), "a bare 0 is falsy: quote it"
+
+
 def test_the_pr_marker_name_is_never_the_release_marker():
     upload = _lean_gate_steps()["Upload the validated-tree marker"]
     name = re.search(r"^\s*name: (.*)$", upload, re.M).group(1).strip()
