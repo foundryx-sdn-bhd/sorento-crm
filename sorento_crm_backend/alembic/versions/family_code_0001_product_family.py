@@ -7,7 +7,7 @@ cleanly. The backfill is `app.services.product_family.FAMILY_CODE_SQL`, the SQL 
 `family_code_for`, and skips rows a person set by hand.
 
 Revision ID: family_code_0001
-Revises: chat_backfill_0001
+Revises: ca3_0003_chat_report_extractor
 """
 from alembic import op
 
@@ -15,7 +15,7 @@ from app.services.product_family import FAMILY_CODE_SQL
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "family_code_0001"
-down_revision = "chat_backfill_0001"
+down_revision = "ca3_0003_chat_report_extractor"
 branch_labels = None
 depends_on = None
 
