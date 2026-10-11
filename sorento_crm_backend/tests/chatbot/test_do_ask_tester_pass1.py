@@ -162,7 +162,7 @@ def test_a_do_number_header_prints_no_customer_line_of_forced_links():
         ]
     }
     header = scope_block.search_scope_header(domain="order", qf={"entities": []}, gate_json=gate, resolver_json={})
-    assert "Order: 202609-0916" in header, header
+    assert "Delivery order: 202609-0916" in header, header
     assert "Customer:" not in header, header
 
 

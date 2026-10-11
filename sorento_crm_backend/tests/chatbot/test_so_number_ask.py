@@ -481,8 +481,13 @@ class TestDashedSoNumberGetsItsCard:
     def test_dashed_so_number_gets_its_card(self, session_factory, typed) -> None:
         from app.services.chatbot import so_status
 
+        from app.models.base import set_company_scope
+        from app.services.company_scope import DEFAULT_COMPANY_ID
+
         _seed_so(session_factory, "SO2610-0127", customer_id=None, lines=[(4, 0)])
-        out = so_status.lookup(session_factory(), [typed], linked=None)
+        db = session_factory()
+        set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+        out = so_status.lookup(db, [typed], linked=None)
         assert out.missing == [], out
         assert len(out.cards) == 1, out
         assert out.cards[0].startswith("*SO2610-0127*"), out.cards
