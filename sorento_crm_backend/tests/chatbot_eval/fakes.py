@@ -158,3 +158,17 @@ class DigestEngine(RecordingEngine):
     def turn(self, case, text, state, run_id):
         self.n += 1
         return make_outcome("TESTCODE-1 ok", state={"n": self.n}, trace_digest={"parser": {"intent": f"i{self.n}"}, "resolved": [], "tools": []})
+
+
+def _digest_engine(version):
+    class _E(RecordingEngine):
+        def turn(self, case, text, state, run_id):
+            self.n += 1
+            return make_outcome("TESTCODE-1 ok", state={"n": self.n},
+                                trace_digest={"parser": {"prompt_version": version}, "resolved": [], "tools": []})
+
+    return _E
+
+
+DigestV50Engine = _digest_engine(50)
+DigestV51Engine = _digest_engine(51)
