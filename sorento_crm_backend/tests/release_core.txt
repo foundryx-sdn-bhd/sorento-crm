@@ -1,0 +1,48 @@
+# Release core tier (CI-LEAN, documentation/plans/ci/PLAN-ci-lean-10oct.md).
+#
+# Every release runs these test files, plus every test file the merged batch
+# reaches (the import selection over the diff since the last successful
+# release, scripts/ci_select_tests.py). Paths are relative to
+# sorento_crm_backend/; blank lines and # comments are ignored. Keep the tier
+# under about 600 estimated CPU-s (.test_durations): it is the floor every
+# release pays. tests/test_ci_docs_only_filter.py checks that every line names
+# a test file that exists.
+
+# Auth, sessions, integration keys, RBAC, company scoping.
+tests/test_auth_login.py
+tests/test_user_session_service.py
+tests/test_integration_auth_dependencies.py
+tests/test_integration_auth_resolver.py
+tests/test_rbac.py
+tests/test_company_scope.py
+
+# Money and stock paths that failed a release in the 30 days to 10 Oct 2026.
+tests/test_stock_visibility_policy.py
+tests/test_cost_price_apply.py
+tests/test_ladder_v5_edges.py
+tests/test_contacts_access_filters.py
+tests/test_ingest_parity_security_fixes.py
+tests/test_oi_monthly_number_and_raises.py
+tests/test_oi_email_print.py
+tests/test_complaint_root_cause_resolution_filters.py
+tests/test_list_pagination_limit.py
+tests/scm/test_purchase_trend.py
+tests/scm/test_stock_debt_lendable_routes.py
+
+# Contracts the n8n flows and the MCP server depend on.
+tests/test_audit_actor_contract.py
+tests/test_conversation_n8n_contract.py
+tests/chatbot/test_contracts.py
+tests/chatbot/test_import_boundary.py
+
+# Chatbot core golden, plus the replays that failed a release or a nightly.
+tests/chatbot/test_turn_replay.py
+tests/chatbot/test_rearch_r9_handpass9_replay.py
+tests/chatbot/test_rearch_r10_handpass10_replay.py
+tests/chatbot/test_rearch_r13_stock_no_subject.py
+tests/chatbot/test_chatbot_r6_rate_limit.py
+tests/chatbot/test_customer_asks_refer_only.py
+tests/chatbot/test_escalation_round5_escalation_words_win.py
+
+# Schema guard.
+tests/test_schema_uuid_id_principle.py
