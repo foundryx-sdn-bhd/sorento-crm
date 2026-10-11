@@ -277,3 +277,16 @@ for big decisions.
   computed only on rows whose (case_id, variant_kind) are in this run (`delta.restricted: true`, `delta.matched` =
   count); a file keeps today's whole-report delta (`delta.restricted: false`).
 - Report records `selection: {topics, ids_file, cases}`.
+
+## Round 17 (AGENT-LOOP-SPIKE reports gate findings, 11 Oct)
+- Header echoes: a report reply opens with a header block (the leading lines before the first blank line, each of the
+  form `<label>: <value>` with a label of at most 40 characters and no `*`), e.g. `Product: X / Customer: all`. A
+  `must` code/text that also appears in the case's own user text (final message or any history user turn,
+  case-insensitive) counts only when it also appears in the reply OUTSIDE that header block. Found on rpt-014:
+  `Product: A, B ... I could not fetch orders just now` passed because both codes were echoed in the header. Numbers
+  and dates are not affected. GRADER_VERSION 9.
+- Report lock: `DbContactReset.reset` also marks chat-requested reorder runs left in flight on the eval DB as failed
+  (`UPDATE scm.reorder_run SET status = 'failed' WHERE requested_via = 'chat' AND status IN ('queued', 'running')`),
+  same transaction, same `sorento_eval_*` guard. The eval stack runs no worker, so a low-stock run never finishes and
+  every later low-stock ask got "a plan is already running" (`app/api/v1/scm/low_stock_report.py:482-498`,
+  `app/services/scm/reorder_run_service.py:167`).
