@@ -19,6 +19,7 @@ from .judge import CALIBRATION_MIN, GuardedJudge, calibrate, load_judge
 from .report import build_report, render_summary
 from .trace import DbContactReset, DbTraceReader
 from .grade import grade
+from .prompts import resolve_prompt
 from .runner import CaseResult, NotDryRunError, RunResult, run_all
 
 
@@ -164,8 +165,21 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as exc:
                 print(str(exc), file=sys.stderr)
                 return 2
+    prompt = {"id": None, "version": None, "template_md5": None, "source": "unknown"}
+    trace_dsn = os.environ.get("EVAL_TRACE_DB_URL")
+    if args.prompt_version and not trace_dsn:
+        print(f"--prompt-version {args.prompt_version} needs EVAL_TRACE_DB_URL to resolve it", file=sys.stderr)
+        return 2
+    if trace_dsn:
+        try:
+            prompt = resolve_prompt(trace_dsn, args.prompt_version)
+        except LookupError as exc:
+            if args.prompt_version:
+                print(str(exc), file=sys.stderr)
+                return 2
+            print(f"production label not resolved: {exc}", file=sys.stderr)
     if args.prompt_version:
-        kw["prompt_version"] = args.prompt_version
+        kw["prompt_version"] = prompt["id"]
     judge = load_judge(args.judge)
     if judge is not None:
         try:
@@ -192,17 +206,29 @@ def main(argv: list[str] | None = None) -> int:
     except NotDryRunError as exc:
         print(f"aborted: {exc}", file=sys.stderr)
         run = exc.run
+    seen: dict[str, int] = {}
+    for r in run.results:
+        v = ((r.trace_digest or {}).get("parser") or {}).get("prompt_version")
+        if v is not None:
+            seen[str(v)] = seen.get(str(v), 0) + 1
+    mismatch = prompt["source"] != "unknown" and any(k != str(prompt["version"]) for k in seen)
     report = build_report(run, baseline, args.budget_model, "calibrated" if calibrated else "uncalibrated")
     report.update(
         engine=args.engine, split=args.split, variants=args.variants, run_id=run_id,
         prompt_version=args.prompt_version or "label", cases=len(loaded.cases), started_at=started_at,
+        prompt=prompt, prompt_versions_seen=seen,
         judge_stopped=judge.stopped if judge is not None else None,
         judge_usd=judge.budget.spent if judge is not None else 0.0,
     )
+    if mismatch:
+        report["prompt_mismatch"] = True
     if args.out:
         _write(args.out, report, run)
     print(render_summary(report, args.split))
-    return {"not_dry_run": 4, "budget": 3, "interrupted": 130}.get(run.stopped_reason, 0)
+    if mismatch:
+        print(f"prompt mismatch: resolved version {prompt['version']}, traces show {sorted(seen)}", file=sys.stderr)
+    code = {"not_dry_run": 4, "budget": 3, "interrupted": 130}.get(run.stopped_reason, 0)
+    return code or (5 if mismatch else 0)
 
 
 if __name__ == "__main__":
