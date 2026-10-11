@@ -29,7 +29,10 @@ Why 2076 files: the batch changed `app/models/__init__.py` (referenced by nearly
 ## Fix
 
 - `lean` output reads only the filter step. The full shards run only on `full_suite`, no earlier
-  release, a failed lookup, or a batch at the compare API's 300-file cap (the diff is unknown).
+  release, a failed lookup, a batch at the compare API's 300-file cap (the diff is unknown), or a
+  batch that changes `tests/conftest.py` or `tests/_pg_fixture.py` (owner ruling via crew, 11 Oct
+  2026, option (b): a harness change alters how every test runs; the 9 Oct release caught 6
+  repo-wide breaks the changed tests missed; rare, so the average stays near the 60 line).
 - Over the budget, `scripts/ci_select_tests.py` writes the test files named on stdin instead of
   an empty list: on a PR its changed tests (what the workflow already fell back to), on a release
   the batch's changed tests plus the core tier. Each PR of the batch already ran its own import

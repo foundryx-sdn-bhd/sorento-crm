@@ -69,8 +69,9 @@ on:
   # in that one job with the core tier plus the batch's changed test files
   # (CI-COST, 11 Oct 2026: owner target <= ~60 billed per release; Q4's "no
   # cap" sent release 38099410256 to the full shards, ~468 billed). Only
-  # `full_suite`, no earlier release, a failed lookup or a batch at the compare
-  # API's 300-file cap run the full shards. A tree whose release tests already
+  # `full_suite`, no earlier release, a failed lookup, a batch at the compare
+  # API's 300-file cap or a batch that changes the test harness
+  # (tests/conftest.py, tests/_pg_fixture.py) run the full shards. A tree whose release tests already
   # passed is not tested again. In parallel build-images builds what changed,
   # then build-and-deploy, which carries `environment: production` and
   # therefore PAUSES until the owner approves the deployment in GitHub
@@ -434,13 +435,14 @@ jobs:
       backend_tests: ${{ steps.select.outputs.tests || steps.filter.outputs.backend_tests }}
       # A lean release (CI-LEAN): `release-tests` (`lean-gate`) runs the
       # core tier plus the selection, and the shards stay off. A selection
-      # over the budget (or a changed tests/conftest.py) stays lean and runs
+      # over the budget stays lean and runs
       # the core tier plus the batch's changed test files (the select step's
       # `tests`). It used to read `select.full` here and drop to the full
       # shards: release 38099410256 reached 2076 files through
       # app/models/__init__.py and billed ~468 minutes (CI-COST, 11 Oct 2026).
-      # The full shards run only on full_suite or a diff that cannot be
-      # established (the filter step leaves `lean` unset then).
+      # The full shards run only on full_suite, a diff that cannot be
+      # established, or a test harness change (the filter step leaves `lean`
+      # unset then).
       lean: ${{ steps.filter.outputs.lean == 'true' }}
       # The last successful release's head: what `vitest --changed` diffs to.
       base_sha: ${{ steps.filter.outputs.base_sha }}
@@ -556,6 +558,12 @@ jobs:
             # The compare API caps its file list at 300: the batch may be
             # truncated, so it cannot pick the tests. Full suite.
             lean=false; files=""; why="$count files reaches the compare API's 300-file cap: every area counts as changed"
+          fi
+          # A harness change alters how every test runs, so no selection can
+          # scope it: full shards (CI-COST owner ruling, 11 Oct 2026; rare).
+          if [ "${lean:-false}" = "true" ] \
+              && grep -Eq '^sorento_crm_backend/tests/(conftest|_pg_fixture)\.py$' <<< "$files"; then
+            lean=false; files=""; why="the batch changes the test harness (tests/conftest.py or tests/_pg_fixture.py): every area counts as changed"
           fi
           if [ -n "$why" ]; then
             echo "docs_only=false: $why"
