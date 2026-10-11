@@ -67,7 +67,7 @@ def test_ac110_seed_modes_are_todays_except_the_ruled_ones(session_factory):
     assert rules["carry_unclear"].mode == "carry"
     assert rules["product_pick"].mode == "collapse"
     for kind in KINDS:
-        if kind not in ("generic_menu", "entities_only", "product_pick"):
+        if kind not in ("generic_menu", "entities_only", "product_pick", "carry_unclear"):
             assert rules[kind].mode == "ask", kind
         assert rules[kind].repeat_limit == 2, kind  # AC-116 seed
 
