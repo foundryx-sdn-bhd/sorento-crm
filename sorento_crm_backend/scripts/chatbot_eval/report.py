@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from .budget import cost_usd
 from .runner import CaseResult, RunResult
 
-GRADER_VERSION = 9  # bump on any grading-rule change
+GRADER_VERSION = 10  # bump on any grading-rule change
 PASS = ("correct", "good_clarify")
 
 

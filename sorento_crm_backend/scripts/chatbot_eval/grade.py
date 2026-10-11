@@ -47,7 +47,7 @@ def _has_date(reply: str, iso: str) -> bool:
     return any(re.search(rf"(?<![\d/-]){re.escape(f)}(?![\d/-])", reply) for f in forms)
 
 
-HEADER_LINE = re.compile(r"^[^*:]{1,40}:\s*\S")
+HEADER_LINE = re.compile(r"^[A-Za-z ]{1,40}:\s*\S")
 
 
 def _body(reply: str) -> str | None:
@@ -56,20 +56,24 @@ def _body(reply: str) -> str | None:
     n = 0
     while n < len(lines) and HEADER_LINE.match(lines[n]):
         n += 1
-    return "\n".join(lines[n:]) if n else None
+    return "\n".join(lines[n:]) if n >= 2 else None
 
 
-def _must_ok(reply: str, item: dict, user_texts: list[str] | None = None) -> bool:
+def _must_ok(reply: str, item: dict, user_texts: list[str] | None = None) -> tuple[bool, bool]:
+    """(matched, header_only_echo): the echo flag marks a code/text found only in the header and in the user text."""
     low = reply.lower()
     body = _body(reply)
     body_low = body.lower() if body is not None else low
     echoed = " ".join(user_texts or []).lower()
+    header_only = False
     for key, want in item.items():
         if key == "near":
             continue
         want = str(want)
         if key in ("code", "text"):
-            ok = want.lower() in (body_low if want.lower() in echoed else low)
+            ok = want.lower() in low
+            if ok and want.lower() in echoed and want.lower() not in body_low:
+                header_only = True
         elif key == "number":
             ok = _has_number(reply, want)
         elif key == "date":
@@ -77,8 +81,8 @@ def _must_ok(reply: str, item: dict, user_texts: list[str] | None = None) -> boo
         else:
             ok = False
         if not ok:
-            return False
-    return True
+            return False, False
+    return True, header_only
 
 
 def _vacuous(kind: str, expect: Expect) -> bool:
@@ -89,7 +93,12 @@ def _passes(outcome: str, expect: Expect, reply: str, user_texts: list[str] | No
     if outcome == "clarify":
         low = reply.lower()
         return "good_clarify" if all(o.lower() in low for o in expect.options) else None
-    return "correct" if all(_must_ok(reply, m, user_texts) for m in expect.must) else None
+    results = [_must_ok(reply, m, user_texts) for m in expect.must]
+    if not all(ok for ok, _ in results):
+        return None
+    if results and all(echo for _, echo in results):
+        return None
+    return "correct"
 
 
 def grade(
