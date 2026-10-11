@@ -181,6 +181,7 @@ class _Spec:
     """What a route resolves its measure to: the engine call and the cuts it allows."""
 
     basis: str
+    basis_label: str
     measure: str
     dimensions: tuple[str, ...]
     dealer_dimensions: frozenset[str]
@@ -303,11 +304,11 @@ def _serve(
 
     common = {
         "basis": basis_norm,
-        "basis_label": ask.CATALOGUE[basis_norm]["label"],
+        "basis_label": spec.basis_label,
         "measure": measure_norm,
         "sort": sort_norm,
         "group_by": group_norm,
-        "group_label": ask.GROUP_LABELS[group_norm] if group_norm else None,
+        "group_label": ask.GROUP_LABELS.get(group_norm, group_norm) if group_norm else None,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
     }
@@ -473,7 +474,8 @@ def report_ask(
         if measure_norm not in ask.MEASURES:
             raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(ask.MEASURES))
         return _Spec(
-            basis_norm, measure_norm, ask.CATALOGUE[basis_norm]["dimensions"], ask.DEALER_KEYS, GRANT,
+            basis_norm, ask.CATALOGUE[basis_norm]["label"], measure_norm, ask.CATALOGUE[basis_norm]["dimensions"],
+            ask.DEALER_KEYS, GRANT,
             lambda db, **kw: ask.run_ask(db, basis=basis_norm, measure=measure_norm, **kw),
         )
 
@@ -518,10 +520,12 @@ def report(
 ):
     def resolve() -> _Spec:
         key = (measure or "").strip().lower()
+        if not key:
+            raise _unprocessable("measure is required", "measure_required", _allowed(measures.keys()))
         if key not in measures.MEASURES:
             raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(measures.keys()))
         m = measures.get(key)
-        return _Spec(m.basis, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run)
+        return _Spec(m.basis, m.label, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run)
 
     return _serve(
         request, db, resolve, _PARAMS - {"basis"},

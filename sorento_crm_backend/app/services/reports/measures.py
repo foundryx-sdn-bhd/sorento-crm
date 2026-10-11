@@ -30,7 +30,15 @@ class Measure:
 MEASURES: dict[str, Measure] = {}
 
 
+#: The reveal grants a measure may name. A new report adds its own here, with review.
+KNOWN_GRANTS = frozenset({"sales_orders.sales_report"})
+
+
 def register(measure: Measure) -> None:
+    if not set(measure.dealer_dimensions) <= ask.DEALER_KEYS:
+        raise ValueError(f"Measure '{measure.key}': dealer_dimensions must be within the dealer keys")
+    if measure.grant not in KNOWN_GRANTS:
+        raise ValueError(f"Measure '{measure.key}': unknown grant '{measure.grant}'")
     if measure.key in MEASURES:
         raise ValueError(f"Measure '{measure.key}' is already registered")
     MEASURES[measure.key] = measure

@@ -69,8 +69,9 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_project_detail",
     "crm_project_forecast",
     "crm_project_quotations_list",
-    "crm_report",
     "crm_projects_list",
+    # No policy row until the chatbot routes to it (REPORTS-STEP2 S2); allow-listed here meanwhile.
+    "crm_report",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",
     "crm_sla_conversation_tracking_list",

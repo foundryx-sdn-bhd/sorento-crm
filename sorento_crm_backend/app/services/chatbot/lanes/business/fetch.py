@@ -1262,10 +1262,10 @@ def entity_ids_transformer(
             raise ScopeViolation(
                 f"{tool_name} asked for a customer outside the contact's scope", dropped=outside
             )
-        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s route forces the dealer's own
-        # links itself (`enforce_customer_scope`), so the lane sends only what was named
+        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s and `crm_report`'s route force the dealer's own
+        # links themselves (`enforce_customer_scope`), so the lane sends only what was named
         # (no 50-id cap hit, no header listing every account); the check above stays.
-        if requested or tool_name != "crm_report_ask":
+        if requested or tool_name not in ("crm_report_ask", "crm_report"):
             out["customer_ids"] = requested or list(scope_ids)
         out.pop("customer_query", None)
 

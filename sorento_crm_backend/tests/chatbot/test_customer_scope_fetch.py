@@ -105,9 +105,9 @@ class TestUnscopedTools:
 
 
 class TestSetIsPinnedToTheCatalogue:
-    def test_the_set_is_the_seven_tools(self) -> None:
-        """AC-CS-31: the set named in D4."""
-        assert fetch.CUSTOMER_SCOPED_TOOLS == frozenset(SCOPED_TOOLS)
+    def test_the_set_is_the_eight_tools_plus_crm_report(self) -> None:
+        """AC-CS-31: the set named in D4, plus `crm_report` (REPORTS-STEP2, lead sign-off)."""
+        assert fetch.CUSTOMER_SCOPED_TOOLS == frozenset(SCOPED_TOOLS) | {"crm_report"}
 
     def test_customer_scoped_tools_pinned_to_catalogue(self) -> None:
         """AC-CS-32: every catalogue tool whose `query_params` carry `customer_ids` is in
