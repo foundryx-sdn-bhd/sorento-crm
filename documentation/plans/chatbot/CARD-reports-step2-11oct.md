@@ -1,4 +1,4 @@
-# Reports step 2: one report tool, one report frame (card)
+# Reports step 2: one report tool, one report entry in Focus (card)
 
 Lane AGENT-LOOP-SPIKE, step 2 of `ARCH-scalable-chat-11oct.html` (owner Q3: reports first). Size L, lead
 pattern. Branch `crew/reports-step2` from origin/main 56c5d0c60. No code yet.
@@ -6,7 +6,7 @@ pattern. Branch `crew/reports-step2` from origin/main 56c5d0c60. No code yet.
 ## What changes for a customer
 
 Report questions (top sellers, sales totals, outstanding, sales by month/channel) go through one tool
-and one held "report frame". Follow-ups like "only dealer", "by month instead", "top 5", "amount
+and one report entry held in Focus (the memory the bot already has). Follow-ups like "only dealer", "by month instead", "top 5", "amount
 instead" change the last report instead of starting over or being misread as a customer or product.
 Every value the bot carried from earlier is shown in the reply header: "Period: Oct 2026 (from
 earlier)". Grants, dealer limits, scope and the reply look stay exactly as today.
@@ -39,9 +39,10 @@ parser tokens (REPORT_ASK 2.0k, TOP_SELLING 2.9k, SALES_REPORT 1.8k, LOW_STOCK_F
 2. **Low stock stays its own tool** (it creates a reorder run and a file: an action, "reads generic,
    actions specific"). The sales-analysis Excel path stays; only its read figures fold in.
 3. **Old tools stay on the allow-list** until crm_report passes the gate for that measure.
-4. **One report frame** held in focus, owned by the report intent (INTENT-FRAMES rule: a new intent starts a
-   clean frame; one live frame). It replaces `sales_ranking_frame` + `top_selling` + the outstanding
-   detail-offer carry. Refine = patch of the held frame; a different report kind or subject = new frame.
+4. **One report entry in Focus**: no new state system. Today's `Focus.sales_ranking_frame` is extended to hold
+   the last report call of every report kind (owned by the report intent, per INTENT-FRAMES: a new intent starts
+   clean). It absorbs `Focus.top_selling` and the outstanding detail-offer carry. Refine = patch of that entry;
+   a different report kind or subject = a fresh entry.
 5. **Provenance in the reply header**: every carried or defaulted value is labelled ("Period: Oct 2026
    (from earlier)", "Basis: delivered (default)"). Defaults only where CLARIFY-POLICY allows; rankings stay
    must-ask for period / metric / top N (owner rule).
@@ -66,13 +67,13 @@ for one new measure added in a day or less (candidate: `so_count`, already compu
 
 Both prototypes share the same static report section and differ only in what the parser emits:
 
-- **F (semantic frame)**: `{act: new|refine|switch, measure, dimensions[], filters[{axis, raw}], period,
-  top, sort}`; code maps the frame to the crm_report call via the registry and resolves raw mentions.
+- **F (meaning output)**: `{act: new|refine|switch, measure, dimensions[], filters[{axis, raw}], period,
+  top, sort}`; code maps that output to the crm_report call via the registry and resolves raw mentions.
 - **T (tool call)**: the crm_report params directly (raw mentions in the id slots, the resolver still fills
   ids; the model never invents ids).
 
 Measured on the report eval slice: pass / strict per report topic, prompt tokens and cache share, p95.
-Tie goes to F: it survives tool changes and keeps the tool contract out of the prompt.
+Tie goes to F (meaning output): it survives tool changes and keeps the tool contract out of the prompt.
 
 ## DP2 (go-on bar, owner rulings)
 
@@ -84,16 +85,16 @@ first (Q3).
 ## Real examples (masked)
 
 1. Refine (snapshot, staff): "Srtkt71-ss outstanding" -> "Dealer outstanding only" -> "Delivery order list".
-   Under the frame: channel=dealer patches the held outstanding frame; the third message switches the view to
-   rows of the same frame.
-2. Regroup / measure (snapshot, staff): "top 200 project hot selling item" -> "quantity" -> "amount". Frame:
+   With the Focus entry: channel=dealer patches the held outstanding report; the third message switches the view
+   to rows of the same report.
+2. Regroup / measure (snapshot, staff): "top 200 project hot selling item" -> "quantity" -> "amount". Focus entry:
    top=200, channel=project, then measure qty, then amount; the header shows the carried period.
-3. Filter (snapshot, staff): after a ranking, "Sold by [agent]" -> filter sales_agent=[agent] on the held frame.
+3. Filter (snapshot, staff): after a ranking, "Sold by [agent]" -> filter sales_agent=[agent] on the held report entry.
 4. Misread narrowing (snapshot, staff): "[Customer C] outstanding" -> "By products o/s brand Sorento" -> the
-   bot offered "Sorento (customer)" and the user had to restate everything. Frame: group_by product + filter
+   bot offered "Sorento (customer)" and the user had to restate everything. Focus entry: group_by product + filter
    brand=Sorento patch; "Sorento" is read in the brand slot, not as a customer.
 5. Stale subject (DEV p9ob, staff): "CBDR4003 stock" -> "Top sales Sorento and Mocha water closet this
-   month" -> "Sorento and mocha" answered "No sales for BK007A". Frame: a new report frame has no product
+   month" -> "Sorento and mocha" answered "No sales for BK007A". A fresh report entry has no product
    slot from the stock ask, so nothing leaks in.
 6. Grant must survive (DEV 0309, dealer): "Top 20 [Customer S] order products" -> "Sales report is not
    enabled for your account." Unchanged.
