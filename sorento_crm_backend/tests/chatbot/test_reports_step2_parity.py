@@ -93,6 +93,23 @@ def _outstanding_several_products(sf, mp):
                      attributes=s5a.OUT_ATTRS, matches=BOTH_PRODUCTS, mcp_response=REPORT_HIT)
 
 
+def _outstanding_family_codes(sf, mp):
+    """One typed prefix resolving to SEVERAL products (no code equals what was typed): the only emission
+    for which the lane sends the several-code form `product_codes`."""
+    from tests.chatbot.test_sales_report_lane import _family_resolve_services
+
+    _seed_contact(sf, variables={})
+    services = _family_resolve_services(token="SRT567", matches=[
+        {"entity_type": "product", "canonical_code": "SRT5679", "uuid": "55555555-5555-5555-5555-555555555555"},
+        {"entity_type": "product", "canonical_code": "SRT5670", "uuid": "66666666-6666-6666-6666-666666666666"},
+    ])
+    ents = [{"raw": "SRT567", "hint": "product", "canonical_code": None, "current_message": True,
+             "confident": True}]
+    return _run_turn(sf, mp, qf=_qf(order_status="so_outstanding", entities=ents),
+                     text_body="SRT567 sales order outstanding", msg_id="ZZT-par-1b",
+                     attributes=s5a.OUT_ATTRS, resolve_services=services, mcp_response=REPORT_HIT)
+
+
 def _outstanding_location_token(sf, mp):
     _seed_contact(sf, variables={})
     _seed_warehouses(sf)
@@ -143,7 +160,9 @@ def _sales_channel(sf, mp):
 
 LANE_SCENARIOS = {
     **{k: (f, ()) for k, f in s5a.SCENARIOS.items()},
-    "outstanding_several_products": (_outstanding_several_products, ("product_codes",)),
+    # two codes the customer TYPED: the lane keeps the typed winner, one `product_code` (today's behaviour)
+    "outstanding_two_typed_codes": (_outstanding_several_products, ("product_code",)),
+    "outstanding_family_codes": (_outstanding_family_codes, ("product_codes",)),
     "outstanding_location_token": (_outstanding_location_token, ("location_token", "warehouse_codes")),
     "outstanding_order_dates": (_outstanding_order_dates, ("order_date_from", "order_date_to")),
     "outstanding_detail_pick_2": (_outstanding_detail_pick_2, ("detail",)),
