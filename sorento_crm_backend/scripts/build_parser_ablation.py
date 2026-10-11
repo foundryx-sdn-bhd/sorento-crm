@@ -198,15 +198,6 @@ cleanly-typed referent, and NOT a mash of several concepts forced together.
         """  A single day sets BOTH start and end to that same date (e.g. "30 June 2026"
   → date_filter_start = "2026-06-30", date_filter_end = "2026-06-30").""",
     ),
-    # C13 POSITIONAL REFERENCES: ordinal / range examples.
-    (
-        "C13",
-        """
-  - multiple: "1st and 3rd", "2, 4 and 5"                 → [1,3] / [2,4,5]
-  - ranges:   "the first three", "1 to 3"                 → [1,2,3]
-  - "the last one" = N; "the first two" = [1,2]""",
-        "",
-    ),
     # C14 PERSON-NAME MENTION: honorific list.
     (
         "C14",
@@ -360,13 +351,6 @@ domain_hint "inventory". """,
         "C27",
         """"check what you have", "teruskan" ->""",
         """"check what you have" ->""",
-    ),
-    # C28 Last answered.
-    (
-        "C28",
-        """"and if 100?", "kalau 100?",
-    "100 pula?" ->""",
-        """"and if 100?" ->""",
     ),
     # C29 OPEN QUESTION: Malay / Chinese / pinyin ordinals, confirm words, counts, number words.
     (
@@ -649,13 +633,6 @@ never""",
         """"one piece", "tandas",
     "jamban", "马桶", "坐厕" is""",
         """"one piece" is""",
-    ),
-    (
-        "C43b",
-        """"have
-    stock", "ada stok", "有货" is""",
-        """"have
-    stock" is""",
     ),
     (
         "C43c",
