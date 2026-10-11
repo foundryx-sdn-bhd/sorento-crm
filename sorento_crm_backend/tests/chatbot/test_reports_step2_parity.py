@@ -160,8 +160,8 @@ def _sales_channel(sf, mp):
 
 LANE_SCENARIOS = {
     **{k: (f, ()) for k, f in s5a.SCENARIOS.items()},
-    # two codes the customer TYPED: the lane keeps the typed winner, one `product_code` (today's behaviour)
-    "outstanding_two_typed_codes": (_outstanding_several_products, ("product_code",)),
+    # two codes the customer TYPED: both go out, as the several-code form `product_codes` (gate fix, 11 Oct 2026)
+    "outstanding_two_typed_codes": (_outstanding_several_products, ("product_codes",)),
     "outstanding_family_codes": (_outstanding_family_codes, ("product_codes",)),
     "outstanding_location_token": (_outstanding_location_token, ("location_token", "warehouse_codes")),
     "outstanding_order_dates": (_outstanding_order_dates, ("order_date_from", "order_date_to")),
