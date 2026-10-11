@@ -50,7 +50,7 @@ def test_number_musts_unaffected_by_header():
 
 
 def test_grader_version_9():
-    assert GRADER_VERSION == 9
+    assert GRADER_VERSION >= 9
 
 
 # ---- (b) report lock reset ----
@@ -119,3 +119,34 @@ def test_reset_fails_in_flight_chat_reorder_runs_in_same_transaction(monkeypatch
 def test_reset_guard_still_refuses_non_eval_database():
     with pytest.raises(ValueError):
         DbContactReset("postgresql://u:p@127.0.0.1:1/sorento_crm")
+
+
+# ---- 17b: narrower header-echo rule ----
+def test_digit_label_single_line_is_not_a_header():
+    v = verdict("TESTCODE-9: No ETA", must=[{"code": "TESTCODE-9"}], text="eta for TESTCODE-9")
+    assert v.label == "correct"
+
+
+def test_code_echo_plus_non_echo_number_is_correct():
+    v = verdict("Product: TESTCODE-1\nCustomer: all\n\n*Sales order outstanding*\nOutstanding: 1,473",
+                must=[{"code": "TESTCODE-1"}, {"number": 1473}], text="TESTCODE-1 outstanding")
+    assert v.label == "correct"
+
+
+def test_both_codes_header_only_still_wrong():
+    assert verdict("Customer: all\nProduct: TESTCODE-1, TESTCODE-2\nDates: all\n\nI could not fetch orders").label == "wrong"
+
+
+def test_only_evidence_is_header_echo_is_wrong():
+    v = verdict("Product: TESTCODE-1\nCustomer: all\n\nNo outstanding delivery order.",
+                must=[{"code": "TESTCODE-1"}], text="TESTCODE-1 outstanding")
+    assert v.label == "wrong"
+
+
+def test_single_line_header_block_is_not_a_header():
+    v = verdict("Product: TESTCODE-1\n\nNo outstanding delivery order.", must=[{"code": "TESTCODE-1"}], text="TESTCODE-1 outstanding")
+    assert v.label == "correct"
+
+
+def test_grader_version_10():
+    assert GRADER_VERSION == 10
