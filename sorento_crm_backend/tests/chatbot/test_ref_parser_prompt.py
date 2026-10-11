@@ -51,3 +51,27 @@ def test_gate_lets_the_new_kinds_through_for_an_order_ask(kind):
 
     assert kind in ALLOWED["order"], (kind, ALLOWED["order"])
     assert kind in ALLOWED["sales"], (kind, ALLOWED["sales"])
+
+
+def _addendum() -> str:
+    from app.services import chatbot_parser_prompt as prompt
+
+    return str(getattr(prompt, "REF_KINDS_ADDENDUM", "") or "")
+
+
+def test_ref_kinds_addendum_scopes_as_typed_to_kind_worded_document_numbers():
+    text = _addendum().lower()
+    assert text, "REF_KINDS_ADDENDUM is not defined"
+    assert "document number" in text, "the as-typed rule must name document numbers"
+    for word in ("do", "so", "po", "pr", "invoice"):
+        assert re.search(rf"\b{word}\b", text), word
+    assert "only" in text
+    # product codes and sizes are untouched by this rule
+    sentences = [s for s in re.split(r"(?<=[.!?\n])", text) if "product code" in s]
+    assert any("size" in s and ("unchanged" in s or "as the rest" in s or "not" in s) for s in sentences), (
+        "no sentence says product codes / sizes / specs are read as before"
+    )
+
+
+def test_ref_kinds_addendum_has_no_unscoped_as_typed():
+    assert "number as typed" not in _addendum().lower()
