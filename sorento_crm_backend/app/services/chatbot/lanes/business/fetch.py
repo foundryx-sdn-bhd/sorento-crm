@@ -2283,7 +2283,13 @@ def sales_report_product_code(entities: Any, semantic_input: Any) -> str:
     for code in codes[1:]:
         while shared and not code.upper().startswith(shared.upper()):
             shared = shared[:-1]
-    return shared if len(shared) >= _SALES_REPORT_MIN_PREFIX else codes[0]
+    if len(shared) >= _SALES_REPORT_MIN_PREFIX:
+        return shared
+    # No usable shared prefix: the first code the customer typed exactly (a family stem typed
+    # beside it is not a code the route can take), else the first code as before.
+    si = semantic_input if isinstance(semantic_input, dict) else {}
+    exact = [jsc.js_string(c).strip().casefold() for c in jsc.array(si.get("outstanding_exact_product_codes"))]
+    return next((c for c in codes if c.strip().casefold() in exact), codes[0])
 
 
 #: The offer BLOCK the presenter appended, in either form: R9's single sentence, or the

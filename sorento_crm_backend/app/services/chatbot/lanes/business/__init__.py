@@ -1299,6 +1299,11 @@ def _resolve_report_product_and_location(
                     ordered += [c for c in matched if c.strip().casefold() == token]
                 else:
                     ordered += [c for c in gated_codes if c.strip().casefold().startswith(token)]
+            # The codes the customer typed exactly: the sales report, which takes ONE code or
+            # prefix, falls back to the first of them when the union shares no prefix.
+            semantic_input["outstanding_exact_product_codes"] = [
+                c for t in typed_tokens for c in matched if c.strip().casefold() == t
+            ]
             matched = list(dict.fromkeys(ordered or matched))
         if len(matched) > 1:
             # Every typed code answers (the fetch sends `product_codes`), not just the first.
