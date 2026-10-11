@@ -668,6 +668,11 @@ def resolve_entity_body(
     ]
     if len(product_tokens) >= 2 and len(product_tokens) == len(entities):
         match_mode = "or"
+    # REF-PROBES: a message that only names reference numbers is resolved per token (OR). AND
+    # mode probes the old kinds alone and answers the empty intersection with an OR rerun, so
+    # a delivery order hit would hide the sales order / PO / PR sharing its number.
+    if entities and all(jsc.get(x, "hint") in REFERENCE_NARROW for x in entities):
+        match_mode = "or"
     tier_gate_dict = tier_gate if isinstance(tier_gate, dict) else None
     recomposed_access_levels = (
         tier_gate_dict.get("access_levels_recomposed") if tier_gate_dict is not None else None

@@ -1969,6 +1969,28 @@ def _top_selling_dealer_scope(
     return {**parse_output, "entities": [e for e in entities if not _is_customer(e)]}
 
 
+def _reference_scope(customer_scope: dict[str, Any] | None, profile: Any) -> list[Any] | None:
+    """REF-PROBES: the customer links a reference-number match must belong to, or None when
+    no scope applies. Enforced dealers and any non-staff contact are held to their links (an
+    unlinked dealer has none, so another customer's sales order is never offered)."""
+    scope = customer_scope or {}
+    if scope.get("enforced"):
+        return list(scope.get("linked") or [])
+    return None if is_staff_profile(profile) else list(scope.get("linked") or [])
+
+
+def _reference_kinds(
+    ctx: dict[str, Any], customer_scope: dict[str, Any] | None, profile: Any, *, per_match_scope: bool = True
+) -> list[str]:
+    """The reference kinds this asker may have probed. A lane with no per-match scope drop
+    (`per_match_scope=False`, the casual clarifier) loses the customer-owned kinds (sales order,
+    PO ref) for any contact held to links."""
+    kinds = visible_reference_kinds((ctx.get("access") or {}).get("attributes"), is_staff_profile(profile))
+    if not per_match_scope and _reference_scope(customer_scope, profile) is not None:
+        kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
+    return kinds
+
+
 def _customer_scope_gate(
     scope: dict[str, Any] | None,
     verdict: dict[str, Any],
@@ -5192,10 +5214,7 @@ def _run_stages_body(  # noqa: PLR0915
                 **ctx,
                 "parse": {**(ctx.get("parse") or {}), "output": resolver_parse_output},
                 # REF-PROBES: the reference kinds this asker may have probed.
-                "reference_kinds": visible_reference_kinds(
-                    (ctx.get("access") or {}).get("attributes"),
-                    is_staff_profile(state_out.profile),
-                ),
+                "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile),
             }
             resolve_outcome = (
                 turn_runtime.resolve_kinds(
@@ -5236,11 +5255,7 @@ def _run_stages_body(  # noqa: PLR0915
                     ),
                     roster_caps=roster_caps,
                     enforced_scope=bool((customer_scope or {}).get("enforced")),
-                    scope_customer_ids=(
-                        list((customer_scope or {}).get("ids") or [])
-                        if (customer_scope or {}).get("enforced")
-                        else None
-                    ),
+                    scope_linked=_reference_scope(customer_scope, state_out.profile),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds
@@ -5735,7 +5750,9 @@ def _run_stages_body(  # noqa: PLR0915
         clarifier_setup_error: str | None = None
         if branch_kind == "low_signal" and completes_here:
             try:
-                resolved_for_prompt = casual.resolve_for_prompt(db, ctx=ctx)
+                resolved_for_prompt = casual.resolve_for_prompt(
+                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile, per_match_scope=False)}
+                )
                 clarifier_prompt = casual.construct_user_prompt(ctx, resolved_for_prompt)
                 clarifier_config = casual.resolve_clarifier_config(
                     db,

@@ -92,11 +92,16 @@ async def get_purchase_request_by_number(
 ):
     """Get a purchase request by its request number, with lines and attachments (read-only).
     A number carried by several requests answers the newest."""
+    import re
+
+    from sqlalchemy import func
+
     from app.models.procurement import PurchaseRequestHeader
 
+    folded = re.sub(r"[-\s]+", "", number).lower()
     row = (
         db.query(PurchaseRequestHeader.id)
-        .filter(PurchaseRequestHeader.request_number == number.strip())
+        .filter(func.lower(func.regexp_replace(PurchaseRequestHeader.request_number, r"[-\s]+", "", "g")) == folded)
         .order_by(PurchaseRequestHeader.created_at.desc())
         .first()
     )

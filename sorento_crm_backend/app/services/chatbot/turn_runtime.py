@@ -2339,21 +2339,40 @@ class ResolveOutcome:
 _CUSTOMER_OWNED_REF_KINDS = frozenset({"sales_order", "customer_po_ref"})
 
 
-def _without_foreign_sales_orders(payload: dict[str, Any], customer_ids: Collection[str]) -> dict[str, Any]:
-    """REF-PROBES S3: a dealer's reference number that also names ANOTHER customer's sales
-    order (or PO ref) must not become a picker option or an answer: those matches are
-    dropped from the resolutions and the gate's compatible entities, as a silent miss."""
-    allowed = {str(c) for c in customer_ids}
+def _all_matches(resolved: Any) -> list[dict[str, Any]]:
+    if not isinstance(resolved, dict):
+        return []
+    out = [m for r in jsc.array(resolved.get("resolutions")) if isinstance(r, dict) for m in jsc.array(r.get("matches"))]
+    out += jsc.array(resolved.get("intersection"))
+    for v in (resolved.get("by_entity_type") or {}).values():
+        out += v if isinstance(v, list) else []
+    return [m for m in out if isinstance(m, dict)]
+
+
+def _without_foreign_sales_orders(
+    db: Session, payload: dict[str, Any], linked: list[Any]
+) -> dict[str, Any]:
+    """REF-PROBES S3: a reference number that also names ANOTHER customer's sales order (or
+    PO ref) must not become a picker option or an answer: those matches are dropped from the
+    resolutions and the gate's compatible entities, as a silent miss. "Another customer's"
+    is `so_status`'s own scope rule (a link, or a linked debtor code in the same company)."""
+    from app.models.order import SalesOrder
+    from app.services.chatbot import so_status
+
+    ref_uuids = {
+        str(m.get("uuid"))
+        for m in _all_matches(payload.get("resolved"))
+        if jsc.nullish_str(m.get("entity_type")).strip().lower() in _CUSTOMER_OWNED_REF_KINDS and m.get("uuid")
+    }
     dropped: set[str] = set()
+    if ref_uuids:
+        sos = db.query(SalesOrder).filter(SalesOrder.id.in_(ref_uuids)).all()
+        in_scope = so_status._scope_check(db, sos, linked)
+        owned = {str(so.id) for so in sos if in_scope(so)}
+        dropped = ref_uuids - owned
 
     def _foreign(match: Any) -> bool:
-        if jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower() not in _CUSTOMER_OWNED_REF_KINDS:
-            return False
-        owner = jsc.get(jsc.get(match, "display"), "customer_id")
-        if owner is not None and str(owner) in allowed:
-            return False
-        dropped.add(str(jsc.get(match, "uuid")))
-        return True
+        return str(jsc.get(match, "uuid")) in dropped
 
     resolved = payload.get("resolved")
     if not isinstance(resolved, dict):
@@ -2415,7 +2434,7 @@ def resolve_kinds(
     stamp_purchase_order: bool = False,
     roster_caps: Mapping[str, int] | None = None,
     enforced_scope: bool = False,
-    scope_customer_ids: Collection[str] | None = None,
+    scope_linked: list[Any] | None = None,
 ) -> ResolveOutcome:
     """Ask the resolver what each named token actually IS (AC-1527).
 
@@ -2608,8 +2627,8 @@ def resolve_kinds(
         logger.warning("chatbot: the resolver did not answer", exc_info=True)
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
-    if scope_customer_ids is not None:
-        payload = _without_foreign_sales_orders(payload, scope_customer_ids)
+    if scope_linked is not None:
+        payload = _without_foreign_sales_orders(db, payload, scope_linked)
     resolved = payload.get("resolved")
     # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
     # resolver's answer MEANS for each token the parser hinted, before the pure core
@@ -2676,16 +2695,6 @@ def resolve_kinds(
                 kind = hinted
             hits[kind] = hits.get(kind, 0) + 1
 
-    # REF-PROBES: a lone token resolved in AND mode comes back as an `intersection`, with no
-    # `resolutions`. A reference number's kind is read off it the same way.
-    lone_tokens = [t for t in jsc.array(jsc.get(resolved, "tokens")) if isinstance(t, str)]
-    if not jsc.array(jsc.get(resolved, "resolutions")) and len(lone_tokens) == 1:
-        if hint_by_key.get(_token_key(lone_tokens[0])) in REFERENCE_NARROW:
-            hits = by_token.setdefault(lone_tokens[0], {})
-            for match in jsc.array(jsc.get(resolved, "intersection")):
-                kind = jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower()
-                if kind:
-                    hits[kind] = hits.get(kind, 0) + 1
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]
     unplaced = named_unplaced(entities, resolved)
@@ -3539,14 +3548,14 @@ def make_tool_runner(
         # by the lane from `sales_orders` (`lanes/business/run_fetch`'s `so_numbers` arm),
         # and so are not "could not find" words for compose to name a second time.
         so_numbers = _so_numbers_asked(domain, verdict, unplaced)
-        placed_so = _placed_reference_words(db, entities)["so_numbers"]
+        placed_refs = _placed_reference_words(db, entities)
+        placed_so = placed_refs["so_numbers"]
         so_numbers = list(dict.fromkeys([*so_numbers, *placed_so]))
         envelope_unplaced = unplaced
         if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
             lane_out = {**lane_out, "po_refs": None}
-        placed_refs = _placed_reference_words(db, entities)
         # REF-PROBES: a customer PO ref the resolver PLACED is answered for staff too (their
         # own "PO" is the supplier PO path, which is `purchase_order`); one the asker NAMED
         # as a PO ref that nothing placed goes to the same arm, which says it was not found.
