@@ -233,4 +233,3 @@ def _stub_casual_llm(request, monkeypatch):
     monkeypatch.setattr(casual_mod, "resolve_clarifier_config", _fake_resolve_clarifier_config)
     monkeypatch.setattr(casual_mod, "call_clarifier", _fake_call_clarifier)
     yield calls
-

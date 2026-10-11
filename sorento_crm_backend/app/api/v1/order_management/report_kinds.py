@@ -43,7 +43,8 @@ def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, k
     block only, `so_refused` echoed."""
     # Normalised as the route does BEFORE the grant decision; an unknown value passes on to its 422.
     scope = (_one(params, "scope") or "both").strip().lower() or "both"
-    so_refused = False
+    # A caller may say the SO side is withheld; it can never turn the server's own downgrade off.
+    so_refused = (_one(params, "so_refused") or "").strip().lower() in ("1", "true", "yes")
     if scope in ("so", "both") and "sales_orders.outstanding" not in keys:
         scope, so_refused = "do", True
     from app.api.v1.order_management.orders import get_outstanding_report
@@ -51,16 +52,16 @@ def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, k
     response = asyncio.run(
         get_outstanding_report(
             product_code=_one(params, "product_code"),
-            product_codes=None,
+            product_codes=_many(params, "product_codes"),
             scope=scope,
             customer_query=_one(params, "customer_query"),
             customer_ids=_many(params, "customer_ids"),
             warehouse_codes=_many(params, "warehouse_codes"),
             brand_ids=_many(params, "brand_ids"),
-            order_date_from=None,
-            order_date_to=None,
-            detail=None,
-            location_token=None,
+            order_date_from=_one(params, "order_date_from"),
+            order_date_to=_one(params, "order_date_to"),
+            detail=_one(params, "detail"),
+            location_token=_one(params, "location_token"),
             so_refused=so_refused,
             contact_id=contact_id,
             space_id=space_id,
@@ -89,7 +90,7 @@ def _delivered_sales(db: Session, *, params: dict, contact_id: str, space_id: st
             customer_ids=_many(params, "customer_ids"),
             channel=_one(params, "channel"),
             warehouse_codes=_many(params, "warehouse_codes"),
-            location_token=None,
+            location_token=_one(params, "location_token"),
             date_from=_one(params, "date_from"),
             date_to=_one(params, "date_to"),
             group_by=_one(params, "group_by"),
@@ -199,7 +200,10 @@ def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str, key
 
 # ------------------------------------------------------------------------- the rows
 
-_OUTSTANDING_PARAMS = frozenset({"product_code", "customer_query", "customer_ids", "warehouse_codes", "brand_ids", "scope"})
+_OUTSTANDING_PARAMS = frozenset({
+    "product_code", "product_codes", "customer_query", "customer_ids", "warehouse_codes", "brand_ids", "scope",
+    "location_token", "order_date_from", "order_date_to", "detail", "so_refused",
+})
 
 for _row in (
     Measure(
@@ -219,7 +223,7 @@ for _row in (
         grant="sales_orders.sales_report", dealer_dimensions=("customer", "product", "delivery_order"),
         run=_delivered_sales, kind="sales_report",
         params=frozenset({"product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
-                          "date_from", "date_to", "group_by"}),
+                          "location_token", "date_from", "date_to", "group_by"}),
     ),
     Measure(
         key="sales_value", label="Sales value", synonyms=("sales analysis", "sales by month"),

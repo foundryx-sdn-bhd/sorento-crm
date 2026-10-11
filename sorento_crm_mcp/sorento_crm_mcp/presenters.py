@@ -1863,14 +1863,14 @@ def _low_stock_read_envelope(body: dict) -> dict:
             low.append((level - on_hand, row))
     low.sort(key=lambda pair: -pair[0])
     count = (body.get("counts") or {}).get("low")
-    lines = [f"As of: {body.get('run_date') or (body.get('run') or {}).get('as_of') or ''}",
-             f"Low items: {count if count is not None else len(low)}"]
+    as_of = body.get("run_date") or (body.get("run") or {}).get("as_of")
+    lines = [f"As of: {as_of}"] if as_of else []
+    lines.append(f"Low items: {count if count is not None else len(low)}")
     for _gap, row in low[:_LOW_STOCK_READ_TOP]:
-        line = f"{_cell(row, 'Item code')} {_cell(row, 'Description') or ''}".strip()
+        lines.append(f"{_cell(row, 'Item code')}: {_cell(row, 'Description') or ''}".rstrip(": ").rstrip())
         supplier = _cell(row, "Supplier")
         if "Supplier" in columns and supplier:
-            line += f" ({supplier})"
-        lines.append(line)
+            lines.append(f"Supplier: {supplier}")
     return {"result_type": "low_stock_report", "response": "\n".join(lines), "attachments": [], "has_result": True}
 
 
