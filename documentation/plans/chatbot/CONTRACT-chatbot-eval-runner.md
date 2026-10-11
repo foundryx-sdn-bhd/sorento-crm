@@ -290,3 +290,9 @@ for big decisions.
   same transaction, same `sorento_eval_*` guard. The eval stack runs no worker, so a low-stock run never finishes and
   every later low-stock ask got "a plan is already running" (`app/api/v1/scm/low_stock_report.py:482-498`,
   `app/services/scm/reorder_run_service.py:167`).
+- Round 17b (regrade of the stored baselines showed the first rule over-triggering: 37 main-set and 9 report flips,
+  e.g. `SRT8308: No ETA` read as a header, and single-product report replies whose code legitimately appears only in
+  `Product:`): (1) a header line's label is letters and spaces only (no digits, at most 40 chars), and a header block
+  needs at least 2 such lines; (2) a header-only echo still counts UNLESS every must item the reply matched is a
+  header-only echo of the user's text (then the reply proved nothing beyond repeating the ask -> not met).
+  GRADER_VERSION 10.
