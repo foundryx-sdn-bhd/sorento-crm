@@ -246,3 +246,13 @@ the layer that broke. All new label fields are optional and start empty; they ar
   tracked changes). Env `EVAL_APP_SHA` overrides `git_sha` when the backend runs from another checkout. No git
   available -> both null, run continues. `--regrade` keeps the source run's values. The resolved prompt id is
   already recorded (`prompt.id`, round 11).
+
+## Round 14 (tool layer reads the real trace, 11 Oct)
+- First reports run: tool layer `no_trace` on all 38. Real traces carry tool calls inside stage `looked_up`
+  `raw.envelopes[*]`: `tool` (name), `tool_ran` (bool) and the parameters in `lane_ask.filters`,
+  `sales_ranking_frame` and `low_stock_frame` (dicts, may be null). Trace entries with a top-level `tool` key are
+  cross-domain probes, not the answer's tool.
+- Digest `tools` = one item per envelope with a `tool` and `tool_ran` true: `{tool, args}` where args is the merge of
+  the non-null dicts `lane_ask.filters`, `sales_ranking_frame`, `low_stock_frame` (later keys win), plus the probe
+  entries as before (kept, they can only add matches).
+- Results rows carry `needs_judge` (bool) so strict rates can be cut by any grouping offline.
