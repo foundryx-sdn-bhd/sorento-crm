@@ -131,5 +131,8 @@ EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL
   checks cannot settle, and only once it agrees with human verdicts (`calibration/*.json`) on at least
   90%. It has its own spend cap (`--judge-budget-usd`, default $2) and sends the masked case text and
   the bot reply to Anthropic. The key is never in the repo; crew's gate loads it at runtime.
+- Per layer: each result also scores understood (parser domain / intent / entities), resolved (records),
+  tool (name + params) and reply, wherever the case label carries `understood`, `expected_resolved` or `tool`
+  (filled over time). The report's `by_layer` and `first_failing_layer` say which layer broke.
 - Known gaps (v1): media (photo) turns and ideation turns are excluded; relative-date asks ("this
   month") carry no period numbers because the replay date is not the ask date.
