@@ -10,6 +10,7 @@ own company arm.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable, Optional
@@ -516,7 +517,10 @@ _GRANT_CODES = {
 _KIND_ALWAYS = frozenset({"measure", "contact_id", "space_id", "carried"})
 
 
-def _serve_kind(request: Request, db: Session, m: measures.Measure, contact_id: Optional[str], space_id: Optional[str]):
+def _serve_kind(
+    request: Request, db: Session, m: measures.Measure, contact_id: Optional[str], space_id: Optional[str],
+    current_user: dict,
+):
     """A non-ranking measure: the same entry gates as `_serve`, the measure's grant, then its own
     `run`, which reuses the old route's or service's guards. The body is that route's own plus
     `report_kind`."""
@@ -531,6 +535,15 @@ def _serve_kind(request: Request, db: Session, m: measures.Measure, contact_id: 
         )
     if not request.headers.get("X-API-Key"):
         raise AppException(403, "This route is for the chatbot only", code="api_key_required")
+    # The old router's own guards, for the act-as user (module first, then the permission).
+    if m.module_key:
+        from app.modules.runtime.guards import require_module_enabled_with_api_key
+
+        asyncio.run(require_module_enabled_with_api_key(m.module_key)(db=db, current_user=current_user))
+    if m.permission:
+        from app.dependencies import require_permission_with_api_key
+
+        require_permission_with_api_key(m.permission)(current_user=current_user, db=db)
     axis = (request.query_params.get("group_by") or "").strip().lower()
     if axis and "group_by" in m.params and axis not in m.dimensions:
         raise _unprocessable(f"Unknown group_by value '{axis}'", "unknown_group_by", _allowed(m.dimensions))
@@ -543,13 +556,16 @@ def _serve_kind(request: Request, db: Session, m: measures.Measure, contact_id: 
 
     resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
     keys = granted_keys(db, resolved) if resolved else []
-    if m.grant not in keys:
+    if m.grant not in keys and not m.grant_optional:
         raise AppException(403, "Not enabled for your account.", code=_GRANT_CODES.get(m.grant, "report_not_enabled"))
     brand_scope = contact_brand_scope(db, contact_id, space_id)
     if brand_scope:
         set_brand_scope(db, brand_scope)
     params = {k: request.query_params.getlist(k) for k in request.query_params.keys() if k not in _KIND_ALWAYS}
-    body = m.run(db, params=params, contact_id=contact_id, space_id=space_id)
+    body = m.run(
+        db, params=params, contact_id=contact_id, space_id=space_id, keys=keys,
+        principal_id=str(current_user.get("id") or ""),
+    )
     return JSONResponse(content=jsonable_encoder({**body, "report_kind": m.kind}))
 
 
@@ -585,7 +601,7 @@ def report(
 ):
     picked = measures.MEASURES.get((measure or "").strip().lower())
     if picked is not None and picked.kind != "ranking":
-        return _serve_kind(request, db, picked, contact_id, space_id)
+        return _serve_kind(request, db, picked, contact_id, space_id, current_user)
 
     def resolve() -> _Spec:
         key = (measure or "").strip().lower()

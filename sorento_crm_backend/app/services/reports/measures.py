@@ -30,6 +30,12 @@ class Measure:
     #: kind's native body; `params` is the set of route params it supports (the route says 422
     #: naming any other).
     kind: str = "ranking"
+    #: The old route's router guards for a non-ranking measure: the module the tenant must have
+    #: enabled and the permission the act-as user must hold ("" = none beyond the route's own).
+    module_key: str = ""
+    permission: str = ""
+    #: True when a missing `grant` is not a refusal but the run's own business (outstanding: SO side withheld).
+    grant_optional: bool = False
     params: frozenset = frozenset()
 
 
