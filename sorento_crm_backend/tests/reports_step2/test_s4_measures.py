@@ -316,10 +316,31 @@ def no_jobs(monkeypatch):
     monkeypatch.setattr(queue_service, "enqueue_job", _boom)
 
 
-def test_ac19_low_stock_is_the_read_view_of_the_latest_run(client, db, no_jobs):
+@pytest.fixture
+def pick_run(monkeypatch):
+    """`today_or_latest_run` reads `scm.reorder_run` by raw SQL, which the blank test schema cannot
+    resolve: patch the pick, in its own return shape (`{"row": <run mapping>, "is_today": bool}`)."""
+    from app.services.scm import reorder_run_service
+
+    def _pick(run=None, *, status="completed", is_today=True):
+        if run is None:
+            picked = None
+        else:
+            picked = {
+                "row": {"id": run.id, "status": status, "started_at": datetime(2026, 10, 10, 22, 0),
+                        "finished_at": None},
+                "is_today": is_today,
+            }
+        monkeypatch.setattr(reorder_run_service, "today_or_latest_run", lambda db, today=None: picked)
+
+    return _pick
+
+
+def test_ac19_low_stock_is_the_read_view_of_the_latest_run(client, db, no_jobs, pick_run):
     from app.services.scm.low_stock_report_service import build_low_stock_view
 
     run, contact = _low_world(db)
+    pick_run(run)
     expected = json.loads(json.dumps(build_low_stock_view(db, run_id=run.id, include_supplier=True), default=str))
     resp = _get(client, REPORT, contact, measure="low_stock")
     assert resp.status_code == 200, resp.text
@@ -328,32 +349,46 @@ def test_ac19_low_stock_is_the_read_view_of_the_latest_run(client, db, no_jobs):
     assert {k: v for k, v in body.items() if k not in ("report_kind", "run_date")} == expected
 
 
-def test_ac20_low_stock_without_the_supplier_grant_has_no_supplier_column(client, db, no_jobs):
-    _run_, contact = _low_world(db, grants=(SALES_GRANT, LOW_GRANT))
+def test_ac20_low_stock_without_the_supplier_grant_has_no_supplier_column(client, db, no_jobs, pick_run):
+    run, contact = _low_world(db, grants=(SALES_GRANT, LOW_GRANT))
+    pick_run(run)
     body = _get(client, REPORT, contact, measure="low_stock").json()
     assert "Supplier" not in body["columns"], body["columns"]
 
 
-def test_ac20_low_stock_needs_its_grant(client, db, no_jobs):
-    _run_, contact = _low_world(db, grants=(SALES_GRANT,))
+def test_ac20_low_stock_needs_its_grant(client, db, no_jobs, pick_run):
+    run, contact = _low_world(db, grants=(SALES_GRANT,))
+    pick_run(run)
     assert _get(client, REPORT, contact, measure="low_stock").status_code == 403
 
 
-def test_ac21_low_stock_writes_nothing(client, db, no_jobs):
-    _run_, contact = _low_world(db)
+def test_ac21_low_stock_writes_nothing(client, db, no_jobs, pick_run):
+    run, contact = _low_world(db)
+    pick_run(run)
     db.commit()
     before = _counts(db)
     assert _get(client, REPORT, contact, measure="low_stock").status_code == 200
     assert _counts(db) == before
 
 
-def test_ac21_with_no_completed_run_the_reply_says_there_is_no_snapshot_and_writes_nothing(client, db, no_jobs):
+def test_ac21_with_no_run_the_reply_says_there_is_no_snapshot_and_writes_nothing(client, db, no_jobs, pick_run):
     contact = _staff(db, SALES_GRANT, LOW_GRANT)
+    pick_run(None)
     before = _counts(db)
     resp = _get(client, REPORT, contact, measure="low_stock")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "no_snapshot" and "no low stock snapshot yet" in body["message"].lower(), body
+    assert _counts(db) == before
+
+
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_ac21_a_run_still_being_built_with_no_completed_one_says_preparing(client, db, no_jobs, pick_run, status):
+    run, contact = _low_world(db)
+    pick_run(run, status=status)
+    before = _counts(db)
+    body = _get(client, REPORT, contact, measure="low_stock").json()
+    assert body["status"] == "preparing" and "still being prepared" in body["message"], body
     assert _counts(db) == before
 
 
