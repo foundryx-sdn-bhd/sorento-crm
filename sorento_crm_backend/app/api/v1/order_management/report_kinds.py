@@ -31,6 +31,28 @@ def _many(params: dict, name: str) -> Optional[list[str]]:
     return list(params[name]) if params.get(name) else None
 
 
+def _location_token(params: dict) -> Optional[str]:
+    """`location_token` with the old routes' `Query(max_length=32)`, which a direct call skips."""
+    token = _one(params, "location_token")
+    if token is not None and len(token) > 32:
+        raise AppException(422, "location_token is at most 32 characters", code="invalid_location_token")
+    return token
+
+
+_BOOL_WORDS = {"true": True, "1": True, "yes": True, "on": True, "false": False, "0": False, "no": False, "off": False}
+
+
+def _flag(params: dict, name: str) -> bool:
+    """A bool param as FastAPI reads it (true/false/1/0/yes/no/on/off, any case); anything else is 422."""
+    raw = _one(params, name)
+    if raw is None:
+        return False
+    try:
+        return _BOOL_WORDS[raw.strip().lower()]
+    except KeyError:
+        raise AppException(422, f"{name} must be a boolean", code="invalid_boolean")
+
+
 def _body(response: Any) -> dict:
     return json.loads(response.body)
 
@@ -44,7 +66,7 @@ def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, k
     # Normalised as the route does BEFORE the grant decision; an unknown value passes on to its 422.
     scope = (_one(params, "scope") or "both").strip().lower() or "both"
     # A caller may say the SO side is withheld; it can never turn the server's own downgrade off.
-    so_refused = (_one(params, "so_refused") or "").strip().lower() in ("1", "true", "yes")
+    so_refused = _flag(params, "so_refused")
     if scope in ("so", "both") and "sales_orders.outstanding" not in keys:
         scope, so_refused = "do", True
     from app.api.v1.order_management.orders import get_outstanding_report
@@ -61,7 +83,7 @@ def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, k
             order_date_from=_one(params, "order_date_from"),
             order_date_to=_one(params, "order_date_to"),
             detail=_one(params, "detail"),
-            location_token=_one(params, "location_token"),
+            location_token=_location_token(params),
             so_refused=so_refused,
             contact_id=contact_id,
             space_id=space_id,
@@ -90,7 +112,7 @@ def _delivered_sales(db: Session, *, params: dict, contact_id: str, space_id: st
             customer_ids=_many(params, "customer_ids"),
             channel=_one(params, "channel"),
             warehouse_codes=_many(params, "warehouse_codes"),
-            location_token=_one(params, "location_token"),
+            location_token=_location_token(params),
             date_from=_one(params, "date_from"),
             date_to=_one(params, "date_to"),
             group_by=_one(params, "group_by"),
