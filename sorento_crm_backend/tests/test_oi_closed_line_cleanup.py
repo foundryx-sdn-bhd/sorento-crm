@@ -350,3 +350,64 @@ def test_a_row_updated_in_place_by_a_later_buy_decision_is_not_cancelled(api, mo
     w.db.expire_all()
     assert w.db.get(OrderInquiryRow, row.id).state == INQUIRY_RAISED
     assert str(row.id) not in _cancelled_ids(out)
+
+
+def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, monkeypatch):
+    """The OI-2609-0724 shape (fake codes): the decision on line A was dropped at 03:00, then CS
+    confirmed OTHER lines three times (03:50, 05:28, 07:18). Each confirm carries A's old
+    snapshot forward verbatim and cancels-and-re-raises its still-raised ORDER row under the
+    new revision, so the live row is born 07:18 and points at the active revision. Nothing
+    re-decided A: the row is still stranded and must be cancelled."""
+    from app.models.project_so import (
+        DECISION_ACTIVE,
+        DECISION_SUPERSEDED,
+        SOSupplyDecision,
+    )
+
+    w = _world(api, monkeypatch)
+    db = w.db
+    a, c = w.rows["A"], w.rows["C"]
+    a_snap = {
+        "project_line_id": str(a.so_line_id), "line_no": 1,
+        "components": [{"kind": "buy", "qty": "40"}],
+    }
+
+    def c_snap(qty):
+        return {
+            "project_line_id": str(c.so_line_id), "line_no": 3,
+            "components": [{"kind": "buy", "qty": qty}],
+        }
+
+    revisions = [
+        (1, datetime(2026, 10, 1, 9, 0), [dict(a_snap), c_snap("40")]),
+        (2, datetime(2026, 10, 6, 3, 50), [dict(a_snap), c_snap("30")]),
+        (3, datetime(2026, 10, 6, 5, 28), [dict(a_snap), c_snap("20")]),
+        (4, datetime(2026, 10, 6, 7, 18), [dict(a_snap), c_snap("10")]),
+    ]
+    active = None
+    for revision_no, confirmed_at, snapshots in revisions:
+        last = revision_no == len(revisions)
+        decision = SOSupplyDecision(
+            id=str(uuid.uuid4()), company_id=w.world.company_id,
+            project_sales_order_id=w.order.id, revision_no=revision_no,
+            state=DECISION_ACTIVE if last else DECISION_SUPERSEDED,
+            line_snapshots=snapshots, confirmed_by=w.world.actor, confirmed_at=confirmed_at,
+        )
+        db.add(decision)
+        db.flush()
+        active = decision
+    # The last carry: the old raised row cancelled, a fresh one raised under revision 4.
+    a.state = INQUIRY_CANCELLED
+    carried = OrderInquiryRow(
+        id=str(uuid.uuid4()), company_id=w.world.company_id, order_inquiry_id=w.inquiry.id,
+        so_line_id=a.so_line_id, item_code=a.item_code, qty=Decimal("40"), verb=IV_ORDER,
+        state=INQUIRY_RAISED, ack_state="awaiting", note="ZZT carried A",
+        supply_decision_id=active.id, created_at=datetime(2026, 10, 6, 7, 18),
+    )
+    db.add(carried)
+    db.commit()
+    w.calls.clear()
+
+    out = _run(w, apply=False)
+
+    assert str(carried.id) in _cancelled_ids(out), out["rows"]
