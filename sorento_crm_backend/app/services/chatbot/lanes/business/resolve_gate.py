@@ -1362,6 +1362,7 @@ def run(
         tier_gate=tier_gate_out,
         aggregate=aggregate,
         roster_caps=roster_caps,
+        union_ask_domains=True,
     )
     gate_snapshot = _snapshot(gate_item)
 

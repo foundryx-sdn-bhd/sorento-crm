@@ -5192,11 +5192,10 @@ def resolve_references(
             # entity types keep strict single-hit semantics - variant siblings
             # are a product-domain concept (SKU suffixes); customers / orders /
             # promotions don't have the same family pattern.
-            # A typed spelling that is not the stored code itself ("Cb88ss/diy" for CB88SS-DIY) names that
-            # one full code through the separator-insensitive match, so it carries no family of siblings.
-            existing_product_hit = any(
-                m.entity_type == "product" and str(m.canonical_code or "").lower() == tok.lower()
-                for m in per_token[tok]
+            # A code typed with "/" for its dash ("Cb88ss/diy" for CB88SS-DIY) names that one full code, so it
+            # carries no family of siblings.
+            existing_product_hit = "/" not in tok and any(
+                m.entity_type == "product" for m in per_token[tok]
             )
             if existing_product_hit and (tok_allowed is None or "product" in tok_allowed):
                 seen_uuids = {m.uuid for m in per_token[tok] if m.uuid}

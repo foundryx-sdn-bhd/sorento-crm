@@ -1875,8 +1875,12 @@ def lane_parse_output(
     # the one bucket in the map above that means "outstanding, no document named", and
     # reading it here keeps this true for a caller still speaking the pre-rearch
     # vocabulary (`order_status` straight on the verdict, no `document`/`status` pair).
+    # A message that holds SEVERAL asks (REPORTS-STEP2 S3a, "<code> got stock? got outstanding for X") answers
+    # every half now: its outstanding half runs for both documents (the report's default) instead of the
+    # scope question hanging beside the other answers. A single ask is unchanged.
+    several_asks = len([a for a in (out.get("asks") or []) if isinstance(a, dict) and a.get("domain")]) > 1
     out["outstanding_scope_ask_candidate"] = (
-        jsc.js_string(out.get("order_status") or "").strip() == "outstanding"
+        jsc.js_string(out.get("order_status") or "").strip() == "outstanding" and not several_asks
     )
     # PLAN-chatbot-sales-report.md S4 wiring point 2: the sales report's channel, off the
     # FOCUS when this message named none of its own. The turn that answers a customer

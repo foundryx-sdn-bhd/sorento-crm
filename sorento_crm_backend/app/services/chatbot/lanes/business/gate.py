@@ -382,6 +382,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     tier_gate: dict[str, Any] | None = None,
     aggregate: dict[str, Any] | None = None,
     roster_caps: Mapping[str, int] | None = None,
+    union_ask_domains: bool = False,
 ) -> dict[str, Any]:
     """`disallowed-entity-gate`'s output item. `item` is mutated and returned, as in JS.
 
@@ -435,6 +436,12 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     entities = list(by_uuid.values())
 
     allowed = ALLOWED.get(domain)  # `ALLOWED[domain] ?? null`
+    # A message that holds several asks (REPORTS-STEP2 S3a) is about each ask's own kinds: the entities one
+    # ask's domain allows are not dropped because the primary domain does not ("scr" the customer of the
+    # outstanding half, beside a stock half). A single ask is unchanged.
+    ask_domains = [a.get("domain") for a in jsc.array(parser.get("asks")) if isinstance(a, dict)]
+    if union_ask_domains and allowed is not None and len({d for d in ask_domains if d}) > 1:
+        allowed = list(dict.fromkeys(t for d in [domain, *ask_domains] for t in (ALLOWED.get(d) or [])))
     gate_passed = True
     gate_reason = "ok"
     gate_clarification = ""
