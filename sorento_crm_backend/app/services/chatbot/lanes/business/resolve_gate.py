@@ -593,6 +593,12 @@ def _allowed_entity_types(entities: list[Any], parse_output: dict[str, Any]) -> 
     return list(dict.fromkeys([*hints, *(t for d in domains for t in (ALLOWED.get(d) or []))]))
 
 
+def _widened_entity_types(entities: list[Any], parse_output: dict[str, Any]) -> list[Any]:
+    """The kinds `_allowed_entity_types` added beyond the parser's own hints."""
+    hints = {jsc.get(x, "hint") for x in entities}
+    return [t for t in _allowed_entity_types(entities, parse_output) if t not in hints]
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -733,6 +739,9 @@ def resolve_entity_body(
         locked = [t for t in locked if t in brands]
     if locked:
         body["hint_locked_tokens"] = locked
+    widened = _widened_entity_types(entities, parse_output)
+    if widened:
+        body["widened_entity_types"] = widened
     if brands:
         body["brand_tokens"] = brands
     grounded_specs = [

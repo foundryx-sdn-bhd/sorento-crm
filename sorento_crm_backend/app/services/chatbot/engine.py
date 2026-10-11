@@ -5548,8 +5548,13 @@ def _run_stages_body(  # noqa: PLR0915
         if branch_kind == "not_supported" and verdict.get("domain_hint") in UNSUPPORTED_TOPIC_COPY:
             # The fixed line for a topic the bot cannot answer is told in the contact's own language (the
             # conversation's, else the saved one), whatever words the question used.
+            # A message that is plainly Chinese or Malay says its own language; English marker words are weak
+            # (they only say "not asked in another language"), so they do not override a remembered one.
+            detected = language_mod.detect(latest_user_message.split("\n")[0])
             item["reply_language"] = language_mod.choose(
-                None, remembered_before.get("reply_language"), getattr(profile, "language", None)
+                detected if detected in ("zh", "ms") else None,
+                remembered_before.get("reply_language"),
+                getattr(profile, "language", None),
             )
 
         # Owner ruling, hand pass 10 (21 Sep 2026, `test_rearch_r10_handpass10_

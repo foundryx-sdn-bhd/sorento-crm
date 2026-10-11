@@ -1330,6 +1330,13 @@ class ResolveReferenceRequest(BaseModel):
             "from picking 'order' when the user actually meant 'customer'."
         ),
     )
+    widened_entity_types: list[str] | None = Field(
+        default=None,
+        description=(
+            "Kinds the caller ADDED to `allowed_entity_types` beyond its own hints (a message holding "
+            "several asks). A customer-scoped contact never gets `customer` among them."
+        ),
+    )
     hint_locked_tokens: list[str] | None = Field(
         default=None,
         description=(
@@ -3199,6 +3206,15 @@ def resolve_reference_post(
                     "entity_pins": pins,
                 }
             )
+    if payload.widened_entity_types and payload.contact_id and "customer" in payload.widened_entity_types:
+        from app.services.contact_customer_scope import contact_customer_scope
+        from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+        _who = resolve_contact_with_null_workspace_fallback(db, contact_id=payload.contact_id, space_id=payload.space_id)
+        if _who and contact_customer_scope(db, str(_who)).enforced:
+            payload = payload.model_copy(update={
+                "allowed_entity_types": [t for t in (payload.allowed_entity_types or []) if t != "customer"]
+            })
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None
