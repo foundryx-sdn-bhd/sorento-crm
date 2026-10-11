@@ -226,3 +226,13 @@ def test_the_turn_path_never_reads_the_catalogue() -> None:
         "deployed backend image (compose builds it with context: ./sorento_crm_backend), "
         "so every live business turn would fail: " + ", ".join(sorted(offenders))
     )
+
+
+def test_reports_step2_ac9_crm_report_is_on_the_chatbot_allow_list_and_the_old_six_stay():
+    """REPORTS-STEP2 AC-9: the new tool is callable by the chatbot; no old report tool is lost."""
+    assert "crm_report" in CHATBOT_READ_ONLY_TOOLS
+    for old in (
+        "crm_report_ask", "crm_sales_report", "crm_top_selling_report", "crm_outstanding_report",
+        "crm_low_stock_report", "crm_sales_analysis",
+    ):
+        assert old in CHATBOT_READ_ONLY_TOOLS, old
