@@ -465,6 +465,18 @@ def test_a_release_batch_at_the_compare_cap_runs_the_full_suite(tmp_path):
     assert run_step(tmp_path, "workflow_dispatch", many, last_release=LAST_RELEASE) == FULL_PIPELINE
 
 
+@pytest.mark.parametrize("harness", ["sorento_crm_backend/tests/conftest.py", "sorento_crm_backend/tests/_pg_fixture.py"])
+def test_a_release_batch_touching_the_test_harness_runs_the_full_suite(tmp_path, harness):
+    """CI-COST owner ruling (11 Oct 2026, crew decision (b)): a harness change alters how
+    every test runs, so no selection can scope it (the 9 Oct release caught 6 repo-wide
+    breaks the changed tests missed). Full shards; rare, so the average stays near 60."""
+    out = run_step(tmp_path, "workflow_dispatch", RELEASE_BATCH + [harness], last_release=LAST_RELEASE)
+    assert out == FULL_PIPELINE
+    nested = run_step(tmp_path, "workflow_dispatch",
+                      RELEASE_BATCH + ["sorento_crm_backend/tests/chatbot/conftest.py"], last_release=LAST_RELEASE)
+    assert nested["lean"] == "true", "a sub-directory conftest is scoped by the selection, stays lean"
+
+
 def test_a_tree_whose_release_tests_passed_is_not_tested_again(tmp_path):
     """A re-dispatch (a rejected approval, a deploy hiccup) of a tree whose
     release tests already passed builds and deploys only."""
@@ -1540,14 +1552,14 @@ def test_select_step_on_pr_1411_runs_the_test_that_broke_the_release(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
-    # Under the budget when this was written (216 files, ~2668 CPU-s); either
-    # way the file runs on the PR: in the list, or in the full shards.
+    # Under the budget when this was written (216 files, ~2668 CPU-s); above
+    # it (the tree has grown) only the PR's own changed test files go out.
     if outputs["full"] == "false":
         selected = outputs["tests"].split()
         assert "sorento_crm_backend/tests/test_ingest_parity_security_fixes.py" in selected
         assert set(filtered["backend_tests"].split()) <= set(selected)
     else:
-        assert outputs == {"tests": "", "full": "true"}
+        assert outputs == {"tests": filtered["backend_tests"], "full": "true"}
     assert "estimated" in result.stdout and "sorento_crm_backend/tests/test_ingest_parity_security_fixes.py" in result.stdout
 
 
@@ -1690,13 +1702,63 @@ def test_the_release_tests_job_reports_as_release_tests():
     assert _gh_eval(name, {"github": {"event_name": "workflow_dispatch", "event": {}}}) == "Release tests"
 
 
-def test_the_lean_flag_drops_to_the_shards_when_the_selection_is_over_the_cap():
+def _changes_outputs() -> dict[str, str]:
     block = re.search(r"\n  changes:\n(.*?)\n    steps:", _workflow_text(), re.S).group(1)
-    lean = _expression(re.search(r"^      lean: (.*)$", block, re.M).group(1))
+    outputs = block[block.index("\n    outputs:\n"):]
+    return {k: _expression(v) for k, v in re.findall(r"^      ([a-z_]+): (.*)$", outputs, re.M)}
+
+
+def test_the_lean_flag_survives_a_selection_over_the_budget():
+    """CI-COST: release run 38099410256 (main f7e48144b) printed lean=true, but the
+    import selection reached 2076 files (32731 CPU-s, over the 3600 budget), the
+    `lean` job output read `select.full`, turned false, and the 10 main shards,
+    3 SCM shards, 4 vitest shards and the serial shard ran: ~468 billed minutes.
+    The full shards now run only when the filter step itself says not lean
+    (full_suite, or a release whose diff cannot be established)."""
+    lean = _changes_outputs()["lean"]
     ctx = lambda flt, full: {"steps": {"filter": {"outputs": {"lean": flt}}, "select": {"outputs": {"full": full}}}}
     assert str(_gh_eval(lean, ctx("true", "false"))).lower() == "true"
-    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("true", "true"))).lower() == "true", "over the budget is still a lean release"
     assert str(_gh_eval(lean, ctx("", ""))).lower() == "false"
+    assert str(_gh_eval(lean, ctx("", "true"))).lower() == "false"
+
+
+def test_a_lean_release_over_the_budget_runs_core_tier_and_changed_tests_in_one_job(tmp_path):
+    """The batch of release 38099410256 reaches every test through app/models/__init__.py.
+    Over the budget, the release-tests job gets the core tier and the batch's changed test
+    files (each PR already ran its own import selection in its PR gate), and no shard runs."""
+    output = tmp_path / "select.txt"
+    output.write_text("")
+    changed_test = "sorento_crm_backend/tests/chatbot/test_chat_backfill.py"
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _step_script("Select backend tests by import")],
+        cwd=REPO,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "GITHUB_OUTPUT": str(output),
+             "BACKEND_CODE": "sorento_crm_backend/app/models/__init__.py", "BACKEND_TESTS": changed_test,
+             "LEAN": "true"},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    step = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert step["full"] == "true", "app/models/__init__.py reaches the whole suite"
+    tests = step["tests"].split()
+    assert changed_test in tests
+    assert "sorento_crm_backend/tests/test_rbac.py" in tests, "the core tier runs"
+    assert len(tests) < 100, f"core tier + changed tests only, got {len(tests)} files"
+    ctx = {"steps": {"filter": {"outputs": {"lean": "true", "backend_tests": changed_test}},
+                     "select": {"outputs": step}}}
+    rendered = {k: str(_gh_eval(v, ctx)).lower() if k == "lean" else str(_gh_eval(v, ctx))
+                for k, v in _changes_outputs().items() if k in ("lean", "backend_tests")}
+    assert rendered["lean"] == "true"
+    assert rendered["backend_tests"] == step["tests"]
+    ran = _ran(_simulate("workflow_dispatch", outputs={**LEAN_RELEASE, **rendered}))
+    assert ran == {"check-migration-heads", "changes", "lean-gate", "build-images", "build-and-deploy"}
+
+
+def test_full_suite_input_states_the_measured_cost():
+    """The last full run (38099410256) billed ~468 minutes, not the ~250 the input claimed."""
+    desc = re.search(r"^      full_suite:\n        description: \"(.*)\"$", _triggers(), re.M).group(1)
+    assert "470 billed minutes" in desc
 
 
 def test_a_passed_release_tests_job_marks_its_tree_validated():
