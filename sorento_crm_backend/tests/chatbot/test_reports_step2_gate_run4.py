@@ -27,18 +27,67 @@ def _sales(**kw: Any) -> dict[str, Any]:
     return _parser_output(**base)
 
 
-def test_a_a_narrowing_a_held_sales_report_applies_to_that_report(console, monkeypatch) -> None:
-    text, log = lane._say_all(console, monkeypatch, _sales(), "sales report for the customer")
-    assert [n for n, _ in log] == ["crm_sales_report"], log
-    assert "all products" in text.lower(), text  # the held report is the all-products one
-    narrow = _parser_output(
+def _present(body: dict[str, Any]) -> str:
+    """A route body through the real presenter, as production does."""
+    import json
+
+    from sorento_crm_mcp.presenters import present_response
+
+    return present_response("crm_sales_report", json.dumps(body))
+
+
+#: A real, empty sales report body: the route answered 200 and nothing was delivered.
+EMPTY_REPORT: dict[str, Any] = {
+    "status": "ok", "message": None, "basis": "delivered", "customer_name": lane.CUSTOMER_NAME, "customer_count": 1,
+    "product_code": EXACT, "product_codes": [EXACT], "channel": None, "channel_shown": False,
+    "location_token": None, "warehouse_codes": [], "date_from": "2026-09-01", "date_to": "2026-09-30",
+    "grain": "month", "total": {"qty": 0, "amount": 0.0}, "periods": [], "group_by": None, "rows": [],
+    "more": 0, "options": [],
+}
+
+
+def _route_calls(console, monkeypatch, answer):
+    """Install after the report is held: every later `crm_sales_report` call goes to `answer(args)`,
+    which returns the raw route string or raises. Returns the list of (name, args) the lane sent."""
+    seen: list[tuple[str, dict[str, Any]]] = []
+    real_factory = lane._REAL_FETCH_SERVICES
+
+    def _factory(*, mcp_call):
+        def _route(name: str, args: dict[str, Any]) -> Any:
+            seen.append((name, dict(args)))
+            if name == "crm_sales_report":
+                return answer(args)
+            return mcp_call(name, args)
+
+        return real_factory(mcp_call=_route)
+
+    monkeypatch.setattr(lane, "FetchServices", _factory)
+    return seen
+
+
+def _narrow(*entities: dict[str, Any], **kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
         domain_hint="order", intent_hint="check_order", order_status="sales_ranking", ranking_drill="scoped",
-        entities=[lane._hit(EXACT, "product")], group_by=None, **SEP,
+        entities=list(entities) or [lane._hit(EXACT, "product")], group_by=None, **SEP,
     )
-    text, log = lane._say_all(console, monkeypatch, narrow, "only this one")
+    base.update(kw)
+    return _parser_output(**base)
+
+
+def _hold(console, monkeypatch, qf=None) -> None:
+    text, log = lane._say_all(console, monkeypatch, qf or _sales(), "sales report for the customer")
+    assert [n for n, _ in log] == ["crm_sales_report"], (log, text)
+
+
+def test_a_a_narrowing_a_held_sales_report_applies_to_that_report(console, monkeypatch) -> None:
+    """The narrowed product is a real row (the harness seeds SRTWT7408) and the route answers a real empty report (200, no periods),
+    so "No sales found." comes through the report's own miss path, not a 404 or an error."""
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    text, _calls = console.say(_narrow(), "only this one")
     assert "I don't have a ranking" not in text, text
-    sent = [a for n, a in log if n in ("crm_sales_report", "crm_report")]
-    assert sent, (log, text)
+    sent = [a for n, a in seen if n in ("crm_sales_report", "crm_report")]
+    assert sent, (seen, text)
     assert sent[0].get("product_code") == EXACT, sent[0]
     assert sent[0].get("customer_ids") == [console.ids["customer"]], sent[0]  # the held report's own filter stays
     assert "No sales found" in text, text
@@ -216,3 +265,136 @@ def test_d_a_dealer_unlinked_between_turns_gets_the_own_account_line_not_figures
         "Sorry, that isn't under your account. I can only check on ZZT OWN DEALER SDN BHD.",
     ) or "your own account" in text or "isn't under your account" in text, (text, seen)
     assert "No sales found" not in text and "Delivered" not in text, text
+
+
+# ================================================================================ review of gate run 4 (R1 to R4)
+
+
+def _route_404() -> str:
+    import json
+
+    from sorento_crm_mcp.http_client import http_error_body
+
+    return _present(json.loads(http_error_body(
+        json.dumps({"detail": "product_not_found"}), status_code=404, path="/api/v1/sales-report", method="GET",
+    )))
+
+
+def _route_500() -> str:
+    import json
+
+    from sorento_crm_mcp.http_client import http_error_body
+
+    return _present(json.loads(http_error_body(
+        json.dumps({"detail": "boom"}), status_code=500, path="/api/v1/sales-report", method="GET",
+    )))
+
+
+def test_r1_a_404_on_the_narrowing_turn_is_not_an_empty_report(console, monkeypatch) -> None:
+    """An unknown code is a 404, not a sale of nothing: it keeps today's miss path (AC-1658, the
+    escalate offer), never "No sales found." with a result."""
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _route_404())
+    text, _calls = console.say(_narrow(), "only this one")
+    assert [n for n, _ in seen].count("crm_sales_report") == 1, seen  # the narrowing did run the report
+    assert "No sales found" not in text, text
+    assert text.strip(), text
+
+
+def test_r1_b_a_500_on_the_narrowing_turn_keeps_the_error_path(console, monkeypatch) -> None:
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _route_500())
+    text, _calls = console.say(_narrow(), "only this one")
+    assert [n for n, _ in seen].count("crm_sales_report") == 1, seen
+    assert "No sales found" not in text, text
+
+
+def test_r1_c_a_tool_that_raises_on_the_narrowing_turn_keeps_the_error_path(console, monkeypatch) -> None:
+    _hold(console, monkeypatch)
+
+    def _boom(args: dict[str, Any]) -> Any:
+        raise TimeoutError("sales report timed out")
+
+    seen = _route_calls(console, monkeypatch, _boom)
+    text, _calls = console.say(_narrow(), "only this one")
+    assert [n for n, _ in seen].count("crm_sales_report") == 1, seen
+    assert "No sales found" not in text, text
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "Error executing tool crm_sales_report: GET /api/v1/sales-report returned HTTP 404",
+        "Error executing tool crm_sales_report: GET /api/v1/sales-report returned HTTP 500",
+        "Error executing tool crm_sales_report: timed out",
+        {"error": "GET /sales-report returned HTTP 404", "status_code": 404, "has_result": False},
+        {"has_result": False, "items": []},
+    ],
+    ids=["404_text", "500_text", "timeout_text", "404_dict_no_response", "no_envelope_dict"],
+)
+def test_r1_d_a_result_with_no_report_envelope_is_never_an_empty_report(console, monkeypatch, result) -> None:
+    """The narrowing turn's tool answer is not a rendered report at all (a bare error string or a body with
+    no `response`). That is a failure or a miss on an unknown code, never "the product sold nothing"."""
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: result)
+    text, _calls = console.say(_narrow(), "only this one")
+    assert [n for n, _ in seen].count("crm_sales_report") == 1, seen
+    assert "No sales found" not in text, text
+
+
+def test_r2_a_report_held_for_one_location_keeps_it_when_narrowed(console, monkeypatch) -> None:
+    lane._other_customer(console, "ZZT ALPHA SDN BHD")
+    hold = _sales(entities=[lane._hit("ZZT ALPHA SDN BHD", "customer"), _e("BRW", "warehouse")])
+    text, log = lane._say_all(console, monkeypatch, hold, "sales report for the customer")
+    first = [a for n, a in log if n == "crm_sales_report"]
+    assert first and first[0].get("warehouse_codes") == ["BRW"], (first, text)  # the held report is for BRW
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    console.say(_narrow(), "only this one")
+    sent = [a for n, a in seen if n == "crm_sales_report"]
+    assert sent, seen
+    assert sent[0].get("product_code") == EXACT, sent[0]
+    assert sent[0].get("warehouse_codes") == ["BRW"], sent[0]
+    assert sent[0].get("location_token"), sent[0]
+
+
+def test_r3_a_customer_typed_in_the_narrowing_turn_beats_the_held_one(console, monkeypatch) -> None:
+    other = lane._other_customer(console, "ZZT BRAVO SDN BHD")
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    narrow = _narrow(lane._hit(EXACT, "product"), lane._hit("ZZT BRAVO SDN BHD", "customer"))
+    console.say(narrow, "only this one for the typed customer")
+    sent = [a for n, a in seen if n in ("crm_sales_report", "crm_report")]
+    assert sent, seen
+    assert sent[0].get("customer_ids") == [other], (sent[0], console.ids["customer"])
+
+
+def test_r4_a_channel_carried_through_a_detail_offer_survives_the_narrowing(console, monkeypatch) -> None:
+    """Held after a detail-offer re-run: the channel rode in as `outstanding_carried_channel`, not as
+    the turn's own `sales_channel`. Narrowing that report keeps it."""
+    from tests.chatbot.test_sales_report_lane import SALES_REPORT_HIT
+
+    hit = {**SALES_REPORT_HIT, "customer_name": lane.CUSTOMER_NAME, "channel": "dealer", "channel_shown": True,
+           "date_from": "2026-09-01", "date_to": "2026-09-30"}
+    seen: list[tuple[str, dict[str, Any]]] = []
+    real_factory = lane._REAL_FETCH_SERVICES
+
+    def _factory(*, mcp_call):
+        def _route(name: str, args: dict[str, Any]) -> Any:
+            if name == "crm_sales_report":
+                seen.append((name, dict(args)))
+                return _present(hit if len(seen) < 3 else EMPTY_REPORT)
+            return mcp_call(name, args)
+
+        return real_factory(mcp_call=_route)
+
+    monkeypatch.setattr(lane, "FetchServices", _factory)
+    console.say(_sales(sales_channel="dealer"), "dealer sales report for the customer")
+    pick = _parser_output(
+        message_type="casual", intent_hint=None, domain_hint=None, entities=[], reference_positions=[1],
+    )
+    console.say(pick, "1")  # the detail offer's re-run
+    assert len(seen) == 2 and seen[1][1].get("channel") == "dealer", seen  # precondition: channel carried
+    console.say(_narrow(), "only this one")
+    assert len(seen) == 3, seen
+    assert seen[2][1].get("product_code") == EXACT, seen[2]
+    assert seen[2][1].get("channel") == "dealer", seen[2]
