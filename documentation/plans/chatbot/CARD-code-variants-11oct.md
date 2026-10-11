@@ -1,6 +1,6 @@
 # CARD - product family relation in did-you-mean (CODE-VARIANTS)
 
-Status: card filed to the owner 11 Oct 2026, no code yet. Track: M (resolver ranking rule,
+Status: answered by the owner 11 Oct 2026 (Q1 a; Q2 current resolver, no LLM; Q3-Q5 current behaviour, minimal change). Build per PLAN-code-variants.md. Track: L (migration).
 chatbot reply content changes; L if Q1 lands as a new column, which needs a migration).
 
 ## The miss being fixed
