@@ -149,4 +149,27 @@ def test_single_line_header_block_is_not_a_header():
 
 
 def test_grader_version_10():
-    assert GRADER_VERSION == 10
+    assert GRADER_VERSION >= 10
+
+
+# ---- round 19: bold header lines ----
+BOLD = ("*Customer:* all\n*Product:* TESTCODE-1, TESTCODE-1-200\n*Delivery date:* 01/01/2026 to 31/12/2026\n\n"
+        "*Total:* Qty 4,165")
+
+
+def test_bold_header_echo_sole_evidence_is_wrong():
+    assert verdict(BOLD, must=[{"code": "TESTCODE-1"}], text="Only model TESTCODE-1").label == "wrong"
+
+
+def test_bold_header_echo_plus_non_echo_number_is_correct():
+    v = verdict(BOLD, must=[{"code": "TESTCODE-1"}, {"number": 4165}], text="Only model TESTCODE-1")
+    assert v.label == "correct"
+
+
+def test_bold_line_with_digit_label_is_not_a_header():
+    v = verdict("*TESTCODE-1:* 5\n*Customer:* all\n\nsomething", must=[{"code": "TESTCODE-1"}], text="Only model TESTCODE-1")
+    assert v.label == "correct"
+
+
+def test_grader_version_11():
+    assert GRADER_VERSION == 11
