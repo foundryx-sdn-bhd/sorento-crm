@@ -1,7 +1,7 @@
 # PLAN: resolver probes for SO number, customer PO ref, our PO number, purchase request (REF-PROBES)
 
-Status: Phase 3 done (reviewer READY, security-reviewer READY, round 2); awaiting crew eval gate + owner hand test. Track: M feature, LEAD pattern. No UI. Parser prompt publish
-migration only (no schema change). Security review required (new read route + MCP tool).
+Status: Phase 3 done (reviewer READY, security-reviewer READY, round 2); per-step eval gate on v58 PASSED; round 4 (cloud): main merged, REF_KINDS rebuilt on the v56 ablation text (`rkind_0002_parser_ref_kinds_v56`, unlabelled, needs its own eval run before promotion); awaiting round-3/4 review + owner hand test. Track: M feature, LEAD pattern. No UI. Parser prompt publish
+migrations only (no schema change). Security review required (new read route + MCP tool).
 
 UAC: `ref-probes-acceptance-criteria.md`. Card: `ref-probes-behaviour-card.md`.
 Origin: owner 11 Oct architecture review (PR #1566, section #refres).
