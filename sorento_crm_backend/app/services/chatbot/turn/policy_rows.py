@@ -349,6 +349,23 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
         supported=True,
         ladder=[],
     ),
+    # CA-3 (chat analytics in the bot): what customers ask the bot, over `crm_report_ask`
+    # `dataset=chat`. No switch words (the parser's `chat_report` intent names it). Seeded
+    # onto a live database by migration `ca3_0002_chat_analytics_domain`; this copy is the
+    # blank-schema fallback, as the `sales` row's is.
+    dict(
+        name="chat_analytics",
+        label="chat analytics",
+        intents=["chat_report"],
+        tools=["crm_report_ask"],
+        escalation_team_code="customer_service",
+        switch_words=[],
+        narrowing={},
+        # answer.DOMAIN_GRANT_REQUIRED["chat_analytics"]: the grant the whole domain is read under.
+        reveal_key="chatbot.analytics",
+        supported=True,
+        ladder=[],
+    ),
 ]
 
 # lanes/business/fetch.DATE_PARAMS's own keys - which tools take a date window. A
