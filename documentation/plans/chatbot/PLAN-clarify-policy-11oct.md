@@ -37,6 +37,13 @@ appending onto the wording-layer text (PROMPT-DYNAMIC #1405), never rebuilding f
 constant. Crew-note on #1473: the second to merge keeps ONE copy of the paragraph. Release step:
 owner promotes the version.
 
+## Release step (one ordered step, in the PR body)
+
+1. Crew's eval gate on the clp_0002 parser version (DEV, dev key).
+2. Owner promotes that version to `production`.
+3. Immediately after: `UPDATE chatbot_clarify_policy SET mode='ask', updated_by='release CLARIFY-POLICY',
+   updated_at=now() WHERE ask_kind='carry_unclear';`
+
 ## Dropped by ruling
 
 v1 S2 promotion level (Q2), v1 S3 attachment-type default (Q3), v1 S4 DO / SO period default (Q1),

@@ -89,7 +89,7 @@ Only kinds whose alternative already exists in code get more than one allowed mo
 | `do_period`, `so_period` | `ask` | `default` = newest 20, no window: the per-contact skip switch path (`do_ask.py:101`, `so_status.py:350`) |
 | `outstanding_scope` | `ask` | `default` = both (`lanes/business/__init__.py:1963`) |
 | `carry_combine` (NEW, R2) | `ask` (owner's rule) | `carry` (today), `drop` |
-| `carry_unclear` (NEW, Q9) | `ask` (owner's rule) | `carry` (today), `drop` |
+| `carry_unclear` (NEW, Q9) | `carry` until the parser version is promoted, then `ask` (owner's rule; crew ruling 11 Oct) | `ask`, `drop` |
 | `generic_menu` | `default` (Q5: answer the subject) | `ask` (today's menu) |
 | every other kind | its one current mode | none yet; a default gets built when the owner asks for one |
 

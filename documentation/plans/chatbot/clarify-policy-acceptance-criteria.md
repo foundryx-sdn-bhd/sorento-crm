@@ -22,8 +22,10 @@ marked "contains".
 - AC-110 A table `chatbot_clarify_policy` exists with columns `ask_kind` (PK), `label`, `mode`,
   `allowed_modes`, `default_note`, `repeat_limit`, `updated_at`, `updated_by`; added by an additive
   migration that seeds 31 rows from ONE constant list in code (the card's table), each with today's
-  mode, except `generic_menu` / `entities_only` = `default` (Q5) and `carry_combine` /
-  `carry_unclear` = `ask` (R2, Q9).
+  mode, except `generic_menu` / `entities_only` = `default` (Q5) and `carry_combine` = `ask` (R2).
+  `carry_unclear` seeds `carry` (crew ruling 11 Oct): flipped to `ask` in the release step that
+  promotes the clp_0002 parser version, because the production parser sets `continuation` only from
+  that version on.
 - AC-111 `mode` must be one of the row's `allowed_modes` (DB CHECK or trigger plus a service-level
   check); an UPDATE to a mode outside it fails.
 - AC-112 Allowed modes: `do_period`, `so_period` = {ask, default}; `outstanding_scope` = {ask,
@@ -77,7 +79,7 @@ follow-up, AC-147), or the turn is a REFINE of the held question
   different kind B: the bot fetches NOTHING and replies exactly
   "<Ask label> for <B>: only <A> (from earlier) or all <A plural>?\n1. Only <A>\n2. All <A plural>"
   (e.g. "Delivery for ZZT TRADING: only ZZT391 (from earlier) or all products?").
-- AC-141 (`carry_unclear` = ask, seed) Carried A, NOT clear, no new subject: the bot fetches NOTHING
+- AC-141 (`carry_unclear` = ask, after the release flip; seed `carry` keeps the carry and asks nothing) Carried A, NOT clear, no new subject: the bot fetches NOTHING
   and replies exactly "<Ask label>: for <A> (from earlier) or all <A plural>?\n1. <A>\n2. All
   <A plural>" (e.g. "Delivery today: for ZZT391 (from earlier) or all products?"). The ask label
   carries the parsed date words the parser already resolves (e.g. "today"), from parsed fields.
@@ -85,6 +87,8 @@ follow-up, AC-147), or the turn is a REFINE of the held question
   true): no question; the ask runs with A (today's carry).
 - AC-143 Answer position 1 (or the parser's pick of it) runs the ask with A kept; position 2 or a
   parser `all` runs it without A (dropped from this ask's focus). No keyword reading of the reply.
+- AC-144b A contact's OWN linked customer on the focus is never a carried subject (dealer naming a
+  product), including sessions stored before this lane.
 - AC-144 No question when: the message restates A; A and B are the same kind (a new customer
   replaces the old one); no carried subject; A is not a kind the new domain accepts.
 - AC-145 Mode `carry` on either row = today's behaviour (kept, no ask); `drop` = A dropped, no ask.
