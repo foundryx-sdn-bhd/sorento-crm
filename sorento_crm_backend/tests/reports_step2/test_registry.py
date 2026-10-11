@@ -87,3 +87,29 @@ def test_ac8_get_of_an_unknown_key_raises_key_error():
 
     with pytest.raises(KeyError):
         measures.get("zzt_no_such_measure")
+
+
+def test_review_dealer_dimensions_must_be_a_subset_of_the_ask_dealer_keys():
+    from app.services.reports import measures
+
+    try:
+        with pytest.raises(ValueError):
+            measures.register(
+                _fake("zzt_bad_dealer", dimensions=("product", "customer"), dealer_dimensions=("customer",))
+            )
+        assert "zzt_bad_dealer" not in measures.MEASURES
+    finally:
+        measures.MEASURES.pop("zzt_bad_dealer", None)
+    assert "zzt_bad_dealer" not in measures.MEASURES
+
+
+def test_review_a_grant_must_be_a_known_grant():
+    from app.services.reports import measures
+
+    assert "sales_orders.sales_report" in measures.KNOWN_GRANTS
+    try:
+        with pytest.raises(ValueError):
+            measures.register(_fake("zzt_bad_grant", grant="zzt.unknown"))
+    finally:
+        measures.MEASURES.pop("zzt_bad_grant", None)
+    assert "zzt_bad_grant" not in measures.MEASURES

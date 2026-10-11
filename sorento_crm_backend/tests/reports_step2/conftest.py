@@ -25,7 +25,7 @@ def fake_measure():
 
     m = measures.Measure(
         key="zzt_fake_measure", label="ZZT fake", synonyms=("zzt",), basis="delivered",
-        figure="amount", dimensions=("product",), grant="sales_orders.sales_report",
+        figure="amount", dimensions=("product", "month"), grant="sales_orders.sales_report",
         dealer_dimensions=("product",), run=_run,
     )
     measures.register(m)
@@ -38,3 +38,30 @@ def fake_measure():
 class SimpleCalls:
     def __init__(self, measure, calls):
         self.measure, self.calls = measure, calls
+
+
+@pytest.fixture
+def register_fake():
+    """Factory: registers a fake measure with the given overrides, removes all afterwards."""
+    from app.services.reports import measures
+
+    made: list[str] = []
+
+    def _make(key, **over):
+        base = dict(
+            key=key, label="ZZT fake", synonyms=("zzt",), basis="delivered", figure="amount",
+            dimensions=("product", "month"), grant="sales_orders.sales_report",
+            dealer_dimensions=("product",),
+            run=lambda db, **kw: {**ask._empty(), "rows": [], "total": {"qty": 1, "amount": 1.0}},
+        )
+        base.update(over)
+        m = measures.Measure(**base)
+        measures.register(m)
+        made.append(key)
+        return m
+
+    try:
+        yield _make
+    finally:
+        for k in made:
+            measures.MEASURES.pop(k, None)

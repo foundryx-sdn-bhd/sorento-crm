@@ -86,6 +86,7 @@ def test_ac2_unknown_measure_is_422_listing_the_valid_keys(client, db):
 def test_ac2_missing_measure_is_422(client, db):
     resp = _report(client, _full(db))
     assert resp.status_code == 422, resp.text
+    assert "required" in resp.text.lower() and "Unknown measure" not in resp.text, resp.text
 
 
 # ------------------------------------------------------------------ AC-3
@@ -184,8 +185,44 @@ def test_ac6_a_group_by_inside_the_measures_dimensions_is_served(client, db, fak
 def test_ac5_a_dealer_outside_the_fake_measures_dealer_dimensions_is_403(client, db, fake_measure):
     w = _ranking_world(db)
     resp = _report(client, _dealer(db, w), measure="zzt_fake_measure", group_by="month", top_n=3)
-    assert resp.status_code in (403, 422), resp.text
+    assert resp.status_code == 403 and _code(resp) == "report_dimension_not_allowed", resp.text
     assert fake_measure.calls == []
+
+
+def test_review_a_measures_own_grant_is_enforced(client, db, register_fake):
+    """A contact holding the sales report grant but not the measure's grant is refused."""
+    m = register_fake("zzt_other_grant", grant="zzt.other")
+    resp = _report(client, _full(db), measure=m.key)
+    assert resp.status_code == 403 and _code(resp) == "sales_report_not_enabled", resp.text
+
+
+def test_review_a_basis_the_ask_engine_does_not_know_is_served_with_the_measures_label(client, db, register_fake):
+    m = register_fake("zzt_pending_m", basis="zzt_pending", label="Pending things")
+    resp = _report(client, _full(db), measure=m.key)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["basis_label"] == "Pending things", resp.text
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "other_customer",
+        {"sales_agent_ids": ["00000000-0000-4000-8000-000000000001"]},
+        {"customer_agent_ids": ["00000000-0000-4000-8000-000000000001"]},
+        {"warehouse_codes": ["ZZT-WH"]},
+        {"channel": "dealer"},
+    ],
+)
+def test_review_a_dealer_may_not_widen_with_staff_filters_or_another_customer(client, db, extra):
+    from tests._pg_fixture import unique_code
+    from tests._sales_report_do_seed import seed_customer
+
+    w = _ranking_world(db)
+    if extra == "other_customer":
+        extra = {"customer_ids": [seed_customer(db, name=unique_code("OtherCust")).id]}
+        db.commit()
+    resp = _report(client, _dealer(db, w), measure="delivered_amount", **extra)
+    assert resp.status_code == 403, resp.text
 
 
 # ------------------------------------------------------------------ AC-10 rate limit
