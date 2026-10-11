@@ -1829,6 +1829,15 @@ def _http_error_envelope(tool_name: str, data: dict) -> dict:
     }
 
 
+#: `crm_report`'s `report_kind` -> the tool whose presenter renders it (a ranking is `crm_report_ask`'s).
+_REPORT_KIND_TOOLS = {
+    "outstanding": "crm_outstanding_report",
+    "sales_report": "crm_sales_report",
+    "sales_analysis": "crm_sales_analysis",
+    "low_stock": "crm_low_stock_report",
+}
+
+
 def present_response(tool_name: str, raw: str) -> str:
     """Transform a sanitized tool JSON string into the render envelope JSON string.
 
@@ -1850,6 +1859,17 @@ def present_response(tool_name: str, raw: str) -> str:
     # own `code` / `detail` are what the operator reads.
     if isinstance(data.get("status_code"), int) and data["status_code"] >= 400:
         return json.dumps(_http_error_envelope(tool_name, data))
+
+    # REPORTS-STEP2 S4: `crm_report` renders each `report_kind` with the presenter that kind uses
+    # today, so the reply is the old tool's, word for word.
+    if tool_name == "crm_report":
+        kind = data.get("report_kind")
+        if kind == "low_stock" and data.get("status") == "no_snapshot":
+            return json.dumps({
+                "result_type": "low_stock_report", "response": str(data.get("message") or ""),
+                "attachments": [], "has_result": True,
+            })
+        tool_name = _REPORT_KIND_TOOLS.get(kind, "crm_report_ask")
 
     # S4 point 5 (AC-1114b): `crm_outstanding_report` never goes through the
     # generic item/field envelope below - the report's shape (two named

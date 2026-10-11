@@ -34,6 +34,7 @@ from app.models.sales_agent import SalesAgent
 from app.schemas.report_ask import ReportAskResponse
 from app.services.contact_brand_scope import contact_brand_scope
 from app.services.error_handler import AppException, handle_not_found
+from app.api.v1.order_management import report_kinds  # noqa: F401  (registers the non-ranking measures)
 from app.services.reports import ask, measures
 from app.services.sales_report_service import TOP_SELLING_N_CEILING, _resolve_products
 from app.services.uuid_list_param import parse_uuid_list
@@ -506,6 +507,52 @@ def report_ask(
     )
 
 
+#: The refusal code an old route used for a missing reveal grant, so `/report` answers the same.
+_GRANT_CODES = {
+    "sales_orders.sales_report": "sales_report_not_enabled",
+    "sales_orders.outstanding": "outstanding_not_enabled",
+    "scm.low_stock_report": "low_stock_report_not_enabled",
+}
+_KIND_ALWAYS = frozenset({"measure", "contact_id", "space_id", "carried"})
+
+
+def _serve_kind(request: Request, db: Session, m: measures.Measure, contact_id: Optional[str], space_id: Optional[str]):
+    """A non-ranking measure: the same entry gates as `_serve`, the measure's grant, then its own
+    `run`, which reuses the old route's or service's guards. The body is that route's own plus
+    `report_kind`."""
+    from fastapi.encoders import jsonable_encoder
+
+    contact_id = (contact_id or "").strip() or None
+    space_id = (space_id or "").strip() or None
+    require_contact_identity_pair(contact_id, space_id)
+    if not (contact_id and space_id):
+        raise AppException(
+            422, "contact_id and space_id are required", detail="contact_id, space_id", code="contact_identity_required"
+        )
+    if not request.headers.get("X-API-Key"):
+        raise AppException(403, "This route is for the chatbot only", code="api_key_required")
+    axis = (request.query_params.get("group_by") or "").strip().lower()
+    if axis and "group_by" in m.params and axis not in m.dimensions:
+        raise _unprocessable(f"Unknown group_by value '{axis}'", "unknown_group_by", _allowed(m.dimensions))
+    unsupported = [k for k in request.query_params.keys() if k not in m.params | _KIND_ALWAYS]
+    if unsupported:
+        names = ", ".join(unsupported)
+        raise _unprocessable(f"{names} not supported for measure '{m.key}'", "unsupported_param", names)
+    from app.services.contact_field_reveal_service import granted_keys
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+    keys = granted_keys(db, resolved) if resolved else []
+    if m.grant not in keys:
+        raise AppException(403, "Not enabled for your account.", code=_GRANT_CODES.get(m.grant, "report_not_enabled"))
+    brand_scope = contact_brand_scope(db, contact_id, space_id)
+    if brand_scope:
+        set_brand_scope(db, brand_scope)
+    params = {k: request.query_params.getlist(k) for k in request.query_params.keys() if k not in _KIND_ALWAYS}
+    body = m.run(db, params=params, contact_id=contact_id, space_id=space_id)
+    return JSONResponse(content=jsonable_encoder({**body, "report_kind": m.kind}))
+
+
 @router.get("/report")
 def report(
     request: Request,
@@ -536,6 +583,10 @@ def report(
     current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
     db: Session = Depends(get_db),
 ):
+    picked = measures.MEASURES.get((measure or "").strip().lower())
+    if picked is not None and picked.kind != "ranking":
+        return _serve_kind(request, db, picked, contact_id, space_id)
+
     def resolve() -> _Spec:
         key = (measure or "").strip().lower()
         if not key:

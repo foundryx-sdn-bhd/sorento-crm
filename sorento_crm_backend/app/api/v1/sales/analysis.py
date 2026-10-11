@@ -195,7 +195,21 @@ def _answer(result, *, by_month, period_start: date, as_at: date, company_name: 
     }
 
 
-def _prepare(
+@dataclass
+class _Read:
+    """The figures half of an ask, before any file: what `_prepare` goes on to export."""
+
+    answer: Dict[str, Any]
+    resolved: Any
+    company_id: str
+    definition: Any
+    params: Dict[str, Any]
+    view: Any
+    file_view: Any
+    grant: frozenset
+
+
+def read_answer(
     db: Session,
     *,
     rows: str,
@@ -208,21 +222,17 @@ def _prepare(
     n: Optional[int],
     contact_id: str,
     space_id: str,
-    principal_id: str,
-) -> Union[Dict[str, Any], _Prepared]:
-    """Every blocking step, on a worker thread (the low stock route's security B1 shape)."""
-    from app.api.v1.reports.reports import _export_filename
-    from app.config import settings
+) -> Union[Dict[str, Any], _Read]:
+    """Every gate and the figures, nothing written: a terminal answer dict (`busy` / `refused`
+    / `clarify` / `error`), or the `_Read` the file path goes on from. `/report` (measure
+    `sales_value`) stops here."""
     from app.models.access import RespondContactCustomer
-    from app.models.base import set_company_scope
     from app.models.company import Company, RespondContactCompany
     from app.schemas.report import ReportViewConfig
-    from app.services import queue_service, rate_limit
+    from app.services import rate_limit
     from app.services.contact_field_reveal_service import granted_keys
-    from app.services.download_service import DownloadService
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
     from app.services.reports import engine, registry as reg
-    from app.tasks.report_export_tasks import generate_report_xlsx
 
     _validate(rows, cols, basis, date_from, date_to, n)
     if channel is not None and channel not in ("dealer", "project"):
@@ -342,6 +352,43 @@ def _prepare(
         col_label=definition.dataset.column(AXES[cols]).label,
         n=n,
     )
+
+    return _Read(answer=answer, resolved=resolved, company_id=company_id, definition=definition,
+                 params=params, view=view, file_view=file_view, grant=grant)
+
+
+def _prepare(
+    db: Session,
+    *,
+    rows: str,
+    cols: str,
+    channel: Optional[str],
+    basis: Optional[str],
+    company: Optional[str],
+    date_from: Optional[date],
+    date_to: Optional[date],
+    n: Optional[int],
+    contact_id: str,
+    space_id: str,
+    principal_id: str,
+) -> Union[Dict[str, Any], _Prepared]:
+    """Every blocking step, on a worker thread (the low stock route's security B1 shape)."""
+    from app.api.v1.reports.reports import _export_filename
+    from app.config import settings
+    from app.models.base import set_company_scope
+    from app.services import queue_service
+    from app.services.download_service import DownloadService
+    from app.services.reports import engine
+    from app.tasks.report_export_tasks import generate_report_xlsx
+
+    read = read_answer(
+        db, rows=rows, cols=cols, channel=channel, basis=basis, company=company,
+        date_from=date_from, date_to=date_to, n=n, contact_id=contact_id, space_id=space_id,
+    )
+    if isinstance(read, dict):
+        return read
+    answer, resolved, company_id, definition = read.answer, read.resolved, read.company_id, read.definition
+    params, file_view, grant = read.params, read.file_view, read.grant
 
     # --- the file: the same params, the same view ------------------------------------
     owner_user_id = str(db.execute(text(

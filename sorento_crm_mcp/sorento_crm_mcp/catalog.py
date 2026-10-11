@@ -865,12 +865,18 @@ CATALOG: tuple[ToolSpec, ...] = (
     ToolSpec(
         "crm_report",
         (
-            "ONE named report over sales order lines: pick a `measure` from the registry, "
-            "rank or total it for a REQUIRED period, with the common filters. Same answer, "
-            "gates and reply shape as crm_report_ask. `measure` is REQUIRED, one of: "
+            "ONE named report: pick a `measure` from the registry. `measure` is REQUIRED, one of: "
             "ordered_amount, ordered_qty, delivered_amount, delivered_qty, outstanding_amount, "
-            "outstanding_qty (an unknown key is 422 listing the valid ones); ask the person "
-            "which measure when they did not say.\n\n"
+            "outstanding_qty (rank or total sales order lines for a REQUIRED period, with the "
+            "common filters; same answer, gates and reply shape as crm_report_ask), "
+            "order_outstanding (SO backlog and DO pending for a product, customer or brand: "
+            "`scope` so | do | both, no period), delivered_sales (delivered sales by DO date, "
+            "`group_by` customer | product | delivery_order | sales_agent), sales_value (sales "
+            "by month | year | channel as `group_by`, `basis` ordered | delivered | invoiced "
+            "REQUIRED, optional `company`), low_stock (the latest low stock snapshot, optional "
+            "`categories` and `suppliers`, no period; reads only). An unknown key is 422 listing the "
+            "valid ones, and a param the measure does not support is 422 naming it; ask the "
+            "person which measure when they did not say.\n\n"
             "REQUIRED: `date_from` and `date_to` (ISO dates; 422 `period_required` otherwise - "
             "ask the person which period, never guess one) and `contact_id` + `space_id`. "
             "`group_by` = customer | product | brand | category | sales_agent | location | "
@@ -893,7 +899,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "date_from", "date_to", "measure", "group_by", "top_n", "sort",
             "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
-            "customer_agent_ids", "carried",
+            "customer_agent_ids", "carried", "scope", "company", "customer_query",
+            "categories", "suppliers",
         ),
         domain="orders",
         related_tools=("crm_report_ask", "crm_sales_report"),

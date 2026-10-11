@@ -25,17 +25,23 @@ class Measure:
     #: `run(db, *, group_by, date_from, date_to, filters, warehouse_codes, policy,
     #: company_grants, sort, top_n)` returns the dict `ask.run_ask` returns.
     run: Callable
+    #: The shape of the body: ranking | outstanding | sales_report | sales_analysis | low_stock.
+    #: A non-ranking measure's `run` is `run(db, *, params, contact_id, space_id)` and returns that
+    #: kind's native body; `params` is the set of route params it supports (the route says 422
+    #: naming any other).
+    kind: str = "ranking"
+    params: frozenset = frozenset()
 
 
 MEASURES: dict[str, Measure] = {}
 
 
 #: The reveal grants a measure may name. A new report adds its own here, with review.
-KNOWN_GRANTS = frozenset({"sales_orders.sales_report"})
+KNOWN_GRANTS = frozenset({"sales_orders.sales_report", "sales_orders.outstanding", "scm.low_stock_report"})
 
 
 def register(measure: Measure) -> None:
-    if not set(measure.dealer_dimensions) <= ask.DEALER_KEYS:
+    if measure.kind == "ranking" and not set(measure.dealer_dimensions) <= ask.DEALER_KEYS:
         raise ValueError(f"Measure '{measure.key}': dealer_dimensions must be within the dealer keys")
     if measure.grant not in KNOWN_GRANTS:
         raise ValueError(f"Measure '{measure.key}': unknown grant '{measure.grant}'")

@@ -1,0 +1,189 @@
+"""The non-ranking measures behind `GET /api/v1/order-management/report` (REPORTS-STEP2 S4).
+
+Each row adapts the old tool's route or service to `run(db, *, params, contact_id, space_id)`
+and returns that route's own body, so every guard of the old route holds and the reply is the
+old tool's. `params` maps a route param name to its raw query values (always lists).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import date
+from typing import Any, Optional
+
+from sqlalchemy.orm import Session
+
+from app.services.error_handler import AppException
+from app.services.reports import measures
+from app.services.reports.measures import Measure
+
+_PAIR = ("contact_id", "space_id")
+
+
+def _one(params: dict, name: str) -> Optional[str]:
+    values = params.get(name) or []
+    return values[0] if values else None
+
+
+def _many(params: dict, name: str) -> Optional[list[str]]:
+    return list(params[name]) if params.get(name) else None
+
+
+def _body(response: Any) -> dict:
+    return json.loads(response.body)
+
+
+# ------------------------------------------------------------------------- outstanding
+
+
+def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, force_scope: Optional[str] = None):
+    from app.api.v1.order_management.orders import get_outstanding_report
+
+    response = asyncio.run(
+        get_outstanding_report(
+            product_code=_one(params, "product_code"),
+            product_codes=None,
+            scope=force_scope or _one(params, "scope") or "both",
+            customer_query=_one(params, "customer_query"),
+            customer_ids=_many(params, "customer_ids"),
+            warehouse_codes=_many(params, "warehouse_codes"),
+            brand_ids=_many(params, "brand_ids"),
+            order_date_from=None,
+            order_date_to=None,
+            detail=None,
+            location_token=None,
+            so_refused=False,
+            contact_id=contact_id,
+            space_id=space_id,
+            current_user={},
+            db=db,
+        )
+    )
+    return _body(response)
+
+
+# ------------------------------------------------------------------------- delivered sales
+
+
+def _delivered_sales(db: Session, *, params: dict, contact_id: str, space_id: str):
+    from app.api.v1.order_management.orders import get_sales_report
+
+    response = asyncio.run(
+        get_sales_report(
+            product_code=_one(params, "product_code"),
+            customer_query=_one(params, "customer_query"),
+            customer_ids=_many(params, "customer_ids"),
+            channel=_one(params, "channel"),
+            warehouse_codes=_many(params, "warehouse_codes"),
+            location_token=None,
+            date_from=_one(params, "date_from"),
+            date_to=_one(params, "date_to"),
+            group_by=_one(params, "group_by"),
+            contact_id=contact_id,
+            space_id=space_id,
+            current_user={},
+            db=db,
+        )
+    )
+    return _body(response)
+
+
+# ------------------------------------------------------------------------- sales value
+
+
+def _sales_value(db: Session, *, params: dict, contact_id: str, space_id: str):
+    from app.api.v1.sales import analysis
+
+    def _date(name: str) -> Optional[date]:
+        raw = _one(params, name)
+        try:
+            return date.fromisoformat(raw) if raw else None
+        except ValueError:
+            raise AppException(422, f"{name} must be an ISO date", code="invalid_date")
+
+    top_n = _one(params, "top_n")
+    read = analysis.read_answer(
+        db,
+        rows=(_one(params, "group_by") or "channel").strip().lower(),
+        cols="year",
+        channel=(_one(params, "channel") or "").strip().lower() or None,
+        basis=(_one(params, "basis") or "").strip().lower() or None,
+        company=_one(params, "company"),
+        date_from=_date("date_from"),
+        date_to=_date("date_to"),
+        n=int(top_n) if top_n else None,
+        contact_id=contact_id,
+        space_id=space_id,
+    )
+    return read if isinstance(read, dict) else read.answer
+
+
+# ------------------------------------------------------------------------- low stock
+
+
+def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str):
+    """The latest completed run's read view. Reads only: no run, download row or job."""
+    from app.api.v1.scm.low_stock_report import SUPPLIER_GRANT
+    from app.models.scm import ReorderRun
+    from app.services.contact_field_reveal_service import granted_keys
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+    from app.services.scm import low_stock_report_service
+
+    resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+    include_supplier = SUPPLIER_GRANT in (granted_keys(db, resolved) if resolved else [])
+    suppliers = _many(params, "suppliers")
+    if suppliers and not include_supplier:
+        # The Supplier column is hidden from this contact; filtering by it would leak what it hides.
+        return {"status": "error", "message": "Could not run the low stock report right now."}
+    # The latest completed run of the contact's company (what the reorder page opens to), read only.
+    run = (
+        db.query(ReorderRun)
+        .filter(ReorderRun.status == "completed")
+        .order_by(ReorderRun.started_at.desc().nullslast(), ReorderRun.created_at.desc())
+        .first()
+    )
+    if run is None:
+        return {"status": "no_snapshot", "message": "There is no low stock snapshot yet."}
+    # Without the Supplier column the view's default supplier split is refused, so it is not split.
+    split = {} if include_supplier else {"split": "none"}
+    view = low_stock_report_service.build_low_stock_view(
+        db, run_id=str(run.id), include_supplier=include_supplier, suppliers=suppliers,
+        categories=_many(params, "categories"), **split,
+    )
+    body = json.loads(json.dumps(view, default=str))
+    stamp = run.started_at or run.created_at
+    body["run_date"] = stamp.date().isoformat() if stamp else None
+    return body
+
+
+# ------------------------------------------------------------------------- the rows
+
+_OUTSTANDING_PARAMS = frozenset({"product_code", "customer_query", "customer_ids", "warehouse_codes", "brand_ids", "scope"})
+
+for _row in (
+    Measure(
+        key="order_outstanding", label="Outstanding orders by subject", synonyms=("outstanding", "backlog"),
+        basis="outstanding", figure="qty", dimensions=(), grant="sales_orders.outstanding",
+        dealer_dimensions=(), run=_outstanding, kind="outstanding", params=_OUTSTANDING_PARAMS,
+    ),
+    Measure(
+        key="delivered_sales", label="Delivered sales", synonyms=("sales report", "delivered"),
+        basis="delivered", figure="amount", dimensions=("customer", "product", "delivery_order", "sales_agent"),
+        grant="sales_orders.sales_report", dealer_dimensions=("customer", "product", "delivery_order"),
+        run=_delivered_sales, kind="sales_report",
+        params=frozenset({"product_code", "customer_query", "customer_ids", "channel", "warehouse_codes",
+                          "date_from", "date_to", "group_by"}),
+    ),
+    Measure(
+        key="sales_value", label="Sales value", synonyms=("sales analysis", "sales by month"),
+        basis="ordered", figure="amount", dimensions=("month", "year", "channel"),
+        grant="sales_orders.sales_report", dealer_dimensions=(), run=_sales_value, kind="sales_analysis",
+        params=frozenset({"group_by", "basis", "channel", "company", "date_from", "date_to", "top_n"}),
+    ),
+    Measure(
+        key="low_stock", label="Low stock", synonyms=("low stock", "reorder"),
+        basis="stock", figure="qty", dimensions=(), grant="scm.low_stock_report", dealer_dimensions=(),
+        run=_low_stock, kind="low_stock", params=frozenset({"categories", "suppliers"}),
+    ),
+):
+    measures.register(_row)
