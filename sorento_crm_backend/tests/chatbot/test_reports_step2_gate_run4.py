@@ -260,10 +260,7 @@ def test_d_a_dealer_unlinked_between_turns_gets_the_own_account_line_not_figures
         entities=[lane._hit(EXACT, "product")], group_by=None, **SEP,
     )
     text, _calls = console.say(narrow, "only this one")
-    assert text.strip() in (
-        "You can only see sales for your own account.",
-        "Sorry, that isn't under your account. I can only check on ZZT OWN DEALER SDN BHD.",
-    ) or "your own account" in text or "isn't under your account" in text, (text, seen)
+    assert text.strip() == "You can only see sales for your own account.", (text, seen)  # the copy row, chosen by the 403 code
     assert "No sales found" not in text and "Delivered" not in text, text
 
 

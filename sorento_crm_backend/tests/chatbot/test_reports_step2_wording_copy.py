@@ -25,7 +25,7 @@ from app.services import ai_prompt_registry
 from app.services.ai_prompt_registry import PROMPT_KEYS
 from app.services.chatbot_reply_copy import CHATBOT_REPLY_COPY
 from tests.chatbot import test_report_ask_lane as lane
-from tests.chatbot.test_report_ask_lane import PERIOD_Q, _e, _rank, console  # noqa: F401
+from tests.chatbot.test_report_ask_lane import PERIOD_Q, _e, _rank, console, console_no_grant  # noqa: F401
 from tests.chatbot.test_reports_step2_gate_fixes import _http_error, _payload, _reply_text, _run, _sales_payload
 from tests.chatbot.test_reports_step2_lane import _s2_harness  # noqa: F401  (autouse fixture by name)
 
@@ -241,12 +241,13 @@ def _script():
     return ScriptDirectory.from_config(cfg)
 
 
+SEED_REV = "rep2_0001_wording_seed"
+
+
 def _head_module():
     import importlib.util
 
-    script = _script()
-    (head,) = script.get_heads()
-    rev = script.get_revision(head)
+    rev = _script().get_revision(SEED_REV)
     spec = importlib.util.spec_from_file_location("zzt_wording_seed_migration", rev.path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -264,13 +265,16 @@ def _upgrade(session) -> None:
     session.expire_all()
 
 
-def test_the_chain_has_one_head_and_it_is_the_wording_seed_on_pab_0001() -> None:
-    heads = _script().get_heads()
+def test_the_chain_has_one_head_and_the_wording_seed_is_an_ancestor_of_it() -> None:
+    script = _script()
+    heads = script.get_heads()
     assert len(heads) == 1, heads
-    head = heads[0]
-    assert head != "pab_0001_parser_ablation", "no new revision sits on top of pab_0001_parser_ablation"
-    assert len(head) <= 32, head
-    assert _script().get_revision(head).down_revision == "pab_0001_parser_ablation"
+    assert len(SEED_REV) <= 32, SEED_REV
+    seed = script.get_revision(SEED_REV)
+    assert seed is not None and seed.down_revision, "the seed migration must chain onto a parent"
+    chain = {r.revision for r in script.walk_revisions(base="base", head=heads[0])}
+    assert SEED_REV in chain, "the wording seed is not an ancestor of the head"
+    assert seed.down_revision in chain, seed.down_revision
 
 
 def _clear(db) -> None:
@@ -326,3 +330,102 @@ def test_an_edited_row_keeps_its_edited_text_after_the_upgrade() -> None:
         assert label.version_id == v2.id
         assert db.query(AIPromptVersion).filter_by(name=key).count() == 2
         assert db.query(AIPromptVersion).filter_by(id=label.version_id).one().template == "The owner's edit for {{report}}."
+
+
+# ================================================================================ review round: pre-call refusals
+
+
+def test_w1_a_the_dealer_refusal_is_the_published_dimension_denied_line(console, bust) -> None:
+    lane._link_dealer(console)
+    db = console.session_factory()
+    try:
+        _publish(db, "chatbot_reply_report_dimension_denied", "EDITED: that breakdown is not for you.")
+    finally:
+        db.close()
+    text, calls = console.say(_rank(_e("Zzz", "sales_agent"), group_by="product"), "top products for agent Zzz")
+    assert calls == [], calls
+    assert text.strip() == "EDITED: that breakdown is not for you.", text
+
+
+def test_w1_b_the_not_enabled_line_before_any_call_is_the_published_copy(console_no_grant, bust) -> None:
+    db = console_no_grant.session_factory()
+    try:
+        _publish(db, "chatbot_reply_report_not_enabled", "EDITED: ask the office to switch sales reports on.")
+    finally:
+        db.close()
+    text, calls = console_no_grant.say(_rank(_e("Sorento", "brand")), "top 3 salesman for Sorento brand last month")
+    assert calls == [], calls
+    assert text.strip() == "EDITED: ask the office to switch sales reports on.", text
+
+
+# ================================================================================ review round: other languages
+
+ENGLISH_SUMMARY_WORDS = ("top ", "by amount", "this month", "sales agents", "sales agent", "quantity")
+
+
+def _say_in(console, language: str, qf: dict[str, Any]) -> str:
+    console.session_vars = {**console.session_vars, "variables": {**(console.session_vars.get("variables") or {}), "reply_language": language}}
+    text, _calls = console.say(qf, {"ms": "sepuluh teratas jualan untuk sorento bulan lepas", "zh": "sorento 前十名销售"}[language])
+    return text
+
+
+@pytest.mark.parametrize("language", ["ms", "zh"])
+def test_w2_a_the_period_re_ask_in_another_language_has_no_english_summary(console, language) -> None:
+    _say_in(console, language, _rank(_e("Sorento", "brand"), top_n=10, measure="amount", **NO_PERIOD))
+    text = _say_in(console, language, _rank(_e("Sorento", "brand"), top_n=20, measure="amount", **NO_PERIOD))
+    first = text.splitlines()[0]
+    body = CHATBOT_REPLY_COPY[f"report_period_missing.{language}"][1]
+    prefix = body.split("{{asked}}")[0]
+    assert first.startswith(prefix), (language, text)
+    assert not any(w in first.lower() for w in ENGLISH_SUMMARY_WORDS), first
+
+
+@pytest.mark.parametrize("language", ["ms", "zh"])
+def test_w2_b_the_give_up_in_another_language_has_no_english_example(console, language) -> None:
+    _say_in(console, language, _rank(_e("Sorento", "brand"), top_n=10, measure="amount", **NO_PERIOD))
+    _say_in(console, language, _rank(_e("Sorento", "brand"), top_n=20, measure="amount", **NO_PERIOD))
+    text = _say_in(console, language, _rank(_e("Sorento", "brand"), top_n=30, measure="amount", **NO_PERIOD))
+    body = CHATBOT_REPLY_COPY[f"report_period_give_up.{language}"][1]
+    assert text.startswith(body.split("{{example}}")[0]), (language, text)
+    assert not any(w in text.lower() for w in ENGLISH_SUMMARY_WORDS), text
+
+
+# ================================================================================ review round: held_ask repeats nothing
+
+
+def test_w3_held_ask_names_a_value_once_however_many_fields_carry_it() -> None:
+    from app.services.chatbot.lanes.business import report_ask
+
+    out = {
+        "group_by": None, "top_n": 20, "measure": "amount",
+        "report_ask_words": {"brand": ["Sorento"]},
+        "entities": [{"raw": "sorento", "hint": "brand", "current_message": True}],
+    }
+    text = report_ask.held_ask(out)
+    assert text.lower().count("sorento") == 1, text
+
+
+# ================================================================================ review round: the say wiring
+
+
+def test_w4_a_published_period_missing_changes_the_lane_reply(console, bust) -> None:
+    console.say(_rank(_e("Sorento", "brand"), top_n=10, measure="amount", **NO_PERIOD), "top 10 sorento")
+    db = console.session_factory()
+    try:
+        _publish(db, "chatbot_reply_report_period_missing", "EDITED dates please for {{asked}}.")
+    finally:
+        db.close()
+    text = _restated(console, top_n=20, measure="amount")
+    assert text.splitlines()[0].startswith("EDITED dates please for "), text
+
+
+def test_w4_b_a_published_give_up_changes_the_lane_reply(console, bust) -> None:
+    console.say(_rank(_e("Sorento", "brand"), top_n=10, measure="amount", **NO_PERIOD), "top 10 sorento")
+    _restated(console, top_n=20, measure="amount")
+    db = console.session_factory()
+    try:
+        _publish(db, "chatbot_reply_report_period_give_up", "EDITED giving up, try {{example}}.")
+    finally:
+        db.close()
+    text = _restated(console, top_n=30, measure="amount")
+    assert text.startswith("EDITED giving up, try "), text
