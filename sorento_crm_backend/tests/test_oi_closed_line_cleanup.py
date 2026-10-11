@@ -321,3 +321,32 @@ def test_cli_accepts_a_company_argument(api, monkeypatch):
     )
 
     assert code in (0, None)
+
+
+def test_a_row_updated_in_place_by_a_later_buy_decision_is_not_cancelled(api, monkeypatch):
+    """A re-decide with Buy > 0 on a line with one raised ORDER row updates that row IN PLACE, so
+    it keeps its old created_at (1 Oct). A later active decision (confirmed after the dropped
+    batch applied, 6 Oct) that covers the line with a Buy makes the row live: not cancelled,
+    not reported."""
+    from app.models.project_so import SOSupplyDecision
+
+    w = _world(api, monkeypatch)
+    row = w.rows["A"]
+    assert row.created_at == datetime(2026, 10, 1, 9, 0)
+    w.db.add(SOSupplyDecision(
+        id=str(uuid.uuid4()), company_id=w.world.company_id,
+        project_sales_order_id=w.order.id, revision_no=2, state="active",
+        line_snapshots=[{
+            "project_line_id": str(row.so_line_id), "line_no": 1,
+            "components": [{"kind": "buy", "qty": "40"}],
+        }],
+        confirmed_by=w.world.actor, confirmed_at=datetime(2026, 10, 8, 9, 0),
+    ))
+    w.db.commit()
+    w.calls.clear()
+
+    out = _run(w, apply=True)
+
+    w.db.expire_all()
+    assert w.db.get(OrderInquiryRow, row.id).state == INQUIRY_RAISED
+    assert str(row.id) not in _cancelled_ids(out)
