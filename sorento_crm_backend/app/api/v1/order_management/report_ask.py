@@ -10,8 +10,9 @@ own company arm.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -33,7 +34,7 @@ from app.models.sales_agent import SalesAgent
 from app.schemas.report_ask import ReportAskResponse
 from app.services.contact_brand_scope import contact_brand_scope
 from app.services.error_handler import AppException, handle_not_found
-from app.services.reports import ask
+from app.services.reports import ask, measures
 from app.services.sales_report_service import TOP_SELLING_N_CEILING, _resolve_products
 from app.services.uuid_list_param import parse_uuid_list
 
@@ -175,40 +176,43 @@ def _response(data: dict) -> JSONResponse:
     return JSONResponse(content=ReportAskResponse(**data).model_dump(mode="json"))
 
 
-@router.get("/report-ask")
-def report_ask(
+@dataclass(frozen=True)
+class _Spec:
+    """What a route resolves its measure to: the engine call and the cuts it allows."""
+
+    basis: str
+    measure: str
+    dimensions: tuple[str, ...]
+    dealer_dimensions: frozenset[str]
+    grant: str
+    run: Callable
+
+
+def _serve(
     request: Request,
-    date_from: Optional[date] = Query(None, description="First day of the period (ISO). Required."),
-    date_to: Optional[date] = Query(None, description="Last day of the period (ISO). Required."),
-    basis: str = Query(
-        DEFAULT_BASIS,
-        description="delivered | ordered | outstanding. All three rank sales order lines (the SO's own agent), "
-        "dated by the line's required date, else the SO date.",
-    ),
-    measure: str = Query("amount", description="amount | qty - what the ranking sorts by."),
-    group_by: Optional[str] = Query(
-        None,
-        description="customer | product | brand | category | sales_agent | location | channel | month. Absent = one total.",
-    ),
-    top_n: Optional[int] = Query(None, description=f"1 to {TOP_SELLING_N_CEILING}. Required with group_by."),
-    sort: str = Query("desc", description="desc (top) | asc (bottom)."),
-    product_code: Optional[str] = Query(None, description="Product code prefix, at least 3 characters."),
-    product_ids: Optional[list[str]] = Query(None, description="Product ids; ANDed with product_code."),
-    brand_ids: Optional[list[str]] = Query(None),
-    category_ids: Optional[list[str]] = Query(None),
-    sales_agent_ids: Optional[list[str]] = Query(None),
-    customer_ids: Optional[list[str]] = Query(None),
-    customer_agent_ids: Optional[list[str]] = Query(
-        None,
-        description="Customers whose assigned agent (the customer card) is one of these; 'none' = no agent.",
-    ),
-    warehouse_codes: Optional[list[str]] = Query(None),
-    channel: Optional[str] = Query(None, description="dealer | project"),
-    contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
-    space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
-    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
-    db: Session = Depends(get_db),
+    db: Session,
+    resolve: Callable[[], _Spec],
+    allowed_params: frozenset,
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    group_by: Optional[str],
+    top_n: Optional[int],
+    sort: str,
+    product_code: Optional[str],
+    product_ids: Optional[list[str]],
+    brand_ids: Optional[list[str]],
+    category_ids: Optional[list[str]],
+    sales_agent_ids: Optional[list[str]],
+    customer_ids: Optional[list[str]],
+    customer_agent_ids: Optional[list[str]],
+    warehouse_codes: Optional[list[str]],
+    channel: Optional[str],
+    contact_id: Optional[str],
+    space_id: Optional[str],
 ):
+    """Every gate and the shared param handling for `/report-ask` and `/report`; the two
+    routes differ only in how `resolve` turns their measure params into a `_Spec`."""
     contact_id = (contact_id or "").strip() or None
     space_id = (space_id or "").strip() or None
     require_contact_identity_pair(contact_id, space_id)
@@ -222,7 +226,7 @@ def report_ask(
     if not request.headers.get("X-API-Key"):
         raise AppException(403, "This route is for the chatbot only", code="api_key_required")
     for key in request.query_params.keys():
-        if key not in _PARAMS:
+        if key not in allowed_params:
             raise _unprocessable(f"Unknown parameter '{key}'", "unknown_param", key)
 
     if date_from is None or date_to is None:
@@ -234,21 +238,14 @@ def report_ask(
     if date_from > date_to:
         raise _unprocessable("date_from is after date_to", "date_range_inverted")
 
-    basis_norm = (basis or "").strip().lower()
-    if basis_norm not in ask.CATALOGUE:
-        raise _unprocessable(f"Unknown basis '{basis}'", "unknown_basis", _allowed(ask.CATALOGUE))
-    measure_norm = (measure or "").strip().lower()
-    if measure_norm not in ask.MEASURES:
-        raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(ask.MEASURES))
+    spec = resolve()
+    basis_norm, measure_norm = spec.basis, spec.measure
     sort_norm = (sort or "").strip().lower()
     if sort_norm not in ("desc", "asc"):
         raise _unprocessable(f"Unknown sort '{sort}'", "unknown_sort", _allowed(("desc", "asc")))
     group_norm = (group_by or "").strip().lower() or None
-    if group_norm is not None and group_norm not in ask.CATALOGUE[basis_norm]["dimensions"]:
-        raise _unprocessable(
-            f"Unknown group_by value '{group_by}'", "unknown_group_by",
-            _allowed(ask.CATALOGUE[basis_norm]["dimensions"]),
-        )
+    if group_norm is not None and group_norm not in spec.dimensions:
+        raise _unprocessable(f"Unknown group_by value '{group_by}'", "unknown_group_by", _allowed(spec.dimensions))
     if group_norm is not None and top_n is None:
         raise _unprocessable("A ranking needs top_n", "top_n_required")
     if top_n is not None and not 1 <= top_n <= TOP_SELLING_N_CEILING:
@@ -294,7 +291,7 @@ def report_ask(
 
     resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
     keys = granted_keys(db, resolved) if resolved else []
-    if GRANT not in keys:
+    if spec.grant not in keys:
         raise AppException(403, "Sales report is not enabled for your account.", code="sales_report_not_enabled")
 
     # Brand scope off the contact this route already resolved, whatever the key: the router
@@ -337,7 +334,7 @@ def report_ask(
     )
     if scoped is not None:
         outside = (
-            (group_norm is not None and group_norm not in ask.DEALER_KEYS)
+            (group_norm is not None and group_norm not in spec.dealer_dimensions)
             or bool(agents)
             or bool(card_agents)
             or bool(codes)
@@ -419,10 +416,8 @@ def report_ask(
     from app.services.stock_visibility import resolve_policy
 
     policy = resolve_policy(db, resolved, space_id) if resolved else None
-    data = ask.run_ask(
+    data = spec.run(
         db,
-        basis=basis_norm,
-        measure=measure_norm,
         group_by=group_norm,
         date_from=date_from,
         date_to=date_to,
@@ -434,3 +429,105 @@ def report_ask(
         top_n=top_n,
     )
     return _response({**data, **common, "filters": echo})
+
+
+@router.get("/report-ask")
+def report_ask(
+    request: Request,
+    date_from: Optional[date] = Query(None, description="First day of the period (ISO). Required."),
+    date_to: Optional[date] = Query(None, description="Last day of the period (ISO). Required."),
+    basis: str = Query(
+        DEFAULT_BASIS,
+        description="delivered | ordered | outstanding. All three rank sales order lines (the SO's own agent), "
+        "dated by the line's required date, else the SO date.",
+    ),
+    measure: str = Query("amount", description="amount | qty - what the ranking sorts by."),
+    group_by: Optional[str] = Query(
+        None,
+        description="customer | product | brand | category | sales_agent | location | channel | month. Absent = one total.",
+    ),
+    top_n: Optional[int] = Query(None, description=f"1 to {TOP_SELLING_N_CEILING}. Required with group_by."),
+    sort: str = Query("desc", description="desc (top) | asc (bottom)."),
+    product_code: Optional[str] = Query(None, description="Product code prefix, at least 3 characters."),
+    product_ids: Optional[list[str]] = Query(None, description="Product ids; ANDed with product_code."),
+    brand_ids: Optional[list[str]] = Query(None),
+    category_ids: Optional[list[str]] = Query(None),
+    sales_agent_ids: Optional[list[str]] = Query(None),
+    customer_ids: Optional[list[str]] = Query(None),
+    customer_agent_ids: Optional[list[str]] = Query(
+        None,
+        description="Customers whose assigned agent (the customer card) is one of these; 'none' = no agent.",
+    ),
+    warehouse_codes: Optional[list[str]] = Query(None),
+    channel: Optional[str] = Query(None, description="dealer | project"),
+    contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
+    db: Session = Depends(get_db),
+):
+    def resolve() -> _Spec:
+        basis_norm = (basis or "").strip().lower()
+        if basis_norm not in ask.CATALOGUE:
+            raise _unprocessable(f"Unknown basis '{basis}'", "unknown_basis", _allowed(ask.CATALOGUE))
+        measure_norm = (measure or "").strip().lower()
+        if measure_norm not in ask.MEASURES:
+            raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(ask.MEASURES))
+        return _Spec(
+            basis_norm, measure_norm, ask.CATALOGUE[basis_norm]["dimensions"], ask.DEALER_KEYS, GRANT,
+            lambda db, **kw: ask.run_ask(db, basis=basis_norm, measure=measure_norm, **kw),
+        )
+
+    return _serve(
+        request, db, resolve, _PARAMS,
+        date_from=date_from, date_to=date_to, group_by=group_by, top_n=top_n, sort=sort,
+        product_code=product_code, product_ids=product_ids, brand_ids=brand_ids,
+        category_ids=category_ids, sales_agent_ids=sales_agent_ids, customer_ids=customer_ids,
+        customer_agent_ids=customer_agent_ids, warehouse_codes=warehouse_codes, channel=channel,
+        contact_id=contact_id, space_id=space_id,
+    )
+
+
+@router.get("/report")
+def report(
+    request: Request,
+    date_from: Optional[date] = Query(None, description="First day of the period (ISO). Required."),
+    date_to: Optional[date] = Query(None, description="Last day of the period (ISO). Required."),
+    measure: Optional[str] = Query(None, description="A measure key from the registry. Required."),
+    group_by: Optional[str] = Query(
+        None,
+        description="customer | product | brand | category | sales_agent | location | channel | month. Absent = one total.",
+    ),
+    top_n: Optional[int] = Query(None, description=f"1 to {TOP_SELLING_N_CEILING}. Required with group_by."),
+    sort: str = Query("desc", description="desc (top) | asc (bottom)."),
+    product_code: Optional[str] = Query(None, description="Product code prefix, at least 3 characters."),
+    product_ids: Optional[list[str]] = Query(None, description="Product ids; ANDed with product_code."),
+    brand_ids: Optional[list[str]] = Query(None),
+    category_ids: Optional[list[str]] = Query(None),
+    sales_agent_ids: Optional[list[str]] = Query(None),
+    customer_ids: Optional[list[str]] = Query(None),
+    customer_agent_ids: Optional[list[str]] = Query(
+        None,
+        description="Customers whose assigned agent (the customer card) is one of these; 'none' = no agent.",
+    ),
+    warehouse_codes: Optional[list[str]] = Query(None),
+    channel: Optional[str] = Query(None, description="dealer | project"),
+    contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
+    current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
+    db: Session = Depends(get_db),
+):
+    def resolve() -> _Spec:
+        key = (measure or "").strip().lower()
+        if key not in measures.MEASURES:
+            raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(measures.keys()))
+        m = measures.get(key)
+        return _Spec(m.basis, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run)
+
+    return _serve(
+        request, db, resolve, _PARAMS - {"basis"},
+        date_from=date_from, date_to=date_to, group_by=group_by, top_n=top_n, sort=sort,
+        product_code=product_code, product_ids=product_ids, brand_ids=brand_ids,
+        category_ids=category_ids, sales_agent_ids=sales_agent_ids, customer_ids=customer_ids,
+        customer_agent_ids=customer_agent_ids, warehouse_codes=warehouse_codes, channel=channel,
+        contact_id=contact_id, space_id=space_id,
+    )

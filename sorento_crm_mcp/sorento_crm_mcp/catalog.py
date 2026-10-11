@@ -863,6 +863,44 @@ CATALOG: tuple[ToolSpec, ...] = (
         restricted_fields=(("sales_orders.sales_report", "Sales report"),),
     ),
     ToolSpec(
+        "crm_report",
+        (
+            "ONE named report over sales order lines: pick a `measure` from the registry, "
+            "rank or total it for a REQUIRED period, with the common filters. Same answer, "
+            "gates and reply shape as crm_report_ask. `measure` is REQUIRED, one of: "
+            "ordered_amount, ordered_qty, delivered_amount, delivered_qty, outstanding_amount, "
+            "outstanding_qty (an unknown key is 422 listing the valid ones); ask the person "
+            "which measure when they did not say.\n\n"
+            "REQUIRED: `date_from` and `date_to` (ISO dates; 422 `period_required` otherwise - "
+            "ask the person which period, never guess one) and `contact_id` + `space_id`. "
+            "`group_by` = customer | product | brand | category | sales_agent | location | "
+            "channel | month; absent = ONE total. With `group_by`, `top_n` (1 to 1,000) is "
+            "REQUIRED (422 `top_n_required`). `sort` desc (top, default) | asc (bottom).\n\n"
+            "FILTERS (all optional, ANDed, RESOLVED ids, never names): `product_code` (PREFIX, "
+            "at least 3 characters), `product_ids`, `brand_ids`, `category_ids`, "
+            "`sales_agent_ids`, `customer_ids`, `customer_agent_ids` (`none` = no agent), "
+            "`warehouse_codes`, `channel` dealer | project. OMIT a filter you do not use: an "
+            "empty value is 422 `empty_filter`.\n\n"
+            "ACCESS: the contact needs the Sales report reveal (403 `sales_report_not_enabled`). "
+            "A customer-linked dealer may group or filter by product, brand, category and "
+            "month ONLY; anything else is 403 `report_dimension_not_allowed` - say 'That "
+            "breakdown is not available for your account.' Rate limited like crm_report_ask "
+            "(`status: busy`)."
+        ),
+        "/api/v1/order-management/report",
+        (),
+        (
+            "date_from", "date_to", "measure", "group_by", "top_n", "sort",
+            "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
+            "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
+            "customer_agent_ids",
+        ),
+        domain="orders",
+        related_tools=("crm_report_ask", "crm_sales_report"),
+        escalation_team="sales",
+        restricted_fields=(("sales_orders.sales_report", "Sales report"),),
+    ),
+    ToolSpec(
         "crm_top_selling_report",
         (
             "Top selling ITEMS (or CATEGORIES) over a date window, ranked by quantity or by "

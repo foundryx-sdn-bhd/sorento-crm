@@ -37,6 +37,7 @@ TOOL_REQUIRED_QUERY_HINTS: dict[str, tuple[str, ...]] = {
     "crm_sales_analysis": ("contact_id", "space_id"),
     # The report ask needs the contact pair and a period (422 period_required otherwise).
     "crm_report_ask": ("contact_id", "space_id", "date_from", "date_to"),
+    "crm_report": ("contact_id", "space_id", "date_from", "date_to", "measure"),
 }
 
 # Parent-relation tools: meaningless without a parent entity UUID.

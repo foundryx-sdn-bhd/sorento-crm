@@ -69,6 +69,7 @@ UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_project_detail",
     "crm_project_forecast",
     "crm_project_quotations_list",
+    "crm_report",
     "crm_projects_list",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",
@@ -96,6 +97,7 @@ BrandScopeTreatment = Literal["filtered", "no_products"]
 BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
     "crm_top_selling_report": ("code",),
     "crm_report_ask": ("name",),
+    "crm_report": ("name",),
     "crm_order_analytics": ("group_key",),
     "crm_complaint_analytics": ("group_key",),
 }
@@ -142,6 +144,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
     "crm_report_ask": "filtered",
+    "crm_report": "filtered",
     "crm_resource_attachments_list": "filtered",
     "crm_sales_analysis": "filtered",
     "crm_sales_report": "filtered",

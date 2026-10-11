@@ -60,6 +60,7 @@ PRESENTER_TOOLS: frozenset[str] = frozenset(
         "crm_top_selling_report",
         "crm_sales_analysis",
         "crm_report_ask",
+        "crm_report",
     }
 )
 
@@ -1893,7 +1894,7 @@ def present_response(tool_name: str, raw: str) -> str:
         return json.dumps(_sales_analysis_envelope(data))
 
     # The report engine's ask: a ranking or one number, rendered whole from the route's body.
-    if tool_name == "crm_report_ask":
+    if tool_name in ("crm_report_ask", "crm_report"):
         return json.dumps(_report_ask_envelope(data))
 
     rows = data.get("data")
