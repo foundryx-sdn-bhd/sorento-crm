@@ -10,6 +10,7 @@ import pytest
 
 from tests._brand_scope_seed import api, db, leaks, world  # noqa: F401  (fixtures by name)
 from tests._report_ask_so_seed import seed_so_line
+from tests._pg_fixture import unique_code
 from tests._sales_report_do_seed import money, seed_agent
 
 ROUTE = "/api/v1/order-management/report"
@@ -18,7 +19,7 @@ PERIOD = {"date_from": "2026-09-01", "date_to": "2026-09-30"}
 
 @pytest.fixture
 def sales(db, world):
-    ag1, ag2 = seed_agent(db, code="ZZT-S2-AG1"), seed_agent(db, code="ZZT-S2-AG2")
+    ag1, ag2 = seed_agent(db, code=unique_code("ZZT-S2")), seed_agent(db, code=unique_code("ZZT-S2"))
     kw = dict(cust=world.cust)
     seed_so_line(db, prod=world.p_mocha, agent=ag1, qty=2, total="100.00", **kw)
     seed_so_line(db, prod=world.p_sorento, agent=ag1, qty=3, total="1000.00", **kw)

@@ -44,10 +44,21 @@ def _ask(client, contact, **params):
 # ------------------------------------------------------------------ AC-1 equivalence
 
 
+def _open_lines(db, w):
+    """Partly delivered September lines, so the outstanding basis has rows on every ranked axis
+    (the ranking world is fully delivered, which leaves nothing outstanding)."""
+    from tests._report_ask_so_seed import seed_so_line
+
+    for agent, prod, qty, total in ((w.a1, w.p1, 10, "100.00"), (w.a2, w.p2, 8, "80.00"), (w.a3, w.p3, 6, "60.00")):
+        seed_so_line(db, cust=w.cust, prod=prod, qty=qty, total=total, agent=agent, wh=w.wh, delivered=qty // 2)
+    db.commit()
+
+
 @pytest.mark.parametrize("key", S1)
 @pytest.mark.parametrize("shape", [{"group_by": "sales_agent", "top_n": 10}, {"group_by": "product", "top_n": 2, "sort": "asc"}, {}])
 def test_ac1_report_equals_report_ask_for_the_same_inputs(client, db, key, shape):
-    _ranking_world(db)
+    w = _ranking_world(db)
+    _open_lines(db, w)
     contact = _full(db)
     basis, figure = key.split("_")
     new = _report(client, contact, measure=key, **shape)
