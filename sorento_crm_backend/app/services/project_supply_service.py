@@ -516,6 +516,35 @@ def plan_qty_of(core: Optional[SalesOrderLine]) -> Decimal:
     return max(_dec(core.qty_ordered if required is None else required), _ZERO)
 
 
+def delivered_credits(
+    core: Optional[SalesOrderLine], open_qty: Decimal, entry: Any
+) -> Tuple[List[Decimal], List[Decimal]]:
+    """OI-CLOSED-LINE: how much of each Reserve then Borrow component the customer already
+    received, front-first in payload order. One credit, `min(delivered, plan qty)`, spent
+    across the components, so the recheck, the R14 guard and the written holds agree.
+
+    Two rulings meet here. 14 Sep 2026 (`plan_qty_of`): a delivered unit nobody sourced is
+    put back by the Buy, so delivered units are attributed first to the Buy and the timely
+    SPO. 11 Oct 2026 (OI-CLOSED-LINE): only the rest of them exempts Reserve and Borrow from
+    needing free stock."""
+    left = _ZERO
+    if core is not None:
+        left = max(
+            min(_dec(core.qty_delivered), _dec(open_qty))
+            - _dec(entry.buy_qty)
+            - _dec(entry.timely_spo_qty),
+            _ZERO,
+        )
+    reserve: List[Decimal] = []
+    borrow: List[Decimal] = []
+    for items, out in ((entry.reserve or [], reserve), (entry.borrow or [], borrow)):
+        for item in items:
+            covered = min(left, max(_dec(item.qty), _ZERO))
+            left -= covered
+            out.append(covered)
+    return reserve, borrow
+
+
 class SupplyLinesRefused(AppException):
     """A refusal that names its lines (AC-C02).
 
@@ -5869,9 +5898,8 @@ class ProjectSupplyService:
         by_id = {str(w.id): code for code, w in reserve_locations.items()}
         allowed = ", ".join(sorted(reserve_locations))
         # One credit, consumed across Reserve then Borrow components in payload order.
-        delivered_left = min(_dec(fact.core.qty_delivered), _dec(fact.open_qty))
-        delivered_left = max(delivered_left, _ZERO)
-        for item in entry.reserve or []:
+        reserve_credit, borrow_credit = delivered_credits(fact.core, fact.open_qty, entry)
+        for index, item in enumerate(entry.reserve or []):
             warehouse = by_id.get(str(item.warehouse_id))
             qty = _dec(item.qty)
             # What this order's own active revision already holds here - read BEFORE the
@@ -5931,8 +5959,7 @@ class ProjectSupplyService:
             # needs no free stock to be "reserved", so the delivered quantity is credited
             # first and only the remainder is judged against live capacity. The hold cap
             # stays `_open_of`, so nothing is held for the delivered part.
-            covered = min(delivered_left, ask)
-            delivered_left -= covered
+            covered = min(reserve_credit[index], ask)
             ask -= covered
             qty -= covered
             if ask <= _ZERO:
@@ -6062,10 +6089,9 @@ class ProjectSupplyService:
                         ),
                     }
 
-        for item in entry.borrow or []:
-            covered = min(delivered_left, _dec(item.qty))
+        for index, item in enumerate(entry.borrow or []):
+            covered = borrow_credit[index]
             if covered > _ZERO:
-                delivered_left -= covered
                 if covered == _dec(item.qty):
                     continue
                 item = item.model_copy(update={"qty": _dec(item.qty) - covered})
@@ -6213,8 +6239,10 @@ class ProjectSupplyService:
         holds = self._holds_by_holder(product_ids, exclude_line_ids=sorted(named))
         mine: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
         for line, entry, fact in checked:
-            for item in entry.reserve or []:
-                qty = _dec(item.qty)
+            reserve_credit, _borrow_credit = delivered_credits(fact.core, fact.open_qty, entry)
+            for index, item in enumerate(entry.reserve or []):
+                # What the customer already received needs no stock on the floor.
+                qty = _dec(item.qty) - reserve_credit[index]
                 warehouse_id = str(getattr(item, "warehouse_id", "") or "")
                 if qty <= _ZERO or not warehouse_id or not fact.product_id:
                     continue
@@ -8378,9 +8406,11 @@ class ProjectSupplyService:
         unowned = self._unowned_holds(line)
         # OI-CLOSED-LINE AC-9: a hold is never wider than what is still owed. The delivered
         # part of a Reserve or Borrow was credited at the recheck and holds nothing.
-        hold_left = _open_of(fact.core)
-        for item in entry.reserve or []:
-            qty = _dec(item.qty)
+        reserve_credit, borrow_credit = delivered_credits(fact.core, fact.open_qty, entry)
+        # The adopted holds count: the line's total held never passes what it still owes.
+        hold_left = max(_open_of(fact.core) - sum(unowned.values(), _ZERO), _ZERO)
+        for index, item in enumerate(entry.reserve or []):
+            qty = _dec(item.qty) - reserve_credit[index]
             if qty <= _ZERO:
                 continue
             # A hold this line already has that belongs to NO revision is this reserve,
@@ -8431,8 +8461,8 @@ class ProjectSupplyService:
                 )
             )
 
-        for item in entry.borrow or []:
-            qty = _dec(item.qty)
+        for index, item in enumerate(entry.borrow or []):
+            qty = _dec(item.qty) - borrow_credit[index]
             if qty <= _ZERO:
                 continue
             if getattr(item, "supply_key", None):

@@ -35,7 +35,8 @@ from typing import Any, Dict, List, Optional, Sequence
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.models.base import company_scope, set_company_scope  # noqa: E402
-from app.models.planning_change import PlanningChangeRow  # noqa: E402
+from app.models.company import Company
+from app.models.planning_change import PlanningChangeBatch, PlanningChangeRow  # noqa: E402
 from app.models.project_so import (  # noqa: E402
     INQUIRY_CANCELLED,
     INQUIRY_RAISED,
@@ -81,11 +82,22 @@ def run(
     *,
     apply: bool = False,
     cancel_balance_items: Sequence[str] = (),
+    company_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Cancel (or, without `apply`, only report) the stranded rows of one inquiry."""
-    inquiry = db.query(OrderInquiry).filter(OrderInquiry.inquiry_no == inquiry_no).first()
-    if inquiry is None:
+    query = db.query(OrderInquiry).filter(OrderInquiry.inquiry_no == inquiry_no)
+    if company_code:
+        query = query.join(Company, Company.id == OrderInquiry.company_id).filter(
+            Company.code == company_code
+        )
+    matches = query.all()
+    if not matches:
         raise ValueError(f"No order inquiry {inquiry_no}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"{inquiry_no} exists in {len(matches)} companies; name one with --company"
+        )
+    inquiry = matches[0]
     service = ProjectOrderInquiryService(db)
     balance_items = {str(item).strip() for item in cancel_balance_items if str(item).strip()}
 
@@ -112,20 +124,31 @@ def run(
                 .filter(ProjectSalesOrderLine.id == row.so_line_id)
                 .first()
             )
-            dropped = (
-                db.query(PlanningChangeRow)
+            # Only a row raised at or before the dropped decision was applied belongs to
+            # this clean-up: a later raise is a fresh decision on the same line.
+            candidates = (
+                db.query(PlanningChangeRow, PlanningChangeBatch.applied_at)
+                .join(PlanningChangeBatch, PlanningChangeBatch.id == PlanningChangeRow.batch_id)
                 .filter(
                     PlanningChangeRow.project_line_id == row.so_line_id,
                     PlanningChangeRow.applied_reason == CLOSED_REASON,
                 )
                 .order_by(PlanningChangeRow.created_at.desc())
-                .first()
+                .all()
             )
+            for candidate, applied_at in candidates:
+                cutoff = applied_at or candidate.created_at
+                if cutoff is None or row.created_at is None or row.created_at <= cutoff:
+                    dropped = candidate
+                    break
         reason: Optional[str] = None
         if row.verb in (IV_ORDER, IV_ORDER_BACK):
             if dropped is not None:
                 reason = CLOSED_REASON
-            elif core is not None and (core.line_status or "open") == "cancelled":
+            elif (
+                core is not None
+                and (core.line_status or "open") == "cancelled"
+            ):
                 reason = "the sales-order line is cancelled"
         elif row.verb == IV_CANCEL_BALANCE and row.item_code in balance_items:
             reason = "the balance was cancelled by the planner"
@@ -137,7 +160,8 @@ def run(
         was_qty = row.qty
         composition = _composition_text(dropped.composition_json if dropped is not None else None)
         row.state = INQUIRY_CANCELLED
-        row.note = f"Dropped: {reason}; composition dropped: {composition}."
+        stamp = f"Dropped: {reason}; composition dropped: {composition}."
+        row.note = f"{row.note}; {stamp}" if row.note else stamp
         service._record_handover(
             row, kind="cancelled", was={"qty": was_qty}, actor_user_id=inquiry.raised_by
         )
@@ -151,6 +175,7 @@ def main(argv: Optional[Sequence[str]] = None, db=None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--inquiry", required=True, help="inquiry number, e.g. OI-0123")
+    parser.add_argument("--company", default=None, help="companies.code, when the number is shared")
     parser.add_argument("--apply", action="store_true", help="write (default: dry run)")
     parser.add_argument(
         "--cancel-balance", action="append", default=[], metavar="ITEM_CODE",
@@ -167,7 +192,8 @@ def main(argv: Optional[Sequence[str]] = None, db=None) -> int:
         set_company_scope(db, None)
         with company_scope(db, None):
             out = run(
-                db, args.inquiry, apply=args.apply, cancel_balance_items=args.cancel_balance
+                db, args.inquiry, apply=args.apply,
+                cancel_balance_items=args.cancel_balance, company_code=args.company,
             )
             for r in out["rows"]:
                 print(
