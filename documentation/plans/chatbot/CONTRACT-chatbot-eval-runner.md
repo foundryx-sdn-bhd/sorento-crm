@@ -239,3 +239,10 @@ the layer that broke. All new label fields are optional and start empty; they ar
   `first_failing_layer`: for results whose reply failed, a count of the first layer in order understood -> resolved
   -> tool -> reply that is `fail` (`reply` when no earlier layer was scored). `--regrade` recomputes layers from the
   stored digests. The verdict itself is unchanged by layers. GRADER_VERSION stays 8 (verdicts unchanged).
+
+## Round 13 (run provenance, 11 Oct)
+- `report.json` records `git_sha` (full HEAD of the checkout the runner runs from, `git rev-parse HEAD` in the
+  package's repo; the crew stack serves the same checkout) and `git_dirty` (true when `git status --porcelain` lists
+  tracked changes). Env `EVAL_APP_SHA` overrides `git_sha` when the backend runs from another checkout. No git
+  available -> both null, run continues. `--regrade` keeps the source run's values. The resolved prompt id is
+  already recorded (`prompt.id`, round 11).
