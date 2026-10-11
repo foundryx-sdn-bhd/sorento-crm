@@ -1,93 +1,107 @@
-# UAC - CLARIFY-POLICY (default-and-disclose, collapse, loop breaker)
+# UAC - CLARIFY-POLICY (policy as data, loop breaker, generic menus, carried subject)
 
-Card: `CARD-clarify-policy-11oct.md`. Plan: `PLAN-clarify-policy-11oct.md`.
-Status: DRAFT on the card's recommendations (Q1-Q5 all (a)), pending owner rulings. An AC tagged
-with a Q is rewritten if that Q is ruled otherwise.
+Card: `CARD-clarify-policy-11oct.md` (+ `.html`). Plan: `PLAN-clarify-policy-11oct.md`.
+Status: v3 after owner rulings Q1-Q5, R1/R2, Q9 and crew rulings Q6-Q8 (a) (11 Oct 2026). and Q10. v1 AC numbers are retired, not reused.
 
-Fake names and codes only in tests (`ZZT...`, "Test Dealer"). Every reply quoted below is exact
-unless marked "contains".
+Fake names and codes only in tests (`ZZT...`, "Test Dealer"). Quoted replies are exact unless
+marked "contains".
 
-## Loop breaker and never-stuck (P3, P4; Q4 (a))
+## Unchanged by ruling (regression guards)
 
-- AC-1 The same clarification (same ask kind, same parameter, same subject code) may be sent at most
-  twice in a row to one contact. When the turn would send it a third time, the reply is instead a
-  best-effort answer from what is known plus a one-line handover offer; it is not flagged as a
-  clarification and arms no pending question for that ask.
-- AC-2 "Same clarification" is decided from what the BOT asked (a fingerprint the bot stores with its
-  own reply), never from the user's text and never from the reply wording: two asks with different
-  wording but the same kind / parameter / subject count as the same.
-- AC-3 An ask for the same parameter about a DIFFERENT subject is a new clarification (count restarts).
-- AC-4 A turn the parser reads as an answer to the open question, or any non-clarification reply in
-  between, resets the count.
-- AC-5 Covers asks that store no pending today: the DO / SO period ask, the attachment-type ask, the
-  domain menu, the LLM clarifier (`do_ask.py:14-17`, `lanes/business/answer.py:3215-3224`,
-  `chatbot_reply_copy.py:35-46`, `lanes/casual.py:259-330`).
-- AC-6 The handover line respects the contact's escalation switch: with escalation allowed it offers
-  the team that owns the topic (today's offer copy); without it, "Please refer to your salesman."
-- AC-7 Replay of DEV cand-0258 (prod history: attachment-type ask sent twice, user then writes "I want
-  the DESCRIPTION SIZE!!!"): the reply does not contain "provide the attachment type".
+- AC-101 (Q1) A DO list ask with no dates, with or without a named subject, still asks "Which
+  period..." and fetches nothing (today's `do_ask.range_reply`); same for the SO list.
+- AC-102 (Q2) The promotion access-level menu is shown exactly as today; "every level empty" still
+  replies "No current promotion for <CODE>." (cand-0265).
+- AC-103 (Q3) A product attachment ask whose parse carries no attachment type still asks for the
+  type; the bot never sends files of a type the parser did not name. A parse that names a type sends
+  that type.
+- AC-104 The per-contact `chatbot_skip_period_questions` switch keeps its behaviour.
 
-## Promotion access level (Q2 (a))
+## Policy as data (R1, Q7, Q8)
 
-- AC-8 A contact entitled to more than one level but whose own audience is dealer or end user gets
-  that level's promotions directly, never the "Which access level" menu. (UNVERIFIED: how a contact's
-  own level is derived; coder confirms from `turn/state.py` Profile.tier / access types and cites it.)
-- AC-9 Staff (office) with several levels: when exactly one level has a live promotion for the
-  subject, the reply is that level's promotion, with one disclose line naming the level
-  ("Dealer promotion shown. Another level? Reply office or end user." contains the level name).
-- AC-10 Staff, two or more levels have DIFFERENT live promotions: the menu stays (cand-0267 shape).
-- AC-11 Staff, two or more levels with promotions where every level resolves to the SAME promotion
-  rows: no menu; the rows are sent once.
-- AC-12 Regression: every level empty still replies "No current promotion for <CODE>." (cand-0265,
-  `answer.py:333-344`); the availability map empty `{}` with a named subject also replies that,
-  never a menu of "- no promotion" lines.
+- AC-110 A table `chatbot_clarify_policy` exists with columns `ask_kind` (PK), `label`, `mode`,
+  `allowed_modes`, `default_note`, `repeat_limit`, `updated_at`, `updated_by`; added by an additive
+  migration that seeds 31 rows from ONE constant list in code (the card's table), each with today's
+  mode, except `generic_menu` / `entities_only` = `default` (Q5) and `carry_combine` /
+  `carry_unclear` = `ask` (R2, Q9).
+- AC-111 `mode` must be one of the row's `allowed_modes` (DB CHECK or trigger plus a service-level
+  check); an UPDATE to a mode outside it fails.
+- AC-112 Allowed modes: `do_period`, `so_period` = {ask, default}; `outstanding_scope` = {ask,
+  default}; `carry_combine`, `carry_unclear` = {ask, carry, drop}; `generic_menu`, `entities_only` = {ask, default};
+  every other kind = {its seeded mode} only.
+- AC-113 The chatbot reads the policy once per turn through one function. An empty or missing table
+  (blank-schema tests) falls back to the seed constant; a read error falls back to the seed too,
+  never to "no ask".
+- AC-114 `do_period` / `so_period` set to `default`: a DO / SO list ask with no dates behaves exactly
+  like the skip switch path (newest 20, no window) for every contact. Seed `ask` = today.
+- AC-115 `outstanding_scope` set to `default`: no "Outstanding for which document?" question, scope =
+  both. Seed `ask` = today.
+- AC-116 `repeat_limit` per row drives the loop breaker (AC-120); seed 2.
 
-## Attachment type (Q3 (a))
+## Loop breaker (P3, Q4)
 
-- AC-13 A product attachment ask with no attachment type, for a resolved product that has exactly one
-  attachment type on record: the files of that type are sent, with a one-line disclose naming the
-  type.
-- AC-14 Same, product has several types: the reply lists the types the product HAS (by display name),
-  e.g. contains "ZZT100 has:" and each type, and ends "Reply with the one you need."; it never says
-  "e.g. product image, technical drawing, or certificate" and never lists a type the product lacks.
-- AC-15 Same, product has none: says the product has no files on record and gives the refer /
-  handover line; no type question.
-- AC-16 Scope unchanged: types counted only over attachments the contact may see (existing access
-  level filter).
+- AC-120 The same clarification (same ask kind, same parameter, same subject code) is sent at most
+  `repeat_limit` times in a row to one contact. The next turn that would send it again instead
+  replies with one plain line naming what is missing (contains the subject code and the missing
+  thing, e.g. "I still need the attachment type for ZZT100.") plus the handover offer when the
+  contact's escalation is allowed, or "Please refer to your salesman." when it is not. It contains
+  NO fetched data and no guessed value; it is not flagged as a clarification and arms no pending
+  for that ask.
+- AC-121 "Same clarification" is decided from a fingerprint the bot stores with its own reply, never
+  from the user's text or the reply wording.
+- AC-122 Same parameter, different subject = a new clarification (count restarts).
+- AC-123 A turn read as an answer to the open question, or any non-clarification reply in between,
+  resets the count.
+- AC-124 Covers asks that store no pending today (DO / SO period, attachment-type text ask, domain
+  menu, LLM clarifier).
+- AC-125 Replay of DEV cand-0258 (attachment-type ask sent twice, then "I want the DESCRIPTION
+  SIZE!!!"): the reply does not contain "provide the attachment type".
 
-## DO / SO period (Q1 (a))
+## Generic menus (Q5)
 
-- AC-17 A DO list ask that names a subject (product, customer or SO) and carries no dates fetches
-  with no date window, newest first, at most 5 rows, and the reply ends with the disclose line
-  "Another month? Reply with the month." (translated per reply language).
-- AC-18 Same for the SO list (newest 5, same disclose line).
-- AC-19 A bare DO / SO list ask with no subject and no dates still asks "Which period?" (today's copy).
-- AC-20 A range over 31 days still gets today's over-31-days ask (unchanged, `do_ask.py:135-153`).
-- AC-21 The per-contact `chatbot_skip_period_questions` switch keeps its behaviour (newest 20, no
-  disclose line needed).
-- AC-22 Customer scope applies before the default: the default never shows a DO / SO outside the
-  contact's linked customers (`lanes/business/__init__.py:2195-2199` stays before the period step).
-- AC-23 A default that finds nothing replies "No delivery orders found for <subject>." plus the
-  disclose line, not the period question.
+- AC-130 With `generic_menu` = `default` (seed): a message whose parse carries a resolved subject
+  but no domain gets an answer for the subject's default domain plus "Something else? Tell me what
+  you need about <subject>." instead of the topic menu or "What would you like me to know?".
+- AC-131 A message with no subject and no domain keeps today's reply.
+- AC-132 With the row set to `ask`, today's menu returns.
 
-## Collapse pickers (P2)
+## Carried subject (R2, Q6, Q9)
 
-- AC-24 Product picker (`lanes/business/gate.py:970`) and stock family pick (`turn/task.py:871-895`):
-  when the options are annotated with whether they hold the asked data and exactly ONE option holds
-  it, the bot answers for that option and adds one line naming the others ("Also matched: A, B.").
-- AC-25 Outstanding with no document named: default "Both" with a disclose line, no SO / DO / Both
-  question (`lanes/business/__init__.py:1947-1955`).
-- AC-26 Must-ask rows from the card table (#3, #6, #9, #11, #13, #15, #17, #20, #21, #24, #28) are
-  unchanged apart from the loop breaker.
+Terms. "Carried A": the focus holds a subject of kind A from an earlier question, the new message has
+no `current_message: true` entity of kind A, and A is a kind the new ask's domain accepts. "Clear":
+the parser sets `anaphora.backward_reference` true, or `continuation` true (Q10, same subject
+follow-up, AC-147), or the turn is a REFINE of the held question
+(`turn/decide.py`), or it answers a held question. Nothing else counts; no keyword reading.
 
-## Generic menus (Q5 (a))
-
-- AC-27 A message whose parse carries a subject (a resolved code or a named team) but no domain gets
-  an answer for the subject's default domain plus "Something else? Tell me what you need about
-  <subject>." instead of the topic menu or "What would you like me to know?".
-- AC-28 A message with no subject and no domain keeps today's menu.
+- AC-140 (`carry_combine` = ask, seed) Carried A, NOT clear, and the message names a subject of a
+  different kind B: the bot fetches NOTHING and replies exactly
+  "<Ask label> for <B>: only <A> (from earlier) or all <A plural>?\n1. Only <A>\n2. All <A plural>"
+  (e.g. "Delivery for ZZT TRADING: only ZZT391 (from earlier) or all products?").
+- AC-141 (`carry_unclear` = ask, seed) Carried A, NOT clear, no new subject: the bot fetches NOTHING
+  and replies exactly "<Ask label>: for <A> (from earlier) or all <A plural>?\n1. <A>\n2. All
+  <A plural>" (e.g. "Delivery today: for ZZT391 (from earlier) or all products?"). The ask label
+  carries the parsed date words the parser already resolves (e.g. "today"), from parsed fields.
+- AC-142 Carried A and CLEAR ("delivery for this" with ZZT391 in focus, parser backward_reference
+  true): no question; the ask runs with A (today's carry).
+- AC-143 Answer position 1 (or the parser's pick of it) runs the ask with A kept; position 2 or a
+  parser `all` runs it without A (dropped from this ask's focus). No keyword reading of the reply.
+- AC-144 No question when: the message restates A; A and B are the same kind (a new customer
+  replaces the old one); no carried subject; A is not a kind the new domain accepts.
+- AC-145 Mode `carry` on either row = today's behaviour (kept, no ask); `drop` = A dropped, no ask.
+- AC-146 Replay of the DEV cand-0230 shape (customer delivery, then product delivery, then a bare
+  month): the bot asks instead of listing rows filtered by both. The carry asks count for the loop
+  breaker (AC-120).
+- AC-147 (Q10) An elliptical follow-up the parser reads as `continuation` true ("eta?" right after a
+  stock answer for ZZT391) answers for ZZT391 with no question.
+- AC-148 (Q10) No time or turn expiry of the carried subject: a carried subject is still carried on a
+  turn whose previous turn is days old, and after several turns in between (no clock anywhere).
+- AC-149 (Q10) A new unlabelled `chatbot_semantic_parser` version carries the "SAME SUBJECT OR A
+  NEW ONE" `continuation` definition word for word from INTENT-FRAMES (#1473); the `production`
+  label does not move. Live DEV grading of the new version on the follow-up / fresh-question
+  phrasings (crew runs it, dev key) before the owner promotes it.
 
 ## Never
 
-- AC-29 No regex / keyword test on user text is added anywhere (reviewer greps the diff).
-- AC-30 No permission or scope change: every default runs after the existing scope filters.
+- AC-150 No regex / keyword test on user text anywhere in the diff (reviewer greps).
+- AC-151 No permission or scope change; defaults run after the existing scope filters.
+- AC-152 No guessed value in any reply (Q3, Q4).

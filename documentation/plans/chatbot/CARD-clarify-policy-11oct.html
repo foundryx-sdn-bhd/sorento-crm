@@ -46,105 +46,104 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
 </style>
 </head>
 <body>
-<h1>Clarify policy: when the chatbot should ask, and when it should just answer</h1>
-<p class="meta">Lane CLARIFY-POLICY, 11 Oct 2026. For owner rulings on Q1 to Q5 at the bottom. Customer names masked.</p>
+<h1>Clarify policy: when the chatbot asks, and when it answers</h1>
+<p class="meta">Lane CLARIFY-POLICY, PR #1570. Updated 11 Oct 2026 with your answers. Customer names masked.</p>
 
-<h2>Why</h2>
-<p>5 of 47 hidden eval failures are the bot asking when it should have answered, plus loops (same question 3 times). Today each topic decides on its own when to ask, in 29 places, and nothing stops the bot repeating its own question.</p>
+<h2>Your answers (11 Oct)</h2>
+<div class="rule"><b>Q1</b> Period ask for delivery and sales order lists stays as today.</div>
+<div class="rule"><b>Q2</b> Promotion level ask stays as today.</div>
+<div class="rule"><b>Q3</b> No guessing the attachment type. The AI reads what the user means ("drawing" = the drawing type) and sends that; if it cannot tell, it asks.</div>
+<div class="rule"><b>Q4</b> Third identical question: no guessed answer. Offer the handover, or say plainly what is missing.</div>
+<div class="rule"><b>Q5</b> Yes: a message naming something gets an answer for it, not a topic menu.</div>
+<div class="rule"><b>New 1</b> Each question kind is a row you can set (ask or default), stored in the database, starting from today's behaviour. A settings page comes later, after a mock.</div>
+<div class="rule"><b>New 2</b> An earlier subject meeting a newly named one: ask. "Delivery for [customer]: only SRT391-GM (from earlier) or all products?"</div>
+<div class="rule"><b>Q9</b> Ask when unclear, use the earlier subject when clear. "Delivery for this" = clear, no question. "Delivery today" with no reference = ask "Delivery today: for SRT391-GM (from earlier) or all products?". Clear means the AI reads an explicit reference (this / that / 这个 / the same), a follow-up on the same thing ("eta?" after a stock answer, your Q10), or an answer to the open question; never a word list. The earlier subject never expires by time.</div>
 
-<h2>Proposed rules (every topic)</h2>
-<div class="rule"><b>1. Default and say so.</b> If a missing detail has a safe default, answer with it and say the assumption in one line, with how to change it. Example: "Latest delivery for SRT391-GM: DO 202610-0668, 5 Oct. Another month? Reply with the month." Ask only when there is no safe default, or a wrong guess is costly (money, a stock promise, the wrong file to a dealer).</div>
-<div class="rule"><b>2. Skip pointless menus.</b> If every choice leads to the same answer (all "no promotion", only one choice has data), answer directly.</div>
-<div class="rule"><b>3. Loop breaker.</b> Never ask the same question a third time. Instead: best answer from what we know, plus an offer to hand over.</div>
-<div class="rule"><b>4. Never stuck.</b> Every turn ends in an answer, a different question, or a handover offer.</div>
-<div class="rule"><b>5. No word lists.</b> The AI reads what the user means; code never matches keywords. Who may see what does not change.</div>
+<h2>What changes for a contact</h2>
+<ul>
+<li><b>Loop breaker:</b> the same question at most twice in a row. Third time: "I still need the attachment type for CB1512ASS." plus the handover offer (or "Please refer to your salesman." when handover is off). Never a guess.</li>
+<li><b>Topic menus:</b> replaced by an answer for the named thing plus "Something else? Tell me what you need about X."</li>
+<li><b>Earlier subject, unclear:</b> the questions above, before anything is fetched. The user answers 1 / 2 or in their own words. "Delivery for this" uses the earlier subject with no question.</li>
+<li>Everything else stays exactly as today until you switch a row.</li>
+</ul>
 
-<h2>All 29 questions the bot asks today</h2>
-<p class="meta">Swipe the table sideways. Legend: <span class="pill DEFAULT">DEFAULT</span> answer with a default and say so, <span class="pill MUST">MUST-ASK</span> keep asking, <span class="pill COLLAPSE">COLLAPSE</span> skip menu when it changes nothing, <span class="pill KEEP">KEEP</span> already fine, <span class="pill Q">Qn</span> your call below.</p>
+<h2>The settings table (one row per question)</h2>
+<p>Each row: the question in plain words, what the bot does (ask / default / collapse), which choices are possible, what "default" means, and how many times it may repeat (2). Only rows where the other behaviour already exists can be switched now:</p>
+<ul>
+<li>Delivery order period, sales order period: ask (today) or default = newest 20, no date window.</li>
+<li>Outstanding SO / DO / both: ask (today) or default = both.</li>
+<li>Earlier subject + new subject: ask (your rule), carry (today), or drop.</li>
+<li>Earlier subject, no reference: ask (your Q9), carry (today), or drop.</li>
+<li>Topic menu: answer the named thing (your Q5) or menu.</li>
+</ul>
+
+<h2>All 31 questions, starting setting</h2>
+<p class="meta">Swipe the table sideways. <span class="pill MUST">ASK</span> asks, <span class="pill DEFAULT">DEFAULT</span> answers with a real value from the data, <span class="pill COLLAPSE">COLLAPSE</span> skips a menu when only one choice has data.</p>
 <div class="wrap">
 <table>
-<thead><tr><th>#</th><th>What the bot asks today</th><th>Example</th><th>Proposed</th><th>Why</th></tr></thead>
+<thead><tr><th>#</th><th>What the bot asks today</th><th>Example</th><th>Starting setting</th><th>Why</th></tr></thead>
 <tbody>
-<tr><td class="n">1</td><td>Which access level (office / dealer / end user) for a promotion</td><td class="ex">"Which access level do you need for SRTWC286? 1. Dealer - has promotion 2. End user - has promotion"</td><td><span class="pill COLLAPSE">COLLAPSE</span> <span class="pill DEFAULT">DEFAULT</span> own level <span class="pill Q">Q2</span></td><td>A dealer only has one level that matters; one level with a promo means no choice</td></tr>
-<tr><td class="n">2</td><td>Which level, generic "Which one do you mean?"</td><td class="ex">"Which one do you mean? 1. Office 2. Dealer"</td><td><span class="pill DEFAULT">DEFAULT</span> contact's own level <span class="pill Q">Q2</span></td><td>The contact's level is already known for most contacts</td></tr>
-<tr><td class="n">3</td><td>Which brand / spec / product type for a promotion</td><td class="ex">"Which brand do you mean by 'cabana'?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>No subject means nothing to look up</td></tr>
-<tr><td class="n">4</td><td>Which attachment type for a product</td><td class="ex">"Please provide the attachment type for product CB1512ASS - e.g. product image, technical drawing, or certificate."</td><td><span class="pill DEFAULT">DEFAULT</span> types the product has <span class="pill Q">Q3</span></td><td>We know which files exist; asking blind caused the 3x loop</td></tr>
-<tr><td class="n">5</td><td>Which kind of file</td><td class="ex">"Which kind of file do you need?"</td><td><span class="pill DEFAULT">DEFAULT</span> types the product has <span class="pill Q">Q3</span></td><td>Same as #4</td></tr>
-<tr><td class="n">6</td><td>Which product, for a purchase cost ask</td><td class="ex">"Which product?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>No product means nothing to answer</td></tr>
-<tr><td class="n">7</td><td>Which period, for delivery orders (DO)</td><td class="ex">"Which period for [customer]? - This month (Oct 2026) - Last month (Sep 2026)"</td><td><span class="pill DEFAULT">DEFAULT</span> latest DOs for the named subject <span class="pill Q">Q1</span></td><td>"This month" missed a September order in a real case; latest finds it</td></tr>
-<tr><td class="n">8</td><td>Which period, for sales order lists</td><td class="ex">"Which period for SRT391-GM?"</td><td><span class="pill DEFAULT">DEFAULT</span> newest orders for the subject <span class="pill Q">Q1</span></td><td>Same rule as #7</td></tr>
-<tr><td class="n">9</td><td>Period / measure / basis / how many, for sales rankings</td><td class="ex">"Rank by quantity or by value?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Your earlier rule: no default for rankings (top 10 already after 2 misses)</td></tr>
-<tr><td class="n">10</td><td>Drill into "the N above, or across all?"</td><td class="ex">"Of the 10 above, or across all customers?"</td><td><span class="pill KEEP">KEEP</span></td><td>Already gives up after one miss</td></tr>
-<tr><td class="n">11</td><td>Top selling: by what, for whom, which category</td><td class="ex">"Top selling by customer or by sales agent?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Same rule as rankings</td></tr>
-<tr><td class="n">12</td><td>Low stock: which category / supplier / grouping</td><td class="ex">"Which category for the low stock report?"</td><td><span class="pill KEEP">KEEP</span></td><td>Optional parts already become "no filter" after 2 misses</td></tr>
-<tr><td class="n">13</td><td>What is the idea (ideation)</td><td class="ex">"What's the idea?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Nothing to file without it</td></tr>
-<tr><td class="n">14</td><td>Outstanding for which document: SO, DO or both</td><td class="ex">"Outstanding for which document? SO / DO / Both"</td><td><span class="pill DEFAULT">DEFAULT</span> Both</td><td>"Both" is already the fallback</td></tr>
-<tr><td class="n">15</td><td>Which customer is this outstanding report for</td><td class="ex">"Which customer is this outstanding report for?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Wrong customer is costly</td></tr>
-<tr><td class="n">16</td><td>Which product (several codes match)</td><td class="ex">"Which product do you mean? 1. MBF97503 - has incoming 2. MMC97503 - has incoming"</td><td><span class="pill COLLAPSE">COLLAPSE</span></td><td>If only one choice has the data asked for, answer it and name the others</td></tr>
-<tr><td class="n">17</td><td>Which customer (several match)</td><td class="ex">"Which customer do you mean? 1. [customer A] 2. [customer A project]"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Wrong customer is costly</td></tr>
-<tr><td class="n">18</td><td>Which one, for orders / forms / other lists</td><td class="ex">"Which one do you mean? 1. Display standee form (Mocha) 2. ... (Sorento)"</td><td><span class="pill COLLAPSE">COLLAPSE</span></td><td>Same as #16</td></tr>
-<tr><td class="n">19</td><td>A word matches several kinds of thing</td><td class="ex">"Do you mean the product or the customer?"</td><td><span class="pill COLLAPSE">COLLAPSE</span></td><td>If only one kind fits the topic, take it</td></tr>
-<tr><td class="n">20</td><td>Which customer is account N for</td><td class="ex">"Which customer is Account 3 for?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Ledger data, a wrong guess is costly</td></tr>
-<tr><td class="n">21</td><td>How many units (dealer stock check)</td><td class="ex">"How many units of SRTKT73SS-BL?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>"Yes for 1" reads as "yes for 50": a stock promise. Loop breaker still applies</td></tr>
-<tr><td class="n">22</td><td>Which variant of a product family (stock)</td><td class="ex">"SRTWC8152 x 1: which one? 1. -200-RL 2. -300-RL ..."</td><td><span class="pill COLLAPSE">COLLAPSE</span></td><td>Same as #16</td></tr>
-<tr><td class="n">23</td><td>Is this number for all products or one</td><td class="ex">"Is 5 for all 3 products, or one?"</td><td><span class="pill DEFAULT">DEFAULT</span> all</td><td>All is the usual meaning; say so</td></tr>
-<tr><td class="n">24</td><td>How many units needed (when stock is short)</td><td class="ex">"How many units do you need?"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Same as #21</td></tr>
-<tr><td class="n">25</td><td>Did you mean (code not found)</td><td class="ex">"Couldn't find SRTWT51013. Did you mean: 1. SRTWT51011 ..."</td><td><span class="pill KEEP">KEEP</span></td><td>Already shows what exists and offers handover</td></tr>
-<tr><td class="n">26</td><td>Generic topic menu</td><td class="ex">"Are you asking about any of these? - Product - Photos ..."</td><td><span class="pill Q">Q5</span></td><td>Generic menus were an eval failure</td></tr>
-<tr><td class="n">27</td><td>One short AI question on a vague message</td><td class="ex">"Could you tell me which product?"</td><td><span class="pill KEEP">KEEP</span> + loop breaker</td><td>Fine once; never three times</td></tr>
-<tr><td class="n">28</td><td>Which team / company / person to hand over to</td><td class="ex">"Which team? 1. Marketing 2. Purchasing"</td><td><span class="pill MUST">MUST-ASK</span></td><td>Handover target must be right</td></tr>
-<tr><td class="n">29</td><td>"What would you like me to know?" (only codes sent)</td><td class="ex">"What would you like to know about SRTWC8066?"</td><td><span class="pill Q">Q5</span></td><td>Generic menu</td></tr>
+<tr><td class="n">1</td><td>Which access level (office / dealer / end user) for a promotion</td><td class="ex">"Which access level do you need for SRTWC286? 1. Dealer 2. End user"</td><td><span class="pill MUST">ASK</span></td><td>You ruled keep (Q2)</td></tr>
+<tr><td class="n">2</td><td>Which level, generic "Which one do you mean?"</td><td class="ex">"Which one do you mean? 1. Office 2. Dealer"</td><td><span class="pill MUST">ASK</span></td><td>Q2 keep</td></tr>
+<tr><td class="n">3</td><td>Which brand / spec / product type for a promotion</td><td class="ex">"Which brand do you mean by 'cabana'?"</td><td><span class="pill MUST">ASK</span></td><td>No subject, nothing to look up</td></tr>
+<tr><td class="n">4</td><td>Which attachment type for a product</td><td class="ex">"Please provide the attachment type for product CB1512ASS"</td><td><span class="pill MUST">ASK</span></td><td>Q3: the AI picks the type the user means; unsure means ask, never guess</td></tr>
+<tr><td class="n">5</td><td>Which kind of file</td><td class="ex">"Which kind of file do you need?"</td><td><span class="pill MUST">ASK</span></td><td>Q3</td></tr>
+<tr><td class="n">6</td><td>Which product, for a purchase cost ask</td><td class="ex">"Which product?"</td><td><span class="pill MUST">ASK</span></td><td>No product, nothing to answer</td></tr>
+<tr><td class="n">7</td><td>Which period, for delivery orders</td><td class="ex">"Which period for [customer]? This month / Last month"</td><td><span class="pill MUST">ASK</span></td><td>Q1 keep. Switchable to DEFAULT: newest 20, no window</td></tr>
+<tr><td class="n">8</td><td>Which period, for sales order lists</td><td class="ex">"Which period for SRT391-GM?"</td><td><span class="pill MUST">ASK</span></td><td>Q1 keep. Switchable to DEFAULT: newest 20</td></tr>
+<tr><td class="n">9</td><td>Period / measure / basis / how many, for rankings</td><td class="ex">"Rank by quantity or by value?"</td><td><span class="pill MUST">ASK</span></td><td>Your earlier rule: no default</td></tr>
+<tr><td class="n">10</td><td>Rankings: of the N above, or across all</td><td class="ex">"Of the 10 above, or across all?"</td><td><span class="pill MUST">ASK</span></td><td>Already gives up after one miss</td></tr>
+<tr><td class="n">11</td><td>Top selling: by what, for whom</td><td class="ex">"By customer or by sales agent?"</td><td><span class="pill MUST">ASK</span></td><td>Same rule as rankings</td></tr>
+<tr><td class="n">12</td><td>Low stock: category / supplier / grouping</td><td class="ex">"Which category?"</td><td><span class="pill MUST">ASK</span></td><td>Optional parts already become no filter after 2 misses</td></tr>
+<tr><td class="n">13</td><td>What is the idea (ideation)</td><td class="ex">"What's the idea?"</td><td><span class="pill MUST">ASK</span></td><td>Nothing to file without it</td></tr>
+<tr><td class="n">14</td><td>Outstanding for SO, DO or both</td><td class="ex">"Outstanding for which document?"</td><td><span class="pill MUST">ASK</span></td><td>Switchable to DEFAULT: both</td></tr>
+<tr><td class="n">15</td><td>Which customer for the outstanding report</td><td class="ex">"Which customer is this report for?"</td><td><span class="pill MUST">ASK</span></td><td>Wrong customer is costly</td></tr>
+<tr><td class="n">16</td><td>Which product (several codes match)</td><td class="ex">"Which product do you mean? 1. MBF97503 2. MMC97503"</td><td><span class="pill COLLAPSE">COLLAPSE</span></td><td>Today: if only one has the data, it is answered</td></tr>
+<tr><td class="n">17</td><td>Which customer (several match)</td><td class="ex">"Which customer do you mean? 1. [customer A] 2. [customer A project]"</td><td><span class="pill MUST">ASK</span></td><td>Wrong customer is costly</td></tr>
+<tr><td class="n">18</td><td>Which one, for orders / forms / other lists</td><td class="ex">"Which one do you mean? 1. Standee form (Mocha) 2. (Sorento)"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">19</td><td>A word matches several kinds of thing</td><td class="ex">"Product or customer?"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">20</td><td>Which customer is account N for</td><td class="ex">"Which customer is Account 3 for?"</td><td><span class="pill MUST">ASK</span></td><td>Ledger data</td></tr>
+<tr><td class="n">21</td><td>How many units (dealer stock)</td><td class="ex">"How many units of SRTKT73SS-BL?"</td><td><span class="pill MUST">ASK</span></td><td>A yes for 1 reads as a yes for 50</td></tr>
+<tr><td class="n">22</td><td>Which variant of a product family (stock)</td><td class="ex">"SRTWC8152 x 1: which one?"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">23</td><td>Is this number for all products or one</td><td class="ex">"Is 5 for all 3 products, or one?"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">24</td><td>How many units needed (stock short)</td><td class="ex">"How many units do you need?"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">25</td><td>Did you mean (code not found)</td><td class="ex">"Couldn't find SRTWT51013. Did you mean ..."</td><td><span class="pill MUST">ASK</span></td><td>Already shows what exists</td></tr>
+<tr><td class="n">26</td><td>Generic topic menu</td><td class="ex">"Are you asking about any of these? - Product - Photos ..."</td><td><span class="pill DEFAULT">DEFAULT</span></td><td>Q5 yes: answer the named subject, add "Something else?"</td></tr>
+<tr><td class="n">27</td><td>One short AI question on a vague message</td><td class="ex">"Could you tell me which product?"</td><td><span class="pill MUST">ASK</span></td><td></td></tr>
+<tr><td class="n">28</td><td>Which team / company / person for handover</td><td class="ex">"Which team? 1. Marketing 2. Purchasing"</td><td><span class="pill MUST">ASK</span></td><td>Handover target must be right</td></tr>
+<tr><td class="n">29</td><td>"What would you like me to know?" (only codes sent)</td><td class="ex">"What would you like to know about SRTWC8066?"</td><td><span class="pill DEFAULT">DEFAULT</span></td><td>Q5, same as 26</td></tr>
+<tr><td class="n">30</td><td>NEW: earlier subject + new subject</td><td class="ex">"Delivery for [customer]: only SRT391-GM (from earlier) or all products?"</td><td><span class="pill MUST">ASK</span></td><td>Your new rule. Switchable to CARRY (today) or DROP</td></tr>
+<tr><td class="n">31</td><td>NEW: earlier subject, no reference to it</td><td class="ex">"Delivery today: for SRT391-GM (from earlier) or all products?"</td><td><span class="pill MUST">ASK</span></td><td>Your Q9. Switchable to CARRY (today) or DROP</td></tr>
 </tbody>
 </table>
 </div>
 
 <h2>Real cases (DEV eval, masked)</h2>
-<div class="case"><b>Attachment loop (dealer, 6 Oct).</b> "size?" then a photo, each answered:
+<div class="case"><b>Attachment loop (dealer).</b> "size?" then a photo, each answered:
 <div class="bot">Please provide the attachment type for product CB1512ASS - e.g. product image, technical drawing, or certificate.</div>
-User: "I want the DESCRIPTION SIZE!!!". Wanted: the description; no size on record, say so. Rule 3 stops the third ask; Q3 removes the first.</div>
-<div class="case"><b>All "no promotion" menu (staff).</b> "CGB1032B promotion":
-<div class="bot">1. Office - no promotion 2. Dealer - no promotion 3. End user - no promotion</div>
-Today's main already replies "No current promotion for CGB1032B." Kept as a test.</div>
-<div class="case"><b>Dealer gets a level menu.</b> "Srtwc286 offer":
-<div class="bot">Which access level do you need for Srtwc286? 1. Dealer - has promotion 2. End user - has promotion</div>
-Expected: no live dealer promotion, say so. With Q2 (a) a dealer gets its own level.</div>
-<div class="case"><b>Period ask hides the answer (staff).</b> "[customer] 有下单MBF97521 吗":
-<div class="bot">Which period for [customer]? - This month (Oct 2026) - Last month (Sep 2026)</div>
-The real order is from September. "This month" would miss it; "latest for this customer and product" finds it.</div>
-<div class="case"><b>Generic menu instead of handover (staff).</b> "how can i ask marketing about bidet seat cover?" got a topic menu. Expected: offer the marketing handover. Today's main passes.</div>
+Then "I want the DESCRIPTION SIZE!!!". New: the third time says what is missing and offers the handover.</div>
+<div class="case"><b>Earlier product sticks to a customer (staff).</b> "[customer] 7/10 有送货吗？", then "SRT391-GM几时会安排送货？", then "十月":
+<div class="bot">客户: [customer] / 产品: SRT391-GM / Dates: 01/10/2026 to 31/10/2026 ...</div>
+New: "Delivery for [customer]: only SRT391-GM (from earlier) or all products?"</div>
+<div class="case"><b>Topic menu instead of an answer (staff).</b> "how can i ask marketing about bidet seat cover?" got a topic menu. New: answer for the named team / thing.</div>
+<div class="case"><b>All "no promotion" menu (staff).</b> "CGB1032B promotion": today's main already says "No current promotion for CGB1032B." Kept as a test.</div>
 
 <h2>Edge cases</h2>
 <ul>
-<li>A default never widens what a contact may see: a dealer's "latest DO" is the latest it may see.</li>
-<li>The "say so" line is translated (Malay, Chinese) like every other label.</li>
-<li>A default that finds nothing says what was searched and how to change it; it does not fall back to the question.</li>
-<li>Rewording the same question still counts as the same question for the loop breaker.</li>
-<li>When the user actually answers, the count resets.</li>
-<li>Handover offer respects each contact's handover switch; without it: "Please refer to your salesman."</li>
+<li>A row can only be set to a choice the bot supports; anything else is refused.</li>
+<li>If the settings cannot be read, the bot uses the starting settings, never "no question".</li>
+<li>The earlier-subject question is not asked when the user repeats the earlier thing, answers a pending question, or names a new thing of the same kind (a new customer replaces the old one, as today).</li>
+<li>A default never widens what a contact may see.</li>
 </ul>
 
-<h2>Your call (Q1 to Q5)</h2>
-<div class="q"><b>Q1. Period ask for delivery and sales order lists</b> (you added it in #1433).<br>
-(a) A product, customer or SO named with no dates: show its latest DOs, any month (newest 5), plus "Another month? Reply with the month." A bare "my DOs" still asks.<br>
-(b) Default "this month" for every list, say so.<br>
-(c) Keep asking.<br>
-<span class="rec">Recommend (a):</span> "this month" misses real answers; a bare list still needs a window.</div>
-<div class="q"><b>Q2. Promotion level menu.</b><br>
-(a) Dealers and end users get their own level, never the menu. Staff: if only one level has a promotion, answer it; menu only when 2+ levels have different promotions.<br>
-(b) Staff always get every level that has a promotion, labelled, no menu.<br>
-(c) Keep today.<br>
-<span class="rec">Recommend (a).</span></div>
-<div class="q"><b>Q3. Attachment type.</b><br>
-(a) Use what the product has: one type, send it; several, list them ("CB1512ASS has: Product Photos, Certification. Reply with the one you need."); none, say so.<br>
-(b) Keep asking, but list only types the product has.<br>
-<span class="rec">Recommend (a).</span></div>
-<div class="q"><b>Q4. Loop breaker.</b><br>
-(a) Ask, ask again once, and the third time give the best answer plus a handover offer.<br>
-(b) Never ask the same thing twice: the second time is already best answer plus handover.<br>
-<span class="rec">Recommend (a):</span> matches today's "two misses then give up" rule.</div>
-<div class="q"><b>Q5. Generic topic menus.</b><br>
-(a) If the message names something (a code, a team), answer the most likely reading and add "Something else? Tell me what you need about X." Menu only when nothing is named.<br>
-(b) Keep the menu, but only topics this contact can use, at most 4.<br>
-<span class="rec">Recommend (a).</span></div>
+<h2>Q6 to Q8 decided (a) by crew, Q9 by you (11 Oct)</h2>
+<p>Q6: build the new check now; whichever lane merges second wires it. Q7: only rows with an existing alternative are switchable. Q8: database rows now, a settings page later after a mock. Q9: ask when unclear, carry when clear.</p>
+<h2>Q10 decided by you (11 Oct)</h2>
+<p>"eta?" right after "SRT391-GM stock" is a follow-up: the bot answers the ETA for SRT391-GM, no question. The earlier subject never expires by time. The bot asks only when an earlier subject meets a newly named one, or a new question does not continue the earlier one ("delivery today").</p>
+<h2>Q10 as it was asked</h2>
+<div class="q"><b>Q10. Short follow-ups with no reference word.</b> "eta?" straight after "SRT391-GM stock". By the Q9 rule this has no explicit reference, so the bot would ask "ETA: for SRT391-GM (from earlier) or all products?".<br>
+(a) Teach the AI that a bare follow-up on the same thing counts as a reference (new AI version, tested on DEV cases first), so no question.<br>
+(b) Ask, as the rule reads.<br>
+<span class="rec">Recommend (a):</span> otherwise every short follow-up gets a question.</div>
 </body>
 </html>
