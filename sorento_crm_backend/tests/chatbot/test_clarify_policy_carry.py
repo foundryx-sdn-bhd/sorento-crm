@@ -210,6 +210,52 @@ def test_ac146_customer_then_product_then_a_bare_month_asks_the_carry_question_a
     assert both == [], dealer.calls
 
 
+def _domain_month() -> dict[str, Any]:
+    """How the parser reads "delivery in october": the domain named in the message, a month window,
+    no entity of its own."""
+    return verdict(
+        domain_hint="order", intent_hint="check_order", domain_in_message=True, entities=[],
+        date_mode="month", date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+    )
+
+
+def test_ac146_a_month_with_the_domain_word_under_an_open_carry_question_asks_it_again(office):  # noqa: F811
+    """Reviewer B1: "delivery in october" (domain_in_message true, no entity) answers neither
+    option, so the carry question is asked again, never a fetch over customer AND product."""
+    office.say("delivery for zzt dealer", _customer_ask())
+    second = office.say(f"delivery for {CODE}", _product_ask())
+    assert ((office.state or {}).get("open_question") or {}).get("kind") == "carry_scope", second
+    office.calls.clear()
+    third = office.say("delivery in october", _domain_month())
+    assert third == second, (second, third)
+    assert ((office.state or {}).get("open_question") or {}).get("kind") == "carry_scope", office.state
+    both = [a for a in _orders(office) if a.get("product_ids") and a.get("customer_ids")]
+    assert both == [], office.calls
+
+
+def test_ac146_the_same_for_a_held_product_and_a_new_customer(dealer):  # noqa: F811
+    _carried_product(dealer)
+    second = dealer.say("delivery for zzt dealer", _customer_ask())
+    assert second == Q_COMBINE, second
+    dealer.calls.clear()
+    third = dealer.say("delivery in october", _domain_month())
+    assert third == Q_COMBINE, third
+    assert _orders(dealer) == [], dealer.calls
+
+
+def test_ac146_the_month_given_with_the_domain_word_is_kept_for_the_pick(office):  # noqa: F811
+    office.say("delivery for zzt dealer", _customer_ask())
+    office.say(f"delivery for {CODE}", _product_ask())
+    office.say("delivery in october", _domain_month())
+    office.calls.clear()
+    reply = office.say("2", _answer("pick", 2))
+    assert "Which period" not in reply, reply
+    orders = _orders(office)
+    assert orders, office.calls
+    assert orders[-1].get("actual_delivery_date_from") == "2026-10-01", orders[-1]
+    assert not orders[-1].get("customer_ids"), orders[-1]
+
+
 def test_ac146_an_open_carry_question_and_two_non_answers_ends_in_the_loop_breaker(dealer, session_factory):  # noqa: F811
     _ask_unclear(session_factory)
     _carried_product(dealer)
