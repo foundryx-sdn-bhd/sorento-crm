@@ -107,3 +107,56 @@ def test_b_d_the_open_metric_question_reaches_the_parser_with_its_options(consol
     assert obj is not None, "the sales ranking's open question is never stated to the parser"
     assert obj["owed"] == ["metric"], obj
     assert {o["code"] for o in obj.get("options") or []} == {"qty", "amount"}, obj
+
+
+# ================================================================================ narrowing counts the exact code only
+
+
+def test_c_the_narrowed_report_counts_the_exact_code_not_its_longer_sibling(console, monkeypatch) -> None:
+    """The sales report route reads `product_code` as a PREFIX (S19), so a narrowing that only re-sends
+    the typed code also counts a sibling that starts with it. The call the lane sends is run against the
+    REAL report service (keys the service does not take are dropped, so an exact-match option the fix adds
+    to the service is honoured and a call with none is not): CODEX-1 carries 3, CODEX-1-NEW carries 5."""
+    import inspect
+    from datetime import date
+
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from app.services.sales_report_delivered import delivered_sales_report
+    from tests._mc_lookup_seed import product, warehouse
+    from tests._sales_report_do_seed import line, seed_do
+
+    db = console.session_factory()
+    try:
+        exact = product(db, company_id=DEFAULT_COMPANY_ID, code="CODEX-1")
+        sibling = product(db, company_id=DEFAULT_COMPANY_ID, code="CODEX-1-NEW")
+        wh = warehouse(db, company_id=DEFAULT_COMPANY_ID, code="CDXWH")
+        seed_do(db, customer_id=console.ids["customer"], order_date=date(2026, 9, 10),
+                lines=[line(exact.id, wh.id, 3, price=10, total=30)])
+        seed_do(db, customer_id=console.ids["customer"], order_date=date(2026, 9, 11),
+                lines=[line(sibling.id, wh.id, 5, price=10, total=50)])
+        db.commit()
+    finally:
+        db.close()
+
+    lane._say_all(console, monkeypatch, _sales(), "sales report for the customer")
+    narrow = _parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_ranking", ranking_drill="scoped",
+        entities=[lane._hit("CODEX-1", "product")], group_by=None, **SEP,
+    )
+    _text, log = lane._say_all(console, monkeypatch, narrow, "only this one")
+    sent = [a for n, a in log if n == "crm_sales_report"]
+    assert sent, log
+
+    takes = set(inspect.signature(delivered_sales_report).parameters) - {"db"}
+    kwargs = {k: v for k, v in sent[0].items() if k in takes}
+    for key in ("date_from", "date_to"):
+        if isinstance(kwargs.get(key), str):
+            kwargs[key] = date.fromisoformat(kwargs[key])
+    db = console.session_factory()
+    db.info["company_scope"] = None  # all companies: the service is called outside a request
+    try:
+        body = delivered_sales_report(db, **kwargs)
+    finally:
+        db.close()
+    assert body["product_codes"] == ["CODEX-1"], (body["product_codes"], sent[0])
+    assert body["total"]["qty"] == 3, (body["total"], sent[0])
