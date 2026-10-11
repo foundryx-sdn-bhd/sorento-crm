@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Column, Integer, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, Integer, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.sql import func
 from sqlalchemy import DateTime
@@ -127,3 +127,29 @@ class ChatbotDomainWord(Base):
     updated_at = Column(
         DateTime(timezone=False), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class ChatbotClarifyPolicy(Base):
+    """One question kind the chatbot can ask, and what it does instead (CLARIFY-POLICY S2,
+    AC-110..AC-116, owner rule R1 11 Oct 2026): `ask`, `default`, `collapse`, or for the
+    carried subject `ask`, `carry`, `drop`. Seeded by migration `clp_0001_clarify_policy` from
+    `clarify_policy.CLARIFY_POLICY_ROWS`; `clarify_policy.load_clarify_policy` falls back to that
+    list when the table is empty (the create_all case). `mode` must be one of the row's own
+    `allowed_modes` (CHECK). Not company scoped: one policy for the chatbot."""
+
+    __tablename__ = "chatbot_clarify_policy"
+    __audit_track__ = True
+    __table_args__ = (
+        CheckConstraint("mode = ANY(allowed_modes)", name="ck_chatbot_clarify_policy_mode_allowed"),
+    )
+
+    ask_kind = Column(Text, primary_key=True)
+    label = Column(Text, nullable=False)
+    mode = Column(Text, nullable=False)
+    allowed_modes = Column(ARRAY(Text), nullable=False)
+    default_note = Column(Text, nullable=False, server_default="")
+    repeat_limit = Column(Integer, nullable=False, server_default="2")
+    updated_at = Column(
+        DateTime(timezone=False), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    updated_by = Column(Text, nullable=True)

@@ -16,6 +16,7 @@ ask, the attachment type ask, the domain menu, the LLM clarifier).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,122 @@ _MISSING_WORDS = {
     "carry_combine": "which products to include",
     "carry_unclear": "which products to include",
 }
+
+
+@dataclass(frozen=True)
+class ClarifyRule:
+    """One `chatbot_clarify_policy` row (AC-110)."""
+
+    ask_kind: str
+    label: str
+    mode: str
+    allowed_modes: tuple[str, ...]
+    default_note: str = ""
+    repeat_limit: int = MAX_IDENTICAL_ASKS
+
+
+def _row(kind: str, label: str, mode: str = "ask", others: tuple[str, ...] = (), note: str = "") -> dict[str, Any]:
+    return {
+        "ask_kind": kind,
+        "label": label,
+        "mode": mode,
+        "allowed_modes": [mode, *others],
+        "default_note": note,
+        "repeat_limit": MAX_IDENTICAL_ASKS,
+    }
+
+
+#: The ONE seed of `chatbot_clarify_policy` (the CARD's table, owner rulings 11 Oct 2026): every
+#: kind at today's mode, except `generic_menu` / `entities_only` = default (Q5) and the carried
+#: subject rows = ask (R2, Q9). A kind has more than one allowed mode only where the other
+#: behaviour already exists in code (Q7). Frozen like `turn/policy_rows.py`: the migration
+#: `clp_0001_clarify_policy` inserts these rows, so edit a row by a new migration, not here.
+CLARIFY_POLICY_ROWS: tuple[dict[str, Any], ...] = (
+    _row("promo_tier", "Promotion access level"),
+    _row("tier_pick", "Generic access level pick"),
+    _row("promo_subject", "Promotion subject"),
+    _row("attachment_type", "Attachment type"),
+    _row("attachment_kind", "Attachment kind"),
+    _row("cost_product", "Purchase cost product"),
+    _row("do_period", "Which period, for delivery orders", "ask", ("default",), "newest 20, no date window"),
+    _row("so_period", "Which period, for sales orders", "ask", ("default",), "newest 20, no date window"),
+    _row("ranking_fields", "Ranking period, metric, basis, top N"),
+    _row("ranking_drill", "Ranking drill scope"),
+    _row("top_selling", "Top selling grain, metric, who"),
+    _row("low_stock", "Low stock category, supplier, grouping"),
+    _row("idea_text", "Ideation idea"),
+    _row("outstanding_scope", "Outstanding for which document", "ask", ("default",), "both SO and DO"),
+    _row("outstanding_customer", "Outstanding report customer"),
+    _row("product_pick", "Product picker", "collapse"),
+    _row("customer_pick", "Customer picker"),
+    _row("roster_pick", "Roster pick"),
+    _row("kind_pick", "Kind pick"),
+    _row("account_customer", "Account N customer"),
+    _row("stock_qty", "Stock quantity"),
+    _row("stock_family", "Stock family pick"),
+    _row("qty_scope", "Quantity for all or one"),
+    _row("demand_qty", "Stock denial demand quantity"),
+    _row("did_you_mean", "Did you mean"),
+    _row("generic_menu", "Domain menu", "default", ("ask",), "answer the subject's default domain"),
+    _row("llm_clarify", "LLM clarifier"),
+    _row("escalation_pick", "Escalation team, company, member"),
+    _row("entities_only", "What would you like me to know", "default", ("ask",), "answer the subject's default domain"),
+    _row("carry_combine", "Carried subject with a new subject", "ask", ("carry", "drop"), "ask, keep or drop"),
+    _row("carry_unclear", "Carried subject, no reference", "ask", ("carry", "drop"), "ask, keep or drop"),
+)
+
+
+def _rule(row: Any) -> ClarifyRule:
+    return ClarifyRule(
+        ask_kind=str(row["ask_kind"]),
+        label=str(row.get("label") or row["ask_kind"]),
+        mode=str(row["mode"]),
+        allowed_modes=tuple(row.get("allowed_modes") or (row["mode"],)),
+        default_note=str(row.get("default_note") or ""),
+        repeat_limit=int(row.get("repeat_limit") or MAX_IDENTICAL_ASKS),
+    )
+
+
+_SEED: dict[str, ClarifyRule] = {r["ask_kind"]: _rule(r) for r in CLARIFY_POLICY_ROWS}
+
+
+def load_clarify_policy(db: Any) -> dict[str, ClarifyRule]:
+    """The policy, one rule per kind (AC-113): the table's rows over the seed. An empty or
+    missing table, or any read error, is the seed, never "no ask". A row whose mode is not in
+    its own allowed modes (the service-level check beside the DB CHECK, AC-111) is ignored."""
+    rules = dict(_SEED)
+    if db is None:
+        return rules
+    nested = None
+    try:
+        from sqlalchemy import text
+
+        # A savepoint, so a missing table never aborts the caller's transaction.
+        nested = db.begin_nested() if hasattr(db, "begin_nested") else None
+        rows = db.execute(
+            text(
+                "SELECT ask_kind, label, mode, allowed_modes, default_note, repeat_limit "
+                "FROM chatbot_clarify_policy"
+            )
+        ).mappings().all()
+        if nested is not None:
+            nested.commit()
+    except Exception:  # noqa: BLE001 - an unreadable table is the seed
+        if nested is not None and nested.is_active:
+            nested.rollback()
+        logger.warning("chatbot: clarify policy unreadable, using the seed", exc_info=True)
+        return rules
+    for row in rows:
+        rule = _rule(dict(row))
+        if rule.mode in rule.allowed_modes:
+            rules[rule.ask_kind] = rule
+    return rules
+
+
+def mode(db: Any, kind: str) -> str:
+    """The mode the bot uses for `kind` this turn (`load_clarify_policy`)."""
+    rule = load_clarify_policy(db).get(kind)
+    return rule.mode if rule is not None else "ask"
 
 
 def ask_fingerprint(kind: str, param: str, subject: str | None) -> str:
@@ -163,8 +280,9 @@ _ESCALATE_OFFER = "Would you like me to escalate?"
 
 
 def repeat_limit(db: Any, kind: str | None) -> int:
-    """The loop breaker's limit for this ask kind (AC-116)."""
-    return MAX_IDENTICAL_ASKS
+    """The loop breaker's limit for this ask kind (AC-116): its policy row, else the seed."""
+    rule = load_clarify_policy(db).get(kind or "")
+    return rule.repeat_limit if rule is not None else MAX_IDENTICAL_ASKS
 
 
 def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_run: bool) -> None:

@@ -104,7 +104,7 @@ from app.models.chat_facts import (
 )
 from app.models.chatbot_file_link import ChatbotFileLink
 from app.models.conversation_frame import ConversationFrame
-from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
+from app.models.chatbot_policy import ChatbotClarifyPolicy, ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord
 from app.models.lookup import LookupSet, LookupOption, LookupOptionKeyword, LookupBinding
 from app.models.portal import (
     PortalToken,
@@ -347,6 +347,7 @@ __all__ = [
     "ChatbotDomain",
     "ChatbotEntityKind",
     "ChatbotStatusWord",
+    "ChatbotClarifyPolicy",
     "ChatbotDomainWord",
     "LookupSet",
     "LookupOption",
