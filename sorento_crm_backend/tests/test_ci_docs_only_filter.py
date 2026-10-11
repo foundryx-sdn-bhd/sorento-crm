@@ -48,6 +48,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -590,26 +591,80 @@ def test_the_pr_gate_reports_as_pr_gate_on_a_pull_request():
 
 
 def test_the_pr_gate_runs_whatever_the_fast_gates_did_and_fails_with_them(tmp_path):
-    """`always()` so a red fast gate never turns the required check into a
-    "skipped" (which a ruleset accepts); its first step fails on such a need."""
+    """`always()` so a red root job never turns the required check into a
+    "skipped" (which a ruleset accepts); its first step fails on such a need.
+    CI-COST round 2: the PII guard, gitleaks and the alembic head check run as
+    steps of the PR gate on a PR, so `check-migration-heads` skips there."""
     jobs = _job_ifs()
-    assert set(jobs["lean-gate"]["needs"]) == {"changes", "check-migration-heads", "pii-guard", "gitleaks"}
-    for forced in ({"gitleaks": "failure"}, {"changes": "failure"}, {"pii-guard": "failure"}):
-        results = _simulate("pull_request", label="ci", outputs=TESTS_ONLY_OUTPUTS, forced=forced)
+    assert set(jobs["lean-gate"]["needs"]) == {"changes", "check-migration-heads"}
+    for forced in ({"changes": "failure"}, {"check-migration-heads": "failure"}):
+        results = _simulate("workflow_dispatch", outputs=LEAN_RELEASE, forced=forced)
         assert results["lean-gate"] == "success", "the job runs (its step then fails)"
     script = _step_script("Fail when a fast gate did not pass")
-    green = {"changes": "success", "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success"}
-    def run(needs):
+    green = {"changes": "success", "check-migration-heads": "success"}
+    def run(needs, event):
         return subprocess.run(
             ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "EVENT": event,
                  "NEEDS": json.dumps({k: {"result": v, "outputs": {}} for k, v in needs.items()})},
             capture_output=True, text=True,
         )
-    assert run(green).returncode == 0
-    for job in green:
-        bad = run({**green, job: "failure"})
-        assert bad.returncode != 0 and f"{job} failure" in bad.stdout + bad.stderr, job
+    assert run(green, "workflow_dispatch").returncode == 0
+    assert run({**green, "check-migration-heads": "skipped"}, "pull_request").returncode == 0, "folded on a PR"
+    skipped = run({**green, "check-migration-heads": "skipped"}, "workflow_dispatch")
+    assert skipped.returncode != 0 and "check-migration-heads skipped" in skipped.stdout + skipped.stderr
+    for event in ("pull_request", "workflow_dispatch"):
+        for job in green:
+            bad = run({**green, job: "failure"}, event)
+            assert bad.returncode != 0 and f"{job} failure" in bad.stdout + bad.stderr, (event, job)
+
+
+def test_the_pr_gate_runs_the_fast_gates_as_its_first_steps():
+    """CI-COST round 2: four one-job fast gates billed a minute each for 16-54 s of
+    work (run 38122622280). On a PR they are steps of the PR gate, before the
+    dependency install, so a red gate still fails in about a minute."""
+    names = list(_lean_gate_steps())
+    steps = _lean_gate_steps()
+    for name, needle in (("Single alembic head", "python3 scripts/ci_alembic_heads.py"),
+                         ("No personal data in tracked files", "python3 scripts/pii_guard.py"),
+                         ("Secret scan (gitleaks)", "bash scripts/ci_gitleaks.sh")):
+        assert name in steps, names
+        assert needle in steps[name], name
+        assert "github.event_name == 'pull_request'" in steps[name], name
+        assert names.index(name) < names.index("Install dependencies"), name
+    checkout = _lean_gate_steps()["Checkout"]
+    assert "github.event_name == 'pull_request'" in checkout and "fetch-depth" in checkout, "gitleaks reads base..head"
+
+
+def test_the_gitleaks_script_pins_and_verifies_the_cli():
+    script = (REPO / "scripts" / "ci_gitleaks.sh").read_text(encoding="utf-8")
+    assert re.search(r'GITLEAKS_VERSION="\$\{GITLEAKS_VERSION:-8\.30\.1\}"', script)
+    assert "sha256sum -c -" in script and "--redact" in script
+    assert "--config .gitleaks.toml" in script and "--no-merges --first-parent" in script
+    assert 'git rev-list --count "$range"' in script
+    assert "gitleaks/gitleaks-action" not in _workflow_text(), "the action needs a paid org license"
+
+
+def test_the_alembic_head_script_passes_on_this_checkout_and_fails_on_two_heads(tmp_path):
+    script = REPO / "scripts" / "ci_alembic_heads.py"
+    ok = subprocess.run([sys.executable, str(script)], cwd=REPO, capture_output=True, text=True)
+    assert ok.returncode == 0 and "1 head(s)" in ok.stdout, ok.stdout + ok.stderr
+    versions = tmp_path / "versions"
+    versions.mkdir()
+    (versions / "a.py").write_text('revision = "a"\ndown_revision = None\n', encoding="utf-8")
+    (versions / "b.py").write_text('revision: str = "b"\ndown_revision = "a"\n', encoding="utf-8")
+    (versions / "c.py").write_text('revision = "c"\ndown_revision = ("a",)\n', encoding="utf-8")
+    bad = subprocess.run([sys.executable, str(script), str(versions)], capture_output=True, text=True)
+    assert bad.returncode != 0 and "2 head(s): ['b', 'c']" in bad.stdout, bad.stdout + bad.stderr
+    assert "python3 scripts/ci_alembic_heads.py" in _job_block("check-migration-heads")
+
+
+def test_the_pr_gate_collects_only_what_it_runs():
+    """CI-COST round 2: the whole-suite collect-only billed ~1.8 min of every PR gate
+    (38074897990). On a PR the selected files' own run collects them; the whole-suite
+    collect stays on the release, where it is the import check for every test."""
+    step = _lean_gate_steps()["Pytest collect-only (catches import errors in tests)"]
+    assert "github.event_name != 'pull_request'" in step
 
 
 def test_the_pr_gate_carries_the_frontend_and_mcp_checks():
@@ -910,7 +965,7 @@ def _ran(results: dict[str, str]) -> set[str]:
 # CI-LEAN: a `ci` PR runs the four one-minute fast gates and ONE job that does
 # everything else (`lean-gate`, check name `PR gate`): no image builds, no SCM
 # or main shards, no vitest shards, no separate label or gate job.
-GATES_ON_PR = {"check-migration-heads", "changes", "pii-guard", "gitleaks", "lean-gate"}
+GATES_ON_PR = {"changes", "lean-gate"}
 
 
 def test_pull_request_fast_gate_backend_with_scm_paths():
@@ -1022,10 +1077,12 @@ RELEASE_TESTS = FULL_SUITE - {"pii-guard", "ci-gate"}
 
 
 def test_push_to_main_runs_the_alembic_gate_and_nothing_else():
-    """Owner decision 29 Sep 2026: a merge does not test or deploy."""
+    """Owner decision 29 Sep 2026: a merge does not test or deploy. CI-COST round 2:
+    the PII guard and gitleaks ran on the PR's commits in its PR gate, so a push
+    to main is the alembic head check alone (3 billed minutes -> 1)."""
     for outputs in (FULL_PIPELINE, {**NO_AREA, "docs_only": "true"}):
         results = _simulate("push", outputs=outputs)
-        assert _ran(results) == {"check-migration-heads", "pii-guard", "gitleaks"}, results
+        assert _ran(results) == {"check-migration-heads"}, results
         assert results["changes"] == "skipped"
         assert results["build-images"] == "skipped"
         assert results["build-and-deploy"] == "skipped"
@@ -1073,8 +1130,10 @@ def test_release_runs_neither_the_pii_guard_nor_the_ci_gate():
     for outputs in (FULL_PIPELINE, {"docs_only": "false", **NO_AREA}):
         results = _simulate("workflow_dispatch", outputs=outputs)
         assert results["pii-guard"] == "skipped" and results["ci-gate"] == "skipped", results
-    for event, label in (("push", None), ("pull_request", "ci"), ("merge_group", None)):
-        assert _simulate(event, label=label, outputs=FULL_PIPELINE)["pii-guard"] == "success", event
+    assert _simulate("merge_group", outputs=FULL_PIPELINE)["pii-guard"] == "success"
+    for event, label in (("push", None), ("pull_request", "ci")):
+        assert _simulate(event, label=label, outputs=FULL_PIPELINE)["pii-guard"] == "skipped", event
+    assert "gitleaks" not in _job_ifs(), "a step of the PR gate now, no job"
 
 
 # ---------------------------------------------------------------------------
@@ -1293,7 +1352,7 @@ def _run_gate(tmp_path: Path, needs: dict[str, str]) -> tuple[int, str]:
 
 
 GATE_NEEDS_GREEN = {
-    "check-migration-heads": "success", "pii-guard": "success", "gitleaks": "success", "changes": "success",
+    "check-migration-heads": "success", "pii-guard": "success", "changes": "success",
     "validate-backend": "success", "validate-mcp": "skipped", "test-backend-scm": "skipped",
     "test-backend": "skipped", "lean-gate": "skipped", "validate-frontend": "skipped",
     "typecheck-frontend": "skipped",
@@ -1308,11 +1367,11 @@ def test_ci_gate_step_passes_when_every_need_succeeded_or_was_path_filtered(tmp_
 
 @pytest.mark.parametrize("job,result", [
     ("test-backend", "failure"), ("test-backend-scm", "cancelled"), ("validate-frontend", "failure"),
-    ("lean-gate", "failure"), ("gitleaks", "failure"), ("pii-guard", "failure"),
+    ("lean-gate", "failure"), ("pii-guard", "failure"),
     # Run 37369427779 (5 Oct 2026): GitHub reports `abandoned` for a job it
     # never found a runner for and for a matrix whose shard hit its cap; a
     # deny-list of failure/cancelled passed that run green.
-    ("test-backend", "abandoned"), ("gitleaks", "abandoned"), ("validate-frontend", "abandoned"),
+    ("test-backend", "abandoned"), ("pii-guard", "abandoned"), ("validate-frontend", "abandoned"),
     ("typecheck-frontend", "timed_out"), ("validate-mcp", "something-new"), ("test-backend", ""),
 ])
 def test_ci_gate_step_fails_on_anything_but_success_or_skipped(tmp_path, job, result):
