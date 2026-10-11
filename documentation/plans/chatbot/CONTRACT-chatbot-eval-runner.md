@@ -199,3 +199,18 @@ Measured on `sorento_ai_automation_20261006` `chatbot.turns.trace` (a JSON array
   0256, 0258, 0306: the replayed history re-asked the same thing and the bot correctly answered the same way).
   Fix: the rubric is checked first; `stuck` only replaces a failing verdict (wrong) when the reply equals the
   previous one. A repeat that meets the rubric is correct. Tool errors / blank stay first. GRADER_VERSION 8.
+
+## Round 11 (prompt pin resolves or fails, 11 Oct; follow-up PR)
+- Bug (found by the prompt-diet lane): the engine renders a pinned prompt only when `prompt_overrides` holds the
+  `ai_prompt_versions.id`; anything that matches no row (e.g. `"50"`) silently falls back to the code prompt
+  (`app/services/ai_prompt_registry.py:1393-1407`).
+- `--prompt-version X` accepts the version NUMBER or the row UUID. It is resolved before the engine is built,
+  read-only, via `EVAL_TRACE_DB_URL`: `ai_prompt_versions` where `name = 'chatbot_semantic_parser'` and
+  (`id = X` or `version = X`). No DB URL, or no matching row -> exit 2 with a message naming X. The envelope pins
+  the resolved UUID.
+- Without `--prompt-version`, the run resolves the `production` label (`ai_prompt_labels.label = 'production'`) the
+  same way when `EVAL_TRACE_DB_URL` is set (no DB URL: prompt recorded as unknown, run continues).
+- `report.json` gains `prompt: {id, version, template_md5, source: "pin" | "label" | "unknown"}`; `prompt_version` stays.
+- Evidence from the traces: `prompt_versions_seen` = count of the parser's `prompt_version` across final-turn digests.
+  A pinned or label-resolved run where any seen version differs from the resolved version sets `prompt_mismatch:
+  true`, prints it on stderr and exits 5 after writing the report.
