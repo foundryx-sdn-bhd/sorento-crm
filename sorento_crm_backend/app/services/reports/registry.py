@@ -76,6 +76,9 @@ MONTHS_OF_YEAR: Tuple[Tuple[str, str], ...] = tuple(
 )
 
 
+AGGS = frozenset({"sum", "count_distinct"})
+
+
 @dataclass(frozen=True)
 class Column:
     """One catalog column: what it is called, what it holds, and how to select it."""
@@ -100,8 +103,16 @@ class Column:
     #: The period_months idea for years: every year of the period is a value, so a year
     #: with no sales is a blank row rather than a missing one.
     period_years: bool = False
+    #: How a measure aggregates: "sum" (default) or "count_distinct" (distinct values of
+    #: `expr`; a total is its own query over the whole set, never a sum of cells).
+    agg: str = "sum"
+    #: A ratio measure: (numerator key, denominator key) of two other measures. Computed
+    #: AFTER aggregation from their sums, in every cell and total; `expr` is not read.
+    ratio_of: Optional[Tuple[str, str]] = None
 
     def __post_init__(self) -> None:
+        if self.agg not in AGGS:
+            raise ValueError(f"Report column '{self.key}' has agg '{self.agg}'; expected one of {sorted(AGGS)}")
         if self.type not in COLUMN_TYPES:
             raise ValueError(
                 f"Report column '{self.key}' has type '{self.type}'; "

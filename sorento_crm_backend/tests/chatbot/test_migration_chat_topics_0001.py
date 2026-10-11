@@ -32,7 +32,9 @@ from tests._pg_fixture import blank_session
 
 STEM = "chat_topics_0001_taxonomy"
 _MIGRATION = pathlib.Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{STEM}.py"
-DOMAINS = tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS)
+#: The 15 parser domains the taxonomy was drawn from (9 Oct 2026). `chat_analytics` (CA-3) is a
+#: routing domain about the bot itself: its asks are labelled at `general`, so it has no subject.
+DOMAINS = tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS if row["name"] != "chat_analytics")
 
 
 def _source() -> str:

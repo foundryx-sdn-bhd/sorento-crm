@@ -34,6 +34,7 @@ from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import low_stock_ask
+from app.services.chatbot.lanes.business import chat_report
 from app.services.chatbot.lanes.business import report_ask
 from app.services.chatbot.lanes.business import ranking_ask
 from app.services.chatbot.lanes.business import resolve_gate
@@ -888,6 +889,9 @@ def run_until_exit(
     sales_analysis_ask = (
         jsc.js_string(parse_output_peek.get("order_status") or "") == "sales_analysis"
     )
+    # CA-3: a chat report names no order subject for the gate to resolve; the lane resolves its
+    # customer and product words itself (`chat_report.settle`) and says a miss in one line.
+    chat_report_ask = chat_report.is_chat_report(parse_output_peek)
     if (
         isinstance(parse_output_peek.get("outstanding_reask_filters"), dict)
         or isinstance(parse_output_peek.get("outstanding_detail_reask"), dict)
@@ -897,6 +901,7 @@ def run_until_exit(
         or carried_subject_answer
         or sales_report_ungranted
         or sales_analysis_ask
+        or chat_report_ask
     ):
         return {
             "delegate": DELEGATE,
@@ -1409,6 +1414,14 @@ def run_fetch(
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
     customer_scope = ctx.get("customer_scope") if isinstance(ctx.get("customer_scope"), dict) else {}
+    if chat_report.is_chat_report(parse_output) and db is not None:
+        # CA-3: THIS fetch is a chat report, scoped by the asker rule (dealer only), not by customer
+        # links; applied here, at fetch time, so no other fetch of the turn sees the relaxation.
+        customer_scope = chat_report.scope_for(
+            chat_report.DOMAIN, customer_scope,
+            asker=chat_report.asker_of(db, contact_id, space_id),
+            granted=chat_report.GRANT in set((ctx.get("access") or {}).get("attributes") or []),
+        )
     scoped_to_links = bool(customer_scope.get("enforced") and customer_scope.get("ids"))
     if scoped_to_links:
         semantic_input["scope_customer_ids"] = list(customer_scope["ids"])
@@ -1693,6 +1706,10 @@ def run_fetch(
         if need not in granted:
             if trace is not None:
                 trace.add("domain_grant", {"domain": domain, "skipped": "not_granted", "needs": need})
+            if need == chat_report.GRANT:
+                # CA-3: a contact without the Chat analytics reveal is turned away in one line
+                # before any call (the route refuses again, `chat_analytics_not_enabled`).
+                return _fixed_reply(chat_report.NOT_ENABLED)
             if need == _SALES_REPORT_GRANT:
                 # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is refused in the
                 # words every sales figure ask was refused in under `order`.
@@ -2100,6 +2117,34 @@ def run_fetch(
             semantic_input["top_selling_drop"] = ["category_words", "category_code"]
         semantic_input["top_selling_notes"] = notes
         semantic_input["top_selling_category_ids"] = category_ids
+    elif domain == chat_report.DOMAIN and chat_report.is_chat_report(parse_output):
+        # CA-3 (PLAN-chat-analytics-ca3-chat-dataset-10oct.md slice 5): what customers ask
+        # the bot, `crm_report_ask` with `dataset=chat`. The reveal was checked above; every
+        # other gate (a dealer's or a salesman's customers) is the route's, from
+        # `contact_id`. Nothing runs until the period, and how many for a ranking, are
+        # settled (`required_fields`; both missing are asked in one reply).
+        tool_name = chat_report.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "chat_report_override"}}
+        settled, line = chat_report.settle(
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
+            own_ids=customer_scope.get("ids"),
+            message_text=jsc.js_string(
+                jsc.get(jsc.get(jsc.get(jsc.get(ctx, "text"), "message"), "message"), "text") or ""
+            ),
+        )
+        if trace is not None:
+            trace.add(
+                "required_ask",
+                {"ask": chat_report.ASK_NAME, "done": bool(settled and settled.done),
+                 "values": settled.values if settled else None, "line": line},
+            )
+        if settled is None:
+            return _fixed_reply(line or "")
+        if not settled.done:
+            return _fixed_reply(settled.reply or "", required_ask=settled.slot)
+        semantic_input["report_ask_args"] = chat_report.route_args(settled)
+        # The args carry every id the ask settled; nothing the session carried rides beside them.
+        entities = []
     elif domain in contracts.ORDER_OR_SALES_DOMAINS and order_status_raw == report_ask.ASK_NAME:
         # REPORT-ENGINE slice 1b (PLAN-report-engine.md section 11): sales ranked or
         # totalled by one dimension, `crm_report_ask`. The grant was checked above for
