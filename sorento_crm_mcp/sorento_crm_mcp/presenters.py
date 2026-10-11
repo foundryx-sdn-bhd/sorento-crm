@@ -1838,6 +1838,42 @@ _REPORT_KIND_TOOLS = {
 }
 
 
+_LOW_STOCK_READ_TOP = 10
+
+
+def _low_stock_read_envelope(body: dict) -> dict:
+    """A full low stock read view as a chat reply: the run date, how many items are low, then the
+    low items by shortage (reorder level minus on hand), largest first. The supplier is named only
+    when the view carries the Supplier column (the contact holds that grant)."""
+    columns = list(body.get("columns") or [])
+
+    def _cell(row: list, name: str):
+        return row[columns.index(name)] if name in columns and columns.index(name) < len(row) else None
+
+    def _num(value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    low = []
+    for row in body.get("rows") or []:
+        on_hand, level = _num(_cell(row, "BRW on hand")), _num(_cell(row, "Reorder level"))
+        if on_hand < level:
+            low.append((level - on_hand, row))
+    low.sort(key=lambda pair: -pair[0])
+    count = (body.get("counts") or {}).get("low")
+    lines = [f"As of: {body.get('run_date') or (body.get('run') or {}).get('as_of') or ''}",
+             f"Low items: {count if count is not None else len(low)}"]
+    for _gap, row in low[:_LOW_STOCK_READ_TOP]:
+        line = f"{_cell(row, 'Item code')} {_cell(row, 'Description') or ''}".strip()
+        supplier = _cell(row, "Supplier")
+        if "Supplier" in columns and supplier:
+            line += f" ({supplier})"
+        lines.append(line)
+    return {"result_type": "low_stock_report", "response": "\n".join(lines), "attachments": [], "has_result": True}
+
+
 def present_response(tool_name: str, raw: str) -> str:
     """Transform a sanitized tool JSON string into the render envelope JSON string.
 
@@ -1869,6 +1905,8 @@ def present_response(tool_name: str, raw: str) -> str:
                 "result_type": "low_stock_report", "response": str(data.get("message") or ""),
                 "attachments": [], "has_result": True,
             })
+        if kind == "low_stock" and "status" not in data:
+            return json.dumps(_low_stock_read_envelope(data))
         tool_name = _REPORT_KIND_TOOLS.get(kind, "crm_report_ask")
 
     # S4 point 5 (AC-1114b): `crm_outstanding_report` never goes through the

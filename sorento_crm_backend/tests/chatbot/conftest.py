@@ -233,3 +233,16 @@ def _stub_casual_llm(request, monkeypatch):
     monkeypatch.setattr(casual_mod, "resolve_clarifier_config", _fake_resolve_clarifier_config)
     monkeypatch.setattr(casual_mod, "call_clarifier", _fake_call_clarifier)
     yield calls
+
+
+@pytest.fixture(autouse=True)
+def _outstanding_and_sales_report_calls_keep_their_old_tool_names(request, monkeypatch) -> None:
+    """REPORTS-STEP2 S5a: the lane now sends the outstanding and delivered sales reports as
+    `crm_report` + a measure key (`fetch.REPORT_MEASURE_OF`). The many older lane tests record and
+    serve those calls under the old tool names, so for them the seam is switched off and they keep
+    exercising the lane exactly as before; only the `reports_step2` modules see the switch."""
+    if "reports_step2" in request.module.__name__:
+        return
+    from app.services.chatbot.lanes.business import fetch
+
+    monkeypatch.setattr(fetch, "REPORT_MEASURE_OF", {})

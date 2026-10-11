@@ -1422,6 +1422,13 @@ def ensure_read_only(name: Any) -> None:
         )
 
 
+#: The tools whose chat call goes out as `crm_report` with this measure key.
+REPORT_MEASURE_OF: dict[str, str] = {
+    "crm_outstanding_report": "order_outstanding",
+    "crm_sales_report": "delivered_sales",
+}
+
+
 def call_tool(name: str, args: dict[str, Any], *, mcp: Any) -> Any:
     """One MCP tool call, passed straight through (D10) - if the tool only READS.
 
@@ -1440,6 +1447,11 @@ def call_tool(name: str, args: dict[str, Any], *, mcp: Any) -> Any:
     payload rather than from the domain table.
     """
     ensure_read_only(name)
+    measure = REPORT_MEASURE_OF.get(name)
+    if measure:
+        # REPORTS-STEP2 S5a: the lane keeps working in the old tool's terms; the call itself is
+        # `crm_report` with the measure key, same args, same reply (the presenter picks the kind).
+        name, args = "crm_report", {**args, "measure": measure}
     return mcp.call_tool(name, args)
 
 
