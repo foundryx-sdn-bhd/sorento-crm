@@ -111,10 +111,22 @@ def test_ac20_order_outstanding_needs_a_subject(client, db):
     assert resp.status_code == 422 and resp.json().get("code") == "subject_required", resp.text
 
 
-def test_ac20_order_outstanding_needs_the_outstanding_grant(client, db):
+def test_review_order_outstanding_without_the_grant_serves_the_do_block_only(client, db):
+    """No `sales_orders.outstanding`: the lane's own behaviour today (scope=do, so_refused=True)."""
     cust, _prod = _outstanding_world(db)
-    resp = _get(client, REPORT, _staff(db, SALES_GRANT), measure="order_outstanding", customer_ids=cust.id)
-    assert resp.status_code == 403, resp.text
+    contact = _staff(db, SALES_GRANT)
+    old = _get(client, OUTSTANDING, contact, customer_ids=cust.id, scope="do", so_refused="true")
+    new = _get(client, REPORT, contact, measure="order_outstanding", customer_ids=cust.id)
+    assert old.status_code == 200, old.text
+    assert new.status_code == 200, new.text
+    assert "so" not in new.json() and new.json().get("so_refused") is True, new.json()
+    assert _without_kind(new.json()) == old.json()
+
+
+def test_review_so_count_without_the_grant_is_403(client, db):
+    cust, _prod = _outstanding_world(db)
+    resp = _get(client, REPORT, _staff(db, SALES_GRANT), measure="so_count", customer_ids=cust.id)
+    assert resp.status_code == 403 and "Unknown measure" not in resp.text, resp.text
 
 
 def test_ac20_order_outstanding_dealer_sees_only_its_own_customers(client, db):
@@ -390,6 +402,222 @@ def test_ac21_a_run_still_being_built_with_no_completed_one_says_preparing(clien
     body = _get(client, REPORT, contact, measure="low_stock").json()
     assert body["status"] == "preparing" and "still being prepared" in body["message"], body
     assert _counts(db) == before
+
+
+# ============================================================================ S4 review round
+
+
+REAL_SUPPLIERS = ("Zenith Sanitaryware Sdn Bhd", "Lotus Porcelain Trading")
+
+
+def _named_run(db, grants, *, categories=None):
+    from tests.scm.test_low_stock_report import _product, _run, _summary_row
+
+    run = _run(db, company_id=DEFAULT_COMPANY_ID)
+    specs = [("N1", REAL_SUPPLIERS[0]), ("N2", REAL_SUPPLIERS[1]), ("N3", REAL_SUPPLIERS[0])]
+    for i, (stem, supplier) in enumerate(specs):
+        cat = categories[i] if categories else None
+        _summary_row(db, run, _product(db, stem=stem, category_code=cat), pool_on_hand=1, reorder_level=50,
+                     supplier_name=supplier)
+    return run, _staff(db, *grants)
+
+
+def test_review_b1_low_stock_without_the_supplier_grant_leaks_no_supplier_name(client, db, no_jobs, pick_run):
+    run, contact = _named_run(db, (SALES_GRANT, LOW_GRANT))
+    pick_run(run)
+    body = _get(client, REPORT, contact, measure="low_stock").json()
+    assert body.get("status") != "error" and body.get("columns"), body
+    assert not (body["facets"].get("suppliers") or []), body["facets"]
+    dumped = json.dumps(body)
+    for name in REAL_SUPPLIERS:
+        assert name not in dumped, name
+
+
+def test_review_b2_sales_value_group_by_year_is_the_lanes_channel_by_year(client, db, analysis_harness):
+    _sale(db, "100.00", date(2026, 9, 5), "retail")
+    _sale(db, "250.00", date(2026, 9, 6), "project")
+    contact = _staff(db, SALES_GRANT)
+    window = dict(date_from="2026-01-01", date_to="2026-09-30", basis="ordered")
+    old = _get(client, ANALYSIS, contact, rows="channel", cols="year", **window).json()
+    resp = _get(client, REPORT, contact, measure="sales_value", group_by="year", **window)
+    assert resp.status_code == 200, resp.text
+    for key in ("columns", "rows", "totals", "total_count"):
+        assert resp.json()[key] == old[key], key
+
+
+def test_review_b2_sales_value_group_by_month_is_month_by_year(client, db, analysis_harness):
+    _sale(db, "100.00", date(2026, 9, 5), "retail")
+    contact = _staff(db, SALES_GRANT)
+    window = dict(date_from="2026-01-01", date_to="2026-09-30", basis="ordered")
+    old = _get(client, ANALYSIS, contact, rows="month", cols="year", **window).json()
+    new = _get(client, REPORT, contact, measure="sales_value", group_by="month", **window).json()
+    assert new["rows"] == old["rows"] and new["total_count"] == old["total_count"]
+
+
+@pytest.fixture
+def restricted(client, db, monkeypatch):
+    """The act-as principal is an ordinary user: `allow` are the permission slugs it holds and
+    `enabled` the tenant's enabled modules (strict guard on, so a missing one blocks)."""
+    from app.config import settings
+    from app.dependencies import get_current_user, get_current_user_or_api_key
+    from app.main import app
+    from app.models.user import User
+    from app.services.user_service import UserPermissionService
+
+    user = User(id=str(uuid.uuid4()), email=f"{unique_code('U')}@test.com", name="ZZT Plain", status="ACTIVE")
+    db.add(user)
+    db.commit()
+    principal = {"id": user.id, "email": user.email}
+    app.dependency_overrides[get_current_user] = lambda: principal
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: principal
+
+    def _apply(allow, enabled):
+        monkeypatch.setattr(UserPermissionService, "check_user_has_permission",
+                            lambda self, uid, slug: slug in allow)
+        monkeypatch.setattr(settings, "module_guard_strict", True, raising=False)
+        monkeypatch.setattr("app.modules.runtime.guards.is_module_enabled", lambda d, t, m: m in enabled)
+        monkeypatch.setattr("app.modules.runtime.installer.is_module_enabled", lambda d, t, m: m in enabled)
+        monkeypatch.setattr("app.modules.runtime.guards.tenant_has_any_module_row", lambda d, t: True)
+
+    return _apply
+
+
+_BASE_ALLOW = {"order_management.orders.view"}
+_MODULES = {"order", "sales", "scm"}
+
+
+def test_review_s1_sales_value_needs_the_sales_permission_and_module(client, db, analysis_harness, restricted):
+    _sale(db, "100.00", date(2026, 9, 5), "retail")
+    contact = _staff(db, SALES_GRANT)
+    ask = dict(measure="sales_value", group_by="channel", basis="ordered", date_from="2026-01-01", date_to="2026-09-30")
+    restricted(_BASE_ALLOW | {"sales.reports.view"}, _MODULES)
+    control = _get(client, REPORT, contact, **ask)
+    assert control.status_code == 200, ("control", control.text)
+    restricted(_BASE_ALLOW, _MODULES)
+    assert _get(client, REPORT, contact, **ask).status_code == 403, "no sales.reports.view"
+    restricted(_BASE_ALLOW | {"sales.reports.view"}, _MODULES - {"sales"})
+    assert _get(client, REPORT, contact, **ask).status_code == 403, "sales module disabled"
+
+
+def test_review_s1_low_stock_needs_the_reorder_permission_and_module(client, db, no_jobs, pick_run, restricted):
+    run, contact = _low_world(db)
+    pick_run(run)
+    restricted(_BASE_ALLOW | {"scm.reorder.run"}, _MODULES)
+    control = _get(client, REPORT, contact, measure="low_stock")
+    assert control.status_code == 200, ("control", control.text)
+    restricted(_BASE_ALLOW, _MODULES)
+    assert _get(client, REPORT, contact, measure="low_stock").status_code == 403, "no scm.reorder.run"
+    restricted(_BASE_ALLOW | {"scm.reorder.run"}, _MODULES - {"scm"})
+    assert _get(client, REPORT, contact, measure="low_stock").status_code == 403, "scm module disabled"
+
+
+def test_review_s2_low_stock_reads_the_company_the_contact_adopts(db, monkeypatch, no_jobs):
+    """Two companies, a completed run each: the pick runs under the company
+    `low_stock_report._adopt_company_scope` chooses, never under the ambient 'all companies'."""
+    from fastapi.testclient import TestClient
+
+    from app.api.v1.scm.low_stock_report import _adopt_company_scope
+    from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
+    from app.main import app
+    from app.models.base import get_company_scope, set_company_scope
+    from app.models.company import RespondContactCompany
+    from app.models.user import User
+    from app.services.company_scope_resolver import apply_company_scope
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+    from app.services.scm import reorder_run_service
+    from tests._mc_lookup_seed import seed_mocha
+    from tests.scm.test_low_stock_report import _product, _run, _summary_row
+
+    mocha = seed_mocha(db)
+    runs = {}
+    for company_id, stem in ((DEFAULT_COMPANY_ID, "SORE"), (mocha.id, "MOCH")):
+        run = _run(db, company_id=company_id)
+        _summary_row(db, run, _product(db, stem=stem), pool_on_hand=1, reorder_level=50, supplier_name=None)
+        runs[company_id] = (run, stem)
+    contact = _staff(db, SALES_GRANT, LOW_GRANT)
+    db.add(RespondContactCompany(id=str(uuid.uuid4()), respond_contact_id=contact.id, company_id=mocha.id))
+    from tests.test_top_selling_report import _seed_superadmin
+
+    principal = _seed_superadmin(db)
+    db.commit()
+
+    # The ambient scope an API-key request carries: every company (the production shape).
+    async def _scope():
+        set_company_scope(db, None)
+        return None
+
+    app.dependency_overrides[get_db] = lambda: (yield db)
+    app.dependency_overrides[get_current_user] = lambda: principal
+    app.dependency_overrides[get_current_user_or_api_key] = lambda: principal
+    app.dependency_overrides[apply_company_scope] = _scope
+    seen = []
+
+    def _pick(session, today=None):
+        scope = get_company_scope(session)
+        seen.append(scope)
+        if isinstance(scope, frozenset) and len(scope) == 1:
+            run = runs[next(iter(scope))][0]
+            return {"row": {"id": run.id, "status": "completed", "started_at": datetime(2026, 10, 10, 22, 0),
+                            "finished_at": None}, "is_today": True}
+        return None
+
+    monkeypatch.setattr(reorder_run_service, "today_or_latest_run", _pick)
+    try:
+        set_company_scope(db, None)
+        resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact.id, space_id="zzt-space")
+        expected = _adopt_company_scope(db, resolved_contact_id=str(resolved), owner_user_id=principal["id"])
+        set_company_scope(db, None)
+        assert expected in runs, expected
+        seen.clear()
+        resp = TestClient(app).get(
+            REPORT, params={**_as_contact(contact), "measure": "low_stock"}, headers=KEY)
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 200, resp.text
+    assert seen and all(s == frozenset({expected}) for s in seen), (seen, expected)
+    stem = runs[expected][1]
+    other = next(v[1] for k, v in runs.items() if k != expected)
+    assert stem in json.dumps(resp.json()) and other not in json.dumps(resp.json()), resp.text
+
+
+def test_review_low_stock_categories_given_as_one_comma_value_are_split(client, db, no_jobs, pick_run):
+    from app.services.scm.low_stock_report_service import build_low_stock_view
+
+    run, contact = _named_run(db, (SALES_GRANT, LOW_GRANT, SUPPLIER_GRANT),
+                              categories=("ZZTCATA", "ZZTCATB", "ZZTCATC"))
+    pick_run(run)
+    keys = [f["key"] for f in build_low_stock_view(db, run_id=run.id, include_supplier=True)["facets"]["categories"]]
+    wanted = sorted(k for k in keys if k.startswith("ZZTCAT"))[:2]
+    expected = json.loads(json.dumps(
+        build_low_stock_view(db, run_id=run.id, include_supplier=True, categories=wanted), default=str))
+    resp = _get(client, REPORT, contact, measure="low_stock", categories=",".join(wanted))
+    assert resp.status_code == 200, resp.text
+    got = {k: v for k, v in resp.json().items() if k not in ("report_kind", "run_date")}
+    assert got == expected and expected["counts"]["rows"] == 2, (got.get("counts"), expected["counts"])
+
+
+@pytest.mark.parametrize(
+    "param, values",
+    [("categories", [f"C{i}" for i in range(101)]), ("suppliers", [f"S{i}" for i in range(101)]),
+     ("suppliers", ["X" * 256])],
+    ids=["101_categories", "101_suppliers", "supplier_name_256_chars"],
+)
+def test_review_low_stock_input_is_capped(client, db, no_jobs, pick_run, param, values):
+    run, contact = _named_run(db, (SALES_GRANT, LOW_GRANT, SUPPLIER_GRANT))
+    pick_run(run)
+    resp = _get(client, REPORT, contact, measure="low_stock", **{param: values})
+    assert resp.status_code == 422, resp.text
+    assert "Unknown measure" not in resp.text
+
+
+def test_review_sales_value_top_n_not_a_number_is_422_not_500(client, db, analysis_harness):
+    contact = _staff(db, SALES_GRANT)
+    try:
+        resp = _get(client, REPORT, contact, measure="sales_value", group_by="channel", basis="ordered",
+                    top_n="abc", date_from="2026-01-01", date_to="2026-09-30")
+    except Exception as exc:  # noqa: BLE001 - an unhandled error is the defect
+        pytest.fail(f"top_n=abc raised {exc!r} instead of answering 422")
+    assert resp.status_code == 422, resp.text
 
 
 # ============================================================================ AC-22
