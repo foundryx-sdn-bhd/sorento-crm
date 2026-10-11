@@ -149,6 +149,7 @@ def _regrade(args, cases: list[Case]) -> int:
         prompt_version=src.get("prompt_version", "stored"), cases=len(results), regrade_dropped=dropped,
         started_at=src.get("started_at", datetime.now(timezone.utc).isoformat()),
         git_sha=src.get("git_sha"), git_dirty=src.get("git_dirty"),
+        **{k: src[k] for k in ("prompt", "prompt_versions_seen", "prompt_mismatch") if k in src},
         regraded_from=args.regrade, regraded_at=datetime.now(timezone.utc).isoformat(),
     )
     if args.out:
