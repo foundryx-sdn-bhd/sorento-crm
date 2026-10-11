@@ -126,11 +126,26 @@ def latest_emissions(path: Path) -> dict[tuple[str, str], dict]:
     return {key: emission for key, (_, emission) in best.items()}
 
 
-def build_examples(data_dir: Path, emissions_path: Path, results_path: Path) -> list[dict]:
+def read_exclusions(path: Path) -> tuple[set[tuple[str, str]], set[str]]:
+    """(contact, text) pairs from a JSON list, and bare messages from a JSONL of example rows."""
+    pairs: set[tuple[str, str]] = set()
+    messages: set[str] = set()
+    if path.suffix == ".jsonl":
+        messages = {str(r["message"]) for r in read_jsonl(path) if r.get("message")}
+    else:
+        for item in json.loads(path.read_text(encoding="utf-8")):
+            pairs.add((str(item[0]), str(item[1])))
+    return pairs, messages
+
+
+def build_examples(
+    data_dir: Path, emissions_path: Path, results_path: Path, exclude_path: Path | None = None
+) -> list[dict]:
     rows: list[dict] = []
     cards = card_names()
     labels = {str(r.get("case_id")): r.get("label") for r in read_jsonl(results_path)}
     emissions = latest_emissions(emissions_path)
+    excluded_pairs, excluded_messages = read_exclusions(exclude_path) if exclude_path else (set(), set())
     for path in sorted(data_dir.glob("*.json")):
         case = json.loads(path.read_text(encoding="utf-8"))
         case_id = str(case.get("id") or path.stem)
@@ -142,12 +157,18 @@ def build_examples(data_dir: Path, emissions_path: Path, results_path: Path) -> 
         if expect is None:
             print(f"skipped {case_id}: no parser emission for this message", file=sys.stderr)
             continue
+        if (str(contact.get("respond_id")), text) in excluded_pairs or text in excluded_messages:
+            print(f"skipped {case_id}: excluded (near-duplicate of hidden)", file=sys.stderr)
+            continue
         area = area_of(expect, cards)
         if area is None:
             print(f"skipped {case_id}: emission has no usable area ({expect.get('domain_hint')!r})", file=sys.stderr)
             continue
         expect = compact(expect)
         terms = mask_terms(contact)
+        if mask(text, terms) in excluded_messages:
+            print(f"skipped {case_id}: excluded (near-duplicate of hidden)", file=sys.stderr)
+            continue
         context = previous_reply(case.get("history") or [])
         rows.append(
             {
@@ -203,6 +224,9 @@ def main() -> int:
     ap.add_argument("--data-dir", required=True, type=Path)
     ap.add_argument("--emissions", required=True, type=Path, help="JSONL of parser emissions per case message")
     ap.add_argument("--results", required=True, type=Path, help="eval results.jsonl (case_id, label)")
+    ap.add_argument(
+        "--exclude", type=Path, help="JSON list of [respond_id, text] pairs, or JSONL example rows, to drop"
+    )
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--embed", action="store_true", help="fill each row's embedding (provider calls)")
     ap.add_argument(
@@ -214,7 +238,7 @@ def main() -> int:
     reason = check_data_dir(args.data_dir)
     if reason:
         return refuse(reason)
-    rows = build_examples(args.data_dir, args.emissions, args.results)
+    rows = build_examples(args.data_dir, args.emissions, args.results, args.exclude)
     if args.embed:
         if not args.config_db_url:
             return refuse("--embed needs --config-db-url (the key is read from ai_assistant_configs, never the env)")

@@ -1570,6 +1570,13 @@ def _close_turn(
             logger.warning("chat facts: recording turn %s failed", turn_id, exc_info=True)
 
 
+def _fallback_reason(exc: Exception) -> str:
+    """`Type: first line of the message`, at most 300 chars. A database error's message carries
+    the statement and its parameters (a whole vector literal), which must not reach the trace."""
+    first = (str(exc).splitlines() or [""])[0]
+    return f"{type(exc).__name__}: {first}"[:300]
+
+
 def _sum_usage(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
     """Two parser calls on one turn are one spend: the token counts add, the rest is the second's."""
     summed = dict(second)
@@ -1619,7 +1626,7 @@ def _parse_with_diet(
         system_prompt = prompt_diet.build_system_prompt(core_text, cards, selected, examples)
     except Exception as exc:  # noqa: BLE001 - never stuck: the static prompt answers
         logger.warning("prompt diet fell back to the static prompt: %s", exc, exc_info=True)
-        facts["fallback"] = f"{type(exc).__name__}: {exc}"
+        facts["fallback"] = _fallback_reason(exc)
         return None, None, False
 
     def cache_key(names: list[str]) -> str:
@@ -4501,7 +4508,7 @@ def _run_stages_body(  # noqa: PLR0915
                 diet_access = prompt_diet.resolve_embedding_access(db)
             except Exception as exc:  # noqa: BLE001 - the static prompt is the fallback
                 diet_core = diet_cards = None
-                diet_facts["fallback"] = f"{type(exc).__name__}: {exc}"
+                diet_facts["fallback"] = _fallback_reason(exc)
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
