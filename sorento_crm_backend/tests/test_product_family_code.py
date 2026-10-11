@@ -308,8 +308,8 @@ def test_ac5_detail_carries_family_fields_and_members(client, db, refs):
     assert body["family_code"] == "ZZTFAM8380"
     assert body["family_code_manual"] is False
     assert body["family_members"] == [
-        {"id": a, "product_code": "ZZTFAM8380-A", "product_name": "N ZZTFAM8380-A"},
-        {"id": b, "product_code": "ZZTFAM8380-B", "product_name": "N ZZTFAM8380-B"},
+        {"id": a, "product_code": "ZZTFAM8380-A", "product_name": "N ZZTFAM8380-A", "description": None},
+        {"id": b, "product_code": "ZZTFAM8380-B", "product_name": "N ZZTFAM8380-B", "description": None},
     ]
 
 
