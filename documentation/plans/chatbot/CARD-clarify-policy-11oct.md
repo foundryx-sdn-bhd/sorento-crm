@@ -185,7 +185,10 @@ today (#4, #7, #8, #26, #27; `do_ask.py:14-17`).
   `continuation` field carries this. On main it is declared but means "more / next" and nothing
   reads it (`head/parser.py:118-123`). This lane gives it INTENT-FRAMES' meaning, word for word
   (#1473 `INTENT_FRAMES_ADDENDUM`, "SAME SUBJECT OR A NEW ONE"), as a new unlabelled parser version
-  graded on DEV before the owner promotes it.
+  graded on DEV before the owner promotes it. AMENDED (crew ruling (a), 11 Oct): live, v54 kept the
+  product on "delivery today" because #1473's paragraph lists "how about delivery?" as a follow-up.
+  Our paragraph drops that example and says a message with its own scope (date window, whole list)
+  is not a continuation (v55, `clp_0003`). Whichever of #1473 / #1570 merges second reconciles.
 - No time expiry: main has none on the carried subject today (only the escalation offer's 3-turn
   clock, `turn/pending.py:303`, which is not a subject). A test pins that.
 - R2 and P3 together: the carried-subject ask repeated twice then gets the handover line.

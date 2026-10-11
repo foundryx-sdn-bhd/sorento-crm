@@ -97,10 +97,15 @@ follow-up, AC-147), or the turn is a REFINE of the held question
   breaker (AC-120).
 - AC-147 (Q10) An elliptical follow-up the parser reads as `continuation` true ("eta?" right after a
   stock answer for ZZT391) answers for ZZT391 with no question.
+- AC-146b A bare month sent while the carry question is open is kept: the carry question is re-asked,
+  and the pick then runs over that month with no period question.
 - AC-148 (Q10) No time or turn expiry of the carried subject: a carried subject is still carried on a
   turn whose previous turn is days old, and after several turns in between (no clock anywhere).
-- AC-149 (Q10) A new unlabelled `chatbot_semantic_parser` version carries the "SAME SUBJECT OR A
-  NEW ONE" `continuation` definition word for word from INTENT-FRAMES (#1473); the `production`
+- AC-149 (Q10, crew ruling (a) 11 Oct) A new unlabelled `chatbot_semantic_parser` version carries the
+  "SAME SUBJECT OR A NEW ONE" `continuation` definition, AMENDED from INTENT-FRAMES (#1473): a
+  message asking a different kind of thing with its own scope (a date window or a whole list:
+  "delivery today") is NOT a continuation, and the "how about delivery?" example is dropped
+  (`clp_0003_parser_continuation_v2`; clp_0002 stays as applied); the `production`
   label does not move. Live DEV grading of the new version on the follow-up / fresh-question
   phrasings (crew runs it, dev key) before the owner promotes it.
 
