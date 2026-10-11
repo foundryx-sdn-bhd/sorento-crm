@@ -220,7 +220,9 @@ class TestSalesMatrix:
             hit = hit()
         entities = _qf()["entities"] if status == "sales_report" else []
         extra = (
-            {"rank_by": "quantity", "basis": None, "rank_group": None, "top_n": 5}
+            # basis named: since #1447 (REPORT-ENGINE) a null basis is asked first
+            # ("Delivered ... or ordered?") and no tool runs that turn.
+            {"rank_by": "quantity", "basis": "delivered", "rank_group": None, "top_n": 5}
             if status == "top_selling"
             else {}
         )
