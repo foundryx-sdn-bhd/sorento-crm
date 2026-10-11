@@ -111,12 +111,13 @@ def _resolve_products(db: Session, product_codes: list[str]) -> list[Product]:
         .filter(func.lower(Product.product_code).in_([c.lower() for c in codes]))
         .all()
     )
-    by_code = {row.product_code.lower(): row for row in rows if row.product_code}
+    # EVERY row of a code: one code can name a product in each company the caller belongs to
+    # (twins), and the company scope already limits `rows` to those companies.
     found: list[Product] = []
     for code in codes:
-        row = by_code.get(code.lower())
-        if row is not None and row not in found:
-            found.append(row)
+        for row in rows:
+            if row.product_code and row.product_code.lower() == code.lower() and row not in found:
+                found.append(row)
     return found
 
 
@@ -216,7 +217,7 @@ def outstanding_report(
     result: dict = {
         # One line for however many codes were named, joined the way the `Customer:`
         # line joins several ledgers - the presenter prints this verbatim.
-        "product_code": ", ".join(p.product_code for p in products) if products else None,
+        "product_code": ", ".join(dict.fromkeys(p.product_code for p in products)) if products else None,
         "customer_name": _customer_echo(db, customer_query, customer_ids),
         # #1262 slice 9 (F1a): a FILTER, never a breakdown-changing subject like
         # product/customer above - the by_customer/by_product axis choice is untouched

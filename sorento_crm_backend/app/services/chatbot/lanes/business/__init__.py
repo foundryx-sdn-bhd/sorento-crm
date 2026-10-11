@@ -1289,6 +1289,10 @@ def _resolve_report_product_and_location(
                     semantic_input["outstanding_product_code"] = token
                 break
 
+    # Every location word the turn names answers (REPORTS-STEP2 S3a, AC-29): the codes are the union,
+    # in the order named. The header's single `location_token` stays only for ONE word.
+    named_tokens: list[str] = []
+    named_codes: list[str] = []
     for e in [
         *jsc.array(parse_output.get("entities")),
         *jsc.array(parse_output.get("outstanding_refinement_entities")),
@@ -1300,9 +1304,11 @@ def _resolve_report_product_and_location(
             break
         codes = resolve_warehouse_token(db, token)
         if codes:
-            semantic_input["outstanding_warehouse_codes"] = codes
-            semantic_input["outstanding_location_token"] = token
-        break  # D5/AC-1105: one location word per turn
+            named_tokens.append(token)
+            named_codes += [c for c in codes if c not in named_codes]
+    if named_codes:
+        semantic_input["outstanding_warehouse_codes"] = named_codes
+        semantic_input["outstanding_location_token"] = named_tokens[0] if len(set(named_tokens)) == 1 else None
 
     # AC-1132/AC-1138: the SCOPE-ANSWER and DETAIL-PICK turns re-type no location
     # word at all (they are "2" / "1"), so the loop above finds nothing. The codes

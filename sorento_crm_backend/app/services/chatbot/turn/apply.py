@@ -2105,6 +2105,8 @@ def _lane_of(verdict: dict[str, Any], domains: list[str], policy: Policy) -> str
         and not _help_request_is_an_ask(verdict)
     ):
         return "escalation"
+    if verdict.get("domain_hint") in contracts.UNSUPPORTED_TOPIC_COPY:
+        return "not_supported"
     if domains and all(
         (policy.domain(name) is not None and not policy.domain(name).supported) for name in domains
     ):

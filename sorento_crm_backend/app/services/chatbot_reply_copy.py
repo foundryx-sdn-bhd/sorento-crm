@@ -349,6 +349,19 @@ IDEATION_CAPTURE_CONFIG_ERROR = {
     "zh": "此处的创意收集设置不正确，所以我无法保存。请告知您的 Sorento 联系人。",
 }
 
+# REPORTS-STEP2 S3a: asks the bot cannot answer from its data, told apart by the parser's `domain_hint`.
+NOT_SUPPORTED_RECEIVABLES = {
+    "en": "Overdue and payment balances are not available in this chat. Please check with your salesman or our accounts team.",
+    "ms": "Baki tertunggak dan bayaran tidak dapat disemak dalam chat ini. Sila semak dengan jurujual anda atau pasukan akaun kami.",
+    "zh": "此聊天无法查询逾期款项和付款余额。请向您的业务员或我们的账务部查询。",
+}
+
+NOT_SUPPORTED_DEALER_LOCATOR = {
+    "en": "I can't look up nearby dealers in this chat. Please ask your salesman for the dealer nearest you.",
+    "ms": "Saya tidak dapat mencari pengedar berdekatan dalam chat ini. Sila tanya jurujual anda tentang pengedar yang paling dekat.",
+    "zh": "此聊天无法查询附近的经销商。请向您的业务员询问离您最近的经销商。",
+}
+
 #: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
 #: registry key per language: `chatbot_reply_<name>` (English) and
 #: `chatbot_reply_<name>.ms` / `.zh`.
@@ -389,6 +402,8 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "ideation_capture_complete_no_link": (IDEATION_CAPTURE_COMPLETE_NO_LINK, ("idea_number", "title")),
     "ideation_capture_error": (IDEATION_CAPTURE_ERROR, ()),
     "ideation_capture_config_error": (IDEATION_CAPTURE_CONFIG_ERROR, ()),
+    "not_supported_receivables": (NOT_SUPPORTED_RECEIVABLES, ()),
+    "not_supported_dealer_locator": (NOT_SUPPORTED_DEALER_LOCATOR, ()),
 }
 
 #: The languages the new templates carry (plan 7.2). English is the bare key.

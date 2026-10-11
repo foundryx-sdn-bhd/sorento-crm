@@ -182,7 +182,16 @@ INTENT_HINTS: tuple[str, ...] = tuple(
 )
 IntentHint = Literal[INTENT_HINTS]  # type: ignore[valid-type]
 
-DOMAIN_HINTS: tuple[str, ...] = tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS)
+#: Asks the bot cannot answer, read by the parser as a `domain_hint` of their own (REPORTS-STEP2 S3a):
+#: `domain_hint -> the canned copy key` of its line. No policy row: the turn is `not_supported` by this table.
+UNSUPPORTED_TOPIC_COPY: dict[str, str] = {
+    "receivables": "not_supported_receivables",
+    "dealer_locator": "not_supported_dealer_locator",
+}
+
+DOMAIN_HINTS: tuple[str, ...] = (
+    tuple(row["name"] for row in policy_rows.DEFAULT_DOMAIN_ROWS) + tuple(UNSUPPORTED_TOPIC_COPY)
+)
 DomainHint = Literal[DOMAIN_HINTS]  # type: ignore[valid-type]
 
 
