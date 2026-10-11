@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -116,3 +117,55 @@ def _rubric(expect: Expect, reply: str) -> Verdict:
         if label:
             return Verdict(label, [], bool(expect.judge_note) or _vacuous(kind, expect))
     return Verdict("wrong", ["expectation_not_met"])
+
+
+LAYERS = ("understood", "resolved", "tool", "reply")
+
+
+def _eq(want: object, got: object) -> bool:
+    if isinstance(want, str) and isinstance(got, str):
+        return want.lower() == got.lower()
+    return want == got
+
+
+def _contains_all(wanted: list, blob: object) -> bool:
+    text = json.dumps(blob, default=str).lower()
+    return all(str(w).lower() in text for w in wanted)
+
+
+def score_layers(expect: Expect, digest: dict | None, verdict: Verdict) -> dict:
+    """pass | fail | na (label has no field) | no_trace (label has it, digest lacks the stage)."""
+    digest = digest or {}
+    layers = {"understood": "na", "resolved": "na", "tool": "na"}
+    if expect.understood:
+        parser = digest.get("parser") or {}
+        if not parser:
+            layers["understood"] = "no_trace"
+        else:
+            want = expect.understood
+            ok = all(_eq(want[k], parser.get(k)) for k in ("domain", "intent") if k in want)
+            ok = ok and _contains_all(want.get("entities") or [], parser.get("entities"))
+            layers["understood"] = "pass" if ok else "fail"
+    if expect.expected_resolved:
+        resolved = digest.get("resolved") or []
+        if not resolved:
+            layers["resolved"] = "no_trace"
+        else:
+            ok = _contains_all(expect.expected_resolved, [r.get("entities") for r in resolved])
+            layers["resolved"] = "pass" if ok else "fail"
+    if expect.tool:
+        tools = digest.get("tools") or []
+        if not tools:
+            layers["tool"] = "no_trace"
+        else:
+            name, params = expect.tool.get("name"), expect.tool.get("params") or {}
+
+            def match(t: dict) -> bool:
+                args = t.get("args") or {}
+                return (name is None or _eq(name, t.get("tool"))) and all(
+                    k in args and _eq(v, args[k]) for k, v in params.items()
+                )
+
+            layers["tool"] = "pass" if any(match(t) for t in tools) else "fail"
+    layers["reply"] = "pass" if verdict.label in ("correct", "good_clarify") else "fail"
+    return {k: layers[k] for k in LAYERS}

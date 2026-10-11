@@ -25,7 +25,7 @@ from .engine import Outcome
 from .judge import CALIBRATION_MIN, GuardedJudge, calibrate, load_judge
 from .report import build_report, render_summary
 from .trace import DbContactReset, DbTraceReader
-from .grade import grade
+from .grade import grade, score_layers
 from .prompts import resolve_prompt
 from .runner import CaseResult, NotDryRunError, RunResult, run_all
 
@@ -68,7 +68,7 @@ def _write(out: str, report: dict, run) -> None:
                 "branch_kind": r.outcome.branch_kind, "tool_errors": r.outcome.tool_errors, "lane_notes": r.outcome.lane_notes,
                 "delegated": (r.outcome.raw or {}).get("reply") is None and bool((r.outcome.raw or {}).get("delegate")),
                 "previous_bot_reply": r.previous_bot_reply,
-                "trace_digest": r.trace_digest, "replay_digests": r.replay_digests,
+                "trace_digest": r.trace_digest, "replay_digests": r.replay_digests, "layers": r.layers,
             }
             fh.write(json.dumps(row) + "\n")
 
@@ -113,10 +113,12 @@ def _regrade(args, cases: list[Case]) -> int:
             reply_text=row.get("reply_text") or "", branch_kind=row.get("branch_kind"),
             tool_errors=errors, lane_notes=notes, latency_ms=row.get("latency_ms", 0), raw=raw,
         )
+        verdict = grade(case.expect, out, row.get("previous_bot_reply"))
         results.append(
             CaseResult(
                 case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
-                variant_kind=row.get("variant_kind"), verdict=grade(case.expect, out, row.get("previous_bot_reply")),
+                variant_kind=row.get("variant_kind"), verdict=verdict,
+                layers=score_layers(case.expect, row.get("trace_digest"), verdict),
                 outcome=out, latency_ms=row.get("latency_ms", 0), tokens=row.get("tokens") or {},
                 previous_bot_reply=row.get("previous_bot_reply"),
                 trace_digest=row.get("trace_digest"), replay_digests=row.get("replay_digests") or [],
