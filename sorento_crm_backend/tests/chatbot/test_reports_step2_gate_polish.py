@@ -189,3 +189,59 @@ def test_p4_a_restate_without_group_by_keeps_the_held_ranking(console) -> None:
     pending = _pending(console)
     assert (pending.get("extras") or {}).get("top_n") == 20, pending
     assert int(pending.get("misses") or 0) == 1, pending
+
+
+def test_p1_resolve_kinds_drops_guesses_before_it_places_the_location_word(session_factory, monkeypatch) -> None:
+    """The seam itself: the warehouse word is the only unplaced token and the resolver guessed products
+    for it. `_without_guesses` only acts while something is unplaced, so it must run BEFORE the lane's
+    location word leaves that map. (Also the whole-message phrase case: a resolution whose token the
+    resolver was never asked about.)"""
+    import uuid
+
+    from app.models.inventory import Warehouse
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.lanes.business import resolve_gate
+    from tests.chatbot.test_outstanding_lane import PRODUCT_CODE, PRODUCT_UUID
+
+    db = session_factory()
+    try:
+        db.add(Warehouse(id=str(uuid.uuid4()), warehouse_code="ZZT-SENTUL", warehouse_name="ZZT SENTUL", is_active=True))
+        db.commit()
+        exact = {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE, "match_tier": "exact"}
+        guesses = [
+            {"uuid": str(uuid.uuid4()), "entity_type": "product", "canonical_code": f"ZZTGUESS{i}", "match_tier": "trgm"}
+            for i in (1, 2)
+        ]
+        resolutions = [
+            {"token": PRODUCT_CODE, "matches": [exact]},
+            {"token": "Sentul", "matches": guesses},
+            {"token": "outstanding at sentul", "matches": guesses},  # a token the resolver was never asked
+        ]
+        compatible = [{**m, "code": m["canonical_code"]} for m in (exact, *guesses)]
+
+        def stub(ctx, entry, item, **kwargs):
+            return {
+                "resolved": {
+                    "tokens": [PRODUCT_CODE, "Sentul"], "resolutions": resolutions, "unresolved_tokens": ["Sentul"],
+                },
+                "gate": {
+                    "compatible_entities": compatible,
+                    "gate_debug": {"domain": "order", "allowed_lookup": ["product"], "entities_count": 3},
+                },
+                "aggregate": None, "tier_gate": None, "_exit_kind": "continue",
+            }
+
+        monkeypatch.setattr(resolve_gate, "run", stub)
+        entities = [
+            {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None, "current_message": True},
+            {"raw": "Sentul", "hint": "warehouse", "canonical_code": None, "current_message": True},
+        ]
+        ctx = {"parse": {"output": {"domain_hint": "order", "intent_hint": "check_order", "entities": entities}}}
+        outcome = turn_runtime.resolve_kinds(
+            db, ctx=ctx, branch_kind="check_order", space_id=None, dry_run=True
+        )
+    finally:
+        db.close()
+    codes = [e.get("canonical_code") or e.get("code") for e in outcome.compatible_entities]
+    assert codes == [PRODUCT_CODE], codes
+    assert "sentul" not in outcome.unplaced_tokens, outcome.unplaced_tokens
