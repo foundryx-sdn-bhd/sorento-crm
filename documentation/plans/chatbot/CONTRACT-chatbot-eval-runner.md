@@ -296,3 +296,9 @@ for big decisions.
   needs at least 2 such lines; (2) a header-only echo still counts UNLESS every must item the reply matched is a
   header-only echo of the user's text (then the reply proved nothing beyond repeating the ask -> not met).
   GRADER_VERSION 10.
+
+## Round 19 (bold header lines, 11 Oct)
+- Header lines may be bold: `*Label:* value` (WhatsApp bold around the label and colon) counts as a header line
+  exactly like `Label: value` (same word-only label of at most 40 chars, same block rules). Found on rpt-020: a
+  sales-figures reply `*Customer:* all / *Product:* CWC7601-S, ... / *Delivery date:* ...` passed because the echoed
+  code sat in a bold header. GRADER_VERSION 11.
