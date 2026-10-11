@@ -1864,7 +1864,7 @@ def present_response(tool_name: str, raw: str) -> str:
     # today, so the reply is the old tool's, word for word.
     if tool_name == "crm_report":
         kind = data.get("report_kind")
-        if kind == "low_stock" and data.get("status") == "no_snapshot":
+        if kind == "low_stock" and data.get("status") in ("no_snapshot", "preparing"):
             return json.dumps({
                 "result_type": "low_stock_report", "response": str(data.get("message") or ""),
                 "attachments": [], "has_result": True,

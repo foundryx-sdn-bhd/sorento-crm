@@ -10,6 +10,7 @@ import asyncio
 import json
 from datetime import date
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -129,10 +130,9 @@ def _sales_value(db: Session, *, params: dict, contact_id: str, space_id: str):
 def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str):
     """The latest completed run's read view. Reads only: no run, download row or job."""
     from app.api.v1.scm.low_stock_report import SUPPLIER_GRANT
-    from app.models.scm import ReorderRun
     from app.services.contact_field_reveal_service import granted_keys
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
-    from app.services.scm import low_stock_report_service
+    from app.services.scm import low_stock_report_service, reorder_run_service
 
     resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
     include_supplier = SUPPLIER_GRANT in (granted_keys(db, resolved) if resolved else [])
@@ -140,24 +140,26 @@ def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str):
     if suppliers and not include_supplier:
         # The Supplier column is hidden from this contact; filtering by it would leak what it hides.
         return {"status": "error", "message": "Could not run the low stock report right now."}
-    # The latest completed run of the contact's company (what the reorder page opens to), read only.
-    run = (
-        db.query(ReorderRun)
-        .filter(ReorderRun.status == "completed")
-        .order_by(ReorderRun.started_at.desc().nullslast(), ReorderRun.created_at.desc())
-        .first()
-    )
-    if run is None:
+    # The run the reorder page opens to (today's, else the latest completed), read only.
+    picked = reorder_run_service.today_or_latest_run(db)
+    if picked is None:
         return {"status": "no_snapshot", "message": "There is no low stock snapshot yet."}
+    run = picked["row"]
+    if run["status"] != "completed":
+        # Only a first plan being built right now reaches here (a completed run is preferred).
+        return {"status": "preparing", "message": "The low stock snapshot is still being prepared."}
     # Without the Supplier column the view's default supplier split is refused, so it is not split.
     split = {} if include_supplier else {"split": "none"}
     view = low_stock_report_service.build_low_stock_view(
-        db, run_id=str(run.id), include_supplier=include_supplier, suppliers=suppliers,
+        db, run_id=str(run["id"]), include_supplier=include_supplier, suppliers=suppliers,
         categories=_many(params, "categories"), **split,
     )
     body = json.loads(json.dumps(view, default=str))
-    stamp = run.started_at or run.created_at
-    body["run_date"] = stamp.date().isoformat() if stamp else None
+    stamp = run.get("started_at") or run.get("finished_at")
+    body["run_date"] = (
+        stamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur")).date().isoformat()
+        if stamp else (str(body.get("run", {}).get("as_of") or "")[:10] or None)
+    )
     return body
 
 
