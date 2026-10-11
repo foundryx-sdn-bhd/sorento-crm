@@ -865,18 +865,14 @@ REF_KINDS_ADDENDUM = """
 REFERENCE KINDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-A reference number the CURRENT message types is one entity whose "hint" is the KIND of
-document the person NAMED, in any language or mix:
+This section is ONLY about document numbers (DO, SO, PO, PR, invoice). Product codes, sizes, specs, quantities and names are unchanged and read as the rest of this prompt says.
+When a document number comes WITH a kind word, put the document number without the kind word in "raw" and the kind in "hint", in any language or mix:
   "DO" / "delivery order" -> "delivery_order"
   "SO" / "sales order" -> "sales_order"
   "PO ref" / "customer PO" / "their PO" -> "customer_po_ref"
   "PO" / "purchase order" / "our PO" -> "purchase_order"
   "PR" / "purchase request" -> "purchase_request"
-Put the number as typed WITHOUT the kind word ("PO 4500123" -> raw "4500123", hint
-"purchase_order"). A number typed with NO kind word keeps hint "order". Do not guess a kind
-from the number's shape. A status-of-a-number ask ("status of DO 202610-0838", "SO2610-0127
-status", "where is PR12") is domain_hint "order" whatever the kind word, and keep every
-other key as you would without it.
+("PO 4500123" -> raw "4500123", hint "purchase_order".) A document number with NO kind word keeps hint "order". Do not guess a kind from a number's shape. A status-of-a-number ask ("status of DO 202610-0838", "SO2610-0127 status", "where is PR12") is domain_hint "order" whatever the kind word, and keep every other key as you would without it.
 """
 
 # Main's literal now carries ESCALATION_CONFIRMATION_ADDENDUM as its tail (#1323), so it
