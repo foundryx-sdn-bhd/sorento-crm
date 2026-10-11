@@ -66,7 +66,7 @@ from app.services.chatbot.usage import record_parser_usage
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
-from app.services.chatbot import quick_reply_guard
+from app.services.chatbot import clarify_policy, quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import state as turn_state
@@ -3349,6 +3349,11 @@ def _run_turn(
             # offload above rebuilds its result from a job that came through here, so it is
             # stamped too, and a duplicate reads `is_test` off the row it replays.
             result.is_test = dry_run
+            # CLARIFY-POLICY S1 (AC-1..AC-6): every arm has composed and stored its reply, so
+            # this is the one place that sees the turn's final ask: its fingerprint is stored
+            # with the reply, and a third identical clarification becomes the handover line.
+            # Before the language pass, so the replacement line is localized like any other.
+            clarify_policy.apply_loop_breaker(result, session_factory, turn_id=turn_id, dry_run=dry_run)
             try:
                 _localize_result(result, session_factory, dry_run)
             except Exception:  # noqa: BLE001 - a language pass never fails a turn that answered
