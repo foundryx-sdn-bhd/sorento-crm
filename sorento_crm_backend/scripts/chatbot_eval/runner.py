@@ -148,9 +148,10 @@ def run_all(
                 aborted = True
                 raise
             except Exception as exc:  # noqa: BLE001
+                verdict = Verdict("error", [f"harness: {type(exc).__name__}"])
                 results[idx] = CaseResult(
                     case_id=case.id, split=case.split, topic_code=case.topic_code, language=case.language,
-                    variant_kind=kind, verdict=Verdict("error", [f"harness: {type(exc).__name__}"]),
+                    variant_kind=kind, verdict=verdict, layers=score_layers(case.expect, None, verdict),
                     outcome=Outcome(reply_text=""), latency_ms=0, tokens={"prompt": 0, "cached": 0, "output": 0},
                 )
 

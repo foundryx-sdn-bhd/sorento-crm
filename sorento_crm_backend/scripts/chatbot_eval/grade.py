@@ -129,7 +129,7 @@ def _eq(want: object, got: object) -> bool:
 
 
 def _contains_all(wanted: list, blob: object) -> bool:
-    text = json.dumps(blob, default=str).lower()
+    text = json.dumps(blob, default=str, ensure_ascii=False).lower()
     return all(str(w).lower() in text for w in wanted)
 
 
