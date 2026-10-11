@@ -124,3 +124,35 @@ def test_review2_a_dealer_multi_ask_never_gets_another_customer_added_as_a_kind(
     matches = _token_matches(answer)
     assert prod.id in {m["uuid"] for m in matches}, matches
     assert all(m["entity_type"] == "product" for m in matches), matches
+
+
+# ------------------------------------------------------------------ finding 1, tightened: the EXACT tier
+
+
+@pytest.mark.parametrize("code", ["CBCH80020/25", "CBCH6003/4/5/6", "SRTKS2406-O/F", "MWT2800-N/H"])
+def test_review1_the_exact_product_probe_finds_a_stored_code_that_contains_a_slash(db, code):
+    row = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    db.flush()
+    with company_scope(db, SCOPE):
+        hits = er._probe_product(db, [code])[code]
+    assert [(h.canonical_code, h.uuid, h.match_field) for h in hits] == [(code, row.id, "product_code")], hits
+
+
+@pytest.mark.parametrize("code", ["CBCH80020/25", "CBCH6003/4/5/6"])
+def test_review1_such_a_code_resolves_on_the_exact_tier_not_a_fallback(db, code):
+    row = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    db.flush()
+    with company_scope(db, SCOPE):
+        result = er.resolve_references(db, [code], allowed_entity_types=["product"])
+    matches = result.resolutions[0].matches
+    assert [(m.canonical_code, m.uuid, m.match_tier) for m in matches] == [(code, row.id, "exact")], matches
+
+
+def test_review1_the_slash_for_dash_typing_still_resolves_on_the_exact_tier(db):
+    row = product(db, company_id=DEFAULT_COMPANY_ID, code="CB88SS-DIY")
+    db.flush()
+    with company_scope(db, SCOPE):
+        hits = er._probe_product(db, ["Cb88ss/diy"])["Cb88ss/diy"]
+        result = er.resolve_references(db, ["Cb88ss/diy"], allowed_entity_types=["product"])
+    assert [h.canonical_code for h in hits] == ["CB88SS-DIY"], hits
+    assert [(m.canonical_code, m.match_tier) for m in result.resolutions[0].matches] == [("CB88SS-DIY", "exact")]
