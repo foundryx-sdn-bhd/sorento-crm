@@ -45,8 +45,10 @@ OUT_ATTRS = ["sales_orders.outstanding"]
 
 @pytest.fixture(autouse=True)
 def _harness(monkeypatch):
-    """The repo MCP package on the path (the repo idiom), and a fake route that serves BOTH the old
-    tool names and `crm_report` (the old body plus `report_kind`, rendered by the presenter of its kind)."""
+    """The repo MCP package on the path (the repo idiom), and a fake MCP CLIENT behind the REAL
+    `services._mcp_call` seam: it records every `(name, args)` that reaches the client and answers with the
+    old route body rendered by the old presenter (a `crm_report` call is answered like the old tool of its
+    measure, which is what the S4 `report_kind` dispatch renders)."""
     mcp_root = Path(__file__).resolve().parents[3] / "sorento_crm_mcp"
     if str(mcp_root) not in sys.path:
         sys.path.append(str(mcp_root))
@@ -54,27 +56,43 @@ def _harness(monkeypatch):
         import sorento_crm_mcp.presenters  # noqa: F401
     except ImportError:  # pragma: no cover
         pytest.skip("sorento_crm_mcp is not importable in this environment")
+    from app.services import ai_assistant_service
+    from app.services.chatbot import engine as engine_mod
+
     original = ol._capturing_mcp
+    real_fetch_services = engine_mod.business_services.fetch_services
+    original_wire = ol._wire_business_services
+    live: dict[str, Any] = {}
 
     def _capturing(response: Any = None):
         captured: list[tuple[str, dict[str, Any]]] = []
         inner, _unused = original(response)
+        live.update(captured=captured, inner=inner, response=response)
+        return inner, captured
 
-        def _call(name: str, args: dict[str, Any]) -> Any:
-            captured.append((name, dict(args)))
-            if name != "crm_report" or not isinstance(response, dict):
-                return inner(name, args)
-            measure = args.get("measure")
-            old = {"order_outstanding": "crm_outstanding_report", "delivered_sales": "crm_sales_report"}.get(measure)
-            if old is None:
-                return json.dumps({"has_result": False, "items": []})
-            # Same route body the old branch builds, then the presenter of the `report_kind`.
-            envelope = json.loads(inner(old, {k: v for k, v in args.items() if k != "measure"}))
-            return json.dumps(envelope)
+    class _FakeClient:
+        def __init__(self, base_url: str, timeout_seconds: int = 20):
+            pass
 
-        return _call, captured
+        def call_tool(self, name: str, args: dict[str, Any]) -> Any:
+            live["captured"].append((name, dict(args)))
+            inner, response = live["inner"], live["response"]
+            if name == "crm_report" and isinstance(response, dict):
+                old = {"order_outstanding": "crm_outstanding_report",
+                       "delivered_sales": "crm_sales_report"}.get(args.get("measure"))
+                if old is None:
+                    return json.dumps({"has_result": False, "items": []})
+                return inner(old, {k: v for k, v in args.items() if k != "measure"})
+            return inner(name, args)
+
+    def _wire(monkeypatch_, *, resolve_services, mcp_call):
+        original_wire(monkeypatch_, resolve_services=resolve_services, mcp_call=mcp_call)
+        # the REAL fetch seam (`services._mcp_call`), over the fake client above
+        monkeypatch_.setattr(engine_mod.business_services, "fetch_services", real_fetch_services)
 
     monkeypatch.setattr(ol, "_capturing_mcp", _capturing)
+    monkeypatch.setattr(ol, "_wire_business_services", _wire)
+    monkeypatch.setattr(ai_assistant_service, "MCPRuntimeClient", _FakeClient)
 
 
 def _reply(result) -> str:
