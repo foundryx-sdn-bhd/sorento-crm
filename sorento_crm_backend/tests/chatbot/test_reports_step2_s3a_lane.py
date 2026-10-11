@@ -179,7 +179,7 @@ def test_ac32_a_compound_ask_answers_both_halves_and_filters_the_outstanding_by_
     session_factory, monkeypatch
 ):
     """The parser's real emission for "Cb88ss/diy got stock? got outstanding for scr" (eval trace) PLUS
-    `order_status: outstanding`, which is what parser v53 must set for the outstanding ask of a multi-ask
+    `order_status: outstanding`, which is what parser v54 must set for the outstanding ask of a multi-ask
     message (v50 leaves it null; nothing but the message text says "outstanding", and text rules are not
     allowed). `asks` inventory + order, `domain_hint` inventory, `entity_op: replace_combine`, two
     entities both hinted `product`. The resolver decides from the data that "scr" is the customer; both
