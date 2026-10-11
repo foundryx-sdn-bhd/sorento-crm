@@ -5417,6 +5417,20 @@ def _run_stages_body(  # noqa: PLR0915
             # words, so `narrow.decide`'s own "a roster never offers a token the resolver
             # could not place" rule never saw them. Re-entering with them lets it fire.
             # Order plans only, the lane this was measured on.
+            # CLARIFY-POLICY S4: the re-entry knows the contact's own enforced links (read
+            # above, `customer_scope`), so the carried-subject check never reads the
+            # contact's own account as a subject carried from an earlier question.
+            state_in = dataclasses_replace(
+                state_in,
+                profile=dataclasses_replace(
+                    state_in.profile,
+                    own_customer_ids=tuple(
+                        str(i) for i in ((customer_scope or {}).get("ids") or ())
+                    )
+                    if (customer_scope or {}).get("enforced")
+                    else (),
+                ),
+            )
             if resolved_kinds or resolved_candidates or (
                 unplaced_tokens and plan.ask is not None and "order" in plan.domains
             ):
@@ -5483,23 +5497,10 @@ def _run_stages_body(  # noqa: PLR0915
                 # linked rows for not matching that word.
                 for spec in plan.fetch:
                     spec.entities = [e for e in spec.entities if e.get("hint") != "customer"]
-                # CLARIFY-POLICY S4: a linked row nobody named (this turn, or carried from a
-                # turn that named it) is marked `scope`, so the carried-subject ask never
-                # reads the contact's own account as a subject from an earlier question.
-                named_now = any(
-                    isinstance(e, dict) and e.get("current_message") is True and e.get("hint") == "customer"
-                    for e in verdict.get("entities") or []
-                )
-                named_before = {
-                    str(r.get("uuid"))
-                    for r in state_in.focus.customers or []
-                    if isinstance(r, dict) and r.get("uuid") and r.get("scope") is not True
-                }
                 state_out.focus.customers = [
                     {
                         "uuid": cid, "hint": "customer", "canonical_code": code or name, "raw": name,
                         "name": name, "current_message": False,
-                        **({} if named_now or str(cid) in named_before else {"scope": True}),
                     }
                     for cid, name, code in customer_scope["linked"]
                     if cid in scope_ids

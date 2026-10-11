@@ -98,7 +98,9 @@ CLARIFY_POLICY_ROWS: tuple[dict[str, Any], ...] = (
     _row("escalation_pick", "Escalation team, company, member"),
     _row("entities_only", "What would you like me to know", "default", ("ask",), "answer the subject's default domain"),
     _row("carry_combine", "Carried subject with a new subject", "ask", ("carry", "drop"), "ask, keep or drop"),
-    _row("carry_unclear", "Carried subject, no reference", "ask", ("carry", "drop"), "ask, keep or drop"),
+    # Crew ruling 11 Oct: `carry` until the parser version with `continuation` is promoted;
+    # the release step flips it to `ask` with that promotion.
+    _row("carry_unclear", "Carried subject, no reference", "carry", ("ask", "drop"), "ask, keep or drop"),
 )
 
 
@@ -472,10 +474,12 @@ def _row_label(row: dict[str, Any]) -> str:
     return str(row.get("name") or row.get("display_name") or row.get("canonical_code") or row.get("raw") or "").strip()
 
 
-def _carried_rows(rows: list[Any]) -> list[dict[str, Any]]:
+def _carried_rows(rows: list[Any], own_ids: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """The rows of one focus field that are a subject carried from an earlier question: never
-    a customer row the contact's own customer scope wrote (`scope: True`, `engine.py`)."""
-    return [r for r in rows or [] if isinstance(r, dict) and r.get("scope") is not True and _row_label(r)]
+    the contact's own linked customer (`own_ids`, from its customer scope)."""
+    return [
+        r for r in rows or [] if isinstance(r, dict) and str(r.get("uuid") or "") not in own_ids and _row_label(r)
+    ]
 
 
 def _date_words(verdict: dict[str, Any]) -> str:
@@ -493,6 +497,7 @@ def carry_conflict(
     turn_no: int | None,
     candidates: dict[str, list[dict[str, Any]]] | None = None,
     answers_task: bool = False,
+    own_customer_ids: tuple[str, ...] | None = None,
 ) -> CarryOutcome | None:
     """The one check (AC-140..AC-145): does this turn carry a subject of kind A from an earlier
     question into a new ask without the message saying so? Called by `turn/apply.py` once the
@@ -519,7 +524,10 @@ def carry_conflict(
     for kind, field, plural in _CARRY_KINDS:
         if kind in named_kinds or kind not in domain_row.narrowing:
             continue  # restated or replaced (AC-144), or a kind this ask cannot use
-        carried = _carried_rows(getattr(focus, field, None) or [])
+        if kind == "customer" and own_customer_ids is None:
+            continue  # the contact's own links are not read yet (`Profile.own_customer_ids`)
+        own = frozenset(own_customer_ids or ()) if kind == "customer" else frozenset()
+        carried = _carried_rows(getattr(focus, field, None) or [], own)
         if not carried:
             continue
         others = [e for e in named if str(e.get("hint") or "") != kind]

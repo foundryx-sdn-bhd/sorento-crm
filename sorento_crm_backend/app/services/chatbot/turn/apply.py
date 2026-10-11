@@ -3556,6 +3556,7 @@ def _apply(
         turn_no=state.turn_no,
         candidates=candidates,
         answers_task=task_outcome.fetch is not None or bool(task_outcome.closed_kinds),
+        own_customer_ids=getattr(state.profile, "own_customer_ids", None),
     )
     if carry is not None:
         trace.rules_fired.append(f"carry_{carry.action}")

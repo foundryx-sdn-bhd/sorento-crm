@@ -223,6 +223,11 @@ class Profile:
     # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): `respond_contacts.chatbot_files_as_links`,
     # the A/B switch. Default OFF: an unresolved contact gets files as attachments (today).
     files_as_links: bool = False
+    # CLARIFY-POLICY S4: the customers this contact's own customer scope pins it to (the
+    # enforced links, `lanes/business/services.customer_scope`), set by `engine.py` once the
+    # scope is read; () for a contact with none enforced, None while not yet read. Such a
+    # customer is the contact's own account, never a subject carried from an earlier question.
+    own_customer_ids: tuple[str, ...] | None = None
 
 
 def offers_escalation(profile: "Profile | None") -> bool:
