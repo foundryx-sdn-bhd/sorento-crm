@@ -37,7 +37,7 @@ def test_refine_keeps_the_held_frame_channel():
 
 
 def test_sales_report_still_gets_the_focus_channel():
-    from app.services.chatbot.turn.state import Focus, report_from_frame
+    from app.services.chatbot.turn.state import Focus
 
     v = verdict(order_status="sales_report", sales_channel=None, domain_hint="order")
     assert _lane_out(v, Focus(sales_channel="dealer")).get("sales_channel") == "dealer"
@@ -48,7 +48,7 @@ def _top_selling_words(canonical):
     from app.services.chatbot.turn import apply as ap
     from app.services.chatbot.turn.decide import CARRY, Decision
     from app.services.chatbot.turn.plan import Trace
-    from app.services.chatbot.turn.state import Focus, report_from_frame
+    from app.services.chatbot.turn.state import Focus
 
     focus = Focus(status="top_selling", top_selling={"rank_by": "quantity"})
     e = entity("马桶", "category", canonical_code=canonical)

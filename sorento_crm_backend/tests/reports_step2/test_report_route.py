@@ -228,6 +228,26 @@ def test_review_a_dealer_may_not_widen_with_staff_filters_or_another_customer(cl
     assert resp.status_code == 403, resp.text
 
 
+# ------------------------------------------------------------------ carried (provenance echo)
+
+
+def test_review_carried_keeps_only_known_param_names(client, db):
+    body = _report(client, _full(db), measure="delivered_amount", carried=["brand_ids", "zzt_bogus", "date_from"]).json()
+    assert body["carried"] == ["brand_ids", "date_from"], body
+
+
+def test_review_carried_is_capped_at_twenty_names(client, db):
+    names = ["brand_ids"] * 30
+    body = _report(client, _full(db), measure="delivered_amount", carried=names).json()
+    assert len(body["carried"]) <= 20 and set(body["carried"]) == {"brand_ids"}, body
+
+
+def test_review_a_blank_carried_leaves_the_key_out(client, db):
+    body = _report(client, _full(db), measure="delivered_amount", carried="").json()
+    assert "carried" not in body or body["carried"] is None, body
+    assert "carried" not in body, body
+
+
 # ------------------------------------------------------------------ AC-10 rate limit
 
 

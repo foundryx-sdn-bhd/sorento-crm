@@ -72,7 +72,7 @@ def _lane_out(v, focus):
 
 
 def test_c2_fresh_ranking_takes_no_channel_from_the_focus():
-    from app.services.chatbot.turn.state import Focus, report_from_frame
+    from app.services.chatbot.turn.state import Focus
 
     v = verdict(order_status="sales_ranking", ranking_refine=False, sales_channel=None, group_by="customer",
                 domain_hint="order")

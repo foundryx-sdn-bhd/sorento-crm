@@ -63,6 +63,8 @@ def _body(args: dict[str, Any]) -> dict[str, Any]:
     if args.get("carried") is not None:
         body["carried"] = list(args["carried"])
     body["filters"] = [{"key": "brand", "label": "Brand", "values": ["Sorento"]}] if args.get("brand_ids") else []
+    if args.get("channel"):
+        body["filters"].append({"key": "channel", "label": "Channel", "values": ["Dealer"]})
     return body
 
 
@@ -335,3 +337,26 @@ def test_ac18_a_turn_that_is_not_a_report_ask_clears_the_entry(console) -> None:
     assert not _wire(console).get("report"), _wire(console)
     text, calls = console.say(_refine(top_n=5), "top 5")
     assert calls == [], calls
+
+
+# ================================================================================ AC-15 review round
+
+
+def test_ac15_a_held_channel_said_again_in_this_message_is_not_carried(console) -> None:
+    _t1(console, sales_channel="dealer")
+    text, calls = console.say(_refine(top_n=5, sales_channel="dealer"), "top 5, only dealer")
+    (args,) = calls
+    assert args["channel"] == "dealer", args
+    assert "channel" not in args["carried"], args
+    channel = next(l for l in text.splitlines() if l.startswith("Channel:"))
+    assert not channel.endswith(EARLIER), text
+
+
+def test_ac15_a_held_brand_named_again_in_this_message_is_not_carried(console) -> None:
+    _t1(console)
+    text, calls = console.say(_refine(top_n=5, entities=[_e("Sorento", "brand")]), "top 5 for Sorento")
+    (args,) = calls
+    assert args["brand_ids"] == [console.ids["brand"]], args
+    assert "brand_ids" not in args["carried"], args
+    brand = next(l for l in text.splitlines() if l.startswith("Brand:"))
+    assert not brand.endswith(EARLIER), text

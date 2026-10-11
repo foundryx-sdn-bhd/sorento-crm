@@ -88,8 +88,7 @@ def _split_key(args: dict[str, Any]) -> dict[str, Any]:
     """The call's args in the lane's own words: `crm_report` takes one registry key
     (`delivered_amount`), split back here into `basis` and `measure` (REPORTS-STEP2 S2 rename)."""
     key = str(args.get("measure") or "")
-    if "_" not in key:
-        return args
+    assert "_" in key, f"crm_report takes a registry key, got {key!r}"
     basis, _, figure = key.partition("_")
     return {**args, "basis": basis, "measure": figure}
 
