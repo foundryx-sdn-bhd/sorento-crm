@@ -41,7 +41,8 @@ def _body(response: Any) -> dict:
 def _outstanding(db: Session, *, params: dict, contact_id: str, space_id: str, keys=(), **_):
     """Without `sales_orders.outstanding` the SO side is withheld, as the lane does today: the DO
     block only, `so_refused` echoed."""
-    scope = _one(params, "scope") or "both"
+    # Normalised as the route does BEFORE the grant decision; an unknown value passes on to its 422.
+    scope = (_one(params, "scope") or "both").strip().lower() or "both"
     so_refused = False
     if scope in ("so", "both") and "sales_orders.outstanding" not in keys:
         scope, so_refused = "do", True
@@ -150,16 +151,15 @@ def _kl_date(stamp) -> str:
     return stamp.astimezone(ZoneInfo("Asia/Kuala_Lumpur")).date().isoformat()
 
 
-def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str, principal_id: str = "", **_):
+def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str, keys=(), principal_id: str = "", **_):
     """The run the reorder page opens to (today's, else the latest completed), as a read view.
     Reads only: no run, download row or job."""
     from app.api.v1.scm.low_stock_report import SUPPLIER_GRANT, _adopt_company_scope, _csv_list, _name_list
-    from app.services.contact_field_reveal_service import granted_keys
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
     from app.services.scm import low_stock_report_service, reorder_run_service
 
     resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
-    include_supplier = SUPPLIER_GRANT in (granted_keys(db, resolved) if resolved else [])
+    include_supplier = SUPPLIER_GRANT in keys
     suppliers = _name_list(params.get("suppliers"))
     categories = _csv_list(params.get("categories"))
     if suppliers and not include_supplier:
@@ -168,10 +168,11 @@ def _low_stock(db: Session, *, params: dict, contact_id: str, space_id: str, pri
     # One company, chosen as the old route does, and the pick runs under it.
     from sqlalchemy import text
 
-    owner = str(db.execute(text(
+    linked = db.execute(text(
         "SELECT id FROM users WHERE respond_contact_id = :c AND status = 'ACTIVE' "
         "ORDER BY created_at, id LIMIT 1"
-    ), {"c": str(resolved)}).scalar() or principal_id)
+    ), {"c": str(resolved)}).scalar() if resolved else None
+    owner = str(linked or principal_id)
     if _adopt_company_scope(db, resolved_contact_id=str(resolved) if resolved else None, owner_user_id=owner) is None:
         return {"status": "error", "message": "Could not run the low stock report right now."}
     picked = reorder_run_service.today_or_latest_run(db)
