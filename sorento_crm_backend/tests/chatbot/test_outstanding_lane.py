@@ -1580,13 +1580,18 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
             attributes=["sales_orders.outstanding"],
             matches={"hanlim": {"uuid": CUSTOMER_UUID, "entity_type": "customer", "canonical_code": CUSTOMER_NAME}},
         )
-        assert captured, "the new ask must still be answered, not swallowed"
-        name, _args = captured[0]
-        assert name != "crm_outstanding_report", (
+        # CLARIFY-POLICY R2 (owner): the held product plus a newly named customer, no reference, is
+        # ASKED ("Delivery for <customer>: only <product> (from earlier) or all products?") before
+        # anything is fetched. The guarded point is unchanged: the stray position 2 is NOT taken as
+        # an answer to the scope question, so nothing runs as the outstanding report.
+        assert not [n for n, _a in captured if n == "crm_outstanding_report"], (
             f"a turn naming a customer is a NEW ask, never an answer to the open scope "
-            f"question, however many reference_positions ride along with it: {name}"
+            f"question, however many reference_positions ride along with it: {captured}"
         )
         reply = (_result.reply or {}).get("text") or ""
+        assert "(from earlier)" in reply and reply.startswith("Delivery for"), (
+            f"the new ask must be answered by the carry question, not swallowed: {reply!r}"
+        )
         assert "Outstanding for which document?" not in reply, (
             f"the open scope question must be DROPPED by the new ask, never re-asked: {reply!r}"
         )
@@ -4708,19 +4713,18 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
                 },
             },
         )
-        assert captured, "the new ask must still be answered, not dropped on the floor"
-        name, args = captured[0]
-        assert name == "crm_order_management_orders_list", (
-            f"a plain delivery enquiry must run the plain order lane, never the "
-            f"OLD product's outstanding report: {name}"
-        )
-        assert args.get("customer_ids") == [CUSTOMER_ONLY_UUID], (
-            f"the customer named THIS turn must reach the tool: {args}"
-        )
-        assert args.get("product_code") != PRODUCT_CODE, (
-            f"the offer's OLD product must not be carried into an unrelated new ask: {args}"
+        # CLARIFY-POLICY R2 (owner): the offer's product is held and the turn names a new customer
+        # with no reference, so the bot ASKS "only <product> (from earlier) or all products?"
+        # before fetching. The guarded point holds: the old outstanding report never runs and the
+        # old product is not silently carried into a fetch.
+        assert not [n for n, _a in captured if n == "crm_outstanding_report"], captured
+        assert not [a for _n, a in captured if a.get("product_code") == PRODUCT_CODE], (
+            f"the offer's OLD product must not be carried into an unrelated new ask: {captured}"
         )
         reply = (result.reply or {}).get("text") or ""
+        assert "(from earlier)" in reply and reply.startswith("Delivery for"), (
+            f"the new ask must be answered by the carry question, not dropped: {reply!r}"
+        )
         assert "Sales order outstanding" not in reply, reply
         assert "Reply 1 for" not in reply, reply
         open_question = _session_of(session_factory).get("open_question") or {}
@@ -4768,13 +4772,15 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
                 },
             },
         )
-        assert captured, "the new ask must still be answered"
-        name, args = captured[0]
-        assert name != "crm_outstanding_report", (
+        # CLARIFY-POLICY R2 (owner): see the sibling test above - the carry question is the new
+        # first reply; the guarded point (never answered as the OLD outstanding report, the old
+        # scope question dropped) is kept.
+        assert not [n for n, _a in captured if n == "crm_outstanding_report"], (
             f"a plain delivery enquiry must not be answered as the OLD product's "
-            f"outstanding report: {name}"
+            f"outstanding report: {captured}"
         )
         reply = (result.reply or {}).get("text") or ""
+        assert "(from earlier)" in reply and reply.startswith("Delivery for"), reply
         assert "Outstanding for which document?" not in reply, (
             f"the old scope question must be dropped, not re-asked: {reply!r}"
         )
