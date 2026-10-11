@@ -759,6 +759,7 @@ def seed_chatbot_policy() -> None:
     pdyn5 = _load("_pdyn_0005_access_level_order", "pdyn_0005_access_level_order.py")
     pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
     report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
+    ca3_domain = _load("_ca3_0002_chat_analytics_domain", "ca3_0002_chat_analytics_domain.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
@@ -792,6 +793,9 @@ def seed_chatbot_policy() -> None:
         pdyn4.apply(conn)
         pdyn5.apply(conn)
         pdyn6.apply(conn)
+    # CA-3: the chat_analytics routing domain, before the republish renders the domain list.
+    with engine.begin() as conn:
+        ca3_domain.apply(conn)
     # LAST, and after every narrowing step: it renders the blocks from the tables as
     # they now stand and leaves `production` on that version.
     with engine.begin() as conn:
