@@ -137,8 +137,8 @@ en 77 -> 72 / 90, zh 9 -> 8 / 11, mixed 4 -> 3 / 4, ms 0 -> 0 / 2.
 - R4 "purchasing" after a yes: both versions reply alike; v50 passed only through a memory recap that
   named the code. Likely grader variance, to confirm on v50.
 Q2 is not complete: the v50 side (does v50 pass these 5 again, and what did its parser emit) needs ~14
-calls; today's cap (450) is spent (449). Next (12 Oct): v50 re-run of the 5 (~14 calls), then v54 = v53
-with the guilty cuts restored (`--restore C13,C28,C43` as evidence dictates), full DEV on v54 (214),
+calls; today's cap (450) is spent (449). Next (12 Oct): v50 re-run of the 5 (~14 calls), then a restore build = v53
+with the guilty cuts restored (`--restore C13,C28,C43` as evidence dictates), full DEV on it (214), pinned by its own fixed UUID (eval DB v54 is AGENT-LOOP-SPIKE, not this lane),
 crew hidden gate.
 
 
