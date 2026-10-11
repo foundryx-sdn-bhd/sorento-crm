@@ -172,3 +172,19 @@ def _digest_engine(version):
 
 DigestV50Engine = _digest_engine(50)
 DigestV51Engine = _digest_engine(51)
+
+
+class DigestNoneVersionEngine(RecordingEngine):
+    """Parser stage present, prompt_version None (backend fell back to the code prompt)."""
+
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n},
+                            trace_digest={"parser": {"prompt_version": None, "domain": "stock", "intent": "x"}, "resolved": [], "tools": []})
+
+
+class DigestNoParserEngine(RecordingEngine):
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n},
+                            trace_digest={"parser": {}, "resolved": [], "tools": []})

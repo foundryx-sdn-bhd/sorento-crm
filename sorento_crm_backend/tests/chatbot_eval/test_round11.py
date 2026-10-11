@@ -112,3 +112,42 @@ def test_seen_version_differs_from_resolved_is_mismatch_exit_5(tmp_path, monkeyp
     assert rc == 5
     assert rep is not None and rep["prompt_mismatch"] is True
     assert "mismatch" in capsys.readouterr().err.lower()
+
+
+# ---- review round: fallback prompt is a mismatch; DB errors handled ----
+@pytest.mark.parametrize("extra", [("--prompt-version", "50"), ()])
+def test_none_prompt_version_is_mismatch(tmp_path, monkeypatch, capsys, extra):
+    monkeypatch.setattr(prompts, "query_prompt", fake_query([]))
+    rc, rep = _go(tmp_path, monkeypatch, *extra, engine="tests.chatbot_eval.fakes:DigestNoneVersionEngine")
+    assert rc == 5
+    assert rep["prompt_versions_seen"] == {"none": 2}
+    assert rep["prompt_mismatch"] is True
+
+
+def test_digest_without_parser_stage_not_counted(tmp_path, monkeypatch):
+    monkeypatch.setattr(prompts, "query_prompt", fake_query([]))
+    rc, rep = _go(tmp_path, monkeypatch, "--prompt-version", "50", engine="tests.chatbot_eval.fakes:DigestNoParserEngine")
+    assert rc == 0
+    assert not rep.get("prompt_versions_seen")
+    assert not rep.get("prompt_mismatch")
+
+
+def _db_down(dsn, value):
+    import psycopg2
+
+    raise psycopg2.OperationalError("connection refused")
+
+
+def test_db_error_when_pinned_exit_2_names_value(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(prompts, "query_prompt", _db_down)
+    rc, _ = _go(tmp_path, monkeypatch, "--prompt-version", "50", engine="tests.chatbot_eval.fakes:NeverEngine")
+    assert rc == 2
+    assert "50" in capsys.readouterr().err
+
+
+def test_db_error_unpinned_warns_and_continues(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(prompts, "query_prompt", _db_down)
+    rc, rep = _go(tmp_path, monkeypatch)
+    assert rc == 0
+    assert rep["prompt"]["source"] == "unknown"
+    assert capsys.readouterr().err.strip()
