@@ -361,6 +361,8 @@ jobs:
       lean: ${{ steps.filter.outputs.lean == 'true' }}
       # The last successful release's head: what `vitest --changed` diffs to.
       base_sha: ${{ steps.filter.outputs.base_sha }}
+      # A PR whose merge tree already passed a PR gate (CI-COST round 2).
+      validated: ${{ steps.filter.outputs.validated }}
     steps:
       - name: Detect changed areas
         id: filter
@@ -396,6 +398,22 @@ jobs:
           }
           case "$EVENT" in
             pull_request)
+              # A merge tree whose PR gate already passed (a re-label with no
+              # new commit on either side) tests nothing (CI-COST round 2:
+              # 1.15 runs per head, 4-11 Oct). `PUSH_AFTER` is the merge
+              # commit here. The marker's own prefix keeps a release, which
+              # looks up `validated-tree-`, running its own tests. A failed
+              # lookup tests.
+              tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$PUSH_AFTER" --jq '.tree.sha') || tree=""
+              if [ -n "$tree" ] \
+                  && n=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pr-validated-tree-$tree&per_page=5" \
+                           --jq '[.artifacts[] | select(.expired | not)] | length') \
+                  && [ "${n:-0}" -gt 0 ]; then
+                for area in backend frontend mcp scm; do echo "$area=false"; done | tee -a "$GITHUB_OUTPUT"
+                printf '%s\n' "docs_only=false" "backend_tests=" "backend_code=" "validated=true" >> "$GITHUB_OUTPUT"
+                echo "merge tree $tree already passed a PR gate (pr-validated-tree artifact): nothing to test"
+                exit 0
+              fi
               files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate \
                         --jq '.[] | .filename, (.previous_filename // empty)') \
                 || { files=""; why="PR file list call failed"; }
@@ -1393,7 +1411,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ (github.event_name == 'pull_request' || needs.changes.outputs.frontend == 'true') && 0 || 1 }}
+          fetch-depth: ${{ ((github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true') || needs.changes.outputs.frontend == 'true') && 0 || 1 }}
 
       # The four fast gates, folded into this job on a PR (CI-COST round 2):
       # as separate jobs each billed a whole minute for 16-54 s of work (run
@@ -1402,15 +1420,15 @@ jobs:
       # job runs instead, and a release skips PII and gitleaks by design (its
       # commits passed both in their PR gates).
       - name: Single alembic head
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
         run: python3 scripts/ci_alembic_heads.py
 
       - name: No personal data in tracked files
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
         run: python3 scripts/pii_guard.py
 
       - name: Secret scan (gitleaks)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'
         env:
           RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
         run: bash scripts/ci_gitleaks.sh
@@ -1583,21 +1601,24 @@ jobs:
 
       # A release whose tests passed leaves a marker for its tree, so a
       # re-dispatch of the same tree (a rejected approval, a deploy hiccup)
-      # skips the tests (`changes`, the workflow_dispatch case). One byte,
-      # kept 30 days.
+      # skips the tests (`changes`, the workflow_dispatch case). A PR gate
+      # that passed does the same for its merge tree under its own prefix,
+      # `pr-validated-tree-` (CI-COST round 2), so a re-label on that tree
+      # is a no-op and a release never reads it. `success()`: every step
+      # above passed. One byte, kept 30 days.
       - name: Mark this tree as validated
         id: tree
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'))
         run: |
           tree=$(git rev-parse 'HEAD^{tree}')
           echo "tree=$tree" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$GITHUB_SHA" > validated-tree.txt
 
       - name: Upload the validated-tree marker
-        if: success() && github.event_name == 'workflow_dispatch'
+        if: success() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.validated != 'true'))
         uses: actions/upload-artifact@v4
         with:
-          name: validated-tree-${{ steps.tree.outputs.tree }}
+          name: ${{ github.event_name == 'pull_request' && 'pr-validated-tree-' || 'validated-tree-' }}${{ steps.tree.outputs.tree }}
           path: validated-tree.txt
           retention-days: 30
 
