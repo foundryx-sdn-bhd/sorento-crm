@@ -1,6 +1,6 @@
 # PLAN: REPORTS-STEP2 (one crm_report tool, one report entry in Focus)
 
-Status: S1 building (owner answered Q1-Q5 on 11 Oct: Q1 low-stock split, Q2 extend the engine, Q3 crew labels ~40 report cases, Q4 tie -> meaning output, Q5 carried values in one header line, rankings still ask). Track: L, lead pattern. Card:
+Status: S1 + S2 done and reviewed (11 Oct); S3 waits for crew's labelled report cases; S4 next (owner answered Q1-Q5 on 11 Oct: Q1 low-stock split, Q2 extend the engine, Q3 crew labels ~40 report cases, Q4 tie -> meaning output, Q5 carried values in one header line, rankings still ask). Track: L, lead pattern. Card:
 `CARD-reports-step2-11oct.md` / `.html`. Architecture: `ARCH-scalable-chat-11oct.html` step 2. Prior: PROMPT-DIET
 stopped at DP1 (PR #1568 measurement record).
 
@@ -35,6 +35,9 @@ dealer keys) and reviewer per slice set.
 - The MCP `crm_report` description lists the measure keys as a literal (the MCP package cannot import the backend
   registry); S4 adds a backend test that compares that literal with `measures.keys()`.
 - `_Spec` duplicates most of `Measure`; fold when S4 adds non-ask measures.
+- S2 review: the order-domain policy row (`turn/policy_rows.py:176`, migration `report_engine_0001_prompt`) still
+  lists `crm_report_ask` although the lane now calls `crm_report` (allowed via UNDOMAINED_CHATBOT_TOOLS). S4 moves the
+  row to `crm_report` in the same seed migration that takes the old report tools off the allow-list.
 
 ## DP2
 
