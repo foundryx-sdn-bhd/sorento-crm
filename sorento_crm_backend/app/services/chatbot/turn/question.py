@@ -104,8 +104,9 @@ def of_required_ask(slot: Any) -> dict[str, Any] | None:
     if not isinstance(slot, dict) or not slot.get("asking"):
         return None
     ask = rf.ASKS.get(str(slot.get("ask") or ""))
-    if ask is None or not ask.answered_by_parser:
-        # Only an ask whose replies the parser reads (the low stock report) is stated.
+    if ask is None or not (ask.answered_by_parser or ask.stated_to_parser):
+        # Only an ask whose question the parser is shown (the low stock report, the sales
+        # ranking) is stated.
         return None
     field = next((f for f in (ask.fields if ask else ()) if f.name == slot.get("asking")), None)
     if field is None:
@@ -115,6 +116,8 @@ def of_required_ask(slot: Any) -> dict[str, Any] | None:
         for i, o in enumerate(slot.get("options") or [], start=1)
         if isinstance(o, (list, tuple)) and len(o) == 2
     ]
+    if not options and field.choices:
+        options = [{"position": i, "code": c} for i, c in enumerate(field.choices, start=1)]
     obj: dict[str, Any] = {
         "kind": PICK_ONE if options else FREE,
         "about": ask.name,

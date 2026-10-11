@@ -2484,6 +2484,18 @@ def _sales_report_filters_from_ctx(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _held_sales_report(ctx: dict[str, Any]) -> dict[str, Any]:
+    """`Focus.report` entry for a plain sales report: its customers and period, kind `sales_report`."""
+    filters = _sales_report_filters_from_ctx(ctx)
+    keep = ("customer_ids", "date_filter_start", "date_filter_end", "warehouse_codes", "location_token", "channel")
+    return {
+        "kind": "sales_report",
+        "measure": "delivered_sales",
+        "args": {k: filters[k] for k in keep if filters.get(k)},
+        "shown": None,
+    }
+
+
 def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     """S4 wiring point 7 (AC-1654/AC-1655/AC-1658): `crm_sales_report` never goes
     through the generic envelope below - mirrors `_outstanding_report_output` for
@@ -2517,6 +2529,19 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         # string here is never a rendered report, so it is never treated as a result.
         text = result if isinstance(result, str) else jsc.js_string(result)
         has_result = False
+    ctx_si = ctx.get("semantic_input")
+    if isinstance(ctx_si, str):
+        ctx_si = _safe_json(ctx_si)
+    narrowed_miss = (
+        not has_result
+        and isinstance(ctx_si, dict)
+        and ctx_si.get("sales_report_narrowed") is True
+        and ("response" not in envelope or not text.strip() or text.strip().endswith(SALES_REPORT_MISS_MESSAGE))
+    )
+    if narrowed_miss:
+        # A held report narrowed to one product with nothing sold is an answer, in the report's own
+        # miss line, never the miss lane over the family or the held total.
+        text, has_result = SALES_REPORT_MISS_MESSAGE, True
     offer = [
         {
             "idx": row.get("idx"),
@@ -2545,7 +2570,7 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         # 2026): a bare, non-envelope string is never a rendered report, so it must
         # never reach `response` either - only "Error executing tool" ever got
         # stripped downstream, so any other unrendered string rode through verbatim.
-        "response": text if "response" in envelope else "",
+        "response": text if "response" in envelope or narrowed_miss else "",
         "response_intro": None,
         "answers": [],
         "attachments": [],
@@ -2558,6 +2583,9 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         "requested_attributes": [],
         "keys_served": False,
         "outstanding_ask": outstanding_ask,
+        # The plain report that ran, held as `Focus.report` (kind marks it non-ranking) so a
+        # narrowing to one product next turn re-runs it.
+        "report": _held_sales_report(ctx),
         # AC-1659: this report carries its OWN Customer / Product / Channel /
         # Location / Delivery date header, so `tail/compile_state.py` must skip the
         # generic search-scope header (the same marker `crm_outstanding_report`

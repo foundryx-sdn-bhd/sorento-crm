@@ -227,8 +227,8 @@ def _basis_question() -> str:
 PERIOD = rf.FieldSpec(name="period", noun="period", question=PERIOD_QUESTION, resolve=_resolve_period, allow_all=False)
 TOP_N = rf.FieldSpec(name="top_n", noun="number", question=TOP_N_QUESTION, resolve=_resolve_top_n, allow_all=False)
 
-METRIC = rf.FieldSpec(name="metric", noun="measure", question=ranking_ask.METRIC_LINE, question_fn=_metric_question, resolve=_resolve_metric, allow_all=False)
-BASIS = rf.FieldSpec(name="basis", noun="basis", question=ranking_ask.RANKING_BASIS_LINE, question_fn=_basis_question, resolve=_resolve_basis, allow_all=False)
+METRIC = rf.FieldSpec(name="metric", noun="measure", question=ranking_ask.METRIC_LINE, question_fn=_metric_question, resolve=_resolve_metric, allow_all=False, choices=("qty", "amount"))
+BASIS = rf.FieldSpec(name="basis", noun="basis", question=ranking_ask.RANKING_BASIS_LINE, question_fn=_basis_question, resolve=_resolve_basis, allow_all=False, choices=BASES)
 
 SALES_RANKING_ASK = rf.register(rf.AskType(
     name=ASK_NAME,
@@ -242,6 +242,7 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     cancelled=CANCELLED,
     give_up=GIVE_UP,
     answer_drops=("sales_channel", "report_ask_words"),
+    stated_to_parser=True,
 ))
 
 
@@ -302,7 +303,12 @@ def names_its_own_ask(verdict: dict[str, Any], open_slot: dict[str, Any] | None 
     if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME or verdict.get("ranking_refine") is True:
         return False
     if any(
-        isinstance(e, dict) and e.get("current_message") is not False and jsc.js_string(e.get("hint") or "").strip()
+        isinstance(e, dict)
+        and e.get("current_message") is not False
+        and jsc.js_string(e.get("hint") or "").strip()
+        # A stray word the parser itself is unsure of and filed under no real kind ("other") is not
+        # a filter, so it never turns an answer to the open question into a new ask.
+        and not (jsc.js_string(e.get("hint") or "").strip().lower() == "other" and e.get("confident") is False)
         for e in jsc.array(verdict.get("entities"))
     ):
         return True
@@ -602,6 +608,8 @@ def settle(
     frame = parse_output.get("sales_ranking_frame")
     frame = frame if isinstance(frame, dict) else {}
     drill = parse_output.get("ranking_drill")
+    if frame.get("kind") == "sales_report":
+        frame = {}  # a held plain sales report is not a ranking: nothing to refine or drill
     raw_group = jsc.js_string(parse_output.get("group_by") or "").strip().lower()
     # A refine never changes the axis: a verdict naming another axis than the held ranking's
     # is not one, whatever its `ranking_refine` says (crew live pass, 8 Oct 2026).

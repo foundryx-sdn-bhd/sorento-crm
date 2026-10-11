@@ -1000,6 +1000,7 @@ def _fetch_semantic_input(
         # (a carried account never narrows a self-reference ask) and by
         # `_sales_report_output` (a miss on the asker's own accounts is a final answer).
         "self_reference": parse_output.get("self_reference") is True,
+        "sales_report_narrowed": parse_output.get("sales_report_narrowed") is True,
         # R-B3 (reviewer finding, Phase 3 fix round): the sales_report_detail
         # offer's stored channel, restored by `head/output_exchange.py::
         # _apply_outstanding_pending` - `fetch.py` reads this ONLY when THIS

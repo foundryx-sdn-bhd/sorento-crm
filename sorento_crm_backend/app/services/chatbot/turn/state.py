@@ -306,6 +306,8 @@ def frame_from_report(report: dict[str, Any]) -> dict[str, Any]:
     frame = {**(report.get("args") or {}), "basis": basis, "measure": figure}
     if report.get("shown"):
         frame["shown"] = report["shown"]
+    if report.get("kind"):
+        frame["kind"] = report["kind"]  # a held plain sales report, not a ranking
     return frame
 
 

@@ -113,6 +113,9 @@ class FieldSpec:
     ask_unknown: bool = False
     #: The first line of a numbered pick, when "Which <noun> do you mean?" does not fit.
     pick_head: str | None = None
+    #: The fixed answers a free question takes (codes), stated to the parser as the options of
+    #: its `Open question:` object.
+    choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,10 @@ class AskType:
     #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
     #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
     answer_drops: tuple[str, ...] = ()
+    #: The open question is stated to the parser as the turn's `Open question:` object although
+    #: replies are still read by shape (`answered_by_parser` False): the parser then knows what
+    #: the message may be answering, and its words are never matched in code.
+    stated_to_parser: bool = False
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
