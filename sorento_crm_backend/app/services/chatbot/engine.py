@@ -5296,6 +5296,15 @@ def _run_stages_body(  # noqa: PLR0915
                 if exact is not None:
                     resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact
                     turn_trace.add("exact_codes_only", {"kept": [e.get("code") for e in compatible_entities]})
+                    if isinstance(resolver_payload, dict):
+                        # The answer bridge reads the GATE's list, not the local one.
+                        resolver_payload = {
+                            **resolver_payload,
+                            "gate": {
+                                **(resolver_payload.get("gate") or {}),
+                                "compatible_entities": compatible_entities,
+                            },
+                        }
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
             if staff_account_refusal and not (customer_scope or {}).get("enforced"):
