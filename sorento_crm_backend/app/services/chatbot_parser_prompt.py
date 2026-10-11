@@ -855,6 +855,22 @@ every other key as you would without it. A message with no PO number: null. Neve
 a number, never take one from an earlier turn.
 """
 
+# CA-3 (chat analytics, `documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md`
+# "Parser output"): what customers ASK THE BOT, ranked or counted. ADDITIVE ONLY, beneath
+# PO_REFS_ADDENDUM (MEMORY_ADDENDUM stays the tail), published as a new UNLABELLED version by
+# migration `ca3_0001_chat_report_prompt`. Every example is synthetic.
+CHAT_REPORT_ADDENDUM = """
+
+== CHAT REPORT: a ranking, split, trend or count of what customers ASK THE BOT (questions, topics,
+outcomes, failures, how many asked): domain_hint "chat_analytics" and intent_hint "chat_report",
+BOTH always set; business_query, domain_in_message true. Not sales, stock or orders.
+  "chat_report": {"group_by": "topic|subject|product|customer|outcome|failure_reason|week|month|day|language"|null,
+    "measure": "asks|failed|failure_rate|contacts"|null, "subject": null} or null
+Fill chat_report only to flag a new chat report (group_by when an axis is named); null on every
+other message and on a reply to "Which period?" / "How many?". A period goes into
+date_filter_start/end; top_n null unless a number is named.
+"""
+
 # REF-PROBES (owner, 11 Oct 2026): the KIND a typed reference number is, read from the words
 # HERE and nowhere else. The code never pattern-matches a number's shape; the resolver reads
 # the data. ADDITIVE ONLY, right beneath PO_REFS_ADDENDUM, published as a new UNLABELLED
@@ -886,6 +902,7 @@ SEMANTIC_PARSER_PROMPT += ACCOUNT_LEDGER_ADDENDUM
 SEMANTIC_PARSER_PROMPT += LOW_STOCK_FILTERS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
+SEMANTIC_PARSER_PROMPT += CHAT_REPORT_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REF_KINDS_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608

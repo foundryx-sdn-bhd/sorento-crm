@@ -190,10 +190,17 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # PROMO-SUBJECT-FILTER round 3b (AC-36): PROMOTION SUBJECT emits a listed qualifier as a
 # specification entity from the Product details line: 51,600 est. tokens without
 # MEMORY_ADDENDUM (+142), so CEILING is 51,604 (+4).
-# REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, between
-# PO_REFS_ADDENDUM and CANONICAL_CODE_ADDENDUM): 51,986 est. tokens without MEMORY_ADDENDUM
-# (+382), so CEILING is 51,990 (+4).
-CEILING = 51_990
+# re-pin 10 Oct 2026 (CA-3-CHAT-DATASET, PR #1553, design approved 9 Oct): CHAT_REPORT_ADDENDUM
+# (502 est. tokens, trimmed from 1,404) plus the chat_analytics line of the policy blocks seed:
+# 52,149 est. tokens without MEMORY_ADDENDUM (+545), so CEILING is 52,153 (+4).
+# CA-3 review round 5 (10 Oct 2026): CHAT_REPORT_ADDENDUM generalised (no golden wording), 690 est. tokens:
+# 52,329 est. tokens without MEMORY_ADDENDUM, so CEILING is 52,333 (+4).
+# re-pin 10 Oct 2026 (CA-3-CHAT-DATASET, PR #1553, extractor ruling): CHAT_REPORT_ADDENDUM shrinks to
+# routing only (240 est. tokens, the focused extractor reads the fields): 51,879 est. tokens without
+# MEMORY_ADDENDUM (-450), so CEILING is 51,883 (+4).
+# REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
+# CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
+CEILING = 52_268
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

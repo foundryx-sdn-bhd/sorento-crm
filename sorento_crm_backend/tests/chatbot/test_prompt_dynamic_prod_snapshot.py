@@ -98,10 +98,11 @@ def _row(db, version: int) -> AIPromptVersion:
 
 
 def _seed_registries_to_the_file(db) -> None:
-    """Tables shaped like the owner's text: the policy block's 14 domains (no `sales`, and
+    """Tables shaped like the owner's text: the policy block's 14 domains (no `sales` and no
+    `chat_analytics` (CA-3, 10 Oct 2026: a domain the 1 Oct file cannot carry), and
     master_products narrowing product list_all), only the two order statuses, the five
     agents and the seven access levels."""
-    db.execute(text("DELETE FROM chatbot_domains WHERE name = 'sales'"))
+    db.execute(text("DELETE FROM chatbot_domains WHERE name IN ('sales', 'chat_analytics')"))
     db.execute(
         text("UPDATE chatbot_domains SET narrowing = '{\"product\": \"list_all\"}'::jsonb WHERE name = 'master_products'")
     )
