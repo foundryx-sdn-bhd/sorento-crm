@@ -31,8 +31,6 @@ ASK_NAME = "sales_ranking"
 TOOL = "crm_report"
 
 PERIOD_QUESTION = "Which period? For example this month, September, 2026, or 1 to 15 Sep."
-#: Said above the period question when a restated ranking ask still names no period.
-PERIOD_STILL_MISSING = "I still need a period for that."
 TOP_N_QUESTION = "How many? For example top 5."
 #: Said above the ranking that ran with the default count after two unreadable replies.
 DEFAULT_TOP_N = 10
@@ -569,8 +567,53 @@ def _reply_choices(args: dict[str, Any], parse_output: dict[str, Any]) -> dict[s
     return given
 
 
+#: Said (with this ask's `top N ... by ...` in front) when a restated ask has no held pieces to name.
+EXAMPLE_ASK = "top 5 sales agents for Sorento by amount, delivered"
+
+
+def _plural(group_by: Any) -> str:
+    raw = jsc.js_string(group_by or "").strip().lower()
+    return AXIS_NOUNS.get(GROUP_BY.get(raw, raw), ("", ""))[1]
+
+
+def held_ask(parse_output: dict[str, Any]) -> str:
+    """The ranking ask this message restates, said in a few words off the parser's fields
+    ("top 20 sales agents for Sorento by amount"); empty when it names nothing to say."""
+    plural = _plural(parse_output.get("group_by"))
+    top_n = parse_output.get("top_n")
+    count = int(top_n) if isinstance(top_n, (int, float)) and not isinstance(top_n, bool) and float(top_n).is_integer() else None
+    words = _dict(parse_output.get("report_ask_words"))
+    named = [
+        " ".join(jsc.js_string(w).split())
+        for hint in WORD_HINTS
+        for w in jsc.array(words.get(hint))
+        if " ".join(jsc.js_string(w).split())
+    ]
+    named += [
+        " ".join(jsc.js_string(e.get("raw") or "").split())
+        for e in jsc.array(parse_output.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False and " ".join(jsc.js_string(e.get("raw") or "").split())
+    ]
+    if not plural and count is None and not named:
+        return ""
+    head = f"top {count} {plural}".strip() if count is not None else (plural or "sales")
+    text = f"{head} for {', '.join(named)}" if named else head
+    metric = metric_from(parse_output)
+    if metric:
+        text += " by " + ("quantity" if metric == "qty" else "amount")
+    return text
+
+
+def _say(say: Any, name: str, **words: str) -> str:
+    if say is not None:
+        return say(name, **words)
+    from app.services.chatbot import copy as reply_copy  # the package imports this module
+
+    return reply_copy.fallback_copy().render(name, **words)
+
+
 def settle(
-    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False
+    db: Any, parse_output: dict[str, Any], entities: Any, *, dealer: bool = False, say: Any = None
 ) -> tuple[rf.Outcome | None, str | None]:
     """Every required field settled, or the line to send instead of running. Returns
     `(outcome, None)` (send `outcome.reply` with `outcome.slot` unless `outcome.done`), or
@@ -653,11 +696,14 @@ def settle(
         # miss like a slot answer's, so it ends at the same bound.
         misses = int(restated.get("misses") or 0) + 1
         if misses >= rf.MAX_MISSES:
-            line = SALES_RANKING_ASK.give_up_blank or SALES_RANKING_ASK.give_up.format(word="that")
+            held = held_ask(parse_output)
+            example = f"{held} this month" if held else EXAMPLE_ASK
+            line = _say(say, "report_period_give_up", example=example)
             return rf.Outcome(values=outcome.values, reply=line, slot=None, extras=outcome.extras), None
         slot = {**outcome.slot, "misses": misses}
+        still = _say(say, "report_period_missing", asked=held_ask(parse_output) or "that")
         return rf.Outcome(
-            values=outcome.values, reply=f"{PERIOD_STILL_MISSING}\n\n{PERIOD_QUESTION}", slot=slot, extras=outcome.extras
+            values=outcome.values, reply=f"{still}\n\n{PERIOD_QUESTION}", slot=slot, extras=outcome.extras
         ), None
     return outcome, None
 
@@ -886,17 +932,25 @@ def route_args(outcome: rf.Outcome) -> dict[str, Any]:
     return args
 
 
-def error_line(envelope: Any) -> str | None:
-    """A route refusal said as its own message (403: `report_dimension_not_allowed`,
-    `customer_not_permitted`, `sales_report_not_enabled`), a 404 as `I couldn't find that
-    <thing>.`; None for any other error (the generic error path answers it)."""
+#: The route's 403 `detail.code` -> the reply copy that says it. The route's own words are never
+#: echoed; any other code is the general refusal.
+FORBIDDEN_COPY = {
+    "customer_not_permitted": "report_own_account",
+    "report_dimension_not_allowed": "report_dimension_denied",
+    "sales_report_not_enabled": "report_not_enabled",
+}
+
+
+def error_line(envelope: Any, say: Any = None) -> str | None:
+    """A route refusal said as its own line (403: by `detail.code`, see `FORBIDDEN_COPY`), a 404
+    as `I couldn't find that <thing>.`; None for any other error (the generic error path answers it)."""
     if not isinstance(envelope, dict):
         return None
     status = envelope.get("status_code")
     detail = _dict(envelope.get("detail"))
+    if status == 403:
+        return _say(say, FORBIDDEN_COPY.get(jsc.js_string(detail.get("code") or ""), "report_refused"))
     message = jsc.js_string(detail.get("message") or "").strip()
-    if status == 403 and message:
-        return message
     if status == 404:
         thing = message.split(" not found", 1)[0].strip().lower() if " not found" in message else ""
         return f"I couldn't find that {thing}." if thing else "I couldn't find that."

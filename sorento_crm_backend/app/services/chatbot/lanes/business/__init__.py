@@ -684,13 +684,23 @@ def _sales_report_not_enabled() -> dict[str, Any]:
     }
 
 
-#: A report that needs a product or a customer and was given neither (a 422 `subject_required`
-#: from the route, or the same case caught before the call).
-SUBJECT_REQUIRED_ASK = "Which product or customer is this for?"
+#: What a report line calls the report that was refused, by the tool that ran (REPORTS-STEP2).
+_REPORT_NAMES = {
+    "crm_sales_report": "the sales report",
+    "crm_outstanding_report": "the outstanding report",
+    report_ask.TOOL: "the sales ranking",
+}
 
-#: A permanent 4xx from a report route: the ask as worded cannot run, and asking again will not
-#: change that, so the retry sentence is the wrong thing to say.
-REPORT_REFUSED_LINE = "I can't run that report as asked."
+
+def _report_line(db: Any, ctx: dict[str, Any], name: str, **words: str) -> str:
+    """One of the report lane's own lines (REPORTS-STEP2), from the editable reply copy in the
+    contact's language. Each word that fills a token is run through the localizer first."""
+    localizer = ctx.get("localizer")
+    language = getattr(localizer, "language", None)
+    templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()
+    return templates.render_in(
+        name, language, **{k: (localizer.text(v) if localizer is not None else v) for k, v in words.items()}
+    )
 
 
 def _which_customer_ask() -> dict[str, Any]:
@@ -2147,7 +2157,8 @@ def run_fetch(
         # 1b fix round F1: a customer-scoped (dealer) turn is refused a staff breakdown
         # before any agent or location word is resolved.
         settled, line = report_ask.settle(
-            db, parse_output, entities, dealer=bool(customer_scope.get("enforced"))
+            db, parse_output, entities, dealer=bool(customer_scope.get("enforced")),
+            say=lambda name, **words: _report_line(db, ctx, name, **words),
         )
         if trace is not None:
             trace.add(
@@ -2192,7 +2203,7 @@ def run_fetch(
     ):
         if trace is not None:
             trace.add("sales_report", {"asked": "subject_required"})
-        return _fixed_reply(SUBJECT_REQUIRED_ASK)
+        return _fixed_reply(_report_line(db, ctx, "report_subject_ask", missing="product or customer"))
 
     # DO-ASK-SIMPLIFY security S1 (PR #1433): a transporter named on a DO list ask would
     # filter the rows by it, telling the contact who carried each one. Without the
@@ -2391,7 +2402,7 @@ def run_fetch(
         # REPORT-ENGINE slice 1b: the route's own refusal (the audience check is the
         # route's) is said as its message, a 404 as one line.
         refusal = (
-            report_ask.error_line(envelope)
+            report_ask.error_line(envelope, lambda name: _report_line(db, ctx, name, report=_REPORT_NAMES.get(tool_name, "that report")))
             if tool_name == report_ask.TOOL or tool_name in business_services.REPORT_MEASURE_OF
             else None
         )
@@ -2414,8 +2425,10 @@ def run_fetch(
             detail = envelope.get("detail")
             code = detail.get("code") if isinstance(detail, dict) else None
             if status_code == 422 and code == "subject_required":
-                return _fixed_reply(SUBJECT_REQUIRED_ASK)
-            return _fixed_reply(REPORT_REFUSED_LINE)
+                return _fixed_reply(_report_line(db, ctx, "report_subject_ask", missing="product or customer"))
+            return _fixed_reply(
+                _report_line(db, ctx, "report_refused", report=_REPORT_NAMES.get(tool_name, "that report"))
+            )
         return _error_fragment(envelope["error"])
 
     # PRODUCT-ALTERNATIVES round B (card Addendum 1, owner 8 Oct 2026): an asked product
