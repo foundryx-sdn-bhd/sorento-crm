@@ -1,6 +1,6 @@
 # PLAN: parser prompt ablation, language teaching out (PROMPT-ABLATION, 11 Oct 2026)
 
-Status: built; DEV measured; awaiting crew hidden gate (M experiment lane, crew lead pattern). Card: `CARD-prompt-ablation-11oct.md`.
+Status: hidden gate PASS (v56 83.2% vs v50 80.8%); publish migration pab_0001 built, label unmoved, owner decides promotion (M experiment lane, crew lead pattern). Card: `CARD-prompt-ablation-11oct.md`.
 UAC: `prompt-ablation-acceptance-criteria.md`.
 
 ## Rulings (crew, 11 Oct)
