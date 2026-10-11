@@ -1,0 +1,160 @@
+"""Fake engine + fake case builders. All data is made up."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from scripts.chatbot_eval.engine import Outcome
+
+
+def make_outcome(reply="ok", *, dry_run=True, tool_errors=None, tokens=None, state=None, latency_ms=10, branch_kind=None, lane_notes=None, trace_digest=None):
+    extra = {"lane_notes": list(lane_notes)} if lane_notes else {}
+    if trace_digest is not None:
+        extra["trace_digest"] = trace_digest
+    return Outcome(
+        reply_text=reply,
+        branch_kind=branch_kind,
+        dry_run=dry_run,
+        tool_errors=list(tool_errors or []),
+        tokens=tokens or {"prompt": 0, "cached": 0, "output": 0},
+        latency_ms=latency_ms,
+        state=state,
+        raw={},
+        **extra,
+    )
+
+
+class RecordingEngine:
+    """Replies from a script keyed by the text sent; records every call."""
+
+    def __init__(self, replies=None, default="Stock of TESTCODE-1 is 1,630 units", dry_run=True, tokens=None, **kw):
+        self.replies = replies or {}
+        self.default = default
+        self.dry_run = dry_run
+        self.tokens = tokens
+        self.calls = []  # (text, state_in, run_id)
+        self.n = 0
+
+    def turn(self, case, text, state, run_id):
+        self.calls.append((text, state, run_id))
+        self.n += 1
+        return make_outcome(
+            self.replies.get(text, self.default),
+            dry_run=self.dry_run,
+            tokens=self.tokens,
+            state={"n": self.n},
+        )
+
+
+class FakeEngine(RecordingEngine):
+    """Importable by `--engine tests.chatbot_eval.fakes:FakeEngine`."""
+
+
+def case_dict(cid="c1", split="dev", topic="stock", language="en", text="how many TESTCODE-1?", outcome="answer", **over):
+    d = {
+        "id": cid,
+        "split": split,
+        "topic_code": topic,
+        "language": language,
+        "contact": {"respond_id": "9001", "custom_fields": [{"name": "is_allowed_stock", "value": "true"}]},
+        "history": [],
+        "message": {"text": text},
+        "variants": [],
+        "expect": {"outcome": outcome, "must": [{"code": "TESTCODE-1"}]},
+    }
+    d.update(over)
+    return d
+
+
+def write_case(directory: Path, d: dict, name=None):
+    directory.mkdir(parents=True, exist_ok=True)
+    p = directory / (name or f"{d.get('id', 'x')}.json")
+    p.write_text(json.dumps(d))
+    return p
+
+
+class BudgetBurner(RecordingEngine):
+    """Burns 1M prompt tokens per turn so any small --budget-usd trips."""
+
+    def __init__(self, **kw):
+        super().__init__(tokens={"prompt": 1_000_000, "cached": 0, "output": 0})
+
+
+# ---- judge fakes for CLI tests (module-level because --judge builds the class itself) ----
+JUDGE_CALLS: list = []
+JUDGE_CFG = {"agree": True, "tokens": {"prompt": 0, "cached": 0, "output": 0}}
+
+
+class FakeJudge:
+    """Importable by `--judge tests.chatbot_eval.fakes:FakeJudge`.
+
+    Agrees with the human label when JUDGE_CFG['agree'] else always disagrees.
+    Passes (during real cases) always. Calibration cases have ids starting 'cal'.
+    """
+
+    def __init__(self, **kw):
+        pass
+
+    def score(self, case, outcome):
+        from scripts.chatbot_eval.judge import JudgeResult
+
+        JUDGE_CALLS.append(case.id)
+        if case.id.startswith("cal"):
+            human = case.id.endswith("y")
+            passed = human if JUDGE_CFG["agree"] else (not human)
+        else:
+            passed = True
+        return JudgeResult(passed=passed, note="n", tokens=dict(JUDGE_CFG["tokens"]))
+
+
+class KwEngine(RecordingEngine):
+    """Records the kwargs load_engine passed (class-level, reset by the test)."""
+
+    SEEN: list = []
+
+    def __init__(self, **kw):
+        super().__init__()
+        KwEngine.SEEN.append(kw)
+
+
+class LiveSecondEngine(RecordingEngine):
+    """Second turn ever returns dry_run False (aborts a run)."""
+
+    def turn(self, case, text, state, run_id):
+        out = super().turn(case, text, state, run_id)
+        if self.n == 2:
+            out.dry_run = False
+        return out
+
+
+class ExplodingEngine(RecordingEngine):
+    """Raises RuntimeError for the case whose id is 'boom'."""
+
+    def turn(self, case, text, state, run_id):
+        if case.id == "boom":
+            raise RuntimeError("kaboom")
+        return super().turn(case, text, state, run_id)
+
+
+class NeverEngine:
+    """A regrade must not build or call an engine."""
+
+    def __init__(self, **kw):
+        raise AssertionError("engine constructed during --regrade")
+
+
+class LaneNoteEngine(RecordingEngine):
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n}, lane_notes=["note one"])
+
+
+class UnknownModelJudge(FakeJudge):
+    model = "claude-unknown-9"
+
+
+class DigestEngine(RecordingEngine):
+    def turn(self, case, text, state, run_id):
+        self.n += 1
+        return make_outcome("TESTCODE-1 ok", state={"n": self.n}, trace_digest={"parser": {"intent": f"i{self.n}"}, "resolved": [], "tools": []})
