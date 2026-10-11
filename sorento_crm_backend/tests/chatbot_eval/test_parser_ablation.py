@@ -84,6 +84,9 @@ KEPT_LINES = [
     '"po_refs": ["..."] or null',
     '"ranking_drill"',
     '"low_stock": {"group_by"',
+    '"1st and 3rd", "2, 4 and 5"',
+    '"kalau 100?"',
+    '"ada stok", "有货" is',
 ]
 
 # U7 language teaching gone
