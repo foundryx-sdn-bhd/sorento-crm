@@ -39,6 +39,13 @@ _MISSING_WORDS = {
     "carry_unclear": "which products to include",
 }
 
+#: The carried-subject asks name the carried kind's own plural (round 6: a carried customer is
+#: "which customers").
+_CARRY_MISSING = {"product": "which products to include", "customer": "which customers to include"}
+
+#: The apply rule naming the carried kind of a carry_scope ask (`turn/apply.py`).
+CARRY_KIND_RULE = "carry_kind_"
+
 
 @dataclass(frozen=True)
 class ClarifyRule:
@@ -193,14 +200,14 @@ def should_break(previous: list[str | None], current: str | None, limit: int = M
     return all(f == current for f in previous[-limit:])
 
 
-def _subject_code(focus: Any, *, printable: bool = False) -> str | None:
+def _subject_code(focus: Any, *, printable: bool = False, field: str | None = None) -> str | None:
     """The turn's subject off the focus the turn ended with (products first, then customers):
     resolved values, never the message text. The fingerprint key may fall back to a row's
     uuid; the PRINTED subject (`printable`) never does: only a code or a name, else None
     (security review, CLARIFY-POLICY round 4)."""
     if not isinstance(focus, dict):
         return None
-    for key in ("products", "customers"):
+    for key in ((field,) if field else ("products", "customers")):
         values = set()
         for row in focus.get(key) or []:
             if not isinstance(row, dict):
@@ -213,9 +220,10 @@ def _subject_code(focus: Any, *, printable: bool = False) -> str | None:
     return None
 
 
-def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
-    """`(fingerprint, kind, subject)` of the clarification this turn's reply carries, read off
-    the turn's own trace records (what the bot decided, not what it said), else all None.
+def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None, str | None]:
+    """`(fingerprint, kind, printable subject, param)` of the clarification this turn's reply
+    carries, read off the turn's own trace records (what the bot decided, not what it said),
+    else all None.
 
     * `do_range` with `asked` / `so_list` with `period_asked`: the DO / SO period ask;
     * the turn plan's `ask` (`apply` record, e.g. `attachment_type_ask`);
@@ -223,6 +231,7 @@ def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
     records = [r for r in trace or [] if isinstance(r, dict)]
     focus = None
     plan: dict[str, Any] = {}
+    rules: list[Any] = []
     kind = param = None
     for rec in records:
         name = rec.get("kind")
@@ -230,17 +239,31 @@ def turn_fingerprint(trace: Any) -> tuple[str | None, str | None, str | None]:
             focus = rec["focus"]
         elif name == "apply" and isinstance(rec.get("plan"), dict):
             plan = rec["plan"]
+            rules = list(rec.get("rules_fired") or [])
         elif name == "do_range" and rec.get("asked"):
             kind, param = "do_period", "date_range"
         elif name == "so_list" and rec.get("period_asked"):
             kind, param = "so_period", "date_range"
+    field = None
     if kind is None and isinstance(plan.get("ask"), str) and plan["ask"]:
         kind, param = _PLAN_ASK_KINDS.get(plan["ask"], plan["ask"]), "ask"
+        carried = next(
+            (r[len(CARRY_KIND_RULE):] for r in rules if isinstance(r, str) and r.startswith(CARRY_KIND_RULE)), None
+        )
+        if carried:
+            # The carried kind is the ask's parameter and its subject ("which customers").
+            param = carried
+            field = {"product": "products", "customer": "customers"}.get(carried)
     if kind is None and plan.get("lane") == "clarification":
         kind, param = "llm_clarify", "topic"
     if kind is None:
-        return None, None, None
-    return ask_fingerprint(kind, param or "", _subject_code(focus)), kind, _subject_code(focus, printable=True)
+        return None, None, None, None
+    return (
+        ask_fingerprint(kind, param or "", _subject_code(focus, field=field)),
+        kind,
+        _subject_code(focus, printable=True, field=field),
+        param,
+    )
 
 
 #: A turn plan's `ask` name -> its policy kind (`CLARIFY_POLICY_ROWS`).
@@ -276,20 +299,20 @@ def previous_fingerprints(
     return list(reversed(out))
 
 
-def missing_line(kind: str | None, subject: str | None) -> str:
+def missing_line(kind: str | None, subject: str | None, param: str | None = None) -> str:
     """AC-120: one plain line naming what is still missing, with the subject code."""
-    missing = _MISSING_WORDS.get(kind or "", "more detail")
+    missing = _CARRY_MISSING.get(param or "") or _MISSING_WORDS.get(kind or "", "more detail")
     return f"I still need {missing} for {subject}." if subject else f"I still need {missing}."
 
 
-def break_reply(profile: Any, kind: str | None, subject: str | None = None) -> str:
+def break_reply(profile: Any, kind: str | None, subject: str | None = None, param: str | None = None) -> str:
     """Q4: never a guessed answer, no fetched data. The plain line naming what is missing, then
     the handover offer when this contact is offered one, or the refer line when its escalation
     is barred (AC-120)."""
     from app.services.chatbot import escalation_control
     from app.services.chatbot.turn import state as turn_state
 
-    line = missing_line(kind, subject)
+    line = missing_line(kind, subject, param)
     if turn_state.escalation_barred(profile):
         return f"{line}\n\n{escalation_control.barred_reply(profile)}"
     if turn_state.offers_escalation(profile):
@@ -330,7 +353,7 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
         row = db.query(ChatbotTurn).filter(ChatbotTurn.id == turn_id).first()
         if row is None or not isinstance(row.response, dict):
             return
-        current, kind, subject = turn_fingerprint(row.trace)
+        current, kind, subject, param = turn_fingerprint(row.trace)
         if current is None:
             menu_subject = _menu_subject(row.trace)
             old_text = jsc_text((result.reply or {}).get("text"))
@@ -356,7 +379,7 @@ def apply_loop_breaker(result: Any, session_factory: Any, *, turn_id: Any, dry_r
             db,
             row,
             result,
-            break_reply(profile, kind, subject),
+            break_reply(profile, kind, subject, param),
             {RESPONSE_KEY: None, "loop_broken": current},
             trace_entry={"kind": "loop_breaker", "fingerprint": current, "previous": previous},
         )
@@ -500,10 +523,40 @@ def _carried_rows(rows: list[Any], own_ids: frozenset[str] = frozenset()) -> lis
     ]
 
 
+#: Relative date modes said as words (each catalogued for ms / zh in `label_catalog`).
+_RELATIVE_DATE_MODES = frozenset(
+    {"today", "yesterday", "tomorrow", "this_week", "last_week", "this_month", "last_month"}
+)
+
+
 def _date_words(verdict: dict[str, Any]) -> str:
-    """The parsed date mode as words for the ask label ("today"), from the parser's own field."""
+    """A relative parsed date mode as words for the ask label ("today"), from the parser's own
+    field; any other window is said by its dates (`_date_span`)."""
     date_mode = verdict.get("date_mode")
-    return str(date_mode).replace("_", " ").strip() if isinstance(date_mode, str) and date_mode else ""
+    if isinstance(date_mode, str) and date_mode in _RELATIVE_DATE_MODES:
+        return date_mode.replace("_", " ")
+    return ""
+
+
+def _date_span(verdict: dict[str, Any]) -> tuple[str, str] | None:
+    """The parsed window as ISO dates, for a window no relative word names (a month, a range)."""
+    start = str(verdict.get("date_filter_start") or "")[:10]
+    end = str(verdict.get("date_filter_end") or "")[:10]
+    return (start, end) if start and end else None
+
+
+def _span_words(span: Any, loc: Any) -> str:
+    """A whole calendar month as "10/2026", any other window as "01/10/2026 to 15/10/2026"
+    (the range sentence through the catalog): numbers read in every language."""
+    from datetime import date, timedelta
+
+    try:
+        start, end = date.fromisoformat(str(span[0])), date.fromisoformat(str(span[1]))
+    except (TypeError, ValueError, IndexError):
+        return ""
+    if start.day == 1 and (end + timedelta(days=1)).day == 1 and (start.year, start.month) == (end.year, end.month):
+        return f"{start.month:02d}/{start.year}"
+    return loc.fill("{from} to {to}", **{"from": start.strftime("%d/%m/%Y"), "to": end.strftime("%d/%m/%Y")})
 
 
 #: Report and ranking asks (`order_status` values, `focus.status`): a filter carried into a
@@ -597,6 +650,7 @@ def carry_conflict(
             "subject": subject,
             "plural": plural,
             "date_words": "" if others else _date_words(verdict),
+            "date_span": None if others or _date_words(verdict) else _date_span(verdict),
             "new_kinds": sorted({str(e.get("hint") or "") for e in others}),
             "new_subject": ", ".join(dict.fromkeys(_named_label(e, focus, candidates) for e in others)),
         }
@@ -642,10 +696,11 @@ def carry_scope_text(parts: dict[str, Any], new_subject: str | None = None, loca
         )
         return f"{question}\n1. {loc.fill('Only {subject}', subject=subject)}\n2. {every}"
     words = str(parts.get("date_words") or "")
-    if words:
+    when = loc.sentence(words) if words else _span_words(parts.get("date_span"), loc)
+    if when:
         question = loc.fill(
             "{label} {when}: for {subject} (from earlier) or all {plural}?",
-            label=label, when=loc.sentence(words), subject=subject, plural=plural,
+            label=label, when=when, subject=subject, plural=plural,
         )
     else:
         question = loc.fill(

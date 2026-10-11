@@ -741,20 +741,33 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
             focus.domains = list(pending.payload.get("domains") or focus.domains)
             trace.rules_fired.append("carry_scope_kept" if keeps else "carry_scope_dropped")
             return focus, None, None, True
-        names_own = any(
-            isinstance(e, dict) and e.get("current_message") is True for e in (verdict or {}).get("entities") or []
+        v = verdict or {}
+        if v.get("topic_reset") is True or v.get("message_type") in ("escalation", "request_for_help"):
+            # A reset or a hand-off request closes the open carry question; the turn runs as
+            # itself (the reset empties the focus, the escalation lane takes the request).
+            trace.rules_fired.append("carry_scope_closed")
+            return focus, None, None, False
+        names_own = any(isinstance(e, dict) and e.get("current_message") is True for e in v.get("entities") or [])
+        answer_shaped = any(
+            v.get(key) for key in ("date_filter_start", "date_filter_end", "date_mode", "demand_qty")
         )
-        if not names_own and (verdict or {}).get("domain_in_message") is not True:
-            # CLARIFY-POLICY AC-146: a message that neither answers the open carry question nor
-            # asks something of its own (a bare month) gets the SAME question again, never a
-            # fetch over both subjects; the repeat counts for the loop breaker.
+        if not names_own and v.get("domain_in_message") is not True and answer_shaped:
+            # CLARIFY-POLICY AC-146: a message that only adds a value to the held ask (a bare
+            # month) without answering the open carry question gets the SAME question again,
+            # never a fetch over both subjects; the value is kept for the ask it belongs to
+            # (round 6), and the repeat counts for the loop breaker.
+            if decision.window:
+                focus.date_window = dict(decision.window)
             trace.rules_fired.append("carry_scope_asked_again")
+            trace.rules_fired.append(f"{clarify_policy.CARRY_KIND_RULE}{pending.payload.get('kind') or ''}")
             return (
-                state.focus,
+                focus,
                 pending,
                 Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace),
                 False,
             )
+        # Anything else ("thanks"): the turn runs as itself and the question stays open.
+        return focus, pending, None, False
 
     if pending.kind in OUTSTANDING_KINDS:
         # BEFORE the generic roster path: these options are a SCOPE, not an entity to
@@ -3578,6 +3591,7 @@ def _apply(
         if carry.action == "drop":
             _set_kind_field(focus, carry.kind, [])
         elif carry.action == "ask":
+            trace.rules_fired.append(f"{clarify_policy.CARRY_KIND_RULE}{carry.kind}")
             # The held subject stays on the focus beside the new one (today's rules may have
             # dropped it), so the answer can keep it (1) or drop it (2).
             if not getattr(focus, carry.field, None):

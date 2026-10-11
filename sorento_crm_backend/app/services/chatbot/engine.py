@@ -5003,6 +5003,25 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        # CLARIFY-POLICY S4: the contact's own enforced links are known now, so the
+        # carried-subject check can read a held customer at all (never the contact's own
+        # account). The first plan was made before the scope was read; when the turn holds
+        # a customer it is made again, so a turn the resolver never re-enters is covered too.
+        state_in = dataclasses_replace(
+            state_in,
+            profile=dataclasses_replace(
+                state_in.profile,
+                own_customer_ids=tuple(str(i) for i in ((customer_scope or {}).get("ids") or ()))
+                if (customer_scope or {}).get("enforced")
+                else (),
+            ),
+        )
+        if state_in.focus.customers:
+            replanned_state, replanned = turn_apply(state_in, verdict, policy)
+            if any(str(r).startswith("carry_") for r in replanned.trace.rules_fired):
+                # Adopted only when the held customer changes the plan (an ask, a keep or a
+                # drop); any other turn keeps the plan the context above was built from.
+                state_out, plan = replanned_state, replanned
 
         # Grant before roster (SF-1, PLAN-chatbot-answer-half-reattach.md slice R2):
         # an ungranted contact's sales-report ask is refused HERE, before the resolver
@@ -5420,20 +5439,6 @@ def _run_stages_body(  # noqa: PLR0915
             # words, so `narrow.decide`'s own "a roster never offers a token the resolver
             # could not place" rule never saw them. Re-entering with them lets it fire.
             # Order plans only, the lane this was measured on.
-            # CLARIFY-POLICY S4: the re-entry knows the contact's own enforced links (read
-            # above, `customer_scope`), so the carried-subject check never reads the
-            # contact's own account as a subject carried from an earlier question.
-            state_in = dataclasses_replace(
-                state_in,
-                profile=dataclasses_replace(
-                    state_in.profile,
-                    own_customer_ids=tuple(
-                        str(i) for i in ((customer_scope or {}).get("ids") or ())
-                    )
-                    if (customer_scope or {}).get("enforced")
-                    else (),
-                ),
-            )
             if resolved_kinds or resolved_candidates or (
                 unplaced_tokens and plan.ask is not None and "order" in plan.domains
             ):

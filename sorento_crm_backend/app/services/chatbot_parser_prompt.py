@@ -320,10 +320,12 @@ null, read as usual; "clear", "start over", "reset" -> mode null, topic_reset tr
 
 # CLARIFY-POLICY S5 (owner ruling Q10, 11 Oct 2026): the parser's `continuation` key, defined
 # as the same-subject follow-up signal the carried-subject rule reads
-# (`clarify_policy.carry_conflict`). Word for word the first paragraph of INTENT-FRAMES'
-# INTENT_FRAMES_ADDENDUM (#1473), without its TOPIC RESET part; whichever lane merges second
-# keeps ONE copy. NOT appended to SEMANTIC_PARSER_PROMPT: published only as a new UNLABELLED
-# version by migration `clp_0002_parser_continuation`, onto the wording-layer text.
+# (`clarify_policy.carry_conflict`). The first paragraph of INTENT-FRAMES' INTENT_FRAMES_ADDENDUM
+# (#1473), without its TOPIC RESET part, AMENDED by crew ruling 11 Oct: a message with its own
+# date window or a whole list ("delivery today") is not a continuation. Whichever lane merges
+# second keeps ONE copy. NOT appended to SEMANTIC_PARSER_PROMPT: published only as a new
+# UNLABELLED version by migration (`clp_0002` first wording, `clp_0003` this one), onto the
+# wording-layer text.
 CONTINUATION_ADDENDUM = """
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -331,12 +333,14 @@ SAME SUBJECT OR A NEW ONE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 "continuation" is true when the current message asks about the SAME subject as the
-previous turn without naming it again: a follow-up about what was just shown ("and its
-price?", "cert?", "any incoming?", "check stock" right after a product answer, "how about
-delivery?"). It is false when the message names a subject of its own (a code, a name, a
-category), asks for a report or a list that needs no subject ("low stock report", "top
-selling items", "my outstanding"), or starts something unrelated. A pick off a numbered
-list, "yes" or "no" is false. When continuation is true, entity_op is "reuse".
+previous turn without naming it again: a short follow-up about what was just shown ("and its
+price?", "cert?", "eta?", "any incoming?", "check stock" right after a product answer). It is
+false when the message names a subject of its own (a code, a name, a category), asks for a
+report or a list that needs no subject ("low stock report", "top selling items", "my
+outstanding"), asks a different kind of thing with its own scope such as a date window or a
+whole list ("delivery today", "orders this week", "all deliveries"), or starts something
+unrelated. A pick off a numbered list, "yes" or "no" is false. When continuation is true,
+entity_op is "reuse".
 """
 
 MEMORY_ADDENDUM = '\n\n== MEMORY ==\nTwo more OUTPUT keys: "message_type" gains "history_question"; "profile_statements": up to 3 {"key","value"} items, or null.\nThe user block may carry "About this contact", "Recent conversations" and "Earlier in this conversation" (oldest first). Use ONLY to resolve a reference ("that one", "the usual", "same as last time"); never override a code, customer or domain the CURRENT message names.\n"history_question": the dealer\'s OWN PAST with the bot, in any wording: "what did I ask", "what do I normally ask about", "what products do I usually ask about", "what did I check last week", "apa saya tanya tadi", "我之前问过什么"; never "clarification"; domain_hint, intent_hint null and entities [] (the past ask is not a live one). A bare number answering a numbered list in the Previous response re-runs that line: its domain and codes (current_message false). A discount, credit or price-exception request: "request_for_help", intent_hint "commercial_request". "profile_statements": up to 3 things the dealer states about THEMSELVES - key language|role|usual_brands|usual_sites|project|about, their own words.\n\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCURRENT DATE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nCURRENT DATE: {{current_date}}\n\nIf relative dates such as "today" or "yesterday" appear in the current turn input, convert them to absolute dates before calling the MCP tool.'
