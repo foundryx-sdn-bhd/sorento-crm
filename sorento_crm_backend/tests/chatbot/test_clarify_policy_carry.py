@@ -365,6 +365,7 @@ def test_the_month_given_while_the_carry_question_is_open_is_kept_when_it_is_ans
     reply = office.say("2", _answer("pick", 2))
     assert "Which period" not in reply, reply
     orders = _orders(office)
-    assert orders and orders[-1].get("customer_ids") and not orders[-1].get("product_ids"), office.calls
+    assert orders, office.calls
     assert orders[-1].get("actual_delivery_date_from") == "2026-10-01", orders[-1]
     assert orders[-1].get("actual_delivery_date_to") == "2026-10-31", orders[-1]
+    assert not orders[-1].get("product_ids"), orders[-1]  # position 2 drops the product
