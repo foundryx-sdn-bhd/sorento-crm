@@ -47,7 +47,7 @@ def _has_date(reply: str, iso: str) -> bool:
     return any(re.search(rf"(?<![\d/-]){re.escape(f)}(?![\d/-])", reply) for f in forms)
 
 
-HEADER_LINE = re.compile(r"^[A-Za-z ]{1,40}:\s*\S")
+HEADER_LINE = re.compile(r"^(?:[A-Za-z ]{1,40}:|\*[A-Za-z ]{1,40}:\*)\s*\S")
 
 
 def _body(reply: str) -> str | None:
