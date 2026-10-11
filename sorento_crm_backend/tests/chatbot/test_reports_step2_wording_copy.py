@@ -29,6 +29,7 @@ from tests.chatbot import test_report_ask_lane as lane
 from tests.chatbot.test_report_ask_lane import PERIOD_Q, _e, _rank, console, console_no_grant  # noqa: F401
 from tests.chatbot.test_reports_step2_gate_fixes import _http_error, _payload, _reply_text, _run, _sales_payload
 from tests.chatbot.test_reports_step2_lane import _s2_harness  # noqa: F401  (autouse fixture by name)
+from tests.chatbot.test_chat_report_lane import _chat, _extractor_reads_the_parser_verdict, console as chat_console  # noqa: F401
 
 NO_PERIOD = {"date_filter_start": None, "date_filter_end": None}
 
@@ -432,3 +433,35 @@ def test_w4_b_a_published_give_up_changes_the_lane_reply(console, bust) -> None:
         db.close()
     text = _restated(console, top_n=30, measure="amount")
     assert text.startswith("EDITED giving up, try "), text
+
+
+# ================================================================================ review round 2: chat report + engine path
+
+
+def test_w5_a_the_chat_report_dealer_refusal_is_the_published_dimension_denied_line(chat_console, bust) -> None:
+    lane._link_dealer(chat_console)
+    db = chat_console.session_factory()
+    try:
+        _publish(db, "chatbot_reply_report_dimension_denied", "EDITED: that chat breakdown is not for you.")
+    finally:
+        db.close()
+    text, calls = chat_console.say(_chat(group_by="customer"), "top 5 customers asking")
+    assert calls == [], calls
+    assert text.strip() == "EDITED: that chat breakdown is not for you.", text
+
+
+@pytest.mark.parametrize("language", ["ms", "zh"])
+def test_w5_b_the_grant_refused_turn_speaks_the_contacts_language(console_no_grant, bust, language) -> None:
+    db = console_no_grant.session_factory()
+    try:
+        _publish(db, f"chatbot_reply_report_not_enabled.{language}", f"EDITED {language}: laporan tidak dibuka.")
+    finally:
+        db.close()
+    console_no_grant.session_vars = {
+        **console_no_grant.session_vars,
+        "variables": {**(console_no_grant.session_vars.get("variables") or {}), "reply_language": language},
+    }
+    said = {"ms": "sepuluh teratas jualan untuk sorento bulan lepas", "zh": "sorento 前十名销售"}[language]
+    text, calls = console_no_grant.say(_rank(_e("Sorento", "brand")), said)
+    assert calls == [], calls
+    assert text.strip() == f"EDITED {language}: laporan tidak dibuka.", text
