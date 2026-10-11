@@ -1,13 +1,14 @@
-"""Product alternatives: the -NEW code rule, the stored links and the one lookup.
+"""Product alternatives: the code rule, the stored links and the one lookup.
 
 A link (`product_alternatives`) says "use `alternative_product_id` instead of `product_id`",
 same company. Two writers:
 
-* the -NEW rule (`reconcile_new_alternatives`, source `auto_new`): product Y is the
-  alternative of product X when removing exactly ONE whole `NEW` segment from Y's code gives
-  X's code (split on `-`, case-insensitive, whitespace around each segment trimmed). It is a
-  data rule on product codes, run from the AutoCount ingest, the product API create/update,
-  the Excel import and the one-off backfill; it never reads user text.
+* the code rule (`reconcile_new_alternatives`, source `auto_new`): product Y is the
+  alternative of product X when removing exactly ONE whole marker segment (`NEW`, `DIY`, `N`
+  or `PP`) from Y's code gives X's code, or when replacing exactly one whole `PP` segment of
+  Y with `NL` gives X's code (split on `-`, case-insensitive, whitespace around each segment
+  trimmed). It is a data rule on product codes, run from the AutoCount ingest, the product
+  API create/update, the Excel import and the one-off backfill; it never reads user text.
 * a person on the product page (source `manual`). Any hand edit sets
   `products.alternatives_manual`, and the rule never touches that product's links again
   until Reset to auto.
@@ -38,6 +39,11 @@ SOURCE_AUTO_NEW = "auto_new"
 SOURCE_MANUAL = "manual"
 
 _NEW = "NEW"
+# Whole segments that mark a code as an alternative of the same code without them.
+_MARKERS = (_NEW, "DIY", "N", "PP")
+_PP, _NL = "PP", "NL"
+# SQL form of "has a marker segment", for the backfill's candidate filter.
+_MARKER_SEGMENT_RE = r"(^|-)(" + "|".join(_MARKERS) + r")($|-)"
 
 
 _DASH_RE = re.compile(r"\s*-\s*")
@@ -60,29 +66,38 @@ def _norm_sql(column):
 
 
 def new_base_codes(code: Optional[str]) -> set[str]:
-    """The codes this code is the -NEW alternative of: one whole `NEW` segment removed."""
+    """The codes this code is the alternative of: one whole marker segment (`NEW`, `DIY`,
+    `N`, `PP`) removed, or one whole `PP` segment replaced by `NL`."""
     segments = normalize_code(code).split("-") if code else []
     bases = set()
     for index, segment in enumerate(segments):
-        if segment != _NEW:
+        if segment not in _MARKERS:
             continue
         rest = segments[:index] + segments[index + 1 :]
         base = "-".join(rest)
         if rest and base.strip("-"):
             bases.add(base)
+        if segment == _PP:
+            bases.add("-".join(segments[:index] + [_NL] + segments[index + 1 :]))
     return bases
 
 
 def _new_codes_for(code: str) -> set[str]:
-    """The codes that would be this code's -NEW alternatives: `NEW` inserted as one
-    whole segment at any position (the inverse of `new_base_codes`)."""
+    """The codes that would be this code's alternatives: a marker inserted as one whole
+    segment at any position, or an `NL` segment turned into `PP` (the inverse of
+    `new_base_codes`)."""
     segments = normalize_code(code).split("-")
     if not code or not any(segments):
         return set()
-    return {
-        "-".join(segments[:index] + [_NEW] + segments[index:])
+    out = {
+        "-".join(segments[:index] + [marker] + segments[index:])
+        for marker in _MARKERS
         for index in range(len(segments) + 1)
     }
+    for index, segment in enumerate(segments):
+        if segment == _NL:
+            out.add("-".join(segments[:index] + [_PP] + segments[index + 1 :]))
+    return out
 
 
 def _same_company_by_codes(db: Session, product: Product, codes: set[str]) -> list[Product]:
@@ -186,12 +201,12 @@ def reconcile_new_alternatives_safely(db: Session, product_id: str) -> None:
 
 
 def backfill_new_alternatives(db: Session, *, apply: bool = False) -> dict:
-    """One-off pass over every product whose code has a `NEW` segment.
+    """One-off pass over every product whose code has a marker segment (`NEW`, `DIY`, `N`, `PP`).
 
     ``apply=False`` (the default) reports what it would add and writes nothing."""
     candidates = (
         db.query(Product)
-        .filter(_norm_sql(Product.product_code).op("~")(r"(^|-)NEW($|-)"))
+        .filter(_norm_sql(Product.product_code).op("~")(_MARKER_SEGMENT_RE))
         .order_by(Product.product_code)
         .all()
     )
@@ -344,7 +359,7 @@ def unlink(db: Session, link_id: str) -> None:
 
 def reset_auto(db: Session, product_id: str) -> dict:
     """Back to the rule: every link of this product goes, the manual mark clears, and the
-    -NEW rule derives it again."""
+    code rule derives it again."""
     product = _product_or_404(db, product_id)
     # Row by row, not a bulk delete: each removed link goes through the ORM so the
     # `__audit_track__` listeners record it.

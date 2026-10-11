@@ -258,7 +258,7 @@ class Product(Base, CompanyScopedMixin):
     # clears the flag. See docs/plans/PLAN-variant-manual-curation.md.
     variant_link_manual = Column(Boolean, nullable=False, server_default="false", default=False)
     # PRODUCT-ALTERNATIVES (card Q1 (a)): set once a person adds or unlinks one of this
-    # product's alternatives by hand; the -NEW rule
+    # product's alternatives by hand; the code rule
     # (`product_alternative_service.reconcile_new_alternatives`) then never touches this
     # product's links again until "Reset to auto" clears it.
     alternatives_manual = Column(Boolean, nullable=False, server_default="false", default=False)
@@ -366,7 +366,7 @@ class Product(Base, CompanyScopedMixin):
         Index("ix_products_barcode", "barcode"),
         Index("ix_products_company_family_code", "company_id", "family_code"),
         Index("ix_products_variant_of_id", "variant_of_id"),
-        # PRODUCT-ALTERNATIVES: the -NEW rule's per-company normalised-code probe
+        # PRODUCT-ALTERNATIVES: the code rule's per-company normalised-code probe
         # (`product_alternative_service._norm_sql`, migration prod_alt_0001_tables).
         Index(
             "ix_products_company_norm_code",
@@ -411,7 +411,8 @@ class ProductAlternative(Base, CompanyScopedMixin):
     """A stored "use this instead" link: `product_id` (the old code) ->
     `alternative_product_id` (its replacement), same company.
 
-    `source` says who made it: `auto_new` by the -NEW code rule
+    `source` says who made it: `auto_new` by the code rule
+    (-NEW, -DIY, -N, -PP, and PP for NL)
     (`app/services/product_alternative_service.py`), `manual` by a person on the product
     page. The chatbot reads these links (`alternatives_for`), never the codes themselves.
     Card: documentation/plans/chatbot/CARD-product-alternatives-08oct.md.
