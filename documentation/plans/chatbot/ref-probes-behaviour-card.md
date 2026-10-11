@@ -2,7 +2,7 @@
 
 Filed to crew as --ask on 11 Oct 2026.
 
-Owner answers (11 Oct 2026, relayed by crew): Q2 (a) PR read = same people as our POs (`purchase_orders.placed`); Q3 (a) unqualified "PO X" probes our PO and customer PO ref, picker on a double hit; Q4 (a) narrowed miss + other-kind hit answers the true kind, named; Q5 (a) header + lines, capped. Q1: scope stays reference numbers only for now (crew explaining to the owner). The build already matches every answer.
+Owner answers (11 Oct 2026, relayed by crew): Q2 (a) PR read = same people as our POs (`purchase_orders.placed`); Q3 (a) unqualified "PO X" probes our PO and customer PO ref, picker on a double hit; Q4 (a) narrowed miss + other-kind hit answers the true kind, named; Q5 (a) header + lines, capped. Q1 (a) this lane does reference numbers only; "which PRs / SOs contain product X" (cases 0216, 0235) goes to a follow-up lane. The build already matches every answer.
 
 ```
 BEHAVIOUR CARD REF-PROBES (data: sorento_eval_base, read-only; code at origin/main fd3eb5a90)
