@@ -64,9 +64,10 @@ The `[skip ci]` convention for intermediate commits (a commit message containing
 a run for that push) stays in place as belt and braces - it costs nothing now that pushes to a PR
 do not trigger runs on their own, and it still matters for pushes to `main`.
 
-A `ci`-labelled PR run is the fast gate only: alembic head, image imports, typecheck, vitest, and
-the three SCM shards when SCM paths changed. The six main backend shards run in the merge queue
-(`merge_group`) and in a release, never on a PR. **A merge does not deploy**: a push to main runs
+A `ci`-labelled PR run is `Changed areas` plus one `PR gate` job: the alembic head, PII and
+gitleaks gates, the import chains, the import-selected backend tests, and tsc plus related vitest
+when the frontend changed. No shard runs on a PR; the full shards run on a release only when
+`full_suite=true` or the diff is unknown (`documentation/reference/CI-LABELS-AND-MINUTES.md`). **A merge does not deploy**: a push to main runs
 only the alembic head gate. The release is `gh workflow run deploy.yml --repo jayson-odoo/sorento-crm
 --ref main` (add `-f skip_tests=true` when main's head was already validated by a green queue run),
 dispatched by the orchestrator after a batch has merged; it runs the full suite, builds the images,
@@ -75,8 +76,8 @@ and its deploy job then waits for the owner's approval in the GitHub `production
 lists the ruleset changes that turn the label into the real merge gate).
 
 A docs-only change (every path under `documentation/**`, `.claude/**`, `.cursor/**`, a root-level
-`*.md` or the PR template) runs only the `Changed areas` and `Single alembic head` jobs on a PR
-and on a merge-queue entry: no image build, no test suite (owner ruling 29 Sep 2026;
+`*.md` or the PR template) runs only `Changed areas` and the `PR gate` fast-gate steps (alembic
+head, PII, gitleaks) on a PR, and `Changed areas` plus `Single alembic head` on a merge-queue entry: no image build, no test suite (owner ruling 29 Sep 2026;
 `documentation/plans/ci/PLAN-ci-docs-skip-29sep.md`). One
 non-docs path anywhere in the change keeps the full pipeline: a markdown file inside a service
 tree, either end of a rename, or documentation a test reads as input (`documentation/reference/`,
