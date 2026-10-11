@@ -751,11 +751,16 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
         answer_shaped = any(
             v.get(key) for key in ("date_filter_start", "date_filter_end", "date_mode", "demand_qty")
         )
-        if not names_own and v.get("domain_in_message") is not True and answer_shaped:
+        asked_domains = {str(d) for d in pending.payload.get("domains") or ()}
+        same_domain = v.get("domain_in_message") is not True or not v.get("domain_hint") or (
+            str(v.get("domain_hint")) in asked_domains
+        )
+        if not names_own and answer_shaped and same_domain:
             # CLARIFY-POLICY AC-146: a message that only adds a value to the held ask (a bare
-            # month) without answering the open carry question gets the SAME question again,
-            # never a fetch over both subjects; the value is kept for the ask it belongs to
-            # (round 6), and the repeat counts for the loop breaker.
+            # month, or "delivery in october" naming the asked domain again) without answering
+            # the open carry question gets the SAME question again, never a fetch over both
+            # subjects; the value is kept for the ask it belongs to (round 6), and the repeat
+            # counts for the loop breaker.
             if decision.window:
                 focus.date_window = dict(decision.window)
             trace.rules_fired.append("carry_scope_asked_again")
@@ -766,6 +771,13 @@ def _answer_pending(state: State, decision: Decision, trace: Trace, verdict: dic
                 Plan(domains=[], fetch=[], ask=pending, denied=[], trace=trace),
                 False,
             )
+        if not names_own and not same_domain:
+            # A new ask in another domain naming no subject of its own: the held subject was put
+            # back on the focus only for the carry question, so it leaves with that question and
+            # the turn runs on the focus today's rules would have given it.
+            _set_kind_field(focus, str(pending.payload.get("kind") or ""), [])
+            trace.rules_fired.append("carry_scope_closed")
+            return focus, None, None, False
         # Anything else ("thanks"): the turn runs as itself and the question stays open.
         return focus, pending, None, False
 

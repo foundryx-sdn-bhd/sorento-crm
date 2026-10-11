@@ -41,11 +41,30 @@ MARKER_KEY = "clp_0002_parser_continuation"
 #: The block's own heading: a text carrying it already has the block.
 BLOCK_HEADING = "\nSAME SUBJECT OR A NEW ONE\n"
 
+#: The block this revision publishes, frozen here: the first wording (CLARIFY-POLICY S5, 3d96ef91).
+#: A later edit to the code constant `CONTINUATION_ADDENDUM` must never change what an applied
+#: revision publishes.
+CONTINUATION_ADDENDUM = (
+    '\n'
+    '\n'
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+    'SAME SUBJECT OR A NEW ONE\n'
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+    '\n'
+    '"continuation" is true when the current message asks about the SAME subject as the\n'
+    'previous turn without naming it again: a follow-up about what was just shown ("and its\n'
+    'price?", "cert?", "any incoming?", "check stock" right after a product answer, "how about\n'
+    'delivery?"). It is false when the message names a subject of its own (a code, a name, a\n'
+    'category), asks for a report or a list that needs no subject ("low stock report", "top\n'
+    'selling items", "my outstanding"), or starts something unrelated. A pick off a numbered\n'
+    'list, "yes" or "no" is false. When continuation is true, entity_op is "reuse".\n'
+)
+
 
 def with_continuation_block(text: str) -> str:
     """`text` carrying CONTINUATION_ADDENDUM once, just before the policy blocks (at the end
     when there are none). A text that already has it is returned as it is."""
-    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, CONTINUATION_ADDENDUM
+    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN
 
     if BLOCK_HEADING in text:
         return text

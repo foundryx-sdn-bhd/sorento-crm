@@ -39,7 +39,9 @@ owner promotes the version.
 
 ## Release step (one ordered step, in the PR body)
 
-1. Crew's eval gate on the clp_0002 parser version (DEV, dev key).
+1. Crew's eval gate on the clp_0003 parser version (v56 + the amended SAME SUBJECT OR A NEW ONE
+   block; DEV, dev key). The version promoted must also carry main's chat report block
+   (`ca3_0001_chat_report_prompt`), so crew composes the two before the gate.
 2. Owner promotes that version to `production`.
 3. Immediately after: `UPDATE chatbot_clarify_policy SET mode='ask', updated_by='release CLARIFY-POLICY',
    updated_at=now() WHERE ask_kind='carry_unclear';`

@@ -256,6 +256,20 @@ def test_ac146_the_month_given_with_the_domain_word_is_kept_for_the_pick(office)
     assert not orders[-1].get("customer_ids"), orders[-1]
 
 
+def test_ac146_a_new_ask_in_another_domain_closes_the_carry_question_and_drops_the_held_subject(office):  # noqa: F811
+    office.say("delivery for zzt dealer", _customer_ask())
+    office.say(f"delivery for {CODE}", _product_ask())
+    office.calls.clear()
+    office.say(
+        "any stock?",
+        verdict(domain_hint="inventory", intent_hint="check_stock", domain_in_message=True, entities=[]),
+    )
+    assert ((office.state or {}).get("open_question") or {}).get("kind") != "carry_scope", office.state
+    assert not ((office.state or {}).get("focus") or {}).get("customers"), office.state
+    both = [a for _n, a in office.calls if a.get("product_ids") and a.get("customer_ids")]
+    assert both == [], office.calls
+
+
 def test_ac146_an_open_carry_question_and_two_non_answers_ends_in_the_loop_breaker(dealer, session_factory):  # noqa: F811
     _ask_unclear(session_factory)
     _carried_product(dealer)

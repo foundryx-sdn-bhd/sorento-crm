@@ -42,6 +42,27 @@ SOURCE = Path(__file__).resolve().parents[1] / "data" / "chatbot_semantic_parser
 #: The block's own heading: a text carrying it already has a continuation block.
 BLOCK_HEADING = "\nSAME SUBJECT OR A NEW ONE\n"
 
+#: The block this revision publishes, frozen here: the amended wording (crew ruling (a), 11 Oct 2026).
+#: A later edit to the code constant `CONTINUATION_ADDENDUM` must never change what an applied
+#: revision publishes.
+CONTINUATION_ADDENDUM = (
+    '\n'
+    '\n'
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+    'SAME SUBJECT OR A NEW ONE\n'
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+    '\n'
+    '"continuation" is true when the current message asks about the SAME subject as the\n'
+    'previous turn without naming it again: a short follow-up about what was just shown ("and its\n'
+    'price?", "cert?", "eta?", "any incoming?", "check stock" right after a product answer). It is\n'
+    'false when the message names a subject of its own (a code, a name, a category), asks for a\n'
+    'report or a list that needs no subject ("low stock report", "top selling items", "my\n'
+    'outstanding"), asks a different kind of thing with its own scope such as a date window or a\n'
+    'whole list ("delivery today", "orders this week", "all deliveries"), or starts something\n'
+    'unrelated. A pick off a numbered list, "yes" or "no" is false. When continuation is true,\n'
+    'entity_op is "reuse".\n'
+)
+
 _MEMORY = "== MEMORY =="
 _CURRENT_DATE_TAIL = "\n\n\n" + "\u2501" * 35 + "\nCURRENT DATE\n"
 
@@ -49,8 +70,6 @@ _CURRENT_DATE_TAIL = "\n\n\n" + "\u2501" * 35 + "\nCURRENT DATE\n"
 def with_amended_block(text: str) -> str:
     """`text` carrying the amended block once, as its own section before `== MEMORY ==`
     (else before the CURRENT DATE tail, else at the end)."""
-    from app.services.chatbot_parser_prompt import CONTINUATION_ADDENDUM
-
     block = CONTINUATION_ADDENDUM.strip("\n")
     if BLOCK_HEADING in text:
         return text

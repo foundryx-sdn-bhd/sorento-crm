@@ -60,6 +60,19 @@ def test_clp_0002_still_publishes_an_unlabelled_version():
     _publishes_unlabelled("clp_0002_parser_continuation.py", lambda t: None)
 
 
+def test_each_revision_publishes_its_own_frozen_block_not_the_code_constant():
+    """Reviewer S1: clp_0002 keeps the first wording once the constant is amended, and clp_0003's
+    block is its own copy, so a later edit to the constant changes neither."""
+    from app.services.chatbot_parser_prompt import CONTINUATION_ADDENDUM
+
+    first = _load("clp_0002_parser_continuation.py")
+    assert "how about\ndelivery?" in first.CONTINUATION_ADDENDUM
+    assert first.CONTINUATION_ADDENDUM.strip("\n") in first.with_continuation_block("base text")
+    amended = _load("clp_0003_parser_continuation_v2.py")
+    assert PARAGRAPH in amended.CONTINUATION_ADDENDUM
+    assert amended.CONTINUATION_ADDENDUM == CONTINUATION_ADDENDUM  # today's constant, until it moves
+
+
 def test_clp_0003_publishes_the_amended_paragraph_as_a_new_unlabelled_version():
     base = _load("clp_0003_parser_continuation_v2.py").SOURCE.read_text(encoding="utf-8")
 
