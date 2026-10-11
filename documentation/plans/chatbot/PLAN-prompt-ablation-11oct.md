@@ -109,4 +109,66 @@ cases only. 6. Report pass / strict per topic and language, cost/turn, cache %, 
 
 ## Results
 
-(filled after the runs)
+### DEV run 2 (11 Oct, valid; v53 = id 882f8b23 vs v50 OFF from DP1, same DB and runner, originals)
+
+| | v50 | trim v53 |
+|---|---|---|
+| pass | 84.1% (90/107) | 77.6% (83/107) |
+| strict | 41.1% | 39.3% |
+| prompt tokens / turn | 39,507 | 36,454 (-7.7%) |
+| cache share | 96.1% | 97.6% |
+| cost / turn | $0.00590 | $0.00523 (-11%) |
+| latency p50 / p95 | 3.85 s / 7.96 s | 3.32 s / 7.19 s |
+
+Per area, passes v50 -> v53: incoming 15 -> 12 / 15, inventory 34 -> 32 / 37, master_products 5 -> 4 / 5,
+order 11 -> 10 / 14, purchase_order 3 -> 2 / 3, resource_attachment 1 -> 2 / 3, others equal. By language:
+en 77 -> 72 / 90, zh 9 -> 8 / 11, mixed 4 -> 3 / 4, ms 0 -> 0 / 2.
+
+8 cases lost, 1 won. Q2 re-run of the 8 on v53 (20 calls): 3 pass again (noise, excluded). 5 fail again,
+4 distinct roots (case ids crew-only):
+- R1 incoming, a numbered pick "no 1 & no 8" over a product list: v53 answers every row. Suspects: C13
+  (positional examples, also reviewer finding 1), C29 / C30 (open-question pick words).
+- R2 a quantity follow-up "14 ada stock" after a stock answer: v53 parser emits entity {raw "14", hint
+  product} (trace) instead of a quantity; a later "eta?" in the same thread then lists 50 products.
+  Suspects: C28 ("Last answered" Malay phrasings), C43 ("ada stok" = the stock ask).
+- R3 a bare product code with no history: v53 parser domain_hint null, so the reply asks "What would you
+  like me to know?". The sibling case passed on re-run, so this is borderline. Suspect: none named yet
+  (needs the v50 parser JSON).
+- R4 "purchasing" after a yes: both versions reply alike; v50 passed only through a memory recap that
+  named the code. Likely grader variance, to confirm on v50.
+Q2 is not complete: the v50 side (does v50 pass these 5 again, and what did its parser emit) needs ~14
+calls; today's cap (450) is spent (449). Next (12 Oct): v50 re-run of the 5 (~14 calls), then v54 = v53
+with the guilty cuts restored (`--restore C13,C28,C43` as evidence dictates), full DEV on v54 (214),
+crew hidden gate.
+
+
+Run 1 (11 Oct, 214 calls) was INVALID: the lane stack had no MCP server, every lookup failed with
+"Connection refused", pass 50.5%. Lead's setup defect, not a prompt effect. Discarded.
+
+### Owner ask: what translation the system already has (read-only, 11 Oct; paths under sorento_crm_backend/)
+
+- `translation_memory` (`app/models/translation_memory.py:44-73`) + `translate()` (`app/services/translation_service.py:89`:
+  memory first, AI on a miss). Used only by SCM supplier documents (`app/services/scm/supplier_document_service.py:335`,
+  `app/services/scm/description_translation.py:37`) and chat reply labels (`app/services/chatbot/label_catalog.py:842-871`).
+  On sorento_eval_base: en->zh 298 and en->ms 298 (chat labels), zh->en 19 (supplier phrases such as 连体马桶 ->
+  "One-piece toilet"); 0 rows equal a category `class_label`.
+- Category vocabulary: `ProductCategory.class_label` + `search_synonyms` (`app/models/product.py:52-56`), seeded from
+  `CLASS_SYNONYMS` (`app/services/product_class_signal.py:66-93`, English and Malay, no Chinese). 120 categories, 39 with a
+  class_label (11 labels), 0 with a Chinese synonym. Spec registry `synonyms / user_synonyms / value_labels`
+  (`app/models/product_spec.py:66,113,154`) has no Chinese either.
+- Brands and products: no translated columns (`app/models/product.py:98-153`); 0 of 12 brands and 0 of 15,390 products
+  carry Chinese. Frontend i18n (`sorento_crm_frontend/i18n/messages/*.json`) is UI strings only.
+- Resolver today: category mentions go through `_top_selling_category_ids` (`app/services/chatbot/lanes/business/__init__.py:529-565`)
+  -> `resolve_category_token` (`.../services.py:650`, exact / whole word) -> `resolve_category_class` (`services.py:781-840`)
+  -> `ClassVocabulary` (`product_class_signal.py:228-311`, exact lookup over class_label, search_synonyms, registry synonyms,
+  CLASS_SYNONYMS). The parser's English canonical_code is preferred over raw at `app/services/chatbot/turn/apply.py:1509-1515`
+  (top_selling) and `.../report_ask.py:284-286` (sales_ranking). Brands: `resolve_brand_token` (`services.py:764`). Products:
+  `entity_resolver` exact -> prefix -> trigram (:2927) -> embedding (:2844). No resolver path reads `translation_memory`.
+- Smallest hook: in `ClassVocabulary.resolve` after the exact lookup (`product_class_signal.py:300-311`), or in
+  `_top_selling_category_ids` before a word is marked unknown (`__init__.py:556-561`): when the raw mention is not Latin
+  script, look it up in `translation_memory` (zh->en; `translate()` fills a miss with one cached AI call) and feed the English
+  result to the same exact / synonym lookup. Simpler still: add the Chinese words as `search_synonyms` / registry
+  `user_synonyms` (staff-editable), which the existing exact lookup already matches with no code change.
+- Gaps: no Chinese names exist for any category, brand or product; the zh->en memory rows do not land on class labels
+  ("Basin" is not "Wash Basin"), so a translated word still has to match a label or synonym; an AI fill adds one call per unseen
+  word (cached after). Whether customers type Chinese brand names is UNVERIFIED.
