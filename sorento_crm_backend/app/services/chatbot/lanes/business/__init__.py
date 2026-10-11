@@ -1275,20 +1275,31 @@ def _resolve_report_product_and_location(
         # RESOLVE-SEMANTIC-FALLBACK: the code the customer typed is `canonical_code` first
         # ("TAP SRTWT5608" carries SRTWT5608 there), raw second - the resolver's own token
         # order (`resolve_gate._token_of`), so the subject match reads the same value.
-        typed_codes = {
+        typed_tokens = [
             jsc.js_string(e.get("canonical_code") or e.get("raw") or "").strip().casefold()
             for e in jsc.array(parse_output.get("entities"))
             if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
-        }
-        typed_codes.discard("")
-        matched: list[str] = []
-        for e in jsc.array(entities):
-            if not isinstance(e, dict) or e.get("entity_type") != "product":
-                continue
-            code = e.get("code") or e.get("canonical_code")
-            if jsc.truthy(code) and jsc.js_string(code).strip().casefold() in typed_codes:
-                matched.append(jsc.js_string(code))
+        ]
+        typed_tokens = list(dict.fromkeys(t for t in typed_tokens if t))
+        typed_codes = set(typed_tokens)
+        gated_codes = [
+            jsc.js_string(e.get("code") or e.get("canonical_code"))
+            for e in jsc.array(entities)
+            if isinstance(e, dict) and e.get("entity_type") == "product" and jsc.truthy(e.get("code") or e.get("canonical_code"))
+        ]
+        matched: list[str] = [c for c in gated_codes if c.strip().casefold() in typed_codes]
         matched = list(dict.fromkeys(matched))
+        if matched:
+            # A typed stem with no exact product ("CWC7601" beside the exact "CKS901") is a
+            # family: its gated members answer beside the exact code, in the order typed.
+            exact = {c.strip().casefold() for c in matched}
+            ordered: list[str] = []
+            for token in typed_tokens:
+                if token in exact:
+                    ordered += [c for c in matched if c.strip().casefold() == token]
+                else:
+                    ordered += [c for c in gated_codes if c.strip().casefold().startswith(token)]
+            matched = list(dict.fromkeys(ordered or matched))
         if len(matched) > 1:
             # Every typed code answers (the fetch sends `product_codes`), not just the first.
             semantic_input["outstanding_product_codes"] = matched
