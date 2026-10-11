@@ -1,6 +1,6 @@
 # PLAN: REPORTS-STEP2 (one crm_report tool, one report entry in Focus)
 
-Status: S1 building (owner Q2/Q3/Q4 yes 11 Oct; Q1 low-stock split and Q5 pending). Track: L, lead pattern. Card:
+Status: S1 building (owner answered Q1-Q5 on 11 Oct: Q1 low-stock split, Q2 extend the engine, Q3 crew labels ~40 report cases, Q4 tie -> meaning output, Q5 carried values in one header line, rankings still ask). Track: L, lead pattern. Card:
 `CARD-reports-step2-11oct.md` / `.html`. Architecture: `ARCH-scalable-chat-11oct.html` step 2. Prior: PROMPT-DIET
 stopped at DP1 (PR #1568 measurement record).
 
@@ -10,7 +10,10 @@ stopped at DP1 (PR #1568 measurement record).
    registry rows in code, seeded from `reports/ask.py` CATALOGUE; rows for DO pending (outstanding service),
    delivered-by-DO-date (delivery_order_lines dataset) and sales value (sales_yearly). Grants, dealer keys,
    `enforce_customer_scope`, rate limits and presenters reused unchanged. MCP ToolSpec + chatbot allow-list.
-2. Low stock and the sales-analysis Excel stay as they are.
+2. Low stock SPLIT (owner Q1): the read side (`build_low_stock_view`, `scm/low_stock_report_service.py:271`, over
+   `reorder_run_service.today_or_latest_run` :466) becomes a `low_stock` measure in crm_report; generating a reorder
+   run + Excel (`low_stock_report.py` create_run :483, download :507, enqueue :519-536) stays the action tool. The
+   sales-analysis Excel stays.
 3. One report entry in Focus (no new state system): Focus.sales_ranking_frame extended to every report kind,
    owned by the report intent (INTENT-FRAMES); refine = patch, switch = fresh entry; absorbs Focus.top_selling and
    the outstanding detail-offer carry.
