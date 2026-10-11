@@ -51,7 +51,9 @@ def test_ac9_crm_report_carries_the_contact_pair_and_the_filters():
 def test_ac9_crm_report_restricts_like_crm_report_ask():
     spec, old = _spec(), _spec("crm_report_ask")
     assert spec is not None and old is not None
-    assert spec.restricted_fields == old.restricted_fields
+    # `crm_report` serves the sales measures only; the chat dataset (CA-3) stays on crm_report_ask.
+    sales_only = tuple(f for f in old.restricted_fields if f[0] != "chatbot.analytics")
+    assert spec.restricted_fields == sales_only
 
 
 def test_ac9_the_description_names_every_registry_key():

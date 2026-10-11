@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import false, or_
+from sqlalchemy import false, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.v1.order_management._contact_scope import (
@@ -32,7 +32,8 @@ from app.models.company import RespondContactCompany
 from app.models.order import Customer
 from app.models.product import Brand, Product, ProductCategory
 from app.models.sales_agent import SalesAgent
-from app.schemas.report_ask import ReportAskResponse
+from app.services import contact_asker
+from app.schemas.report_ask import ReportAskChatResponse, ReportAskResponse
 from app.services.contact_brand_scope import contact_brand_scope
 from app.services.error_handler import AppException, handle_not_found
 from app.api.v1.order_management import report_kinds  # noqa: F401  (registers the non-ranking measures)
@@ -60,9 +61,19 @@ _PARAMS = frozenset(
     {
         "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort", "product_code",
         "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids", "warehouse_codes",
-        "channel", "contact_id", "space_id", "customer_agent_ids",
+        "channel", "contact_id", "space_id", "customer_agent_ids", "dataset",
     }
 )
+#: The chat dataset's own query keys (CA-3); any other is 422 `unknown_param`.
+_CHAT_PARAMS = frozenset(
+    {
+        "dataset", "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort", "subjects",
+        "product_ids", "customer_ids", "contact_id", "space_id", "askers", "category_ids", "brand_ids",
+    }
+)
+CHAT_GRANT = "chatbot.analytics"
+_CHAT_DEFAULT_BASIS = "asks"
+_CHAT_DEFAULT_MEASURE = "asks"
 #: The filter params: present but resolving to nothing is 422 `empty_filter`, never "no filter".
 _FILTER_PARAMS = (
     "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids", "customer_ids",
@@ -222,6 +233,8 @@ def _serve(
     contact_id: Optional[str],
     space_id: Optional[str],
     carried: Optional[list[str]] = None,
+    dataset: Optional[str] = None,
+    chat: Optional[Callable[[str, str], Any]] = None,
 ):
     """Every gate and the shared param handling for `/report-ask` and `/report`; the two
     routes differ only in how `resolve` turns their measure params into a `_Spec`."""
@@ -237,6 +250,13 @@ def _serve(
         )
     if not request.headers.get("X-API-Key"):
         raise AppException(403, "This route is for the chatbot only", code="api_key_required")
+    if chat is not None:
+        # `/report-ask` only: `dataset` picks the sales or the chat (CA-3) report.
+        dataset_norm = (dataset or "").strip().lower()
+        if dataset_norm not in ask.DATASETS:
+            raise _unprocessable(f"Unknown dataset '{dataset}'", "unknown_dataset", _allowed(ask.DATASETS))
+        if dataset_norm == "chat":
+            return chat(contact_id, space_id)
     for key in request.query_params.keys():
         if key not in allowed_params:
             raise _unprocessable(f"Unknown parameter '{key}'", "unknown_param", key)
@@ -480,6 +500,9 @@ def report_ask(
     ),
     warehouse_codes: Optional[list[str]] = Query(None),
     channel: Optional[str] = Query(None, description="dealer | project"),
+    dataset: str = Query("sales", description="sales (default) | chat."),
+    subjects: Optional[list[str]] = Query(None, description="Chat only: subject (domain) codes."),
+    askers: Optional[list[str]] = Query(None, description="Chat only: dealer | salesperson | staff | unclassified."),
     contact_id: Optional[str] = Query(None, description="Respond.io contact id. Required with space_id."),
     space_id: Optional[str] = Query(None, description="Respond.io workspace id. Required with contact_id."),
     current_user: dict = Depends(require_permission_with_api_key("order_management.orders.view")),
@@ -487,13 +510,14 @@ def report_ask(
 ):
     def resolve() -> _Spec:
         basis_norm = (basis or "").strip().lower()
-        if basis_norm not in ask.CATALOGUE:
-            raise _unprocessable(f"Unknown basis '{basis}'", "unknown_basis", _allowed(ask.CATALOGUE))
+        if basis_norm not in ask.CATALOGUE["sales"]:
+            raise _unprocessable(f"Unknown basis '{basis}'", "unknown_basis", _allowed(ask.CATALOGUE["sales"]))
         measure_norm = (measure or "").strip().lower()
         if measure_norm not in ask.MEASURES:
             raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(ask.MEASURES))
         return _Spec(
-            basis_norm, ask.CATALOGUE[basis_norm]["label"], measure_norm, ask.CATALOGUE[basis_norm]["dimensions"],
+            basis_norm, ask.CATALOGUE["sales"][basis_norm]["label"], measure_norm,
+            ask.CATALOGUE["sales"][basis_norm]["dimensions"],
             ask.DEALER_KEYS, GRANT,
             lambda db, **kw: ask.run_ask(db, basis=basis_norm, measure=measure_norm, **kw),
         )
@@ -504,7 +528,13 @@ def report_ask(
         product_code=product_code, product_ids=product_ids, brand_ids=brand_ids,
         category_ids=category_ids, sales_agent_ids=sales_agent_ids, customer_ids=customer_ids,
         customer_agent_ids=customer_agent_ids, warehouse_codes=warehouse_codes, channel=channel,
-        contact_id=contact_id, space_id=space_id,
+        contact_id=contact_id, space_id=space_id, dataset=dataset,
+        chat=lambda contact, space: _chat_report_ask(
+            request, db, date_from=date_from, date_to=date_to, basis=basis, measure=measure,
+            group_by=group_by, top_n=top_n, sort=sort, subjects=subjects, product_ids=product_ids,
+            customer_ids=customer_ids, contact_id=contact, space_id=space, askers=askers,
+            category_ids=category_ids, brand_ids=brand_ids,
+        ),
     )
 
 
@@ -613,10 +643,232 @@ def report(
         return _Spec(m.basis, m.label, m.figure, m.dimensions, frozenset(m.dealer_dimensions), m.grant, m.run, m.key)
 
     return _serve(
-        request, db, resolve, _PARAMS - {"basis"} | {"carried"},
+        request, db, resolve, _PARAMS - {"basis", "dataset"} | {"carried"},
         date_from=date_from, date_to=date_to, group_by=group_by, top_n=top_n, sort=sort,
         product_code=product_code, product_ids=product_ids, brand_ids=brand_ids,
         category_ids=category_ids, sales_agent_ids=sales_agent_ids, customer_ids=customer_ids,
         customer_agent_ids=customer_agent_ids, warehouse_codes=warehouse_codes, channel=channel,
         contact_id=contact_id, space_id=space_id, carried=carried,
+    )
+
+
+# ----------------------------------------------------------------------- chat (CA-3)
+
+
+def _chat_response(data: dict) -> JSONResponse:
+    return JSONResponse(content=ReportAskChatResponse(**data).model_dump(mode="json"))
+
+
+def _chat_report_ask(
+    request: Request,
+    db: Session,
+    *,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    basis: str,
+    measure: str,
+    group_by: Optional[str],
+    top_n: Optional[int],
+    sort: str,
+    subjects: Optional[list[str]],
+    product_ids: Optional[list[str]],
+    customer_ids: Optional[list[str]],
+    contact_id: str,
+    space_id: str,
+    askers: Optional[list[str]] = None,
+    category_ids: Optional[list[str]] = None,
+    brand_ids: Optional[list[str]] = None,
+):
+    """`dataset=chat`: the bot's chat analytics (asks, turns, failures, contacts). Same gates
+    as the sales report in the same order, with the `chatbot.analytics` reveal in place of the
+    sales one, and a dealer or salesman held to their own customers' asks."""
+    present = request.query_params.keys()
+    for key in present:
+        if key not in _CHAT_PARAMS:
+            raise _unprocessable(f"Unknown parameter '{key}'", "unknown_param", key)
+    if date_from is None or date_to is None:
+        raise _unprocessable("date_from and date_to are required", "period_required")
+    if not all(_MIN_YEAR <= d.year <= _MAX_YEAR for d in (date_from, date_to)):
+        raise _unprocessable(
+            f"Dates must fall in {_MIN_YEAR} to {_MAX_YEAR}", "date_out_of_range", "date_from, date_to"
+        )
+    if date_from > date_to:
+        raise _unprocessable("date_from is after date_to", "date_range_inverted")
+
+    basis_norm = (basis if "basis" in present else _CHAT_DEFAULT_BASIS).strip().lower()
+    if basis_norm not in ask.CATALOGUE["chat"]:
+        raise _unprocessable(f"Unknown basis '{basis}'", "unknown_basis", _allowed(ask.CATALOGUE["chat"]))
+    measure_norm = (measure if "measure" in present else _CHAT_DEFAULT_MEASURE).strip().lower()
+    if measure_norm not in ask.CHAT_MEASURES:
+        raise _unprocessable(f"Unknown measure '{measure}'", "unknown_measure", _allowed(ask.CHAT_MEASURES))
+    sort_norm = (sort or "").strip().lower()
+    if sort_norm not in ("desc", "asc"):
+        raise _unprocessable(f"Unknown sort '{sort}'", "unknown_sort", _allowed(("desc", "asc")))
+    group_norm = (group_by or "").strip().lower() or None
+    if group_norm is not None and group_norm not in ask.CHAT_DIMENSIONS:
+        raise _unprocessable(
+            f"Unknown group_by value '{group_by}'", "unknown_group_by", _allowed(ask.CHAT_DIMENSIONS)
+        )
+    if top_n is not None and not 1 <= top_n <= TOP_SELLING_N_CEILING:
+        raise _unprocessable(f"top_n must be between 1 and {TOP_SELLING_N_CEILING}", "top_n_out_of_range")
+
+    subject_codes = [
+        p.strip().lower() for item in (subjects or []) for p in str(item or "").split(",") if p.strip()
+    ]
+    named_customers = parse_uuid_list(customer_ids, param_name="customer_ids")
+    named_products = parse_uuid_list(product_ids, param_name="product_ids")
+    asker_words = [
+        p.strip().lower() for item in (askers or []) for p in str(item or "").split(",") if p.strip()
+    ]
+    for word in asker_words:
+        if word not in contact_asker.ASKERS:
+            raise _unprocessable(f"Unknown asker '{word}'", "unknown_asker", _allowed(contact_asker.ASKERS))
+    named_categories = parse_uuid_list(category_ids, param_name="category_ids")
+    named_brands = parse_uuid_list(brand_ids, param_name="brand_ids")
+    for name, values in (
+        ("subjects", subject_codes), ("customer_ids", named_customers), ("product_ids", named_products),
+        ("askers", asker_words), ("category_ids", named_categories), ("brand_ids", named_brands),
+    ):
+        if name in present and not values:
+            raise _unprocessable(f"'{name}' was given but names nothing", "empty_filter", name)
+        if len(values or []) > _MAX_VALUES:
+            raise _unprocessable(f"Too many values for '{name}' (max {_MAX_VALUES})", "too_many_values", name)
+
+    if subject_codes:
+        known = {n for (n,) in db.execute(text("SELECT name FROM chatbot_domains")).all()}
+        # No domain rows (a blank schema) leaves nothing to check against.
+        unknown = [c for c in subject_codes if known and c not in known]
+        if unknown:
+            raise _unprocessable(f"Unknown subject '{unknown[0]}'", "unknown_subject", unknown[0])
+
+    from app.services.contact_field_reveal_service import granted_keys
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    contact_id, space_id = contact_id.strip(), space_id.strip()
+    resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+    keys = granted_keys(db, resolved) if resolved else []
+    if CHAT_GRANT not in keys:
+        raise AppException(403, "Chat analytics is not enabled for your account.", code="chat_analytics_not_enabled")
+
+    if measure_norm in ("failed", "failure_rate"):
+        basis_norm = "turns"  # a failure is counted on messages, never on split asks
+    unit = {"contacts": "contacts", "failure_rate": "%"}.get(measure_norm, basis_norm)
+    common = {
+        "dataset": "chat",
+        "basis": basis_norm,
+        "measure": measure_norm,
+        "unit": unit,
+        "sort": sort_norm,
+        "group_by": group_norm,
+        "group_label": ask.CHAT_GROUP_LABELS[group_norm] if group_norm else None,
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+    }
+
+    from app.services import rate_limit
+
+    limit, window_minutes = _rate_limit_setting(db)
+    if not rate_limit.hit(
+        "report_ask", str(resolved), limit=limit, window_seconds=window_minutes * 60
+    ).allowed:
+        minutes = "1 minute" if window_minutes == 1 else f"{window_minutes} minutes"
+        return _chat_response(
+            {
+                "status": "busy", "message": f"Too many reports in the last {minutes}.", **common,
+                "total": {"value": 0},
+            }
+        )
+
+    # The asking contact is scoped by the one asker rule (`contact_asker`): a dealer is forced to
+    # its own customers (a named one outside them is the helper's own 403) and to the dealer's
+    # breakdowns; a salesperson to the customers whose card agent is theirs; staff, and a contact
+    # nobody classified that holds the grant, see all.
+    asker = contact_asker.classify(db, str(resolved))
+    scoped = None
+    if asker == "dealer":
+        scoped = enforce_customer_scope(
+            db, contact_id=contact_id, space_id=space_id, customer_ids=named_customers, customer_query=None
+        )
+        if scoped is not None and group_norm is not None and group_norm not in ask.CHAT_DEALER_KEYS:
+            raise AppException(403, _DEALER_MESSAGE, code="report_dimension_not_allowed")
+    customers = scoped if scoped is not None else named_customers
+    scope_customers: list[str] | None = list(scoped) if scoped is not None else None
+    scoped_book = False
+    if asker == "salesperson":
+        # Narrowed to its own book only when it has an agent link; a salesperson without one sees all.
+        with company_scope(db, None):
+            agent_ids = [str(i) for (i,) in db.query(SalesAgent.id).filter(SalesAgent.contact_id == str(resolved)).all()]
+        scoped_book = bool(agent_ids)
+    if scoped_book:
+        with company_scope(db, None):
+            own = (
+                {str(i) for (i,) in db.query(Customer.id).filter(Customer.sales_agent_id.in_(agent_ids)).all()}
+                if agent_ids else set()
+            )
+            customers = [c for c in (named_customers or own) if c in own]
+        scope_customers = sorted(own)
+
+    grants = {
+        str(c)
+        for (c,) in db.query(RespondContactCompany.company_id)
+        .filter(RespondContactCompany.respond_contact_id == str(resolved))
+        .all()
+        if c
+    }
+    echo: list[tuple[str, list[str]]] = []
+    if subject_codes:
+        from app.services.reports.datasets import chat_asks
+
+        words = dict(chat_asks.subject_options(db))
+        echo.append(("subject", sorted(words.get(c, c) for c in subject_codes)))
+    if named_products:
+        echo.append(("product", _lookup(db, Product, Product.product_code, named_products, grants, "Product")))
+    if named_customers:
+        # Only the customers left after scoping: a name outside the contact's own is never echoed.
+        shown = [c for c in named_customers if c in set(customers)]
+        if shown:
+            echo.append(("customer", _lookup(db, Customer, Customer.customer_name, shown, grants, "Customer")))
+
+    filters: dict[str, list[str]] = {}
+    if subject_codes:
+        filters["subject"] = subject_codes
+    if named_products:
+        filters["product"] = named_products
+    if scoped is not None or named_customers or customers != named_customers or scoped_book:
+        filters["customer"] = customers
+    if asker_words:
+        filters["asker"] = asker_words
+        echo.append(("asker", [w.capitalize() for w in asker_words]))
+    if named_categories:
+        filters["category"] = named_categories
+        echo.append(("category", sorted(set(_lookup(db, ProductCategory, ProductCategory.category_name, named_categories, grants, "Category")))))
+    if named_brands:
+        filters["brand"] = named_brands
+        echo.append(("brand", sorted(set(_lookup(db, Brand, Brand.brand_name, named_brands, grants, "Brand")))))
+
+    data = ask.run_ask(
+        db,
+        dataset="chat",
+        basis=basis_norm,
+        measure=measure_norm,
+        group_by=group_norm,
+        date_from=date_from,
+        date_to=date_to,
+        filters=filters,
+        warehouse_codes=[],
+        policy=None,
+        sort=sort_norm,
+        top_n=top_n,
+        scope_customers=scope_customers,
+    )
+    return _chat_response(
+        {
+            **data,
+            **common,
+            "date_from": data["date_from"],
+            "date_to": data["date_to"],
+            "filters": [
+                {"key": key, "label": ask.CHAT_FILTER_LABELS[key], "values": values} for key, values in echo if values
+            ],
+        }
     )

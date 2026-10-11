@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 
 import {
   useRuntimeSettings,
@@ -26,6 +27,8 @@ interface FieldSpec {
   name: RuntimeSettingName;
   label: string;
   placeholder?: string;
+  hint?: string;
+  multiline?: boolean;
 }
 
 interface CardSpec {
@@ -70,7 +73,14 @@ const CARDS: CardSpec[] = [
   {
     key: 'respond-webhook',
     title: 'Respond.io webhook',
-    fields: [{ name: 'respond_webhook_secret', label: 'Webhook secret' }],
+    fields: [
+      {
+        name: 'respond_webhook_secret',
+        label: 'Signing keys',
+        hint: "Paste each Respond.io webhook's signing key, one per line.",
+        multiline: true,
+      },
+    ],
   },
 ];
 
@@ -188,7 +198,7 @@ function RuntimeSettingsCard({
           {spec.key === 'respond-webhook' && (
             <RespondWebhookFacts data={data} />
           )}
-          {spec.fields.map(({ name, label, placeholder }) => {
+          {spec.fields.map(({ name, label, placeholder, hint, multiline }) => {
             const field = data.fields[name];
             if (!field) return null;
             const id = `runtime-${name}`;
@@ -259,6 +269,17 @@ function RuntimeSettingsCard({
               : field.source === 'env'
                 ? String(field.value ?? '')
                 : placeholder;
+            const onTextChange = (next: string) =>
+              setDraft((d) => {
+                // An emptied secret box means "keep", never "clear": clearing is
+                // the explicit button (security review L3).
+                if (field.secret && next === '') {
+                  const rest = { ...d };
+                  delete rest[name];
+                  return rest;
+                }
+                return { ...d, [name]: next };
+              });
             return (
               <div key={name} className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -266,29 +287,40 @@ function RuntimeSettingsCard({
                   <SourceBadge field={field} />
                 </div>
                 <div className="flex items-center gap-2">
-                  <Input
-                    id={id}
-                    type={field.secret ? 'password' : 'text'}
-                    autoComplete={field.secret ? 'new-password' : 'off'}
-                    value={shownValue}
-                    placeholder={fieldPlaceholder}
-                    title={fieldPlaceholder}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setDraft((d) => {
-                        // An emptied secret box means "keep", never "clear": clearing is
-                        // the explicit button (security review L3).
-                        if (field.secret && next === '') {
-                          const rest = { ...d };
-                          delete rest[name];
-                          return rest;
-                        }
-                        return { ...d, [name]: next };
-                      });
-                    }}
-                  />
+                  {multiline ? (
+                    <Textarea
+                      id={id}
+                      rows={3}
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-describedby={hint ? `${id}-hint` : undefined}
+                      className="font-mono text-xs"
+                      value={shownValue}
+                      placeholder={fieldPlaceholder}
+                      title={fieldPlaceholder}
+                      onChange={(e) => onTextChange(e.target.value)}
+                    />
+                  ) : (
+                    <Input
+                      id={id}
+                      type={field.secret ? 'password' : 'text'}
+                      autoComplete={field.secret ? 'new-password' : 'off'}
+                      value={shownValue}
+                      placeholder={fieldPlaceholder}
+                      title={fieldPlaceholder}
+                      onChange={(e) => onTextChange(e.target.value)}
+                    />
+                  )}
                   {clearButton}
                 </div>
+                {hint && (
+                  <p
+                    id={`${id}-hint`}
+                    className="text-sm text-muted-foreground"
+                  >
+                    {hint}
+                  </p>
+                )}
               </div>
             );
           })}

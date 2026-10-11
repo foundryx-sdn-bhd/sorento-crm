@@ -473,6 +473,30 @@ def _build_json_schema() -> dict[str, Any]:
                 },
                 "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
             },
+            # CA-3 (chat analytics): the chat report's own words, read by the parser and
+            # nowhere else. ONE nullable object (the `low_stock` pattern) so the shared
+            # `group_by` / `measure` enums gain nothing. The period is `date_filter_*`, the
+            # count `top_n`, the direction `rank_direction`; null on every other message.
+            # `subject` is a chatbot domain name, a free string: the domain list is data.
+            "chat_report": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "group_by": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "topic", "subject", "product", "customer", "outcome", "failure_reason",
+                            "week", "month", "day", "language", None,
+                        ],
+                    },
+                    "measure": {
+                        "type": ["string", "null"],
+                        "enum": ["asks", "failed", "failure_rate", "contacts", None],
+                    },
+                    "subject": {"type": ["string", "null"]},
+                },
+                "required": ["group_by", "measure", "subject"],
+            },
             # SO-PO-REF (owner, 7 Oct 2026): the PO number(s) the message gives, as typed
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
@@ -570,6 +594,7 @@ def _build_json_schema() -> dict[str, Any]:
             "anaphora",
             "profile_statements",
             "low_stock",
+            "chat_report",
             "po_refs",
         ],
     }
@@ -629,6 +654,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
         # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
         "low_stock",
+        # CA-3: no prompt version before `ca3_0001_chat_report_prompt` carries it; absent
+        # reads as "not a chat report".
+        "chat_report",
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",

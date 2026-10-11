@@ -62,6 +62,11 @@ _LANE_GATED_KEYS = {
     # run_fetch` answers the refusal line without fetching, and the route itself re-reads
     # the key and 403s (AC-41), because that fetch CREATES a reorder run and sends a file.
     "scm.low_stock_report": "app/services/chatbot/lanes/business/__init__.py",
+    # CA-3 (PLAN-chat-analytics-ca3-chat-dataset-10oct.md): the whole chat_analytics DOMAIN
+    # is per contact, not one field of a tool's answer. Both seams refuse before any work:
+    # `lanes/business/answer.py::DOMAIN_GRANT_REQUIRED` (the domain grant gate) and the
+    # report_ask route's chat branch (403 chat_analytics_not_enabled).
+    "chatbot.analytics": "app/services/chatbot/lanes/business/answer.py",
 }
 
 

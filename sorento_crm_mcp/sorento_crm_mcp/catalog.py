@@ -848,7 +848,24 @@ CATALOG: tuple[ToolSpec, ...] = (
             "A customer-linked dealer sees only its own customers' sales and may group or "
             "filter by product, brand, category and month ONLY; anything else is 403 "
             "`report_dimension_not_allowed` - say 'That breakdown is not available for your "
-            "account.' Ten asks per contact per 10 minutes (`status: busy`)."
+            "account.' Ten asks per contact per 10 minutes (`status: busy`).\n\n"
+            "CHAT DATASET: `dataset=chat` (default `sales`) ranks or totals what customers ASK "
+            "THE BOT, not sales: 'top 5 questions this week', 'which products do dealers ask "
+            "about most in September', 'failure rate by week', 'how many dealers asked about "
+            "stock'. `basis` asks (every ask) | turns (each message once; use it for failed and "
+            "failure_rate). `measure` asks | failed | failure_rate | contacts (distinct "
+            "contacts). `group_by` topic | subject | product | customer | outcome | "
+            "failure_reason | week | month | day | language | asker (dealer / salesperson / staff / "
+            "unclassified) | salesperson (the asking salesperson by name) | category | brand; a "
+            "week, month or day trend lists every bucket and needs no `top_n`. Filters: `subjects` "
+            "(domain codes such as inventory), `product_ids`, `customer_ids`, `askers` (any of "
+            "dealer, salesperson, staff, unclassified; default is dealer, salesperson and "
+            "unclassified), `category_ids`, `brand_ids` (through the products the question "
+            "named). A customer ranking prints each customer's agent. Chat bases and sales params do not mix "
+            "(422 `unknown_param`). Needs the Chat analytics reveal (403 "
+            "`chat_analytics_not_enabled`, say it is not enabled for the account). A dealer sees "
+            "its own customers' asks and may group by topic, subject, product and month only. "
+            "The reply carries the topic coverage line; data starts 5 Sep 2026."
         ),
         "/api/v1/order-management/report-ask",
         (),
@@ -856,12 +873,15 @@ CATALOG: tuple[ToolSpec, ...] = (
             "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
             "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
-            "customer_agent_ids",
+            "customer_agent_ids", "dataset", "subjects", "askers",
         ),
         domain="orders",
         related_tools=("crm_sales_report", "crm_top_selling_report"),
         escalation_team="sales",
-        restricted_fields=(("sales_orders.sales_report", "Sales report"),),
+        restricted_fields=(
+            ("sales_orders.sales_report", "Sales report"),
+            ("chatbot.analytics", "Chat analytics"),
+        ),
     ),
     ToolSpec(
         "crm_report",

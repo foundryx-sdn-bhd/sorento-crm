@@ -3346,6 +3346,8 @@ def _report_ask(body: dict) -> str:
     def _mark(line: str, *params: str) -> str:
         return line + earlier if carried.intersection(params) else line
 
+    if body.get("dataset") == "chat":
+        return _chat_report_ask(body)
     facts = [
         _mark(
             f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}",
@@ -3380,15 +3382,103 @@ def _report_ask(body: dict) -> str:
     return "\n".join(lines)
 
 
+#: The measure as the head line says it, by the route's `measure`.
+_CHAT_MEASURE_WORDS = {"asks": "asks", "failed": "failed turns", "failure_rate": "failure rate", "contacts": "contacts"}
+#: A trend lists every bucket, so its head is "<measure> by week", never "Top N weeks".
+_CHAT_TRENDS = ("week", "month", "day")
+_CHAT_PLURALS = {"category": "categories", "salesperson": "salespeople", "asked by": "askers"}
+_CHAT_SINGULARS = {"asked by": "asker"}
+_CHAT_COVERAGE_FLOOR = 80
+
+
+def _chat_date(value: Any) -> str:
+    """`2026-09-01` as `1 Sep 2026`; anything unreadable as it came."""
+    try:
+        d = datetime.strptime(str(value), "%Y-%m-%d")
+    except ValueError:
+        return str(value)
+    return f"{d.day} {d.strftime('%b')} {d.year}"
+
+
+def _singular(unit: str, count: Any) -> str:
+    """`asks` / `turns` / `contacts` as the singular for exactly one."""
+    return unit[:-1] if int(count) == 1 and unit.endswith("s") else unit
+
+
+def _chat_figure(figures: dict, body: dict) -> str:
+    """One row's (or the total's) figure with its unit: `124 asks`, `7 contacts`, or for a
+    failure rate `1.2% (14 of 1,215 turns)`."""
+    value = figures.get("value") or 0
+    if body.get("unit") == "%":
+        text = f"{float(value):.1f}%"
+        if figures.get("denominator") is not None:
+            text += f" ({int(figures.get('numerator') or 0):,} of {int(figures['denominator']):,} {_singular('turns', figures['denominator'])})"
+        return text
+    unit = body.get("unit") or "asks"
+    return f"{int(value):,} {_singular(unit, value)}"
+
+
+def _chat_report_ask(body: dict) -> str:
+    """`crm_report_ask` over the chat dataset (CA-3): one fact per line, never " · ". Head line
+    naming the unit, filters, the period, the ranked rows, `and N more`, the whole set's total.
+    The topic coverage line is last, or FIRST when under 80% of asks are labelled, so a thin
+    sample is read as thin before any number is."""
+    if body.get("message") and not body.get("rows") and (body.get("total") or {}).get("value", 0) == 0:
+        return str(body["message"])
+    facts = [
+        f"{f.get('label')}: {', '.join(str(v) for v in f.get('values') or [])}"
+        for f in body.get("filters") or []
+    ]
+    facts.append(f"Period: {_chat_date(body.get('date_from'))} to {_chat_date(body.get('date_to'))}")
+    phrase = _CHAT_MEASURE_WORDS.get(str(body.get("measure")), "asks")
+    group_by = body.get("group_by")
+    rows = body.get("rows") or []
+    label = str(body.get("group_label") or group_by or "").lower()
+    if not group_by:
+        lines = [phrase.capitalize(), *facts]
+    elif not rows:
+        lines = [f"No {phrase} found", *facts]
+    elif group_by in _CHAT_TRENDS:
+        lines = [f"{phrase.capitalize()} by {label}", *facts]
+    else:
+        lead = "Bottom" if body.get("sort") == "asc" else "Top"
+        noun = _CHAT_SINGULARS.get(label, label) if len(rows) == 1 else _CHAT_PLURALS.get(label, label + "s")
+        lines = [f"{lead} {len(rows)} {noun} by {phrase}", *facts]
+    for row in rows:
+        # A customer ranking prints each customer's card agent (a row without the key prints plain).
+        agent = ""
+        if group_by == "customer" and "agent" in row:
+            agent = f" (agent {row['agent']})" if row.get("agent") else " (no agent)"
+        lines.append(f"{row.get('rank')}. {row.get('name')}{agent}: {_chat_figure(row, body)}")
+    more = int(body.get("more") or 0)
+    if more > 0:
+        lines.append(f"and {more} more")
+    lines.append(f"Total: {_chat_figure(body.get('total') or {}, body)}")
+    if body.get("unclassified_askers") is not None:
+        lines.append(f"Unclassified askers: {int(body['unclassified_askers']):,}")
+    if int(body.get("unclassified_left_out") or 0) > 0:
+        lines.append(f"Unclassified askers left out: {int(body['unclassified_left_out']):,}")
+    coverage = body.get("coverage") or {}
+    if coverage.get("line"):
+        if int(coverage.get("percent") or 0) < _CHAT_COVERAGE_FLOOR:
+            lines.insert(0, str(coverage["line"]))
+        else:
+            lines.append(str(coverage["line"]))
+    return "\n".join(lines)
+
+
 def _report_ask_envelope(body: dict) -> dict:
     """Minimal envelope (`response` + `has_result`), like the other report tools: the rendered
     header is never empty, so the text alone cannot tell a miss from a hit. A ranking that
     printed rows also hands them on with their keys (`drill_rows`, REPORT-DRILLDOWN), so the
     chatbot can rank within exactly those rows next."""
     answered = body.get("status") in ("ok", "refused", "busy") and (
-        body.get("status") != "ok" or bool(body.get("rows")) or not body.get("group_by")
+        body.get("status") != "ok"
+        or bool(body.get("rows"))
+        or not body.get("group_by")
+        or body.get("dataset") == "chat"  # an empty chat period is an answer, with its own line
     )
-    rows = body.get("rows") or [] if body.get("status") == "ok" and body.get("group_by") else []
+    rows = body.get("rows") or [] if body.get("status") == "ok" and body.get("group_by") and body.get("dataset") != "chat" else []
     drill = (
         {
             "group_by": body.get("group_by"),

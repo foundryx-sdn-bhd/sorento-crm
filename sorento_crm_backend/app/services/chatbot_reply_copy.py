@@ -400,6 +400,11 @@ REPORT_NOT_ENABLED = {
     "ms": "Laporan jualan tidak diaktifkan untuk akaun anda.",
     "zh": "您的账户未开通销售报告。",
 }
+REPORT_CHAT_NOT_ENABLED = {
+    "en": "Chat analytics is not enabled for your account.",
+    "ms": "Analitik sembang tidak diaktifkan untuk akaun anda.",
+    "zh": "您的账户未开通聊天分析。",
+}
 
 #: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
 #: registry key per language: `chatbot_reply_<name>` (English) and
@@ -450,6 +455,7 @@ FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "report_own_account": (REPORT_OWN_ACCOUNT, ()),
     "report_dimension_denied": (REPORT_DIMENSION_DENIED, ()),
     "report_not_enabled": (REPORT_NOT_ENABLED, ()),
+    "report_chat_not_enabled": (REPORT_CHAT_NOT_ENABLED, ()),
 }
 
 #: The languages the new templates carry (plan 7.2). English is the bare key.

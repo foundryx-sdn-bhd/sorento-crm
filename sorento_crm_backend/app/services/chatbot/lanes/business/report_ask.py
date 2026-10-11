@@ -938,6 +938,7 @@ FORBIDDEN_COPY = {
     "customer_not_permitted": "report_own_account",
     "report_dimension_not_allowed": "report_dimension_denied",
     "sales_report_not_enabled": "report_not_enabled",
+    "chat_analytics_not_enabled": "report_chat_not_enabled",
 }
 
 

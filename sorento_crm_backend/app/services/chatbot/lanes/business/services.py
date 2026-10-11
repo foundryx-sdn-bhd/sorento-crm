@@ -791,6 +791,31 @@ def resolve_brand_token(db: Session, token: str, *, exact_only: bool = False) ->
     return [(str(r[0]), r[1]) for r in rows if _whole_word_run(r[1] or "", word)]
 
 
+def resolve_category_class_exact(db: Session, token: str) -> list[str]:
+    """The category ids whose class label or synonym IS the word (`resolve_classes_for_term`:
+    exact, case-insensitive; a plural folded). No containment fallback, so a longer phrase that
+    merely holds a class word ("toilet seat") never widens to that class. Used by the chat report."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import resolve_classes_for_term
+
+    word = _norm(token)
+    if not word:
+        return []
+    labels = set(resolve_classes_for_term(db, word))
+    singular = " ".join(_category_words(word))
+    if not labels and singular != word:
+        labels = set(resolve_classes_for_term(db, singular))
+    if not labels:
+        return []
+    return [
+        str(r[0])
+        for r in db.query(ProductCategory.id)
+        .filter(ProductCategory.class_label.in_(sorted(labels)))
+        .order_by(ProductCategory.category_code)
+        .all()
+    ]
+
+
 def resolve_category_class(db: Session, token: str) -> tuple[list[str], list[str]]:
     """A category word through the catalogue's class vocabulary, the one the stock ask
     reads (`product_class_signal.resolve_classes_for_term`: a class label, its synonyms,

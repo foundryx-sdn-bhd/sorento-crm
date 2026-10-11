@@ -29,9 +29,9 @@ import pytest
 from app.models.base import company_scope
 from app.models.product import ProductCategory
 
-from ._pg_fixture import blank_session, unique_code
+from tests._pg_fixture import blank_session, unique_code
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "add_zh_category_synonyms.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "add_zh_category_synonyms.py"
 
 V50_WORDS = {
     "马桶": "Water Closet",

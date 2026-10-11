@@ -2423,6 +2423,8 @@ def _resolve_input(
     # Local return-wrapper so every exit path gets `limit` applied
     # consistently. Skip the wrap for raw empty-shape payloads (they have no
     # rows; the cap is a no-op there anyway).
+    family_raw_by_token: dict[str, str] = {}
+
     def _ret(result: dict[str, Any]) -> dict[str, Any]:
         return _apply_limit(result, limit)
 
@@ -2462,6 +2464,11 @@ def _resolve_input(
         # so callers can pass conversational phrasing verbatim. Alignment with
         # positional `allowed_entity_types` is preserved (in-place clean).
         filtered = [_strip_entity_stopwords(t) for t in filtered]
+        # CODE-VARIANTS: the pre-fold text by (stripped) token, so the fallback re-run
+        # below, which cannot align raw_tokens by position, still knows each typed code.
+        if raw_tokens and tokens and len(raw_tokens) == len(tokens):
+            _typed = [r for t, r in zip(tokens, raw_tokens) if t]
+            family_raw_by_token = {t: r for t, r in zip(filtered, _typed) if r}
         prepared_tokens: list[str] = filtered
         input_for_or: list[str] | str = filtered
     synthesized_from_query = False
@@ -2653,6 +2660,7 @@ def _resolve_input(
         allowed_entity_types=fb_allowed,
         cross_type_expand=True,
         regions=regions,
+        family_raw_by_token=family_raw_by_token,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
     fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)

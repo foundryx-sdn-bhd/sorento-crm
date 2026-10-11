@@ -51,3 +51,53 @@ class ReportAskResponse(BaseModel):
     more: int = 0
     total_count: int = 0
     total: ReportAskTotal
+
+
+class ReportAskChatRow(BaseModel):
+    rank: int
+    name: str
+    value: float
+    # Failure rate only: failed turns and the non-noise turns they are a share of.
+    numerator: Optional[int] = None
+    denominator: Optional[int] = None
+    # A customer ranking only: the customer card's agent (None = no agent).
+    agent: Optional[str] = None
+
+
+class ReportAskChatTotal(BaseModel):
+    value: float
+    numerator: Optional[int] = None
+    denominator: Optional[int] = None
+
+
+class ReportAskChatCoverage(BaseModel):
+    percent: int
+    taxonomy_version: Optional[int] = None
+    line: str
+
+
+class ReportAskChatResponse(BaseModel):
+    """`dataset=chat` (CA-3). Declared in full: `response_model` drops what is not named."""
+
+    status: str  # ok | busy
+    message: Optional[str] = None
+    dataset: str = "chat"
+    basis: str
+    measure: str
+    unit: str  # asks | turns | contacts | %
+    sort: str = "desc"
+    group_by: Optional[str] = None
+    group_label: Optional[str] = None
+    date_from: str
+    date_to: str
+    filters: List[ReportAskFilter] = []
+    rows: List[ReportAskChatRow] = []
+    more: int = 0
+    total_count: int = 0
+    total: ReportAskChatTotal
+    coverage: Optional[ReportAskChatCoverage] = None
+    # Distinct unclassified contacts, only when the reply splits or filters by asker.
+    unclassified_askers: Optional[int] = None
+    # Distinct unclassified contacts the default asker filter left out; null when they are in or the
+    # message chose its own askers.
+    unclassified_left_out: Optional[int] = None

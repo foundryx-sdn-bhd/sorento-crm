@@ -140,6 +140,10 @@ class AskType:
     #: replies are still read by shape (`answered_by_parser` False): the parser then knows what
     #: the message may be answering, and its words are never matched in code.
     stated_to_parser: bool = False
+    #: Verdict keys that make a LONG reply read as another ask still an answer: the parser
+    #: put the answer's own words in them (CA-3: a period or a count named in "top 5 for
+    #: September"). Empty keeps the original capture.
+    answer_keys: tuple[str, ...] = ()
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -370,7 +374,18 @@ def _reply_verdict_by_shape(
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,
     )
-    if other_ask and len(words) > SHORT_REPLY_WORDS:
+    if other_ask and len(words) > SHORT_REPLY_WORDS and not (
+        any(verdict.get(k) for k in ask.answer_keys)
+        and (
+            verdict.get("intent_hint") in (None, "", ask.reroute.get("intent_hint"))
+            # Another intent's verdict is a reply only when it names no axis, status or
+            # entity of its own (a plain period or count), else it is another ask.
+            or (
+                not (verdict.get("group_by") or verdict.get("order_status"))
+                and not verdict.get("entities")
+            )
+        )
+    ):
         return verdict, "required_ask_dropped"
     rerouted = {
         **{k: v for k, v in verdict.items() if k not in ask.answer_drops},

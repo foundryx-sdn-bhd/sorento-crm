@@ -11,6 +11,7 @@ carry `{{token}}`s the lane fills from what it knows, never fixed sentences. Sho
 * report_own_account      route 403 `customer_not_permitted`
 * report_dimension_denied route 403 `report_dimension_not_allowed`
 * report_not_enabled      route 403 `sales_report_not_enabled`
+* report_chat_not_enabled route 403 `chat_analytics_not_enabled` (CA-3 chat dataset)
 The 403 lines are chosen by the route's `detail.code`, never by echoing `detail.message`.
 """
 from __future__ import annotations
@@ -39,6 +40,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "report_own_account": (),
     "report_dimension_denied": (),
     "report_not_enabled": (),
+    "report_chat_not_enabled": (),
 }
 EN = {
     "report_subject_ask": "Which {{missing}} is this for?",
@@ -182,6 +184,7 @@ def _forbidden(code: str, message: str) -> str:
         ("customer_not_permitted", "report_own_account"),
         ("report_dimension_not_allowed", "report_dimension_denied"),
         ("sales_report_not_enabled", "report_not_enabled"),
+        ("chat_analytics_not_enabled", "report_chat_not_enabled"),
     ],
 )
 def test_a_route_403_is_said_from_the_copy_chosen_by_its_code(session_factory, code, short) -> None:
