@@ -4709,6 +4709,10 @@ def _run_stages_body(  # noqa: PLR0915
         open_ask = state_in.focus.required_ask
         state_in.focus.required_ask = None
         if (open_ask or {}).get("ask") == report_ask.ASK_NAME and report_ask.names_its_own_ask(verdict, open_ask):
+            if open_ask.get("asking") == "period":
+                # The restated ask still has no period: the lane re-asks it once, in other words,
+                # and counts the miss against the same bound a slot answer has.
+                verdict = {**verdict, "report_ask_restated": {"misses": int(open_ask.get("misses") or 0)}}
             open_ask = None  # a new sales ranking ask, not the answer to the open question
         verdict, required_rule = required_fields.reply_verdict(verdict, open_ask, _message_text)
         if required_rule:

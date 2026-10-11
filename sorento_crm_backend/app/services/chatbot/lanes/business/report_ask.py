@@ -31,6 +31,8 @@ ASK_NAME = "sales_ranking"
 TOOL = "crm_report"
 
 PERIOD_QUESTION = "Which period? For example this month, September, 2026, or 1 to 15 Sep."
+#: Said above the period question when a restated ranking ask still names no period.
+PERIOD_STILL_MISSING = "I still need a period for that."
 TOP_N_QUESTION = "How many? For example top 5."
 #: Said above the ranking that ran with the default count after two unreadable replies.
 DEFAULT_TOP_N = 10
@@ -635,7 +637,21 @@ def settle(
         # A refine with no ranking held has nothing to refine: it is a fresh ask, and a
         # period alone never runs a total (it asks).
         given["period"] = period
-    return rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n}), None
+    outcome = rf.collect(db, SALES_RANKING_ASK, given=given, extras={"args": args, "top_n": top_n})
+    restated = parse_output.get("report_ask_restated")
+    if isinstance(restated, dict) and outcome.slot is not None and outcome.slot.get("asking") == "period":
+        # A restated ask while the period is pending: its new values are kept (they are this
+        # outcome's extras), the question is not repeated word for word, and the re-ask is a
+        # miss like a slot answer's, so it ends at the same bound.
+        misses = int(restated.get("misses") or 0) + 1
+        if misses >= rf.MAX_MISSES:
+            line = SALES_RANKING_ASK.give_up_blank or SALES_RANKING_ASK.give_up.format(word="that")
+            return rf.Outcome(values=outcome.values, reply=line, slot=None, extras=outcome.extras), None
+        slot = {**outcome.slot, "misses": misses}
+        return rf.Outcome(
+            values=outcome.values, reply=f"{PERIOD_STILL_MISSING}\n\n{PERIOD_QUESTION}", slot=slot, extras=outcome.extras
+        ), None
+    return outcome, None
 
 
 def _refine(
