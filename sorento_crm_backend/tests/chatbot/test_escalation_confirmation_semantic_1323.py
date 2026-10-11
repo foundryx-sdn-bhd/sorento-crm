@@ -319,6 +319,7 @@ class TestPrompt:
             ACCOUNT_LEDGER_ADDENDUM,
             CANONICAL_CODE_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
+            CHAT_REPORT_ADDENDUM,
             PO_REFS_ADDENDUM,
             SUB_ASKS_ADDENDUM,
             MEMORY_ADDENDUM,
@@ -345,6 +346,7 @@ class TestPrompt:
             + REPORT_ASK_ADDENDUM
             + PO_REFS_ADDENDUM
             + SUB_ASKS_ADDENDUM
+            + CHAT_REPORT_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK

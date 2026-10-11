@@ -152,10 +152,13 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # code means the exact code or its family, read by the per-ask runner. 51 -> 53.
     "sub_asks": "app/services/chatbot/turn/sub_asks.py",
     "family": "app/services/chatbot/turn/sub_asks.py",
+    # 10 Oct 2026 (CA-3-CHAT-DATASET): the chat report's group_by / measure / subject, read by
+    # `lanes/business/chat_report.settle`. 53 -> 54.
+    "chat_report": "app/services/chatbot/lanes/business/chat_report.py",
 }
 
 
-def test_measured_read_set_matches_the_53_declared_keys():
+def test_measured_read_set_matches_the_54_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

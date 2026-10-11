@@ -1199,6 +1199,8 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 DOMAIN_GRANT_REQUIRED: dict[str, str] = {
     "purchase_cost": "purchase_orders.cost",
     "sales": "sales_orders.sales_report",
+    # CA-3: what customers ask the bot, read under the Chat analytics reveal (Q4 a: nobody holds it).
+    "chat_analytics": "chatbot.analytics",
 }
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE

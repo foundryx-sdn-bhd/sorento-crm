@@ -95,7 +95,13 @@ from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
 from app.models.chat_thread_sync_state import ChatThreadSyncState
 from app.models.chatbot_turn import ChatbotTurn
-from app.models.chat_facts import ChatAskFact, ChatAskItem, ChatEpisodeFact
+from app.models.chat_facts import (
+    ChatAskFact,
+    ChatAskItem,
+    ChatBackfillRun,
+    ChatEpisodeFact,
+    ChatLabelAudit,
+)
 from app.models.chatbot_file_link import ChatbotFileLink
 from app.models.conversation_frame import ConversationFrame
 from app.models.chatbot_policy import ChatbotDomain, ChatbotDomainWord, ChatbotEntityKind, ChatbotStatusWord

@@ -135,7 +135,7 @@ def _params_meta(
                 ReportPeriodParam(
                     key=param.key,
                     label=param.label,
-                    default=param.resolved_default(),
+                    default=param.resolved_default(db),
                     years=_years(db, definition),
                 )
             )
@@ -181,7 +181,7 @@ def get_report_meta(
 ) -> ReportMeta:
     definition = _authorised(db, current_user, key)
     grants = _company_grants(db, current_user, definition)
-    default_view = ReportViewsService(db).default_config(key) or engine.view_config(definition)
+    default_view = ReportViewsService(db).default_config(key) or engine.view_config(definition, db)
     company_param = definition.dataset.company_param
     saved = default_view.params.get(company_param) or [] if company_param else []
     if company_param and grants is not None and any(c not in grants for c in saved):
@@ -199,6 +199,7 @@ def get_report_meta(
         permission=definition.permission,
         opens_on=definition.opens_on,
         dataset_param=definition.datasets_by[0] if definition.datasets_by else None,
+        pivot_rows_by=definition.pivot_rows_by,
         params=_params_meta(db, definition, grants),
         catalog=[
             ReportCatalogColumn(
@@ -291,7 +292,7 @@ def export_report(
         # The job reads the company this press resolved, not whatever it defaults to later.
         params = {**params, company_param: ctx.values.get(company_param) or []}
 
-    view = body.view or engine.view_config(definition)
+    view = body.view or engine.view_config(definition, db)
     engine.validate_view(definition, view, ctx.dataset)
     download = DownloadService(db).create(
         user_id=str(current_user["id"]),

@@ -76,7 +76,7 @@ def generate_report_xlsx(
         if definition is None:
             raise ValueError(f"Unknown report '{key}'")
 
-        config = ReportViewConfig.model_validate(view) if view else engine.view_config(definition)
+        config = ReportViewConfig.model_validate(view) if view else engine.view_config(definition, db)
         grants = frozenset() if company_grants == NO_COMPANY_SNAPSHOT else company_grants
         data = engine.run_workbook(db, definition, params or {}, config, company_grants=grants)
         content = render_workbook(definition, data)

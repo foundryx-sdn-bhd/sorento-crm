@@ -144,6 +144,9 @@ def _contact(db):
     )
     db.add(contact)
     db.flush()
+    from tests._portal_grant import link_contact_company
+
+    link_contact_company(db, contact.id)
     return contact
 
 
@@ -403,7 +406,7 @@ def portal_client():
     from app.models.access import RespondContact
     from app.models.portal import PortalToken
     from fastapi.testclient import TestClient
-    from tests._portal_grant import link_contact_segment, seed_segment
+    from tests._portal_grant import link_contact_company, link_contact_segment, seed_segment
 
     with blank_session() as db:
         contact = RespondContact(
@@ -413,6 +416,7 @@ def portal_client():
         db.flush()
         segment = seed_segment(db, kinds=["price_tag_request"])
         link_contact_segment(db, contact.id, segment.code)
+        link_contact_company(db, contact.id)
 
         def _override_get_db():
             yield db
@@ -702,10 +706,10 @@ def test_auto_pick_on_a_tie_is_independent_of_query_order(db, monkeypatch):
     promo_a = _promotion(db, [(parent, "400.00")], description="ZZT A Promo")
     promo_z = _promotion(db, [(parent, "400.00")], description="ZZT Z Promo")
 
-    def _covering_z_first(db_, product_ids, viewer):
+    def _covering_z_first(db_, product_ids, viewer, **_kwargs):
         return [promo_z, promo_a]
 
-    def _covering_a_first(db_, product_ids, viewer):
+    def _covering_a_first(db_, product_ids, viewer, **_kwargs):
         return [promo_a, promo_z]
 
     monkeypatch.setattr(pricing_module, "_covering_promotions", _covering_z_first)

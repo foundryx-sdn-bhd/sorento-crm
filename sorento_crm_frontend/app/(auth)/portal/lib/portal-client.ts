@@ -1175,6 +1175,15 @@ export interface AIExtractedProductLine {
   match?: 'product' | 'product_set' | null;
   product_id?: string | null;
   product_set_id?: string | null;
+  // AI-EXTRACT-DYM: on a row with no match only - the resolver's "did you
+  // mean" candidates, best first. Never applied until the user picks one.
+  suggestions?: AIExtractedProductSuggestion[];
+}
+
+export interface AIExtractedProductSuggestion {
+  product_id: string;
+  product_code: string;
+  product_name?: string | null;
 }
 
 export interface AIExtractTokenUsage {

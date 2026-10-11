@@ -23,10 +23,13 @@ rebuild any row.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import (
     REAL,
+    BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -54,6 +57,10 @@ class ChatAskFact(Base):
     __audit_skip__ = "derived analytics fact, rebuilt from chatbot.turns by the sweep"
     __table_args__ = (
         UniqueConstraint("turn_id", "ask_seq", name="uq_chat_ask_facts_turn_seq"),
+        UniqueConstraint("history_id", "ask_seq", name="uq_chat_ask_facts_history_seq"),
+        CheckConstraint(
+            "(turn_id IS NULL) <> (history_id IS NULL)", name="ck_chat_ask_facts_one_source"
+        ),
         Index("ix_chat_ask_facts_asked_at", "asked_at"),
         Index("ix_chat_ask_facts_contact", "contact_respond_id"),
         Index("ix_chat_ask_facts_outcome", "outcome"),
@@ -61,10 +68,13 @@ class ChatAskFact(Base):
     )
 
     id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
-    # `trace` for everything CA-1 writes; CA-4 adds a source for pre-trace history.
+    # `trace` (CA-1, from a turn) or `history_backfill` (CA-4, from a `chat_histories` row).
     source = Column(Text, nullable=False)
     # The `chatbot.turns` row. Not an FK: a fact is a log line and survives its turn.
-    turn_id = Column(UUID(as_uuid=False), nullable=False)
+    turn_id = Column(UUID(as_uuid=False), nullable=True)
+    # The incoming `chat_histories.id` of a backfilled message (CA-4). Exactly one of this and
+    # `turn_id` is set. Not an FK, for the same reason.
+    history_id = Column(BigInteger, nullable=True)
     ask_seq = Column(SmallInteger, nullable=False, server_default=text("1"), default=1)
 
     contact_respond_id = Column(Text, nullable=False)
@@ -101,6 +111,8 @@ class ChatAskFact(Base):
     label_prompt_version = Column(Text, nullable=True)
     labelled_at = Column(DateTime(timezone=True), nullable=True)
     label_confidence = Column(REAL, nullable=True)
+    # en | ms | zh | mixed | other, named by the CA-2 labeller in the same call as the topic.
+    language = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -129,8 +141,10 @@ class ChatAskItem(Base):
     ref_id = Column(Text, nullable=False)
     # named | shown
     role = Column(Text, nullable=False)
-    # parser | reply
+    # parser | reply | lookup | resolver_pass
     resolved_by = Column(Text, nullable=False)
+    # The CA-2 labeller's own score for a `resolver_pass` item; null for the others.
+    confidence = Column(REAL, nullable=True)
 
 
 class ChatEpisodeFact(Base):
@@ -157,3 +171,116 @@ class ChatEpisodeFact(Base):
     # Null until CA-2 judges them.
     resolved = Column(Boolean, nullable=True)
     asked_again = Column(Boolean, nullable=True)
+
+
+#: The pre-trace eras CA-4 backfills: `(first day, day after the last)`, Malaysia dates. Era D
+#: is only the 5 to 22 Sep messages the engine never traced (crew ruling Q5); from 5 Sep every
+#: traced message has its facts from the trace. Shared by the extractor and the report notes.
+HISTORY_ERAS: dict[str, tuple[date, date]] = {
+    "A": (date(2026, 4, 17), date(2026, 7, 22)),
+    "B": (date(2026, 7, 22), date(2026, 8, 19)),
+    "C": (date(2026, 8, 19), date(2026, 9, 5)),
+    "D": (date(2026, 9, 5), date(2026, 9, 23)),
+}
+
+
+class ChatBackfillRun(Base):
+    """One run of the history backfill over one era (chat analytics CA-4).
+
+    Counts, tokens and a progress cursor only: no column holds what a customer or the bot
+    wrote. `messages_eligible` is the era's whole eligible count when the run started, which
+    is what the report's coverage line divides by.
+    """
+
+    __tablename__ = "chat_backfill_runs"
+    __audit_skip__ = "the run table is itself the record of the job"
+    __table_args__ = ({"schema": "chatbot"},)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    era = Column(Text, nullable=False)
+    # running | done | failed
+    status = Column(Text, nullable=False)
+    messages_eligible = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    messages_read = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    messages_skipped = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    asks_written = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    calls = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    failed_calls = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_in = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_out = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    tokens_cached = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    model = Column(Text, nullable=True)
+    prompt_version = Column(Text, nullable=True)
+    taxonomy_version = Column(SmallInteger, nullable=True)
+    row_limit = Column(Integer, nullable=True)
+    # The highest `chat_histories.id` of the last committed batch.
+    last_history_id = Column(BigInteger, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    # The exception class of a run that stopped, never its message (it may quote a prompt).
+    error = Column(Text, nullable=True)
+
+
+class ChatTopic(Base):
+    """One node of the topic taxonomy (chat analytics CA-2).
+
+    A subject has no parent and is one of the parser's domains, or `general`; a leaf nests
+    under a subject (`inventory.availability`). Seeded and changed only by migration: a
+    taxonomy bump is a new `version`, so a trend only ever compares labels of one version.
+    """
+
+    __tablename__ = "chat_topics"
+    __audit_skip__ = "reference rows written only by migration"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_chat_topics_code"),
+        {"schema": "chatbot"},
+    )
+
+    # Surrogate uuid id (the uuid-id principle); `code` stays the business key the
+    # parent_code and corrected_topic FKs point at.
+    id = Column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid_str, server_default=text("gen_random_uuid()")
+    )
+    code = Column(Text, nullable=False)
+    parent_code = Column(Text, ForeignKey("chatbot.chat_topics.code"), nullable=True)
+    label = Column(Text, nullable=False)
+    definition = Column(Text, nullable=False)
+    # The taxonomy version that introduced the row.
+    version = Column(SmallInteger, nullable=False)
+    # active | retired
+    status = Column(Text, nullable=False, server_default=text("'active'"), default="active")
+    sort_order = Column(Integer, nullable=False, server_default=text("0"), default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ChatLabelAudit(Base):
+    """One ask drawn into the topic audit sample for a taxonomy version, and the verdict a
+    person gave it (chat analytics CA-2).
+
+    There is no column for the customer's words: the audit screen reads the message from the
+    turn envelope at request time and never stores it.
+    """
+
+    __tablename__ = "chat_label_audits"
+    __audit_skip__ = "the audit table is itself the review record"
+    __table_args__ = (
+        UniqueConstraint("ask_id", "taxonomy_version", name="uq_chat_label_audits_ask_version"),
+        {"schema": "chatbot"},
+    )
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    ask_id = Column(
+        UUID(as_uuid=False),
+        ForeignKey("chatbot.chat_ask_facts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    taxonomy_version = Column(SmallInteger, nullable=False)
+    drawn_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # right | wrong_topic | wrong_subject
+    verdict = Column(Text, nullable=True)
+    corrected_topic = Column(Text, ForeignKey("chatbot.chat_topics.code"), nullable=True)
+    # right | wrong
+    products_verdict = Column(Text, nullable=True)
+    # The reviewer's user id as text.
+    reviewed_by = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)

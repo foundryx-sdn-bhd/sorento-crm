@@ -40,6 +40,7 @@ from app.schemas.status import StatusGraphResponse
 from app.services import project_quotation_approval_service as approvals
 from app.services import project_quotation_document_service as svc
 from app.services import project_service as projects
+from app.services.client_ip import client_ip
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.uuid_path_param import validate_uuid_path
 from app.utils.http import content_disposition
@@ -62,14 +63,6 @@ def _envelope(data: List[dict]):
         "pagination": {"total": len(data), "page": 1, "limit": max(len(data), 1)},
         "empty": not data,
     }
-
-
-def _client_ip(request: Request) -> str | None:
-    """The signer's address, recorded because a signature with provenance is stronger evidence."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or None
-    return request.client.host if request.client else None
 
 
 def _issue_or_404(db: Session, document, issue_id: str):
@@ -559,7 +552,7 @@ async def sign_quotation_document(
         _editable_project(db, project_id, current_user)
         document = svc.get_document_or_404(db, project_id, document_id)
         body = payload.model_dump(exclude_unset=True)
-        body["ip_address"] = _client_ip(request)
+        body["ip_address"] = client_ip(request)
         body["user_agent"] = request.headers.get("user-agent")
         signature = svc.sign_as_sorento(
             db, document=document, actor_user_id=current_user["id"], payload=body

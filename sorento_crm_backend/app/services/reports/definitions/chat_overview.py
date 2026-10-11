@@ -44,6 +44,10 @@ DEFAULT_DETAIL_COLUMNS = [
     "shown",
 ]
 
+#: A split message counts once here: these are turn measures (Top asks counts every ask).
+TURNS = ds.turn_only(ds.DATASET)
+ITEM_TURNS = ds.turn_only(items_ds.DATASET)
+
 
 REPORT = reg.register(
     reg.ReportDefinition(
@@ -51,10 +55,10 @@ REPORT = reg.register(
         title="Chat overview",
         permission=PERMISSION,
         module_key=MODULE_KEY,
-        dataset=ds.DATASET,
+        dataset=TURNS,
         params=(
             reg.DateBasisParam(key="date_basis", label="Date basis", default="asked_at"),
-            reg.PeriodParam(key="period", label="Period", default=ds.default_period),
+            reg.PeriodParam(key="period", label="Period", default=ds.default_period, default_reads_db=True),
             reg.SelectParam(
                 key="contact_type",
                 label="Contact type",
@@ -96,9 +100,9 @@ REPORT = reg.register(
             },
             "pivot": {"rows": "outcome", "cols": "week", "measures": ["asks", "failed"]},
         },
-        note=lambda ctx: ds.COVERAGE_NOTE,
+        note=ds.overview_note,
         opens_on="summary",
-        datasets_by=("count_by", {"products": items_ds.DATASET}),
+        datasets_by=("count_by", {"products": ITEM_TURNS}),
         workbook=reg.WorkbookSpec(
             company_name="SORENTO SDN BHD",
             report_title="CHAT OVERVIEW",

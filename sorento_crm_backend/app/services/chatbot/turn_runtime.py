@@ -62,6 +62,10 @@ from app.services.chatbot.turn.state import (
     token_key,
 )
 from app.services.chatbot import session_state
+# BRAND-PROMO-EXPAND: the resolver's own fan-out table (brand / category -> promotion), read
+# here so `resolve_kinds` can tell a hit that CONFIRMS a hint from one that re-types it. One
+# copy, the resolver's; never a second table of the same pairs in this module.
+from app.services.entity_resolver import _ENTITY_TYPE_EXPANSIONS as RESOLVER_FAN_OUT
 
 logger = logging.getLogger(__name__)
 
@@ -2427,6 +2431,10 @@ def resolve_kinds(
     # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain too - every sales ask ran
     # under `order` until it had its own, and its brand word must stay out of the same
     # shared-resolver fan-out.
+    #
+    # Order/sales only, on purpose (BRAND-PROMO-EXPAND, PR #1504, "Not in this PR"): outside
+    # them a brand word still reaches the resolver, whose brand -> promotion fan-out is
+    # folded back onto the hint on `by_token` below.
     is_order_domain = (
         jsc.nullish_str(output_block_for_domain.get("domain_hint")).strip().lower()
         in ORDER_OR_SALES_DOMAINS
@@ -2532,16 +2540,70 @@ def resolve_kinds(
         return ResolveOutcome({}, [], None, {}, {}, False, None)
 
     resolved = payload.get("resolved")
+    # BRAND-PROMO-EXPAND (owner, 6 Oct 2026: "Sorento is always a brand"): what the
+    # resolver's answer MEANS for each token the parser hinted, before the pure core
+    # (`turn/reconcile.py::apply_reconciliation`) reads it as `{token: {kind: hits}}` and
+    # re-types a hint on "the one other kind hitting".
+    #
+    # A hit under a kind the hint FANS OUT to is the hinted word resolving, not another
+    # kind: the resolver has no brand or category probe and answers both through the
+    # promotion probe (`entity_resolver._ENTITY_TYPE_EXPANSIONS`), so "SORENTO" (brand)
+    # came back as 20 promotion matches (prefix on the promotion description) and zero
+    # brand matches, and reconciliation rewrote the hint to promotion. The row was then
+    # stored on `focus.extra["promotion"]`, carried into the next turn by
+    # `with_carried_entities` AS a promotion and re-resolved under inventory (prod turn
+    # 120/121; the dev DBs' seven "sorento" / "sorento wc" promotion rows on inventory
+    # turns). Counted under the hint instead, so `brand` stays `brand` and `category` stays
+    # `category`, while the match itself still reaches the fetch through the gate's
+    # `compatible_entities` (the promotion domain still lists that brand's promotions off
+    # this turn's matches; under inventory the gate already rejects them as incompatible).
+    # The hint is looked up the way `reconcile.hits_for_token` looks the token up: the
+    # entity's `raw` first, folded through `token_key`, so the echoed token maps back to
+    # the hint that asked for it.
+    #
+    # A BRAND hint goes one step further outside order/sales (ROGUE-CONVO-REVIEW, prod 6 Oct
+    # 2026 18:50 MYT, "SORENTO S-TRAP 250MM ONE PIECE WC-ZZWC8318-RL-250"): the resolver
+    # answered the brand word with FOUR kinds at once, promotion, customer, form and
+    # transporter, none of which inventory even accepts, and reconciliation armed "Which one
+    # do you mean? 1. SORENTO (promotion) 2. SORENTO (customer) 3. SORENTO (form) 4. SORENTO
+    # (transporter)" over a product the parser had read perfectly. The resolver has no brand
+    # probe, so nothing it answers a brand word with can contradict the parser's brand hint
+    # ("Sorento is always a brand"): every hit counts as the brand, the hint stands, no pick
+    # is armed and no row of those kinds reaches the focus. Like reconciliation itself, this
+    # reads the hint alone, not the parser's `confident` flag (`apply._focus_rules` is what
+    # keeps a non-confident entity off the focus). In the product domains (master_products,
+    # product_attachment) a brand word the resolver placed on products used to be re-typed
+    # `product`; it now stays a brand on the focus, and the fetch is unchanged because the
+    # gate's `compatible_entities` still carries those products. The DOMAIN
+    # overrides (`_DOMAIN_HINT_EXPANSIONS`, brand -> customer / transporter under order) are
+    # NOT folded: there the re-type is the intended reading ("super ceramic" names a
+    # customer), and the live-brand intercept above already keeps a real brand out of that
+    # fan-out. Category hints keep today's reading beyond the promotion fold: a class word
+    # that the resolver places as products is still re-typed (no evidence against it yet).
+    hint_by_key: dict[str, str] = {}
+    for e in entities:
+        if not isinstance(e, dict):
+            continue
+        key = _token_key(jsc.nullish_str(e.get("raw")).strip() or jsc.nullish_str(e.get("canonical_code")).strip())
+        hint = jsc.nullish_str(e.get("hint")).strip().lower()
+        if key and hint:
+            hint_by_key.setdefault(key, hint)
     by_token: dict[str, dict[str, int]] = {}
     for resolution in jsc.array(jsc.get(resolved, "resolutions")):
         token = jsc.nullish_str(jsc.get(resolution, "token")).strip()
         if not token:
             continue
         hits = by_token.setdefault(token, {})
+        hinted = hint_by_key.get(_token_key(token))
+        fan_out = RESOLVER_FAN_OUT.get(hinted or "", frozenset())
+        brand_word = hinted == "brand" and not is_order_domain
         for match in jsc.array(jsc.get(resolution, "matches")):
             kind = jsc.nullish_str(jsc.get(match, "entity_type")).strip().lower()
-            if kind:
-                hits[kind] = hits.get(kind, 0) + 1
+            if not kind:
+                continue
+            if hinted and (kind in fan_out or brand_word):
+                kind = hinted
+            hits[kind] = hits.get(kind, 0) + 1
 
     gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
     compatible = [e for e in jsc.array(gate.get("compatible_entities")) if isinstance(e, dict)]

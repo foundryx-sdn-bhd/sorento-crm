@@ -1,0 +1,421 @@
+{
+  "_note": "Synthetic messages only (public repo). Expected parser output per message; has_period = the message names a period (date_filter_start/end set). Live-checked 3 times each by the parity script before the hand test; the pytest here is offline.",
+  "cases": [
+    {
+      "id": "en_top5_this_week",
+      "language": "en",
+      "message": "top 5 questions this week",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 5,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_no_count_this_week",
+      "language": "en",
+      "message": "top questions this week",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zh_most_asked_this_week",
+      "language": "zh",
+      "message": "这个星期最多人问什么",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "ms_most_asked_this_week",
+      "language": "ms",
+      "message": "soalan paling banyak minggu ni",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "mixed_top_this_week",
+      "language": "mixed",
+      "message": "top questions minggu ni",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_top10_products_since_sept",
+      "language": "en",
+      "message": "top 10 products customers asked about since Sept",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "product",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 10,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_products_about_stock_last_month",
+      "language": "en",
+      "message": "most asked products about stock last month",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "product",
+          "measure": "asks",
+          "subject": "inventory"
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_failed_per_week_september",
+      "language": "en",
+      "message": "how many questions failed per week in September",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "week",
+          "measure": "failed",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_failure_rate_per_day_range",
+      "language": "en",
+      "message": "failure rate per day 1 to 15 Sep",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "day",
+          "measure": "failure_rate",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_top5_customers_september",
+      "language": "en",
+      "message": "top 5 customers by number of asks in September",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "customer",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 5,
+        "has_period": true
+      }
+    },
+    {
+      "id": "ms_how_many_dealers_last_month",
+      "language": "ms",
+      "message": "berapa ramai pelanggan bertanya bulan lepas",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": null,
+          "measure": "contacts",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zh_top3_failure_reasons_september",
+      "language": "zh",
+      "message": "9月的失败原因排名前3",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "failure_reason",
+          "measure": "failed",
+          "subject": null
+        },
+        "top_n": 3,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_top5_topics_no_period",
+      "language": "en",
+      "message": "top 5 topics customers ask about",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 5,
+        "has_period": false
+      }
+    },
+    {
+      "id": "en_what_do_customers_ask",
+      "language": "en",
+      "message": "what do customers ask the bot about",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": false
+      }
+    },
+    {
+      "id": "mixed_top3_subject_since_sept",
+      "language": "mixed",
+      "message": "top 3 subject soalan since Sept",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "subject",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 3,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_by_language_last_month",
+      "language": "en",
+      "message": "questions by language last month",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "language",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_fail_rate_by_topic_top5",
+      "language": "en",
+      "message": "top 5 topics by fail rate this month",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "failure_rate",
+          "subject": null
+        },
+        "top_n": 5,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_outcome_breakdown_september",
+      "language": "en",
+      "message": "outcome breakdown for September",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "outcome",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "en_asks_per_month_since_sept",
+      "language": "en",
+      "message": "questions per month since Sept",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "month",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zh_top5_products_this_month",
+      "language": "zh",
+      "message": "本月最多问的产品前5",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "product",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 5,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_this_month_most_asked",
+      "language": "zh",
+      "message": "这个月经销商最多问的是什么问题",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_most_asked_product_sept",
+      "language": "zh",
+      "message": "九月份被问最多的产品",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "product",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_most_failed_reason",
+      "language": "zh",
+      "message": "上个月机器人失败最多的原因",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "failure_reason",
+          "measure": "failed",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "zd_zh_top3_with_most",
+      "language": "zh",
+      "message": "这个星期最多人问的前3个问题",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "topic",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": 3,
+        "has_period": true
+      }
+    },
+    {
+      "id": "q_ms_quarter_outcome",
+      "language": "ms",
+      "message": "pecahan keputusan perbualan bot bagi suku tahun lepas",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": "outcome",
+          "measure": "asks",
+          "subject": null
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    },
+    {
+      "id": "q_en_howmany_stock_failed",
+      "language": "en",
+      "message": "how many stock questions did the bot get wrong in Q3",
+      "expect": {
+        "domain_hint": "chat_analytics",
+        "intent_hint": "chat_report",
+        "chat_report": {
+          "group_by": null,
+          "measure": "failed",
+          "subject": "inventory"
+        },
+        "top_n": null,
+        "has_period": true
+      }
+    }
+  ]
+}
