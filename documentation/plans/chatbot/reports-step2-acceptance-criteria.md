@@ -39,4 +39,6 @@ Acceptance:
 - AC-9 The MCP `crm_report` ToolSpec is read_only, carries contact_id/space_id, and its `measure` description
   names every registry key; the chatbot read-only allow-list includes `crm_report` and still includes the old
   six tools.
+- AC-7 note: the MCP description lists the keys as a literal (no import of the backend registry from the MCP
+  package); the sync is checked by a backend test in S4.
 - AC-10 Rate limit and brand scope behave as `/report-ask` (same settings, same stamping).

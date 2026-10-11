@@ -28,6 +28,14 @@ S2 Focus report entry + refine/switch + provenance. S3 F and T prompt sections +
 (outstanding SO/DO, delivered by DO date, sales value) + `so_count` timed add for DP2. Security review (scope,
 dealer keys) and reviewer per slice set.
 
+## Carried from the S1 reviews (11 Oct)
+
+- `/report` echoes the figure (`amount`/`qty`) as `measure` so the report_ask presenter works; S2 adds the measure key
+  to the response (and the presenter) so the Focus entry holds the registry key, not the figure.
+- The MCP `crm_report` description lists the measure keys as a literal (the MCP package cannot import the backend
+  registry); S4 adds a backend test that compares that literal with `measures.keys()`.
+- `_Spec` duplicates most of `Measure`; fold when S4 adds non-ask measures.
+
 ## DP2
 
 Report-topic pass +10 pt on the report slice, p95 <= 8 s, 30-case smoke no topic worse, new measure <= 1 day.
