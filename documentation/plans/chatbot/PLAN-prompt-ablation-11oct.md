@@ -81,6 +81,18 @@ teaching, number / ordinal / yes-no words, honorifics, grammar particles, relati
 | D02 | THE ATTRIBUTE PHRASE, WHOLE 978-979 | whole section (duplicate of 241) |
 | D03 | CURRENT DATE tail 2084 | stale "before calling the MCP tool" line |
 
+Added in build (language only, lead ruling 11 Oct after the coder's first pass): C47 leftover
+Malay/Chinese words ("gambar", "semua variant", "这些", "sepuluh", "10个", "这个产品" sentence);
+C48a-d typo teaching in DOCUMENT and OPEN NUMBERED QUESTION ("Outstsnding", "stoick"); C49a-c
+company-pick English paraphrase lists; C50a-b sales-agent / category paraphrase lists; C52h plural
+synonyms in DOCUMENT; C52i year-span wording; C53a-b typo examples ("Sorneto", "walll"; the rule
+"a typo is corrected to the listed name" stays); C53g year-phrasing variants; C54a-b redundant
+cross-reference prose. A multi-span cut uses suffixed ids (C15a..e); `--restore C15` restores all.
+C10 inserts a header `== ENTITY OP: how this turn relates to the previous entities ==` so the
+entity_op rules (unchanged) sit in their own section.
+Rejected from the first pass (business worked examples or an output rule, restored): C48e (raw is
+the word spelt right), C51-C52f, C53c-f, C54c-d, C55a-b, C56a-b.
+
 Never cut: any output key, value set, domain / intent / team name, code shape rule (container
 4+7, PO number shape, warehouse short-token shapes), owner rulings, company codes, Known brands /
 Product types / Promotion kinds handling, the Chinese -> English class map.
