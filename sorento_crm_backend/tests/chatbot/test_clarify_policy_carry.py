@@ -349,3 +349,22 @@ def test_the_break_line_is_translated_and_keeps_the_code(dealer, session_factory
     assert "I still need" not in third and "Please refer to your salesman" not in third, third
     assert "escalate this to our team" not in third, third
     assert CODE in third, third
+
+
+# --- round 6: the month given while the question was open is kept for the ask it belongs to ------ #
+
+
+def test_the_month_given_while_the_carry_question_is_open_is_kept_when_it_is_answered(office):  # noqa: F811
+    """cand-0230: customer, then product (carry question), then a bare month (re-asked), then "2".
+    The fetch runs for the customer only over that month, with no "Which period" question."""
+    office.say("delivery for zzt dealer", _customer_ask())
+    office.say(f"delivery for {CODE}", _product_ask())
+    again = office.say("十月", _bare_month())
+    assert CODE in again and ((office.state or {}).get("open_question") or {}).get("kind") == "carry_scope", again
+    office.calls.clear()
+    reply = office.say("2", _answer("pick", 2))
+    assert "Which period" not in reply, reply
+    orders = _orders(office)
+    assert orders and orders[-1].get("customer_ids") and not orders[-1].get("product_ids"), office.calls
+    assert orders[-1].get("actual_delivery_date_from") == "2026-10-01", orders[-1]
+    assert orders[-1].get("actual_delivery_date_to") == "2026-10-31", orders[-1]
