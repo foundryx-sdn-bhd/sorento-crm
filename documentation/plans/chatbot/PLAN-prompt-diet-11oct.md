@@ -1,6 +1,6 @@
 # PLAN: PROMPT-DIET (step 1 of ARCH-scalable-chat option D = option E)
 
-Status: building (11 Oct 2026). Track: M, lead pattern. Additive migration (one new table, two prompt keys).
+Status: stopped at DP1 (11 Oct 2026, crew per owner exit ramps); PR #1568 is a draft measurement record, switch stays off. Track: M, lead pattern. Additive migration (one new table, two prompt keys).
 UAC: `prompt-diet-acceptance-criteria.md`. Architecture: `ARCH-scalable-chat-11oct.html` (PR #1566).
 
 ## Goal
