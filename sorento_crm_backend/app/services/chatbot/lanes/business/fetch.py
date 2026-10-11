@@ -2483,7 +2483,7 @@ def _sales_report_filters_from_ctx(ctx: dict[str, Any]) -> dict[str, Any]:
         "customer_ids": customer_ids,
         "warehouse_codes": semantic_input.get("outstanding_warehouse_codes") or [],
         "location_token": semantic_input.get("outstanding_location_token"),
-        "channel": semantic_input.get("sales_channel"),
+        "channel": semantic_input.get("sales_channel") or semantic_input.get("outstanding_carried_channel"),
     }
 
 
@@ -2539,7 +2539,8 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         not has_result
         and isinstance(ctx_si, dict)
         and ctx_si.get("sales_report_narrowed") is True
-        and ("response" not in envelope or not text.strip() or text.strip().endswith(SALES_REPORT_MISS_MESSAGE))
+        and "response" in envelope
+        and text.strip().endswith(SALES_REPORT_MISS_MESSAGE)
     )
     if narrowed_miss:
         # A held report narrowed to one product with nothing sold is an answer, in the report's own

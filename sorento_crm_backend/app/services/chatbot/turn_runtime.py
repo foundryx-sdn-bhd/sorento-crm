@@ -1950,7 +1950,8 @@ def lane_parse_output(
 
         out["sales_ranking_frame"] = frame_from_report(focus.report)
     held_plain = focus.report if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_report" else None
-    if held_plain is not None and _narrows_held_sales_report(out):
+    if held_plain is not None and _narrows_held_sales_report(verdict):
+        # Read off the parser's own verdict: `out["order_status"]` was re-projected from the focus status above.
         # A plain sales report is held (no ranking): "only this one" narrows IT. The same report
         # runs again for the exact code the parser typed, with the held customers and period.
         held_args = held_plain.get("args") or {}
@@ -1964,12 +1965,21 @@ def lane_parse_output(
         out["outstanding_carried_product_code"] = (
             jsc.nullish_str(typed[0].get("canonical_code")).strip() or jsc.nullish_str(typed[0].get("raw")).strip()
         )
-        if held_args.get("customer_ids"):
+        names_customer = any(
+            isinstance(e, dict) and e.get("current_message") is not False
+            and jsc.nullish_str(e.get("hint")).strip().lower() == "customer"
+            for e in jsc.array(out.get("entities"))
+        )
+        if held_args.get("customer_ids") and not names_customer:
             out["outstanding_carried_customer_ids"] = list(held_args["customer_ids"])
         for key in ("date_filter_start", "date_filter_end", "sales_channel"):
             held_key = "channel" if key == "sales_channel" else key
             if not out.get(key) and held_args.get(held_key):
                 out[key] = held_args[held_key]
+        if held_args.get("warehouse_codes") and not out.get("outstanding_carried_warehouse_codes"):
+            out["outstanding_carried_warehouse_codes"] = list(held_args["warehouse_codes"])
+        if held_args.get("location_token") and not out.get("outstanding_carried_location_token"):
+            out["outstanding_carried_location_token"] = held_args["location_token"]
     # Fix lane round 8 (owner hand test, 28 Sep 2026): an outstanding ask after a ranking
     # is the ORDINARY outstanding ask with the ranked codes as its products
     # (`apply._hop_to_report` wrote them on the hop). The same carried keys an answering
