@@ -112,7 +112,9 @@ cd sorento_crm_backend
 EXTERNAL_API_KEY=<lane key> EVAL_TRACE_DB_URL=<eval clone dsn> EVAL_RESET_DB_URL=<same dsn> \
   venv/bin/python -m scripts.chatbot_eval --data-dir "$EVAL_DATA_DIR" --split dev --variants one \
   --engine http --base-url http://localhost:<be port> --budget-usd 3 --out <dir outside the repo>
-# --prompt-version <ai_prompt_versions.id> pins an unpromoted parser prompt (dry run only)
+# --prompt-version <version number or ai_prompt_versions.id> pins a parser prompt (dry run only);
+# it is resolved read-only via EVAL_TRACE_DB_URL and fails (exit 2) if it matches nothing; report.json records
+# the prompt id, version and template md5, and a run whose traces show another version exits 5
 # --engine pkg.module:Class runs the same cases through another engine
 ```
 
