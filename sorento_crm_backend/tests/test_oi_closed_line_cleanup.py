@@ -352,7 +352,7 @@ def test_a_row_updated_in_place_by_a_later_buy_decision_is_not_cancelled(api, mo
     assert str(row.id) not in _cancelled_ids(out)
 
 
-def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, monkeypatch):
+def _carried_world(api, monkeypatch, *, patch_a_in_revision_3=None):
     """The OI-2609-0724 shape (fake codes): the decision on line A was dropped at 03:00, then CS
     confirmed OTHER lines three times (03:50, 05:28, 07:18). Each confirm carries A's old
     snapshot forward verbatim and cancels-and-re-raises its still-raised ORDER row under the
@@ -367,6 +367,7 @@ def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, m
     w = _world(api, monkeypatch)
     db = w.db
     a, c = w.rows["A"], w.rows["C"]
+    a_patch = patch_a_in_revision_3 or {}
     a_snap = {
         "project_line_id": str(a.so_line_id), "line_no": 1,
         "components": [{"kind": "buy", "qty": "40"}],
@@ -381,8 +382,8 @@ def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, m
     revisions = [
         (1, datetime(2026, 10, 1, 9, 0), [dict(a_snap), c_snap("40")]),
         (2, datetime(2026, 10, 6, 3, 50), [dict(a_snap), c_snap("30")]),
-        (3, datetime(2026, 10, 6, 5, 28), [dict(a_snap), c_snap("20")]),
-        (4, datetime(2026, 10, 6, 7, 18), [dict(a_snap), c_snap("10")]),
+        (3, datetime(2026, 10, 6, 5, 28), [dict(a_snap, **a_patch), c_snap("20")]),
+        (4, datetime(2026, 10, 6, 7, 18), [dict(a_snap, **a_patch), c_snap("10")]),
     ]
     active = None
     for revision_no, confirmed_at, snapshots in revisions:
@@ -407,6 +408,35 @@ def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, m
     db.add(carried)
     db.commit()
     w.calls.clear()
+
+    return w, carried
+
+
+def test_a_dropped_line_only_carried_by_later_confirms_is_still_cancelled(api, monkeypatch):
+    w, carried = _carried_world(api, monkeypatch)
+
+    out = _run(w, apply=False)
+
+    assert str(carried.id) in _cancelled_ids(out), out["rows"]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"late_days": 3},
+        {"product_id": "zzt-swapped-product", "item_code": "ZZT-IT-A-NEW"},
+    ],
+    ids=["planning_change_late_days", "carried_product_follow"],
+)
+def test_a_carried_snapshot_patched_without_a_re_decide_is_still_cancelled(
+    api, monkeypatch, patch
+):
+    """Two writers patch a carried snapshot without CS re-deciding the line: a planning change
+    stamps `late_days` on the active revision in place (`planning_change_service.py`), and the
+    carry moves a swapped product's id and code onto its copy (`project_supply_service.py`).
+    Revision 3 (05:28) then differs from revision 2 only there; the line is still not
+    re-decided."""
+    w, carried = _carried_world(api, monkeypatch, patch_a_in_revision_3=patch)
 
     out = _run(w, apply=False)
 
