@@ -1,6 +1,6 @@
 # PLAN: parser prompt ablation, language teaching out (PROMPT-ABLATION, 11 Oct 2026)
 
-Status: building (M experiment lane, crew lead pattern). Card: `CARD-prompt-ablation-11oct.md`.
+Status: built; DEV measured; awaiting crew hidden gate (M experiment lane, crew lead pattern). Card: `CARD-prompt-ablation-11oct.md`.
 UAC: `prompt-ablation-acceptance-criteria.md`.
 
 ## Rulings (crew, 11 Oct)
@@ -172,3 +172,28 @@ Run 1 (11 Oct, 214 calls) was INVALID: the lane stack had no MCP server, every l
 - Gaps: no Chinese names exist for any category, brand or product; the zh->en memory rows do not land on class labels
   ("Basin" is not "Wash Basin"), so a translated word still has to match a label or synonym; an AI fill adds one call per unseen
   word (cached after). Whether customers type Chinese brand names is UNVERIFIED.
+
+### Restore build (11 Oct, owner approved going over the cap): id fe4f3509-ef54-4bb8-9628-cbc7b5d63b2d (eval DB v56)
+
+v53 with C13 (positional examples), C28 ("Last answered" quantity phrasings) and C43b ("ada stok" / "有货" = the
+stock ask) put back; class map still cut. 139,003 chars (v50 148,593).
+
+| | v50 | v53 trim | v56 restore |
+|---|---|---|---|
+| pass | 84.1% | 77.6% | 82.2% |
+| strict | 41.1% | 39.3% | 40.2% |
+| prompt tokens / turn | 39,507 | 36,454 | 36,554 |
+| cache share | 96.1% | 97.6% | 97.1% |
+| cost / turn | $0.00590 | $0.00523 | $0.00536 (-9%) |
+| latency p50 / p95 | 3.85 / 7.96 s | 3.32 / 7.19 s | 3.89 / 9.17 s |
+
+Passes v50 -> v56 by area: incoming 15 -> 14, inventory 34 -> 33, purchase_order 3 -> 2, resource_attachment 1 -> 2,
+all others equal; by language en 77 -> 76, mixed 4 -> 3, zh 9 -> 9, ms 0 -> 0.
+v56 vs v50: 3 lost, 1 won. The 3 lost (the "14 ada stock" thread x2, "purchasing") were re-run on v50 on the same
+stack (8 calls): v50 fails all 3 too, with the same parser output (entity {raw "14", hint product}). Under Q2 none is
+caused by a cut; the DP1 baseline passed them on another day / stack. Of the 11 Oct repeat fails, the numbered pick
+and the bare code now pass. So C28 and C43b were restored on the owner's instruction, not on Q2 evidence (kept: they
+cost 116 chars). p95 9.17 s with p50 equal to v50: likely machine load from other lanes (UNVERIFIED); v53 on the same
+stack earlier gave 7.19 s.
+Live calls 11 Oct: 214 invalid (no MCP) + 1 + 214 + 20 + 1 + 214 + 8 = 672 (owner lifted the cap at ~15:50).
+Next: crew hidden gate with `--prompt-version fe4f3509-ef54-4bb8-9628-cbc7b5d63b2d` (it has the Malay / Chinese cases).
