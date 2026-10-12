@@ -124,12 +124,24 @@ def _product_codes(out: dict[str, Any]) -> set[str]:
         ("SRTWC8122 pakai seat cover apa?", "SRTWC8122"),
         ("SRTWC191-G2 配什么马桶盖?", "SRTWC191-G2"),
         ("SRTSCBD824-BL boleh pakai WC mana?", "SRTSCBD824-BL"),
+        # Crew live check 13 Oct (v88): both were read as FILE requests.
+        ("seat cover SRTWC8122", "SRTWC8122"),
+        ("SRTWC8383-RL-MBL 配什么马桶盖", "SRTWC8383-RL-MBL"),
+        # Round 3, more real-shaped phrasings (en / ms / zh / mixed).
+        ("srtwc8088 seat cover which one", "SRTWC8088"),
+        ("cover for SRTWC8357-RL?", "SRTWC8357-RL"),
+        ("penutup tandas untuk SRTWC6015 yang mana", "SRTWC6015"),
+        ("SRTSCBD330-UF 可以配哪个马桶?", "SRTSCBD330-UF"),
+        ("boss, SRTWC8152-BL punya seat cover code apa", "SRTWC8152-BL"),
+        ("which toilet can use seat cover SRTSCBD319-UF", "SRTSCBD319-UF"),
     ],
 )
 def test_a_fit_question_emits_fits_and_keeps_the_code_a_product(db, message: str, code: str) -> None:
     out = _parse(_system(db), message)
     assert _keys(out) == ["fits"], out
     assert code in _product_codes(out), out
+    # Crew live check 13 Oct: two fit asks were answered as file requests.
+    assert out.get("domain_hint") == "master_products", out
 
 
 def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:
@@ -139,7 +151,15 @@ def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:
 
 
 @pytest.mark.parametrize(
-    "message", ["SRTWC8383-RL-MBL stock?", "SRTSCBD823-MBL price", "seat cover got promotion?"]
+    "message",
+    [
+        "SRTWC8383-RL-MBL stock?",
+        "SRTSCBD823-MBL price",
+        "seat cover got promotion?",
+        # A FILE ask stays a file ask: the find rule must not take these.
+        "SRTWC8122 seat cover photo",
+        "send me SRTWC8383-RL-MBL drawing",
+    ],
 )
 def test_a_fact_question_emits_no_find(db, message: str) -> None:
     out = _parse(_system(db), message)

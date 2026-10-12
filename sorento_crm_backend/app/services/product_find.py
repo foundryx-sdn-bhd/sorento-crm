@@ -191,7 +191,11 @@ FILTERS: dict[str, FindFilter] = {
             vocabulary=(
                 "fits: the products that fit or go with the named product: the seat cover(s) "
                 "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The named "
-                "product is a product entity as usual."
+                "product is a product entity as usual. The other side named beside a code with "
+                "nothing else asked is this filter too, in any language or order (\"seat cover "
+                "SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\"): emit "
+                "fits, keep that word out of the entities, and it is never a file or photo ask "
+                "unless a file word (photo, drawing, catalogue, cert) is said."
             ),
             labels={
                 FITS_COVERS_HEAD: {"ms": "Penutup tempat duduk untuk {code}:", "zh": "{code} 适配的马桶盖："},
