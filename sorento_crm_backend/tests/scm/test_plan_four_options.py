@@ -185,3 +185,99 @@ def test_names_donor_back_on_restores_the_order_borrow(borrow_world, monkeypatch
     components = _components(ProjectSupplyService(db).proposal_for(world["asker"]))
 
     assert [c for c in components if c["kind"] == "borrow" and c["donor_so_number"]], components
+
+
+def test_toggle_on_the_pools_later_order_is_also_proposed_as_a_location_borrow():
+    """Step 4b: a later POOL order's on hand, the same rule as step 2."""
+    from app.services.project_supply_service import ProjectSupplyService
+
+    from .._pg_fixture import blank_session
+    from ..test_so_supply_confirmation import _stock, _uid
+    from .test_borrow_location_only import DONOR_FIELDS, _borrow_order_on
+    from .test_ladder_v7_borrow import LEAD_DAYS, WINDOW_DAY, _policy
+    from .test_project_supply_service_ladder import (
+        _components,
+        _group_sites,
+        _lead_time,
+        _seed_line,
+        _world,
+    )
+
+    with blank_session() as db:
+        company_id, _eling, project, product = _world(db)
+        _group, sites = _group_sites(db)
+        own, pool = sites["BRW"]
+        _stock(db, product, pool, on_hand=60)
+        _lead_time(db, product, LEAD_DAYS)
+        _policy(db)
+        _seed_line(
+            db, company_id, project, product, pool, qty_ordered="60",
+            required_date=date.today() + timedelta(days=WINDOW_DAY + 60), line_no=9,
+            so_number=f"ZZTSO-POOL{_uid()[:4]}",
+        )
+        asker, _line, _cso, _cline = _seed_line(
+            db, company_id, project, product, own, qty_ordered="60", line_no=1,
+            so_number=f"ZZTSO-ASK{_uid()[:5]}",
+        )
+        _borrow_order_on(db)
+        components = _components(ProjectSupplyService(db).proposal_for(asker))
+
+    assert [(c["kind"], c["rung"]) for c in components] == [("borrow", "pool")]
+    for field in DONOR_FIELDS:
+        assert components[0][field] is None, (field, components[0])
+
+
+# ------------------------------------------------------- the board's own rows (Q5)
+
+
+def _board_contribution():
+    from app.models.base import company_scope
+
+    from .._pg_fixture import blank_session
+    from ..test_fulfilment_board import (
+        BASE,
+        MARKER,
+        TODAY as BOARD_TODAY,
+        VIEW,
+        _board_world,
+        _client,
+        _restore,
+        _sorento,
+        _user,
+    )
+
+    with blank_session() as db:
+        company_id = _sorento(db)
+        actor = _user(db, f"{MARKER} Eling")
+        order, _product = _board_world(db)
+        db.commit()
+        client, originals = _client(db, actor, [VIEW])
+        try:
+            with company_scope(db, frozenset({company_id})):
+                response = client.get(
+                    f"{BASE}/fulfilment-planning/board",
+                    params={
+                        "orders": order.so_number,
+                        "granularity": "week",
+                        "as_of": BOARD_TODAY.isoformat(),
+                    },
+                )
+        finally:
+            _restore(originals)
+    assert response.status_code == 200, response.text
+    return response.json()["cells"][0]["contributions"][0]
+
+
+def test_the_board_hides_the_borrow_incoming_question_and_option_row():
+    contribution = _board_contribution()
+
+    assert "supply_borrow" not in [step["kind"] for step in contribution["trail"]]
+    assert "supply_borrow" not in [option["step"] for option in contribution["options"]]
+
+
+def test_the_board_asks_borrow_incoming_again_once_it_is_back_on(monkeypatch):
+    monkeypatch.setattr(ladder_steps, "SUPPLY_BORROW", True)
+    contribution = _board_contribution()
+
+    assert "supply_borrow" in [step["kind"] for step in contribution["trail"]]
+    assert "supply_borrow" in [option["step"] for option in contribution["options"]]
