@@ -32,7 +32,7 @@ import { toast } from '@/lib/toast';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
 
 vi.mock('@/lib/toast', () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), warning: vi.fn(), error: vi.fn() }),
 }));
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
 
@@ -1101,7 +1101,7 @@ describe('FulfilmentBoardListView: the Decide claim order survives a rows change
       }),
     );
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
+      expect(toast.warning).toHaveBeenCalledWith(
         expect.stringContaining('1 short: B2155-NL-BLUE line 10 (only 50 free at BRW)'),
       ),
     );

@@ -12,7 +12,7 @@ import { BoardDecideControl } from './BoardDecideControl';
 import type { BoardContribution, BoardDraft } from '../../_shared/types/fulfilmentPlanning.types';
 
 vi.mock('@/lib/toast', () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), warning: vi.fn(), error: vi.fn() }),
 }));
 
 // The real SearchableSelect drives a cmdk popover - out of scope here (AC-36 pins it as
@@ -349,7 +349,7 @@ describe('BoardDecideControl: the lenient toast (AC-16, R10)', () => {
     // OI-CLOSED-LINE (owner, 12 Oct 2026): a short line is saved as decided and named as
     // short, never skipped.
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
+      expect(toast.warning).toHaveBeenCalledWith(
         '2 saved as Use own location · 1 short: CB6633 line 20 (only 10 free at own location)',
       ),
     );
@@ -541,7 +541,7 @@ describe('BoardDecideControl: Use BRW on a delivered or short line (OI-CLOSED-LI
     fireEvent.click(save);
 
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
+      expect(toast.warning).toHaveBeenCalledWith(
         '1 saved as Use BRW · 1 short: ZZT-DIY line 10 (only 2 free at BRW)',
       ),
     );

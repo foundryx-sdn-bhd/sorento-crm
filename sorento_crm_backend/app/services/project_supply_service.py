@@ -6320,9 +6320,10 @@ class ProjectSupplyService:
         Reserve only. A Borrow names a donor line and is checked against that line's own
         commitment (`_check_borrow`); incoming supply is not on a floor for anybody to pick.
 
-        Silent when NOBODY else holds at that location: the free-stock recheck already
-        refuses more than a location has, and it says what to do instead. This rule is here
-        to NAME the line holding the rest, so it speaks only when there is one to name.
+        OI-CLOSED-LINE (owner rule, 12 Oct 2026): it no longer refuses. What is past on hand
+        less the other lines' holds is recorded short (`_record_short`) and not held, whether
+        or not anybody else holds there, because a Reserve with a reason at an own-group bin
+        skips the free-stock recheck and the floor is then its only bound.
         """
         pairs = {
             (fact.product_id, str(item.warehouse_id))
@@ -6353,14 +6354,12 @@ class ProjectSupplyService:
                 on_hand = levels.get(key, (_ZERO, _ZERO))[0]
                 holders = list(holds.get(key, ())) + list(mine.get(key, ()))
                 held = sum((_dec(holder["qty"]) for holder in holders), _ZERO)
-                # NOBODY ELSE HOLDING HERE is not this rule's case: the free-stock recheck
-                # below already refuses more than a location has, and it says what to do
-                # about it ("Buy that quantity instead, or borrow it on the order's own
-                # sheet"). This rule exists to name the line that has the rest, so it only
-                # speaks when there IS one.
-                if holders and qty > on_hand - held and hasattr(self, "_stock_short"):
-                    # OI-CLOSED-LINE (owner rule, 12 Oct 2026): short, not refused. Holds
-                    # only what is left on the floor once the other lines are counted.
+                # OI-CLOSED-LINE (owner rule, 12 Oct 2026): short, not refused. Holds only
+                # what is left on the floor once the other lines are counted. Judged whether or
+                # not anybody else holds here: a Reserve with a reason at an own-group bin skips
+                # the free-stock recheck (the 8 Sep TEMPORARY LIFT), so the floor is the only
+                # bound it has (browser check, 12 Oct).
+                if qty > on_hand - held:
                     room = max(on_hand - held, _ZERO)
                     warehouse = self._warehouse_row(warehouse_id)
                     self._record_short(
@@ -6370,42 +6369,6 @@ class ProjectSupplyService:
                         qty - room,
                     )
                     qty = room
-                elif holders and qty > on_hand - held:
-                    warehouse = self._warehouse_row(warehouse_id)
-                    code = warehouse.warehouse_code if warehouse else "That location"
-                    asking = self._so_number_of(fact)
-                    names = ", ".join(
-                        dict.fromkeys(
-                            self._holder_name(holder, asking) for holder in holders
-                        )
-                    )
-                    message = (
-                        f"{code}: {qty_text(on_hand)} on hand, {qty_text(held)} already "
-                        f"reserved by {names}, you asked {qty_text(qty)}"
-                    )
-                    raise ReserveOverHand(
-                        message=message,
-                        failing_lines=[
-                            {
-                                "line_no": line.line_no,
-                                "so_line_no": (
-                                    fact.core.line_no if fact.core is not None else None
-                                ),
-                                "item_code": fact.item_code,
-                                "reason": message,
-                                "project_line_id": str(line.id),
-                            }
-                        ],
-                        conflict={
-                            "line": line.line_no,
-                            "warehouse_code": warehouse.warehouse_code
-                            if warehouse
-                            else None,
-                            "on_hand": qty_text(on_hand),
-                            "held_by": holders,
-                            "asked": qty_text(qty),
-                        },
-                    )
                 mine[key].append(
                     {
                         "so_number": self._so_number_of(fact),
@@ -8314,8 +8277,8 @@ class ProjectSupplyService:
             # OI-CLOSED-LINE (owner rule, 12 Oct 2026): what was short of free stock on the
             # undelivered part when this was confirmed. Present only when something was.
             **(
-                {"stock_short": self._stock_short_snapshot(str(line.id))}
-                if self._stock_short_snapshot(str(line.id))
+                {"stock_short": short}
+                if (short := self._stock_short_snapshot(str(line.id)))
                 else {}
             ),
             # What the ENGINE proposed for this line at this moment, beside what was

@@ -1060,9 +1060,11 @@ def confirm_supply(
 ):
     """Confirm the lines the planner has decided, in one action (AC-C01 as amended).
 
-    Every line IN THIS CONFIRMATION commits together or none of them does: the service
-    rechecks each against authoritative facts, and one stale, unbalanced or unmapped line
-    refuses the lot with `failing_lines` naming each by line number and item code. A line
+    The service rechecks each line against authoritative facts. A stock shortfall on a
+    line's undelivered part is confirmed as decided and named in `stock_short_notices`;
+    a line that still cannot be written (unbalanced, unmapped, stale) is held back and
+    named in `lines_held_back` while the rest confirm, and only a press with nothing left
+    to confirm is refused with `failing_lines` (OI-CLOSED-LINE, owner rule 12 Oct 2026). A line
     the body does not name is left undecided on purpose (13.4) and keeps counting as
     demand; a body naming no line at all AND withdrawing none is refused. The Order Inquiry
     handoff runs inside this same transaction, so purchasing can never be told to buy

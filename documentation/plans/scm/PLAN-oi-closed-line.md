@@ -44,7 +44,9 @@ never a block; "one bad line never refuses the whole order".
    queues a STOCK SHORT line in the same handover email (no purchasing row raised).
 9. BE `api/v1/projects/fulfilment_planning.py` `confirm_supply`: runs through `_write_holding_back` (#1362), so
    a line that still cannot be written is held back and named (`lines_held_back`); refused only when nothing is
-   left. Not for a planning-change press.
+   left. Not for a planning-change press. A Borrow from another ORDER's committed line
+   (`_check_group_borrow`) or off a supply DOCUMENT (`_check_supply_borrow`) is not stock on a floor and keeps
+   its refusal, so such a line is held back and named rather than saved short.
 10. Old tests pinning AC-C02 / AC-C03 / R14 refusals are restated to R2, keeping their invariants (holds never
     exceed stock; two lines never share units).
 

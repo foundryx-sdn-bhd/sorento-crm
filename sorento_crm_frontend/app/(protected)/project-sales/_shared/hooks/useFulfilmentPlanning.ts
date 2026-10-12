@@ -287,7 +287,7 @@ export function useReconciliationMutations() {
         toast.warning(failingLineText(notice));
       }
       for (const notice of result.lines_held_back ?? []) {
-        toast.warning(failingLineText({ ...notice, reason: `held back: ${notice.reason}` }));
+        toast.warning(failingLineText({ ...notice, reason: `held back, decision kept: ${notice.reason}` }));
       }
       // Only when something went wrong. The successful count is on the Transfers page and
       // does not need saying twice; an unwritten movement has no other way to be noticed.

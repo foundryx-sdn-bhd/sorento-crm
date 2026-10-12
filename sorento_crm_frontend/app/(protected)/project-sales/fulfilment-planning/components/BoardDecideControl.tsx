@@ -164,6 +164,8 @@ function sameAgentCandidate(rows: BoardContribution[], donorSo: string) {
 interface SkippedEntry {
   label: string;
   why: string;
+  /** The row's own key, when the entry is about a row this press saved. */
+  key?: string;
 }
 
 /**
@@ -349,7 +351,8 @@ export function BoardDecideControl({
             skipped.push({ label: labelFor(row), why: result.skip });
             continue;
           }
-          if (result.warning) short.push({ label: labelFor(row), why: result.warning });
+          if (result.warning)
+            short.push({ label: labelFor(row), why: result.warning, key: row.key });
           const trimmedReason = chosenReason.trim();
           if (chosenWay === 'cancel_so') {
             saves.push({
@@ -431,16 +434,16 @@ export function BoardDecideControl({
         }
         onSaved(savedKeys);
         const savedSet = new Set(savedKeys);
-        const savedShort = short.filter((entry) =>
-          tickedRows.some((r) => labelFor(r) === entry.label && savedSet.has(r.key)),
-        );
+        const savedShort = short.filter((entry) => entry.key && savedSet.has(entry.key));
         const message = toastMessage(
           savedKeys.length,
           labelOf(chosenWay),
           skipped,
           savedShort,
         );
-        if (savedKeys.length > 0) toast.success(message);
+        // A line saved short of stock reads amber, the way the board's Confirm summary does.
+        if (savedKeys.length > 0 && savedShort.length > 0) toast.warning(message);
+        else if (savedKeys.length > 0) toast.success(message);
         else toast(message);
       } finally {
         setSaving(false);
