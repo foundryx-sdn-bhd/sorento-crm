@@ -1217,10 +1217,10 @@ def test_a_multi_company_lone_last_in_miss_keeps_the_bare_line_and_the_companies
     assert "Last in: none on record" in message, message
 
 
-def test_a_lone_sold_by_ask_is_its_total_and_its_breakdown(session_factory, monkeypatch, stub_access):
-    """Crew live check 13 Oct 2026 ("CB88SS 今年卖了多少 by salesman, 按下单"): the parser
-    reads one sold_by ask. The count and its breakdown are listed, as hand-test step 6
-    does, never today's "top how many?" question."""
+def test_a_lone_sold_by_ask_keeps_todays_report_path(session_factory, monkeypatch, stub_access):
+    """Crew answer 13 Oct 2026 (option b; owner: no new lanes in answering): "CB88SS 今年卖了
+    多少 by salesman, 按下单" is one ask, so it keeps today's report path (owner ruling Q1(b)),
+    whatever the parser put in sub_asks. The runner never answers it."""
     c = _console(session_factory, monkeypatch, stub_access, "+60000009541")
     text = c.say(
         "ELP3754 2026 sold by salesman, ordered",
@@ -1232,9 +1232,7 @@ def test_a_lone_sold_by_ask_is_its_total_and_its_breakdown(session_factory, monk
             family=None,
         ),
     )
-    lines = text.splitlines()
-    assert "Sold 2026 (ordered): 860" in lines, text
-    assert any(ln.startswith("1. AGENT01") for ln in lines), text
+    assert "Sold 2026 (ordered): 860" not in text.splitlines(), text
 
 
 def test_a_lone_ask_of_any_other_measure_keeps_todays_path(session_factory, monkeypatch, stub_access):

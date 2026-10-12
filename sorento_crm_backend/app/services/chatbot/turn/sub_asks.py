@@ -453,13 +453,7 @@ def vague_token(verdict: Any, focus_products: list[Any]) -> str | None:
 
 def _sub_asks(verdict: Any) -> list[dict[str, Any]]:
     raw = verdict.get("sub_asks") if isinstance(verdict, dict) else None
-    asks = [a for a in raw or [] if isinstance(a, dict) and isinstance(a.get("measure"), str)]
-    if len(asks) == 1 and asks[0]["measure"] == "sold_by":
-        # A count and its breakdown are two asks (crew live check 13 Oct 2026, "CB88SS 今年卖了
-        # 多少 by salesman"): a lone per-group sold ask is listed with its total, as the
-        # owner's step 6 lists it, never sent to today's "top how many?" path.
-        asks = [{**asks[0], "measure": "sold_total", "group_by": None}, asks[0]]
-    return asks
+    return [a for a in raw or [] if isinstance(a, dict) and isinstance(a.get("measure"), str)]
 
 
 def _resumed(verdict: Any, pending: Any) -> tuple[str, int, dict[str, Any]] | None:
