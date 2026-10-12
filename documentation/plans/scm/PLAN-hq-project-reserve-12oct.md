@@ -1,7 +1,7 @@
 # PLAN: HQ warehouse as a project reserve
 
-Status: Plan (behaviour card asked on PR #1597, waiting on owner). Track: standard (SCM
-planner, Stock Debt, G12 lock; no migration expected).
+Status: Build (owner answered the card 12 Oct; reviewer next). Track: standard (Stock Debt
+walk, planner pool set, G12 lock; no migration).
 
 ## Owner ask (12 Oct)
 
@@ -36,23 +36,41 @@ and BRW stock gets taken by dealers), then move it to the actual project locatio
   - move HQ to "project bins" in the container grid split (`container_request_service.py:975,1066`)
     and HQ's last purchase cost into the `project` group (`reorder_run_service.py:1480`). Display only.
 
-## Target rule
+## Rule (owner answers, 12 Oct 2026)
 
 A **project reserve** = a warehouse that is some location's pool (`pool_warehouse_id` target)
-AND has `segment = project`. One predicate, next to `pool_predicate.is_site_pool`.
+AND has `segment = project` (`pool_predicate.is_project_reserve`).
 
-1. Planner: a project reserve lends a project line its whole own net
-   (`on hand - SO at HQ + SPO`, 0% dealer share), is NOT inside the dealer `pools_net`, and the
-   dealer pools' share rule is unchanged.
-2. Stock Debt: reserve on hand + incoming is its own pile; any project line that its own group
-   cannot cover draws it (date order across groups); POOL_GROUP (dealer) lines never do.
-   PR #1594 projection: reserve supply skips `dealer(M)` and goes to project months.
-3. Reorder / low stock: covered by the segment test already (tests pin it). Chatbot: per Q4.
-4. G12 lock and supply_claim skip a project reserve.
+1. **Fulfilment Planning never sees it** (Q1 final: "taking HQ is NOT a planning step"). It
+   is out of `ProjectSupplyService._site_pool_warehouses` (pool chain, drawable stock, pool
+   net) and out of `group_netting.netting_for_products`' pools. The ladder is unchanged,
+   Use BRW and the 50% dealer share included. Stock gets from HQ to a project by the CS
+   transfer in AutoCount.
+2. **Stock Debt** (Q2: "same principle and code as Covered by today"): the walk reads HQ as
+   one more pile (`supply_assignment.RESERVE_GROUP`). A project line draws its own group's
+   pile, then HQ; an HQ arrival clears open project shortfalls earliest required date
+   first. Book=Project and Book=All include HQ; Book=Retail does not. A book S/O on an HQ
+   PO may pin it to a project line (`may_draw`). R45 still holds: an HQ PO/SPO covers a
+   line on the page only through a link.
+3. **Dealers** (Q3 = a): a dealer (pool) line never draws HQ.
+4. **Chatbot** (Q4): no change; visibility policies stay as they are.
+5. **Side effects** (Q5 = a): G12 count, PO filter, Order Inquiry lock and `supply_claim`
+   skip a reserve. Reorder / low stock / BRW on hand drop HQ through the existing segment
+   test (pinned by a test). Container grid shows HQ under project bins and HQ's last cost
+   moves to the `project` group: accepted display effects.
 
-Data step `HQ.segment = project` ships WITH the release (owner, prod data).
+#1594 (STOCK-DEBT-PROJECTION) coordinates: its `pool_supply(M)` should leave HQ supply out of
+`dealer(M)` and give it to project months. Not touched here (that lane is unmerged).
 
-## Behaviour card questions
+Open, left as today: an SO line booked AT HQ itself reads as a dealer (pool) line.
 
-See the `crew-ask` on PR #1597 (Q1 draw order, Q2 Stock Debt competition, Q3 dealer short,
-Q4 chatbot, Q5 side effects).
+## Release post-steps
+
+1. Owner, prod data, WITH the release (not before): `UPDATE warehouses SET segment =
+   'project' WHERE warehouse_code = 'HQ';`
+2. Check HQ's current prod `segment` first (NULL or `dealer`): with `dealer`, retail-only
+   usage and the sales trajectory also stop counting HQ deliveries.
+
+## Tests
+
+`sorento_crm_backend/tests/scm/test_hq_project_reserve.py`.
