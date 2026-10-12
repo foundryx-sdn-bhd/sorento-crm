@@ -54,6 +54,7 @@ from app.schemas.project_supply import (
     SupplyProposal,
 )
 from app.services import project_service as projects
+from app.services.audit_service import log_audit
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.project_classification_evidence import classification_evidence
 from app.services import confirm_simulation  # noqa: F401 - registers the engine commit guard
@@ -526,7 +527,7 @@ def _run_confirm_many(
             ),
         )
 
-    return supply.confirm_many(
+    results = supply.confirm_many(
         payload.orders,
         actor_user_id=actor_id,
         assert_can_act=lambda session, order: _assert_can_act_on(session, order, current_user),
@@ -539,6 +540,81 @@ def _run_confirm_many(
         raw_errors=raw_errors,
         describe_writes=describe_writes,
     )
+    stash = db.info.pop(_REFUSAL_STASH, {})
+    if not describe_writes:  # the admin Simulate records nothing (AC-W7)
+        batch_of = {
+            str(entry.pso_id): entry.batch_id or (None if any_per_order else payload.batch_id)
+            for entry in payload.orders
+        }
+        _record_refusals(
+            [
+                {
+                    "pso_id": result["pso_id"],
+                    "error": result.get("error"),
+                    "batch_id": batch_of.get(str(result["pso_id"])),
+                    "lines": stash.get(str(result["pso_id"])) or result.get("failing_lines"),
+                }
+                for result in results
+                if not result.get("ok")
+            ],
+            actor_id,
+            preview,
+        )
+    return results
+
+
+#: `Session.info` key `_confirm_a_planning_change` leaves each refused order's line detail
+#: under, for the refusal record: the response only carries it for an admin.
+_REFUSAL_STASH = "planning_refusal_lines"
+
+
+def _is_planning_admin(db: Session, user_id: str) -> bool:
+    """Admin (PLANNING-WHY AC-W0): the check Simulate confirm uses."""
+    from app.services.user_service import UserPermissionService
+
+    return bool(
+        UserPermissionService(db).get_user_role_slugs(user_id) & {"superadmin", "admin"}
+    )
+
+
+def _record_refusals(refused: list, user_id: str, preview: bool) -> None:
+    """One `CONFIRM_REFUSED` audit row per refused order (PLANNING-WHY AC-W6), written AFTER
+    the order's rollback on its own session. A failure here is logged and never changes the
+    Confirm's answer (AC-W7)."""
+    if not refused:
+        return
+    from app.database import SessionLocal
+
+    try:
+        with SessionLocal() as session:
+            for item in refused:
+                log_audit(
+                    session,
+                    "project_sales_orders",
+                    str(item["pso_id"]),
+                    "CONFIRM_REFUSED",
+                    new_values={
+                        "preview": preview,
+                        "batch_id": item.get("batch_id"),
+                        "lines": [
+                            {
+                                "so_line_no": line.get("so_line_no", line.get("line_no")),
+                                "item_code": line.get("item_code"),
+                                "reason_code": line.get("reason_code"),
+                                "reason": line.get("reason"),
+                                "change": line.get("change"),
+                            }
+                            for line in (item.get("lines") or [])
+                        ],
+                    },
+                    user_id=user_id,
+                    reason=item.get("error"),
+                    root_entity_type="project_sales_orders",
+                    root_entity_id=str(item["pso_id"]),
+                )
+            session.commit()
+    except Exception:  # noqa: BLE001 - the record is a courtesy, never the answer
+        logger.exception("Could not record the refused Confirm")
 
 
 _SIMULATE_PROBE_LINE_CAP = 60
@@ -1332,11 +1408,13 @@ def confirm_supply(
     ever writes the draft. See `_confirm_with_possible_rejects`'s own docstring for the
     shared seam both Confirm routes run this through.
     """
+    acted = False
     try:
         validate_uuid_path(pso_id, resource="Sales order")
         service = ProjectSupplyService(db)
         order = service.get_order(pso_id)
         _assert_can_act_on(db, order, current_user)
+        acted = True
         # OI-CLOSED-LINE (owner rule, 12 Oct 2026): one line that cannot be written never
         # refuses the whole order. The lines the recheck refuses are held back and named, and
         # the rest confirm - the same seam Confirm all uses (#1362). A planning-change press
@@ -1363,6 +1441,21 @@ def confirm_supply(
         return body
     except Exception as exc:
         db.rollback()
+        if acted and 400 <= (getattr(exc, "status_code", 0) or 0) < 500:
+            detail = exc.detail if isinstance(getattr(exc, "detail", None), dict) else {}
+            _record_refusals(
+                [
+                    {
+                        "pso_id": pso_id,
+                        "error": detail.get("message"),
+                        "batch_id": payload.batch_id,
+                        "lines": db.info.pop(_REFUSAL_STASH, {}).get(pso_id)
+                        or detail.get("failing_lines"),
+                    }
+                ],
+                current_user["id"],
+                False,
+            )
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 
@@ -1493,6 +1586,19 @@ def _confirm_a_planning_change(
         # sentence and the sheet marks the row; the batch path dropped them, so the same
         # refusal read as "1 line cannot be confirmed" with nothing to act on.
         failing_lines = failed[0].get("failing_lines") if failed else None
+        if not failing_lines:
+            # PLANNING-WHY: name the rows that stopped it. The detail is stashed for the
+            # refusal record whoever pressed; only an admin's answer carries it (AC-W2..W4).
+            explained = planning_change_service.explain_refusal(db, str(order.id), batch_id)
+            db.info.setdefault(_REFUSAL_STASH, {})[str(order.id)] = explained
+            if _is_planning_admin(db, actor_user_id):
+                if explained:
+                    failing_lines = explained
+                elif not failed:
+                    message = (
+                        "Every change on this order is already confirmed (revision "
+                        f"{current_revision})."
+                    )
         if failing_lines:
             raise SupplyLinesRefused(
                 status_code=422,
