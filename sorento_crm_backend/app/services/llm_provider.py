@@ -194,6 +194,7 @@ class LLMProvider(Protocol):
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        json_schema_strict: bool = True,
     ) -> ChatResult: ...
 
     def embed(self, text: str) -> list[float]: ...
@@ -403,6 +404,7 @@ class OpenAIProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        json_schema_strict: bool = True,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -428,7 +430,9 @@ class OpenAIProvider:
                 "json_schema": {
                     "name": json_schema_name or "structured_result",
                     "schema": json_schema,
-                    "strict": True,
+                    # False only for a caller whose schema leaves keys optional (the
+                    # sparse chatbot parser): strict mode requires every key.
+                    "strict": json_schema_strict,
                 },
             }
         elif response_format is not None:
@@ -749,6 +753,7 @@ class AnthropicProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        json_schema_strict: bool = True,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -1312,6 +1317,7 @@ class GeminiProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        json_schema_strict: bool = True,
     ) -> ChatResult:
         from app.services import llm_cassette
 

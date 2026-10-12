@@ -1294,17 +1294,94 @@ Write ONLY the keys that carry something. A key you leave out is read as exactly
     object you write, leave out its empty keys the same way;
   - inside each entity, leave out canonical_code, quantity, spec_key, spec_value and
     account when they are null.
-ALWAYS write, even when the value is false:
-  - message_type;
-  - is_affirmative when the message answers a yes/no question with NO (false); leave it
-    out only when the message is not a yes or a no at all (null);
-  - domain_in_message whenever it is true or false;
-  - inside each entity: raw, hint, current_message, confident and hint_confident.
+ALWAYS write message_type. Five flags mean something different when false than when
+null, so write them whenever they are true OR false, and leave them out only when null:
+is_affirmative (false: the message declines; null: it is not a yes or a no at all),
+domain_in_message, and inside each entity current_message, confident and hint_confident.
+Inside each entity, always write raw and hint.
 Decide every value exactly as the rules above say; this changes only which keys you
 write, never what any of them means.
-  - "stock SRTWC286" -> {"message_type": "business_query", "intent_hint": "check_stock",
-    "domain_hint": "inventory", "domain_in_message": true, "entities": [{"raw":
-    "SRTWC286", "hint": "product", "current_message": true, "confident": true,
-    "hint_confident": true}], "entity_op": "replace"}
   - "thanks" -> {"message_type": "casual", "domain_in_message": false}
 """
+
+#: The OUTPUT block every parser line carries, byte for byte (the code constant, v42, v50,
+#: the v52 candidate and v56 all hash the same, measured 12 Oct 2026). A sparse version
+#: replaces it: the model copies the shape it is shown, so a template full of `false` and
+#: `[]` defaults is emitted in full whatever a later rule says (live probe, 12 Oct 2026).
+STRICT_OUTPUT_BLOCK_START = "== OUTPUT (exactly these keys, no others, no comments) =="
+STRICT_OUTPUT_BLOCK_END = "Return exactly one JSON object."
+SPARSE_OUTPUT_BLOCK = """== OUTPUT (these keys and no others, no comments; WRITE ONLY THE KEYS THAT CARRY A VALUE) ==
+A key whose value would be null, [] or false is LEFT OUT (SPARSE OUTPUT, at the end). What
+each key holds when it is written:
+{
+  "message_type": "request_for_help|business_query|clarification|casual|unknown" (always written),
+  "intent_hint": "string",
+  "domain_hint": "string",
+  "scope_intent": "broaden|specific",
+  "is_affirmative": true|false (false is a decline; a message that is neither: leave out),
+  "user_goal": "string",
+  "continuation": true,
+  "access_levels": ["..."],
+  "broaden_axis": "date|<entity hint>|all — the ONE axis the user is widening this turn; see BROADEN AXIS",
+  "broaden_to": "family|all - how far that axis is widened; see BROADEN AXIS",
+  "date_mode": "overlap|started|ended — only for promotion domain with a date filter",
+  "date_filter_start": "start date of filter if user explicitly mentions in the current message",
+  "date_filter_end": "end date of filter if user explicitly mentions in the current message",
+  "match_mode": "and|or",
+  "demand_qty": n,
+  "entities": [{...}],
+  "entity_op": "clear|replace_combine|replace|modify|reuse",
+  "domain_in_message": true|false (written whenever it is true or false),
+  "requested_attributes": ["..."],
+  "contains_flyer": true,
+  "reference_positions": [n],
+  "reference_target": "result|dym — WHICH set a positional reply targets; only when a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
+  "person_mention": "the surface name the user mentioned",
+  "is_active": "true|false — lifecycle status filter from current message only",
+  "order_status": "outstanding|delivered — ORDER delivery-status filter from current message only (order domain)",
+  "correction": true,
+  "routing": {
+    "suggested_team": "purchasing|purchasing_certification|customer_service|marketing_product|marketing_form|warehouse|marketing_promotion|it_admin",
+    "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support"
+  },
+  "escalation": { "is_escalation_confirmation": true, "company_pick": "string — ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" },
+  "document": ["SO|DO|PO|SPO|GRN"], the papers the message named
+  "status": "outstanding|delivered|sales_report — the delivery/order status axis from the current message only; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
+  "asks": [{"domain","intent"}] one per domain the message names, ONLY when it names more than one; see ASKS
+  "topic_reset": true, only when the message drops the current subject for a new one; see TOPIC RESET
+  "anaphora": { "backward_reference": true }
+}
+Return exactly one JSON object, holding only the keys that carry a value."""
+
+#: The addenda's own "emit on every object" lines, each told the same thing. Literal
+#: edits of PROMPT text (never of anything a customer typed); a phrase a line does not
+#: carry is skipped.
+SPARSE_PHRASE_EDITS: tuple[tuple[str, str], ...] = (
+    (
+        "Everything below is IN ADDITION to the OUTPUT object above. Emit",
+        "Everything below is IN ADDITION to the OUTPUT object above, and like every key it is\n"
+        "written only when it carries a value (SPARSE OUTPUT). Emit",
+    ),
+    ("what was asked. Emit on every object:", "what was asked. Emit when it carries a value:"),
+    ("One more OUTPUT key, on every object:", "One more OUTPUT key, written only when it carries a value:"),
+)
+
+
+def sparse_prompt(template: str) -> str:
+    """A parser version's text turned into its SPARSE OUTPUT version (CHAT-SPARSE).
+
+    The OUTPUT block is swapped for `SPARSE_OUTPUT_BLOCK`, the addenda's "on every object"
+    lines are told the same, and `SPARSE_OUTPUT_ADDENDUM` goes last. Refuses a text that
+    does not carry the OUTPUT block exactly once, or that is already sparse: either is a
+    line this was not built for, and a half-sparse prompt would be graded as a sparse one.
+    """
+    if SPARSE_OUTPUT_MARKER in template:
+        raise ValueError("prompt is already a sparse version")
+    start = template.find(STRICT_OUTPUT_BLOCK_START)
+    if start < 0 or template.count(STRICT_OUTPUT_BLOCK_START) != 1:
+        raise ValueError("prompt does not carry the OUTPUT block exactly once")
+    end = template.index(STRICT_OUTPUT_BLOCK_END, start) + len(STRICT_OUTPUT_BLOCK_END)
+    text = template[:start] + SPARSE_OUTPUT_BLOCK + template[end:]
+    for old, new in SPARSE_PHRASE_EDITS:
+        text = text.replace(old, new)
+    return text + SPARSE_OUTPUT_ADDENDUM

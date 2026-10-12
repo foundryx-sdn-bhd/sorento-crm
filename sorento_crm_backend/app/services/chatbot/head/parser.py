@@ -676,14 +676,14 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 # other version keeps the strict schema byte for byte.
 #
 # Each object keeps the keys whose absence would lose a fact. `message_type` has no empty
-# value. Inside an entity, `raw` and `hint` name it, and `current_message` / `confident` /
-# `hint_confident` are read as `is False` (`head/grounding.py:430,638`, `engine.py:496`),
-# so their `false` is not their null. `is_affirmative` (`turn/decide.py:614`) and
-# `domain_in_message` (`lanes/business/low_stock_ask.py:457`) are read the same way: the
-# prompt tells the model to write their `false`, and an omitted one is null.
+# value, and `raw` / `hint` name an entity. Five flags are read as `is False`, so their
+# `false` is not their null: `is_affirmative` (`turn/decide.py:614`), `domain_in_message`
+# (`lanes/business/low_stock_ask.py:457`) and, per entity, `current_message` / `confident`
+# / `hint_confident` (`head/grounding.py:430,638`, `engine.py:496`). The prompt tells the
+# model to write their `false`; an omitted one is null, as on the strict wire.
 SPARSE_REQUIRED: dict[str, list[str]] = {
     "": ["message_type"],
-    "entities": ["raw", "hint", "current_message", "confident", "hint_confident"],
+    "entities": ["raw", "hint"],
 }
 
 
