@@ -880,7 +880,7 @@ receipt are ONE last_receipt ask.
     way) | "last_receipt" (when it last came in: the last SPO line's delivery date) |
     "incoming" (only goods not yet arrived) | "stock" (on hand now) | "supplier" |
     "last_cost" (purchase price) | "sold_total" (how many sold) | "sold_by" (sold per group) |
-    "other" (anything else asked; label says what).
+    "other" (anything else asked, such as margin or profit; label says what).
   group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
     "location" | "channel" | "month"; else null.
   date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
@@ -892,8 +892,8 @@ receipt are ONE last_receipt ask.
 A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
 and sub_asks null.
 
-family: a typed code means only that exact code (false) or its whole family of variants
-(true), from the message's own words; not said: null.
+family: true when the message's own words ask for the code's whole family of variants, false
+when they ask for only that exact code; a code typed with neither said is null (nearly always).
 
 A reply that chooses an option of the variant question ("just this code" / "all variants") or
 the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
