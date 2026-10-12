@@ -51,7 +51,8 @@ AND has `segment = project` (`pool_predicate.is_project_reserve`).
    pile, then HQ; an HQ arrival clears open project shortfalls earliest required date
    first. Book=Project and Book=All include HQ; Book=Retail does not. A book S/O on an HQ
    PO may pin it to a project line (`may_draw`). R45 still holds: an HQ PO/SPO covers a
-   line on the page only through a link.
+   line on the page only through a link (owner via crew, 12 Oct: keep R45 for HQ documents;
+   unlinked incoming HQ supply shows only in #1594's projection layer).
 3. **Dealers** (Q3 = a): a dealer (pool) line never draws HQ.
 4. **Chatbot** (Q4): no change; visibility policies stay as they are.
 5. **Side effects** (Q5 = a): G12 count, PO filter, Order Inquiry lock and `supply_claim`
