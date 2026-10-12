@@ -3,9 +3,12 @@
 The owner's rule: "only consider pool, those project locations are matched already", and
 "pool a": pool supply first covers the dealer / retail orders due in its month, and only
 the remainder goes to project shortfalls, earliest first. Only a SURPLUS carries; debt
-never accumulates across months (R37).
+never accumulates across months (R37). Owner, 12 Oct 2026 after hand testing: pool ON HAND
+is shared and decided at planning time, so it covers dealer orders only and never a project
+shortfall; only INCOMING pool supply (POs, not-landed SPOs) carries to project lines.
 
-    remainder(M)    = carried_in(M) + pool_supply(M) - dealer(M)
+    dealer_left(M)  = dealer(M) less what pool on hand (carried, earliest first) covers
+    remainder(M)    = carried_in(M) + incoming(M) - dealer_left(M)
     projected(M)    = project(M) + remainder(M)
     carried_in(M+1) = max(0, min(remainder(M), projected(M)))
 
@@ -28,25 +31,48 @@ def _balances(rows):
     return [row.projected for row in rows]
 
 
-def test_srtwt2215_prod_shape_carries_the_pool_po_dec_to_apr():
+def test_srtwt2215_prod_shape_carries_the_hq_po_not_the_brw_on_hand():
+    """BRW on hand 191 meets the 15 dealer order; the 176 left of it does not carry to the
+    project months. The 5,000 HQ PO carries: Oct -38 + 5,000 = 4,962, and on."""
     rows = project_months(
-        KEYS, PROJECT, pool_supply={"2026-10": 5191.0}, dealer_demand={"2026-10": 15.0}
+        KEYS, PROJECT, pool_supply={"2026-10": 5000.0}, dealer_demand={"2026-10": 15.0},
+        pool_on_hand={"2026-10": 191.0},
     )
-    assert _balances(rows) == [5138.0, 5121.0, 3685.0, 2072.0, 1592.0, 795.0, 427.0]
-    assert rows[0].carried_in == 0.0 and rows[0].pool_supply == 5191.0
-    assert rows[0].dealer_demand == 15.0 and rows[0].carried_out == 5138.0
-    assert rows[2].carried_in == 5121.0 and rows[2].month_balance == -1436.0
+    assert _balances(rows) == [4962.0, 4945.0, 3509.0, 1896.0, 1416.0, 619.0, 251.0]
+    assert rows[0].carried_in == 0.0 and rows[0].pool_supply == 5000.0
+    assert rows[0].dealer_demand == 0.0 and rows[0].carried_out == 4962.0
+    assert rows[2].carried_in == 4945.0 and rows[2].month_balance == -1436.0
 
 
-def test_c_fhss12_pool_supply_is_applied_to_the_earliest_shortfall():
-    """Owner's hand test: 57 BRW on hand + 15 BRW PO, Oct -377. Oct reads -305 and the
-    later months are unchanged: nothing is left to carry, and debt does not carry."""
+def test_c_fhss12_only_the_incoming_po_meets_the_project_shortfall():
+    """Owner's hand test: 57 BRW on hand + 15 BRW PO, Oct -377. Only the PO counts: -362,
+    and the later months are unchanged."""
     rows = project_months(
         ["2026-10", "2026-11", "2026-12"], {"2026-10": -377.0, "2026-11": -20.0, "2026-12": -5.0},
-        pool_supply={"2026-10": 72.0}, dealer_demand={},
+        pool_supply={"2026-10": 15.0}, dealer_demand={}, pool_on_hand={"2026-10": 57.0},
     )
-    assert _balances(rows) == [-305.0, -20.0, -5.0]
+    assert _balances(rows) == [-362.0, -20.0, -5.0]
     assert rows[0].carried_out == 0.0
+
+
+def test_pool_on_hand_covers_dealer_orders_only():
+    """100 on hand, a 30 dealer order and a 50 project shortfall: the dealer order is met
+    from the floor and the 70 left of it does not touch the project line."""
+    rows = project_months(
+        ["2026-10"], {"2026-10": -50.0}, pool_supply={}, dealer_demand={"2026-10": 30.0},
+        pool_on_hand={"2026-10": 100.0},
+    )
+    assert _balances(rows) == [-50.0]
+
+
+def test_pool_on_hand_left_over_still_meets_a_later_dealer_order():
+    """50 on hand in Oct meets a 40 dealer order in Dec, so the incoming PO's surplus is not
+    charged for it."""
+    rows = project_months(
+        ["2026-10", "2026-11", "2026-12"], {"2026-10": -80.0}, pool_supply={"2026-10": 100.0},
+        dealer_demand={"2026-12": 40.0}, pool_on_hand={"2026-10": 50.0},
+    )
+    assert _balances(rows) == [20.0, 20.0, 20.0]
 
 
 def test_dealer_orders_in_the_month_come_before_project_shortfalls():
