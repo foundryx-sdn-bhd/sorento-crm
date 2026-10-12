@@ -229,7 +229,9 @@ def book_so_pins(
                 and line.required_date is not None
                 and line.required_date < tba_from
                 and (line.warehouse or line.is_pool)
-                and may_draw(ownership_group(line.warehouse, line.is_pool), group)
+                and may_draw(
+                    ownership_group(line.warehouse, line.is_pool, line.is_reserve), group
+                )
             ),
             key=lambda line: (
                 line.required_date, line.core_line_no or 0, line.key,
@@ -719,8 +721,12 @@ class StockDebtService:
         """
         project_bins = self._project_bins(group)
         # A PROJECT RESERVE (HQ) is project supply: in the project book, out of the retail
-        # one, where it could cover nothing (`supply_assignment.RESERVE_GROUP`).
-        reserves = dict(self.supply.project_reserve_warehouses())
+        # one, where it could cover nothing (`supply_assignment.RESERVE_GROUP`). Not under a
+        # `group` filter: HQ is no group's own stock, and the filtered balance is the
+        # group's own (AC-S2-6).
+        reserves = (
+            {} if group else dict(self.supply.project_reserve_warehouses())
+        )
         if book == "project":
             return {**project_bins, **reserves}
         pool_bins = dict(self.supply.site_pool_warehouses())
@@ -942,7 +948,8 @@ class StockDebtService:
             documents_pin_only=view,
         )
         demand_rows = self._demand(
-            product_ids, warehouse_ids, codes, pools, date_from=date_from, date_to=date_to,
+            product_ids, warehouse_ids, codes, pools, reserves=reserves,
+            date_from=date_from, date_to=date_to,
         )
         # STOCK-DEBT-LENDABLE (owner, 30 Sep 2026, option B): in the VIEW alone, the lines
         # that CAN WAIT - due on or after `as_of + lead + 14`, the board's own borrow-donor
@@ -1195,6 +1202,7 @@ class StockDebtService:
         codes: Dict[str, str],
         pools: set,
         *,
+        reserves: frozenset = frozenset(),
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
     ) -> Dict[str, List[DemandLine]]:
@@ -1281,6 +1289,7 @@ class StockDebtService:
                     required_date=row.required_date,
                     open_qty=_float(row.qty),
                     is_pool=warehouse_id in pools,
+                    is_reserve=warehouse_id in reserves,
                     qty_ordered=_float(row.qty_ordered),
                     qty_delivered=_float(row.qty_delivered),
                     # R29: the Sales order cell's own link target.

@@ -397,3 +397,140 @@ def test_the_reserves_on_hand_covers_a_project_line_on_the_stock_debt_page(scm_a
     row = _row_of(got.json(), product.product_code)
     balances = {m["key"]: m["balance"] for m in row["months"]}
     assert balances[month_key(_months_ahead(1))] >= 0, balances
+
+
+# --------------------------------------------------------------------------- review round 1
+
+
+def test_a_reserve_arrival_clears_the_earliest_shortfall_across_groups_first():
+    """IB due 3 Oct and BB due 5 Oct are both short; one HQ PO of 40 lands 20 Oct and
+    clears the IB line first, whatever group it is in."""
+    po = SupplyEvent(
+        key="po:hq-1", kind="po", warehouse="HQ", at=date(2026, 10, 20), qty=40,
+        is_pool=True, is_reserve=True,
+    )
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[po],
+        demand=[
+            _line("bb", "BRW-BB", date(2026, 10, 5), 40),
+            _line("ib", "WH3-IB", date(2026, 10, 3), 40),
+        ],
+    )
+
+    by_key = {row.line.key: row for row in result.lines}
+    assert by_key["ib"].uncovered == 0
+    assert by_key["bb"].uncovered == 40
+
+
+def test_a_line_takes_the_reserves_free_stock_before_another_lines_lendable_claim():
+    """Rule 6 across piles: BRW-BB's 100 is a far line's lendable landed claim and HQ holds
+    500 free, so a near BB line of 50 takes HQ and lends nobody's goods."""
+    from app.services.scm.supply_assignment import Hold
+
+    bin_floor = SupplyEvent(
+        key="on_hand:BRW-BB", kind="on_hand", warehouse="BRW-BB", at=AS_OF, qty=100,
+    )
+    far = _line("far", "BRW-BB", date(2027, 6, 1), 100)
+    near = _line("near", "BRW-BB", date(2026, 10, 10), 50)
+    claim = Hold(
+        line_key="far", supply_key="on_hand:BRW-BB", qty=100, kind="on_hand",
+        warehouse="BRW-BB", landed=True, lendable=True,
+    )
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[bin_floor, _hq(500)],
+        demand=[far, near], pinned=[claim],
+    )
+
+    by_key = {row.line.key: row for row in result.lines}
+    assert [a.event.key for a in by_key["near"].assigned] == ["on_hand:HQ"]
+    assert by_key["far"].lent_qty == 0
+
+
+def test_a_line_booked_at_the_reserve_draws_the_reserves_own_stock():
+    """An SO line booked AT HQ is in HQ's own pile, like any line at its own location."""
+    line = DemandLine(
+        key="at-hq", so_number="SOhq", line_no=1, warehouse="HQ", agent_code="JAY",
+        required_date=date(2026, 10, 10), open_qty=30, is_pool=True, is_reserve=True,
+    )
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[_hq(100)], demand=[line],
+    )
+
+    (row,) = result.lines
+    assert row.status == "covered"
+
+
+def test_a_book_so_on_an_hq_po_pins_a_project_line_and_never_a_dealer_line():
+    """R42 for the reserve: HQ's pile is one any project line may use (`may_draw`)."""
+    from app.services.scm.stock_debt_service import book_so_pins
+
+    po = SupplyEvent(
+        key="po:hq-1", kind="po", warehouse="HQ", at=date(2026, 10, 20), qty=50,
+        is_pool=True, is_reserve=True,
+    )
+
+    def _so_line(key, warehouse, *, is_pool=False):
+        return DemandLine(
+            key=key, so_number="SO1", line_no=1, warehouse=warehouse, agent_code="JAY",
+            required_date=date(2026, 10, 10), open_qty=20, is_pool=is_pool,
+            sales_order_id="so-1",
+        )
+
+    project = book_so_pins(
+        [("p", po, "so-1", 0.0)], {"p": [_so_line("bb", "BRW-BB")]}, [], tba_from=TBA,
+    )
+    dealer = book_so_pins(
+        [("p", po, "so-1", 0.0)], {"p": [_so_line("brw", "BRW", is_pool=True)]}, [],
+        tba_from=TBA,
+    )
+
+    assert [(h.line_key, h.qty) for h in project] == [("bb", 20)]
+    assert dealer == []
+
+
+def test_the_order_inquiry_netting_keeps_the_reserve_out_of_the_pool_net():
+    """`netting_for_products` (the OI link walk and the chatbot's door) nets the dealer
+    pools without HQ, the same as the planner's own netting."""
+    from app.services.scm.group_netting import netting_for_products
+
+    from tests._pg_fixture import blank_session
+    from tests.scm.test_project_supply_service_ladder import _group_sites, _world
+    from tests.test_so_supply_confirmation import _stock
+
+    with blank_session() as db:
+        _company_id, _eling, _project, product = _world(db)
+        _group, sites = _group_sites(db)
+        _own, brw_pool = sites["BRW"]
+        hq = _reserve(db)
+        _stock(db, product, brw_pool, on_hand=40)
+        _stock(db, product, hq, on_hand=1000)
+
+        net = netting_for_products(db, [str(product.id)]).pools_net(str(product.id)).net
+
+    assert net == Decimal("40")
+
+
+def test_g12_skips_the_reserve_for_spo_lines_and_the_po_list_filter():
+    from app.models.base import company_scope
+    from app.services.scm.project_bin_lock import count_unclaimed_project_bin_lines
+    from app.services.scm.purchase_order_service import PurchaseOrderService
+
+    from tests._pg_fixture import blank_session
+    from tests.scm.test_project_bin_lock import MARKER, _World
+
+    with blank_session() as db:
+        world = _World(db)
+        with company_scope(db, frozenset({world.company_id})):
+            # The fixture's "bin" becomes HQ's shape: segment project AND a pool.
+            world.bin_wh.pool_warehouse_id = world.bin_wh.id
+            db.flush()
+            world.spo_allocation(f"{MARKER}-SPO-HQ")
+            made = world.purchase_order(f"{MARKER}-PO-HQF")
+
+            assert count_unclaimed_project_bin_lines(db, world.company_id) == 0
+            listed = PurchaseOrderService(db).list(
+                page=1, limit=50, sort="po_number", direction="asc",
+                query=made["po"].po_number, status=None, supplier=None,
+                unclaimed_project_bin=True,
+            )
+            assert listed["data"] == []

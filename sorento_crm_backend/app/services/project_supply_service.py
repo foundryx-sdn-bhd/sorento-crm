@@ -4639,6 +4639,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             required_date = row.get("required_date")
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             timely_refs = [
@@ -9060,6 +9064,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             shares = attribution.get(key, {}).get(str(core.id) if core else "", {})
             ahead = _dec(shares.get("so_qty_ahead"))

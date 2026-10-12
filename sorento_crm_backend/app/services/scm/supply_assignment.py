@@ -264,6 +264,8 @@ class DemandLine:
     required_date: Optional[date]
     open_qty: float
     is_pool: bool = False
+    #: A line booked AT a project reserve (HQ): its group is the reserve's own pile.
+    is_reserve: bool = False
     #: The drill's own Ordered/Delivered columns (R22, Stock Debt only - `open_qty` above
     #: is what the WALK uses and stays as it is). `qty_ordered` is `plan_qty()`
     #: (`coalesce(qty_required, qty_ordered)`), `qty_delivered` the sales-order book's own
@@ -971,7 +973,7 @@ def _walk(
             continue
 
         state: _Open = item  # type: ignore[assignment]
-        group = _group_of(state.line.warehouse, state.line.is_pool)
+        group = _group_of(state.line.warehouse, state.line.is_pool, state.line.is_reserve)
         # Rule 6: the line's own claim first, off the floor it names (the event is in
         # this group's pile - the claim was registered against a counted, non-pin-only
         # floor of the line's own bin). What nearer lines drew is what the line lent.
@@ -995,9 +997,13 @@ def _walk(
             # then, only if the line is still short, the parts other lines have claimed.
             # A project line then draws the RESERVE's pile (HQ) the same way, once its
             # own group's is spent; a dealer (`POOL_GROUP`) line never does.
-            groups = [group] if group == POOL_GROUP else [group, RESERVE_GROUP]
-            for pile in [piles.setdefault(name, []) for name in groups]:
-                for free_only in (True, False):
+            # Rule 6 across both piles: every pile's UNCLAIMED part before anybody's claim,
+            # so a line never lends another line's landed goods while HQ still has free stock.
+            groups = (
+                [group] if group in (POOL_GROUP, RESERVE_GROUP) else [group, RESERVE_GROUP]
+            )
+            for free_only in (True, False):
+                for pile in [piles.setdefault(name, []) for name in groups]:
                     for event in list(pile):
                         if state.remaining <= EPSILON:
                             break
@@ -1179,7 +1185,7 @@ def group_book_positions(assignment: Assignment) -> Dict[str, float]:
             # it against one would charge a group for an obligation it cannot be asked to
             # meet.
             continue
-        group = _group_of(line.warehouse, line.is_pool)
+        group = _group_of(line.warehouse, line.is_pool, line.is_reserve)
         out[group] = out.get(group, 0.0) - float(line.open_qty)
         for item in row.assigned:
             if not item.pinned or item.event.key not in counted:
