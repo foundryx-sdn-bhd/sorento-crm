@@ -5157,7 +5157,9 @@ def envelope_of(
         # The TOOL's own verdict, before the rows test above: a report or a refusal
         # renders as `lane_text` with no figures yet DID find something, and the
         # composer's miss rule (an offer to escalate) must not read it as a miss.
-        "tool_has_result": bool(fetched.get("has_result")),
+        # SPEC-PROMO-PARAMS: a spec-filtered zero whose reply states what the data holds
+        # (`spec_miss_stated`, the values on file or the axis to pick) answered too.
+        "tool_has_result": bool(fetched.get("has_result")) or fetched.get("spec_miss_stated") is True,
         # The lane's own failure, when the fetch did not complete: neither a hit nor a
         # miss, so the composer offers nothing on it (the error text is the answer).
         "error": fragment.get("error") if isinstance(fragment.get("error"), str) else None,
