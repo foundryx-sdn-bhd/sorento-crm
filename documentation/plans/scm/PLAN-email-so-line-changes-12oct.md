@@ -1,7 +1,7 @@
 # PLAN: Order inquiry email - remove REMARK, derive Was -> Now from the line change
 
-Status: Plan, behaviour card asked on PR #1596 (lane EMAIL-SO-CHANGES, size M, standard track:
-the REMARK removal is a template-document migration). Red test landed first.
+Status: Build done, in review (lane EMAIL-SO-CHANGES, size M, standard track: the REMARK
+removal is a template-document migration, `oihr_0006_no_remark_column`). Red test landed first.
 
 ## Owner rules (12 Oct 2026)
 
@@ -36,6 +36,27 @@ and never reaches the email. CWB242 took the ordinary `_settle_row_in_place` pat
 
 Red test: `tests/scm/test_oi_email_so_line_changes.py::test_redirected_line_prints_its_date_move_as_was_now`.
 
-## Behaviour (pending the card answers)
+## Behaviour (card answered 12 Oct, PR #1596)
 
-See PR #1596 card and `ALIGN-email-so-line-changes-12oct.html` (before/after renders).
+- Q1 owner = (a): numbers + headline only. No REMARK column, no per-line label, no group row.
+- Q2 = (a): one `Attachments:` line under the table, by item code.
+- Q3 = (a): the before values are the OI row's own (`previous_qty`, `previous_delivery_date`,
+  `previous_item_code`), the same ones the Order Inquiries Was/Now dialog reads.
+- Owner addition: the item code is a column pair like qty and date: ITEM CODE (before) +
+  NEW ITEM CODE (after), the NEW column shown only when some line in the mail changed its
+  product, the cell filled only on lines that changed.
+- Line table: `LOCATION | ITEM CODE | NEW ITEM CODE* | QTY | NEW QTY* | DELIVERY | NEW DATE*`.
+- A redirected line's date move also names DELAY/ADVANCE in the headline.
+- The `ALIGN-email-so-line-changes-12oct.html` renders predate the owner's Q1/item-code
+  answers; the tests in `tests/test_oi_email_no_remark.py` are the current shape.
+
+## Done
+
+- `app/services/project_order_inquiry_service.py`: the fresh row raised in place of used
+  supply records its `was` off its own before columns (`_write`, raised branch);
+  `_handover_verb_keys` adds the date verb for such a row.
+- `alembic/versions/oihr_0006_no_remark_column.py`: the new document, guarded on the
+  unedited `oihr_0005` state, reversible.
+- Tests: `tests/scm/test_oi_email_so_line_changes.py` (SRTWB246 date, redirected product
+  swap), `tests/test_oi_email_no_remark.py` (migration + renders).
+- Guide: `documentation/user-guides/supply-chain/order-inquiry-handover-email.md`.
