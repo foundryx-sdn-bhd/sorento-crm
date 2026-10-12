@@ -3819,6 +3819,16 @@ class ProjectSupplyService:
             self._borrow_from_order_value = borrow_from_order_enabled(self.db)
         return self._borrow_from_order_value
 
+    def _names_its_order(self, item: Any) -> bool:
+        """Is this confirmed borrow an ORDER borrow? The switch on AND the donor order named.
+
+        Owner, 12 Oct 2026: what the planner suggests confirms exactly as displayed. With the
+        switch on, the planner still proposes a later order's stock as a location's Borrow
+        (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off), naming no order, so Confirm writes the
+        location shape for it; a borrow a person picked with the donor named keeps the
+        order-borrow shape. With the switch off this is always False, as before (K5)."""
+        return self.borrow_from_order and bool(getattr(item, "donor_so_number", None))
+
     def _eligible_donor(
         self,
         row: Any,
@@ -6851,8 +6861,9 @@ class ProjectSupplyService:
         donor_line_no = getattr(item, "donor_line_no", None)
         line_text = f" line {donor_line_no}" if donor_line_no is not None else ""
         # "Borrow from another order" OFF (S2): a refusal names the location, never the
-        # donor order, whatever the payload carried.
-        by_order = self.borrow_from_order
+        # donor order, whatever the payload carried. ON, a borrow naming no order is a
+        # location's too (`_names_its_order`).
+        by_order = self._names_its_order(item)
         held = (
             f"{order.so_number or 'That sales order'}{line_text}"
             if by_order
@@ -7467,9 +7478,9 @@ class ProjectSupplyService:
                 donor_core_line_id = getattr(item, "donor_core_line_id", None)
                 if not donor_core_line_id or _dec(item.qty) <= _ZERO:
                     continue
-                if not self.borrow_from_order and not getattr(item, "supply_key", None):
-                    # "Borrow from another order" OFF borrows a location, so the donor's
-                    # own decision is left alone (Q2). A step-3 document borrow is
+                if not self._names_its_order(item) and not getattr(item, "supply_key", None):
+                    # A location borrow (switch OFF, or ON with no order named) leaves the
+                    # donor's own decision alone (Q2). A step-3 document borrow is
                     # unchanged in both states (D5).
                     continue
                 by_donor.setdefault(str(donor_core_line_id), line)
@@ -7855,7 +7866,7 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not donor_core_line_id:
                     continue
                 supply_key = getattr(item, "supply_key", None)
-                if not by_order and not supply_key:
+                if not supply_key and not self._names_its_order(item):
                     continue
                 if supply_key:
                     # STEP 3, AND THE DONOR'S OWN ROW SAYS IT FIRST (S4, fixed 30 Aug).
@@ -7923,6 +7934,11 @@ class ProjectSupplyService:
         # the fact itself: the `-IR` group lent 40 to a `-BB` line and is owed 40 back.
         if not by_order:
             return order_backs + self._location_order_backs(checked, reference)
+        # ON, a later order's stock borrowed with no order named (the planner's own
+        # suggestion) is a location's, owed back on this line exactly as under OFF.
+        order_backs = order_backs + self._location_order_backs(
+            checked, reference, unnamed_order_borrows_only=True
+        )
         for line, entry, fact in checked:
             if not fact.product_id:
                 continue
@@ -7985,12 +8001,18 @@ class ProjectSupplyService:
         self,
         checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
         reference: str,
+        *,
+        unnamed_order_borrows_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """"Borrow from another order" OFF (D4, B3): every borrow that is not a document is
         owed back on the BORROWING line, at its own date, at the location it left from. The
         line's own location and its own group included (Q3): a project line is demand only
         through its OI rows, so nothing else would replace what it took. One row per (line,
-        location)."""
+        location).
+
+        `unnamed_order_borrows_only` is the switch-ON reading: only a later order's stock
+        borrowed with no order named (`_names_its_order` False). Every other ON borrow keeps
+        the order-back rule it always had."""
         backs: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for line, entry, fact in checked:
             for item in entry.borrow or []:
@@ -7998,6 +8020,11 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not item.warehouse_id:
                     continue
                 if getattr(item, "supply_key", None):
+                    continue
+                if unnamed_order_borrows_only and (
+                    not getattr(item, "donor_core_line_id", None)
+                    or self._names_its_order(item)
+                ):
                     continue
                 back = backs.get((str(line.id), str(item.warehouse_id)))
                 if back is None:
@@ -8137,7 +8164,14 @@ class ProjectSupplyService:
                     "source_warehouse_id": str(item.warehouse_id),
                     # BR2: under OFF the project stays an id, never a shown code.
                     "donor_project_ref": (
-                        donor.project_code if donor and self.borrow_from_order else None
+                        donor.project_code
+                        if donor
+                        and (
+                            self._names_its_order(item)
+                            if is_group_borrow
+                            else self.borrow_from_order
+                        )
+                        else None
                     ),
                     "donor_project_id": str(donor.id) if donor else None,
                     "reason": (

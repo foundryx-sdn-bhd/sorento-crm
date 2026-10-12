@@ -95,7 +95,7 @@ function byKind(
  * Resolved PER LINE, because two lines of one board need not share an ownership group:
  * `DC1-BB` is the agent's own group on a `BRW-BB` line and somebody else's on a `BRW-IB` one.
  *
- * Every kind in `ORDER` gets a card whether or not it has a quantity. What makes two boards
+ * Every kind in `STRIP_ORDER` gets a card whether or not it has a quantity. What makes two boards
  * comparable is that Buy is always in the same place; a card that came and went would move
  * every card beside it, and a strip is read by glancing at a position.
  */

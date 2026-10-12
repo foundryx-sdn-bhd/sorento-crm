@@ -1,7 +1,6 @@
 # PLAN: Fulfilment Planning limited to four options
 
-Status: behaviour card posted to the owner (crew-ask on PR #1586), awaiting answers. No code yet.
-Track: small fix expected (no migration, no auth/RBAC change); confirmed after the answers.
+Status: built, in review (PR #1586). Track: small fix (no migration, no auth/RBAC change, no new ingest surface).
 
 Owner rule (12 Oct 2026): Fulfilment Planning suggestions are limited to four options:
 **Use own location, Borrow (location), Use BRW, Buy.** The planner stops suggesting
@@ -79,14 +78,30 @@ Switch is OFF on dev. Every donor-named suggestion is FROZEN in revisions confir
 supply_borrow: none. So "Borrow from another order" on the cards is frozen history, not the live
 planner.
 
-## 5. Questions (crew-ask on PR #1586), with recommendation
+## 5. Owner answers (12 Oct 2026)
 
-- Q1 Use incoming: (a) keep the step, show it under Use own location [rec]; (b) remove, Buy
-  re-orders goods on the water; (c) remove + Buy nets open SPO (separate lane).
-- Q2 Borrow-from-order switch: (a) retire, always location-only, toggle + menu entry removed,
-  column kept [rec]; (b) keep toggle, hide wording.
-- Q3 Borrow incoming: (a) remove step 3 from the walk [rec]; (b) keep, show as Borrow.
-- Q4 Old frozen/saved lines: (a) display fold only [rec]; (b) rewrite data.
-- Q5 Per-line option rows: (a) drop removed steps' rows too [rec]; (b) cards only.
+Principle: DISABLE and HIDE, never delete code. Each step sits behind a flag in
+`app/services/scm/ladder_steps.py` (all off) so it can be turned back on.
 
-Answers recorded here when they arrive.
+- Q1 Use incoming: disabled; the planner does not consider the group's water. Not shown
+  under Use own location.
+- Q2 Borrow from another order: the Settings toggle stays, but the planner never names a
+  donor, whatever the toggle says (`ORDER_BORROW_NAMES_DONOR` off). The toggle still governs a
+  person's pick (Decide menu, Borrow dialog). Cards never show a "Borrow from another order"
+  card.
+- Q3 Borrow incoming: disabled (step 3 never walked); code kept.
+- Q4 (a): display-only fold for old frozen decisions and saved drafts. The board re-walks
+  every line's Suggested on each load (`project_fulfilment_board_service.py:2835`, `:2882`), so
+  only the Decided side of a confirmed revision and saved drafts still carry removed kinds.
+- Q5: the per-line option row and trail question of a disabled step are hidden.
+- Cards: Use own location, Borrow, Use BRW, Buy.
+- Review round 1 ruling (owner, 12 Oct): the planner's suggestion confirms exactly as
+  displayed. With the toggle ON, a borrow naming no donor order confirms as a location borrow
+  (order-back on this line, donor decision untouched); a borrow picked with the donor named
+  keeps the ON shape (`ProjectSupplyService._names_its_order`).
+
+## 6. Tests
+
+`tests/scm/test_plan_four_options.py` pins the four-option planner, the board's hidden rows and
+confirm-as-displayed. Tests that pin the disabled steps' own behaviour run with the
+`ladder_steps_on` fixture (`tests/conftest.py`). Vitest: `DecisionStrip.fourOptions.test.tsx`.

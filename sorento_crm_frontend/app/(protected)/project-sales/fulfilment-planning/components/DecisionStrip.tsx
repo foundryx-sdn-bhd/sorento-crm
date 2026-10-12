@@ -61,10 +61,8 @@ export function DecisionStrip({
   return (
     <div data-testid="decision-strip" className="space-y-2">
       <div
-        className={cn(
-          // Four cards: two rows of two on a phone, one row from `sm` up.
-          'grid grid-cols-2 gap-2 sm:grid-cols-4',
-        )}
+        // Four cards: two rows of two on a phone, one row from `sm` up.
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4"
       >
         {totals.map((total) => {
           const selected = active === total.kind;

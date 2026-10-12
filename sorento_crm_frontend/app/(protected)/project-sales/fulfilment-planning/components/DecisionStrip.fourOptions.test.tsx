@@ -11,7 +11,10 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DecisionStrip } from './DecisionStrip';
-import { decisionStripTotals } from '../../_shared/lib/decisionStrip';
+import {
+  contributionCarriesKind,
+  decisionStripTotals,
+} from '../../_shared/lib/decisionStrip';
 import type {
   BoardContribution,
   BoardSource,
@@ -134,5 +137,34 @@ describe('DecisionStrip: four options', () => {
       ['shared', '6'],
       ['buy', '9'],
     ]);
+  });
+
+  it('pressing Borrow keeps a line whose only borrow names an old donor order', () => {
+    // The filter must match the count: the card counts this line, so pressing it keeps it.
+    const donorOnly = line({
+      key: 'donor-only',
+      proposed: {
+        components: [
+          source({
+            kind: 'borrow',
+            rung: 'order_borrow',
+            qty: '20',
+            location: 'BRW-BB',
+            donor_so_number: 'SO383872',
+          }),
+        ],
+      },
+    });
+    const waterOnly = line({
+      key: 'water-only',
+      proposed: {
+        components: [
+          source({ kind: 'timely_spo', rung: 'group_take', qty: '7', location: 'BRW-BB' }),
+        ],
+      },
+    });
+
+    expect(contributionCarriesKind(donorOnly, null, 'borrow_other')).toBe(true);
+    expect(contributionCarriesKind(waterOnly, null, 'own')).toBe(false);
   });
 });
