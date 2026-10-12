@@ -214,6 +214,33 @@ def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
     return None
 
 
+def constraints_for_terms(db: Any, terms: Any) -> list[dict[str, Any]] | None:
+    """`promo_filter`'s `scope_terms` as `spec_constraints`, for a turn whose own parse names
+    no subject (a digit picked off "Which cabinet do you mean?"): each term is the whole
+    phrase of one registry value (`grounding._whole_spec_value`, "basin cabinet" ->
+    furniture_type basin_cabinet) or a subject `_subject_constraint` maps. None when any
+    term maps to nothing."""
+    from app.services.chatbot.head.grounding import _whole_spec_value, load_vocabulary
+
+    words = [jsc.js_string(t).strip() for t in jsc.array(terms) if jsc.js_string(t).strip()]
+    if db is None or not words:
+        return None
+    vocab = load_vocabulary(db)
+    out: list[dict[str, Any]] = []
+    for term in words:
+        whole = _whole_spec_value(term, vocab)
+        c = (
+            {"key": whole.key, "op": "eq", "value": whole.value}
+            if whole is not None and whole.value is not None
+            else _subject_constraint(db, term)
+        )
+        if c is None:
+            return None
+        if c not in out:
+            out.append(c)
+    return out
+
+
 def carries_size(spec_constraints: Any) -> bool:
     """Does the list hold the virtual `size` key (the route resolves its axis)?"""
     from app.services.chatbot.head.grounding import SIZE_KEY

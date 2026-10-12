@@ -735,9 +735,11 @@ def _access_ask_answer(
     # SPEC-PROMO-PARAMS owner Q4: the described subject rides the open pick as well, so the
     # answering turn (which names none) makes the same promotion products call a contact
     # with one tier makes (`lanes/business.run_fetch` reads it back off `promo_filter`).
-    from app.services.chatbot.lanes.business.fetch import spec_constraints_for
+    from app.services.chatbot.lanes.business.fetch import constraints_for_terms, spec_constraints_for
 
-    asked_constraints = spec_constraints_for(parser or {}, db)
+    asked_constraints = spec_constraints_for(parser or {}, db) or constraints_for_terms(
+        db, asked_filter.get("scope_terms")
+    )
     if asked_constraints and asked_filter.get("scope_terms"):
         # Only when the class IS the subject (`promo_filter`, AC-17): a typed code keeps
         # its product_ids on the pick.
