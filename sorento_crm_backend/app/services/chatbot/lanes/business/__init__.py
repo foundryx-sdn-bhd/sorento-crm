@@ -1729,6 +1729,10 @@ def run_fetch(
         # open pick (`answer_bridge`, beside `promo_filter`) and `narrow` above put them here.
         carried = semantic_input.get("spec_constraints")
         spec_constraints = [c for c in carried if isinstance(c, dict)] if isinstance(carried, list) else None
+    if spec_constraints and jsc.js_string(domain or "") == "promotion" and not semantic_input.get("scope_terms"):
+        # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
+        # product token the resolver placed is the stricter ask and keeps its product_ids.
+        spec_constraints = None
     if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
         # On the product and stock lanes the resolver's described set already applies the
         # subject and every registry key exactly (`extracted_specs`), with the counted-set

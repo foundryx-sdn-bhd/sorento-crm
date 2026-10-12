@@ -1311,6 +1311,14 @@ def entity_ids_transformer(
                 out["promotion_ids"] = named
             else:
                 out.pop("promotion_ids", None)
+            # The promotions list's other two narrowings (`promo_filter`), for parity (owner
+            # Q4 option (a)): the brand of the line's product and the promotion's kind.
+            brand_ids = [b for b in jsc.array(jsc.get(semantic_input, "brand_ids")) if is_uuid(b)]
+            if brand_ids:
+                out["brand_ids"] = brand_ids
+            kinds = [k for k in jsc.array(jsc.get(semantic_input, "promotion_types")) if isinstance(k, str) and k]
+            if kinds:
+                out["promotion_types"] = kinds
 
     # group_by / top_n (A3, AC-909/AC-910): additive parser keys, uniform across
     # every list tool this plan touches. `top_n` aliases to `limit` for the

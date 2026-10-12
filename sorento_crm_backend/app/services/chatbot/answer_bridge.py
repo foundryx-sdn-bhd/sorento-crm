@@ -738,7 +738,9 @@ def _access_ask_answer(
     from app.services.chatbot.lanes.business.fetch import spec_constraints_for
 
     asked_constraints = spec_constraints_for(parser or {}, db)
-    if asked_constraints:
+    if asked_constraints and asked_filter.get("scope_terms"):
+        # Only when the class IS the subject (`promo_filter`, AC-17): a typed code keeps
+        # its product_ids on the pick.
         asked_filter["spec_constraints"] = asked_constraints
     question = _tier_options(rows, asked_at_turn=asked_at_turn, promo_filter=asked_filter)
     return turn_compose.Answer(text=text, question=question)
