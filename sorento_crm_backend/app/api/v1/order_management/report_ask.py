@@ -143,8 +143,8 @@ def _lookup(
     db: Session, model: Any, name_column: Any, ids: list[str], grants: set[str], label: str,
     *, shared: bool = False,
 ) -> list[str]:
-    """The names of `ids` (`_lookup_pairs`), sorted."""
-    return sorted(n for _i, n in _lookup_pairs(db, model, name_column, ids, grants, label, shared=shared))
+    """The names of `ids` (`_lookup_pairs`), sorted, a name once (one brand name can exist per company)."""
+    return sorted({n for _i, n in _lookup_pairs(db, model, name_column, ids, grants, label, shared=shared)})
 
 
 def _echo(

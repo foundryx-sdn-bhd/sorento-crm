@@ -61,6 +61,7 @@ PRESENTER_TOOLS: frozenset[str] = frozenset(
         "crm_sales_analysis",
         "crm_report_ask",
         "crm_report",
+        "crm_find",
     }
 )
 
@@ -1603,6 +1604,56 @@ def _verdict_tail(entry: dict) -> str:
     return _AVAILABILITY_TAILS.get(branch, _AVAILABILITY_TAILS["too_big"])
 
 
+#: The discontinued marker the chatbot's product replies print (`lanes/business/fetch.py`).
+_FIND_DISCONTINUED = "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"
+
+
+def _find_stock_value(stock: Any) -> Any:
+    """The `Stock:` value of one `crm_find` row: the number for a staff policy, the stock
+    tool's own 1-unit verdict sentence for a dealer (`availability`, no number of ours)."""
+    stock = stock if isinstance(stock, dict) else {}
+    if stock.get("mode") == "availability":
+        verdict = stock.get("verdict")
+        return _verdict_tail(verdict) if isinstance(verdict, dict) else None
+    on_hand = stock.get("on_hand")
+    return _stock_int(on_hand) if on_hand is not None else None
+
+
+def _find_envelope(data: dict) -> dict:
+    """CHAT-FIND: the whole `crm_find` reply. Per group its head line (from the route's filter
+    registry), then per row one fact per line - `Code:`, `Stock:`, then the product replies'
+    discontinued marker when it is - a blank line between rows and between groups, never " · ". `has_result` is
+    false only when no group has a row (every named product has nothing on record)."""
+    blocks: list[str] = []
+    has_rows = False
+    for group in data.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        rows = [r for r in group.get("rows") or [] if isinstance(r, dict)]
+        parts: list[str] = []
+        for row in rows:
+            lines = [f"Code: {row.get('product_code')}"]
+            stock = _find_stock_value(row.get("stock"))
+            if stock is not None:
+                lines.append(f"Stock: {stock}")
+            if row.get("is_discontinued") is True:
+                # The marker every product reply prints (chatbot `fetch._item_line`).
+                lines.append(_FIND_DISCONTINUED)
+            parts.append("\n".join(lines))
+        has_rows = has_rows or bool(rows)
+        more = group.get("more")
+        if isinstance(more, int) and not isinstance(more, bool) and more > 0:
+            parts.append(f"Showing {len(rows)} of {len(rows) + more}.")
+        head = str(group.get("head") or "").strip()
+        body = "\n\n".join(parts)
+        blocks.append(f"{head}\n{body}" if head and body else head or body)
+    return {
+        "result_type": "find",
+        "response": "\n\n".join(b for b in blocks if b),
+        "has_result": has_rows,
+    }
+
+
 def _stamp_refers(entries: Any) -> Any:
     """CUSTOMER-ASKS-REFER-ONLY (owner ruling 1 Oct 2026): each answered entry carries
     `refers_to_salesman`, read off the tail this presenter printed for it, so the backend's
@@ -1954,6 +2005,10 @@ def present_response(tool_name: str, raw: str) -> str:
     # The report engine's ask: a ranking or one number, rendered whole from the route's body.
     if tool_name in ("crm_report_ask", "crm_report"):
         return json.dumps(_report_ask_envelope(data))
+
+    # CHAT-FIND: the generic find, one group per named product, rendered whole (`_find_envelope`).
+    if tool_name == "crm_find":
+        return json.dumps(_find_envelope(data))
 
     rows = data.get("data")
     if not isinstance(rows, list):
@@ -3311,6 +3366,14 @@ _REPORT_ASK_PLURALS = {
 }
 
 
+def _ask_date(iso: Any) -> str:
+    """``"2026-09-01"`` -> ``"01/09/2026"``, the form the sales report prints; anything else as given."""
+    try:
+        return datetime.strptime(str(iso), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return str(iso)
+
+
 def _ask_rm(value: Any) -> str:
     try:
         return f"RM {float(value):,.2f}"
@@ -3355,7 +3418,11 @@ def _report_ask(body: dict) -> str:
         )
         for f in body.get("filters") or []
     ]
-    facts.append(_mark(f"Period: {body.get('date_from')} to {body.get('date_to')}", "date_from", "date_to"))
+    facts.append(
+        _mark(
+            f"Period: {_ask_date(body.get('date_from'))} to {_ask_date(body.get('date_to'))}", "date_from", "date_to"
+        )
+    )
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
     basis = body.get("basis_label")

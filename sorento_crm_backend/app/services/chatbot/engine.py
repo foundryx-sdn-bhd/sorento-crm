@@ -2384,7 +2384,7 @@ def _apply_top_selling_updates(focus: Any, updates: dict[str, Any]) -> None:
     """Write `_top_selling_narrowing`'s updates onto the ranking's slot. A new agent,
     brand or customer word replaces that axis (the ranking is narrowed by what the
     customer names NOW, owner retest 27 Sep 2026)."""
-    if not updates or focus.status != "top_selling":
+    if focus.status != "top_selling":
         return
     slot = focus.top_selling if isinstance(focus.top_selling, dict) else {}
     for key in ("agent_ids", "brand_ids"):
@@ -2396,6 +2396,20 @@ def _apply_top_selling_updates(focus: Any, updates: dict[str, Any]) -> None:
         slot["who"] = dict(updates["who"])
     if updates.get("unknown"):
         slot["unknown"] = [*(slot.get("unknown") or []), *[list(u) for u in updates["unknown"]]]
+    # A fresh ask whose resolved filters equal the held ask's is a restatement: the count changes, the
+    # metric and basis stay (a different filter is a new ask, and the metric is asked again).
+    from app.services.chatbot.turn import apply as _turn_apply_mod
+
+    held = slot.pop("restates", None)
+    # A restatement names the same filters again; a fresh ask with no filter of its own ("top 10 selling
+    # items") states its own metric (owner: never assume), so an empty filter set is never one.
+    if isinstance(held, dict) and any(held.get(k) for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS) and all(
+        sorted(map(str, held.get(k) or [])) == sorted(map(str, slot.get(k) or []))
+        for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS
+    ):
+        for key in ("rank_by", "basis"):
+            if slot.get(key) is None and held.get(key) is not None:
+                slot[key] = held[key]
     focus.top_selling = slot
 
 
@@ -4657,6 +4671,7 @@ def _run_stages_body(  # noqa: PLR0915
     # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
     from app.services.chatbot.lanes.business import report_ask as _report_ask
 
+    verdict = _report_ask.as_ranking_refine(verdict, state_in.focus.report, state_in.focus.top_selling)
     verdict = _report_ask.as_top_selling(verdict, state_in.focus.report)
     verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:

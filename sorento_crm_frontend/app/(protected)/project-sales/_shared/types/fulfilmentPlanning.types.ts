@@ -515,7 +515,19 @@ export interface SupplyFailingLine {
   so_line_no?: number | null;
   item_code?: string | null;
   reason: string;
+  /**
+   * PLANNING-WHY: why a planning change row stopped a Confirm, and what the book did to it.
+   * Sent to an admin only; absent on every other refusal.
+   */
+  reason_code?: PlanningRefusalReason | null;
+  change?: string | null;
 }
+
+export type PlanningRefusalReason =
+  | 'not_decided'
+  | 'changed_again'
+  | 'already_confirmed'
+  | 'line_cancelled';
 
 /** `GET /project-sales/sales-orders/{pso_id}/supply`. */
 export interface SupplyProposal {
@@ -2678,4 +2690,52 @@ export interface ConfirmManyOrderResult {
 /** `POST /project-sales/fulfilment-planning/confirm-all`. */
 export interface ConfirmManyResult {
   results: ConfirmManyOrderResult[];
+}
+
+
+/** One line of a History event. Which keys are set depends on the event kind. */
+export interface PlanningHistoryLine {
+  so_line_no?: number | null;
+  item_code?: string | null;
+  action?: 'ordered' | 'cancelled' | 'reduced' | 'order_back' | null;
+  qty?: number | null;
+  previous_qty?: number | null;
+  cause?: string | null;
+  change?: string | null;
+  reason_code?: string | null;
+  reason?: string | null;
+  kind?: string | null;
+  state?: string | null;
+  remark?: string | null;
+}
+
+export type PlanningHistoryKind =
+  | 'confirm_refused'
+  | 'revision_confirmed'
+  | 'oi_cancelled'
+  | 'autocount_update'
+  | 'email_sent';
+
+/** `GET /project-sales/fulfilment-planning/history` (admin only). Newest first. */
+export interface PlanningHistoryEvent {
+  id: string;
+  kind: PlanningHistoryKind;
+  at: string | null;
+  actor: string | null;
+  pso_id: string;
+  so_no: string;
+  lines: PlanningHistoryLine[];
+  preview?: boolean;
+  revision_no?: number;
+  reissued_unchanged?: number;
+  counts?: Record<string, number>;
+  subject?: string;
+  status?: string;
+  sent_at?: string | null;
+  recipients?: string[];
+  body_text?: string | null;
+}
+
+export interface PlanningHistory {
+  events: PlanningHistoryEvent[];
 }

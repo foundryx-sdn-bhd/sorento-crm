@@ -58,4 +58,4 @@ def test_ac15_a_period_said_now_is_not_marked():
 def test_ac15_one_fact_per_line_with_no_dot_joins():
     text = _report_ask(_body(carried=["date_from", "date_to", "brand_ids"]))
     assert " · " not in text
-    assert "Brand: Sorento" in text and "Period: 2026-09-01 to 2026-09-30" in text
+    assert "Brand: Sorento" in text and "Period: 01/09/2026 to 30/09/2026" in text

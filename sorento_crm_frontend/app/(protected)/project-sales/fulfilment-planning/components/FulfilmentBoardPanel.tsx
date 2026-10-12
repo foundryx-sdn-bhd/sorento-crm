@@ -8,6 +8,7 @@ import { isSuperadminUser } from '@/lib/is-superadmin';
 import {
   ArrowLeft,
   FlaskConical,
+  History,
   LayoutGrid,
   List,
   PackageSearch,
@@ -107,6 +108,8 @@ import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect
 import { BoardScopeToggle, type BoardScope } from './BoardScopeToggle';
 import { isPreMarkOnly, VERDICT_FILTER_OPTIONS, verdictOf } from './BoardDecisionPill';
 import { BoardTransfersPanel } from './BoardTransfersPanel';
+import { PlanningHistorySheet } from './PlanningHistorySheet';
+import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
 import { FulfilmentBoardMatrix } from './FulfilmentBoardMatrix';
 import { DecisionStrip } from './DecisionStrip';
@@ -1263,6 +1266,18 @@ export function FulfilmentBoardPanel({
   const simulateConfirm = useSimulateConfirmMutation();
   const { data: session } = useSession();
   const canSimulate = isSuperadminUser(session?.user);
+  // PLANNING-WHY: the admin History sheet. `soId` aims it at one order (the refusal block's
+  // link); null opens it on every order on the board.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historySoId, setHistorySoId] = React.useState<string | undefined>(undefined);
+  const historyOrders = React.useMemo(() => {
+    // An order nobody has adopted has no planning record, so no history yet.
+    const orders = (board.data?.orders ?? []).filter((order) => order.project_sales_order_id);
+    return {
+      ids: orders.map((order) => order.project_sales_order_id as string),
+      numbers: orders.map((order) => order.so_number),
+    };
+  }, [board.data]);
   // The lines each order's press posted, by planning record, so the results block can set
   // them beside what the server says it wrote.
   const [postedLines, setPostedLines] = React.useState<
@@ -2325,6 +2340,17 @@ export function FulfilmentBoardPanel({
                   Simulate confirm
                 </DropdownMenuItem>
               )}
+              {canSimulate && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setHistorySoId(undefined);
+                    setHistoryOpen(true);
+                  }}
+                >
+                  <History className="size-4" aria-hidden />
+                  History
+                </DropdownMenuItem>
+              )}
               {/* Undo last confirm, one entry per order the newest revision can be undone
                   for (R6): below Undo all, same permission as Confirm, hidden entirely when
                   nothing on the board is undoable (AC-UC-04). A refused order keeps its
@@ -2519,6 +2545,10 @@ export function FulfilmentBoardPanel({
               // A refusal names the LINES it refused, not just the order: the fix is on one
               // row, and "SO404352: refused" sends a planner to read thirty of them.
               const failing = result.failing_lines ?? [];
+              // PLANNING-WHY AC-W13: an admin's refusal names each line in a table; a line
+              // without a reason code reads as it always did.
+              const coded = canSimulate ? failing.filter(hasReasonCode) : [];
+              const plain = canSimulate ? failing.filter((line) => !hasReasonCode(line)) : failing;
               // #1362: a confirmed order can still name lines - held back, or a Buy kept
               // over landed goods - and each one is something to act on.
               const notices = result.ok ? confirmNoticeLines(result) : [];
@@ -2637,13 +2667,41 @@ export function FulfilmentBoardPanel({
                       </p>
                     );
                   })()}
-                  {failing.length > 0 && (
+                  {coded.length > 0 && (
+                    <PlanningRefusalTable
+                      lines={coded}
+                      onGoToLine={(line) => {
+                        const target = allContributions.find(
+                          (candidate) =>
+                            candidate.so_number === label &&
+                            (candidate.so_line_no ?? candidate.line_no) === line.so_line_no,
+                        );
+                        if (target) focusLeftOutLine(target);
+                        else setView('list');
+                      }}
+                      onReload={() => void board.refetch()}
+                    />
+                  )}
+                  {canSimulate && !result.ok && !result.heldBack && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => {
+                        setHistorySoId(result.pso_id);
+                        setHistoryOpen(true);
+                      }}
+                    >
+                      History
+                    </Button>
+                  )}
+                  {plain.length > 0 && (
                     <ul
                       className={`space-y-0.5 rounded-md px-2 py-1.5 ${
                         result.heldBack ? 'bg-muted/50' : 'bg-destructive/5'
                       }`}
                     >
-                      {failing.map((line, index) => (
+                      {plain.map((line, index) => (
                         <li
                           key={`${line.line_no ?? 'order'}-${line.item_code ?? ''}-${index}`}
                           className={`text-sm break-words ${
@@ -3088,6 +3146,15 @@ export function FulfilmentBoardPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {canSimulate && (
+        <PlanningHistorySheet
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          psoIds={historyOrders.ids}
+          soNumbers={historyOrders.numbers}
+          initialSoId={historySoId}
+        />
+      )}
     </div>
   );
 }

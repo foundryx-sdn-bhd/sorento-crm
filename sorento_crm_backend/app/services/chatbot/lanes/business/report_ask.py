@@ -249,6 +249,26 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
 # --------------------------------------------------------------------------- #
 
 
+def as_ranking_refine(verdict: dict[str, Any], held_report: Any, top_selling_slot: Any) -> dict[str, Any]:
+    """Engine seam, before `as_top_selling`: the parser read a bare follow-up ("bottom 5") as a top
+    selling ask, but a sales ranking is on screen and no top selling question is open. With no axis of
+    its own, no entity and no domain word, it changes the ranking's direction or count: a refine of
+    the held ranking. The top selling keys it carries map to the ranking's (`rank_by` to `measure`)."""
+    if jsc.js_string(verdict.get("order_status") or "").strip() != "top_selling":
+        return verdict
+    held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
+    if not held_ranking or (isinstance(top_selling_slot, dict) and top_selling_slot.get("asked")):
+        return verdict
+    if jsc.js_string(verdict.get("group_by") or "").strip() or verdict.get("rank_group") is not None:
+        return verdict
+    if verdict.get("domain_in_message") is not False or jsc.array(verdict.get("entities")):
+        return verdict
+    out = {**verdict, "order_status": ASK_NAME, "ranking_refine": True}
+    if out.get("measure") is None:
+        out["measure"] = {"quantity": "qty", "amount": "amount"}.get(out.get("rank_by"))
+    return out
+
+
 def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
     """Engine seam, before `hold_words`: the parser read a product or category ranking as
     `sales_ranking` but filled its own top selling field (`rank_group`). Products and categories

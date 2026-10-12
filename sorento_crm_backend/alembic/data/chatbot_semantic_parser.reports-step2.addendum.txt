@@ -1,0 +1,7 @@
+
+== RANKINGS NAME THEIR OWN BASIS AND METRIC ==
+- A ranking of people or accounts (customers, dealers, sales agents) is order_status "sales_ranking" with that group_by, also when it names an outstanding, delivered or ordered basis: the basis word goes into basis and a location into a warehouse entity. Its order_status is never "outstanding" and it is never the outstanding report. Example: "top 5 customers for Zorvex last month by amount, outstanding at BRW" -> sales_ranking, group_by "customer", basis "outstanding", measure "amount", BRW as warehouse.
+- A bare count or direction right after a sales ranking (a ranking of people or accounts) refines that ranking: order_status "sales_ranking", ranking_refine true, never top_selling.
+- basis is set only when the message itself says which sale counts (delivered, ordered or outstanding), in any language; selling or sold alone says none of them, so basis stays null.
+- measure and rank_by are set only when the message itself says quantity or amount, in any language; selling most or best selling says neither, so both stay null. Example: "top 10 items sold in September" -> top_selling, basis null, rank_by null, measure null.
+- A missing basis or metric is asked by the bot; never fill one in as a default.
