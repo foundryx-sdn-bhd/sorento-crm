@@ -93,6 +93,7 @@ from app.services.scm.supply_assignment import (
     effective_date,
     month_axis,
     month_key,
+    may_draw,
     ownership_group,
     parse_supply_key,
     tone_for,
@@ -201,7 +202,8 @@ def book_so_pins(
     A line the walk will not draw for (TBA, undated, unlocated - R14) is never given one:
     `assign()` would drop the pin and the quantity would be lost for nothing. Nor is a line
     in ANOTHER ownership group (or a site pool against a project group): only a Confirm
-    moves supply across a group (R40).
+    moves supply across a group (R40). A PROJECT RESERVE's PO (HQ) may pin to any project
+    line, the pile it lands in being one any project line may use (`may_draw`).
 
     R43 withdrew R42's "only a PO line the overdue rule counts": `po_lines` carries every PO
     line naming an order, dead, late or undated, and every pin `fulfils` (see `Hold`).
@@ -217,7 +219,7 @@ def book_so_pins(
         budget = float(event.qty) - float(placed or 0.0)
         if budget <= 0:
             continue
-        group = ownership_group(event.warehouse, event.is_pool)
+        group = ownership_group(event.warehouse, event.is_pool, event.is_reserve)
         budgets[event.key] = budget
         candidates[event.key] = sorted(
             (
@@ -227,7 +229,9 @@ def book_so_pins(
                 and line.required_date is not None
                 and line.required_date < tba_from
                 and (line.warehouse or line.is_pool)
-                and ownership_group(line.warehouse, line.is_pool) == group
+                and may_draw(
+                    ownership_group(line.warehouse, line.is_pool, line.is_reserve), group
+                )
             ),
             key=lambda line: (
                 line.required_date, line.core_line_no or 0, line.key,
@@ -716,12 +720,19 @@ class StockDebtService:
           `assignments_for` already relies on the same fact for its own pool step.
         """
         project_bins = self._project_bins(group)
+        # A PROJECT RESERVE (HQ) is project supply: in the project book, out of the retail
+        # one, where it could cover nothing (`supply_assignment.RESERVE_GROUP`). Not under a
+        # `group` filter: HQ is no group's own stock, and the filtered balance is the
+        # group's own (AC-S2-6).
+        reserves = (
+            {} if group else dict(self.supply.project_reserve_warehouses())
+        )
         if book == "project":
-            return project_bins
+            return {**project_bins, **reserves}
         pool_bins = dict(self.supply.site_pool_warehouses())
         if book == "retail":
             return pool_bins
-        return {**project_bins, **pool_bins}
+        return {**project_bins, **pool_bins, **reserves}
 
     def _project_bins(self, group: Optional[str]) -> Dict[str, Warehouse]:
         """The flagged bins alone, narrowed by `group` - `_warehouses`'s own project half,
@@ -921,7 +932,8 @@ class StockDebtService:
             warehouse_id: warehouse.warehouse_code or warehouse_id
             for warehouse_id, warehouse in warehouses.items()
         }
-        pools = set(self.supply.site_pool_warehouses())
+        reserves = set(self.supply.project_reserve_warehouses())
+        pools = set(self.supply.site_pool_warehouses()) | reserves
 
         # FIRST, and deliberately: `lead_times` fills the memo the per-line fallback in
         # `_po_rows` reads. Called after `_supply`, every PO line whose supplier agreement
@@ -929,13 +941,15 @@ class StockDebtService:
         # the dev copy.
         leads = self.supply.lead_times(product_ids)
         supply_rows = self._supply(
-            product_ids, warehouse_ids, codes, pools, as_of=as_of, include_po=include_po,
+            product_ids, warehouse_ids, codes, pools, reserves=reserves,
+            as_of=as_of, include_po=include_po,
             delivery_dated=view,
             # R45: on the page a document is spent by its links and nothing else.
             documents_pin_only=view,
         )
         demand_rows = self._demand(
-            product_ids, warehouse_ids, codes, pools, date_from=date_from, date_to=date_to,
+            product_ids, warehouse_ids, codes, pools, reserves=reserves,
+            date_from=date_from, date_to=date_to,
         )
         # STOCK-DEBT-LENDABLE (owner, 30 Sep 2026, option B): in the VIEW alone, the lines
         # that CAN WAIT - due on or after `as_of + lead + 14`, the board's own borrow-donor
@@ -1038,6 +1052,7 @@ class StockDebtService:
         codes: Dict[str, str],
         pools: set,
         *,
+        reserves: frozenset = frozenset(),
         as_of: Optional[date] = None,
         include_po: bool = True,
         delivery_dated: bool = False,
@@ -1116,6 +1131,7 @@ class StockDebtService:
                     at=as_of,
                     qty=qty,
                     is_pool=warehouse_id in pools,
+                    is_reserve=warehouse_id in reserves,
                 )
             )
 
@@ -1134,6 +1150,7 @@ class StockDebtService:
                         qty=_float(ref.qty),
                         ref=_spo_ref(ref.spo_number),
                         is_pool=warehouse_id in pools,
+                        is_reserve=warehouse_id in reserves,
                         ordered_qty=_float(ref.ordered_qty),
                         received_qty=_float(ref.received_qty),
                         # R29: the wire fields the Document cell links off.
@@ -1163,6 +1180,7 @@ class StockDebtService:
                             # as "bought for" would print one date twice.
                             bought_for=None if parked else line.bought_for,
                             is_pool=warehouse_id in pools,
+                            is_reserve=warehouse_id in reserves,
                             ordered_qty=_float(line.ordered_qty)
                             if line.ordered_qty is not None
                             else None,
@@ -1184,6 +1202,7 @@ class StockDebtService:
         codes: Dict[str, str],
         pools: set,
         *,
+        reserves: frozenset = frozenset(),
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
     ) -> Dict[str, List[DemandLine]]:
@@ -1270,6 +1289,7 @@ class StockDebtService:
                     required_date=row.required_date,
                     open_qty=_float(row.qty),
                     is_pool=warehouse_id in pools,
+                    is_reserve=warehouse_id in reserves,
                     qty_ordered=_float(row.qty_ordered),
                     qty_delivered=_float(row.qty_delivered),
                     # R29: the Sales order cell's own link target.
