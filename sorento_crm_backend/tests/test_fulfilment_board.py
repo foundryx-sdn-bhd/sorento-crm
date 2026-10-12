@@ -129,6 +129,16 @@ def _warehouse(db, code: str) -> Warehouse:
     return row
 
 
+def _pool(db, code: str) -> Warehouse:
+    """A SITE POOL, in the live book's shape: some location's `pool_warehouse_id`, and NOT
+    `segment = project` - a pool that is would be a project reserve (HQ), which Fulfilment
+    Planning never draws (`pool_predicate.is_project_reserve`)."""
+    row = _warehouse(db, code)
+    row.segment = None
+    db.flush()
+    return row
+
+
 def _stock(db, product: Product, warehouse: Warehouse, *, on_hand: int, reserved: int = 0):
     row = Stock(
         id=_uid(),
@@ -1573,7 +1583,7 @@ def test_the_sign_of_every_factor_is_verified_against_its_raw_fact():
 
 def _pooled_warehouses(db):
     """A project location whose shortfall may draw on a shared pool, as BRW-BB draws on BRW."""
-    pool = _warehouse(db, f"ZZTP{_uid()[:6]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:6]}"[:20])
     own = _warehouse(db, f"ZZTO{_uid()[:6]}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -2336,7 +2346,7 @@ def test_the_locations_include_the_site_pool_the_suggestion_cites():
     with blank_session() as db:
         group = f"Z{_uid()[:3]}".upper()
         product = _product(db, f"ZZT-{_uid()[:6]}")
-        pool = _warehouse(db, f"ZZTPOOL{_uid()[:5]}"[:20])
+        pool = _pool(db, f"ZZTPOOL{_uid()[:5]}"[:20])
         own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
         sibling = _warehouse(db, f"ZZTB{_uid()[:4]}-{group}"[:20])
         own.pool_warehouse_id = pool.id
@@ -2672,7 +2682,7 @@ def _group_world(
     """
     group = f"Z{_uid()[:3]}".upper()
     product = _product(db, f"ZZT-{_uid()[:6]}")
-    pool = _warehouse(db, f"ZZTP{_uid()[:5]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:5]}"[:20])
     own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -5292,7 +5302,7 @@ def _dealer_pool(
     """
     from app.models.scm import ItemClassification, ReorderLevel
 
-    pool = _warehouse(db, f"ZZTP{_uid()[:6]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:6]}"[:20])
     own = _warehouse(db, f"ZZTO{_uid()[:6]}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -5499,7 +5509,7 @@ def test_the_pool_rung_never_overstates_another_pools_offer_past_its_own_availab
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool1 = _pooled_warehouses(db)
-        pool2 = _warehouse(db, f"ZZTP2{_uid()[:6]}"[:20])
+        pool2 = _pool(db, f"ZZTP2{_uid()[:6]}"[:20])
         other_own = _warehouse(db, f"ZZTX{_uid()[:6]}"[:20])
         other_own.pool_warehouse_id = pool2.id
         db.flush()
@@ -6878,7 +6888,7 @@ def test_the_pool_rung_names_the_pools_net_and_the_classification_in_front_of_it
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool = _pooled_warehouses(db)
-        other_pool = _warehouse(db, f"ZZTQ{_uid()[:6]}"[:20])
+        other_pool = _pool(db, f"ZZTQ{_uid()[:6]}"[:20])
         second = _warehouse(db, f"ZZTR{_uid()[:6]}"[:20])
         second.pool_warehouse_id = other_pool.id
         db.flush()
@@ -7136,7 +7146,7 @@ def _unit_world(db, *, on_hand: int, first_qty: str, second_qty: str):
     """
     group = f"Z{_uid()[:3]}".upper()
     product = _product(db, f"ZZT-{_uid()[:6]}")
-    pool = _warehouse(db, f"ZZTP{_uid()[:5]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:5]}"[:20])
     own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()

@@ -278,15 +278,23 @@ def netting_for_products(
     from app.models.procurement import InboundShipment, SPOAllocation
     from app.services.scm import spo_supply
     from app.services.scm.planning_predicate import in_fulfilment_planning
+    from app.services.scm.pool_predicate import is_project_reserve
     from app.services.scm.demand import demand_qty, is_open_demand
     from sqlalchemy import func
 
     ids = [str(pid) for pid in product_ids if pid]
     warehouses = db.query(Warehouse).filter(Warehouse.is_active.is_(True)).all()
     codes = {str(w.id): w.warehouse_code for w in warehouses if w.warehouse_code}
+    # A PROJECT RESERVE (HQ, `pool_predicate.is_project_reserve`) is no site pool here:
+    # its stock is never the dealers', so it is outside `pools_net`.
     pools = {
         str(w.pool_warehouse_id) for w in warehouses if w.pool_warehouse_id
     } & set(codes)
+    pools -= {
+        str(w.id)
+        for w in warehouses
+        if is_project_reserve(w.segment, is_pool=str(w.id) in pools)
+    }
     # Every ACTIVE warehouse is read (the pools have to be in `codes` for `pools_net`). Only
     # a caller asking the PLANNING question narrows the groups to the flagged bins (R17);
     # `None` leaves every code a member of its own group, which is what this seam answered
