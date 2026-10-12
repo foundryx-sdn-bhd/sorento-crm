@@ -558,9 +558,8 @@ def test_p2_basis_only_from_a_delivered_or_ordered_word_never_the_default():
     assert "default" in block and "null" in block
 
 
-def test_p3_received_is_goods_already_in_never_goods_on_the_way():
-    block = _block(_addendum(), '"received_qty"', '"last_receipt"')
-    assert "already came in" in block and "never goods still on the" in block
+# p3 (received is goods already in, never goods on the way) moved with the measure words to
+# the `chatbot_status_words` rows: tests/chatbot/test_maskp_0002_measure_words.py.
 
 
 def test_p4_no_word_lists_and_no_worked_examples():

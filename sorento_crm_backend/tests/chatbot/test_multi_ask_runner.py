@@ -1020,13 +1020,8 @@ def test_the_parser_prompt_teaches_last_in_date_and_quantity_is_one_ask():
     assert "The date and quantity of the last receipt are ONE last_receipt ask." in " ".join(SUB_ASKS_ADDENDUM.split())
 
 
-def test_the_last_receipt_measure_is_the_spo_delivery_date_not_grn():
-    from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
-
-    line = next(ln for ln in SUB_ASKS_ADDENDUM.splitlines() if '"last_receipt"' in ln)
-    text = " ".join(SUB_ASKS_ADDENDUM[SUB_ASKS_ADDENDUM.index(line) :].split("\n")[:3]).lower()
-    assert "spo" in text and "delivery date" in text
-    assert "grn" not in text
+# The last_receipt definition (the SPO line's delivery date, never GRN) is a measure row now:
+# tests/chatbot/test_maskp_0002_measure_words.py.
 
 
 # ---------------------------------------------------------------- R-LASTIN round 2 (reviewer)
