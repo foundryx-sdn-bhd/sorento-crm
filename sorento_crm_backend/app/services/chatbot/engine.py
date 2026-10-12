@@ -4911,6 +4911,12 @@ def _run_stages_body(  # noqa: PLR0915
             and isinstance(verdict.get("open_question_answer"), dict)
             and verdict["open_question_answer"].get("mode") == "pick"
             and _decide.picked_positions(state_in.pending, verdict) is None
+            # Only the typed-code shape: a worded pick ("the second one", "kedua") carries no product
+            # entity, and `apply._open_pick_answer` converts it.
+            and sum(
+                1 for e in (verdict.get("entities") or [])
+                if isinstance(e, dict) and e.get("current_message") is not False and e.get("hint") == "product"
+            ) == 1
         ):
             verdict = {**verdict, "open_question_answer": dict(turn_question.NO_ANSWER)}
 

@@ -1006,7 +1006,8 @@ def _fetch_semantic_input(
         # PLAN-retail-sales-reports-26sep S1: the sales analysis's basis (ordered |
         # delivered) and the company the contact named, straight to the tool's params.
         "sales_basis": parse_output.get("sales_basis"),
-        "sales_company": parse_output.get("sales_company"),
+        # A company the parser also tagged as a brand entity is that brand, not a company (the route 422s it).
+        "sales_company": None if contracts.company_is_a_brand(parse_output) else parse_output.get("sales_company"),
         # CHATBOT-SELFREF-SCOPE (owner rule Q6a): "my" / "me" / "our" means ALL the
         # asker's linked accounts. Read by `entity_ids_transformer`'s two report arms
         # (a carried account never narrows a self-reference ask) and by

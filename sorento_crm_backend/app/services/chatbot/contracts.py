@@ -1021,3 +1021,19 @@ PREVIEW = "<preview>"
 # property of the build at all - the same kind delegates or completes depending on data -
 # so a module-level constant claiming otherwise could only mislead. `delegate.delegate_for`
 # is the one place that answers the question, and it needs both halves to do it.
+
+
+def company_is_a_brand(verdict: dict[str, Any]) -> bool:
+    """The parser tagged the brand it also put in `entities` as the sales company too: a
+    `sales_company` equal (case and spacing aside) to a brand entity's raw is that brand, not a
+    company. Both are parser fields of the same verdict."""
+    company = " ".join(str(verdict.get("sales_company") or "").split()).casefold()
+    if not company:
+        return False
+    return any(
+        isinstance(e, dict)
+        and e.get("hint") == "brand"
+        and e.get("current_message") is not False
+        and " ".join(str(e.get("raw") or "").split()).casefold() == company
+        for e in (verdict.get("entities") or [])
+    )

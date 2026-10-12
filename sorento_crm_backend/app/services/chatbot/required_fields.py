@@ -366,7 +366,10 @@ def reply_verdict(
         return _reply_verdict_by_shape(verdict, slot, text, ask)
     answer = verdict.get("open_question_answer")
     mode = answer.get("mode") if isinstance(answer, dict) else None
-    answers = mode in ANSWER_MODES
+    # A verdict that names its own ask (a domain word, not a refine) is a new question, which wins
+    # over an answer the parser also declared.
+    names_its_own_ask = verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False
+    answers = mode in ANSWER_MODES and not names_its_own_ask
     if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
     rerouted = {
@@ -388,6 +391,8 @@ def _reply_verdict_by_shape(
     words = (text or "").split()
     if not words or "?" in text:
         return verdict, "required_ask_dropped"
+    if verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False:
+        return verdict, "required_ask_dropped"  # names its own ask: a new question wins
     same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,
