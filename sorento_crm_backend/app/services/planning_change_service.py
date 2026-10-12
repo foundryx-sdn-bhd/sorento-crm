@@ -60,6 +60,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -2793,7 +2794,11 @@ def _validate_composition_shape(
             .all()
         )
 
-    return {
+    # Stored in a JSONB column, so every value goes in JSON-shaped: a caller that hands over a
+    # `model_dump()` without `mode="json"` passes `date` objects (a borrow's
+    # `donor_required_date` / `arrival_date`), and the UPDATE died on them (prod,
+    # HOTFIX-CONFIRM-DATE). `_to_confirm_line` parses the ISO strings back.
+    return jsonable_encoder({
         "project_line_id": str(composition.get("project_line_id")),
         "timely_spo_qty": qty_text(timely),
         "reserve": [
@@ -2832,7 +2837,7 @@ def _validate_composition_shape(
         "buy_qty": qty_text(buy),
         "buy_reason": composition.get("buy_reason"),
         "amend_reason": composition.get("amend_reason"),
-    }
+    })
 
 
 def set_row_decision(
