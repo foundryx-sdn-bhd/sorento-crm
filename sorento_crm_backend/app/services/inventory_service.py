@@ -637,6 +637,16 @@ class StockService:
         # `warehouse_id`), None when it named none. Read beside `resolved_policy`.
         self.requested_warehouse_ids: Optional[set[str]] = None
     
+    @staticmethod
+    def _shipments_from_today(db: Session, product_ids: list[str], regions) -> dict:
+        """The dealer's incoming read: shipments with a packing list whose ETA is today or
+        later (CHAT-FIND round 3: a past ETA was printed as the day stock comes)."""
+        from app.services import incoming_stock_service as incoming
+
+        return incoming.earliest_packing_list_shipment(
+            db, product_ids, regions=regions, not_before=incoming.today_myt()
+        )
+
     def list_stock(
         self,
         page: int = 1,
@@ -1688,9 +1698,7 @@ class StockService:
         # R5: the earliest still-incoming shipment with a packing list, any
         # location, per product on this page.
         contact_rules = rules_for_contact(self.db, resolved_contact_id)
-        eta_by_product = earliest_packing_list_shipment(
-            self.db, query_ids, regions=contact_rules.regions
-        )
+        eta_by_product = self._shipments_from_today(self.db, query_ids, contact_rules.regions)
 
         # R7: the asking contact's own "Packing list allowed" toggle, resolved once
         # off `resolved_contact_id` - the SAME internal id this whole call's policy

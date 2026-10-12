@@ -228,3 +228,55 @@ def test_ac_sa309_undated_shipment_ignored_dated_one_still_qualifies(db):
     shipment_id, eta, _ = earliest_packing_list_shipment(db, [p])[p]
     assert shipment_id == s_dated
     assert eta == date(2026, 12, 25)
+
+
+# CHAT-FIND round 3 (crew live check, 13 Oct 2026): a dealer read "No stock, ETA 13/09/2026" a
+# month after that date. A shipment whose ETA is already past is not one the dealer can be
+# told is coming (R10: no "to be confirmed" answer), so `not_before` drops it; the dealer
+# availability read passes today (Malaysia time). Callers that pass nothing are unchanged.
+
+
+def test_not_before_drops_a_past_eta_and_keeps_the_next_one(db):
+    p = _product(db, "PASTETA")
+    a1, a2 = _attachment(db), _attachment(db)
+    _line(db, _shipment(db, eta=date(2026, 9, 13), number="S-PAST", attachment_id=a1), p)
+    s_next = _shipment(db, eta=date(2026, 11, 2), number="S-NEXT", attachment_id=a2)
+    _line(db, s_next, p)
+    db.commit()
+
+    assert earliest_packing_list_shipment(db, [p])[p][1] == date(2026, 9, 13)
+    shipment_id, eta, _ = earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))[p]
+    assert (shipment_id, eta) == (s_next, date(2026, 11, 2))
+
+
+def test_not_before_with_only_a_past_eta_is_no_incoming(db):
+    p = _product(db, "PASTONLY")
+    _line(db, _shipment(db, eta=date(2026, 9, 13), number="S-PAST-ONLY", attachment_id=_attachment(db)), p)
+    db.commit()
+    assert p not in earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))
+
+
+def test_not_before_keeps_an_eta_of_today(db):
+    p = _product(db, "TODAYETA")
+    _line(db, _shipment(db, eta=date(2026, 10, 13), number="S-TODAY", attachment_id=_attachment(db)), p)
+    db.commit()
+    assert p in earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))
+
+
+def test_the_dealer_availability_read_passes_today(monkeypatch):
+    """The stock tool and the find tool share `_apply_stock_visibility`: it asks for shipments
+    not before today, Malaysia time."""
+    import app.services.incoming_stock_service as incoming
+
+    seen = {}
+
+    def _fake(db, product_ids, regions=None, not_before=None):
+        seen["not_before"] = not_before
+        return {}
+
+    monkeypatch.setattr(incoming, "earliest_packing_list_shipment", _fake)
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    from app.services.inventory_service import StockService
+
+    assert StockService._shipments_from_today(None, ["x"], None) == {}
+    assert seen["not_before"] == date(2026, 10, 13)

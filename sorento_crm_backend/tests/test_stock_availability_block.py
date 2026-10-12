@@ -56,6 +56,15 @@ WRITE_PERM = "inventory.stock.edit"
 # --------------------------------------------------------------------- fixtures
 
 
+@pytest.fixture(autouse=True)
+def _fixed_today(monkeypatch):
+    """The dealer read only takes shipments due today or later (CHAT-FIND round 3); these tests
+    date their shipments in 2026, so today is pinned before every one of them."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 1, 1))
+
+
 @pytest.fixture
 def db():
     with blank_session() as session:
