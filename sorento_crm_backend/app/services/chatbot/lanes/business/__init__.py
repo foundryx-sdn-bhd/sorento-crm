@@ -1410,6 +1410,9 @@ def run_fetch(
     }
     for key, values in narrow.items():
         semantic_input[key] = list(values)
+    submission_type = fetch_mod.portal_submission_type(parse_output)
+    if submission_type:
+        semantic_input["submission_type"] = submission_type
     # PLAN-chatbot-customer-scope-29sep.md D3/D4: a customer-scoped contact's turn
     # (`engine._customer_scope_gate`). The engine refuses a customer word outside its links (one fixed line, before any
     # fetch); here the links ride to `entity_ids_transformer`, which forces them on every customer-scoped tool.
@@ -2250,6 +2253,13 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
+    if tool_name == "crm_portal_link_get":
+        # DEV-FAILURES RC-B: the intro names the form the link opens, in the reply language.
+        templates = reply_copy.resolve(db) if db is not None else reply_copy.fallback_copy()
+        trigger["portal_intro"] = templates.render_in(
+            fetch_mod.PORTAL_LINK_COPY.get(submission_type or "", "portal_link"),
+            getattr(ctx.get("localizer"), "language", None),
+        )
     predicate = gate.get("predicate")
     if isinstance(predicate, dict) and not predicate.get("qualifying_total"):
         # Reviewer B2 on PR #833: a described set with nothing in it has no product to
