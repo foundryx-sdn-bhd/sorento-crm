@@ -24,7 +24,7 @@ idempotent (every step is guarded by NOT EXISTS / IS NULL, so a second run is a 
 Counts are logged before anything changes (the dry run) and after.
 
 Revision ID: scope_seeds_debtor_company
-Revises: devf_0002_portal_link_copy
+Revises: oihr_0006_no_remark_column
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "scope_seeds_debtor_company"
-down_revision = "devf_0002_portal_link_copy"
+down_revision = "oihr_0006_no_remark_column"
 branch_labels = None
 depends_on = None
 
