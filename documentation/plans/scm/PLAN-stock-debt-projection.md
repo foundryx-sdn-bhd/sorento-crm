@@ -1,6 +1,6 @@
 # PLAN: Stock Debt projected coverage (sales orders only) (STOCK-DEBT-PROJECTION)
 
-Status: built, in review (12 Oct 2026). Owner answered card v2: Q1-Q4 (a); locations "only
+Status: built; reviewer READY after two fix rounds, browser pass PASS (12 Oct 2026); waiting on owner hand test. Owner answered card v2: Q1-Q4 (a); locations "only
 consider pool, those project locations are matched already". Small fix track (no migration, no
 auth/RBAC change, no new ingest surface).
 
