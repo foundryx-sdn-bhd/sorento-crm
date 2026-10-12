@@ -243,3 +243,28 @@ def test_resolve_references_resolves_to_own_company_customer(db, world):
     got = {str(m.uuid) for tr in res.resolutions for m in tr.matches}
     assert world["cust_b"] not in got
     assert world["cust_a"] in got
+
+
+# ------------------------------------------------------------- RAG phrase probe
+# `_rag_resolve_phrase` (the `resolve_entities_to_filters` fallback behind the MCP
+# orders / stock / products tools) is the same raw vector search. Its hits carry no
+# uuid, so `_attach_company_info` cannot gate them: before the fix another company's
+# customer / product code came straight back and was echoed to the caller.
+
+
+def test_rag_phrase_never_returns_another_companys_codes(db, world):
+    """Red before the fix: company B's customer and product codes came back."""
+    s = world["suffix"]
+    set_company_scope(db, frozenset({world["a"]}))
+    hits = er._rag_resolve_phrase(db, f"zzt3 phrase {s}", frozenset({"customer", "product"}))
+    codes = {h.canonical_code for h in hits}
+    assert not codes & {f"ZZT3CB{s}", f"ZZT3B{s}"}
+    assert {f"ZZT3CA{s}", f"ZZT3A{s}"} <= codes
+
+
+def test_rag_phrase_under_no_scope_still_returns_every_company(db, world):
+    """Guard: a None scope (staff / back-compat) is unchanged."""
+    s = world["suffix"]
+    set_company_scope(db, None)
+    hits = er._rag_resolve_phrase(db, f"zzt3 phrase {s}", frozenset({"customer"}))
+    assert {f"ZZT3CA{s}", f"ZZT3CB{s}"} <= {h.canonical_code for h in hits}
