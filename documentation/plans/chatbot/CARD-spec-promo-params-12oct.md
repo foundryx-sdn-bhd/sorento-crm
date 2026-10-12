@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Build. Owner answered Q1-Q5 on 12 Oct (section 8); backend + MCP half done (c1fb5c32), chatbot slice in progress. Track: full
+Status: Review. Built and reviewed (reviewer READY, security review READY); last fixes in progress before the crew gate. Track: full (sections 2-5 are the pre-answer proposal; sections 8-10 are what shipped).
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -124,8 +124,8 @@ should have captured that".
 | "250mm floor grating got stock?" | product_type floor_grating; spec size 250 mm, axis not said | data holds 250 only on `dim_length` among floor gratings: `crm_inventory_stock_balance_list(spec_constraints=[{product_type eq floor_grating}, {dim_length eq 250}])` | stock rows for the 250mm gratings only, today's stock presenter |
 | same ask, 250 on both `dim_length` and `dim_width` of different gratings | same | none yet | "Do you mean 250mm length or 250mm width?" (two quick replies) |
 | "300mm floor grating got stock?", no grating carries 300 | same, 300 | `spec_constraints` as above -> 0 rows + `spec_alternatives` | "No floor grating is 300mm. They come in 100mm, 150mm and 250mm. Which one?" |
-| "which basins are on promotion?" | class basin; on_promotion true | `crm_master_products_list(spec_constraints=[{class eq basin}], has_active_promotion=true)` | the basin list (counted, paged as today) |
-| "black basin on promo got stock?" | class basin, finish black, on_promotion true, domain inventory | stock tool with both params | stock rows of black basins in a live promotion |
+| "which basins are on promotion?" (SUPERSEDED by section 10) | class basin; on_promotion true | `crm_master_products_list(spec_constraints=[{class eq basin}], has_active_promotion=true)` | the basin list (counted, paged as today) |
+| "black basin on promo got stock?" (SUPERSEDED by section 10) | class basin, finish black, on_promotion true, domain inventory | stock tool with both params | stock rows of black basins in a live promotion |
 
 ## 4. Edge cases
 
@@ -229,3 +229,24 @@ axis never reaches the resolver or the tool. Slices:
 4. Miss replies come from the MCP presenters and state only what the response holds.
 5. Guard: an inactive registry key (`seat_cover` once turned off) is absent from the parser vocabulary
    and rejected by `spec_constraints`.
+
+## 10. As shipped (12 Oct)
+
+- Q4 follow-up, owner chose option (a): `crm_marketing_promotion_products_list` is the ONE promotion path
+  for a promotion ask with a described subject (first turn and tier-pick turn). The route takes
+  `spec_constraints`, `brand_ids`, `promotion_types` (and `access_levels`); the reply groups product
+  lines under their promotion (code, name, promo price; dates when the promotion holds them); the
+  stamped tier one-liner ("No <Level> promotion for <subject>.") stays on this tool; no resolver
+  "Couldn't find ... escalate" after the tool has answered. "Any promo?" with no subject keeps
+  `crm_marketing_promotions_list`.
+- Product and stock lanes: the MCP spec filter is sent only when a size is in the ask; every other
+  spec is already filtered exactly by the resolver's counted set (membership_clause), in any phrasing.
+- `has_active_promotion` + `access_levels` on the products / stock tools: approved MCP params (ARCH
+  option D, owner question 4 on PR #1566) for MCP / n8n callers; no chatbot consumer in this lane. A
+  dealer call without `access_levels` falls back to the contact's own tier (fail closed).
+- Enum values in `spec_constraints` match the stored value case-insensitively; synonyms are NOT
+  resolved by the route (the chatbot sends grounded canonical values). Catalog text says so.
+- Guards: company scope on every miss-detail / size read; hidden spec keys for a contact never filter
+  or print; caps (16 constraints, 50 values per list, 4096 chars raw); non-finite numbers and
+  wrong-typed values rejected; an inactive registry key (e.g. `seat_cover` once turned off) is absent
+  from the parser vocabulary and rejected by the route.
