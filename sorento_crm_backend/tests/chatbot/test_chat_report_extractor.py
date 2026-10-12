@@ -5,8 +5,8 @@ Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md 
 `extract_chat_report(db, message_text, *, today) -> dict | None` returns
 `{group_by, measure, subject, top_n, date_from, date_to}` and NEVER raises.
 
-No network: the provider seam is `get_provider` imported at module level of the extractor (the
-`ideation_extractor` pattern, patched as `<module>.get_provider`); `resolve_api_key` is patched
+No network: the provider seam is `app.services.llm_provider.get_provider`, which the chatbot's one
+wrapper `llm_call.chat` calls (hotfix: the extractor no longer imports it); `resolve_api_key` is patched
 with `create=True` because the plan names it but not where it lives. Red today with
 ModuleNotFoundError until the module exists.
 
@@ -80,7 +80,8 @@ class _Provider:
 def _run(db, provider, text="top 5 questions this week"):
     from app.services.chatbot.analytics import chat_report_extractor
 
-    with patch(f"{MODULE}.get_provider", return_value=provider, create=True), \
+    # The call goes through `llm_call.chat`, which reaches the provider via `llm_provider.get_provider`.
+    with patch("app.services.llm_provider.get_provider", return_value=provider), \
          patch(f"{MODULE}.resolve_api_key", return_value="fake-key", create=True):
         return chat_report_extractor.extract_chat_report(db, text, today=TODAY)
 
@@ -152,7 +153,7 @@ def test_no_api_key_returns_none(db):
     from app.services.chatbot.analytics import chat_report_extractor
 
     with patch(f"{MODULE}.resolve_api_key", return_value=None, create=True), \
-         patch(f"{MODULE}.get_provider", side_effect=AssertionError("no key: no call"), create=True):
+         patch("app.services.llm_provider.get_provider", side_effect=AssertionError("no key: no call")):
         assert chat_report_extractor.extract_chat_report(db, "top 5 questions", today=TODAY) is None
 
 
@@ -236,6 +237,27 @@ def test_the_provider_call_is_bounded_by_the_shared_attempt_deadline(configured)
     assert timeout is not None and 0 < timeout <= ATTEMPT_TIMEOUT_SECONDS, (
         "the provider default (600 s) would hang the turn", timeout,
     )
+
+
+def test_the_provider_call_goes_through_the_wrapper_and_a_429_is_retried(configured, monkeypatch):
+    """ONE wrapper (`llm_call.chat`, R6): a rate limit is waited out, not read as "no reading"."""
+    from app.services.chatbot import llm_call
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+    class _Flaky(_Provider):
+        def chat(self, messages, **kwargs):
+            if not self.calls:
+                self.calls.append(kwargs)
+                raise RateLimitError("Error code: 429 - Please try again in 1s.")
+            return super().chat(messages, **kwargs)
+
+    slept: list[float] = []
+    monkeypatch.setattr(llm_call, "_sleep", slept.append)
+    provider = _Flaky(json.dumps(GOOD))
+    assert _run(configured, provider) == GOOD
+    assert len(provider.calls) == 2 and len(slept) == 1
 
 
 # ------------------------------------------------------------------ prompt-teaching pins (generalisation)
