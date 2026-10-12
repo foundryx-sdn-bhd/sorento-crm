@@ -1378,6 +1378,9 @@ def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
     if order_status.strip() == "sales_analysis" and (
         str(verdict.get("group_by") or "").strip() not in ("", "product", "category")
         or verdict.get("sales_basis") not in (None, "delivered", "ordered")
+        # On purpose the plain brand-equals-company rule: there is no db here, and a count with no axis is a
+        # product ranking anyway. The lane (`_company_is_only_a_brand`) checks the Company row; do not align
+        # one side to the other.
         or (verdict.get("sales_company") and not contracts.company_is_a_brand(verdict))
     ):
         # A real analysis ask (a month or channel breakdown, another basis, a company) is not a ranking of items.

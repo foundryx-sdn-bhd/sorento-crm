@@ -938,6 +938,17 @@ def run_until_exit(
     return {"delegate": DELEGATE, "payload": payload}
 
 
+def _analysis_names_a_subject(parse_output: dict[str, Any], has_product: Any, has_customer: Any) -> bool:
+    """THIS message named a product or customer (a current-message entity) and it resolved. A subject
+    carried from an earlier turn is not the analysis' subject: company totals stay company totals."""
+    hints = {
+        jsc.js_string(e.get("hint") or "").strip().lower()
+        for e in jsc.array(parse_output.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+    }
+    return bool((has_product and "product" in hints) or (has_customer and "customer" in hints))
+
+
 def _company_is_only_a_brand(db: Any, parse_output: dict[str, Any]) -> bool:
     """The parser tagged a brand entity's name as the sales company too, and no company row goes by
     that name or code (the analysis route's own match): then it is the brand, not a company."""
@@ -2077,7 +2088,9 @@ def run_fetch(
             so_refused = order_status_raw != "outstanding"
         semantic_input["outstanding_scope"] = scope
         semantic_input["outstanding_so_refused"] = so_refused
-    elif order_status_raw == "sales_analysis" and not has_own_accounts and not (has_product or has_customer):
+    elif order_status_raw == "sales_analysis" and not has_own_accounts and not _analysis_names_a_subject(
+        parse_output, has_product, has_customer
+    ):
         # PLAN-retail-sales-reports-26sep S1: a sales ANALYSIS (a company's sales by
         # month, by year, by channel) is the reports kernel's own query, answered as the
         # whole table in text and the same query as an Excel (Owner ruling 26 Sep 07:16
@@ -2094,7 +2107,10 @@ def run_fetch(
         domain in contracts.ORDER_OR_SALES_DOMAINS
         and (has_product or has_customer or carried_subject)
         and order_status_raw == "sales_report"
-    ) or (order_status_raw == "sales_analysis" and (has_own_accounts or has_product or has_customer)):
+    ) or (
+        order_status_raw == "sales_analysis"
+        and (has_own_accounts or _analysis_names_a_subject(parse_output, has_product, has_customer))
+    ):
         # S4 wiring point 3 (AC-1650): domain "order" + a resolved product OR
         # customer + `order_status: "sales_report"` picks THIS tool - one more
         # branch beside the outstanding override above, never `tools[0]`. R7
