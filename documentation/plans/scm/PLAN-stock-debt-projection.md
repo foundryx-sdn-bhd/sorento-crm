@@ -34,7 +34,7 @@ Known limits (review rounds 1-2):
   them, the projection does not re-walk them.
 - A PO at an out-of-span pool whose AutoCount S/O names an order in the span is not
   pinned to that order (the page's own book-S/O pin reads in-span supply only); it counts as that
-pool's free supply.
+  pool's free supply.
 
 Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` /
 `_project` / `_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
