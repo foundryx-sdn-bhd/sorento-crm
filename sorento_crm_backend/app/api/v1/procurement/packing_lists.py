@@ -376,13 +376,17 @@ async def get_packing_list(
             # Round 5, AC-H17 (narrowed - reviewer's consumer check): the STATUS this
             # response reports is recomputed from the SAME visible total as the quantity
             # above, so one payload never shows an allocated figure and a status that
-            # disagree about which lines counted. `refresh_shipment_line_statuses`'
-            # PERSISTED `line_status` (unfiltered) is left alone above - it feeds
+            # disagree about which lines counted. The PERSISTED `line_status` follows the
+            # same visible total since PL-STATUS-ROLLUP (`compute_shipment_line_figures`),
+            # so the header and the list agree with this page; only the persisted
+            # `spo_allocated_quantity` stays unfiltered - it feeds
             # `container_request_service.PL_UNALLOCATED_SQL` and
             # `allocation_suggestion_service`'s reorder/allocation arithmetic, and
-            # narrowing THAT column is a purchasing decision, not a display one. Set on
-            # the in-memory object only, exactly like the two `setattr` calls above it -
-            # nothing here is committed.
+            # narrowing THAT figure is a purchasing decision, not a display one. This
+            # status is still judged on the product's whole total rather than the
+            # per-line apportioned share the stored one uses. Set on the in-memory
+            # object only, exactly like the two `setattr` calls above it - nothing here
+            # is committed.
             setattr(
                 line,
                 "line_status",

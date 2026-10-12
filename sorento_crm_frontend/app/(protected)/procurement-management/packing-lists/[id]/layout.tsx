@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { formatDate } from '@/lib/helpers';
+import { formatStatusLabel } from '@/lib/status-badge';
 import { enqueuePackingListExport } from '@/app/(protected)/scm/services/fulfilmentService';
 import { EntityDownloadsButton } from '@/components/my-downloads/EntityDownloadsButton';
 import { ENTITY_DOWNLOADS_QUERY_KEY, MY_DOWNLOADS_QUERY_KEY } from '@/services/myDownloadsService';
@@ -148,7 +149,15 @@ function PackingListToolbar({ id }: { id: string }) {
       />
       {/* Read-only record metadata: under the header (which has no subtitle slot, PR
           #1336), never inside a tab body, so view and edit stay the same. */}
-      <p className="text-sm text-muted-foreground break-words">{subtitle}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-muted-foreground break-words">{subtitle}</p>
+        {/* The same status pill the Packing Lists grid shows for this row. */}
+        {packingList?.shipment_status ? (
+          <Badge status={packingList.shipment_status}>
+            {formatStatusLabel(packingList.shipment_status)}
+          </Badge>
+        ) : null}
+      </div>
 
       {/* The record's own actions: pager, gear, primary (D6). They sit under the
           toolbar rather than on it, and wrap under the title at 375. */}
