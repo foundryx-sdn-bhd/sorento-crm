@@ -11,12 +11,19 @@ from __future__ import annotations
 
 #: Step 1's water half: the group's own SPO landing by the line's date, composed as
 #: `timely_spo` ("Use incoming").
-USE_INCOMING = True
+USE_INCOMING = False
 
 #: Step 3: a later order's SPO ("Borrow incoming").
-SUPPLY_BORROW = True
+SUPPLY_BORROW = False
 
 #: Steps 2 and 4b name the later order they take from ("Borrow from another order") when
 #: the Settings toggle is on. Off, the planner always proposes the same stock as a
 #: location's Borrow, whatever the toggle says; the toggle still governs a person's pick.
-ORDER_BORROW_NAMES_DONOR = True
+ORDER_BORROW_NAMES_DONOR = False
+
+
+def without_water(candidates):
+    """Step 1's candidates less the water half while `USE_INCOMING` is off."""
+    if USE_INCOMING or not candidates:
+        return candidates
+    return [candidate for candidate in candidates if not candidate.get("water")]

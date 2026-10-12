@@ -115,7 +115,7 @@ from app.models.projects import Project
 from app.models.scm import ItemClassification, ReorderLevel, SupplierPerformance
 from app.models.user import User
 from app.services.error_handler import AppException
-from app.services.scm import priority, spo_supply
+from app.services.scm import ladder_steps, priority, spo_supply
 from app.services.scm.history_sources import SPO_HISTORY_SOURCE
 from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.borrow_mode import borrow_from_order_enabled
@@ -1678,14 +1678,22 @@ class ProjectSupplyService:
                         fact, landed, credit_tier1_qty, credit_tier2
                     ),
                 }]
+            # Owner, 12 Oct 2026 (`ladder_steps`): the planner proposes a later order's stock
+            # as a location's Borrow and never walks step 3.
+            location_only = not ladder_steps.ORDER_BORROW_NAMES_DONOR
             order_borrow = self.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_left
+                fact, as_of=as_of, borrow_left=borrow_left, location_only=location_only
             )
-            supply_borrow = self.supply_borrow_candidates_for(
-                fact, as_of=as_of, supply_left=supply_left
+            supply_borrow = (
+                self.supply_borrow_candidates_for(
+                    fact, as_of=as_of, supply_left=supply_left
+                )
+                if ladder_steps.SUPPLY_BORROW
+                else []
             )
             pool_borrow = self.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_left, pool=True
+                fact, as_of=as_of, borrow_left=borrow_left, pool=True,
+                location_only=location_only,
             )
         pools_net = fact.pools_net if pools_net_left is None else pools_net_left
         settings = self._fulfilment_settings()
@@ -3851,6 +3859,10 @@ class ProjectSupplyService:
         as_of: Optional[date] = None,
         borrow_left: Optional[Mapping[str, Decimal]] = None,
         pool: bool = False,
+        #: The PLANNER's own read (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off): the stock
+        #: is told as a location's whatever the toggle says. A person's pick (the Borrow
+        #: dialog) leaves this False and keeps the toggle's meaning.
+        location_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """Step 2 (R3, R4, R5, R9, R12, R19, R25): the LATER orders holding on hand.
 
@@ -3942,7 +3954,7 @@ class ProjectSupplyService:
                     }
                 )
         out.sort(key=self._donor_order)
-        if not self.borrow_from_order:
+        if location_only or not self.borrow_from_order:
             # Same stock, same ranking (sorted above), told as a location (D2). Less a
             # donor only its agent's authorisation could release (B1): confirm refuses it.
             return [
