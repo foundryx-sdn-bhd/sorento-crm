@@ -1144,7 +1144,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             errors = _wire_errors(parsed, PARSE_OUTPUT_JSON_SCHEMA, "")
             if errors:
                 raise ParserError("parser emission off the schema: " + "; ".join(errors[:5]))
-        parsed = hydrate_emission(parsed)
+            parsed = hydrate_emission(parsed)
+        # A strict answer is not hydrated: the provider was held to every key, so one
+        # missing is a fault to see, not an empty value to read.
         assert_emission(parsed)
     except ParserError as exc:
         # The provider answered, so it billed. The turn fails either way; the spend is
