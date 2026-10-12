@@ -190,8 +190,9 @@ def _mk_warehouse(db, code):
 
 def _mk_stock(db, pid, wid, qty):
     db.execute(text(
-        "INSERT INTO stock (id, product_id, warehouse_id, quantity_on_hand, created_at, updated_at) "
-        "VALUES (:id, :p, :w, :q, now(), now())"
+        "INSERT INTO stock (id, product_id, warehouse_id, quantity_on_hand, "
+        "synced_to_excel, created_at, updated_at) "
+        "VALUES (:id, :p, :w, :q, false, now(), now())"
     ), {"id": str(uuid.uuid4()), "p": pid, "w": wid, "q": qty})
 
 
