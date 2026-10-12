@@ -281,3 +281,80 @@ def test_the_board_asks_borrow_incoming_again_once_it_is_back_on(monkeypatch):
 
     assert "supply_borrow" in [step["kind"] for step in contribution["trail"]]
     assert "supply_borrow" in [option["step"] for option in contribution["options"]]
+
+
+# ------------------------------------- the suggestion confirms as displayed (Q2, (a))
+
+
+def test_toggle_on_confirming_the_planners_location_borrow_owes_it_back_on_this_line(
+    borrow_world,
+):
+    """Owner, 12 Oct 2026: what the planner suggests confirms exactly as displayed.
+
+    With the toggle ON the planner still proposes a location's Borrow ("ordered back to X on
+    this line"), so Confirm must write that: the order-back on the BORROWING line, and the
+    donor's own decision left alone. Before the fix it followed the toggle and wrote the
+    order-borrow shape instead (the reviewer's probe: the row on the donor line, the donor
+    decision superseded)."""
+    from app.models.project_so import DECISION_SUPERSEDED, SOSupplyDecision
+
+    from .test_borrow_location_only import (
+        _assert_location_order_back,
+        _component_to_payload,
+        _confirm_borrow,
+        _order_backs,
+        _step_two_borrow,
+    )
+
+    db, world = borrow_world
+    component = _step_two_borrow(db, world)
+    assert component["donor_so_number"] is None, "the planner names no donor"
+    assert "on this line" in component["reason"], component["reason"]
+    _confirm_borrow(db, world, _component_to_payload(component, warehouse=world["donor_bin"]))
+
+    rows = _order_backs(db)
+    donor_states = [
+        d.state
+        for d in db.query(SOSupplyDecision)
+        .filter(SOSupplyDecision.project_sales_order_id == world["donor_order"].id)
+        .all()
+    ]
+    assert len(rows) == 1, [(r.so_line_id, r.qty, r.note) for r in rows]
+    _assert_location_order_back(
+        rows[0],
+        line=world["asker_line"],
+        order=world["asker"],
+        code=world["donor_bin"].warehouse_code,
+    )
+    assert DECISION_SUPERSEDED not in donor_states, donor_states
+
+
+def test_toggle_on_a_borrow_picked_with_the_donor_named_keeps_the_order_borrow(
+    borrow_world, monkeypatch,
+):
+    """A person's "Borrow from another order" (the donor named) keeps today's ON shape."""
+    from app.models.project_so import DECISION_SUPERSEDED, SOSupplyDecision
+
+    from .test_borrow_location_only import (
+        _component_to_payload,
+        _confirm_borrow,
+        _order_backs,
+        _step_two_borrow,
+    )
+
+    monkeypatch.setattr(ladder_steps, "ORDER_BORROW_NAMES_DONOR", True)
+    db, world = borrow_world
+    component = _step_two_borrow(db, world)
+    assert component["donor_so_number"]
+    _confirm_borrow(db, world, _component_to_payload(component, warehouse=world["donor_bin"]))
+
+    rows = _order_backs(db)
+    donor_states = [
+        d.state
+        for d in db.query(SOSupplyDecision)
+        .filter(SOSupplyDecision.project_sales_order_id == world["donor_order"].id)
+        .all()
+    ]
+    assert len(rows) == 1
+    assert str(rows[0].so_line_id) == str(world["donor_line"].id)
+    assert DECISION_SUPERSEDED in donor_states
