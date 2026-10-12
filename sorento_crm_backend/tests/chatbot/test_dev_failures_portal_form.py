@@ -146,3 +146,17 @@ def test_run_fetch_without_a_form_or_localizer_sends_the_bare_english_line() -> 
     calls, fetched = _run_portal_fetch({"domain_hint": "portal_link", "portal_form": None}, None)
     assert "submission_type" not in calls[0]
     assert fetched["response"].startswith("Here is your portal link.")
+
+
+def test_a_non_dict_action_link_does_not_break_the_intro_swap() -> None:
+    """fetch.output_structurer reads `type` only off dict action links (reviewer nit, 938e6387):
+    a render envelope from the tool can carry anything in `action_links`."""
+    envelope = {
+        "items": [],
+        "attachments": [],
+        "has_result": True,
+        "intro": "Here is your portal link.",
+        "action_links": ["not-a-dict", {"label": "Portal Link", "url": LINK, "type": "portal_link"}],
+    }
+    out = fetch.output_structurer(envelope, {"tool": "crm_portal_link_get", "portal_intro": "Berikut pautan portal anda."})
+    assert (out.get("response") or "").startswith("Berikut pautan portal anda.")

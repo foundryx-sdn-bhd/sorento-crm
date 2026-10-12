@@ -135,3 +135,11 @@ def test_downgrade_deletes_only_unlabelled_rows_of_this_message(monkeypatch) -> 
         db.commit()
         db.expire_all()
         assert sorted(r.version for r in _versions(db)) == [2, 3]
+
+
+def test_stock_plus_last_in_keeps_the_message_order() -> None:
+    """Crew gate 12 Oct (spo_allocation.last_in -20 on ed5751be): the two-asks rule must not fix
+    an order of its own, or a combined ask loses domain_hint spo_allocation. It defers to ASKS."""
+    line = next(l for l in ADDENDUM_FILE.read_text(encoding="utf-8").splitlines() if "last receipt" in l)
+    assert "ordered as ASKS says" in line
+    assert "then spo_allocation" not in line
