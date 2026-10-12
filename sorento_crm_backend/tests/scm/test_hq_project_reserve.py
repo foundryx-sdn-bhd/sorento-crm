@@ -378,7 +378,7 @@ def _reserve_world(scm_app):
     _stock(db, product, hq, 500)
     _demand(db, product, bb, qty=40, required_date=_months_ahead(1), so_number=f"{marker}-SO1")
     db.flush()
-    return app, marker, product
+    return app, marker, product, db, hq, bb
 
 
 @pytest.mark.parametrize("book", ["all", "project"])
@@ -389,7 +389,7 @@ def test_the_reserves_on_hand_covers_a_project_line_on_the_stock_debt_page(scm_a
     from app.services.scm.supply_assignment import month_key
     from tests.scm.test_stock_debt_routes import BASE, _months_ahead, _row_of
 
-    app, marker, product = _reserve_world(scm_app)
+    app, marker, product, _db, _hq_row, _bb = _reserve_world(scm_app)
     with TestClient(app) as c:
         got = c.get(BASE, params={"query": marker, "only_debt": False, "book": book})
     assert got.status_code == 200, got.text
@@ -536,3 +536,43 @@ def test_g12_skips_the_reserve_for_spo_lines_and_the_po_list_filter():
                 unclaimed_project_bin=True,
             )
             assert listed["data"] == []
+
+
+def _page_balance(app, marker, product, month_date, **params):
+    from fastapi.testclient import TestClient
+
+    from app.services.scm.supply_assignment import month_key
+    from tests.scm.test_stock_debt_routes import BASE, _row_of
+
+    with TestClient(app) as c:
+        got = c.get(BASE, params={"query": marker, "only_debt": False, **params})
+    assert got.status_code == 200, got.text
+    row = _row_of(got.json(), product.product_code)
+    return {m["key"]: m["balance"] for m in row["months"]}[month_key(month_date)]
+
+
+def test_a_group_filter_reads_the_groups_own_stock_without_the_reserve(scm_app):
+    """`group=BB` answers what BB holds of its own (AC-S2-6): HQ is no group's stock, so
+    the BB line reads short its 40 there, and covered in the unfiltered book."""
+    from app.services.scm.group_netting import group_of_warehouse_code
+    from tests.scm.test_stock_debt_routes import _months_ahead
+
+    app, marker, product, _db, _hq_row, bb = _reserve_world(scm_app)
+    group = group_of_warehouse_code(bb.warehouse_code)
+
+    assert _page_balance(app, marker, product, _months_ahead(1), book="project") >= 0
+    assert (
+        _page_balance(app, marker, product, _months_ahead(1), book="project", group=group)
+        == -40
+    )
+
+
+def test_a_line_booked_at_hq_is_covered_by_hqs_own_stock_on_the_page(scm_app):
+    from tests.scm.test_stock_debt_routes import _demand, _months_ahead
+
+    app, marker, product, db, hq, _bb = _reserve_world(scm_app)
+    _demand(db, product, hq, qty=30, required_date=_months_ahead(2),
+            so_number=f"{marker}-SOHQ")
+    db.flush()
+
+    assert _page_balance(app, marker, product, _months_ahead(2), book="project") >= 0
