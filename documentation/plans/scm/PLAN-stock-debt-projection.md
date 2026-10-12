@@ -4,49 +4,49 @@ Status: built; reviewer READY after two fix rounds, browser pass PASS (12 Oct 20
 consider pool, those project locations are matched already". Small fix track (no migration, no
 auth/RBAC change, no new ingest surface).
 
-## Implemented rule (owner, 12 Oct 2026)
+## Implemented rule (owner, 12 Oct 2026; "pool a")
 
 ```
-month(M)      = the page's own figure for M, unchanged (project bins matched as today)
-added(M)      = the month figure of the site pools OUTSIDE the span (active, segment <> 'project',
-                not flagged for planning), from the same walk over those pools alone: their
-                supply (PO Delivery date, SPO ETA, today for on hand and past due) less their
-                own sales orders, less what a hold in the page's walk took of that supply
-pool_free(M)  = every pool's spare dated in M, in the span or outside it
-carried_in(M) = carry(M-1), 0 before the current month
-projected(M)  = month(M) + added(M) + carried_in(M)
-carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M))
+project(M)      = the project bins' own month figure off the page's walk (their spare less
+                  their lines' shortfalls), matched exactly as today
+pool_supply(M)  = every active pool's supply dated in M, in the span or outside it (segment
+                  <> 'project', not flagged for planning): on hand today, a PO on its Delivery
+                  date, an SPO on arrival, anything past due today; less what a project line's
+                  hold (placement, book S/O, decision) took of it
+dealer(M)       = the open orders at pool locations due in M (dealer / retail)
+remainder(M)    = carried_in(M) + pool_supply(M) - dealer(M)
+projected(M)    = project(M) + remainder(M)
+carried_in(M+1) = max(0, min(remainder(M), projected(M)))
 ```
 
-Only pool spare carries; project spare and debt never carry (R37). A pool reads the same
-whether the span holds it or not (review B1): its own orders are netted either way, and pool
-spare already in a month figure only caps the carry, it is never added again. Under the switch
-the walk ignores `date_from` (demand before it still takes its share); the axis still starts at
-its month. Row total = today's total plus `added` on the axis. "Only products in debt" and the
-sort read the projected months. UAC: `stock-debt-projection-acceptance-criteria.md`.
+Owner's "pool a": in each month pool supply first covers that month's dealer / retail orders,
+and only the remainder goes to project shortfalls. Pool stock is applied to the EARLIEST
+shortfall first and only a SURPLUS carries; project spare never carries and debt never
+accumulates (R37). The arithmetic does not depend on whether the span holds a pool, so Book=All
+and Book=Project give the same projection, and pool stock is counted once. Row total = the sum
+of `project + pool_supply - dealer` over the axis, plus TBA. Under the switch the walk ignores
+`date_from` (demand before it still takes its share); the axis still starts at its month.
 
-Book=Project (owner, 12 Oct 2026, prod evidence after HQ was made its own pool): the
-running balance starts from the PROJECT book's months and carries in pool supply (pool on
-hand, pool POs incl. HQ, pool SPOs), although that book's walk reads no pool bin: under
-`book=project` every active pool is outside the span and enters through `added`. Prod shape
-(Book=Project Oct -38, Nov -17, Dec -1,436, Jan -1,613, Feb -480, Mar -797, Apr -368; BRW
-on hand 191; HQ PO 5,000 delivered 8 Oct; a 15 dealer order at BRW) projects 5,138, 5,121,
-3,685, 2,072, 1,592, 795, 427, the same under Book=All
+The drill line states it plainly, for example (owner's C-FHSS12, Book=Project):
+"This month -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
+Projected -305". Carried in, dealer orders and carried forward appear when not zero.
+
+Prod shape (owner, 12 Oct 2026, after HQ was made its own pool): Book=Project months Oct -38,
+Nov -17, Dec -1,436, Jan -1,613, Feb -480, Mar -797, Apr -368; BRW on hand 191; HQ PO 5,000
+delivered 8 Oct; a 15 dealer order at BRW in October. Projected: 5,138, 5,121, 3,685, 2,072,
+1,592, 795, 427 under Book=Project and Book=All
 (`test_prod_srtwt2215_book_project_carries_the_pool_po`).
 
-Known limits (review rounds 1-2):
-- Outside the span a pool is walked on its own; inside it, every pool shares one pile, so a pool
-  order can also draw another pool's on-hand stock. A month can differ by that draw; the carry
-  over the row ends the same.
-- Placements that together exceed their document (more placed than the PO holds) can read the
-  outside case slightly more optimistic in the order's month; the walk inside the span caps
-  them, the projection does not re-walk them.
-- A PO at an out-of-span pool whose AutoCount S/O names an order in the span is not
-  pinned to that order (the page's own book-S/O pin reads in-span supply only); it counts as that
-  pool's free supply.
+Known limits:
+- A pool PO whose AutoCount S/O names a project order is pinned to it only when the PO is inside
+  the page's span (the book-S/O pin reads in-span supply). Under Book=Project it counts as pool
+  supply and is applied to the earliest shortfall; the row's total is the same.
+- An order at a pool OUTSIDE the span that holds project stock through a placement is still
+  counted in full as a pool order (inside the span the held part is taken off).
 
-Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` /
-`_project` / `_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
+UAC: `stock-debt-projection-acceptance-criteria.md`. Code:
+`app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` / `_project` /
+`_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
 `StockDebtClient.projection.test.tsx`, `stockDebtService.real.test.ts`.
 
 The sections below are the behaviour card as it was put to the owner.

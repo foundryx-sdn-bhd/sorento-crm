@@ -120,7 +120,18 @@ beforeEach(() => {
     supply: [],
     demand_total_qty: 0,
     supply_total_qty: 0,
-    projection: { carried_in: 5121, month_balance: -1436, pool_added: 0, projected: 3685 },
+    projection: {
+      carried_in: 0,
+      month_balance: -377,
+      pool_supply: 72,
+      pool_sources: [
+        { label: 'BRW on hand', qty: 57 },
+        { label: 'BRW PO', qty: 15 },
+      ],
+      dealer_demand: 0,
+      projected: -305,
+      carried_out: 0,
+    },
   });
   exportStockDebt.mockResolvedValue({ id: 'd1' });
 });
@@ -177,7 +188,37 @@ describe('StockDebtClient projected balance', () => {
       'p1', '2026-12', '', undefined, 'all', true,
     );
     expect(line.textContent).toBe(
-      'Carried in +5,121 · This month -1,436 · Pool added 0 · Projected +3,685',
+      'This month -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month · Projected -305',
+    );
+  });
+
+  it('the drill names dealer orders, the carry in and the carry forward when they are not zero', async () => {
+    getStockDebtCell.mockResolvedValue({
+      demand: [],
+      supply: [],
+      demand_total_qty: 0,
+      supply_total_qty: 0,
+      projection: {
+        carried_in: 10,
+        month_balance: -38,
+        pool_supply: 5191,
+        pool_sources: [
+          { label: 'BRW on hand', qty: 191 },
+          { label: 'HQ PO', qty: 5000 },
+        ],
+        dealer_demand: 15,
+        projected: 5148,
+        carried_out: 5148,
+      },
+    });
+    renderBoard();
+    await screen.findByText('SRTWT2215');
+    await switchOn();
+
+    fireEvent.click(await screen.findByRole('button', { name: /SRTWT2215, Dec 26/ }));
+    const line = await screen.findByTestId('stock-debt-projection-line');
+    expect(line.textContent).toBe(
+      'This month -38 · Carried in +10 · Pool supply 5,191 (BRW on hand 191, HQ PO 5,000) applied to this month · Dealer orders -15 · Projected +5,148 · Carried forward +5,148',
     );
   });
 });

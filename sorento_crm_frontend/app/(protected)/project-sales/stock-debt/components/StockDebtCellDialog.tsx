@@ -26,6 +26,7 @@ import type {
   StockDebtBook,
   StockDebtDemandLine,
   StockDebtDemandStatus,
+  StockDebtProjection,
   StockDebtSupplyEvent,
   StockDebtSupplyKind,
 } from '../types/stockDebt.types';
@@ -176,6 +177,29 @@ function CoveredByEntry({ entry }: { entry: StockDebtAssignedFrom }) {
 
 function signedQty(value: number): string {
   return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
+}
+
+/** The drill's projection line, plainly: what this month is short or spare on its own,
+ *  then each pool term that is not zero, then the result and what carries on. */
+function projectionParts(projection: StockDebtProjection): string[] {
+  const parts = [`This month ${signedQty(projection.month_balance)}`];
+  if (projection.carried_in) parts.push(`Carried in ${signedQty(projection.carried_in)}`);
+  if (projection.pool_supply) {
+    const sources = (projection.pool_sources ?? [])
+      .map((source) => `${source.label} ${source.qty.toLocaleString()}`)
+      .join(', ');
+    parts.push(
+      `Pool supply ${projection.pool_supply.toLocaleString()}${sources ? ` (${sources})` : ''} applied to this month`,
+    );
+  }
+  if (projection.dealer_demand) {
+    parts.push(`Dealer orders ${(-projection.dealer_demand).toLocaleString()}`);
+  }
+  parts.push(`Projected ${signedQty(projection.projected)}`);
+  if (projection.carried_out) {
+    parts.push(`Carried forward ${signedQty(projection.carried_out)}`);
+  }
+  return parts;
 }
 
 export function StockDebtCellDialog({
@@ -676,12 +700,7 @@ export function StockDebtCellDialog({
               data-testid="stock-debt-projection-line"
               className="text-xs text-muted-foreground"
             >
-              {[
-                `Carried in ${signedQty(projection.carried_in)}`,
-                `This month ${signedQty(projection.month_balance)}`,
-                `Pool added ${signedQty(projection.pool_added)}`,
-                `Projected ${signedQty(projection.projected)}`,
-              ].join(' · ')}
+              {projectionParts(projection).join(' · ')}
             </p>
           )}
         </DialogHeader>

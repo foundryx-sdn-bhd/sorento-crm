@@ -312,6 +312,14 @@ AUX_EXPORT_HEADERS = [
 ]
 
 
+def _source_order(label: str) -> tuple:
+    """`("BRW", 0)` for "BRW on hand", `("BRW", 1)` for "BRW PO", `("BRW", 2)` for an SPO."""
+    for rank, suffix in enumerate((" on hand", " PO", " SPO")):
+        if label.endswith(suffix):
+            return (label[: -len(suffix)], rank)
+    return (label, 3)
+
+
 class StockDebtService:
     def __init__(self, db: Session):
         self.db = db
@@ -426,10 +434,14 @@ class StockDebtService:
             # the workbook both); the two still ride the row unchanged, just not here.
             total = sum(month["balance"] for month in months) + result.tba
             if projected:
-                # The projection moves quantity between months and adds the pool supply
-                # the page does not count, so the row's total is today's plus that.
-                total += sum(
-                    pool[product_id]["added"].get(key, 0.0) for key in axis
+                # The projection moves pool stock between months; its total is what the
+                # months hold in all: project figure plus pool supply less pool orders.
+                series = pool[product_id]
+                total = result.tba + sum(
+                    series["project"].get(key, 0.0)
+                    + series["pool_supply"].get(key, 0.0)
+                    - series["dealer"].get(key, 0.0)
+                    for key in axis
                 )
                 months = self._projected_on_axis(
                     result, axis, product_id, pool[product_id]
@@ -585,8 +597,19 @@ class StockDebtService:
                 projection = {
                     "carried_in": row.carried_in,
                     "month_balance": row.month_balance,
-                    "pool_added": row.pool_added,
+                    "pool_supply": row.pool_supply,
+                    # By location, then on hand before PO before SPO, the order the owner
+                    # reads them in ("BRW on hand 57, BRW PO 15").
+                    "pool_sources": [
+                        {"label": name, "qty": round(qty, 4)}
+                        for name, qty in sorted(
+                            pool["sources"].get(month, {}).items(),
+                            key=lambda item: _source_order(item[0]),
+                        )
+                    ],
+                    "dealer_demand": row.dealer_demand,
                     "projected": row.projected,
+                    "carried_out": row.carried_out,
                 }
 
         # R29: Supply's own "Assigned to" entries carry `line_no` (the CORE line's own
@@ -733,9 +756,9 @@ class StockDebtService:
                     }
                 )
             for event in (pool or {}).get("events", []):
-                # The event AS THE OUT-OF-SPAN WALK COUNTED IT: a late document already
-                # sits on today with its paperwork date in `stated_at`.
+                # A late document sits on today, with its paperwork date beside it.
                 arrival = effective_date(event.at, as_of)
+                late = event.at is not None and event.at < as_of
                 if month_key(arrival) != month:
                     continue
                 is_document = event.kind in (KIND_SPO, KIND_PO)
@@ -748,16 +771,16 @@ class StockDebtService:
                         **self._po_fields(event),
                         "warehouse_code": event.warehouse,
                         "date": arrival,
-                        "stated_date": event.stated_at,
-                        "days_late": int(event.days_late or 0),
+                        "stated_date": event.at if late else None,
+                        "days_late": (as_of - event.at).days if late else 0,
                         "bought_for": event.bought_for,
                         "qty": event.ordered_qty
                         if is_document and event.ordered_qty is not None
                         else event.qty,
                         "received_qty": event.received_qty if is_document else None,
                         "outstanding_qty": event.qty if is_document else None,
-                        # What is spare of it once its own pool's orders and any hold
-                        # in the page's walk have taken theirs.
+                        # What the projection offers of it: less what a project line's
+                        # hold already took.
                         "free_qty": round(max(pool["left"].get(event.key, 0.0), 0.0), 4),
                         "overdue": False,
                         "assigned_to": [
@@ -1778,91 +1801,114 @@ class StockDebtService:
         date_to: Optional[date] = None,
         keep_events: bool = False,
     ) -> Dict[str, dict]:
-        """STOCK-DEBT-PROJECTION: per product, the two pool inputs `project_months`
-        takes, by month key (`stock_debt_projection` states the rule).
+        """STOCK-DEBT-PROJECTION: per product, the three month series `project_months`
+        takes (`stock_debt_projection` states the rule, owner's "pool a", 12 Oct 2026).
 
-        - `pool_free`: pool supply the walk left spare - in the span (already inside the
-          month's own figure) and in the pools outside it. The projection only lets it
-          carry; it is never added to a month a second time.
-        - `added`: the month figures of the pools OUTSIDE the span - active segment-rule
-          pools the page does not read - from the SAME walk the page runs, over those
-          pools alone (their own supply less their own sales orders). So a pool reads the
-          same whether the span holds it or not: review B1, a 500 retail line at an
-          out-of-span HQ was ignored while the same line inside the span was netted.
+        - `project`: the project bins' own month figure off the page's walk - their spare
+          less their lines' shortfalls. A pool bin's events and lines are left out: pool
+          stock is accounted below, once.
+        - `pool_supply`: every pool's supply by month, in the span (the walk's own counted
+          events) and in the active segment-rule pools outside it (read the way the page
+          reads its own: PO on its Delivery date, SPO on arrival, on hand and anything past
+          due today). Less what a project line's hold took of it (a placement, the book's
+          S/O, a decision), so held stock is not offered twice.
+        - `dealer`: the open orders at pool locations due in each month, less what such a
+          line took from project supply through a hold.
+        - `sources`: per month, the pool supply by location and kind, for the drill line.
 
-        What a hold in the page's own walk took of an out-of-span event (AC-S2-1b stands
-        it up off its key) is taken off that event's spare here, so it is not spent twice.
-
-        Nothing here is written and nothing is assigned (R45): it is arithmetic over walks
-        the page already knows how to run.
+        Nothing here is written and nothing is assigned (R45).
         """
         as_of = date.today()
+        tba_from = self._tba_from()
         span = set(warehouses)
         extra = {
             wid: row for wid, row in self._segment_pools().items() if wid not in span
         }
-        other: Dict[str, Assignment] = {}
-        other_events: Dict[str, List[SupplyEvent]] = {}
+        extra_supply: Dict[str, List[SupplyEvent]] = {}
+        extra_demand: Dict[str, List[DemandLine]] = {}
         if extra and product_ids:
-            # Its own instance: `_assignments` resets the per-request caches `cell()` and
-            # the list read after this call.
-            reader = StockDebtService(self.db)
-            other = reader._assignments(
-                [(str(pid), "", None) for pid in product_ids], extra,
-                date_to=date_to, view=True, keep_events=keep_events,
+            codes = {wid: row.warehouse_code or wid for wid, row in extra.items()}
+            extra_supply = self._supply(
+                list(product_ids), list(extra), codes, set(extra), as_of=as_of,
+                include_po=True, delivery_dated=True, documents_pin_only=True,
             )
-            other_events = getattr(reader, "_event_cache", {})
+            extra_demand = self._demand(
+                list(product_ids), list(extra), codes, set(extra), date_to=date_to,
+            )
+
+        def label(event: SupplyEvent) -> str:
+            kind = {KIND_ON_HAND: "on hand", KIND_PO: "PO", KIND_SPO: "SPO"}.get(
+                event.kind, event.kind
+            )
+            return f"{event.warehouse} {kind}"
+
         out: Dict[str, dict] = {}
         for product_id in product_ids:
             result = assignments[product_id]
-            taken: Dict[str, float] = {}
-            taken_outside: Dict[str, float] = {}
+            pool_keys = {event.key for event in result.supply if event.is_pool}
+            pool_keys.update(event.key for event in extra_supply.get(product_id, []))
+            taken_by_project: Dict[str, float] = {}
             assigned_to: Dict[str, Dict[Tuple[str, Optional[int]], float]] = {}
-            for res in (result, other.get(product_id)):
-                if res is None:
+            project: Dict[str, float] = {}
+            dealer: Dict[str, float] = {}
+            for row in result.lines:
+                month = row.bucket if self._is_month_key(row.bucket) else None
+                for item in row.assigned:
+                    who = (row.line.so_number, row.line.core_line_no)
+                    bucket = assigned_to.setdefault(item.event.key, {})
+                    bucket[who] = bucket.get(who, 0.0) + item.qty
+                    if not row.line.is_pool and item.event.key in pool_keys:
+                        taken_by_project[item.event.key] = (
+                            taken_by_project.get(item.event.key, 0.0) + item.qty
+                        )
+                if month is None:
                     continue
-                for line in res.lines:
-                    for item in line.assigned:
-                        key = (line.line.so_number, line.line.core_line_no)
-                        bucket = assigned_to.setdefault(item.event.key, {})
-                        bucket[key] = bucket.get(key, 0.0) + item.qty
-                        into = taken if res is result else taken_outside
-                        into[item.event.key] = into.get(item.event.key, 0.0) + item.qty
-            pool_free: Dict[str, float] = {}
-            added: Dict[str, float] = {}
-            for event in result.supply:
-                spare = result.free.get(event.key, 0.0)
-                key = month_key(effective_date(event.at, as_of))
-                # Review R1, the mirror of `taken` below: a hold in the OUTSIDE walk on
-                # supply IN the span (a placement at an out-of-span pool naming a BRW PO)
-                # spent it there, and the page's own month still reads it spare.
-                spent = min(max(spare, 0.0), taken_outside.get(event.key, 0.0))
-                if spent > 0:
-                    added[key] = added.get(key, 0.0) - spent
-                if event.is_pool and spare - spent > 0:
-                    pool_free[key] = pool_free.get(key, 0.0) + spare - spent
+                if row.line.is_pool:
+                    # A pool line's own order; what it drew from project supply through a
+                    # hold is not asked of the pool again.
+                    crossed = sum(
+                        item.qty for item in row.assigned
+                        if item.event.key not in pool_keys
+                    )
+                    dealer[month] = dealer.get(month, 0.0) + row.line.open_qty - crossed
+                else:
+                    project[month] = project.get(month, 0.0) - row.short_at_date
+            for line in extra_demand.get(product_id, []):
+                if not line.is_pool or line.required_date is None:
+                    continue
+                if line.required_date >= tba_from:
+                    continue
+                month = month_key(effective_date(line.required_date, as_of))
+                dealer[month] = dealer.get(month, 0.0) + line.open_qty
+            pool_supply: Dict[str, float] = {}
+            sources: Dict[str, Dict[str, float]] = {}
             left: Dict[str, float] = {}
-            outside = other.get(product_id)
-            if outside is not None:
-                for month in outside.months:
-                    added[month.key] = added.get(month.key, 0.0) + month.balance
-                for event in outside.supply:
-                    spare = outside.free.get(event.key, 0.0)
-                    spent = min(spare, taken.get(event.key, 0.0))
-                    key = month_key(effective_date(event.at, as_of))
-                    if spent > 0:
-                        added[key] = added.get(key, 0.0) - spent
-                    if spare - spent > 0:
-                        pool_free[key] = pool_free.get(key, 0.0) + spare - spent
-                    left[event.key] = spare - spent
-            out[product_id] = {"pool_free": pool_free, "added": added}
+            events = [event for event in result.supply if event.is_pool]
+            added_events = [
+                event for event in extra_supply.get(product_id, []) if event.at is not None
+            ]
+            for event in result.supply:
+                if event.is_pool:
+                    continue
+                spare = result.free.get(event.key, 0.0)
+                if spare > 0:
+                    month = month_key(effective_date(event.at, as_of))
+                    project[month] = project.get(month, 0.0) + spare
+            for event in events + added_events:
+                qty = float(event.qty) - taken_by_project.get(event.key, 0.0)
+                left[event.key] = qty
+                if qty <= 0:
+                    continue
+                month = month_key(effective_date(event.at, as_of))
+                pool_supply[month] = pool_supply.get(month, 0.0) + qty
+                by_label = sources.setdefault(month, {})
+                by_label[label(event)] = by_label.get(label(event), 0.0) + qty
+            out[product_id] = {
+                "project": project, "pool_supply": pool_supply, "dealer": dealer,
+                "sources": sources,
+            }
             if keep_events:
-                admitted = {event.key: event for event in (outside.supply if outside else ())}
-                out[product_id]["events"] = [
-                    admitted.get(event.key, event)
-                    for event in other_events.get(product_id, [])
-                    if event.key in admitted
-                ]
+                out[product_id]["events"] = added_events
                 out[product_id]["left"] = left
                 out[product_id]["assigned_to"] = assigned_to
         return out
@@ -1871,18 +1917,18 @@ class StockDebtService:
     def _project(
         result: Assignment, pool: dict, last: Optional[str] = None
     ) -> List[ProjectedMonth]:
-        """`project_months` over every month from today's to the later of the row's own
-        last month, its last added pool month and `last`."""
+        """`project_months` over every month from today's to the latest month any of the
+        three series names, or `last`."""
         first = month_key(date.today())
-        candidates = [first, *(month.key for month in result.months), *pool["added"]]
+        candidates = [first, *pool["project"], *pool["pool_supply"], *pool["dealer"]]
         if last:
             candidates.append(last)
         keys = month_axis(first, max(candidates))
         return project_months(
             keys,
-            {month.key: month.balance for month in result.months},
-            pool_free=pool["pool_free"],
-            pool_added=pool["added"],
+            pool["project"],
+            pool_supply=pool["pool_supply"],
+            dealer_demand=pool["dealer"],
         )
 
     def _projected_on_axis(
