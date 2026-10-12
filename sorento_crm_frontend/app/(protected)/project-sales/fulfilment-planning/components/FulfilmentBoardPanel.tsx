@@ -2,9 +2,12 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { toast } from '@/lib/toast';
+import { isSuperadminUser } from '@/lib/is-superadmin';
 import {
   ArrowLeft,
+  FlaskConical,
   LayoutGrid,
   List,
   PackageSearch,
@@ -50,6 +53,7 @@ import {
   PLANNING_BOARD_KEY,
   useConfirmManyMutation,
   usePreviewConfirmManyMutation,
+  useSimulateConfirmMutation,
   useFulfilmentPlanningMutations,
   useLineDraftMutation,
   usePlanningBoard,
@@ -1229,6 +1233,9 @@ export function FulfilmentBoardPanel({
 
   const confirmMany = useConfirmManyMutation();
   const previewConfirmMany = usePreviewConfirmManyMutation();
+  const simulateConfirm = useSimulateConfirmMutation();
+  const { data: session } = useSession();
+  const canSimulate = isSuperadminUser(session?.user);
   // The lines each order's press posted, by planning record, so the results block can set
   // them beside what the server says it wrote.
   const [postedLines, setPostedLines] = React.useState<
@@ -1244,15 +1251,20 @@ export function FulfilmentBoardPanel({
   const [undoAllOpen, setUndoAllOpen] = React.useState(false);
   const [confirmingAll, setConfirmingAll] = React.useState(false);
   const [batchResults, setBatchResults] = React.useState<BoardBatchResult[] | null>(null);
+  // True while `batchResults` holds an admin Simulate confirm: nothing in it was saved.
+  const [simulated, setSimulated] = React.useState(false);
 
   /**
    * The body of ONE press, built once for both Preview and Confirm so the two can never drift:
    * adopts any order not yet adopted (the body needs the mirror ids), re-reads the board once
    * afterwards, and returns the per-order `orders` plus the orders left out with a reason.
    * `excludeKeys` are the lines the planner unticked in the preview; Preview itself passes none.
+   * `adopt: false` (the admin Simulate) never adopts: adopting writes, so a never-planned
+   * order is reported as not simulated instead.
    */
   const buildConfirmOrders = React.useCallback(
-    async (excludeKeys: ReadonlySet<string>) => {
+    async (excludeKeys: ReadonlySet<string>, options: { adopt?: boolean } = {}) => {
+      const adoptFirst = options.adopt !== false;
       if (!board.data) return null;
       let liveBoard = board.data;
       let contributions = allContributions;
@@ -1306,6 +1318,7 @@ export function FulfilmentBoardPanel({
       // Confirm (1) posting nothing at all.
       const adoptedPsoIds = new Map<string, string>();
       for (const order of liveBoard.orders) {
+        if (!adoptFirst) break;
         if (!wantedOrders.has(order.sales_order_id) || order.project_sales_order_id) continue;
         try {
           const adopted = await adopt.mutateAsync(order.sales_order_id);
@@ -1364,8 +1377,9 @@ export function FulfilmentBoardPanel({
             pso_id: '',
             so_number: soNumber,
             ok: false,
-            error:
-              'is not being planned yet, so there is nothing to confirm it against. Press Start planning on it, then confirm again.',
+            error: adoptFirst
+              ? 'is not being planned yet, so there is nothing to confirm it against. Press Start planning on it, then confirm again.'
+              : 'is not being planned yet; Confirm would adopt it first, so it was not simulated.',
           } as BoardBatchResult);
           continue;
         }
@@ -1557,6 +1571,7 @@ export function FulfilmentBoardPanel({
     if (!board.data) return;
     setConfirmingAll(true);
     setBatchResults(null);
+    setSimulated(false);
     // AC-6: the count as the banner above stated it the moment Confirm was pressed - the
     // owner's own words were "confirming silently is dangerous", so a press that leaves lines
     // out says so in the SAME toast that says what it did commit, not only in a banner that
@@ -1791,6 +1806,32 @@ export function FulfilmentBoardPanel({
     previewConfirmMany,
     confirmSummary,
   ]);
+
+  /**
+   * SIMULATE CONFIRM (admin): the body Confirm would post, sent to the server's dry run. It
+   * never adopts, never touches a draft and needs no board refetch: nothing was saved.
+   */
+  const runSimulate = React.useCallback(async () => {
+    if (!board.data) return;
+    setConfirmingAll(true);
+    setBatchResults(null);
+    try {
+      const built = await buildConfirmOrders(new Set(), { adopt: false });
+      if (!built) {
+        toast.error('Nothing could be sent for this press');
+        return;
+      }
+      const { skipped } = built;
+      const answered =
+        built.orders.length > 0 ? (await simulateConfirm.mutateAsync(built.body)).results : [];
+      setSimulated(true);
+      setBatchResults([...skipped, ...answered]);
+    } catch {
+      // The mutation's own `onError` already toasted the message.
+    } finally {
+      setConfirmingAll(false);
+    }
+  }, [board, buildConfirmOrders, simulateConfirm]);
 
   /**
    * The rows on screen, and the rows the selection holds.
@@ -2205,6 +2246,15 @@ export function FulfilmentBoardPanel({
                 <Undo2 className="size-4" aria-hidden />
                 Undo all
               </DropdownMenuItem>
+              {canSimulate && (
+                <DropdownMenuItem
+                  disabled={confirmingAll}
+                  onSelect={confirmingAll ? undefined : () => void runSimulate()}
+                >
+                  <FlaskConical className="size-4" aria-hidden />
+                  Simulate confirm
+                </DropdownMenuItem>
+              )}
               {/* Undo last confirm, one entry per order the newest revision can be undone
                   for (R6): below Undo all, same permission as Confirm, hidden entirely when
                   nothing on the board is undoable (AC-UC-04). A refused order keeps its
@@ -2384,7 +2434,10 @@ export function FulfilmentBoardPanel({
                 that in fact confirmed everything it could. */}
             {(() => {
               const countable = batchResults.filter((r) => !r.heldBack);
-              return `${countable.filter((r) => r.ok).length} of ${countable.length} orders confirmed`;
+              const okCount = countable.filter((r) => r.ok).length;
+              return simulated
+                ? `Simulation, nothing was saved: ${okCount} of ${countable.length} orders would confirm`
+                : `${okCount} of ${countable.length} orders confirmed`;
             })()}
           </p>
           <ul className="space-y-1">
