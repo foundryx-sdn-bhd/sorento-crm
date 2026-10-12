@@ -376,3 +376,185 @@ def test_error_text_is_capped_at_1000_chars(api, monkeypatch):
     errors = result["simulated_errors"]
     assert errors and len(errors) == 1, result
     assert 0 < len(errors[0]["error"]) <= 1000
+
+
+# --------------------------------------------------------------------------- fix round (R1..R6)
+
+
+def _raise_for_every_payload(monkeypatch, exc_factory, seen=None):
+    from app.services.project_supply_service import ProjectSupplyService
+
+    def wrapper(self, order, payload, *args, **kwargs):
+        if seen is not None:
+            seen.append(
+                (_lines_of(payload), [str(x) for x in (getattr(payload, "only_line_ids", None) or [])])
+            )
+        raise exc_factory()
+
+    monkeypatch.setattr(ProjectSupplyService, "confirm", wrapper)
+
+
+def test_r1_an_order_level_409_is_not_blamed_on_lines(api, monkeypatch):
+    """R1: the same refusal on every line is the ORDER's, so `simulated_errors` is null."""
+    from app.services.error_handler import AppException
+
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, _core, (a, b) = _two_line_order(world)
+    message = "Somebody else confirmed this sales order a moment ago."
+    _raise_for_every_payload(
+        monkeypatch, lambda: AppException(status_code=409, message=message, code="stale")
+    )
+
+    response = _post(
+        client, order, [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")]
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert message in (result["error"] or "")
+    assert result["simulated_errors"] is None
+
+
+def test_r1_the_same_type_error_on_every_line_is_not_attributable(api, monkeypatch):
+    """R1: a non-AppException identical on every line: error keeps its class, no line blamed."""
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, _core, (a, b) = _two_line_order(world)
+    _raise_for_every_payload(monkeypatch, lambda: TypeError("same everywhere"))
+
+    response = _post(
+        client, order, [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")]
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert (result["error"] or "").startswith("TypeError: ")
+    assert result["simulated_errors"] is None
+
+
+def test_r3_the_probe_budget_is_per_request_and_an_unprobed_order_says_so(api, monkeypatch):
+    """R3: budget 3 over two orders each failing on one of two lines: the first order is
+    probed (2 runs), the second runs out and is marked as not probed."""
+    import app.api.v1.projects.fulfilment_planning as fp
+
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    monkeypatch.setattr(fp, "_SIMULATE_PROBE_BUDGET", 3, raising=False)
+    order1, _c1, (a1, b1) = _two_line_order(world)
+    order2, _c2, (a2, b2) = _two_line_order(world)
+    from app.services.project_supply_service import ProjectSupplyService
+
+    original = ProjectSupplyService.confirm
+    bad = {str(b1.id), str(b2.id)}
+
+    def wrapper(self, order, payload, *args, **kwargs):
+        if bad & set(_lines_of(payload)):
+            raise TypeError("Object of type date is not JSON serializable")
+        return original(self, order, payload, *args, **kwargs)
+
+    monkeypatch.setattr(ProjectSupplyService, "confirm", wrapper)
+
+    response = client.post(
+        URL,
+        json={
+            "orders": [
+                {
+                    "pso_id": order1.id,
+                    "lines": [_line_payload(a1.id, buy_qty="50"), _line_payload(b1.id, buy_qty="50")],
+                },
+                {
+                    "pso_id": order2.id,
+                    "lines": [_line_payload(a2.id, buy_qty="50"), _line_payload(b2.id, buy_qty="50")],
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    first, second = response.json()["results"]
+    assert first["ok"] is False and second["ok"] is False
+    assert [e["line_no"] for e in first["simulated_errors"]] == [20]
+    assert not first["error"].endswith("(not probed: the simulation's per-line budget was spent)")
+    assert second["simulated_errors"] is None
+    assert second["error"].endswith(" (not probed: the simulation's per-line budget was spent)")
+
+
+def test_r4_more_than_fifty_orders_is_refused_before_anything_runs(api, monkeypatch):
+    """R4: 51 orders -> 422 `simulate_too_many_orders`; confirm-all is not refused by it."""
+    import uuid
+
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, core_so, (a, _b) = _two_line_order(world)
+    before = _counts(world, order, core_so)
+    body = {
+        "orders": [{"pso_id": order.id, "lines": [_line_payload(a.id, buy_qty="50")]}]
+        + [
+            {"pso_id": str(uuid.uuid4()), "lines": [_line_payload(str(uuid.uuid4()), buy_qty="1")]}
+            for _ in range(50)
+        ]
+    }
+    assert len(body["orders"]) == 51
+
+    response = client.post(URL, json=body)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "simulate_too_many_orders"
+    assert _counts(world, order, core_so) == before
+
+    real = client.post(f"{BASE}/fulfilment-planning/confirm-all", json={"orders": body["orders"][1:]})
+    assert (real.json() or {}).get("code") != "simulate_too_many_orders"
+
+
+def test_r5_a_single_posted_line_that_fails_is_named_without_probing(api, monkeypatch):
+    """R5: one posted line failing with no named line: `simulated_errors` names it."""
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, _core, (a, _b) = _two_line_order(world)
+    seen = []
+    _raise_for_every_payload(monkeypatch, lambda: TypeError("only line broke"), seen)
+
+    response = _post(client, order, [_line_payload(a.id, buy_qty="50")])
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    errors = result["simulated_errors"]
+    assert errors and len(errors) == 1, result
+    assert errors[0]["line_no"] == 10
+    assert errors[0]["item_code"] == world.product.product_code
+    assert errors[0]["error"].startswith("TypeError: ")
+    assert len(seen) == 1, "no per-line probe run for a one-line order"
+
+
+def test_r6_the_probe_never_runs_a_line_outside_only_line_ids(api, monkeypatch):
+    """R6: only_line_ids=[A] with lines [A, B]: B is never run alone."""
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, _core, (a, b) = _two_line_order(world)
+    seen = []
+    _raise_for_every_payload(monkeypatch, lambda: TypeError("broke"), seen)
+
+    response = client.post(
+        URL,
+        json={
+            "orders": [
+                {
+                    "pso_id": order.id,
+                    "lines": [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")],
+                    "only_line_ids": [str(a.id)],
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    for lines, only in seen:
+        assert only != [str(b.id)] and lines != [str(b.id)], f"line B was run alone: {seen}"
+    for entry in result["simulated_errors"] or []:
+        assert str(entry["project_line_id"]) == str(a.id)

@@ -158,9 +158,8 @@ def test_a_failure_inside_the_apply_savepoint_keeps_its_class_name_when_simulate
     assert result["ok"] is False, result
     assert (result["error"] or "").startswith("TypeError: "), result["error"]
     assert "date is not JSON serializable" in result["error"]
-    errors = result["simulated_errors"]
-    assert errors, result
-    for entry in errors:
+    # The same failure on every line is the ORDER's, not a line's (R1).
+    for entry in result["simulated_errors"] or []:
         assert entry["error"].startswith("TypeError: "), entry
     assert _snapshot(fixture) == before
 
@@ -179,3 +178,24 @@ def test_the_same_failure_in_a_real_confirm_all_reports_the_bare_text(api, monke
     assert result["ok"] is False, result
     assert "date is not JSON serializable" in (result["error"] or ""), result
     assert not (result["error"] or "").startswith("TypeError"), result["error"]
+
+
+def test_r2_a_failure_from_an_unposted_batch_row_is_not_blamed_on_posted_lines(api, monkeypatch):
+    """R2: the batch apply fails identically whichever line is posted, so the failure is the
+    order's: `simulated_errors` is null and every batch row stays pending."""
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_role_slugs", lambda self, user_id: {"admin"}
+    )
+    fixture = _form_three(api)
+    _break_apply_one_order(monkeypatch)
+    before = _snapshot(fixture)
+
+    response = fixture["client"].post(URL, json={"orders": [_two_line_entry(fixture)]})
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert result["simulated_errors"] is None
+    assert _snapshot(fixture) == before
