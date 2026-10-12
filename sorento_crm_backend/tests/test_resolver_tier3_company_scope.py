@@ -291,6 +291,31 @@ def test_memo_does_not_serve_one_scopes_miss_to_another(db, world):
     assert world["prod_a"] in {str(m.uuid) for tr in hit.resolutions for m in tr.matches}
 
 
+def test_memo_does_not_serve_one_brand_scopes_miss_to_another(db, world):
+    """The brand scope narrows tier-1/2 product answers too, so it is part of the key:
+    a miss under a brand scope that hides A's NULL-brand product must not be replayed
+    once the brand scope is lifted."""
+    from app.models.base import set_brand_scope
+
+    brand = str(uuid.uuid4())
+    db.execute(
+        text("INSERT INTO brands (id, brand_code, brand_name, is_active, company_id) "
+             "VALUES (:i, :c, :c, true, :co)"),
+        {"i": brand, "c": f"ZZT3BR{world['suffix']}", "co": world["a"]},
+    )
+    code = f"ZZT3A{world['suffix']}"
+    set_company_scope(db, frozenset({world["a"]}))
+    with er.resolve_memo():
+        set_brand_scope(db, frozenset({brand}))
+        miss = er.resolve_references(db, [code], allowed_entity_types=["product"],
+                                     enable_embedding_fallback=False)
+        set_brand_scope(db, None)
+        hit = er.resolve_references(db, [code], allowed_entity_types=["product"],
+                                    enable_embedding_fallback=False)
+    assert not {str(m.uuid) for tr in miss.resolutions for m in tr.matches}
+    assert world["prod_a"] in {str(m.uuid) for tr in hit.resolutions for m in tr.matches}
+
+
 def test_vector_cache_is_keyed_by_company_scope(db, world):
     """Red before the fix: a vector remembered for company A's caller was a hit for B's."""
     calls: list[list[str]] = []

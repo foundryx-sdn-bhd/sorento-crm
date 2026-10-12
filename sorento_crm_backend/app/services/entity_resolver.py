@@ -3043,8 +3043,9 @@ def _tier3_embedding_lookup(
     # Raw SQL, so the scope listener never sees it: filter here, in SQL, so another
     # company's chunk can neither come back nor take one of the 5 ranking slots and
     # sink this company's own match on the confidence gap. NULL-company chunks are
-    # shared knowledge (forms), visible under every scope - same rule as
-    # `embedding_service._embedding_company_filter`.
+    # shared knowledge (forms), visible under every scope, as in
+    # `embedding_service._embedding_company_filter`; UNSET keeps only those (the
+    # `__company_shared__` rule of `company_sql_predicate`).
     scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
     sql = text(
         f"""
