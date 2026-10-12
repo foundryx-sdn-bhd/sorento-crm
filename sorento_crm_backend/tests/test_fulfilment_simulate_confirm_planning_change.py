@@ -117,3 +117,65 @@ def test_a_raw_date_in_a_batch_composition_is_named_by_class_and_line(api, monke
     assert re.match(r"^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception): ", errors[0]["error"]), errors
     assert "date is not JSON serializable" in errors[0]["error"]
     assert _snapshot(fixture) == before
+
+
+def _break_apply_one_order(monkeypatch):
+    from app.services import planning_change_service
+
+    def boom(*args, **kwargs):
+        raise TypeError("Object of type date is not JSON serializable")
+
+    monkeypatch.setattr(planning_change_service, "_apply_one_order", boom)
+
+
+def _two_line_entry(fixture):
+    line_1, line_2, _line_3 = fixture["lines"]
+    return {
+        "pso_id": str(fixture["order"].id),
+        "batch_id": str(fixture["batch"].id),
+        "lines": [_line_payload(line_1.id, buy_qty="25"), _line_payload(line_2.id)],
+    }
+
+
+def test_a_failure_inside_the_apply_savepoint_keeps_its_class_name_when_simulated(
+    api, monkeypatch
+):
+    """AC-S6 on the batch path: `apply` catches the order's exception inside its savepoint
+    and records `str(exc)`; a simulation must still say `TypeError: ...`."""
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_role_slugs", lambda self, user_id: {"admin"}
+    )
+    fixture = _form_three(api)
+    _break_apply_one_order(monkeypatch)
+    before = _snapshot(fixture)
+
+    response = fixture["client"].post(URL, json={"orders": [_two_line_entry(fixture)]})
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert (result["error"] or "").startswith("TypeError: "), result["error"]
+    assert "date is not JSON serializable" in result["error"]
+    errors = result["simulated_errors"]
+    assert errors, result
+    for entry in errors:
+        assert entry["error"].startswith("TypeError: "), entry
+    assert _snapshot(fixture) == before
+
+
+def test_the_same_failure_in_a_real_confirm_all_reports_the_bare_text(api, monkeypatch):
+    """No behaviour change outside a simulation: a real press keeps the bare message."""
+    fixture = _form_three(api)
+    _break_apply_one_order(monkeypatch)
+
+    response = fixture["client"].post(
+        f"{BASE}/fulfilment-planning/confirm-all", json={"orders": [_two_line_entry(fixture)]}
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert "date is not JSON serializable" in (result["error"] or ""), result
+    assert not (result["error"] or "").startswith("TypeError"), result["error"]
