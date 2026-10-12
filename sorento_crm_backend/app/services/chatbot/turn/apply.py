@@ -1292,6 +1292,11 @@ TOP_SELLING_BROADEN_KEYS = {
 }
 
 
+#: The held top selling keys a restatement compares (the filters) and keeps (the metric and basis).
+TOP_SELLING_RESTATE_FILTERS = ("brand_ids", "agent_ids", "customer_ids", "category_words", "category_code")
+TOP_SELLING_RESTATE_KEYS = ("rank_by", "basis", *TOP_SELLING_RESTATE_FILTERS)
+
+
 def _narrows_the_ranking(verdict: dict[str, Any]) -> bool:
     """Is this message only narrowing the ranking on screen, whatever the parser said
     about `domain_in_message`? True when it carries a top selling key of its own, or
@@ -1487,6 +1492,7 @@ def _top_selling_rules(
     carried = dict(focus.top_selling or {})
     carried.pop("hop", None)
     carried.pop("answered", None)
+    carried.pop("restates", None)  # one hop: the engine consumed it or it never applied
     # What the last reply asked lives one turn: this turn's reply records its own.
     asked_last = carried.pop("asked", None)
     # A word the last reply said it does not know is said once (owner retest, 27 Sep).
@@ -1588,7 +1594,11 @@ def _top_selling_rules(
         # "by amount" under a ranking names only the axis it changes. A fresh ask states
         # its own filters too (owner: never assume): a customer, channel or date window
         # it does not name is not carried from the last ask (reviewer B2, PR #1273).
-        carried = {}
+        # What the held ask settled rides along one hop (`restates`): the engine compares it with the
+        # filters this message's words resolve to (`engine._apply_top_selling_updates`) and keeps the
+        # metric and basis when they are the same filters, so a restated count never re-asks them.
+        held = {k: carried[k] for k in TOP_SELLING_RESTATE_KEYS if carried.get(k) is not None}
+        carried = {"restates": held} if held.get("rank_by") else {}
         _drop_unnamed_filters(focus, verdict)
         trace.rules_fired.append("top_selling_fresh_ask")
     carried.update(own)

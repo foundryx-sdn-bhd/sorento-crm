@@ -3366,6 +3366,14 @@ _REPORT_ASK_PLURALS = {
 }
 
 
+def _ask_date(iso: Any) -> str:
+    """``"2026-09-01"`` -> ``"01/09/2026"``, the form the sales report prints; anything else as given."""
+    try:
+        return datetime.strptime(str(iso), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return str(iso)
+
+
 def _ask_rm(value: Any) -> str:
     try:
         return f"RM {float(value):,.2f}"
@@ -3410,7 +3418,11 @@ def _report_ask(body: dict) -> str:
         )
         for f in body.get("filters") or []
     ]
-    facts.append(_mark(f"Period: {body.get('date_from')} to {body.get('date_to')}", "date_from", "date_to"))
+    facts.append(
+        _mark(
+            f"Period: {_ask_date(body.get('date_from'))} to {_ask_date(body.get('date_to'))}", "date_from", "date_to"
+        )
+    )
     total = body.get("total") or {}
     figures = f"{_ask_rm(total.get('amount'))}, {_ask_pcs(total.get('qty'))}"
     basis = body.get("basis_label")
