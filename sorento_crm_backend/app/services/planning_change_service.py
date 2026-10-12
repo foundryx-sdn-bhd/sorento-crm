@@ -85,6 +85,7 @@ from app.models.project_so import (
     INQUIRY_CANCELLED,
     INQUIRY_PARTLY_LINKED,
     INQUIRY_PLACED,
+    IV_CANCEL_BALANCE,
     IV_ORDER,
     IV_ORDER_BACK,
     IV_RESERVE_AND_ORDER,
@@ -3686,6 +3687,36 @@ def _oi_demand_rows(
         for buy_row in buy_row_query.all():
             buy_rows_by_line.setdefault(str(buy_row.so_line_id), []).append(buy_row)
 
+    # Crew audit of SO422492 (A, later "Save all suggested"): what purchasing still holds
+    # on each qty-down line and has NOT already been asked to cancel, read AFTER this
+    # confirm's own netting. The netting had cancelled line 592's whole 25 (CANCEL BALANCE
+    # 25) and this reaction added CANCEL BALANCE 3 for AutoCount's cut on top: 28 for a 25
+    # row. A reaction never cancels more than is still held.
+    qty_down_line_ids = [
+        str(r.project_line_id)
+        for r in live_rows
+        if r.kind == "qty_down"
+        and r.project_line_id
+        and str(r.project_line_id) not in settled
+    ]
+    cancellable_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    if qty_down_line_ids:
+        held_query = db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.so_line_id.in_(qty_down_line_ids),
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+            OrderInquiryRow.verb.in_((IV_ORDER, IV_ORDER_BACK, IV_CANCEL_BALANCE)),
+        )
+        if order_inquiry_id:
+            held_query = held_query.filter(
+                OrderInquiryRow.order_inquiry_id == order_inquiry_id
+            )
+        for held_row in held_query.all():
+            line_key = str(held_row.so_line_id)
+            if held_row.verb == IV_CANCEL_BALANCE:
+                cancellable_by_line[line_key] -= _dec(held_row.qty)
+            elif not held_row.redirected_to_pool:
+                cancellable_by_line[line_key] += _dec(held_row.qty)
+
     out: List[dict] = []
     counts: Dict[str, int] = {}
     for r in live_rows:
@@ -3745,7 +3776,7 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
-            drop = from_qty - to_qty
+            drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
             if drop <= _ZERO:
                 continue
             out.append(

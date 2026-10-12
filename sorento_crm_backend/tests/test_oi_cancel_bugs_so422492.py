@@ -154,13 +154,13 @@ def test_d_a_buy_only_lines_cancel_balance_names_the_line_location(api):
         line_no=592,
         item_code=world.product.product_code,
         kind="qty_down",
-        from_json={"qty": "136", "required_date": D_592.isoformat()},
-        to_json={"qty": "18", "required_date": D_592.isoformat()},
-        held_json={"revision_no": 1, "reserve": [], "borrow": [], "buy": "136"},
+        from_json={"qty": "25", "required_date": D_592.isoformat()},
+        to_json={"qty": "22", "required_date": D_592.isoformat()},
+        held_json={"revision_no": 1, "reserve": [], "borrow": [], "buy": "25"},
     )
     out, counts = _oi_demand_rows(db, [change], core_so.so_number)
     assert counts == {"CANCEL_BALANCE": 1}
-    assert out[0]["qty"] == Decimal("118")
+    assert out[0]["qty"] == Decimal("3")
     assert out[0]["stock_location"] == world.own_wh.warehouse_code, out[0]
 
 
@@ -513,3 +513,53 @@ def test_review_r1_an_unchanged_borrow_hole_restated_prints_no_cancel(api):
     db.flush()
     assert hole.state == INQUIRY_CANCELLED, "premise: the old hole is superseded"
     assert not _handovers_for(world, hole), [h["line"]["remark"] for h in _handovers_for(world, hole)]
+
+
+def test_a2_a_later_save_all_suggested_cancels_the_kept_row_once_not_25_plus_3(api):
+    """Crew audit of 0a6aa6115 (A, later "Save all suggested"): line 592's kept row reads
+    PLACED with no PO link (a companion product counts as its cover). CS then decides the
+    line as a stock Reserve, so the netting cancels all 25 - and the planning change
+    reaction added CANCEL BALANCE 3 for AutoCount's own cut on top: 28 cancelled for a 25
+    row. A reaction never cancels more than purchasing still holds on the line."""
+    from app.models.project_so import INQUIRY_PLACED
+
+    from .test_planning_changes import _stock
+
+    client, world = api
+    db = world.db
+    core_so, order, (core_592, core_other), (line_592, line_other) = _two_bought_lines(api)
+    row_592 = _order_row(world, line_592)
+    row_592.state = INQUIRY_PLACED  # covered by a companion, no PO link
+    db.commit()
+    batch = _cut_592_and_delay_other(world, core_so, core_592, core_other, line_592, line_other)
+    response = _confirm(client, order.id, [_line_payload(line_other.id, buy_qty="10")],
+                        batch_id=str(batch.id))
+    assert response.status_code == 200, response.text
+    db.commit()
+    db.refresh(row_592)
+    assert row_592.state != INQUIRY_CANCELLED, "premise: A kept the row"
+
+    _stock(db, world.product, world.own_wh, on_hand=100)
+    db.commit()
+    before = len(world.db.info.get(_HANDOVER_PENDING_KEY, []))
+    response = _confirm(
+        client, order.id,
+        [_line_payload(line_592.id, reserve=[{"warehouse_id": world.own_wh.id, "qty": "22"}])],
+        batch_id=str(batch.id),
+    )
+    assert response.status_code == 200, response.text
+    db.commit()
+
+    told = [
+        item["line"]["remark"] for item in world.db.info.get(_HANDOVER_PENDING_KEY, [])[before:]
+        if item.get("line_no") == line_592.line_no
+    ]
+    raised_cb = [
+        r for r in db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line_592.id)
+        if r.verb == "CANCEL_BALANCE" and r.state != INQUIRY_CANCELLED
+    ]
+    total_cb = sum((Decimal(str(r.qty)) for r in raised_cb), Decimal("0"))
+    assert total_cb <= Decimal("25"), [(r.qty, r.note) for r in raised_cb]
+    assert len(raised_cb) <= 1, [(r.qty, r.note) for r in raised_cb]
+    assert told, "premise: purchasing is told something"
+    assert len([r for r in told if "CANCEL" in r]) == 1, told
