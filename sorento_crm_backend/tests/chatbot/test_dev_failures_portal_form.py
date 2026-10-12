@@ -104,3 +104,45 @@ def test_reply_prints_the_copy_line_above_the_link() -> None:
 def test_reply_without_copy_keeps_todays_line() -> None:
     out = fetch.output_structurer({"portal_url": LINK}, {"tool": "crm_portal_link_get"})
     assert (out.get("response") or "").startswith("Here is your portal link.")
+
+
+def _run_portal_fetch(parse: dict, localizer) -> tuple[list[dict], dict]:
+    """`run_fetch` end to end for a portal_link ask, the MCP call recorded (reviewer blocker 1:
+    the wiring between the parse, the tool args and the reply is guarded here, not only the
+    pieces)."""
+    import json
+
+    from app.services.chatbot.lanes import business
+    from app.services.chatbot.lanes.business.services import FetchServices
+
+    calls: list[dict] = []
+    url = f"{LINK}&type={parse.get('portal_form') or ''}"
+
+    def mcp_call(name, args):
+        calls.append({"name": name, **dict(args)})
+        return json.dumps({"portal_url": url})
+
+    payload = {
+        "_exit_kind": "continue",
+        "gate": {"compatible_entities": []},
+        "ctx": {"parse": {"output": parse}, "contact": {"id": "c1"}, "localizer": localizer},
+    }
+    fragment = business.run_fetch(payload, services=FetchServices(mcp_call=mcp_call), dry_run=False)
+    return calls, fragment["fetch"]
+
+
+def test_run_fetch_deep_links_and_names_the_form_in_the_reply_language() -> None:
+    from types import SimpleNamespace
+
+    calls, fetched = _run_portal_fetch(
+        {"domain_hint": "portal_link", "portal_form": "complaint"}, SimpleNamespace(language="ms")
+    )
+    assert [c["name"] for c in calls] == ["crm_portal_link_get"]
+    assert calls[0]["submission_type"] == "complaint"
+    assert fetched["response"].startswith("Berikut pautan portal anda untuk aduan.")
+
+
+def test_run_fetch_without_a_form_or_localizer_sends_the_bare_english_line() -> None:
+    calls, fetched = _run_portal_fetch({"domain_hint": "portal_link", "portal_form": None}, None)
+    assert "submission_type" not in calls[0]
+    assert fetched["response"].startswith("Here is your portal link.")

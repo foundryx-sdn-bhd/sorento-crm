@@ -78,7 +78,7 @@ def test_addendum_is_minimal_business_rules(path: Path) -> None:
     assert rules and all(len(line) <= 160 for line in rules)
     assert all(line.count("Example:") <= 1 for line in rules)
     assert not re.search(r"[㐀-鿿]", text)
-    assert "—" not in text and "–" not in text
+    assert "\u2014" not in text and "\u2013" not in text
 
 
 def test_addenda_stay_small() -> None:

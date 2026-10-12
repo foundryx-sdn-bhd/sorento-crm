@@ -2957,7 +2957,7 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             "own_header": True,
         }
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
-    if ctx.get("portal_intro") and any(a.get("type") == "portal_link" for a in e.get("action_links") or []):
+    if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):
         # DEV-FAILURES RC-B: the copy line naming the form, already in the reply language.
         e["intro"] = ctx["portal_intro"]
     # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
