@@ -219,9 +219,7 @@ def pool_allowance(
     """
     if not pool:
         return ZERO
-    allowed = available_for_project(
-        pool.get("available"), pools_net, pool_share_pct, reserve=bool(pool.get("reserve"))
-    )
+    allowed = available_for_project(pool.get("available"), pools_net, pool_share_pct)
     if share_left is None:
         return allowed
     stated = share_left.get(str(pool.get("location") or ""))
@@ -252,37 +250,28 @@ def pool_share_capacity(
     cap the chain by the FIRST pool's allowance and spread that one number over every
     location, which printed `offered=0` beside `taken=300` the moment another site's pool
     answered (review round 2, S5).
-
-    A PROJECT RESERVE (`pool.reserve`, HQ) is outside the dealer net: it lends its own
-    allowance and spends none of `left`, which bounds the dealer pools alone.
     """
     left = max(_dec(pools_net), ZERO)
     out: List[Tuple[str, Decimal, Decimal]] = []
     for pool in pools:
+        if left <= ZERO:
+            break
         location = pool.get("location")
         if not location:
             continue
-        reserve = bool(pool.get("reserve"))
-        if not reserve and left <= ZERO:
-            continue
-        allowance = pool_allowance(pool, pools_net, pool_share_pct, share_left)
-        if not reserve:
-            allowance = min(allowance, left)
+        allowance = min(
+            pool_allowance(pool, pools_net, pool_share_pct, share_left), left
+        )
         capacity = min(max(_dec(pool.get("free")), ZERO), allowance)
         if capacity <= ZERO:
             continue
         out.append((str(location), capacity, allowance))
-        if not reserve:
-            left -= capacity
+        left -= capacity
     return out
 
 
 def available_for_project(
-    available: Any,
-    pools_net: Any,
-    pool_share_pct: Optional[int] = None,
-    *,
-    reserve: bool = False,
+    available: Any, pools_net: Any, pool_share_pct: Optional[int] = None
 ) -> Decimal:
     """What a site pool may lend a PROJECT line: R-K's "Available for Project".
 
@@ -293,13 +282,7 @@ def available_for_project(
     the board's site-pool rows and their subtotal, and the lightbox ledger's running column.
     A pool with nothing to spare answers `0`, never `None` - "the pool can give you nothing"
     is an answer, and a blank cell is not (R-K).
-
-    A PROJECT RESERVE (`reserve=True`, HQ: a pool with `segment = project`) keeps nothing
-    for dealers and is outside the dealer pools' net, so it lends its whole own Available
-    (`PLAN-hq-project-reserve-12oct.md`).
     """
-    if reserve:
-        return max(_dec(available), ZERO) // 1
     share = DEFAULT_POOL_SHARE_PCT if pool_share_pct is None else int(pool_share_pct)
     share = min(max(share, 0), 100)
     spare = (max(_dec(available), ZERO) * (100 - share)) // 100
@@ -617,28 +600,20 @@ def pool_reserve_capacity(
 
     Nothing is un-netted here, unlike rung 2: this line's demand is booked at
     `BRW-<group>`, never at a pool, so none of it is inside `pools_net`.
-
-    A PROJECT RESERVE (`pool.reserve`, HQ) is outside `pools_net`: it is bounded by its own
-    Available and its free floor, and spends none of the dealer pools' net.
     """
     left = max(_dec(pools_net), ZERO)
     out: List[Tuple[str, Decimal]] = []
     for pool in pools:
+        if left <= ZERO:
+            break
         location = pool.get("location")
         if not location:
             continue
-        free = max(_dec(pool.get("free")), ZERO)
-        if pool.get("reserve"):
-            capacity = min(free, max(_dec(pool.get("available")), ZERO))
-        elif left <= ZERO:
-            continue
-        else:
-            capacity = min(free, left)
+        capacity = min(max(_dec(pool.get("free")), ZERO), left)
         if capacity <= ZERO:
             continue
         out.append((str(location), capacity))
-        if not pool.get("reserve"):
-            left -= capacity
+        left -= capacity
     return out
 
 

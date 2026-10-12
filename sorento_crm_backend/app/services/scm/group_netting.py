@@ -137,7 +137,6 @@ class GroupNetting:
         warehouse_codes: Mapping[str, str],
         pool_warehouse_ids: Iterable[str] = (),
         planning_warehouse_ids: Optional[Iterable[str]] = None,
-        reserve_warehouse_ids: Iterable[str] = (),
     ) -> None:
         """`planning_warehouse_ids` narrows the OWNERSHIP GROUPS to the bins flagged into
         fulfilment planning (`planning_predicate`, R17): a bin that is off is not a member
@@ -151,9 +150,6 @@ class GroupNetting:
         self._triples = triples
         self._codes = {str(k): str(v) for k, v in warehouse_codes.items() if v}
         self._pool_ids = {str(pool_id) for pool_id in pool_warehouse_ids}
-        # PROJECT RESERVES (HQ: a pool with `segment = project`) are pools, but their stock
-        # is never the dealers', so they stay out of `pools_net` - the dealer pools' pile.
-        self._reserve_ids = {str(wid) for wid in reserve_warehouse_ids}
         planning = (
             None
             if planning_warehouse_ids is None
@@ -213,9 +209,7 @@ class GroupNetting:
             return NetPosition(net=ZERO, by_location=())
         key = ("pools", product_id, "")
         if key not in self._memo:
-            self._memo[key] = self._net_over(
-                product_id, self._pool_ids - self._reserve_ids
-            )
+            self._memo[key] = self._net_over(product_id, self._pool_ids)
         return self._memo[key]
 
     def groups(self) -> Tuple[str, ...]:
@@ -230,10 +224,6 @@ class GroupNetting:
 
     def is_pool(self, warehouse_id: Optional[str]) -> bool:
         return bool(warehouse_id) and str(warehouse_id) in self._pool_ids
-
-    def is_reserve(self, warehouse_id: Optional[str]) -> bool:
-        """A project reserve (HQ): a pool outside `pools_net`, see `pool_predicate`."""
-        return bool(warehouse_id) and str(warehouse_id) in self._reserve_ids
 
     # ------------------------------------------------------------------- arithmetic
 
@@ -295,10 +285,12 @@ def netting_for_products(
     ids = [str(pid) for pid in product_ids if pid]
     warehouses = db.query(Warehouse).filter(Warehouse.is_active.is_(True)).all()
     codes = {str(w.id): w.warehouse_code for w in warehouses if w.warehouse_code}
+    # A PROJECT RESERVE (HQ, `pool_predicate.is_project_reserve`) is no site pool here:
+    # its stock is never the dealers', so it is outside `pools_net`.
     pools = {
         str(w.pool_warehouse_id) for w in warehouses if w.pool_warehouse_id
     } & set(codes)
-    reserves = {
+    pools -= {
         str(w.id)
         for w in warehouses
         if is_project_reserve(w.segment, is_pool=str(w.id) in pools)
@@ -318,7 +310,6 @@ def netting_for_products(
             warehouse_codes=codes,
             pool_warehouse_ids=pools,
             planning_warehouse_ids=planning,
-            reserve_warehouse_ids=reserves,
         )
 
     triples: Dict[Tuple[str, str], Dict[str, Decimal]] = {}
@@ -389,7 +380,6 @@ def netting_for_products(
         warehouse_codes=codes,
         pool_warehouse_ids=pools,
         planning_warehouse_ids=planning,
-        reserve_warehouse_ids=reserves,
     )
 
 

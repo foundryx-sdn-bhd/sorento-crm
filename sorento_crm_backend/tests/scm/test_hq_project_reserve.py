@@ -3,12 +3,13 @@
 A project reserve is a warehouse that is some location's pool (`pool_warehouse_id`) AND
 carries `segment = project`. Its stock belongs to projects in general, never to dealers:
 
-* the planner lends a project line its whole own net (0% dealer share), and the reserve sits
-  outside the dealer `pools_net`, so it neither props up nor is capped by a dealer backlog;
-* Stock Debt never sets reserve supply against a dealer (pool) line;
+* Fulfilment Planning never offers, draws or nets it (owner, 12 Oct: taking HQ is a Stock
+  Debt step; stock reaches a project by a CS transfer in AutoCount);
+* Stock Debt's Covered-by walk lets ANY project line use it after its own group's pile, and
+  never a dealer (pool) line;
 * the G12 unclaimed project-bin lock does not apply to it.
 
-The engine and `assign()` cases are pure; the board and G12 cases seed their own chain on
+The `assign()` cases are pure; the board and G12 cases seed their own chain on
 Postgres (`blank_session`) because CI's database has no data.
 """
 from __future__ import annotations
@@ -24,48 +25,6 @@ from tests.test_order_inquiry_dedication import world  # noqa: F401  (pytest fix
 
 def _dec(value) -> Decimal:
     return Decimal(str(value))
-
-
-# --------------------------------------------------------------------------- the engine
-
-
-def test_a_reserve_lends_its_whole_available_whatever_the_dealer_net():
-    """0% dealer share, and the dealer pools' net (here oversold) does not cap it."""
-    from app.services.scm.front_planning_engine import pool_share_capacity
-
-    chain = pool_share_capacity(
-        pools=[{"location": "HQ", "free": 500, "available": 500, "reserve": True}],
-        pools_net=-100,
-        pool_share_pct=50,
-    )
-
-    assert [(loc, _dec(cap)) for loc, cap, _allowance in chain] == [("HQ", Decimal("500"))]
-
-
-def test_a_reserve_does_not_spend_the_dealer_pools_net():
-    """BRW keeps its own share rule against the dealer net; HQ answers beside it, and what
-    HQ lent is not taken off the net BRW is bounded by."""
-    from app.services.scm.front_planning_engine import pool_share_capacity
-
-    chain = pool_share_capacity(
-        pools=[
-            {"location": "HQ", "free": 500, "available": 500, "reserve": True},
-            {"location": "BRW", "free": 400, "available": 400},
-        ],
-        pools_net=400,
-        pool_share_pct=50,
-    )
-
-    assert {loc: _dec(cap) for loc, cap, _allowance in chain} == {
-        "HQ": Decimal("500"),
-        "BRW": Decimal("200"),
-    }
-
-
-def test_the_dealer_share_rule_is_unchanged_for_an_ordinary_pool():
-    from app.services.scm.front_planning_engine import available_for_project
-
-    assert available_for_project(47, 1000, 50) == Decimal("23")
 
 
 # --------------------------------------------------------------------------- Stock Debt
@@ -84,18 +43,80 @@ def _line(key, warehouse, required_date, qty, **kw) -> DemandLine:
 
 def test_reserve_stock_never_covers_a_dealer_line():
     """A dealer order at BRW is short while HQ holds 100: HQ stays put (Q3)."""
-    hq = SupplyEvent(
-        key="on_hand:HQ", kind="on_hand", warehouse="HQ", at=AS_OF, qty=100,
-        is_pool=True, is_reserve=True,
-    )
     result = assign(
-        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[hq],
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[_hq(100)],
         demand=[_line("dealer", "BRW", date(2026, 10, 20), 40, is_pool=True)],
     )
 
     (line,) = result.lines
     assert line.status == "short"
     assert line.assigned == ()
+
+
+def _hq(qty, at=AS_OF, key="on_hand:HQ"):
+    return SupplyEvent(
+        key=key, kind="on_hand", warehouse="HQ", at=at, qty=qty,
+        is_pool=True, is_reserve=True,
+    )
+
+
+def test_reserve_stock_covers_any_project_groups_line():
+    """HQ is a pile any project line may use, whatever its group (owner, Q2)."""
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[_hq(100)],
+        demand=[
+            _line("bb", "BRW-BB", date(2026, 10, 10), 30),
+            _line("ib", "WH3-IB", date(2026, 10, 12), 50),
+        ],
+    )
+
+    by_key = {row.line.key: row for row in result.lines}
+    assert by_key["bb"].status == "covered"
+    assert by_key["ib"].status == "covered"
+    assert {a.event.key for a in by_key["ib"].assigned} == {"on_hand:HQ"}
+
+
+def test_a_line_uses_its_own_group_before_the_reserve():
+    own = SupplyEvent(key="on_hand:BRW-BB", kind="on_hand", warehouse="BRW-BB", at=AS_OF, qty=20)
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[own, _hq(100)],
+        demand=[_line("bb", "BRW-BB", date(2026, 10, 10), 50)],
+    )
+
+    (line,) = result.lines
+    assert [(a.event.key, a.qty) for a in line.assigned] == [
+        ("on_hand:BRW-BB", 20), ("on_hand:HQ", 30),
+    ]
+
+
+def test_the_earlier_project_line_takes_the_reserve_first_across_groups():
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[_hq(40)],
+        demand=[
+            _line("ib-late", "WH3-IB", date(2026, 11, 1), 40),
+            _line("bb-early", "BRW-BB", date(2026, 10, 5), 40),
+        ],
+    )
+
+    by_key = {row.line.key: row for row in result.lines}
+    assert by_key["bb-early"].status == "covered"
+    assert by_key["ib-late"].status != "covered"
+
+
+def test_a_reserve_arrival_clears_an_earlier_project_shortfall_late():
+    """An HQ PO landing after a BB line's date clears it late, like any own-group arrival."""
+    po = SupplyEvent(
+        key="po:hq-1", kind="po", warehouse="HQ", at=date(2026, 10, 20), qty=100,
+        is_pool=True, is_reserve=True,
+    )
+    result = assign(
+        "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[po],
+        demand=[_line("bb", "BRW-BB", date(2026, 10, 5), 60)],
+    )
+
+    (line,) = result.lines
+    assert line.uncovered == 0
+    assert [a.event.key for a in line.assigned] == ["po:hq-1"]
 
 
 def test_dealer_stock_at_brw_still_covers_the_dealer_line():
@@ -132,8 +153,10 @@ def _pool_components(proposal):
     ]
 
 
-def test_the_board_lends_a_project_line_the_reserves_whole_stock():
-    """HQ 500, nothing anywhere else: a line of 450 reads HQ 450, not HQ's half and a Buy."""
+def test_the_board_never_offers_or_draws_the_reserve():
+    """Owner, 12 Oct: taking HQ is a Stock Debt step, never a planning step. HQ holds 500
+    and nothing else does: the line reads Buy, with no HQ component and HQ not in the
+    planner's pool set."""
     from app.services.project_supply_service import ProjectSupplyService
 
     from tests._pg_fixture import blank_session
@@ -150,15 +173,20 @@ def test_the_board_lends_a_project_line_the_reserves_whole_stock():
             db, company_id, project, product, own,
             qty_ordered="450", required_date=date.today() + timedelta(days=10),
         )
-        components = _pool_components(ProjectSupplyService(db).proposal_for(order))
-        hq_code = hq.warehouse_code
+        service = ProjectSupplyService(db)
+        components = _pool_components(service.proposal_for(order))
+        pools = service.site_pool_warehouses()
+        reserves = service.project_reserve_warehouses()
+        hq_id, hq_code = str(hq.id), hq.warehouse_code
 
-    assert components == [("reserve", "450", hq_code)]
+    assert hq_code not in [location for _kind, _qty, location in components]
+    assert hq_id not in pools
+    assert hq_id in reserves
 
 
-def test_the_reserve_does_not_prop_up_an_oversold_dealer_pool_net():
-    """BRW holds 400 but MWH owes dealers 500, so the dealer pools net -100 and lend
-    nothing; HQ (1,000) is outside that net and covers the line on its own."""
+def test_the_use_brw_step_is_unchanged_and_the_reserve_is_outside_the_pool_net():
+    """BRW holds 400 and MWH owes dealers 500, so the dealer pools net -100; HQ's 1,000 does
+    not prop that net up, and BRW lends nothing - exactly as with no HQ at all."""
     from app.services.project_supply_service import ProjectSupplyService
 
     from tests._pg_fixture import blank_session
@@ -182,11 +210,38 @@ def test_the_reserve_does_not_prop_up_an_oversold_dealer_pool_net():
         )
         service = ProjectSupplyService(db)
         components = _pool_components(service.proposal_for(order))
-        dealer_net = service.netting().pools_net(str(product.id)).net
-        hq_code = hq.warehouse_code
+        pool_net = service.netting().pools_net(str(product.id)).net
+        hq_code, brw_code = hq.warehouse_code, brw_pool.warehouse_code
 
-    assert dealer_net == Decimal("-100"), "HQ is not inside the dealer pools' net"
-    assert components == [("reserve", "300", hq_code)]
+    assert pool_net == Decimal("-100"), "HQ is not inside the pool net"
+    locations = [location for _kind, _qty, location in components]
+    assert hq_code not in locations
+    assert brw_code not in locations, "a pool net of -100 lends nothing"
+
+
+def test_the_use_brw_step_still_lends_brws_share_beside_a_reserve():
+    """The control: BRW 400 (half kept for dealers) lends 200 to a line of 200, HQ or not."""
+    from app.services.project_supply_service import ProjectSupplyService
+
+    from tests._pg_fixture import blank_session
+    from tests.scm.test_project_supply_service_ladder import _group_sites, _seed_line, _world
+    from tests.test_so_supply_confirmation import _stock
+
+    with blank_session() as db:
+        company_id, _eling, project, product = _world(db)
+        _group, sites = _group_sites(db)
+        own, brw_pool = sites["BRW"]
+        hq = _reserve(db)
+        _stock(db, product, brw_pool, on_hand=400)
+        _stock(db, product, hq, on_hand=1000)
+        order, _line, _cso, _cline = _seed_line(
+            db, company_id, project, product, own,
+            qty_ordered="200", required_date=date.today() + timedelta(days=10),
+        )
+        components = _pool_components(ProjectSupplyService(db).proposal_for(order))
+        brw_code = brw_pool.warehouse_code
+
+    assert components == [("reserve", "200", brw_code)]
 
 
 # --------------------------------------------------------------------------- G12
@@ -295,3 +350,49 @@ def test_reorder_does_not_count_the_reserves_stock_as_dealer_on_hand():
 
     assert len(rows) == 1
     assert rows[0]["quantity_on_hand"] == 0
+
+
+# --------------------------------------------------------------------------- Stock Debt page
+
+
+def _reserve_world(scm_app):
+    from app.models.inventory import Warehouse
+    from tests.scm.conftest import SORENTO_COMPANY_ID
+    from tests.scm.test_stock_debt_routes import (
+        _client, _demand, _months_ahead, _product, _stock, _u, _warehouse,
+    )
+
+    app, db = _client(scm_app)
+    marker = f"ZZTHQR{_u()[:6]}".upper()
+    hq = Warehouse(
+        id=_u(), warehouse_code=f"ZZTHQ{_u()[:6]}", warehouse_name="ZZT HQ", location="ZZT",
+        is_active=True, fulfilment_planning=False, segment="project",
+        company_id=SORENTO_COMPANY_ID,
+    )
+    db.add(hq)
+    db.flush()
+    hq.pool_warehouse_id = hq.id
+    bb = _warehouse(db, f"ZZTBRW{_u()[:4]}-BB")
+    product = _product(db, f"{marker}-A")
+    _stock(db, product, hq, 500)
+    _demand(db, product, bb, qty=40, required_date=_months_ahead(1), so_number=f"{marker}-SO1")
+    db.flush()
+    return app, marker, product
+
+
+@pytest.mark.parametrize("book", ["all", "project"])
+def test_the_reserves_on_hand_covers_a_project_line_on_the_stock_debt_page(scm_app, book):
+    """HQ's 500 on hand covers the BB line's 40 (owner Q2), in Book=All and Book=Project."""
+    from fastapi.testclient import TestClient
+
+    from app.services.scm.supply_assignment import month_key
+    from tests.scm.test_stock_debt_routes import BASE, _months_ahead, _row_of
+
+    app, marker, product = _reserve_world(scm_app)
+    with TestClient(app) as c:
+        got = c.get(BASE, params={"query": marker, "only_debt": False, "book": book})
+    assert got.status_code == 200, got.text
+
+    row = _row_of(got.json(), product.product_code)
+    balances = {m["key"]: m["balance"] for m in row["months"]}
+    assert balances[month_key(_months_ahead(1))] >= 0, balances

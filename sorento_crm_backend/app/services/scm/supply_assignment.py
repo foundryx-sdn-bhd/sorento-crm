@@ -148,14 +148,30 @@ DEFAULT_OVERDUE_DEAD_DAYS = 0
 #: (`BRW`, `MWH`), and reading one as a group would let a `-BB` line eat the pool silently.
 POOL_GROUP = "__pool__"
 
+#: The pile a PROJECT RESERVE's supply lands in (HQ: a pool with `segment = project`,
+#: `pool_predicate.is_project_reserve`). Owner, 12 Oct 2026: HQ is "just another location
+#: the existing walk reads", a group pile ANY project line may use once its own group's pile
+#: is spent - and never a dealer (`POOL_GROUP`) line.
+RESERVE_GROUP = "__reserve__"
 
-def ownership_group(warehouse: Optional[str], is_pool: bool = False) -> str:
+
+def ownership_group(
+    warehouse: Optional[str], is_pool: bool = False, is_reserve: bool = False
+) -> str:
     """Public name for `_group_of`, for a caller outside this module that must agree with
     the walk about which pile a location is (R42's S/O pin stays inside its own group)."""
-    return _group_of(warehouse, is_pool)
+    return _group_of(warehouse, is_pool, is_reserve)
 
 
-def _group_of(warehouse: Optional[str], is_pool: bool) -> str:
+def may_draw(line_group: str, supply_group: str) -> bool:
+    """Whether a line of `line_group` may take supply of `supply_group`: its own group's,
+    and a project line also the reserve's (`RESERVE_GROUP`)."""
+    return supply_group == line_group or (
+        supply_group == RESERVE_GROUP and line_group != POOL_GROUP
+    )
+
+
+def _group_of(warehouse: Optional[str], is_pool: bool, is_reserve: bool = False) -> str:
     """The ownership group a location belongs to, in ONE spelling.
 
     Delegates to `group_netting.group_of_warehouse_code` (which delegates to
@@ -163,6 +179,8 @@ def _group_of(warehouse: Optional[str], is_pool: bool) -> str:
     walks and the pile ladder v4 nets can never come to disagree about what `BRW-BB` is.
     Imported inside the function to keep this module importable with nothing behind it.
     """
+    if is_reserve:
+        return RESERVE_GROUP
     if is_pool:
         return POOL_GROUP
     from app.services.scm.group_netting import group_of_warehouse_code
@@ -189,6 +207,8 @@ class SupplyEvent:
     ref: Optional[str] = None
     bought_for: Optional[date] = None
     is_pool: bool = False
+    #: A PROJECT RESERVE's supply (HQ): its own pile, `RESERVE_GROUP`.
+    is_reserve: bool = False
     #: The date the DOCUMENT states, when `at` is an ASSUMED one (R-O). Set only on a late
     #: document the grace period admitted: `at` is then `as_of + overdue_grace_days`, which
     #: is what every reader plans against, and this is what the paperwork says, so a ledger
@@ -913,10 +933,26 @@ def _walk(
     for at, kind, _index, item in steps:
         if kind == 0:
             event: SupplyEvent = item  # type: ignore[assignment]
-            group = _group_of(event.warehouse, event.is_pool)
+            group = _group_of(event.warehouse, event.is_pool, event.is_reserve)
             # This group's own queue, earliest required date first. A snapshot list,
-            # because the loop removes from the queue as it goes.
-            for state in list(shortfalls.get(group, ())):
+            # because the loop removes from the queue as it goes. A reserve arrival clears
+            # EVERY project group's queue the same way, earliest required date first.
+            if group == RESERVE_GROUP:
+                queue = sorted(
+                    (
+                        (state, line_group)
+                        for line_group, states in shortfalls.items()
+                        if line_group != POOL_GROUP
+                        for state in states
+                    ),
+                    key=lambda pair: (
+                        effective_date(pair[0].line.required_date, as_of),
+                        _identity(pair[0]),
+                    ),
+                )
+            else:
+                queue = [(state, group) for state in shortfalls.get(group, ())]
+            for state, line_group in queue:
                 if left[event.key] <= EPSILON:
                     break
                 take = min(state.remaining, left[event.key])
@@ -929,7 +965,7 @@ def _walk(
                 if event.key in draws:
                     draws[event.key].append((state, len(state.taken) - 1))
                 if state.remaining <= EPSILON:
-                    shortfalls[group].remove(state)
+                    shortfalls[line_group].remove(state)
             if left[event.key] > EPSILON:
                 piles.setdefault(group, []).append(event)
             continue
@@ -957,26 +993,29 @@ def _walk(
             # Its OWN group's pile, in arrival order (it was appended that way), and no
             # other group's (R40). Two passes (rule 6): first every bin's UNCLAIMED part,
             # then, only if the line is still short, the parts other lines have claimed.
-            pile = piles.setdefault(group, [])
-            for free_only in (True, False):
-                for event in list(pile):
-                    if state.remaining <= EPSILON:
-                        break
-                    available = left[event.key]
-                    if free_only:
-                        available -= max(claimed.get(event.key, 0.0), 0.0)
-                    take = min(state.remaining, available)
-                    if take <= EPSILON:
+            # A project line then draws the RESERVE's pile (HQ) the same way, once its
+            # own group's is spent; a dealer (`POOL_GROUP`) line never does.
+            groups = [group] if group == POOL_GROUP else [group, RESERVE_GROUP]
+            for pile in [piles.setdefault(name, []) for name in groups]:
+                for free_only in (True, False):
+                    for event in list(pile):
+                        if state.remaining <= EPSILON:
+                            break
+                        available = left[event.key]
+                        if free_only:
+                            available -= max(claimed.get(event.key, 0.0), 0.0)
+                        take = min(state.remaining, available)
+                        if take <= EPSILON:
+                            if left[event.key] <= EPSILON:
+                                pile.remove(event)
+                            continue
+                        left[event.key] -= take
+                        state.remaining -= take
+                        state.taken.append(Assigned(event=event, qty=_round(take), at=at))
+                        if event.key in draws:
+                            draws[event.key].append((state, len(state.taken) - 1))
                         if left[event.key] <= EPSILON:
                             pile.remove(event)
-                        continue
-                    left[event.key] -= take
-                    state.remaining -= take
-                    state.taken.append(Assigned(event=event, qty=_round(take), at=at))
-                    if event.key in draws:
-                        draws[event.key].append((state, len(state.taken) - 1))
-                    if left[event.key] <= EPSILON:
-                        pile.remove(event)
         # Its own date has now passed in the walk, so whatever is left is what this line
         # went without ON ITS DATE - the figure its month books (R37). Later supply may
         # still clear it (it becomes `late`), and that does not give the month back: the
@@ -1094,7 +1133,9 @@ def free_piles_at(
         free = float(event.qty) - spent.get(event.key, 0.0)
         if free <= EPSILON:
             continue
-        out.setdefault(_group_of(event.warehouse, event.is_pool), []).append(
+        out.setdefault(
+            _group_of(event.warehouse, event.is_pool, event.is_reserve), []
+        ).append(
             (event, _round(free))
         )
     for pile in out.values():
@@ -1129,7 +1170,7 @@ def group_book_positions(assignment: Assignment) -> Dict[str, float]:
     counted = {event.key for event in assignment.supply}
     out: Dict[str, float] = {}
     for event in assignment.supply:
-        group = _group_of(event.warehouse, event.is_pool)
+        group = _group_of(event.warehouse, event.is_pool, event.is_reserve)
         out[group] = out.get(group, 0.0) + float(event.qty)
     for row in assignment.lines:
         line = row.line
@@ -1143,7 +1184,9 @@ def group_book_positions(assignment: Assignment) -> Dict[str, float]:
         for item in row.assigned:
             if not item.pinned or item.event.key not in counted:
                 continue
-            lender = _group_of(item.event.warehouse, item.event.is_pool)
+            lender = _group_of(
+                item.event.warehouse, item.event.is_pool, item.event.is_reserve
+            )
             if lender == group:
                 continue
             out[lender] = out.get(lender, 0.0) - float(item.qty)
@@ -1227,6 +1270,7 @@ __all__ = [
     "KIND_PO",
     "KIND_SPO",
     "POOL_GROUP",
+    "RESERVE_GROUP",
     "STATUS_COVERED",
     "STATUS_LATE",
     "STATUS_ORDER_BACK",
@@ -1252,6 +1296,7 @@ __all__ = [
     "group_book_positions",
     "month_axis",
     "month_key",
+    "may_draw",
     "ownership_group",
     "parse_supply_key",
     "tone_for",
