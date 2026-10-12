@@ -523,4 +523,27 @@ describe('fix round: simulated wording and number formatting (R7-R10)', () => {
     expect(notices.textContent).toContain('CB2807-DIY');
     expect(notices.textContent).toContain('only 3 free at BRW, 2 short');
   });
+
+  it('a cancel-only simulated order has no "Would write" list', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated({
+          lines_confirmed: [],
+          inquiry_rows: [],
+          transfers: [],
+          lines_cancelled: [{ project_line_id: 'pl-so-a-1', line_no: 10, item_code: 'ZZT-X' }],
+        }),
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const results = await screen.findByTestId('board-confirm-results');
+    expect(
+      within(results).getByText('Would transfer to Cancel SO: line 10 ZZT-X'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('board-simulate-writes-pso-so-a')).toBeNull();
+    expect(within(results).queryByText(/Would write/)).toBeNull();
+  });
 });
