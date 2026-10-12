@@ -36,32 +36,48 @@ def filter_keys(parse_output: dict[str, Any]) -> list[str]:
     return keys
 
 
+def _key(value: Any) -> str:
+    """A code compared by its letters and digits only, casefolded: the parser's token and the
+    resolved code may differ by dashes, spaces and case ("SRTWC8383 RL MBL" names
+    SRTWC8383-RL-MBL). Data against data; the user's words are never pattern-matched."""
+    return "".join(ch for ch in jsc.js_string(value or "").casefold() if ch.isalnum())
+
+
 def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[Any]:
-    """`entities` narrowed to the products the CURRENT message named, matched on the tokens
-    the parser read off it (the low stock report's rule, `run_fetch` "B"). Carried products
-    stay only when the message named none."""
+    """`entities` with the products this find is about.
+
+    * The parse names a product this message: the resolved products whose code matches one of
+      its tokens; when none matches, every resolved product (the resolver resolved what was
+      typed, so a mismatch in spelling never turns into asking again).
+    * The parse names no product this message but carries one (a product entity the parser
+      marked as not from this message, e.g. "which seat cover fits it?"): the resolved products.
+    * No product entity at all: no product, so the lane asks for the code (card rule 6).
+    """
+    parsed = [
+        e for e in jsc.array(parse_output.get("entities"))
+        if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
+    ]
+    is_product = lambda e: isinstance(e, dict) and e.get("entity_type") == "product"  # noqa: E731
+    if not parsed:
+        return [e for e in entities if not is_product(e)]
     tokens = {
-        jsc.js_string(tok).strip().casefold()
-        for e in jsc.array(parse_output.get("entities"))
-        if isinstance(e, dict) and e.get("current_message") is True
+        _key(tok)
+        for e in parsed
+        if e.get("current_message") is True
         for tok in (e.get("raw"), e.get("canonical_code"))
         if jsc.truthy(tok)
     }
     tokens.discard("")
     if not tokens:
         return list(entities)
-
-    def _named(entity: Any) -> bool:
-        if not isinstance(entity, dict):
-            return False
-        codes = [
-            jsc.js_string(entity.get(field) or "").strip().casefold()
-            for field in ("code", "canonical_code")
-        ]
-        return any(tok in code for code in codes if code for tok in tokens)
-
-    named = [e for e in entities if _named(e)]
-    return named if named else [e for e in entities if not (isinstance(e, dict) and e.get("entity_type") == "product")]
+    named = [
+        e for e in entities
+        if is_product(e)
+        and any(tok in code for code in (_key(e.get("code")), _key(e.get("canonical_code"))) if code for tok in tokens)
+    ]
+    if not named:
+        return list(entities)
+    return [e for e in entities if not is_product(e)] + named
 
 
 def _ids(value: Any) -> list[str]:

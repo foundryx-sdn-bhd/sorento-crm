@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permission_with_api_key
+from app.modules.runtime.guards import module_allowed_with_api_key
 from app.services import product_find
 
 router = APIRouter()
@@ -41,4 +42,12 @@ def find_products(
     db: Session = Depends(get_db),
 ):
     parsed = product_find.parse_filters(filters)
-    return product_find.run_find(db, parsed, contact_id=contact_id, space_id=space_id)
+    # Stock is the inventory module's data: with that module off for this caller the rows
+    # come back without it, as `/inventory/stock` would refuse (security review L1).
+    return product_find.run_find(
+        db,
+        parsed,
+        contact_id=contact_id,
+        space_id=space_id,
+        with_stock=module_allowed_with_api_key(db, current_user, "inventory"),
+    )

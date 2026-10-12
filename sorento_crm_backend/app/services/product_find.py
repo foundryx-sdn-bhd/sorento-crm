@@ -44,6 +44,9 @@ MAX_FILTERS_CHARS = 4096
 
 #: The lane's line when a product_ref filter arrives with no product named (card rule 6).
 ASK_PRODUCT_LINE = "Which product code? For example SRTWC8383-RL-MBL."
+#: The lane's line when the route answered no group: no named product is visible to this
+#: contact, or the contact resolved to nobody (fail closed). Asking again changes neither.
+NOTHING_LINE = "I have nothing on record for that product."
 
 #: The labels the MCP presenter prints for every filter, with their translations.
 COMMON_LABELS: dict[str, dict[str, str]] = {
@@ -55,6 +58,10 @@ COMMON_LABELS: dict[str, dict[str, str]] = {
     ASK_PRODUCT_LINE: {
         "ms": "Kod produk yang mana? Contohnya SRTWC8383-RL-MBL.",
         "zh": "请问是哪个产品代码？例如 SRTWC8383-RL-MBL。",
+    },
+    NOTHING_LINE: {
+        "ms": "Saya tiada rekod untuk produk itu.",
+        "zh": "我没有该产品的记录。",
     },
 }
 
@@ -189,6 +196,7 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
     if len(parsed) > MAX_FILTERS:
         raise _unprocessable(f"at most {MAX_FILTERS} filters", "too_many")
     out: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str):
             raise _unprocessable("each filter is an object with a key", "filters_required")
@@ -197,6 +205,9 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
             raise _unprocessable(
                 f"unknown filter {item['key'][:40]!r}; allowed: {', '.join(FILTERS)}", "unknown_filter"
             )
+        if spec.key in seen_keys:
+            continue  # one filter, one read: a repeated key adds nothing but queries
+        seen_keys.add(spec.key)
         if spec.type == TYPE_PRODUCT_REF:
             raw_ids = item.get("product_ids")
             if raw_ids is not None and not isinstance(raw_ids, list):
@@ -207,6 +218,8 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
             if len(ids) > MAX_PRODUCT_IDS:
                 raise _unprocessable(f"at most {MAX_PRODUCT_IDS} product_ids per filter", "too_many")
             out.append({"key": spec.key, "product_ids": ids})
+        else:  # pragma: no cover - every registered type is handled above
+            raise _unprocessable(f"filter {spec.key} has no reader", "unknown_filter")
     return out
 
 
@@ -282,8 +295,14 @@ def run_find(
     *,
     contact_id: Optional[str] = None,
     space_id: Optional[str] = None,
+    with_stock: bool = True,
 ) -> dict[str, Any]:
-    """The route's body for already-validated `filters` (`parse_filters`)."""
+    """The route's body for already-validated `filters` (`parse_filters`). `with_stock` False
+    (the inventory module is off for this caller) leaves every row's stock as mode `none`."""
+    # Stripped as the company scope resolver strips them (`_resolve_api_key_scope`), so the
+    # two never disagree about whether a contact was named.
+    contact_id = (contact_id or "").strip() or None
+    space_id = (space_id or "").strip() or None
     if contact_id and not space_id:
         # Company scope needs both or stays off, the stock policy reads the contact alone:
         # they agree or nobody is answered (the stock route's rule).
@@ -304,8 +323,10 @@ def run_find(
         for p in g.rows[:ROWS_PER_GROUP]:
             if str(p.id) not in shown_ids:
                 shown_ids.append(str(p.id))
-    stock, visibility = _stock_by_product(db, shown_ids, contact_id, space_id)
-    if contact_id and visibility is None and shown_ids:
+    stock, visibility = (
+        _stock_by_product(db, shown_ids, contact_id, space_id) if with_stock else ({}, None)
+    )
+    if with_stock and contact_id and visibility is None and shown_ids:
         # The contact resolved to no policy: fail closed, as the stock route does.
         return {"groups": [], "stock_visibility": None}
     body_groups = []

@@ -222,3 +222,73 @@ def test_l5_the_structurer_localizes_the_reply_with_the_turns_localizer() -> Non
     assert out["response"] != PRESENTER_TEXT
     assert "SRTSCBD823-MBL" in out["response"] and PRODUCT_CODE in out["response"]
     assert not out["response"].splitlines()[-1].startswith("Stock:")
+
+
+# --------------------------------------------------------------------------- review round 1
+
+VERDICT_TEXT = (
+    f"Seat cover for {PRODUCT_CODE}:\n"
+    "Code: SRTSCBD823-MBL\nStock: ✅ Got stock.\n\n"
+    "Code: SRTSCBD824-BL\nStock: ❌ No stock, ETA 20/10/2026."
+)
+
+
+@pytest.mark.parametrize(
+    "lang,got,eta",
+    [
+        ("ms", "Stok: ✅ Stok ada.", "Stok: ❌ Tiada stok, ETA 20/10/2026."),
+        ("zh", "库存: ✅ 有库存。", "库存: ❌ 没有库存，ETA 20/10/2026。"),
+    ],
+)
+def test_r1_a_dealer_stock_verdict_is_translated_after_its_mark(lang, got, eta) -> None:
+    """Reviewer blocker 1 (kill test K12): the `Stock:` verdict line goes through
+    `Localizer.tail`, so the sentence after the mark is the customer's language too."""
+    out = fetch_mod.output_structurer(
+        {"response": VERDICT_TEXT, "has_result": True, "result_type": "find"},
+        {"tool": TOOL, "localizer": _loc(lang)},
+    )["response"].split("\n")
+    assert got in out and eta in out, out
+
+
+@pytest.mark.parametrize("lang", ["en", "ms", "zh"])
+def test_r1_no_group_is_one_line_in_the_customers_language(lang) -> None:
+    """Reviewer finding 3: the route answered no group (nothing visible, or fail closed)."""
+    from app.services.product_find import NOTHING_LINE
+
+    out = fetch_mod.output_structurer(
+        {"response": "", "has_result": False, "result_type": "find"},
+        {"tool": TOOL, "localizer": _loc(lang) if lang != "en" else None},
+    )
+    assert out["response"] == (_loc(lang).text(NOTHING_LINE) if lang != "en" else NOTHING_LINE)
+    assert lang == "en" or out["response"] != NOTHING_LINE
+
+
+@pytest.mark.parametrize("typed", ["SRTWC8383RLMBL", "srtwc8383 rl mbl"])
+def test_r1_a_code_typed_without_dashes_is_answered_not_asked_again(session_factory, typed) -> None:
+    """Reviewer finding 2 (kill test K7): the resolver resolved what was typed; a spelling
+    difference in dashes, spaces or case never turns into "Which product code?"."""
+    call, captured = _capturing_mcp(ENVELOPE)
+    entities = [{"raw": typed, "hint": "product", "canonical_code": typed, "current_message": True}]
+    _run(_payload(parse=_find_parse(entities=entities)), call)
+    assert captured and captured[0][0] == TOOL, captured
+    assert captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}]
+
+
+def test_r1_a_carried_product_beside_a_newly_named_one_is_left_out(session_factory) -> None:
+    carried = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    payload = _payload(parse=_find_parse())
+    payload["gate"]["compatible_entities"].insert(
+        0, {"uuid": carried, "entity_type": "product", "canonical_code": "SRTWC8088", "code": "SRTWC8088"}
+    )
+    call, captured = _capturing_mcp(ENVELOPE)
+    _run(payload, call)
+    assert captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}], captured
+
+
+def test_r1_a_carried_product_the_parser_points_back_to_is_the_subject(session_factory) -> None:
+    """"which seat cover fits it?": the parser carries the earlier code as a product entity
+    not from this message; that product is asked about, never the ask line."""
+    entities = [{"raw": PRODUCT_CODE, "hint": "product", "canonical_code": PRODUCT_CODE, "current_message": False}]
+    call, captured = _capturing_mcp(ENVELOPE)
+    _run(_payload(parse=_find_parse(entities=entities)), call)
+    assert captured and captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}]

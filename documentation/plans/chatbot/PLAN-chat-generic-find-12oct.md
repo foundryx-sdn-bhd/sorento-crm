@@ -1,6 +1,7 @@
 # PLAN: generic find (one MCP read tool for products + filter registry)
 
-Status: Build (lane CHAT-FIND, PR #1601; card answered by crew 12 Oct, Q1-Q5 all (a)).
+Status: Review (lane CHAT-FIND, PR #1601; card answered by crew 12 Oct, Q1-Q5 all (a); security review READY,
+reviewer round 1 fixed: verdict localization test, dashless codes, the no-group line).
 Track: standard (new MCP tool surface, so security review runs; no migration, no FE change).
 
 Architecture: option D of `documentation/plans/chatbot/ARCH-scalable-chat-11oct.html` (PR #1566),
@@ -110,6 +111,21 @@ role, so the line names neither as fact). A named product the caller cannot see 
   helpers), `BRAND_SCOPE_TREATMENT["crm_find"] = "filtered"`, `mcp_tool_domains`.
 - `label_catalog.LABELS` gains the registry's labels (`Code`, `Stock`, `Status`, `Discontinued`,
   heads with `{code}`, the ask line) in ms and zh.
+
+## 2.6 Review round 1 decisions
+
+- Brand scope rests on the route (ORM brand predicate on every Product read, anchors and links
+  alike), pinned by `tests/test_product_find_scope.py` through the real resolver. The chatbot's
+  `brand_guard` cannot prune a text reply, the same as `crm_report_ask` and the outstanding
+  report (security L2, accepted).
+- Stock is printed only when the caller may use the `inventory` module
+  (`guards.module_allowed_with_api_key`, security L1); `contact_id` / `space_id` are stripped as
+  the scope resolver strips them (L3); a repeated filter key is read once.
+- The lane's subject: the products this message named (codes compared by letters and digits
+  only), else every resolved product; a product entity the parser carried back ("fits it?") is
+  the subject; no product entity at all asks for the code.
+- No group (nothing visible, or the contact resolved to nobody): `I have nothing on record for
+  that product.`, localized; never "try again".
 
 ## 3. Filters 2 and 3 (card Q5 a)
 

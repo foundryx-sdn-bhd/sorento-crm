@@ -2783,10 +2783,6 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     }
 
 
-#: Said when `crm_find` answered nothing printable (an error envelope never reaches here).
-_FIND_ERROR_TEXT = "I could not check that just now, please try again."
-
-
 def _find_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     """CHAT-FIND: the presenter's text (`presenters._find_envelope`) is the reply, verbatim,
     localized line by line; a dealer's `Stock:` verdict is translated after its status mark the
@@ -2801,8 +2797,14 @@ def _find_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, An
         text = "\n".join(
             loc.tail(line) if line.startswith(stock_lead) else line for line in loc.lines(text).split("\n")
         )
+    if not text:
+        # No group: no named product is visible to this contact, or the contact resolved to
+        # nobody (the route fails closed). Said once; asking again changes neither.
+        from app.services.product_find import NOTHING_LINE
+
+        text = loc.text(NOTHING_LINE)
     return {
-        "response": text or _FIND_ERROR_TEXT,
+        "response": text,
         "response_intro": None,
         "answers": [],
         "attachments": [],
