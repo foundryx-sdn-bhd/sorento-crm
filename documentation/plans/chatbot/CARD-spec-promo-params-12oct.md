@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Review. Step-1 hand test round fixed (section 10b); one crew ask open (the axis pick). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10b are what shipped).
+Status: Review. Step-1 hand test round fixed (section 10b); owner size ruling built (section 10c). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10c are what shipped).
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -269,6 +269,29 @@ line. `chatbot_prompt_vars.publish_specs_block` (`scripts/publish_parser_specs_b
 publishes the production text word for word with the block as a new unlabelled version; the owner
 promotes it (PR release post-steps).
 
-Open: the answer to "Which one do you mean?" (Length or Width). The parser carries the subject
-but not the number, so "length" alone is not answered (crew ask on the PR, recommendation: a
-numbered pick carried like the promotion tier menu).
+The axis pick this round raised was closed by the owner ruling in 10c (no axis question).
+
+### 10c. Owner size ruling (12 Oct)
+
+Ruling: never ask Length or Width. A bare millimetre size matches any axis; an axis word narrows
+to that axis. Reply with a few matches, then offer more; the parser marks the follow-up.
+
+- `product_spec_filter.resolve_size`: several axes holding the value become one `any_of`
+  constraint (OR across the axes); `spec_ambiguous` is gone. One axis rewrites onto its key.
+- Grounding keeps the parser's axis key only when an axis word is in the entity's raw or the
+  message (`_axis_said`, the registry's `ground_words`); otherwise the number is `size`. A spec
+  pair the parser put on a product hint splits off the same way, and a product entity that is
+  only a measure is dropped.
+- Paging reuses the carried set page (`focus.set_page`, `turn/apply.py`, runner in
+  `turn_runtime.make_tool_runner`) under a `spec_page` key: page size 5, the routes state
+  `spec_page {page, limit, total}`, the lane adds "Reply to see more." while more remain. The
+  next turn continues only when the parser sets `continuation: true` (rule added to the parser
+  prompt; no text matching in code), with the same constraints and the next page.
+- `publish_specs_block(from_version=...)` handles the three prompt shapes: `{{specs}}` present;
+  prod v52 policy-block markers with static Specification lines (replaced by `{{specs}}`);
+  no markers (dev v52, block appended). Release post-step: `--from-version 52`.
+
+Live parse on the v52 line (prod shape + publisher, gpt-5.4-mini, 7 calls): "600mm basin got
+stock?" lists 5 of 7 with the offer; "more", "show more", "lagi", "ada lagi?" and a Chinese
+variant each return page 2 in the customer's language; "600mm length basin" returns the length
+basins only.
