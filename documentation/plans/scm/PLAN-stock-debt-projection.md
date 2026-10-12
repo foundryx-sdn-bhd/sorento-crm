@@ -1,6 +1,6 @@
 # PLAN: Stock Debt projected coverage (sales orders only) (STOCK-DEBT-PROJECTION)
 
-Status: built; rule D implemented and tests green, waiting on reviewer, browser pass and owner hand test (12 Oct 2026). Earlier: owner answered card v2 Q1-Q4 (a); locations "only consider pool, those project locations are matched already". Small fix track (no migration, no
+Status: built; owner hand test PASS and merge approved together with #1597 (13 Oct 2026, 00:20); merges after #1597. Earlier: owner answered card v2 Q1-Q4 (a); locations "only consider pool, those project locations are matched already". Small fix track (no migration, no
 auth/RBAC change, no new ingest surface).
 
 ## Implemented rule (owner, 12 Oct 2026, 22:20: option D; crew answer (b) the same day)
@@ -25,13 +25,15 @@ carried_in(M+1)   = max(0, min(remainder(M), projected(M)))
 
 A project reserve is exactly #1597's `is_project_reserve`: a pool (some location's
 `pool_warehouse_id`) with `segment = project`, per warehouse row, so one company's HQ can be
-a reserve while another company's same-coded HQ stays a dealer pool. #1597 keeps R45 for HQ
-documents, so an unlinked HQ PO/SPO is covered ONLY by this display-only layer.
-`_project_reserves()` reads `site_pool_warehouses()` and, once #1597 is on main, its
-`project_reserve_warehouses()`, so either merge order holds; reserve documents are matched by
-key at the reserve warehouses' ids, never by code. A trial merge with #1597 (4bc34cb8) passes
-both lanes' tests. Reserve ON
-HAND is #1597's walk, not this layer. `project(M)` always comes off the page's own walk, so
+a reserve while another company's same-coded HQ stays a dealer pool. This branch carries
+#1597 (merged in; #1597 merges to main first) and reads `project_reserve_warehouses()` and the
+walk's `is_reserve` flag. #1597 keeps R45 for HQ documents and walks HQ on hand for project
+lines, and its PLAIN Book=Project page credits an unlinked HQ PO to its month (SRTWT2215:
+October +4,962). The projection counts it exactly once: reserve stock is kept out of the
+project figure and carried as the reserve term instead (its unlinked documents, plus the on
+hand the walk left spare), so SRTWT2215 reads 4,962, 4,945, 3,509, 1,896, 1,416, 619, 251,
+then -171 in May (`test_with_1597_the_reserve_po_is_counted_exactly_once`). Reserve ON
+HAND is first #1597's walk; only what it leaves spare is carried here. `project(M)` always comes off the page's own walk, so
 each book's projection follows that book's Covered by (they differ only where Covered by
 does, e.g. an out-of-span link is honoured uncapped under Book=Project). The reserve term is
 the same in both books: a reserve outside the span is read by walking the span with every
