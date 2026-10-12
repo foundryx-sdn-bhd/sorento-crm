@@ -79,6 +79,24 @@ and their OUTPUT lines are untouched; `PLAIN_FLAGS` (true or null) now covers on
 or object. The cand-0104 blank reply is still open: no reader turns a null plain flag into a failure
 (every read is truthiness or `is True`), and the per-turn outputs were asked of crew.
 
+## Round 3, second part: per-turn data from crew
+
+- Round 2's grouped OUTPUT line showed `continuation` as `true|null`, and the candidate set
+  `continuation: true` where main did not, turning a new order ask into "refines the standing subject".
+  Round 3's contiguous groups put `continuation` back on main's own line and position.
+- A nullable `open_question_answer` let the model decide "not an answer" (null) before `mode`: the turn
+  after a product roster came back unanswered. `escalation` and `open_question_answer` now keep main's
+  flat shape and OUTPUT lines word for word; only `low_stock` and `anaphora` are nullable.
+- Never blank (owner rule, crew ask): every `out_of_scope` hand-over persisted `reply.text = null`
+  (`escalate-catalog` has `includeResponse: false`; the lane's one message lived only in the
+  `send_message` action), so the eval, the console bubble, the next turn's `Previous response:` and the
+  chat-history link read a blank reply. MAIN HAS THIS TOO (engine, tail and lane are unchanged by this
+  lane); the grouped wire only exposed it by routing one more message to `out_of_scope`. Fix:
+  `run_tail` falls back to the lane's own message text when it composed none (`engine.py`,
+  `lane_text`). Red test `tests/chatbot/test_out_of_scope_never_blank.py`; the strict xfail
+  `test_s5_escalation_seams.py::test_a_clarifys_text_reaches_the_persisted_reply` (this defect) is now
+  green; console tests read the customer's bubbles as reply plus extras (`_bubbles`).
+
 ## Measurement (live, 12 Oct 2026, round 2: 66 parser calls)
 
 gpt-5.4-mini, `head/parser.parse` production path, 20 made-up turns

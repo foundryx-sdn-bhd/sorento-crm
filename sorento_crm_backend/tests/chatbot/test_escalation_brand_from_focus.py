@@ -1077,9 +1077,9 @@ class TestTheConsoleShowsWhereTheEscalationWent:
             first_text="check spec srtwc286",
             first_verdict=_product_verdict("master_products", "check_product", "srtwc286"),
         )
-        assert turn2.send_messages == [
+        assert _bubbles(turn2) == [
             "Routed to your PIC, they will reply shortly.",
-        ], turn2.send_messages
+        ], (turn2.reply_text, turn2.send_messages)
         assert turn2.trace_summary["routing_line"] == (
             "Routing: team marketing_product, brand sorento, source focus_product, "
             "found in Sorento, assignee ZZT Tay Zhi Yang"
@@ -1315,7 +1315,7 @@ def _assert_marketing_draw(
     assert str(routing["cursor_key"]).endswith(f"~b:{brand}"), routing
     assert routing["assignee_name"] == assignee, routing
     assert routing.get("product_company") == company, routing
-    assert turn.send_messages[-1] == "Routed to your PIC, they will reply shortly.", turn.send_messages
+    assert _bubbles(turn)[-1] == "Routed to your PIC, they will reply shortly.", (turn.reply_text, turn.send_messages)
 
 
 class TestTheOwnersRetestOfRound3:
@@ -1527,3 +1527,9 @@ class TestTheLiveTurnDrawsFromTheNamedTeam:
         assert len(sla) == 1 and sla[0].team_set_code == "marketing_product", sla
         routing = _looked_up_routing(session_factory, turn.turn_id)
         assert routing["product_company"] == "Mocha", routing
+
+
+def _bubbles(turn) -> list[str]:
+    """What the customer is sent, in order: the reply bubble, then any extra ones. The
+    escalation arm's handover line is the reply itself since CHAT-SPARSE (never blank)."""
+    return [t for t in [turn.reply_text, *(turn.send_messages or [])] if t]
