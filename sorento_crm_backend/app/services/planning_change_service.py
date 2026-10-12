@@ -3598,6 +3598,26 @@ def _execute_reallocations(
     }
 
 
+def _line_changes(
+    rows: Sequence[PlanningChangeRow], line_ids: Sequence[str]
+) -> Dict[str, Dict[str, Any]]:
+    """Per project line id this apply restates: the SO line's own qty and date before and
+    after, off the batch rows' `from_json` / `to_json`."""
+    wanted = {str(line_id) for line_id in line_ids}
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if not r.project_line_id or str(r.project_line_id) not in wanted:
+            continue
+        before, after = r.from_json or {}, r.to_json or {}
+        out[str(r.project_line_id)] = {
+            "from_qty": _dec(before.get("qty")) if before.get("qty") is not None else None,
+            "to_qty": _dec(after.get("qty")) if after.get("qty") is not None else None,
+            "from_date": _as_date(before.get("required_date")),
+            "to_date": _as_date(after.get("required_date")),
+        }
+    return out
+
+
 def _oi_demand_rows(
     db: Session,
     live_rows: Sequence[PlanningChangeRow],
@@ -3770,6 +3790,9 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_DATE_LATER if r.kind == "delayed" else CHANGE_DATE_EARLIER,
                     "note": f"Was {from_date}" if from_date else "No previous delivery date",
+                    # EMAIL-SO-CHANGES: the same date, structured, for the email's
+                    # DELIVERY / NEW DATE.
+                    "from_date": _as_date(from_date),
                 }
             )
             counts["DELAY" if r.kind == "delayed" else "ADVANCE"] = (
@@ -3791,6 +3814,10 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_QTY_DECREASE,
                     "note": f"Was {qty_text(from_qty)}, now {qty_text(to_qty)}",
+                    # EMAIL-SO-CHANGES: the same two figures, structured, for the email's
+                    # QTY / NEW QTY.
+                    "from_qty": from_qty,
+                    "to_qty": to_qty,
                 }
             )
             counts["CANCEL_BALANCE"] = counts.get("CANCEL_BALANCE", 0) + 1
@@ -4567,6 +4594,9 @@ def _apply_one_order(
         result = supply.confirm(
             order, body, actor_user_id=actor, uncover_line_ids=uncover_line_ids,
             settle_in_place_line_ids=settle_line_ids,
+            # EMAIL-SO-CHANGES: what the book did to each line this apply restates (the
+            # "What changed" source), for the handover email's Was -> Now.
+            line_changes=_line_changes(live, settle_line_ids),
             # The cascade waits for the shift below. Run inside `confirm`, it filled the
             # survivor's headroom from ANY free purchase-order line first, so the closed
             # lines' own documents arrived a moment later to a row with nothing left to

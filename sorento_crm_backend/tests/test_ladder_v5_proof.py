@@ -39,6 +39,7 @@ from .test_fulfilment_board import (  # noqa: F401  (helpers, not fixtures)
     _incoming,
     _line,
     _order,
+    _pool,
     _product,
     _service,
     _step,
@@ -138,7 +139,7 @@ def test_the_pool_is_asked_before_another_location_and_answers_the_whole_line():
     ownership group holding 100 within the cap. Pool 24, never Borrow 24."""
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
-        pool = _warehouse(db, f"ZZTC{_uid()[:5]}"[:20])
+        pool = _pool(db, f"ZZTC{_uid()[:5]}"[:20])
         own = _warehouse(db, f"ZZTC{_uid()[:5]}-BB"[:20])
         own.pool_warehouse_id = pool.id
         db.flush()
@@ -180,8 +181,8 @@ def test_another_sites_pool_answers_a_line_whose_own_pool_is_empty():
 
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
-        own_pool = _warehouse(db, f"ZZTD{_uid()[:5]}"[:20])
-        other_pool = _warehouse(db, f"ZZTE{_uid()[:5]}"[:20])
+        own_pool = _pool(db, f"ZZTD{_uid()[:5]}"[:20])
+        other_pool = _pool(db, f"ZZTE{_uid()[:5]}"[:20])
         own = _warehouse(db, f"ZZTD{_uid()[:5]}-BB"[:20])
         elsewhere = _warehouse(db, f"ZZTE{_uid()[:5]}-BB"[:20])
         own.pool_warehouse_id = own_pool.id
