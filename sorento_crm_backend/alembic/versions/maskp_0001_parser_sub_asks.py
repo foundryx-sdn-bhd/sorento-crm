@@ -49,6 +49,15 @@ DEV_FAILURES_ADDENDA = (
 )
 #: The head of MEMORY_ADDENDUM, the base text's tail block.
 MEMORY_ANCHOR = "\n\n== MEMORY ==\n"
+#: The rendered policy blocks a production text without the MEMORY block ends with
+#: (`chatbot_parser_prompt.BLOCKS_BEGIN`).
+BLOCKS_ANCHOR = "\n\n<<<CHATBOT POLICY BLOCKS>>>"
+#: The production-line version (crew live check 13 Oct 2026: the version crew pins is prod's
+#: own line, v52 on dev and prod): the production text plus the addendum.
+PROD_MESSAGE = (
+    "MULTI-ASK-PLAN2 (production line): the production parser text plus the sub_asks and "
+    "family keys. Unlabelled, promote from the Chatbot Console."
+)
 MESSAGE = (
     "MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES "
     "(one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console."
@@ -93,6 +102,61 @@ def publish(session: Session) -> int | None:
     return next_version
 
 
+def publish_on_production(session: Session) -> int | None:
+    """The production-labelled text (prod's own line) with the addendum right before its
+    MEMORY block, else right before its policy blocks, as a new UNLABELLED version. None on
+    a database with no production label (a fresh one) or when this text is already
+    published; a production text with neither anchor fails loudly."""
+    from app.models.ai_prompt import AIPromptVersion
+
+    row = session.execute(
+        sa.text(
+            "SELECT v.template, v.variables FROM ai_prompt_versions v JOIN ai_prompt_labels l "
+            "ON l.version_id = v.id WHERE l.name = :n AND l.label = 'production'"
+        ),
+        {"n": PROMPT_NAME},
+    ).first()
+    if row is None:
+        logger.warning("maskp_0001: no production-labelled parser version, production line not published")
+        return None
+    production = row[0]
+    addendum = ADDENDUM.read_text(encoding="utf-8")
+    if addendum in production:
+        logger.info("maskp_0001: the production text already carries the sub asks addendum")
+        return None
+    anchor = MEMORY_ANCHOR if MEMORY_ANCHOR in production else BLOCKS_ANCHOR if BLOCKS_ANCHOR in production else None
+    if anchor is None:
+        raise RuntimeError(
+            "maskp_0001: the production parser text carries neither the MEMORY block nor the policy "
+            "blocks, so the sub asks addendum has no place to go; publish it by hand"
+        )
+    template = production.replace(anchor, addendum + anchor, 1)
+    existing = (
+        session.query(AIPromptVersion.version)
+        .filter(AIPromptVersion.name == PROMPT_NAME, AIPromptVersion.template == template)
+        .first()
+    )
+    if existing is not None:
+        logger.info("maskp_0001: production line already published as v%s", existing[0])
+        return None
+    versions = session.query(AIPromptVersion.version).filter(AIPromptVersion.name == PROMPT_NAME).all()
+    next_version = max((int(v[0]) for v in versions), default=0) + 1
+    session.add(
+        AIPromptVersion(
+            name=PROMPT_NAME,
+            version=next_version,
+            type="text",
+            template=template,
+            variables=list(row[1] or ["current_date"]),
+            config_json={"wording_edit": True},
+            commit_message=PROD_MESSAGE,
+        )
+    )
+    session.flush()
+    logger.info("maskp_0001: published the production line as v%s, label unmoved", next_version)
+    return next_version
+
+
 def upgrade() -> None:
     from app.services.ai_prompt_seed import seed_prompt_registry
 
@@ -101,6 +165,7 @@ def upgrade() -> None:
     session = Session(bind=bind)
     try:
         publish(session)
+        publish_on_production(session)
         session.commit()
     except Exception:
         session.rollback()
@@ -115,8 +180,8 @@ def downgrade() -> None:
     op.get_bind().execute(
         sa.text(
             "DELETE FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser' "
-            "AND commit_message = :m "
+            "AND commit_message IN (:m, :p) "
             "AND id NOT IN (SELECT version_id FROM ai_prompt_labels)"
         ),
-        {"m": MESSAGE},
+        {"m": MESSAGE, "p": PROD_MESSAGE},
     )
