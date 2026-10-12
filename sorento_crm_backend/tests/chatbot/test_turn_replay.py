@@ -838,7 +838,13 @@ def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[di
                 f"replay case called tool {name!r} with no recorded tool_results entry for it"
             )
         entry = bucket.pop(0) if len(bucket) > 1 else bucket[0]
-        return json.dumps(entry.get("envelope") or {})
+        envelope = entry.get("envelope") or {}
+        if isinstance(envelope, dict) and envelope.get("truncated") is True:
+            raise AssertionError(
+                f"recorded {name!r} envelope was truncated by the trace's 8 KB cap "
+                f"(trace.cap_envelope, {envelope.get('bytes')} bytes): not replayable, re-record it whole"
+            )
+        return json.dumps(envelope)
 
     monkeypatch.setattr(MCPRuntimeClient, "call_tool", _fake_call_tool)
     return tool_calls

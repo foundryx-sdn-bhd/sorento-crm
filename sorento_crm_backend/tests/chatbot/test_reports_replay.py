@@ -257,3 +257,14 @@ def test_a_domain_only_tool_trace_entry_is_not_a_recorded_call() -> None:
     turn = {"tool_results": [{"tool": None, "args": None, "envelope": None}]}
     _compare("x", 1, {}, _R(), failures, turn=turn, tool_calls=[])
     assert failures == [], failures
+
+
+def test_a_truncated_recorded_envelope_fails_as_a_recording_gap_not_an_engine_answer(monkeypatch, stub_parser) -> None:
+    """`TurnTrace.add` caps a tool envelope at 8 KB (`trace.cap_envelope`); a capped one is not the answer the
+    turn saw, so replaying it would grade the engine on a stub. Replay names the gap instead."""
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    recorded = {"tool": "crm_report", "args": {}, "envelope": {"truncated": True, "bytes": 9000, "head": "{"}}
+    _install_stubs(monkeypatch, stub_parser, turn={"tool_results": [recorded]})
+    with pytest.raises(AssertionError, match="truncated"):
+        MCPRuntimeClient.call_tool(None, "crm_report", {})
