@@ -120,6 +120,34 @@ describe('BoardTransfersPanel: columns (D6)', () => {
   });
 });
 
+describe('BoardTransfersPanel: one line per cell where the second said nothing new', () => {
+  it('shows the product code once when the product name is the code', () => {
+    mockData([transferOf({ item_code: 'SRTFVP08', product_name: 'SRTFVP08' })]);
+
+    render(<BoardTransfersPanel soNumbers={['SO404352']} />);
+
+    expect(screen.getAllByText('SRTFVP08')).toHaveLength(1);
+  });
+
+  it('keeps the product name under the code when it differs', () => {
+    mockData([transferOf()]);
+
+    render(<BoardTransfersPanel soNumbers={['SO404352']} />);
+
+    expect(screen.getByText('SRTWB7518')).toBeInTheDocument();
+    expect(screen.getByText('Some Product')).toBeInTheDocument();
+  });
+
+  it('shows the order line in For without the customer name', () => {
+    mockData([transferOf()]);
+
+    render(<BoardTransfersPanel soNumbers={['SO404352']} />);
+
+    expect(screen.getByText('SO404352 · line 22')).toBeInTheDocument();
+    expect(screen.queryByText('ABC SDN BHD')).not.toBeInTheDocument();
+  });
+});
+
 describe('BoardTransfersPanel: hidden when empty (D4)', () => {
   it('renders nothing when the list is empty and nothing was just confirmed', () => {
     mockData([]);
