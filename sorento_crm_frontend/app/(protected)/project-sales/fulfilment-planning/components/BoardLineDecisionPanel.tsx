@@ -268,18 +268,38 @@ export function BoardLineDecisionPanel({
         .filter((id): id is string => Boolean(id)),
     [draft.reserve],
   );
+  // OI-CLOSED-LINE (owner, 12 Oct 2026): a line with goods already delivered may name the
+  // location they went out from even when it shows nothing free now.
+  const anyDelivered = toMinor(contribution.qty_delivered ?? '0') > 0;
   const reserveCandidates = React.useMemo(
     () =>
       locations.filter(
         (location) =>
           Boolean(location.warehouse_id) &&
           !reserveWarehouseIds.includes(location.warehouse_id as string) &&
-          toMinor(location.qty_free_remaining ?? location.qty_free ?? '0') > 0,
+          (anyDelivered ||
+            toMinor(location.qty_free_remaining ?? location.qty_free ?? '0') > 0),
       ),
-    [locations, reserveWarehouseIds],
+    [locations, reserveWarehouseIds, anyDelivered],
   );
 
   const balance = lineBalance(draft);
+  // OI-CLOSED-LINE: the delivered part of the line, credited front-first across the Reserve
+  // rows the way Confirm credits it (`delivered_credits`): after the Buy and incoming take
+  // their share, what the customer already received needs no free stock.
+  const reserveCredits = React.useMemo(() => {
+    let left = Math.max(
+      Math.min(toMinor(contribution.qty_delivered ?? '0'), toMinor(draft.open_qty)) -
+        toMinor(draft.buy_qty) -
+        toMinor(draft.timely_spo_qty),
+      0,
+    );
+    return draft.reserve.map((row) => {
+      const credit = Math.min(left, Math.max(toMinor(row.qty), 0));
+      left -= credit;
+      return credit;
+    });
+  }, [contribution.qty_delivered, draft]);
   /**
    * D5: the board CAN check the pool-share carve-out (R-C), because its own cell states each
    * pool's allowance and the pools' net. Without them this panel refused "BRW 62 + Buy 73" -
@@ -810,12 +830,12 @@ export function BoardLineDecisionPanel({
                       row.warehouse_id,
                       row.location,
                     );
-                    // The SERVER's own guard refuses a reserve above on-hand at that
-                    // location (`_check_reserve_against_on_hand`); this is the same check
-                    // read off the same figure, so a planner sees it before Confirm does
-                    // (AC-3.3). The row is never removed for it - it stays here, editable.
+                    // OI-CLOSED-LINE (owner, 12 Oct 2026): only the part not yet delivered
+                    // needs free stock, and a shortfall there is a warning, never a block -
+                    // Confirm records it and tells purchasing. The row is never removed.
                     const over =
-                      available !== null && toMinor(row.qty) > toMinor(available);
+                      available !== null &&
+                      toMinor(row.qty) - (reserveCredits[index] ?? 0) > toMinor(available);
                     return (
                       <div
                         key={row.key}
@@ -844,7 +864,7 @@ export function BoardLineDecisionPanel({
                             data-testid={`line-reserve-available-${row.key}`}
                             className={cn(
                               'text-sm tabular-nums',
-                              over ? 'text-destructive' : 'text-muted-foreground',
+                              over ? 'text-warning' : 'text-muted-foreground',
                             )}
                           >
                             {over
@@ -974,9 +994,10 @@ export function BoardLineDecisionPanel({
                 )}
               </div>
               {/* An order back is a Buy whose supply is ALREADY on order or already shipped,
-                  so the row purchasing gets carries verb ORDER BACK. Offered only while the
-                  line is being bought: there is no row to mark otherwise. */}
-              {buying && (
+                  so the row purchasing gets carries verb ORDER BACK. Offered whenever the
+                  line buys anything (OI-CLOSED-LINE: "98 from BB, 2 order back"); with no Buy
+                  there is no row to mark. */}
+              {(buying || toMinor(draft.buy_qty) > 0) && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Switch

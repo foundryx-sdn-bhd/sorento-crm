@@ -397,6 +397,7 @@ def test_off_a_same_group_sibling_borrow_raises_an_order_back_on_this_line():
 # --------------------------------------------------------------------------- T8
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_k1_a_row_made_under_on_ends_as_one_row_on_the_borrowing_line_after_a_flip_to_off():
     with blank_session() as db:
         world = _borrow_world(db)
@@ -429,6 +430,7 @@ def test_k1_a_row_made_under_on_ends_as_one_row_on_the_borrowing_line_after_a_fl
 # --------------------------------------------------------------------------- T9
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_on_pins_todays_behaviour_donor_named_superseded_and_the_row_on_the_donor_line():
     with blank_session() as db:
         world = _borrow_world(db)
@@ -744,9 +746,10 @@ def test_br2_off_no_offered_candidate_names_a_donor_project():
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_r2_an_over_asked_project_hold_is_refused_by_location_under_off(enabled):
-    """Fix round 2 item 1: under OFF the refusal of an over-asked `other_project` hold names
-    the bin, never the project code. ON keeps today's sentence."""
+def test_r2_an_over_asked_project_hold_is_recorded_short_naming_the_bin(enabled):
+    """Fix round 2 item 1, restated for OI-CLOSED-LINE (#1580, owner rule 12 Oct 2026): an
+    over-asked `other_project` hold is no longer refused. The line confirms, holds what the
+    bin has, and the shortfall notice names the BIN, never the project code, in both states."""
     from app.models.projects import Project
 
     with blank_session() as db:
@@ -756,29 +759,26 @@ def test_r2_an_over_asked_project_hold_is_refused_by_location_under_off(enabled)
         code = donor_project.project_code
         bin_code = world["donor_bin"].warehouse_code
         db.commit()
-        with pytest.raises(AppException) as refused:
-            ProjectSupplyService(db).confirm(
-                world["asker"],
-                ConfirmSupplyBody(lines=[ConfirmLine(
-                    project_line_id=world["asker_line"].id,
-                    borrow=[{
-                        "source": "other_project",
-                        "warehouse_id": str(world["donor_bin"].id),
-                        "donor_project_id": str(donor_project.id),
-                        "qty": "40",
-                        "reason": "Take the held stock.",
-                    }],
-                )]),
-                actor_user_id=world["eling"],
-            )
+        body = ProjectSupplyService(db).confirm(
+            world["asker"],
+            ConfirmSupplyBody(lines=[ConfirmLine(
+                project_line_id=world["asker_line"].id,
+                borrow=[{
+                    "source": "other_project",
+                    "warehouse_id": str(world["donor_bin"].id),
+                    "donor_project_id": str(donor_project.id),
+                    "qty": "40",
+                    "reason": "Take the held stock.",
+                }],
+            )]),
+            actor_user_id=world["eling"],
+        )
 
-    reason = refused.value.detail["failing_lines"][0]["reason"]
-    if enabled:
-        assert reason.startswith(f"{code} has "), reason
-    else:
-        assert code not in reason, reason
-        assert reason.startswith(f"Stock held at {bin_code} now has "), reason
-        assert reason.endswith("and 40 was asked for."), reason
+    notices = body["stock_short_notices"]
+    assert notices and len(notices) == 1, notices
+    reason = notices[0]["reason"]
+    assert code not in reason, reason
+    assert reason.startswith(f"Borrow 40 at {bin_code} confirmed as decided"), reason
 
 
 # --------------------------------------------------------------------------- defect A

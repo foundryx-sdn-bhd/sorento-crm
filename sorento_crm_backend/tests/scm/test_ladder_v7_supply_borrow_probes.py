@@ -20,6 +20,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -157,6 +159,7 @@ def test_reconfirming_the_same_line_against_a_different_document_cancels_the_sta
 # --------------------------------------------------- (b) one document, two lines, one confirm
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_two_lines_of_one_confirm_split_one_document_without_double_writing():
     """PLAN 3.2 step 3 / `_check_supply_borrow`'s own docstring: "two lines of one
     confirmation asking for the same document draw it down between them rather than each
@@ -220,6 +223,7 @@ def test_two_lines_of_one_confirm_split_one_document_without_double_writing():
 # --------------------------------------------------------- (c) a DECIDED donor's document
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_decided_donors_document_moves_and_its_revision_is_reissued_minus_that_line():
     """PLAN 3.2 step 3's "PINNED ... by a confirmed decision" half, and 3.3's "the donor's
     own placement comes down first ... the donor's ORDER_BACK row raised at its own date".
@@ -378,6 +382,7 @@ def test_a_decided_donors_document_moves_and_its_revision_is_reissued_minus_that
 # --------------------------------------------------- (d) manual reading, group in deficit
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_placement_still_writes_when_the_askers_own_group_is_in_deficit():
     """PLAN 3.3's closing paragraph: the link the AUTOMATIC step-3 reading writes on
     Confirm is not gated by ladder v4's group-deficit rule (`_groups_in_deficit`) -

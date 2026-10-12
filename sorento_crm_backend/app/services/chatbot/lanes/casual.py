@@ -127,7 +127,11 @@ def resolve_for_prompt(db: Session, *, ctx: dict) -> dict:
     out = _qf(ctx)
     entities = jsc.array(out.get("entities"))
     raws = [jsc.get(e, "raw") for e in entities]
-    hints = [jsc.get(e, "hint") for e in entities]
+    # REF-PROBES: a reference hint is replaced by the kinds this asker may see (the engine
+    # puts them on `ctx["reference_kinds"]`), so a hidden kind never reaches the prompt.
+    from app.services.chatbot.lanes.business.resolve_gate import _allowed_entity_types
+
+    hints = _allowed_entity_types(ctx, entities)
     goal = out.get("user_goal")
 
     return _resolve_input(

@@ -710,6 +710,13 @@ export interface ConfirmResult {
   lines_fulfilled_skipped?: number | null;
   /** Buys confirmed as decided over goods that landed for their line (#1362). */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed as decided while short
+   * of free stock on its undelivered part. Only what exists is held; purchasing is told.
+   */
+  stock_short_notices?: SupplyFailingLine[] | null;
+  /** Lines this press could not write, left out so the rest of the order confirmed. */
+  lines_held_back?: SupplyFailingLine[] | null;
 }
 
 export interface FulfilmentPlanningListEnvelope {
@@ -2636,6 +2643,8 @@ export interface ConfirmManyOrderResult {
    * purchasing adjusts it off the Buy's order inquiry row.
    */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /** The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE). */
+  stock_short_notices?: SupplyFailingLine[] | null;
   error?: string | null;
   failing_lines?: SupplyFailingLine[] | null;
 }

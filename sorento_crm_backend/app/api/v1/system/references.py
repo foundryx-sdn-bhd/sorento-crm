@@ -2637,10 +2637,10 @@ def _resolve_input(
     # stay reachable for callers that ask for them (whitelist `attachment`, or the
     # resource_attachment domain).
     caller_types = {(t or "").strip().lower() for t in (allowed_entity_types or [])}
-    fb_allowed = (
-        None
-        if "attachment" in caller_types
-        else sorted(_RESOLVER_ENTITY_TYPES - {"attachment"})
+    # Never `None`: that reaches every probe, including the reference kinds (PO, PR, SO,
+    # PO ref) which the all-types fallback must not see (REF-PROBES).
+    fb_allowed = sorted(
+        _RESOLVER_ENTITY_TYPES if "attachment" in caller_types else _RESOLVER_ENTITY_TYPES - {"attachment"}
     )
     # No `entity_pins` here: a pinned token either resolved in the primary
     # pass above or the whole request already raised, so `unresolved` never

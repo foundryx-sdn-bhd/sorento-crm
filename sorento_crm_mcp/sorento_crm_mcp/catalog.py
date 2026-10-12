@@ -1424,6 +1424,20 @@ CATALOG: tuple[ToolSpec, ...] = (
         external=True,
         domain="procurement",
     ),
+    # --- procurement: one purchase request by its number (REF-PROBES) ---
+    ToolSpec(
+        "crm_purchase_request_by_number",
+        (
+            "Get ONE PURCHASE REQUEST by its request number (e.g. 'PR2610-0012'): customer, "
+            "status, approval status, dates and every line (item code x quantity). Read-only. "
+            "A number no request carries is a 404."
+        ),
+        "/api/v1/procurement/purchase-requests/by-number/{number}",
+        ("number",),
+        (),
+        module="procurement",
+        domain="procurement",
+    ),
     # --- procurement: purchase orders placed (A5, chatbot-growth-r1) ---
     ToolSpec(
         "crm_procurement_po_placed_list",

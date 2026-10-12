@@ -622,6 +622,8 @@ describe('the pre-marked decision, and Confirm', () => {
       })),
     });
     renderPanel();
+    // BOARD-FROZEN-DISPLAY (12 Oct 2026, SO422492): an APPLIED row no longer uncovers or
+    // pre-marks its line (`isAppliedChangeRow`), but its change icon still draws.
     await screen.findByTestId('board-change-icon-pcr-381895-1');
 
     fireEvent.click(

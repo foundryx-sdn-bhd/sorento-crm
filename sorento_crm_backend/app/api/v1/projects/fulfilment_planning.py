@@ -1060,9 +1060,11 @@ def confirm_supply(
 ):
     """Confirm the lines the planner has decided, in one action (AC-C01 as amended).
 
-    Every line IN THIS CONFIRMATION commits together or none of them does: the service
-    rechecks each against authoritative facts, and one stale, unbalanced or unmapped line
-    refuses the lot with `failing_lines` naming each by line number and item code. A line
+    The service rechecks each line against authoritative facts. A stock shortfall on a
+    line's undelivered part is confirmed as decided and named in `stock_short_notices`;
+    a line that still cannot be written (unbalanced, unmapped, stale) is held back and
+    named in `lines_held_back` while the rest confirm, and only a press with nothing left
+    to confirm is refused with `failing_lines` (OI-CLOSED-LINE, owner rule 12 Oct 2026). A line
     the body does not name is left undecided on purpose (13.4) and keeps counting as
     demand; a body naming no line at all AND withdrawing none is refused. The Order Inquiry
     handoff runs inside this same transaction, so purchasing can never be told to buy
@@ -1080,17 +1082,28 @@ def confirm_supply(
         service = ProjectSupplyService(db)
         order = service.get_order(pso_id)
         _assert_can_act_on(db, order, current_user)
-        body = _confirm_with_possible_rejects(
-            db,
-            service,
+        # OI-CLOSED-LINE (owner rule, 12 Oct 2026): one line that cannot be written never
+        # refuses the whole order. The lines the recheck refuses are held back and named, and
+        # the rest confirm - the same seam Confirm all uses (#1362). A planning-change press
+        # names its lines on purpose, so it is never applied in part.
+        body, _entry, held = service._write_holding_back(
             order,
             payload,
-            actor_user_id=current_user["id"],
-            batch_id=payload.batch_id,
-            confirm_batch=lambda: _confirm_a_planning_change(
-                db, order, payload, current_user["id"]
+            lambda target, entry: _confirm_with_possible_rejects(
+                db,
+                service,
+                target,
+                entry,
+                actor_user_id=current_user["id"],
+                batch_id=entry.batch_id,
+                confirm_batch=lambda: _confirm_a_planning_change(
+                    db, target, entry, current_user["id"]
+                ),
             ),
+            hold_back=not payload.batch_id,
         )
+        if held:
+            body["lines_held_back"] = held
         db.commit()
         return body
     except Exception as exc:
@@ -1159,11 +1172,25 @@ def _confirm_a_planning_change(
             message="This planning change was already applied to this sales order.",
             code="planning_change_batch_applied",
         )
-    by_line = {str(row.project_line_id): row for row in rows if row.project_line_id}
+    # ONLY A ROW THE APPLY CAN STILL ACT ON (BOARD-FROZEN-DISPLAY, SO422492). A batch stays
+    # open while any of its rows is pending (S5b, #1245), so a board opened on it names
+    # lines whose rows an earlier press already applied (or that failed, or that a newer
+    # revision overtook). A decision routed through such a row was stored and then ignored
+    # - `_apply_one_order` takes pending rows only - so the press read "Nothing on this
+    # planning change could be confirmed", or confirmed the rest of the order WITHOUT the
+    # line. Those lines are ordinary decisions now: they ride in `extra`, the same as a
+    # line the batch never named.
+    current_revision = planning_change_service.current_revision_no(db, str(order.id))
+    by_line = {
+        str(row.project_line_id): row
+        for row in rows
+        if row.project_line_id and planning_change_service.row_is_live(row, current_revision)
+    }
 
     extra: list[dict] = []
+    named: list[str] = []
     for line in payload.lines:
-        composition = line.model_dump()
+        composition = line.model_dump(mode="json")
         row = by_line.get(str(line.project_line_id))
         if row is None:
             extra.append(composition)
@@ -1179,12 +1206,14 @@ def _confirm_a_planning_change(
         planning_change_service.set_row_decision(
             db, batch_id, str(row.id), "amend", composition
         )
+        named.append(str(line.project_line_id))
 
     result = planning_change_service.apply(
         db,
         batch_id,
         actor_user_id,
         extra_confirm_lines={str(order.id): extra},
+        named_line_ids={str(order.id): named},
         refuse_if_applied=True,
         only_pso_ids={str(order.id)},
         notify=not preview,

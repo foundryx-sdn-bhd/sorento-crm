@@ -30,7 +30,7 @@ from app.schemas.procurement import (
 )
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT, FormVoidRequest
 from app.schemas.download import PdfExportOptions
-from app.services.error_handler import handle_internal_error
+from app.services.error_handler import AppException, handle_internal_error
 from app.services.handling_lock_service import assert_can_act_on_form
 from app.services.revision_fence import require_current_revision
 from app.services.document_number import display_document_number
@@ -82,6 +82,32 @@ async def get_purchase_requests(
         return result
     except Exception as e:
         raise handle_internal_error(str(e))
+
+
+@router.get("/by-number/{number}", response_model=PurchaseRequestHeaderResponse)
+async def get_purchase_request_by_number(
+    number: str,
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db: Session = Depends(get_db),
+):
+    """Get a purchase request by its request number, with lines and attachments (read-only).
+    A number carried by several requests answers the newest."""
+    import re
+
+    from sqlalchemy import func
+
+    from app.models.procurement import PurchaseRequestHeader
+
+    folded = re.sub(r"[-\s]+", "", number).lower()
+    row = (
+        db.query(PurchaseRequestHeader.id)
+        .filter(func.lower(func.regexp_replace(PurchaseRequestHeader.request_number, r"[-\s]+", "", "g")) == folded)
+        .order_by(PurchaseRequestHeader.created_at.desc())
+        .first()
+    )
+    if row is None:
+        raise AppException(status_code=404, message="Purchase request not found")
+    return await get_purchase_request(str(row.id), current_user=current_user, db=db)
 
 
 @router.get("/{request_id}", response_model=PurchaseRequestHeaderResponse)

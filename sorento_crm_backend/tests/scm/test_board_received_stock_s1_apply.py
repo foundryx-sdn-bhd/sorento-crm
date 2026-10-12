@@ -143,16 +143,10 @@ def test_ac_s1_2_a_partial_placement_records_what_is_left_and_never_fails_the_or
     assert not (fresh.result_json or {}).get("executed_reallocations"), fresh.result_json
 
 
-def test_ac_s1_3_a_row_whose_core_line_closed_is_superseded_and_the_order_still_applies(api):
-    """AC-S1-3: "A pending batch row whose core line `line_status` is `closed`: at apply
-    it is marked superseded with reason "the sales-order line is closed" and the rest of
-    the order applies."
-
-    One order, two lines of the same product: line 1's core row is closed between compose
-    and apply (the book cancelled/delivered it out from under a stale batch, R3's own
-    "no recompose" case); line 2 carries its own qty_down change in the SAME batch and
-    stays open, so "the rest of the order applies" has something to check.
-    """
+def _two_line_batch(api, *, close_line_1_as):
+    """One order, two lines of the same product, both qty_down in the SAME batch; line 1's
+    core row is then set to `close_line_1_as` between compose and apply, line 2 stays open.
+    Returns `(world, batch, line1, line2, row1, row2)`."""
     client, world = api
     db = world.db
     core_so = _core_so(db, world.company_id)
@@ -197,42 +191,80 @@ def test_ac_s1_3_a_row_whose_core_line_closed_is_superseded_and_the_order_still_
     assert batch is not None
     assert batch.line_count == 2
 
-    # The book closes line 1 out from under the still-pending batch row - a stale row's SO
-    # line is now gone, and R3 says the batch records nothing was recomposed for it, not
-    # that Apply refuses the whole order.
-    core_line1.line_status = "closed"
+    core_line1.line_status = close_line_1_as
     db.commit()
 
     from app.models.planning_change import PlanningChangeRow
 
-    rows = (
-        db.query(PlanningChangeRow)
-        .filter(PlanningChangeRow.batch_id == batch.id)
-        .order_by(PlanningChangeRow.line_no)
-        .all()
-    )
+    rows = db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch.id).all()
     row1 = next(r for r in rows if r.line_no == 1)
     row2 = next(r for r in rows if r.line_no == 2)
     planning_change_service.set_row_decision(db, str(batch.id), str(row1.id), "confirm")
     planning_change_service.set_row_decision(db, str(batch.id), str(row2.id), "confirm")
+    return world, batch, line1, line2, row1, row2
+
+
+def test_ac_s1_3_a_row_whose_core_line_closed_now_applies_and_the_rest_of_the_order_applies(api):
+    """AC-S1-3, REVERSED by the owner ruling of 11 Oct 2026 (OI-CLOSED-LINE AC-1 + AC-4):
+    line status must not decide whether a confirmed decision applies. A pending row whose
+    core line became `closed` after the batch was built applies like an open line (no
+    "the sales-order line is closed" reason anywhere), and line 2's own change in the SAME
+    batch still applies ("the rest of the order applies").
+    """
+    world, batch, line1, line2, row1, row2 = _two_line_batch(api, close_line_1_as="closed")
+    db = world.db
+
     result = planning_change_service.apply(db, str(batch.id), world.actor)
     db.commit()
 
     assert result["failed_orders"] == [], result["failed_orders"]
 
-    db.expire_all()
-    fresh1 = db.get(PlanningChangeRow, row1.id)
-    assert fresh1.applied_state == PLANNING_CHANGE_STATE_SUPERSEDED, fresh1.applied_state
-    assert fresh1.applied_reason and "the sales-order line is closed" in fresh1.applied_reason, (
-        fresh1.applied_reason
+    from app.models.planning_change import (
+        PLANNING_CHANGE_STATE_APPLIED,
+        PlanningChangeRow,
     )
 
-    # Line 2's own change still applied - "the rest of the order applies".
+    db.expire_all()
+    fresh1 = db.get(PlanningChangeRow, row1.id)
+    assert fresh1.applied_state == PLANNING_CHANGE_STATE_APPLIED, (
+        fresh1.applied_state, fresh1.applied_reason,
+    )
+    assert "the sales-order line is closed" not in (fresh1.applied_reason or "")
+    line1_row = (
+        db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == line1.id, OrderInquiryRow.qty == Decimal("100"))
+        .one_or_none()
+    )
+    assert line1_row is not None, "the closed line's own qty_down was applied to its OI row"
+
+    # Line 2's own change still applied - "the rest of the order applies" (AC-4).
     fresh2 = db.get(PlanningChangeRow, row2.id)
-    assert fresh2.applied_state != PLANNING_CHANGE_STATE_PENDING, fresh2.applied_state
+    assert fresh2.applied_state == PLANNING_CHANGE_STATE_APPLIED, fresh2.applied_state
     line2_row = (
         db.query(OrderInquiryRow)
         .filter(OrderInquiryRow.so_line_id == line2.id, OrderInquiryRow.qty == Decimal("30"))
         .one_or_none()
     )
     assert line2_row is not None, "line 2's own qty_down was applied"
+
+
+def test_ac_5_a_row_whose_core_line_was_cancelled_is_still_superseded(api):
+    """OI-CLOSED-LINE AC-5: a pending row whose core line became `cancelled` between compose
+    and apply is superseded, reason "the sales-order line is cancelled"; the rest of the
+    order still applies."""
+    world, batch, line1, line2, row1, row2 = _two_line_batch(api, close_line_1_as="cancelled")
+    db = world.db
+
+    result = planning_change_service.apply(db, str(batch.id), world.actor)
+    db.commit()
+
+    assert result["failed_orders"] == [], result["failed_orders"]
+
+    from app.models.planning_change import PlanningChangeRow
+
+    db.expire_all()
+    fresh1 = db.get(PlanningChangeRow, row1.id)
+    assert fresh1.applied_state == PLANNING_CHANGE_STATE_SUPERSEDED, fresh1.applied_state
+    assert fresh1.applied_reason == "the sales-order line is cancelled", fresh1.applied_reason
+    fresh2 = db.get(PlanningChangeRow, row2.id)
+    assert fresh2.applied_state != PLANNING_CHANGE_STATE_PENDING, fresh2.applied_state
