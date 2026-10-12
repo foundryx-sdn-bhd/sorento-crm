@@ -298,6 +298,13 @@ async def list_all_promotion_products(
             "An unknown key is HTTP 422."
         ),
     ),
+    brand_ids: Optional[list[str]] = Query(
+        None, description="Brand UUIDs (csv/JSON/repeated): lines whose product is of one of these brands."
+    ),
+    promotion_types: Optional[list[str]] = Query(
+        None,
+        description="Promotion type codes (csv/JSON/repeated): lines under a promotion of one of these kinds.",
+    ),
     contact_id: Optional[str] = Query(
         None,
         description=(
@@ -313,6 +320,7 @@ async def list_all_promotion_products(
     # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
     hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
     parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
+    parsed_brand_ids = parse_uuid_list(brand_ids, param_name="brand_ids")
     try:
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
@@ -393,6 +401,8 @@ async def list_all_promotion_products(
             or (text_query and text_query.strip())
             or norm_entities
             or parsed_spec_constraints
+            or parsed_brand_ids
+            or normalize_list_query_param(promotion_types)
         )
         # Gate "no filter = empty page" guard to API-key / MCP callers only.
         # FE DataGrid lands on this endpoint with no filters and expects the
@@ -441,6 +451,8 @@ async def list_all_promotion_products(
             serving_policy=serving_policy,
             spec_constraints=parsed_spec_constraints,
             hidden_spec_keys=hidden_spec_keys,
+            brand_ids=parsed_brand_ids,
+            promotion_types=normalize_list_query_param(promotion_types),
         )
         # A virtual `size` the data could not place on one axis: no rows, and the clarify /
         # miss keys the strict response_model would drop.

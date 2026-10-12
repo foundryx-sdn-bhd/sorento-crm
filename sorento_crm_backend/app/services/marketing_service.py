@@ -309,6 +309,14 @@ def clamp_discount_percent_for_db(value: Optional[float]) -> Optional[float]:
     return round(v, 2)
 
 
+
+def _promotion_kind_clause(kind_codes: list[str]):
+    """Promotions whose type (`promotion_types.type_code`) is one of `kind_codes`: the kind
+    narrowing the promotions list and the promotion products list share."""
+    from app.models.marketing import PromotionType
+
+    return Promotion.promotion_type_id.in_(select(PromotionType.id).where(PromotionType.type_code.in_(kind_codes)))
+
 class PromotionService:
     """Service for promotion operations."""
     
@@ -694,11 +702,7 @@ class PromotionService:
         # everything else and, like the subject, never widened by the inactive fallback.
         kind_codes = [c for c in (promotion_types or []) if c and c.strip()]
         if kind_codes:
-            from app.models.marketing import PromotionType
-
-            type_clause = Promotion.promotion_type_id.in_(
-                select(PromotionType.id).where(PromotionType.type_code.in_(kind_codes))
-            )
+            type_clause = _promotion_kind_clause(kind_codes)
             subject_clause = type_clause if subject_clause is None else and_(subject_clause, type_clause)
         brand_list = [b for b in (brand_ids or []) if b and b.strip()]
         if brand_list:
@@ -1269,6 +1273,8 @@ class PromotionProductService:
         serving_policy: bool = False,
         spec_constraints: Optional[list[dict]] = None,
         hidden_spec_keys: frozenset[str] = frozenset(),
+        brand_ids: Optional[list[str]] = None,
+        promotion_types: Optional[list[str]] = None,
     ):
         """List products for a promotion, several promotions, or all promotion products.
 
@@ -1347,6 +1353,14 @@ class PromotionProductService:
                     select(Product.id).where(spec_constraint_clause(self.db, spec_constraints))
                 )
             )
+        # Brand of the LINE's product and kind of its promotion (owner Q4 option (a), the
+        # promotions list's own two narrowings, `list_promotions`), ANDed with the rest.
+        brand_list = [b for b in (brand_ids or []) if b and str(b).strip()]
+        if brand_list:
+            q = q.filter(PromotionProduct.product_id.in_(select(Product.id).where(Product.brand_id.in_(brand_list))))
+        kind_codes = [c for c in (promotion_types or []) if c and str(c).strip()]
+        if kind_codes:
+            q = q.filter(PromotionProduct.promotion_id.in_(select(Promotion.id).where(_promotion_kind_clause(kind_codes))))
 
         if promotion_ids:
             resolved_bulk: list[str] = []
@@ -1537,6 +1551,8 @@ class PromotionProductService:
             or any_dimension_max is not None
             or contact_access_codes is not None
             or bool(spec_constraints)
+            or bool(brand_list)
+            or bool(kind_codes)
         )
         today = datetime.utcnow().date()
         active_clause = _promotion_active_clause(today)
