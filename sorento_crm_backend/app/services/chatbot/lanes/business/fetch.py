@@ -153,6 +153,95 @@ def tool_filter(candidates: Any, *, has_product: bool | None) -> ToolPick:
     )
 
 
+# --------------------------------------------------------------------------- #
+# SPEC-PROMO-PARAMS: a described ask's subject and specs as the tools' `spec_constraints`
+# --------------------------------------------------------------------------- #
+
+_PROMOTION_PRODUCTS_TOOL = "crm_marketing_promotion_products_list"
+# The tools whose route takes `spec_constraints` (`sorento_crm_mcp/catalog.py`).
+SPEC_CONSTRAINT_TOOLS = frozenset(
+    {"crm_master_products_list", "crm_inventory_stock_balance_list", _PROMOTION_PRODUCTS_TOOL}
+)
+# The domains whose tool is one of them (`turn/policy_rows.py`).
+SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory", "promotion"})
+_SUBJECT_HINTS = frozenset({"category", "product_type"})
+
+
+def _phrase(text: Any) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", jsc.nullish_str(text).lower()))
+
+
+def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
+    """The category word the parser named, as a registry constraint, read off registry data
+    only: a `product_type` value whose own name or synonym IS the phrase (a plural read in
+    the singular), else the class the class vocabulary reads it as
+    (`product_spec_search._exact_classes`, the described set's own reader). None when
+    neither names it."""
+    from app.services.product_spec_registry import active_registry, merged_allowed_values, merged_synonyms
+    from app.services.product_spec_search import SELF_SYNONYM_KEY, _exact_classes
+
+    said = _phrase(raw)
+    if not said:
+        return None
+    row = next((r for r in active_registry(db) if r.spec_key == "product_type"), None)
+    if row is not None:
+        phrases: dict[str, Any] = {}
+        for value in merged_allowed_values(row):
+            phrases.setdefault(_phrase(str(value).replace("_", " ")), value)
+        for value, words in merged_synonyms(row).items():
+            if value != SELF_SYNONYM_KEY:
+                for word in words or []:
+                    phrases.setdefault(_phrase(word), value)
+        singular = said[:-1] if said.endswith("s") and len(said) > 3 else ""
+        for candidate in (said, singular):
+            if candidate and candidate in phrases:
+                return {"key": "product_type", "op": "eq", "value": phrases[candidate]}
+    classes = _exact_classes(db, raw)
+    if classes:
+        return {"key": "class", "op": "eq", "value": classes[0] if len(classes) == 1 else list(classes)}
+    return None
+
+
+def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | None:
+    """The described ask as `spec_constraints` (card section 9, slices 2 and 3): the subject
+    (the category / product type entity, mapped through registry data, never matched
+    against the message) first, then every grounded specification entity that has a
+    value, in entity order, each `{key, op: "eq", value}`.
+
+    None when the turn names a product code (`resolve_gate._names_a_typed_code`, the code
+    path keeps its resolved ids), when a subject word maps to nothing or the subject words
+    map to two different things (that ask stays on the resolver path rather than being
+    answered for half of what was said), and when nothing maps at all. A specification
+    with no value is left out: the unknown-value clarify answers it."""
+    from app.services.chatbot.head.grounding import specification_entities
+    from app.services.chatbot.lanes.business.resolve_gate import _names_a_typed_code
+
+    if db is None or not isinstance(parse_output, dict) or _names_a_typed_code(parse_output):
+        return None
+    entities = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
+    subjects: list[dict[str, Any]] = []
+    for e in entities:
+        if jsc.nullish_str(e.get("hint")).strip().lower() not in _SUBJECT_HINTS:
+            continue
+        raw = jsc.nullish_str(e.get("raw")).strip()
+        if not raw:
+            continue
+        subject = _subject_constraint(db, raw)
+        if subject is None:
+            return None
+        if subject not in subjects:
+            subjects.append(subject)
+    if len(subjects) > 1:
+        return None
+    specs = [
+        {"key": jsc.js_string(e["spec_key"]), "op": "eq", "value": e["spec_value"]}
+        for e in specification_entities(entities)
+        if e.get("spec_key") and e.get("spec_value") is not None
+    ]
+    out = [*subjects, *[c for i, c in enumerate(specs) if c not in specs[:i]]]
+    return out or None
+
+
 def select_tool(domain: str | None, spec_constraints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The domain's tool, read off `turn.policy.default_policy()` (AC-1594: was
     `contracts.DOMAIN_SPEC`, now the frozen seed `chatbot_domains` is migrated from). No
@@ -1188,6 +1277,22 @@ def entity_ids_transformer(
             out["requested_quantities"] = json.dumps(
                 dict(quantities), separators=(",", ":")
             )
+
+    # SPEC-PROMO-PARAMS (card section 9, slices 2 and 3): a described ask's subject and
+    # specs travel as `spec_constraints` and the route does the filtering, so the call
+    # carries no resolver `product_ids` (MCP stays the executor). On the promotion products
+    # tool a promotion the resolver matched by NAME off the same words is not the subject
+    # either; only one the customer named (`promo_filter`) stays, as on the promotions list.
+    spec_constraints = jsc.get(semantic_input, "spec_constraints")
+    if tool_name in SPEC_CONSTRAINT_TOOLS and isinstance(spec_constraints, list) and spec_constraints:
+        out.pop("product_ids", None)
+        out["spec_constraints"] = [dict(c) for c in spec_constraints if isinstance(c, dict)]
+        if tool_name == _PROMOTION_PRODUCTS_TOOL:
+            named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
+            if named:
+                out["promotion_ids"] = named
+            else:
+                out.pop("promotion_ids", None)
 
     # group_by / top_n (A3, AC-909/AC-910): additive parser keys, uniform across
     # every list tool this plan touches. `top_n` aliases to `limit` for the
