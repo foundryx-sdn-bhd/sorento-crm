@@ -1,8 +1,31 @@
 # PLAN: Stock Debt projected coverage (sales orders only) (STOCK-DEBT-PROJECTION)
 
-Status: behaviour card v2 posted (data request folded in), waiting on owner (no code before the owner answers). Track: small
-fix track expected (no migration, no auth/RBAC change, no new ingest surface; one new read in
-`stock_debt_service.py`, one toggle on `StockDebtClient.tsx`).
+Status: built, in review (12 Oct 2026). Owner answered card v2: Q1-Q4 (a); locations "only
+consider pool, those project locations are matched already". Small fix track (no migration, no
+auth/RBAC change, no new ingest surface).
+
+## Implemented rule (owner, 12 Oct 2026)
+
+```
+month(M)      = the page's own figure for M, unchanged (project bins matched as today)
+pool_free(M)  = pool supply in the span the walk left spare (already inside month(M))
+added(M)      = pool supply outside the span (active, segment <> 'project'), dated as the page
+                dates its own (PO Delivery date, SPO ETA, today for on hand and past due),
+                less what a pinned hold took of it
+carried_in(M) = carry(M-1), 0 before the current month
+projected(M)  = month(M) + added(M) + carried_in(M)
+carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M) + added(M))
+```
+
+Only pool spare carries; project spare and debt never carry (R37). Pool spare already in a
+month figure is carried, never added again: the SRTWT2215-shaped route test gives the same
+projection whether the HQ PO is inside the span or outside it. Row total = today's total plus
+the pool supply added on the axis. "Only products in debt" and the sort read the projected
+months. Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection`
+/ `_project` / `_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
+`StockDebtClient.projection.test.tsx`, `stockDebtService.real.test.ts`.
+
+The sections below are the behaviour card as it was put to the owner.
 
 ## The owner's words (12 Oct 2026)
 
