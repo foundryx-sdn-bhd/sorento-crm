@@ -1,7 +1,6 @@
 # CARD - generic product find, first filter: WC <-> seat cover fit (CHAT-FIND)
 
 Status: answered by crew 12 Oct 2026, Q1-Q5 all (a) (owner asleep, crew holds authority; owner reviews in the morning). Plan: `PLAN-chat-generic-find-12oct.md`.
-answers overnight, owner reviews in the morning. Plan: `PLAN-chat-generic-find-12oct.md`.
 
 ## The ask being answered
 
