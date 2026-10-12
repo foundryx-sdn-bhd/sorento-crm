@@ -352,7 +352,40 @@ IDEATION_CAPTURE_CONFIG_ERROR = {
 #: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
 #: registry key per language: `chatbot_reply_<name>` (English) and
 #: `chatbot_reply_<name>.ms` / `.zh`.
+# DEV-FAILURES RC-B (owner approved 12 Oct): a portal link reply names the form the link opens;
+# the bare line is for a link that opens no particular form.
+CHATBOT_REPLY_PORTAL_LINK = {
+    "en": "Here is your portal link.",
+    "ms": "Berikut pautan portal anda.",
+    "zh": "这是您的门户链接。",
+}
+CHATBOT_REPLY_PORTAL_LINK_COMPLAINT = {
+    "en": "Here is your portal link for a complaint.",
+    "ms": "Berikut pautan portal anda untuk aduan.",
+    "zh": "这是您提交投诉的门户链接。",
+}
+CHATBOT_REPLY_PORTAL_LINK_STOCK_INQUIRY = {
+    "en": "Here is your portal link for a stock inquiry.",
+    "ms": "Berikut pautan portal anda untuk pertanyaan stok.",
+    "zh": "这是您提交库存查询的门户链接。",
+}
+CHATBOT_REPLY_PORTAL_LINK_PURCHASE_REQUEST = {
+    "en": "Here is your portal link for a purchase request.",
+    "ms": "Berikut pautan portal anda untuk permintaan pembelian.",
+    "zh": "这是您提交采购申请的门户链接。",
+}
+CHATBOT_REPLY_PORTAL_LINK_SPONSORSHIP_FORM = {
+    "en": "Here is your portal link for the sponsorship form.",
+    "ms": "Berikut pautan portal anda untuk borang tajaan.",
+    "zh": "这是您填写赞助表格的门户链接。",
+}
+
 FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
+    "portal_link": (CHATBOT_REPLY_PORTAL_LINK, ()),
+    "portal_link_complaint": (CHATBOT_REPLY_PORTAL_LINK_COMPLAINT, ()),
+    "portal_link_stock_inquiry": (CHATBOT_REPLY_PORTAL_LINK_STOCK_INQUIRY, ()),
+    "portal_link_purchase_request": (CHATBOT_REPLY_PORTAL_LINK_PURCHASE_REQUEST, ()),
+    "portal_link_sponsorship_form": (CHATBOT_REPLY_PORTAL_LINK_SPONSORSHIP_FORM, ()),
     "fallback_ack": (CHATBOT_REPLY_FALLBACK_ACK, ()),
     "fallback_offer": (CHATBOT_REPLY_FALLBACK_OFFER, ()),
     "fallback_last_time": (CHATBOT_REPLY_FALLBACK_LAST_TIME, ("summary",)),

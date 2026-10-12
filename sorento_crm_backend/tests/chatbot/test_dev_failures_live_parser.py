@@ -1,8 +1,8 @@
-"""DEV-FAILURES RC-A: the LIVE parser reads the shapes the "WHICH DATA ANSWERS THE QUESTION"
-addendum teaches (documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
+"""DEV-FAILURES: the LIVE parser reads the shapes the RC-A and RC-B addenda teach
+(documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
 
-Two texts: BASE is the stored v50 body (`chatbot_semantic_parser.v50.txt`), PATCHED is v50 plus
-`chatbot_semantic_parser.dev-failures.addendum.txt` (what migration `devf_0001` publishes). The
+Two texts: BASE is main's trimmed v56 body (`chatbot_semantic_parser.ablation-20261011.txt`),
+PATCHED is what migration `devf_0001` publishes (v56 plus both addenda). The
 messages are made up in the shapes of the DEV-set failures, never the real ones.
 
 Opt-in, never in CI: `CHATBOT_LIVE_LLM=1` (the suite's `live_external` marker), model
@@ -24,16 +24,16 @@ pytestmark = pytest.mark.live_external
 
 TODAY = "Monday, 12 October 2026"
 DATA = Path(__file__).resolve().parents[2] / "alembic" / "data"
-V50 = DATA / "chatbot_semantic_parser.v50.txt"
-ADDENDUM = DATA / "chatbot_semantic_parser.dev-failures.addendum.txt"
+BASE = DATA / "chatbot_semantic_parser.ablation-20261011.txt"
+ADDENDA = ("chatbot_semantic_parser.dev-failures.addendum.txt", "chatbot_semantic_parser.portal-form.addendum.txt")
 BRANDS = [{"brand_name": "Sorento", "brand_code": "SRT"}, {"brand_name": "Mocha", "brand_code": "MCH"}]
 PROMPTS = [p for p in os.environ.get("DEV_FAILURES_PROMPTS", "base,patched").split(",") if p]
 
 
 def _system_text(label: str) -> str:
-    body = V50.read_text(encoding="utf-8")
+    body = BASE.read_text(encoding="utf-8")
     if label == "patched":
-        body = body.rstrip("\n") + ADDENDUM.read_text(encoding="utf-8")
+        body = body.rstrip("\n") + "".join((DATA / a).read_text(encoding="utf-8") for a in ADDENDA)
     return body.replace("{{current_date}}", TODAY)
 
 
@@ -54,7 +54,7 @@ def _parse(label: str, message: str, previous: str) -> dict[str, Any]:
     print(json.dumps({
         "prompt": label, "message": message,
         **{k: out.get(k) for k in ("domain_hint", "intent_hint", "order_status", "status",
-                                    "requested_attributes", "asks", "topic_reset")},
+                                    "requested_attributes", "asks", "topic_reset", "portal_form")},
         "entities": [{k: e.get(k) for k in ("raw", "hint", "canonical_code")}
                      for e in (out.get("entities") or []) if isinstance(e, dict)],
     }, ensure_ascii=False))
@@ -83,8 +83,10 @@ CASES: list[tuple[str, str, str, Callable[[dict[str, Any]], bool]]] = [
      lambda o: o.get("domain_hint") == "order" and "outstanding" in (o.get("order_status"), o.get("status"))),
     ("brand_promotion_file", "Mocha promo file pls", "(none)",
      lambda o: o.get("domain_hint") == "promotion" and not _hints(o, "attachment")),
+    ("sponsorship_form_typo", "sponsorshp form pls", "(none)",
+     lambda o: o.get("domain_hint") == "portal_link" and o.get("portal_form") in (None, "sponsorship_form")),
     ("price_tag_request", "hello, need to order some price tags", "(none)",
-     lambda o: o.get("domain_hint") == "portal_link"),
+     lambda o: o.get("domain_hint") == "portal_link" and o.get("portal_form") is None),
     ("portal_after_misses", "ok i want to submit a product inquiry",
      'Couldn\'t find: "QWE26-0011" (product). Would you like me to escalate to purchasing team?',
      lambda o: o.get("domain_hint") == "portal_link"
@@ -101,5 +103,5 @@ def test_dev_failure_shape(label: str, name: str, message: str, previous: str, c
     ok = bool(check(out))
     print(f"DEV-FAILURES-EVAL case={name} prompt={label} pass={int(ok)}/1")
     if label == "base" and not ok:
-        pytest.xfail("v50 misses this shape (expected red on base)")
+        pytest.xfail("v56 misses this shape (expected red on base)")
     assert ok, f"{name} on {label}"

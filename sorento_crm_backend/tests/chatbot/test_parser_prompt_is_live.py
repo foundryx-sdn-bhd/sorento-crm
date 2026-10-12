@@ -38,6 +38,7 @@ from app.services.chatbot_parser_prompt import (
     REPORT_ASK_ADDENDUM,
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
+    PORTAL_FORM_ADDENDUM,
     PROMOTION_KIND_ADDENDUM,
     CHAT_REPORT_ADDENDUM,
     PO_REFS_ADDENDUM,
@@ -261,6 +262,9 @@ def _without_growth_r1_addendum(text: str) -> str:
     # STOCK-QTY-PARTIAL-FILL (#1513, 6 Oct 2026): the trap-specs fallback block sits
     # between CANONICAL_CODE_ADDENDUM and MEMORY_ADDENDUM (MEMORY stays the tail);
     # RESOLVE-SEMANTIC-FALLBACK: CANONICAL_CODE_ADDENDUM sits beneath it, after LOW_STOCK.
+    # DEV-FAILURES RC-B: PORTAL_FORM_ADDENDUM sits above the trap-specs block, beneath MEMORY.
+    if text.endswith(PORTAL_FORM_ADDENDUM):
+        text = text[: -len(PORTAL_FORM_ADDENDUM)]
     if text.endswith(TRAP_SPECS_FALLBACK_BLOCK):
         text = text[: -len(TRAP_SPECS_FALLBACK_BLOCK)]
     if text.endswith(PROMOTION_KIND_ADDENDUM):

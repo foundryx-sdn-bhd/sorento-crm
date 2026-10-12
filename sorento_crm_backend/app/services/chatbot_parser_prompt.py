@@ -1011,6 +1011,16 @@ SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
 SEMANTIC_PARSER_PROMPT += TRAP_SPECS_FALLBACK_BLOCK
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
+# DEV-FAILURES RC-B (PLAN-dev-failures-12oct.md): the `portal_form` output key, so the strict
+# schema and this fallback declare the same keys. MEMORY_ADDENDUM stays the tail, as above. The
+# published version (`devf_0001_parser_data_rules`) carries it on the v56 text instead.
+PORTAL_FORM_ADDENDUM = (_ADDENDA_DIR / "chatbot_semantic_parser.portal-form.addendum.txt").read_text(
+    encoding="utf-8"
+)
+SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
+SEMANTIC_PARSER_PROMPT += PORTAL_FORM_ADDENDUM
+SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
+
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in
 # `documentation/plans/chatbot/parser-prompt-inventory.md`.

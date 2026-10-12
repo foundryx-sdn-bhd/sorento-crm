@@ -1,16 +1,15 @@
-"""Publish v50 plus the DEV-FAILURES "which data answers the question" addendum as one
-unlabelled chatbot parser version (documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
+"""Publish main's trimmed parser (v56) plus the DEV-FAILURES addenda as one unlabelled chatbot
+parser version (documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
 
-Why: seven DEV-set failures on v50 were parse misses where the meaning was read but mapped to
-the wrong records ("when will there be stock" read as a stock check, "when will it be
-delivered" missing the outstanding status, a price tag request read as the template file, a
-brand promotion file read as a resource attachment, two brands read as one). The addendum
-states which records answer each shape, as business rules with English examples only (owner
-rule 11 Oct: teach business facts, not language).
+Why: seven DEV-set failures were parse misses where the meaning was read but mapped to the
+wrong records, and two portal link replies could not say which form the link opens. The
+addenda are one short business rule per gap, at most one English example each, no word lists
+(owner 12 Oct, after the #1542 audit): `chatbot_semantic_parser.dev-failures.addendum.txt`
+(RC-A) and `chatbot_semantic_parser.portal-form.addendum.txt` (RC-B, the `portal_form` key).
 
-The body is `alembic/data/chatbot_semantic_parser.v50.txt` (never edited) followed by
-`alembic/data/chatbot_semantic_parser.dev-failures.addendum.txt`, with no policy blocks (the
-graded v50 carries none). The production label is never moved and `ai_prompt_labels` is never
+The body is `alembic/data/chatbot_semantic_parser.ablation-20261011.txt` (the v56 text
+`pab_0001_parser_ablation` publishes, never edited) followed by the two addenda, with no
+policy blocks (the graded v56 carries none). The production label is never moved and `ai_prompt_labels` is never
 touched: promoting is one label move in the Chatbot Console, and the owner decides.
 
 Idempotent: a version already carrying this exact template publishes nothing.
@@ -34,13 +33,16 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 PROMPT_NAME = "chatbot_semantic_parser"
 DATA = Path(__file__).resolve().parents[1] / "data"
-BASE = DATA / "chatbot_semantic_parser.v50.txt"
-ADDENDUM = DATA / "chatbot_semantic_parser.dev-failures.addendum.txt"
-MESSAGE = "devf_0001_parser_data_rules: v50 plus which-data-answers rules (DEV-FAILURES RC-A), unlabelled"
+BASE = DATA / "chatbot_semantic_parser.ablation-20261011.txt"
+ADDENDA = (
+    DATA / "chatbot_semantic_parser.dev-failures.addendum.txt",
+    DATA / "chatbot_semantic_parser.portal-form.addendum.txt",
+)
+MESSAGE = "devf_0001_parser_data_rules: v56 plus which-records rules and portal_form (DEV-FAILURES), unlabelled"
 
 
 def body() -> str:
-    return BASE.read_text(encoding="utf-8").rstrip("\n") + ADDENDUM.read_text(encoding="utf-8")
+    return BASE.read_text(encoding="utf-8").rstrip("\n") + "".join(a.read_text(encoding="utf-8") for a in ADDENDA)
 
 
 def publish(session: Session) -> int | None:

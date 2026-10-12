@@ -1,64 +1,10 @@
 
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WHICH DATA ANSWERS THE QUESTION (refines the sections above)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-These rules say which of OUR records answers a question. They are read by MEANING in any
-language; the English examples only show the shape.
-
-== "WHEN WILL THERE BE STOCK" IS AN ETA ASK ==
-Asking WHEN a product will HAVE stock (be available, be back in stock, can be bought again)
-asks for the next arrival date, which only the incoming records hold -> domain_hint
-"incoming", intent_hint "check_incoming", requested_attributes [] (the ETA default), the
-product as typed. Asking WHETHER there is stock now stays inventory / check_stock.
-  - "when will SRTXX100 have stock" -> incoming / check_incoming
-  - "SRTXX100 got stock?" -> inventory / check_stock
-
-== STOCK PLUS LAST IN IS TWO ASKS ==
-One message that asks for the stock of a product AND its last receipt ("last in", "last
-received") names two domains: asks [{"domain":"inventory","intent":"check_stock"},
-{"domain":"spo_allocation","intent":"check_spo"}], domain_hint "inventory", one product
-entity. A product named in a reply under a low stock report is a plain check_stock ask
-about that product, never low_stock_report.
-  - "stock SRTXX100 and last in" -> both asks above
-
-== DID A CUSTOMER ORDER A PRODUCT ==
-Asking whether a customer ORDERED a product ("did X order Y", "has X ordered Y", "X got
-order Y?") is the same ask as "did X take/buy Y" in DECISIVE DOMAIN TERMS: order /
-check_order, order_status null, a customer entity AND a product entity, and
-requested_attributes ["quantity"]. It names no period: never leave the quantity out.
-
-== WHEN WILL A CUSTOMER'S PRODUCT BE DELIVERED ==
-Asking WHEN goods will be delivered, sent or scheduled for delivery to a customer asks
-about delivery orders not yet delivered -> domain_hint "order", intent_hint
-"check_order", order_status "outstanding", status "outstanding". The words of the current
-message carry this; the previous turn is not needed.
-  - "when will SRTXX100 be delivered" (customer in the current subject) -> order,
-    order_status "outstanding"
-
-== A BRAND'S PROMOTION FILE IS A PROMOTION ASK ==
-"promotion", "promo" or "offer" decides the domain over a generic paper word ("file",
-"document", "pdf", "copy"): a brand plus a promotion word plus a paper word is promotion /
-check_promotion with the brand entity. A generic paper word is never an attachment entity
-in any domain: it names no file.
-  - "Mocha promotion file" -> promotion / check_promotion, entities [{raw:"Mocha",
-    hint:"brand", canonical_code:"Mocha"}]
-
-== A PRICE TAG REQUEST IS A PORTAL SUBMISSION ==
-Asking to REQUEST or ORDER price tags (the printed tags made for the customer) is a
-submission through the portal -> domain_hint "portal_link", intent_hint "get_portal_link".
-Only the price tag TEMPLATE (the blank file) is resource_attachment.
-  - "I want to request price tags" -> portal_link
-  - "price tag template" -> resource_attachment
-
-== A PORTAL SUBMISSION STARTS A NEW SUBJECT ==
-Asking to submit something through the portal (a complaint, stock inquiry, product
-inquiry, purchase request, sponsorship form, price tag request) is about the submission,
-not about the codes of earlier turns: domain_hint "portal_link", topic_reset true, and no
-entity from earlier turns. A code the assistant could not find earlier is never carried
-into it.
-
-== TWO BRANDS JOINED BY "AND" ARE TWO BRAND ENTITIES ==
-"Sorento and Mocha", "Sorento & Mocha", "Sorento, Mocha" name two brands, each its own
-brand entity, both kept. They are never one entity, and never a product.
+== WHICH RECORDS ANSWER THE QUESTION ==
+- WHEN a product will have stock is an arrival question: incoming / check_incoming. Example: "when will SRTXX100 have stock".
+- Stock and last receipt of a product in one message are two asks: inventory / check_stock, then spo_allocation / check_spo.
+- Whether a customer ordered a product is the "did X take/buy Y" order ask: both entities, requested_attributes ["quantity"].
+- WHEN a product will be delivered or sent out is order / check_order with order_status and status "outstanding", not a requested attribute.
+- A promotion word decides the domain over a generic paper word: promotion / check_promotion, and the paper word is no attachment entity.
+- Requesting price tags (not the template file) is portal_link / get_portal_link with "portal_form" null.
+- A portal_link ask starts a new subject: topic_reset true, no entity from earlier turns.
+- Two brands joined by "and" are two brand entities.

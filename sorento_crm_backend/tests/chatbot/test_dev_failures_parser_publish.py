@@ -1,5 +1,5 @@
-"""DEV-FAILURES RC-A: the publish migration for v50 plus the "which data answers the question"
-addendum (documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
+"""DEV-FAILURES: the publish migration for main's v56 parser plus the RC-A and RC-B addenda
+(documentation/plans/chatbot/PLAN-dev-failures-12oct.md).
 
 Postgres only (tests._pg_fixture). The live parser check of the same rules is
 `test_dev_failures_live_parser.py` (opt-in, never in CI).
@@ -19,20 +19,21 @@ from tests._pg_fixture import blank_session
 
 BACKEND = Path(__file__).resolve().parents[2]
 DATA = BACKEND / "alembic" / "data"
-V50_FILE = DATA / "chatbot_semantic_parser.v50.txt"
+BASE_FILE = DATA / "chatbot_semantic_parser.ablation-20261011.txt"
 ADDENDUM_FILE = DATA / "chatbot_semantic_parser.dev-failures.addendum.txt"
+PORTAL_FORM_FILE = DATA / "chatbot_semantic_parser.portal-form.addendum.txt"
 MIGRATION = BACKEND / "alembic" / "versions" / "devf_0001_parser_data_rules.py"
 PROMPT_NAME = "chatbot_semantic_parser"
 
-RULE_HEADERS = [
-    '== "WHEN WILL THERE BE STOCK" IS AN ETA ASK ==',
-    "== STOCK PLUS LAST IN IS TWO ASKS ==",
-    "== DID A CUSTOMER ORDER A PRODUCT ==",
-    "== WHEN WILL A CUSTOMER'S PRODUCT BE DELIVERED ==",
-    "== A BRAND'S PROMOTION FILE IS A PROMOTION ASK ==",
-    "== A PRICE TAG REQUEST IS A PORTAL SUBMISSION ==",
-    "== A PORTAL SUBMISSION STARTS A NEW SUBJECT ==",
-    '== TWO BRANDS JOINED BY "AND" ARE TWO BRAND ENTITIES ==',
+RULES = [
+    "WHEN a product will have stock is an arrival question",
+    "Stock and last receipt of a product in one message are two asks",
+    "Whether a customer ordered a product",
+    "WHEN a product will be delivered or sent out",
+    "A promotion word decides the domain over a generic paper word",
+    "Requesting price tags (not the template file) is portal_link",
+    "A portal_link ask starts a new subject",
+    'Two brands joined by "and" are two brand entities',
 ]
 
 
@@ -54,29 +55,35 @@ def test_revision_ids() -> None:
     assert len(module.revision) <= 32
 
 
-def test_body_is_v50_then_addendum() -> None:
+def test_body_is_v56_then_both_addenda() -> None:
     body = _module().body()
-    v50 = V50_FILE.read_text(encoding="utf-8")
-    assert body.startswith(v50.rstrip("\n"))
-    assert body.endswith(ADDENDUM_FILE.read_text(encoding="utf-8"))
+    base = BASE_FILE.read_text(encoding="utf-8")
+    addenda = ADDENDUM_FILE.read_text(encoding="utf-8") + PORTAL_FORM_FILE.read_text(encoding="utf-8")
+    assert body == base.rstrip("\n") + addenda
     assert BLOCKS_BEGIN not in body
-    assert body.count("{{current_date}}") == v50.count("{{current_date}}")
+    assert body.count("{{current_date}}") == 1
 
 
-@pytest.mark.parametrize("header", RULE_HEADERS)
-def test_addendum_carries_each_rule(header: str) -> None:
-    assert header in ADDENDUM_FILE.read_text(encoding="utf-8")
+@pytest.mark.parametrize("rule", RULES)
+def test_addendum_carries_each_rule(rule: str) -> None:
+    assert rule in ADDENDUM_FILE.read_text(encoding="utf-8")
 
 
-def test_addendum_teaches_no_language() -> None:
-    """Owner rule 11 Oct (CARD-prompt-ablation-11oct.md): business facts, not language
-    teaching, so the addendum carries no Chinese or Malay phrase lists and no dashes the
-    repo forbids."""
-    text = ADDENDUM_FILE.read_text(encoding="utf-8")
+@pytest.mark.parametrize("path", [ADDENDUM_FILE, PORTAL_FORM_FILE], ids=["rc_a", "rc_b"])
+def test_addendum_is_minimal_business_rules(path: Path) -> None:
+    """Owner 12 Oct (#1542 audit): one short rule per gap, at most one English example per rule,
+    no word lists, no Chinese or Malay; and no dashes the repo forbids."""
+    text = path.read_text(encoding="utf-8")
+    rules = [line for line in text.splitlines() if line.startswith("- ")]
+    assert rules and all(len(line) <= 160 for line in rules)
+    assert all(line.count("Example:") <= 1 for line in rules)
     assert not re.search(r"[㐀-鿿]", text)
-    for word in ("bila", "ada stok", "hantar", "belum", "sudah"):
-        assert word not in text.lower()
     assert "—" not in text and "–" not in text
+
+
+def test_addenda_stay_small() -> None:
+    total = len(ADDENDUM_FILE.read_text(encoding="utf-8")) + len(PORTAL_FORM_FILE.read_text(encoding="utf-8"))
+    assert total <= 1300
 
 
 def test_publish_on_empty_table() -> None:
@@ -92,12 +99,12 @@ def test_publish_on_empty_table() -> None:
 def test_next_version_and_no_label_moves() -> None:
     module = _module()
     with blank_session() as db:
-        prev = AIPromptVersion(name=PROMPT_NAME, version=50, type="text", template="live", variables=[])
+        prev = AIPromptVersion(name=PROMPT_NAME, version=56, type="text", template="live", variables=[])
         db.add(prev)
         db.flush()
         db.add(AIPromptLabel(name=PROMPT_NAME, label="production", version_id=prev.id))
         db.commit()
-        assert module.publish(db) == 51
+        assert module.publish(db) == 57
         labels = db.query(AIPromptLabel).filter(AIPromptLabel.name == PROMPT_NAME).all()
         assert [(l.label, l.version_id) for l in labels] == [("production", prev.id)]
 
