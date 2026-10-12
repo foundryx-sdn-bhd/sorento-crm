@@ -3569,10 +3569,14 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
                 continue
             label = jsc.js_string(grp.get("label") or grp.get("key") or "").strip()
             if label:
+                if msg and not msg.endswith("\n\n"):
+                    msg += "\n"
                 msg += f"*{label}*\n"
             for it in grp["items"]:
                 position += 1
-                msg += _item_line(position, it) + "\n\n"
+                # A one-line item (its title is the whole line, no fields) sits on the next
+                # line; a card keeps its blank line.
+                msg += _item_line(position, it) + ("\n" if not jsc.get(it, "fields") else "\n\n")
 
     # Ported from PR #1118 (not merged), review round 3 (Observation B): while ANY
     # product still needs a quantity (D14), `intro` (`_noted_and_missing_question`)

@@ -1100,3 +1100,32 @@ def test_promotion_products_size_and_miss_detail_see_only_promoted_products(api,
     assert "450" not in json.dumps(miss.get("spec_alternatives")), miss
     assert _alts(miss).get("dim_length") == [600], miss
     assert miss.get("spec_unrecorded") == {"size": 1}, "only the promoted basin without a size counts"
+
+
+def test_a_spec_filtered_promotion_call_lists_live_promotions_only(api, db, monkeypatch):
+    """Crew live check on bec7d329: "which basins are on promotion?" listed a promotion that
+    ended a month ago beside live ones (the serving policy keeps the newest expired one per
+    kind). With a live promotion in the answer, the expired one goes (owner round 3: expired
+    hidden beside live; with none live it still serves, `test_promo_round3_detection`)."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
+    )
+    live = _p(db, "PLV", {"class": _enum("Basin")})
+    gone = _p(db, "PGN", {"class": _enum("Basin")})
+    from app.models.marketing import PromotionType
+
+    kept = PromotionType(id=str(uuid.uuid4()), type_code=f"ZZT{uuid.uuid4().hex[:8]}", type_name="ZZT kept", show_expired=True)
+    db.add(kept)
+    db.flush()
+    _promo(db, live, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    expired = _promo(db, gone, start=TODAY - timedelta(days=120), end=TODAY - timedelta(days=30))
+    expired.promotion_type_id = kept.id  # the only row of a kind that keeps its newest expired one
+    db.commit()
+
+    resp = api.get(
+        "/api/v1/marketing/promotion-products/",
+        params={"serving_policy": "true", "limit": 100, **_constraints({"key": "class", "op": "eq", "value": "Basin"})},
+    )
+    assert resp.status_code == 200, resp.text
+    codes = {row["product"]["product_code"] for row in resp.json()["data"]}
+    assert codes == _codes_of([live]), codes

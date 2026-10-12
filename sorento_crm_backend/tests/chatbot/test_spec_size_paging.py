@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import _run_turn
 from tests.chatbot.test_spec_on_category_entity import (  # noqa: F401
@@ -218,3 +220,138 @@ def test_p11_the_see_more_line_is_in_the_catalog():
     for lang in ("ms", "zh"):
         done = Localizer(lang, defaults(lang)).sentence(line)
         assert done != line and "1" in done and "5" in done and "7" in done, (lang, done)
+
+
+def _seed_gratings(session_factory, rows):
+    """Floor gratings known only as a registry product type (no Category row names them),
+    one stock row each: the dev shape behind the crew's "250mm floor grating" ask."""
+    from app.models.product_spec import ProductSpecifications
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from tests._mc_lookup_seed import product, stock, warehouse
+    from tests.chatbot.test_lane_require import _seed_registry
+    from tests.chatbot.test_outstanding_lane import _seed_contact
+
+    _seed_contact(session_factory, variables={})
+    db = session_factory()
+    _seed_registry(db)
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    codes = []
+    for tag, mm in rows:
+        p = product(db, company_id=DEFAULT_COMPANY_ID, code=f"ZZT-FG-{tag}-{uuid.uuid4().hex[:4]}")
+        values = {"product_type": {"value": "floor_grating"}, **{k: {"value": v, "unit": "mm"} for k, v in mm.items()}}
+        db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=p.id, values=values))
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+        codes.append(p.product_code)
+    db.commit()
+    return codes
+
+
+@pytest.mark.parametrize("key", ["size", "dim_width"])
+def test_p12_a_size_on_a_product_type_subject_lists_it(session_factory, monkeypatch, _clear_overrides, key):
+    """Crew live check on v87 (bec7d329): "250mm floor grating got stock?" answered "Couldn't
+    find: floor grating (category)" with no tool call. The subject is a registry product type
+    (no Category row); the route filters it, so it is no miss."""
+    codes = _seed_gratings(session_factory, (("A", {"dim_length": 250}), ("B", {"dim_width": 250}), ("C", {"dim_length": 300})))
+    call, captured = _route_backed_stock(monkeypatch, session_factory)
+    monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
+    qf = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock",
+        entities=[_spec_entity("250mm", key, 250), _category("floor grating", "floor grating")],
+    )
+    reply = _say(session_factory, monkeypatch, qf, "250mm floor grating got stock?")
+    calls = _stock_calls(captured)
+    assert calls and calls[-1].get("spec_constraints"), (captured, reply)
+    assert {"key": "product_type", "op": "eq", "value": "floor_grating"} in calls[-1]["spec_constraints"], calls
+    assert "Couldn't find" not in reply, reply
+    assert set(_shown(reply, codes)) == set(codes[:2]), reply
+
+
+def test_p13_a_size_whose_subject_maps_to_nothing_keeps_the_resolvers_set(session_factory, monkeypatch, _clear_overrides):
+    """Crew live check on v87: "Couldn't find: floor grating (category)", no tool call. When the
+    subject maps to no single registry value (`fetch._subject_constraint` None, as for a phrase
+    two product types claim), the lane sends no constraints; the resolver's counted set must
+    then stay, or the subject is placed by nothing."""
+    from app.services.chatbot.lanes.business import fetch
+
+    codes = _seed_gratings(session_factory, (("A", {"dim_length": 250}), ("B", {"dim_width": 250})))
+    call, captured = _route_backed_stock(monkeypatch, session_factory)
+    monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
+    monkeypatch.setattr(fetch, "_subject_constraint", lambda db, raw: None)
+    qf = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock",
+        entities=[_spec_entity("250mm", "size", 250), _category("floor grating", "floor grating")],
+    )
+    reply = _say(session_factory, monkeypatch, qf, "250mm floor grating got stock?")
+    assert "Couldn't find" not in reply, reply
+    assert _stock_calls(captured), (captured, reply)
+    assert set(_shown(reply, codes)) == set(codes), reply
+
+
+PROMO_PRODUCTS = "crm_marketing_promotion_products_list"
+
+
+def _promo_world(session_factory, monkeypatch, lines=7):
+    """A single-tier contact (no menu) and one live promotion holding `lines` basins; the
+    promotion-products tool pages like the route (`spec_page` on a constrained call) and the
+    real MCP presenter renders it."""
+    import json
+
+    from tests.chatbot.test_outstanding_lane import _present_response
+    from tests.chatbot.test_promo_subject_filter import _seed, _use_mcp
+
+    _seed(session_factory)
+    present = _present_response()
+    rows = [
+        {
+            "selling_price": 100 + i,
+            "product": {"product_code": f"ZZPB{i}", "product_name": f"ZZPB{i}", "list_price": 200},
+            "promotion": {"id": "p1", "description": "ZZT Raya", "start_date": "2026-10-01", "end_date": "2026-10-31"},
+        }
+        for i in range(lines)
+    ]
+
+    def behaviour(name, args):
+        if name != PROMO_PRODUCTS:
+            return {"has_result": True, "items": [{"description": "ZZT Raya"}]}
+        page, limit = int(args.get("page") or 1), int(args.get("limit") or 50)
+        body = {"data": rows[(page - 1) * limit: page * limit], "pagination": {"total": lines, "page": page, "limit": limit}}
+        if args.get("spec_constraints"):
+            body["spec_page"] = {"page": page, "limit": limit, "total": lines}
+        return present(name, json.dumps(body))
+
+    return [r["product"]["product_code"] for r in rows], (lambda: _use_mcp(monkeypatch, behaviour))
+
+
+def _promo_say(session_factory, monkeypatch, use, qf, text):
+    from tests.chatbot.test_promo_subject_filter import TWO_TIERS, _services
+
+    captured = use()
+    result, _ = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body=text,
+        msg_id=f"zzt-pp-{uuid.uuid4().hex[:6]}", resolve_services=_services(TWO_TIERS),
+    )
+    return (result.reply or {}).get("text") or "", [a for n, a in captured if n == PROMO_PRODUCTS]
+
+
+def test_p14_a_promotion_list_shows_a_few_one_line_each_then_pages(session_factory, monkeypatch, _clear_overrides):
+    """Crew live check on bec7d329: "which basins are on promotion?" listed 50 lines, 4-5 lines
+    each, no paging. Expected: a few lines, one line per product, "Reply to see more", and the
+    parser's continuation brings the next page with the same filters."""
+    from tests.chatbot.test_promo_subject_filter import _ask_qf, _pick_qf
+
+    codes, use = _promo_world(session_factory, monkeypatch)
+    _promo_say(session_factory, monkeypatch, use, _ask_qf("basin"), "which basins are on promotion?")
+    first, calls = _promo_say(session_factory, monkeypatch, use, _pick_qf(1), "1")
+    assert calls and calls[-1].get("limit") == 5 and calls[-1].get("page") == 1, calls
+    assert SEE_MORE in first, first
+    assert f"{codes[0]}: MYR 100.00" in first and "List Price" not in first, first
+    assert f"1. {codes[0]}: MYR 100.00\n2. {codes[1]}: MYR 101.00" in first, "one line each, no blank line between"
+    assert len(_shown(first, codes)) == 5, first
+
+    more = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=[], continuation=True)
+    second, calls2 = _promo_say(session_factory, monkeypatch, use, more, "more")
+    assert calls2 and calls2[-1].get("page") == 2, calls2
+    assert calls2[-1].get("spec_constraints") == calls[-1].get("spec_constraints"), (calls, calls2)
+    assert calls2[-1].get("access_levels") == calls[-1].get("access_levels") == ["Sorento Office"], (calls, calls2)
+    assert set(_shown(second, codes)) == set(codes[5:]), second
+    assert SEE_MORE not in second, second

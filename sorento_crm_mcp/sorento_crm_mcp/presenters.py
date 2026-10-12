@@ -1125,7 +1125,7 @@ def _promotion_heading(promo: dict) -> str | None:
     return desc or when or None
 
 
-def _promotion_products(rows: list[dict], b: _Builder) -> None:
+def _promotion_products(rows: list[dict], b: _Builder, *, one_line: bool = False) -> None:
     """One section per promotion (owner Q4 option (a), 12 Oct 2026): the promotion once as
     the heading, then one line per product on it: code, name, the promo selling price. The
     flat `items` carry the same lines (without the promotion) for the pick and the counts.
@@ -1137,19 +1137,33 @@ def _promotion_products(rows: list[dict], b: _Builder) -> None:
         promo = pp.get("promotion") or {}
         price = pp.get("selling_price") if _filled(pp.get("selling_price")) else pp.get("promotion_price")
         before = len(b.items)
-        b.item(
-            prod.get("product_code"),
-            [
-                ("company_name", "Company", pp.get("company_name")),
-                ("Product Code", prod.get("product_code")),
-                ("Product Name", _distinct_name(prod.get("product_code"), prod.get("product_name"))),
-                ("Selling Price", _money(price)),
-                ("List Price", _money(prod.get("list_price"))),
-                ("Dimensions", _dims(prod)),
-            ],
-            discontinued=prod.get("is_discontinued") is True,
-            expired=pp.get("is_expired") is True,
-        )
+        if one_line:
+            # A paged, spec-filtered answer (crew live check, bec7d329): one line per
+            # product, "<code> <name>: <promo price>", the section heading carrying the
+            # promotion. The whole line is the TITLE, as `_incoming_dealer` does.
+            code = prod.get("product_code")
+            head = " ".join(str(x) for x in (code, _distinct_name(code, prod.get("product_name"))) if _filled(x))
+            money = _money(price)
+            if _filled(head):
+                b.raw_item(
+                    f"{head}: {money}" if money else head,
+                    [],
+                    {"discontinued": prod.get("is_discontinued") is True, "expired": pp.get("is_expired") is True},
+                )
+        else:
+            b.item(
+                prod.get("product_code"),
+                [
+                    ("company_name", "Company", pp.get("company_name")),
+                    ("Product Code", prod.get("product_code")),
+                    ("Product Name", _distinct_name(prod.get("product_code"), prod.get("product_name"))),
+                    ("Selling Price", _money(price)),
+                    ("List Price", _money(prod.get("list_price"))),
+                    ("Dimensions", _dims(prod)),
+                ],
+                discontinued=prod.get("is_discontinued") is True,
+                expired=pp.get("is_expired") is True,
+            )
         for a in pp.get("promotion_attachments") or []:
             b.attach(a.get("attachment") or a)
         if len(b.items) == before:
@@ -2006,6 +2020,8 @@ def present_response(tool_name: str, raw: str) -> str:
         _stock_availability(data, b)
     elif so_outstanding:
         _orders_so_outstanding(rows, b)
+    elif tool_name == "crm_marketing_promotion_products_list" and isinstance(data.get("spec_page"), dict):
+        _promotion_products(rows, b, one_line=True)
     else:
         row_builder(rows, b)
 

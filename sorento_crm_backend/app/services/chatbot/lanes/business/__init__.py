@@ -1764,7 +1764,12 @@ def run_fetch(
     spec_page_carry = parse_output.get("spec_page") if isinstance(parse_output.get("spec_page"), dict) else None
     if spec_page_carry and isinstance(spec_page_carry.get("spec_constraints"), list):
         spec_constraints = [c for c in spec_page_carry["spec_constraints"] if isinstance(c, dict)] or None
-    if spec_constraints and jsc.js_string(domain or "") == "promotion" and not semantic_input.get("scope_terms"):
+    if (
+        spec_constraints
+        and jsc.js_string(domain or "") == "promotion"
+        and not semantic_input.get("scope_terms")
+        and not spec_page_carry
+    ):
         # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
         # product token the resolver placed is the stricter ask and keeps its product_ids.
         spec_constraints = None
@@ -2285,9 +2290,9 @@ def run_fetch(
         "predicate": gate.get("predicate"),
     }
     spec_filtered = bool(semantic_input.get("spec_constraints")) and tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS
-    # Owner ruling (12 Oct 2026): a spec-filtered product or stock answer is paged; a promotion
-    # answer keeps its own grouped list.
-    spec_paged = spec_filtered and jsc.js_string(domain or "") != "promotion"
+    # Owner ruling (12 Oct 2026): a spec-filtered answer is paged, a few lines first. The crew's
+    # live check on bec7d329 asked the same of a promotion list (50 lines, unpaged).
+    spec_paged = spec_filtered
     if spec_filtered:
         # The route filters by `spec_constraints` and its rows ARE the answer: the
         # resolver's counted set (its total, its header, its product_ids slice) describes
@@ -2308,6 +2313,10 @@ def run_fetch(
             # A few matches first (owner ruling, 12 Oct 2026); a continuation asks the next page.
             args["limit"] = fetch_mod.SPEC_PAGE_SIZE
             args["page"] = int((spec_page_carry or {}).get("page") or 0) + 1
+            if spec_page_carry and isinstance(spec_page_carry.get("access_levels"), list):
+                # The next page is asked under the tier the first page was answered under;
+                # a continuation names no tier, and an empty list reads as "no tier filter".
+                args["access_levels"] = list(spec_page_carry["access_levels"])
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.
         if trace is not None:
@@ -2609,6 +2618,7 @@ def run_fetch(
                 "spec_constraints": list(spec_constraints or []),
                 "page": page,
                 "total": total,
+                "access_levels": list(args.get("access_levels") or []),
             }
     if spec_filtered and isinstance(structured, dict) and isinstance(envelope, dict):
         if structured.get("has_result"):

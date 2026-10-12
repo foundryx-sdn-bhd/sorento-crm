@@ -1573,9 +1573,15 @@ class PromotionProductService:
                 .all()
             ]
             serving_verdict = promotion_serving.evaluate_candidates(self.db, parent_ids, today)
-            q_final = q.filter(
-                PromotionProduct.promotion_id.in_(list(serving_verdict.served_ids))
-            )
+            served = set(serving_verdict.served_ids)
+            live = served - serving_verdict.expired_but_usable_ids
+            if spec_constraints and live:
+                # SPEC-PROMO-PARAMS (crew live check, bec7d329): "which basins are on
+                # promotion?" listed a promotion that ended a month ago beside live ones. A
+                # live answer exists, so the expired one goes; with none live the expired
+                # ones still serve, marked (owner round 3, 9 Oct: expired hidden beside live).
+                served = live
+            q_final = q.filter(PromotionProduct.promotion_id.in_(list(served)))
             total = q_final.count()
         elif active is None:
             q_final = q
@@ -1597,10 +1603,13 @@ class PromotionProductService:
             "created_at": PromotionProduct.created_at,
         }
         sort_column = sort_map.get(sort_field, PromotionProduct.created_at)
-        if sort_dir == "desc":
-            q_final = q_final.order_by(sort_column.desc())
+        ordered = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
+        if spec_constraints:
+            # A spec-filtered answer is paged ("Reply to see more"): one promotion's lines
+            # together, and a unique tiebreak so no line repeats or drops between pages.
+            q_final = q_final.order_by(PromotionProduct.promotion_id, ordered, PromotionProduct.id)
         else:
-            q_final = q_final.order_by(sort_column.asc())
+            q_final = q_final.order_by(ordered)
 
         offset = (page - 1) * limit
         products = q_final.offset(offset).limit(limit).all()
