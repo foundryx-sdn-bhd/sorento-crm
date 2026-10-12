@@ -814,6 +814,10 @@ def test_retire_rechecks_its_gate_when_the_countdown_lapses(
     assert _park_retire(client, seat_cover_spec.id).status_code == 202
     for link in db.query(ProductCompatibility).all():
         compat.unlink(db, link.id)
-    assert compat.retire_seat_cover_spec(db, seat_cover_spec.id) == {"removed": 0}
+    from app.services.error_handler import AppException
+
+    with pytest.raises(AppException) as refused:
+        compat.retire_seat_cover_spec(db, seat_cover_spec.id)
+    assert refused.value.status_code == 409
     db.refresh(seat_cover_spec)
     assert seat_cover_spec.is_active is True

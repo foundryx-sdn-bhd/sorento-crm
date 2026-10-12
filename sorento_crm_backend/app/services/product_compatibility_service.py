@@ -543,7 +543,7 @@ def retire_seat_cover_spec(db: Session, registry_id: str, user_id: Optional[str]
     rule list means "this key has no rules", so the values cannot come back.
 
     The gate is checked again here, at commit time: links unlinked during the countdown
-    leave the old spec in place rather than retire it with nothing replacing it."""
+    refuse the retire (409) rather than remove the spec with nothing replacing it."""
     from app.services.audit_service import log_audit
     from app.services.product_spec_write import apply_spec_values
 
@@ -552,7 +552,12 @@ def retire_seat_cover_spec(db: Session, registry_id: str, user_id: Optional[str]
         # Already gone: nothing left to retire.
         return {"removed": 0}
     if not _flyer_applied_everywhere(db):
-        return {"removed": 0}
+        # Refused, not a quiet success: the reader is told the spec stayed.
+        raise AppException(
+            status_code=409,
+            message="The flyer links were removed during the countdown; the old spec stays.",
+            code="seat_cover_flyer_not_applied",
+        )
     holding = _spec_rows_holding(db)
     removed = [
         {
