@@ -627,6 +627,15 @@ class PreviewTransfer(BaseModel):
     to_location: Optional[str] = None
 
 
+class SimulatedLineError(BaseModel):
+    """One line the Simulate confirm probe found failing on its own, with the raw reason."""
+
+    line_no: Optional[int] = None
+    item_code: Optional[str] = None
+    project_line_id: str
+    error: str
+
+
 class ConfirmManyOrderResult(BaseModel):
     """One order's outcome. `ok` decides which of the two halves is populated - never both,
     and never neither: a result the caller cannot read as success-or-failure is worse than
@@ -670,6 +679,9 @@ class ConfirmManyOrderResult(BaseModel):
     #: The lines the server refused, named the way `SupplyFailingLine` always is (AC-C02),
     #: when the refusal named any.
     failing_lines: Optional[List[SupplyFailingLine]] = None
+    #: Simulate confirm only: the lines that fail when run alone, found by the per-line probe
+    #: when the order's own failure named none. Null on every other result.
+    simulated_errors: Optional[List[SimulatedLineError]] = None
 
 
 class ConfirmManyResult(BaseModel):

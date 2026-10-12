@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.projects._common import permission_slugs
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
+from app.models.product import Product
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.project_board import (
     BoardLineDraft,
@@ -471,56 +472,153 @@ def confirm_all(
     neither confirms as an ordinary revision beside it.
     """
     try:
-        if not payload.orders:
-            return {"results": []}
-        actor_id = current_user["id"]
-        supply = ProjectSupplyService(db)
-        any_per_order = any(entry.batch_id for entry in payload.orders)
-
-        def write_one(order, entry):
-            resolved_batch_id = entry.batch_id or (None if any_per_order else payload.batch_id)
-            # `_confirm_with_possible_rejects` opens its OWN `UndoJournal` per branch (S1,
-            # #978: `confirm_many` commits or rolls back each entry on its own, so a journal
-            # opened HERE - inside that per-order try - never survives past this order's own
-            # write). `entry.rejected_line_ids` is this order's own half of the board's
-            # withdrawal, `entry` itself the composition `confirm()` already reads.
-            return _confirm_with_possible_rejects(
-                db,
-                supply,
-                order,
-                entry,
-                actor_user_id=actor_id,
-                batch_id=resolved_batch_id,
-                confirm_batch=lambda: _confirm_a_planning_change(
-                    db,
-                    order,
-                    _BatchedEntry(
-                        list(entry.lines),
-                        resolved_batch_id,
-                        list(getattr(entry, "cancelled_lines", None) or []),
-                    ),
-                    actor_id,
-                    preview=payload.preview,
-                ),
-            )
-
-        results = supply.confirm_many(
-            payload.orders,
-            actor_user_id=actor_id,
-            assert_can_act=lambda session, order: _assert_can_act_on(
-                session, order, current_user
-            ),
-            write=write_one,
-            # #1362 hold-back: an order answering a planning-change batch is applied whole.
-            can_hold_back=lambda entry: not (
-                entry.batch_id or (None if any_per_order else payload.batch_id)
-            ),
-            preview=payload.preview,
-        )
-        return {"results": results}
+        return {
+            "results": _run_confirm_many(db, payload, current_user, preview=payload.preview)
+        }
     except Exception as exc:
         db.rollback()
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+def _run_confirm_many(
+    db: Session,
+    payload: ConfirmManyBody,
+    current_user: dict,
+    *,
+    preview: bool,
+    raw_errors: bool = False,
+) -> list:
+    """The per-order machinery behind `confirm_all`, shared with `simulate_confirm` so a
+    dry run can never drift from the real press (see `confirm_all` for the rules)."""
+    if not payload.orders:
+        return []
+    actor_id = current_user["id"]
+    supply = ProjectSupplyService(db)
+    any_per_order = any(entry.batch_id for entry in payload.orders)
+
+    def write_one(order, entry):
+        resolved_batch_id = entry.batch_id or (None if any_per_order else payload.batch_id)
+        # `_confirm_with_possible_rejects` opens its OWN `UndoJournal` per branch (S1,
+        # #978: `confirm_many` commits or rolls back each entry on its own, so a journal
+        # opened HERE - inside that per-order try - never survives past this order's own
+        # write). `entry.rejected_line_ids` is this order's own half of the board's
+        # withdrawal, `entry` itself the composition `confirm()` already reads.
+        return _confirm_with_possible_rejects(
+            db,
+            supply,
+            order,
+            entry,
+            actor_user_id=actor_id,
+            batch_id=resolved_batch_id,
+            confirm_batch=lambda: _confirm_a_planning_change(
+                db,
+                order,
+                _BatchedEntry(
+                    list(entry.lines),
+                    resolved_batch_id,
+                    list(getattr(entry, "cancelled_lines", None) or []),
+                ),
+                actor_id,
+                preview=preview,
+            ),
+        )
+
+    return supply.confirm_many(
+        payload.orders,
+        actor_user_id=actor_id,
+        assert_can_act=lambda session, order: _assert_can_act_on(session, order, current_user),
+        write=write_one,
+        # #1362 hold-back: an order answering a planning-change batch is applied whole.
+        can_hold_back=lambda entry: not (
+            entry.batch_id or (None if any_per_order else payload.batch_id)
+        ),
+        preview=preview,
+        raw_errors=raw_errors,
+    )
+
+
+_SIMULATE_PROBE_LINE_CAP = 60
+
+
+@router.post("/fulfilment-planning/simulate-confirm", response_model=ConfirmManyResult)
+def simulate_confirm(
+    payload: ConfirmManyBody,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Admin dry run of "Confirm all": the real per-order machinery, rolled back (AC-S1..S8).
+
+    Exists so an admin can see WHY a press would fail without it saving anything. Refused
+    before anything runs unless the caller is an admin. A commit or a queued job inside the
+    write trips `confirm_simulation` and surfaces as that order's error, so nothing sticks.
+    An order that fails without naming a line, and posted two or more, is probed line by
+    line (each line alone, still rolled back) so the failing line is named.
+    """
+    from app.services.confirm_simulation import (
+        error_text,
+        install_commit_tripwire,
+        simulating,
+    )
+    from app.services.user_service import UserPermissionService
+
+    if not (
+        UserPermissionService(db).get_user_role_slugs(current_user["id"])
+        & {"superadmin", "admin"}
+    ):
+        raise AppException(
+            status_code=403,
+            message="Simulate confirm is for admins only.",
+            code="simulate_admin_only",
+        )
+    install_commit_tripwire(db)
+    db.info["confirm_simulate"] = True
+    try:
+        with simulating():
+            results = _run_confirm_many(db, payload, current_user, preview=True, raw_errors=True)
+            supply = ProjectSupplyService(db)
+            for entry, result in zip(payload.orders, results):
+                result["simulated_errors"] = None
+                if result.get("ok") or result.get("failing_lines") or len(entry.lines) < 2:
+                    continue
+                failed = []
+                for posted in entry.lines[:_SIMULATE_PROBE_LINE_CAP]:
+                    line_id = str(posted.project_line_id)
+                    alone = payload.model_copy(
+                        update={
+                            "orders": [entry.model_copy(update={"only_line_ids": [line_id]})]
+                        }
+                    )
+                    outcome = _run_confirm_many(
+                        db, alone, current_user, preview=True, raw_errors=True
+                    )[0]
+                    if outcome.get("ok"):
+                        continue
+                    mirror = next(
+                        (m for m in supply.lines_of(str(entry.pso_id)) if str(m.id) == line_id),
+                        None,
+                    )
+                    failed.append(
+                        {
+                            "line_no": mirror.line_no if mirror is not None else None,
+                            "item_code": (
+                                db.query(Product.product_code)
+                                .filter(Product.id == mirror.product_id)
+                                .scalar()
+                                if mirror is not None and mirror.product_id
+                                else None
+                            ),
+                            "project_line_id": line_id,
+                            "error": outcome.get("error") or "",
+                        }
+                    )
+                result["simulated_errors"] = failed or None
+        return {"results": results}
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(error_text(exc))
+    finally:
+        db.info.pop("confirm_simulate", None)
+        db.rollback()
 
 
 @router.get("/fulfilment-planning/stock-detail", response_model=StockDetail)

@@ -10987,8 +10987,12 @@ class ProjectSupplyService:
         write: Optional[Callable[[ProjectSalesOrder, Any], Dict[str, Any]]] = None,
         can_hold_back: Optional[Callable[[Any], bool]] = None,
         preview: bool = False,
+        raw_errors: bool = False,
     ) -> List[Dict[str, Any]]:
         """"Confirm all approved" (D3): every order's Confirm, each in its OWN transaction.
+
+        `raw_errors` (the admin Simulate confirm only) reports a failure as the exception's
+        class name plus text, capped, instead of the bare message a planner reads.
 
         The board's Approve all composes a verdict per LINE across up to fifty orders; this is
         the same per-order write `confirm` already does, called once per order rather than once
@@ -11126,6 +11130,10 @@ class ProjectSupplyService:
             except Exception as exc:  # noqa: BLE001 - every order must get an answer
                 self.db.rollback()
                 message, failing_lines = _error_detail(exc)
+                if raw_errors:
+                    from app.services.confirm_simulation import error_text
+
+                    message = error_text(exc)
                 results.append(
                     {
                         "pso_id": pso_id,
