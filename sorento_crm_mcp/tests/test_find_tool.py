@@ -152,10 +152,13 @@ def test_m2_a_row_prints_code_and_stock_one_fact_per_line() -> None:
     assert env["result_type"] == "find"
 
 
-def test_m2_a_discontinued_row_marks_status_before_stock() -> None:
+def test_m2_a_discontinued_row_carries_the_existing_marker() -> None:
+    """Crew audit, round 3: the product replies' own marker (`fetch.py` `_item_line`), never a
+    new `Status:` line."""
     env = _present(_body(_group(f"Seat cover for {WC}:", [_row(COVER, discontinued=True)])))
     lines = env["response"].split("\n")
-    assert lines[1:] == [f"Code: {COVER}", "Status: Discontinued", "Stock: 12"]
+    assert lines[1:] == [f"Code: {COVER}", "Stock: 12", "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"]
+    assert "Status:" not in env["response"]
 
 
 def test_m2_rows_and_groups_are_separated_by_a_blank_line() -> None:
@@ -226,7 +229,7 @@ def test_m2_availability_uses_the_stock_tools_own_verdict_tail() -> None:
 
 
 def test_m2_a_none_group_is_just_its_head_line() -> None:
-    none_line = f"No seat cover or WC is on record for {WC}."
+    none_line = f"No seat cover is on record for {WC}."
     env = _present(_body(_group(none_line, [], relation=None)))
     assert env["response"] == none_line
     assert env["has_result"] is False
@@ -239,7 +242,7 @@ def test_m2_more_prints_showing_twenty_of_n() -> None:
 
 
 def test_m2_has_result_is_false_only_when_no_group_has_rows() -> None:
-    empty = _group(f"No seat cover or WC is on record for {WC}.", [], relation=None)
+    empty = _group(f"No seat cover is on record for {WC}.", [], relation=None)
     assert _present(_body(empty))["has_result"] is False
     assert _present(_body())["has_result"] is False
     full = _group(f"Seat cover for {COVER}:", [_row(WC)], anchor=COVER)

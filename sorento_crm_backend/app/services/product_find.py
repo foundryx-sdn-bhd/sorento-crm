@@ -63,8 +63,6 @@ NOTHING_LINE = "I have nothing on record for that product."
 COMMON_LABELS: dict[str, dict[str, str]] = {
     "Code": {"ms": "Kod", "zh": "代码"},
     "Stock": {"ms": "Stok", "zh": "库存"},
-    "Status": {"ms": "Status", "zh": "状态"},
-    "Discontinued": {"ms": "Dihentikan", "zh": "已停产"},
     "Showing {shown} of {total}.": {"ms": "Menunjukkan {shown} daripada {total}.", "zh": "显示 {total} 个中的 {shown} 个。"},
     ASK_PRODUCT_LINE: {
         "ms": "Kod produk yang mana? Contohnya SRTWC8383-RL-MBL.",
@@ -127,7 +125,31 @@ class FindFilter:
 
 FITS_COVERS_HEAD = "Seat cover for {code}:"
 FITS_WCS_HEAD = "{code} fits these WCs:"
-FITS_NONE_LINE = "No seat cover or WC is on record for {code}."
+FITS_NONE_LINE = "No seat cover is on record for {code}."
+#: The none line for a product that is itself a seat cover (crew audit, round 3).
+FITS_NO_WC_LINE = "No WC is on record for {code}."
+#: The derived spec value that says a product is a seat cover (`product_spec_registry`).
+SEAT_COVER_PRODUCT_TYPE = "toilet_seat"
+
+
+def _seat_covers(db: Session, products: list[Any]) -> set[str]:
+    """The ids among `products` the data calls a seat cover: an `-SC` code (owner ruling 12
+    Oct, `product_compatibility_service.is_spare_seat_cover`) or a derived `product_type` of
+    toilet_seat. Read from the data, never from the customer's words."""
+    from app.models.product_spec import ProductSpecifications
+    from app.services.product_compatibility_service import is_spare_seat_cover
+
+    out = {str(p.id) for p in products if is_spare_seat_cover(p.product_code)}
+    rest = [str(p.id) for p in products if str(p.id) not in out]
+    if rest:
+        rows = db.query(ProductSpecifications.product_id, ProductSpecifications.values).filter(
+            ProductSpecifications.product_id.in_(rest)
+        )
+        for pid, values in rows:
+            product_type = (values or {}).get("product_type") if isinstance(values, dict) else None
+            if isinstance(product_type, dict) and product_type.get("value") == SEAT_COVER_PRODUCT_TYPE:
+                out.add(str(pid))
+    return out
 
 
 def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
@@ -141,6 +163,8 @@ def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     }
     covers = covers_for(db, list(anchors))
     wcs = wcs_for(db, list(anchors))
+    unlinked = [p for pid, p in anchors.items() if not covers.get(pid) and not wcs.get(pid)]
+    seat_covers = _seat_covers(db, unlinked) if unlinked else set()
     groups: list[Group] = []
     for pid in product_ids:
         anchor = anchors.get(pid)
@@ -152,7 +176,8 @@ def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
         elif wcs.get(pid):
             groups.append(Group(pid, code, "wcs", FITS_WCS_HEAD.format(code=code), wcs[pid]))
         else:
-            groups.append(Group(pid, code, None, FITS_NONE_LINE.format(code=code), []))
+            none_line = FITS_NO_WC_LINE if pid in seat_covers else FITS_NONE_LINE
+            groups.append(Group(pid, code, None, none_line.format(code=code), []))
     return groups
 
 
@@ -172,8 +197,12 @@ FILTERS: dict[str, FindFilter] = {
                 FITS_COVERS_HEAD: {"ms": "Penutup tempat duduk untuk {code}:", "zh": "{code} 适配的马桶盖："},
                 FITS_WCS_HEAD: {"ms": "{code} sesuai untuk WC ini:", "zh": "{code} 适配以下马桶："},
                 FITS_NONE_LINE: {
-                    "ms": "Tiada penutup tempat duduk atau WC direkodkan untuk {code}.",
-                    "zh": "没有 {code} 的马桶盖或马桶适配记录。",
+                    "ms": "Tiada penutup tempat duduk direkodkan untuk {code}.",
+                    "zh": "没有 {code} 的马桶盖记录。",
+                },
+                FITS_NO_WC_LINE: {
+                    "ms": "Tiada WC direkodkan untuk {code}.",
+                    "zh": "没有 {code} 适配的马桶记录。",
                 },
             },
             run=_run_fits,

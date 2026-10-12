@@ -44,7 +44,10 @@ from tests._pg_fixture import blank_session, unique_code
 VIEW = "master_data.products.view"
 URL = "/api/v1/master-data/products/find"
 
-NONE_LINE = "No seat cover or WC is on record for {code}."
+NONE_LINE = "No seat cover is on record for {code}."
+#: Crew audit, round 3: the reverse wording when the unlinked product is itself a seat cover
+#: (an `-SC` code, or derived `product_type` toilet_seat).
+NO_WC_LINE = "No WC is on record for {code}."
 
 
 def pf():
@@ -544,3 +547,22 @@ def test_f8_parser_vocabulary_holds_every_filters_line(db):
         for key, row in module.FILTERS.items():
             assert key in text
             assert row.vocabulary in text
+
+
+def test_f9_an_unlinked_seat_cover_says_no_wc_is_on_record(db, monkeypatch):
+    """Crew audit, round 3: a `-SC` code and a derived `product_type: toilet_seat` are seat
+    covers; with no link the line says no WC is on record. Any other product: no seat cover."""
+    from app.models.product_spec import ProductSpecifications
+
+    spare = _p(db, f"{_stem()}-SC")
+    seat = _p(db, f"{_stem()}SEAT")
+    db.add(ProductSpecifications(product_id=seat.id, values={"product_type": {"value": "toilet_seat"}}))
+    plain = _p(db, f"{_stem()}-UF")
+    db.add(ProductSpecifications(product_id=plain.id, values={"product_type": {"value": "water_closet"}}))
+    db.flush()
+    groups = _groups(_find(_client(db, {VIEW}, monkeypatch), _filters(spare.id, seat.id, plain.id)))
+    assert [g["head"] for g in groups] == [
+        NO_WC_LINE.format(code=spare.product_code),
+        NO_WC_LINE.format(code=seat.product_code),
+        NONE_LINE.format(code=plain.product_code),
+    ]

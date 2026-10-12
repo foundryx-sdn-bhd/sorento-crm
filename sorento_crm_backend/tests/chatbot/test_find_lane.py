@@ -162,13 +162,14 @@ def test_l4_crm_find_is_wired_into_the_allow_lists() -> None:
 
 FIND_LINES = (
     "Code: SRTSCBD823-MBL\n"
-    "Status: Discontinued\n"
-    "Stock: 12"
+    "Stock: 12\n"
+    "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"
 )
 HEADS = (
     f"Seat cover for {PRODUCT_CODE}:",
     f"{PRODUCT_CODE} fits these WCs:",
-    f"No seat cover or WC is on record for {PRODUCT_CODE}.",
+    f"No seat cover is on record for {PRODUCT_CODE}.",
+    f"No WC is on record for {PRODUCT_CODE}.",
 )
 
 
@@ -179,11 +180,10 @@ def _loc(lang: str) -> Localizer:
 @pytest.mark.parametrize("lang", ["ms", "zh"])
 def test_l5_labels_and_values_translate_and_codes_are_untouched(lang) -> None:
     out = _loc(lang).lines(FIND_LINES)
-    code_line, status_line, stock_line = out.split("\n")
+    code_line, stock_line, marker_line = out.split("\n")
     assert code_line.endswith("SRTSCBD823-MBL") and code_line != "Code: SRTSCBD823-MBL"
     assert stock_line.endswith("12") and not stock_line.startswith("Stock:")
-    assert not status_line.startswith("Status:") or lang == "ms"  # ms keeps the word "Status"
-    assert "Discontinued" not in status_line
+    assert marker_line.startswith("\u26a0\ufe0f  *(") and "DISCONTINUED" not in marker_line
 
 
 @pytest.mark.parametrize("lang", ["ms", "zh"])
@@ -208,8 +208,9 @@ def test_l5_every_registry_label_is_in_the_catalog_with_ms_and_zh() -> None:
             assert english in label_catalog.LABELS, english
             assert label_catalog.LABELS[english].get("ms")
             assert label_catalog.LABELS[english].get("zh")
-    for english in ("Code", "Stock", "Status", "Discontinued", "Seat cover for {code}:",
-                    "{code} fits these WCs:", "No seat cover or WC is on record for {code}."):
+    for english in ("Code", "Stock", "PRODUCT DISCONTINUED", "Seat cover for {code}:",
+                    "{code} fits these WCs:", "No seat cover is on record for {code}.",
+                    "No WC is on record for {code}."):
         entry = label_catalog.LABELS.get(english)
         assert entry and entry.get("ms") and entry.get("zh"), english
 

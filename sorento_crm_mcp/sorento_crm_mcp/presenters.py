@@ -1603,6 +1603,10 @@ def _verdict_tail(entry: dict) -> str:
     return _AVAILABILITY_TAILS.get(branch, _AVAILABILITY_TAILS["too_big"])
 
 
+#: The discontinued marker the chatbot's product replies print (`lanes/business/fetch.py`).
+_FIND_DISCONTINUED = "\u26a0\ufe0f  *(PRODUCT DISCONTINUED)*"
+
+
 def _find_stock_value(stock: Any) -> Any:
     """The `Stock:` value of one `crm_find` row: the number for a staff policy, the stock
     tool's own 1-unit verdict sentence for a dealer (`availability`, no number of ours)."""
@@ -1616,8 +1620,8 @@ def _find_stock_value(stock: Any) -> Any:
 
 def _find_envelope(data: dict) -> dict:
     """CHAT-FIND: the whole `crm_find` reply. Per group its head line (from the route's filter
-    registry), then per row one fact per line - `Code:`, `Status: Discontinued` when it is,
-    `Stock:` - a blank line between rows and between groups, never " · ". `has_result` is
+    registry), then per row one fact per line - `Code:`, `Stock:`, then the product replies'
+    discontinued marker when it is - a blank line between rows and between groups, never " · ". `has_result` is
     false only when no group has a row (every named product has nothing on record)."""
     blocks: list[str] = []
     has_rows = False
@@ -1628,11 +1632,12 @@ def _find_envelope(data: dict) -> dict:
         parts: list[str] = []
         for row in rows:
             lines = [f"Code: {row.get('product_code')}"]
-            if row.get("is_discontinued") is True:
-                lines.append("Status: Discontinued")
             stock = _find_stock_value(row.get("stock"))
             if stock is not None:
                 lines.append(f"Stock: {stock}")
+            if row.get("is_discontinued") is True:
+                # The marker every product reply prints (chatbot `fetch._item_line`).
+                lines.append(_FIND_DISCONTINUED)
             parts.append("\n".join(lines))
         has_rows = has_rows or bool(rows)
         more = group.get("more")
