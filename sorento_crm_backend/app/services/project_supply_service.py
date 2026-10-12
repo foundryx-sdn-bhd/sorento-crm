@@ -2516,6 +2516,7 @@ class ProjectSupplyService:
             chain.append(
                 {
                     "location": fact.pool_code,
+                    "warehouse_id": str(fact.pool.id),
                     "free": fact.pool_free if stated is None else stated,
                     "available": fact.pool_available,
                     "on_hand": self._pile_facts()
@@ -2548,6 +2549,7 @@ class ProjectSupplyService:
             rest.append(
                 {
                     "location": pool.warehouse_code,
+                    "warehouse_id": pool_id,
                     "free": free,
                     "available": available,
                     "on_hand": triple["on_hand"],
@@ -4821,7 +4823,9 @@ class ProjectSupplyService:
         pct = self._fulfilment_settings().get("pool_share_pct")
         allowances: Dict[str, str] = {}
         for entry in self.pool_chain_for(fact):
-            warehouse_id = self.warehouse_id_for_code(entry.get("location"))
+            # By the pool's own id, never its code: two companies may each own an `HQ`
+            # (owner, 12 Oct 2026: per company, never by a code literal).
+            warehouse_id = entry.get("warehouse_id")
             if not warehouse_id:
                 continue
             allowances[warehouse_id] = qty_text(

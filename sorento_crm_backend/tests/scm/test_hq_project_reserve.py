@@ -643,3 +643,58 @@ def test_a_second_companys_hq_with_segment_dealer_stays_a_normal_pool():
     assert mch_hq.id in mch_pools and mch_hq.id not in mch_reserves
     assert str(mch_hq.id) in {entry.warehouse_id for entry in mch_net.by_location}
     assert mch_net.net == Decimal("70")
+
+
+def test_the_sheets_pool_limit_is_keyed_by_the_pools_id_not_its_code():
+    """Crew audit (12 Oct): two companies each own a warehouse coded `HQ`. Sorento's is a
+    project reserve (never in the chain); the other company's is an ordinary self-pool a
+    user who sees both companies is offered. The sheet's per-line pool limit must land on
+    the pool the walk consulted, by id - a lookup by the code `HQ` can land on Sorento's."""
+    import uuid as _uuid
+
+    from app.models.company import Company
+    from app.models.inventory import Stock, Warehouse
+    from app.services.project_supply_service import ProjectSupplyService
+
+    from tests._pg_fixture import blank_session
+    from tests.scm.test_project_supply_service_ladder import _group_sites, _seed_line, _world
+
+    code = f"ZZHQ{_uuid.uuid4().hex[:4].upper()}"
+    with blank_session() as db:
+        srt_id, _eling, project, product = _world(db)
+        other = Company(id=str(_uuid.uuid4()), name="ZZT Mocha", code=f"ZM{_uuid.uuid4().hex[:6]}")
+        db.add(other)
+        db.flush()
+        _group, sites = _group_sites(db)
+        own, _own_pool = sites["BRW"]
+
+        def _hq(company_id, segment, on_hand):
+            row = Warehouse(
+                id=str(_uuid.uuid4()), company_id=company_id, warehouse_code=code,
+                warehouse_name=code, is_active=True, segment=segment,
+                fulfilment_planning=False,
+            )
+            db.add(row)
+            db.flush()
+            row.pool_warehouse_id = row.id
+            db.add(Stock(id=str(_uuid.uuid4()), company_id=company_id, product_id=product.id,
+                         warehouse_id=row.id, quantity_on_hand=on_hand, quantity_reserved=0))
+            db.flush()
+            return row
+
+        srt_hq = _hq(srt_id, "project", 0)
+        mch_hq = _hq(other.id, "dealer", 400)
+        order, _line, _cso, _cline = _seed_line(
+            db, srt_id, project, product, own,
+            qty_ordered="300", required_date=date.today() + timedelta(days=10),
+        )
+        from app.models.base import company_scope
+
+        # A user who sees BOTH companies, the owner's own case on prod.
+        with company_scope(db, frozenset({str(srt_id), str(other.id)})):
+            line = ProjectSupplyService(db).proposal_for(order)["lines"][0]
+        allowances = line["pool_allowances"]
+        srt_hq_id, mch_hq_id = str(srt_hq.id), str(mch_hq.id)
+
+    assert srt_hq_id not in allowances, "Sorento's reserve is never a pool the walk consulted"
+    assert mch_hq_id in allowances, "the pool the walk consulted, by its own id"
