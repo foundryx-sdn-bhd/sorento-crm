@@ -48,6 +48,10 @@ ALLOWED = {
     # (engine H57), so there is no route through `/chat/turn` that exercises the queue.
     # Not core, not on any request path.
     "scripts/chatbot_queue_replay.py",
+    # CHAT-SPARSE (12 Oct 2026): times `head.parser.parse` itself, strict vs sparse, on
+    # made-up turns; a whole `/chat/turn` would bury the parser's seconds under the rest.
+    # Not core, not on any request path.
+    "scripts/chatbot_sparse_measure.py",
     # Chatbot memory lane A S2 (contract section 4/5): the contact's memory/facts
     # surface is a `user_management.contacts` route, so it cannot live under
     # `app/services/chatbot/`, yet its vocabulary, precedence and row-lock rules
