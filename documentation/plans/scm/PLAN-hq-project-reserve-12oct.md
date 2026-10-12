@@ -66,10 +66,36 @@ Open, left as today: an SO line booked AT HQ itself reads as a dealer (pool) lin
 
 ## Release post-steps
 
-1. Owner, prod data, WITH the release (not before): `UPDATE warehouses SET segment =
-   'project' WHERE warehouse_code = 'HQ';`
-2. Check HQ's current prod `segment` first (NULL or `dealer`): with `dealer`, retail-only
-   usage and the sales trajectory also stop counting HQ deliveries.
+HQ's prod `segment` is NULL since 12 Oct 23:05 (owner cleared it). The code in this PR is
+inert while it is NULL (`is_project_reserve(NULL)` is false), so the release can go first and
+the data step right after it, never before.
+
+1. Owner, prod data, WITH the release:
+   ```sql
+   SELECT id, company_id, warehouse_code, segment, pool_warehouse_id, is_active
+     FROM warehouses WHERE warehouse_code = 'HQ';          -- expect one row, segment NULL
+   UPDATE warehouses SET segment = 'project', updated_at = now()
+    WHERE warehouse_code = 'HQ' AND segment IS NULL;        -- expect 1 row
+   ```
+2. What moves at that step: reorder / low stock / BRW on hand / PO book / SPO history /
+   product economics / cover offers drop HQ; G12 and supply_claim skip it; the planner stops
+   offering it; Stock Debt lets project lines use it; HQ's last purchase cost moves from the
+   `unattributed` bucket to `project`; the container grid lists HQ under project bins.
+   Retail-only usage and the sales trajectory do not move (NULL already reads as not-dealer
+   there).
+
+## Interim (HQ NULL, until the data step)
+
+NULL reads as `dealer` in `pool_predicate` (`COALESCE(segment, 'dealer')`), so HQ is a site
+pool everywhere that predicate runs: reorder / low stock on hand, SPO and PO
+(`reorder_run_service.py:1105,1148-1161`), BRW on hand (`summary_order_service.py:885-907`,
+`active_site_pool_sql` plus `counts_as_available`), cover offers (`cover_service.py:120,192`),
+product economics. Planner and Stock Debt are as on main (HQ a pool by FK: 50% share, in the
+pool net, dealer-only cover). No G12 lock (`segment = 'project'` only). Three readers differ
+from `dealer`: retail-only usage (`reorder_level_service.py:90,159`, `warehouse_segment =
+'dealer'`) excludes HQ deliveries; the sales trajectory (`trajectory_service.py:135-151`,
+`COALESCE(segment, 'project')`) counts HQ in the project series; last purchase cost
+(`reorder_run_service.py:1480`) files HQ purchases as `unattributed`.
 
 ## Tests
 
