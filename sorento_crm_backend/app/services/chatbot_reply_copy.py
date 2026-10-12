@@ -349,9 +349,6 @@ IDEATION_CAPTURE_CONFIG_ERROR = {
     "zh": "此处的创意收集设置不正确，所以我无法保存。请告知您的 Sorento 联系人。",
 }
 
-#: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
-#: registry key per language: `chatbot_reply_<name>` (English) and
-#: `chatbot_reply_<name>.ms` / `.zh`.
 # DEV-FAILURES RC-B (owner approved 12 Oct): a portal link reply names the form the link opens;
 # the bare line is for a link that opens no particular form.
 CHATBOT_REPLY_PORTAL_LINK = {
@@ -380,6 +377,9 @@ CHATBOT_REPLY_PORTAL_LINK_SPONSORSHIP_FORM = {
     "zh": "这是您填写赞助表格的门户链接。",
 }
 
+#: `short name -> (per-language text, declared {{tokens}})`, expanded below into one
+#: registry key per language: `chatbot_reply_<name>` (English) and
+#: `chatbot_reply_<name>.ms` / `.zh`.
 FALLBACK_REPLY_COPY: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "portal_link": (CHATBOT_REPLY_PORTAL_LINK, ()),
     "portal_link_complaint": (CHATBOT_REPLY_PORTAL_LINK_COMPLAINT, ()),

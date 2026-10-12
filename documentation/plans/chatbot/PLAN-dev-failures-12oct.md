@@ -1,6 +1,6 @@
 # PLAN: DEV-set failure coverage (DEV-FAILURES, 12 Oct)
 
-Status: Build, RC-A done (awaiting crew eval gate), RC-B next. Small fix track (under ~300 lines per root cause, no auth change; RC-A carries one data-only prompt publish migration, label unmoved).
+Status: Build, RC-A and RC-B done (awaiting crew eval gate). Small fix track (under ~300 lines per root cause, no auth change; RC-A carries one data-only prompt publish migration, label unmoved).
 
 ## Journey
 
@@ -26,12 +26,27 @@ made-up phrasing in the same shapes.
 | C, E, ladder | resolver single winner, stale miss carry, zero-stock base code | 1 each | Later |
 | data | eval contact seed, attachment type alias, promotion rows | 3 | Data, not code |
 
-## RC-A (done)
+## RC-A (done, rebuilt on v56 per crew 12 Oct)
 
-- `alembic/data/chatbot_semantic_parser.dev-failures.addendum.txt`: eight rules under "WHICH DATA
-  ANSWERS THE QUESTION".
-- `alembic/versions/devf_0001_parser_data_rules.py` publishes v50 + addendum, unlabelled; promoting
-  is the owner's label move after the crew eval gate.
-- Tests: `tests/chatbot/test_dev_failures_parser_publish.py` (CI, Postgres) and
-  `tests/chatbot/test_dev_failures_live_parser.py` (opt-in live, made-up phrasing): base v50 5/8,
-  patched 8/8, one call each (16 live calls).
+- Base is main's trimmed v56 text (`alembic/data/chatbot_semantic_parser.ablation-20261011.txt`).
+- `alembic/data/chatbot_semantic_parser.dev-failures.addendum.txt` (946 chars): eight one-line
+  business rules, one English example in total, no word lists, no Chinese or Malay (owner 12 Oct,
+  #1542 audit). A test pins the shape.
+- `alembic/versions/devf_0001_parser_data_rules.py` publishes v56 + both addenda, unlabelled;
+  promoting is the owner's label move after the crew eval gate.
+
+## RC-B (done)
+
+- Parser key `portal_form` (one of `portal_service.SUPPORTED_TYPES`, else null):
+  `alembic/data/chatbot_semantic_parser.portal-form.addendum.txt` (262 chars), also in the fallback
+  constant so the strict schema and the prompt declare the same keys.
+- `run_fetch` sends it as `submission_type`, so the link opens that portal tab; a price tag
+  request is not deep-linkable and gets the bare link.
+- The reply names the form from `CHATBOT_REPLY_COPY` (owner approved the five lines in en/ms/zh,
+  12 Oct), seeded insert-only by `devf_0002_portal_link_copy`, editable in Settings > AI Prompts.
+
+## Tests
+
+- `tests/chatbot/test_dev_failures_parser_publish.py`, `tests/chatbot/test_dev_failures_portal_form.py`
+  (CI, mocked, no LLM).
+- `tests/chatbot/test_dev_failures_live_parser.py` (opt-in live, made-up phrasing, one call per case).
