@@ -268,6 +268,7 @@ A reply that chooses an option of the variant question ("just this code" / "all 
 the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
 option's position, never yes, no or a new question.
 $q$ IN template) = 0
+    AND position('SUB ASKS AND FAMILY' IN template) = 0
     AND (position($q$
 
 == MEMORY ==

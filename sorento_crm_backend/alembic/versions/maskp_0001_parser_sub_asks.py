@@ -121,8 +121,9 @@ def publish_on_production(session: Session) -> int | None:
         return None
     production = row[0]
     addendum = ADDENDUM.read_text(encoding="utf-8")
-    if addendum in production:
-        logger.info("maskp_0001: the production text already carries the sub asks addendum")
+    if addendum in production or "SUB ASKS AND FAMILY" in production:
+        # Any SUB ASKS block, this one or an older one (a promoted r7 text): never a second.
+        logger.info("maskp_0001: the production text already carries a sub asks block")
         return None
     anchor = MEMORY_ANCHOR if MEMORY_ANCHOR in production else BLOCKS_ANCHOR if BLOCKS_ANCHOR in production else None
     if anchor is None:

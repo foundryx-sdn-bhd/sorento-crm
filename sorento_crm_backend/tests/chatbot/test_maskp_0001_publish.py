@@ -164,3 +164,11 @@ def test_no_production_label_publishes_nothing_on_the_production_line():
     m = _migration()
     with blank_session() as db:
         assert m.publish_on_production(db) is None
+
+
+def test_a_production_text_with_an_older_sub_asks_block_gets_no_second_one():
+    """Review N1: a promoted r7 text already carries a SUB ASKS AND FAMILY block."""
+    m = _migration()
+    with blank_session() as db:
+        _production(db, "PROD\n\nSUB ASKS AND FAMILY\nold r7 rules" + m.MEMORY_ANCHOR + "memory")
+        assert m.publish_on_production(db) is None
