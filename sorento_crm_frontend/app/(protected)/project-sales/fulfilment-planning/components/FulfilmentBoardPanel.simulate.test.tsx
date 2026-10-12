@@ -314,9 +314,21 @@ describe('AC-S9: selecting it only simulates', () => {
     expect(previewConfirmMany).not.toHaveBeenCalled();
   });
 
-  it('never adopts an un-adopted order and lists it as not simulated, while simulating the adopted one', async () => {
+  it('F1: simulates an un-adopted order by core id with placeholder lines, never calling adopt', async () => {
     getPlanningBoard.mockResolvedValue(mixedBoard());
-    simulateConfirm.mockResolvedValue({ results: [okSimulated()] });
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated(),
+        okSimulated({
+          pso_id: 'pso-so-b-rolled-back',
+          adopted: true,
+          decision_revision: 1,
+          lines_confirmed: [
+            { project_line_id: 'pl-b-1', line_no: 1, item_code: 'ZZT-ITEM-2' },
+          ],
+        }),
+      ],
+    });
     renderPanel(['SO403340', 'SO000002']);
 
     await pressSimulate();
@@ -324,14 +336,19 @@ describe('AC-S9: selecting it only simulates', () => {
     await waitFor(() => expect(simulateConfirm).toHaveBeenCalledTimes(1));
     expect(adoptSalesOrder).not.toHaveBeenCalled();
     const [body] = simulateConfirm.mock.calls[0];
-    expect(body.orders.map((order: { pso_id: string }) => order.pso_id)).toEqual(['pso-so-a']);
+    const adoptedEntry = body.orders.find(
+      (order: { sales_order_id?: string }) => order.sales_order_id === 'so-b',
+    );
+    expect(adoptedEntry).toBeDefined();
+    expect(adoptedEntry.pso_id).toBeUndefined();
+    expect(
+      adoptedEntry.lines.map((line: { project_line_id: string }) => line.project_line_id),
+    ).toEqual(['pending-adoption:core-so-b-1']);
 
     const results = await screen.findByTestId('board-confirm-results');
-    expect(
-      within(results).getByText(
-        /SO000002:? is not being planned yet; Confirm would adopt it first, so it was not simulated\./,
-      ),
-    ).toBeInTheDocument();
+    expect(within(results).queryByText(/was not simulated/)).toBeNull();
+    expect(within(results).queryByText(/is not being planned yet/)).toBeNull();
+    expect(within(results).getByText(/SO000002:? would confirm as revision 1/)).toBeInTheDocument();
   });
 });
 
