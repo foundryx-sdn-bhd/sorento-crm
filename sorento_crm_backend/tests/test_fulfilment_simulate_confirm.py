@@ -587,8 +587,20 @@ def test_r6_the_probe_never_runs_a_line_outside_only_line_ids(api, monkeypatch):
 def test_a_simulation_names_a_stock_short_reserve_and_persists_nothing(api, monkeypatch):
     """Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a Reserve past the free stock confirms as
     decided with a warning; the simulation shows `stock_short_notices` and saves nothing."""
+    from app.services.automation_service import AutomationService
+    from app.services.project_order_inquiry_service import (
+        register_order_inquiry_post_commit_dispatch,
+    )
+
     client, world = api
     _as_role(monkeypatch, "admin")
+    register_order_inquiry_post_commit_dispatch()
+    dispatched = []
+    monkeypatch.setattr(
+        AutomationService,
+        "dispatch_event",
+        lambda self, trigger, *, context, source_kind, source_id: dispatched.append(trigger),
+    )
     order, core_so, (a, _b) = _two_line_order(world, pool=30, qty_each="50")
     before = _counts(world, order, core_so)
 
@@ -607,3 +619,4 @@ def test_a_simulation_names_a_stock_short_reserve_and_persists_nothing(api, monk
     assert notices[0]["line_no"] == 10
     assert "20 short" in notices[0]["reason"], notices
     assert _counts(world, order, core_so) == before
+    assert dispatched == [], f"a simulation sends no handover email: {dispatched}"
