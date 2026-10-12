@@ -255,3 +255,77 @@ def test_the_batch_stays_open_while_a_genuinely_pending_row_is_left(api):
     db = world.db
     _so, _order, batch, _line_1, _line_2 = _partly_applied(client, world)
     assert db.get(PlanningChangeBatch, batch.id).applied_at is None
+
+
+def test_a_named_line_the_batch_cannot_apply_fails_the_order_and_names_the_line(api):
+    """Never fail silently: a line the press named through a LIVE row that the apply then
+    drops (here the book cancelled the line between compose and apply, so the row is
+    superseded) fails the whole order with the line named - nothing is written, rather than
+    a revision quietly missing the line."""
+    client, world = api
+    db = world.db
+    _stock(db, world.product, world.pool_wh, on_hand=200)
+    so, core_1, order, line_1 = _adopted_line(db, world, qty="24", line_no=1)
+    _so, core_2, _order, line_2 = _adopted_line(db, world, qty="10", line_no=2, core_so=so)
+    _confirm(client, order.id, {"lines": [_buy(line_1.id, "24"), _reserve(world, line_2.id, "10")]})
+    batch = _build(db, world, so, [
+        (_change(DATE_MOVED, so, core_1, old_qty="24", new_qty="24", new_date=MOVED_TO), core_1),
+        (_change(DATE_MOVED, so, core_2, old_qty="10", new_qty="10", new_date=MOVED_TO), core_2),
+    ])
+    db.commit()
+    before = _active(db, order).revision_no
+    core_2.line_status = "cancelled"
+    db.commit()
+
+    result = _result(
+        _press(client, order, batch, [_buy(line_1.id, "24"), _reserve(world, line_2.id, "10")]),
+        order,
+    )
+
+    assert result["ok"] is False
+    assert "line 2" in (result.get("error") or ""), result.get("error")
+    assert [f["line_no"] for f in result.get("failing_lines") or []] == [2]
+    db.expire_all()
+    assert _active(db, order).revision_no == before
+
+
+def test_reconfirming_a_line_purchasing_was_told_to_cancel_raises_a_fresh_order(api):
+    """Owner question (12 Oct): once fixed, does re-confirming SRTWT2201 line 688 as Buy 24,
+    after rev 4 told purchasing CANCEL ALL for it, raise a new ORDER 24? Reproduces the prod
+    state with an ordinary confirm that leaves the drifted line out, then confirms it again."""
+    client, world = api
+    db = world.db
+    _stock(db, world.product, world.pool_wh, on_hand=200)
+    so, core_1, order, line_1 = _adopted_line(db, world, qty="24", line_no=1)
+    _so, _core_2, _order, line_2 = _adopted_line(db, world, qty="10", line_no=2, core_so=so)
+    _confirm(client, order.id, {"lines": [_buy(line_1.id, "24"), _reserve(world, line_2.id, "10")]})
+    core_1.required_date = MOVED_AGAIN
+    line_1.required_date = MOVED_AGAIN
+    db.commit()
+    # The prod rev 4: a confirm that names the other line only - the drifted line 1 is not
+    # carried, so it leaves the revision and its ORDER row is cancelled.
+    _confirm(client, order.id, {"lines": [_buy(line_2.id, "10")]})
+    db.expire_all()
+    assert _snapshot(_active(db, order), line_1) is None
+    live = (
+        db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == str(line_1.id))
+        .filter(OrderInquiryRow.state != INQUIRY_CANCELLED)
+        .all()
+    )
+    assert sum((Decimal(r.qty) for r in live if r.verb != IV_CANCEL_BALANCE), Decimal("0")) == 0
+
+    _confirm(client, order.id, {"lines": [_buy(line_1.id, "24")]})
+
+    db.expire_all()
+    assert _snapshot_buy(_snapshot(_active(db, order), line_1)) == Decimal("24")
+    orders = (
+        db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == str(line_1.id))
+        .filter(OrderInquiryRow.state != INQUIRY_CANCELLED)
+        .filter(OrderInquiryRow.verb != IV_CANCEL_BALANCE)
+        .all()
+    )
+    assert sum((Decimal(r.qty) for r in orders), Decimal("0")) == Decimal("24"), [
+        (r.verb, r.state, r.qty) for r in orders
+    ]

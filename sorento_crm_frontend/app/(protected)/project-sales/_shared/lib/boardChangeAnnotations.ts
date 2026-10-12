@@ -531,25 +531,30 @@ export function lineKeyOf(
 }
 
 /**
- * A row another, later row in the same batch has already replaced (S1/S4,
- * `PLAN-esb-change-row-refresh.md`, issue #1240) - never worth drawing on the board a second
- * time, whatever the batch itself has been applied or not. `get_batch` returns every row a
- * batch ever carried, superseded and applied included, the append-only record, by design, so
- * the batch lightbox and history still show them; only the LIVE overlay (this file) drops one.
+ * A row that is HISTORY, never worth drawing on the board: one another, later row in the same
+ * batch has already replaced (S1/S4, `PLAN-esb-change-row-refresh.md`, issue #1240), or one an
+ * earlier Confirm already APPLIED (BOARD-FROZEN-DISPLAY, 12 Oct 2026). `get_batch` returns
+ * every row a batch ever carried, by design, so the batch lightbox and history still show
+ * them; only the LIVE overlay (this file) drops one.
  *
  * ONE predicate, used everywhere a row feeds the board overlay - `proposalsByLine` (and
  * through it `uncoverChangedLines`, `changedLineIds`, `preMarkedKeys`), `annotationsByLine`
  * and `annotationsByCell` (review round 1, B1 ruling: the S2 list-vs-grid split this used to
- * carry was a defect, not a feature). An APPLIED row is deliberately NOT retired here: a
- * row's own `applied_state` must never gate the overlay, pre-mark or Confirm on its own - only
- * the BATCH's own `applied_at` does, which none of these functions receive (they take
- * `Pick<PlanningChangeBatch, 'orders'>`) - pinned by `FulfilmentBoardPanel.change.test.tsx`'s
- * "does not block Confirm ... even if a row says it was" (R3, review round 3) and "AC-F7: the
- * pill still reads Confirmed ..." (the latter via `preMarkedKeys`'s own separate `covered`
- * guard below, which stays).
+ * carry was a defect, not a feature).
+ *
+ * WHY AN APPLIED ROW IS RETIRED TOO (reverses the R3 ruling of
+ * `PLAN-board-draft-on-confirmed-line.md`, review round 3). A batch stays open while ANY of
+ * its rows is pending (S5b, #1245), so after a partial Confirm the rows that press DID apply
+ * kept uncovering their lines and pre-marking them with the batch's OLD `proposal_json`,
+ * painted over the line's frozen decision. SO422492 on prod: C-FH14, confirmed BUY in rev 3
+ * and rev 4 and handed to purchasing as ORDER, read "Own N (BRW-NTC)" as both Suggested and
+ * Decided. What an applied row asked for is already in the active revision; the line shows
+ * that. A failed row is NOT retired: its order's apply rolled back, so the change it carries
+ * is still undone. Confirm's own block still reads only the batch's `applied_at`
+ * (`FulfilmentBoardPanel.change.test.tsx`, "does not block Confirm ...").
  */
 function isRetiredChangeRow(row: PlanningChangeRow): boolean {
-  return row.applied_state === 'superseded';
+  return row.applied_state === 'superseded' || row.applied_state === 'applied';
 }
 
 /**
@@ -644,8 +649,9 @@ export function uncoverChangedLines<
   };
 }
 
-/** The planning lines a batch names, and the fresh proposal it holds for each. A superseded
- * row is skipped (S4/B1) - another row in the same batch already replaced it. */
+/** The planning lines a batch names, and the fresh proposal it holds for each. A retired row
+ * is skipped (`isRetiredChangeRow`): a superseded one was replaced by another row (S4/B1), an
+ * applied one is already in the active revision (BOARD-FROZEN-DISPLAY). */
 function proposalsByLine(
   batch: Pick<PlanningChangeBatch, 'orders'> | null | undefined,
 ): Map<string, { proposal: BoardContribution | null }> {
@@ -688,9 +694,8 @@ export function preMarkedKeys(
   contributions: BoardContribution[],
 ): string[] {
   if (!batch) return [];
-  // `changed` drops a SUPERSEDED row's line only (S4/B1, `isRetiredChangeRow`) - an applied
-  // row's own `applied_state` is not a signal this function acts on (see that predicate's own
-  // doc). The `covered` check below is a SEPARATE guard this function still needs: it takes
+  // `changed` drops a retired (superseded or applied) row's line (`isRetiredChangeRow`).
+  // The `covered` check below is a SEPARATE guard this function still needs: it takes
   // `Pick<PlanningChangeBatch, 'orders'>`, never the
   // batch's own `applied_at`, so a batch that resolves APPLIED after the board's contributions
   // are already on screen (AC-F7, `FulfilmentBoardPanel.change.test.tsx`) is indistinguishable

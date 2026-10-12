@@ -622,7 +622,15 @@ describe('the pre-marked decision, and Confirm', () => {
       })),
     });
     renderPanel();
-    await screen.findByTestId('board-change-icon-pcr-381895-1');
+    await screen.findByTestId('fulfilment-board-matrix');
+    // BOARD-FROZEN-DISPLAY (12 Oct 2026, SO422492): an APPLIED row is history - it no longer
+    // overlays or pre-marks its line (`isRetiredChangeRow`), so the line reads as the board
+    // states it, not as the batch's old proposal. Waited for, not asserted once: the batch
+    // is its own, later query.
+    await waitFor(() => expect(getPlanningChangeBatch).toHaveBeenCalled());
+    expect(
+      screen.queryByTestId('board-change-icon-pcr-381895-1'),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(
       await screen.findByRole('button', {
