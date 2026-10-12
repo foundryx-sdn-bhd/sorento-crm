@@ -956,9 +956,8 @@ class TestAcH17PackingListQuantityAndStatusAgree:
         never recomputes `line_status` afterwards - so the response shows
         `spo_allocated_quantity 10` (round 3's own fix, already filtered)
         against a `line_status` still computed from 1009, exactly the
-        disagreement the AC names. The persisted-row assertions already
-        pass today (nothing filters the write path at all yet); they are
-        the guard against a future fix reaching too far.
+        disagreement the AC names. The persisted allocated-figure assertion
+        guards against a future fix reaching too far.
         """
         client, db = _client(scm_app)
         chain = _chain(db)
