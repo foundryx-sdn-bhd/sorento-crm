@@ -546,4 +546,18 @@ describe('fix round: simulated wording and number formatting (R7-R10)', () => {
     expect(screen.queryByTestId('board-simulate-writes-pso-so-a')).toBeNull();
     expect(within(results).queryByText(/Would write/)).toBeNull();
   });
+
+  it('already-fulfilled lines read "would be cleared" in a simulation', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [okSimulated({ lines_fulfilled_skipped: 2 })],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const results = await screen.findByTestId('board-confirm-results');
+    expect(
+      within(results).getByText('2 lines already fulfilled, decision would be cleared'),
+    ).toBeInTheDocument();
+  });
 });
