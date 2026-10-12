@@ -89,10 +89,17 @@ ALLOWED: dict[str, list[str]] = {
     # against the live `brands` table (`turn_runtime.active_brands`,
     # `resolve_gate.py`'s own pre-resolver intercept), never sent through the
     # shared resolver's order-domain fan-out to customer/transporter.
-    "order": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    "order": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        # REF-PROBES: a typed reference number the resolver placed as another kind.
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
     # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain gates exactly as its asks did
     # under `order`.
-    "sales": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    "sales": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
     "incoming": ["product", "inbound_shipment", "category", "brand"],
     "forms": ["form"],
     "portal_link": [],
@@ -127,7 +134,10 @@ ALLOWED: dict[str, list[str]] = {
     # the PO tool takes `warehouse_ids`; a customer or transporter token no longer rides into
     # it. Supersedes PLAN-chatbot-warehouse-entity-and-last-in line 47 ("purchase_order
     # stays as is"). `ALLOWS_EMPTY` below keeps a bare "PO" listing the open book.
-    "purchase_order": ["product", "warehouse", "category", "brand"],
+    "purchase_order": [
+        "product", "warehouse", "category", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
 }
 
 #: PLAN-low-stock-report S6 (owner ruling, console round 2, 14 Sep 2026): INTENTS that

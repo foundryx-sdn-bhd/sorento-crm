@@ -50,9 +50,9 @@ _AXES: tuple[dict[str, Any], ...] = (
         "all_text": "all products",
     },
     {
-        "label": "Order",
+        "label": "Delivery order",
         "types": ("customer_order", "order", "order_number"),
-        "hints": ("order", "customer_order", "order_number"),
+        "hints": ("order", "customer_order", "order_number", "delivery_order"),
         "always": False,
     },
     {

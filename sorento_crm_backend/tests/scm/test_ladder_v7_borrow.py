@@ -32,7 +32,7 @@ from app.models.project_so import (
     SOSupplyDecision,
 )
 from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
-from app.services.project_supply_service import ProjectSupplyService, SupplyLinesRefused
+from app.services.project_supply_service import ProjectSupplyService
 from app.services.scm import priority
 
 from .._pg_fixture import blank_session
@@ -473,10 +473,13 @@ def test_a_date_aware_use_proposal_confirms_verbatim_although_available_is_negat
     assert holds == [(own_id, "own", Decimal("27"))], holds
 
 
-def test_a_reserve_beyond_the_date_aware_pile_is_still_refused():
+def test_a_reserve_beyond_the_date_aware_pile_holds_only_the_pile_and_records_the_short():
     """The other half of the same seeding: the pile is the WALK's number, not the whole
     floor. JAY's 32 is due after JEREMY's 27 and the 12 behind it, so 16 is free by his
-    date - and a hand-composed Reserve for the whole 32 is refused with the 16 named."""
+    date - and a hand-composed Reserve for the whole 32 holds the 16 and records 16 short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
@@ -493,32 +496,36 @@ def test_a_reserve_beyond_the_date_aware_pile_is_still_refused():
         )
         service = ProjectSupplyService(db)
         jay_components = _components(service.proposal_for(jay))
-        refusal = None
-        try:
-            service.confirm(
-                jay,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=jay_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "32"}],
-                        )
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        except SupplyLinesRefused as exc:
-            refusal = exc
+        result = service.confirm(
+            jay,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=jay_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "32"}],
+                    )
+                ]
+            ),
+            actor_user_id=eling,
+        )
+        held = [
+            Decimal(str(a.qty))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id == jay_line.id)
+            .all()
+        ]
         db.rollback()
         own_code = own.warehouse_code
 
     assert [(c["kind"], c["qty"]) for c in jay_components] == [("buy", "32")], (
         "16 is not the whole unit, so the board proposes a Buy"
     )
-    assert refusal is not None, "32 was asked for off a pile that is 16 by his date"
-    assert refusal.detail["failing_lines"][0]["reason"] == (
-        f"{own_code} now has 16 free for this line, and 32 was asked for."
-    ), refusal.detail["failing_lines"]
+    [notice] = result["stock_short_notices"]
+    assert notice["reason"] == (
+        f"Reserve 32 at {own_code} confirmed as decided; only 16 free at {own_code} "
+        "when confirmed, 16 short"
+    ), notice
+    assert held == [Decimal("16")], "32 was asked for off a pile that is 16 by his date"
 
 
 def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
@@ -528,7 +535,11 @@ def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
     100 on the floor, 60 of it owed to an earlier order that has decided nothing - so it
     holds no stock a Reserve competes with, and only the DATED walk knows it is spoken for.
     The board gives line 10 its 30 and line 20 the 10 that is left; line 20 is hand-composed
-    for 30 anyway, and is told what remains rather than what is on the floor."""
+    for 30 anyway, holds the 10 that remains (not what is on the floor) and is the only line
+    recorded short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
@@ -563,38 +574,44 @@ def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
             row["line_no"]: [(c["kind"], c["qty"]) for c in row["components"]]
             for row in proposal["lines"]
         }
-        refusal = None
-        try:
-            service.confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=first_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
-                        ),
-                        ConfirmLine(
-                            project_line_id=second_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        except SupplyLinesRefused as exc:
-            refusal = exc
+        result = service.confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=first_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
+                    ),
+                    ConfirmLine(
+                        project_line_id=second_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
+                    ),
+                ]
+            ),
+            actor_user_id=eling,
+        )
+        held = {
+            a.so_line_id: Decimal(str(a.qty))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id.in_([first_line.id, second_line.id]))
+            .all()
+        }
+        first_id, second_id = first_line.id, second_line.id
         db.rollback()
         own_code = own.warehouse_code
 
     assert stated[10] == [("reserve", "30")], "30 is free by the first line's date"
     assert stated[20] == [("buy", "30")], "10 is left by the second's, which is not whole"
-    assert refusal is not None, "the second line asked for a pile the first had emptied"
-    assert [row["line_no"] for row in refusal.detail["failing_lines"]] == [20], (
-        f"only the second line is refused: {refusal.detail['failing_lines']}"
+    assert [row["line_no"] for row in result["stock_short_notices"]] == [20], (
+        f"only the second line is short: {result['stock_short_notices']}"
     )
-    assert refusal.detail["failing_lines"][0]["reason"] == (
-        f"{own_code} now has 10 free for this line, and 30 was asked for."
-    ), refusal.detail["failing_lines"]
+    assert result["stock_short_notices"][0]["reason"] == (
+        f"Reserve 30 at {own_code} confirmed as decided; only 10 free at {own_code} "
+        "when confirmed, 20 short"
+    ), result["stock_short_notices"]
+    assert held == {first_id: Decimal("30"), second_id: Decimal("10")}, (
+        "the second line asked for a pile the first had emptied and holds what was left"
+    )
 
 
 # --------------------------------------------------------------------------- AC-S3-2
