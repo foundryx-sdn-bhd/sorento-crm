@@ -185,7 +185,7 @@ from app.schemas.common import PaginationResponse
 from app.models.user import SystemSetting
 from app.services.embedding_events import publish_embedding_event
 from app.services.identifier_resolver import is_uuid, resolve_identifier
-from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail
+from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail, stamp_spec_page
 
 
 # Lifted out of `bulk_import_products` (PLAN-autocount-pull-review.md, P11) so the
@@ -666,6 +666,7 @@ class ProductService:
             if spec_constraints:
                 payload.update(spec_miss_detail(self.db, spec_constraints, spec_base))
         payload.update(spec_extra)
+        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def specifications_for_products(self, product_ids: List[str]) -> dict:

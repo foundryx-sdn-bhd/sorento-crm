@@ -10,7 +10,8 @@ Rule (owner): the parser decides, code only honours what the parser emitted; no 
 customer's text. A spec pair the parser emitted on a category entity is a specification of that
 ask. A millimetre number there carries no axis word of the customer's own, so it is the virtual
 `size` key and the route reads the axis from the data (`product_spec_filter.resolve_size`): one
-axis holds it -> that axis; several -> "Length or Width?"; none -> the values on file.
+axis holds it -> that axis; several -> any of them (owner ruling 12 Oct 2026, after this hand
+test: no "Length or Width?" question); none -> the values on file.
 
 Made-up product codes only (ZZT-*).
 """
@@ -133,10 +134,12 @@ PRODUCTS_TOOL = "crm_master_products_list"
 ROUTES = {STOCK_TOOL: STOCK_PATH, PRODUCTS_TOOL: "/api/v1/master-data/products/"}
 
 
-def _seed_basins(session_factory) -> None:
+def _seed_basins(session_factory, rows=None) -> list[str]:
+    """Wash basins with one stock row each. `rows`: `(tag, {mm key: value})` pairs; default the
+    step-1 world (600 on Length for two, on Width for one, one with no size). Returns the codes."""
     from app.models.product_spec import ProductSpecifications
     from app.services.company_scope import DEFAULT_COMPANY_ID
-    from tests._mc_lookup_seed import product
+    from tests._mc_lookup_seed import product, stock, warehouse
     from tests.chatbot.test_outstanding_lane import _seed_contact
     from tests.chatbot.test_promo_subject_filter import _class
 
@@ -144,16 +147,16 @@ def _seed_basins(session_factory) -> None:
     _class(session_factory, "Wash Basin", ("basin",))
     db = session_factory()
     _seed_registry(db)
-    mm = lambda v: {"value": v, "unit": "mm"}  # noqa: E731
-    for tag, extra in (
-        ("L1", {"dim_length": mm(600)}),
-        ("L2", {"dim_length": mm(600)}),
-        ("W1", {"dim_width": mm(600)}),
-        ("N1", {}),
-    ):
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    codes: list[str] = []
+    for tag, mm in rows or (("L1", {"dim_length": 600}), ("L2", {"dim_length": 600}), ("W1", {"dim_width": 600}), ("N1", {})):
         p = product(db, company_id=DEFAULT_COMPANY_ID, code=f"ZZT-SOC-{tag}-{uuid.uuid4().hex[:4]}")
-        db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=p.id, values={"class": {"value": "Wash Basin"}, **extra}))
+        values = {"class": {"value": "Wash Basin"}, **{k: {"value": v, "unit": "mm"} for k, v in mm.items()}}
+        db.add(ProductSpecifications(id=str(uuid.uuid4()), product_id=p.id, values=values))
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+        codes.append(p.product_code)
     db.commit()
+    return codes
 
 
 def _route_backed_stock(monkeypatch, session_factory):
@@ -199,9 +202,10 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
-def test_t1_size_on_the_category_entity_asks_length_or_width(session_factory, monkeypatch, _clear_overrides):
-    """RED (crew trace e2a6498a): the size is ignored and every basin is listed. The real
-    resolver reads the seeded basins, as on the owner's console."""
+def test_t1_size_on_the_category_entity_lists_basins_holding_it_on_any_axis(session_factory, monkeypatch, _clear_overrides):
+    """Crew trace e2a6498a: the size was ignored and every basin listed. Owner ruling (12 Oct
+    2026): 600 matches Length OR Width, so the basins holding 600 on either axis are listed and
+    the one with no size is not. The real resolver reads the seeded basins, as on the console."""
     from tests.chatbot.test_engine import _parser_output
     from tests.chatbot.test_outstanding_lane import _run_turn
     from tests.chatbot import test_outstanding_lane as harness
@@ -222,8 +226,10 @@ def test_t1_size_on_the_category_entity_asks_length_or_width(session_factory, mo
     assert stock_calls, f"the stock tool must be asked: {captured}"
     sent = [c for a in stock_calls for c in (a.get("spec_constraints") or [])]
     assert {"key": "size", "op": "eq", "value": 600} in sent, stock_calls
-    assert "Length" in reply and "Width" in reply, reply
-    assert "ZZT-SOC-" not in reply, f"no basin may be listed before the axis is known: {reply}"
+    for tag in ("L1", "L2", "W1"):
+        assert f"ZZT-SOC-{tag}-" in reply, reply
+    assert "ZZT-SOC-N1-" not in reply, reply
+    assert "Which one do you mean" not in reply, reply
 
 
 # --------------------------------------------------------------------------- an axis the customer never said
@@ -257,10 +263,10 @@ def test_g6_an_axis_word_in_the_spec_keeps_that_axis(vdb, raw, key):
 
 
 @pytest.mark.parametrize("domain,intent", [("inventory", "check_stock"), ("master_products", "check_product")])
-def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, _clear_overrides, domain, intent):
-    """RED: the live parse's own shape (a category plus a dim_width spec on "600mm"; the live
-    parse named `master_products`) listed only the width basin, while 600 sits on Length for two
-    basins."""
+def test_t2_live_parse_shape_matches_either_axis(session_factory, monkeypatch, _clear_overrides, domain, intent):
+    """The live parse's own shape (a category plus a dim_width spec on "600mm"; the live parse
+    named `master_products`) listed only the width basin, while 600 sits on Length for two basins.
+    Owner ruling (12 Oct 2026): every basin holding 600 on any axis."""
     from tests.chatbot.test_engine import _parser_output
     from tests.chatbot.test_outstanding_lane import _run_turn
     from tests.chatbot import test_outstanding_lane as harness
@@ -277,5 +283,55 @@ def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, 
         msg_id=f"zzt-soc-{uuid.uuid4().hex[:6]}", real_resolver=True,
     )
     reply = (result.reply or {}).get("text") or ""
-    assert "Length" in reply and "Width" in reply, reply
-    assert "ZZT-SOC-" not in reply, reply
+    for tag in ("L1", "L2", "W1"):
+        assert f"ZZT-SOC-{tag}-" in reply, reply
+    assert "ZZT-SOC-N1-" not in reply, reply
+
+
+# --------------------------------------------------------------------------- reviewer round (step-1 diff)
+
+
+def test_r_s1_a_corrected_word_on_the_category_pair_binds_nothing(vdb):
+    """Reviewer S1 (owner "exact only", #833 round 10): the parser's corrected word ("gunmetal" for
+    a typed "gunmetl") never filters; it is an unknown finish in the customer's own spelling."""
+    verdict = _ground(
+        vdb, _category("gunmetl basin", "basin", spec_key="finish", spec_value="gunmetal"),
+        message="gunmetl basin got stock?",
+    )
+    finishes = [s for s in _specs(verdict["entities"]) if s["spec_key"] == "finish"]
+    assert finishes and all(s["spec_value"] is None for s in finishes), verdict["entities"]
+    assert any("gunmetl" in str(s["raw"]) for s in finishes), finishes
+
+
+def test_r_s2_an_axis_word_in_the_category_raw_keeps_that_axis(vdb):
+    """Reviewer S2: the customer said "wide", so the pair stays on Width (no `size`)."""
+    verdict = _ground(
+        vdb, _category("600mm wide basin", "basin", spec_key="dim_width", spec_value=600),
+        message="600mm wide basin got stock?",
+    )
+    specs = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("dim_width", 600) in specs and ("size", 600) not in specs, verdict["entities"]
+
+
+def test_r_b1_a_size_ask_outside_the_spec_lanes_keeps_its_require_leg():
+    """Reviewer B1: "600mm basin cert?" (product_attachment) never sends spec_constraints, so the
+    resolver's `require` (the cert condition) must stay; only a size that reaches the tool drops it."""
+    from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
+
+    size = {"raw": "600", "hint": "specification", "canonical_code": "600", "current_message": True,
+            "confident": True, "spec_key": "size", "spec_value": 600, "spec_unit": "mm"}
+    cert = {"raw": "cert", "hint": "attachment_type", "canonical_code": "certificate", "current_message": True, "confident": True}
+
+    def body(domain, intent, extra):
+        return resolve_entity_body({
+            "text": {"message": {"message": {"text": "600mm basin"}}},
+            "contact": {"id": "1"},
+            "parse": {"output": {
+                "message_type": "business_query", "domain_hint": domain, "intent_hint": intent,
+                "match_mode": "and", "access_levels": [],
+                "entities": [_category("basin"), dict(size), *extra],
+            }},
+        })
+
+    assert body("product_attachment", "check_product_attachment", [cert]).get("require"), "the cert leg stays"
+    assert not body("inventory", "check_stock", []).get("require"), "a size the stock tool filters drops the leg"

@@ -3662,6 +3662,30 @@ def _apply(
     # Round 4 R5: a clarify is answered on the very next turn or not at all; the engine
     # re-arms it only when this turn asks another one.
     new_state.focus.set_clarify = None
+    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the last answer listed a few matches of a
+    # spec-filtered list and said "Reply to see more". The PARSER decides whether this message
+    # asks for more of that list (`continuation`, any phrasing or language); naming a subject
+    # of its own makes it a new ask. The next page re-sends the list's own constraints.
+    spec_page = (carried_set or {}).get("spec_page")
+    if isinstance(spec_page, dict):
+        carried_set = None
+        domain = spec_page.get("domain")
+        if verdict.get("continuation") is True and domain and not _names_a_subject(verdict):
+            trace.rules_fired.append("spec_page_continued")
+            return new_state, Plan(
+                domains=[domain],
+                fetch=[
+                    FetchSpec(
+                        domain=domain,
+                        entities=[],
+                        filters={"set_page": {"spec_page": dict(spec_page)}, "top_n": None},
+                        date_window=None,
+                    )
+                ],
+                ask=None,
+                denied=[],
+                trace=trace,
+            )
     # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
     # ("Other brands with stock: Cabana 3, Mocha 2. Name one to see them.") narrows THAT
     # set to the brand, counted the same way the offer counted it, never a new set of

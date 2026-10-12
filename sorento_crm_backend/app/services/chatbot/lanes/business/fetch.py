@@ -165,6 +165,10 @@ SPEC_CONSTRAINT_TOOLS = frozenset(
 )
 # The domains whose tool is one of them (`turn/policy_rows.py`).
 SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory", "promotion"})
+
+#: How many rows a spec-filtered product or stock answer shows before "Reply to see more"
+#: (owner ruling, 12 Oct 2026: a few matches first, the rest on request).
+SPEC_PAGE_SIZE = 5
 _SUBJECT_HINTS = frozenset({"category", "product_type"})
 
 
@@ -218,11 +222,23 @@ def constraints_for_terms(db: Any, terms: Any) -> list[dict[str, Any]] | None:
     return out
 
 
-def carries_size(spec_constraints: Any) -> bool:
-    """Does the list hold the virtual `size` key (the route resolves its axis)?"""
+def carries_size(spec_constraints: Any, db: Any = None) -> bool:
+    """Does the list hold a size: the virtual `size` key (the route resolves its axis), or,
+    given `db`, a registry key measured in mm ("600mm length")? Owner ruling (12 Oct 2026):
+    every size ask is answered by the route, a few matches first."""
     from app.services.chatbot.head.grounding import SIZE_KEY
 
-    return any(isinstance(c, dict) and c.get("key") == SIZE_KEY for c in jsc.array(spec_constraints))
+    keys = {c.get("key") for c in jsc.array(spec_constraints) if isinstance(c, dict)}
+    if SIZE_KEY in keys:
+        return True
+    if db is None or not keys:
+        return False
+    from app.services.product_spec_registry import active_registry
+
+    return any(
+        str(row.spec_key) in keys and str(row.data_type) == "numeric" and str(row.unit or "").lower() == "mm"
+        for row in active_registry(db)
+    )
 
 
 def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | None:

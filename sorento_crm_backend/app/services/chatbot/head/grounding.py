@@ -665,7 +665,10 @@ def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounde
     value = entity.get("spec_value")
     entry = next((k for k in vocab.keys if k.key == key), None)
     if key == SIZE_KEY or (entry is not None and entry.data_type == "numeric" and (entry.unit or "").lower() == "mm"):
-        return _validate_size(str(value), value, vocab)
+        # Reviewer S2: an axis word in the category's own words ("600mm wide basin") is the
+        # customer's axis, read by the registry's word reader; only a number with none is a size.
+        said = [g for g in ground_words(str(entity.get("raw") or ""), vocab)[0] if (g.unit or "").lower() == "mm"]
+        return said or _validate_size(str(value), value, vocab)
     if entry is None:
         return []
     return _validate({"spec_key": key, "spec_value": value, "raw": str(value)}, vocab)
@@ -766,6 +769,18 @@ def ground(
             # a spec pair the parser put ON the category entity is a specification of the ask.
             # Left there, nothing read it and every basin was listed.
             carried = _spec_of_category(entity, vocab)
+            # Reviewer S1 (owner "exact only", #833 round 10): a word the parser put right binds
+            # nothing; it is said back as typed, as for any specification entity. A number is
+            # never a corrected word.
+            words = [g for g in carried if not isinstance(g.value, (int, float)) or isinstance(g.value, bool)]
+            if words:
+                others = [
+                    str(e.get("raw") or "")
+                    for e in entities
+                    if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
+                ]
+                typed = _as_typed(words, {**entity, "raw": str(entity.get("spec_value"))}, message, vocab, others)
+                carried = [g for g in carried if g not in words] + typed
             add(carried, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in carried], "spec_on_category": True})
             entity = {k: v for k, v in entity.items() if k not in ("spec_key", "spec_value")}

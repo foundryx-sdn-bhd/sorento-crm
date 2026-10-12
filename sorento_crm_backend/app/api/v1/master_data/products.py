@@ -104,9 +104,11 @@ def _with_specs_and_or_specifications(
             serialized["specifications"] = specifications_by_product.get(str(row.id))
         if include_specs:
             serialized["specs"] = specs_by_product.get(str(row.id)) or []
-    if result.get("spec_resolved"):
-        # The axis a virtual `size` constraint resolved to (SPEC-PROMO-PARAMS).
-        body["spec_resolved"] = result["spec_resolved"]
+    for key in ("spec_resolved", "spec_page"):
+        # The axis a virtual `size` constraint resolved to, and the page a spec-filtered
+        # answer returned (SPEC-PROMO-PARAMS).
+        if result.get(key):
+            body[key] = result[key]
     return JSONResponse(content=body)
 
 
@@ -291,7 +293,7 @@ def get_products(
         ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
-        if (include_specifications or include_specs or result.get("spec_resolved")) and isinstance(result, dict):
+        if (include_specifications or include_specs or result.get("spec_resolved") or result.get("spec_page")) and isinstance(result, dict):
             return _with_specs_and_or_specifications(
                 service,
                 result,

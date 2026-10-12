@@ -1757,11 +1757,18 @@ def run_fetch(
         # open pick (`answer_bridge`, beside `promo_filter`) and `narrow` above put them here.
         carried = semantic_input.get("spec_constraints")
         spec_constraints = [c for c in carried if isinstance(c, dict)] if isinstance(carried, list) else None
+    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the parser read this message as "more of
+    # the same list" (`continuation`); the list's own constraints ride the carry
+    # (`focus.set_page["spec_page"]`, handed in by `turn_runtime`'s runner) and the next page
+    # is asked with exactly those filters.
+    spec_page_carry = parse_output.get("spec_page") if isinstance(parse_output.get("spec_page"), dict) else None
+    if not spec_constraints and spec_page_carry and isinstance(spec_page_carry.get("spec_constraints"), list):
+        spec_constraints = [c for c in spec_page_carry["spec_constraints"] if isinstance(c, dict)] or None
     if spec_constraints and jsc.js_string(domain or "") == "promotion" and not semantic_input.get("scope_terms"):
         # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
         # product token the resolver placed is the stricter ask and keeps its product_ids.
         spec_constraints = None
-    if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
+    if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints, db):
         # On the product and stock lanes the resolver's described set already applies the
         # subject and every registry key exactly (`extracted_specs`), with the counted-set
         # answer the owner ruled on (header, brand lines, count-and-ask). Only the virtual
@@ -2278,6 +2285,9 @@ def run_fetch(
         "predicate": gate.get("predicate"),
     }
     spec_filtered = bool(semantic_input.get("spec_constraints")) and tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS
+    # Owner ruling (12 Oct 2026): a spec-filtered product or stock answer is paged; a promotion
+    # answer keeps its own grouped list.
+    spec_paged = spec_filtered and jsc.js_string(domain or "") != "promotion"
     if spec_filtered:
         # The route filters by `spec_constraints` and its rows ARE the answer: the
         # resolver's counted set (its total, its header, its product_ids slice) describes
@@ -2294,6 +2304,10 @@ def run_fetch(
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
+        if spec_paged:
+            # A few matches first (owner ruling, 12 Oct 2026); a continuation asks the next page.
+            args["limit"] = fetch_mod.SPEC_PAGE_SIZE
+            args["page"] = int((spec_page_carry or {}).get("page") or 0) + 1
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.
         if trace is not None:
@@ -2578,6 +2592,24 @@ def run_fetch(
             alternative_tail, alternative_found = [], False
 
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if spec_paged and isinstance(structured, dict) and structured.get("has_result") and isinstance(envelope, dict):
+        # The route states the page it returned (`spec_page`); when more matched, the reply says
+        # how far it got and that a reply shows more, and the list's constraints are carried
+        # for the parser's `continuation` on the next message. The last page carries nothing.
+        page_info = envelope.get("spec_page") if isinstance(envelope.get("spec_page"), dict) else {}
+        total, page, limit = (int(page_info.get(k) or 0) for k in ("total", "page", "limit"))
+        end = min(page * limit, total)
+        if limit and total > end:
+            response = jsc.js_string(structured.get("response") or "").rstrip()
+            structured["response"] = (
+                f"{response}\n\nShowing {(page - 1) * limit + 1} to {end} of {total}. Reply to see more."
+            )
+            structured["spec_carry"] = {
+                "domain": jsc.js_string(domain or ""),
+                "spec_constraints": list(spec_constraints or []),
+                "page": page,
+                "total": total,
+            }
     if spec_filtered and isinstance(structured, dict) and isinstance(envelope, dict):
         if structured.get("has_result"):
             # The subject and specs were satisfied by the filter; the resolver not

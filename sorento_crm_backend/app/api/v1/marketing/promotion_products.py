@@ -465,9 +465,11 @@ async def list_all_promotion_products(
             if hasattr(product, 'promo_selling_price'):
                 product.promotion_price = product.promo_selling_price
         result["data"] = products
-        if result.get("spec_resolved"):
+        if result.get("spec_resolved") or result.get("spec_page"):
             body = PromotionServingListResponse[PromotionProductResponse].model_validate(result).model_dump(mode="json")
-            body["spec_resolved"] = result["spec_resolved"]
+            for key in ("spec_resolved", "spec_page"):
+                if result.get(key):
+                    body[key] = result[key]
             return JSONResponse(content=body)
         return result
     except HTTPException:

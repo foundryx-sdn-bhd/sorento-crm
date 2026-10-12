@@ -515,19 +515,49 @@ def test_size_resolves_to_the_one_mm_key_that_holds_the_value(api, db):
     assert resp.json().get("spec_resolved") == {"size": "dim_length"}
 
 
-def test_size_held_by_two_keys_returns_no_rows_and_spec_ambiguous(api, db):
-    """RED today: `size` is an unknown key (422), so there is neither a 200 nor `spec_ambiguous`."""
+def test_size_held_by_two_keys_matches_either_axis(api, db):
+    """Owner ruling (12 Oct 2026, after hand test step 1): a bare mm size matches products holding
+    it on ANY dimension axis; no "Length or Width?" question. Was: no rows plus `spec_ambiguous`."""
     a = _g(db, "AA", dim_length=250)
     c = _g(db, "AC", dim_width=250)
+    other = _g(db, "AO", dim_length=100)
     db.commit()
 
-    resp = _list(api, db, [a, c], **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    resp = _list(api, db, [a, c, other], **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["data"] == []
-    assert body.get("spec_ambiguous") == [
-        {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"]}
-    ]
+    assert _codes(resp) == _codes_of([a, c])
+    assert not body.get("spec_ambiguous"), body
+    assert body.get("spec_resolved") == {"size": ["dim_length", "dim_width"]}, body
+
+
+def test_an_axis_key_narrows_to_that_axis_only(api, db):
+    """Owner ruling (12 Oct 2026): "600mm length" uses that axis only (guard)."""
+    a = _g(db, "XA", dim_length=250)
+    c = _g(db, "XC", dim_width=250)
+    db.commit()
+
+    resp = _list(api, db, [a, c], **_constraints(GRATING, {"key": "dim_length", "op": "eq", "value": 250}))
+    assert _codes(resp) == _codes_of([a])
+
+
+@pytest.mark.parametrize("path", [PRODUCTS, "/api/v1/inventory/stock/balance"])
+def test_a_spec_filtered_call_states_its_page(api, db, path):
+    """Owner ruling (12 Oct 2026): a few matches first, then "reply to see more". The chatbot
+    pages a spec-filtered answer, so the route states the page it returned (`spec_page`): the
+    total that matched and the page/limit asked. Absent without `spec_constraints`."""
+    rows = [_g(db, f"PG{i}", dim_length=250) for i in range(3)]
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    for p in rows:
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+    db.commit()
+
+    resp = api.get(path, params={"limit": 2, "page": 1, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250})})
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get("spec_page") == {"page": 1, "limit": 2, "total": 3}, resp.json().get("spec_page")
+    plain = api.get(path, params={"limit": 2, "page": 1})
+    assert "spec_page" not in plain.json()
+    assert rows
 
 
 def test_size_held_by_no_key_lists_every_mm_key_and_the_unrecorded_count(api, db):
@@ -775,9 +805,9 @@ def test_staff_call_without_contact_still_sees_dim_width(api, db):
 
     size = _bare_list(api, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
     assert size.status_code == 200, size.text
-    assert size.json().get("spec_ambiguous") == [
-        {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"]}
-    ]
+    # Owner ruling (12 Oct 2026): either axis matches; no `spec_ambiguous`.
+    assert _codes(size) == _codes_of([a, c]), size.text
+    assert not size.json().get("spec_ambiguous")
 
 
 # --------------------------------------------------------------------------------------- #

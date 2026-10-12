@@ -233,8 +233,9 @@ def _with_sellable(service: StockService, result: dict) -> JSONResponse:
                 _attach_total(entry, pid, entry["total_on_hand"])
             summary.append(entry)
         body["stock_summary"] = summary
-    if result.get("spec_resolved"):
-        body["spec_resolved"] = result["spec_resolved"]
+    for key in ("spec_resolved", "spec_page"):
+        if result.get(key):
+            body[key] = result[key]
     return JSONResponse(content=body)
 
 
@@ -423,10 +424,12 @@ def get_stock_balance(
             return JSONResponse(content=jsonable_encoder(result))
         if include_sellable and isinstance(result, dict):
             return _with_sellable(service, result)
-        if isinstance(result, dict) and result.get("spec_resolved"):
-            # Bypasses response_model, which would drop the undeclared key.
+        if isinstance(result, dict) and (result.get("spec_resolved") or result.get("spec_page")):
+            # Bypasses response_model, which would drop the undeclared keys.
             body = StockBalanceListResponse.model_validate(result).model_dump(mode="json")
-            body["spec_resolved"] = result["spec_resolved"]
+            for key in ("spec_resolved", "spec_page"):
+                if result.get(key):
+                    body[key] = result[key]
             return JSONResponse(content=body)
         return result
     except Exception as e:

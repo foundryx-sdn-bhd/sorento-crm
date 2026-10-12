@@ -737,35 +737,80 @@ def publish_wording_edit(session: Session, *, old: str, new: str, message: str) 
     return version
 
 
-def publish_specs_block(session: Session) -> int | None:
-    """The PRODUCTION parser text with the `{{specs}}` block added, published as a new
-    UNLABELLED version (SPEC-PROMO-PARAMS, owner hand test 12 Oct 2026: the owner's v84-v86
-    carry no `{{specs}}`, so the specification vocabulary, the `size` line included, never
-    reached the parser). Every word of the owner's text is kept: the block goes inside the
-    policy markers when the text has them, else after the text inside a new pair. Returns
-    the version number; None when the production text already carries `{{specs}}` or a
-    version with exactly that text exists. The label moves only when the owner moves it."""
-    import uuid
+def _with_specs_block(text: str) -> str:
+    """`text` carrying the live `{{specs}}` block, every word outside it kept.
 
+    Three shapes (owner hand test and crew, 12 Oct 2026): `{{specs}}` already present -> left
+    alone; policy markers holding STATIC rendered `Specification ...` lines and the `Product
+    types (...)` line that closes them (prod v52, rendered at publish time, no size line) ->
+    those lines become `{{specs}}`, rendered live from the registry, size line included;
+    markers without such lines -> `{{specs}}` goes in before the end marker; no markers (dev
+    v52) -> a marker pair holding `{{specs}}` is appended."""
     from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, BLOCKS_END
 
-    row = session.execute(
-        sql(
-            "SELECT v.template, v.variables FROM ai_prompt_versions v "
-            "JOIN ai_prompt_labels l ON l.version_id = v.id "
-            "WHERE l.name = :n AND l.label = 'production'"
-        ),
-        {"n": PROMPT_KEY},
-    ).first()
-    if row is None or _re.search(r"\{\{\s*specs\s*\}\}", row[0] or ""):
-        return None
-    text = row[0]
-    if BLOCKS_BEGIN in text and BLOCKS_END in text:
+    if _re.search(r"\{\{\s*specs\s*\}\}", text or ""):
+        return text
+    if BLOCKS_BEGIN in text and BLOCKS_END in text and text.index(BLOCKS_BEGIN) < text.index(BLOCKS_END):
         head, rest = text.split(BLOCKS_BEGIN, 1)
         inside, tail = rest.split(BLOCKS_END, 1)
-        new_text = f"{head}{BLOCKS_BEGIN}{inside.rstrip(chr(10))}\n\n{{{{specs}}}}\n{BLOCKS_END}{tail}"
+        lines = inside.split("\n")
+        static = [
+            i for i, ln in enumerate(lines)
+            if ln.startswith("Specification ") or ln.startswith("Product types (the category entity keeps")
+        ]
+        if static:
+            kept = [ln for i, ln in enumerate(lines) if i not in static]
+            kept.insert(static[0] - sum(1 for i in static if i < static[0]), "{{specs}}")
+            inside = "\n".join(kept)
+        else:
+            inside = f"{inside.rstrip(chr(10))}\n\n{{{{specs}}}}\n"
+        return f"{head}{BLOCKS_BEGIN}{inside}{BLOCKS_END}{tail}"
+    return f"{text.rstrip(chr(10))}\n\n{BLOCKS_BEGIN}\n{{{{specs}}}}\n{BLOCKS_END}\n"
+
+
+def _with_continuation_rule(text: str) -> str:
+    """`text` with the "MORE OF THE SAME LIST" rule, once, before the policy markers when
+    the text has them (they close the prompt), else at the end."""
+    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, CONTINUATION_RULE
+
+    rule = CONTINUATION_RULE.strip("\n")
+    if rule in text:
+        return text
+    if BLOCKS_BEGIN in text:
+        head, rest = text.split(BLOCKS_BEGIN, 1)
+        return f"{head.rstrip(chr(10))}\n\n{rule}\n\n{BLOCKS_BEGIN}{rest}"
+    return f"{text.rstrip(chr(10))}\n\n{rule}\n"
+
+
+def publish_specs_block(session: Session, *, from_version: int | None = None) -> int | None:
+    """A parser version carrying the live specification vocabulary (the `size` line included)
+    and the continuation rule, published as a new UNLABELLED version (SPEC-PROMO-PARAMS, owner
+    hand test 12 Oct 2026: v84-v86 carry no `{{specs}}`, and prod v52's block is static text
+    with no size line). The source is `from_version` when given, else the version labelled
+    production; every word of its text is kept (`_with_specs_block`, `_with_continuation_rule`).
+    Returns the version number; None when the source already carries both, or a version with
+    exactly the new text exists. The label moves only when the owner moves it."""
+    import uuid
+
+    if from_version is not None:
+        row = session.execute(
+            sql("SELECT template, variables FROM ai_prompt_versions WHERE name = :n AND version = :v"),
+            {"n": PROMPT_KEY, "v": int(from_version)},
+        ).first()
     else:
-        new_text = f"{text.rstrip(chr(10))}\n\n{BLOCKS_BEGIN}\n{{{{specs}}}}\n{BLOCKS_END}\n"
+        row = session.execute(
+            sql(
+                "SELECT v.template, v.variables FROM ai_prompt_versions v "
+                "JOIN ai_prompt_labels l ON l.version_id = v.id "
+                "WHERE l.name = :n AND l.label = 'production'"
+            ),
+            {"n": PROMPT_KEY},
+        ).first()
+    if row is None:
+        return None
+    new_text = _with_continuation_rule(_with_specs_block(row[0] or ""))
+    if new_text == row[0]:
+        return None
     exists = session.execute(
         sql("SELECT 1 FROM ai_prompt_versions WHERE name = :n AND template = :t"),
         {"n": PROMPT_KEY, "t": new_text},
@@ -789,7 +834,10 @@ def publish_specs_block(session: Session) -> int | None:
             template=new_text,
             variables=variables if "specs" in variables else [*variables, "specs"],
             config_json={"wording_edit": True},
-            commit_message="SPEC-PROMO-PARAMS: the production text with the {{specs}} block",
+            commit_message=(
+                f"SPEC-PROMO-PARAMS: v{from_version if from_version is not None else 'production'}"
+                " with the live {{specs}} block and the continuation rule"
+            ),
         )
     )
     session.flush()

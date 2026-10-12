@@ -1309,7 +1309,7 @@ class PromotionProductService:
             resolve_or_empty as _resolve_or_empty,
         )
 
-        from app.services.product_spec_filter import promoted_clause, resolve_size, spec_constraint_clause
+        from app.services.product_spec_filter import promoted_clause, resolve_size, spec_constraint_clause, stamp_spec_page
 
         # The size is resolved among the products this route answers about: those on a line of
         # a promotion live today, open to the caller's tier and of the product's own company
@@ -1649,6 +1649,7 @@ class PromotionProductService:
         if _entity_buckets is not None:
             payload["resolved_entities"] = _entity_buckets.as_echo()
         payload.update(spec_extra)
+        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def get_promotion_line(self, promotion_id: str, line_id: str):

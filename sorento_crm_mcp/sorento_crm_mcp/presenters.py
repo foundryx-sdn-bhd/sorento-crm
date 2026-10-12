@@ -154,6 +154,10 @@ _PASSTHROUGH_KEYS = (
     # mode (which format to print, whether to ask the quantity question again)
     # instead of inferring it from which block happens to be present.
     "stock_visibility",
+    # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the page a spec-filtered answer
+    # returned and how many matched. Its reader is the chatbot lane, which shows a few
+    # matches first and offers the rest; only the routes' spec-filtered calls carry it.
+    "spec_page",
 )
 
 

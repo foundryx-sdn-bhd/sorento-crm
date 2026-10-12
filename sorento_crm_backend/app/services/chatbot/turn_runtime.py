@@ -3455,6 +3455,11 @@ def make_tool_runner(
         page_ids: list[str] = []
         listed_products: list[dict[str, Any]] = []
         carry = spec.filters.get("set_page")
+        spec_page = carry.get("spec_page") if isinstance(carry, dict) else None
+        if isinstance(spec_page, dict):
+            # SPEC-PROMO-PARAMS: the next page of a spec-filtered list. No counted set to
+            # replay: the lane re-sends the carried constraints with the next page.
+            carry = None
         if isinstance(carry, dict):
             # Security B2: the entitlement comes off the CARRY (what the first answer
             # counted under), never off this turn's verdict - a bare count states no
@@ -3481,6 +3486,8 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        if isinstance(spec_page, dict):
+            lane_out = {**lane_out, "spec_page": dict(spec_page)}
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
             # one the menu was asked for rides the open pick's payload.
@@ -5288,7 +5295,12 @@ def envelope_of(
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.
-        "product_codes": [
+        # SPEC-PROMO-PARAMS: none when the lane answered a FILTERED set (`subject_filtered`):
+        # its rows are the described set, so a class member the filter left out (a basin
+        # with no 600 mm on any axis) is not a product that "has no stock".
+        "product_codes": []
+        if fetched.get("subject_filtered") is True
+        else [
             name
             for name in (
                 _answer_subject(e)
@@ -5433,6 +5445,10 @@ def envelope_of(
         # count answer recounts the set under the SAME entitlement rather than under the
         # parser's own, empty, list. `None` on every arm that never called the tool.
         "access_levels_used": fetched.get("access_levels"),
+        # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the constraints and page of a
+        # spec-filtered answer that offered "Reply to see more"; `engine.py` keeps it on
+        # `focus.set_page` for the parser's `continuation`. None when nothing is left.
+        "spec_carry": fetched.get("spec_carry") if isinstance(fetched.get("spec_carry"), dict) else None,
         # The top selling question this reply asked (`group` / `metric` / `basis` /
         # `how_many`), or None when it asked nothing. `engine.py` records it on
         # `focus.top_selling` (`turn/apply.record_top_selling_asked`), reviewer B2 on

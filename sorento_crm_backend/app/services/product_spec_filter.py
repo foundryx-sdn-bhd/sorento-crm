@@ -143,7 +143,10 @@ def _stored(key: str):
 
 
 def _one(c: dict):
-    """One constraint as a predicate over `ProductSpecifications`."""
+    """One constraint as a predicate over `ProductSpecifications`. A resolved `size` held on
+    several axes carries `any_of` (one constraint per axis) and matches any of them."""
+    if c.get("any_of"):
+        return or_(*[_one(x) for x in c["any_of"]])
     key, op, value = c["key"], c["op"], c["value"]
     if op == "eq":
         scalars = value if isinstance(value, list) else [value]
@@ -267,6 +270,17 @@ def spec_miss_detail(db: Session, constraints: list[dict], base=None) -> dict:
     }
 
 
+def stamp_spec_page(payload: dict, constraints: list[dict] | None) -> None:
+    """`spec_page` on a spec-filtered answer: the page it returned and how many matched, so the
+    chatbot can show a few matches first and offer the rest (owner ruling, 12 Oct 2026). Only
+    when `spec_constraints` were sent; every other caller's body is unchanged."""
+    if not constraints:
+        return
+    page = payload.get("pagination")
+    page = page.model_dump() if hasattr(page, "model_dump") else dict(page or {})
+    payload["spec_page"] = {k: int(page.get(k) or 0) for k in ("page", "limit", "total")}
+
+
 def resolve_size(
     db: Session, constraints: list[dict] | None, hidden: frozenset[str] = frozenset(), base=None
 ) -> tuple[list[dict] | None, dict]:
@@ -275,8 +289,10 @@ def resolve_size(
     Candidates are the active numeric registry keys in mm. Among products matching the other
     constraints, the candidates holding the number decide:
       * one key: the constraint is rewritten onto it; extra = `{"spec_resolved": {"size": key}}`.
-      * several: the route returns no rows; extra = `spec_ambiguous` (candidates sorted) plus
-        `spec_labels` (each candidate's label, so the reply can ask "Length or Width?").
+      * several: a product holding the number on ANY of them matches (owner ruling, 12 Oct
+        2026, after hand test step 1: no "Length or Width?" question); the constraint becomes
+        `{"key": "size", ..., "any_of": [one per axis]}`; extra = `{"spec_resolved": {"size":
+        [keys, sorted]}}`.
       * none: the route returns no rows; extra = `spec_alternatives` per mm key present and
         `spec_unrecorded: {"size": n}` (products with no mm value at all, left out when 0).
     Returns `(constraints, extra)`; constraints is None when the route must return no rows.
@@ -309,13 +325,9 @@ def resolve_size(
             resolved[SIZE_KEY] = holders[0]
             continue
         if holders:
-            labels = {str(row.spec_key): str(row.label) for row in mm_keys if str(row.spec_key) in holders}
-            return None, {
-                "spec_ambiguous": [
-                    {"key": SIZE_KEY, "value": size["value"], "candidates": holders}
-                ],
-                "spec_labels": labels,
-            }
+            out.append({**size, "any_of": [{**size, "key": key} for key in holders]})
+            resolved[SIZE_KEY] = holders
+            continue
         alternatives = [
             _alternative(row, values)
             for row in mm_keys

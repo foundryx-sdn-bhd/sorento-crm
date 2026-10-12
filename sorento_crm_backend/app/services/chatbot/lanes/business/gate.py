@@ -484,7 +484,19 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             intent = jsc.js_string(parser.get("intent_hint") or "")
             intent_allows_empty = intent in INTENTS_ALLOWING_EMPTY
             gate_passed = ALLOWS_EMPTY.get(domain) is True or intent_allows_empty
-            if intent_allows_empty and ALLOWS_EMPTY.get(domain) is not True:
+            spec_page = parser.get("spec_page")
+            if (
+                not gate_passed
+                and isinstance(spec_page, dict)
+                and isinstance(spec_page.get("spec_constraints"), list)
+                and spec_page["spec_constraints"]
+            ):
+                # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the next page of a
+                # spec-filtered list is scoped by the list's own constraints, which the lane
+                # sends as `spec_constraints`; the page names no entity of its own.
+                gate_passed = True
+                gate_reason = "no entities; a carried spec page scopes it"
+            elif intent_allows_empty and ALLOWS_EMPTY.get(domain) is not True:
                 # Its own reason string, so a trace says WHY a domain that normally
                 # demands a filter let this one through.
                 gate_reason = f"no entities; intent '{intent}' permits broad query"

@@ -592,6 +592,25 @@ def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]
     return out
 
 
+def _size_reaches_the_tool(parse_output: dict[str, Any]) -> bool:
+    """Will this ask's `size` reach a tool as `spec_constraints` (`fetch.spec_constraints_for`)?
+    Only then may the resolver's `require` leg go (reviewer B1, step-1 round): a size ask in a
+    domain that never sends the constraints ("600mm basin cert?") keeps its cert condition, and
+    so does an ask that names a typed code or no subject word. Read off the parse alone."""
+    from app.services.chatbot.lanes.business.fetch import SPEC_CONSTRAINT_DOMAINS, _SUBJECT_HINTS
+
+    if jsc.js_string(parse_output.get("domain_hint") or "") not in SPEC_CONSTRAINT_DOMAINS:
+        return False
+    if _names_a_typed_code(parse_output):
+        return False
+    return any(
+        isinstance(e, dict)
+        and jsc.nullish_str(e.get("hint")).strip().lower() in _SUBJECT_HINTS
+        and jsc.nullish_str(e.get("raw")).strip()
+        for e in parse_output.get("entities") or []
+    )
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -653,7 +672,11 @@ def resolve_entity_body(
     # SPEC-PROMO-PARAMS: the virtual `size` key is no registry key, so the resolver never
     # sees it (an unknown key there); it travels only as a `spec_constraints` item on the
     # MCP call (`fetch.spec_constraints_for`), where the route resolves its axis.
-    sized = any(g.get("spec_key") == SIZE_KEY for g in grounded)
+    # A size: the virtual key, or any grounded value measured in mm ("600mm length"); either
+    # is answered by the route (owner ruling, 12 Oct 2026), so no counted set is built for it.
+    sized = any(
+        g.get("spec_key") == SIZE_KEY or str(g.get("spec_unit") or "").lower() == "mm" for g in grounded
+    )
     grounded = [g for g in grounded if g.get("spec_key") != SIZE_KEY]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]
@@ -788,7 +811,7 @@ def resolve_entity_body(
     require = derive_require(parse_output, message_text=_query_text(ctx))
     if require is not None and not set(require) <= set(REQUIRE_LEGS):
         require = None
-    if sized:
+    if sized and _size_reaches_the_tool(parse_output):
         # SPEC-PROMO-PARAMS hand test step 1: the counted set would be the subject without
         # the size (the resolver never sees it), so its count, its header and its "no stock
         # matched these" describe a different set. A size ask is answered by the route, which

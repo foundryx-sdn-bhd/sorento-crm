@@ -18,7 +18,7 @@ from app.services.error_handler import handle_not_found, handle_conflict, handle
 from app.services.company_scope import get_company_scope, stamp_lookup_companies
 from app.services.import_log_service import ImportLogService
 from app.services.identifier_resolver import resolve_identifier
-from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail
+from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail, stamp_spec_page
 from app.services.rules.master_rules import resolve_master_by_code
 
 
@@ -1190,6 +1190,7 @@ class StockService:
         if total == 0 and spec_constraints:
             payload.update(spec_miss_detail(self.db, spec_constraints, spec_base))
         payload.update(spec_extra)
+        stamp_spec_page(payload, spec_constraints)
         return payload
 
     def stock_last_updated_by_company(self, company_ids) -> dict[str, datetime]:

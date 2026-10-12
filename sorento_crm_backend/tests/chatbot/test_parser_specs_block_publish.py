@@ -77,7 +77,9 @@ def test_p2_a_text_with_policy_markers_gets_specs_inside_them(db):
     head, rest = new.template.split(BLOCKS_BEGIN, 1)
     inside, tail = rest.split(BLOCKS_END, 1)
     assert "{{specs}}" in inside and "{{domains_detail}}" in inside
-    assert head == OWNER_TEXT and tail == "\ntail\n"
+    # The owner's words come first, unchanged; the continuation rule (owner ruling 12 Oct) sits
+    # between them and the markers.
+    assert head.startswith(OWNER_TEXT.rstrip("\n")) and tail == "\ntail\n"
 
 
 def test_p3_idempotent_and_a_text_that_has_specs_publishes_nothing(db):
@@ -90,11 +92,14 @@ def test_p3_idempotent_and_a_text_that_has_specs_publishes_nothing(db):
     assert db.query(AIPromptVersion).filter(AIPromptVersion.name == KEY).count() == 2
 
 
-def test_p3b_production_already_with_specs_publishes_nothing(db):
+def test_p3b_production_already_with_specs_keeps_its_block(db):
+    """A text that already carries `{{specs}}` keeps exactly one (owner ruling 12 Oct: it still
+    gets the continuation rule, so a version is published)."""
     from app.services import chatbot_prompt_vars as pv
 
     _production(db, OWNER_TEXT + "\n{{specs}}\n")
-    assert pv.publish_specs_block(db) is None
+    version = pv.publish_specs_block(db)
+    assert _row(db, version).template.count("{{specs}}") == 1
 
 
 def test_p4_the_published_version_renders_the_size_line(db):
@@ -106,3 +111,73 @@ def test_p4_the_published_version_renders_the_size_line(db):
     version = pv.publish_specs_block(db)
     rendered, _ = ai_prompt_registry.render(db, KEY, current_date="TODAY", override_version_id=_row(db, version).id)
     assert any(line.startswith("Specification size") for line in rendered.splitlines()), rendered[-2000:]
+
+
+# --------------------------------------------------------------------------- owner ruling 12 Oct: shapes + continuation
+
+PROD_BLOCK = (
+    f"{BLOCKS_BEGIN}\n"
+    "Domain inventory: stock.\n"
+    'Specification dim_length ("Length"): a number in mm. Words: length, long.\n'
+    'Specification dim_width ("Width"): a number in mm. Words: width, wide.\n'
+    "Product types (the category entity keeps these, never a specification): wash basin.\n"
+    f"{BLOCKS_END}\n"
+)
+
+
+def test_p5_prod_shape_static_spec_lines_become_the_live_block(db):
+    """Prod v52 (crew, 12 Oct): the markers hold STATIC rendered Specification lines with no size
+    line. They become `{{specs}}` (the live registry, size line included); the Domain line and
+    every word outside the markers stay."""
+    from app.services import ai_prompt_registry
+    from app.services import chatbot_prompt_vars as pv
+
+    _production(db, OWNER_TEXT + PROD_BLOCK, version=52)
+    version = pv.publish_specs_block(db)
+    new = _row(db, version).template
+    head, rest = new.split(BLOCKS_BEGIN, 1)
+    inside, _tail = rest.split(BLOCKS_END, 1)
+    assert "Domain inventory: stock." in inside
+    assert "{{specs}}" in inside and "Specification dim_length" not in inside, inside
+    assert "Product types (the category" not in inside, inside
+    assert head.startswith(OWNER_TEXT.rstrip("\n"))
+    rendered, _ = ai_prompt_registry.render(db, KEY, current_date="TODAY", override_version_id=_row(db, version).id)
+    assert sum(1 for ln in rendered.splitlines() if ln.startswith("Specification size")) == 1
+
+
+def test_p6_from_version_publishes_off_that_version_not_production(db):
+    """Owner/crew: production may be v60 (already carrying `{{specs}}`) while the line to publish
+    is v86 or v52. `from_version` names the source; the label never moves."""
+    from app.services import chatbot_prompt_vars as pv
+
+    prod = _production(db, OWNER_TEXT + "\n{{specs}}\n", version=60)
+    db.add(AIPromptVersion(id=str(uuid.uuid4()), name=KEY, version=86, type="text",
+                           template="ZZT v86 text.\n", variables=[], config_json={}, commit_message="owner"))
+    db.flush()
+    version = pv.publish_specs_block(db, from_version=86)
+    assert version == 87
+    new = _row(db, 87).template
+    assert new.startswith("ZZT v86 text.") and "{{specs}}" in new
+    assert _label(db) == prod.id
+
+
+def test_p7_the_continuation_rule_rides_every_published_version(db):
+    """Owner ruling (12 Oct): the parser decides that "more" (any phrasing or language) continues
+    the same list, through the `continuation` key the schema already carries. The rule is added
+    once, also to a text that already had `{{specs}}`."""
+    from app.services import chatbot_prompt_vars as pv
+    from app.services.chatbot_parser_prompt import CONTINUATION_RULE
+
+    _production(db, OWNER_TEXT + "\n{{specs}}\n", version=60)
+    version = pv.publish_specs_block(db)
+    assert version is not None, "a text with {{specs}} but no continuation rule still needs the rule"
+    new = _row(db, version).template
+    assert new.count(CONTINUATION_RULE.strip()) == 1
+    assert pv.publish_specs_block(db, from_version=version) is None
+
+
+def test_p8_the_code_prompt_carries_the_continuation_rule():
+    """The code-constant prompt (fresh installs, tests) defines `continuation` the same way."""
+    from app.services.chatbot_parser_prompt import CONTINUATION_RULE, SEMANTIC_PARSER_PROMPT
+
+    assert '"continuation"' in CONTINUATION_RULE and CONTINUATION_RULE.strip() in SEMANTIC_PARSER_PROMPT
