@@ -24,6 +24,11 @@ from app.models.base import (
 
 from app.services.error_handler import AppException
 
+#: A simulation must not sit on a lock or run away: both are SET LOCAL inside its outer
+#: savepoint, so the rollback to that savepoint restores the caller's own values.
+SIMULATE_LOCK_TIMEOUT = "5s"
+SIMULATE_STATEMENT_TIMEOUT = "30s"
+
 #: Cap on every error string a simulation hands back (AC-S8).
 MAX_ERROR_CHARS = 1000
 
@@ -35,6 +40,8 @@ class SimulationWouldCommit(Exception):
 
 
 def is_simulating() -> bool:
+    # A ContextVar does not reach a new thread; the confirm path spawns none today, so the
+    # guards below hold. A future thread in that path must copy the context itself.
     return _SIMULATING.get()
 
 
@@ -76,6 +83,8 @@ def simulation_session(request_db: Session) -> Iterator[Session]:
     """
     conn = request_db.connection()
     outer = conn.begin_nested()
+    conn.exec_driver_sql(f"SET LOCAL lock_timeout = '{SIMULATE_LOCK_TIMEOUT}'")
+    conn.exec_driver_sql(f"SET LOCAL statement_timeout = '{SIMULATE_STATEMENT_TIMEOUT}'")
     sim = Session(
         bind=conn, autoflush=request_db.autoflush, join_transaction_mode="create_savepoint"
     )

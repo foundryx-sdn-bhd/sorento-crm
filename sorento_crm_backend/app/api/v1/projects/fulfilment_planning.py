@@ -661,6 +661,36 @@ def _simulate_on(sim: Session, payload: SimulateConfirmBody, current_user: dict)
         adopted_at.add(index)
         resolved.append((index, entry))
 
+    # A placeholder that adoption did not swap (a core line of ANOTHER order, or one that no
+    # longer exists) fails its own order with a plain sentence, before any write runs.
+    runnable: list = []
+    for index, entry in resolved:
+        stray = next(
+            (
+                str(x)
+                for x in [
+                    *(line.project_line_id for line in entry.lines),
+                    *entry.rejected_line_ids,
+                    *(c.project_line_id for c in entry.cancelled_lines),
+                    *(entry.only_line_ids or []),
+                ]
+                if str(x).startswith(_PENDING_ADOPTION)
+            ),
+            None,
+        )
+        if stray is None:
+            runnable.append((index, entry))
+            continue
+        message = f"Line {stray} is not on this sales order."
+        results[index] = {
+            "pso_id": str(entry.pso_id),
+            "ok": False,
+            "preview": True,
+            "error": message,
+            "failing_lines": [{"reason": message}],
+            "adopted": True if index in adopted_at else None,
+        }
+    resolved = runnable
     body = ConfirmManyBody(
         orders=[entry for _i, entry in resolved], batch_id=payload.batch_id
     )

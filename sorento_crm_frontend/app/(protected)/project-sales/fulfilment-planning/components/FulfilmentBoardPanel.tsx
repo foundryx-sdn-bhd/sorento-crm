@@ -206,6 +206,25 @@ const ROW_AXIS_NOUNS: Record<BoardRowAxis, string> = {
 
 const ROW_AXES: BoardRowAxis[] = ['product', 'sales_order', 'customer', 'project'];
 
+/**
+ * Whether an order's answer holds anything the press would act on: lines confirmed or
+ * withdrawn, a Cancel SO, already-fulfilled lines whose stale decision it clears, or a
+ * pending planning change it applies. The real press and Simulate share this one predicate.
+ */
+function pressHasSomething(
+  answer: ConfirmManyOrderResult | undefined,
+  order: { cancelled_lines: unknown[]; batch_id: string | null },
+): boolean {
+  return (
+    (answer?.lines_confirmed?.length ?? 0) > 0 ||
+    (answer?.lines_withdrawn?.length ?? 0) > 0 ||
+    (answer?.lines_cancelled?.length ?? 0) > 0 ||
+    order.cancelled_lines.length > 0 ||
+    (answer?.lines_fulfilled_skipped ?? 0) > 0 ||
+    Boolean(order.batch_id)
+  );
+}
+
 function rowAxisFrom(value: string | null): BoardRowAxis {
   return ROW_AXES.includes(value as BoardRowAxis) ? (value as BoardRowAxis) : 'product';
 }
@@ -1633,16 +1652,9 @@ export function FulfilmentBoardPanel({
             } as BoardBatchResult);
             return false;
           }
-          const ids = [...(dryRun?.lines_confirmed ?? []), ...(dryRun?.lines_withdrawn ?? [])];
           // An order whose named lines are all already fulfilled confirms nothing new, but the REAL
           // press clears their stale decisions (the dry run rolled that back), so it is still posted.
-          if (
-            ids.length > 0 ||
-            (dryRun?.lines_cancelled?.length ?? 0) > 0 ||
-            order.cancelled_lines.length > 0 ||
-            (dryRun?.lines_fulfilled_skipped ?? 0) > 0 ||
-            Boolean(order.batch_id)
-          ) {
+          if (pressHasSomething(dryRun, order)) {
             return true;
           }
           refusals.push({
@@ -1839,8 +1851,10 @@ export function FulfilmentBoardPanel({
   ]);
 
   /**
-   * SIMULATE CONFIRM (admin): the body Confirm would post, sent to the server's dry run. It
-   * never adopts, never touches a draft and needs no board refetch: nothing was saved.
+   * SIMULATE CONFIRM (admin): the body Confirm would post, sent to the server's dry run. A
+   * never-planned order is adopted by the server inside the simulation (adoption deferred
+   * here), so nothing is adopted for real. It never touches a draft and needs no board
+   * refetch: nothing was saved.
    */
   const runSimulate = React.useCallback(async () => {
     if (!board.data) return;
@@ -1867,8 +1881,18 @@ export function FulfilmentBoardPanel({
         const salesOrderId = built.orders[index]?.sales_order_id;
         const standing = salesOrderId
           ? board.data?.orders.find((order) => order.sales_order_id === salesOrderId)
-          : undefined;
-        return standing ? { ...result, so_number: standing.so_number } : result;
+          : board.data?.orders.find((order) => order.project_sales_order_id === result.pso_id);
+        const labelled = standing ? { ...result, so_number: standing.so_number } : result;
+        const posted = built.orders[index];
+        // The same "nothing to confirm" reading the real press gives an ok order.
+        return result.ok && posted && !pressHasSomething(result, posted)
+          ? ({
+              ...labelled,
+              ok: false,
+              heldBack: true,
+              error: 'has nothing to confirm',
+            } as BoardBatchResult)
+          : labelled;
       });
       setSimulated(true);
       setBatchResults([...skipped, ...named]);
