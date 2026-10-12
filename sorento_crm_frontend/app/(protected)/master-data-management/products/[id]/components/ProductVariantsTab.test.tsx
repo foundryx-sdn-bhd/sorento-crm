@@ -44,6 +44,7 @@ vi.mock('../../hooks/useProducts', () => ({
 // (ProductVariantPickerDialog.test.tsx). Here we stub it to a minimal dialog that
 // surfaces the props the tab passes (title / excludeIds) and can fire onConfirm.
 vi.mock('./ProductAlternativesSection', () => ({ default: () => null }));
+vi.mock('./ProductCompatibilitySection', () => ({ default: () => null }));
 
 vi.mock('./ProductVariantPickerDialog', () => ({
   default: ({
