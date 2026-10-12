@@ -2543,9 +2543,10 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         and text.strip().endswith(SALES_REPORT_MISS_MESSAGE)
     )
     if narrowed_miss:
-        # A held report narrowed to one product with nothing sold is an answer, in the report's own
-        # miss line, never the miss lane over the family or the held total.
-        text, has_result = SALES_REPORT_MISS_MESSAGE, True
+        # A held report narrowed to one product with nothing sold is an answer, the presenter's own
+        # text (code and period header, then the miss line), never the miss lane over the family
+        # or the held total, and no escalate offer.
+        has_result = True
     offer = [
         {
             "idx": row.get("idx"),

@@ -1412,6 +1412,20 @@ def _top_selling_rules(
     # A verdict the parser itself named a sales ranking is a new ask (owner held-state rule:
     # a new intent always wins), never an answer inside an open top selling question.
     new_sales_ranking = isinstance(order_status, str) and order_status.strip() == "sales_ranking"
+    # ... unless the parser flipped the status on a bare answer: no domain word, no axis of its
+    # own, nothing fresh, and a top selling question is open. Then it answers that question.
+    ranking_answers_open_ask = (
+        new_sales_ranking
+        and focus.status == TOP_SELLING_STATUS
+        and isinstance(focus.top_selling, dict)
+        and bool(focus.top_selling.get("asked"))
+        and domain_in_message(verdict) is False
+        and not str(verdict.get("group_by") or "").strip()
+        and not decision.starts_fresh
+    )
+    if ranking_answers_open_ask:
+        new_sales_ranking = False
+        asked = True
     names_its_ask = decision.starts_fresh or domain_in_message(verdict) is True or new_sales_ranking
     hopped = isinstance(focus.top_selling, dict) and bool(focus.top_selling.get("hop"))
     if was_ranking and not asked and not new_sales_ranking:
@@ -1448,6 +1462,11 @@ def _top_selling_rules(
     # A word the last reply said it does not know is said once (owner retest, 27 Sep).
     carried.pop("unknown", None)
     own = {k: verdict.get(k) for k in TOP_SELLING_KEYS if verdict.get(k) is not None}
+    if ranking_answers_open_ask and "rank_by" not in own:
+        # The ranking reading carries the metric as `measure`; the top selling slot keeps it as `rank_by`.
+        metric = {"qty": "quantity", "amount": "amount"}.get(verdict.get("measure"))
+        if metric:
+            own["rank_by"] = metric
     if _top_selling_waiting(asked_last, own):
         # One turn: the lane input of THIS answer sends no channel (`lane_parse_output`).
         carried["answered"] = True
