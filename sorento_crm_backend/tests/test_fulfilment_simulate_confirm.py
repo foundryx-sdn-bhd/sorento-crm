@@ -623,3 +623,45 @@ def test_a_simulation_names_a_stock_short_reserve_and_persists_nothing(api, monk
     assert "20 short" in notices[0]["reason"], notices
     assert _counts(world, order, core_so) == before
     assert dispatched == [], f"a simulation sends no handover email: {dispatched}"
+
+
+# --------------------------------------------------------------------------- lock holding
+
+
+def test_s1_the_simulation_runs_under_short_lock_and_statement_timeouts_that_do_not_leak(
+    api, monkeypatch
+):
+    """v2 fix S1: inside the write `lock_timeout` is 5s and `statement_timeout` 30s (SET LOCAL
+    in the simulation's savepoint); afterwards the caller's session shows its old values."""
+    import sqlalchemy as sa
+
+    from app.services.project_supply_service import ProjectSupplyService
+
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    seen = {}
+    original = ProjectSupplyService.confirm
+
+    def recording(self, order, payload, *args, **kwargs):
+        seen["lock"] = self.db.execute(sa.text("SHOW lock_timeout")).scalar()
+        seen["statement"] = self.db.execute(sa.text("SHOW statement_timeout")).scalar()
+        return original(self, order, payload, *args, **kwargs)
+
+    monkeypatch.setattr(ProjectSupplyService, "confirm", recording)
+    order, _core, (a, b) = _two_line_order(world)
+    before = (
+        world.db.execute(sa.text("SHOW lock_timeout")).scalar(),
+        world.db.execute(sa.text("SHOW statement_timeout")).scalar(),
+    )
+
+    response = _post(
+        client, order, [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")]
+    )
+
+    assert response.status_code == 200, response.text
+    assert seen == {"lock": "5s", "statement": "30s"}
+    after = (
+        world.db.execute(sa.text("SHOW lock_timeout")).scalar(),
+        world.db.execute(sa.text("SHOW statement_timeout")).scalar(),
+    )
+    assert after == before

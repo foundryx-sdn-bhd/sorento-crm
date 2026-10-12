@@ -329,3 +329,30 @@ def test_t5_a_non_admin_is_refused_before_anything_runs_adoption_included(api, m
     assert response.json()["code"] == "simulate_admin_only"
     assert _everything(world, core_so) == before
     assert before["planning_records"] == 0
+
+
+# --------------------------------------------------------------------------- S2
+
+
+def test_s2_a_placeholder_for_a_core_line_not_on_the_order_is_a_plain_refusal(api, monkeypatch):
+    """v2 fix S2: `pending-adoption:<core line of another order>` answers that order ok:false
+    with the plain sentence (no database text) and persists nothing."""
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    core_so, core_lines = _never_planned(world)
+    other_so = _core_so(world.db, world.company_id)
+    other_lines = [_core_line(world.db, other_so, world.product, world.own_wh, qty_ordered="50")]
+    world.db.commit()
+    foreign = str(other_lines[0].id)
+    before = _everything(world, core_so)
+
+    response = client.post(
+        URL,
+        json=_sim_body(core_so, [_line_payload(PENDING + foreign, buy_qty="50")]),
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert result["error"] == f"Line {PENDING}{foreign} is not on this sales order."
+    assert _everything(world, core_so) == before

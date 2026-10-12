@@ -577,4 +577,27 @@ describe('fix round: simulated wording and number formatting (R7-R10)', () => {
       within(results).getByText('2 lines already fulfilled, decision would be cleared'),
     ).toBeInTheDocument();
   });
+
+  it('S3: an ok order with nothing to confirm reads "has nothing to confirm"', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated({
+          decision_revision: 4,
+          lines_confirmed: [],
+          lines_withdrawn: [],
+          lines_cancelled: [],
+          lines_fulfilled_skipped: 0,
+          inquiry_rows: [],
+          transfers: [],
+        }),
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const results = await screen.findByTestId('board-confirm-results');
+    expect(within(results).getByText(/SO403340:? has nothing to confirm/)).toBeInTheDocument();
+    expect(within(results).queryByText(/would confirm as revision/)).toBeNull();
+  });
 });
