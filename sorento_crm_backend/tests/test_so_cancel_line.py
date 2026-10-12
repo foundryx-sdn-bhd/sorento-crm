@@ -812,6 +812,11 @@ def test_c17_a_preview_confirm_all_echoes_the_cancel_but_writes_nothing(api):
 
 
 def test_c18_a_refused_line_beside_a_cancel_on_the_single_route_cancels_nothing(api):
+    """Restated to the owner rule of 12 Oct 2026 (OI-CLOSED-LINE, #1580): one line that
+    cannot be written never refuses the whole order, and the single-order Confirm route runs
+    through the #1362 hold-back. So the refused line beside a cancel is held back by name
+    and decides nothing, while the cancel itself still lands. (The name is kept so the
+    test's history reads; the rollback rule survives only beside a batch, AC-C24 / AC-C27.)"""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, _p = w["a"]
@@ -821,9 +826,17 @@ def test_c18_a_refused_line_beside_a_cancel_on_the_single_route_cancels_nothing(
         # open qty is 5: components that add up to 3 are refused by the recheck.
         json=_cancel_body(mirror_a, lines=[_line_payload(open_line.id, buy_qty="3")]),
     )
-    assert response.status_code in (409, 422), response.text
-    assert _status(world.db, core_a.id) == "closed"
-    assert _raw(world.db, core_a.id).cancelled_at is None
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [row["line_no"] for row in body["lines_held_back"]] == [30], body
+    assert "add up to 3" in body["lines_held_back"][0]["reason"], body
+    assert body["lines_confirmed"] == [] and body["lines_decided"] == 0, body
+    assert [row["line_no"] for row in body["lines_cancelled"]] == [10], body
+    assert _status(world.db, core_a.id) == "cancelled"
+    assert _raw(world.db, core_a.id).cancelled_at is not None
+    assert world.db.query(SOSupplyDecision).filter(
+        SOSupplyDecision.project_sales_order_id == w["order"].id
+    ).count() == 0, "the held-back line writes no decision"
 
 
 def test_c19_a_re_push_lands_the_new_price_while_the_line_stays_cancelled(env):
