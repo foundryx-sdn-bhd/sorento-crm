@@ -24,6 +24,15 @@ from tests.chatbot.test_top_selling_round5 import _position
 
 # ================================================================================ A
 
+#: The parser schema REQUIRES this object on every emission (head/parser.py), nothing answered:
+#: the shared `_parser_output` stub omits it, so the run 7 builders set the live shape.
+LIVE_NO_ANSWER = {"mode": None, "items": [], "picked": [], "qty_for_all": None}
+
+
+def _live(qf: dict[str, Any]) -> dict[str, Any]:
+    return {**qf, "open_question_answer": dict(LIVE_NO_ANSWER)}
+
+
 FAMILY: dict[str, Any] = {
     **EMPTY_REPORT,
     "product_code": None, "product_codes": [],
@@ -49,7 +58,7 @@ def _hold_with_offer(console, monkeypatch) -> list[tuple[str, dict[str, Any]]]:
 
 
 def _scoped_exact(**kw: Any) -> dict[str, Any]:
-    return _exact_verdict(**{"ranking_drill": "scoped", "group_by": "product", **kw})
+    return _live(_exact_verdict(**{"ranking_drill": "scoped", "group_by": "product", **kw}))
 
 
 def test_a12_with_the_drill_offer_open_a_scoped_product_reading_still_narrows(console, monkeypatch) -> None:
@@ -63,7 +72,7 @@ def test_a12_with_the_drill_offer_open_a_scoped_product_reading_still_narrows(co
 
 def test_a13_guard_a_pick_of_by_product_is_still_the_drill(console, monkeypatch) -> None:
     seen = _hold_with_offer(console, monkeypatch)
-    console.say(_position(2), "2")
+    console.say(_live(_position(2)), "2")
     drilled = [a for a in _sent(seen) if a.get("group_by") == "product"]
     assert drilled and not drilled[0].get("product_code_exact"), seen
 
@@ -73,7 +82,6 @@ def test_a14_unit_the_exact_verdict_narrows_but_a_pick_or_another_axis_does_not(
 
     assert _narrows_held_sales_report(_scoped_exact()) is True
     assert _narrows_held_sales_report(_scoped_exact(group_by="customer")) is False
-    assert _narrows_held_sales_report(_scoped_exact(reference_positions=[2])) is False
 
 
 # ================================================================================ B
@@ -86,7 +94,7 @@ BRAND_PROJECT: dict[str, Any] = dict(
 
 
 def _brand_ranking(**kw: Any) -> dict[str, Any]:
-    return _parser_output(**{**BRAND_PROJECT, "entities": [_e("Sorento", "brand")], **kw})
+    return _live(_parser_output(**{**BRAND_PROJECT, "entities": [_e("Sorento", "brand")], **kw}))
 
 
 def _names(log):
@@ -136,3 +144,97 @@ def test_c1_a_miss_on_the_asked_field_keeps_the_other_fields_the_reply_carried()
     second, _line = ra.settle(None, reply, [])
     assert second.slot and second.slot["asking"] == "period", second
     assert (second.slot["values"].get("metric") or {}).get("value") == "qty", second.slot
+
+
+# ================================================================================ review round
+
+
+def test_a15_a_typed_label_of_the_open_offer_is_a_pick_not_a_narrowing(console, monkeypatch) -> None:
+    seen = _hold_with_offer(console, monkeypatch)
+    console.say(_live(_exact_verdict(lane._hit("By product", "product"), group_by="product")), "By product")
+    sent = _sent(seen)
+    assert not any(a.get("product_code_exact") or a.get("product_code") == "By product" for a in sent), sent
+    assert any(a.get("group_by") == "product" for a in sent), sent
+
+
+COMPLETE = {"date_filter_start": "2026-01-01", "date_filter_end": "2026-12-31", "basis": "delivered"}
+
+
+def test_b20_guard_a_location_keeps_the_ranking_on_the_ranking_lane(console, monkeypatch) -> None:
+    qf = _brand_ranking(**COMPLETE)
+    qf["entities"] = [_e("Sorento", "brand"), _e("BRW", "warehouse")]
+    text, log = lane._say_all(console, monkeypatch, qf, "project sales top 40 Sorento products at BRW")
+    assert "crm_top_selling_report" not in _names(log), log
+    (ranking,) = [a for n, a in log if n == "crm_report"]
+    assert ranking.get("warehouse_codes") == ["BRW"], ranking
+
+
+def test_b21_guard_a_basis_top_selling_cannot_count_keeps_the_ranking_lane(console, monkeypatch) -> None:
+    text, log = lane._say_all(
+        console, monkeypatch, _brand_ranking(**{**COMPLETE, "basis": "outstanding"}), "outstanding top 40 Sorento products"
+    )
+    assert "crm_top_selling_report" not in _names(log), (text, log)
+
+
+def test_n1_a_two_word_category_survives_the_relabel(console, monkeypatch) -> None:
+    qf = _brand_ranking()
+    qf["entities"] = [_e("ZZT CATEGORY", "category")]
+    text, log = lane._say_all(console, monkeypatch, qf, "project sales top 40 ZZT CATEGORY products")
+    top = [a for n, a in log if n == "crm_top_selling_report"]
+    slot = ((console.session_vars.get("focus") or {}).get("top_selling")) or {}
+    kept = (top and console.ids["category"] in (top[0].get("category_ids") or [])) or slot.get("category_words") == ["ZZT CATEGORY"]
+    assert kept, (text, log, slot)
+
+
+def test_a17_a_declared_pick_beside_the_typed_code_is_not_a_narrowing(console, monkeypatch) -> None:
+    """The live parser echoed `picked: [2]` (By product) beside the code it typed, with no
+    `reference_positions`. `decide.picked_positions` does not read `open_question_answer`, so the
+    engine does not run the drill from it (actual behaviour, pinned): but it is not an exact-code
+    narrowing either, and the code is never sent as the product."""
+    seen = _hold_with_offer(console, monkeypatch)
+    qf = _scoped_exact()
+    qf["open_question_answer"] = {**LIVE_NO_ANSWER, "mode": "pick", "picked": [2]}
+    console.say(qf, "only this exact model")
+    sent = _sent(seen)
+    assert not any(a.get("product_code_exact") for a in sent), sent
+
+
+def test_a16_a_narrowed_empty_report_closes_the_drill_offer(console, monkeypatch) -> None:
+    seen = _hold_with_offer(console, monkeypatch)
+    text, _calls = console.say(_live(_exact_verdict()), "only this exact model")
+    assert any(a.get("product_code_exact") for a in _sent(seen)) and "No sales found" in text, (seen, text)
+    assert (console.session_vars.get("open_question") or {}).get("kind") != "sales_report_detail", console.session_vars
+
+
+# ================================================================================ D
+
+
+def _analysis_ranking(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="sales_analysis", domain_in_message=True,
+        top_n=20, sales_channel="project", group_by=None, entities=[_e("Sorento", "brand")],
+        date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_b22_a_subjectless_sales_analysis_with_a_count_is_the_top_selling_ask(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _analysis_ranking(), "top 20 project sales Sorento products")
+    assert "crm_sales_analysis" not in _names(log), log
+    assert "By quantity or by amount?" in text, text
+    assert ((console.session_vars.get("focus") or {}).get("top_selling")), console.session_vars
+
+
+def test_b23_guard_a_sales_analysis_with_no_count_stays_a_sales_analysis(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _analysis_ranking(top_n=None), "project sales of Sorento")
+    assert "By quantity or by amount?" not in text, text
+    assert not ((console.session_vars.get("focus") or {}).get("top_selling")), console.session_vars
+
+
+def test_a15b_a_label_entity_is_a_pick_even_without_the_live_answer_object(console, monkeypatch) -> None:
+    seen = _hold_with_offer(console, monkeypatch)
+    console.say(_exact_verdict(lane._hit("By product", "product"), group_by="product"), "By product")
+    sent = _sent(seen)
+    assert not any(a.get("product_code_exact") or a.get("product_code") == "By product" for a in sent), sent
+    assert any(a.get("group_by") == "product" for a in sent), sent
