@@ -501,6 +501,28 @@ def _build_json_schema() -> dict[str, Any]:
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
             "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                "value": {"type": ["string", "null"]},
+                            },
+                            "required": ["key", "value"],
+                        },
+                    },
+                },
+                "required": ["filters"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -596,6 +618,7 @@ def _build_json_schema() -> dict[str, Any]:
             "low_stock",
             "chat_report",
             "po_refs",
+            "find",
         ],
     }
 
@@ -660,6 +683,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
 
