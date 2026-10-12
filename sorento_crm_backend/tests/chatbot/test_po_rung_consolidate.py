@@ -86,3 +86,38 @@ def test_the_merged_line_keeps_the_first_line_position() -> None:
     other = _row_block(qty="5", location="BRW-BB")
     assert block.index(merged) < block.index(other)
     assert block.count("*Product Code:* SRTWC8517") == 2
+
+
+def _item(ordered, outstanding, *, company=None, po_number="PO-1001") -> dict:
+    """A PO line whose ordered and outstanding differ (a partly received line)."""
+    fields = [
+        {"key": "po_number", "label": "PO Number", "value": po_number},
+        {"key": "product_code", "label": "Product Code", "value": "SRTWC8517"},
+        {"key": "ordered_qty", "label": "Ordered Qty", "value": ordered},
+        {"key": "outstanding_qty", "label": "Outstanding Qty", "value": outstanding},
+        {"key": "po_date", "label": "PO Date", "value": "2026-05-01"},
+        {"key": "location", "label": "Location", "value": "KL-WH"},
+    ]
+    if company is not None:
+        fields.insert(0, {"key": "company_name", "label": "Company", "value": company})
+    return {"fields": fields, "kind": "po"}
+
+
+def test_ordered_and_outstanding_are_summed_each_on_its_own() -> None:
+    block = _block([_item("36", "20"), _item("36", "20")])
+    assert "*Ordered:* 72\n*Outstanding:* 40" in block
+
+
+def test_the_summed_number_prints_plain() -> None:
+    block = _block([_item("36.0", "36.0"), _item(36, 36)])
+    assert "*Ordered:* 72\n*Outstanding:* 72" in block
+
+
+def test_one_po_number_in_two_companies_is_two_documents() -> None:
+    block = _block([_item("36", "36", company="SORENTO"), _item("36", "36", company="MOCHA")])
+    assert block.count("*Ordered:* 36\n*Outstanding:* 36") == 2
+
+
+def test_a_blank_po_number_is_no_document_number() -> None:
+    block = _block([_item("36", "36", po_number="  "), _item("36", "36", po_number="  ")])
+    assert block.count("*Ordered:* 36\n*Outstanding:* 36") == 2

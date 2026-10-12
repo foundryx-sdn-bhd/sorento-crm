@@ -19,7 +19,7 @@ the staff reply are a data issue and staff need to see them). Staff ETA display 
 
 ## Fix (owner ruling 13 Oct 2026)
 
-In the stock reply's PO block, rows of the same product, same document (`kind` + PO/SPO
+In the stock reply's PO block, rows of the same product, same document (`kind` + company + PO/SPO
 number), same location and same PO date are consolidated into ONE row before rendering,
 with ordered and outstanding summed. Rows that differ in document, location or date stay
 separate. The existing formatter `_crossdomain_rung_text` is reused unchanged; the grouping
@@ -51,5 +51,10 @@ is `answer._consolidate_rung_rows`, called on the rows just before it.
   position.
 - `tests/chatbot/test_crossdomain_ladder.py::TestD11LinesFollowOneAnotherInToolOrder` is
   updated to the ruling: its three same-PO lines now print as one row, 57.
-- Kill test: removing the grouping call turns 4 tests red. Dropping location and date from
-  the key turns 3 red.
+- Review round 1 (READY with two should-fixes, both applied): ordered and outstanding are
+  pinned apart (36/20 twice prints 72/40). Company is part of the document key, because PO
+  numbers are unique per company only. A blank PO number never merges. The summed number
+  prints plain (`36.0` + `36` prints `72`).
+- Kill test: removing the grouping call turns 4 tests red, and dropping location and date
+  from the key turns 3 red. Each of these turns 1 red: summing outstanding from ordered,
+  printing the raw sum, and dropping company from the key.

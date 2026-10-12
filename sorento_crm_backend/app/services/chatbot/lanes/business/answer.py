@@ -1336,6 +1336,9 @@ def _crossdomain_rung_row(it: Any, field_by_key: Any) -> dict[str, Any]:
         "qty": field_by_key(it, "outstanding_qty"),
         "po_date": field_by_key(it, "po_date"),
         "location": field_by_key(it, "location"),
+        # Never rendered: PO numbers are unique per company only, so the document key
+        # in `_consolidate_rung_rows` needs it beside the number.
+        "company": field_by_key(it, "company_name"),
     }
 
 
@@ -1352,7 +1355,7 @@ def _rung_qty(value: Any) -> Decimal | None:
 
 def _consolidate_rung_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Owner ruling 13 Oct 2026 (STAFF-STOCK-ETA): open lines of the same product on the
-    same document (`kind` + PO/SPO number), at the same location and with the same PO
+    same document (`kind` + company + PO/SPO number), at the same location and with the same PO
     date, are ONE row with `ordered_qty` and `qty` summed. The block never prints the
     document number (D3), so two such lines read as the same row printed twice (live:
     one PO with two open lines of 36, each from a different SO line).
@@ -1365,13 +1368,14 @@ def _consolidate_rung_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     index_by_key: dict[tuple[Any, ...], int] = {}
     for row in rows:
         ordered, outstanding = _rung_qty(row.get("ordered_qty")), _rung_qty(row.get("qty"))
-        number = row.get("number")
-        if ordered is None or outstanding is None or number in (None, ""):
+        number = jsc.js_string(row.get("number") or "").strip()
+        if ordered is None or outstanding is None or not number:
             out.append(row)
             continue
         key = (
             row.get("kind"),
-            jsc.js_string(number).strip(),
+            row.get("company"),
+            number,
             _norm_code(row.get("product_code")),
             row.get("location"),
             row.get("po_date"),
@@ -1392,8 +1396,6 @@ def _consolidate_rung_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _fmt_rung_qty(number: Decimal) -> str:
     """`72`, never `72.0` or `7.2E+1`; a fraction keeps its digits (`13.5`)."""
-    if number == number.to_integral_value():
-        return str(number.quantize(Decimal(1)))
     return format(number.normalize(), "f")
 
 
