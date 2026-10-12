@@ -2808,6 +2808,44 @@ def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[s
     }
 
 
+def _find_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """CHAT-FIND: the presenter's text (`presenters._find_envelope`) is the reply, verbatim,
+    localized line by line; a dealer's `Stock:` verdict is translated after its status mark the
+    way the stock reply's own verdicts are (`Localizer.tail`). It states its own subject in each
+    head line, so the generic search-scope header is skipped, and "nothing on record" is an
+    answer, never the miss lane (card Q3 a: no escalate offer)."""
+    envelope = result if isinstance(result, dict) else {}
+    text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
+    loc = (ctx or {}).get("localizer") or IDENTITY
+    if text:
+        stock_lead = f"{loc.text('Stock')}: "
+        text = "\n".join(
+            loc.tail(line) if line.startswith(stock_lead) else line for line in loc.lines(text).split("\n")
+        )
+    if not text:
+        # No group: no named product is visible to this contact, or the contact resolved to
+        # nobody (the route fails closed). Said once; asking again changes neither.
+        from app.services.product_find import NOTHING_LINE
+
+        text = loc.text(NOTHING_LINE)
+    return {
+        "response": text,
+        "response_intro": None,
+        "answers": [],
+        "attachments": [],
+        "action_links": [],
+        "last_updated_at": None,
+        "has_result": True,
+        "alternatives": [],
+        "relaxed_axis": None,
+        "field_access": None,
+        "requested_attributes": [],
+        "keys_served": False,
+        "outstanding_report": True,
+        "own_header": True,
+    }
+
+
 def _dmy(value: Any) -> str:
     text = jsc.js_string(value or "")[:10]
     parts = text.split("-")
@@ -2948,6 +2986,8 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return _top_selling_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_report_ask":
         return _report_ask_output(result, ctx)
+    if jsc.js_string(ctx.get("tool") or "") == "crm_find":
+        return _find_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_sales_analysis":
         # The same envelope: the presenter's text and, when there is one, the Excel. It
         # states its own scope (company, channel, basis, period), so the order domain's

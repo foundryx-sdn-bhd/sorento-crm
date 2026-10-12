@@ -721,6 +721,12 @@ def resolve_entity_body(
     }
     if dry_run:
         body["dry_run"] = True
+    # CHAT-FIND: on a find the words beside a code name what fits it, never which variant of
+    # it ("seat cover for SRTWC8088"), so the route keeps the typed codes as typed.
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    if find_lane.filter_keys(parse_output):
+        body["keep_typed_codes"] = True
     if any(jsc.get(x, "hint") in REFERENCE_NARROW for x in entities):
         body["reference_kinds"] = _visible_reference_kinds(ctx)
     # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026, dev turn 4d18caff "any basin with thickness
