@@ -64,3 +64,13 @@ def test_step_8_the_whole_family_sold_and_cost_with_no_question(session_factory,
     assert "2026 总共卖出（已出货）: 860" in lines
     assert any(ln.startswith("采购价: RM 45.00 / 件（PO-2026-0412") for ln in lines)
     assert (c.stored_question or {}).get("kind") not in ("sub_ask_scope", "sub_ask_basis")
+
+
+def test_step_9_a_missing_variant_is_never_answered_with_a_sibling(session_factory, monkeypatch, stub_access):
+    """Review B1 on the live emission: SRTWT7445-ZZ does not exist."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009903")
+    text = _say(c, "step9")
+    sibling_ids = {pid for code, pid in c.uuid_of.items() if code in FAMILY}
+    for _name, args in c.tools.calls:
+        assert not sibling_ids & set(_ids(args.get("product_ids"))), _name
+    assert 'Couldn\'t find "SRTWT7445-ZZ"' in text

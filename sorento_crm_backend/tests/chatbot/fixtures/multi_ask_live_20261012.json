@@ -1,5 +1,5 @@
 {
- "_about": "Live gpt-5.4-mini emissions of the maskp_0001 parser template with the maskp_0002 measure glossary rendered (MULTI-ASK-PLAN2, 12 Oct 2026) for the owner's hand-test steps 4, 5, 6 and 8 (laneboard/scripts/1542.md). Replayed by test_multi_ask_live_replay.py; the steps 5 and 6 replies were parsed under their Open question line. Step 4's last_receipt ask carries a stray 2026 window the runner must ignore.",
+ "_about": "Live gpt-5.4-mini emissions of the maskp_0001 parser template with the maskp_0002 measure glossary rendered (MULTI-ASK-PLAN2, 12 Oct 2026) for the owner's hand-test steps 4 to 9 (laneboard/scripts/1542.md). Replayed by test_multi_ask_live_replay.py; the steps 5 and 6 replies were parsed under their Open question line. Step 4's last_receipt ask carries a stray 2026 window the runner must ignore.",
  "steps": {
   "step4": {
    "message": "SRTWT7445,2026 年 入库了多少数量 , 供应商是谁 ， 采购价是多少钱。 最后一次进库是什么时候 ，2026 总共卖了多少个，2026年每位业务员共卖了多少个",
@@ -341,6 +341,100 @@
     "profile_statements": null
    }
   },
+  "step7": {
+   "message": "stock SRTWT7445",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to check stock for SRTWT7445",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445",
+      "hint": "product",
+      "canonical_code": "SRTWT7445",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "warehouse",
+     "suggested_agent": "general_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "sub_asks": null,
+    "family": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
   "step8": {
    "message": "SRTWT7445 系列 2026 卖了多少，按已出货，还有采购价",
    "verdict": {
@@ -440,6 +534,126 @@
      }
     ],
     "family": true,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   }
+  },
+  "step9": {
+   "message": "SRTWT7445-ZZ stock and supplier",
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_stock",
+    "domain_hint": "inventory",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "trying to check stock and supplier for SRTWT7445-ZZ",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [
+     {
+      "raw": "SRTWT7445-ZZ",
+      "hint": "product",
+      "canonical_code": "SRTWT7445-ZZ",
+      "current_message": true,
+      "confident": true,
+      "hint_confident": null,
+      "quantity": null,
+      "spec_key": null,
+      "spec_value": null,
+      "account": null
+     }
+    ],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": null,
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": null,
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": "warehouse",
+     "suggested_agent": "general_enquiries"
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": [
+     {
+      "domain": "inventory",
+      "intent": "check_stock"
+     },
+     {
+      "domain": "purchase_cost",
+      "intent": "check_po_cost"
+     }
+    ],
+    "sub_asks": [
+     {
+      "measure": "stock",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "stock"
+     },
+     {
+      "measure": "supplier",
+      "group_by": null,
+      "date_from": null,
+      "date_to": null,
+      "basis": null,
+      "label": "supplier"
+     }
+    ],
+    "family": null,
     "topic_reset": false,
     "proceed_anyway": null,
     "open_question_answer": {
