@@ -59,6 +59,14 @@ def test_a9_guard_a_sales_analysis_naming_the_domain_is_untouched(console, monke
         assert not sent.get("product_code_exact"), sent
 
 
+def test_a10_guard_a_sales_analysis_naming_another_basis_is_not_narrowed(console, monkeypatch) -> None:
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    console.say(_exact_verdict(order_status="sales_analysis", sales_basis="invoiced"), "invoiced sales of this model")
+    for sent in _sent(seen):
+        assert not sent.get("product_code_exact"), sent
+
+
 # ================================================================================ B
 
 YEAR = {"date_filter_start": "2026-01-01", "date_filter_end": "2026-12-31"}
@@ -136,4 +144,60 @@ def test_b11_guard_a_sales_ranking_with_its_own_axis_still_leaves_top_selling(co
         ),
         "top 5 sales agents",
     )
+    assert not c.slot, c.slot
+
+
+def test_b12_a_flipped_verdict_echoing_the_held_axis_still_answers_the_open_ask(console_factory) -> None:
+    c = console_factory()
+    _t1(c)
+    _t2(c)
+    text, captured = c.say(_t3_flipped(group_by="product", message_type="business_query", topic_reset=False), "2026")
+    assert "Which period" not in text, text
+    if not _calls(captured):
+        text, captured = c.say(_answer(basis="delivered"), "delivered")
+    (args,) = _calls(captured)
+    assert args["n"] == 20 and args["rank_by"] == "quantity", args
+    assert args["date_from"] == "2026-01-01" and args["date_to"] == "2026-12-31", args
+    assert args.get("channel") == "project", args
+    assert "Which period" not in text, text
+
+
+def test_b13_guard_a_flipped_verdict_naming_another_axis_leaves_top_selling(console_factory) -> None:
+    c = console_factory()
+    _t1(c)
+    _t2(c)
+    c.say(_t3_flipped(group_by="customer"), "2026")
+    assert not c.slot, c.slot
+
+
+def _flipped_answer(**kw: Any) -> dict[str, Any]:
+    return _t3_flipped(top_n=None, date_filter_start=None, date_filter_end=None, sales_channel=None, **kw)
+
+
+def test_b14_a_flipped_metric_answer_sets_rank_by_and_moves_to_the_basis_question(console_factory) -> None:
+    c = console_factory()
+    _t1(c)
+    assert c.slot.get("asked") == "metric", c.slot
+    text, captured = c.say(_flipped_answer(), "quantity")
+    assert c.slot.get("rank_by") == "quantity", c.slot
+    assert "Delivered" in text and "ordered" in text, text
+    assert "By quantity or by amount?" not in text, text
+
+
+def test_b15_an_echoed_axis_under_the_group_question_is_the_answer(console_factory) -> None:
+    c = console_factory()
+    text, captured = c.say(
+        _ask(top_n=20, rank_group="unclear", rank_by="quantity", basis="delivered", entities=[]),
+        "top 20 selling by category",
+    )
+    assert c.slot.get("asked") == "group", (c.slot, text)
+    c.say(_flipped_answer(group_by="category"), "categories")
+    assert c.slot.get("rank_group") == "category", c.slot
+
+
+def test_b16_guard_an_explicit_not_a_refine_echo_is_a_new_ask(console_factory) -> None:
+    c = console_factory()
+    _t1(c)
+    _t2(c)
+    c.say(_t3_flipped(group_by="product", ranking_refine=False), "2026")
     assert not c.slot, c.slot
