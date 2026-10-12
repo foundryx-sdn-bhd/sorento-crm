@@ -246,8 +246,21 @@ def test_c6_promotion_without_a_subject_keeps_the_promotions_list():
 def test_c6_both_phrasings_give_the_same_constraints(vdb):
     """RED: `spec_constraints_for` does not exist. 'which basins are on promotion' and
     'basin promotion' differ only in raw text and must map to one identical list."""
+    import uuid
+
+    from app.models.product import ProductCategory
     from app.services.chatbot.lanes.business.fetch import spec_constraints_for
 
+    # Wash Basin class with synonym "basin", as C7b seeds it: both phrasings map through the
+    # shared class reader (the lane's built-in CLASS_SYNONYMS fallback is gone).
+    vdb.add(
+        ProductCategory(
+            id=str(uuid.uuid4()), category_code=f"ZZT{uuid.uuid4().hex[:6].upper()}-WB",
+            category_name="ZZT basin category", class_label="Wash Basin", is_searchable=True,
+            search_synonyms=["basin"],
+        )
+    )
+    vdb.commit()
     a = spec_constraints_for(_ask(_category("basins"), domain="promotion", intent="check_promotion"), vdb)
     b = spec_constraints_for(_ask(_category("basin"), domain="promotion", intent="check_promotion"), vdb)
     assert a and a == b
