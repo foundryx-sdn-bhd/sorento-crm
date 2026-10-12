@@ -484,3 +484,168 @@ def test_has_active_promotion_counts_only_promotions_open_to_the_callers_tier(ap
     assert ask(access_levels=["zzt_dealer", "zzt_end_user"]) == _codes_of(rows), "repeated list accepted"
     assert ask(access_levels="zzt-no-such-tier-zz") == set(), "unknown tier matches nothing"
     assert ask() == _codes_of(rows), "absent access_levels = no tier restriction"
+
+
+# --------------------------------------------------------------------------------------- #
+# Slice 2: virtual `size` key (card section 9, slice 1), inactive keys, promotion-products
+# --------------------------------------------------------------------------------------- #
+
+GRATING = {"key": "product_type", "op": "eq", "value": "floor_grating"}
+
+
+def _g(db, tag, **mm):
+    """A floor grating carrying the given mm keys, e.g. _g(db, "A", dim_length=250)."""
+    values = {"product_type": _enum("floor_grating")}
+    values.update({k: _num(v) for k, v in mm.items()})
+    return _p(db, tag, values)
+
+
+def _alts(body) -> dict:
+    return {a["key"]: a["values"] for a in body.get("spec_alternatives", [])}
+
+
+def test_size_resolves_to_the_one_mm_key_that_holds_the_value(api, db):
+    """RED today: `size` is not a registry key, so the route answers 422 (unknown key)."""
+    a = _g(db, "SA", dim_length=250)
+    b = _g(db, "SB", dim_length=100)
+    db.commit()
+
+    resp = _list(api, db, [a, b], **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert _codes(resp) == _codes_of([a])
+    assert resp.json().get("spec_resolved") == {"size": "dim_length"}
+
+
+def test_size_held_by_two_keys_returns_no_rows_and_spec_ambiguous(api, db):
+    """RED today: `size` is an unknown key (422), so there is neither a 200 nor `spec_ambiguous`."""
+    a = _g(db, "AA", dim_length=250)
+    c = _g(db, "AC", dim_width=250)
+    db.commit()
+
+    resp = _list(api, db, [a, c], **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["data"] == []
+    assert body.get("spec_ambiguous") == [
+        {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"]}
+    ]
+
+
+def test_size_held_by_no_key_lists_every_mm_key_and_the_unrecorded_count(api, db):
+    """RED today: `size` is an unknown key (422), so neither alternatives nor unrecorded exist."""
+    rows = [
+        _g(db, "NL", dim_length=100),
+        _g(db, "NW", dim_width=120),
+        _g(db, "N0A"),
+        _g(db, "N0B"),
+    ]
+    db.commit()
+
+    resp = _list(api, db, rows, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 300}))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["data"] == []
+    alts = _alts(body)
+    assert alts.get("dim_length") == [100], body
+    assert alts.get("dim_width") == [120], body
+    assert body.get("spec_unrecorded") == {"size": 2}, body
+
+
+def test_size_candidates_are_only_active_numeric_mm_keys(api, db):
+    """RED today: `size` is an unknown key (422). A litre key and an inactive mm key both
+    hold 250 on a grating, yet only the active mm key `dim_length` may be a candidate."""
+    from app.models.product_spec import ProductSpecRegistry
+
+    db.query(ProductSpecRegistry).filter(ProductSpecRegistry.spec_key == "dim_height").update(
+        {"is_active": False}
+    )
+    db.flush()
+    mm = _g(db, "MM", dim_length=250)
+    litre = _p(db, "LITRE", {"product_type": _enum("floor_grating"), "capacity_litre": _num(250, "L")})
+    off = _p(db, "OFF", {"product_type": _enum("floor_grating"), "dim_height": _num(250)})
+    db.commit()
+
+    resp = _list(api, db, [mm, litre, off], **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert _codes(resp) == _codes_of([mm])
+    body = resp.json()
+    assert body.get("spec_resolved") == {"size": "dim_length"}
+    assert not body.get("spec_ambiguous")
+
+
+def _seat_cover_row(db):
+    from app.models.product_spec import ProductSpecRegistry
+
+    db.add(
+        ProductSpecRegistry(
+            id=str(uuid.uuid4()),
+            spec_key="seat_cover",
+            label="Seat cover",
+            data_type="enum",
+            allowed_values=["zzt_x"],
+            is_active=False,
+        )
+    )
+    db.flush()
+
+
+def test_inactive_registry_key_is_rejected_by_name(api, db):
+    """Guard for the inactive-key rule (may already pass after slice 1): a registry key that
+    is switched off is a 422 naming it, never a silent filter."""
+    _seat_cover_row(db)
+    a = _g(db, "IK", dim_length=250)
+    db.commit()
+
+    resp = _list(api, db, [a], **_constraints({"key": "seat_cover", "op": "eq", "value": "zzt_x"}))
+    assert resp.status_code == 422, resp.text
+    assert "seat_cover" in resp.text
+
+
+def test_spec_alternatives_items_carry_label_and_unit(api, db):
+    """A7. RED today: items are `{key, values}` only, so the presenter cannot print
+    "Length" or "mm" without a second lookup."""
+    rows = [_g(db, "LU1", dim_length=100), _g(db, "LU2", dim_length=150)]
+    db.commit()
+
+    resp = _list(api, db, rows, **_constraints(GRATING, {"key": "dim_length", "op": "eq", "value": 999}))
+    assert resp.status_code == 200, resp.text
+    item = next(a for a in resp.json()["spec_alternatives"] if a["key"] == "dim_length")
+    assert item["label"] == "Length"
+    assert item["unit"] == "mm"
+    assert item["values"] == [100, 150]
+
+
+def test_promotion_products_route_filters_lines_by_spec_constraints(api, db, monkeypatch):
+    """A5. RED today: `GET /marketing/promotion-products` has no `spec_constraints` param,
+    so it is ignored and the tap line comes back with the basin line."""
+    monkeypatch.setattr(
+        UserPermissionService,
+        "get_user_permission_slugs",
+        lambda self, uid: {"marketing.promotion_products.view"},
+    )
+    basin = _p(db, "PPB", {"class": _enum("Basin")})
+    tap = _p(db, "PPT", {"class": _enum("Tap")})
+    promo = _promo(db, basin, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    group = promo.promotion_groups[0] if promo.promotion_groups else None
+    assert group is not None
+    db.add(
+        PromotionProduct(
+            id=str(uuid.uuid4()),
+            promotion_id=promo.id,
+            promotion_group_id=group.id,
+            product_id=tap.id,
+            company_id=DEFAULT_COMPANY_ID,
+        )
+    )
+    db.commit()
+
+    resp = api.get(
+        "/api/v1/marketing/promotion-products/",
+        params={
+            "promotion_ids": [promo.id],
+            "active": "true",
+            "limit": 100,
+            **_constraints({"key": "class", "op": "eq", "value": "Basin"}),
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    codes = {row["product"]["product_code"] for row in resp.json()["data"]}
+    assert codes == _codes_of([basin])
