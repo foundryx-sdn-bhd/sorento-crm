@@ -7669,7 +7669,9 @@ class ProjectSupplyService:
                 ConfirmSupplyBody(lines=[]),
                 actor_user_id=str(active.confirmed_by or actor_user_id),
                 uncover_line_ids=sorted(wanted),
-                uncover_reason_by_line=reason_by_line,
+                # Every withdrawn line carries a reason, so the order inquiry retires its
+                # rows even while an AutoCount change on it waits on CS (SO422492 A).
+                uncover_reason_by_line=reason_by_line or {line_id: reason for line_id in wanted},
             )
             # WHY the revision this call just retired was retired. `confirm` stamps its
             # own "Reconfirmed by CS.", which is not what happened here - nobody

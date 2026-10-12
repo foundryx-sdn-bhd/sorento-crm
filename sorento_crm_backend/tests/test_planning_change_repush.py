@@ -1050,3 +1050,55 @@ def test_two_confirmed_lines_same_order_applied_one_press_at_a_time(api):
         "S5b: only once BOTH rows of this one-order batch are applied does the batch stamp "
         "applied_at"
     )
+
+
+def test_so422492_review_4_a_closed_undecided_new_line_gets_no_replacement(api):
+    """Review finding 4: a NEW line the book closes while its `added` row is undecided is
+    gone, not re-changed - the row retires and nothing replaces it."""
+    from app.services.scm.outstanding_diff import CLOSED
+
+    world, project = api
+    db = world.db
+    core_so, _held_core_line, _held_product, order, held_mirror = _linked_line(
+        world, project, qty_ordered=72,
+    )
+    _freeze_with_a_full_buy(db, world, order, held_mirror)
+    product = _product(db)
+    core_line = _core_line(db, core_so, product, world.own_wh, qty_ordered="10", required_date=D1)
+    _project_line(db, order, line_no=2, product=product, core_line=core_line)
+    db.commit()
+    push1 = _added_change(
+        core_so.so_number, product.product_code, world.own_wh.warehouse_code,
+        qty=10, required_date=D1,
+    )
+    batch1 = planning_change_service.build_batch(
+        db, Diff(scope_documents=(core_so.so_number,), changes=[push1]),
+        applied_line_ids={id(push1): str(core_line.id)},
+        order_ids={core_so.so_number: str(core_so.id)},
+        actor=world.actor, import_job_id=None, file_name="push1.xlsx",
+    )
+    db.commit()
+    first = _assert_one_live_added_row(db, batch1.id, product.product_code, qty="10", on=D1)
+
+    core_line.line_status = "closed"
+    db.flush()
+    loc = world.own_wh.warehouse_code
+    closed = Change(
+        CLOSED, core_so.so_number, product.product_code, loc,
+        before=Line(doc_number=core_so.so_number, item_code=product.product_code,
+                    location=loc, qty=10.0, required_date=D1, row_ref=str(core_line.id)),
+        after=None,
+    )
+    planning_change_service.build_batch(
+        db, Diff(scope_documents=(core_so.so_number,), changes=[closed]),
+        applied_line_ids={id(closed): str(core_line.id)},
+        order_ids={core_so.so_number: str(core_so.id)},
+        actor=world.actor, import_job_id=None, file_name="push2.xlsx",
+    )
+    db.commit()
+    db.expire_all()
+    assert db.get(PlanningChangeRow, first.id).applied_state == "superseded"
+    assert not [
+        r for r in _rows_for(db, batch1.id)
+        if r.item_code == product.product_code and r.applied_state == "pending"
+    ]

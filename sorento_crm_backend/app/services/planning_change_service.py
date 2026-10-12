@@ -1120,6 +1120,8 @@ def build_batch(
             # describing the line as it stands now.
             replaces_added = (
                 older is not None
+                # A line the book closed is gone, not re-changed: its row just retires.
+                and e["change"].kind != CLOSED
                 and older.kind == "added"
                 and older.decision is None
                 and _entry_differs_from_older_row(e["change"], older)

@@ -1757,6 +1757,9 @@ class ProjectOrderInquiryService:
                 and _dec(entry.get("buy_qty")) > _ZERO
             },
             actor_user_id=actor_user_id,
+            covered_line_ids={
+                str(entry["line"].id) for entry in buy_lines if entry.get("line")
+            },
         )
         created += shortfalls
         raised += shortfalls
@@ -4043,6 +4046,7 @@ class ProjectOrderInquiryService:
         shortfalls: Sequence[Dict[str, Any]],
         buy_line_ids: Optional[set] = None,
         actor_user_id: Optional[str] = None,
+        covered_line_ids: Optional[set] = None,
     ) -> int:
         """One row per donor location this confirmation left oversold (PLAN 13.11).
 
@@ -4097,6 +4101,22 @@ class ProjectOrderInquiryService:
             # apart: the hole names no cover, because nothing covers it yet.
             and not (row.covered_by or "").strip()
         ]
+        if covered_line_ids is not None:
+            # SO422492 A, second writer: a board "Order back" row on a line this revision
+            # dropped while its AutoCount change waits on CS stands, exactly as
+            # `_retire_uncovered_rows` keeps that line's ORDER row.
+            board_rows_off_revision = [
+                str(row.so_line_id)
+                for row in rows
+                if not _is_borrow_order_back(row)
+                and row.so_line_id
+                and str(row.so_line_id) not in covered_line_ids
+            ]
+            awaiting_cs = self._lines_with_undecided_planning_change(board_rows_off_revision)
+            rows = [
+                row for row in rows
+                if _is_borrow_order_back(row) or str(row.so_line_id) not in awaiting_cs
+            ]
         # A PARTLY LINKED row is netted HALF, exactly as an ORDER row is one method up:
         # the quantity sitting on a document is real supply and counts against the hole,
         # and the remainder is a hole this revision is about to restate, so the row is
@@ -4135,7 +4155,12 @@ class ProjectOrderInquiryService:
         self._drop_suggested_links(cancelled_this_pass)
 
         def _hole_key(row: OrderInquiryRow) -> Tuple[Any, Any, Any]:
-            return (str(row.so_line_id), row.item_code or None, row.stock_location or None)
+            return (
+                str(row.so_line_id),
+                row.item_code or None,
+                row.stock_location or None,
+                _is_borrow_order_back(row),
+            )
 
         re_raised: set = set()
         created = 0
@@ -4173,7 +4198,8 @@ class ProjectOrderInquiryService:
             )
             self.db.add(shortfall_row)
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
-            re_raised.add(_hole_key(shortfall_row))
+            # Every row this method raises is a borrow hole, whatever its note says.
+            re_raised.add(_hole_key(shortfall_row)[:3] + (True,))
             created += 1
         # SO422492 E: a cancelled raise purchasing was told about is told again, as a
         # cancel - unless this pass re-raised the same hole, whose own line restates it. A
@@ -4343,11 +4369,17 @@ class ProjectOrderInquiryService:
         # but the book still needs it: cancelling its row told purchasing CANCEL ALL 25 for
         # a line the book had only cut to 22. Its row stands until CS decides the change,
         # and that confirm restates it (settle in place). A book cancellation is excluded:
-        # that line is genuinely leaving. Not on the `only_line_ids` path: there CS took the
-        # line out on purpose.
+        # that line is genuinely leaving. Not for a line CS or purchasing withdrew on purpose
+        # (`only_line_ids`, or named in `reason_by_line`).
+        # A line CS (or purchasing) withdrew carries its own reason in `reason_by_line`.
+        withdrawn = {str(line_id) for line_id in (reason_by_line or {})}
         awaiting_cs = (
             self._lines_with_undecided_planning_change(
-                [str(row.so_line_id) for row in stale if row.so_line_id]
+                [
+                    str(row.so_line_id)
+                    for row in stale
+                    if row.so_line_id and str(row.so_line_id) not in withdrawn
+                ]
             )
             if only_line_ids is None
             else set()
@@ -4416,7 +4448,10 @@ class ProjectOrderInquiryService:
         exactly that difference. The difference moves to a row per new line, with the links
         that cover it (latest arrival first, the over-cover rule) and purchasing's
         acknowledgement, and nothing is told as a cancel or an order. Anything else - two
-        live rows, a different total, product or location - is left to the netting.
+        live rows, a different total, product, location or required date, a line given back
+        whole, a row holding a CS reserve link - is left to the netting. A manual link moves
+        too: unlike a CANCEL_BALANCE drop, the total purchasing placed is still owed by this
+        order, only by other lines.
 
         Returns every line it handled (the source and the new lines)."""
         entries = [
@@ -4446,7 +4481,11 @@ class ProjectOrderInquiryService:
         for entry in entries:
             line_id = str(entry["line"].id)
             need = _dec(entry.get("buy_qty"))
-            key = _key(entry.get("item_code"), entry.get("stock_location"))
+            # The required date is part of the key: a split that also moves a date is a
+            # change purchasing has to hear about, so it is left to the netting.
+            key = _key(entry.get("item_code"), entry.get("stock_location")) + (
+                entry.get("required_date"),
+            )
             rows = rows_by_line.get(line_id, [])
             if not rows:
                 if need > _ZERO:
@@ -4464,8 +4503,12 @@ class ProjectOrderInquiryService:
                 and row.state in (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
                 and not row.redirected_to_pool
                 and row.ack_state != ACK_REJECTED
-                and _key(row.item_code, row.stock_location) == key
-                and _ZERO <= need < _dec(row.qty)
+                and _key(row.item_code, row.stock_location) + (row.delivery_date,) == key
+                and _ZERO < need < _dec(row.qty)
+                # A CS reserve link is tied to its reserve request row; it never moves.
+                and not any(
+                    link.reserve_request_row_id for link in self._links_of(row.id)
+                )
             ):
                 sources_by_key[key].append((entry, row))
 
@@ -4565,21 +4608,25 @@ class ProjectOrderInquiryService:
         source.supply_decision_id = decision.id
         self.db.flush()
         self._invalidate_link_cache()
+        # A suggestion sized for the old quantity is stale on the smaller row.
+        self._drop_suggested_links([source])
         self.refresh_link_state([source, *new_rows])
 
     def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
-        """The lines among `line_ids` carrying a PENDING planning change row nobody has
-        decided yet, other than a book cancellation (SO422492 BUG A)."""
+        """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
+        yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
+        overtook can never be decided, so it holds nothing back. Live means held against
+        the order's latest revision or the one just before it: inside a confirm the
+        revision being replaced is still what the batch's leftover rows name, until the
+        apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
         if not line_ids:
             return set()
         from app.models.planning_change import (
             PLANNING_CHANGE_STATE_PENDING,
             PlanningChangeRow,
         )
-
-        return {
-            str(line_id)
-            for (line_id,) in self.db.query(PlanningChangeRow.project_line_id)
+        rows = (
+            self.db.query(PlanningChangeRow)
             .filter(
                 PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
                 PlanningChangeRow.decision.is_(None),
@@ -4587,7 +4634,26 @@ class ProjectOrderInquiryService:
                 PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
             )
             .all()
-        }
+        )
+        from app.models.project_so import SOSupplyDecision
+
+        live_revisions: Dict[str, set] = {}
+        out: set = set()
+        for row in rows:
+            pso_id = str(row.project_sales_order_id)
+            if pso_id not in live_revisions:
+                live_revisions[pso_id] = {
+                    revision_no
+                    for (revision_no,) in self.db.query(SOSupplyDecision.revision_no)
+                    .filter(SOSupplyDecision.project_sales_order_id == pso_id)
+                    .order_by(SOSupplyDecision.revision_no.desc())
+                    .limit(2)
+                    .all()
+                } or {0}
+            held_revision = (row.held_json or {}).get("revision_no")
+            if held_revision is None or held_revision in live_revisions[pso_id]:
+                out.add(str(row.project_line_id))
+        return out
 
     def retire_rows_for_dropped_lines(
         self,
