@@ -28,7 +28,9 @@ import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 export type TimelineEvent = {
   id: string;
   /** What happened, in the fewest words that are still specific. */
-  title: string;
+  title: React.ReactNode;
+  /** Lets a caller find one entry (a test, or a row that opens a dialog). */
+  testId?: string;
   /** Who did it, if a person did. */
   actor?: string | null;
   /** ISO timestamp. Null is allowed and shown honestly rather than dropping the entry. */
@@ -106,7 +108,11 @@ export function EventTimeline({
           </p>
           <ol className="space-y-0">
             {group.events.map((event, index) => (
-              <li key={event.id} className="relative flex gap-3 pb-5 last:pb-0">
+              <li
+                key={event.id}
+                data-testid={event.testId}
+                className="relative flex gap-3 pb-5 last:pb-0"
+              >
                 {/* The rail. Drawn per row and stopped on the last one, so the thread does
                     not dangle below the final event. */}
                 {index < group.events.length - 1 && (
