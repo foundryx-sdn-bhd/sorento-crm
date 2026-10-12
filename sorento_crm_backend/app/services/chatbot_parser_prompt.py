@@ -904,6 +904,14 @@ SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += CHAT_REPORT_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REF_KINDS_ADDENDUM
+# CHAT-FIND (`documentation/plans/chatbot/PLAN-chat-generic-find-12oct.md`): the generic find
+# rule and the registry's filter lines arrive through the live `{{find_filters}}` variable
+# (`chatbot_prompt_vars.VARIABLES["find_filters"]`, filled by `ai_prompt_registry.render` for the
+# code fallback as for a published version), so the constant grows by the token only and a
+# filter registered later needs no prompt edit. Published versions get it from
+# `chatbot_find_prompt.publish_find_block`.
+FIND_ADDENDUM = '\n\nOne more OUTPUT key, on every object: "find" (below), null when it does not apply.\n{{find_filters}}\n'
+SEMANTIC_PARSER_PROMPT += FIND_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code
@@ -1280,163 +1288,3 @@ def blocks_of(template: str | None) -> str:
     if BLOCKS_BEGIN in body and BLOCKS_END in body:
         return body.split(BLOCKS_BEGIN, 1)[1].split(BLOCKS_END, 1)[0].strip("\n") + "\n"
     return body
-
-
-# CHAT-SPARSE (`documentation/plans/chatbot/PLAN-chat-sparse-emission-12oct.md`): the
-# families of output keys that are empty on nearly every turn, nested in the STRICT wire
-# schema as one nullable object each (`chatbot/head/parser.py::PARSE_OUTPUT_GROUPED_JSON_SCHEMA`)
-# and flattened back before any reader sees them. One definition for the schema and for the
-# prompt text below. Key names inside a group are unchanged, so every rule above applies
-# as written. Measured on 20 strict live emissions (12 Oct 2026): these keys are empty on
-# 19 or 20 of the 20 turns. A group holds only keys that are NEXT TO EACH OTHER in the flat
-# schema, so the model makes every decision in the same order as on the flat wire (crew
-# eval of 12 Oct 2026, round 2: groups that pulled correction / topic_reset / is_active
-# ahead of the entities lost two cases that are right on the flat wire).
-OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
-    "dates": ("date_mode", "date_filter_start", "date_filter_end"),
-    "ranking": (
-        "sales_channel",
-        "rank_by",
-        "basis",
-        "rank_group",
-        "rank_direction",
-        "sort_by",
-        "sort_dir",
-        "ranking_refine",
-        "ranking_drill",
-        "measure",
-        "sales_basis",
-        "sales_company",
-    ),
-}
-#: The same, inside each entity: null on all but a few entities (2 of 10 measured).
-ENTITY_OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
-    "detail": ("quantity", "spec_key", "spec_value", "account"),
-}
-
-GROUPED_OUTPUT_MARKER = "OUTPUT GROUPS (the schema nests these keys)"
-GROUPED_OUTPUT_ADDENDUM = (
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    + GROUPED_OUTPUT_MARKER
-    + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "The output schema puts some of the keys above inside a group object. Decide every key\n"
-    "exactly as the rules above say; only where it is written changes:\n"
-    + "".join(f'  - "{group}": {", ".join(keys)}\n' for group, keys in OUTPUT_GROUPS.items())
-    + "".join(f'  - "{group}", inside each entity: {", ".join(keys)}\n' for group, keys in ENTITY_OUTPUT_GROUPS.items())
-    + "A group is null when NONE of its keys says anything: every key in it would be null,\n"
-    "false or []. That is nearly every message: a plain question is \"dates\": null,\n"
-    "\"ranking\": null, and an entity with no quantity and no specification is\n"
-    "\"detail\": null. Write the group object only when at least one key in it is true or\n"
-    "has a value, and then write every one of its keys, each with the value the rules above\n"
-    "give it.\n"
-    "low_stock and anaphora work the same way: null when\n"
-    "every key inside would be null, false or [], otherwise the whole object as the rules\n"
-    "above say. This overrides any line above that says to write one of them on every object.\n"
-)
-
-
-#: Flags no reader tells false from null (pinned by `tests/chatbot/test_parser_grouped_
-#: emission.py::test_no_reader_tells_a_plain_flags_false_from_its_null`). Inside a group the
-#: schema allows them only true or null, so a group is never written just to say false.
-PLAIN_FLAGS: frozenset[str] = frozenset(
-    {
-        "ranking_refine",
-        "backward_reference",
-        "all_categories",
-    }
-)
-
-STRICT_OUTPUT_BLOCK_START = "== OUTPUT (exactly these keys, no others, no comments) =="
-STRICT_OUTPUT_BLOCK_END = "Return exactly one JSON object."
-#: The nullable object the OUTPUT block spells out on one line, shown as null by default.
-_NULLABLE_OBJECT_LINES = {
-    "anaphora": '  "anaphora": null, or { "backward_reference": true } when the message refers backward,',
-}
-
-
-def _grouped_block(block: str) -> str:
-    """The OUTPUT block with each group's member lines folded into one line showing the
-    group as null (the model copies the shape it is shown; a template of `false` defaults
-    is written in full). Each member keeps its own description; a plain flag shows
-    `true|null`. Nothing outside the moved lines changes."""
-    import re
-
-    group_of = {key: group for group, keys in OUTPUT_GROUPS.items() for key in keys}
-    members: dict[str, list[str]] = {group: [] for group in OUTPUT_GROUPS}
-    lines: list[str] = []
-    for line in block.split("\n"):
-        match = re.match(r'  "(\w+)": (.*?),?$', line)
-        key = match.group(1) if match else None
-        if key in _NULLABLE_OBJECT_LINES:
-            value = match.group(2)
-            if not (value.startswith("{") and value.endswith("}")):
-                raise ValueError(f"OUTPUT block line for {key} is not a one-line object")
-            lines.append(_NULLABLE_OBJECT_LINES[key])
-        elif key in group_of:
-            group = group_of[key]
-            value = match.group(2)
-            if key in PLAIN_FLAGS:
-                # The flag's own description stays; only its `false` default goes.
-                value = "true|null" + value[len("false"):] if value.startswith("false") else "true|null"
-            if not members[group]:
-                lines.append(f"<<{group}>>")
-            members[group].append(f'"{key}": {value}')
-        else:
-            lines.append(line)
-    text = "\n".join(lines)
-    for group, keys in OUTPUT_GROUPS.items():
-        listed = {m.split('"')[1] for m in members[group]}
-        shown = members[group] + [f'"{key}": ...' for key in keys if key not in listed]
-        line = f'  "{group}": null, or {{ {", ".join(shown)} }} when one of them says something,'
-        if f"<<{group}>>" in text:
-            text = text.replace(f"<<{group}>>", line)
-        else:
-            # A group none of whose keys the block lists (they come from the addenda).
-            anchor = "\n}\n" + STRICT_OUTPUT_BLOCK_END
-            if anchor not in text:
-                raise ValueError("OUTPUT block does not close with '}' right above its last line")
-            text = text.replace(anchor, "\n" + line + anchor)
-    # Refuse rather than publish a half-folded block: a member still on a line of its own
-    # (another indent, another spelling) would be named twice.
-    for key in group_of:
-        if re.search(rf'^\s*"{key}"\s*:', text, re.MULTILINE):
-            raise ValueError(f"OUTPUT block still lists {key} on a line of its own")
-    for key in _NULLABLE_OBJECT_LINES:
-        if text.count(f'"{key}":') != 1:
-            raise ValueError(f"OUTPUT block does not list {key} exactly once")
-    return text
-
-
-def grouped_prompt(template: str) -> str:
-    """A parser version's text in the grouped wire shape (CHAT-SPARSE): the OUTPUT block
-    shows each group as null (`_grouped_block`) and the OUTPUT GROUPS section goes last.
-    Nothing else in the text changes. Refuses (ValueError, so the migration and the script
-    skip it with a log line) a text that already carries the section, does not carry the
-    OUTPUT block exactly once, or whose block or entity line it cannot fold cleanly."""
-    if GROUPED_OUTPUT_MARKER in template:
-        raise ValueError("prompt already carries the OUTPUT GROUPS section")
-    if template.count(STRICT_OUTPUT_BLOCK_START) != 1:
-        raise ValueError("prompt does not carry the OUTPUT block exactly once")
-    start = template.index(STRICT_OUTPUT_BLOCK_START)
-    end = template.index(STRICT_OUTPUT_BLOCK_END, start) + len(STRICT_OUTPUT_BLOCK_END)
-    text = template[:start] + _grouped_block(template[start:end]) + template[end:]
-    return _grouped_entity_line(text) + GROUPED_OUTPUT_ADDENDUM
-
-
-ENTITY_LINE_PREFIX = "Each entity: {"
-ENTITY_LINE_END = '"confident": true|false }'
-
-
-def _grouped_entity_line(text: str) -> str:
-    """The entity format line shows each entity group as null, as `_grouped_block` does for
-    the object. Refuses a text whose entity line ends some other way."""
-    lines = text.split("\n")
-    for index, line in enumerate(lines):
-        if line.startswith(ENTITY_LINE_PREFIX) and line.endswith(ENTITY_LINE_END):
-            groups = "".join(
-                f', "{group}": null, or {{ {", ".join(chr(34) + k + chr(34) for k in keys)} }} when one of them has a value'
-                for group, keys in ENTITY_OUTPUT_GROUPS.items()
-            )
-            lines[index] = line[: -len(" }")] + groups + " }"
-            return "\n".join(lines)
-    raise ValueError("no entity format line ending in the confident flag")

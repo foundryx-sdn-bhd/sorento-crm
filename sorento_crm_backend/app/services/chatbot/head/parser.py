@@ -23,12 +23,6 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.ai_prompt_registry import agent_model, render
-from app.services.chatbot_parser_prompt import (
-    ENTITY_OUTPUT_GROUPS,
-    GROUPED_OUTPUT_MARKER,
-    OUTPUT_GROUPS,
-    PLAIN_FLAGS,
-)
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -85,8 +79,6 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
-    # CHAT-SPARSE: the rendered prompt asks for the grouped wire shape (`resolve_config`).
-    grouped: bool = False
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -512,6 +504,31 @@ def _build_json_schema() -> dict[str, Any]:
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
             "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
+                            },
+                            "required": ["key", "value", "unit"],
+                        },
+                    },
+                },
+                "required": ["filters"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -608,6 +625,7 @@ def _build_json_schema() -> dict[str, Any]:
             "low_stock",
             "chat_report",
             "po_refs",
+            "find",
         ],
     }
 
@@ -673,116 +691,11 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
         # absent reads as "no PO number given".
         "po_refs",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
-
-
-# CHAT-SPARSE (PLAN-chat-sparse-emission-12oct): the GROUPED wire shape, still STRICT.
-# Decoding the emission was most of the parse (CHAT-SPEED #1602), and most of it was key
-# families that are empty on nearly every turn. A version carrying `GROUPED_OUTPUT_MARKER`
-# is held to this schema instead: each family in `OUTPUT_GROUPS` becomes one nullable
-# object, and the objects in `NULLABLE_OBJECTS` may be null, so an unused family costs one
-# `null`. Strict mode still guarantees every key and every enum (the non-strict sparse
-# attempt drifted off the schema in the crew eval of 12 Oct 2026). `flatten_grouped` turns
-# the answer back into the flat shape below before any reader sees it.
-# Only objects whose null is a side matter: `escalation` and `open_question_answer` keep the
-# flat shape, because a single `null` token decided before `mode` / the confirmation flag is
-# a different reading (eval round 2: an open product roster came back unanswered).
-NULLABLE_OBJECTS: tuple[str, ...] = ("low_stock", "anaphora")
-
-
-def _empty_value(schema: dict) -> Any:
-    """What an unused family member reads as: null wherever it can be null, else [] for a
-    list and an object of its members' empties (the shape a strict emission writes)."""
-    declared = schema.get("type")
-    types = declared if isinstance(declared, list) else [declared]
-    if "null" in types:
-        return None
-    if "array" in types:
-        return []
-    if "object" in types:
-        return {name: _empty_value(child) for name, child in schema.get("properties", {}).items()}
-    raise ValueError(f"no empty value for {schema!r}")
-
-
-def _grouped(flat: dict[str, Any], groups: dict[str, tuple[str, ...]], nullable: tuple[str, ...] = ()) -> dict:
-    """`flat`'s properties with each group's members folded into one nullable object, placed
-    where its first member was so the order stays the prompt's."""
-    group_of = {key: group for group, keys in groups.items() for key in keys}
-    properties: dict[str, Any] = {}
-    for key, schema in flat.items():
-        group = group_of.get(key)
-        if group is None:
-            properties[key] = _nullable_object(schema) if key in nullable else schema
-        elif group not in properties:
-            properties[group] = {
-                "type": ["object", "null"],
-                "additionalProperties": False,
-                "properties": {member: _true_or_null(member, flat[member]) for member in groups[group]},
-                "required": list(groups[group]),
-            }
-    return properties
-
-
-def _true_or_null(key: str, schema: dict) -> dict:
-    """A plain flag inside a nullable object may be true or null, never false: no reader
-    tells its false from its null, and a false would make the model write the object."""
-    return {"type": ["boolean", "null"], "enum": [True, None]} if key in PLAIN_FLAGS else schema
-
-
-def _nullable_object(schema: dict) -> dict:
-    return {
-        **schema,
-        "type": ["object", "null"],
-        "properties": {k: _true_or_null(k, v) for k, v in schema["properties"].items()},
-    }
-
-
-def _build_grouped_schema() -> dict[str, Any]:
-    flat = PARSE_OUTPUT_JSON_SCHEMA["properties"]
-    properties = _grouped(flat, OUTPUT_GROUPS, NULLABLE_OBJECTS)
-    item = flat["entities"]["items"]
-    item_properties = _grouped(item["properties"], ENTITY_OUTPUT_GROUPS)
-    properties["entities"] = {
-        **flat["entities"],
-        "items": {**item, "properties": item_properties, "required": list(item_properties)},
-    }
-    return {**PARSE_OUTPUT_JSON_SCHEMA, "properties": properties, "required": list(properties)}
-
-
-PARSE_OUTPUT_GROUPED_JSON_SCHEMA = _build_grouped_schema()
-
-
-def _flattened(wire: dict, groups: dict[str, tuple[str, ...]], flat_schema: dict) -> dict:
-    out: dict[str, Any] = {}
-    for key, value in wire.items():
-        if key in groups:
-            for member in groups[key]:
-                if value is None:
-                    out[member] = _empty_value(flat_schema[member])
-                elif isinstance(value, dict) and member in value:
-                    out[member] = value[member]
-        elif key in NULLABLE_OBJECTS and value is None and key in flat_schema:
-            out[key] = _empty_value(flat_schema[key])
-        else:
-            out[key] = value
-    return out
-
-
-def flatten_grouped(wire: dict) -> dict:
-    """A grouped answer in the flat shape every reader expects. A null group writes each
-    member's empty value; a null object writes its object of empties; each entity's groups
-    are flattened the same way. Anything else is copied as is, so `assert_emission` still
-    names a key that is missing."""
-    flat_schema = PARSE_OUTPUT_JSON_SCHEMA["properties"]
-    out = _flattened(wire, OUTPUT_GROUPS, flat_schema)
-    if isinstance(out.get("entities"), list):
-        item_schema = flat_schema["entities"]["items"]["properties"]
-        out["entities"] = [
-            _flattened(e, ENTITY_OUTPUT_GROUPS, item_schema) if isinstance(e, dict) else e
-            for e in out["entities"]
-        ]
-    return out
 
 
 def resolve_config(
@@ -821,7 +734,6 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
-        grouped=GROUPED_OUTPUT_MARKER in (system_prompt or ""),
     )
 
 
@@ -1083,7 +995,7 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             messages,
             temperature=0.0,
             max_tokens=PARSER_MAX_TOKENS,
-            json_schema=PARSE_OUTPUT_GROUPED_JSON_SCHEMA if config.grouped else PARSE_OUTPUT_JSON_SCHEMA,
+            json_schema=PARSE_OUTPUT_JSON_SCHEMA,
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
@@ -1116,8 +1028,6 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             raise ParserError(f"parser returned non-JSON content: {exc}") from exc
         if not isinstance(parsed, dict):
             raise ParserError("parser returned a non-object")
-        if config.grouped:
-            parsed = flatten_grouped(parsed)
         assert_emission(parsed)
     except ParserError as exc:
         # The provider answered, so it billed. The turn fails either way; the spend is

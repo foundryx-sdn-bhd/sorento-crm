@@ -1026,12 +1026,9 @@ def _gemini_schema(schema: Any) -> Any:
             # `["string","null"]` type union above, and is translated the same
             # way: dropped from the list, recorded as `nullable`.
             members = [item for item in value if item is not None and item != "null"]
+            out["enum"] = members
             if len(members) != len(value):
                 out["nullable"] = True
-            if all(isinstance(item, str) for item in members):
-                out["enum"] = members
-            # A non-string enum (the chatbot parser's grouped `[true, null]` flags,
-            # CHAT-SPARSE) has no Gemini spelling at all; the type alone is kept.
             continue
         if key == "properties" and isinstance(value, dict):
             out["properties"] = {
