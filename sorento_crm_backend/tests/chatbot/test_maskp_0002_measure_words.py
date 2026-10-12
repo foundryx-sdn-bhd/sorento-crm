@@ -144,3 +144,41 @@ def test_a_value_the_owner_already_uses_is_named_never_silently_skipped(caplog):
         assert missing == ["stock"]
         assert "stock" in caplog.text and "sub_ask_measures" in caplog.text
         assert _rows(db).get("stock") is None
+
+
+# ---- crew live check, 13 Oct 2026 (v90 = prod v52 + the addendum, NO glossary rows on dev):
+# the measure list rendered empty and the parser filed supplier as other, 入库 as last_receipt.
+
+
+MEASURE_VALUES = (
+    "received_qty", "last_receipt", "incoming", "stock", "supplier",
+    "last_cost", "sold_total", "sold_by", "other",
+)
+
+
+def test_the_addendum_defines_every_measure_inline_even_with_no_glossary_rows():
+    rendered = SUB_ASKS_ADDENDUM.replace("{{sub_ask_measures}}", "")
+    for value in MEASURE_VALUES:
+        assert f'"{value}":' in rendered, value
+
+
+def test_a_quantity_received_is_received_qty_and_a_date_is_last_receipt():
+    text = " ".join(SUB_ASKS_ADDENDUM.split())
+    received = text[text.index('"received_qty":') : text.index('"last_receipt":')]
+    last = text[text.index('"last_receipt":') : text.index('"incoming":')]
+    assert "HOW MANY" in received and "quantity" in received
+    assert "WHEN" in last and "date" in last
+
+
+def test_a_count_and_its_breakdown_are_two_asks():
+    text = " ".join(SUB_ASKS_ADDENDUM.split())
+    assert "A count AND its breakdown are two things" in text
+    assert "sold_total then sold_by" in text
+
+
+def test_the_glossary_renders_the_words_only():
+    with blank_session() as db:
+        _seeded(db)
+        rendered = pv.render_value(db, "sub_ask_measures")
+        first = rendered.splitlines()[0]
+        assert first.startswith('    "received_qty": ') and "never goods" not in first
