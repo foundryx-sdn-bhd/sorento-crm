@@ -239,3 +239,103 @@ def test_still_raised_amendment_cut_rides_a_later_mail_with_before_and_after(api
     _handover, lines = _lines(calls, world.product.product_code)
     assert len(lines) == 1, lines
     assert lines[0]["qty"] == "6" and lines[0]["was"] == {"qty": "10"}, lines[0]
+
+
+def _amend_rows(world, fixture, rows):
+    amendment = SOAmendment(
+        company_id=world.company_id,
+        project_sales_order_id=fixture["order"].id,
+        from_version_kind="schedule",
+        status=AMENDMENT_PUBLISHED,
+        delta_json={
+            "rows": [
+                {
+                    "row_key": str(index),
+                    "so_line_id": str(fixture["line"].id),
+                    "product_id": str(world.product.id),
+                    "product_code": world.product.product_code,
+                    **row,
+                }
+                for index, row in enumerate(rows)
+            ]
+        },
+    )
+    world.db.add(amendment)
+    world.db.flush()
+    return amendment
+
+
+_DATE_AND_CUT = [
+    {"verb": "DELAY", "field": "delivery_date", "qty": "6",
+     "from_value": "2026-08-25", "to_value": "2026-09-10"},
+    {"verb": "CANCEL BALANCE", "field": "qty", "qty": "4", "from_value": "10", "to_value": "6"},
+]
+
+
+def _date_line_and_qty_line(lines):
+    dated = [l for l in lines if (l["was"] or {}).get("delivery_date")]
+    qty = [l for l in lines if (l["was"] or {}).get("qty")]
+    assert len(dated) == 1 and len(qty) == 1 and len(lines) == 2, lines
+    assert dated[0]["was"] == {"delivery_date": "25/08/2026"}, dated[0]
+    assert qty[0]["qty"] == "6" and qty[0]["was"] == {"qty": "10"}, qty[0]
+
+
+def test_a_date_move_and_a_qty_move_on_one_line_print_as_their_own_lines(api, monkeypatch):
+    """Reviewer B1: one amendment moves a line's date AND cuts it. The DELAY row keeps
+    its own line and its date Was; the qty move prints QTY 10 / NEW QTY 6 on the other."""
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _raise_one_row(api, qty="10")
+    calls.clear()
+
+    amendment = _amend_rows(world, fixture, _DATE_AND_CUT)
+    ProjectOrderInquiryService(world.db).derive_for_amendment(
+        amendment, actor_user_id=world.cs_user
+    )
+    world.db.commit()
+
+    _handover, lines = _lines(calls, world.product.product_code)
+    _date_line_and_qty_line(lines)
+
+
+def test_still_raised_split_increase_and_date_move_ride_a_later_mail_once(api, monkeypatch):
+    """Reviewer B2: the append path holds the same two rules as the publish mail - a split
+    increase is ONE line (QTY 10 / NEW QTY 14, both verbs in the headline) and the same
+    line's DELAY row stays its own line."""
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _raise_one_row(api, qty="10")
+    pool = CoveringPool(
+        kind=POOL_PRE_ORDER, reference="ZZT-PRE-2", product_id=str(world.product.id),
+        qty=Decimal("2"),
+    )
+    monkeypatch.setattr(ProjectOrderInquiryService, "_pools", lambda self, order, demand: [pool])
+    amendment = _amend_rows(
+        world, fixture,
+        [
+            {"verb": "DELAY", "field": "delivery_date", "qty": "14",
+             "from_value": "2026-08-25", "to_value": "2026-09-10"},
+            {"verb": "ORDER", "field": "qty", "qty": "4", "from_value": "10", "to_value": "14"},
+        ],
+    )
+    ProjectOrderInquiryService(world.db).derive_for_amendment(
+        amendment, actor_user_id=world.cs_user
+    )
+    world.db.commit()
+    calls.clear()
+
+    ProjectOrderInquiryService(world.db)._append_still_raised_amendment_rows(
+        fixture["order"], actor_user_id=world.cs_user
+    )
+    world.db.commit()
+
+    handover, lines = _lines(calls, world.product.product_code)
+    dated = [l for l in lines if (l["was"] or {}).get("delivery_date")]
+    qty = [l for l in lines if (l["was"] or {}).get("qty")]
+    assert len(lines) == 2 and len(dated) == 1 and len(qty) == 1, lines
+    assert qty[0]["qty"] == "14" and qty[0]["was"] == {"qty": "10"}, qty[0]
+    assert "PRE-ORDERED" in handover["headline"] and "DELAY" in handover["headline"], (
+        handover["headline"]
+    )
