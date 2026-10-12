@@ -115,7 +115,7 @@ from app.services.company_scope import build_company_predicate
 from app.services.error_handler import AppException
 from app.services.scm import order_link_service, priority, spo_supply
 from app.services.scm.front_planning_engine import DEFAULT_LEAD_TIME_DAYS
-from app.services.scm.pool_predicate import is_site_pool
+from app.services.scm.pool_predicate import is_project_reserve, is_site_pool
 from app.services.scm.supply_assignment import (
     KIND_PO as SA_KIND_PO,
     KIND_SPO as SA_KIND_SPO,
@@ -7278,6 +7278,16 @@ class ProjectOrderInquiryService:
                 total += claim["reserved"]
         return total
 
+    def _is_project_bin(self, warehouse: Optional[Warehouse]) -> bool:
+        """G12's test: `segment = project` and NOT a project reserve. HQ is a pool with
+        `segment = project` - general project stock, so its lines are not locked to one
+        project's claim (`pool_predicate.is_project_reserve`, PLAN-hq-project-reserve-12oct)."""
+        segment = warehouse.segment if warehouse else None
+        if is_site_pool(segment):
+            return False
+        code = str(warehouse.warehouse_code or "").strip().upper() if warehouse else ""
+        return not is_project_reserve(segment, is_pool=code in self._pool_codes())
+
     def _pool_codes(self) -> set:
         """Every warehouse that is SOME location's pool, by code.
 
@@ -7503,7 +7513,7 @@ class ProjectOrderInquiryService:
             remaining = max(
                 remaining - self._reserved_for_netting(target_id, own_so_number), _ZERO
             )
-            project_bin = not is_site_pool(warehouse.segment if warehouse else None)
+            project_bin = self._is_project_bin(warehouse)
             candidates.append(
                 self._candidate(
                     kind="po",
@@ -7590,7 +7600,7 @@ class ProjectOrderInquiryService:
                     not in pools
                 ):
                     continue
-                project_bin = not is_site_pool(warehouse.segment if warehouse else None)
+                project_bin = self._is_project_bin(warehouse)
                 candidates.append(
                     self._candidate(
                         kind="spo",
