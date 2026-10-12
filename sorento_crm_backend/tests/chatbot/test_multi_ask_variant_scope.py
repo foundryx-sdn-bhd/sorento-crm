@@ -51,3 +51,27 @@ def test_a_base_code_with_variants_still_asks_only_this_one_or_all(session_facto
     assert text.splitlines() == ["SRTWT7445 has 9 variants. Just SRTWT7445, or all 9?"]
     assert (c.stored_question or {}).get("kind") == "sub_ask_scope"
     assert not c.tools.calls
+
+
+def test_all_about_the_head_never_widens_a_variant_typed_beside_it(session_factory, monkeypatch, stub_access):
+    """Review B1 (a4a02904): "all" answers the question about SRTWT7446 only; SRTWT7445-LV,
+    never asked about, stays the exact code."""
+    from tests.chatbot.test_multi_ask_runner import pick
+
+    monkeypatch.setattr(r9, "OTHER_CODES", ["ELP3754", "SRTWT7446", "SRTWT7446-A"])
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009933")
+    two = verdict(
+        domain_hint="inventory",
+        intent_hint="check_stock",
+        entities=[entity("SRTWT7445-LV", hint="product"), entity("SRTWT7446", hint="product")],
+        sub_asks=[sub("stock", "stock"), sub("last_cost", "last cost")],
+        family=None,
+    )
+    asked = c.say("SRTWT7445-LV and SRTWT7446 stock and cost", two)
+    assert asked.splitlines() == ["SRTWT7446 has 2 variants. Just SRTWT7446, or all 2?"]
+    c.tools.calls.clear()
+    c.say("all", pick(2))
+    wanted = sorted(c.uuid_of[code] for code in ("SRTWT7445-LV", "SRTWT7446", "SRTWT7446-A"))
+    assert c.tools.calls
+    for name, args in c.tools.calls:
+        assert sorted(_ids(args.get("product_ids"))) == wanted, name
