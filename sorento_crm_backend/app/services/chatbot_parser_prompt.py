@@ -534,8 +534,6 @@ entity, exactly as if they were listed there:
       null (raw "pink")
     - "any kitchen sink with thickness 1.2 mm" -> category "kitchen sink", specification
       thickness 1.2
-    - "250mm floor grating got stock?" -> category "floor grating", specification size
-      250 (raw "250mm"); "25cm" is size 250
     - "cert?" after a described answer -> the same entities, the certificate ask
 """
 

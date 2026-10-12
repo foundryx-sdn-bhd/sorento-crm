@@ -1735,7 +1735,11 @@ def run_fetch(
         semantic_input["spec_constraints"] = spec_constraints
         if trace is not None:
             trace.add("spec_constraints", {"constraints": spec_constraints})
-    candidates = fetch_mod.select_tool(domain, spec_constraints=spec_constraints)
+    candidates = (
+        fetch_mod.select_tool(domain, spec_constraints=spec_constraints)
+        if spec_constraints
+        else fetch_mod.select_tool(domain)
+    )
 
     has_product = (
         any(isinstance(e, dict) and e.get("entity_type") == "product" for e in entities)
