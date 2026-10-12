@@ -97,7 +97,7 @@ def test_a_token_found_by_an_earlier_tier_is_not_embedded(db, calls):
 def test_the_answers_match_one_call_per_token(db, calls, monkeypatch):
     batched = {r.token: [m.canonical_code for m in r.matches] for r in _resolve(db, ["SRTWC286", *MISSING]).resolutions}
     # The per-token path, as it ran before: no prefetch, one call per token.
-    monkeypatch.setattr(er, "_prefetch_embeddings", lambda tokens: None)
+    monkeypatch.setattr(er, "_prefetch_embeddings", lambda db, tokens: None)
     getattr(er, "_VECTOR_CACHE", {}).clear()
     calls.clear()
     single = {r.token: [m.canonical_code for m in r.matches] for r in _resolve(db, ["SRTWC286", *MISSING]).resolutions}
@@ -140,17 +140,17 @@ def test_the_cache_is_bounded(monkeypatch):
         return [[1.0, 2.0] for _ in chunks]
 
     for token in ["a", "b", "c", "d"]:
-        er._remember_vector(embed, token, [1.0, 2.0])
+        er._remember_vector(embed, (), token, [1.0, 2.0])
 
     assert len(er._VECTOR_CACHE) == 3
-    assert er._known_vector(embed, "a") is None
-    assert er._known_vector(embed, "d") == [1.0, 2.0]
+    assert er._known_vector(embed, (), "a") is None
+    assert er._known_vector(embed, (), "d") == [1.0, 2.0]
 
 
 def test_each_batched_vector_lands_on_its_own_token(db, calls):
     with er.resolve_memo():
-        er._prefetch_embeddings(list(MISSING))
-        remembered = {t: er._memo_embedding(t, lambda _c: pytest.fail("embedded again")) for t in MISSING}
+        er._prefetch_embeddings(db, list(MISSING))
+        remembered = {t: er._memo_embedding(db, t, lambda _c: pytest.fail("embedded again")) for t in MISSING}
 
     assert len(calls) == 1
     assert remembered == {t: _vector_for(t) for t in MISSING}
@@ -162,7 +162,7 @@ def test_another_embedding_model_is_a_cache_miss(monkeypatch):
     def embed(chunks):
         return [[1.0] for _ in chunks]
 
-    er._remember_vector(embed, "zz-phrase", [1.0])
+    er._remember_vector(embed, (), "zz-phrase", [1.0])
     monkeypatch.setattr(settings, "embedding_model_name", "zz-other-model")
 
-    assert er._known_vector(embed, "zz-phrase") is None
+    assert er._known_vector(embed, (), "zz-phrase") is None
