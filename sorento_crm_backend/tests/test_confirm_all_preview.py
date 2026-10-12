@@ -260,7 +260,34 @@ def test_the_real_press_writes_exactly_what_the_preview_said(api):
 
 
 def test_a_preview_reports_the_held_back_line_the_press_would_drop_and_writes_nothing(api):
-    """Pool holds 50, two lines of 50 each reserve all 50: the second is held back."""
+    """A line that cannot be written (its components add up to 20, it is open for 50) is
+    held back by name, the other confirms, and a preview writes nothing.
+
+    Restated to the owner rule of 12 Oct 2026 (OI-CLOSED-LINE, #1580): a stock shortfall
+    is a warning, so the second of two Reserves over a 50 pool is no longer the held-back
+    case; an unbalanced line still is. The shortfall case is pinned just below."""
+    client, world = api
+    order, _core_so_row, (line_a, line_b) = _two_line_order(world, pool=50, qty_each="50")
+    before = _counts(world, order)
+
+    response = _post(
+        client, order, [_reserve(world, line_a, 50), _line_payload(line_b.id, buy_qty="20")], preview=True
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert result["preview"] is True
+    assert [row["line_no"] for row in result["lines_confirmed"]] == [10]
+    assert [row["line_no"] for row in result["lines_held_back"]] == [20]
+    assert "add up to 20" in result["lines_held_back"][0]["reason"], result
+    assert _counts(world, order) == before
+
+
+def test_a_preview_of_a_short_reserve_confirms_it_with_a_shortfall_notice_and_writes_nothing(api):
+    """Owner rule of 12 Oct 2026 (#1580 R2): pool holds 50, two lines of 50 each reserve all
+    50. The second is short, which is a warning: both lines confirm, the shortfall is named,
+    nothing is held back, and a preview writes nothing."""
     client, world = api
     order, _core_so_row, (line_a, line_b) = _two_line_order(world, pool=50, qty_each="50")
     before = _counts(world, order)
@@ -273,8 +300,11 @@ def test_a_preview_reports_the_held_back_line_the_press_would_drop_and_writes_no
     result = response.json()["results"][0]
     assert result["ok"] is True, result
     assert result["preview"] is True
-    assert [row["line_no"] for row in result["lines_confirmed"]] == [10]
-    assert [row["line_no"] for row in result["lines_held_back"]] == [20]
+    assert [row["line_no"] for row in result["lines_confirmed"]] == [10, 20]
+    assert result["lines_held_back"] == []
+    notices = result["stock_short_notices"] or []
+    assert [row["line_no"] for row in notices] == [20], result
+    assert "only 0 free" in notices[0]["reason"] and "50 short" in notices[0]["reason"], notices
     assert _counts(world, order) == before
 
 
