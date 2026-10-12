@@ -277,7 +277,8 @@ def test_the_which_answer_read_as_a_position_still_gets_the_stamped_menu(session
     assert probes and all(a.get("brand_ids") == [brand_id] and [t.lower() for t in a.get("scope_terms") or []] == ["basin cabinet"] for a in probes), probes
     n = len(captured)
     reply = _turn(session_factory, monkeypatch, services, _pick_qf(2), "2", f"zzt-md-pos-pick-{typed[:1]}")
-    fetch = [a for name, a in captured[n:] if name == PROMO_TOOL]
+    # owner Q4 option (a), 12 Oct: the pick turn runs the promotion-products tool
+    fetch = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
     assert fetch and all(a.get("access_levels") == ["Sorento Dealer"] for a in fetch), captured[n:]
     assert "ZZT PROMO BASIN_CABINET" in reply, reply
 

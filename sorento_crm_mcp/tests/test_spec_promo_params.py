@@ -168,7 +168,7 @@ def test_promotion_products_tool_declares_the_narrowing_params(param):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("param,value", [("brand_ids", ["b-1", "b-2"]), ("promotion_types", ["a3_flyer"])])
+@pytest.mark.parametrize("param,value", [("brand_ids", ["6136ea6b-1699-46ec-8e8e-f60c8bb64310", "7136ea6b-1699-46ec-8e8e-f60c8bb64311"])  # real UUIDs: owner Q4 option (a), 12 Oct, ("promotion_types", ["a3_flyer"])])
 async def test_promotion_products_forwards_a_list_to_the_backend(param, value):
     """RED: the undeclared param never reaches the backend query."""
     query = await _call(PROMO_PRODUCTS, {param: value})

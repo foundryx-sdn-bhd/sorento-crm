@@ -14,7 +14,7 @@ from sqlalchemy import Float, and_, case, cast, func, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
-from app.models.product_spec import ProductSpecifications
+from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
 from app.services.error_handler import AppException
 from app.services.product_predicate_service import active_promotion_clause
 from app.services.product_spec_registry import active_registry
@@ -57,8 +57,12 @@ def parse_spec_constraints(
     types.setdefault(SIZE_KEY, "numeric")
     # `class` is what the product IS, its vocabulary the categories' `class_label` (the
     # registry row carries no choices of its own), so it is known even on an install whose
-    # registry has no row for it.
-    types.setdefault(CLASS_KEY, "enum")
+    # registry has no row for it (legacy / category-sourced). A class row that exists and
+    # is switched off is honoured: the key is then unknown (422) like any inactive key.
+    if CLASS_KEY not in types and not db.query(
+        db.query(ProductSpecRegistry).filter(ProductSpecRegistry.spec_key == CLASS_KEY).exists()
+    ).scalar():
+        types[CLASS_KEY] = "enum"
     out: list[dict] = []
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str) or "value" not in item:

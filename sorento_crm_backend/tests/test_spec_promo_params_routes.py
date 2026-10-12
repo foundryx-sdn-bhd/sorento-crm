@@ -841,3 +841,31 @@ def test_promotion_products_route_narrows_by_brand_and_kind_with_spec_constraint
         brand_ids=[b1.id], promotion_types=["zzt_standard"],
         **_constraints({"key": "class", "op": "eq", "value": "Tap"}),
     ) == set()
+
+
+def test_inactive_class_registry_row_is_rejected_and_an_absent_one_stays_accepted(api, db):
+    """Owner Q4 option (a), 12 Oct: a `class` registry row switched off is a 422 naming it. RED if
+    the route special-cases `class` and accepts it; an absent `class` row stays accepted as today
+    (the seed has no `class` row in this schema)."""
+    from app.models.product_spec import ProductSpecRegistry
+
+    basin = _p(db, "CLS", {"class": _enum("Basin")})
+    db.commit()
+    present = db.query(ProductSpecRegistry).filter(ProductSpecRegistry.spec_key == "class").first()
+    constraint = _constraints({"key": "class", "op": "eq", "value": "Basin"})
+
+    if present is None:
+        absent = _list(api, db, [basin], **constraint)
+        assert _codes(absent) == _codes_of([basin]), absent.text
+        db.add(
+            ProductSpecRegistry(
+                id=str(uuid.uuid4()), spec_key="class", label="Class", data_type="enum", allowed_values=[], is_active=False
+            )
+        )
+    else:
+        present.is_active = False
+    db.commit()
+
+    resp = _list(api, db, [basin], **constraint)
+    assert resp.status_code == 422, resp.text
+    assert "class" in resp.text

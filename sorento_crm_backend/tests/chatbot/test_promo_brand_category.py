@@ -190,5 +190,7 @@ def test_pick_fetches_by_subject_and_brand_never_by_the_product_set(session_fact
         assert a.get("brand_ids") == [ids["srt"]], a
         assert not a.get("product_ids"), a
     assert "ZZT SORENTO KITCHEN SINK COMBO" in reply, reply
-    for bad in ("Here's what you want", "no promotion matched", "escalate", "ZZTSK"):
+    # owner Q4 option (a), 12 Oct: each product line now shows its code, so "ZZTSK" is no longer
+    # forbidden reply text; "never fetched by the product set" is the no-product_ids check above
+    for bad in ("Here's what you want", "no promotion matched", "escalate"):
         assert bad.lower() not in reply.lower(), reply
