@@ -54,12 +54,20 @@ def _cleanup_refusal_audit_rows():
     """The refusal row is written on its own session and really commits; remove it."""
     seen: list[str] = []
     yield seen
-    if seen:
+    if not seen:
+        return
+    try:
         with engine.begin() as conn:
+            # audit_logs is append-only: the cleanup runs under the maintenance flag.
+            conn.execute(text("SET LOCAL sorento.audit_maintenance = 'on'"))
             conn.execute(
                 text("DELETE FROM audit_logs WHERE action = 'CONFIRM_REFUSED' AND entity_id = ANY(:ids)"),
                 {"ids": seen},
             )
+    except Exception:
+        # A CREATEROLE non-superuser login (the local test DB's) is refused the flag by the
+        # trigger; the rows carry fresh random order ids, so leaving them is harmless.
+        pass
 
 
 def _as_role(monkeypatch, *slugs):
