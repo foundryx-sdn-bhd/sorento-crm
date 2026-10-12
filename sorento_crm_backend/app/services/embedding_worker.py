@@ -67,8 +67,8 @@ def _frame_company_id(db: Session, frame_id: str):
     """The company of a frame's contact, when the contact belongs to exactly one.
 
     A frame is one contact's conversation. A contact in several companies (or in
-    none, or unknown) has no single company to stamp, so the frame stays NULL,
-    and the RAG search hides a company-less frame from every company scope
+    none, or unknown) has no single company to stamp, so the frame stays NULL.
+    Defence in depth: a company-scoped RAG search returns no frame at all
     (``embedding_service._embedding_company_filter``). Same contact resolution
     as the request-entry scope resolver, so the two cannot disagree."""
     from app.services.contact_access_type_service import ContactAccessTypeService
@@ -805,8 +805,8 @@ def backfill_frame_embedding_companies(db: Session) -> int:
     """Stamp company-less ``conversation_frame`` embeddings with the frame contact's
     company (``_frame_company_id``); returns how many documents were stamped.
 
-    Frames whose contact is in several companies, in none, or gone stay NULL and
-    hidden from every company scope. The caller commits."""
+    Frames whose contact is in several companies, in none, or gone stay NULL.
+    The caller commits."""
     stamped = 0
     with company_scope(db, None):
         docs = (

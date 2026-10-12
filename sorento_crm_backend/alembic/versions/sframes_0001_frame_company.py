@@ -4,14 +4,13 @@ re-embed the certificates that carry another company's product codes (finding 3)
 Until this lane the embedding worker wrote every `conversation_frame` document and chunk
 company-less, and a company-less row is visible under every company scope, so a
 contact-scoped `/external/rag/search` could read every company's contact conversation
-summaries. The worker now stamps the frame contact's company and the search hides a
-company-less frame from any company scope; this backfill gives the existing rows their
-company so they stay retrievable for their own company.
+summaries. A company-scoped search now returns no frame at all, and the worker stamps the
+frame contact's company as defence in depth; this backfill gives the existing rows the same
+stamp.
 
 Additive UPDATE only: NULL -> the company of the frame's contact, when the contact
 belongs to exactly one company (the same resolution the worker uses,
-`embedding_worker.backfill_frame_embedding_companies`). Every other row stays NULL,
-which now reads as hidden, not shared.
+`embedding_worker.backfill_frame_embedding_companies`). Every other row stays NULL.
 
 Certificates: the worker now embeds only the codes of the certificate's own company's
 products (a shared certificate: company-less products only). An embedding written before

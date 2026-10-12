@@ -63,8 +63,8 @@ class EmbeddingDocument(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     # Company of the source entity (multi-company isolation). Nullable: shared /
     # company-less knowledge (mcp_tool, form, schema_doc) stays NULL and is visible
-    # under every scope. A conversation_frame carries its contact's company; one
-    # left NULL is hidden from every company scope. NOT a CompanyScopedMixin - the vector
+    # under every scope. A conversation_frame carries its contact's company, but a
+    # company-scoped search never returns a frame (one contact's private conversation). NOT a CompanyScopedMixin - the vector
     # search filters on this column manually (the pipeline processes all companies).
     company_id = Column(UUID(as_uuid=False), nullable=True, index=True)
     created_at = Column(DateTime(timezone=False), nullable=False, server_default=func.now())

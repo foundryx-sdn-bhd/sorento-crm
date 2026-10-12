@@ -29,8 +29,9 @@ Is (1) reachable today with real prod callers? Answered in the PR body.
 
 - `embedding_worker._frame_company_id`: a frame's company is its contact's company when the
   contact is in exactly one (same resolver as the request-entry scope); otherwise NULL.
-- `embedding_service._embedding_company_filter`: under a company scope, a company-less
-  `conversation_frame` row is hidden (scope None, staff or an unscoped key, still sees it).
+- `embedding_service._embedding_company_filter`: under a company scope, NO
+  `conversation_frame` row is returned (crew ruling (a), 12 Oct: a frame is one contact's private
+  conversation; recall stays on `/external/memory/frames/search`). Scope None still sees them.
 - `process_embedding_queue_item`: a `.deleted` event whose source row is gone deletes the
   document and chunks (status `removed`); a stale delete for a live row removes nothing.
 - `purge_orphan_embeddings` + `scripts/purge_orphan_embeddings.py`: dry-run count by default,

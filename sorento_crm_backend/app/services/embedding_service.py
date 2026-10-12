@@ -31,10 +31,11 @@ def _embedding_company_filter(db: Session):
                            (shared / company-less knowledge stays visible),
                            minus ``debtor:<code>`` seeds: company-less (migration
                            304) although the orders they come from are not,
-                           and minus company-less ``conversation_frame`` rows:
-                           a frame is one contact's conversation, never shared
-                           knowledge, so one the worker could not tie to a
-                           single company is hidden rather than shown to all
+                           and minus every ``conversation_frame`` row: a frame
+                           is one contact's private conversation, so a scoped
+                           caller reads frames only through the contact-bound
+                           /external/memory/frames/search, never here (not
+                           even its own company's: that is other contacts')
       UNSET / empty     -> false()  (fail-closed: 0 rows)
 
     Embedding rows are NOT CompanyScopedMixin (the ORM auto-filter never touches
@@ -50,10 +51,7 @@ def _embedding_company_filter(db: Session):
                 EmbeddingChunk.company_id.in_(list(scope)),
             ),
             ~EmbeddingChunk.source_id.startswith("debtor:"),
-            or_(
-                EmbeddingChunk.source_type != "conversation_frame",
-                EmbeddingChunk.company_id.isnot(None),
-            ),
+            EmbeddingChunk.source_type != "conversation_frame",
         )
     return sa_false()  # UNSET / empty frozenset -> fail-closed
 

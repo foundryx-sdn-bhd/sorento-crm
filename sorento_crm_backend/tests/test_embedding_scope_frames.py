@@ -6,8 +6,9 @@ in every test; the caller is scoped to A and must never read B's data.
 
 1. A `conversation_frame` embedding was always written company-less, so
    `/external/rag/search` under a contact's company scope returned EVERY company's contact
-   conversation summaries. The worker now stamps the frame contact's company, and the
-   search treats a company-less frame as not shared.
+   conversation summaries. A contact-scoped search now returns no frame at all (crew
+   ruling (a): a frame is one contact's private conversation), and the worker stamps the
+   frame contact's company as defence in depth.
 2. A hard-deleted source's embedding was never removed (the `.deleted` event dead-lettered
    on "not found"), so its row stayed retrievable. The worker now drops it, and
    `purge_orphan_embeddings` sweeps the ones already left behind.
@@ -237,14 +238,37 @@ def test_rag_search_hides_a_company_less_frame_from_a_company_scope(db, world):
     assert legacy in _search_ids(db, world, "conversation_frame")
 
 
-def test_rag_search_returns_only_the_scoped_companys_frames(db, world):
-    frame_a, frame_b = str(uuid.uuid4()), str(uuid.uuid4())
-    _seed_chunk(db, "conversation_frame", frame_a, world["a"], world["vec"])
+def test_rag_search_never_returns_another_contacts_frame_in_the_same_company(db, world):
+    """Crew ruling (a): a frame is one contact's private conversation, so a contact-scoped
+    search returns no frame at all, even one stamped with the caller's own company.
+    Contacts A and B both sit in company X (world "a"); A's search must not read B's
+    frame. Frames stay recallable through the contact-bound /external/memory/frames/search."""
+    contact_a = _seed_contact(db, world["a"])
+    contact_b = _seed_contact(db, world["a"])
+    frame_b = _seed_frame(db, contact_b)
+    out = embedding_worker.process_embedding_queue_item(
+        _queue(db, "conversation_frame", frame_b, "frame_closed")
+    )
+    assert out["status"] == "completed", out
+    assert _doc(db, "conversation_frame", frame_b).company_id == world["a"]
+
+    from app.services.company_scope_resolver import resolve_contact_company_scope
+
+    scope_a = resolve_contact_company_scope(db, contact_a, "zz-space")
+    assert scope_a == frozenset({world["a"]})
+    set_company_scope(db, scope_a)
+    assert frame_b not in _search_ids(db, world, "conversation_frame")
+    assert frame_b not in _search_ids(db, world)
+
+    set_company_scope(db, None)  # staff / unscoped key
+    assert frame_b in _search_ids(db, world, "conversation_frame")
+
+
+def test_rag_search_returns_no_other_companys_frame(db, world):
+    frame_b = str(uuid.uuid4())
     _seed_chunk(db, "conversation_frame", frame_b, world["b"], world["vec"])
     set_company_scope(db, frozenset({world["a"]}))
-    ids = _search_ids(db, world, "conversation_frame")
-    assert frame_a in ids
-    assert frame_b not in ids
+    assert frame_b not in _search_ids(db, world, "conversation_frame")
 
 
 def test_worker_stamps_the_frame_contacts_company(db, world):
@@ -261,8 +285,6 @@ def test_worker_stamps_the_frame_contacts_company(db, world):
 
     set_company_scope(db, frozenset({world["a"]}))
     assert frame_id not in _search_ids(db, world, "conversation_frame")
-    set_company_scope(db, frozenset({world["b"]}))
-    assert frame_id in _search_ids(db, world, "conversation_frame")
 
 
 def test_worker_leaves_a_multi_company_contacts_frame_company_less(db, world):
