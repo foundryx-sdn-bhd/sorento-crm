@@ -647,3 +647,25 @@ def test_a_lone_line_that_cannot_be_written_is_still_refused(api):
 
     assert response.status_code in (409, 422), response.text
     assert response.json()["failing_lines"], response.text
+
+
+def test_an_own_bin_reserve_with_a_reason_past_on_hand_is_recorded_short(api):
+    """Browser check finding (12 Oct): with a reason, an own-group bin's capacity is lifted to
+    the ask (the 8 Sep TEMPORARY LIFT), so the free-stock recheck never fired and nobody else
+    held there for R14 to name. The floor still bounds it: plan 10, nothing delivered, 5 on
+    hand at the line's own bin, Reserve 10 with a reason confirms, holds 5, records 5 short."""
+    client, world = api
+    _stock(world.db, world.product, world.own_wh, on_hand=5)
+    order, line = _order_with_line(world, ordered="10")
+
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm",
+        json={"lines": [_line_payload(
+            line.id, reserve=[{"warehouse_id": world.own_wh.id, "qty": "10"}],
+            amend_reason="Own bin, take what is there.",
+        )]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert _holds_by_warehouse(world.db, line).get(world.own_wh.id) == Decimal("5")
+    _assert_short(response, world, order, line, short="5", free="5")
