@@ -206,6 +206,7 @@ def test_the_stock_task_addendum_teaches_the_last_answered_line():
         CANONICAL_CODE_ADDENDUM,
         CHAT_REPORT_ADDENDUM,
         PROMOTION_KIND_ADDENDUM,
+        PORTAL_FORM_ADDENDUM,
         TRAP_SPECS_FALLBACK_BLOCK,
         LOW_STOCK_FILTERS_ADDENDUM,
         PO_REFS_ADDENDUM,
@@ -228,7 +229,7 @@ def test_the_stock_task_addendum_teaches_the_last_answered_line():
     # newest outermost.
     assert (
         # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM, CANONICAL_CODE_ADDENDUM (#1511), PO_REFS_ADDENDUM (#1528), then TRAP_SPECS_FALLBACK_BLOCK (#1513), sit between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.
-        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(CHAT_REPORT_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
+        SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM).removesuffix(PORTAL_FORM_ADDENDUM).removesuffix(TRAP_SPECS_FALLBACK_BLOCK).removesuffix(PROMOTION_KIND_ADDENDUM).removesuffix(CANONICAL_CODE_ADDENDUM).removesuffix(CHAT_REPORT_ADDENDUM).removesuffix(PO_REFS_ADDENDUM).removesuffix(REPORT_ASK_ADDENDUM).removesuffix(LOW_STOCK_FILTERS_ADDENDUM).removesuffix(ACCOUNT_LEDGER_ADDENDUM).removesuffix(PO_SPO_WAREHOUSE_ADDENDUM)
         .removesuffix(ESCALATION_CONFIRMATION_ADDENDUM).removesuffix(SELF_REFERENCE_ADDENDUM)
         .removesuffix(TOP_SELLING_ADDENDUM)
         .removesuffix(KNOWN_BRANDS_ADDENDUM)
