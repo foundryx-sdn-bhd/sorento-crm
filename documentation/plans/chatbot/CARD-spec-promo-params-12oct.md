@@ -168,7 +168,25 @@ should have captured that".
    it. Recommendation: yes. Removing it now would mix a migration of working code into a
    param add.
 
-## 6. Data requests
+## 6. Data (crew, 12 Oct, dev DB, counts only)
+
+- 155 `product_specifications` rows with `product_type = floor_grating`. mm keys present:
+  `dim_length` 17 rows (11, 100, 120, 130, 145, 150, 900), `dim_width` 16 (11, 68, 76, 100,
+  120, 130, 145, 150), `dim_height` 1 (76); `diameter` / `depth` / `thickness` 0.
+- No grating carries 250 on any key; 138 of 155 carry no size at all.
+- So the spot-check ask fails on spec COVERAGE before it fails on matching. A filter alone turns
+  it into an honest "no 250mm floor grating", which is wrong if the catalogue does sell one.
+  The size derivation (`product_spec_registry.py:303-329`: the product column, the size block,
+  a lone "NNNMM" not below 10) evidently does not read how gratings state their size. The
+  value 11 is a likely misread.
+- Follow-up request: the description SHAPES of gratings with no size (masked), to see whether a
+  derivation rule (offline, product data, not user text) closes the gap, and whether that is
+  this lane or a separate spec-coverage lane.
+- Reply rule while coverage is thin: when the class has products with NO value for the asked
+  key, the zero-match reply must not claim "none exists". It says the size is not recorded for
+  most of them and offers the class's list (or its stock), never a bare no.
+
+## 7. Data requests (first round)
 
 `crew-data-request:` for (a) the 11 Oct spot-check turn ("250mm floor grating") trace: parser
 output and tool calls, and (b) per numeric mm key, how many `floor_grating` products carry a
