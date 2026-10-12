@@ -76,7 +76,6 @@ _ENTITY_TYPE_ALIASES: dict[str, str] = {
     "delivery_order": "customer_order",
     "do": "customer_order",
     "order": "customer_order",
-    "sales_order": "customer_order",
     # Product-domain hints. Caller uses these labels as `domain_hint` to scope
     # ambiguous aliases (brand / category) to product probes.
     # Product sets: the flyer code that names an assembly. "kit" is what people
@@ -1038,6 +1037,130 @@ def _probe_customer_order(db: Session, tokens: list[str]) -> dict[str, list[Reso
                     "transporter": row.transporter,
                     "is_cancelled": bool(row.is_cancelled) if row.is_cancelled is not None else False,
                 },
+            )
+        )
+    return result
+
+
+def _probe_sales_order(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
+    """Exact match on sales_orders.so_number, dashes and spaces folded."""
+    from app.models.order import SalesOrder
+
+    result: dict[str, list[ResolvedEntity]] = {t: [] for t in tokens}
+    if not tokens:
+        return result
+    norm_to_token = {_strip_all_ws(t.lower()): t for t in tokens}
+    rows = (
+        db.query(SalesOrder)
+        .filter(_ws_insensitive_lower(SalesOrder.so_number).in_(list(norm_to_token.keys())))
+        .all()
+    )
+    for row in rows:
+        token = norm_to_token.get(_strip_all_ws(str(row.so_number).lower()))
+        if not token:
+            continue
+        result[token].append(
+            ResolvedEntity(
+                entity_type="sales_order",
+                canonical_code=row.so_number,
+                uuid=str(row.id),
+                match_field="so_number",
+                display={
+                    "customer_id": str(row.customer_id) if row.customer_id else None,
+                    "customer_name": row.debtor_name,
+                    "status": row.status,
+                },
+            )
+        )
+    return result
+
+
+def _probe_customer_po_ref(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
+    """Every sales order whose customer PO ref folds to the token's key."""
+    from app.models.order import SalesOrder
+    from app.services.scm.po_ref import po_ref_key
+
+    result: dict[str, list[ResolvedEntity]] = {t: [] for t in tokens}
+    key_to_tokens: dict[str, list[str]] = {}
+    for t in tokens:
+        key = po_ref_key(t)
+        if key:
+            key_to_tokens.setdefault(key, []).append(t)
+    if not key_to_tokens:
+        return result
+    rows = db.query(SalesOrder).filter(SalesOrder.po_ref_key.in_(list(key_to_tokens.keys()))).all()
+    for row in rows:
+        for token in key_to_tokens.get(row.po_ref_key, []):
+            result[token].append(
+                ResolvedEntity(
+                    entity_type="customer_po_ref",
+                    canonical_code=row.so_number,
+                    uuid=str(row.id),
+                    match_field="po_ref_key",
+                    display={
+                        "so_number": row.so_number,
+                        "po_ref": row.po_ref,
+                        "customer_id": str(row.customer_id) if row.customer_id else None,
+                        "customer_name": row.debtor_name,
+                    },
+                )
+            )
+    return result
+
+
+def _probe_purchase_order(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
+    """Exact match on purchase_orders.po_number (our own PO number)."""
+    from app.models.procurement import PurchaseOrder
+
+    result: dict[str, list[ResolvedEntity]] = {t: [] for t in tokens}
+    if not tokens:
+        return result
+    norm_to_token = {_strip_all_ws(t.lower()): t for t in tokens}
+    rows = (
+        db.query(PurchaseOrder)
+        .filter(_ws_insensitive_lower(PurchaseOrder.po_number).in_(list(norm_to_token.keys())))
+        .all()
+    )
+    for row in rows:
+        token = norm_to_token.get(_strip_all_ws(str(row.po_number).lower()))
+        if not token:
+            continue
+        result[token].append(
+            ResolvedEntity(
+                entity_type="purchase_order",
+                canonical_code=row.po_number,
+                uuid=str(row.id),
+                match_field="po_number",
+                display={"supplier_id": str(row.supplier_id) if row.supplier_id else None, "status": row.status},
+            )
+        )
+    return result
+
+
+def _probe_purchase_request(db: Session, tokens: list[str]) -> dict[str, list[ResolvedEntity]]:
+    """Exact match on purchase_request_headers.request_number; every duplicate row returns."""
+    from app.models.procurement import PurchaseRequestHeader
+
+    result: dict[str, list[ResolvedEntity]] = {t: [] for t in tokens}
+    if not tokens:
+        return result
+    norm_to_token = {_strip_all_ws(t.lower()): t for t in tokens}
+    rows = (
+        db.query(PurchaseRequestHeader)
+        .filter(_ws_insensitive_lower(PurchaseRequestHeader.request_number).in_(list(norm_to_token.keys())))
+        .all()
+    )
+    for row in rows:
+        token = norm_to_token.get(_strip_all_ws(str(row.request_number).lower()))
+        if not token:
+            continue
+        result[token].append(
+            ResolvedEntity(
+                entity_type="purchase_request",
+                canonical_code=row.request_number,
+                uuid=str(row.id),
+                match_field="request_number",
+                display={"customer_name": row.customer_name, "status": row.status},
             )
         )
     return result
@@ -4366,10 +4489,11 @@ def _company_scoped_models() -> dict[str, Any]:
     from app.models.certificate import Certificate
     from app.models.inventory import Warehouse
     from app.models.marketing import Promotion
-    from app.models.order import Customer, Order, Transporter
+    from app.models.order import Customer, Order, SalesOrder, Transporter
     from app.models.procurement import (
         InboundShipment,
         PickingHeader,
+        PurchaseOrder,
         SPOAllocation,
         Supplier,
     )
@@ -4380,6 +4504,9 @@ def _company_scoped_models() -> dict[str, Any]:
     return {
         "product": Product,
         "customer_order": Order,
+        "sales_order": SalesOrder,
+        "customer_po_ref": SalesOrder,
+        "purchase_order": PurchaseOrder,
         "customer": Customer,
         "transporter": Transporter,
         "supplier": Supplier,
@@ -4805,6 +4932,10 @@ _TIER1_PROBES: tuple[tuple[Callable[[Session, list[str]], dict[str, list[Resolve
     (_probe_product, frozenset({"product"})),
     (_probe_product_set, frozenset({"product_set"})),
     (_probe_customer_order, frozenset({"customer_order"})),
+    (_probe_sales_order, frozenset({"sales_order"})),
+    (_probe_customer_po_ref, frozenset({"customer_po_ref"})),
+    (_probe_purchase_order, frozenset({"purchase_order"})),
+    (_probe_purchase_request, frozenset({"purchase_request"})),
     (_probe_inbound_shipment, frozenset({"inbound_shipment"})),
     (_probe_spo, frozenset({"spo_allocation"})),
     (_probe_grn, frozenset({"grn"})),

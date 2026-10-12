@@ -834,3 +834,68 @@ def test_S64_a_no_stock_no_incoming_line_keeps_its_refer_and_the_marker(console)
     assert c.say("SRT5674 x 5", stock(product("SRT5674", 5))) == (
         f"SRT5674 x 5: {CROSS} No stock and no incoming. {R}\n{DISCONTINUED}"
     )
+
+
+# ================================================================== exact-filter miss (round 3b)
+
+_FAMILY = ["SRTWC8357-200-RL", "SRTWC8357-300-RL", "SRTWC8357-RL", "SRTWC8357-RL-P"]
+_TYPED = "SORENTO WC8357 S-400"
+
+
+def _family_turn(session_factory, monkeypatch, domain: str, intent: str, *, avail: bool) -> str:
+    """A brand + model + spec ask the family only partly matches, on the real resolver."""
+    import json
+
+    from app.services import resolver_code_reader
+    from app.services.chatbot import turn_runtime
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+    from app.services.resolver_code_reader import CodeReading
+    from tests._mc_lookup_seed import product as seed_product
+    from tests.chatbot.test_engine import _parser_output
+    from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
+
+    monkeypatch.setattr(turn_runtime, "_stock_availability_only", lambda *a, **k: avail)
+    monkeypatch.setattr(
+        resolver_code_reader, "read_codes",
+        lambda db, missed, **kw: {t: CodeReading("none", None) for t, _ in missed},
+    )
+    db = session_factory()
+    for code in _FAMILY:
+        seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    db.commit()
+    _seed_contact(session_factory, variables={})
+    hit = json.dumps({
+        "result_type": "products", "intro": "Here are the matching products.", "has_result": True,
+        "attachments": [], "action_links": [],
+        "items": [
+            {"title": c, "flags": {}, "fields": [{"key": "product_code", "label": "Product Code", "value": c}]}
+            for c in _FAMILY
+        ],
+    })
+    qf = _parser_output(
+        domain_hint=domain, intent_hint=intent,
+        entities=[{"raw": _TYPED, "hint": "product", "canonical_code": "WC8357 S-400",
+                   "current_message": True, "confident": True}],
+    )
+    result, _ = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body=_TYPED,
+        msg_id=f"ZZT-avail-exact-{domain}-{int(avail)}", attributes=["stock.available"],
+        mcp_response=hit, real_resolver=True,
+    )
+    return (result.reply or {}).get("text") or ""
+
+
+@pytest.mark.parametrize("domain,intent", [("master_products", "check_product"), ("inventory", "check_stock")])
+def test_avail_exact_filter_miss_is_one_line_not_found_header(session_factory, monkeypatch, domain, intent):
+    out = _family_turn(session_factory, monkeypatch, domain, intent, avail=True)
+    assert "Here's what you want" not in out, out
+    assert "matched these" not in out, out
+    assert "SRTWC8357" not in out, out
+    assert out.startswith('Couldn\'t find: "'), out
+    assert "WC8357" in out and "S-400" in out, out
+
+
+@pytest.mark.parametrize("domain,intent", [("master_products", "check_product"), ("inventory", "check_stock")])
+def test_full_profile_same_input_still_lists_the_family(session_factory, monkeypatch, domain, intent):
+    out = _family_turn(session_factory, monkeypatch, domain, intent, avail=False)
+    assert "SRTWC8357" in out, out
