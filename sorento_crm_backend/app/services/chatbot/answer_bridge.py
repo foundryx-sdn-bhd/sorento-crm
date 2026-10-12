@@ -729,11 +729,18 @@ def _access_ask_answer(
     rows = rows if isinstance(rows, list) else []
     from app.services.chatbot import turn_runtime
 
-    question = _tier_options(
-        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
-            parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate")
-        )
+    asked_filter: dict[str, Any] = dict(
+        turn_runtime.promo_filter(parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate"))
     )
+    # SPEC-PROMO-PARAMS owner Q4: the described subject rides the open pick as well, so the
+    # answering turn (which names none) makes the same promotion products call a contact
+    # with one tier makes (`lanes/business.run_fetch` reads it back off `promo_filter`).
+    from app.services.chatbot.lanes.business.fetch import spec_constraints_for
+
+    asked_constraints = spec_constraints_for(parser or {}, db)
+    if asked_constraints:
+        asked_filter["spec_constraints"] = asked_constraints
+    question = _tier_options(rows, asked_at_turn=asked_at_turn, promo_filter=asked_filter)
     return turn_compose.Answer(text=text, question=question)
 
 

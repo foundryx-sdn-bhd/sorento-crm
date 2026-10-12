@@ -1724,6 +1724,11 @@ def run_fetch(
         if db is not None and jsc.js_string(domain or "") in fetch_mod.SPEC_CONSTRAINT_DOMAINS
         else None
     )
+    if not spec_constraints and picked and jsc.js_string(domain or "") == "promotion":
+        # The tier pick's own turn names no subject: the menu turn's constraints rode the
+        # open pick (`answer_bridge`, beside `promo_filter`) and `narrow` above put them here.
+        carried = semantic_input.get("spec_constraints")
+        spec_constraints = [c for c in carried if isinstance(c, dict)] if isinstance(carried, list) else None
     if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
         # On the product and stock lanes the resolver's described set already applies the
         # subject and every registry key exactly (`extracted_specs`), with the counted-set
