@@ -39,7 +39,7 @@ unreadable. The helper already encrypted, before this lane:
   `app/services/integration_admin_service.py:221`, read `:233`)
 - `system_settings.connector_ss_to_product_secret_ciphertext`,
   `connector_product_to_ss_secret_ciphertext`, `analytics_ro_database_url_ciphertext`,
-  `respond_webhook_secret_ciphertext` (`app/models/user.py:418-423`; landed on main with
+  `respond_webhook_secret_ciphertext` (`app/models/user.py:418-419,422-423`; landed on main with
   SETTINGS-IN-DB, crew audit 12 Oct): `runtime_settings.SECRET_FIELDS`, written
   `app/services/runtime_settings.py:241`, read `:97`
 
