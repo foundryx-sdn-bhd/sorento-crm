@@ -1,0 +1,72 @@
+# CARD: seat cover = product resolution (SEAT-AS-PRODUCT)
+
+Lane SEAT-AS-PRODUCT, PR #1613. Plan: `PLAN-seat-as-product-13oct.md`.
+
+## The rule (owner, 13 Oct)
+
+1. "seat cover for <WC code>" only changes WHICH products the message is about: the WC code is
+   replaced by its linked seat-cover codes (`product_compatibility`, #1590), and the turn runs on
+   as if the customer had typed those codes. The reverse works the same way ("WC for <seat cover>").
+2. The domain is whatever the parser resolves for the message (stock, ETA, files, price, nothing
+   asked), answered by the EXISTING handler and formatter under the same audience rules.
+3. There is no seat-cover reply lane and no seat-cover formatter: #1601's `crm_find` override and
+   its `Code: / Stock:` reply leave the chatbot.
+
+## Why it broke on main (code read, file:line on main d01ca05c)
+
+- Cases 2 and 3: `lanes/business/__init__.py:1775-1779` (`run_fetch`) swaps the domain's own tool
+  for `crm_find` whenever the parse carries `find`, whatever the domain, and `fetch.py:2811`
+  (`_find_output`) prints the find presenter's own `Code: / Stock:` lines. So "stock" got a new
+  format and "eta" got stock.
+- The parser rule itself pins the domain: `product_find.FIND_RULE` says "domain_hint is
+  master_products" and "never emit it for facts about the named product itself (stock, price,
+  ETA ...)". An ETA ask about the seat cover therefore had no right reading.
+- Case 1 (same text, two answers): the rule above makes "seat cover for X" with no ask word a
+  coin toss between the find and the older readings of "seat cover" (a `seat_cover` product
+  specification, a "technical specs" file ask, see prod-20261001 prompt line 1729). One parse
+  emitted `find` (Zilin: the find reply), the other read a Technical Specifications file ask. I
+  cannot read the dev traces from this sandbox; if crew attaches the two turn traces I will
+  confirm which keys each parse carried. The fix does not depend on it: the new rule gives the
+  no-ask message one reading (the linked codes, read as a bare code would be).
+
+## Examples (links from the flyer rows in `scripts/oneoff/link_seat_cover_flyer.py`)
+
+The reply column is the shape the existing handler gives for the seat-cover code(s) typed
+directly; this sandbox has no dev data, so the live values come from the hand test.
+
+| Message | Resolved as | Domain | Reply = existing reply for |
+| --- | --- | --- | --- |
+| `stock seat cover for SRTWC8383-RL-MBL` | SRTSCBD823-MBL | stock | `stock SRTSCBD823-MBL` |
+| `check stock seat cover for SRTWC8122` | SRTSCBD333-UF, SRTSCBD333A-UF | stock | `stock SRTSCBD333-UF SRTSCBD333A-UF` |
+| `eta seat cover for SRTWC8383-RL-MBL` | SRTSCBD823-MBL | incoming | `eta SRTSCBD823-MBL` |
+| `seat cover for SRTWC8088` | SRTSCBD330-UF | as a bare code | `SRTSCBD330-UF` |
+| `SRTWC8122 马桶盖 有货吗` | SRTSCBD333-UF, SRTSCBD333A-UF | stock | `SRTSCBD333-UF SRTSCBD333A-UF 有货吗` |
+| `WC for SRTSCBD330-UF stock` | SRTWC8088 (its linked WC SKUs) | stock | `stock SRTWC8088` |
+
+## Edge cases
+
+- 0 links (no code the message named has one): one line per code, `No seat cover is on record for <code>.` (`No WC is on record for <code>.`
+  for a seat cover), the #1601 wording and translations. No fetch runs.
+- 2+ links: every linked code, in code order, exactly as when two codes are typed.
+- Mixed with another product: see Q2.
+
+## Questions (each with a recommendation)
+
+- Q1 0 links: (a) the one line above as the whole reply; (b) "I could not find a seat cover for
+  <code>." Recommendation (a): the wording and its ms/zh already ship; the WC itself exists, so
+  "could not find" would be untrue.
+- Q2 mixed ("stock seat cover for SRTWC8122 and SRTWT5608"): the parse has no per-entity mark
+  for which code the relation is about. (a) Every product named this message is an anchor; one
+  with no link gets its Q1 line beside the others' answer; (b) only codes on a link are
+  replaced, the rest answer as typed; only when NO named code has a link is the reply the Q1
+  line(s). Recommendation (b): a tap named beside a WC is still asked about, and the link data,
+  not a word, decides which code is an anchor.
+- Q3 the typed code is no exact product (a family `SRTWC8383`, a typo): (a) the code goes to the
+  normal resolver unchanged (picker or miss as for a bare code); (b) run the anchor through the
+  shared resolver and carry the relation across the picker. Recommendation (a) for this lane;
+  trigger for (b): a real turn where a family code is asked for its seat cover.
+- Q4 `SRTWC8122 seat cover photo` (#1601's live test kept it a WC photo ask): now it reads as the
+  seat cover's photo (the relation + a file ask). Recommendation: yes, the words say the cover's photo.
+- Q5 the rule text lives in the live `{{find_filters}}` variable (#1601 design), so the new wording
+  reaches every version carrying the token on deploy (dev v88); prod v52 has no token and gets it
+  through a NEW version from the publisher. Recommendation: keep the variable; no label moves.
