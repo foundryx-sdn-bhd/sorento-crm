@@ -1,7 +1,7 @@
 # PLAN: generic find (one MCP read tool for products + filter registry)
 
-Status: Review (lane CHAT-FIND, PR #1601; card answered by crew 12 Oct, Q1-Q5 all (a); security review READY,
-reviewer round 1 fixed: verdict localization test, dashless codes, the no-group line).
+Status: Merge-ready (lane CHAT-FIND, PR #1601, CI green on 84ae451b; card answered by crew 12 Oct, Q1-Q5 all (a);
+reviewer READY after 2 rounds, security review READY). Open: crew eval gate + owner hand test; filters 2 and 3 wait on #1582.
 Track: standard (new MCP tool surface, so security review runs; no migration, no FE change).
 
 Architecture: option D of `documentation/plans/chatbot/ARCH-scalable-chat-11oct.html` (PR #1566),
