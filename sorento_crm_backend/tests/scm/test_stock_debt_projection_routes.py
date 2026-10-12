@@ -87,8 +87,9 @@ def _seed(db, *, hq_in_span: bool, hq_demand: float = 0):
     order, line = _demand(
         db, product, bin_, qty=300, required_date=_months_ahead(3), so_number=f"{marker}-SO3"
     )
+    hq_line = None
     if hq_demand:
-        _demand(
+        _hq_order, hq_line = _demand(
             db, product, hq, qty=hq_demand, required_date=TODAY,
             so_number=f"{marker}-SO-HQ",
         )
@@ -98,7 +99,7 @@ def _seed(db, *, hq_in_span: bool, hq_demand: float = 0):
     )
     return {
         "product": product, "marker": marker, "po_line": po_line, "order": order,
-        "line": line, "hq": hq,
+        "line": line, "hq": hq, "hq_line": hq_line, "pool": pool,
     }
 
 
@@ -258,3 +259,63 @@ def test_date_from_does_not_hand_earlier_orders_pool_stock(scm_app):
     assert body["months"][0] == month_key(start)
     by_key = {month["key"]: month["balance"] for month in projected["months"]}
     assert by_key[month_key(start)] == 720.0
+
+
+def _hq_placement_on_a_pool_po(db, seed):
+    """A 300 PO at the in-span pool, placed (order inquiry) on the HQ order."""
+    pool_po = _po_line(
+        db, seed["product"], seed["pool"], qty=300, delivery=TODAY - timedelta(days=4),
+        number=f"{seed['marker']}-POOLPO",
+    )
+    project_order, project_line = _project_line_for(db, seed["hq_line"])
+    _order_back_link_on_po(db, project_order, project_line, po_line=pool_po, qty=300)
+
+
+def test_an_outside_order_placed_on_inside_supply_is_not_spent_twice(scm_app):
+    """Review R1: the HQ order's placement takes the pool PO in the outside walk; the
+    page's own month must not still read that PO spare."""
+    app, db = _client(scm_app)
+    inside = _seed(db, hq_in_span=True, hq_demand=500)
+    outside = _seed(db, hq_in_span=False, hq_demand=500)
+    _hq_placement_on_a_pool_po(db, inside)
+    _hq_placement_on_a_pool_po(db, outside)
+    with TestClient(app) as c:
+        projected_in, _ = _row(c, inside, projected="true")
+        projected_out, _ = _row(c, outside, projected="true")
+    assert _balances(projected_in) == [720.0, 720.0, 520.0, 220.0]
+    assert _balances(projected_out) == _balances(projected_in)
+
+
+def test_an_outside_pool_short_month_reads_short(scm_app):
+    """An HQ order of 1,200 next month with nothing at HQ dated then: the outside pools'
+    month goes negative and the projection says so, as it does inside the span. Inside,
+    HQ walks in the pools' shared pile, so its order also draws BRW's 20 on hand (900 this
+    month); outside, HQ is walked alone (920). Next month reads -280 either way."""
+    app, db = _client(scm_app)
+    rows = []
+    for in_span in (True, False):
+        seed = _seed(db, hq_in_span=in_span)
+        _demand(
+            db, seed["product"], seed["hq"], qty=1200, required_date=_months_ahead(1),
+            so_number=f"{seed['marker']}-SO-HQ-LATER",
+        )
+        rows.append(seed)
+    with TestClient(app) as c:
+        inside, _ = _row(c, rows[0], projected="true")
+        outside, _ = _row(c, rows[1], projected="true")
+    assert _balances(inside) == [900.0, -280.0, -200.0, -300.0]
+    assert _balances(outside) == [920.0, -280.0, -200.0, -300.0]
+
+
+def test_a_planning_bin_is_never_read_as_pool(scm_app):
+    """A bin flagged for planning whose segment says dealer is a project location: under
+    `group=BB` it is out of the span and must not be added as pool supply."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True)
+    other = _warehouse(
+        db, f"{seed['marker']}BRW-IB", planning=True, segment="dealer", pool=seed["pool"]
+    )
+    _stock(db, seed["product"], other, 500)
+    with TestClient(app) as c:
+        projected, _ = _row(c, seed, projected="true", group="BB")
+    assert _balances(projected) == [920.0, 920.0, 720.0, 420.0]

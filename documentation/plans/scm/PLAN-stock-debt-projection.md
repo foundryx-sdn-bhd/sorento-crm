@@ -25,8 +25,15 @@ the walk ignores `date_from` (demand before it still takes its share); the axis 
 its month. Row total = today's total plus `added` on the axis. "Only products in debt" and the
 sort read the projected months. UAC: `stock-debt-projection-acceptance-criteria.md`.
 
-Known limit: a PO at an out-of-span pool whose AutoCount S/O names an order in the span is not
-pinned to that order (the page's own book-S/O pin reads in-span supply only); it counts as that
+Known limits (review rounds 1-2):
+- Outside the span a pool is walked on its own; inside it, every pool shares one pile, so a pool
+  order can also draw another pool's on-hand stock. A month can differ by that draw; the carry
+  over the row ends the same.
+- Placements that together exceed their document (more placed than the PO holds) can read the
+  outside case slightly more optimistic in the order's month; the walk inside the span caps
+  them, the projection does not re-walk them.
+- A PO at an out-of-span pool whose AutoCount S/O names an order in the span is not
+  pinned to that order (the page's own book-S/O pin reads in-span supply only); it counts as that
 pool's free supply.
 
 Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` /

@@ -1816,6 +1816,7 @@ class StockDebtService:
         for product_id in product_ids:
             result = assignments[product_id]
             taken: Dict[str, float] = {}
+            taken_outside: Dict[str, float] = {}
             assigned_to: Dict[str, Dict[Tuple[str, Optional[int]], float]] = {}
             for res in (result, other.get(product_id)):
                 if res is None:
@@ -1825,17 +1826,21 @@ class StockDebtService:
                         key = (line.line.so_number, line.line.core_line_no)
                         bucket = assigned_to.setdefault(item.event.key, {})
                         bucket[key] = bucket.get(key, 0.0) + item.qty
-                        if res is result:
-                            taken[item.event.key] = (
-                                taken.get(item.event.key, 0.0) + item.qty
-                            )
+                        into = taken if res is result else taken_outside
+                        into[item.event.key] = into.get(item.event.key, 0.0) + item.qty
             pool_free: Dict[str, float] = {}
+            added: Dict[str, float] = {}
             for event in result.supply:
                 spare = result.free.get(event.key, 0.0)
-                if event.is_pool and spare > 0:
-                    key = month_key(effective_date(event.at, as_of))
-                    pool_free[key] = pool_free.get(key, 0.0) + spare
-            added: Dict[str, float] = {}
+                key = month_key(effective_date(event.at, as_of))
+                # Review R1, the mirror of `taken` below: a hold in the OUTSIDE walk on
+                # supply IN the span (a placement at an out-of-span pool naming a BRW PO)
+                # spent it there, and the page's own month still reads it spare.
+                spent = min(max(spare, 0.0), taken_outside.get(event.key, 0.0))
+                if spent > 0:
+                    added[key] = added.get(key, 0.0) - spent
+                if event.is_pool and spare - spent > 0:
+                    pool_free[key] = pool_free.get(key, 0.0) + spare - spent
             left: Dict[str, float] = {}
             outside = other.get(product_id)
             if outside is not None:
