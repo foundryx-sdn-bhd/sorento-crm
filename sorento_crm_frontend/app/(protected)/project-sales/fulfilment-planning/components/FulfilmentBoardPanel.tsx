@@ -2603,7 +2603,7 @@ export function FulfilmentBoardPanel({
                     <p data-testid={`board-confirm-fulfilled-${result.pso_id}`} className="text-sm break-words text-muted-foreground">
                       {`${result.lines_fulfilled_skipped} line${
                         result.lines_fulfilled_skipped === 1 ? '' : 's'
-                      } already fulfilled, decision cleared`}
+                      } already fulfilled, decision ${simulated ? 'would be ' : ''}cleared`}
                       {(() => {
                         const echoed = new Set((result.lines_confirmed ?? []).map((line) => line.project_line_id));
                         const held = new Set((result.lines_held_back ?? []).map((line) => line.line_no));
