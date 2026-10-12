@@ -88,7 +88,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "editor).\n\n"
             "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
             "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
-            "registry), value is in the key's own unit (mm for sizes), constraints AND. A product with no "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. Key `size` (a number "
+            "in mm when no axis is said) is resolved by the data to the one mm key that holds it "
+            "(`spec_resolved`); when several hold it the response has no rows plus `spec_ambiguous` (ask "
+            "which). A product with no "
             "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
             "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
             "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
@@ -313,7 +316,14 @@ CATALOG: tuple[ToolSpec, ...] = (
             "promotion is EXPIRED; never present an is_expired row as a live promotion.\n\n"
             "REQUIRED - at least ONE narrowing filter or the tool returns an empty page:\n"
             "  • `promotion_ids` (canonical promotion UUIDs)\n"
-            "  • `product_ids` (canonical product UUIDs)\n\n"
+            "  • `product_ids` (canonical product UUIDs)\n"
+            "  • `spec_constraints` (described products, see SPEC FILTER)\n\n"
+            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value}, the same contract as "
+            "crm_master_products_list: keeps only lines whose product satisfies every constraint, so a "
+            "described subject (\"basin\", \"250mm floor grating\") returns the promotions covering it "
+            "together with the products on them. Key `size` (a number in mm, axis not said) is resolved "
+            "by the data; when it cannot be placed on one axis the response has no rows plus "
+            "`spec_ambiguous` or `spec_alternatives`.\n\n"
             "STRUCTURED FILTERS: PRICE price_min/max (MYR); DIMENSIONS (mm) length_min/max, width_min/max, "
             "height_min/max; axis-agnostic any_dimension_min/max; item_type; status=active|inactive|all. "
             "EXACT vs FUZZY: bare number is EXACT (min == max == value); hedge words apply ±5 mm. "
@@ -339,6 +349,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "height_min", "height_max",
             "any_dimension_min", "any_dimension_max",
             "access_levels",
+            "spec_constraints",
             "contact_id", "space_id",
         ),
         domain="promotions",
@@ -494,7 +505,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "Field-reveal gated downstream (`inventory.sellable`), not by this tool.\n\n"
             "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
             "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
-            "registry), value is in the key's own unit (mm for sizes), constraints AND. A product with no "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. Key `size` (a number "
+            "in mm when no axis is said) is resolved by the data to the one mm key that holds it "
+            "(`spec_resolved`); when several hold it the response has no rows plus `spec_ambiguous` (ask "
+            "which). A product with no "
             "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
             "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
             "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "

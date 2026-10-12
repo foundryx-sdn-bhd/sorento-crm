@@ -192,6 +192,58 @@ def _qty(v: Any) -> Any:
     return s.rstrip("0").rstrip(".") if "." in s else s
 
 
+# --------------------------------------------------------------------------
+# spec miss (SPEC-PROMO-PARAMS): a `spec_constraints` call that returned no rows
+# --------------------------------------------------------------------------
+# The three tools that take `spec_constraints` answer a zero with what the data holds:
+# `spec_ambiguous` (a size held on more than one axis), `spec_alternatives` (the values
+# that do exist, each with label and unit) and `spec_unrecorded` (how many have no value
+# recorded). The intro states only those; nothing is added that the body does not carry.
+_SPEC_MISS_TOOLS = frozenset(
+    {"crm_master_products_list", "crm_inventory_stock_balance_list", "crm_marketing_promotion_products_list"}
+)
+
+
+def _spec_or(words: list[str]) -> str:
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} or {words[-1]}"
+
+
+def _spec_value(v: Any, unit: Any) -> str:
+    text = str(_qty(v)) if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
+    return f"{text} {unit}" if _filled(unit) else text
+
+
+def _spec_miss_intro(data: dict) -> str | None:
+    """The reply for a spec-filtered zero, or None when the body carries no spec miss."""
+    labels = data.get("spec_labels") if isinstance(data.get("spec_labels"), dict) else {}
+    ambiguous = [a for a in data.get("spec_ambiguous") or [] if isinstance(a, dict)]
+    if ambiguous:
+        item = ambiguous[0]
+        candidates = [str(c) for c in item.get("candidates") or []]
+        names = [str(n) for n in item.get("labels") or []] or [str(labels.get(c) or c) for c in candidates]
+        if names:
+            return (
+                f"{_spec_value(item.get('value'), 'mm')} is recorded as {_spec_or(names)}, "
+                "depending on the product. Which one do you mean?"
+            )
+    alternatives = [a for a in data.get("spec_alternatives") or [] if isinstance(a, dict) and a.get("values")]
+    unrecorded = data.get("spec_unrecorded") if isinstance(data.get("spec_unrecorded"), dict) else {}
+    unrecorded = {k: n for k, n in unrecorded.items() if isinstance(n, int) and n > 0}
+    if not alternatives and not unrecorded:
+        return None
+    lines = ["No exact match."]
+    for a in alternatives:
+        label = a.get("label") or labels.get(a.get("key")) or a.get("key")
+        values = ", ".join(_spec_value(v, a.get("unit")) for v in a["values"])
+        lines.append(f"{label} values on file: {values}.")
+    for key, n in unrecorded.items():
+        label = labels.get(key) or next(
+            (a.get("label") for a in alternatives if a.get("key") == key and a.get("label")), key
+        )
+        lines.append(f"{n} {'has' if n == 1 else 'have'} no {label} recorded.")
+    return " ".join(lines)
+
+
 def _dims(o: dict) -> str | None:
     l, w, h = o.get("dimensions_length"), o.get("dimensions_width"), o.get("dimensions_height")
     if any(_filled(x) for x in (l, w, h)):
@@ -1961,6 +2013,8 @@ def present_response(tool_name: str, raw: str) -> str:
     has_result = bool(b.items or attachments or b.action_links)
     if attachments:
         intro = "I have attached the file(s) below."
+    elif not has_result and tool_name in _SPEC_MISS_TOOLS and (spec_miss := _spec_miss_intro(data)):
+        intro = spec_miss
     elif not has_result:
         # An empty answer over more than one company has to name the companies it
         # searched, or the reader cannot tell "not stocked anywhere" from "I only

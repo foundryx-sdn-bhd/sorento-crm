@@ -153,7 +153,7 @@ def tool_filter(candidates: Any, *, has_product: bool | None) -> ToolPick:
     )
 
 
-def select_tool(domain: str | None) -> list[dict[str, Any]]:
+def select_tool(domain: str | None, spec_constraints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The domain's tool, read off `turn.policy.default_policy()` (AC-1594: was
     `contracts.DOMAIN_SPEC`, now the frozen seed `chatbot_domains` is migrated from). No
     embedding, no database, no network.
@@ -203,10 +203,18 @@ def select_tool(domain: str | None) -> list[dict[str, Any]]:
     b5b19cec-dccc-4eda-b766-1aeb1362957b arrived with `domain_hint: "purchasing"`, a TEAM
     name, and ended `not_found`; one that got past both guards would end the same way here,
     by falling off the table rather than by zeroing a `LIKE` filter.
+
+    SPEC-PROMO-PARAMS (card section 9, slice 3, owner Q4 12 Oct): a promotion ask with a
+    described subject (`spec_constraints` non-empty) answers from the promotion products
+    tool, the promotions covering the subject together with the products on them, so
+    "which basins are on promotion" and "basin promotion" are one call. With no subject
+    the domain's first tool stands.
     """
     row = default_policy().domain(domain) if domain else None
     if row is None or not row.tools:
         return []
+    if spec_constraints and row.name == "promotion" and _PROMOTION_PRODUCTS_TOOL in row.tools:
+        return [{"name": _PROMOTION_PRODUCTS_TOOL, "similarity": 1.0}]
     return [{"name": row.tools[0], "similarity": 1.0}]
 
 

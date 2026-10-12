@@ -534,6 +534,8 @@ entity, exactly as if they were listed there:
       null (raw "pink")
     - "any kitchen sink with thickness 1.2 mm" -> category "kitchen sink", specification
       thickness 1.2
+    - "250mm floor grating got stock?" -> category "floor grating", specification size
+      250 (raw "250mm"); "25cm" is size 250
     - "cert?" after a described answer -> the same entities, the certificate ask
 """
 
@@ -1189,6 +1191,7 @@ def specification_lines(db: "Session") -> list[str]:
 
     lines: list[str] = []
     types: list[str] = []
+    has_mm = False
     for row in active_registry(db):
         synonyms = merged_synonyms(row)
         labels = dict(getattr(row, "value_labels", None) or {})
@@ -1203,6 +1206,7 @@ def specification_lines(db: "Session") -> list[str]:
         label = (row.label or "").replace('"', "'")
         head = f'Specification {row.spec_key} ("{label}")'
         if data_type == "numeric":
+            has_mm = has_mm or (row.unit or "").lower() == "mm"
             unit = f" in {row.unit}" if row.unit else ""
             worded = [
                 f"{value} ({', '.join(words)})" for value, words in synonyms.items() if value != "_self" and words
@@ -1225,6 +1229,13 @@ def specification_lines(db: "Session") -> list[str]:
             choices.append(f"{shown} = {value}" + (f" ({', '.join(words)})" if words else ""))
         if choices:
             lines.append(f"{head}: choices {'; '.join(choices)}.")
+    if has_mm:
+        # The virtual size key (SPEC-PROMO-PARAMS): the catalogue, not the parser, knows
+        # which axis a bare "250mm" is recorded on, so the route resolves it from the data.
+        lines.append(
+            'Specification size ("Size"): a number in mm. Only when the customer gives a size '
+            "with no length, width, height or diameter word."
+        )
     if types:
         lines.append(f"Product types (the category entity keeps these, never a specification): {', '.join(types)}.")
     return lines

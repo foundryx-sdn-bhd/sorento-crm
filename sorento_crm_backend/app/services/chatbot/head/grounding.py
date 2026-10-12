@@ -33,6 +33,7 @@ or code change.
 """
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -48,6 +49,9 @@ _SPEC_HINTS = frozenset({SPECIFICATION_HINT, "spec"})
 #: The kinds whose raw can hold a descriptor glued to what the thing is.
 _CLASS_HINTS = frozenset({"category", "product_type"})
 _ATTACHMENT_HINT = "attachment_type"
+#: The virtual size key, a number in mm with no axis word: the same key
+#: `product_spec_filter.SIZE_KEY` resolves to one mm key from the data on the route.
+SIZE_KEY = "size"
 
 #: Registry keys that are not descriptors: the class and the type are what the thing IS
 #: (they stay in the category token), and the brand is its own entity kind.
@@ -591,6 +595,25 @@ def _remainder(raw: str, used: set[int]) -> str:
     return " ".join(kept)
 
 
+def _validate_size(raw: str, value: Any, vocab: Vocabulary) -> list[Grounded]:
+    """The virtual `size` key (SPEC-PROMO-PARAMS): a number in mm said with no axis word.
+    Words that do name an axis ground as that key; otherwise a numeric value is kept as
+    `size` (the route resolves the axis from the data), and anything else is dropped.
+    Kept only while the registry has an active mm key for the route to resolve it to."""
+    found, _ = ground_words(raw, vocab)
+    if found:
+        return found
+    if isinstance(value, bool) or not any(k.data_type == "numeric" and (k.unit or "").lower() == "mm" for k in vocab.keys):
+        return []
+    try:
+        number = float(str(value).split()[0])
+    except (TypeError, ValueError, IndexError):
+        return []
+    if not math.isfinite(number) or number <= 0:
+        return []
+    return [Grounded(SIZE_KEY, "Size", raw or str(value), int(number) if number.is_integer() else number, "mm")]
+
+
 def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     """A `specification` entity the parser emitted, checked against the registry: a key
     it knows and a value among that key's choices, else grounded from its raw words."""
@@ -598,6 +621,8 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     value = entity.get("spec_value")
     raw = str(entity.get("raw") or "").strip()
     entry = next((k for k in vocab.keys if k.key == key_name), None)
+    if key_name == SIZE_KEY and entry is None:
+        return _validate_size(raw, value, vocab)
     if entry is not None and value not in (None, ""):
         said = raw or str(value)
         if entry.data_type == "numeric":

@@ -151,8 +151,8 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
     """For a filtered zero: per constrained key, the values that exist among products matching
     the OTHER constraints (`spec_alternatives`, each item with the key's label and unit so the
     reply can name them) and how many of those have no value recorded for it
-    (`spec_unrecorded`, zero counts left out). The reply must never say "none exists" while
-    products with nothing recorded remain."""
+    (`spec_unrecorded`, zero counts left out), plus `spec_labels` for every key named. The
+    reply must never say "none exists" while products with nothing recorded remain."""
     registry = {row.spec_key: row for row in active_registry(db)}
     alternatives: list[dict] = []
     unrecorded: dict[str, int] = {}
@@ -171,7 +171,13 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
         ).scalar()
         if missing:
             unrecorded[key] = int(missing)
-    return {"spec_alternatives": alternatives, "spec_unrecorded": unrecorded}
+    named = {a["key"] for a in alternatives} | set(unrecorded)
+    return {
+        "spec_alternatives": alternatives,
+        "spec_unrecorded": unrecorded,
+        # Each named key's label, so the reply can say "Length" for a key with nothing recorded.
+        "spec_labels": {key: registry[key].label for key in sorted(named)},
+    }
 
 
 def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict] | None, dict]:

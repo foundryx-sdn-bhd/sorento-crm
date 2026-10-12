@@ -140,6 +140,7 @@ TOOL_OBJECT_QUERY_PARAMS: dict[str, tuple[str, ...]] = {
     "crm_inventory_stock_balance_list": ("requested_quantities", "spec_constraints"),
     # SPEC-PROMO-PARAMS: a JSON LIST of {key, op, value} objects (see `_OBJECT_UNIONS`).
     "crm_master_products_list": ("spec_constraints",),
+    "crm_marketing_promotion_products_list": ("spec_constraints",),
 }
 
 # Annotation per object param when it is not the default `dict[str, int] | str`.

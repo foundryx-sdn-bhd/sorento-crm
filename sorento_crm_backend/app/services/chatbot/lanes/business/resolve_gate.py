@@ -628,10 +628,14 @@ def resolve_entity_body(
     # not a record to look up. It travels as a registry binding (`extracted_specs`), and
     # a value the registry does not know as `unknown_values`, said back before anything
     # is counted; the resolver's token map never sees it.
-    from app.services.chatbot.head.grounding import specification_entities
+    from app.services.chatbot.head.grounding import SIZE_KEY, specification_entities
 
     grounded = specification_entities(entities)
     entities = [e for e in entities if not any(e is g for g in grounded)]
+    # SPEC-PROMO-PARAMS: the virtual `size` key is no registry key, so the resolver never
+    # sees it (an unknown key there); it travels only as a `spec_constraints` item on the
+    # MCP call (`fetch.spec_constraints_for`), where the route resolves its axis.
+    grounded = [g for g in grounded if g.get("spec_key") != SIZE_KEY]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]
 
