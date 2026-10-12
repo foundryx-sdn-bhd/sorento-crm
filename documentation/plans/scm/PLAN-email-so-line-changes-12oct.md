@@ -50,10 +50,17 @@ Red test: `tests/scm/test_oi_email_so_line_changes.py::test_redirected_line_prin
   product, the cell filled only on lines that changed.
 - Line table: `LOCATION | ITEM CODE | NEW ITEM CODE* | QTY | NEW QTY* | DELIVERY | NEW DATE*`.
 - A redirected line's date move also names DELAY/ADVANCE in the headline.
-- A raised CANCEL BALANCE row (the confirm's "Placed 10, new need 6" exception, an SO
-  amendment's or a book change's qty decrease, "Was 10, now 6") prints the line's before and
-  after (QTY 10, NEW QTY 6) off that stamp, not the bare drop, so it never reads as an order
-  (reviewer B1).
+- Quantity moves whose rows hold only the difference (crew audit 12 Oct, answer (b)) print
+  the SO line's before and after, from the structured values their writer already holds,
+  never from note text and never from a new column (the Was/Now dialog is untouched):
+  the confirm exception's `placed` / `need` (QTY 10, NEW QTY 6); an SO amendment's delta
+  `from_value` / `to_value` (10 -> 6, 10 -> 14), also when a still-raised amendment row
+  rides a later mail; a book change's batch row `from_json` / `to_json` qty (handed over by
+  `_oi_demand_rows` as `from_qty` / `to_qty`). One email line per SO line: an increase the
+  netting splits over two rows prints once, with both rows' verbs in the headline.
+- `scripts/preview_oi_email.py` renders the email one SO line change would send, through
+  the real apply inside the Simulate confirm dry run, so the owner sees it on the copy
+  without SMTP (`laneboard/scripts/1596.md`).
 - Known, accepted readings under Q1 (a), listed to the owner on the card: a CHANGE SO NO row
   no longer names the SO it moved to, and PRE-ORDERED / ALREADY INBOUND / ORDER BACK lines
   read like ORDER lines; the headline names those actions and Order Inquiries shows the row.
@@ -71,6 +78,10 @@ Red test: `tests/scm/test_oi_email_so_line_changes.py::test_redirected_line_prin
   `_handover_verb_keys` adds the date verb for such a row.
 - `alembic/versions/oihr_0006_no_remark_column.py`: the new document, guarded on the
   unedited `oihr_0005` state, reversible.
-- Tests: `tests/scm/test_oi_email_so_line_changes.py` (SRTWB246 date, redirected product
-  swap), `tests/test_oi_email_no_remark.py` (migration + renders).
+- Tests: `tests/scm/test_oi_email_so_line_changes.py` (SRTWB246 date and qty, headline,
+  redirected product swap, no note parsing, batch row from/to), `tests/test_oi_email_qty_moves.py`
+  (cut, increase, split, confirm exception, book change, still-raised amendment),
+  `tests/test_oi_email_no_remark.py` (migration + renders), `tests/test_oi_email_real_shapes.py`,
+  `tests/scm/test_preview_oi_email.py`.
+- `scripts/preview_oi_email.py`, `laneboard/scripts/1596.md`.
 - Guide: `documentation/user-guides/supply-chain/order-inquiry-handover-email.md`.
