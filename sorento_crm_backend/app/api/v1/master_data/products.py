@@ -13,6 +13,7 @@ from app.services.product_service import ProductService
 from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
 from app.services.uuid_list_param import parse_uuid_list
+from app.services.product_spec_filter import parse_spec_constraints
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
@@ -180,12 +181,26 @@ def get_products(
             "not ask. Distinct from `include_specifications` (see that field)."
         ),
     ),
+    spec_constraints: Optional[str] = Query(
+        None,
+        description=(
+            "JSON list of {key, op, value}: a hard filter on the product spec registry. "
+            "op is eq (default) | between ([lo, hi]) | gte | lte; constraints AND; a product "
+            "with no recorded value for a key does not match. An unknown key is HTTP 422. "
+            "On zero rows the body carries `spec_alternatives` and `spec_unrecorded`."
+        ),
+    ),
+    has_active_promotion: bool = Query(
+        False, description="True keeps only products in a promotion live today."
+    ),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
     """Get products with pagination, filtering, and sorting."""
+    # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints)
     started = time.perf_counter()
     logger.info(
         "products.get start page=%s limit=%s query=%s category_id=%s brand_id=%s status=%s item_type=%s",
@@ -223,6 +238,8 @@ def get_products(
             any_dimension_min=any_dimension_min,
             any_dimension_max=any_dimension_max,
             variant_filter=variant_filter,
+            spec_constraints=parsed_spec_constraints,
+            has_active_promotion=has_active_promotion,
             sort_field=sort or "created_at",
             sort_dir=dir or "asc"
         )
@@ -240,7 +257,7 @@ def get_products(
         # response_model - which would silently drop those keys - and emit the raw
         # dict. `data` is always [] here, so the with-data path stays byte-identical
         # (AC-R1).
-        if isinstance(result, dict) and result.get("alternatives"):
+        if isinstance(result, dict) and (result.get("alternatives") or "spec_alternatives" in result):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
         if (include_specifications or include_specs) and isinstance(result, dict):

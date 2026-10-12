@@ -86,6 +86,13 @@ CATALOG: tuple[ToolSpec, ...] = (
             "Distinct from `include_specifications` above (this is the ranked-list shape the render "
             "presenter appends as fields; that one is the sentence/values block for a catalogue "
             "editor).\n\n"
+            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
+            "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. A product with no "
+            "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
+            "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
+            "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
+            "products in a promotion live today.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results."
         ),
@@ -101,6 +108,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             # from THIS tuple, so a param missing here never reaches the backend
             # however well the description documents it.
             "include_specifications", "include_specs",
+            "spec_constraints", "has_active_promotion",
             "sort", "dir",
             "contact_id", "space_id",
         ),
@@ -483,6 +491,13 @@ CATALOG: tuple[ToolSpec, ...] = (
             "own open sales-order quantity, not yet a delivery order) to every stock row, and an "
             "`(O/S: n)` suffix on the compact block's Total and warehouse lines. Default false. "
             "Field-reveal gated downstream (`inventory.sellable`), not by this tool.\n\n"
+            "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value} - op is eq (default) | "
+            "between ([lo, hi]) | gte | lte, key comes from the Specification lines (the product spec "
+            "registry), value is in the key's own unit (mm for sizes), constraints AND. A product with no "
+            "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
+            "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
+            "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
+            "products in a promotion live today.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results. "
             "Pass BOTH or NEITHER: `contact_id` without `space_id` returns no rows."
@@ -492,6 +507,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "page", "limit", "product_ids", "sort", "dir", "warehouse_ids", "quantity_operator",
             "quantity_value", "status", "requested_qty", "requested_quantities", "include_sellable",
+            "spec_constraints", "has_active_promotion",
             "contact_id", "space_id",
         ),
         domain="inventory",

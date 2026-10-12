@@ -185,6 +185,7 @@ from app.schemas.common import PaginationResponse
 from app.models.user import SystemSetting
 from app.services.embedding_events import publish_embedding_event
 from app.services.identifier_resolver import is_uuid, resolve_identifier
+from app.services.product_spec_filter import product_filter_clause, spec_miss_detail
 
 
 # Lifted out of `bulk_import_products` (PLAN-autocount-pull-review.md, P11) so the
@@ -326,6 +327,8 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
     ):
         """Build the filtered + sorted products query shared by ``list_products``
         and ``neighbours`` so the two can never drift.
@@ -452,6 +455,10 @@ class ProductService:
         if advanced_filter_clause is not None:
             filters.append(advanced_filter_clause)
 
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion)
+        if spec_promo_clause is not None:
+            filters.append(spec_promo_clause)
+
         if filters:
             q = q.filter(and_(*filters))
 
@@ -524,6 +531,8 @@ class ProductService:
         variant_filter: Optional[str] = None,
         discontinued_from: Optional[date] = None,
         discontinued_to: Optional[date] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
     ):
         """List products with filtering and pagination.
 
@@ -582,6 +591,8 @@ class ProductService:
             variant_filter=variant_filter,
             discontinued_from=discontinued_from,
             discontinued_to=discontinued_to,
+            spec_constraints=spec_constraints,
+            has_active_promotion=has_active_promotion,
         )
         if q is self._EMPTY_RESULT:
             payload = {
@@ -631,6 +642,8 @@ class ProductService:
             payload["resolved_entities"] = entity_buckets.as_echo()
         if total == 0:
             self._attach_product_alternatives(payload, query)
+            if spec_constraints:
+                payload.update(spec_miss_detail(self.db, spec_constraints))
         return payload
 
     def specifications_for_products(self, product_ids: List[str]) -> dict:

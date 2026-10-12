@@ -18,6 +18,7 @@ from app.services.error_handler import handle_not_found, handle_conflict, handle
 from app.services.company_scope import get_company_scope, stamp_lookup_companies
 from app.services.import_log_service import ImportLogService
 from app.services.identifier_resolver import resolve_identifier
+from app.services.product_spec_filter import product_filter_clause, spec_miss_detail
 from app.services.rules.master_rules import resolve_master_by_code
 
 
@@ -657,6 +658,8 @@ class StockService:
         space_id: Optional[str] = None,
         requested_qty: Optional[int] = None,
         requested_quantities: Optional[dict] = None,
+        spec_constraints: Optional[list[dict]] = None,
+        has_active_promotion: bool = False,
     ):
         """List stock with product and warehouse info.
 
@@ -930,6 +933,12 @@ class StockService:
         if product_ids:
             q = q.filter(Stock.product_id.in_(product_ids))
 
+        # SPEC-PROMO-PARAMS: narrows by product only; the location and policy filters
+        # above are untouched.
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion)
+        if spec_promo_clause is not None:
+            q = q.filter(Stock.product_id.in_(select(Product.id).where(spec_promo_clause)))
+
         if entity_buckets is not None and entity_buckets.product_codes:
             lowered = [c.lower() for c in entity_buckets.product_codes]
             code_id_rows = (
@@ -1163,6 +1172,8 @@ class StockService:
             if alternatives:
                 payload["alternatives"] = alternatives
                 payload["relaxed_axis"] = "entity"
+        if total == 0 and spec_constraints:
+            payload.update(spec_miss_detail(self.db, spec_constraints))
         return payload
 
     def stock_last_updated_by_company(self, company_ids) -> dict[str, datetime]:
