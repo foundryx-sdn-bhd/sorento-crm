@@ -223,3 +223,37 @@ def test_report_replay(case_path: Path, session_factory, stub_parser, monkeypatc
 
 def test_the_in_repo_corpus_is_not_empty() -> None:
     assert list(IN_REPO_ROOT.glob("*.json")), f"no report replay cases under {IN_REPO_ROOT}"
+
+
+# --------------------------------------------------------------------------- #
+# What the trace records vs what the MCP seam sends
+# --------------------------------------------------------------------------- #
+
+
+def test_a_recorded_legacy_report_name_answers_the_crm_report_call_it_became(monkeypatch, stub_parser) -> None:
+    """The lane traces `crm_sales_report` with its own args (`lanes/business/__init__.py` trace.add "tool"); the
+    MCP seam then sends `crm_report` with the registry key added (`services.REPORT_MEASURE_OF`, S5a). Replay
+    answers the sent call from the recorded entry and logs it the way the trace recorded it."""
+    from app.services.ai_assistant_service import MCPRuntimeClient
+
+    recorded = {"tool": "crm_sales_report", "args": {"product_code": "X1", "date_from": "2026-01-01"}, "envelope": {"lane_text": "ok"}}
+    calls = _install_stubs(monkeypatch, stub_parser, turn={"tool_results": [recorded]})
+    out = MCPRuntimeClient.call_tool(None, "crm_report", {"product_code": "X1", "date_from": "2026-01-01", "measure": "delivered_sales"})
+    assert json.loads(out) == {"lane_text": "ok"}
+    assert calls == [{"tool": "crm_sales_report", "args": {"product_code": "X1", "date_from": "2026-01-01"}}], calls
+
+
+def test_a_domain_only_tool_trace_entry_is_not_a_recorded_call() -> None:
+    """`turn/fetch.py::_fetch_one` adds `{"kind": "tool", "domain": ...}` with no name; the recorder reads it as a tool
+    event with `tool` None, which no real call can ever match."""
+
+    class _R:
+        actions: list = []
+        reply: dict = {}
+        session_patch = None
+        branch_kind = None
+
+    failures: list[str] = []
+    turn = {"tool_results": [{"tool": None, "args": None, "envelope": None}]}
+    _compare("x", 1, {}, _R(), failures, turn=turn, tool_calls=[])
+    assert failures == [], failures
