@@ -4,38 +4,39 @@ Status: built; reviewer READY after two fix rounds, browser pass PASS (12 Oct 20
 consider pool, those project locations are matched already". Small fix track (no migration, no
 auth/RBAC change, no new ingest surface).
 
-## Implemented rule (owner, 12 Oct 2026; "pool a")
+## Implemented rule (owner, 12 Oct 2026; "pool a"; incoming only, after hand testing)
 
 ```
 project(M)      = the project bins' own month figure off the page's walk (their spare less
                   their lines' shortfalls), matched exactly as today
-pool_supply(M)  = every active pool's supply dated in M, in the span or outside it (segment
-                  <> 'project', not flagged for planning): on hand today, a PO on its Delivery
-                  date, an SPO on arrival, anything past due today; less what a project line's
-                  hold (placement, book S/O, decision) took of it
-dealer(M)       = the open orders at pool locations due in M (dealer / retail)
-remainder(M)    = carried_in(M) + pool_supply(M) - dealer(M)
+incoming(M)     = every active pool's INCOMING supply dated in M (segment <> 'project', not
+                  flagged for planning): open PO lines on their Delivery date, open SPO lines
+                  not landed on their ETA, past due today - the documents and dates the page's
+                  own "Covered by" uses - less what a project line's hold took of it
+pool_on_hand    = pool stock on the floor, landed goods included: meets dealer orders only
+dealer_left(M)  = the open orders at pool locations due in M, less what pool on hand meets
+                  (earliest first; what the floor leaves waits for later dealer orders)
+remainder(M)    = carried_in(M) + incoming(M) - dealer_left(M)
 projected(M)    = project(M) + remainder(M)
 carried_in(M+1) = max(0, min(remainder(M), projected(M)))
 ```
 
-Owner's "pool a": in each month pool supply first covers that month's dealer / retail orders,
-and only the remainder goes to project shortfalls. Pool stock is applied to the EARLIEST
-shortfall first and only a SURPLUS carries; project spare never carries and debt never
-accumulates (R37). The arithmetic does not depend on whether the span holds a pool, so Book=All
-and Book=Project give the same projection, and pool stock is counted once. Row total = the sum
-of `project + pool_supply - dealer` over the axis, plus TBA. Under the switch the walk ignores
-`date_from` (demand before it still takes its share); the axis still starts at its month.
+Owner rulings, 12 Oct 2026: "pool a" (pool supply covers its month's dealer / retail orders
+first, then project shortfalls, earliest first; only a SURPLUS carries; debt never accumulates,
+R37), and after hand testing: pool ON HAND (e.g. BRW on hand) is shared and decided at planning
+time ("Use BRW"), so it never meets a project shortfall; only INCOMING pool supply carries,
+counted and dated as "Covered by" counts and dates documents. Book=All and Book=Project give the
+same projection. Row total = the sum over the axis of `project + incoming - dealer_left`, plus
+TBA. Under the switch the walk ignores `date_from`; the axis still starts at its month.
 
-The drill line states it plainly, for example (owner's C-FHSS12, Book=Project):
-"Project bins -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
-Projected -305". Carried in, dealer orders and carried forward appear when not zero.
+The drill line, owner's C-FHSS12 under Book=Project (BRW on hand 57, BRW PO 15):
+"Project bins -377 · Pool supply 15 (BRW PO 15) applied to this month · Projected -362".
+Carried in, dealer orders and carried forward appear when not zero.
 
-Prod shape (owner, 12 Oct 2026, after HQ was made its own pool): Book=Project months Oct -38,
-Nov -17, Dec -1,436, Jan -1,613, Feb -480, Mar -797, Apr -368; BRW on hand 191; HQ PO 5,000
-delivered 8 Oct; a 15 dealer order at BRW in October. Projected: 5,138, 5,121, 3,685, 2,072,
-1,592, 795, 427 under Book=Project and Book=All
-(`test_prod_srtwt2215_book_project_carries_the_pool_po`).
+Prod shape (owner, 12 Oct 2026): Book=Project months Oct -38, Nov -17, Dec -1,436, Jan
+-1,613, Feb -480, Mar -797, Apr -368; BRW on hand 191 (meets the 15 dealer order); HQ PO 5,000
+delivered 8 Oct. Projected: 4,962, 4,945, 3,509, 1,896, 1,416, 619, 251 under Book=Project
+and Book=All (`test_prod_srtwt2215_book_project_carries_the_pool_po`).
 
 Known limits:
 - A pool PO whose AutoCount S/O names a project order is pinned to it only when the PO is inside

@@ -438,10 +438,9 @@ class StockDebtService:
                 # months hold in all: project figure plus pool supply less pool orders.
                 series = pool[product_id]
                 total = result.tba + sum(
-                    series["project"].get(key, 0.0)
-                    + series["pool_supply"].get(key, 0.0)
-                    - series["dealer"].get(key, 0.0)
-                    for key in axis
+                    row.projected - row.carried_in
+                    for row in self._project(result, series, axis[-1] if axis else None)
+                    if row.key in set(axis)
                 )
                 months = self._projected_on_axis(
                     result, axis, product_id, pool[product_id]
@@ -1881,6 +1880,7 @@ class StockDebtService:
                 month = month_key(effective_date(line.required_date, as_of))
                 dealer[month] = dealer.get(month, 0.0) + line.open_qty
             pool_supply: Dict[str, float] = {}
+            pool_on_hand: Dict[str, float] = {}
             sources: Dict[str, Dict[str, float]] = {}
             left: Dict[str, float] = {}
             events = [event for event in result.supply if event.is_pool]
@@ -1900,12 +1900,17 @@ class StockDebtService:
                 if qty <= 0:
                     continue
                 month = month_key(effective_date(event.at, as_of))
+                if event.kind == KIND_ON_HAND:
+                    # Owner, 12 Oct 2026: pool stock on the floor is shared and decided at
+                    # planning time; it meets dealer orders only (`project_months`).
+                    pool_on_hand[month] = pool_on_hand.get(month, 0.0) + qty
+                    continue
                 pool_supply[month] = pool_supply.get(month, 0.0) + qty
                 by_label = sources.setdefault(month, {})
                 by_label[label(event)] = by_label.get(label(event), 0.0) + qty
             out[product_id] = {
                 "project": project, "pool_supply": pool_supply, "dealer": dealer,
-                "sources": sources,
+                "pool_on_hand": pool_on_hand, "sources": sources,
             }
             if keep_events:
                 out[product_id]["events"] = added_events
@@ -1929,6 +1934,7 @@ class StockDebtService:
             pool["project"],
             pool_supply=pool["pool_supply"],
             dealer_demand=pool["dealer"],
+            pool_on_hand=pool["pool_on_hand"],
         )
 
     def _projected_on_axis(

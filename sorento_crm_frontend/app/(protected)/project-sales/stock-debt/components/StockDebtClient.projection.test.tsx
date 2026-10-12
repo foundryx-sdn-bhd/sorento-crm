@@ -123,13 +123,10 @@ beforeEach(() => {
     projection: {
       carried_in: 0,
       month_balance: -377,
-      pool_supply: 72,
-      pool_sources: [
-        { label: 'BRW on hand', qty: 57 },
-        { label: 'BRW PO', qty: 15 },
-      ],
+      pool_supply: 15,
+      pool_sources: [{ label: 'BRW PO', qty: 15 }],
       dealer_demand: 0,
-      projected: -305,
+      projected: -362,
       carried_out: 0,
     },
   });
@@ -188,7 +185,7 @@ describe('StockDebtClient projected balance', () => {
       'p1', '2026-12', '', undefined, 'all', true,
     );
     expect(line.textContent).toBe(
-      'Project bins -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month · Projected -305',
+      'Project bins -377 · Pool supply 15 (BRW PO 15) applied to this month · Projected -362',
     );
   });
 
@@ -201,14 +198,11 @@ describe('StockDebtClient projected balance', () => {
       projection: {
         carried_in: 10,
         month_balance: -38,
-        pool_supply: 5191,
-        pool_sources: [
-          { label: 'BRW on hand', qty: 191 },
-          { label: 'HQ PO', qty: 5000 },
-        ],
+        pool_supply: 5000,
+        pool_sources: [{ label: 'HQ PO', qty: 5000 }],
         dealer_demand: 15,
-        projected: 5148,
-        carried_out: 5148,
+        projected: 4957,
+        carried_out: 4957,
       },
     });
     renderBoard();
@@ -218,7 +212,7 @@ describe('StockDebtClient projected balance', () => {
     fireEvent.click(await screen.findByRole('button', { name: /SRTWT2215, Dec 26/ }));
     const line = await screen.findByTestId('stock-debt-projection-line');
     expect(line.textContent).toBe(
-      'Project bins -38 · Carried in +10 · Pool supply 5,191 (BRW on hand 191, HQ PO 5,000) applied to this month · Dealer orders -15 · Projected +5,148 · Carried forward +5,148',
+      'Project bins -38 · Carried in +10 · Pool supply 5,000 (HQ PO 5,000) applied to this month · Dealer orders -15 · Projected +4,957 · Carried forward +4,957',
     );
   });
 });

@@ -11,15 +11,20 @@ never as an assignment: nothing is pinned, no line changes status.
 already"; "pool a": pool supply first covers the dealer/retail orders due in its month, and
 only the remainder goes to project shortfalls):
 
-    available(M)  = carried_in(M) + pool_supply(M)
-    remainder(M)  = available(M) - dealer(M)
-    projected(M)  = project(M) + remainder(M)
+    dealer_left(M)  = dealer(M) less what pool ON HAND (carried, earliest first) meets
+    remainder(M)    = carried_in(M) + pool_supply(M) - dealer_left(M)
+    projected(M)    = project(M) + remainder(M)
     carried_in(M+1) = max(0, min(remainder(M), projected(M)))
 
 - `project(M)` is the project bins' own month figure, matched as the page matches them:
   their spare in M less their lines' shortfalls in M.
-- `pool_supply(M)` is pool supply dated in M (on hand today, a PO on its Delivery date, an
-  SPO on its arrival, anything past due today), less what a project line's hold took of it.
+- `pool_supply(M)` is INCOMING pool supply dated in M: an open PO on its Delivery date, an
+  open SPO that has not landed on its arrival, anything past due today - the documents and
+  dates the page's own "Covered by" uses - less what a project line's hold took of it.
+- `pool_on_hand(M)` is pool stock on the floor (landed goods included). Owner, 12 Oct 2026
+  after hand testing: it is shared and decided at planning time ("Use BRW"), so it meets
+  dealer / retail orders only and never a project shortfall; what it leaves waits for later
+  dealer orders.
 - `dealer(M)` is the open orders at pool locations due in M.
 - Pool stock is applied to the EARLIEST shortfall first and only a SURPLUS carries: a
   month's own project spare is spent on its own shortfall first (it cannot carry), and a
@@ -28,7 +33,7 @@ only the remainder goes to project shortfalls):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Mapping, Sequence
+from typing import List, Mapping, Optional, Sequence
 
 from app.services.scm.supply_assignment import EPSILON
 
@@ -40,9 +45,10 @@ class ProjectedMonth:
     month_balance: float
     #: Pool stock still spare from earlier months.
     carried_in: float
-    #: Pool supply dated in this month.
+    #: Incoming pool supply (POs, SPOs not landed) dated in this month.
     pool_supply: float
-    #: Open orders at pool locations (dealer / retail) due in this month.
+    #: Open orders at pool locations (dealer / retail) due in this month that pool on hand
+    #: did not meet - what is asked of the incoming supply.
     dealer_demand: float
     projected: float
     #: Pool stock that carries into the next month.
@@ -60,15 +66,21 @@ def project_months(
     *,
     pool_supply: Mapping[str, float],
     dealer_demand: Mapping[str, float],
+    pool_on_hand: Optional[Mapping[str, float]] = None,
 ) -> List[ProjectedMonth]:
     """One `ProjectedMonth` per key, in the order given (the caller passes consecutive
     months from the first month anything can land in)."""
     out: List[ProjectedMonth] = []
     carry = 0.0
+    floor = 0.0
     for key in keys:
         own = float(project_balance.get(key, 0.0))
         supply = float(pool_supply.get(key, 0.0))
-        dealer = float(dealer_demand.get(key, 0.0))
+        floor += float((pool_on_hand or {}).get(key, 0.0))
+        asked = float(dealer_demand.get(key, 0.0))
+        met = min(floor, asked)
+        floor -= met
+        dealer = asked - met
         carried_in = carry
         remainder = carried_in + supply - dealer
         projected = own + remainder
