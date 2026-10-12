@@ -5173,6 +5173,7 @@ class ProjectSupplyService:
         uncover_reason_by_line: Optional[Mapping[str, str]] = None,
         settle_in_place_line_ids: Sequence[str] = (),
         defer_auto_place: bool = False,
+        line_changes: Optional[Mapping[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """One transaction, every CHOSEN line, or nothing (PLAN 3.1, AC-C01 as amended
         by PLAN-fulfilment-planning-from-autocount-so.md 13.4).
@@ -5474,6 +5475,7 @@ class ProjectSupplyService:
             settle_in_place_line_ids=settle_in_place_line_ids,
             defer_auto_place=defer_auto_place,
             uncover_reason_by_line=uncover_reason_by_line,
+            line_changes=line_changes,
             # The day the planner was deciding on (the board's own dial), so the proposal
             # frozen beside the decision is the one they were shown. Absent means today.
             as_of=getattr(payload, "as_of", None),
@@ -7078,6 +7080,7 @@ class ProjectSupplyService:
         settle_in_place_line_ids: Sequence[str] = (),
         defer_auto_place: bool = False,
         uncover_reason_by_line: Optional[Mapping[str, str]] = None,
+        line_changes: Optional[Mapping[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         previous = self.active_decision(str(order.id))
         if previous is not None:
@@ -7265,6 +7268,7 @@ class ProjectSupplyService:
             ),
             settle_in_place_line_ids=settle_in_place_line_ids,
             uncover_reason_by_line=uncover_reason_by_line,
+            line_changes=line_changes,
         )
         # LADDER V7.1 STEP 3'S OTHER HALF (PLAN 3.3, R8): the placement MOVES. Run after
         # the handoff, because it needs the inquiry header the handoff mints and because the
@@ -7700,7 +7704,9 @@ class ProjectSupplyService:
                 ConfirmSupplyBody(lines=[]),
                 actor_user_id=str(active.confirmed_by or actor_user_id),
                 uncover_line_ids=sorted(wanted),
-                uncover_reason_by_line=reason_by_line,
+                # Every withdrawn line carries a reason, so the order inquiry retires its
+                # rows even while an AutoCount change on it waits on CS (SO422492 A).
+                uncover_reason_by_line=reason_by_line or {line_id: reason for line_id in wanted},
             )
             # WHY the revision this call just retired was retired. `confirm` stamps its
             # own "Reconfirmed by CS.", which is not what happened here - nobody
