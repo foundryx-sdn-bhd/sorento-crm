@@ -1215,3 +1215,39 @@ def test_a_multi_company_lone_last_in_miss_keeps_the_bare_line_and_the_companies
     assert "Sorento" in message and "Mocha" in message, message
     assert "matched these" not in message, message
     assert "Last in: none on record" in message, message
+
+
+def test_a_lone_sold_by_ask_is_its_total_and_its_breakdown(session_factory, monkeypatch, stub_access):
+    """Crew live check 13 Oct 2026 ("CB88SS 今年卖了多少 by salesman, 按下单"): the parser
+    reads one sold_by ask. The count and its breakdown are listed, as hand-test step 6
+    does, never today's "top how many?" question."""
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009541")
+    text = c.say(
+        "ELP3754 2026 sold by salesman, ordered",
+        verdict(
+            domain_hint="order",
+            intent_hint="check_order",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("sold_by", "sold by salesman", window=Y2026, group_by="sales_agent", basis="ordered")],
+            family=None,
+        ),
+    )
+    lines = text.splitlines()
+    assert "Sold 2026 (ordered): 860" in lines, text
+    assert any(ln.startswith("1. AGENT01") for ln in lines), text
+
+
+def test_a_lone_ask_of_any_other_measure_keeps_todays_path(session_factory, monkeypatch, stub_access):
+    c = _console(session_factory, monkeypatch, stub_access, "+60000009542")
+    c.say(
+        "ELP3754 last cost",
+        verdict(
+            domain_hint="purchase_cost",
+            intent_hint="check_po_cost",
+            entities=[entity("ELP3754", hint="product")],
+            sub_asks=[sub("last_cost", "last cost")],
+            family=None,
+        ),
+    )
+    assert not c.tools.args("crm_report_ask")
+    assert "crm_procurement_grn_summary" not in c.tools.names()
