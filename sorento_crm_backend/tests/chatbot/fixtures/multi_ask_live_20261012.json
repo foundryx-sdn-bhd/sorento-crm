@@ -1,5 +1,5 @@
 {
- "_about": "Live gpt-5.4-mini emissions of the maskp_0001 parser template (MULTI-ASK-PLAN2, 12 Oct 2026) for the owner's hand-test steps 4, 5, 6 and 8 (laneboard/scripts/1542.md). Replayed by test_multi_ask_live_replay.py; the steps 5 and 6 replies were parsed under their Open question line.",
+ "_about": "Live gpt-5.4-mini emissions of the maskp_0001 parser template with the maskp_0002 measure glossary rendered (MULTI-ASK-PLAN2, 12 Oct 2026) for the owner's hand-test steps 4, 5, 6 and 8 (laneboard/scripts/1542.md). Replayed by test_multi_ask_live_replay.py; the steps 5 and 6 replies were parsed under their Open question line. Step 4's last_receipt ask carries a stray 2026 window the runner must ignore.",
  "steps": {
   "step4": {
    "message": "SRTWT7445,2026 年 入库了多少数量 , 供应商是谁 ， 采购价是多少钱。 最后一次进库是什么时候 ，2026 总共卖了多少个，2026年每位业务员共卖了多少个",
@@ -9,7 +9,7 @@
     "domain_hint": "spo_allocation",
     "scope_intent": null,
     "is_affirmative": null,
-    "user_goal": "trying to check the last incoming quantity, supplier, purchase cost, last receipt time, total sold in 2026, and sales by salesperson for SRTWT7445",
+    "user_goal": "trying to check the last receipt, received quantity, supplier, purchase cost, and 2026 sales totals for SRTWT7445",
     "continuation": false,
     "access_levels": [],
     "broaden_axis": null,
@@ -55,7 +55,7 @@
     "sort_dir": null,
     "ranking_refine": null,
     "ranking_drill": null,
-    "measure": "qty",
+    "measure": null,
     "sales_basis": null,
     "sales_company": null,
     "promotion_kind": null,
@@ -100,7 +100,7 @@
       "date_from": "2026-01-01",
       "date_to": "2026-12-31",
       "basis": null,
-      "label": "2026 年 入库了多少数量"
+      "label": "入库了多少数量"
      },
      {
       "measure": "supplier",
@@ -121,8 +121,8 @@
      {
       "measure": "last_receipt",
       "group_by": null,
-      "date_from": null,
-      "date_to": null,
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
       "basis": null,
       "label": "最后一次进库是什么时候"
      },
@@ -173,9 +173,9 @@
     "message_type": "business_query",
     "intent_hint": "check_product",
     "domain_hint": "master_products",
-    "scope_intent": null,
+    "scope_intent": "specific",
     "is_affirmative": null,
-    "user_goal": "trying to choose just this code for SRTWT7445",
+    "user_goal": "trying to choose just this code",
     "continuation": false,
     "access_levels": [],
     "broaden_axis": null,
@@ -190,9 +190,7 @@
     "domain_in_message": false,
     "requested_attributes": [],
     "contains_flyer": false,
-    "reference_positions": [
-     1
-    ],
+    "reference_positions": [],
     "reference_target": null,
     "person_mention": null,
     "is_active": null,
@@ -260,7 +258,7 @@
     "domain_hint": "order",
     "scope_intent": null,
     "is_affirmative": null,
-    "user_goal": "trying to answer the sales basis question by choosing delivered",
+    "user_goal": "trying to answer that sales are counted as delivered",
     "continuation": false,
     "access_levels": [],
     "broaden_axis": null,
@@ -319,7 +317,13 @@
      "picked": [
       1
      ],
-     "items": [],
+     "items": [
+      {
+       "position": 1,
+       "code": "delivered",
+       "qty": null
+      }
+     ],
      "qty_for_all": null
     },
     "low_stock": {
@@ -345,7 +349,7 @@
     "domain_hint": "order",
     "scope_intent": null,
     "is_affirmative": null,
-    "user_goal": "trying to find how much SRTWT7445 series sold in 2026, broken down by shipped basis, and also its purchase cost",
+    "user_goal": "trying to find how much SRTWT7445 series sold in 2026, broken down by delivered sales and purchase cost",
     "continuation": false,
     "access_levels": [],
     "broaden_axis": null,
@@ -379,8 +383,8 @@
     "reference_target": null,
     "person_mention": null,
     "is_active": null,
-    "order_status": "sales_analysis",
-    "group_by": "month",
+    "order_status": "sales_report",
+    "group_by": null,
     "top_n": null,
     "sales_channel": null,
     "rank_by": null,
@@ -392,7 +396,7 @@
     "ranking_refine": null,
     "ranking_drill": null,
     "measure": null,
-    "sales_basis": "delivered",
+    "sales_basis": null,
     "sales_company": null,
     "promotion_kind": null,
     "correction": null,
@@ -420,7 +424,7 @@
     "sub_asks": [
      {
       "measure": "sold_total",
-      "group_by": "month",
+      "group_by": null,
       "date_from": "2026-01-01",
       "date_to": "2026-12-31",
       "basis": "delivered",
