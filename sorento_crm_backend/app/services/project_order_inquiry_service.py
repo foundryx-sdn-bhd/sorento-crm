@@ -302,6 +302,7 @@ _HANDOVER_VERB_ORDER = (
     IV_CHANGE_SO,
     IV_CANCEL_BALANCE,
     "CHANGE_ITEM_CODE",
+    "STOCK_SHORT",
 )
 _HANDOVER_VERB_LABEL = {
     IV_ORDER: "ORDER",
@@ -317,6 +318,9 @@ _HANDOVER_VERB_LABEL = {
     # the email's headline would otherwise print blank. Worded as REMARK words it
     # (OI-EMAIL-PRINT, owner 9 Oct).
     "CHANGE_ITEM_CODE": "NEW ITEM CODE",
+    # OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow confirmed while short of
+    # free stock, told to purchasing as its own line. No row is raised for it.
+    "STOCK_SHORT": "STOCK SHORT",
 }
 
 
@@ -3694,6 +3698,61 @@ class ProjectOrderInquiryService:
                 #: the innermost savepoint (AC-H27/AC-H28, review round 2 ruling) - is
                 #: what `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before
                 #: firing, however many savepoints this line's own write nests inside.
+                "tx": tx_chain[-1] if tx_chain else None,
+            }
+        )
+
+    def record_stock_short(
+        self,
+        *,
+        pso_id: str,
+        line: ProjectSalesOrderLine,
+        item_code: Optional[str],
+        qty_short: Decimal,
+        location: Optional[str],
+        remark: str,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """Queue one STOCK SHORT line of this commit's handover email (OI-CLOSED-LINE, owner
+        rule 12 Oct 2026): a Reserve or Borrow confirmed as decided while short of free
+        stock. Built like `_record_handover`'s entry, with no row behind it."""
+        facts = self._handover_order_facts(pso_id)
+        inquiry_id = (
+            self.db.query(OrderInquiry.id)
+            .filter(OrderInquiry.project_sales_order_id == pso_id)
+            .order_by(OrderInquiry.inquiry_no)
+            .limit(1)
+            .scalar()
+        )
+        line_entry = {
+            "so_date": _handover_fmt_date(facts.get("so_date")),
+            "so_number": facts.get("so_number"),
+            "customer": facts.get("customer"),
+            "project": facts.get("project"),
+            "item_code": item_code,
+            "qty": _qty_str(_dec(qty_short)),
+            "delivery_date": _handover_fmt_date(line.delivery_date),
+            "location": location or "",
+            "remark": remark,
+            "was": _format_handover_was(None),
+        }
+        tx_chain = _transaction_chain(self.db)
+        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
+            {
+                "row_id": f"stock-short:{line.id}:{location or ''}",
+                "order_inquiry_id": str(inquiry_id) if inquiry_id else None,
+                "pso_id": pso_id,
+                "so_number": facts.get("so_number"),
+                "customer": facts.get("customer"),
+                "project": facts.get("project"),
+                "stock_location": location,
+                "line_no": line.line_no,
+                "core_line_id": line.core_sales_order_line_id,
+                "item_code": item_code,
+                "verb_keys": ["STOCK_SHORT"],
+                "line": line_entry,
+                "actor": self._handover_actor(actor_user_id),
+                "tx_chain": tx_chain,
                 "tx": tx_chain[-1] if tx_chain else None,
             }
         )
