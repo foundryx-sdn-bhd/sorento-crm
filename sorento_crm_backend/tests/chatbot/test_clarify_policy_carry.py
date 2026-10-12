@@ -29,14 +29,14 @@ Q_UNCLEAR = f"Delivery today: for {CODE} (from earlier) or all products?\n1. {CO
 def _product_ask(**extra: Any) -> dict[str, Any]:
     return verdict(
         domain_hint="order", intent_hint="check_order", entities=[entity(CODE, hint="product")],
-        **{**do_window(), **extra},
+        **{**do_window(), "requested_attributes": ["delivery"], **extra},
     )
 
 
 def _customer_ask(**extra: Any) -> dict[str, Any]:
     return verdict(
         domain_hint="order", intent_hint="check_order", entities=[entity("ZZT Dealer", hint="customer")],
-        **{**do_window(), **extra},
+        **{**do_window(), "requested_attributes": ["delivery"], **extra},
     )
 
 
@@ -44,7 +44,7 @@ def _today_ask(**extra: Any) -> dict[str, Any]:
     today = date.today().isoformat()
     return verdict(
         domain_hint="order", intent_hint="check_order", entities=[], date_mode="today",
-        date_filter_start=today, date_filter_end=today, **extra,
+        date_filter_start=today, date_filter_end=today, **{"requested_attributes": ["delivery"], **extra},
     )
 
 
@@ -502,3 +502,59 @@ def test_the_carry_question_date_words_are_translated(dealer, session_factory, t
     assert CODE in reply, reply
     lowered = reply.lower()
     assert "month" not in lowered and "range" not in lowered and "from earlier" not in lowered, reply
+
+
+# --- live check 13 Oct (crew on 1be8b721f, parser v52): owner rule "always ask when unclear" -- #
+
+
+def _orders_for_customer_last_month() -> dict[str, Any]:
+    """How the live parser reads "orders for <customer> last month": no delivery attribute."""
+    return verdict(
+        domain_hint="order", intent_hint="check_order", domain_in_message=True, entity_op="replace_combine",
+        entities=[entity("ZZT Dealer", hint="customer")], date_mode="month",
+        date_filter_start="2026-09-01", date_filter_end="2026-09-30",
+    )
+
+
+def _how_about_the_product() -> dict[str, Any]:
+    """How the live parser reads "how about <code>" right after that answer: the product named,
+    no domain word of its own, `replace_combine` (`decide`: REFINE, combine across kinds)."""
+    return verdict(
+        domain_hint="order", intent_hint="check_order", domain_in_message=False, continuation=True,
+        entity_op="replace_combine", entities=[entity(CODE, hint="product")],
+    )
+
+
+def test_a_carried_customer_meeting_a_new_product_by_refine_asks_before_fetching(office):  # noqa: F811
+    """Owner rule 13 Oct: the customer is not dropped or combined silently; the bot asks, in the
+    word the parser read (orders, not delivery)."""
+    office.say("orders for zzt dealer last month", _orders_for_customer_last_month())
+    office.calls.clear()
+    reply = office.say(f"how about {CODE}", _how_about_the_product())
+    assert reply == (
+        f"Orders for {CODE}: only {CUSTOMER} (from earlier) or all customers?\n1. Only {CUSTOMER}\n2. All customers"
+    ), reply
+    assert _orders(office) == [], office.calls
+
+
+def test_the_label_follows_the_parser_delivery_attribute(dealer):  # noqa: F811
+    _carried_product(dealer)
+    assert dealer.say("delivery for zzt dealer", _customer_ask()) == Q_COMBINE
+    dealer.say("start over", verdict(topic_reset=True, entities=[]))
+    _carried_product(dealer)
+    asked = dealer.say("orders for zzt dealer", _customer_ask(requested_attributes=[]))
+    assert asked.startswith(f"Orders for {CUSTOMER}: only {CODE} (from earlier)"), asked
+
+
+def test_a_miss_header_names_the_window_the_fetch_used(office, session_factory):  # noqa: F811
+    """Crew item 2 (pre-existing on main): the carried September window narrowed the fetch, so
+    the miss header must not say "all dates"."""
+    from tests.chatbot.test_clarify_policy_table import _write_all_rows
+
+    _write_all_rows(session_factory(), carry_combine={"mode": "carry"})
+    office.say("orders for zzt dealer last month", _orders_for_customer_last_month())
+    office.calls.clear()
+    reply = office.say(f"how about {CODE}", _how_about_the_product())
+    orders = _orders(office)
+    assert orders and orders[-1].get("actual_delivery_date_from") == "2026-09-01", office.calls
+    assert "Dates: 01/09/2026 to 30/09/2026" in reply and "Dates: all dates" not in reply, reply

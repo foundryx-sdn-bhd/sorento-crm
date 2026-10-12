@@ -164,3 +164,10 @@ def test_ac122_a_focus_customer_row_with_only_a_uuid_never_leaks_the_uuid(dealer
     third = dealer.say("my deliveries", BARE)
     assert not _is_period_ask(third), third
     assert not _UUID.search(third), third
+
+
+
+def test_the_break_line_names_the_customer_by_name_never_its_code(dealer):  # noqa: F811
+    """Live check 13 Oct: owner rule, the chatbot prints the company / group NAME."""
+    third = _third_reply(dealer)
+    assert "I still need the period for ZZT Dealer Sdn Bhd." in third, third

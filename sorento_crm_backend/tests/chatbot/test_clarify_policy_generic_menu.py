@@ -50,3 +50,12 @@ def test_ac132_with_the_rows_set_to_ask_todays_entities_only_reply_returns(conso
     _write_all_rows(session_factory(), generic_menu={"mode": "ask"}, entities_only={"mode": "ask"})
     reply = console.say(CODE, verdict(domain_hint=None, entities=[entity(CODE, hint="product")]))
     assert reply == f"I have {CODE}. What would you like me to know?", reply
+
+
+
+def test_ac130_a_bare_code_the_parser_types_unknown_still_gets_the_subject_answer(console):
+    """Live check 13 Oct: the live parser reads a bare code as `message_type: unknown` with no
+    domain and a resolved, confident `canonical_code` (the casual lane today)."""
+    reply = console.say(CODE, verdict(message_type="unknown", domain_hint=None, entities=[entity(CODE, hint="product", canonical_code=CODE)]))
+    assert CODE in reply, reply
+    assert reply.endswith(f"Something else? Tell me what you need about {CODE}."), reply
