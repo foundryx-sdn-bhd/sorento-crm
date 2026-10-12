@@ -20,6 +20,7 @@ from sqlalchemy import text
 import app.main  # noqa: F401  isort:skip
 from app.services import ai_prompt_registry, chatbot_prompt_vars as pv
 from tests._pg_fixture import pg_session
+from tests.chatbot.test_prompt_dynamic_prod_snapshot import REFERENCE_KINDS
 
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 SNAPSHOT = BACKEND / "alembic" / "data" / "chatbot_semantic_parser.prod-20261001.txt"
@@ -85,6 +86,9 @@ def test_with_the_seeds_the_owner_file_swaps_these_lists_and_still_renders_byte_
     source = SNAPSHOT.read_text(encoding="utf-8")
     with pg_session() as db:
         _seeded(db)
+        # The 1 Oct file's entity-kind block predates the five REF-PROBES kinds (#1569).
+        db.execute(text("DELETE FROM chatbot_entity_kinds WHERE kind = ANY(:k)"), {"k": REFERENCE_KINDS})
+        pv.clear_cache()
         # The statuses bullets match only when the rows carry the owner's words (the
         # sandbox may hold a hand-test word on a sales row, which is untagged anyway).
         template, report = pv.identical_wording_layer(source, db)

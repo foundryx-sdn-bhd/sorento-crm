@@ -605,7 +605,9 @@ def test_every_company_id_table_is_registered():
     # + 1 (PRODUCT-ALTERNATIVES, #1533): `product_alternatives`, one company's own "use this
     #   instead" link between two of its products; the product page and the chatbot read it
     #   by product, so the mixin's filter is what hides another company's links = 158.
-    expected_owned = 158
+    # + 1 (WC-SEAT-COMPAT): `product_compatibility`, one company's own "seat cover fits WC"
+    #   link between two of its products, read by product like the alternatives = 159.
+    expected_owned = 159
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )
