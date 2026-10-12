@@ -271,7 +271,8 @@ def test_t4_nothing_escapes_a_simulation_with_a_stock_short_line(api, monkeypatc
 
 
 def test_t4_a_real_commit_on_any_connection_raises_while_simulating(api):
-    """T4 (engine-level guard): a raw `SessionLocal()` commit raises inside `simulating()`."""
+    """T4 (engine-level guard, replaces the v1 session tripwire unit test): inside
+    `simulating()` a raw `SessionLocal()` commit raises; outside it the same commit works."""
     from app.database import SessionLocal
     from app.services.confirm_simulation import SimulationWouldCommit, simulating
 
@@ -284,6 +285,13 @@ def test_t4_a_real_commit_on_any_connection_raises_while_simulating(api):
         finally:
             raw.rollback()
             raw.close()
+
+    after = SessionLocal()
+    try:
+        after.execute(sa.text("select 1"))
+        after.commit()  # outside a simulation: succeeds
+    finally:
+        after.close()
 
 
 def test_t4_a_savepoint_release_on_the_simulations_own_session_does_not_raise(api):

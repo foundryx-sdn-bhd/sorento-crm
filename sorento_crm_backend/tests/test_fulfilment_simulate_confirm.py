@@ -178,50 +178,53 @@ def test_a_simulation_that_would_confirm_persists_nothing(api, monkeypatch):
 # --------------------------------------------------------------------------- AC-S4
 
 
-def test_a_root_commit_inside_the_write_is_reported_as_that_orders_error(api, monkeypatch):
-    """AC-S4: the route trips on a root commit: ok:false, SimulationWouldCommit, no rows."""
+def test_a_real_commit_inside_the_write_is_reported_as_that_orders_error(api, monkeypatch):
+    """AC-S4 (v2): the write opens a FRESH `SessionLocal()` and commits a row; the engine-level
+    guard raises, the order answers ok:false with SimulationWouldCommit, and the row is not
+    there afterwards."""
+    import sqlalchemy as sa
+
+    from app.database import SessionLocal, engine
     from app.services.project_supply_service import ProjectSupplyService
 
     client, world = api
     _as_role(monkeypatch, "admin")
-    original = ProjectSupplyService.confirm
-
-    def commits(self, order, payload, *args, **kwargs):
-        out = original(self, order, payload, *args, **kwargs)
-        self.db.commit()
-        return out
-
-    monkeypatch.setattr(ProjectSupplyService, "confirm", commits)
-    order, core_so, (a, b) = _two_line_order(world)
-    before = _counts(world, order, core_so)
-
-    response = _post(
-        client, order, [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")]
-    )
-
-    assert response.status_code == 200, response.text
-    result = response.json()["results"][0]
-    assert result["ok"] is False, result
-    assert "SimulationWouldCommit" in (result["error"] or "")
-    assert _counts(world, order, core_so) == before
-
-
-def test_tripwire_blocks_a_root_commit_but_not_a_savepoint_commit(api):
-    """AC-S4: `session.info["confirm_simulate"]` makes a root commit raise; a savepoint
-    commit still works."""
-    from app.services.confirm_simulation import SimulationWouldCommit, install_commit_tripwire
-
-    _client_unused, world = api
-    db = world.db
-    install_commit_tripwire(db)
-    db.info["confirm_simulate"] = True
+    table = f"zzt_sim_probe_{_suffix().replace('-', '_').lower()}"
+    with SessionLocal() as setup:
+        setup.execute(sa.text(f"create table public.{table} (id text)"))
+        setup.commit()
     try:
-        db.begin_nested().commit()  # must not raise
-        with pytest.raises(SimulationWouldCommit):
-            db.commit()
+        original = ProjectSupplyService.confirm
+
+        def commits_elsewhere(self, order, payload, *args, **kwargs):
+            out = original(self, order, payload, *args, **kwargs)
+            other = SessionLocal()
+            try:
+                other.execute(sa.text(f"insert into public.{table} values ('leak')"))
+                other.commit()
+            finally:
+                other.close()
+            return out
+
+        monkeypatch.setattr(ProjectSupplyService, "confirm", commits_elsewhere)
+        order, core_so, (a, b) = _two_line_order(world)
+        before = _counts(world, order, core_so)
+
+        response = _post(
+            client, order, [_line_payload(a.id, buy_qty="50"), _line_payload(b.id, buy_qty="50")]
+        )
+
+        assert response.status_code == 200, response.text
+        result = response.json()["results"][0]
+        assert result["ok"] is False, result
+        assert "SimulationWouldCommit" in (result["error"] or "")
+        with engine.connect() as probe:
+            assert probe.execute(sa.text(f"select count(*) from public.{table}")).scalar() == 0
+        assert _counts(world, order, core_so) == before
     finally:
-        db.info.pop("confirm_simulate", None)
-        db.rollback()
+        with SessionLocal() as cleanup:
+            cleanup.execute(sa.text(f"drop table if exists public.{table}"))
+            cleanup.commit()
 
 
 def test_enqueue_job_raises_while_simulating_and_behaves_normally_otherwise(monkeypatch):
