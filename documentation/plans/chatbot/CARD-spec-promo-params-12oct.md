@@ -206,3 +206,26 @@ value and the distinct values (counts only). Feeds question 2 and the example re
 6. Owner rule: replies state only what the data holds; no invented lines, no unconfigured fallbacks.
 7. `seat_cover` registry key will be turned off (separate WC seat-cover lane); it must not reach the
    parser spec vocabulary.
+
+## 9. Build plan after the answers (12 Oct)
+
+Root cause of the spot-check, from the code: grounding drops a `specification` entity whose key is not
+in the registry and whose raw has no key-name word (`head/grounding.py:738-751`), so "250mm" with no
+axis never reaches the resolver or the tool. Slices:
+
+1. Virtual `size` key. `specification_lines` (`chatbot_parser_prompt.py:1170`) renders one line for it
+   (a number in mm when no axis word is said); grounding keeps `spec_key=size` with a numeric value;
+   the route resolves the axis from data: the active numeric mm keys whose stored value equals the
+   number among products matching the other constraints. One key: use it (`spec_resolved`). Several:
+   no rows plus `spec_ambiguous` (the bot asks which). None: `spec_alternatives` per mm key plus
+   `spec_unrecorded` (products with no mm value at all).
+2. Product and stock lanes: grounded specs (plus the class / product type, resolved through registry
+   data, never text matching) become `spec_constraints` on the MCP call for every described ask (no
+   typed code), whatever the phrasing; the MCP call then carries no resolver `product_ids`.
+3. Promotion: a promotion ask with a described subject calls `crm_marketing_promotion_products_list`
+   with `spec_constraints` (the promotions covering the subject together with the products on them);
+   "which basins are on promotion" and "basin promotion" give the same call. A promotion ask with no
+   subject keeps `crm_marketing_promotions_list`.
+4. Miss replies come from the MCP presenters and state only what the response holds.
+5. Guard: an inactive registry key (`seat_cover` once turned off) is absent from the parser vocabulary
+   and rejected by `spec_constraints`.
