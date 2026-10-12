@@ -1,6 +1,6 @@
 # PLAN: Stock Debt projected coverage (sales orders only) (STOCK-DEBT-PROJECTION)
 
-Status: behaviour card posted, waiting on owner (no code before the owner answers). Track: small
+Status: behaviour card v2 posted (data request folded in), waiting on owner (no code before the owner answers). Track: small
 fix track expected (no migration, no auth/RBAC change, no new ingest surface; one new read in
 `stock_debt_service.py`, one toggle on `StockDebtClient.tsx`).
 
@@ -26,14 +26,19 @@ Three independent reasons, each enough on its own:
    `supply_assignment.py:224-232`). An unlinked PO clears no shortfall; its quantity is only
    "free" in its own month. Links that DO pin it come from OI placements
    (`_holds`, `stock_debt_service.py:1374-1466`) and the book's S/O (`_book_so_holds`).
-3. **HQ is outside the page's span.** `_warehouses` (`stock_debt_service.py:699-724`) reads
-   project bins (`fulfilment_planning_predicate`) plus site pools defined as "some warehouse's
-   `pool_warehouse_id`" (`project_supply_service.py:2422-2446`). HQ is nobody's pool, so the
-   5,000 never reaches `_supply` at all: that is why October reads +138 and not +5,138. The
-   aux column "BRW PO Qty" counts it because it uses the OTHER pool rule, the segment rule
-   (`site_pool_supply.py:69-109`, `pool_predicate.py:64-67`: active and `segment <> 'project'`).
-   On top of that, the pool seal (`supply_assignment.py:147-170`) keeps pool supply off project
-   lines even when it is in the span.
+3. **Span and pool seal.** `_warehouses` (`stock_debt_service.py:699-724`) reads project bins
+   (`fulfilment_planning_predicate`) plus site pools defined as "some warehouse's
+   `pool_warehouse_id`" (`project_supply_service.py:2422-2446`). The aux column "BRW PO Qty"
+   uses the other pool rule, the segment rule (`site_pool_supply.py:69-109`). The pool seal
+   (`supply_assignment.py:147-170`) keeps pool supply off project lines.
+
+   **Correction after the data request (12 Oct):** on the dev copy every dealer-segment
+   warehouse is its own `pool_warehouse_id`, HQ included, so HQ IS in the span there. The first
+   draft's "HQ is nobody's pool" does not hold on dev and is unverified on prod. If prod is the
+   same, the 5,000 is already credited to October as free supply, and October's +138 is what
+   remains after the past-due and October shortfalls (past-due lines land in the current month).
+   A running projection would then carry +138 forward and read red from December. The owner is
+   asked to check the October drill on prod before the rule is fixed (card, check 1).
 
 ## Behaviour card (proposed rule, answers pending)
 
@@ -69,12 +74,10 @@ not counted and is not silently dropped: the drill still lists it.
 Demand counted: every open sales-order line the page counts today (`_demand`:
 `is_open_demand`, `is_transferable_order`, SO status open, the date filter), project AND dealer,
 by `required_date`; past-due lines land in the current month. TBA, undated and unlocated lines
-keep their own columns and are NOT subtracted from the running row (question 4).
+keep their own columns and are NOT subtracted from the running row (question 3).
 
-Counted locations (question 3): the page's own span (project bins) plus every ACTIVE site pool by
-the segment rule, so HQ counts and the projected row foots with "BRW On Hand / PO / Incoming".
-`book=project` keeps project bins only, `book=retail` keeps pools only; `group=` narrows the
-project half exactly as today.
+Counted locations: the page's own span, unchanged (project bins plus the FK site pools, which
+on dev includes HQ). `book` and `group=` narrow it exactly as today.
 
 ### How order inquiries leave the calculation
 
@@ -90,25 +93,13 @@ no placement or allocation is written. The switch only changes what the month ce
 The drill keeps listing the lines as today (short stays short); in projection mode its header
 adds one line: "Opening x, in y, out z, projected w".
 
-### SRTWT2215 under the rule (estimate from the prod row; exact figures pending the data request)
+### Examples
 
-Assuming the month shortfalls above are the full SO demand of those months and the 5,000 lands
-today (delivery 8 Oct is past):
-
-| | Oct | Nov | Dec | Jan | Feb | Mar |
-| --- | --- | --- | --- | --- | --- | --- |
-| Today (month's own) | +138 | -17 | -1,436 | -1,613 | -480 | -797 |
-| Projected | +5,138 | +5,121 | +3,685 | +2,072 | +1,592 | +795 |
-
-So the 5,000 reads as covering Nov to Mar with 795 left, which is the owner's expectation.
-
-### Examples from dev data
-
-Pending `crew-data-request` (this sandbox has no dev DB access by contract). Wanted: SRTWT2215
-plus 3-4 products of these shapes: (a) unlinked PO at a pool covering later project months,
-(b) an SPO with an ETA that turns a red month green under projection, (c) a product that stays
-red under projection (demand beyond all supply), (d) a product whose month view is red only
-because of an OI placement pinning supply elsewhere. Query: appendix A.
+Worked on the dev copy by crew's data request (12 Oct). The figures are on the lane PR's card
+comment, not in this repo. Shapes covered: SRTWT2215 (on dev it has no 5,000 PO; the PO is
+prod only), an unlinked AutoCount PO at a pool covering later months, an overdue SPO carrying
+later months green, a product that stays red, and a product with OI placements pinning PO
+quantity to far lines. Dev has no open SPO with a future ETA, so that shape is seeded in tests.
 
 ### Questions (max 5, each with a recommendation)
 
@@ -120,13 +111,10 @@ because of an OI placement pinning supply elsewhere. Query: appendix A.
    supply covers project lines in the projection, (b) one running number per ownership group.
    Recommend (a): it is the only shape that shows the 5,000 covering Dec to Mar, and a
    projection is not an allocation, so crossing the seal decides nothing.
-3. **Which locations.** (a) project bins in span plus every active site pool by the segment rule
-   (HQ counts; foots with the BRW On Hand / PO / Incoming columns), (b) today's span (HQ stays
-   invisible, the 5,000 is never counted). Recommend (a).
-4. **TBA / undated / unlocated demand.** (a) keep their own columns, not subtracted from the
+3. **TBA / undated / unlocated demand.** (a) keep their own columns, not subtracted from the
    running row, (b) subtract them after the last month. Recommend (a): they have no month to
    land in, and the TBA column already shows them beside the row.
-5. **Drill and "Only products in debt" while projecting.** (a) a cell opens the existing drill
+4. **Drill and "Only products in debt" while projecting.** (a) a cell opens the existing drill
    with the Opening / in / out / projected line added; "in debt" means any projected month
    below 0, (b) cells are not clickable while projecting; "in debt" keeps today's meaning.
    Recommend (a): the drill is how a planner checks a number, and a product whose projection
@@ -136,7 +124,7 @@ because of an OI placement pinning supply elsewhere. Query: appendix A.
 
 - Backend: `StockDebtService.list(..., projected: bool = False)`. When set, a new
   `_projection(product_ids, warehouses)` reads the SAME three supply readers `_supply` uses
-  (with the pool half from the segment rule) and `_demand`, sums by month key, and runs the
+  and `_demand`, sums by month key, and runs the
   cumulative sum; it replaces `months[*].balance` and `total` on the row. No `assign()`, no
   holds. `_in_debt` reads the projected months when set. Same flag on the cell route (header
   line) and the export.
