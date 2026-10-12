@@ -343,6 +343,13 @@ def test_add_duplicate_is_409(db, monkeypatch):
     assert client.post(
         _page(cover), json={"other_product_id": wc.id, "other_role": "wc"}
     ).status_code == 409
+    # And the pair turned round (the WC named as the cover's seat cover) is refused too.
+    assert client.post(
+        _page(wc), json={"other_product_id": cover.id, "other_role": "wc"}
+    ).status_code == 409
+    assert client.post(
+        _page(cover), json={"other_product_id": wc.id, "other_role": "seat_cover"}
+    ).status_code == 409
 
 
 def test_add_self_is_400_and_bad_role_is_422(db, monkeypatch):
@@ -439,6 +446,7 @@ CATALOGUE = [
     "SRTWC8383-SH-MK",  # a finish the spec engine does not know, but the catalogue uses
     "SRTWC8383-RL-FT",  # a segment nobody has said is a plain variant marker
     "SRTWC8383-RL-UF-150-NEW",  # trap, seat, size and packaging markers only
+    "SRTWC8383-RL-MBL-BL",  # fits printed -MBL and -BL equally
     "SRTWC8383-SC",  # a seat cover, never a WC
     "SRTWC8152-RL-BL",
     "SRTWC8122-UF",
@@ -537,6 +545,7 @@ def test_ambiguous_skus_are_unresolved_and_never_linked(db, catalogue, monkeypat
         None,
     )
     for code, reason in (
+        ("SRTWC8383-RL-MBL-BL", "ambiguous"),
         ("SRTWC8383-SH-MK", "finish_not_printed"),
         ("SRTWC8383-RL-FT", "unknown_segment"),
     ):
@@ -722,3 +731,89 @@ def test_retire_removes_the_values_and_deactivates_the_key(db, catalogue, seat_c
     assert "SRTWC8383-RL-UF" in str(audit[-1].old_values)
     spec = _review(client)["seat_cover_spec"]
     assert (spec["is_active"], spec["value_count"], spec["can_retire"]) == (False, 0, False)
+
+
+def test_retire_waits_for_every_company_holding_a_value(db, catalogue, seat_cover_spec, monkeypatch):
+    """Security review: the retire reaches every company, so one company's flyer apply is
+    not enough while another company still holds a value with nothing to replace it."""
+    from app.services.product_spec_write import apply_spec_values
+
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    _p(db, "SRTWC8383-RL-UF", company_id=MOCHA_ID)
+    apply_spec_values(
+        db,
+        "SRTWC8383-RL-UF",
+        [{"spec_key": "seat_cover", "value": "SRTSCBD331-UF", "source": "human"}],
+        commit=False,
+    )
+    db.flush()
+    client = _client(db, {VIEW, EDIT, SPEC_EDIT}, monkeypatch)  # Sorento only
+    client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": [catalogue["SRTWC8383-RL-UF"].id]})
+    assert _review(client)["seat_cover_spec"]["can_retire"] is False
+    assert _park_retire(client, seat_cover_spec.id).status_code == 409
+
+
+def test_apply_never_reaches_another_companys_sku(db, catalogue, monkeypatch):
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    foreign_cover = _p(db, "SRTSCBD331-UF", company_id=MOCHA_ID)
+    foreign_wc = _p(db, "SRTWC8383-RL-UF", company_id=MOCHA_ID)
+    client = _client(db, {VIEW, EDIT}, monkeypatch)  # Sorento only
+    data = client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": [foreign_wc.id]}).json()["data"]
+    assert data["linked"] == 0
+    assert data["skipped"] == [{"product_id": foreign_wc.id, "reason": "not_on_flyer"}]
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    assert (
+        db.query(ProductCompatibility)
+        .filter(ProductCompatibility.seat_cover_product_id == foreign_cover.id)
+        .count()
+        == 0
+    )
+
+
+def test_a_sku_grouped_under_a_printed_model_by_hand_is_unresolved(db, catalogue, monkeypatch):
+    from app.models.product import Product
+
+    sku = _p(db, "SRTWC8383A-RL")
+    sku.family_code, sku.family_code_manual = "SRTWC8383", True
+    db.flush()
+    db.refresh(sku)
+    assert sku.family_code == "SRTWC8383"
+    review = _review(_client(db, {VIEW}, monkeypatch))
+    row = _sku(_model(review, "SRTWC8383"), "SRTWC8383A-RL")
+    assert (row["status"], row["reason"]) == ("unresolved", "not_printed")
+    assert db.get(Product, sku.id) is not None
+
+
+def test_retire_clears_derivation_rules_so_the_values_cannot_come_back(
+    db, catalogue, seat_cover_spec, monkeypatch
+):
+    seat_cover_spec.derivation_rules = [
+        {"match": "contains", "pattern": "SRTWC8383", "value": "SRTSCBD331-UF"}
+    ]
+    db.flush()
+    client = _client(db, {VIEW, EDIT, SPEC_EDIT}, monkeypatch)
+    client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": [catalogue["SRTWC8383-RL-UF"].id]})
+    compat.retire_seat_cover_spec(db, seat_cover_spec.id)
+    db.refresh(seat_cover_spec)
+    assert seat_cover_spec.derivation_rules == []
+    holding = (
+        db.query(ProductSpecifications)
+        .filter(ProductSpecifications.values.has_key("seat_cover"))  # noqa: W601
+        .count()
+    )
+    assert holding == 0
+
+
+def test_retire_rechecks_its_gate_when_the_countdown_lapses(
+    db, catalogue, seat_cover_spec, monkeypatch
+):
+    client = _client(db, {VIEW, EDIT, SPEC_EDIT}, monkeypatch)
+    client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": [catalogue["SRTWC8383-RL-UF"].id]})
+    assert _park_retire(client, seat_cover_spec.id).status_code == 202
+    for link in db.query(ProductCompatibility).all():
+        compat.unlink(db, link.id)
+    assert compat.retire_seat_cover_spec(db, seat_cover_spec.id) == {"removed": 0}
+    db.refresh(seat_cover_spec)
+    assert seat_cover_spec.is_active is True

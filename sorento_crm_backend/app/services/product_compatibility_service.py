@@ -25,6 +25,7 @@ import re
 from collections import defaultdict
 from typing import Iterable, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -176,11 +177,17 @@ def add_manual(
     cover, wc = (other, product) if other_role == ROLE_SEAT_COVER else (product, other)
     if is_spare_seat_cover(wc.product_code):
         raise handle_validation_error(f"{wc.product_code} is a seat cover, not a WC.")
+    # Either orientation: the same two products linked the other way round would say the
+    # WC is a seat cover that fits the seat cover.
     exists = (
         db.query(ProductCompatibility.id)
         .filter(
-            ProductCompatibility.seat_cover_product_id == cover.id,
-            ProductCompatibility.wc_product_id == wc.id,
+            or_(
+                (ProductCompatibility.seat_cover_product_id == cover.id)
+                & (ProductCompatibility.wc_product_id == wc.id),
+                (ProductCompatibility.seat_cover_product_id == wc.id)
+                & (ProductCompatibility.wc_product_id == cover.id),
+            )
         )
         .first()
     )
@@ -246,6 +253,10 @@ def _classify(sku: Product, printed: list[dict]) -> tuple[Optional[dict], Option
     prints only on other codes of the model (a plain `SRTWC8066-S` when only
     `SRTWC8066-S-<colour>` is printed), a finish the flyer does not print for it, or any
     other segment that is not a plain variant marker (`NEUTRAL_SEGMENTS`)."""
+    if family_code_for(sku.product_code) != sku.family_code:
+        # Grouped under the model by hand (`family_code_manual`): its own code is not the
+        # printed model, so nothing on the flyer names it.
+        return None, "not_printed"
     segs = set(_segments(sku.product_code))
     fits = [p for p in printed if p["segments"] <= segs]
     if not fits:
@@ -375,7 +386,6 @@ def flyer_review(db: Session) -> dict:
                 "skus": rows,
             }
         )
-    models.sort(key=lambda m: (m["printed"][0]["flyer_row"], m["family_code"]))
 
     all_cover_codes = {normalize_code(c) for _, cs, _ in FLYER_ROWS for c in cs}
     return {
@@ -436,7 +446,12 @@ def apply_flyer(db: Session, wc_product_ids: list[str], user_id: Optional[str]) 
                 )
             )
             written += 1
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two applies of the same SKUs racing: the unique pair index is the arbiter.
+        db.rollback()
+        raise handle_conflict("These SKUs were linked at the same moment. Reload and try again.")
     return {"linked": written, "already_linked": linked, "skipped": skipped}
 
 
@@ -469,13 +484,21 @@ def _spec_rows_holding(db: Session):
         )
 
 
-def _has_flyer_link(db: Session) -> bool:
-    return (
-        db.query(ProductCompatibility.id)
-        .filter(ProductCompatibility.source == SOURCE_FLYER)
-        .first()
-        is not None
-    )
+def _flyer_applied_everywhere(db: Session) -> bool:
+    """The old spec is replaced: flyer links exist, in EVERY company that holds a value.
+
+    The retire reaches every company (the key is install-wide), so its gate looks at every
+    company too: one company applying the flyer must not take another company's values
+    away before that company has links to replace them (security review, PR #1590)."""
+    with company_scope(db, None):
+        linked = {
+            str(company_id)
+            for (company_id,) in db.query(ProductCompatibility.company_id)
+            .filter(ProductCompatibility.source == SOURCE_FLYER)
+            .distinct()
+        }
+        holding = {str(product.company_id) for _, product in _spec_rows_holding(db)}
+    return bool(linked) and holding <= linked
 
 
 def seat_cover_spec_state(db: Session) -> Optional[dict]:
@@ -490,7 +513,7 @@ def seat_cover_spec_state(db: Session) -> Optional[dict]:
         "registry_id": registry.id,
         "is_active": bool(registry.is_active),
         "value_count": value_count,
-        "can_retire": retirable and _has_flyer_link(db),
+        "can_retire": retirable and _flyer_applied_everywhere(db),
     }
 
 
@@ -500,18 +523,27 @@ def assert_can_retire(db: Session, registry_id: str) -> None:
     registry = _seat_cover_registry(db)
     if registry is None or str(registry.id) != str(registry_id):
         raise handle_not_found("Seat Cover specification", registry_id)
-    if not _has_flyer_link(db):
+    if not _flyer_applied_everywhere(db):
         raise AppException(
             status_code=409,
-            message="Apply the seat cover flyer first; the old spec stays until it is replaced.",
+            message=(
+                "Apply the seat cover flyer first, in every company holding the old spec; "
+                "it stays until it is replaced."
+            ),
             code="seat_cover_flyer_not_applied",
         )
 
 
 def retire_seat_cover_spec(db: Session, registry_id: str, user_id: Optional[str] = None) -> dict:
-    """Remove every `seat_cover` value and set the key inactive, with one audit row holding
-    what was removed. The key goes inactive FIRST, so the re-derive each removal triggers
-    cannot read the key back."""
+    """Remove every `seat_cover` value, set the key inactive and clear its derivation rules,
+    with one audit row holding what was removed.
+
+    Inactive alone would not stop the re-derive each removal triggers: derivation reads
+    every key's rules, active or not (`product_spec_derivation.configured_rules`). An empty
+    rule list means "this key has no rules", so the values cannot come back.
+
+    The gate is checked again here, at commit time: links unlinked during the countdown
+    leave the old spec in place rather than retire it with nothing replacing it."""
     from app.services.audit_service import log_audit
     from app.services.product_spec_write import apply_spec_values
 
@@ -519,15 +551,23 @@ def retire_seat_cover_spec(db: Session, registry_id: str, user_id: Optional[str]
     if registry is None or str(registry.id) != str(registry_id):
         # Already gone: nothing left to retire.
         return {"removed": 0}
+    if not _flyer_applied_everywhere(db):
+        return {"removed": 0}
     holding = _spec_rows_holding(db)
-    removed = {
-        product.product_code: (spec.values or {}).get(SEAT_COVER_SPEC_KEY, {}).get("value")
+    removed = [
+        {
+            "product_code": product.product_code,
+            "company_id": str(product.company_id),
+            "value": (spec.values or {}).get(SEAT_COVER_SPEC_KEY, {}).get("value"),
+        }
         for spec, product in holding
-    }
+    ]
     was_active = bool(registry.is_active)
+    old_rules = registry.derivation_rules
     registry.is_active = False
+    registry.derivation_rules = []
     db.flush()
-    for code in sorted(removed):
+    for code in sorted({row["product_code"] for row in removed}):
         apply_spec_values(
             db,
             code,
@@ -540,8 +580,8 @@ def retire_seat_cover_spec(db: Session, registry_id: str, user_id: Optional[str]
         "product_spec_registry",
         str(registry.id),
         "UPDATE",
-        old_values={"is_active": was_active, "values": removed},
-        new_values={"is_active": False, "values": {}},
+        old_values={"is_active": was_active, "derivation_rules": old_rules, "values": removed},
+        new_values={"is_active": False, "derivation_rules": [], "values": []},
         user_id=user_id,
         description="Seat Cover spec retired: replaced by seat cover compatibility links.",
         event="seat_cover_spec.retire",

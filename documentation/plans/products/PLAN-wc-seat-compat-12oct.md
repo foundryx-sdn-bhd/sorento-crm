@@ -1,6 +1,6 @@
 # PLAN: WC to seat cover compatibility (data + admin slice)
 
-Status: Build (backend green, frontend next). Track: full (new table + migration).
+Status: Review (backend + frontend built, reviewer and security fixes applied, waiting on owner hand test). Track: full (new table + migration).
 Lane: WC-SEAT-COMPAT, PR #1590. Chatbot slice is a later lane, after #1582 merges.
 UAC: `wc-seat-compat-12oct-acceptance-criteria.md` (alongside).
 
@@ -48,6 +48,8 @@ links in a later lane.
 
 For each SKU of a printed model (`products.family_code`), `-SC` SKUs excluded:
 
+0. A SKU grouped under a printed model by hand (its own code's model differs from its
+   `family_code`) is UNRESOLVED (`not_printed`).
 1. Candidates: printed codes of the model whose segments the SKU holds as whole segments
    (`SRTWC8383-MBL` -> {MBL} is held by `SRTWC8383-RL-MBL`, never by `...-RL-BL`).
 2. The most specific candidate wins; two equally specific = UNRESOLVED (`ambiguous`).
@@ -82,7 +84,8 @@ finishes. The PDF is not committed.
 
 - `GET  /api/v1/master-data/products/{id}/compatibility` (products.view) -> `{covers, fits}`
 - `POST /api/v1/master-data/products/{id}/compatibility` (products.edit, session only)
-  `{other_product_id, other_role: seat_cover|wc}`
+  `{other_product_id, other_role: seat_cover|wc}`. A pair already linked in either
+  orientation is 409.
 - `GET  /api/v1/master-data/product-compatibility/flyer-review` (products.view)
   -> `{models: [{family_code, printed: [{flyer_row, wc_code, covers: [{code, found}]}], skus:
   [{product_id, product_code, status, reason, printed_code, flyer_row, cover_codes,
@@ -92,9 +95,12 @@ finishes. The PDF is not committed.
   its reason. Idempotent. No proposal tables: the review is derived on read from the fixed
   flyer list and the live catalogue.
 - Pending actions: `product_compatibility.unlink` (reversible, products.edit) and
-  `seat_cover_spec.retire` (destructive, spec_registry.edit; refused 409 before any flyer
-  link exists). Retire deactivates the key first, reverts every value through
-  `product_spec_write.apply_spec_values`, and writes one audit row holding the removed values.
+  `seat_cover_spec.retire` (destructive, spec_registry.edit). Refused 409 unless flyer links
+  exist in EVERY company holding a value (the key is install-wide, so the gate is too), and
+  re-checked when the countdown lapses. Retire deactivates the key and clears its derivation
+  rules (derivation reads inactive keys too), reverts every value through
+  `product_spec_write.apply_spec_values`, and writes one audit row with the removed values per
+  company. Reverting re-derives each code, which also clears its spec verification stamp.
 
 ### Frontend
 
@@ -108,7 +114,7 @@ finishes. The PDF is not committed.
 
 ## 5. Test list
 
-Backend `tests/test_product_compatibility.py` (41): flyer data counts; table CHECKs and unique;
+Backend `tests/test_product_compatibility.py` (44): flyer data counts; table CHECKs and unique;
 reads with no inheritance; page API both directions, empty, 403s, 409 duplicate both ways,
 400 self, 422 role, -SC never a WC, cross-company 404 (GET, add, park); unlink park 202/404/403;
 review mapping by whole segment, every UNRESOLVED reason, row-note finish, -SC never listed,

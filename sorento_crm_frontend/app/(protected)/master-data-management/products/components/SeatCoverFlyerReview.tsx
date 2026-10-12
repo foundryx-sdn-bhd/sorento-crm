@@ -334,11 +334,10 @@ export default function SeatCoverFlyerReview() {
     });
   }
 
-  async function onApply() {
+  function onApply() {
     const ids = [...ticked];
     if (!ids.length) return;
-    await apply.mutateAsync(ids);
-    setTicked(new Set());
+    apply.mutate(ids, { onSuccess: () => setTicked(new Set()) });
   }
 
   if (isLoading) {

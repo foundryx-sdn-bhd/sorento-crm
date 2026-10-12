@@ -15,8 +15,8 @@ vi.mock('@/hooks/usePermissions', () => ({
   useHasPermission: (slug: string) => perms.has(slug),
 }));
 
-const { applyMutateAsync, retireRun } = vi.hoisted(() => ({
-  applyMutateAsync: vi
+const { applyMutate, retireRun } = vi.hoisted(() => ({
+  applyMutate: vi
     .fn()
     .mockResolvedValue({ linked: 1, already_linked: 0, skipped: [] }),
   retireRun: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock('../hooks/useProductCompatibility', () => ({
     error: null,
   }),
   useApplyFlyerReview: () => ({
-    mutateAsync: applyMutateAsync,
+    mutate: applyMutate,
     isPending: false,
   }),
   useRetireSeatCoverSpec: () => ({
@@ -173,7 +173,7 @@ describe('SeatCoverFlyerReview', () => {
     ).toBe(true);
   });
 
-  it('the model tick takes every ready SKU and applies only those', async () => {
+  it('the model tick takes every ready SKU and applies only those', () => {
     render(<SeatCoverFlyerReview />);
     fireEvent.click(
       screen.getByRole('checkbox', {
@@ -181,7 +181,10 @@ describe('SeatCoverFlyerReview', () => {
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Link 2 SKUs' }));
-    expect(applyMutateAsync).toHaveBeenCalledWith(['w-uf', 'w-mbl']);
+    expect(applyMutate).toHaveBeenCalledWith(
+      ['w-uf', 'w-mbl'],
+      expect.any(Object),
+    );
   });
 
   it('a single SKU tick applies that SKU', () => {
@@ -190,7 +193,7 @@ describe('SeatCoverFlyerReview', () => {
       screen.getByRole('checkbox', { name: 'Link SRTWC8383-RL-MBL' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Link 1 SKU' }));
-    expect(applyMutateAsync).toHaveBeenCalledWith(['w-mbl']);
+    expect(applyMutate).toHaveBeenCalledWith(['w-mbl'], expect.any(Object));
   });
 
   it('without products edit nothing can be ticked', () => {
