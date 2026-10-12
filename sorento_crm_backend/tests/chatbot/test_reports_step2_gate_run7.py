@@ -460,3 +460,28 @@ def test_b35_guard_a_company_totals_analysis_still_calls_the_analysis(console, m
     qf = _subject_analysis(entities=[], group_by="month")
     _text, log = lane._say_all(console, monkeypatch, qf, "sales by month this year")
     assert "crm_sales_analysis" in _names(log), log
+
+
+def _totals_analysis() -> dict[str, Any]:
+    return _live(_parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_analysis", domain_in_message=True,
+        group_by="month", sales_company=None, top_n=None, entities=[], entity_op="replace", **SEP,
+    ))
+
+
+def test_b36_a_company_totals_analysis_after_a_product_report_stays_an_analysis(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, _answer)
+    console.say(_sales(entities=[lane._hit(EXACT, "product")]), f"sales of {EXACT}")
+    before = len(seen)
+    console.say(_totals_analysis(), "sales by month this year")
+    later = [n for n, _a in seen[before:]]
+    assert "crm_sales_analysis" in later and "crm_sales_report" not in later, later
+
+
+def test_b37_a_company_totals_analysis_after_a_customer_report_stays_an_analysis(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, _answer)
+    console.say(_sales(), "sales report for the customer")
+    before = len(seen)
+    console.say(_totals_analysis(), "sales by month this year")
+    later = [n for n, _a in seen[before:]]
+    assert "crm_sales_analysis" in later and "crm_sales_report" not in later, later
