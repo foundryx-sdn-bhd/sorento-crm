@@ -649,3 +649,132 @@ def test_promotion_products_route_filters_lines_by_spec_constraints(api, db, mon
     assert resp.status_code == 200, resp.text
     codes = {row["product"]["product_code"] for row in resp.json()["data"]}
     assert codes == _codes_of([basin])
+
+
+# --------------------------------------------------------------------------------------- #
+# Slice 2b: company scope and spec visibility on the miss detail and on `size`
+# --------------------------------------------------------------------------------------- #
+
+
+def _bare_list(api, **params):
+    """The chatbot call shape: no resolver product_ids, just the constraints."""
+    return api.get(PRODUCTS, params={"limit": 100, **params})
+
+
+def test_miss_detail_and_size_ignore_products_of_another_company(api, db):
+    """S1. RED today: `spec_miss_detail` and the size resolver read `product_specifications`
+    with no join to the scoped `products`, so a Mocha grating holding dim_length 999 leaks
+    into `spec_alternatives`, `spec_unrecorded` and `spec_resolved`."""
+    seed_mocha(db)
+    ours_sized = _g(db, "S1OURS", dim_length=100)
+    ours_bare = _g(db, "S1BARE")
+    foreign_sized = _p(
+        db, "S1FSIZED",
+        {"product_type": _enum("floor_grating"), "dim_length": _num(999)},
+        company_id=MOCHA_ID,
+    )
+    foreign_bare = _p(db, "S1FBARE", {"product_type": _enum("floor_grating")}, company_id=MOCHA_ID)
+    db.commit()
+    assert foreign_sized.company_id == MOCHA_ID and foreign_bare.company_id == MOCHA_ID
+
+    miss = _bare_list(api, **_constraints(GRATING, {"key": "dim_length", "op": "eq", "value": 300}))
+    assert miss.status_code == 200, miss.text
+    body = miss.json()
+    assert body["data"] == []
+    assert _alts(body).get("dim_length") == [100], body
+    assert "999" not in json.dumps(body.get("spec_alternatives")), body
+    assert body.get("spec_unrecorded") == {"dim_length": 1}, "the foreign bare grating must not count"
+
+    size = _bare_list(api, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 999}))
+    assert size.status_code == 200, size.text
+    sbody = size.json()
+    assert sbody["data"] == []
+    assert not sbody.get("spec_resolved"), sbody
+    assert not sbody.get("spec_ambiguous"), sbody
+    assert "999" not in json.dumps(sbody.get("spec_alternatives")), sbody
+    assert sbody.get("spec_unrecorded") == {"size": 1}, sbody
+
+
+def _hide_dim_width_contact(db):
+    """A respond contact whose per-contact spec policy hides dim_width."""
+    from app.models.access import RespondContact, SpecVisibilityPolicy
+    from tests._pg_fixture import unique_code
+
+    contact = RespondContact(
+        id=unique_code("CONTACT"),
+        phone_number=f"+60{uuid.uuid4().int % 10**9:09d}",
+        name="ZZT Spec Contact",
+    )
+    db.add(contact)
+    db.flush()
+    db.add(
+        SpecVisibilityPolicy(
+            id=str(uuid.uuid4()), contact_id=contact.id, spec_keys=None, excluded_spec_keys=["dim_width"]
+        )
+    )
+    db.flush()
+    return contact
+
+
+def _width_world(db):
+    a = _g(db, "VL250", dim_length=250)
+    c = _g(db, "VW250", dim_width=250)
+    d = _g(db, "VW120", dim_width=120)
+    db.commit()
+    return a, c, d
+
+
+def test_hidden_key_is_never_a_size_candidate_or_an_alternative(api, db):
+    """S2 (i). RED today: `contact_id` is not read by the products route, so dim_width stays
+    visible: 250 is ambiguous (length or width) and 120 lists dim_width as an alternative."""
+    contact = _hide_dim_width_contact(db)
+    a, c, d = _width_world(db)
+    who = {"contact_id": contact.id, "space_id": "364817"}
+
+    shared = _bare_list(api, **who, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert _codes(shared) == _codes_of([a]), shared.text
+    sbody = shared.json()
+    assert sbody.get("spec_resolved") == {"size": "dim_length"}, sbody
+    assert not sbody.get("spec_ambiguous"), sbody
+    assert "dim_width" not in shared.text
+
+    only_width = _bare_list(api, **who, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 120}))
+    assert only_width.status_code == 200, only_width.text
+    wbody = only_width.json()
+    assert wbody["data"] == []
+    assert not wbody.get("spec_resolved"), wbody
+    assert "dim_width" not in only_width.text, wbody
+    assert "width" not in only_width.text.lower(), wbody
+    assert _alts(wbody).get("dim_length") == [250], wbody
+
+
+def test_a_constraint_on_a_hidden_key_is_not_applied_and_not_echoed(api, db):
+    """S2 (ii). RED today: the dim_width constraint is applied as a filter (only the 250 width
+    grating comes back). A hidden key neither ranks nor prints, so the constraint is dropped
+    and all three gratings match; nothing in the body names the key."""
+    contact = _hide_dim_width_contact(db)
+    a, c, d = _width_world(db)
+
+    resp = _bare_list(
+        api, contact_id=contact.id, space_id="364817",
+        **_constraints(GRATING, {"key": "dim_width", "op": "eq", "value": 250}),
+    )
+    assert _codes(resp) == _codes_of([a, c, d]), resp.text
+    assert "dim_width" not in resp.text.replace("dim_width_", "")  # no echo outside the row data
+    body = resp.json()
+    for extra in ("spec_alternatives", "spec_unrecorded", "spec_resolved", "spec_ambiguous"):
+        assert "dim_width" not in json.dumps(body.get(extra)), body
+
+
+def test_staff_call_without_contact_still_sees_dim_width(api, db):
+    """S2 (iii) guard (may pass today): no contact_id, nothing hidden."""
+    a, c, d = _width_world(db)
+
+    width = _bare_list(api, **_constraints(GRATING, {"key": "dim_width", "op": "eq", "value": 250}))
+    assert _codes(width) == _codes_of([c])
+
+    size = _bare_list(api, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert size.status_code == 200, size.text
+    assert size.json().get("spec_ambiguous") == [
+        {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"]}
+    ]
