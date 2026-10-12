@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Planning why trail (mockup v2)</title>
+<title>Planning why trail (mockup v3)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set as documentation/mockups/so-cancel-line */
 :root{--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--page:#f7f7f8}
@@ -87,20 +87,34 @@ a,.lk{color:#1d4ed8;text-decoration:underline;cursor:pointer;font-size:13px}
 .sidebar .on{background:var(--muted);color:var(--foreground);font-weight:500}
 .shell{display:flex}
 </style>
+<style>
+.sheetwrap{position:relative;background:#fff;height:860px;overflow:hidden}
+.sheet{position:absolute;right:0;top:0;bottom:0;width:600px;background:#fff;border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,.08);display:flex;flex-direction:column}
+.phone .sheet{width:100%;border-left:0}
+.sheet .hd{padding:14px 16px 10px;border-bottom:1px solid var(--border)}
+.sheet .hd .t{font-size:16px;font-weight:600}
+.sheet .bd{flex:1;overflow:auto;padding:14px 16px}
+.sheet .filters{margin:10px 0 0}
+.sheet .sel{min-width:130px}
+.menu{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;z-index:3;font-size:13px}
+.menu div{padding:6px 8px;border-radius:4px}
+.menu .hl{background:var(--muted)}
+.admin{font-size:10px;font-weight:600;color:#6d28d9;background:#ede9fe;border-radius:4px;padding:0 5px;margin-left:6px}
+</style>
 </head>
 <body>
 <div class="doc">
-<h1>Planning "why" trail, mock v2</h1>
-<p class="intro">v2 (13 Oct 2026) after the owner's notes on v1: "too many words, i need structure, reuse components, you just give me a history page to debug, don't show too many things to the user" and "i am okay with the timeline, just make sure I can filter by product, SO etc". So: the Confirm refusal is a short table (line, product, change, one reason badge, one action), no sentences; the board gets no new button (line History icons open the page filtered, owner Q1); the History is one page under Project Demand, a debug tool with filters for SO, product, line, event, user and date. Real case SO422492, people masked to roles, Malaysia time (stored +8 h). New elements carry a <span class="new-tag">NEW</span> tag.</p>
-<div class="nav"><a href="#s1">1 Confirm refusal</a><a href="#s2">2 Planning history page</a><a href="#s3">3 Filtered: SO + product</a><a href="#s4">4 Open email</a><a href="#s5">5 Cancelled OI row</a><a href="#s6">6 375 px</a><a href="#s7">7 Reason badges</a><a href="#s8">8 Component mapping</a></div>
+<h1>Planning "why" trail, mock v3</h1>
+<p class="intro">v3 (13 Oct 2026) after the owner's notes on v2: "make these visible by admin which is me only" (the refusal detail) and "i don't need this page, i just need this as side panel (lightbox) from the fulfilment planning page of the SO(s)". So: the refusal detail and History are admin-only, using the check Simulate confirm already uses (role slug <code>superadmin</code>/<code>admin</code>, <code>fulfilment_planning.py:573-581</code>; FE <code>isSuperadminUser</code>, <code>lib/is-superadmin.ts:19</code>); everyone else sees today's short message. History is a side panel opened from the board's gear menu, for the SO(s) on the board, with filters SO, product, line, event, user, date. No page, no route, no menu entry, no change to the Order Inquiries worklist. Real case SO422492, people masked to roles, Malaysia time (stored +8 h). <span class="new-tag">NEW</span> marks new elements; <span class="admin">admin</span> marks admin-only.</p>
+<div class="nav"><a href="#s1">1 Confirm refusal: admin vs others</a><a href="#s2">2 Gear menu: History</a><a href="#s3">3 History panel</a><a href="#s4">4 Filtered: product</a><a href="#s5">5 Open email</a><a href="#s6">6 375 px</a><a href="#s7">7 Reason badges</a><a href="#s8">8 Component mapping</a></div>
 
 <section id="s1">
-<h2><span class="nb">1</span>Confirm refusal: one row per line, one badge, one action</h2>
-<p class="why">The board's results block, same place as today. Rows illustrative: the 12 Oct press's own lines were never recorded.</p>
+<h2><span class="nb">1</span>Confirm refusal: admin sees the rows, everyone else the short message</h2>
+<p class="why">Same results block under the board. The server sends the per-line rows only to an admin; a non-admin's answer carries none. Rows illustrative: the 12 Oct press's own lines were never recorded. Every refusal is still recorded for the History either way.</p>
 <div class="cmp">
-<div><p class="lbl">Today</p>
-<div class="res old"><div class="h">0 of 1 orders confirmed</div><div>SO422492: Nothing on this planning change could be confirmed.</div></div></div>
-<div><p class="lbl">New</p>
+<div><p class="lbl">CS user (not admin): unchanged</p>
+<div class="res"><div class="h">0 of 1 orders confirmed</div><div>SO422492: Nothing on this planning change could be confirmed.</div></div></div>
+<div><p class="lbl">Admin <span class="admin">admin</span></p>
 <div class="res"><div class="h"><span>0 of 1 orders confirmed · SO422492</span><a>History</a></div>
 <table><tr><th>Line</th><th>Product</th><th>Change</th><th>Reason</th><th></th></tr>
 <tr><td class="n">592</td><td>SRTWC8840-SC</td><td class="n">Qty 25 → 22</td><td><span class="pill warn">Not decided</span></td><td><a>Go to line</a></td></tr>
@@ -111,22 +125,30 @@ a,.lk{color:#1d4ed8;text-decoration:underline;cursor:pointer;font-size:13px}
 </section>
 
 <section id="s2">
-<h2><span class="nb">2</span>Planning history page (Project Demand → Planning history)</h2>
-<p class="why">A list page with the existing filter toolbar; results as a timeline, newest first, grouped by day. Every entry is a title, badges with counts, and a small table that opens on click. No paragraphs.</p>
-<div class="desk"><div class="shell">
-<div class="sidebar"><div class="grp">Project Demand</div><div>Fulfilment Planning</div><div>Plans</div><div>Planning changes</div><div class="on">Planning history <span class="new-tag">NEW</span></div><div>Forecast &amp; Reports</div></div>
-<div class="main" style="flex:1;min-width:0">
- <div class="pagehead"><div class="t">Planning history</div></div>
- <div class="filters">
-  <span class="sel set">SO422492 <span class="x">✕</span></span>
-  <span class="sel">Product <span>▾</span></span>
-  <span class="sel">Line <span>▾</span></span>
-  <span class="sel">Event: all <span>▾</span></span>
-  <span class="sel">User <span>▾</span></span>
-  <span class="sel">24/09/2026 → 13/10/2026 <span>▾</span></span>
-  <span class="btn">Clear</span>
- </div>
- <p class="day">12 Oct 2026</p>
+<h2><span class="nb">2</span>Gear menu: "History" under "Simulate confirm" (admin only)</h2>
+<p class="why">The board's existing gear menu. A non-admin sees only "Undo all", as today.</p>
+<div class="desk"><div class="screen"><div class="main" style="position:relative;height:300px">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div>
+ <div class="menu" style="right:120px;top:62px"><div>Undo all</div><div>Simulate confirm <span class="admin">admin</span></div><div class="hl">History <span class="admin">admin</span><span class="new-tag">NEW</span></div></div>
+ <table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table>
+</div></div><div class="cap">1280 · gear menu</div></div>
+</section>
+
+<section id="s3">
+<h2><span class="nb">3</span>History side panel over the board</h2>
+<p class="why">Sheet from the right, board still behind it. The SO filter lists only the SO(s) on this board and starts with all of them; a one-order board starts on that order. Timeline newest first: title, count badges, small table on click.</p>
+<div class="desk"><div class="sheetwrap"><div class="main" style="opacity:.45"><div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div><table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table></div><div class="scrim"></div>
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div><div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel">Product <span>▾</span></span><span class="sel">Line <span>▾</span></span><span class="sel">Event: all <span>▾</span></span><span class="sel">User <span>▾</span></span><span class="sel">Any date <span>▾</span></span><span class="btn">Clear</span></div></div><div class="bd"><p class="day">12 Oct 2026</p>
  <ol class="tl">
   <li><span class="dot r"></span><div class="ev"><div class="top"><span class="ti">Confirm refused · SO422492 <span class="new-tag">NEW</span></span><span class="tm">(example) · CS user A</span></div>
    <div class="chips"><span class="pill warn">Not decided 2</span><span class="pill mute">Changed again 1</span><span class="lk more">▾ 3 lines</span></div></div></li>
@@ -153,48 +175,41 @@ a,.lk{color:#1d4ed8;text-decoration:underline;cursor:pointer;font-size:13px}
  <ol class="tl">
   <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 2 confirmed · SO422492</span><span class="tm">5:25 pm · Admin user A</span></div><div class="chips"><span class="pill info">Ordered 3</span><span class="pill mute">Re-issued unchanged 15</span><a>Open email</a></div></div></li>
   <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 1 confirmed · SO422492 · OI-2609-0764 raised</span><span class="tm">11:30 am · CS user A</span></div><div class="chips"><span class="pill info">Ordered</span><a>Open email</a></div></div></li>
- </ol>
-</div></div><div class="cap">1280 · Planning history page, filtered to SO422492. Counts come from the stored rows; the 1:24 pm email shows kinds only because the extract held only its first lines.</div></div>
-<p class="note">Without an SO filter the page lists every order's events (latest first, paged), so the owner can start from a product, a user or a date. Event filter values: Confirm refused, Revision confirmed, Order cancelled, AutoCount update, Email.</p>
+ </ol></div></div>
+</div><div class="cap">1280 · History panel (Sheet, side right) over the Fulfilment planning board</div></div>
 </section>
 
-<section id="s3">
-<h2><span class="nb">3</span>Filtered: SO422492 + product SRTWC8840-SC: "why was the 25 cancelled?"</h2>
-<p class="why">Five entries, read bottom to top: ordered 25, AutoCount cut to 22 and nobody decided, revision 4 cancelled the 25, CANCEL ALL email.</p>
-<div class="desk"><div class="main">
- <div class="filters">
-  <span class="sel set">SO422492 <span class="x">✕</span></span>
-  <span class="sel set">SRTWC8840-SC <span class="x">✕</span></span>
-  <span class="sel">Line <span>▾</span></span>
-  <span class="sel">Event: all <span>▾</span></span>
-  <span class="sel">User <span>▾</span></span>
-  <span class="sel">Any date <span>▾</span></span>
-  <span class="btn">Clear</span>
- </div>
- <p class="day">12 Oct 2026</p>
+<section id="s4">
+<h2><span class="nb">4</span>Filtered by product: "why was SRTWC8840-SC 25 cancelled?"</h2>
+<p class="why">Read bottom to top: ordered 25, AutoCount cut it to 22 and nobody decided, revision 4 cancelled the 25, CANCEL ALL email.</p>
+<div class="desk"><div class="sheetwrap" style="height:560px"><div class="main" style="opacity:.45"><div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div><table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table></div><div class="scrim"></div>
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div><div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel set">SRTWC8840-SC <span class="x">✕</span></span><span class="sel">Line <span>▾</span></span><span class="sel">Event: all <span>▾</span></span><span class="sel">User <span>▾</span></span><span class="sel">Any date <span>▾</span></span><span class="btn">Clear</span></div></div><div class="bd"><p class="day">12 Oct 2026</p>
  <ol class="tl">
   <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: SO422492</span><span class="tm">2:42 pm</span></div><div class="chips"><span class="pill bad">Cancel all 25</span><a>Open email</a></div></div></li>
   <li><span class="dot r"></span><div class="ev"><div class="top"><span class="ti">Order cancelled · line 592 · 25</span><span class="tm">2:42 pm · CS user A</span></div><div class="chips"><span class="pill mute">Revision 4</span><span class="pill warn">Not decided</span><span class="sub">Qty 25 → 22</span></div></div></li>
  </ol>
  <p class="day">8 Oct 2026</p>
- <ol class="tl">
-  <li><span class="dot a"></span><div class="ev"><div class="top"><span class="ti">AutoCount update · line 592</span><span class="tm">4:39 pm · Integration (system)</span></div><div class="chips"><span class="pill ac">Qty 25 → 22</span><span class="pill warn">Not decided</span></div></div></li>
- </ol>
+ <ol class="tl"><li><span class="dot a"></span><div class="ev"><div class="top"><span class="ti">AutoCount update · line 592</span><span class="tm">4:39 pm · Integration (system)</span></div><div class="chips"><span class="pill ac">Qty 25 → 22</span><span class="pill warn">Not decided</span></div></div></li></ol>
  <p class="day">24 Sep 2026</p>
  <ol class="tl">
   <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: BRW-NTC @ SO422492</span><span class="tm">11:30 am</span></div><div class="chips"><span class="pill info">Order 25</span><a>Open email</a></div></div></li>
   <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Ordered · line 592 · 25 at BRW-NTC</span><span class="tm">11:30 am · CS user A</span></div><div class="chips"><span class="pill mute">Revision 1</span><span class="pill mute">OI-2609-0764</span></div></div></li>
- </ol>
-</div><div class="cap">1280 · same page, SO + product filters set</div></div>
+ </ol></div></div>
+</div><div class="cap">1280 · same panel, product filter set</div></div>
 </section>
 
-<section id="s4">
-<h2><span class="nb">4</span>Open email: the exact email purchasing got</h2>
-<p class="why">Dialog with the stored email, read only. Lines for the filtered product highlighted.</p>
+<section id="s5">
+<h2><span class="nb">5</span>Open email: the exact email purchasing got</h2>
+<p class="why">Dialog over the panel with the stored email, read only, recipients shown (owner Q4). Lines for the filtered product highlighted.</p>
 <div class="desk"><div class="sheetwrap" style="height:440px"><div class="scrim"></div>
 <div class="dlg">
  <div style="display:flex;justify-content:space-between"><h3>OI: SO422492</h3><span class="icon">✕</span></div>
- <div class="sub">12/10/2026 2:42 pm · <span class="pill ok">Sent</span></div><div class="sub">To: purchasing A &lt;user@example.test&gt;, purchasing B &lt;user@example.test&gt; (masked; owner Q4: recipients shown to anyone who can see the board)</div>
+ <div class="sub">12/10/2026 2:42 pm · <span class="pill ok">Sent</span></div><div class="sub">To: purchasing A &lt;user@example.test&gt;, purchasing B &lt;user@example.test&gt; (masked)</div>
 <div class="mailbody">ORDER, ORDER BACK, CANCEL BALANCE
 
 SO422492 - 22/09/2026 - (customer) - 18 STRY MENARA MAJLIS PERBANDARAN SEPANG
@@ -208,23 +223,13 @@ Raised by CS user A on 12/10/2026.</div>
 </div></div><div class="cap">1280 · Dialog</div></div>
 </section>
 
-<section id="s5">
-<h2><span class="nb">5</span>Order Inquiries: a cancelled row gets one badge and a link</h2>
-<p class="why">Minimal on the user's screen: the Note cell keeps today's text with one reason badge beside it. The row's existing History icon (owner Q1) now opens Planning history filtered to the SO and line; the badge links there too.</p>
-<div class="desk"><div class="main">
- <table><tr><th>Inquiry</th><th>SO</th><th>Line</th><th>Item</th><th>Verb</th><th>Qty</th><th>State</th><th>Note</th><th></th></tr>
- <tr><td>OI-2609-0764</td><td>SO422492</td><td class="n">592</td><td>SRTWC8840-SC</td><td>ORDER</td><td class="n">25</td><td><span class="pill mute">cancelled</span></td><td>Superseded by revision 4 <span class="pill warn" style="margin-left:6px">Not decided</span><span class="new-tag">NEW</span></td><td><span class="icon">⟲</span></td></tr>
- <tr><td>OI-2609-0764</td><td>SO422492</td><td class="n">160</td><td>SRTWT2201</td><td>ORDER</td><td class="n">24</td><td><span class="pill mute">cancelled</span></td><td>Was 24 on 2026-11-09; the book left nothing to buy <span class="pill mute" style="margin-left:6px">Product changed</span><span class="new-tag">NEW</span></td><td><span class="icon">⟲</span></td></tr>
- </table>
-</div><div class="cap">1280 · worklist, cancelled rows</div></div>
-</section>
-
 <section id="s6">
 <h2><span class="nb">6</span>375 px</h2>
 <div class="row">
-<div class="phone"><div class="screen"><div class="main">
- <div class="pagehead"><div class="t">Planning history</div></div>
- <div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel set">SRTWC8840-SC <span class="x">✕</span></span><span class="btn">Filters (4)</span><span class="btn">Clear</span></div>
+<div class="phone"><div class="screen"><div class="sheetwrap" style="height:760px">
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div>
+<div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel set">SRTWC8840-SC <span class="x">✕</span></span><span class="btn">Filters (4)</span><span class="btn">Clear</span></div></div>
+<div class="bd">
  <p class="day">12 Oct 2026</p>
  <ol class="tl">
   <li><span class="dot b"></span><div class="ev"><div class="ti">Email · OI: SO422492</div><div class="tm">2:42 pm</div><div class="chips"><span class="pill bad">Cancel all 25</span><a>Open email</a></div></div></li>
@@ -234,7 +239,7 @@ Raised by CS user A on 12/10/2026.</div>
  <ol class="tl"><li><span class="dot a"></span><div class="ev"><div class="ti">AutoCount update · line 592</div><div class="tm">4:39 pm · Integration (system)</div><div class="chips"><span class="pill ac">Qty 25 → 22</span></div></div></li></ol>
  <p class="day">24 Sep 2026</p>
  <ol class="tl"><li><span class="dot g"></span><div class="ev"><div class="ti">Ordered · line 592 · 25</div><div class="tm">11:30 am · CS user A</div></div></li></ol>
-</div></div><div class="cap">375 · page; other filters in a Filters popover</div></div>
+</div></div></div></div><div class="cap">375 · panel full width; other filters in a Filters popover</div></div>
 <div class="phone"><div class="screen"><div class="main">
  <div class="res"><div class="h"><span>0 of 1 confirmed · SO422492</span><a>History</a></div>
  <table><tr><th>Line</th><th>Product</th><th>Reason</th></tr>
@@ -242,10 +247,9 @@ Raised by CS user A on 12/10/2026.</div>
  <tr><td class="n">528</td><td>SRTWT2200<div class="sub">Qty 140 → 22</div></td><td><span class="pill warn">Not decided</span><div><a>Go to line</a></div></td></tr>
  <tr><td class="n">1056</td><td>SRTWC8318-RL-N<div class="sub">New, qty 2</div></td><td><span class="pill mute">Changed again</span><div><a>Reload</a></div></td></tr>
  </table></div>
-</div></div><div class="cap">375 · Confirm refusal</div></div>
+</div></div><div class="cap">375 · admin Confirm refusal</div></div>
 </div>
 </section>
-
 <section id="s7">
 <h2><span class="nb">7</span>Reason badges (the whole vocabulary)</h2>
 <table class="map">
@@ -254,7 +258,7 @@ Raised by CS user A on 12/10/2026.</div>
 <tr><td><span class="pill mute">Changed again</span></td><td>AutoCount changed the line again; this change is replaced</td><td>Reload</td><td><code>applied_state</code> superseded (PCS:1145, 1157, 1255)</td></tr>
 <tr><td><span class="pill mute">Already confirmed</span></td><td>A newer revision settled it (hover: revision, who, when)</td><td>Reload</td><td>PCS:4246-4257</td></tr>
 <tr><td><span class="pill mute">Line cancelled</span></td><td>The SO line is cancelled in AutoCount</td><td>none</td><td>PCS:4285-4302</td></tr>
-<tr><td><span class="pill mute">Product changed</span></td><td>OI row cancelled because AutoCount changed the product</td><td>none</td><td>OIS:1937</td></tr>
+<tr><td><span class="pill mute">Product changed</span></td><td>OI row cancelled because AutoCount changed the product (History only)</td><td>none</td><td>OIS:1937</td></tr>
 <tr><td><span class="pill mute">Cancel SO</span> / <span class="pill mute">Manual</span> / <span class="pill mute">Cause not recorded</span></td><td>Transfer to Cancel SO; a person marked it; a row cancelled before this release with no provable cause</td><td>none</td><td>OIS:4208, OIS:6061, Q5</td></tr>
 </table>
 </section>
@@ -263,15 +267,16 @@ Raised by CS user A on 12/10/2026.</div>
 <h2><span class="nb">8</span>Component mapping</h2>
 <table class="map">
 <tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr>
-<tr><td>Refusal rows in the results block</td><td>Results block + <code>failing_lines</code>; plain <code>Table</code> + <code>Badge</code></td><td><code>sorento_crm_frontend/app/(protected)/project-sales/fulfilment-planning/components/FulfilmentBoardPanel.tsx:2495-2694</code>; <code>sorento_crm_frontend/components/ui/table.tsx</code>, <code>components/ui/badge.tsx</code></td></tr>
+<tr><td>Admin gate (server + UI)</td><td>Role slug <code>superadmin</code>/<code>admin</code> via <code>UserPermissionService.get_user_role_slugs</code>, as Simulate confirm; FE <code>isSuperadminUser</code> as <code>canSimulate</code></td><td><code>sorento_crm_backend/app/api/v1/projects/fulfilment_planning.py:573-581</code>; <code>sorento_crm_frontend/lib/is-superadmin.ts:19</code>; <code>FulfilmentBoardPanel.tsx:1265</code></td></tr>
+<tr><td>Refusal rows in the results block</td><td>Results block + <code>failing_lines</code>; <code>Table</code> + <code>Badge</code></td><td><code>sorento_crm_frontend/app/(protected)/project-sales/fulfilment-planning/components/FulfilmentBoardPanel.tsx:2495-2694</code>; <code>sorento_crm_frontend/components/ui/table.tsx</code>, <code>components/ui/badge.tsx</code></td></tr>
 <tr><td>"Go to line"</td><td>Left-out banner link (List view, open + scroll the row)</td><td><code>FulfilmentBoardPanel.tsx:343-349</code>, <code>FulfilmentBoardListView.tsx:137</code></td></tr>
-<tr><td>Menu entry "Planning history"</td><td>Project Demand group beside Planning changes</td><td><code>sorento_crm_frontend/config/menu.config.tsx:294-312</code></td></tr>
-<tr><td>Page header + filter toolbar</td><td><code>PageHeader</code>, <code>ListPageToolbar</code>, <code>SearchableSelect</code> (SO, product, line, user; clearable), <code>SearchableMultiSelect</code> (event), date range picker</td><td><code>components/common/ListPageToolbar.tsx</code>, <code>components/common/SearchableSelect.tsx</code>, <code>components/common/SearchableMultiSelect.tsx</code>, <code>components/ui/date-range-picker.tsx</code></td></tr>
-<tr><td>Timeline</td><td><code>EventTimeline</code> (day groups, rail, actor, time; <code>tags</code> slot for the badges, <code>detail</code> for the small table)</td><td><code>sorento_crm_frontend/components/common/EventTimeline.tsx</code></td></tr>
+<tr><td>Gear menu item "History"</td><td><code>DropdownMenuItem</code> beside "Simulate confirm"</td><td><code>FulfilmentBoardPanel.tsx:2310-2330</code></td></tr>
+<tr><td>History side panel</td><td><code>Sheet</code> side right, as <code>FulfilmentPlanningSheet</code></td><td><code>sorento_crm_frontend/components/ui/sheet.tsx</code>, <code>fulfilment-planning/components/FulfilmentPlanningSheet.tsx</code></td></tr>
+<tr><td>Filters</td><td><code>SearchableSelect</code> (SO from the board's orders, product, line, user; clearable), <code>SearchableMultiSelect</code> (event), date range picker</td><td><code>components/common/SearchableSelect.tsx</code>, <code>components/common/SearchableMultiSelect.tsx</code>, <code>components/ui/date-range-picker.tsx</code></td></tr>
+<tr><td>Timeline</td><td><code>EventTimeline</code> (<code>tags</code> slot for badges, <code>detail</code> for the small table)</td><td><code>sorento_crm_frontend/components/common/EventTimeline.tsx</code></td></tr>
 <tr><td>Open email dialog</td><td><code>Dialog</code> over the stored <code>email_outbox</code> row</td><td><code>sorento_crm_backend/app/models/email_outbox.py:16-63</code></td></tr>
-<tr><td>Line History icon (board + worklist)</td><td><code>DecisionTrailButton</code>, now a link to Planning history filtered to SO + line (owner Q1); the per-line dialog content folds into the page</td><td><code>project-sales/_shared/components/DecisionTrailButton.tsx</code>, <code>DecisionTrailDialog.tsx</code></td></tr>
-<tr><td>Cancelled row badge</td><td><code>WorklistPill</code> in the Note cell</td><td><code>order-inquiries/components/orderInquiryWorklistColumns.tsx:755</code></td></tr>
 </table>
+<p class="note">Unchanged for everyone: the line History icon and its dialog (<code>DecisionTrailButton</code>), the Order Inquiries worklist, the board header.</p>
 </section>
 </div>
 </body>

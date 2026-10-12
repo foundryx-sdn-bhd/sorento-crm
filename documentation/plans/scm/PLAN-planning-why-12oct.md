@@ -1,6 +1,6 @@
 # PLAN: Planning "why" trail - why was this cancelled, why can I not confirm
 
-Status: Plan. All five answered 13 Oct (Q1-Q5 (a)); mock v2 with the owner. Track: standard (Size M, LEAD pattern).
+Status: Plan. All five answered 13 Oct (Q1-Q5 (a)); mock v3 with the owner. Track: standard (Size M, LEAD pattern).
 Lane: PLANNING-WHY, branch `crew/planning-why`.
 UAC: `planning-why-12oct-acceptance-criteria.md` (written after the card is answered).
 
@@ -71,6 +71,17 @@ me a history page to debug, don't show too many things to the user"; "i am okay 
 timeline, just make sure I can filter by product, SO etc". Mock v2: refusal = table rows (line,
 product, change, one reason badge, one action); History = one page "Planning history" under
 Project Demand with filters SO, product, line, event, user, date; no new board button.
+
+Owner on mock v2 (verbatim): "make these visible by admin which is me only" (refusal detail);
+"i don't need this page, i just need this as side panel (lightbox) from the fulfilment planning
+page of the SO(s)". Mock v3: refusal rows and History are admin-only, gated like Simulate
+confirm (role slug `superadmin`/`admin`, `BE/api/v1/projects/fulfilment_planning.py:573-581`;
+FE `isSuperadminUser`, `sorento_crm_frontend/lib/is-superadmin.ts:19`, `canSimulate`
+`FulfilmentBoardPanel.tsx:1265`); non-admins keep today's sentence. History = a Sheet opened
+from the board gear menu (beside Simulate confirm) for the SO(s) on the board, filters SO,
+product, line, event, user, date. No page, route or menu entry; the line History icon, the
+worklist and the board header are unchanged (this supersedes the Q1 "line icons open it"
+detail, since History is now admin-only).
 
 Mock: `documentation/mockups/PLANNING-WHY/index.html` (real SO422492, masked).
 

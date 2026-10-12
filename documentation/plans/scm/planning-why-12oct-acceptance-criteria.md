@@ -1,7 +1,7 @@
 # UAC: Planning "why" trail
 
-Plan: `PLAN-planning-why-12oct.md`. Status: DRAFT, all questions answered (13 Oct 2026); read side follows mock v2, pending owner
-approval of v2. Reason TEXT in AC-W1..W5 becomes a short reason code + badge per mock v2 section 7.
+Plan: `PLAN-planning-why-12oct.md`. Status: DRAFT, all questions answered (13 Oct 2026); read side follows mock v3 (admin-only), pending
+owner approval of v3. Reason TEXT in AC-W1..W5 becomes a short reason code + badge per mock v2 section 7.
 
 Paths: BE = `sorento_crm_backend/app`, FE = `sorento_crm_frontend/app/(protected)/project-sales`.
 
@@ -53,7 +53,15 @@ Paths: BE = `sorento_crm_backend/app`, FE = `sorento_crm_frontend/app/(protected
   it out), `book_left_nothing`, `product_changed`, `cancel_so`, `planning_change_retired`,
   `reserve_moved`, `manual`, `superseded` (re-issued in the same revision).
 
-## R3 / R4 read side (mock v2)
+## Admin gate (mock v3)
+
+- **AC-W0** Admin = role slug `superadmin` or `admin` (`UserPermissionService.get_user_role_slugs`,
+  as `fulfilment_planning.py:573-581`). The per-line refusal rows (AC-W1..W5) are sent only to an
+  admin; a non-admin's refusal is today's answer, unchanged (`error` = `Nothing on this planning
+  change could be confirmed.`, no new `failing_lines`). The recording (AC-W7) happens for both.
+  The history read (AC-W10) answers 403 for a non-admin.
+
+## R3 / R4 read side (mock v3)
 
 - **AC-W10** `GET /sales-orders/{pso_id}/history[?core_line_id=]` returns the order's events
   newest first: `revision_confirmed`, `autocount_update`, `confirm_refused`, `oi_cancelled`,
@@ -64,11 +72,12 @@ Paths: BE = `sorento_crm_backend/app`, FE = `sorento_crm_frontend/app/(protected
   the cause is `undecided_change` only when a `planning_change_rows` row for that line existed
   with `created_at` before N's `confirmed_at`, was not applied by then, and had no decision;
   otherwise `cause not recorded`.
-- **AC-W12** Menu Project Demand -> "Planning history" opens a page with clearable filters SO,
-  product, line, event (multi), user, date range; results in `EventTimeline`. A line History
-  icon (board, worklist) opens the page filtered to SO + line. No new board header button.
-- **AC-W13** The worklist Note cell of a cancelled row keeps its text and adds one reason badge
-  (vocabulary: mock v2 section 7) linking to the page filtered to SO + line.
+- **AC-W12** For an admin, the board gear menu shows "History" under "Simulate confirm"; it opens
+  a right Sheet with clearable filters SO (the board's orders, all selected at first), product,
+  line, event (multi), user, date range; results in `EventTimeline`. A non-admin sees no
+  History item. No page, route or menu entry; line History icon, worklist, board header unchanged.
+- **AC-W13** In the admin results block each refusal row is Line | Product | Change | reason badge
+  | action (Go to line / Reload), plus a History link opening the Sheet on that order.
 - **AC-W14** "Open email" shows the stored email (subject, sent time, status, recipients, text)
   to anyone who can see the board.
 - Usable at 375 px and 1280 px. No UUIDs on screen.
