@@ -135,22 +135,29 @@ export function BoardTransfersPanel({
         header: ({ column }) => (
           <DataGridColumnHeader title="Product" column={column} />
         ),
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <div
-              className="truncate text-sm"
-              title={row.original.item_code ?? ''}
-            >
-              {row.original.item_code || 'Not stated'}
+        // The name only when it says something the code does not: many products carry
+        // their code as their name, and the same word twice is noise (owner, 12 Oct 2026).
+        cell: ({ row }) => {
+          const code = row.original.item_code ?? '';
+          const name = row.original.product_name?.trim() ?? '';
+          const showName =
+            name !== '' && name.toUpperCase() !== code.trim().toUpperCase();
+          return (
+            <div className="min-w-0">
+              <div className="truncate text-sm" title={code}>
+                {code || 'Not stated'}
+              </div>
+              {showName ? (
+                <div
+                  className="truncate text-xs text-muted-foreground"
+                  title={name}
+                >
+                  {name}
+                </div>
+              ) : null}
             </div>
-            <div
-              className="truncate text-xs text-muted-foreground"
-              title={row.original.product_name ?? ''}
-            >
-              {row.original.product_name || ''}
-            </div>
-          </div>
-        ),
+          );
+        },
         size: 180,
         minSize: 140,
         meta: { headerTitle: 'Product' },
@@ -223,18 +230,12 @@ export function BoardTransfersPanel({
           const label = row.original.so_number
             ? `${row.original.so_number} · line ${row.original.so_line_no ?? '?'}`
             : 'Not stated';
+          // The order line only: the customer is the board's own, so naming it on every
+          // row repeated what the page already says (owner, 12 Oct 2026).
           return (
-            <div className="min-w-0">
-              <div className="truncate text-sm tabular-nums" title={label}>
-                {label}
-              </div>
-              <div
-                className="truncate text-xs text-muted-foreground"
-                title={row.original.customer_name ?? ''}
-              >
-                {row.original.customer_name || ''}
-              </div>
-            </div>
+            <span className="block truncate text-sm tabular-nums" title={label}>
+              {label}
+            </span>
           );
         },
         size: 180,

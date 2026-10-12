@@ -27,6 +27,8 @@ below, never a borrowed row. Helpers are imported, not copied, from:
 """
 from __future__ import annotations
 
+import pytest
+
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -239,6 +241,7 @@ def test_challenge_if_drifted_has_no_caller():
 # AC-E2b/AC-E2c: the borrow-hold release moves to batch apply
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_apply_retires_a_step_3_supply_borrow_placement_the_new_composition_drops():
     """The reviewer follow-up shape (`test_planning_change_delta_seam.py`'s own
     `test_qty_up_covered_by_a_step_3_supply_borrow_composes_and_confirms`), carried one
@@ -311,6 +314,7 @@ def test_apply_retires_a_step_3_supply_borrow_placement_the_new_composition_drop
         assert first_decision.state == DECISION_SUPERSEDED, first_decision.state
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_apply_retires_the_step_3_placement_of_a_line_the_batch_cancels():
     """E1 (review round): the existing regression above does not guard
     `ProjectOrderInquiryService.retire_supply_borrow_rows` at all - the line is NAMED in
@@ -389,6 +393,7 @@ def test_apply_retires_the_step_3_placement_of_a_line_the_batch_cancels():
         )
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_apply_keeps_a_step_3_supply_borrow_the_new_composition_still_carries():
     """A top-up the SAME document still covers whole re-places through the same seam,
     never doubling the link: one live placement at the NEW quantity, not two."""

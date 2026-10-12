@@ -11,7 +11,8 @@
  * `DraftLine` shape and against the same `lineBalance` / `lineBlockers`, and these are the two
  * conversions either side of it.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
+import { borrowKinds } from './supplyVocabulary';
 import {
   amendDraftFrom,
   amendSummary,
@@ -775,6 +776,7 @@ describe('amendSummary: what the decided row reads', () => {
   });
 
   it('names a borrow that states its donor order as a borrow from another order', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     expect(
       amendSummary(
         {
@@ -1442,4 +1444,8 @@ describe('decideComposition: the delivered part needs no free stock (OI-CLOSED-L
       expect.objectContaining({ warehouse_id: 'wh-donor', qty: '10' }),
     ]);
   });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });
