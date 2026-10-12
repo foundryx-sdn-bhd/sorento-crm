@@ -472,19 +472,18 @@ def _handover_fmt_date(value: Any) -> Optional[str]:
     return str(value)
 
 
-_CANCEL_BALANCE_STAMP = re.compile(
-    r"(?:Placed|Was) (\d+(?:\.\d+)?), (?:new need|now) (\d+(?:\.\d+)?)"
-)
-
-
-def _cancel_balance_before_after(note: Optional[str]) -> Optional[Tuple[Decimal, Decimal]]:
-    """The line's quantity before and after, off a CANCEL BALANCE row's own stamp: the
-    confirm exception's "Placed 10, new need 6", or `_change_note`'s / the book change's
-    "Was 10, now 6". `None` when the note carries neither."""
-    match = _CANCEL_BALANCE_STAMP.search(note or "")
-    if not match:
+def _delta_qty_move(row: Dict[str, Any]) -> Optional[Tuple[Decimal, Decimal]]:
+    """An SO amendment delta row's own quantity before and after (`from_value` /
+    `to_value` on a `qty` field), or `None` when the row states no quantity move."""
+    if row.get("field") not in (None, "qty"):
         return None
-    return Decimal(match.group(1)), Decimal(match.group(2))
+    before, after = row.get("from_value"), row.get("to_value")
+    if before is None or after is None:
+        return None
+    try:
+        return Decimal(str(before)), Decimal(str(after))
+    except Exception:  # noqa: BLE001 - a malformed stored number is data, not a crash
+        return None
 
 
 def _format_handover_was(was: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -1754,8 +1753,15 @@ class ProjectOrderInquiryService:
                 if not line_total_told:
                     # EMAIL-HANDOVER-QTY: the settled line's `CANCEL n` already says
                     # what this exception row says.
+                    # EMAIL-SO-CHANGES: the row's own qty is the drop; the email prints
+                    # the line's before and after (QTY placed, NEW QTY need), the two
+                    # figures this branch decided on.
                     self._record_handover(
-                        cancel_balance_row, kind="raised", actor_user_id=actor_user_id
+                        cancel_balance_row,
+                        kind="raised",
+                        was={"qty": placed},
+                        qty=need,
+                        actor_user_id=actor_user_id,
                     )
                 exceptions.append(
                     {
@@ -3659,15 +3665,6 @@ class ProjectOrderInquiryService:
             .filter(OrderInquiry.id == row.order_inquiry_id)
             .first()
         )
-        if kind == "raised" and row.verb == IV_CANCEL_BALANCE and qty is None:
-            # EMAIL-SO-CHANGES (owner, 12 Oct): with no REMARK, a raised CANCEL BALANCE
-            # row printing only its own quantity (the drop) reads like an order for it.
-            # It prints the line's before and after instead, read off the fixed stamp its
-            # writer put on it ("Placed 10, new need 6" / "Was 10, now 6").
-            before_after = _cancel_balance_before_after(row.note)
-            if before_after and not (was or {}).get("qty"):
-                was = {**(was or {}), "qty": before_after[0]}
-                qty = before_after[1]
         resolved_actor_id = actor_user_id or (inquiry_scalars[0] if inquiry_scalars else None)
         pso_id = inquiry_scalars[1] if inquiry_scalars else None
         facts = self._handover_order_facts(pso_id) if pso_id else {}
@@ -3877,15 +3874,57 @@ class ProjectOrderInquiryService:
                 ProjectSalesOrderLine.core_sales_order_line_id,
             ).filter(ProjectSalesOrderLine.id.in_(uncached_line_ids)):
                 self._handover_line_no_cache[line_id] = (line_no, core_line_id)
+        # EMAIL-SO-CHANGES: a qty move's rows hold only the difference; the line's
+        # before/after is the amendment delta's own `from_value` / `to_value`, printed
+        # once per (amendment, SO line), the way `_write` printed it on publish.
+        moves: Dict[Tuple[str, str], Tuple[Decimal, Decimal]] = {}
+        for inquiry_id, delta in (
+            self.db.query(OrderInquiry.id, SOAmendment.delta_json)
+            .join(SOAmendment, SOAmendment.id == OrderInquiry.amendment_id)
+            .filter(OrderInquiry.id.in_({row.order_inquiry_id for row in rows}))
+        ):
+            for delta_row in (delta or {}).get("rows") or []:
+                change = _DELTA_VERB_CHANGE.get(str(delta_row.get("verb") or ""))
+                move = (
+                    _delta_qty_move(delta_row)
+                    if change in (CHANGE_QTY_DECREASE, CHANGE_QTY_INCREASE)
+                    else None
+                )
+                if move and delta_row.get("so_line_id"):
+                    moves[(str(inquiry_id), str(delta_row["so_line_id"]))] = move
+        told: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for row in rows:
             if str(row.id) in already_queued:
+                continue
+            key = (str(row.order_inquiry_id), str(row.so_line_id))
+            move = (
+                moves.get(key)
+                if row.verb not in (IV_DELAY, IV_ADVANCE, IV_CHANGE_SO)
+                else None
+            )
+            if move is None:
+                self._record_handover(
+                    row,
+                    kind="raised",
+                    was=self._amendment_row_was(row),
+                    actor_user_id=actor_user_id,
+                )
+                continue
+            if key in told:
+                told[key]["verb_keys"] = list(
+                    dict.fromkeys(
+                        [*told[key]["verb_keys"], *_handover_verb_keys("raised", row, None)]
+                    )
+                )
                 continue
             self._record_handover(
                 row,
                 kind="raised",
-                was=self._amendment_row_was(row),
+                was={"qty": move[0]},
+                qty=move[1],
                 actor_user_id=actor_user_id,
             )
+            told[key] = self.db.info[_HANDOVER_PENDING_KEY][-1]
 
     def _handover_order_facts(self, pso_id: Optional[str]) -> Dict[str, Any]:
         """SO number / customer / project / SO date for ONE project sales order, kept
@@ -4474,6 +4513,7 @@ class ProjectOrderInquiryService:
         # derives exactly as it always has.
         row_decisions = amendment.row_decisions or {}
         demand: List[DemandRow] = []
+        qty_moves: Dict[str, Tuple[Decimal, Decimal]] = {}
         for index, row in enumerate(delta.get("rows") or []):
             row_key = str(row.get("row_key") or index)
             if (row_decisions.get(row_key) or {}).get("decision") == "declined":
@@ -4500,6 +4540,11 @@ class ProjectOrderInquiryService:
                 and row.get("from_value")
                 else None
             )
+            move = _delta_qty_move(row) if change in (
+                CHANGE_QTY_DECREASE, CHANGE_QTY_INCREASE
+            ) else None
+            if move and line:
+                qty_moves[str(line.id)] = move
             demand.append(
                 DemandRow(
                     line_id=line.id if line else str(row.get("so_line_id") or ""),
@@ -4514,7 +4559,9 @@ class ProjectOrderInquiryService:
                     was=was,
                 )
             )
-        return self._write(order, amendment, demand, actor_user_id=actor_user_id)
+        return self._write(
+            order, amendment, demand, actor_user_id=actor_user_id, qty_moves=qty_moves
+        )
 
     def derive_for_book_change(
         self,
@@ -4547,11 +4594,18 @@ class ProjectOrderInquiryService:
         amendment still keeps its own header (backlog: fold those too, see the plan).
         """
         demand: List[DemandRow] = []
+        qty_moves: Dict[str, Tuple[Decimal, Decimal]] = {}
         for row in rows:
             qty = _dec(row.get("qty"))
             if qty <= _ZERO:
                 continue
             change = str(row.get("change") or "")
+            # EMAIL-SO-CHANGES: the batch row's own from/to quantity (the "What changed"
+            # source), when the caller hands it over.
+            if row.get("from_qty") is not None and row.get("to_qty") is not None:
+                qty_moves[str(row.get("line_id") or "")] = (
+                    _dec(row.get("from_qty")), _dec(row.get("to_qty"))
+                )
             demand.append(
                 DemandRow(
                     line_id=str(row.get("line_id") or ""),
@@ -4567,7 +4621,10 @@ class ProjectOrderInquiryService:
         if not demand:
             return None
         inquiry = self.ensure_inquiry(order, actor_user_id=actor_user_id)
-        return self._write(order, None, demand, actor_user_id=actor_user_id, inquiry=inquiry)
+        return self._write(
+            order, None, demand, actor_user_id=actor_user_id, inquiry=inquiry,
+            qty_moves=qty_moves,
+        )
 
     def _change_note(self, change: str, row: Dict[str, Any]) -> Optional[str]:
         """The half of the instruction the verb does not carry."""
@@ -4594,7 +4651,12 @@ class ProjectOrderInquiryService:
         *,
         actor_user_id: Optional[str],
         inquiry: Optional[OrderInquiry] = None,
+        qty_moves: Optional[Dict[str, Tuple[Decimal, Decimal]]] = None,
     ) -> OrderInquiry:
+        """`qty_moves` (EMAIL-SO-CHANGES): per SO line id, the line's quantity before and
+        after a qty change, from the writer's own structured values. A row of such a line
+        holds only the difference, so the email prints the line's before and after
+        instead, once per SO line however many rows the netting split it into."""
         plans = net_demand(demand, self._pools(order, demand))
 
         if inquiry is None:
@@ -4648,10 +4710,34 @@ class ProjectOrderInquiryService:
         # read - `derive_for_amendment`); every other row's `was` stays `None` here,
         # same as before - CHANGE SO NO's own source-order `was` is still built at the
         # one caller that already knows it, per the PLAN's own section 6.
+        told_moves: Dict[str, Dict[str, Any]] = {}
         for plan, plan_row in zip(plans, written):
+            move = (qty_moves or {}).get(str(plan.line_id or ""))
+            if plan.verb in (IV_DELAY, IV_ADVANCE, IV_CHANGE_SO):
+                # The same line's date or SO move is its own instruction and line.
+                move = None
+            if move is None:
+                self._record_handover(
+                    plan_row, kind="raised", was=plan.was, actor_user_id=actor_user_id
+                )
+                continue
+            first = told_moves.get(str(plan.line_id))
+            if first is not None:
+                # One email line per SO line: a split row adds only its verb.
+                first["verb_keys"] = list(
+                    dict.fromkeys(
+                        [*first["verb_keys"], *_handover_verb_keys("raised", plan_row, None)]
+                    )
+                )
+                continue
             self._record_handover(
-                plan_row, kind="raised", was=plan.was, actor_user_id=actor_user_id
+                plan_row,
+                kind="raised",
+                was={**(plan.was or {}), "qty": move[0]},
+                qty=move[1],
+                actor_user_id=actor_user_id,
             )
+            told_moves[str(plan.line_id)] = self.db.info[_HANDOVER_PENDING_KEY][-1]
         self._hand_to_purchasing(order, inquiry, len(plans))
         return inquiry
 

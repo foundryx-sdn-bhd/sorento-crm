@@ -3719,6 +3719,10 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_QTY_DECREASE,
                     "note": f"Was {qty_text(from_qty)}, now {qty_text(to_qty)}",
+                    # EMAIL-SO-CHANGES: the same two figures, structured, for the email's
+                    # QTY / NEW QTY.
+                    "from_qty": from_qty,
+                    "to_qty": to_qty,
                 }
             )
             counts["CANCEL_BALANCE"] = counts.get("CANCEL_BALANCE", 0) + 1

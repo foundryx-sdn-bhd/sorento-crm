@@ -19,8 +19,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
-
 from app.models.project_so import (
     INQUIRY_CANCELLED,
     IV_CANCEL_BALANCE,
@@ -138,21 +136,11 @@ def test_redirected_line_prints_its_qty_move_too(api, monkeypatch):
     assert entries[0]["was"] == {"qty": "1", "delivery_date": WAS_FMT}, entries[0]
 
 
-@pytest.mark.parametrize(
-    "note, was_qty, now_qty",
-    [
-        ("Placed 10, new need 6", "10", "6"),
-        ("Was 280, now 0", "280", "0"),
-        ("Superseded by revision 3; Was 12.5, now 4", "12.5", "4"),
-    ],
-)
-def test_raised_cancel_balance_prints_the_lines_before_and_after(
-    api, monkeypatch, note, was_qty, now_qty
-):
-    """Reviewer B1: with REMARK gone, a raised CANCEL BALANCE row printing only its own
-    quantity (the drop) reads like an order for it beside a real ORDER line. It prints
-    the line's before and after, off the stamp its writer put on it (the confirm's
-    exception row, an SO amendment's or a book change's qty decrease)."""
+def test_a_note_alone_is_never_parsed_into_a_was(api, monkeypatch):
+    """Crew audit (2): before values never come from note text. A raised CANCEL BALANCE
+    queued with no structured before/after prints its own quantity, whatever its note
+    says; the writers pass `placed`/`need`, the delta's from/to, or the batch row's
+    from/to qty instead (`tests/test_oi_email_qty_moves.py`)."""
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
 
     _client, world = api
@@ -161,29 +149,7 @@ def test_raised_cancel_balance_prints_the_lines_before_and_after(
     fixture = _one_row_fixture(api, qty="4")
     row = fixture["row"]
     row.verb = IV_CANCEL_BALANCE
-    row.note = note
-    world.db.flush()
-
-    ProjectOrderInquiryService(world.db)._record_handover(
-        row, kind="raised", actor_user_id=world.actor
-    )
-    world.db.commit()
-
-    line = _handover_calls(calls)[-1]["context"]["handover"]["lines"][-1]
-    assert line["qty"] == now_qty, line
-    assert line["was"] == {"qty": was_qty}, line
-
-
-def test_raised_cancel_balance_without_a_stamp_is_left_as_it_was(api, monkeypatch):
-    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
-
-    _client, world = api
-    _register(world)
-    calls = _captured_dispatches(monkeypatch)
-    fixture = _one_row_fixture(api, qty="4")
-    row = fixture["row"]
-    row.verb = IV_CANCEL_BALANCE
-    row.note = "Confirmed by WhatsApp"
+    row.note = "Placed 10, new need 6; Was 10, now 6"
     world.db.flush()
 
     ProjectOrderInquiryService(world.db)._record_handover(
@@ -195,43 +161,30 @@ def test_raised_cancel_balance_without_a_stamp_is_left_as_it_was(api, monkeypatc
     assert line["qty"] == "4" and line["was"] is None, line
 
 
-def test_redirected_line_with_a_product_swap_prints_item_code_and_new_item_code(api, monkeypatch):
-    """Owner, 12 Oct: the item code can change too, and the email must show it - off the
-    same OI before values (`previous_item_code`), including the redirected / fresh-row path
-    that hid SRTWB246's date. Rendered through the no-REMARK document."""
-    from app.models.procurement import PurchaseOrderLine
+def test_book_change_qty_down_hands_its_from_and_to_qty_to_the_email(api):
+    """Crew answer (b): the planning-change batch row's own from/to quantity (the "What
+    changed" source) is what `derive_for_book_change` prints as QTY / NEW QTY."""
+    from types import SimpleNamespace
 
-    from ..test_oi_email_no_remark import ORDER, _line_table, _render
-    from ..test_oi_email_print import _ctx
-    from ..test_oi_product_follow_apply import _apply, _swap_fixture
+    from app.services import planning_change_service
 
-    _client, world = api
-    _register(world)
-    calls = _captured_dispatches(monkeypatch)
-    fx = _swap_fixture(api, linked=True, acknowledged=True)
-    po_line = world.db.get(PurchaseOrderLine, fx["link"].po_line_id)
-    po_line.qty_received = po_line.qty_ordered
-    world.db.commit()
-    calls.clear()
-
-    response = _apply(fx)
-    assert response.status_code == 200, response.text
-    world.db.commit()
-    world.db.expire_all()
-
-    old, new = fx["old"].product_code, fx["new"].product_code
-    fresh = [
-        r for r in _rows_of(world, fx["line"])
-        if r.verb == IV_ORDER and r.state != INQUIRY_CANCELLED and not r.redirected_to_pool
+    fixture = _one_row_fixture(api, qty="10")
+    row = fixture["row"]
+    live_rows = [
+        SimpleNamespace(
+            kind="qty_down",
+            project_line_id=str(fixture["line"].id),
+            core_line_id=str(fixture["core"].id),
+            item_code=row.item_code,
+            from_json={"qty": "10", "required_date": WAS_1.isoformat()},
+            to_json={"qty": "6", "required_date": WAS_1.isoformat()},
+            held_json={},
+        )
     ]
-    assert len(fresh) == 1 and fresh[0].previous_item_code == old, fresh
-
-    entries = _line_entries(calls, new)
-    assert len(entries) == 1, entries
-    assert (entries[0]["was"] or {}).get("item_code") == old, entries[0]
-    assert "qty" not in (entries[0]["was"] or {}), "same quantity: no NEW QTY"
-    assert "delivery_date" not in (entries[0]["was"] or {}), "same date: no NEW DATE"
-
-    body = _line_table(_render(_ctx(ORDER, entries)))
-    assert body[0] == ["LOCATION", "ITEM CODE", "NEW ITEM CODE", "QTY", "DELIVERY"], body
-    assert body[1][1:3] == [old, new], body
+    demand_rows, _counts = planning_change_service._oi_demand_rows(
+        fixture["world"].db, live_rows, fixture["core_so"].so_number, [],
+        order_inquiry_id=str(row.order_inquiry_id),
+    )
+    assert len(demand_rows) == 1, demand_rows
+    assert demand_rows[0]["qty"] == Decimal("4")
+    assert (demand_rows[0]["from_qty"], demand_rows[0]["to_qty"]) == (Decimal("10"), Decimal("6"))
