@@ -45,7 +45,7 @@ def _base() -> str:
 def test_revision_ids_chain_onto_mains_head():
     m = _migration()
     assert m.revision == "maskp_0001_parser_sub_asks"
-    assert m.down_revision == "rkind_0002_parser_ref_kinds_v56"
+    assert m.down_revision == "rkind_0003_reference_kind_rows"
     assert len(m.revision) <= 32
 
 

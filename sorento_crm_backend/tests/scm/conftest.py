@@ -384,3 +384,4 @@ def single_location_plan_basis(inputs: dict, warehouse, *, rounded: float) -> di
         "rounded": float(rounded or 0.0),
         "locations": [loc],
     }
+

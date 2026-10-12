@@ -334,3 +334,56 @@ def test_a_set_pool_reads_back_the_same_as_the_write_answered(client, db):
     pair = ("pool_warehouse_id", "pool_warehouse_code")
     assert {k: written.json()[k] for k in pair} == {k: read.json()[k] for k in pair}
     assert read.json()["pool_warehouse_code"] == _code(db, pool)
+
+
+# =========================================================================== #
+# A warehouse that is its own pool
+#
+# Site pools (BRW, HQ) point ``pool_warehouse_id`` at themselves (migration 311), and that
+# is what puts them in the Stock Debt span (`procurement_service._planning_span_map`). The
+# edit form used to show a self-pool as empty and send ``null`` on every save; it now sends
+# only changed fields, so the guard that matters here is: an update that does not carry the
+# key leaves the self-pool alone, and only an explicit ``null`` clears it.
+# =========================================================================== #
+def _self_pooled(db) -> str:
+    wid = _warehouse(db)
+    _row(db, wid).pool_warehouse_id = wid
+    db.commit()
+    return wid
+
+
+def test_a_save_that_never_mentions_the_pool_keeps_a_self_pool(db):
+    wid = _self_pooled(db)
+
+    WarehouseService(db).update_warehouse(wid, WarehouseUpdate(warehouse_name="Renamed"))
+
+    assert _row(db, wid).pool_warehouse_id == wid
+
+
+def test_the_route_keeps_a_self_pool_on_an_edit_without_the_key(client, db):
+    wid = _self_pooled(db)
+
+    response = client.put(f"{BASE}/{wid}", json={"location": "Klang"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pool_warehouse_id"] == wid
+    assert _row(db, wid).pool_warehouse_id == wid
+
+
+def test_a_warehouse_can_be_made_its_own_pool(client, db):
+    wid = _warehouse(db)
+
+    response = client.put(f"{BASE}/{wid}", json={"pool_warehouse_id": wid})
+
+    assert response.status_code == 200, response.text
+    assert _row(db, wid).pool_warehouse_id == wid
+    assert response.json()["pool_warehouse_code"] == _code(db, wid)
+
+
+def test_an_explicit_null_still_clears_a_self_pool(client, db):
+    wid = _self_pooled(db)
+
+    response = client.put(f"{BASE}/{wid}", json={"pool_warehouse_id": None})
+
+    assert response.status_code == 200, response.text
+    assert _row(db, wid).pool_warehouse_id is None

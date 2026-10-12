@@ -1802,6 +1802,7 @@ def _lead_time(db, product, days: int) -> None:
     db.flush()
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_beyond_the_reserve_window_says_so_and_offers_no_donor():
     """The captain, on SO414341: two lines due 15 February and 15 March 2027, roughly 174
     days out on a product whose lead time is well inside that, read "Nothing free at BRW-BB
@@ -3948,6 +3949,7 @@ def _step(contribution, kind: str) -> dict:
     return next(step for step in contribution["trail"] if step["kind"] == kind)
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_trail_asks_the_four_questions_in_order_and_then_buy():
     """AC-V1 / AC-V7 (ladder v5, section 1e): FIVE rows, one per question plus Buy, in the
     captain's own order - our own location, the pool, another location, the same agent's
@@ -4039,6 +4041,7 @@ def test_the_trail_adds_up_to_the_proposal_it_explains():
 # `test_demand_a_confirmed_decision_already_holds_is_not_subtracted_twice`.
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_covered_before_the_buy_step_says_the_buy_was_not_needed():
     """Ladder v3: the group holds nothing here, so full cover comes from the POOL, and every
     rung after it - group/cross-group borrow, buy - is walked and reported unnecessary, never
@@ -4208,6 +4211,7 @@ def test_a_cell_whose_pool_step_answered_from_two_pools_shows_both_taken_figures
     assert own_code in step["why"] and far_code in step["why"], step["why"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_dealer_hot_selling_line_still_reads_the_pools_own_later_order_in_the_proof():
     """Review round 2 (S4): the proof gated `pool_borrow` on dealer hot-selling while
     `ProjectSupplyService.walk` built it for every item (LADDER V8, R-A retired the gate).
@@ -4499,6 +4503,7 @@ def test_a_hot_selling_rung_still_names_the_classification_in_the_pool_sentence(
         assert _step(contribution, "buy")["took"] == "10"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_supply_on_the_water_is_inside_question_ones_own_offer():
     """AC-V2 on the board. `_quantity_world` has 7 open on ZZT-SPO-0001 against the 28 the
     line plans for (AC-S2-4, not the 20 still owed).
@@ -5172,6 +5177,7 @@ def test_covering_a_line_does_not_move_what_is_left_for_the_lines_behind_it():
         assert after["available_to_this_line"] == "5"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_uncovered_line_of_a_partly_confirmed_order_is_still_proposed():
     """Ladder v3: the own location holds 5 against the sibling's 21, so the whole-line rule
     buys the lot - the seven-rung trail (the read-only own-location strip first) is still
@@ -6310,6 +6316,7 @@ def test_a_donor_line_says_what_was_lent_off_it_and_to_which_order():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_beyond_its_window_is_bought_whole_even_with_an_spo_landing_in_time():
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
@@ -6826,6 +6833,7 @@ def test_the_group_rung_names_the_group_net_when_the_group_has_nothing_for_this_
         assert sibling.warehouse_code not in step["why"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_question_one_offers_the_groups_spo_and_names_both_of_its_numbers():
     """AC-V2 through the board. The group's SPO is INSIDE its net and there is no rung
     above this question for it to be spent on, so the water is part of what question 1

@@ -20,8 +20,9 @@ class WarehouseBase(BaseModel):
     # plan buy too little, and excluding a good location makes it buy too much.
     #
     # pool_warehouse_id - the shared pool this location draws on. A shortage in a customer
-    # bin is covered from its site's pool before it is ever a purchase (ADR-0011). Empty
-    # means the location is its own pool, which is the no-pooling default.
+    # bin is covered from its site's pool before it is ever a purchase (ADR-0011). A site
+    # pool (BRW, HQ) points at itself, which is what puts it in the Stock Debt span; empty
+    # means the location stands alone (the planner still nets it as its own pool).
     #
     # segment - who this location sells to, `dealer` or `project`. The bare site code is
     # the dealer bin and its suffixed bins are project stock, which is why "last purchase

@@ -19,7 +19,7 @@ back is the reverse move. Until then the strict output schema already carries bo
 Idempotent: a version already carrying this exact template publishes nothing.
 
 Revision ID: maskp_0001_parser_sub_asks
-Revises: rkind_0002_parser_ref_kinds_v56
+Revises: rkind_0003_reference_kind_rows
 """
 import logging
 from pathlib import Path
@@ -29,7 +29,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "maskp_0001_parser_sub_asks"
-down_revision = "rkind_0002_parser_ref_kinds_v56"
+down_revision = "rkind_0003_reference_kind_rows"
 branch_labels = None
 depends_on = None
 
