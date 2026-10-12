@@ -232,6 +232,15 @@ def _restore_stubbed_module_symbols():
         if getattr(module, attr, None) is not original:
             setattr(module, attr, original)
 
+
+# runtime_settings binds `SessionLocal` by name when it is first imported, and its readers
+# (the connector's `verify_token`, among others) import it lazily. A test that stubs
+# `app.database.SessionLocal` before that first import handed the stub to it: the read failed,
+# secrets failed closed, and the connector answered 503 "not configured" in place of 401 - only
+# on an xdist worker that had not imported it yet (release run 38287204810). The stub also
+# outlived the test's monkeypatch. Importing it here binds the real session once, for every test.
+import app.services.runtime_settings  # noqa: E402,F401
+
 # ---------------------------------------------------------------------------
 # Company-scope test default (multi-company isolation).
 #
