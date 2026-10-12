@@ -248,6 +248,29 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
 # --------------------------------------------------------------------------- #
 
 
+def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
+    """Engine seam, before `hold_words`: the parser read a product or category ranking as
+    `sales_ranking` but filled its own top selling field (`rank_group`). Products and categories
+    ranked are the top selling ask (the parser prompt's rule), unless this is a scoped or unsure
+    drill of a held sales ranking. The metric the ranking reading calls `measure` is the top
+    selling `rank_by`."""
+    if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME:
+        return verdict
+    if jsc.js_string(verdict.get("group_by") or "").strip().lower() not in ("product", "category"):
+        return verdict
+    if verdict.get("rank_group") not in ("item", "category"):
+        return verdict
+    held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
+    if held_ranking and verdict.get("ranking_drill") in ("scoped", "unsure"):
+        return verdict
+    out = {**verdict, "order_status": "top_selling"}
+    if out.get("rank_by") is None:
+        metric = {"qty": "quantity", "amount": "amount"}.get(out.get("measure"))
+        if metric:
+            out["rank_by"] = metric
+    return out
+
+
 def hold_words(verdict: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Engine seam before grounding, a `sales_ranking` verdict: its brand, sales agent and
     category entities, held out of the descriptor grounding and handed back after it."""

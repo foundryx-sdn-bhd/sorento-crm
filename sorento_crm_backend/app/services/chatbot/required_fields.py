@@ -232,6 +232,23 @@ def _from_pick(spec: FieldSpec, options: list[list[Any]], word: str) -> Resolved
     return None
 
 
+def _keep_other_givens(
+    db: Any, ask: AskType, asked: str, values: dict[str, dict[str, Any]], given: dict[str, Any] | None,
+    carried: dict[str, Any],
+) -> None:
+    """A reply that missed the asked field still carried other fields (the parser read a metric
+    under the period question): the ones that settle are kept, never asked again."""
+    for other in ask.fields:
+        if other.name == asked or other.name in values:
+            continue
+        word = (given or {}).get(other.name)
+        got = word if isinstance(word, Resolved) else None
+        if got is None and isinstance(word, str) and word.strip():
+            got = _settle(db, _live(other), word, carried)
+        if got is not None and got.status == "ok":
+            values[other.name] = {"value": got.value, "label": got.label}
+
+
 def collect(
     db: Any,
     ask: AskType,
@@ -288,6 +305,7 @@ def collect(
                 # A reply the caller could read nothing from is asked again, plainly (a
                 # numbered pick shows its list again).
                 again = _pick_line(spec, options) if options else spec.question
+                _keep_other_givens(db, ask, spec.name, values, given, carried)
                 return Outcome(values=values, reply=_miss_line(word, spec, got.note) if word else again,
                                slot=_slot(ask, values, carried, asking=spec.name, options=options, misses=misses),
                                extras=carried)

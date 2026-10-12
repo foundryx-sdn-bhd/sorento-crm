@@ -1833,8 +1833,13 @@ def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
     )
     if not (scoped_ranking or refinement):
         return False
-    if jsc.js_string(out.get("group_by") or "").strip():
-        return False
+    axis = jsc.js_string(out.get("group_by") or "").strip()
+    if axis:
+        # With the drill offer open the parser echoes the offered axis on "only <code>": `product`
+        # is no axis of its own there, unless the verdict is a pick of that offer.
+        picks = bool(jsc.array(out.get("reference_positions"))) or bool(out.get("open_question_answer"))
+        if axis != "product" or picks:
+            return False
     products = [
         e for e in jsc.array(out.get("entities"))
         if isinstance(e, dict) and e.get("current_message") is not False

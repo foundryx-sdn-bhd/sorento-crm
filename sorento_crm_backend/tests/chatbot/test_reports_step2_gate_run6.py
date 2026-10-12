@@ -139,7 +139,8 @@ def test_b10_a_sales_ranking_naming_its_domain_is_a_new_ask(console_factory) -> 
     )
     sent = [a for n, a in captured if n in ("crm_report", "crm_top_selling_report")]
     assert sent, (text, captured)
-    assert sent[-1]["top_n"] == 40 and sent[-1]["date_from"] == "2026-01-01", sent[-1]
+    # The ranking lane counts `top_n`; the top selling lane (a product ranking carrying `rank_group`) counts `n`.
+    assert (sent[-1].get("top_n") or sent[-1].get("n")) == 40 and sent[-1]["date_from"] == "2026-01-01", sent[-1]
 
 
 def test_b11_guard_a_sales_ranking_with_its_own_axis_still_leaves_top_selling(console_factory) -> None:
