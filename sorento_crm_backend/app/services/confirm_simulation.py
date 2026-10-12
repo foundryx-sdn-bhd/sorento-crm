@@ -11,7 +11,15 @@ from contextvars import ContextVar
 from typing import Iterator
 
 from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+
+from app.models.base import (
+    get_brand_scope,
+    get_company_scope,
+    set_brand_scope,
+    set_company_scope,
+)
 
 from app.services.error_handler import AppException
 
@@ -38,19 +46,38 @@ def simulating() -> Iterator[None]:
         _SIMULATING.reset(token)
 
 
-def _refuse_root_commit(session: Session) -> None:
-    # `before_commit` also fires for a savepoint's release in some SQLAlchemy versions, and
-    # a savepoint commit is legitimate inside the write; only a root commit is refused.
-    if session.info.get("confirm_simulate") and not session.in_nested_transaction():
+@event.listens_for(Engine, "commit")
+def _refuse_real_commit(conn) -> None:  # noqa: ANN001
+    """A REAL root commit on any connection while simulating. A savepoint release does not
+    fire this event, so the simulation's own per-order commits pass; a drain that opens a
+    fresh `SessionLocal()` and commits does not."""
+    if is_simulating():
         raise SimulationWouldCommit(
             "Simulation refused a commit: nothing may be saved during a simulated confirm."
         )
 
 
-def install_commit_tripwire(session: Session) -> None:
-    """Idempotently arm `session` so a root commit raises while `info["confirm_simulate"]`."""
-    if not event.contains(session, "before_commit", _refuse_root_commit):
-        event.listen(session, "before_commit", _refuse_root_commit)
+@contextmanager
+def simulation_session(request_db: Session) -> Iterator[Session]:
+    """A session whose commits are savepoint releases inside an outer savepoint that is
+    ALWAYS rolled back, so the real Confirm code can run end to end and leave nothing.
+
+    It rides the request session's own connection (not a new one): that is the connection
+    that can see the caller's rows and carries its transaction-local settings. Company and
+    brand scope are copied across; `confirm_preview` makes the post-commit drains skip.
+    """
+    conn = request_db.connection()
+    outer = conn.begin_nested()
+    sim = Session(bind=conn, join_transaction_mode="create_savepoint")
+    set_company_scope(sim, get_company_scope(request_db))
+    set_brand_scope(sim, get_brand_scope(request_db))
+    sim.info["confirm_preview"] = True
+    try:
+        yield sim
+    finally:
+        sim.close()
+        if outer.is_active:
+            outer.rollback()
 
 
 def error_text(exc: BaseException) -> str:

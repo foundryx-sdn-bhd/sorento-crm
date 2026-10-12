@@ -11116,11 +11116,15 @@ class ProjectSupplyService:
         can_hold_back: Optional[Callable[[Any], bool]] = None,
         preview: bool = False,
         raw_errors: bool = False,
+        describe_writes: bool = False,
     ) -> List[Dict[str, Any]]:
         """"Confirm all approved" (D3): every order's Confirm, each in its OWN transaction.
 
         `raw_errors` (the admin Simulate confirm only) reports a failure as the exception's
         class name plus text, capped, instead of the bare message a planner reads.
+        `describe_writes` (also Simulate only) is the real write, committing or rolling
+        back each order as ever, that ALSO reads back the inquiry rows and transfers it
+        wrote, before the commit, the way a preview does.
 
         The board's Approve all composes a verdict per LINE across up to fifty orders; this is
         the same per-order write `confirm` already does, called once per order rather than once
@@ -11154,6 +11158,7 @@ class ProjectSupplyService:
         )
         can_hold_back = can_hold_back or (lambda _entry: True)
         results: List[Dict[str, Any]] = []
+        observe = preview or describe_writes
         for entry in entries:
             pso_id = str(entry.pso_id)
             # A malformed id would otherwise reach `get_order`'s query, and Postgres would
@@ -11200,7 +11205,7 @@ class ProjectSupplyService:
                 before_decision_id = None
                 before_rows: Set[str] = set()
                 before_moves: Set[str] = set()
-                if preview:
+                if observe:
                     active = self.active_decision(str(order.id))
                     before_decision_id = str(active.id) if active is not None else None
                     before_rows, before_moves = self._preview_baseline(order)
@@ -11208,7 +11213,7 @@ class ProjectSupplyService:
                     order, entry, write, can_hold_back(entry)
                 )
                 previewed = None
-                if preview:
+                if observe:
                     now_active = self.active_decision(str(order.id))
                     changed = now_active is not None and str(now_active.id) != before_decision_id
                     previewed = (
@@ -11216,6 +11221,7 @@ class ProjectSupplyService:
                         if changed
                         else {"inquiry_rows": [], "transfers": []}
                     )
+                if preview:
                     self.db.rollback()
                 else:
                     self.db.commit()
@@ -11223,7 +11229,7 @@ class ProjectSupplyService:
                     {
                         "pso_id": pso_id,
                         "ok": True,
-                        **({"preview": True, **previewed} if preview else {}),
+                        **({"preview": True, **previewed} if observe else {}),
                         "decision_revision": body.get("revision_no"),
                         "inquiry_rows_created": body.get("inquiry_rows_created"),
                         "lines_decided": body.get("lines_decided"),
@@ -11269,7 +11275,7 @@ class ProjectSupplyService:
                         "ok": False,
                         "error": message,
                         "failing_lines": failing_lines,
-                        **({"preview": True} if preview else {}),
+                        **({"preview": True} if observe else {}),
                     }
                 )
             finally:
