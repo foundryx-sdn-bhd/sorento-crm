@@ -1722,6 +1722,11 @@ export function FulfilmentBoardPanel({
         (total, entry) => total + (entry.landed_buy_notices?.length ?? 0),
         0,
       );
+      // OI-CLOSED-LINE (owner, 12 Oct 2026): confirmed as decided while short of stock.
+      const stockShort = ok.reduce(
+        (total, entry) => total + (entry.stock_short_notices?.length ?? 0),
+        0,
+      );
       // The server's own echo of the lines it wrote; only a server that predates the field
       // falls back to what this press posted.
       const linesConfirmed = ok.reduce((total, entry) => {
@@ -1753,11 +1758,12 @@ export function FulfilmentBoardPanel({
           (heldBack > 0 ? ` · ${heldBack} held back` : '') +
           (landedBuys > 0
             ? ` · ${landedBuys} Buy${landedBuys === 1 ? '' : 's'} kept over landed goods`
-            : '');
+            : '') +
+          (stockShort > 0 ? ` · ${stockShort} short of stock` : '');
         // S4 (fix round 2, reviewer): a press that left something out is not an unqualified
         // success, the owner's own words on SO420745 were "confirming silently is dangerous" -
         // so the toast that SAYS so reads amber, not the plain green every other Confirm gets.
-        if (leftOutAtConfirm > 0 || heldBack > 0 || landedBuys > 0) {
+        if (leftOutAtConfirm > 0 || heldBack > 0 || landedBuys > 0 || stockShort > 0) {
           toast.warning(summary);
         } else {
           toast.success(summary);

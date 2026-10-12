@@ -11,9 +11,9 @@ exactly as it covers an own location:
 * AC-3.2 - a Reserve at the site pool (not the line's own bin) within what it holds is
   accepted and lands in `so_supply_decisions` naming that warehouse.
 * AC-3.3 - a Reserve at the site pool above what is on hand there, once another order
-  already holds part of it, is refused by `_check_reserve_against_on_hand` (R14) and names
-  the earlier holder - the same guard `tests/test_confirm_reserve_guard.py` pins for an own
-  location, retargeted at the pool a planner would add by hand.
+  already holds part of it, confirms holding only what is left and records the rest short
+  (owner rule 12 Oct 2026, OI-CLOSED-LINE) - the same guard `tests/test_confirm_reserve_guard.py`
+  pins for an own location, retargeted at the pool a planner would add by hand.
 
 Postgres via `tests/_pg_fixture.py::blank_session`, never sqlite. Every FK target is seeded
 here or through the shared helper functions in `tests/test_so_supply_confirmation.py`,
@@ -21,10 +21,12 @@ never borrowed off an existing row - CI's database is empty.
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from app.models.base import company_scope
-from app.models.project_so import SOSupplyDecision
+from app.models.project_so import SOLineAllocation, SOSupplyDecision
 from app.services import project_seed_service
 
 from tests._pg_fixture import blank_session
@@ -135,11 +137,14 @@ def test_a_manually_added_pool_reserve_within_on_hand_confirms_and_names_the_poo
     ]
 
 
-def test_a_manually_added_pool_reserve_above_on_hand_is_refused_and_names_the_holder(api):
+def test_a_manually_added_pool_reserve_above_on_hand_holds_what_is_left_and_records_the_short(api):
     """AC-3.3: the server's on-hand guard is the same one `test_confirm_reserve_guard.py`
     pins for an own location, retargeted at a SITE POOL a planner just added by hand - it
-    refuses a Reserve above what is on hand there less what another order already holds,
-    and names that order. Nothing is written on the refused order."""
+    caps a Reserve at what is on hand there less what another order already holds: the
+    earlier order's 1 of the 10 stays, this line holds the 9 left and is recorded 6 short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     _stock(db, world.product, world.pool_wh, on_hand=10)
@@ -173,24 +178,26 @@ def test_a_manually_added_pool_reserve_above_on_hand_is_refused_and_names_the_ho
         },
     )
 
-    assert response.status_code == 409, response.text
-    body = response.json()
-    assert body["message"] == (
-        f"{world.pool_wh.warehouse_code}: 10 on hand, 1 already reserved by "
-        f"{held_by_core.so_number}, you asked 15"
-    )
-    conflict = body["reserve_conflict"]
-    assert conflict["line"] == 22
-    assert conflict["warehouse_code"] == world.pool_wh.warehouse_code
-    assert conflict["on_hand"] == "10"
-    assert conflict["asked"] == "15"
-    assert conflict["held_by"] == [
-        {"so_number": held_by_core.so_number, "line_no": 7, "qty": "1"}
-    ]
-    assert [entry["line_no"] for entry in body["failing_lines"]] == [22]
+    assert response.status_code == 200, response.text
+    notices = response.json()["stock_short_notices"]
+    assert [notice["line_no"] for notice in notices] == [22], notices
+    assert f"only 9 free at {world.pool_wh.warehouse_code}" in notices[0]["reason"], notices
+    assert ", 6 short" in notices[0]["reason"], notices
+    db.expire_all()
+    held = {
+        (row.so_line_id, row.warehouse_id): row.qty
+        for row in db.query(SOLineAllocation).filter(
+            SOLineAllocation.so_line_id.in_([held_by_line.id, line.id])
+        )
+    }
+    assert held == {
+        (held_by_line.id, world.pool_wh.id): Decimal("1"),
+        (line.id, world.pool_wh.id): Decimal("9"),
+    }, held
     assert (
         db.query(SOSupplyDecision)
-        .filter(SOSupplyDecision.project_sales_order_id == order.id)
+        .filter(SOSupplyDecision.project_sales_order_id == order.id,
+                SOSupplyDecision.state == "active")
         .count()
-        == 0
+        == 1
     )
