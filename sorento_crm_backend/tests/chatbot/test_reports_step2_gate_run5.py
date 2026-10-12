@@ -20,7 +20,7 @@ from tests.chatbot.test_reports_step2_gate_run4 import (  # noqa: F401
     _route_calls,
     _sales,
 )
-from tests.chatbot.test_reports_step2_lane import EARLIER, SEP_LAST, _s2_harness, _t1  # noqa: F401
+from tests.chatbot.test_reports_step2_lane import EARLIER, SEP_LAST, _refine as _refine_verdict, _s2_harness, _t1  # noqa: F401
 
 NO_DATES = {"date_filter_start": None, "date_filter_end": None}
 
@@ -72,6 +72,15 @@ def test_a3_guard_two_products_are_not_a_narrowing(console, monkeypatch) -> None
 def test_a4_guard_with_no_held_report_nothing_is_narrowed(console, monkeypatch) -> None:
     seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
     console.say(_exact_verdict(), "only this exact model")
+    for sent in _sent(seen):
+        assert not sent.get("product_code_exact"), sent
+        assert not sent.get("customer_ids"), sent
+
+
+def test_a5_guard_a_topic_reset_is_not_a_narrowing(console, monkeypatch) -> None:
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    console.say(_exact_verdict(topic_reset=True), "something else")
     for sent in _sent(seen):
         assert not sent.get("product_code_exact"), sent
         assert not sent.get("customer_ids"), sent
@@ -132,3 +141,32 @@ def test_b5_guard_a_verdict_naming_its_own_period_uses_it(console) -> None:
     (after,) = calls
     assert after["date_from"] == "2026-08-01" and after["date_to"] == "2026-08-31", after
     assert after["top_n"] == 20, after
+
+
+# ================================================================================ direction flips
+
+
+def test_b6_a_restatement_flipping_to_bottom_sorts_ascending(console) -> None:
+    before = _t1_printed(console)
+    assert before["sort"] == "desc", before
+    text, calls = console.say(_restated(top_n=5, rank_direction="bottom"), "bottom 5")
+    (after,) = calls
+    assert after["sort"] == "asc" and after["top_n"] == 5, after
+    assert after["date_from"] == before["date_from"] and "sort" not in after.get("carried", []), after
+    assert PERIOD_Q not in text, text
+
+
+def test_b7_a_restatement_flipping_back_to_top_sorts_descending(console) -> None:
+    _text, first = _t1(console, rank_direction="bottom")
+    assert first[0]["sort"] == "asc", first
+    _text, calls = console.say(_restated(top_n=5, rank_direction="top"), "top 5")
+    (after,) = calls
+    assert after["sort"] == "desc" and after["top_n"] == 5, after
+
+
+def test_b8_a_parser_refine_with_a_direction_flips_the_held_sort(console) -> None:
+    before = _t1_printed(console)
+    _text, calls = console.say(_refine_verdict(rank_direction="bottom"), "the bottom ones")
+    (after,) = calls
+    assert after["sort"] == "asc" and after["top_n"] == before["top_n"], after
+    assert after["date_from"] == before["date_from"], after
