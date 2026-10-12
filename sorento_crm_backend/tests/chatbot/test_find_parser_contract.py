@@ -45,9 +45,11 @@ def test_p1_schema_declares_find_as_a_strict_required_object_or_null() -> None:
     assert filters["type"] == "array"
     item = filters["items"]
     assert item["additionalProperties"] is False
-    assert set(item["required"]) == {"key", "value"}
+    # Round 3: a typed value (code, number + unit, enum) rides `value` + `unit`.
+    assert set(item["required"]) == {"key", "value", "unit"}
+    assert set(item["properties"]["unit"]["type"]) == {"string", "null"}
     assert item["properties"]["key"]["type"] == "string"
-    assert set(item["properties"]["value"]["type"]) == {"string", "null"}
+    assert set(item["properties"]["value"]["type"]) == {"string", "number", "null"}
 
 
 def test_p1_find_is_tolerated_absent() -> None:

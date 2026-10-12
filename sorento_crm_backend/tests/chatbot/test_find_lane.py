@@ -306,3 +306,37 @@ def test_r2_a_carried_product_beside_a_dashless_new_code_is_left_out(session_fac
     call, captured = _capturing_mcp(ENVELOPE)
     _run(payload, call)
     assert captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}], captured
+
+
+# --------------------------------------------------------------------------- round 3: typed values
+
+
+@pytest.fixture()
+def value_row(monkeypatch):
+    from app.services import product_find as pf
+
+    row = pf.FindFilter(
+        key="size_of",
+        vocabulary="size_of: test row",
+        labels={},
+        run=lambda db, arg: [],
+        products=False,
+        value=pf.ValueSpec("number", units=("mm",)),
+        ask="Which size?",
+    )
+    monkeypatch.setitem(pf.FILTERS, "size_of", row)
+    return row
+
+
+def test_r3_a_value_row_forwards_the_parsers_value_and_unit(session_factory, value_row) -> None:
+    call, captured = _capturing_mcp(ENVELOPE)
+    _run(_payload(parse=_find_parse(filters=[{"key": "size_of", "value": 250, "unit": "mm"}], entities=[]), resolved=False), call)
+    assert captured and captured[0][0] == TOOL, captured
+    assert captured[0][1]["filters"] == [{"key": "size_of", "value": 250, "unit": "mm"}]
+
+
+def test_r3_a_value_row_with_no_value_asks_its_own_line(session_factory, value_row) -> None:
+    call, captured = _capturing_mcp(ENVELOPE)
+    result = _run(_payload(parse=_find_parse(filters=[{"key": "size_of", "value": None, "unit": None}], entities=[]), resolved=False), call)
+    assert captured == []
+    assert _response(result) == "Which size?"
