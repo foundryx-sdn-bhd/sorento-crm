@@ -188,3 +188,94 @@ def test_book_change_qty_down_hands_its_from_and_to_qty_to_the_email(api):
     assert len(demand_rows) == 1, demand_rows
     assert demand_rows[0]["qty"] == Decimal("4")
     assert (demand_rows[0]["from_qty"], demand_rows[0]["to_qty"]) == (Decimal("10"), Decimal("6"))
+
+
+def _so400236_dev_shape(api):
+    """SO400236 SRTWB246 as it stands on the shared dev DB (crew extract, 12 Oct): one
+    ORDER row of 1, PLACED, linked to an SPO allocation off a PO bought FOR this line and
+    received in full INTO the line's own location, with the goods on hand there. The own-
+    arrival credit then covers the row (no redirect) and the re-run meets the line from
+    that stock, so the apply's settle reduces the buy to nothing."""
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    from ..test_planning_changes import _stock
+    from ._own_arrival_fixture import po_line_bought_for, supplier_and_po
+
+    _client, world = api
+    db = world.db
+    fixture = _one_row_fixture(api, qty="1")
+    row = fixture["row"]
+    fixture["core"].source_ref = f"ZZT-L-{_uid()[:8]}"
+    po = supplier_and_po(db)
+    _po_line, spo = po_line_bought_for(
+        db, po, world.product, world.own_wh, from_so_line_ref=fixture["core"].source_ref,
+        qty_received=1, spo_number=f"ZZT-SPO-{_uid()[:6]}",
+    )
+    db.add(
+        OrderInquiryLink(
+            id=_uid(), company_id=world.company_id, row_id=row.id,
+            spo_allocation_id=spo.id, document=spo.spo_number, qty=Decimal("1"),
+        )
+    )
+    db.flush()
+    ProjectOrderInquiryService(db).refresh_link_state([row])
+    _stock(db, world.product, world.own_wh, on_hand=1)
+    db.commit()
+    return fixture
+
+
+def test_dev_shape_date_move_prints_delay_never_a_cancel_to_zero(api, monkeypatch):
+    """Crew audit of 6872c888 (preview on dev): SO400236 SRTWB246 rendered CANCEL BALANCE,
+    `1 | 0 | 01/10/2026`, no NEW DATE. The book moved only the date; the email must say
+    DELIVERY old -> NEW DATE new with DELAY, the quantity unchanged."""
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _so400236_dev_shape(api)
+    row = fixture["row"]
+    later = WAS_1.replace(month=WAS_1.month + 2)
+    calls.clear()
+
+    _apply_change(
+        world, fixture["core"], fixture["order"], fixture["core_so"], fixture["line"],
+        old_date=WAS_1, new_date=later, qty="1",
+    )
+
+    entries = _line_entries(calls, row.item_code)
+    assert len(entries) == 1, entries
+    assert entries[0]["qty"] == "1", f"never a cancel to 0: {entries[0]}"
+    assert entries[0]["delivery_date"] == later.strftime("%d/%m/%Y"), entries[0]
+    assert entries[0]["was"] == {"delivery_date": WAS_FMT}, entries[0]
+    headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
+    assert "DELAY" in headline and "CANCEL" not in headline, headline
+
+
+def test_redirected_and_met_from_stock_delay_notice_carries_its_was(api, monkeypatch):
+    """The other stock-met shape: the row's received link is NOT the line's own arrival
+    (redirected to the pool) and free stock meets the line, so no buy row is raised and
+    the apply's DELAY notice row is the line's only email line. It prints DELIVERY old ->
+    NEW DATE new off the batch row's own from date."""
+    from ..test_planning_changes import _stock
+
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _srtwb246_shape(api)
+    _stock(world.db, world.product, world.own_wh, on_hand=1)
+    world.db.commit()
+    later = WAS_1.replace(month=WAS_1.month + 2)
+    calls.clear()
+
+    _apply_change(
+        world, fixture["core"], fixture["order"], fixture["core_so"], fixture["line"],
+        old_date=WAS_1, new_date=later, qty="1",
+    )
+
+    # Every line of the mail: the notice row carries the batch row's own item code (the
+    # harness's `_change` names "ZZT-ITEM"), not the product's.
+    entries = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
+    dated = [e for e in entries if (e["was"] or {}).get("delivery_date")]
+    assert dated, f"the date move must reach the email: {entries}"
+    assert dated[0]["was"]["delivery_date"] == WAS_FMT, dated[0]
+    assert dated[0]["delivery_date"] == later.strftime("%d/%m/%Y"), dated[0]
+    assert not any(e["qty"] == "0" for e in entries), entries

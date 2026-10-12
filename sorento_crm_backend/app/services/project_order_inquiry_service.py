@@ -44,6 +44,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
@@ -890,8 +891,14 @@ class ProjectOrderInquiryService:
         borrow_shortfalls: Sequence[Dict[str, Any]] = (),
         settle_in_place_line_ids: Sequence[str] = (),
         uncover_reason_by_line: Optional[Mapping[str, str]] = None,
+        line_changes: Optional[Mapping[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """The Buy-only handoff, written INSIDE the atomic confirmation (PLAN section 4).
+
+        `line_changes` (EMAIL-SO-CHANGES): per project line id a planning change is
+        applying, the SO line's own `from_qty` / `to_qty` / `from_date` / `to_date` (the
+        batch row's "What changed"), so the handover email says what the book did to a
+        line whose buy this confirm reduces to nothing.
 
         The only creator of standard demand rows. Publish creates none and reconciliation
         creates none (AC-D01): a published-but-unconfirmed order may be covered entirely by
@@ -1256,7 +1263,8 @@ class ProjectOrderInquiryService:
             deferred_cancels: List[Tuple[OrderInquiryRow, Any]] = []
             held_qty = _ZERO
             if (asked_to_settle or drafted) and self._settle_row_in_place(
-                inquiry, entry, rows, need, decision, actor_user_id=actor_user_id
+                inquiry, entry, rows, need, decision, actor_user_id=actor_user_id,
+                line_change=(line_changes or {}).get(str(line.id)),
             ):
                 # Only what the CALLER asked for is reported back: the planning-change
                 # apply reads this list to decide whether to raise a separate DELAY /
@@ -1900,6 +1908,7 @@ class ProjectOrderInquiryService:
         decision: Any,
         *,
         actor_user_id: Optional[str] = None,
+        line_change: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """A planning change moved THIS line: update its one row rather than replace it.
 
@@ -1997,9 +2006,37 @@ class ProjectOrderInquiryService:
             # AC-H5: the honest end of a line the book reduced to nothing, whether or not
             # it carried a link - the handover email is not conditioned on that the way
             # `order_inquiry_changed_with_links` above is.
-            self._record_handover(
-                row, kind="cancelled", was={"qty": previous_qty}, actor_user_id=actor_user_id
-            )
+            still_asked = line_change is not None and _dec(line_change.get("to_qty")) > _ZERO
+            if not still_asked:
+                self._record_handover(
+                    row, kind="cancelled", was={"qty": previous_qty},
+                    actor_user_id=actor_user_id,
+                )
+                return True
+            # EMAIL-SO-CHANGES (crew audit, SO400236 SRTWB246 on dev): the book still asks
+            # for the line, and what it moved is the date (or the quantity); the buy
+            # went to nothing only because landed stock now meets it. The email says what
+            # the book did to the line, never a cancel to 0: QTY / NEW QTY and DELIVERY /
+            # NEW DATE off the batch row's own from/to, on a stand-in carrying the line's
+            # new values (the cancelled row keeps its own record untouched).
+            line_was: Dict[str, Any] = {}
+            from_qty, to_qty = line_change.get("from_qty"), _dec(line_change.get("to_qty"))
+            if from_qty is not None and _dec(from_qty) != to_qty:
+                line_was["qty"] = _dec(from_qty)
+            from_date, to_date = line_change.get("from_date"), line_change.get("to_date")
+            if from_date and to_date and from_date != to_date:
+                line_was["delivery_date"] = from_date
+            if line_was:
+                stand_in = SimpleNamespace(
+                    id=row.id, order_inquiry_id=row.order_inquiry_id,
+                    so_line_id=row.so_line_id, item_code=row.item_code,
+                    stock_location=row.stock_location, verb=row.verb,
+                    cited_document=row.cited_document, note=row.note,
+                    qty=to_qty, delivery_date=to_date or row.delivery_date,
+                )
+                self._record_handover(
+                    stand_in, kind="settled", was=line_was, actor_user_id=actor_user_id
+                )
             return True
 
         links = self._links_of(row.id)
@@ -4616,6 +4653,13 @@ class ProjectOrderInquiryService:
                     stock_location=row.get("stock_location"),
                     change=change,
                     note=row.get("note"),
+                    # EMAIL-SO-CHANGES: a DELAY/ADVANCE notice's structured Was.
+                    was=(
+                        {"delivery_date": row.get("from_date")}
+                        if row.get("from_date")
+                        and change in (CHANGE_DATE_LATER, CHANGE_DATE_EARLIER)
+                        else None
+                    ),
                 )
             )
         if not demand:
