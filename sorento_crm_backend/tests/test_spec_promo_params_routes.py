@@ -306,6 +306,32 @@ def test_zero_rows_carries_spec_alternatives_for_the_values_that_exist(api, db):
     assert not hit.json().get("spec_alternatives")
 
 
+def test_zero_rows_reports_spec_unrecorded_so_a_miss_is_not_read_as_none_exists(api, db):
+    """RED today: ignored, so rows come back and neither `spec_alternatives` nor
+    `spec_unrecorded` exists. Contract: per constrained key, the count of products matching
+    the OTHER constraints that have no value for that key."""
+    sized = [
+        _p(db, "U100", {"product_type": _enum("floor_grating"), "dim_length": _num(100)}),
+        _p(db, "U150", {"product_type": _enum("floor_grating"), "dim_length": _num(150)}),
+    ]
+    unsized = [_p(db, f"UNS{i}", {"product_type": _enum("floor_grating")}) for i in range(3)]
+    db.commit()
+
+    resp = _list(
+        api, db, sized + unsized,
+        **_constraints(
+            {"key": "product_type", "op": "eq", "value": "floor_grating"},
+            {"key": "dim_length", "op": "eq", "value": 250},
+        ),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["data"] == []
+    alts = {a["key"]: a["values"] for a in body.get("spec_alternatives", [])}
+    assert sorted(alts.get("dim_length", [])) == [100, 150], body
+    assert body.get("spec_unrecorded") == {"dim_length": 3}, body
+
+
 # --------------------------------------------------------------------------------------- #
 # 8-9: has_active_promotion
 # --------------------------------------------------------------------------------------- #
