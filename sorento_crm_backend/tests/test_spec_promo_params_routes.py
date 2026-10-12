@@ -869,3 +869,164 @@ def test_inactive_class_registry_row_is_rejected_and_an_absent_one_stays_accepte
     resp = _list(api, db, [basin], **constraint)
     assert resp.status_code == 422, resp.text
     assert "class" in resp.text
+
+
+# --------------------------------------------------------------------------------------- #
+# Security review round: caps, tier fail-closed, hostile JSON, type check at parse
+# --------------------------------------------------------------------------------------- #
+
+
+def _raw_list(api, raw: str, **params):
+    return api.get(PRODUCTS, params={"limit": 100, "spec_constraints": raw, **params})
+
+
+def _one(key="dim_length", op="eq", value=250):
+    return {"key": key, "op": op, "value": value}
+
+
+def test_s1_more_than_16_constraints_is_rejected(api, db):
+    """RED today: no cap, so 17 constraints answer 200."""
+    _grating_world(db)
+    items = [_one(value=250 + i) for i in range(17)]
+    resp = _raw_list(api, json.dumps(items))
+    assert resp.status_code == 422, resp.text[:300]
+    ok = _raw_list(api, json.dumps(items[:16]))
+    assert ok.status_code == 200, ok.text[:300]
+
+
+def test_s1_an_eq_value_list_over_50_is_rejected(api, db):
+    """RED today: no cap on the value list."""
+    _grating_world(db)
+    resp = _raw_list(api, json.dumps([_one(value=list(range(51)))]))
+    assert resp.status_code == 422, resp.text[:300]
+    ok = _raw_list(api, json.dumps([_one(value=list(range(50)))]))
+    assert ok.status_code == 200, ok.text[:300]
+
+
+def test_s1_a_raw_string_over_4096_chars_is_rejected(api, db):
+    """RED today: no length cap (a valid 5000 char list answers 200)."""
+    _grating_world(db)
+    padded = json.dumps([_one()]) + " " * 5000
+    resp = _raw_list(api, padded)
+    assert resp.status_code in (400, 422), resp.text[:300]
+
+
+def test_s1_identical_duplicate_constraints_are_deduped(api, db):
+    """Guard (may pass today): the same constraint twice answers like once."""
+    g250, g300, trap = _grating_world(db)
+    rows = [g250, g300, trap]
+    once = _list(api, db, rows, **_constraints(GRATING, _one()))
+    twice = _list(api, db, rows, **_constraints(GRATING, _one(), _one(), GRATING))
+    assert twice.status_code == 200, twice.text[:300]
+    assert _codes(twice) == _codes(once) == _codes_of([g250])
+
+
+def _tier_contact_world(db):
+    """A respond contact whose only access type is zzt_dealer, plus A (end_user promo),
+    B (dealer promo) and C (no promo)."""
+    from app.models.access import ContactAccessType, RespondContact
+    from app.models.respond_workspace import RespondWorkspace
+    from app.services.contact_access_type_service import ContactAccessTypeService
+
+    db.add_all(
+        [
+            ContactAccessType(code="zzt_end_user", name="ZZT End User Tier"),
+            ContactAccessType(code="zzt_dealer", name="ZZT Dealer Tier"),
+        ]
+    )
+    suffix = uuid.uuid4().hex[:8]
+    ws = RespondWorkspace(
+        id=str(uuid.uuid4()), space_id=f"sp-{suffix}", name=f"zzt-ws-{suffix}", api_key_ciphertext="stub"
+    )
+    db.add(ws)
+    db.flush()
+    contact = RespondContact(
+        id=str(uuid.uuid4()), phone_number=f"+60000{suffix[:6]}", name="ZZT Tier Contact",
+        respond_io_id=f"rid-{suffix}", workspace_id=ws.id,
+    )
+    bare = RespondContact(
+        id=str(uuid.uuid4()), phone_number=f"+60001{suffix[:6]}", name="ZZT No Tier Contact",
+        respond_io_id=f"rid-bare-{suffix}", workspace_id=ws.id,
+    )
+    db.add_all([contact, bare])
+    db.flush()
+    ContactAccessTypeService(db).set_contact_access_codes(str(contact.id), ["zzt_dealer"])
+    prod_a, prod_b, prod_c = _p(db, "T2A"), _p(db, "T2B"), _p(db, "T2C")
+    _promo(db, prod_a).access_levels = ["zzt_end_user"]
+    _promo(db, prod_b).access_levels = ["zzt_dealer"]
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    for p in (prod_a, prod_b, prod_c):
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+    db.commit()
+    return ws, contact, bare, [prod_a, prod_b, prod_c]
+
+
+def _ids_in(node, known: dict) -> set[str]:
+    """Product codes whose id appears anywhere in a JSON body (rows, summaries, availability)."""
+    found: set[str] = set()
+    if isinstance(node, dict):
+        for v in node.values():
+            found |= _ids_in(v, known)
+    elif isinstance(node, list):
+        for v in node:
+            found |= _ids_in(v, known)
+    elif isinstance(node, str) and node in known:
+        found.add(known[node])
+    return found
+
+
+@pytest.mark.parametrize("route", ["products", "stock"])
+def test_s2_has_active_promotion_without_access_levels_uses_the_contacts_own_tier(api, db, route):
+    """RED today: with no `access_levels` the promotion clause carries no tier restriction, so the
+    end_user-only promotion counts for a dealer contact (and an unresolvable or tier-less contact
+    sees every live promotion instead of none)."""
+    ws, contact, bare, prods = _tier_contact_world(db)
+    prod_a, prod_b, prod_c = prods
+    known = {p.id: p.product_code for p in prods}
+    path = PRODUCTS if route == "products" else BALANCE
+
+    def ask(**who):
+        resp = api.get(
+            path,
+            params={"product_ids": [p.id for p in prods], "limit": 100, "has_active_promotion": "true", **who},
+        )
+        assert resp.status_code == 200, resp.text[:300]
+        return _ids_in(resp.json(), known)
+
+    mine = {"contact_id": contact.respond_io_id, "space_id": ws.space_id}
+    assert ask(**mine) == _codes_of([prod_b]), "dealer contact: only the dealer promotion"
+    assert ask(contact_id="rid-does-not-exist", space_id=ws.space_id) == set(), "unresolved contact: nothing"
+    assert ask(contact_id=bare.respond_io_id, space_id=ws.space_id) == set(), "contact with no tier: nothing"
+    assert ask() == _codes_of([prod_a, prod_b]), "staff call keeps no tier restriction"
+
+
+def test_n1_deeply_nested_json_is_a_4xx_never_a_500(api, db):
+    """Hostile input: 5000 nested brackets must not recurse into a 500."""
+    _grating_world(db)
+    resp = _raw_list(api, "[" * 5000 + "]" * 5000)
+    assert 400 <= resp.status_code < 500, resp.text[:300]
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+def test_n2_non_finite_numbers_are_422(api, db, token):
+    """RED today: Python's json accepts these tokens and a non-finite value reaches the query."""
+    _grating_world(db)
+    raw = '[{"key":"dim_length","op":"eq","value":%s}]' % token
+    resp = _raw_list(api, raw)
+    assert resp.status_code == 422, resp.text[:300]
+    raw_between = '[{"key":"dim_length","op":"between","value":[1,%s]}]' % token
+    assert _raw_list(api, raw_between).status_code == 422
+
+
+def test_n3_value_type_must_match_the_key_type(api, db):
+    """RED today: a number on an enum key and text on a numeric key are accepted and silently
+    match nothing. A numeric string stays rejected (strict)."""
+    _grating_world(db)
+    enum_number = _raw_list(api, json.dumps([{"key": "product_type", "op": "eq", "value": 5}]))
+    assert enum_number.status_code == 422, enum_number.text[:300]
+    numeric_text = _raw_list(api, json.dumps([_one(value="abc")]))
+    assert numeric_text.status_code == 422, numeric_text.text[:300]
+    numeric_string = _raw_list(api, json.dumps([_one(value="250")]))
+    assert numeric_string.status_code == 422, numeric_string.text[:300]
+    fine = _raw_list(api, json.dumps([_one(value=250)]))
+    assert fine.status_code == 200, fine.text[:300]
