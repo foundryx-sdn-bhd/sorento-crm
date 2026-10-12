@@ -7,6 +7,7 @@ import {
   adoptSalesOrder,
   confirmMany,
   previewConfirmMany,
+  simulateConfirm,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
