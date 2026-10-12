@@ -164,7 +164,9 @@ today (#4, #7, #8, #26, #27; `do_ask.py:14-17`).
    P4: answer for the named subject / team instead.
 4. cand-0230 (staff, R2). "[customer] 7/10/2026 有送货吗？", then "SRT391-GM几时会安排送货？", then
    "十月": the reply was filtered by BOTH "客户: [customer]" and "产品: SRT391-GM". R2: ask "Delivery for
-   [customer]: only SRT391-GM (from earlier) or all products?".
+   SRT391-GM: only [customer] (from earlier) or all customers?" (crew decision (a), 12 Oct 2026: the
+   question is framed on the NEW subject and asks about the carried one, the only one truly "from
+   earlier"; the general example above is the same rule the other way round).
 5. cand-0220 (staff, R2). "SRT359C 有货吗？" then "[customer] 今天有送货吗？": the label wants that customer's deliveries,
    no SRT359C. R2 makes this an ask; crew relabels it "good clarify" (Q9).
 
