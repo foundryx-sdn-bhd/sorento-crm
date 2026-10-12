@@ -158,6 +158,7 @@ def tool_filter(candidates: Any, *, has_product: bool | None) -> ToolPick:
 # --------------------------------------------------------------------------- #
 
 _PROMOTION_PRODUCTS_TOOL = "crm_marketing_promotion_products_list"
+PROMOTION_PRODUCTS_TOOL = _PROMOTION_PRODUCTS_TOOL
 # The tools whose route takes `spec_constraints` (`sorento_crm_mcp/catalog.py`).
 SPEC_CONSTRAINT_TOOLS = frozenset(
     {"crm_master_products_list", "crm_inventory_stock_balance_list", _PROMOTION_PRODUCTS_TOOL}

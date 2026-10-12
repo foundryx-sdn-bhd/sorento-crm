@@ -2387,11 +2387,14 @@ def run_fetch(
         envelope = {**envelope, "items": kept}
     picked_tier = (tier_gate or {}).get("tier_pick")
     if (
-        tool_name == fetch_mod.TIER_PROBE_TOOL
+        # Owner Q4 option (a): the promotion products tool is the subject path, so it states
+        # the stamped level's miss the same way (never the resolver's word miss).
+        tool_name in (fetch_mod.TIER_PROBE_TOOL, fetch_mod.PROMOTION_PRODUCTS_TOOL)
         and picked_tier
         and semantic_input.get("scope_terms")
         and isinstance(envelope, dict)
         and envelope.get("has_result") is False
+        and envelope.get("spec_miss") is not True
     ):
         # PROMO-SUBJECT-FILTER owner hand test: a picked level with nothing for the subject is
         # one line, the same fact the menu stamped ("- no promotion"); never a miss sentence.
@@ -2400,7 +2403,12 @@ def run_fetch(
         tiers = picked_tier if isinstance(picked_tier, list) else [picked_tier]
         levels = " or ".join(TIER_DISPLAY.get(str(t), str(t).replace("_", " ")) for t in tiers)
         subject = ", ".join(str(t) for t in semantic_input["scope_terms"])
-        return _fixed_reply(f"No {levels} promotion for {subject}.")
+        fragment = _fixed_reply(f"No {levels} promotion for {subject}.")
+        # The tool answered for the subject word (empty at this level), so the resolver not
+        # placing it is no miss of its own (`answer_bridge._miss_triggers`): no "Couldn't
+        # find" and no escalate offer under the one line.
+        fragment["fetch"]["subject_filtered"] = True
+        return fragment
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
