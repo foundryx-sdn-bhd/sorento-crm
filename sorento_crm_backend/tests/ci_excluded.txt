@@ -34,16 +34,7 @@ tests/scm/test_m2_job.py
 tests/scm/test_m2_supplier_perf.py
 tests/scm/test_m2_triggers.py
 tests/scm/test_m3_resolver.py
-tests/scm/test_m3_run.py
-tests/scm/test_m4_cash.py
-tests/scm/test_m4_decisions.py
-tests/scm/test_m5_explainer.py
-tests/scm/test_m5_market.py
-tests/scm/test_m8_low_stock.py
-tests/scm/test_m8_slice_a.py
-tests/scm/test_m8_slice_c.py
 tests/scm/test_m8_slice_d.py
-tests/scm/test_m8_slice_e.py
 tests/scm/test_policy_config.py
 
 # --- Other tests requiring pre-existing business rows.
