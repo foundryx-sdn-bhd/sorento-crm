@@ -200,6 +200,8 @@ export interface StockDebtListParams {
   dateFrom: string;
   /** `YYYY-MM-DD`, or '' for no upper bound (R14, AC-1). */
   dateTo: string;
+  /** STOCK-DEBT-PROJECTION: month cells read the running projected balance. */
+  projected?: boolean;
 }
 
 /** The list params minus paging, plus the workbook split - what `exportStockDebt` sends. */
@@ -212,6 +214,8 @@ export interface StockDebtExportParams {
   dateTo: string;
   /** Whether the workbook carries the four stock and PO columns (default off on the wire). */
   showAux: boolean;
+  /** STOCK-DEBT-PROJECTION: the workbook follows the "Projected balance" switch. */
+  projected?: boolean;
   split: StockDebtExportSplit;
 }
 
@@ -230,6 +234,7 @@ export async function getStockDebtList(
       book: params.book === 'all' ? '' : params.book,
       date_from: params.dateFrom || '',
       date_to: params.dateTo || '',
+      projected: params.projected ? 'true' : '',
     },
   );
   // Repeatable, so `buildDataGridParams`'s scalar `extra` cannot carry it - appended
@@ -254,11 +259,13 @@ export async function getStockDebtCell(
   dateFrom?: string,
   dateTo?: string,
   book?: StockDebtBook,
+  projected?: boolean,
 ): Promise<StockDebtCell> {
   const search = new URLSearchParams({ month });
   if (dateFrom) search.set('date_from', dateFrom);
   if (dateTo) search.set('date_to', dateTo);
   if (book && book !== 'all') search.set('book', book);
+  if (projected) search.set('projected', 'true');
   const res = await apiFetch(
     `/api/v1/project-sales/stock-debt/${encodeURIComponent(productId)}/cell?${search}`,
   );
@@ -285,6 +292,8 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       date_to: params.dateTo || undefined,
       split: params.split,
       show_aux: params.showAux,
+      // Only while the switch is on: the month view's body is what it was before.
+      ...(params.projected ? { projected: true } : {}),
     }),
   });
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to start the stock debt export'));

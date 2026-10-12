@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def resolve_via_embedding_then_ilike(
     if canonical_model is not None and canonical_fields:
         try:
             from app.api.v1.external.rag import _embed_query
-            from app.services.embedding_service import EmbeddingReadService
+            from app.services.embedding_service import EmbeddingReadService, parse_debtor_seed_id
 
             vec = _embed_query(term)
             hits = EmbeddingReadService(db).search_current(
@@ -59,7 +59,7 @@ def resolve_via_embedding_then_ilike(
             source_ids = [str(c.source_id) for c, _, _ in hits if c.source_id]
             if source_ids:
                 # Real master rows: look up canonical fields by id.
-                master_ids = [sid for sid in source_ids if not sid.startswith("debtor:")]
+                master_ids = [sid for sid in source_ids if parse_debtor_seed_id(sid) is None]
                 if master_ids:
                     cols = [getattr(canonical_model, f) for f in canonical_fields]
                     rows = (
@@ -73,21 +73,26 @@ def resolve_via_embedding_then_ilike(
                         for v in tuple(row):
                             if v and v not in canonical_values:
                                 canonical_values.append(str(v))
-                # Synthetic `debtor:<code>` ids point at a distinct
-                # `orders.debtor_code` with no master `customers` row. Resolve
-                # the debtor_name / debtor_code from Order so customer_query
-                # search expands to FIRA-style debtors too.
-                debtor_codes = [
-                    sid.split(":", 1)[1]
-                    for sid in source_ids
-                    if sid.startswith("debtor:") and ":" in sid
-                ]
-                if debtor_codes:
+                # Synthetic `debtor:<company>:<code>` ids point at an
+                # `orders.debtor_code` with no master `customers` row in that
+                # company. Resolve the debtor_name / debtor_code from that
+                # company's orders so customer_query search expands to FIRA-style
+                # debtors too. A legacy company-less id names no company: skipped.
+                seeds = [parse_debtor_seed_id(sid) for sid in source_ids]
+                debtor_keys = [s for s in seeds if s is not None and s[0] is not None]
+                if debtor_keys:
                     from app.models.order import Order
 
                     rows = (
                         db.query(Order.debtor_name, Order.debtor_code)
-                        .filter(Order.debtor_code.in_(debtor_codes))
+                        .filter(
+                            or_(
+                                *(
+                                    and_(Order.company_id == company_id, Order.debtor_code == code)
+                                    for company_id, code in debtor_keys
+                                )
+                            )
+                        )
                         .filter(Order.deleted_at.is_(None))
                         .distinct()
                         .all()

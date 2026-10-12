@@ -27,16 +27,17 @@ from app.models.procurement import InboundShipment, InboundShipmentLine, SPOAllo
 from app.models.order import Order, OrderStatus, OrderLine, Customer, Transporter
 from app.models.product import ProductAttachment
 from app.models.conversation_frame import ConversationFrame
-from app.services.embedding_service import EmbeddingReadService
+from app.services.embedding_service import EmbeddingReadService, parse_debtor_seed_id
 
 logger = logging.getLogger(__name__)
 
 
 # source_type -> owned model carrying company_id (multi-company isolation). Types
 # absent here are synthetic / company-less (mcp_tool, form, schema_doc,
-# order_status, ``debtor:`` seeds) and stay company-less - shared knowledge
-# visible under every scope. ``conversation_frame`` has no company column: its
-# company is the frame contact's, resolved in ``_company_id_for_source``.
+# order_status) and stay company-less - shared knowledge visible under every
+# scope. A ``debtor:<company>:<code>`` customer seed carries its company in the id.
+# ``conversation_frame`` has no company column: its company is the frame
+# contact's, resolved in ``_company_id_for_source``.
 _SOURCE_MODEL_FOR_COMPANY = {
     "product": Product,
     # product_spec is keyed on product_id, so the product row carries its company.
@@ -94,8 +95,9 @@ def _company_id_for_source(db: Session, source_type: str, source_id: str):
     model = _SOURCE_MODEL_FOR_COMPANY.get(source_type)
     if model is None:
         return None
-    if isinstance(source_id, str) and source_id.startswith("debtor:"):
-        return None
+    seed = parse_debtor_seed_id(source_id)
+    if seed is not None:
+        return seed[0]
     try:
         row = db.query(model.company_id).filter(model.id == source_id).first()
     except Exception:
@@ -516,13 +518,20 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
     if source_type == "customer":
         # Customer source supports two shapes:
         # 1. UUID source_id → Customer master row.
-        # 2. `debtor:<code>` synthetic source_id → distinct orders.debtor_code with no Customer match.
-        if isinstance(source_id, str) and source_id.startswith("debtor:"):
-            code = source_id.split(":", 1)[1]
+        # 2. `debtor:<company>:<code>` synthetic source_id → an orders.debtor_code with no
+        #    Customer match in that company, named from that company's orders only.
+        seed = parse_debtor_seed_id(source_id)
+        if seed is not None:
+            company_id, code = seed
+            if company_id is None:
+                # A legacy company-less seed would read as shared knowledge.
+                raise ValueError(f"Company-less debtor seed refused: {source_id}")
             row = (
                 db.query(Order.debtor_code, Order.debtor_name)
+                .filter(Order.company_id == company_id)
                 .filter(Order.debtor_code == code)
                 .filter(Order.deleted_at.is_(None))
+                .order_by(Order.created_at.asc())
                 .first()
             )
             if not row:
@@ -535,7 +544,7 @@ def _canonical_for_source(db: Session, source_type: str, source_id: str, payload
                 ]
             ).strip()
             return {
-                "source_key": source_id,
+                "source_key": f"debtor:{code}",
                 "title": row.debtor_name or row.debtor_code,
                 "body_text": body,
                 "visibility_scope": "internal",

@@ -793,6 +793,124 @@ LINK_HORIZON_PLAN = "plan"
 LINK_HORIZON_NONE = "none"
 
 
+def lines_with_undecided_planning_change(db: Session, line_ids: Sequence[str]) -> set:
+    """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
+    yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
+    overtook can never be decided, so it holds nothing back. Live means held against
+    the order's latest revision or the one just before it: inside a confirm the
+    revision being replaced is still what the batch's leftover rows name, until the
+    apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
+    if not line_ids:
+        return set()
+    from app.models.planning_change import (
+        PLANNING_CHANGE_STATE_PENDING,
+        PlanningChangeRow,
+    )
+    rows = (
+        db.query(PlanningChangeRow)
+        .filter(
+            PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
+            PlanningChangeRow.decision.is_(None),
+            PlanningChangeRow.kind != "cancelled",
+            PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
+        )
+        .all()
+    )
+    from app.models.project_so import SOSupplyDecision
+
+    live_revisions: Dict[str, set] = {}
+    out: set = set()
+    for row in rows:
+        pso_id = str(row.project_sales_order_id)
+        if pso_id not in live_revisions:
+            live_revisions[pso_id] = {
+                revision_no
+                for (revision_no,) in db.query(SOSupplyDecision.revision_no)
+                .filter(SOSupplyDecision.project_sales_order_id == pso_id)
+                .order_by(SOSupplyDecision.revision_no.desc())
+                .limit(2)
+                .all()
+            } or {0}
+        held_revision = (row.held_json or {}).get("revision_no")
+        if held_revision is None or held_revision in live_revisions[pso_id]:
+            out.add(str(row.project_line_id))
+    return out
+
+
+_CANCEL_CTX = "planning_why_cancel_ctx"
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _drop_cancel_ctx(session, _transaction) -> None:
+    """The per-call lookups below describe one transaction; never carry them past it."""
+    session.info.pop(_CANCEL_CTX, None)
+
+
+def _record_cancel(
+    db: Session,
+    row: OrderInquiryRow,
+    cause: str,
+    *,
+    actor_user_id: Optional[str] = None,
+    decision: Any = None,
+) -> None:
+    """Say WHY an order inquiry row was cancelled (PLANNING-WHY AC-W8): one audit row in the
+    cancel's own transaction. `order_inquiry_rows` is `__audit_skip__`, so nothing else
+    records it; the row itself keeps only a free-text note. `decision` is the revision that
+    did it, when a revision did. A revision supersede of a line that holds a pending,
+    undecided planning change reads `undecided_change` rather than `superseded`.
+
+    The action is `EVENT` (prod's `audit_logs_action_check` admits no other new name); the
+    name rides in `event`. The lookups are cached per transaction: a revision cancels dozens
+    of rows of one order."""
+    from app.services.audit_service import log_audit
+
+    ctx = db.info.setdefault(_CANCEL_CTX, {"order": {}, "line": {}, "undecided": {}})
+    with db.no_autoflush:
+        if cause == "superseded" and row.so_line_id:
+            if row.so_line_id not in ctx["undecided"]:
+                ctx["undecided"][row.so_line_id] = bool(
+                    lines_with_undecided_planning_change(db, [row.so_line_id])
+                )
+            if ctx["undecided"][row.so_line_id]:
+                cause = "undecided_change"
+        if row.order_inquiry_id not in ctx["order"]:
+            ctx["order"][row.order_inquiry_id] = (
+                db.query(OrderInquiry.project_sales_order_id)
+                .filter(OrderInquiry.id == row.order_inquiry_id)
+                .scalar()
+            )
+        order_id = ctx["order"][row.order_inquiry_id]
+        if row.so_line_id and row.so_line_id not in ctx["line"]:
+            ctx["line"][row.so_line_id] = (
+                db.query(ProjectSalesOrderLine.line_no)
+                .filter(ProjectSalesOrderLine.id == row.so_line_id)
+                .scalar()
+            )
+        line_no = ctx["line"].get(row.so_line_id) if row.so_line_id else None
+    qty = _dec(row.qty)
+    log_audit(
+        db,
+        "project_order_inquiry_rows",
+        str(row.id),
+        "EVENT",
+        event="OI_ROW_CANCELLED",
+        new_values={
+            "revision_no": decision.revision_no if decision is not None else None,
+            "supply_decision_id": str(decision.id) if decision is not None else None,
+            "cause": cause,
+            "qty": int(qty) if qty == qty.to_integral_value() else float(qty),
+            "item_code": row.item_code,
+            "so_line_no": line_no,
+        },
+        user_id=actor_user_id,
+        company_id=row.company_id,
+        root_entity_type="project_sales_orders",
+        root_entity_id=str(order_id) if order_id else None,
+        skip_flush=True,
+    )
+
+
 class ProjectOrderInquiryService:
     """Derives, serves, exports and closes off what purchasing is told to do."""
 
@@ -1067,6 +1185,7 @@ class ProjectOrderInquiryService:
                 for row in local_rows:
                     was_qty = row.qty
                     row.state = INQUIRY_CANCELLED
+                    _record_cancel(self.db, row, "superseded", actor_user_id=actor_user_id, decision=decision)
                     row.note = f"Superseded by revision {decision.revision_no}"
                     self._record_handover(
                         row,
@@ -1392,6 +1511,7 @@ class ProjectOrderInquiryService:
                 if row.state == INQUIRY_RAISED:
                     was_qty = row.qty
                     row.state = INQUIRY_CANCELLED
+                    _record_cancel(self.db, row, "superseded", actor_user_id=actor_user_id, decision=decision)
                     row.note = f"Superseded by revision {decision.revision_no}"
                     superseded_cancelled_rows.append(row)
                     if row.verb in (IV_ORDER, IV_ORDER_BACK) and cancelled_owned_row is None:
@@ -2003,6 +2123,7 @@ class ProjectOrderInquiryService:
             if links:
                 self._remove_links(row, links)
             row.state = INQUIRY_CANCELLED
+            _record_cancel(self.db, row, "book_left_nothing", actor_user_id=actor_user_id, decision=decision)
             row.note = (
                 f"{row.note}; {moved}; the book left nothing to buy"
                 if row.note
@@ -4175,6 +4296,7 @@ class ProjectOrderInquiryService:
                 # whatever else the same commit raises.
                 was_qty = row.qty
                 row.state = INQUIRY_CANCELLED
+                _record_cancel(self.db, row, "superseded", actor_user_id=actor_user_id, decision=decision)
                 row.note = f"Superseded by revision {decision.revision_no}"
                 self._record_handover(
                     row, kind="cancelled", was={"qty": was_qty}, actor_user_id=actor_user_id
@@ -4301,6 +4423,7 @@ class ProjectOrderInquiryService:
             key = (row.item_code or None, row.stock_location or None)
             if row.state == INQUIRY_RAISED:
                 row.state = INQUIRY_CANCELLED
+                _record_cancel(self.db, row, "borrow_retired", actor_user_id=None, decision=decision)
                 row.note = f"Superseded by revision {decision.revision_no}"
                 cancelled_this_pass.append(row)
             elif row.state == INQUIRY_PARTLY_LINKED:
@@ -4411,6 +4534,7 @@ class ProjectOrderInquiryService:
             if links:
                 self._remove_links(row, links)
             row.state = INQUIRY_CANCELLED
+            _record_cancel(self.db, row, "cancel_so", actor_user_id=actor_user_id)
             stamp = f"Transferred to Cancel SO: {reason_by_core[str(core_id)]}"
             row.note = f"{row.note}; {stamp}" if row.note else stamp
             self._drop_suggested_links([row])
@@ -4571,6 +4695,7 @@ class ProjectOrderInquiryService:
             stamp = _stamp_for(row)
             if row.state == INQUIRY_RAISED:
                 row.state = INQUIRY_CANCELLED
+                _record_cancel(self.db, row, "superseded", actor_user_id=actor_user_id, decision=decision)
                 row.note = stamp
                 retired_this_pass.append(row)
                 self._record_handover(
@@ -4583,6 +4708,7 @@ class ProjectOrderInquiryService:
             # was holding, and that the retirement is what took it back.
             self._unplace_drafts([row], trigger="retired")
             row.state = INQUIRY_CANCELLED
+            _record_cancel(self.db, row, "superseded", actor_user_id=actor_user_id, decision=decision)
             row.note = f"{row.note}; {stamp}" if row.note else stamp
             retired_this_pass.append(row)
             # S4: this line dropped out of the revision taking real cascade-linked
@@ -4774,47 +4900,8 @@ class ProjectOrderInquiryService:
         self.refresh_link_state([source, *new_rows])
 
     def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
-        """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
-        yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
-        overtook can never be decided, so it holds nothing back. Live means held against
-        the order's latest revision or the one just before it: inside a confirm the
-        revision being replaced is still what the batch's leftover rows name, until the
-        apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
-        if not line_ids:
-            return set()
-        from app.models.planning_change import (
-            PLANNING_CHANGE_STATE_PENDING,
-            PlanningChangeRow,
-        )
-        rows = (
-            self.db.query(PlanningChangeRow)
-            .filter(
-                PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
-                PlanningChangeRow.decision.is_(None),
-                PlanningChangeRow.kind != "cancelled",
-                PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
-            )
-            .all()
-        )
-        from app.models.project_so import SOSupplyDecision
-
-        live_revisions: Dict[str, set] = {}
-        out: set = set()
-        for row in rows:
-            pso_id = str(row.project_sales_order_id)
-            if pso_id not in live_revisions:
-                live_revisions[pso_id] = {
-                    revision_no
-                    for (revision_no,) in self.db.query(SOSupplyDecision.revision_no)
-                    .filter(SOSupplyDecision.project_sales_order_id == pso_id)
-                    .order_by(SOSupplyDecision.revision_no.desc())
-                    .limit(2)
-                    .all()
-                } or {0}
-            held_revision = (row.held_json or {}).get("revision_no")
-            if held_revision is None or held_revision in live_revisions[pso_id]:
-                out.add(str(row.project_line_id))
-        return out
+        """See `lines_with_undecided_planning_change`."""
+        return lines_with_undecided_planning_change(self.db, line_ids)
 
     def retire_rows_for_dropped_lines(
         self,
@@ -6561,6 +6648,8 @@ class ProjectOrderInquiryService:
             # the row would still read as something somebody dealt with.
             row.actioned_by = actor_user_id if state != INQUIRY_RAISED else None
             row.actioned_at = now if state != INQUIRY_RAISED else None
+            if state == INQUIRY_CANCELLED:
+                _record_cancel(self.db, row, "manual", actor_user_id=actor_user_id)
         self.db.flush()
         # Review round 2 Blocking 4 (AC-LT-18): this is a CANCEL/ACTIONED writer that
         # never runs `refresh_link_state` (it sets `state` directly, on purchasing's own
@@ -9442,6 +9531,7 @@ class ProjectOrderInquiryService:
             if links:
                 self._remove_links(row, links)
             row.state = INQUIRY_CANCELLED
+            _record_cancel(self.db, row, "borrow_retired")
             row.note = f"{row.note}; {reason}" if row.note else reason
         if rows:
             self.db.flush()
