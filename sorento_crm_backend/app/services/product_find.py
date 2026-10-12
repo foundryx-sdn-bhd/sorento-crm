@@ -195,8 +195,8 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
         raise _unprocessable("filters must be a non-empty JSON list", "filters_required")
     if len(parsed) > MAX_FILTERS:
         raise _unprocessable(f"at most {MAX_FILTERS} filters", "too_many")
-    out: list[dict[str, Any]] = []
-    seen_keys: set[str] = set()
+    # One entry per key: a repeated key's products join the first entry's (one read per key).
+    by_key: dict[str, dict[str, Any]] = {}
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str):
             raise _unprocessable("each filter is an object with a key", "filters_required")
@@ -205,9 +205,6 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
             raise _unprocessable(
                 f"unknown filter {item['key'][:40]!r}; allowed: {', '.join(FILTERS)}", "unknown_filter"
             )
-        if spec.key in seen_keys:
-            continue  # one filter, one read: a repeated key adds nothing but queries
-        seen_keys.add(spec.key)
         if spec.type == TYPE_PRODUCT_REF:
             raw_ids = item.get("product_ids")
             if raw_ids is not None and not isinstance(raw_ids, list):
@@ -215,11 +212,13 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
             ids = parse_uuid_list([json.dumps(raw_ids)] if raw_ids else None, param_name="product_ids")
             if not ids:
                 raise _unprocessable(f"filter {spec.key} needs product_ids", "product_ids_required")
-            if len(ids) > MAX_PRODUCT_IDS:
+            entry = by_key.setdefault(spec.key, {"key": spec.key, "product_ids": []})
+            entry["product_ids"] += [i for i in ids if i not in entry["product_ids"]]
+            if len(entry["product_ids"]) > MAX_PRODUCT_IDS:
                 raise _unprocessable(f"at most {MAX_PRODUCT_IDS} product_ids per filter", "too_many")
-            out.append({"key": spec.key, "product_ids": ids})
         else:  # pragma: no cover - every registered type is handled above
             raise _unprocessable(f"filter {spec.key} has no reader", "unknown_filter")
+    out = list(by_key.values())
     return out
 
 

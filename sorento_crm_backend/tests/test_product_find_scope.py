@@ -93,3 +93,10 @@ def test_inventory_module_off_leaves_stock_out(api, db, world, monkeypatch) -> N
     resp = api.get(URL, None, filters=_filters(world.p_mocha.id))
     [row] = resp.json()["groups"][0]["rows"]
     assert row["stock"] == {"mode": "none", "on_hand": None, "verdict": None}
+
+
+def test_a_repeated_key_merges_its_products() -> None:
+    """Reviewer round 2, should-fix 1: a second entry for the same key adds its products."""
+    a, b = "cccccccc-cccc-cccc-cccc-cccccccccccc", "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    raw = json.dumps([{"key": "fits", "product_ids": [a]}, {"key": "fits", "product_ids": [b, a]}])
+    assert product_find.parse_filters(raw) == [{"key": "fits", "product_ids": [a, b]}]

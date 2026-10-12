@@ -292,3 +292,17 @@ def test_r1_a_carried_product_the_parser_points_back_to_is_the_subject(session_f
     call, captured = _capturing_mcp(ENVELOPE)
     _run(_payload(parse=_find_parse(entities=entities)), call)
     assert captured and captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}]
+
+
+def test_r2_a_carried_product_beside_a_dashless_new_code_is_left_out(session_factory) -> None:
+    """Reviewer round 2, should-fix 2: the letters-and-digits comparison is what keeps a
+    carried product out when the new code was typed without dashes."""
+    carried = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    entities = [{"raw": "SRTWC8383RLMBL", "hint": "product", "canonical_code": "SRTWC8383RLMBL", "current_message": True}]
+    payload = _payload(parse=_find_parse(entities=entities))
+    payload["gate"]["compatible_entities"].insert(
+        0, {"uuid": carried, "entity_type": "product", "canonical_code": "SRTWC8088", "code": "SRTWC8088"}
+    )
+    call, captured = _capturing_mcp(ENVELOPE)
+    _run(payload, call)
+    assert captured[0][1]["filters"] == [{"key": "fits", "product_ids": [PRODUCT_UUID]}], captured

@@ -43,6 +43,10 @@ def _key(value: Any) -> str:
     return "".join(ch for ch in jsc.js_string(value or "").casefold() if ch.isalnum())
 
 
+def _is_product(entity: Any) -> bool:
+    return isinstance(entity, dict) and entity.get("entity_type") == "product"
+
+
 def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[Any]:
     """`entities` with the products this find is about.
 
@@ -57,9 +61,8 @@ def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[A
         e for e in jsc.array(parse_output.get("entities"))
         if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
     ]
-    is_product = lambda e: isinstance(e, dict) and e.get("entity_type") == "product"  # noqa: E731
     if not parsed:
-        return [e for e in entities if not is_product(e)]
+        return [e for e in entities if not _is_product(e)]
     tokens = {
         _key(tok)
         for e in parsed
@@ -72,12 +75,12 @@ def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[A
         return list(entities)
     named = [
         e for e in entities
-        if is_product(e)
+        if _is_product(e)
         and any(tok in code for code in (_key(e.get("code")), _key(e.get("canonical_code"))) if code for tok in tokens)
     ]
     if not named:
         return list(entities)
-    return [e for e in entities if not is_product(e)] + named
+    return [e for e in entities if not _is_product(e)] + named
 
 
 def _ids(value: Any) -> list[str]:
