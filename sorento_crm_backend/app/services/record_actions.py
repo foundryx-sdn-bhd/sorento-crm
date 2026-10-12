@@ -83,6 +83,12 @@ def _reset_product_alternatives(db: Session, payload: dict):
     return reset_auto(db, _entity_id(payload))
 
 
+def _unlink_product_compatibility(db: Session, payload: dict):
+    from app.services.product_compatibility_service import unlink
+
+    return unlink(db, _entity_id(payload))
+
+
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -338,6 +344,20 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="master_data.products.edit",
         label="Reset alternatives",
+    )
+)
+
+# WC-SEAT-COMPAT: unlink one seat cover <-> WC link from the product page's Compatible
+# section. Parked on the LINK row; reversible, both products survive and the link is one
+# pick away.
+register(
+    FormAction(
+        key="product_compatibility.unlink",
+        entity_types=("product_compatibility",),
+        execute=_unlink_product_compatibility,
+        window=WINDOW_REVERSIBLE,
+        permission="master_data.products.edit",
+        label="Unlink",
     )
 )
 
