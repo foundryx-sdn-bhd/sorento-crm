@@ -426,3 +426,47 @@ def test_r_lat_a_size_the_route_filters_skips_the_resolvers_model_phrase_read():
 
     assert body("inventory", "check_stock", [_category("floor grating"), dict(size)])["understand_phrase"] is False
     assert body("inventory", "check_stock", [_category("floor grating")])["understand_phrase"] is True
+
+
+# --------------------------------------------------------------------------- a measure in the words, no pair
+# SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser left the size INSIDE the
+# category's words and emitted no spec pair (or emitted it as a bare "250mm" product). Grounding
+# kept "250mm floor grating" whole (it names no type, so nothing narrowed) or swapped "600mm
+# basin" to its canonical "basin" and the size was lost. A number with the registry's mm unit
+# in the entity's own words is read like the pair the parser puts there.
+
+
+def _product(raw: str) -> dict[str, Any]:
+    return {
+        "raw": raw, "hint": "product", "canonical_code": raw,
+        "current_message": True, "confident": True, "hint_confident": True, "quantity": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "raw,canonical,left,size",
+    [("250mm floor grating", None, "floor grating", 250), ("600mm basin", "basin", "basin", 600), ("600 mm basin", None, "basin", 600)],
+)
+def test_r_hm_a_measure_in_the_category_words_is_the_size(vdb, raw, canonical, left, size):
+    """RED: no specification entity came out; the size was dropped or left in the words."""
+    verdict = _ground(vdb, _category(raw, canonical), message=f"{raw} got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", size)], verdict["entities"]
+    assert [c["raw"] for c in verdict["entities"] if c.get("hint") == "category"] == [left], verdict["entities"]
+
+
+def test_r_hm_a_bare_measure_product_beside_a_type_is_the_size(vdb):
+    """RED: "250mm" went to the resolver as a product code."""
+    verdict = _ground(vdb, _product("250mm"), _category("floor grating"), message="250mm floor grating got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", 250)], verdict["entities"]
+    assert not [e for e in verdict["entities"] if e.get("hint") == "product"], verdict["entities"]
+
+
+@pytest.mark.parametrize("ents", [
+    lambda: [_product("SR250MM")],
+    lambda: [_category("basin", "basin")],
+    lambda: [_category("5 l bucket")],
+])
+def test_r_hm_guard_no_mm_measure_no_size(vdb, ents):
+    """Guard: a code with digits, a subject with no number, a number in another unit."""
+    verdict = _ground(vdb, *ents(), message="got stock?")
+    assert not [s for s in _specs(verdict["entities"]) if s.get("spec_key") == "size"], verdict["entities"]
