@@ -24,8 +24,10 @@ through CS decisions confirmed in Fulfilment Planning; Confirm sends the purchas
 - AC-6 Confirm of a Reserve (or Borrow) on a line whose core `qty_delivered` covers the reserved qty succeeds
   even when the reserve location now has 0 free stock: the delivered part of the line needs no free stock.
 - AC-7 The exemption is the delivered part only: on a line with ordered 10, delivered 4, a Reserve of 10 at a
-  location with 0 free stock is refused as today (6 undelivered units need stock); with 6 free it succeeds.
-- AC-8 A line with nothing delivered is rechecked exactly as today (over-reserve refused).
+  location with 0 free stock confirms as decided with 6 recorded short (owner rule 12 Oct, superseding "refused
+  as today"); with 6 free it succeeds with no warning.
+- AC-8 A line with nothing delivered is rechecked as before, but an over-reserve confirms holding only what is
+  free and records the rest short (owner rule 12 Oct).
 - AC-9 No stock hold is written for delivered qty (the hold stays capped at what is still owed).
 
 ## AutoCount ingest (regression lock)
@@ -43,3 +45,17 @@ through CS decisions confirmed in Fulfilment Planning; Confirm sends the purchas
 - AC-13 `--cancel-balance <item code>` additionally cancels that item's raised CANCEL_BALANCE row(s) on the OI
   (CKSW015); the placed ORDER row of that item stays as it is.
 - AC-14 Re-running with `--apply` after a successful run changes nothing (idempotent).
+
+## Hand-test round (owner rules 12 Oct 2026)
+
+- AC-15 Decide dialog, Use BRW on a fully delivered line with 0 free: not skipped, "Save 1 line", saves Reserve
+  of the whole line at BRW. Partly delivered: only the undelivered part draws free stock.
+- AC-16 A Reserve short on the undelivered part (dialog, line editor, Confirm) is a warning naming "only N free
+  at <location>", never a skip or a blocked Save.
+- AC-17 Line editor: plan 100, delivered 100, 77 free: Reserve 98 + order back 2 composes and saves; no
+  "Only 77 available here". Add location offers a 0-free bin on a line with deliveries.
+- AC-18 Confirm with a short undelivered Reserve or Borrow returns 200, holds only what exists, returns
+  `stock_short_notices`, records `stock_short` on the decision, and lists a STOCK SHORT line in the purchasing
+  email (no purchasing row raised).
+- AC-19 Confirm with one line that cannot be written (e.g. components do not add up) confirms the rest and
+  names it in `lines_held_back`; a payload of only that line is still refused by name.
