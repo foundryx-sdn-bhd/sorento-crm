@@ -11338,6 +11338,12 @@ def register_order_inquiry_post_commit_dispatch() -> None:
             # (see `_mark_handover_transaction_committed`'s own guard), so there is
             # nothing to prune here.
             return
+        if session.info.get("confirm_preview"):
+            # A simulated confirm commits per order on its own session: those commits are
+            # savepoint releases that a root rollback discards, so nothing may be sent.
+            session.info.pop(_HANDOVER_COMMITTED_TX_KEY, None)
+            session.info.pop(_HANDOVER_PENDING_KEY, None)
+            return
         committed = session.info.get(_HANDOVER_COMMITTED_TX_KEY)
         was_committed = False
         if committed:
@@ -11430,6 +11436,11 @@ def register_order_inquiry_post_commit_dispatch() -> None:
         is not this listener's to act on).
         """
         if transaction.parent is not None:
+            return
+        if session.info.get("confirm_preview"):
+            # See `_fire_pending_handover`: a simulation sends nothing.
+            session.info.pop(_UNDO_COMMITTED_TX_KEY, None)
+            session.info.pop(_UNDO_PENDING_KEY, None)
             return
         committed = session.info.get(_UNDO_COMMITTED_TX_KEY)
         was_committed = False

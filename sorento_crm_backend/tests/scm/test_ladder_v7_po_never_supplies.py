@@ -28,6 +28,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 import json
 from datetime import date, timedelta
 
@@ -167,6 +169,7 @@ def test_a_po_backed_book_with_a_pool_take_lands_on_pool_not_use():
 # --------------------------------------------------------------------------- AC-4.2
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_backed_other_groups_free_pile_is_unchanged_and_names_its_document():
     """AC-4.2: the SPO half of the offer is untouched by the PO exclusion. Task 3: the
     component now carries the document's own address, the way a step-3 component always
@@ -210,6 +213,7 @@ def test_an_spo_backed_other_groups_free_pile_is_unchanged_and_names_its_documen
     assert use["label"] == f"Use incoming from {donor_group} group", use["label"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_backed_own_group_water_is_unchanged_and_labelled_use_incoming():
     """AC-4.2's own-group half, and task 2's own-group water label: the option reads "Use
     incoming" (never the static "Use our locations") when the own group's cover is on the

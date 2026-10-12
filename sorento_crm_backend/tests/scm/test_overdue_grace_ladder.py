@@ -29,6 +29,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 
 from app.services.project_supply_service import ProjectSupplyService
@@ -74,6 +76,7 @@ def _late_sentence(spo_number: str) -> str:
 # --------------------------------------------------------------------------- AC-O.1
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_alive_late_document_covers_the_line_at_its_assumed_date():
     """AC-O.1. 50 due 17 days out at BRW-BB with nothing on the floor, against an SPO of
     100 into that same bin whose arrival passed 41 days ago.
@@ -107,6 +110,7 @@ def test_an_alive_late_document_covers_the_line_at_its_assumed_date():
     assert _late_sentence(spo_number) in components[0]["reason"], components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_same_document_at_a_group_sibling_reads_the_same_sentence():
     """The second rung this one fixture carries: the late document sits at MWH-BB, a
     sibling of the asking bin's own ownership group, so question 1's water half answers
@@ -133,6 +137,7 @@ def test_the_same_document_at_a_group_sibling_reads_the_same_sentence():
     assert _late_sentence(spo_number) in components[0]["reason"], components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_bucket_of_two_late_documents_still_states_the_lateness():
     """The captain's own cell, 3 September 2026: BRW-BB on SO419417 carried 725 units
     across TWO late SPOs (24 Jul and 6 Aug) and `group_water_reason` printed ", arriving
@@ -175,6 +180,7 @@ def test_a_bucket_of_two_late_documents_still_states_the_lateness():
 # --------------------------------------------------------------------------- AC-O.2
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_due_inside_the_grace_is_offered_nothing_by_the_late_document():
     """AC-O.2. The same document against a line due in 7 days: the goods are not assumed
     to be there before day 14, so QUESTION 1 is offered none of them and the walk carries

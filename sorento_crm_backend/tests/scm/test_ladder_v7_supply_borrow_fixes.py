@@ -14,6 +14,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -164,6 +166,7 @@ def test_a_reconfirm_that_buys_what_it_borrowed_leaves_one_live_instruction():
 # --------------------------------------------------- 2. one borrow, one hole
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_document_donor_is_short_once_not_twice():
     """FINDING 2. A donor holding the document through a placement of its OWN gets its
     link taken down on Confirm, which puts its own row straight back to `raised` for that
@@ -302,6 +305,7 @@ def test_uncovering_a_line_takes_its_step_three_placement_down():
 # --------------------------------------------- 7. the walk's ledger is keyed by the DOCUMENT
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_document_the_first_asker_may_not_touch_is_still_whole_for_the_second():
     """FINDING 7. `supply_left` was SEEDED with the first asker's own budget, and an
     asker's budget is personal: a document held by a line of the asker's OWN sales order is
@@ -445,6 +449,7 @@ def test_a_carried_free_document_raises_no_phantom_order_back():
 # ------------------------------------------------- 9. a released placement takes its claim
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_releasing_a_placement_takes_its_claim_down_with_it():
     """FINDING 9. `release_supply_borrow` deleted the link row by hand and left the
     `order_link_claims` row it wrote standing - an orphan claim on a document the donor no
@@ -557,6 +562,7 @@ def test_a_document_outside_the_assignment_span_is_not_offered_as_arriving_today
 # ------------------------------------ the tester's gap: the asker's own claim on a document
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_document_the_walk_already_gave_the_asker_covers_its_own_unit():
     """THE SO414244 SHAPE. The walk assigns the asker's own group's incoming document to the
     asker's own line - it lands after the line's date, so the line reads `late` and step 1
