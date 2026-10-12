@@ -72,6 +72,21 @@ Nothing in the database is rewritten. Frozen revisions and saved drafts keep the
 and confirm / undo / order-back keep reading them as they are. Only the DISPLAY folds them:
 `rowOf` maps the old kinds onto the four cards (see Q3).
 
-## 4. Questions (see the crew-ask on PR #1586)
+## 4. Dev data (crew-data-request, 12 Oct; rows kept out of the repo)
 
-Recorded with the answers once they arrive.
+Switch is OFF on dev. Every donor-named suggestion is FROZEN in revisions confirmed on or before
+9 Oct (pre-#1534): 45 components across 10 revisions. timely_spo: 6 components in 3 revisions.
+supply_borrow: none. So "Borrow from another order" on the cards is frozen history, not the live
+planner.
+
+## 5. Questions (crew-ask on PR #1586), with recommendation
+
+- Q1 Use incoming: (a) keep the step, show it under Use own location [rec]; (b) remove, Buy
+  re-orders goods on the water; (c) remove + Buy nets open SPO (separate lane).
+- Q2 Borrow-from-order switch: (a) retire, always location-only, toggle + menu entry removed,
+  column kept [rec]; (b) keep toggle, hide wording.
+- Q3 Borrow incoming: (a) remove step 3 from the walk [rec]; (b) keep, show as Borrow.
+- Q4 Old frozen/saved lines: (a) display fold only [rec]; (b) rewrite data.
+- Q5 Per-line option rows: (a) drop removed steps' rows too [rec]; (b) cards only.
+
+Answers recorded here when they arrive.
