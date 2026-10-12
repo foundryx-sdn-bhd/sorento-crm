@@ -169,6 +169,15 @@ class Product:
     exact: dict[str, str] | None
     family: list[dict[str, str]] = field(default_factory=list)
 
+    @property
+    def is_variant(self) -> bool:
+        """An exact product whose code is a variant of its model family ("SRTWT7445-LV"),
+        not the family head ("SRTWT7445"), by the CODE-VARIANTS rule."""
+        from app.services.product_family import family_code_for
+
+        head = family_code_for(self.code)
+        return self.exact is not None and head is not None and head != "".join(self.code.split()).upper()
+
     def ids(self, family: bool) -> list[str]:
         rows = self.family if (family or self.exact is None) and self.family else [self.exact]
         return [r["uuid"] for r in rows if r]
@@ -297,7 +306,9 @@ def scope_question(
     if verdict.get("family") is not None or len(_sub_asks(verdict)) < 2:
         return None
     products = _scoped_products(run, verdict, candidates, typed_only=True)
-    ambiguous = next((p for p in products or [] if len(p.family) > 1), None)
+    # Owner ruling 12 Oct 2026: an exact variant code ("SRTWT7445-LV") is answered as typed;
+    # only a family head or a bare prefix asks "only this one or all N?".
+    ambiguous = next((p for p in products or [] if len(p.family) > 1 and not p.is_variant), None)
     if ambiguous is None:
         return None
     loc = run.localizer

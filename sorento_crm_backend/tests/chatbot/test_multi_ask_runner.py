@@ -259,6 +259,21 @@ OWNER_REPLY = "\n".join(
 )
 
 
+#: Owner ruling 12 Oct 2026: only a family HEAD (or a bare prefix) gets the scope question; an
+#: exact variant like SRTWC286-SH is answered as typed (test_multi_ask_variant_scope.py). The
+#: scope-question tests below type the head SRTWC286, an exact row of the same family.
+BASE_CODE = "SRTWC286"
+BASE_FAMILY = [BASE_CODE] + OWNER_FAMILY
+BASE_REPLY = OWNER_REPLY.replace("SRTWC286-SH", BASE_CODE, 1)
+
+
+def _base_console(session_factory, monkeypatch, stub_access, phone: str):
+    from tests.chatbot import _r9_engine_console as r9
+
+    monkeypatch.setattr(r9, "OWNER_FAMILY", BASE_FAMILY)
+    return _console(session_factory, monkeypatch, stub_access, phone)
+
+
 # ---------------------------------------------------------------- Acceptance 1
 
 
@@ -323,28 +338,28 @@ def test_an_english_multi_ask_answers_in_english(session_factory, monkeypatch, s
 
 
 def test_a_code_with_variants_and_no_scope_asks_back_first(session_factory, monkeypatch, stub_access):
-    c = _console(session_factory, monkeypatch, stub_access, "+60000009504")
-    text = c.say(OWNER_MESSAGE, owner_verdict(family=None))
-    n = len(OWNER_FAMILY)
-    assert text.splitlines()[0] == f"SRTWC286-SH 有 {n} 个款式。只要 SRTWC286-SH，还是全部 {n} 款？"
+    c = _base_console(session_factory, monkeypatch, stub_access, "+60000009504")
+    text = c.say(OWNER_MESSAGE, owner_verdict(code=BASE_CODE, family=None))
+    n = len(BASE_FAMILY)
+    assert text.splitlines()[0] == f"{BASE_CODE} 有 {n} 个款式。只要 {BASE_CODE}，还是全部 {n} 款？"
     assert not set(c.tools.names()) & RUNNER_TOOLS
     assert c.stored_question and c.stored_question.get("kind") == "sub_ask_scope"
 
     # "只要这个" -> option 1, the exact code: the six asks run.
     text = c.say("只要这个", pick(1))
-    assert text == OWNER_REPLY
+    assert text == BASE_REPLY
 
 
 def test_all_variants_answers_one_summed_line_per_ask(session_factory, monkeypatch, stub_access):
-    c = _console(session_factory, monkeypatch, stub_access, "+60000009505")
-    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    c = _base_console(session_factory, monkeypatch, stub_access, "+60000009505")
+    c.say(OWNER_MESSAGE, owner_verdict(code=BASE_CODE, family=None))
     text = c.say("全部", pick(2))
-    n = len(OWNER_FAMILY)
+    n = len(BASE_FAMILY)
     lines = text.splitlines()
-    assert lines[0] == f"SRTWC286-SH（全部 {n} 款）"
+    assert lines[0] == f"{BASE_CODE}（全部 {n} 款）"
     # Every stub row is 1,200 received per product: the family is ONE summed line.
     assert lines[1] == f"2026 入库数量: {1200 * n:,}"
-    family_ids = sorted(c.uuid_of[code] for code in OWNER_FAMILY)
+    family_ids = sorted(c.uuid_of[code] for code in BASE_FAMILY)
     for name, args in c.tools.calls:
         if name in RUNNER_TOOLS:
             assert sorted(_ids(args.get("product_ids"))) == family_ids, name
@@ -626,8 +641,8 @@ def test_the_incoming_window_is_shown_when_it_was_applied(session_factory, monke
 
 
 def test_the_scope_question_remembers_a_basis_turn_one_already_said(session_factory, monkeypatch, stub_access):
-    c = _console(session_factory, monkeypatch, stub_access, "+60000009524")
-    v = owner_verdict(family=None, basis=None)
+    c = _base_console(session_factory, monkeypatch, stub_access, "+60000009524")
+    v = owner_verdict(code=BASE_CODE, family=None, basis=None)
     v["basis"] = "delivered"  # said once for the message, not per ask
     c.say(OWNER_MESSAGE, v)
     assert c.stored_question.get("kind") == "sub_ask_scope"
@@ -757,8 +772,8 @@ def _reply(**answer) -> dict:
 
 
 def test_the_questions_offer_their_meaning_as_the_option_code(session_factory, monkeypatch, stub_access):
-    c = _console(session_factory, monkeypatch, stub_access, "+60000009527")
-    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    c = _base_console(session_factory, monkeypatch, stub_access, "+60000009527")
+    c.say(OWNER_MESSAGE, owner_verdict(code=BASE_CODE, family=None))
     codes = [o.get("code") for o in c.stored_question.get("options") or []]
     assert codes == ["just this code", "all variants"]
 
@@ -779,10 +794,10 @@ def test_a_basis_reply_the_parser_reads_as_an_option_item_resumes(session_factor
 
 
 def test_all_to_the_variant_question_is_the_family(session_factory, monkeypatch, stub_access):
-    c = _console(session_factory, monkeypatch, stub_access, "+60000009530")
-    c.say(OWNER_MESSAGE, owner_verdict(family=None))
+    c = _base_console(session_factory, monkeypatch, stub_access, "+60000009530")
+    c.say(OWNER_MESSAGE, owner_verdict(code=BASE_CODE, family=None))
     text = c.say("全部", _reply(mode="all"))
-    assert text.splitlines()[0] == f"SRTWC286-SH（全部 {len(OWNER_FAMILY)} 款）"
+    assert text.splitlines()[0] == f"{BASE_CODE}（全部 {len(BASE_FAMILY)} 款）"
     assert c.stored_question is None  # answered, so closed (review F1)
 
 
