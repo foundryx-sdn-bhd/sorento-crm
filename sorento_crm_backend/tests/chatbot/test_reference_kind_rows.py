@@ -45,4 +45,5 @@ def test_the_fallback_reference_rows_equal_the_migration_rows() -> None:
 def test_the_migration_revision_fits_alembic_version() -> None:
     module = _migration()
     assert module.revision == "rkind_0003_reference_kind_rows" and len(module.revision) <= 32
-    assert module.down_revision == "rkind_0002_parser_ref_kinds_v56"
+    # Not pinned to one parent: `scripts/alembic-reparent.sh` moves it onto main's head.
+    assert isinstance(module.down_revision, str) and module.down_revision

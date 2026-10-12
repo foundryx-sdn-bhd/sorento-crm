@@ -15,7 +15,7 @@ this table (the `pdyn_0003` lineage, `app/services/chatbot_prompt_vars.py`) gain
 hint values and five "Entity kind" lines on the next turn after this runs.
 
 Revision ID: rkind_0003_reference_kind_rows
-Revises: rkind_0002_parser_ref_kinds_v56
+Revises: wc_compat_0001_table
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "rkind_0003_reference_kind_rows"
-down_revision = "rkind_0002_parser_ref_kinds_v56"
+down_revision = "wc_compat_0001_table"
 branch_labels = None
 depends_on = None
 
