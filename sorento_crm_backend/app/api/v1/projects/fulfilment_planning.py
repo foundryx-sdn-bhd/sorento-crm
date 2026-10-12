@@ -617,6 +617,35 @@ def _record_refusals(refused: list, user_id: str, preview: bool) -> None:
         logger.exception("Could not record the refused Confirm")
 
 
+_HISTORY_MAX_ORDERS = 50
+
+
+@router.get("/fulfilment-planning/history")
+def planning_history(
+    pso_ids: str = Query(..., description="Comma separated planning order ids, at most 50."),
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """Admin-only History of the named orders (PLANNING-WHY AC-W10): what happened to each
+    plan, newest first. Read-only."""
+    from app.services import planning_history_service
+
+    if not _is_planning_admin(db, current_user["id"]):
+        raise AppException(
+            status_code=403,
+            message="History is for admins only.",
+            code="history_admin_only",
+        )
+    wanted = parse_uuid_list([pso_ids], param_name="pso_ids") or []
+    if len(wanted) > _HISTORY_MAX_ORDERS:
+        raise AppException(
+            status_code=422,
+            message=f"Read the history of at most {_HISTORY_MAX_ORDERS} orders at a time.",
+            code="history_too_many_orders",
+        )
+    return {"events": planning_history_service.history(db, wanted)}
+
+
 _SIMULATE_PROBE_LINE_CAP = 60
 #: Probe runs one simulate request may spend across ALL its orders; each is a full rolled-back
 #: confirm, so an unbounded probe would let one admin press pin a worker.
