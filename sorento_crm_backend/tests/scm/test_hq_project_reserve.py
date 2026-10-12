@@ -576,3 +576,70 @@ def test_a_line_booked_at_hq_is_covered_by_hqs_own_stock_on_the_page(scm_app):
     db.flush()
 
     assert _page_balance(app, marker, product, _months_ahead(2), book="project") >= 0
+
+
+# --------------------------------------------------------------------------- per company
+
+
+def test_a_second_companys_hq_with_segment_dealer_stays_a_normal_pool():
+    """Owner, 12 Oct 23:50: the reserve is per company and decided by warehouse settings
+    alone. Sorento's HQ (self-pool, `segment = project`) is a reserve; a second company's
+    warehouse with the SAME code `HQ` that is a self-pool with `segment = dealer` (Mocha's
+    shape) stays an ordinary site pool: planner pool, inside the pool net, no reserve."""
+    import uuid as _uuid
+
+    from app.models.base import company_scope
+    from app.models.company import Company
+    from app.models.inventory import Warehouse
+    from app.services.project_supply_service import ProjectSupplyService
+    from app.services.scm.group_netting import netting_for_products
+    from app.services.scm.pool_predicate import is_project_reserve
+
+    from tests._pg_fixture import blank_session
+    from tests.scm.test_project_supply_service_ladder import _world
+
+    code = f"ZZHQ{_uuid.uuid4().hex[:4].upper()}"
+    with blank_session() as db:
+        srt_id, _eling, _project, product = _world(db)
+        other = Company(id=str(_uuid.uuid4()), name="ZZT Mocha", code=f"ZM{_uuid.uuid4().hex[:6]}")
+        db.add(other)
+        db.flush()
+
+        def _hq(company_id, segment):
+            row = Warehouse(
+                id=str(_uuid.uuid4()), company_id=company_id, warehouse_code=code,
+                warehouse_name=code, is_active=True, segment=segment,
+                fulfilment_planning=False,
+            )
+            db.add(row)
+            db.flush()
+            row.pool_warehouse_id = row.id
+            db.flush()
+            return row
+
+        srt_hq = _hq(srt_id, "project")
+        mch_hq = _hq(other.id, "dealer")
+        from app.models.inventory import Stock
+
+        db.add(Stock(id=str(_uuid.uuid4()), company_id=other.id, product_id=product.id,
+                     warehouse_id=mch_hq.id, quantity_on_hand=70, quantity_reserved=0))
+        db.flush()
+
+        with company_scope(db, frozenset({str(srt_id)})):
+            srt = ProjectSupplyService(db)
+            srt_pools, srt_reserves = set(srt.site_pool_warehouses()), set(
+                srt.project_reserve_warehouses()
+            )
+        with company_scope(db, frozenset({str(other.id)})):
+            mch = ProjectSupplyService(db)
+            mch_pools, mch_reserves = set(mch.site_pool_warehouses()), set(
+                mch.project_reserve_warehouses()
+            )
+            mch_net = netting_for_products(db, [str(product.id)]).pools_net(str(product.id))
+
+    assert is_project_reserve("project", is_pool=True)
+    assert not is_project_reserve("dealer", is_pool=True)
+    assert srt_hq.id in srt_reserves and srt_hq.id not in srt_pools
+    assert mch_hq.id in mch_pools and mch_hq.id not in mch_reserves
+    assert str(mch_hq.id) in {entry.warehouse_id for entry in mch_net.by_location}
+    assert mch_net.net == Decimal("70")

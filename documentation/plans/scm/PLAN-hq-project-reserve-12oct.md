@@ -62,7 +62,11 @@ AND has `segment = project` (`pool_predicate.is_project_reserve`).
 #1594 (STOCK-DEBT-PROJECTION) coordinates: its `pool_supply(M)` should leave HQ supply out of
 `dealer(M)` and give it to project months. Not touched here (that lane is unmerged).
 
-Open, left as today: an SO line booked AT HQ itself reads as a dealer (pool) line.
+Per company, by warehouse settings only (owner, 12 Oct 23:50): the reserve is whatever warehouse
+is some location's pool AND `segment = project` (`pool_predicate.py:80-86`); no code reads the
+code `HQ` or a company id. Both fields are on the Warehouses form ("Draws stock from", with
+"This warehouse (own pool)", and "Sells to" Dealer/Project, `WarehouseForm.tsx:268-291`).
+Sorento only today; Mocha's HQ stays a dealer pool (test: second company).
 
 ## Release post-steps
 
