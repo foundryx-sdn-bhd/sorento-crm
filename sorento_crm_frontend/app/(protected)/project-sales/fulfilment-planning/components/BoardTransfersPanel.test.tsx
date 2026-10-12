@@ -129,6 +129,14 @@ describe('BoardTransfersPanel: one line per cell where the second said nothing n
     expect(screen.getAllByText('SRTFVP08')).toHaveLength(1);
   });
 
+  it('treats a name that differs from the code only by case or spacing as the code', () => {
+    mockData([transferOf({ item_code: 'SRTFVP08', product_name: ' srtfvp08 ' })]);
+
+    render(<BoardTransfersPanel soNumbers={['SO404352']} />);
+
+    expect(screen.getAllByText(/srtfvp08/i)).toHaveLength(1);
+  });
+
   it('keeps the product name under the code when it differs', () => {
     mockData([transferOf()]);
 
