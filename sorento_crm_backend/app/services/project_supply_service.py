@@ -574,31 +574,6 @@ class SupplyLinesRefused(AppException):
         return list(self.detail.get("failing_lines") or [])
 
 
-class ReserveOverHand(SupplyLinesRefused):
-    """A Reserve for more than is physically there once other lines are counted (R14).
-
-    A `SupplyLinesRefused` so the board pins the row exactly as it pins every other refusal,
-    with the position stated beside the sentence: the message says "BRW-AM: 10 on hand, 1
-    already reserved by SO383850, you asked 15", and `reserve_conflict` carries the same
-    facts in fields for anything that wants to render them rather than read them.
-    """
-
-    def __init__(
-        self,
-        *,
-        message: str,
-        failing_lines: Sequence[Dict[str, Any]],
-        conflict: Dict[str, Any],
-    ):
-        super().__init__(
-            status_code=409,
-            message=message,
-            failing_lines=failing_lines,
-            code="supply_reserve_over_hand",
-        )
-        self.detail["reserve_conflict"] = conflict
-
-
 def _error_detail(exc: Exception) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     """What went wrong, and which lines it named, off any exception `confirm` can raise.
 
@@ -5377,11 +5352,9 @@ class ProjectSupplyService:
                 failing_lines=failing,
             )
 
-        # THE ON-HAND GUARD (R14), ahead of the staleness refusals below so its sentence is
-        # the one the planner reads: it names the location AND the earlier order, where the
-        # capacity message can only say how much is left for this line. Order is all that is
-        # at stake - both refuse by raising, before `_write_decision`, so nothing is written
-        # either way; which sentence comes back is the whole difference.
+        # THE ON-HAND GUARD (R14). OI-CLOSED-LINE (owner rule, 12 Oct 2026): it records what
+        # is past on hand as short rather than refusing, so it runs before `_write_decision`,
+        # whose holds are net of every recorded shortfall.
         # Released lines are excluded with the named ones: their holds are gone at commit
         # (same reading as `replacing` above), so they are not "other lines" holding here.
         self._check_reserve_against_on_hand(
@@ -6137,7 +6110,7 @@ class ProjectSupplyService:
         # control) is untouched, the same "only the part that would drop Reserve below
         # what is credited" rule `_refuse_buy_over_own_arrival` states for its own seam.
         #
-        # Raised directly, the way `ReserveOverHand` above is - not folded into the
+        # Raised directly - not folded into the
         # `invalid`/`stale` buckets, whose shared "N line(s) cannot be confirmed"
         # sentence would drop the credited quantity and the document this message names -
         # and still `SupplyLinesRefused`, so `failing_lines` pins the same line the
@@ -6307,10 +6280,7 @@ class ProjectSupplyService:
         have already confirmed there (R14, captain 27 August 2026).
 
         The ladder already caps what it PROPOSES, but the board lets a planner compose an
-        amendment by hand, and a hand-typed 15 against 10 on hand came back as "BRW-AM now
-        has 9 free for this line, and 15 was asked for" - true, and it does not say who has
-        the other one. This refusal names them: "BRW-AM: 10 on hand, 1 already reserved by
-        SO383850, you asked 15", with the holders on the body so the row can be pinned.
+        amendment by hand, so a hand-typed 15 against 10 on hand has to be bounded here.
 
         OTHER lines, exactly: the lines this confirmation names are excluded (a line
         re-confirming its own hold is not competing with itself), and the lines EARLIER in
@@ -6359,6 +6329,8 @@ class ProjectSupplyService:
                 # not anybody else holds here: a Reserve with a reason at an own-group bin skips
                 # the free-stock recheck (the 8 Sep TEMPORARY LIFT), so the floor is the only
                 # bound it has (browser check, 12 Oct).
+                # The floor bounds THIS order's carried hold too (on hand fell below it, or
+                # the bin went inactive and reads 0): it is never held past what is there.
                 if qty > on_hand - held:
                     room = max(on_hand - held, _ZERO)
                     warehouse = self._warehouse_row(warehouse_id)
@@ -6376,21 +6348,6 @@ class ProjectSupplyService:
                         "qty": qty_text(qty),
                     }
                 )
-
-    @staticmethod
-    def _holder_name(holder: Dict[str, Any], asking: Optional[str]) -> str:
-        """How the refusal names the line holding the stock this one asked for.
-
-        Another order is named by its document number. A line of the SAME order is named as
-        a line, because handing a planner their own SO number back reads as "some other copy
-        of this order is holding it" and sends them looking for a document they are already
-        on - when the competitor is a row on the screen in front of them.
-        """
-        number = holder.get("so_number")
-        if asking and number == asking:
-            line_no = holder.get("line_no")
-            return f"line {line_no} of this order" if line_no is not None else "this order"
-        return number or "another order"
 
     @staticmethod
     def _so_number_of(fact: _LineFacts) -> Optional[str]:
@@ -6412,7 +6369,7 @@ class ProjectSupplyService:
         The same predicate `_hold_rows` nets stock by, asked for different columns, so the
         refusal cannot name a hold the arithmetic does not count (or miss one it does).
         Summed per (order, line), because one line can hold at a location on several
-        allocation rows and the message says "1 already reserved by SO383850", not "1 and 0".
+        allocation rows, and one holder is counted once.
         """
         ids = [pid for pid in product_ids if pid]
         if not ids:

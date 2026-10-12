@@ -2190,9 +2190,9 @@ def test_re_confirming_an_unchanged_reserve_survives_a_rival_taking_the_rest_of_
 
 def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_in_the_short_notice(api):
     """(b) Revision 1 holds Reserve 10 of an open qty of 10. The customer then orders 2
-    more, and the location has only 1 unit free for anyone beyond this order's own carried
-    10. Asking for 12 (an increase of 2) confirms, keeps the carried 10 held and records the
-    short against the 2 increase only, not the 12 the order is resubmitting.
+    more, and once this order's own carried 10 is counted the location has nothing left for
+    the increase. Asking for 12 (an increase of 2) confirms, keeps the carried 10 held and
+    records the short against the 2 increase only, never the 12 the order is resubmitting.
 
     Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
@@ -2200,8 +2200,8 @@ def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_
     db = world.db
     # 20 on hand, deliberately: the subject here is the INCREASE accounting, and asking 12
     # of a location that physically holds 10 is short earlier, at the R14 on-hand guard, for
-    # a different (also true) reason. `quantity_reserved` is what leaves exactly 1 unit free
-    # beyond this order's own carried 10.
+    # a different (also true) reason. `quantity_reserved` below is what leaves nothing free
+    # for the increase once this order's own carried 10 is counted.
     stock = _stock(db, world.product, world.pool_wh, on_hand=20)
     order = _project_so(db, world.project)
     core_so = _core_so(db, world.company_id)
@@ -2222,8 +2222,8 @@ def test_re_confirming_a_larger_reserve_only_the_increase_competes_and_is_named_
     )
     assert first.status_code == 200, first.text
 
-    # The customer orders 2 more, and only 1 unit is free beyond this order's own carried
-    # 10 - not enough for the 2-unit increase.
+    # The customer orders 2 more, and nothing is free for the 2-unit increase beyond this
+    # order's own carried 10.
     core_line.qty_ordered = Decimal("12")
     stock.quantity_reserved = 19
     db.commit()
