@@ -7,14 +7,14 @@ through `create_all`, can take it in any order.
 Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md.
 
 Revision ID: wc_compat_0001_table
-Revises: family_code_0001
+Revises: rkind_0002_parser_ref_kinds_v56
 """
 import sqlalchemy as sa
 from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "wc_compat_0001_table"
-down_revision = "family_code_0001"
+down_revision = "rkind_0002_parser_ref_kinds_v56"
 branch_labels = None
 depends_on = None
 
