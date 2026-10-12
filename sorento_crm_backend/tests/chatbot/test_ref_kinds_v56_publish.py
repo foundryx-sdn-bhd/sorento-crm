@@ -37,6 +37,13 @@ ABLATION_HINTS = (
     '"hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form'
     '|order|category|brand|attachment_type"'
 )
+#: Crew 12 Oct 2026 (reviewer ruling: the parser decides, no code-side prefix matching): the
+#: PO REFS section of the rebuild states what a po_ref is NOT, right after its own last line.
+PO_REFS_RULE = (
+    "po_refs is ONLY the customer's own PO reference. A number you put in entities as an order or "
+    "document number (a delivery order, sales order or invoice number, e.g. \"PS202609-1111\" or "
+    "\"2609-0042\") is never a po_ref, with or without its letters.\n"
+)
 REF_KINDS = ("delivery_order", "sales_order", "customer_po_ref", "purchase_order", "purchase_request")
 
 
@@ -65,7 +72,7 @@ def test_data_file_is_the_ablation_text_plus_the_two_sections_and_the_hint_line(
     assert ablation.count(PO_REFS_ADDENDUM) == 1
     assert ablation.count(ABLATION_HINTS) == 1
     expected = ablation.replace(
-        PO_REFS_ADDENDUM, PO_REFS_ADDENDUM + CHAT_REPORT_ADDENDUM + REF_KINDS_ADDENDUM
+        PO_REFS_ADDENDUM, PO_REFS_ADDENDUM + PO_REFS_RULE + CHAT_REPORT_ADDENDUM + REF_KINDS_ADDENDUM
     )
     text = _text()
     old_line = _entity_format_line(expected)
@@ -152,3 +159,11 @@ def test_downgrade_deletes_only_its_unlabelled_rows(monkeypatch) -> None:
         db.commit()
         db.expire_all()
         assert sorted(r.version for r in _versions(db)) == [2, 3]
+
+
+def test_po_refs_section_says_an_order_entity_number_is_never_a_po_ref() -> None:
+    text = _text()
+    start = text.index("PO REFS\n")
+    section = text[start : text.index("== CHAT REPORT", start)]
+    assert PO_REFS_RULE in section
+    assert text.count(PO_REFS_RULE) == 1

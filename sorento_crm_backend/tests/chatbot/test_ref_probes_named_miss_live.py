@@ -183,3 +183,38 @@ def test_unit_with_document_kind():
     for doc in (["DO"], ["SO", "DO"], None, []):
         same = with_document_kind({"document": doc, "entities": ents})
         assert [e["hint"] for e in same["entities"]] == ["order", "product", "order"], doc
+
+
+def test_contact_without_the_so_grant_gets_no_sales_order_lead_line(session_factory, monkeypatch):
+    """Reviewer should-fix (12 Oct): R5, a contact without `sales_orders.outstanding` never
+    touches the SO kind, so a parser `document` SO must not print "No sales order X." to it."""
+    _seed_contact(session_factory, variables={})
+    _seed_do(session_factory, DO_NO, None)
+    over = dict(_TRACE_SHAPE)
+    entity = {**_ENTITY, **over.pop("entity", {})}
+    qf = _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[entity], **over)
+    result, _ = _run_turn(
+        session_factory,
+        monkeypatch,
+        qf=qf,
+        text_body=f"sales order {DO_NO} delivery",
+        msg_id=f"ZZT-step10nogrant-{uuid.uuid4().hex[:10]}",
+        attributes=[],
+        real_resolver=True,
+        mcp_response=DO_LIST,
+    )
+    reply = (result.reply or {}).get("text") or ""
+    assert "No sales order" not in reply, reply
+    assert DO_NO in reply, reply
+
+
+def test_unit_narrowed_miss_lines_only_names_visible_kinds():
+    from app.services.chatbot.turn.reconcile import narrowed_miss_lines
+
+    rec = [(DO_NO, "sales_order", "customer_order"), ("4500123", "purchase_order", "customer_order")]
+    assert narrowed_miss_lines(rec) == [f"No sales order {DO_NO}.", "No purchase order 4500123."]
+    assert narrowed_miss_lines(rec, visible=["customer_order"]) == []
+    assert narrowed_miss_lines(rec, visible=["customer_order", "sales_order", "customer_po_ref"]) == [
+        f"No sales order {DO_NO}.",
+        "No purchase order 4500123.",
+    ]
