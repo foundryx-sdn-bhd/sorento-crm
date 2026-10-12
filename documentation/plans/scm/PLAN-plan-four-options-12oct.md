@@ -1,6 +1,6 @@
 # PLAN: Fulfilment Planning limited to four options
 
-Status: built, in review (PR #1586). Track: small fix (no migration, no auth/RBAC change, no new ingest surface).
+Status: built; reviewer READY (round 2), browser pass done, owner hand test pending (PR #1586). Track: small fix (no migration, no auth/RBAC change, no new ingest surface).
 
 Owner rule (12 Oct 2026): Fulfilment Planning suggestions are limited to four options:
 **Use own location, Borrow (location), Use BRW, Buy.** The planner stops suggesting
