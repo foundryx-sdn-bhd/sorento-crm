@@ -734,7 +734,7 @@ def simulate_confirm(
 def _simulate_on(sim: Session, payload: SimulateConfirmBody, current_user: dict) -> list:
     """The body of `simulate_confirm`, on the simulation session."""
     from app.models.project_so import ProjectSalesOrderLine
-    from app.services.confirm_simulation import MAX_ERROR_CHARS, error_text
+    from app.services.confirm_simulation import LOCK_BUSY_MESSAGE, MAX_ERROR_CHARS, error_text
 
     actor_id = current_user["id"]
     results: list = [None] * len(payload.orders)
@@ -864,6 +864,8 @@ def _simulate_on(sim: Session, payload: SimulateConfirmBody, current_user: dict)
         result["simulated_errors"] = None
         if result.get("ok") or result.get("failing_lines"):
             continue
+        if result.get("error") == LOCK_BUSY_MESSAGE:
+            continue  # nothing ran for this order; probing line by line would only wait again
         # Only the lines the run actually posted: `only_line_ids` narrows them.
         keep = {str(x) for x in entry.only_line_ids} if entry.only_line_ids is not None else None
         posted = [

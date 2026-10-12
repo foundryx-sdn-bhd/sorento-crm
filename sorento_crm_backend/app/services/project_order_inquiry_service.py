@@ -766,6 +766,50 @@ LINK_HORIZON_PLAN = "plan"
 LINK_HORIZON_NONE = "none"
 
 
+def lines_with_undecided_planning_change(db: Session, line_ids: Sequence[str]) -> set:
+    """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
+    yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
+    overtook can never be decided, so it holds nothing back. Live means held against
+    the order's latest revision or the one just before it: inside a confirm the
+    revision being replaced is still what the batch's leftover rows name, until the
+    apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
+    if not line_ids:
+        return set()
+    from app.models.planning_change import (
+        PLANNING_CHANGE_STATE_PENDING,
+        PlanningChangeRow,
+    )
+    rows = (
+        db.query(PlanningChangeRow)
+        .filter(
+            PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
+            PlanningChangeRow.decision.is_(None),
+            PlanningChangeRow.kind != "cancelled",
+            PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
+        )
+        .all()
+    )
+    from app.models.project_so import SOSupplyDecision
+
+    live_revisions: Dict[str, set] = {}
+    out: set = set()
+    for row in rows:
+        pso_id = str(row.project_sales_order_id)
+        if pso_id not in live_revisions:
+            live_revisions[pso_id] = {
+                revision_no
+                for (revision_no,) in db.query(SOSupplyDecision.revision_no)
+                .filter(SOSupplyDecision.project_sales_order_id == pso_id)
+                .order_by(SOSupplyDecision.revision_no.desc())
+                .limit(2)
+                .all()
+            } or {0}
+        held_revision = (row.held_json or {}).get("revision_no")
+        if held_revision is None or held_revision in live_revisions[pso_id]:
+            out.add(str(row.project_line_id))
+    return out
+
+
 _CANCEL_CTX = "planning_why_cancel_ctx"
 
 
@@ -792,23 +836,14 @@ def _record_cancel(
     The action is `EVENT` (prod's `audit_logs_action_check` admits no other new name); the
     name rides in `event`. The lookups are cached per transaction: a revision cancels dozens
     of rows of one order."""
-    from app.models.planning_change import PlanningChangeRow
     from app.services.audit_service import log_audit
 
     ctx = db.info.setdefault(_CANCEL_CTX, {"order": {}, "line": {}, "undecided": {}})
     with db.no_autoflush:
         if cause == "superseded" and row.so_line_id:
             if row.so_line_id not in ctx["undecided"]:
-                ctx["undecided"][row.so_line_id] = (
-                    db.query(PlanningChangeRow.id)
-                    .filter(
-                        PlanningChangeRow.project_line_id == row.so_line_id,
-                        PlanningChangeRow.applied_state == "pending",
-                        PlanningChangeRow.decision.is_(None),
-                        PlanningChangeRow.kind != "cancelled",
-                    )
-                    .first()
-                    is not None
+                ctx["undecided"][row.so_line_id] = bool(
+                    lines_with_undecided_planning_change(db, [row.so_line_id])
                 )
             if ctx["undecided"][row.so_line_id]:
                 cause = "undecided_change"
@@ -4707,47 +4742,8 @@ class ProjectOrderInquiryService:
         self.refresh_link_state([source, *new_rows])
 
     def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
-        """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
-        yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
-        overtook can never be decided, so it holds nothing back. Live means held against
-        the order's latest revision or the one just before it: inside a confirm the
-        revision being replaced is still what the batch's leftover rows name, until the
-        apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
-        if not line_ids:
-            return set()
-        from app.models.planning_change import (
-            PLANNING_CHANGE_STATE_PENDING,
-            PlanningChangeRow,
-        )
-        rows = (
-            self.db.query(PlanningChangeRow)
-            .filter(
-                PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
-                PlanningChangeRow.decision.is_(None),
-                PlanningChangeRow.kind != "cancelled",
-                PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
-            )
-            .all()
-        )
-        from app.models.project_so import SOSupplyDecision
-
-        live_revisions: Dict[str, set] = {}
-        out: set = set()
-        for row in rows:
-            pso_id = str(row.project_sales_order_id)
-            if pso_id not in live_revisions:
-                live_revisions[pso_id] = {
-                    revision_no
-                    for (revision_no,) in self.db.query(SOSupplyDecision.revision_no)
-                    .filter(SOSupplyDecision.project_sales_order_id == pso_id)
-                    .order_by(SOSupplyDecision.revision_no.desc())
-                    .limit(2)
-                    .all()
-                } or {0}
-            held_revision = (row.held_json or {}).get("revision_no")
-            if held_revision is None or held_revision in live_revisions[pso_id]:
-                out.add(str(row.project_line_id))
-        return out
+        """See `lines_with_undecided_planning_change`."""
+        return lines_with_undecided_planning_change(self.db, line_ids)
 
     def retire_rows_for_dropped_lines(
         self,
