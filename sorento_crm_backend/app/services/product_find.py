@@ -223,12 +223,16 @@ FIND_RULE = (
     'else null>, "unit": <the unit of a number value, else null>}]}. The relation only says WHICH '
     "products the message is about: the named code stays an ordinary product entity (hint "
     "product), and every other key, domain_hint and intent_hint included, is exactly what it "
-    "would be if the message had named the related product's own code instead (\"stock seat "
+    "would be if the message had named the related product's own code instead: \"stock seat "
     "cover for SRTWC8122\" is a stock ask, \"eta seat cover for SRTWC8122\" an incoming ask, "
-    "\"SRTWC8122 seat cover photo\" a file ask, \"seat cover for SRTWC8122\" with nothing else "
-    "asked is read as that code alone). The type word on its own (\"seat cover\", \"my WC\", "
-    "\"马桶盖\") is no entity at all (\"which seat cover fits my WC?\" -> the filter, entities "
-    "[]); never invent a code. Use only the keys listed; otherwise emit \"find\": null."
+    "\"SRTWC8122 seat cover photo\" a file ask. With nothing else asked (\"seat cover for "
+    "SRTWC8122\", \"seat cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\") the message is a bare product code: BARE ENTITY "
+    "CONTINUATION decides domain_hint and intent_hint (the previous turn's, else null); the "
+    "relation itself never sets master_products. A product entity here needs a product CODE: "
+    "the type word on its own (\"seat cover\", "
+    "\"my WC\", \"马桶盖\") is no entity at all, never a category, attachment_type or "
+    "specification (\"which seat cover fits my WC?\" -> the filter, entities []); never invent a "
+    "code. Use only the keys listed; otherwise emit \"find\": null."
 )
 
 

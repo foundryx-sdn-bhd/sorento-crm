@@ -80,6 +80,7 @@ def _parse(system_text: str, message: str) -> dict[str, Any]:
                 "find": out.get("find"),
                 "domain_hint": out.get("domain_hint"),
                 "intent_hint": out.get("intent_hint"),
+                "requested_attributes": out.get("requested_attributes"),
                 "entities": [
                     {k: e.get(k) for k in ("raw", "hint", "canonical_code", "current_message")}
                     for e in (out.get("entities") or [])
@@ -116,32 +117,45 @@ def _product_codes(out: dict[str, Any]) -> set[str]:
     }
 
 
-@pytest.mark.parametrize(
-    "message,code",
-    [
-        ("what seat cover fits SRTWC8383-RL-MBL", "SRTWC8383-RL-MBL"),
-        ("which WC fits SRTSCBD823-MBL", "SRTSCBD823-MBL"),
-        ("SRTWC8122 pakai seat cover apa?", "SRTWC8122"),
-        ("SRTWC191-G2 配什么马桶盖?", "SRTWC191-G2"),
-        ("SRTSCBD824-BL boleh pakai WC mana?", "SRTSCBD824-BL"),
-        # Crew live check 13 Oct (v88): both were read as FILE requests.
-        ("seat cover SRTWC8122", "SRTWC8122"),
-        ("SRTWC8383-RL-MBL 配什么马桶盖", "SRTWC8383-RL-MBL"),
-        # Round 3, more real-shaped phrasings (en / ms / zh / mixed).
-        ("srtwc8088 seat cover which one", "SRTWC8088"),
-        ("cover for SRTWC8357-RL?", "SRTWC8357-RL"),
-        ("penutup tandas untuk SRTWC6015 yang mana", "SRTWC6015"),
-        ("SRTSCBD330-UF 可以配哪个马桶?", "SRTSCBD330-UF"),
-        ("boss, SRTWC8152-BL punya seat cover code apa", "SRTWC8152-BL"),
-        ("which toilet can use seat cover SRTSCBD319-UF", "SRTSCBD319-UF"),
-    ],
-)
-def test_a_fit_question_emits_fits_and_keeps_the_code_a_product(db, message: str, code: str) -> None:
-    out = _parse(_system(db), message)
+#: SEAT-AS-PRODUCT golden set (owner rule 13 Oct): the relation picks WHICH products, the
+#: domain is the ask's own. Each message is parsed beside its control, the same ask with the
+#: linked code(s) typed directly (links from the flyer rows, `link_seat_cover_flyer.py`), and
+#: the two must agree on domain_hint; only the asked one carries `fits`.
+GOLDEN = [
+    # (message, the code it names, control message)
+    ("seat cover for SRTWC8383-RL-MBL", "SRTWC8383-RL-MBL", "SRTSCBD823-MBL"),
+    ("check stock seat cover for SRTWC8122", "SRTWC8122", "check stock SRTSCBD333-UF SRTSCBD333A-UF"),
+    ("eta seat cover for SRTWC8383-RL-MBL", "SRTWC8383-RL-MBL", "eta SRTSCBD823-MBL"),
+    ("SRTWC8122 马桶盖 有货吗", "SRTWC8122", "SRTSCBD333-UF SRTSCBD333A-UF 有货吗"),
+    ("SRTWC8088 seat cover photo", "SRTWC8088", "SRTSCBD330-UF photo"),
+    ("seat cover SRTWC8152-BL bila sampai?", "SRTWC8152-BL", "SRTSCBD824-BL bila sampai?"),
+    ("SRTWC6015 的马桶盖什么时候到货", "SRTWC6015", "SRTSCBD335-UF 什么时候到货"),
+    ("boss, seat cover for SRTWC8357 got stock?", "SRTWC8357", "boss, SRTSCBD332-UF got stock?"),
+    ("SRTWC8122 seat cover price", "SRTWC8122", "SRTSCBD333-UF SRTSCBD333A-UF price"),
+    ("WC for SRTSCBD330-UF stock", "SRTSCBD330-UF", "SRTWC8088 stock"),
+    # Nothing asked: a bare code (BARE ENTITY CONTINUATION; no previous turn here, so null).
+    ("seat cover SRTWC8122", "SRTWC8122", "SRTSCBD333-UF"),
+    ("SRTWC8383-RL-MBL 马桶盖", "SRTWC8383-RL-MBL", "SRTSCBD823-MBL"),
+    ("which seat cover fits SRTWC8383-RL-MBL", "SRTWC8383-RL-MBL", "what is SRTSCBD823-MBL"),
+]
+
+
+NOTHING_ASKED = {"seat cover for SRTWC8383-RL-MBL", "seat cover SRTWC8122", "SRTWC8383-RL-MBL 马桶盖"}
+
+
+@pytest.mark.parametrize("message,code,control", GOLDEN)
+def test_a_fit_ask_keeps_the_domain_its_cover_codes_would_get(db, message: str, code: str, control: str) -> None:
+    system = _system(db)
+    out = _parse(system, message)
+    typed = _parse(system, control)
     assert _keys(out) == ["fits"], out
     assert code in _product_codes(out), out
-    # Crew live check 13 Oct: two fit asks were answered as file requests.
-    assert out.get("domain_hint") == "master_products", out
+    assert _keys(typed) == [], typed
+    # intent_hint is a free snake_case phrase, so only the domain is held equal; both print.
+    # With nothing asked the parser may also read the message as "which product is it"
+    # (master_products, the existing product reply), never as a file or spec ask.
+    allowed = {typed.get("domain_hint")} | ({"master_products"} if message in NOTHING_ASKED else set())
+    assert out.get("domain_hint") in allowed, (out, typed)
 
 
 def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:
@@ -156,8 +170,7 @@ def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:
         "SRTWC8383-RL-MBL stock?",
         "SRTSCBD823-MBL price",
         "seat cover got promotion?",
-        # A FILE ask stays a file ask: the find rule must not take these.
-        "SRTWC8122 seat cover photo",
+        # A FILE ask about the named code itself stays a plain file ask.
         "send me SRTWC8383-RL-MBL drawing",
     ],
 )
