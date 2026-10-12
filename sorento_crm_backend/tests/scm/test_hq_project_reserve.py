@@ -403,23 +403,25 @@ def test_the_reserves_on_hand_covers_a_project_line_on_the_stock_debt_page(scm_a
 
 
 def test_a_reserve_arrival_clears_the_earliest_shortfall_across_groups_first():
-    """IB due 3 Oct and BB due 5 Oct are both short; one HQ PO of 40 lands 20 Oct and
-    clears the IB line first, whatever group it is in."""
+    """BB due 1 Oct, IB due 3 Oct, BB due 5 Oct, all short; one HQ PO of 80 lands 20 Oct
+    and clears them by date across groups (BB 1 Oct, then IB), not group by group."""
     po = SupplyEvent(
-        key="po:hq-1", kind="po", warehouse="HQ", at=date(2026, 10, 20), qty=40,
+        key="po:hq-1", kind="po", warehouse="HQ", at=date(2026, 10, 20), qty=80,
         is_pool=True, is_reserve=True,
     )
     result = assign(
         "p", as_of=AS_OF, tba_from=TBA, lead_days=90, supply=[po],
         demand=[
-            _line("bb", "BRW-BB", date(2026, 10, 5), 40),
+            _line("bb-1", "BRW-BB", date(2026, 10, 1), 40),
             _line("ib", "WH3-IB", date(2026, 10, 3), 40),
+            _line("bb-5", "BRW-BB", date(2026, 10, 5), 40),
         ],
     )
 
     by_key = {row.line.key: row for row in result.lines}
+    assert by_key["bb-1"].uncovered == 0
     assert by_key["ib"].uncovered == 0
-    assert by_key["bb"].uncovered == 40
+    assert by_key["bb-5"].uncovered == 40
 
 
 def test_a_line_takes_the_reserves_free_stock_before_another_lines_lendable_claim():
