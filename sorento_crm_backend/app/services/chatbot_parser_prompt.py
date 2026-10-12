@@ -1408,7 +1408,7 @@ def _grouped_block(block: str) -> str:
             raise ValueError(f"OUTPUT block still lists {key} on a line of its own")
     for key in _NULLABLE_OBJECT_LINES:
         if text.count(f'"{key}":') != 1:
-            raise ValueError(f"OUTPUT block lists {key} more than once")
+            raise ValueError(f"OUTPUT block does not list {key} exactly once")
     return text
 
 

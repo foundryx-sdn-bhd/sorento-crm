@@ -453,6 +453,7 @@ CANDIDATE = LINES["v52 candidate"]
             "escalation",
         ),
         (CANDIDATE.replace('"confident": true|false }', '"confident": true|false, "hint_confident": true|false }', 1), "entity"),
+        (CANDIDATE.replace('\n  "anaphora": { "backward_reference": false }', "", 1), "anaphora exactly once"),
     ],
 )
 def test_grouped_prompt_refuses_a_text_it_cannot_fold_cleanly(variant, reason):
