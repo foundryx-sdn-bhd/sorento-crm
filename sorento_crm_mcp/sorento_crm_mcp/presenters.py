@@ -2011,9 +2011,10 @@ def present_response(tool_name: str, raw: str) -> str:
         it["file_urls"] = list(dict.fromkeys(canonical))
 
     has_result = bool(b.items or attachments or b.action_links)
+    spec_miss = _spec_miss_intro(data) if not has_result and tool_name in _SPEC_MISS_TOOLS else None
     if attachments:
         intro = "I have attached the file(s) below."
-    elif not has_result and tool_name in _SPEC_MISS_TOOLS and (spec_miss := _spec_miss_intro(data)):
+    elif spec_miss:
         intro = spec_miss
     elif not has_result:
         # An empty answer over more than one company has to name the companies it
@@ -2052,6 +2053,10 @@ def present_response(tool_name: str, raw: str) -> str:
         "last_updated_at": _latest_updated(data),
         "has_result": has_result,
     }
+    if spec_miss:
+        # The intro states what the data holds for a spec-filtered zero; the chatbot lane
+        # reads this flag to print it rather than its own generic miss line.
+        envelope["spec_miss"] = True
     if dealer and has_result:
         # Printed after the product lines (`output_structurer`): a dealer's contact
         # point is their salesman, never a team offer.
