@@ -45,7 +45,7 @@ def _base() -> str:
 def test_revision_ids_chain_onto_mains_head():
     m = _migration()
     assert m.revision == "maskp_0001_parser_sub_asks"
-    assert m.down_revision == "rkind_0003_reference_kind_rows"
+    assert m.down_revision == "devf_0002_portal_link_copy"
     assert len(m.revision) <= 32
 
 
@@ -66,7 +66,10 @@ def test_it_publishes_the_ablation_text_plus_the_addendum_unlabelled_once():
         db.flush()
         assert m.publish(db) == 61
         new = _versions(db)[-1]
-        assert new.template == base.replace(m.MEMORY_ANCHOR, SUB_ASKS_ADDENDUM + m.MEMORY_ANCHOR)
+        devf = "".join(a.read_text(encoding="utf-8") for a in m.DEV_FAILURES_ADDENDA)
+        assert new.template == base.replace(m.MEMORY_ANCHOR, SUB_ASKS_ADDENDUM + m.MEMORY_ANCHOR).rstrip("\n") + devf
+        # One candidate holds every v56 addendum on main: REF-PROBES, DEV-FAILURES and this PR's.
+        assert "REFERENCE KINDS" in new.template and "portal_form" in new.template
         assert new.variables == ["current_date"]
         assert new.commit_message == m.MESSAGE
         assert BLOCKS_BEGIN not in new.template

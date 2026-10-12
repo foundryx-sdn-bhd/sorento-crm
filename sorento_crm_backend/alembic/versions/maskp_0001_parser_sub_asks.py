@@ -8,18 +8,19 @@ code or its whole family). The engine's per-ask runner (`turn/sub_asks.py`) answ
 two-or-more-ask message from them.
 
 MULTI-ASK-PLAN2 (owner, 12 Oct 2026): built on main's trimmed parser base, never on the old
-production text: the v56 PROMPT-ABLATION text as `rkind_0002_parser_ref_kinds_v56` publishes it
-(`alembic/data/chatbot_semantic_parser.refkinds-v56-20261011.txt`: v56 plus CHAT_REPORT and
-REF_KINDS), so one label move promotes all three. The new version is that text with the
-addendum right before its MEMORY block (the tail), published verbatim with no policy blocks.
-Promoting is one label move in the Chatbot Console after crew's live parser checks; rolling
-back is the reverse move. Until then the strict output schema already carries both keys
-(absent on the old prompt, tolerated), so nothing changes.
+production text. Main carries two unlabelled v56 candidates, neither holding the other:
+`rkind_0002_parser_ref_kinds_v56` (v56 plus CHAT_REPORT and REF_KINDS,
+`alembic/data/chatbot_semantic_parser.refkinds-v56-20261011.txt`) and `devf_0001_parser_data_rules`
+(v56 plus the DEV-FAILURES and portal_form addenda). This version is the rkind_0002 text with
+the sub asks addendum right before its MEMORY block, then the two DEV-FAILURES addenda appended
+exactly as `devf_0001` appends them, so one label move promotes all of them. Published
+verbatim with no policy blocks. Promoting is one label move in the Chatbot Console after
+crew's live parser checks; rolling back is the reverse move.
 
 Idempotent: a version already carrying this exact template publishes nothing.
 
 Revision ID: maskp_0001_parser_sub_asks
-Revises: rkind_0003_reference_kind_rows
+Revises: devf_0002_portal_link_copy
 """
 import logging
 from pathlib import Path
@@ -29,7 +30,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "maskp_0001_parser_sub_asks"
-down_revision = "rkind_0003_reference_kind_rows"
+down_revision = "devf_0002_portal_link_copy"
 branch_labels = None
 depends_on = None
 
@@ -41,10 +42,15 @@ BASE = DATA / "chatbot_semantic_parser.refkinds-v56-20261011.txt"
 #: SUB_ASKS_ADDENDUM as this revision publishes it, frozen so a later edit of the code
 #: constant never changes what this revision writes (a test holds the two equal today).
 ADDENDUM = DATA / "chatbot_semantic_parser.sub-asks-addendum-20261012.txt"
+#: The DEV-FAILURES addenda, appended after the whole text as `devf_0001_parser_data_rules` does.
+DEV_FAILURES_ADDENDA = (
+    DATA / "chatbot_semantic_parser.dev-failures.addendum.txt",
+    DATA / "chatbot_semantic_parser.portal-form.addendum.txt",
+)
 #: The head of MEMORY_ADDENDUM, the base text's tail block.
 MEMORY_ANCHOR = "\n\n== MEMORY ==\n"
 MESSAGE = (
-    "MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base "
+    "MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES "
     "(one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console."
 )
 
@@ -53,7 +59,8 @@ def template() -> str:
     base = BASE.read_text(encoding="utf-8")
     if base.count(MEMORY_ANCHOR) != 1:
         raise RuntimeError("maskp_0001: the ablation base has no single MEMORY block to put the addendum before")
-    return base.replace(MEMORY_ANCHOR, ADDENDUM.read_text(encoding="utf-8") + MEMORY_ANCHOR)
+    text = base.replace(MEMORY_ANCHOR, ADDENDUM.read_text(encoding="utf-8") + MEMORY_ANCHOR)
+    return text.rstrip("\n") + "".join(a.read_text(encoding="utf-8") for a in DEV_FAILURES_ADDENDA)
 
 
 def publish(session: Session) -> int | None:

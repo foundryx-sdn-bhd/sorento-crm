@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from app.models.inventory import Warehouse
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine
 from app.services.scm import order_link_service
-from app.services.scm.pool_predicate import is_site_pool
+from app.services.scm.pool_predicate import is_project_reserve, is_site_pool
 
 logger = logging.getLogger(__name__)
 
@@ -129,10 +129,22 @@ def claim_purchase_order_for_sizing_rows(db: Session, po: PurchaseOrder) -> int:
             Warehouse.id.in_(list(warehouse_ids))
         )
     }
+    # A PROJECT RESERVE (HQ: a pool with `segment = project`) is general project stock,
+    # claimed by nobody, exactly like an ordinary pool line (`pool_predicate`).
+    pools = {
+        str(row[0])
+        for row in db.query(Warehouse.pool_warehouse_id).filter(
+            Warehouse.pool_warehouse_id.in_(list(warehouse_ids))
+        )
+    }
     bins = [
         ln
         for ln in lines
-        if ln.warehouse_id and not is_site_pool(segments.get(str(ln.warehouse_id)))
+        if ln.warehouse_id
+        and not is_site_pool(segments.get(str(ln.warehouse_id)))
+        and not is_project_reserve(
+            segments.get(str(ln.warehouse_id)), is_pool=str(ln.warehouse_id) in pools
+        )
     ]
     if not bins:
         return 0

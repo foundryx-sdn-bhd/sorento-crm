@@ -15,13 +15,14 @@ INSERT INTO chatbot_status_words (id, domain, value, label, trigger_words, sort_
 -- 2.
 -- A NEW UNLABELLED chatbot_semantic_parser version = the v56 text with CHAT_REPORT and
 -- REF_KINDS that rkind_0002_parser_ref_kinds_v56 published, with SUB_ASKS_ADDENDUM right
--- before its MEMORY block. No label moves. Idempotent: a version already holding the result inserts nothing.
+-- before its MEMORY block, then the DEV-FAILURES and portal_form addenda appended as
+-- devf_0001_parser_data_rules appends them. No label moves. Idempotent: a version already holding the result inserts nothing.
 -- Precondition: rkind_0002's version is on the database (the first SELECT returns one row).
 SELECT version, length(template) FROM ai_prompt_versions
 WHERE name = 'chatbot_semantic_parser' AND commit_message = 'rkind_0002_parser_ref_kinds_v56: v56 ablation text plus CHAT_REPORT and REF_KINDS (REF-PROBES), unlabelled';
 
 WITH base AS (
-  SELECT replace(template, $q$
+  SELECT rtrim(replace(template, $q$
 
 == MEMORY ==
 $q$, $q$
@@ -60,7 +61,22 @@ option's position, never yes, no or a new question.
 $q$ || $q$
 
 == MEMORY ==
-$q$) AS template
+$q$), E'\n')
+         || $q$
+== WHICH RECORDS ANSWER THE QUESTION ==
+- WHEN a product will have stock is an arrival question: incoming / check_incoming. Example: "when will SRTXX100 have stock".
+- Stock and last receipt of a product in one message are two asks (inventory / check_stock and spo_allocation / check_spo), ordered as ASKS says.
+- Whether a customer ordered a product is the "did X take/buy Y" order ask: both entities, requested_attributes ["quantity"].
+- WHEN a product will be delivered or sent out is order / check_order with order_status and status "outstanding", not a requested attribute.
+- A promotion word decides the domain over a generic paper word: promotion / check_promotion, and the paper word is no attachment entity.
+- Requesting price tags (not the template file) is portal_link / get_portal_link with "portal_form" null.
+- A portal_link ask starts a new subject: topic_reset true, no entity from earlier turns.
+- Two brands joined by "and" are two brand entities.
+
+Emit one more key on every object: "portal_form": "complaint|stock_inquiry|purchase_request|sponsorship_form|null".
+== PORTAL FORM ==
+- Asking for one of these four forms is portal_link / get_portal_link, never forms, and "portal_form" is that form; else null.
+$q$ AS template
   FROM ai_prompt_versions
   WHERE name = 'chatbot_semantic_parser' AND commit_message = 'rkind_0002_parser_ref_kinds_v56: v56 ablation text plus CHAT_REPORT and REF_KINDS (REF-PROBES), unlabelled'
   ORDER BY version DESC LIMIT 1
@@ -68,11 +84,11 @@ $q$) AS template
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, config_json, commit_message)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        (SELECT max(version) + 1 FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'),
-       'text', base.template, '["current_date"]'::jsonb, NULL, 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.'
+       'text', base.template, '["current_date"]'::jsonb, NULL, 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.'
 FROM base
 WHERE NOT EXISTS (
   SELECT 1 FROM ai_prompt_versions v WHERE v.name = 'chatbot_semantic_parser' AND v.template = base.template
 );
 
 SELECT version, commit_message FROM ai_prompt_versions
-WHERE name = 'chatbot_semantic_parser' AND commit_message = 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.';
+WHERE name = 'chatbot_semantic_parser' AND commit_message = 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.';

@@ -236,7 +236,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # main's 52,264), so CEILING is 52,887 (+4).
 # Merge of main (#1598 RELEASE-FIX, five entity kind lines) with MULTI-ASK-PLAN2: 53,055 est. tokens
 # without MEMORY_ADDENDUM (52,437 on main + SUB_ASKS_ADDENDUM), so CEILING is 53,059 (+4).
-CEILING = 53_059
+# DEV-FAILURES RC-B (12 Oct, merged over RELEASE-FIX #1598): PORTAL_FORM_ADDENDUM (the
+# `portal_form` output key, 262 chars): 52,524 est. tokens without MEMORY_ADDENDUM (+83) and
+# 53,040 with it, so CEILING is 52,528 (+4; the whole-prompt assertion is CEILING + 512).
+# Merge of main (#1583 DEV-FAILURES, PORTAL_FORM_ADDENDUM) with MULTI-ASK-PLAN2: 53,143 est. tokens
+# without MEMORY_ADDENDUM (main's 52,524 + SUB_ASKS_ADDENDUM), so CEILING is 53,147 (+4).
+CEILING = 53_147
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

@@ -304,6 +304,9 @@ def _build_json_schema() -> dict[str, Any]:
             # for a word that fits no listed kind. Required for strict mode, tolerated
             # absent (no recorded emission carries it).
             "promotion_kind": string_or_null,
+            # DEV-FAILURES RC-B: the portal form a portal_link ask names (a
+            # `portal_service.SUPPORTED_TYPES` code), null for none. Tolerated absent.
+            "portal_form": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -614,6 +617,7 @@ def _build_json_schema() -> dict[str, Any]:
             "sales_basis",
             "sales_company",
             "promotion_kind",
+            "portal_form",
             "correction",
             "self_reference",
             "routing",
@@ -682,6 +686,7 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "sales_basis",
         "sales_company",
         "promotion_kind",
+        "portal_form",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",

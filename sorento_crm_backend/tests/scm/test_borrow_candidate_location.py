@@ -152,6 +152,7 @@ def test_donor_location_reads_site_pool_share_and_netted_po_open_qty():
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         donor = _warehouse(db, f"ZZTP{_uid()[:6]}"[:20])
+        donor.segment = None  # a site pool, never a project reserve (HQ)
         other_owner = _warehouse(db, f"ZZTQ{_uid()[:6]}"[:20])
         other_owner.pool_warehouse_id = donor.id
         db.flush()

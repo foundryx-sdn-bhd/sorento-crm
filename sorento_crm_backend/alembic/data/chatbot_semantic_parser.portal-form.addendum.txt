@@ -1,0 +1,4 @@
+
+Emit one more key on every object: "portal_form": "complaint|stock_inquiry|purchase_request|sponsorship_form|null".
+== PORTAL FORM ==
+- Asking for one of these four forms is portal_link / get_portal_link, never forms, and "portal_form" is that form; else null.
