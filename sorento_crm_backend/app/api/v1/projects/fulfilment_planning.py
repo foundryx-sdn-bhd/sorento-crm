@@ -1397,9 +1397,23 @@ def _confirm_a_planning_change(
             message="This planning change was already applied to this sales order.",
             code="planning_change_batch_applied",
         )
-    by_line = {str(row.project_line_id): row for row in rows if row.project_line_id}
+    # ONLY A ROW THE APPLY CAN STILL ACT ON (BOARD-FROZEN-DISPLAY, SO422492). A batch stays
+    # open while any of its rows is pending (S5b, #1245), so a board opened on it names
+    # lines whose rows an earlier press already applied (or that failed, or that a newer
+    # revision overtook). A decision routed through such a row was stored and then ignored
+    # - `_apply_one_order` takes pending rows only - so the press read "Nothing on this
+    # planning change could be confirmed", or confirmed the rest of the order WITHOUT the
+    # line. Those lines are ordinary decisions now: they ride in `extra`, the same as a
+    # line the batch never named.
+    current_revision = planning_change_service.current_revision_no(db, str(order.id))
+    by_line = {
+        str(row.project_line_id): row
+        for row in rows
+        if row.project_line_id and planning_change_service.row_is_live(row, current_revision)
+    }
 
     extra: list[dict] = []
+    named: list[str] = []
     for line in payload.lines:
         composition = line.model_dump(mode="json")
         row = by_line.get(str(line.project_line_id))
@@ -1417,12 +1431,14 @@ def _confirm_a_planning_change(
         planning_change_service.set_row_decision(
             db, batch_id, str(row.id), "amend", composition
         )
+        named.append(str(line.project_line_id))
 
     result = planning_change_service.apply(
         db,
         batch_id,
         actor_user_id,
         extra_confirm_lines={str(order.id): extra},
+        named_line_ids={str(order.id): named},
         refuse_if_applied=True,
         only_pso_ids={str(order.id)},
         notify=not preview,
