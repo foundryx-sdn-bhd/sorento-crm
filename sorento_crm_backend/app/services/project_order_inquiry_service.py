@@ -42,6 +42,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -985,7 +986,11 @@ class ProjectOrderInquiryService:
         #: OI-PRODUCT-FOLLOW (review S2): product moves made on the DECLINED-settle path,
         #: told to purchasing once the line's own handover lines are queued.
         product_moves: List[Tuple[List[OrderInquiryRow], str]] = []
+        split_line_ids = self._apply_pure_splits(inquiry, decision, buy_lines)
+        settled_in_place.extend(sorted(split_line_ids))
         for entry in buy_lines:
+            if entry.get("line") is not None and str(entry["line"].id) in split_line_ids:
+                continue
             # R9 (owner ruling, S9, `PLAN-oi-worklist-one-header.md`, superseding the old
             # S3 `PLAN-local-supplier-oi-routing.md` rule below): a line decided as a
             # LOCAL buy is not purchasing's job at all, so any of its still-RAISED order
@@ -4129,6 +4134,10 @@ class ProjectOrderInquiryService:
         # carry a suggestion, so a hole this pass cancels must not go on holding it.
         self._drop_suggested_links(cancelled_this_pass)
 
+        def _hole_key(row: OrderInquiryRow) -> Tuple[Any, Any, Any]:
+            return (str(row.so_line_id), row.item_code or None, row.stock_location or None)
+
+        re_raised: set = set()
         created = 0
         for entry in shortfalls:
             key = (entry.get("item_code") or None, entry.get("stock_location") or None)
@@ -4164,7 +4173,16 @@ class ProjectOrderInquiryService:
             )
             self.db.add(shortfall_row)
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
+            re_raised.add(_hole_key(shortfall_row))
             created += 1
+        # SO422492 E: a cancelled raise purchasing was told about is told again, as a
+        # cancel - unless this pass re-raised the same hole, whose own line restates it. A
+        # line CS switched from ORDER BACK to ORDER lost its order back here in silence.
+        for row in cancelled_this_pass:
+            if _hole_key(row) not in re_raised:
+                self._record_handover(
+                    row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id
+                )
         return created
 
     def retire_rows_for_cancelled_lines(
@@ -4385,6 +4403,169 @@ class ProjectOrderInquiryService:
         # go on holding capacity against every other row for a line CS took back out of
         # the confirmation.
         self._drop_suggested_links(retired_this_pass)
+
+    def _apply_pure_splits(
+        self, inquiry: OrderInquiry, decision: Any, buy_lines: Sequence[Dict[str, Any]]
+    ) -> set:
+        """A line SPLIT across new lines moves its instruction, it does not cancel and re-buy
+        it (SO422492 C: B2155-NL-BLUE 139 -> 22 + 9 new lines of 117 printed CANCEL 117 while
+        the same email ordered 117 on the new lines).
+
+        Pure split, in ONE confirm: a named line's single live ORDER row holds more than its
+        new Buy, and lines with no row at all yet, for the same product and location, take
+        exactly that difference. The difference moves to a row per new line, with the links
+        that cover it (latest arrival first, the over-cover rule) and purchasing's
+        acknowledgement, and nothing is told as a cancel or an order. Anything else - two
+        live rows, a different total, product or location - is left to the netting.
+
+        Returns every line it handled (the source and the new lines)."""
+        entries = [
+            entry for entry in buy_lines
+            if entry.get("line") is not None
+            and not entry.get("carried")
+            and entry.get("origin") != "local"
+            and not entry.get("order_back")
+        ]
+        if len(entries) < 2:
+            return set()
+        line_ids = [str(entry["line"].id) for entry in entries]
+        rows_by_line: Dict[str, List[OrderInquiryRow]] = defaultdict(list)
+        for row in self.db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.order_inquiry_id == inquiry.id,
+            OrderInquiryRow.so_line_id.in_(line_ids),
+        ):
+            rows_by_line[str(row.so_line_id)].append(row)
+
+        def _key(item_code: Any, location: Any) -> Tuple[Any, Any]:
+            return (item_code or None, location or None)
+
+        fresh_by_key: Dict[Tuple[Any, Any], List[Dict[str, Any]]] = defaultdict(list)
+        sources_by_key: Dict[Tuple[Any, Any], List[Tuple[Dict[str, Any], OrderInquiryRow]]] = (
+            defaultdict(list)
+        )
+        for entry in entries:
+            line_id = str(entry["line"].id)
+            need = _dec(entry.get("buy_qty"))
+            key = _key(entry.get("item_code"), entry.get("stock_location"))
+            rows = rows_by_line.get(line_id, [])
+            if not rows:
+                if need > _ZERO:
+                    fresh_by_key[key].append(entry)
+                continue
+            live = [
+                row for row in rows
+                if row.state != INQUIRY_CANCELLED and row.verb != IV_CANCEL_BALANCE
+            ]
+            if len(live) != 1:
+                continue
+            row = live[0]
+            if (
+                row.verb == IV_ORDER
+                and row.state in (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                and not row.redirected_to_pool
+                and row.ack_state != ACK_REJECTED
+                and _key(row.item_code, row.stock_location) == key
+                and _ZERO <= need < _dec(row.qty)
+            ):
+                sources_by_key[key].append((entry, row))
+
+        handled: set = set()
+        for key, sources in sources_by_key.items():
+            fresh = fresh_by_key.get(key, [])
+            if len(sources) != 1 or not fresh:
+                continue
+            entry, source = sources[0]
+            need = _dec(entry.get("buy_qty"))
+            moved = _dec(source.qty) - need
+            if sum((_dec(e.get("buy_qty")) for e in fresh), _ZERO) != moved:
+                continue
+            self._split_row(source, need, fresh, decision)
+            handled.add(str(entry["line"].id))
+            handled.update(str(e["line"].id) for e in fresh)
+        return handled
+
+    def _split_row(
+        self,
+        source: OrderInquiryRow,
+        keep: Decimal,
+        fresh: Sequence[Dict[str, Any]],
+        decision: Any,
+    ) -> None:
+        """`_apply_pure_splits`' write: `source` keeps `keep`, each fresh line gets a row for
+        its own Buy, and the links above `keep` follow the quantity."""
+        source_line = self.db.get(ProjectSalesOrderLine, source.so_line_id)
+        source_no = source_line.line_no if source_line is not None else None
+        links = sorted(
+            self._links_of(source.id),
+            key=lambda link: (
+                self._link_expected_date(link) or date.max,
+                link.linked_at or datetime.min,
+            ),
+            reverse=True,
+        )
+        excess = sum((_dec(link.qty) for link in links), _ZERO) - keep
+        new_rows: List[OrderInquiryRow] = []
+        for entry in fresh:
+            qty = _dec(entry.get("buy_qty"))
+            row = OrderInquiryRow(
+                company_id=source.company_id,
+                order_inquiry_id=source.order_inquiry_id,
+                so_line_id=entry["line"].id,
+                item_code=source.item_code,
+                qty=qty,
+                delivery_date=entry.get("required_date") or source.delivery_date,
+                stock_location=source.stock_location,
+                verb=IV_ORDER,
+                covered_by=None,
+                supply_decision_id=decision.id,
+                state=INQUIRY_RAISED,
+                # Purchasing already holds this quantity: the split moves their
+                # acknowledgement with it, it does not ask them to confirm it again.
+                ack_state=source.ack_state,
+                acknowledged_by=source.acknowledged_by,
+                acknowledged_at=source.acknowledged_at,
+                note=f"Split from line {source_no}" if source_no is not None else "Split",
+            )
+            self.db.add(row)
+            self.db.flush()
+            new_rows.append(row)
+            room = qty
+            while excess > _ZERO and room > _ZERO and links:
+                link = links[0]
+                take = min(_dec(link.qty), room, excess)
+                if take == _dec(link.qty):
+                    link.row_id = row.id
+                    links.pop(0)
+                else:
+                    self.db.add(
+                        OrderInquiryLink(
+                            company_id=link.company_id,
+                            row_id=row.id,
+                            po_line_id=link.po_line_id,
+                            spo_allocation_id=link.spo_allocation_id,
+                            document=link.document,
+                            qty=take,
+                            linked_by=link.linked_by,
+                            linked_at=link.linked_at,
+                            auto=bool(link.auto),
+                            claim_id=link.claim_id,
+                        )
+                    )
+                    link.qty = _dec(link.qty) - take
+                room -= take
+                excess -= take
+                self.db.flush()
+                self._invalidate_link_cache()
+        moved_to = ", ".join(
+            str(e["line"].line_no) for e in fresh if e["line"].line_no is not None
+        )
+        stamp = f"Split: {_qty_str(_dec(source.qty) - keep)} moved to line {moved_to}"
+        source.note = f"{source.note}; {stamp}" if source.note else stamp
+        source.qty = keep
+        source.supply_decision_id = decision.id
+        self.db.flush()
+        self._invalidate_link_cache()
+        self.refresh_link_state([source, *new_rows])
 
     def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
         """The lines among `line_ids` carrying a PENDING planning change row nobody has

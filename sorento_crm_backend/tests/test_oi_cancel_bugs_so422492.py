@@ -17,14 +17,20 @@ from decimal import Decimal
 
 from app.models.planning_change import PlanningChangeRow
 from app.models.project_so import INQUIRY_CANCELLED, IV_ORDER, OrderInquiryRow
-from app.services.project_order_inquiry_service import _HANDOVER_PENDING_KEY
-from app.services.scm.outstanding_diff import DATE_MOVED, QTY_CHANGED
+from app.services.project_order_inquiry_service import (
+    _HANDOVER_PENDING_KEY,
+    ProjectOrderInquiryService,
+)
+from app.services.scm.outstanding_diff import ADDED, DATE_MOVED, QTY_CHANGED, Change, Line
 
 from .test_planning_change_apply_on_board import (  # noqa: F401 - fixtures reused
     _build,
     _change,
     _confirm,
+    _link,
     _order_row,
+    _po_line,
+    _supplier,
     api,
     world,
 )
@@ -156,3 +162,135 @@ def test_d_a_buy_only_lines_cancel_balance_names_the_line_location(api):
     assert counts == {"CANCEL_BALANCE": 1}
     assert out[0]["qty"] == Decimal("118")
     assert out[0]["stock_location"] == world.own_wh.warehouse_code, out[0]
+
+
+def test_e_switching_order_back_to_order_tells_purchasing_the_order_back_is_cancelled(api):
+    """SO422492 E: line 160 was re-confirmed from ORDER BACK (from BRW-BB) to a plain ORDER.
+    The ORDER BACK row was cancelled with no email line, so purchasing was never told to stop
+    the order back. Every cancelled raise purchasing was told about appears in the email."""
+    from app.models.project_so import IV_ORDER_BACK
+
+    client, world = api
+    db = world.db
+    core_so = _core_so(db, world.company_id)
+    core_160 = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="12",
+                          required_date=D_592)
+    order = _project_so(db, world.project, so_id=core_so.id,
+                        autocount_doc_no=core_so.so_number)
+    line_160 = _project_line(db, order, line_no=160, product=world.product, core_line=core_160)
+    db.commit()
+    order_back = {**_line_payload(line_160.id, buy_qty="12"), "order_back": True}
+    response = _confirm(client, order.id, [order_back])
+    assert response.status_code == 200, response.text
+    db.commit()
+    back_row = (
+        db.query(OrderInquiryRow)
+        .filter(OrderInquiryRow.so_line_id == line_160.id,
+                OrderInquiryRow.verb == IV_ORDER_BACK,
+                OrderInquiryRow.state != INQUIRY_CANCELLED)
+        .one()
+    )
+
+    response = _confirm(client, order.id, [_line_payload(line_160.id, buy_qty="12")])
+    assert response.status_code == 200, response.text
+    db.commit()
+    db.expire_all()
+    back_row = db.get(OrderInquiryRow, back_row.id)
+    assert back_row.state == INQUIRY_CANCELLED, "premise: the switch cancels the order back"
+    assert _order_row(world, line_160) is not None
+    remarks = [h["line"]["remark"] for h in _handovers_for(world, back_row)]
+    assert "CANCEL ALL" in remarks, (
+        f"E: the cancelled ORDER BACK row must reach the email, got {remarks}"
+    )
+
+
+def test_c_a_pure_split_moves_the_instruction_instead_of_cancel_and_reorder(api):
+    """SO422492 C: AutoCount split B2155-NL-BLUE 139 into 22 on the same line plus new lines
+    totalling 117 (same product, same location, same total). The email printed CANCEL 117 on
+    the old line and ORDER on the new ones. A pure split moves the quantity, the PO links
+    covering it and purchasing's acknowledgement to the new lines' rows; nothing is told as
+    a cancel or a re-order."""
+    from app.models.project_so import IV_CANCEL_BALANCE
+
+    client, world = api
+    db = world.db
+    core_so = _core_so(db, world.company_id)
+    core_x = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="139",
+                        required_date=D_592)
+    order = _project_so(db, world.project, so_id=core_so.id,
+                        autocount_doc_no=core_so.so_number)
+    line_x = _project_line(db, order, line_no=100, product=world.product, core_line=core_x)
+    db.commit()
+    response = _confirm(client, order.id, [_line_payload(line_x.id, buy_qty="139")])
+    assert response.status_code == 200, response.text
+    row_x = _order_row(world, line_x)
+    supplier = _supplier(world)
+    _, po_line = _po_line(world, supplier, qty=139, expected_date=date(2026, 10, 20))
+    _link(world, row_x, po_line, qty=139, document="202609-S0099")
+    db.commit()
+
+    # AutoCount: line 100 cut to 22, three new lines of the same product take the 117.
+    core_x.qty_ordered = Decimal("22")
+    line_x.qty = Decimal("22")
+    new_lines = []
+    for no, qty in ((101, "40"), (102, "40"), (103, "37")):
+        core = _core_line(db, core_so, world.product, world.own_wh, qty_ordered=qty,
+                          required_date=D_592)
+        new_lines.append(
+            (core, _project_line(db, order, line_no=no, product=world.product, core_line=core),
+             qty)
+        )
+    db.commit()
+    loc = world.own_wh.warehouse_code
+    changes = [
+        _change(QTY_CHANGED, core_x, so_number=core_so.so_number,
+                old_date=D_592, new_date=D_592, old_qty="139", new_qty="22"),
+    ] + [
+        Change(ADDED, core_so.so_number, world.product.product_code, loc, before=None,
+               after=Line(doc_number=core_so.so_number, item_code=world.product.product_code,
+                          location=loc, qty=float(qty), required_date=D_592, row_ref="1"))
+        for _core, _line, qty in new_lines
+    ]
+    batch = _build(world, changes, core_so,
+                   [str(core_x.id)] + [str(core.id) for core, _line, _qty in new_lines])
+    assert batch is not None
+
+    before = len(world.db.info.get(_HANDOVER_PENDING_KEY, []))
+    response = _confirm(
+        client, order.id,
+        [_line_payload(line_x.id, buy_qty="22")]
+        + [_line_payload(line.id, buy_qty=qty) for _core, line, qty in new_lines],
+        batch_id=str(batch.id),
+    )
+    assert response.status_code == 200, response.text
+    db.commit()
+    db.expire_all()
+
+    service = ProjectOrderInquiryService(db)
+    row_x = db.get(OrderInquiryRow, row_x.id)
+    assert row_x.state != INQUIRY_CANCELLED
+    assert Decimal(str(row_x.qty)) == Decimal("22")
+    assert sum(Decimal(str(link.qty)) for link in service._links_of(row_x.id)) == Decimal("22")
+    moved = 0
+    for _core, line, qty in new_lines:
+        live = [
+            r for r in db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id)
+            if r.state != INQUIRY_CANCELLED
+        ]
+        assert len(live) == 1 and live[0].verb == IV_ORDER, [(r.verb, r.state) for r in live]
+        assert Decimal(str(live[0].qty)) == Decimal(qty)
+        linked = sum(Decimal(str(link.qty)) for link in service._links_of(live[0].id))
+        assert linked == Decimal(qty), "the PO quantity follows the split"
+        moved += linked
+    assert moved == Decimal("117")
+    assert not db.query(OrderInquiryRow).filter(
+        OrderInquiryRow.order_inquiry_id == row_x.order_inquiry_id,
+        OrderInquiryRow.verb == IV_CANCEL_BALANCE,
+        OrderInquiryRow.state != INQUIRY_CANCELLED,
+    ).all()
+    queued = world.db.info.get(_HANDOVER_PENDING_KEY, [])[before:]
+    remarks = [
+        (item["line_no"], item["line"]["remark"]) for item in queued
+        if item.get("pso_id") == str(order.id)
+    ]
+    assert not [r for r in remarks if "CANCEL" in r[1] or r[1].startswith("ORDER")], remarks
