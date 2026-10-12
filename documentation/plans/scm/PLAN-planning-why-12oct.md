@@ -1,6 +1,6 @@
 # PLAN: Planning "why" trail - why was this cancelled, why can I not confirm
 
-Status: Build. Owner approved mock v3 13 Oct ("ok all good"); UAC final. Track: standard (Size M, LEAD pattern).
+Status: Review done (reviewer READY, security fixed, browser pass PASS on the SO422492 prod copy), awaiting owner hand test and merge go. PR #1600. Track: standard (Size M, LEAD pattern).
 Lane: PLANNING-WHY, branch `crew/planning-why`.
 UAC: `planning-why-12oct-acceptance-criteria.md` (written after the card is answered).
 
