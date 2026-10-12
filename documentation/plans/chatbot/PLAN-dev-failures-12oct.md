@@ -1,6 +1,6 @@
 # PLAN: DEV-set failure coverage (DEV-FAILURES, 12 Oct)
 
-Status: Build, RC-A and RC-B done (awaiting crew eval gate). Small fix track (under ~300 lines per root cause, no auth change; RC-A carries one data-only prompt publish migration, label unmoved).
+Status: Merge-ready. RC-A and RC-B done; crew eval gate passed on e448f3da (eval v62), reviewer READY on 938e6387. Small fix track (under ~300 lines per root cause, no auth change; RC-A carries one data-only prompt publish migration, label unmoved).
 
 ## Journey
 
