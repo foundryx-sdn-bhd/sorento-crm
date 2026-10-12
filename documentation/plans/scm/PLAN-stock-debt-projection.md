@@ -131,7 +131,7 @@ quantity to far lines. Dev has no open SPO with a future ETA, so that shape is s
 - Frontend: one `Switch` + chip in `StockDebtClient.tsx`, the flag through
   `stockDebtService.ts` / `useStockDebtQuery.ts`, and through `StockDebtExportPopover`.
 - Tests first: pytest for the projection read (SRTWT2215 shape, OI placement does not move it,
-  HQ counted, past-due PO lands today, TBA not subtracted); vitest for the switch and chip.
+  a pool PO counted against project lines, past-due PO lands today, TBA not subtracted); vitest for the switch and chip.
 
 ## Appendix A: data request (dev copy, read only)
 
