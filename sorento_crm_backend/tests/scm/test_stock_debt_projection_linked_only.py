@@ -301,3 +301,64 @@ def test_only_a_pool_with_segment_project_is_a_reserve(scm_app):
     for seed in (dealer_pool, not_a_pool):
         for book in BOOKS:
             assert _projected(app, seed, book) == [-100.0, 0.0, -200.0, -300.0], book
+
+
+def test_with_1597_the_reserve_po_is_counted_exactly_once(scm_app):
+    """Crew, both lanes (#1594 + #1597 on one tree): #1597 puts the reserve in Book=Project's
+    span, so the PLAIN page already credits the unlinked HQ PO 202610-S0042 to October
+    (-38 + 5,000 = +4,962, listed Free). The projection must not add it a second time: it
+    reads 4,962, 4,945, 3,509, 1,896, 1,416, 619, 251 and, with May's 422 owed, -171, in
+    both books (a double count reads 9,962 in October)."""
+    app, db = _client(scm_app)
+    seed = _prod_srtwt2215(db)
+    hq = _make_reserve(db, seed["marker"])
+    from app.models.inventory import Warehouse
+
+    bin_ = (
+        db.query(Warehouse)
+        .filter(Warehouse.warehouse_code == f"{seed['marker']}BRW-BB")
+        .one()
+    )
+    _demand(
+        db, seed["product"], bin_, qty=422, required_date=_months_ahead(7),
+        so_number=f"{seed['marker']}-SO7",
+    )
+    expected = [4962.0, 4945.0, 3509.0, 1896.0, 1416.0, 619.0, 251.0, -171.0]
+    with TestClient(app) as c:
+        plain, _ = _row(c, seed, book="project")
+        cell = c.get(
+            f"{BASE}/{seed['product'].id}/cell",
+            params={"month": month_key(TODAY), "projected": "true", "book": "project"},
+        ).json()
+        results = {
+            book: _row(c, seed, projected="true", book=book)[0] for book in BOOKS
+        }
+    assert _balances(plain, 1) == [4962.0]
+    for book, row in results.items():
+        assert _balances(row, 8) == expected, book
+    assert cell["projection"]["month_balance"] == -38.0
+    assert cell["projection"]["reserve_supply"] == 5000.0
+    assert cell["projection"]["projected"] == 4962.0
+    po_rows = [
+        row for row in cell["supply"]
+        if row.get("po_number") == f"{seed['marker']}-202610-S0042"
+    ]
+    assert len(po_rows) == 1
+    assert po_rows[0]["warehouse_code"] == hq.warehouse_code
+
+
+def test_reserve_on_hand_the_walk_leaves_spare_carries_like_reserve_supply(scm_app):
+    """#1597 walks HQ's on hand for project lines: 1,000 on hand meets the 100, 200 and 300
+    owed and 400 stays spare, which the plain page credits to October. The projection
+    carries that surplus as reserve stock instead of dropping it: 400 in every month,
+    never below the plain October."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    db.delete(seed["po_line"])
+    _stock(db, seed["product"], seed["hq"], 1000)
+    db.flush()
+    with TestClient(app) as c:
+        plain, _ = _row(c, seed, book="project")
+        for book in BOOKS:
+            assert _projected(app, seed, book) == [400.0, 400.0, 400.0, 400.0], book
+    assert _balances(plain)[0] == 400.0

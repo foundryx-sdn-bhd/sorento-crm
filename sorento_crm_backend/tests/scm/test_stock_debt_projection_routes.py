@@ -426,3 +426,30 @@ def test_a_second_companys_hq_with_the_same_code_is_not_a_reserve(scm_app):
         for book in BOOKS:
             balances, row = _projected(c, seed, book)
             assert balances == [900.0, 900.0, 700.0, 400.0], book
+
+
+def test_the_drill_states_a_reserve_document_as_the_projection_reads_it(scm_app):
+    """Review: a 300 order at BRW holds 300 of HQ's reserve PO. Under the switch the drill's
+    Supply row for that PO agrees with its projection line in both books: Free 700 and
+    the BRW order named in Assigned to."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    _order, brw_line = _demand(
+        db, seed["product"], seed["pool"], qty=300, required_date=TODAY,
+        so_number=f"{seed['marker']}-SO-BRW",
+    )
+    project_order, project_line = _project_line_for(db, brw_line)
+    _order_back_link_on_po(db, project_order, project_line, po_line=seed["po_line"], qty=300)
+    po_number = f"{seed['marker']}-202610-S0042"
+    with TestClient(app) as c:
+        for book in BOOKS:
+            cell = c.get(
+                f"{BASE}/{seed['product'].id}/cell",
+                params={"month": month_key(TODAY), "projected": "true", "book": book},
+            ).json()
+            assert cell["projection"]["reserve_supply"] == 700.0, book
+            [row] = [r for r in cell["supply"] if r.get("po_number") == po_number]
+            assert row["free_qty"] == 700.0, book
+            assert [entry["so_number"] for entry in row["assigned_to"]] == [
+                f"{seed['marker']}-SO-BRW"
+            ], book
