@@ -335,3 +335,34 @@ def test_r_b1_a_size_ask_outside_the_spec_lanes_keeps_its_require_leg():
 
     assert body("product_attachment", "check_product_attachment", [cert]).get("require"), "the cert leg stays"
     assert not body("inventory", "check_stock", []).get("require"), "a size the stock tool filters drops the leg"
+
+
+def test_g7_the_axis_said_in_the_message_keeps_the_parsers_key(vdb):
+    """Live parse on the v52 line (12 Oct): "600mm length basin got stock?" -> spec raw "600mm",
+    spec_key dim_length. The axis word sits in the message, not the raw; the registry's word
+    reader finds Length there, so the parser's key stands (owner: an axis word narrows)."""
+    verdict = _ground(
+        vdb, _category("basin"), _spec_entity("600mm", "dim_length", 600), message="600mm length basin got stock?",
+    )
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("dim_length", 600)], verdict["entities"]
+
+
+def _product(raw: str, **spec: Any) -> dict[str, Any]:
+    return {"raw": raw, "hint": "product", "canonical_code": None, "current_message": True, "confident": True, "quantity": None, **spec}
+
+
+def test_g8_a_size_the_parser_hinted_as_a_product_is_the_size(vdb):
+    """Live parse on the v52 line (12 Oct): its entity hint list has no "specification", so
+    "600mm" came as {hint product, raw "600mm", spec_key size, spec_value 600}. The spec pair is
+    the parser's own reading; the "product" is nothing but that size, so it is no product token."""
+    verdict = _ground(vdb, _product("600mm", spec_key="size", spec_value=600), _category("basin"), message="600mm basin got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", 600)], verdict["entities"]
+    assert not [e for e in verdict["entities"] if e.get("hint") == "product"], verdict["entities"]
+
+
+def test_g9_a_real_product_keeps_its_entity_beside_the_split_spec(vdb):
+    """Guard: a code with a stray spec pair keeps the code (its words are more than the spec)."""
+    verdict = _ground(vdb, _product("ZZTWC286", spec_key="dim_length", spec_value=600), message="ZZTWC286 600mm length stock?")
+    products = [e for e in verdict["entities"] if e.get("hint") == "product"]
+    assert products and products[0]["raw"] == "ZZTWC286" and not products[0].get("spec_key"), verdict["entities"]
+    assert ("dim_length", 600) in [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])], verdict["entities"]

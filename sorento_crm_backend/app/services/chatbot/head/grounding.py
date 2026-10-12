@@ -614,7 +614,19 @@ def _validate_size(raw: str, value: Any, vocab: Vocabulary) -> list[Grounded]:
     return [Grounded(SIZE_KEY, "Size", raw or str(value), int(number) if number.is_integer() else number, "mm")]
 
 
-def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+def _axis_said(key: str, texts: list[str | None], vocab: Vocabulary) -> bool:
+    """Does any of `texts` (the entity's own words, the customer's message) name the mm axis
+    `key`, read by the registry's own word reader (`ground_words`)? The parser's axis stands
+    only when the customer said it (owner Q2 and the 12 Oct ruling: a bare mm size is any axis)."""
+    return any(
+        (g.unit or "").lower() == "mm" and g.key == key
+        for text in texts
+        if text
+        for g in ground_words(str(text), vocab)[0]
+    )
+
+
+def _validate(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
     """A `specification` entity the parser emitted, checked against the registry: a key
     it knows and a value among that key's choices, else grounded from its raw words."""
     key_name = str(entity.get("spec_key") or "").strip()
@@ -631,8 +643,8 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
             except (TypeError, ValueError, IndexError):
                 number = None
             if number is not None:
-                if (entry.unit or "").lower() == "mm" and not any(
-                    (g.unit or "").lower() == "mm" for g in ground_words(raw, vocab)[0]
+                if (entry.unit or "").lower() == "mm" and not _axis_said(
+                    entry.key, [raw, message if entity.get("current_message") is not False else None], vocab
                 ):
                     # Owner Q2 (12 Oct 2026): a millimetre number whose own words name no axis
                     # ("600mm") is a size; the data says which axis holds it, not the parser's
@@ -656,7 +668,15 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     return []
 
 
-def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+def _only_a_measure(raw: str, vocab: Vocabulary) -> bool:
+    """Is `raw` nothing but numbers and registry units ("600mm", "600 mm")? Read with the
+    grounding's own tokenizer and the registry's units, never a word list of this function."""
+    units = {str(k.unit).lower() for k in vocab.keys if k.unit}
+    words = _words(raw)
+    return bool(words) and all(_NUMBER_RE.match(w) or w in units for w in words)
+
+
+def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
     """The spec pair a category entity carries, as the parser emitted it. A millimetre number
     there was said with no axis word of its own (the parser named the axis on the category,
     not the customer), so it is the virtual `size` key and the route reads the axis from the
@@ -668,6 +688,8 @@ def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounde
         # Reviewer S2: an axis word in the category's own words ("600mm wide basin") is the
         # customer's axis, read by the registry's word reader; only a number with none is a size.
         said = [g for g in ground_words(str(entity.get("raw") or ""), vocab)[0] if (g.unit or "").lower() == "mm"]
+        if not said and key != SIZE_KEY and entity.get("current_message") is not False and _axis_said(key, [message], vocab):
+            said = [Grounded(entry.key, entry.label, str(value), value, entry.unit)]
         return said or _validate_size(str(value), value, vocab)
     if entry is None:
         return []
@@ -764,11 +786,11 @@ def ground(
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
         canonical = str(entity.get("canonical_code") or "").strip()
-        if hint in _CLASS_HINTS and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
+        if (hint in _CLASS_HINTS or hint == _PRODUCT_HINT) and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
             # SPEC-PROMO-PARAMS hand test step 1 (owner, 12 Oct 2026, "600mm basin got stock?"):
             # a spec pair the parser put ON the category entity is a specification of the ask.
             # Left there, nothing read it and every basin was listed.
-            carried = _spec_of_category(entity, vocab)
+            carried = _spec_of_category(entity, vocab, message)
             # Reviewer S1 (owner "exact only", #833 round 10): a word the parser put right binds
             # nothing; it is said back as typed, as for any specification entity. A number is
             # never a corrected word.
@@ -784,6 +806,11 @@ def ground(
             add(carried, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in carried], "spec_on_category": True})
             entity = {k: v for k, v in entity.items() if k not in ("spec_key", "spec_value")}
+            if hint == _PRODUCT_HINT and carried and _only_a_measure(raw, vocab):
+                # A prompt line whose entity hints list no "specification" (v52, v86) puts a
+                # size on a "product" entity ("600mm"). Its words are nothing but that measure,
+                # so it is no product token: the split spec above is all it said.
+                continue
         if (
             hint in _CLASS_HINTS
             and canonical
@@ -811,7 +838,7 @@ def ground(
                 for e in entities
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
-            grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
+            grounded = _as_typed(_validate(entity, vocab, message), entity, message, vocab, others)
             if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
                 # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
                 # holds is an unknown descriptor, asked back as typed, never dropped.
