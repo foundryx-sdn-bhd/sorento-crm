@@ -70,12 +70,17 @@ HQ's prod `segment` is NULL since 12 Oct 23:05 (owner cleared it). The code in t
 inert while it is NULL (`is_project_reserve(NULL)` is false), so the release can go first and
 the data step right after it, never before.
 
-1. Owner, prod data, WITH the release:
+1. Owner, prod data, WITH the release. **Prod has TWO `HQ` warehouses**: Sorento's (company
+   SRT, id `50aa5369...`) and Mocha's (company MCH, id `ab5d1150...`, also a self-pool,
+   `segment = dealer`). Target the SRT one by company, never by code alone. Mocha's HQ stays
+   as it is until the owner rules on it.
    ```sql
-   SELECT id, company_id, warehouse_code, segment, pool_warehouse_id, is_active
-     FROM warehouses WHERE warehouse_code = 'HQ';          -- expect one row, segment NULL
+   SELECT w.id, c.code, w.warehouse_code, w.segment, w.pool_warehouse_id, w.is_active
+     FROM warehouses w JOIN companies c ON c.id = w.company_id
+    WHERE w.warehouse_code = 'HQ';                       -- expect 2 rows: SRT and MCH
    UPDATE warehouses SET segment = 'project', updated_at = now()
-    WHERE warehouse_code = 'HQ' AND segment IS NULL;        -- expect 1 row
+    WHERE warehouse_code = 'HQ'
+      AND company_id = (SELECT id FROM companies WHERE code = 'SRT');  -- expect 1 row
    ```
 2. What moves at that step: reorder / low stock / BRW on hand / PO book / SPO history /
    product economics / cover offers drop HQ; G12 and supply_claim skip it; the planner stops
