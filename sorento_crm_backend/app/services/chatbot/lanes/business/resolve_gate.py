@@ -653,6 +653,7 @@ def resolve_entity_body(
     # SPEC-PROMO-PARAMS: the virtual `size` key is no registry key, so the resolver never
     # sees it (an unknown key there); it travels only as a `spec_constraints` item on the
     # MCP call (`fetch.spec_constraints_for`), where the route resolves its axis.
+    sized = any(g.get("spec_key") == SIZE_KEY for g in grounded)
     grounded = [g for g in grounded if g.get("spec_key") != SIZE_KEY]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]
@@ -786,6 +787,12 @@ def resolve_entity_body(
 
     require = derive_require(parse_output, message_text=_query_text(ctx))
     if require is not None and not set(require) <= set(REQUIRE_LEGS):
+        require = None
+    if sized:
+        # SPEC-PROMO-PARAMS hand test step 1: the counted set would be the subject without
+        # the size (the resolver never sees it), so its count, its header and its "no stock
+        # matched these" describe a different set. A size ask is answered by the route, which
+        # filters by the size (`fetch.spec_constraints_for`, `product_spec_filter.resolve_size`).
         require = None
     # The class word the PARSER named, forwarded as a value (turn re-architecture,
     # D11): a `product_type` / `category` entity IS "which taps", and reading it off

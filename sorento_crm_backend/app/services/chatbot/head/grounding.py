@@ -649,6 +649,21 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
     return []
 
 
+def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
+    """The spec pair a category entity carries, as the parser emitted it. A millimetre number
+    there was said with no axis word of its own (the parser named the axis on the category,
+    not the customer), so it is the virtual `size` key and the route reads the axis from the
+    data. Any other registry key keeps its key; a key the registry does not hold is dropped."""
+    key = str(entity.get("spec_key") or "").strip()
+    value = entity.get("spec_value")
+    entry = next((k for k in vocab.keys if k.key == key), None)
+    if key == SIZE_KEY or (entry is not None and entry.data_type == "numeric" and (entry.unit or "").lower() == "mm"):
+        return _validate_size(str(value), value, vocab)
+    if entry is None:
+        return []
+    return _validate({"spec_key": key, "spec_value": value, "raw": str(value)}, vocab)
+
+
 def _as_typed(grounded: list[Grounded], entity: dict[str, Any], message: str | None, vocab: Vocabulary, others: list[str]) -> list[Grounded]:
     """`grounded` in the customer's own words, when the parser put a word right.
 
@@ -739,6 +754,14 @@ def ground(
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
         canonical = str(entity.get("canonical_code") or "").strip()
+        if hint in _CLASS_HINTS and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
+            # SPEC-PROMO-PARAMS hand test step 1 (owner, 12 Oct 2026, "600mm basin got stock?"):
+            # a spec pair the parser put ON the category entity is a specification of the ask.
+            # Left there, nothing read it and every basin was listed.
+            carried = _spec_of_category(entity, vocab)
+            add(carried, entity)
+            notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in carried], "spec_on_category": True})
+            entity = {k: v for k, v in entity.items() if k not in ("spec_key", "spec_value")}
         if (
             hint in _CLASS_HINTS
             and canonical

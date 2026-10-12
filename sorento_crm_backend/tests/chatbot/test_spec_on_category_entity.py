@@ -108,9 +108,12 @@ def test_g4_an_unknown_key_on_a_category_entity_is_not_invented(vdb):
 # --------------------------------------------------------------------------- lane mapping
 
 
-def test_m1_the_lane_sends_the_size_constraint(vdb):
+def test_m1_the_lane_sends_the_size_constraint(vdb, session_factory):
     """RED: `spec_constraints_for` reads only specification entities, so the size never left."""
     from app.services.chatbot.lanes.business import fetch
+    from tests.chatbot.test_promo_subject_filter import _class
+
+    _class(session_factory, "Wash Basin", ("basin",))
 
     verdict = _ground(
         vdb, _category("600mm basin", "basin", spec_key="dim_width", spec_value=600),
@@ -219,3 +222,56 @@ def test_t1_size_on_the_category_entity_asks_length_or_width(session_factory, mo
     assert {"key": "size", "op": "eq", "value": 600} in sent, stock_calls
     assert "Length" in reply and "Width" in reply, reply
     assert "ZZT-SOC-" not in reply, f"no basin may be listed before the axis is known: {reply}"
+
+
+# --------------------------------------------------------------------------- an axis the customer never said
+
+
+def _spec_entity(raw: str, key: str, value: Any) -> dict[str, Any]:
+    return {
+        "raw": raw, "hint": "specification", "canonical_code": None,
+        "current_message": True, "confident": True, "hint_confident": True,
+        "quantity": None, "spec_key": key, "spec_value": value,
+    }
+
+
+def test_g5_an_mm_spec_whose_words_name_no_axis_is_a_size(vdb):
+    """RED (live parse, 12 Oct): "600mm basin got stock?" parsed to a specification entity
+    raw "600mm" with spec_key dim_width. The customer named no axis (the registry's own word
+    reader finds none in "600mm"), so the axis is the data's to read (owner Q2)."""
+    verdict = _ground(
+        vdb, _category("basin"), _spec_entity("600mm", "dim_width", 600), message="600mm basin got stock?",
+    )
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", 600)], verdict["entities"]
+
+
+@pytest.mark.parametrize(
+    "raw,key", [("600mm width", "dim_width"), ("600mm length", "dim_length"), ("dia 600mm", "diameter")]
+)
+def test_g6_an_axis_word_in_the_spec_keeps_that_axis(vdb, raw, key):
+    """Guard: when the spec's own words name the axis, the parser's key stands."""
+    verdict = _ground(vdb, _category("basin"), _spec_entity(raw, key, 600), message=f"{raw} basin got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [(key, 600)], verdict["entities"]
+
+
+def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, _clear_overrides):
+    """RED: the live parse's own shape (a category plus a dim_width spec on "600mm") listed only
+    the width basin, while 600 sits on Length for two basins."""
+    from tests.chatbot.test_engine import _parser_output
+    from tests.chatbot.test_outstanding_lane import _run_turn
+    from tests.chatbot import test_outstanding_lane as harness
+
+    _seed_basins(session_factory)
+    call, captured = _route_backed_stock(monkeypatch, session_factory)
+    monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
+    qf = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock",
+        entities=[_category("basin", "basin"), _spec_entity("600mm", "dim_width", 600)],
+    )
+    result, _ = _run_turn(
+        session_factory, monkeypatch, qf=qf, text_body="600mm basin got stock?",
+        msg_id=f"zzt-soc-{uuid.uuid4().hex[:6]}", real_resolver=True,
+    )
+    reply = (result.reply or {}).get("text") or ""
+    assert "Length" in reply and "Width" in reply, reply
+    assert "ZZT-SOC-" not in reply, reply

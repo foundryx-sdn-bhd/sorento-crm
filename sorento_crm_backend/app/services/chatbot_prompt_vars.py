@@ -737,6 +737,65 @@ def publish_wording_edit(session: Session, *, old: str, new: str, message: str) 
     return version
 
 
+def publish_specs_block(session: Session) -> int | None:
+    """The PRODUCTION parser text with the `{{specs}}` block added, published as a new
+    UNLABELLED version (SPEC-PROMO-PARAMS, owner hand test 12 Oct 2026: the owner's v84-v86
+    carry no `{{specs}}`, so the specification vocabulary, the `size` line included, never
+    reached the parser). Every word of the owner's text is kept: the block goes inside the
+    policy markers when the text has them, else after the text inside a new pair. Returns
+    the version number; None when the production text already carries `{{specs}}` or a
+    version with exactly that text exists. The label moves only when the owner moves it."""
+    import uuid
+
+    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, BLOCKS_END
+
+    row = session.execute(
+        sql(
+            "SELECT v.template, v.variables FROM ai_prompt_versions v "
+            "JOIN ai_prompt_labels l ON l.version_id = v.id "
+            "WHERE l.name = :n AND l.label = 'production'"
+        ),
+        {"n": PROMPT_KEY},
+    ).first()
+    if row is None or _re.search(r"\{\{\s*specs\s*\}\}", row[0] or ""):
+        return None
+    text = row[0]
+    if BLOCKS_BEGIN in text and BLOCKS_END in text:
+        head, rest = text.split(BLOCKS_BEGIN, 1)
+        inside, tail = rest.split(BLOCKS_END, 1)
+        new_text = f"{head}{BLOCKS_BEGIN}{inside.rstrip(chr(10))}\n\n{{{{specs}}}}\n{BLOCKS_END}{tail}"
+    else:
+        new_text = f"{text.rstrip(chr(10))}\n\n{BLOCKS_BEGIN}\n{{{{specs}}}}\n{BLOCKS_END}\n"
+    exists = session.execute(
+        sql("SELECT 1 FROM ai_prompt_versions WHERE name = :n AND template = :t"),
+        {"n": PROMPT_KEY, "t": new_text},
+    ).first()
+    if exists is not None:
+        return None
+    from app.models.ai_prompt import AIPromptVersion
+
+    top = session.execute(
+        sql("SELECT coalesce(max(version), 0) FROM ai_prompt_versions WHERE name = :n"),
+        {"n": PROMPT_KEY},
+    ).scalar()
+    version = int(top) + 1
+    variables = list(row[1] or [])
+    session.add(
+        AIPromptVersion(
+            id=str(uuid.uuid4()),
+            name=PROMPT_KEY,
+            version=version,
+            type="text",
+            template=new_text,
+            variables=variables if "specs" in variables else [*variables, "specs"],
+            config_json={"wording_edit": True},
+            commit_message="SPEC-PROMO-PARAMS: the production text with the {{specs}} block",
+        )
+    )
+    session.flush()
+    return version
+
+
 # Literal registry lists the drift test (R4) refuses in any version published after the
 # wording layer: the shapes the hand lists had.
 LITERAL_LIST_PATTERNS: dict[str, str] = {
