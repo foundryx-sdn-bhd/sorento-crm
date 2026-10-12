@@ -22,6 +22,7 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from app.database import engine
 from app.models.audit import AuditLog
@@ -61,10 +62,10 @@ def _cleanup_refusal_audit_rows():
             # audit_logs is append-only: the cleanup runs under the maintenance flag.
             conn.execute(text("SET LOCAL sorento.audit_maintenance = 'on'"))
             conn.execute(
-                text("DELETE FROM audit_logs WHERE action = 'CONFIRM_REFUSED' AND entity_id = ANY(:ids)"),
+                text("DELETE FROM audit_logs WHERE event = 'CONFIRM_REFUSED' AND entity_id = ANY(:ids)"),
                 {"ids": seen},
             )
-    except Exception:
+    except DBAPIError:
         # A CREATEROLE non-superuser login (the local test DB's) is refused the flag by the
         # trigger; the rows carry fresh random order ids, so leaving them is harmless.
         pass
@@ -128,7 +129,7 @@ def _audit_rows(fx):
     db.expire_all()
     return (
         db.query(AuditLog)
-        .filter(AuditLog.action == "CONFIRM_REFUSED", AuditLog.entity_id == str(fx["order"].id))
+        .filter(AuditLog.event == "CONFIRM_REFUSED", AuditLog.entity_id == str(fx["order"].id))
         .all()
     )
 
@@ -320,6 +321,12 @@ def test_a_refused_order_writes_exactly_one_confirm_refused_row(
     rows = _audit_rows(fx)
     assert len(rows) == 1, rows
     row = rows[0]
+    # prod's audit_logs_action_check admits only these actions: the name rides in `event`.
+    from .test_planning_why_cancel_cause import allowed_audit_actions
+
+    assert row.action == "EVENT"
+    assert row.event == "CONFIRM_REFUSED"
+    assert row.action in allowed_audit_actions()
     assert row.entity_type == "project_sales_orders"
     assert row.entity_id == str(fx["order"].id)
     assert str(row.user_id) == str(fx["world"].actor)
@@ -418,3 +425,115 @@ def test_a_failure_to_write_the_row_never_changes_the_answer(
 
     assert result["ok"] is False
     assert result["error"] == ERROR
+
+
+# --------------------------------------------------------------------------- fix round 1
+
+
+def test_simulate_confirm_never_calls_the_refusal_recorder(
+    api, monkeypatch, _cleanup_refusal_audit_rows
+):
+    """GUARD (passes while AC-W7 holds): the outcome test alone cannot tell "not called" from
+    "called and wrote nothing"."""
+    import app.api.v1.projects.fulfilment_planning as module
+
+    _as_role(monkeypatch, "admin")
+    fx = _order_with_change(api, seen=_cleanup_refusal_audit_rows)
+    calls: list = []
+    monkeypatch.setattr(module, "_record_refusals", lambda *a, **k: calls.append((a, k)))
+
+    response = fx["client"].post(SIMULATE, json={"orders": [
+        {"pso_id": str(fx["order"].id), "batch_id": str(fx["batch"].id), "lines": []}
+    ]})
+
+    assert response.status_code == 200, response.text
+    assert calls == []
+
+
+def test_a_refusal_row_carries_the_orders_company(api, monkeypatch, _cleanup_refusal_audit_rows):
+    """AC-W7 company scope: a scoped user must see the order's refusals."""
+    _as_role(monkeypatch, "admin")
+    fx = _order_with_change(api, seen=_cleanup_refusal_audit_rows)
+
+    assert _result(_press(fx, preview=False))["ok"] is False
+
+    fx["world"].db.expire_all()
+    rows = fx["world"].db.query(AuditLog).filter(
+        AuditLog.entity_id == str(fx["order"].id),
+        (AuditLog.event == "CONFIRM_REFUSED") | (AuditLog.action == "CONFIRM_REFUSED"),
+    ).all()
+    assert len(rows) == 1
+    assert fx["order"].company_id is not None
+    assert str(rows[0].company_id) == str(fx["order"].company_id)
+
+
+def test_a_batch_id_that_is_not_a_uuid_is_never_written_to_the_audit_row():
+    from app.api.v1.projects.fulfilment_planning import _record_refusals
+
+    import uuid
+
+    order_id = str(uuid.uuid4())
+    try:
+        _record_refusals(
+            [{"pso_id": order_id, "error": ERROR, "batch_id": "not-a-uuid", "lines": []}],
+            None, False,
+        )
+        with engine.connect() as conn:
+            stored = conn.execute(
+                text("SELECT new_values->>'batch_id' FROM audit_logs "
+                     "WHERE (event = 'CONFIRM_REFUSED' OR action = 'CONFIRM_REFUSED') "
+                     "AND entity_id = :id"),
+                {"id": order_id},
+            ).all()
+        assert len(stored) == 1, "the refusal row was not written"
+        assert stored[0][0] is None, stored
+    finally:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL sorento.audit_maintenance = 'on'"))
+                conn.execute(text("DELETE FROM audit_logs WHERE entity_id = :id "
+                                  "AND (event = 'CONFIRM_REFUSED' OR action = 'CONFIRM_REFUSED')"),
+                             {"id": order_id})
+        except DBAPIError:
+            pass
+
+
+@pytest.mark.parametrize("role", ["admin", "user"])
+def test_a_failing_explanation_still_answers_todays_refusal_on_confirm_all(
+    api, monkeypatch, role, _cleanup_refusal_audit_rows
+):
+    from app.services import planning_change_service
+
+    _as_role(monkeypatch, role)
+    fx = _order_with_change(api, seen=_cleanup_refusal_audit_rows)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("explain failed")
+
+    monkeypatch.setattr(planning_change_service, "explain_refusal", boom)
+
+    result = _result(_press(fx, preview=False))
+
+    assert result["ok"] is False
+    assert result["error"] == ERROR
+    assert not result.get("failing_lines")
+
+
+@pytest.mark.parametrize("role", ["admin", "user"])
+def test_a_failing_explanation_still_answers_422_on_single_confirm(
+    api, monkeypatch, role, _cleanup_refusal_audit_rows
+):
+    from app.services import planning_change_service
+
+    _as_role(monkeypatch, role)
+    fx = _order_with_change(api, seen=_cleanup_refusal_audit_rows)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("explain failed")
+
+    monkeypatch.setattr(planning_change_service, "explain_refusal", boom)
+
+    response = _confirm(fx["client"], fx["order"].id, [], batch_id=str(fx["batch"].id))
+
+    assert response.status_code == 422, response.text
+    assert response.json()["message"] == ERROR

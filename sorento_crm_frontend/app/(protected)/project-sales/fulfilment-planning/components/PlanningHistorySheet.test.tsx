@@ -333,3 +333,45 @@ describe('AC-W14: Open email', () => {
     }
   });
 });
+
+describe('fix round 1: badges follow the filter, tables scroll', () => {
+  const MIXED = {
+    id: 'ev-mixed',
+    kind: 'revision_confirmed',
+    at: '2026-10-05T09:00:00',
+    actor: 'Cyndi Tan',
+    pso_id: 'pso-1',
+    so_no: 'SO422492',
+    revision_no: 3,
+    reissued_unchanged: 0,
+    lines: [
+      { so_line_no: 592, item_code: ITEM, action: 'cancelled', qty: 25, cause: 'superseded' },
+      { so_line_no: 700, item_code: OTHER, action: 'ordered', qty: 4, cause: null },
+    ],
+  };
+
+  it('after a product filter the count badges reflect only the visible lines', async () => {
+    getPlanningHistory.mockResolvedValue({ events: [MIXED] });
+    renderSheet();
+    await screen.findByTestId('history-timeline');
+    expect(within(eventRow('ev-mixed')).getByText(/Ordered 1/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/product/i), { target: { value: ITEM } });
+
+    await waitFor(() =>
+      expect(within(eventRow('ev-mixed')).queryByText(/Ordered/)).toBeNull(),
+    );
+    expect(within(eventRow('ev-mixed')).getByText(/Cancelled 1/)).toBeInTheDocument();
+  });
+
+  it('wraps the expanded line table in a horizontally scrollable container', async () => {
+    renderSheet();
+    await screen.findByTestId('history-timeline');
+
+    fireEvent.click(within(eventRow('ev-rev2')).getByRole('button'));
+
+    const table = await within(eventRow('ev-rev2')).findByRole('table');
+    expect(table.closest('.overflow-x-auto')).not.toBeNull();
+    expect(eventRow('ev-rev2').contains(table.closest('.overflow-x-auto'))).toBe(true);
+  });
+});

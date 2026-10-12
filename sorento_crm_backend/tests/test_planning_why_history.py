@@ -180,7 +180,7 @@ def _seed(api):
 
     # A person's own cancel (an audit row naming no revision), and a refused press.
     manual = AuditLog(
-        id=_uid(), entity_type="order_inquiry_rows", entity_id=str(r800.id), action="CANCEL",
+        id=_uid(), entity_type="order_inquiry_rows", entity_id=str(r800.id), action="EVENT", event="OI_ROW_CANCELLED",
         user_id=planner, changed_at=T_MANUAL, root_entity_type="project_sales_orders",
         root_entity_id=str(order.id),
         new_values={"revision_no": None, "supply_decision_id": None, "cause": "manual",
@@ -188,7 +188,7 @@ def _seed(api):
     )
     refused = AuditLog(
         id=_uid(), entity_type="project_sales_orders", entity_id=str(order.id),
-        action="CONFIRM_REFUSED", user_id=cs_user, changed_at=T_REFUSED,
+        action="EVENT", event="CONFIRM_REFUSED", user_id=cs_user, changed_at=T_REFUSED,
         root_entity_type="project_sales_orders", root_entity_id=str(order.id),
         reason="Nothing on this planning change could be confirmed.",
         new_values={"preview": True, "batch_id": str(batch.id), "lines": [{
@@ -302,7 +302,7 @@ def test_a_recorded_cancel_names_its_own_cause_in_the_revision(api, monkeypatch)
     db = fx["world"].db
     db.add(AuditLog(
         id=_uid(), entity_type="order_inquiry_rows", entity_id=str(fx["rows"][2].id),
-        action="CANCEL", user_id=fx["cs_user"], changed_at=T_REV2,
+        action="EVENT", event="OI_ROW_CANCELLED", user_id=fx["cs_user"], changed_at=T_REV2,
         root_entity_type="project_sales_orders", root_entity_id=str(fx["order"].id),
         new_values={"revision_no": 2, "supply_decision_id": str(fx["dec2"].id),
                     "cause": "superseded", "qty": 4, "item_code": "SRTWCX8840-S-RL",
@@ -405,3 +405,84 @@ def test_only_the_named_orders_are_read(api, monkeypatch):
 
     assert {e["pso_id"] for e in mine} == {str(fx["order"].id)}
     assert {e["pso_id"] for e in both} == {str(fx["order"].id), str(other["order"].id)}
+
+
+# --------------------------------------------------------------------------- email layouts
+# Real handover emails come in three header shapes; the header row is never a line and the
+# item code is read from the ITEM CODE column of whichever header is present.
+
+_TRAILER = "\nRaised by Planner One on 12/10/2026.\nOpen: https://crm.example.test/oi/1\n"
+_HEAD = (
+    "ORDER, ORDER BACK, CANCEL BALANCE\n\n"
+    "SO900001 - 22/09/2026 - (Example Customer) - SITE A\n"
+)
+OLD_LAYOUT = (
+    _HEAD
+    + "SO DATE | S/O NO | ITEM CODE | QTY | DELIVERY DATE | REMARK\n"
+    "24/09/2026 | SO900001 | SRTWC8840-SC | 25 | 09/11/2026 | ORDER\n"
+    "24/09/2026 | SO900001 | SRTWT2200 | 140 | 09/11/2026 | ORDER\n"
+    + _TRAILER
+)
+OLD_LAYOUT_WITH_LOCATION = (
+    _HEAD
+    + "SO DATE | S/O NO | LOCATION | ITEM CODE | QTY | DELIVERY DATE | REMARK\n"
+    "24/09/2026 | SO900001 | BRW-BB | SRTWC8840-SC | 25 | 09/11/2026 | ORDER\n"
+    "24/09/2026 | SO900001 | BRW-NTC | SRTWT2200 | 140 | 09/11/2026 | CANCEL BALANCE\n"
+    + _TRAILER
+)
+NEW_LAYOUT = (
+    _HEAD
+    + "LOCATION | ITEM CODE | QTY | NEW QTY | DELIVERY | REMARK\n"
+    "BRW-BB | SRTWT2219 | 6 |  | 09/11/2026 | ORDER BACK\n"
+    "BRW-NTC | SRTWC8840-SC | 25 | 0 | 09/11/2026 | CANCEL ALL\n"
+    + _TRAILER
+)
+
+_LAYOUTS = [
+    (
+        "old",
+        OLD_LAYOUT,
+        [{"item_code": "SRTWC8840-SC", "remark": "ORDER"},
+         {"item_code": "SRTWT2200", "remark": "ORDER"}],
+        {"cancel": 0, "order": 2, "order_back": 0},
+    ),
+    (
+        "old_with_location",
+        OLD_LAYOUT_WITH_LOCATION,
+        [{"item_code": "SRTWC8840-SC", "remark": "ORDER"},
+         {"item_code": "SRTWT2200", "remark": "CANCEL BALANCE"}],
+        {"cancel": 1, "order": 1, "order_back": 0},
+    ),
+    (
+        "new",
+        NEW_LAYOUT,
+        [{"item_code": "SRTWT2219", "remark": "ORDER BACK"},
+         {"item_code": "SRTWC8840-SC", "remark": "CANCEL ALL"}],
+        {"cancel": 1, "order": 0, "order_back": 1},
+    ),
+]
+
+
+@pytest.mark.parametrize("name,body,lines,counts", _LAYOUTS, ids=[x[0] for x in _LAYOUTS])
+def test_the_email_parser_reads_each_header_layout(name, body, lines, counts):
+    from app.services.planning_history_service import _parse_lines
+
+    got_lines, got_counts = _parse_lines(body)
+
+    assert got_lines == lines
+    assert got_counts == counts
+
+
+@pytest.mark.parametrize("name,body,lines,counts", _LAYOUTS, ids=[x[0] for x in _LAYOUTS])
+def test_the_history_route_parses_each_header_layout(api, monkeypatch, name, body, lines, counts):
+    _as_role(monkeypatch, "admin")
+    fx = _seed(api)
+    fx["world"].db.query(EmailOutbox).filter(EmailOutbox.id == fx["email"].id).update(
+        {"body_text": body}
+    )
+    fx["world"].db.commit()
+
+    mail = _by_kind(_get(fx).json()["events"], "email_sent")[0]
+
+    assert mail["lines"] == lines
+    assert mail["counts"] == counts

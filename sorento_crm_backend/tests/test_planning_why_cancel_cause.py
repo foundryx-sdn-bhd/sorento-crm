@@ -17,6 +17,7 @@ Real-DB fixture chain of tests/test_planning_change_apply_on_board.py.
 from __future__ import annotations
 
 import ast
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -49,12 +50,25 @@ from .test_planning_change_apply_on_board import (  # noqa: F401 - fixtures
 
 ROW_TYPES = {"order_inquiry_rows", "project_order_inquiry_rows"}
 
+MIGRATION = (
+    Path(__file__).resolve().parents[1] / "alembic" / "versions" / "aud_0001_audit_standard_s0.py"
+)
+
+
+def allowed_audit_actions() -> set[str]:
+    """The actions prod's CHECK audit_logs_action_check accepts (`_NEW_ALLOWED`), read from
+    the migration: the test schema is built from the ORM models and has no such constraint."""
+    text = MIGRATION.read_text()
+    found = re.search(r'^_NEW_ALLOWED = "\((.*?)\)"', text, re.M)
+    assert found, "_NEW_ALLOWED moved in the audit migration"
+    return set(re.findall(r"'([A-Z_]+)'", found.group(1)))
+
 
 def _cancel_rows(world, row):
     world.db.expire_all()
     return (
         world.db.query(AuditLog)
-        .filter(AuditLog.action == "CANCEL", AuditLog.entity_id == str(row.id))
+        .filter(AuditLog.event == "OI_ROW_CANCELLED", AuditLog.entity_id == str(row.id))
         .all()
     )
 
@@ -63,6 +77,9 @@ def _one_cancel(world, row):
     found = _cancel_rows(world, row)
     assert len(found) == 1, f"expected one CANCEL audit row for {row.id}, got {len(found)}"
     entry = found[0]
+    assert entry.action == "EVENT"
+    assert entry.event == "OI_ROW_CANCELLED"
+    assert entry.action in allowed_audit_actions(), "prod's audit_logs_action_check refuses it"
     assert entry.entity_type in ROW_TYPES
     return entry
 
@@ -304,3 +321,123 @@ def test_no_service_cancels_an_inquiry_row_without_recording_the_cause():
         "these functions set an order inquiry row to cancelled with no _record_cancel( call: "
         + ", ".join(offenders)
     )
+
+
+def test_the_audit_migration_allows_event_but_not_cancel():
+    allowed = allowed_audit_actions()
+    assert "EVENT" in allowed
+    assert "CANCEL" not in allowed and "CONFIRM_REFUSED" not in allowed
+
+
+# --------------------------------------------------------------------------- AC-W9, per assignment
+
+CANCEL_WINDOW = 4
+
+
+def unrecorded_cancel_assignments(source: str) -> list[tuple[str, int]]:
+    """Every `<x>.state = <cancelled>` (x not the header) that has no `_record_cancel(` call in
+    the next CANCEL_WINDOW statements of the SAME block. Returns (function, line) pairs."""
+    tree = ast.parse(source)
+    found: list[tuple[str, int]] = []
+
+    def has_record(stmt: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.Call)
+            and (
+                getattr(n.func, "attr", None) == "_record_cancel"
+                or getattr(n.func, "id", None) == "_record_cancel"
+            )
+            for n in ast.walk(stmt)
+        )
+
+    def visit_block(name: str, block: list) -> None:
+        for index, stmt in enumerate(block):
+            if _assigns_cancelled_to_a_row(stmt) and not any(
+                has_record(after) for after in block[index + 1 : index + 1 + CANCEL_WINDOW]
+            ):
+                found.append((name, stmt.lineno))
+            for field in ("body", "orelse", "finalbody"):
+                inner = getattr(stmt, field, None)
+                if isinstance(inner, list) and inner and isinstance(inner[0], ast.stmt):
+                    visit_block(name, inner)
+            for handler in getattr(stmt, "handlers", []) or []:
+                visit_block(name, handler.body)
+
+    for function in ast.walk(tree):
+        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            visit_block(function.name, function.body)
+    return found
+
+
+def test_the_per_assignment_checker_reports_a_cancel_with_no_record():
+    source = (
+        "def retire(rows):\n"
+        "    for row in rows:\n"
+        "        if row.a:\n"
+        "            row.state = INQUIRY_CANCELLED\n"
+        "            _record_cancel(db, row, 'superseded')\n"
+        "        else:\n"
+        "            row.state = INQUIRY_CANCELLED\n"
+        "            row.note = 'x'\n"
+    )
+    assert unrecorded_cancel_assignments(source) == [("retire", 7)]
+
+
+def test_the_per_assignment_checker_accepts_a_record_after_each_cancel():
+    source = (
+        "def retire(rows):\n"
+        "    for row in rows:\n"
+        "        if row.a:\n"
+        "            row.state = 'cancelled'\n"
+        "            _record_cancel(db, row, 'superseded')\n"
+        "        else:\n"
+        "            row.state = INQUIRY_CANCELLED\n"
+        "            self._record_cancel(db, row, 'manual')\n"
+    )
+    assert unrecorded_cancel_assignments(source) == []
+
+
+def test_every_cancel_assignment_in_the_services_is_followed_by_its_record():
+    offenders: list[str] = []
+    for path in sorted(SERVICES.rglob("*.py")):
+        for name, line in unrecorded_cancel_assignments(path.read_text()):
+            offenders.append(f"{path.name}:{line} ({name})")
+    assert offenders == [], "cancelled with no _record_cancel( right after: " + ", ".join(offenders)
+
+
+# --------------------------------------------------------------------------- partly linked branch
+
+
+def test_retiring_a_placed_row_on_a_dropped_line_records_one_superseded_cancel(api, monkeypatch):
+    import uuid
+    from types import SimpleNamespace
+
+    from app.models.project_so import INQUIRY_PLACED, OrderInquiry
+
+    fx = _confirmed_order(api, line_no=593)
+    world = fx["world"]
+    row = fx["row"]
+    row.state = INQUIRY_PLACED
+    world.db.commit()
+    service = ProjectOrderInquiryService(world.db)
+    # The row holds only the cascade's own guess, which is what lets the walk retire it.
+    monkeypatch.setattr(
+        ProjectOrderInquiryService, "_links_by_row",
+        lambda self, ids: {str(row.id): [SimpleNamespace(auto=True)]},
+    )
+    monkeypatch.setattr(ProjectOrderInquiryService, "_unplace_drafts", lambda self, rows, trigger: None)
+    monkeypatch.setattr(
+        ProjectOrderInquiryService, "_dispatch_changed_with_links", lambda self, *a, **k: None
+    )
+    inquiry = world.db.query(OrderInquiry).filter(OrderInquiry.id == row.order_inquiry_id).one()
+    successor = SimpleNamespace(id=str(uuid.uuid4()), revision_no=2)
+
+    service._retire_uncovered_rows(inquiry, successor, [], actor_user_id=str(world.actor))
+    world.db.commit()
+
+    assert row.state == INQUIRY_CANCELLED
+    entry = _one_cancel(world, row)
+    assert entry.new_values["cause"] == "superseded"
+    assert entry.new_values["revision_no"] == 2
+    assert entry.new_values["supply_decision_id"] == successor.id
+    assert entry.new_values["so_line_no"] == 593
