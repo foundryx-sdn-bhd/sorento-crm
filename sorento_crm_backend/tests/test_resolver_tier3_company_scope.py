@@ -335,10 +335,12 @@ def test_vector_cache_is_keyed_by_company_scope(db, world):
 
 
 # ------------------------------------------------------------- bare exists() (known gap)
-# Measured 12 Oct 2026: `with_loader_criteria` does not reach a bare Core `exists()`, so
-# the `do_orm_execute` listener leaves `db.query(exists().where(Product...))` and
-# `select(exists().where(Product...))` unscoped. No app code on the chatbot resolve or
-# MCP read paths issues that uncorrelated shape (every `exists()` there is correlated to
+# Measured 12 Oct 2026: `with_loader_criteria` does not reach a Core `exists()`, so the
+# `do_orm_execute` listener leaves `db.query(exists().where(Product...))`,
+# `select(exists().where(Product...))` and a Core `exists()` nested in another query's
+# filter unscoped. Such an EXISTS is safe only when it is correlated to a scoped outer
+# row by its own key or carries `build_company_predicate`. No app code on the chatbot
+# resolve or MCP read paths breaks that rule (every `exists()` there is correlated to
 # a scoped outer row or carries its own company predicate, e.g.
 # `product_predicate_service`), so nothing leaks today. This pins the listener gap so a
 # listener change that closes it is noticed, and so new code knows to add
