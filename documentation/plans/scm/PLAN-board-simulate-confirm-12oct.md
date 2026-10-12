@@ -1,6 +1,6 @@
 # PLAN: Fulfilment Planning board, admin "Simulate confirm" (dry run)
 
-Status: Build (owner answered the card 12 Oct: (a) on Q1-Q5). Track: standard (Size M,
+Status: Review done, awaiting owner hand test and the #1580 rebase (owner answered the card 12 Oct: (a) on Q1-Q5). Track: standard (Size M,
 LEAD pattern; touches an admin gate, so security-reviewer runs).
 Lane: SIMULATE-CONFIRM, branch `crew/simulate-confirm`, PR #1585.
 UAC: `board-simulate-confirm-12oct-acceptance-criteria.md` (written after the card is answered).
@@ -158,3 +158,19 @@ order; Q5 runs as the admin.
    simulation result block renders them beside held-back lines (they are the owner's
    "stock-short warnings"). Until then the block shows `lines_held_back` and
    `landed_buy_notices`, which main already returns.
+
+## DoD gate (12 Oct 2026, PR #1585)
+
+Track: standard (Size M), no migration, admin gate (security-reviewer ran).
+
+1. No mock: the FE calls the real `simulate-confirm` route; verified in the cloud browser pass
+   against a seeded sandbox DB (`evidence/simulate-confirm/EVIDENCE-12oct.md`, 1280px and 375px).
+2. No new column, nothing to backfill. 3. No new permission (role-slug gate, owner Q1).
+4. New response field `simulated_errors` asserted on the HTTP body in pytest.
+5. Red-first: 13 BE + 11 FE red tests before code; batch-path red test before its fix; fix
+   round R1-R10 red before code.
+6. Kill tests: reviewer round 1 (a-g, all red), delta round (h-j, all red).
+7. Reviewer READY (round 1 + delta), security-reviewer READY (should-fix taken: request budget
+   and 50-order cap on Simulate only).
+8. Tests on the merge with main (e3a29c8d5): BE 224 passed (9 Confirm / preview / planning-change
+   / draft / cancel-line / simulate files); FE `project-sales/` 220 files, 3688 passed.
