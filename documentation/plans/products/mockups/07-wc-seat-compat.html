@@ -3,184 +3,152 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Seat cover flyer mockup</title>
-<!-- Lane WC-SEAT-COMPAT (PR #1590). Mockup v2 for the owner's Lavish review, not shipped code.
-     v1 was "too out of theme, too complicated" (owner, 12 Oct). v2 is built only from the app's
-     existing page shell and list components, each cited in the notes below.
-     Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md
-     Flyer pairs are the real printed flyer rows; SKU codes in the expanded rows are shaped like
-     the catalogue's, not copied from it. -->
+<title>Compatible section mockup</title>
+<!-- Lane WC-SEAT-COMPAT (PR #1590). Mockup v3 for the owner's Lavish review, not shipped code.
+     Owner decision 12 Oct: no flyer review page. The flyer pairs are linked once by
+     scripts/oneoff/link_seat_cover_flyer.py; from then on people keep the links by hand here.
+     This file shows the only UI: the Compatible section on the product page, Variants tab.
+     Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md -->
 <style>
 :root{
-  --bg:#fff; --fg:#09090b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --primary:#1b84ff;
-  --green:#047857; --green-bg:#ecfdf5; --amber:#b45309; --amber-bg:#fffbeb; --blue-bg:#eff6ff;
-  --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fg:#09090b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --primary:#1b84ff;
+  --blue-bg:#eff6ff; --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 *{box-sizing:border-box}
 body{margin:0;background:#f6f7f9;color:var(--fg);font:14px/1.45 var(--font)}
 .doc{max-width:1400px;margin:0 auto;padding:24px 16px 64px}
 .doc>h1{font-size:20px;margin:0 0 16px}
 h2.ft{font-size:12px;margin:32px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.frame{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.frame{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .w1280{width:1280px;max-width:100%}.w375{width:375px}
 .scroll{overflow-x:auto}
-.shell{display:flex;min-height:560px}
+.shell{display:flex}
 .side{width:240px;flex:none;border-right:1px solid var(--line);padding:16px;font-size:13px;color:#3f3f46}
 .side b{display:block;font-size:16px;margin-bottom:20px;color:var(--fg)}
 .side .g{color:var(--muted);font-size:11px;text-transform:uppercase;margin:14px 0 6px}
-.side .i{padding:6px 8px;border-radius:6px}.side .i.on{background:var(--soft);font-weight:600;color:var(--fg)}
-.main{flex:1;min-width:0;padding:20px 28px}
-.ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:18px}
+.side .i{padding:6px 8px;border-radius:6px}.side .i.on{background:var(--soft);font-weight:600}
+.main{flex:1;min-width:0;padding:20px 28px 28px}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .ph h1{font-size:20px;font-weight:600;margin:0}
 .crumbs{font-size:13px;color:var(--muted);margin-top:4px}
+.title{display:flex;justify-content:space-between;align-items:center;margin:16px 0 4px}
+.title h2{font-size:22px;margin:0}
+.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;background:#ecfdf5;color:#047857;margin-left:8px;vertical-align:middle}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font:500 13px var(--font);white-space:nowrap}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
-.btn.ghost{border-color:transparent}
-.tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-bottom:16px;font-size:14px}
-.tabs span{padding:8px 0;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
-.tabs span.on{color:var(--fg);font-weight:500;border-bottom-color:var(--primary)}
-.tabs em{font-style:normal;color:var(--muted);margin-left:4px}
-.card{border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.tb{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
-.search{flex:0 1 280px;border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--muted);font-size:13px}
-.tb .sp{flex:1}
-.bulk{background:var(--blue-bg)}
-table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13px}
-th{text-align:left;font-weight:500;color:var(--muted);background:#fafafa;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-tr:last-child td{border-bottom:0}
-.cb{display:inline-block;width:15px;height:15px;border:1px solid #a1a1aa;border-radius:4px;vertical-align:middle}
-.cb.on{background:var(--primary);border-color:var(--primary)}
-.chev{color:var(--muted);display:inline-block;width:14px}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.btn.sm{padding:4px 10px;font-size:12px}.btn.ghost{border-color:transparent}
+.cols{display:flex;gap:20px;margin-top:16px;align-items:flex-start}
+.quick{width:220px;flex:none;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:13px;color:var(--muted)}
+.quick b{display:block;color:var(--fg);margin-bottom:10px}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);font-size:14px;white-space:nowrap;overflow-x:auto}
+.tabs span{padding:9px 0;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--primary);font-weight:500;border-bottom-color:var(--primary)}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-top:16px}
+.sec{display:flex;align-items:center;gap:8px;margin:18px 0 8px}
+.sec b{font-size:14px}.sec .btn{margin-left:auto}
+.sub{font-size:13px;color:var(--muted);margin:10px 0 6px}
+.row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-bottom:8px}
+.row .t{flex:1;min-width:0}.row .t b{display:block;font-size:13px}.row .t span{font-size:12px;color:var(--muted)}
 .badge{display:inline-block;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:500}
-.b-green{background:var(--green-bg);color:var(--green)}.b-amber{background:var(--amber-bg);color:var(--amber)}
-.b-grey{background:var(--soft);color:#52525b}.b-blue{background:var(--blue-bg);color:#1d4ed8}
-.muted{color:var(--muted)}
-tr.exp td{background:#fafafa;padding:0}
-.sub{padding:8px 16px 12px 64px}
-.sub table{font-size:12px;background:#fff;border:1px solid var(--line);border-radius:8px}
-.sub th{background:#fff;padding:6px 10px}.sub td{padding:6px 10px}
-.foot{display:flex;justify-content:space-between;padding:10px 16px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)}
+.b-blue{background:var(--blue-bg);color:#1d4ed8}.b-amber{background:#fffbeb;color:#b45309}
+.empty{border:1px dashed var(--line);border-radius:6px;text-align:center;padding:14px;font-size:13px}
+.empty b{display:block}.empty span{color:var(--muted)}
+.hl{outline:2px solid var(--primary);outline-offset:4px;border-radius:8px}
+.dim{color:var(--muted);font-size:13px}
+.modal{width:460px;max-width:100%;border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.14)}
+.modal .h{padding:16px 18px 4px;font-weight:600}.modal .d{padding:0 18px;color:var(--muted);font-size:13px}
+.modal .b{padding:14px 18px}.modal .f{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.lbl{font-size:13px;font-weight:500;margin:0 0 6px}
+.radio{display:flex;gap:18px;font-size:13px;margin-bottom:14px}
+.radio i{display:inline-block;width:14px;height:14px;border:1px solid #a1a1aa;border-radius:50%;vertical-align:-2px;margin-right:6px}
+.radio i.on{border:4px solid var(--primary)}
+.sel{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-size:13px}
 .notes{max-width:1280px;margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;font-size:13px}
-.notes h3{margin:0 0 8px;font-size:14px}
-.notes ul{margin:0;padding-left:18px}.notes li{margin:4px 0}
+.notes h3{margin:0 0 8px;font-size:14px}.notes ul{margin:0;padding-left:18px}.notes li{margin:4px 0}
 .notes code{background:var(--soft);border-radius:4px;padding:0 4px;font-size:12px}
-.phone .main{padding:14px 16px}
-.row375{border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;align-items:flex-start;font-size:13px}
-.row375 .t{flex:1;min-width:0}
-.row375 .t div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
 <div class="doc">
-<h1>Seat Cover Flyer, mockup v2</h1>
+<h1>Compatible section, mockup v3</h1>
 
-<!-- ================================================= 1. TO LINK -->
-<h2 class="ft">1. Seat cover flyer, "To link" tab, 1280px (two rows ticked, one expanded)</h2>
+<h2 class="ft">1. Products &gt; All Products &gt; open a WC (SRTWC8383-RL-MBL) &gt; Variants tab, 1280px. The outlined block is the only new UI.</h2>
 <div class="scroll"><div class="frame w1280"><div class="shell">
   <div class="side"><b>Sorento</b><div class="g">Catalogue</div><div class="i on">Products</div><div class="i">Specifications</div><div class="i">Reference Data</div></div>
   <div class="main">
-    <div class="ph">
-      <div><h1>Seat Cover Flyer</h1><div class="crumbs">Dashboards / Products / All Products / Seat Cover Flyer</div></div>
-      <span class="btn">Retire Seat Cover spec</span>
-    </div>
-    <div class="tabs"><span class="on">To link<em>49</em></span><span>Linked<em>0</em></span><span>Unresolved<em>41</em></span></div>
-    <div class="card">
-      <div class="tb bulk"><b style="font-weight:600">2 selected</b><span class="btn primary">Link selected</span><span class="btn ghost">Clear</span></div>
-      <table>
-        <colgroup><col style="width:44px"><col style="width:44px"><col style="width:70px"><col style="width:240px"><col style="width:300px"><col style="width:110px"><col></colgroup>
-        <thead><tr><th><span class="cb"></span></th><th></th><th>Row</th><th>Model</th><th>Seat cover</th><th>SKUs</th><th>Status</th></tr></thead>
-        <tbody>
-          <tr><td><span class="cb on"></span></td><td><span class="chev">&#9662;</span></td><td>3</td><td class="mono">SRTWC8383</td><td class="mono">SRTSCBD331-UF</td><td>2</td><td><span class="badge b-green">Ready</span></td></tr>
-          <tr class="exp"><td colspan="7"><div class="sub"><table>
-            <colgroup><col style="width:260px"><col><col style="width:120px"></colgroup>
-            <thead><tr><th>SKU</th><th>Product</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr><td class="mono">SRTWC8383-RL-UF</td><td class="muted">One piece WC, RL</td><td><span class="badge b-green">Ready</span></td></tr>
-              <tr><td class="mono">SRTWC8383-SH-UF-150</td><td class="muted">One piece WC, SH 150</td><td><span class="badge b-green">Ready</span></td></tr>
-            </tbody></table></div></td></tr>
-          <tr><td><span class="cb on"></span></td><td><span class="chev">&#9656;</span></td><td>24</td><td class="mono">SRTWC8383-MBL</td><td class="mono">SRTSCBD823-MBL</td><td>1</td><td><span class="badge b-green">Ready</span></td></tr>
-          <tr><td><span class="cb"></span></td><td><span class="chev">&#9656;</span></td><td>25</td><td class="mono">SRTWC8383-BL</td><td class="mono">SRTSCBD824-BL</td><td>1</td><td><span class="badge b-green">Ready</span></td></tr>
-          <tr><td><span class="cb"></span></td><td><span class="chev">&#9656;</span></td><td>6</td><td class="mono">SRTWC8122</td><td class="mono">SRTSCBD333-UF + SRTSCBD333A-UF</td><td>1</td><td><span class="badge b-green">Ready</span></td></tr>
-          <tr><td><span class="cb" style="opacity:.3"></span></td><td></td><td>2</td><td class="mono">SRTWC8088</td><td class="mono">SRTSCBD330-UF</td><td>0</td><td><span class="badge b-grey">Seat cover not in catalogue</span></td></tr>
-          <tr><td><span class="cb" style="opacity:.3"></span></td><td></td><td>7</td><td class="mono">SRTWC6015</td><td class="mono">SRTSCBD335-UF</td><td>0</td><td><span class="badge b-grey">No SKU</span></td></tr>
-        </tbody>
-      </table>
-      <div class="foot"><span>49 flyer pairs</span><span>Rows per page 50</span></div>
+    <div class="ph"><div><h1>Product</h1><div class="crumbs">Dashboards / Products / All Products / Product</div></div><span class="btn">&larr; Back to products</span></div>
+    <div class="title"><h2>SRTWC8383-RL-MBL<span class="pill">Active</span></h2><span><span class="btn">&lsaquo;</span> <span class="dim">12 / 25</span> <span class="btn">&rsaquo;</span> <span class="btn primary">Edit</span></span></div>
+    <div class="dim">Product Code: SRTWC8383-RL-MBL</div>
+    <div class="cols">
+      <div class="quick"><b>Quick Info</b>Category<br>Brand<br>List Price<br>Status</div>
+      <div style="flex:1;min-width:0">
+        <div class="tabs"><span>Overview</span><span>Stock</span><span>Purchase History</span><span>Attachments</span><span>Suppliers</span><span>Promotions</span><span class="on">Variants</span><span>Audit Trail</span><span>Specifications</span></div>
+        <div class="card">
+          <div class="sec" style="margin-top:0"><b>Variant of</b></div><div class="dim">(unchanged)</div>
+          <div class="sec"><b>Variants</b></div><div class="dim">(unchanged)</div>
+          <div class="sec"><b>Alternatives</b><span class="btn sm">+ Add alternative</span></div>
+          <div class="empty"><b>No alternatives</b><span>None linked yet.</span></div>
+
+          <div class="hl" style="margin-top:22px;padding:2px 0">
+            <div class="sec" style="margin-top:4px"><b>Compatible (2)</b><span class="btn sm">+ Add compatible</span></div>
+            <div class="sub">Seat covers that fit</div>
+            <div class="row"><div class="t"><b>SRTSCBD823-MBL</b><span>Seat cover, matt black</span></div><span class="badge b-blue">Flyer</span><span class="btn sm ghost">Unlink</span></div>
+            <div class="row"><div class="t"><b>SRTSCBD407</b><span>Seat cover</span></div><span class="badge b-amber">Manual</span><span class="btn sm ghost">Unlink</span></div>
+            <div class="sub">Fits these WCs</div>
+            <div class="empty"><b>No WCs</b><span>This product is not linked as a seat cover.</span></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div></div></div>
 
-<!-- ================================================= 2. UNRESOLVED -->
-<h2 class="ft">2. "Unresolved" tab, 1280px</h2>
-<div class="scroll"><div class="frame w1280"><div class="shell">
-  <div class="side"><b>Sorento</b><div class="g">Catalogue</div><div class="i on">Products</div></div>
-  <div class="main">
-    <div class="ph"><div><h1>Seat Cover Flyer</h1><div class="crumbs">Dashboards / Products / All Products / Seat Cover Flyer</div></div><span class="btn">Retire Seat Cover spec</span></div>
-    <div class="tabs"><span>To link<em>49</em></span><span>Linked<em>0</em></span><span class="on">Unresolved<em>41</em></span></div>
-    <div class="card">
-      <div class="tb"><span class="search">Search model or SKU</span><span class="sp"></span><span class="btn">Columns</span></div>
-      <table>
-        <colgroup><col style="width:240px"><col style="width:260px"><col></colgroup>
-        <thead><tr><th>Model</th><th>SKU</th><th>Reason</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">SRTWC8383</td><td class="mono">SRTWC8383-RL-MK</td><td>Finish not on the flyer</td></tr>
-          <tr><td class="mono">SRTWC8383</td><td class="mono">SRTWC8383-RL-FT</td><td>Code part not recognised</td></tr>
-          <tr><td class="mono">SRTWC8066</td><td class="mono">SRTWC8066-S</td><td>Code part printed only on another flyer code</td></tr>
-          <tr><td class="mono">SRTWC6030</td><td class="mono">SRTWC6030-SH-MW</td><td>Finish not on the flyer</td></tr>
-        </tbody>
-      </table>
-      <div class="foot"><span>41 SKUs</span><span>Rows per page 50</span></div>
-    </div>
-  </div>
-</div></div></div>
+<h2 class="ft">2. The same section on a seat cover (SRTSCBD824-BL), Variants tab</h2>
+<div class="frame" style="width:760px;max-width:100%;padding:4px 20px 16px">
+  <div class="sec"><b>Compatible (2)</b><span class="btn sm">+ Add compatible</span></div>
+  <div class="sub">Seat covers that fit</div>
+  <div class="empty"><b>No seat covers</b><span>None linked to this product.</span></div>
+  <div class="sub">Fits these WCs</div>
+  <div class="row"><div class="t"><b>SRTWC8152-RL-BL</b><span>WC, black</span></div><span class="badge b-blue">Flyer</span><span class="btn sm ghost">Unlink</span></div>
+  <div class="row"><div class="t"><b>SRTWC8383-RL-BL</b><span>WC, black</span></div><span class="badge b-blue">Flyer</span><span class="btn sm ghost">Unlink</span></div>
+</div>
 
-<!-- ================================================= 3. 375 -->
-<h2 class="ft">3. "To link" tab, 375px (the table scrolls sideways inside its card; the page itself does not)</h2>
-<div class="frame w375 phone"><div class="main">
-  <div class="ph"><div><h1>Seat Cover Flyer</h1></div><span class="btn">Retire spec</span></div>
-  <div class="tabs" style="gap:16px"><span class="on">To link<em>49</em></span><span>Linked<em>0</em></span><span>Unresolved<em>41</em></span></div>
-  <div class="card" style="overflow-x:auto">
-    <table style="width:620px">
-      <colgroup><col style="width:40px"><col style="width:40px"><col style="width:150px"><col style="width:170px"><col style="width:60px"><col style="width:90px"><col style="width:80px"></colgroup>
-      <thead><tr><th><span class="cb"></span></th><th></th><th>Model</th><th>Seat cover</th><th>SKUs</th><th>Status</th><th>Row</th></tr></thead>
-      <tbody>
-        <tr><td><span class="cb on"></span></td><td><span class="chev">&#9656;</span></td><td class="mono">SRTWC8383</td><td class="mono">SRTSCBD331-UF</td><td>2</td><td><span class="badge b-green">Ready</span></td><td>3</td></tr>
-        <tr><td><span class="cb"></span></td><td><span class="chev">&#9656;</span></td><td class="mono">SRTWC8383-MBL</td><td class="mono">SRTSCBD823-MBL</td><td>1</td><td><span class="badge b-green">Ready</span></td><td>24</td></tr>
-        <tr><td><span class="cb"></span></td><td><span class="chev">&#9656;</span></td><td class="mono">SRTWC8122</td><td class="mono">SRTSCBD333-UF + 333A-UF</td><td>1</td><td><span class="badge b-green">Ready</span></td><td>6</td></tr>
-      </tbody>
-    </table>
+<h2 class="ft">3. Add compatible</h2>
+<div class="modal">
+  <div class="h">Add compatible</div><div class="d">Pick the other product.</div>
+  <div class="b">
+    <p class="lbl">The other product is a</p>
+    <div class="radio"><span><i class="on"></i>Seat cover</span><span><i></i>WC</span></div>
+    <p class="lbl">Product</p>
+    <div class="sel"><span>SRTSCBD407 - Seat cover</span><span class="dim">&#9662;</span></div>
   </div>
-</div></div>
+  <div class="f"><span class="btn">Cancel</span><span class="btn primary">Add</span></div>
+</div>
 
-<!-- ================================================= 4. PRODUCT PAGE -->
-<h2 class="ft">4. Product page, Variants tab, Compatible section (unchanged: same markup as Alternatives above it)</h2>
-<div class="frame" style="width:760px;max-width:100%;padding:16px 20px">
-  <div style="display:flex;align-items:center;margin-bottom:8px"><b>Compatible (1)</b><span class="btn" style="margin-left:auto">+ Add compatible</span></div>
-  <div class="muted" style="font-size:13px;margin-bottom:6px">Seat covers that fit</div>
-  <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:8px 12px"><div style="flex:1"><b class="mono">SRTSCBD823-MBL</b></div><span class="badge b-blue">Flyer</span><span class="btn ghost">Unlink</span></div>
-  <div class="muted" style="font-size:13px;margin:12px 0 6px">Fits these WCs</div>
-  <div style="border:1px dashed var(--line);border-radius:6px;text-align:center;padding:14px"><b style="font-size:13px">No WCs</b><div class="muted" style="font-size:13px">This product is not linked as a seat cover.</div></div>
+<h2 class="ft">4. 375px, Variants tab</h2>
+<div class="frame w375" style="padding:14px 16px">
+  <div class="tabs" style="gap:16px"><span>Suppliers</span><span>Promotions</span><span class="on">Variants</span><span>Audit Trail</span></div>
+  <div class="sec"><b>Compatible (1)</b><span class="btn sm">+ Add compatible</span></div>
+  <div class="sub">Seat covers that fit</div>
+  <div class="row"><div class="t"><b>SRTSCBD823-MBL</b><span>Seat cover, matt black</span></div><span class="badge b-blue">Flyer</span><span class="btn sm ghost">Unlink</span></div>
+  <div class="sub">Fits these WCs</div>
+  <div class="empty"><b>No WCs</b><span>This product is not linked as a seat cover.</span></div>
 </div>
 
 <div class="notes">
-<h3>What changed from v1</h3>
+<h3>Where it lives</h3>
 <ul>
-  <li>One plain table of the 49 flyer pairs (Row, Model, Seat cover, SKU count, Status) with a tick per row. Ticking a pair links all its ready SKUs. The SKU list sits behind the row's expand arrow.</li>
-  <li>Three tabs instead of the summary line: To link, Linked, Unresolved. Unresolved lists SKUs with the reason in one column. Nothing in it can be ticked.</li>
-  <li>Retire Seat Cover spec moved to the page header actions. It stays disabled until the flyer is linked and runs the usual 10s countdown.</li>
-  <li>No callout badges, no per-model cards, no extra code-part chips, no sticky bar (the list toolbar's selection strip does that job).</li>
+  <li>Products &gt; All Products &gt; open any product &gt; <b>Variants</b> tab. The section sits directly under Alternatives, on every product. There is no separate page and no new sidebar item.</li>
+  <li>A WC shows "Seat covers that fit"; a seat cover shows "Fits these WCs". The badge says whether a link came from the flyer import (Flyer) or a person (Manual).</li>
+  <li>Add compatible: pick the other product and whether it is a seat cover or a WC, one SKU at a time. Unlink is the usual 5s countdown with Cancel. It needs the existing products edit permission.</li>
 </ul>
-<h3>Built only from existing components</h3>
+<h3>The flyer itself</h3>
 <ul>
-  <li>Page shell and title: <code>components/common/container.tsx</code>, <code>components/common/PageHeader.tsx</code> (its <code>actions</code> slot holds Retire), as on <code>master-data-management/flyer-spec-proposals/page.tsx</code>.</li>
-  <li>Tabs: <code>components/ui/tabs.tsx</code> with <code>TabsList variant="line"</code>, as in <code>sales/teams/[id]/components/SalesTeamDetail.tsx:339</code>.</li>
-  <li>List: <code>components/ui/data-grid.tsx</code> + <code>data-grid-table.tsx</code> in <code>components/ui/card.tsx</code> (<code>Card</code> / <code>CardHeader</code> / <code>CardTable</code>), toolbar <code>components/ui/data-grid-list-toolbar.tsx</code> with its bulk strip, tick column <code>components/ui/data-grid-select-column.tsx</code>, search <code>components/common/ListSearchInput.tsx</code>: the same stack as Spec registry, <code>master-data-management/product-specifications/components/SpecRegistryGrid.tsx:301-372</code>.</li>
-  <li>Row expand: the DataGrid column <code>meta.expandedContent</code> (<code>components/ui/data-grid.tsx:21</code>), as in <code>scm/components/ProductPerspectiveGrid.tsx:163</code>.</li>
-  <li>Status: <code>components/ui/badge.tsx</code>. Retire countdown: <code>hooks/useDeferredRowAction.tsx</code>.</li>
-  <li>Product page section: unchanged; the same row and empty-state markup as <code>products/[id]/components/ProductAlternativesSection.tsx</code>, with <code>ProductVariantPickerDialog.tsx</code> for Add.</li>
-  <li>At 375px the table scrolls sideways inside its own card, the DataGrid's built-in scroller (<code>components/ui/data-grid-table.tsx</code> <code>DataGridScroller</code>), as every other list does; the page never scrolls sideways.</li>
+  <li>No review page. A one-time script, <code>sorento_crm_backend/scripts/oneoff/link_seat_cover_flyer.py</code>, carries the 49 printed flyer pairs, links only the SKUs a printed row names unambiguously, and prints the unresolved ones with their reason. Dry run by default; <code>--apply</code> writes the links; <code>--retire-spec</code> then removes the old Seat Cover spec values.</li>
+</ul>
+<h3>Existing components only</h3>
+<ul>
+  <li>Product page and tabs: <code>master-data-management/products/[id]</code> (unchanged). Section: <code>products/[id]/components/ProductCompatibilitySection.tsx</code>, the same row and empty-state markup as <code>ProductAlternativesSection.tsx</code>, placed in <code>ProductVariantsTab.tsx</code>. Add: <code>ProductVariantPickerDialog.tsx</code>. Badges: <code>components/ui/badge.tsx</code>. Unlink countdown: <code>hooks/useDeferredRowAction.tsx</code>.</li>
 </ul>
 </div>
 </div>
