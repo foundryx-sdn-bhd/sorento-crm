@@ -88,23 +88,30 @@ def require_module_enabled_with_api_key(module_key: str) -> Callable:
         db: Session = Depends(get_db),
         current_user: dict = Depends(get_current_user_or_api_key),
     ) -> None:
-        if not getattr(settings, "module_guard_strict", False):
-            return
-        uid = str(current_user.get("id") or "")
-        if uid == "system":
-            return
-        if _roles_bypass_module(db, uid):
-            return
-        tenant_id = _tenant_id_for_request()
-        if _all_modules_effectively_enabled(db, tenant_id):
-            return
-        if not is_module_enabled(db, tenant_id, module_key):
+        if not module_allowed_with_api_key(db, current_user, module_key):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Module not enabled: {module_key}",
             )
 
     return _guard
+
+
+def module_allowed_with_api_key(db: Session, current_user: dict, module_key: str) -> bool:
+    """The decision `require_module_enabled_with_api_key` refuses on, for a route that reads a
+    second module's data inside its own answer and must leave that part out rather than refuse
+    the whole call (CHAT-FIND: `/products/find` prints stock only when `inventory` is on)."""
+    if not getattr(settings, "module_guard_strict", False):
+        return True
+    uid = str(current_user.get("id") or "")
+    if uid == "system":
+        return True
+    if _roles_bypass_module(db, uid):
+        return True
+    tenant_id = _tenant_id_for_request()
+    if _all_modules_effectively_enabled(db, tenant_id):
+        return True
+    return is_module_enabled(db, tenant_id, module_key)
 
 
 def ensure_public_view_links_allowed(
