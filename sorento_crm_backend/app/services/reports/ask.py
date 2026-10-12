@@ -241,6 +241,11 @@ def run_ask(
             values = [_CHANNEL_CLASS[v] for v in values]
         params[word] = list(values)
 
+    if group_by == "sales_agent" and NO_AGENT_KEY not in (filters.get("sales_agent") or []):
+        # Owner ruling 13 Oct 2026: a sales agent ranking leaves out the "(no agent)" lines unless the ask
+        # itself filters for them; they are cut from the set, so the rows and the total agree.
+        params["has_agent"] = ["yes"]
+
     location_ids, refusal, nothing = resolve_locations(db, warehouse_codes, policy)
     if refusal is not None:
         return _empty("refused", refusal)

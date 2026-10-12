@@ -277,29 +277,62 @@ def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
     selling `rank_by`."""
     if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME:
         return verdict
-    if jsc.js_string(verdict.get("group_by") or "").strip().lower() not in ("product", "category"):
+    group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
+    if group not in ("product", "category", "brand"):
         return verdict
     if verdict.get("rank_group") not in ("item", "category"):
         return verdict
+    # The parser may hand the words it found as `report_ask_words` instead of entities: top selling
+    # takes them as entities (its narrowing resolves a brand, category or agent word itself).
+    word_entities = [
+        {"raw": w, "hint": hint, "canonical_code": None, "current_message": True, "confident": True}
+        for hint in WORD_HINTS
+        for w in jsc.array(_dict(verdict.get("report_ask_words")).get(hint))
+        if isinstance(w, str) and w.strip()
+    ]
+    entities = [*jsc.array(verdict.get("entities")), *word_entities]
     # The top selling route filters by brand, category, sales agent and customer, and counts delivered or
     # ordered sales: a location or another basis would be dropped silently, so that ask stays here.
     hints = {
         jsc.js_string(e.get("hint") or "").strip().lower()
-        for e in jsc.array(verdict.get("entities"))
+        for e in entities
         if isinstance(e, dict) and e.get("current_message") is not False
     }
     if not hints <= {"brand", "category", "sales_agent", "customer"}:
         return verdict
+    if group == "brand" and "brand" not in hints:
+        return verdict  # a real brand ranking ("top 5 brands") names no brand: it stays here
     if verdict.get("basis") not in (None, "delivered", "ordered"):
         return verdict
     held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
     if held_ranking and verdict.get("ranking_drill") in ("scoped", "unsure"):
         return verdict
-    out = {**verdict, "order_status": "top_selling"}
+    out = {**verdict, "order_status": "top_selling", "entities": entities}
+    if group == "brand":
+        out["group_by"] = None  # the brand it grouped by is the filter it named; items are what is ranked
+    if word_entities:
+        out["report_ask_words"] = None
     if out.get("rank_by") is None:
         metric = {"qty": "quantity", "amount": "amount"}.get(out.get("measure"))
         if metric:
             out["rank_by"] = metric
+    return out
+
+
+def as_outstanding_ranking(verdict: dict[str, Any]) -> dict[str, Any]:
+    """Engine seam, before `hold_words`: the parser read "top 5 customers ... outstanding" as the plain
+    outstanding report but filled a ranking shape (an axis the sales ranking offers, and a count or a
+    direction). That is a sales ranking on the outstanding basis; a plain outstanding ask names no axis."""
+    if jsc.js_string(verdict.get("order_status") or "").strip() != "outstanding":
+        return verdict
+    group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
+    if not group or group not in GROUP_BY:
+        return verdict
+    if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
+        return verdict
+    out = {**verdict, "order_status": ASK_NAME, "basis": verdict.get("basis") or "outstanding"}
+    if out.get("measure") is None:
+        out["measure"] = {"quantity": "qty", "amount": "amount"}.get(out.get("rank_by"))
     return out
 
 

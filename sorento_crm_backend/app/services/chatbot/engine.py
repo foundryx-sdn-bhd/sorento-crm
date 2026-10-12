@@ -4672,6 +4672,7 @@ def _run_stages_body(  # noqa: PLR0915
     from app.services.chatbot.lanes.business import report_ask as _report_ask
 
     verdict = _report_ask.as_ranking_refine(verdict, state_in.focus.report, state_in.focus.top_selling)
+    verdict = _report_ask.as_outstanding_ranking(verdict)
     verdict = _report_ask.as_top_selling(verdict, state_in.focus.report)
     verdict, _ranking_words = _report_ask.hold_words(verdict)
     with _session(session_factory) as grounding_db:
