@@ -520,8 +520,14 @@ def test_r4_more_than_fifty_orders_is_refused_before_anything_runs(api, monkeypa
     assert response.json()["code"] == "simulate_too_many_orders"
     assert _counts(world, order, core_so) == before
 
-    real = client.post(f"{BASE}/fulfilment-planning/confirm-all", json={"orders": body["orders"][1:]})
-    assert (real.json() or {}).get("code") != "simulate_too_many_orders"
+    # The cap is Simulate's own: confirm-all still takes 51 (unknown ids, so each just fails).
+    unknown = body["orders"][1:] + [
+        {"pso_id": str(uuid.uuid4()), "lines": [_line_payload(str(uuid.uuid4()), buy_qty="1")]}
+    ]
+    assert len(unknown) == 51
+    real = client.post(f"{BASE}/fulfilment-planning/confirm-all", json={"orders": unknown})
+    assert real.status_code == 200, real.text
+    assert len(real.json()["results"]) == 51
 
 
 def test_r5_a_single_posted_line_that_fails_is_named_without_probing(api, monkeypatch):
