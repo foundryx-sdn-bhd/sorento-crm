@@ -3499,6 +3499,9 @@ def _move_reserve(
     receiving.note = f"{receiving.note}\n{found}" if receiving.note else found
     if take >= _dec(receiving.qty):
         receiving.state = INQUIRY_CANCELLED
+        from app.services.project_order_inquiry_service import _record_cancel
+
+        _record_cancel(db, receiving, "reserve_moved", actor_user_id=actor)
     else:
         receiving.qty = _dec(receiving.qty) - take
     db.flush()
@@ -3800,7 +3803,7 @@ def _oi_demand_rows(
 
 
 def _retire_inquiry_rows(
-    db: Session, project_line_id: Optional[str], reason: str
+    db: Session, project_line_id: Optional[str], reason: str, actor: Optional[str] = None
 ) -> List[str]:
     """`closed` (AC-R06, amended by AC-P3-6): the line is gone from the book, so what it
     asked purchasing for is cancelled - never deleted, because a cancelled row is still
@@ -3819,6 +3822,8 @@ def _retire_inquiry_rows(
 
     Returns THE ROWS IT CANCELLED, by id, and the shift below takes exactly those: a row
     somebody cancelled last month is not this apply's to move documents off."""
+    from app.services.project_order_inquiry_service import _record_cancel
+
     if not project_line_id:
         return []
     rows = (
@@ -3836,6 +3841,7 @@ def _retire_inquiry_rows(
             row.note = note
         else:
             row.state = INQUIRY_CANCELLED
+            _record_cancel(db, row, "planning_change_retired", actor_user_id=actor)
             row.note = note
             cancelled.append(str(row.id))
     return cancelled
@@ -4541,7 +4547,7 @@ def _apply_one_order(
     for line_id in retired_line_ids:
         cancelled_row_ids.extend(
             _retire_inquiry_rows(
-                db, line_id, "The line was closed by a planning change batch."
+                db, line_id, "The line was closed by a planning change batch.", actor
             )
         )
     if cancelled_row_ids:
