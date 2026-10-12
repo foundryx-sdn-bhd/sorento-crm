@@ -75,6 +75,23 @@ CASES: list[tuple[str, str, str, Callable[[dict[str, Any]], bool]]] = [
     ("stock_and_last_in", "stock for MBT2207 and the last in pls",
      "Stock summary for the requested products.\n\n1. *Product Code:* MBT2205\n*Total:* 3",
      lambda o: {"inventory", "spo_allocation"} <= _ask_domains(o)),
+    # Regression guard (crew gate 12 Oct, spo_allocation.last_in -20): a last-in-only ask stays ONE
+    # spo_allocation ask, also right after a stock answer.
+    ("last_in_only", "last in for MBT2207", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_in_count", "MBT2207 last 3 in", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_in_after_stock", "and the last in?",
+     "Stock summary for the requested products.\n\n1. *Product Code:* MBT2207\n*Total:* 40",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_in_qty_words", "how many came in last time for MBT2207", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_stock_in", "when was the last stock in for MBT2207", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_in_stock_qty", "MBT2207 last in stock qty", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and not o.get("asks")),
+    ("last_in_and_stock", "last in and stock for MBT2207", "(none)",
+     lambda o: o.get("domain_hint") == "spo_allocation" and {"inventory", "spo_allocation"} <= _ask_domains(o)),
     ("did_customer_order_zh", "ZETA HARDWARE SDN BHD 有订过 SRTQ5501 吗", "(none)",
      lambda o: o.get("domain_hint") == "order" and bool(_hints(o, "customer"))
      and "quantity" in (o.get("requested_attributes") or [])),
