@@ -765,6 +765,15 @@ LINK_HORIZON_PLAN = "plan"
 LINK_HORIZON_NONE = "none"
 
 
+_CANCEL_CTX = "planning_why_cancel_ctx"
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _drop_cancel_ctx(session, _transaction) -> None:
+    """The per-call lookups below describe one transaction; never carry them past it."""
+    session.info.pop(_CANCEL_CTX, None)
+
+
 def _record_cancel(
     db: Session,
     row: OrderInquiryRow,
@@ -773,45 +782,56 @@ def _record_cancel(
     actor_user_id: Optional[str] = None,
     decision: Any = None,
 ) -> None:
-    """Say WHY an order inquiry row was cancelled (PLANNING-WHY AC-W8): one CANCEL audit row
-    in the cancel's own transaction. `order_inquiry_rows` is `__audit_skip__`, so nothing
-    else records it; the row itself keeps only a free-text note. `decision` is the revision
-    that did it, when a revision did. A revision supersede of a line that holds a pending,
-    undecided planning change reads `undecided_change` rather than `superseded`."""
+    """Say WHY an order inquiry row was cancelled (PLANNING-WHY AC-W8): one audit row in the
+    cancel's own transaction. `order_inquiry_rows` is `__audit_skip__`, so nothing else
+    records it; the row itself keeps only a free-text note. `decision` is the revision that
+    did it, when a revision did. A revision supersede of a line that holds a pending,
+    undecided planning change reads `undecided_change` rather than `superseded`.
+
+    The action is `EVENT` (prod's `audit_logs_action_check` admits no other new name); the
+    name rides in `event`. The lookups are cached per transaction: a revision cancels dozens
+    of rows of one order."""
     from app.models.planning_change import PlanningChangeRow
     from app.services.audit_service import log_audit
 
-    if cause == "superseded" and row.so_line_id:
-        undecided = (
-            db.query(PlanningChangeRow.id)
-            .filter(
-                PlanningChangeRow.project_line_id == row.so_line_id,
-                PlanningChangeRow.applied_state == "pending",
-                PlanningChangeRow.decision.is_(None),
-                PlanningChangeRow.kind != "cancelled",
+    ctx = db.info.setdefault(_CANCEL_CTX, {"order": {}, "line": {}, "undecided": {}})
+    with db.no_autoflush:
+        if cause == "superseded" and row.so_line_id:
+            if row.so_line_id not in ctx["undecided"]:
+                ctx["undecided"][row.so_line_id] = (
+                    db.query(PlanningChangeRow.id)
+                    .filter(
+                        PlanningChangeRow.project_line_id == row.so_line_id,
+                        PlanningChangeRow.applied_state == "pending",
+                        PlanningChangeRow.decision.is_(None),
+                        PlanningChangeRow.kind != "cancelled",
+                    )
+                    .first()
+                    is not None
+                )
+            if ctx["undecided"][row.so_line_id]:
+                cause = "undecided_change"
+        if row.order_inquiry_id not in ctx["order"]:
+            ctx["order"][row.order_inquiry_id] = (
+                db.query(OrderInquiry.project_sales_order_id)
+                .filter(OrderInquiry.id == row.order_inquiry_id)
+                .scalar()
             )
-            .first()
-        )
-        if undecided is not None:
-            cause = "undecided_change"
-    order_id = (
-        db.query(OrderInquiry.project_sales_order_id)
-        .filter(OrderInquiry.id == row.order_inquiry_id)
-        .scalar()
-    )
-    line_no = (
-        db.query(ProjectSalesOrderLine.line_no)
-        .filter(ProjectSalesOrderLine.id == row.so_line_id)
-        .scalar()
-        if row.so_line_id
-        else None
-    )
+        order_id = ctx["order"][row.order_inquiry_id]
+        if row.so_line_id and row.so_line_id not in ctx["line"]:
+            ctx["line"][row.so_line_id] = (
+                db.query(ProjectSalesOrderLine.line_no)
+                .filter(ProjectSalesOrderLine.id == row.so_line_id)
+                .scalar()
+            )
+        line_no = ctx["line"].get(row.so_line_id) if row.so_line_id else None
     qty = _dec(row.qty)
     log_audit(
         db,
         "project_order_inquiry_rows",
         str(row.id),
-        "CANCEL",
+        "EVENT",
+        event="OI_ROW_CANCELLED",
         new_values={
             "revision_no": decision.revision_no if decision is not None else None,
             "supply_decision_id": str(decision.id) if decision is not None else None,

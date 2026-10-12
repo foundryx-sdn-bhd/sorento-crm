@@ -101,8 +101,8 @@ def _refusals_and_cancels(db: Session, ids: List[str]) -> List[dict]:
             AuditLog.root_entity_type == "project_sales_orders",
             AuditLog.root_entity_id.in_(ids),
             or_(
-                AuditLog.action == "CONFIRM_REFUSED",
-                (AuditLog.action == "CANCEL") & AuditLog.entity_type.in_(_ROW_AUDIT_TYPES),
+                AuditLog.event == "CONFIRM_REFUSED",
+                (AuditLog.event == "OI_ROW_CANCELLED") & AuditLog.entity_type.in_(_ROW_AUDIT_TYPES),
             ),
         )
         .all()
@@ -110,7 +110,7 @@ def _refusals_and_cancels(db: Session, ids: List[str]) -> List[dict]:
     out: List[dict] = []
     for row in rows:
         values = row.new_values or {}
-        if row.action == "CONFIRM_REFUSED":
+        if row.event == "CONFIRM_REFUSED":
             out.append(
                 {
                     "id": str(row.id),
@@ -181,7 +181,7 @@ def _revisions(db: Session, ids: List[str]) -> List[dict]:
         .filter(
             AuditLog.root_entity_type == "project_sales_orders",
             AuditLog.root_entity_id.in_(ids),
-            AuditLog.action == "CANCEL",
+            AuditLog.event == "OI_ROW_CANCELLED",
             AuditLog.entity_type.in_(_ROW_AUDIT_TYPES),
         )
         .all()
@@ -190,12 +190,15 @@ def _revisions(db: Session, ids: List[str]) -> List[dict]:
         values = audit.new_values or {}
         if values.get("revision_no") is not None:
             recorded[(str(audit.root_entity_id), int(values["revision_no"]), str(audit.entity_id))] = values
-    changes = (
+    changes: Dict[str, list] = defaultdict(list)
+    for change, applied_at in (
         db.query(PlanningChangeRow, PlanningChangeBatch.applied_at)
         .join(PlanningChangeBatch, PlanningChangeBatch.id == PlanningChangeRow.batch_id)
         .filter(PlanningChangeRow.project_sales_order_id.in_(ids))
         .all()
-    )
+    ):
+        if change.project_line_id:
+            changes[str(change.project_line_id)].append((change, applied_at))
     out: List[dict] = []
     for decision in decisions:
         pso_id = str(decision.project_sales_order_id)
@@ -278,14 +281,13 @@ def _revisions(db: Session, ids: List[str]) -> List[dict]:
     return out
 
 
-def _derived_cause(row: OrderInquiryRow, confirmed_at: datetime, changes: list) -> tuple:
+def _derived_cause(row: OrderInquiryRow, confirmed_at: datetime, changes: Dict[str, list]) -> tuple:
     """AC-W11: a cancel before the release has no recorded cause. `undecided_change` only
     when an AutoCount change for the line was waiting, undecided, when the revision
     confirmed; otherwise the honest `not_recorded`."""
-    for change, applied_at in changes:
+    for change, applied_at in changes.get(str(row.so_line_id), []):
         if (
-            change.project_line_id == row.so_line_id
-            and change.kind != "cancelled"
+            change.kind != "cancelled"
             and change.decision is None
             and change.created_at
             and change.created_at < confirmed_at
@@ -368,16 +370,31 @@ def _recipients(mail: EmailOutbox) -> List[str]:
 
 
 def _parse_lines(body: Optional[str]) -> tuple:
+    """The item code and remark of each line of a handover email's table. The header row
+    (`... ITEM CODE ... REMARK`) says which columns those are, whatever layout the email had
+    (with or without LOCATION, with or without SO DATE / S/O NO); it and anything before it
+    are not lines. A table with no header row reads item code as the second cell and remark
+    as the last."""
+    rows = [
+        [c.strip() for c in text.split("|")] for text in (body or "").splitlines() if "|" in text
+    ]
+    item_at: Optional[int] = 1
+    remark_at: Optional[int] = None  # None: the last cell
+    for position, cells in enumerate(rows):
+        upper_cells = [c.upper() for c in cells]
+        if "ITEM CODE" in upper_cells and "REMARK" in upper_cells:
+            item_at = upper_cells.index("ITEM CODE")
+            remark_at = upper_cells.index("REMARK")
+            rows = rows[position + 1 :]
+            break
     lines: List[dict] = []
     counts = {"cancel": 0, "order": 0, "order_back": 0}
-    for text in (body or "").splitlines():
-        if "|" not in text:
+    for cells in rows:
+        last = len(cells) - 1 if remark_at is None else remark_at
+        if len(cells) < 3 or last >= len(cells) or item_at >= len(cells):
             continue
-        cells = [c.strip() for c in text.split("|")]
-        if len(cells) < 3:
-            continue
-        remark = cells[-1]
-        lines.append({"item_code": cells[1], "remark": remark})
+        remark = cells[last]
+        lines.append({"item_code": cells[item_at], "remark": remark})
         upper = remark.upper()
         if upper.startswith("CANCEL"):
             counts["cancel"] += 1

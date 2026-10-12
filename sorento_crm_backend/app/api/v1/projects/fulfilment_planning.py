@@ -18,6 +18,7 @@ plain `/sales-orders/{pso_id}` one removes any question of shadowing.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional, Tuple
@@ -546,10 +547,13 @@ def _run_confirm_many(
             str(entry.pso_id): entry.batch_id or (None if any_per_order else payload.batch_id)
             for entry in payload.orders
         }
+        refused_ids = [str(r["pso_id"]) for r in results if not r.get("ok")]
+        companies = _order_companies(db, refused_ids) if refused_ids else {}
         _record_refusals(
             [
                 {
                     "pso_id": result["pso_id"],
+                    "company_id": companies.get(str(result["pso_id"])),
                     "error": result.get("error"),
                     "batch_id": batch_of.get(str(result["pso_id"])),
                     "lines": stash.get(str(result["pso_id"])) or result.get("failing_lines"),
@@ -577,7 +581,32 @@ def _is_planning_admin(db: Session, user_id: str) -> bool:
     )
 
 
-def _record_refusals(refused: list, user_id: str, preview: bool) -> None:
+def _order_companies(db: Session, pso_ids: list) -> Dict[str, str]:
+    """The company of each refused order, read on the request's own session. Never raises."""
+    from app.models.project_so import ProjectSalesOrder
+
+    try:
+        return {
+            str(i): str(c)
+            for i, c in db.query(ProjectSalesOrder.id, ProjectSalesOrder.company_id)
+            .filter(ProjectSalesOrder.id.in_([i for i in pso_ids if _is_uuid(i)]))
+            .all()
+            if c
+        }
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not read the refused orders' company")
+        return {}
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _record_refusals(refused: list, user_id: Optional[str], preview: bool) -> None:
     """One `CONFIRM_REFUSED` audit row per refused order (PLANNING-WHY AC-W6), written AFTER
     the order's rollback on its own session. A failure here is logged and never changes the
     Confirm's answer (AC-W7)."""
@@ -592,10 +621,12 @@ def _record_refusals(refused: list, user_id: str, preview: bool) -> None:
                     session,
                     "project_sales_orders",
                     str(item["pso_id"]),
-                    "CONFIRM_REFUSED",
+                    "EVENT",
+                    event="CONFIRM_REFUSED",
+                    company_id=item.get("company_id"),
                     new_values={
                         "preview": preview,
-                        "batch_id": item.get("batch_id"),
+                        "batch_id": item["batch_id"] if _is_uuid(item.get("batch_id")) else None,
                         "lines": [
                             {
                                 "so_line_no": line.get("so_line_no", line.get("line_no")),
@@ -1475,10 +1506,11 @@ def confirm_supply(
             _record_refusals(
                 [
                     {
-                        "pso_id": pso_id,
+                        "pso_id": str(order.id),
                         "error": detail.get("message"),
                         "batch_id": payload.batch_id,
-                        "lines": db.info.pop(_REFUSAL_STASH, {}).get(pso_id)
+                        "company_id": _order_companies(db, [str(order.id)]).get(str(order.id)),
+                        "lines": db.info.pop(_REFUSAL_STASH, {}).get(str(order.id))
                         or detail.get("failing_lines"),
                     }
                 ],
@@ -1618,9 +1650,14 @@ def _confirm_a_planning_change(
         if not failing_lines:
             # PLANNING-WHY: name the rows that stopped it. The detail is stashed for the
             # refusal record whoever pressed; only an admin's answer carries it (AC-W2..W4).
-            explained = planning_change_service.explain_refusal(db, str(order.id), batch_id)
-            db.info.setdefault(_REFUSAL_STASH, {})[str(order.id)] = explained
-            if _is_planning_admin(db, actor_user_id):
+            try:
+                explained = planning_change_service.explain_refusal(db, str(order.id), batch_id)
+                db.info.setdefault(_REFUSAL_STASH, {})[str(order.id)] = explained
+                explain_admin = _is_planning_admin(db, actor_user_id)
+            except Exception:  # noqa: BLE001 - the explanation is a courtesy (AC-W4)
+                logger.exception("Could not explain the refused Confirm")
+                explained, explain_admin = [], False
+            if explain_admin:
                 if explained:
                     failing_lines = explained
                 elif not failed:

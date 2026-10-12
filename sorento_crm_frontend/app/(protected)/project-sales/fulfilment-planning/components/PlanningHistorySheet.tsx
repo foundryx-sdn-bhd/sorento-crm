@@ -179,7 +179,8 @@ function LinesTable({ event, lines }: { event: PlanningHistoryEvent; lines: Plan
   const columns = COLUMNS[event.kind];
   if (lines.length === 0) return null;
   return (
-    <Table className="mt-2 text-xs">
+    <div className="mt-2 overflow-x-auto">
+    <Table className="text-xs">
       <TableHeader>
         <TableRow>
           {columns.head.map((name) => (
@@ -201,6 +202,7 @@ function LinesTable({ event, lines }: { event: PlanningHistoryEvent; lines: Plan
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }
 
@@ -390,7 +392,9 @@ export function PlanningHistorySheet({
 
   const timeline: TimelineEvent[] = visible.map(({ event, lines }) => {
     const isOpen = expanded.has(event.id);
-    const chips = chipsOf(event);
+    // The badges count what is on show: a product or line filter narrows `lines`.
+    const narrowed = lines.length !== event.lines.length;
+    const chips = chipsOf(narrowed ? { ...event, lines, reissued_unchanged: 0 } : event);
     return {
       id: event.id,
       testId: `history-event-${event.id}`,
