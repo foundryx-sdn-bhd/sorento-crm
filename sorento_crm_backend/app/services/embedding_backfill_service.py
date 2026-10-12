@@ -14,7 +14,7 @@ from app.models.forms import Form
 from app.models.list_query_metadata import ListQueryResource
 from app.models.procurement import InboundShipment, InboundShipmentLine, SPOAllocation, PickingHeader, PickingLine
 from app.models.order import Order, OrderStatus, OrderLine, Customer, Transporter
-from app.services.embedding_service import EmbeddingEventService
+from app.services.embedding_service import EmbeddingEventService, debtor_seed_id
 from app.services.mcp_tool_capability_service import build_capability_documents
 
 BackfillSource = Literal[
@@ -281,27 +281,35 @@ class EmbeddingBackfillService:
                 }
                 for r in cust_rows
             ]
-            # When the customer master is exhausted, also seed embeddings for
-            # distinct orders.debtor_code values that have no matching Customer row.
+            # When the customer master is exhausted, also seed embeddings for each
+            # company's distinct orders.debtor_code values that have no matching
+            # Customer row in THAT company: one seed per (company, code), stamped with
+            # the company so it resolves inside it only.
             if len(cust_rows) < limit:
                 from sqlalchemy import func as _sa_func
 
-                seen_codes = {c[0] for c in self.db.query(Customer.customer_code).all() if c[0]}
+                seen = {
+                    (str(c[0]), c[1])
+                    for c in self.db.query(Customer.company_id, Customer.customer_code).all()
+                    if c[0] and c[1]
+                }
                 debtor_rows = (
-                    self.db.query(Order.debtor_code)
+                    self.db.query(Order.company_id, Order.debtor_code)
                     .filter(Order.debtor_code.isnot(None))
+                    .filter(Order.company_id.isnot(None))
                     .filter(Order.deleted_at.is_(None))
-                    .group_by(Order.debtor_code)
+                    .group_by(Order.company_id, Order.debtor_code)
                     .order_by(_sa_func.min(Order.created_at).asc())
                     .all()
                 )
-                for row in debtor_rows:
-                    code = (row[0] or "").strip()
-                    if not code or code in seen_codes:
+                for company_id, raw_code in debtor_rows:
+                    code = (raw_code or "").strip()
+                    if not code or (str(company_id), code) in seen:
                         continue
+                    seen.add((str(company_id), code))  # " X" and "X" are one seed
                     out.append(
                         {
-                            "id": f"debtor:{code}",
+                            "id": debtor_seed_id(str(company_id), code),
                             "source_key": f"debtor:{code}",
                             "source_updated_at": None,
                         }

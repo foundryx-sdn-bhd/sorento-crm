@@ -3017,14 +3017,18 @@ def _embedding_scope_sql(db: Session) -> tuple[str, dict[str, Any]]:
     Raw SQL, so the scope listener never sees it. NULL-company chunks are shared
     knowledge (forms), visible under every scope, as in
     ``embedding_service._embedding_company_filter``; UNSET keeps only those (the
-    ``__company_shared__`` rule of ``company_sql_predicate``). A ``debtor:<code>`` seed
-    is company-less too (migration 304) although the orders it comes from are not, so
-    any company scope drops it; staff (scope None) still see it.
+    ``__company_shared__`` rule of ``company_sql_predicate``). A ``debtor:`` seed carries
+    its company (SCOPE-SEEDS), so it resolves inside that company only; a company-less
+    one (a legacy row) is never shared knowledge, so any company scope drops it. Staff
+    (scope None) see every row.
     """
     if get_company_scope(db) is None:
         return "", {}
     company_sql, params = company_sql_predicate(db, "ec.company_id", shared=True)
-    return f"AND {company_sql} AND ec.source_id NOT LIKE 'debtor:%'", params
+    return (
+        f"AND {company_sql} AND NOT (ec.company_id IS NULL AND ec.source_id LIKE 'debtor:%')",
+        params,
+    )
 
 
 def _tier3_embedding_lookup(
