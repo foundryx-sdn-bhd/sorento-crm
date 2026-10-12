@@ -37,6 +37,11 @@ unreadable. The helper already encrypted, before this lane:
   written `respond_workspace_service.py:76,146`, read `:298`)
 - `integrations.credentials_json` (`app/models/integration.py:53`; written
   `app/services/integration_admin_service.py:221`, read `:233`)
+- `system_settings.connector_ss_to_product_secret_ciphertext`,
+  `connector_product_to_ss_secret_ciphertext`, `analytics_ro_database_url_ciphertext`,
+  `respond_webhook_secret_ciphertext` (`app/models/user.py:418-423`; landed on main with
+  SETTINGS-IN-DB, crew audit 12 Oct): `runtime_settings.SECRET_FIELDS`, written
+  `app/services/runtime_settings.py:241`, read `:97`
 
 Now: `FIELD_ENCRYPTION_KEY` is a comma-separated list of Fernet keys, current first, read by a
 `MultiFernet`. The first key encrypts; every listed key decrypts; the JWT_SECRET-derived key is
@@ -81,7 +86,8 @@ the schema (`app/schemas/ai_assistant.py:27-41`) has no raw-key field. Unchanged
 ## Backfill
 
 `scripts/reencrypt_field_secrets.py` covers every column above plus the three
-`ai_assistant_configs` key columns. Per value: `current` (the current key opens it, left alone),
+`ai_assistant_configs` key columns (12 in all). A test ties its list to
+`runtime_settings.SECRET_FIELDS`, so a new runtime secret that is not listed fails CI. Per value: `current` (the current key opens it, left alone),
 `old_key` (an older listed key or the JWT-derived key opens it, re-encrypted under the current
 key), `plaintext` (encrypted for the `ai_assistant_configs` columns, which held plain text
 before; reported and left alone elsewhere), `unreadable` (no configured key opens it; reported,
@@ -95,8 +101,13 @@ is a no-op.
 
 Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the server.
 
-1. **Env var.** Generate a key (above) and add `FIELD_ENCRYPTION_KEY=<key>` to the **backend and
-   worker** services. Keep `JWT_SECRET` unchanged for now: it still opens every existing token.
+1. **Env var.** Generate ONE key (above) and add the same `FIELD_ENCRYPTION_KEY=<key>` to all four
+   services built from the backend image: **`backend_blue`, `backend_green`, `worker`,
+   `worker_fast`** (`scripts/blue_green_deploy.sh:40-41`). A colour or worker without it refuses
+   to start; a colour with a different key cannot read what the other wrote. `mcp_blue` /
+   `mcp_green` do NOT need it: their image holds only `sorento_crm_mcp/`, which talks to the
+   backend over HTTP and never imports `app` or touches the database. Keep `JWT_SECRET`
+   unchanged for now: it still opens every existing token.
 2. **Deploy** this code. New saves are encrypted under `FIELD_ENCRYPTION_KEY`; existing tokens
    read through the JWT-derived fallback; legacy plaintext AI keys read as is. A backend or
    worker container without the var (and `ENVIRONMENT` not a dev value) refuses to start, by
@@ -104,7 +115,7 @@ Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the s
    **Rollback** past this release cannot read anything saved after it (the old image knows only
    the JWT-derived key): those secrets must be re-entered.
 3. **Dry run:** `cd sorento_crm_backend && python scripts/reencrypt_field_secrets.py` inside the
-   backend container. Expect `old_key` counts on the Respond.io / integration columns and
+   backend container. Expect `old_key` counts on the Respond.io / integration / `system_settings` columns and
    `plaintext` on the AI key columns; `unreadable` should be 0.
 4. **Apply:** `python scripts/reencrypt_field_secrets.py --apply`, then the dry run again: every
    column should read `old_key=0`, AI columns `plaintext=0`. Prod run is the owner's call.
@@ -114,7 +125,9 @@ Prod compose (`/opt/sorento-crm2/docker-compose.yml`) is edited by hand on the s
    already exposed: **database backups or dumps taken before step 4** still hold tokens the leaked
    `JWT_SECRET` opens. If any such backup could have been exposed alongside the leak, rotate the
    upstream credentials too (Respond.io workspace API keys, ideation intake key and embed signing
-   secret, chatbot retry ingress key, `integrations.credentials_json`, the AI provider keys).
+   secret, chatbot retry ingress key, `integrations.credentials_json`, the two connector
+   secrets, the analytics read-only database URL's password, the Respond.io webhook secret, the
+   AI provider keys).
 
 Rotating `FIELD_ENCRYPTION_KEY` itself later: prepend the new key (`new,old`), deploy, run
 `--apply` (moves `old_key` values onto `new`), then drop `old`.

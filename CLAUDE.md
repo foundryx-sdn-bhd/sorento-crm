@@ -185,7 +185,7 @@ Backend (`sorento_crm_backend/.env`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`
 
 `FIELD_ENCRYPTION_KEY` (comma-separated Fernet keys, current first) encrypts stored secrets
 (`app/utils/field_encryption.py`); the JWT_SECRET-derived key is only a decrypt fallback until
-`scripts/reencrypt_field_secrets.py --apply` has run. Backend AND worker need it.
+`scripts/reencrypt_field_secrets.py --apply` has run. Every backend-image service needs the same key (prod: backend_blue, backend_green, worker, worker_fast); the MCP services do not.
 
 `DEALER_KIT_PRINT_BASE_URL` is where the PDF worker reaches the FRONTEND to render a catalogue (inside compose this is the service name, not the public hostname). It defaults to `http://localhost:3000`, so an unset value in a container renders nothing and the export fails on a render timeout.
 
