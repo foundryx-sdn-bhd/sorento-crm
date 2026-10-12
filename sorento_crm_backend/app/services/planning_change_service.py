@@ -3646,6 +3646,21 @@ def _oi_demand_rows(
         ):
             product_by_core[str(cid)] = str(pid) if pid else None
 
+    # SO422492 D: the line's OWN location first (AC-H5, the one location an inquiry row
+    # names). Reading only the held reserve's location left every Buy-only line's CANCEL
+    # BALANCE with a blank location (SRTWT2200 118, SRTWB7099 7, ...).
+    line_ids = [str(r.project_line_id) for r in live_rows if r.project_line_id]
+    location_by_line: Dict[str, Optional[str]] = {}
+    if line_ids:
+        location_by_line = {
+            str(line_id): location
+            for line_id, location in db.query(
+                ProjectSalesOrderLine.id, ProjectSalesOrderLine.stock_location
+            )
+            .filter(ProjectSalesOrderLine.id.in_(line_ids))
+            .all()
+        }
+
     pool_cache: Dict[str, Optional[str]] = {}
     settled = {str(line_id) for line_id in (settled_line_ids or [])}
     date_move_line_ids = [
@@ -3675,9 +3690,9 @@ def _oi_demand_rows(
         if not r.project_line_id:
             continue
         held = r.held_json or {}
-        location = None
+        location = location_by_line.get(str(r.project_line_id)) or None
         reserve = held.get("reserve") or []
-        if reserve:
+        if reserve and not location:
             location = reserve[0].get("location")
         product_id = product_by_core.get(r.core_line_id or "")
 

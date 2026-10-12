@@ -127,3 +127,32 @@ def test_bug_a_confirming_another_line_keeps_the_undecided_lines_row(api):
     assert Decimal(str(live[0].qty)) == Decimal("22")
     remarks = [h["line"]["remark"] for h in _handovers_for(world, row_592)]
     assert "CANCEL ALL" not in remarks, remarks
+
+
+def test_d_a_buy_only_lines_cancel_balance_names_the_line_location(api):
+    """SO422492 D: after "Save all suggested" + Confirm the email listed CANCEL BALANCE
+    SRTWT2200 118 (and four more) with a BLANK location. The reaction read its location
+    only off the held reserve, and a Buy-only line holds none. It is the line's own
+    location."""
+    from app.services.planning_change_service import _oi_demand_rows
+
+    client, world = api
+    db = world.db
+    core_so, order, (core_592, _core_other), (line_592, _line_other) = _two_bought_lines(api)
+    db.refresh(line_592)
+    assert line_592.stock_location == world.own_wh.warehouse_code, "premise: confirm stamped it"
+    change = PlanningChangeRow(
+        project_sales_order_id=str(order.id),
+        project_line_id=str(line_592.id),
+        core_line_id=str(core_592.id),
+        line_no=592,
+        item_code=world.product.product_code,
+        kind="qty_down",
+        from_json={"qty": "136", "required_date": D_592.isoformat()},
+        to_json={"qty": "18", "required_date": D_592.isoformat()},
+        held_json={"revision_no": 1, "reserve": [], "borrow": [], "buy": "136"},
+    )
+    out, counts = _oi_demand_rows(db, [change], core_so.so_number)
+    assert counts == {"CANCEL_BALANCE": 1}
+    assert out[0]["qty"] == Decimal("118")
+    assert out[0]["stock_location"] == world.own_wh.warehouse_code, out[0]
