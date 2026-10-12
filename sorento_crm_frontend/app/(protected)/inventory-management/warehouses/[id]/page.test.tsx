@@ -317,6 +317,18 @@ describe('Warehouse detail - Fulfilment planning (AC-S1-3)', () => {
   });
 });
 
+describe('Warehouse detail - Draws stock from', () => {
+  it('reads a self-pooled warehouse the way the edit form labels it', async () => {
+    h.warehouse = { ...CURRENT, pool_warehouse_id: CURRENT_ID, pool_warehouse_code: 'WH-CUR' };
+    await renderDetail();
+    selectTab('Planning');
+
+    const panel = (activePanel().textContent ?? '').replace(/\s+/g, ' ');
+    expect(panel).toContain('This warehouse (own pool)');
+    expect(panel).not.toContain('Stands alone');
+  });
+});
+
 describe('Warehouse detail - same layout as the edit view', () => {
   it('renders exactly two tabs: Basic Information then Planning', async () => {
     await renderDetail();

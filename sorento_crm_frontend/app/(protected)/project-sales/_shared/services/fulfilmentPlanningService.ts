@@ -9,6 +9,7 @@ import type {
   ClassificationEvidence,
   PlanningBoard,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmManyResult,
   ConfirmResult,
   ConfirmSupplyBody,
@@ -606,6 +607,21 @@ export async function confirmMany(body: ConfirmManyBody): Promise<ConfirmManyRes
  */
 export async function previewConfirmMany(body: ConfirmManyBody): Promise<ConfirmManyResult> {
   return confirmMany({ ...body, preview: true });
+}
+
+/**
+ * Admin dry run of Confirm (board-simulate-confirm-12oct): the SAME body Confirm posts, to its
+ * own route. The server always simulates (it ignores `preview`) and saves nothing.
+ */
+export async function simulateConfirm(body: SimulateConfirmBody): Promise<ConfirmManyResult> {
+  const response = await apiFetch(`${BASE}/fulfilment-planning/simulate-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to simulate the confirmation'));
+  return response.json();
 }
 
 /**
