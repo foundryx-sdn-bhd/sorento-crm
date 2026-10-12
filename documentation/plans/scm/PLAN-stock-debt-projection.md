@@ -25,6 +25,15 @@ the walk ignores `date_from` (demand before it still takes its share); the axis 
 its month. Row total = today's total plus `added` on the axis. "Only products in debt" and the
 sort read the projected months. UAC: `stock-debt-projection-acceptance-criteria.md`.
 
+Book=Project (owner, 12 Oct 2026, prod evidence after HQ was made its own pool): the
+running balance starts from the PROJECT book's months and carries in pool supply (pool on
+hand, pool POs incl. HQ, pool SPOs), although that book's walk reads no pool bin: under
+`book=project` every active pool is outside the span and enters through `added`. Prod shape
+(Book=Project Oct -38, Nov -17, Dec -1,436, Jan -1,613, Feb -480, Mar -797, Apr -368; BRW
+on hand 191; HQ PO 5,000 delivered 8 Oct; a 15 dealer order at BRW) projects 5,138, 5,121,
+3,685, 2,072, 1,592, 795, 427, the same under Book=All
+(`test_prod_srtwt2215_book_project_carries_the_pool_po`).
+
 Known limits (review rounds 1-2):
 - Outside the span a pool is walked on its own; inside it, every pool shares one pile, so a pool
   order can also draw another pool's on-hand stock. A month can differ by that draw; the carry

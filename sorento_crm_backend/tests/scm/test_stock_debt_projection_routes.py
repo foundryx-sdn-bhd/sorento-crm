@@ -319,3 +319,55 @@ def test_a_planning_bin_is_never_read_as_pool(scm_app):
     with TestClient(app) as c:
         projected, _ = _row(c, seed, projected="true", group="BB")
     assert _balances(projected) == [920.0, 920.0, 720.0, 420.0]
+
+
+# --------------------------------------------------------------------------- prod shape
+
+PROD_PROJECT_MONTHS = [-38.0, -17.0, -1436.0, -1613.0, -480.0, -797.0, -368.0]
+
+
+def _prod_srtwt2215(db):
+    """The owner's prod row (12 Oct 2026), HQ made its own pool: BRW on hand 191, PO
+    202610-S0042 5,000 at HQ delivered 8 Oct (past, so it lands today), and BRW-BB orders
+    that read -38, -17, -1,436, -1,613, -480, -797, -368 under Book=Project. A 15 dealer
+    order at BRW this month makes Book=All read +5,138 in October, as prod does."""
+    marker = f"ZZTPJ{_u()[:6]}".upper()
+    pool = _warehouse(db, f"{marker}BRW", planning=False, segment="dealer")
+    pool.pool_warehouse_id = pool.id
+    bin_ = _warehouse(db, f"{marker}BRW-BB", planning=True, segment="project", pool=pool)
+    hq = _warehouse(db, f"{marker}HQ", planning=False, segment="dealer")
+    hq.pool_warehouse_id = hq.id
+    db.flush()
+    product = _product(db, f"{marker}-SRTWT2215")
+    _stock(db, product, pool, 191)
+    _demand(db, product, pool, qty=15, required_date=TODAY, so_number=f"{marker}-SO-DLR")
+    for n, qty in enumerate(PROD_PROJECT_MONTHS):
+        _demand(
+            db, product, bin_, qty=-qty, required_date=TODAY if n == 0 else _months_ahead(n),
+            so_number=f"{marker}-SO{n}",
+        )
+    _po_line(
+        db, product, hq, qty=5000, delivery=TODAY - timedelta(days=4),
+        number=f"{marker}-202610-S0042",
+    )
+    return {"product": product, "marker": marker}
+
+
+def test_prod_srtwt2215_book_project_carries_the_pool_po(scm_app):
+    """Owner, 12 Oct 2026: under Book=Project the projection starts from the PROJECT
+    book's months and carries in pool supply (BRW on hand, the HQ PO), although that
+    book's walk reads no pool bin. Pool spare is 191 + 5,000 less the 15 dealer order =
+    5,176, so: Oct -38 + 5,176 = 5,138, then 5,121, 3,685, 2,072, 1,592, 795, 427.
+    Book=All reads the same projection from its own months (Oct +5,138)."""
+    app, db = _client(scm_app)
+    seed = _prod_srtwt2215(db)
+    expected = [5138.0, 5121.0, 3685.0, 2072.0, 1592.0, 795.0, 427.0]
+    with TestClient(app) as c:
+        project, _ = _row(c, seed, book="project")
+        project_projected, _ = _row(c, seed, book="project", projected="true")
+        every, _ = _row(c, seed)
+        every_projected, _ = _row(c, seed, projected="true")
+    assert _balances(project, 7) == PROD_PROJECT_MONTHS
+    assert _balances(every, 7)[0] == 5138.0
+    assert _balances(project_projected, 7) == expected
+    assert _balances(every_projected, 7) == expected
