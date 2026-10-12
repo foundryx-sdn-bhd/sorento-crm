@@ -60,6 +60,7 @@ from app.dependencies import (
 from app.services.inventory_service import StockService
 from app.services.uuid_list_param import parse_requested_quantities, parse_uuid_list
 from app.services.product_spec_filter import parse_spec_constraints
+from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.inventory import StockResponse, StockBalanceListResponse, StockDashboardResponse, BulkImportStockRequest, BulkImportStockResponse, StockLedgerResponse
 from app.schemas.common import ListResponse, ValidateImportResponse
 from app.services.error_handler import handle_internal_error
@@ -335,6 +336,14 @@ def get_stock_balance(
     has_active_promotion: bool = Query(
         False, description="True keeps only stock of products in a promotion live today."
     ),
+    access_levels: Optional[list[str]] = Query(
+        None,
+        description=(
+            "The asking contact's tier name(s) (repeated / csv / JSON). Only read with "
+            "`has_active_promotion`: restricts it to promotions that tier can see. Absent = no "
+            "restriction; an unknown name matches nothing."
+        ),
+    ),
     current_user: dict = Depends(get_current_user_or_api_key),
     db: Session = Depends(get_db)
 ):
@@ -391,6 +400,7 @@ def get_stock_balance(
             requested_quantities=parsed_requested_quantities,
             spec_constraints=parsed_spec_constraints,
             has_active_promotion=has_active_promotion,
+            access_levels=normalize_list_query_param(access_levels),
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (only on an empty result), bypass the strict

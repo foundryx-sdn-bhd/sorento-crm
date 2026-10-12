@@ -97,14 +97,19 @@ def spec_constraint_clause(db: Session, constraints: list[dict]):
     )
 
 
-def product_filter_clause(db: Session, constraints: list[dict] | None, has_active_promotion: bool = False):
+def product_filter_clause(
+    db: Session,
+    constraints: list[dict] | None,
+    has_active_promotion: bool = False,
+    access_levels: list[str] | None = None,
+):
     """The spec and promotion filters as one predicate over Product, or None when neither is set.
-    The tier is not resolved on these routes yet, so the promotion is any live one."""
+    `access_levels` (the asking contact's tier, filled by the caller) only narrows the promotion."""
     parts = []
     if constraints:
         parts.append(spec_constraint_clause(db, constraints))
     if has_active_promotion:
-        parts.append(active_promotion_clause(db, None))
+        parts.append(active_promotion_clause(db, access_levels))
     return and_(*parts) if parts else None
 
 

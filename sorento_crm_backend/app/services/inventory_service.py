@@ -660,6 +660,7 @@ class StockService:
         requested_quantities: Optional[dict] = None,
         spec_constraints: Optional[list[dict]] = None,
         has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
     ):
         """List stock with product and warehouse info.
 
@@ -935,7 +936,7 @@ class StockService:
 
         # SPEC-PROMO-PARAMS: narrows by product only; the location and policy filters
         # above are untouched.
-        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion)
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion, access_levels)
         if spec_promo_clause is not None:
             q = q.filter(Stock.product_id.in_(select(Product.id).where(spec_promo_clause)))
 

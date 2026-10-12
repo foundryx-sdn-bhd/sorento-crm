@@ -14,6 +14,7 @@ from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
 from app.services.uuid_list_param import parse_uuid_list
 from app.services.product_spec_filter import parse_spec_constraints
+from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
@@ -193,6 +194,14 @@ def get_products(
     has_active_promotion: bool = Query(
         False, description="True keeps only products in a promotion live today."
     ),
+    access_levels: Optional[list[str]] = Query(
+        None,
+        description=(
+            "The asking contact's tier name(s) (repeated / csv / JSON). Only read with "
+            "`has_active_promotion`: restricts it to promotions that tier can see. Absent = no "
+            "restriction; an unknown name matches nothing."
+        ),
+    ),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
@@ -240,6 +249,7 @@ def get_products(
             variant_filter=variant_filter,
             spec_constraints=parsed_spec_constraints,
             has_active_promotion=has_active_promotion,
+            access_levels=normalize_list_query_param(access_levels),
             sort_field=sort or "created_at",
             sort_dir=dir or "asc"
         )

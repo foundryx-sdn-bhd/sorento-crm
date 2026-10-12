@@ -329,6 +329,7 @@ class ProductService:
         discontinued_to: Optional[date] = None,
         spec_constraints: Optional[list[dict]] = None,
         has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
     ):
         """Build the filtered + sorted products query shared by ``list_products``
         and ``neighbours`` so the two can never drift.
@@ -455,7 +456,7 @@ class ProductService:
         if advanced_filter_clause is not None:
             filters.append(advanced_filter_clause)
 
-        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion)
+        spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion, access_levels)
         if spec_promo_clause is not None:
             filters.append(spec_promo_clause)
 
@@ -533,6 +534,7 @@ class ProductService:
         discontinued_to: Optional[date] = None,
         spec_constraints: Optional[list[dict]] = None,
         has_active_promotion: bool = False,
+        access_levels: Optional[list[str]] = None,
     ):
         """List products with filtering and pagination.
 
@@ -593,6 +595,7 @@ class ProductService:
             discontinued_to=discontinued_to,
             spec_constraints=spec_constraints,
             has_active_promotion=has_active_promotion,
+            access_levels=access_levels,
         )
         if q is self._EMPTY_RESULT:
             payload = {

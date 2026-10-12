@@ -92,7 +92,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
             "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
             "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
-            "products in a promotion live today.\n\n"
+            "products in a promotion live today. `access_levels`: the asking contact's tier; filled by the caller, "
+            "restricts has_active_promotion to promotions that tier can see.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results."
         ),
@@ -108,7 +109,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             # from THIS tuple, so a param missing here never reaches the backend
             # however well the description documents it.
             "include_specifications", "include_specs",
-            "spec_constraints", "has_active_promotion",
+            "spec_constraints", "has_active_promotion", "access_levels",
             "sort", "dir",
             "contact_id", "space_id",
         ),
@@ -497,7 +498,8 @@ CATALOG: tuple[ToolSpec, ...] = (
             "recorded value for a key does not match. On zero rows the response carries `spec_alternatives` "
             "(the values that do exist) and `spec_unrecorded` (how many products have no value recorded), "
             "so never say none exists when spec_unrecorded > 0. `has_active_promotion=true` keeps only "
-            "products in a promotion live today.\n\n"
+            "products in a promotion live today. `access_levels`: the asking contact's tier; filled by the caller, "
+            "restricts has_active_promotion to promotions that tier can see.\n\n"
             "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
             "results to that contact's company/companies; omit both for all-company results. "
             "Pass BOTH or NEITHER: `contact_id` without `space_id` returns no rows."
@@ -507,7 +509,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         (
             "page", "limit", "product_ids", "sort", "dir", "warehouse_ids", "quantity_operator",
             "quantity_value", "status", "requested_qty", "requested_quantities", "include_sellable",
-            "spec_constraints", "has_active_promotion",
+            "spec_constraints", "has_active_promotion", "access_levels",
             "contact_id", "space_id",
         ),
         domain="inventory",
