@@ -3704,7 +3704,9 @@ def _oi_demand_rows(
         held_query = db.query(OrderInquiryRow).filter(
             OrderInquiryRow.so_line_id.in_(qty_down_line_ids),
             OrderInquiryRow.state != INQUIRY_CANCELLED,
-            OrderInquiryRow.verb.in_((IV_ORDER, IV_ORDER_BACK, IV_CANCEL_BALANCE)),
+            OrderInquiryRow.verb.in_(
+                (IV_ORDER, IV_ORDER_BACK, IV_RESERVE_AND_ORDER, IV_CANCEL_BALANCE)
+            ),
         )
         if order_inquiry_id:
             held_query = held_query.filter(

@@ -15,6 +15,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.models.planning_change import PlanningChangeRow
 from app.models.project_so import INQUIRY_CANCELLED, IV_ORDER, OrderInquiryRow
 from app.services.project_order_inquiry_service import (
@@ -41,11 +43,29 @@ D_OTHER = date(2026, 11, 9)
 D_OTHER_NEW = date(2026, 11, 16)
 
 
+#: Every handover line queued during the current test, captured as `_record_handover`
+#: writes it. Read from here rather than `db.info`: the queue there is drained whenever a
+#: transaction the session treats as root concludes, which depends on the worker's state.
+_TOLD: list = []
+
+
+@pytest.fixture(autouse=True)
+def _spy_handover(monkeypatch):
+    original = ProjectOrderInquiryService._record_handover
+
+    def spy(self, row, **kwargs):
+        before = len(self.db.info.get(_HANDOVER_PENDING_KEY, []))
+        original(self, row, **kwargs)
+        _TOLD.extend(self.db.info.get(_HANDOVER_PENDING_KEY, [])[before:])
+
+    _TOLD.clear()
+    monkeypatch.setattr(ProjectOrderInquiryService, "_record_handover", spy)
+    yield
+    _TOLD.clear()
+
+
 def _handovers_for(world, row):
-    return [
-        item for item in world.db.info.get(_HANDOVER_PENDING_KEY, [])
-        if item.get("row_id") == str(row.id)
-    ]
+    return [item for item in _TOLD if item.get("row_id") == str(row.id)]
 
 
 def _two_bought_lines(api):
@@ -255,7 +275,7 @@ def test_c_a_pure_split_moves_the_instruction_instead_of_cancel_and_reorder(api)
                    [str(core_x.id)] + [str(core.id) for core, _line, _qty in new_lines])
     assert batch is not None
 
-    before = len(world.db.info.get(_HANDOVER_PENDING_KEY, []))
+    before = len(_TOLD)
     response = _confirm(
         client, order.id,
         [_line_payload(line_x.id, buy_qty="22")]
@@ -288,7 +308,7 @@ def test_c_a_pure_split_moves_the_instruction_instead_of_cancel_and_reorder(api)
         OrderInquiryRow.verb == IV_CANCEL_BALANCE,
         OrderInquiryRow.state != INQUIRY_CANCELLED,
     ).all()
-    queued = world.db.info.get(_HANDOVER_PENDING_KEY, [])[before:]
+    queued = _TOLD[before:]
     remarks = [
         (item["line_no"], item["line"]["remark"]) for item in queued
         if item.get("pso_id") == str(order.id)
@@ -541,7 +561,7 @@ def test_a2_a_later_save_all_suggested_cancels_the_kept_row_once_not_25_plus_3(a
 
     _stock(db, world.product, world.own_wh, on_hand=100)
     db.commit()
-    before = len(world.db.info.get(_HANDOVER_PENDING_KEY, []))
+    before = len(_TOLD)
     response = _confirm(
         client, order.id,
         [_line_payload(line_592.id, reserve=[{"warehouse_id": world.own_wh.id, "qty": "22"}])],
@@ -551,7 +571,7 @@ def test_a2_a_later_save_all_suggested_cancels_the_kept_row_once_not_25_plus_3(a
     db.commit()
 
     told = [
-        item["line"]["remark"] for item in world.db.info.get(_HANDOVER_PENDING_KEY, [])[before:]
+        item["line"]["remark"] for item in _TOLD[before:]
         if item.get("line_no") == line_592.line_no
     ]
     raised_cb = [
