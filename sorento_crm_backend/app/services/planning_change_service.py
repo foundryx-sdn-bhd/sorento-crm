@@ -3983,6 +3983,13 @@ def _notify_purchasing(
 ) -> bool:
     """AC-R09: purchasing told once per order, by a batch link. Best-effort - Apply has
     already written the plan and Order Inquiry changes by the time this runs."""
+    from app.services.confirm_simulation import is_simulating
+
+    if is_simulating():
+        # A simulated confirm tells nobody. The simulation guards would refuse the send too,
+        # but this call is made BEFORE them and a spy on it (and a real notification row
+        # inside the simulation) is still a notification attempted.
+        return False
     try:
         from app.services.notification_service import NotificationService
         from app.services.project_order_inquiry_service import ProjectOrderInquiryService
@@ -4858,7 +4865,11 @@ def apply(
             savepoint.commit()
         except Exception as exc:  # noqa: BLE001 - one order's failure must not sink the rest
             savepoint.rollback()
-            reason = _exc_message(exc)
+            # A simulated confirm (admin dry run) wants the raw class name too; a real one
+            # keeps the bare text its readers have always had.
+            from app.services.confirm_simulation import error_text, is_simulating
+
+            reason = error_text(exc) if is_simulating() else _exc_message(exc)
             logger.exception("planning change apply failed for order %s", so_number)
             for r in order_rows:
                 if (

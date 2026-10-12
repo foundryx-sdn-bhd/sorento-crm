@@ -128,6 +128,13 @@ def enqueue_job(
     heartbeat remains a safety net for jobs that any process failed to drain.
     Drain uses atomic `lpop`, so concurrent drainers cannot double-claim.
     """
+    # A simulated confirm (admin dry run) must not leave a job behind; see confirm_simulation.
+    from app.services.confirm_simulation import SimulationWouldCommit, is_simulating
+
+    if is_simulating():
+        raise SimulationWouldCommit(
+            "Simulation refused a commit: nothing may be saved during a simulated confirm."
+        )
     queue = get_queue(queue_name)
     # The job's audit actor rides in its meta (identity S0, AC-10); a caller's own
     # meta keys are kept.

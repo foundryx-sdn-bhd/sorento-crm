@@ -7,6 +7,7 @@ import {
   adoptSalesOrder,
   confirmMany,
   previewConfirmMany,
+  simulateConfirm,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
@@ -30,6 +31,7 @@ import type {
   BoardLineDraft,
   BoardSource,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmSupplyBody,
   FulfilmentPlanningListParams,
   PlanListParams,
@@ -499,6 +501,16 @@ export function useConfirmManyMutation() {
 export function usePreviewConfirmManyMutation() {
   return useMutation({
     mutationFn: (body: ConfirmManyBody) => previewConfirmMany(body),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+/** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
+export function useSimulateConfirmMutation() {
+  return useMutation({
+    mutationFn: (body: SimulateConfirmBody) => simulateConfirm(body),
     onError: (error: Error) => {
       toast.error(error.message);
     },
