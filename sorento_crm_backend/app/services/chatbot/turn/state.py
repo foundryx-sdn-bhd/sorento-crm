@@ -114,7 +114,18 @@ KIND_FIELD_MAP: dict[str, str] = {
 # and the missed raw sat on `focus.extra["order"]` forever, unreachable and unreplaced.
 # Canonicalised HERE, once, so `apply._set_kind_field`'s write and `narrow._candidates`'s
 # read can never disagree about which bucket either kind is in.
-EXTRA_KIND_ALIASES: dict[str, str] = {"customer_order": "order", "order_number": "order"}
+#
+# REF-PROBES: a reference number the resolver typed as another kind (or the asker named
+# one) is still an order-axis reference, so it settles, carries and is dropped as one.
+EXTRA_KIND_ALIASES: dict[str, str] = {
+    "customer_order": "order",
+    "order_number": "order",
+    "delivery_order": "order",
+    "sales_order": "order",
+    "customer_po_ref": "order",
+    "purchase_order": "order",
+    "purchase_request": "order",
+}
 
 
 @dataclass

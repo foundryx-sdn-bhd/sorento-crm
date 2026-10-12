@@ -527,6 +527,12 @@ class ConfirmResult(BaseModel):
     #: #1362 (owner, 29 Sep 2026): Buys confirmed as decided over goods that landed for
     #: their line. The link stays; purchasing adjusts it off the Buy's inquiry row.
     landed_buy_notices: Optional[List[SupplyFailingLine]] = None
+    #: OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow confirmed as decided
+    #: while short of free stock on its undelivered part, one entry per short component.
+    stock_short_notices: Optional[List[SupplyFailingLine]] = None
+    #: Lines this press could not write, left out so the rest of the order confirmed
+    #: (owner rule, 12 Oct 2026: one bad line never refuses the whole order).
+    lines_held_back: Optional[List[SupplyFailingLine]] = None
 
 
 # ------------------------------------------------------------------- the Plans page (D1)
@@ -666,6 +672,8 @@ class ConfirmManyOrderResult(BaseModel):
     lines_held_back: Optional[List[SupplyFailingLine]] = None
     #: The per-order twin of `ConfirmResult.landed_buy_notices` (#1362).
     landed_buy_notices: Optional[List[SupplyFailingLine]] = None
+    #: The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE).
+    stock_short_notices: Optional[List[SupplyFailingLine]] = None
     error: Optional[str] = None
     #: The lines the server refused, named the way `SupplyFailingLine` always is (AC-C02),
     #: when the refusal named any.
