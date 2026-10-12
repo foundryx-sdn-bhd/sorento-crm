@@ -186,7 +186,7 @@ def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
     if not said:
         return None
     singular = said[:-1] if said.endswith("s") and len(said) > 3 else ""
-    row = next((r for r in active_registry(db) if r.spec_key == "product_type"), None)
+    row = next((r for r in active_registry(db) if str(r.spec_key) == "product_type"), None)
     if row is not None:
         phrases: dict[str, Any] = {}
         for value in merged_allowed_values(row):

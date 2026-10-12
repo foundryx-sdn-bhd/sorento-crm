@@ -46,7 +46,7 @@ def parse_spec_constraints(db: Session, raw: str | None) -> list[dict] | None:
         raise _bad("`spec_constraints` must be a JSON list of {key, op, value}.")
     if not isinstance(parsed, list) or not parsed:
         raise _bad("`spec_constraints` must be a non-empty JSON list of {key, op, value}.")
-    types = {row.spec_key: row.data_type for row in active_registry(db)}
+    types: dict[str, str] = {str(row.spec_key): str(row.data_type or "") for row in active_registry(db)}
     types.setdefault(SIZE_KEY, "numeric")
     out: list[dict] = []
     for item in parsed:
@@ -144,7 +144,7 @@ def _values_of(db: Session, key: str, where) -> list:
 
 
 def _alternative(row, values: list) -> dict:
-    return {"key": row.spec_key, "label": row.label, "unit": row.unit, "values": values}
+    return {"key": str(row.spec_key), "label": row.label, "unit": row.unit, "values": values}
 
 
 def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
@@ -153,7 +153,7 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
     reply can name them) and how many of those have no value recorded for it
     (`spec_unrecorded`, zero counts left out), plus `spec_labels` for every key named. The
     reply must never say "none exists" while products with nothing recorded remain."""
-    registry = {row.spec_key: row for row in active_registry(db)}
+    registry = {str(row.spec_key): row for row in active_registry(db)}
     alternatives: list[dict] = []
     unrecorded: dict[str, int] = {}
     for key in dict.fromkeys(c["key"] for c in constraints):
@@ -176,7 +176,7 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
         "spec_alternatives": alternatives,
         "spec_unrecorded": unrecorded,
         # Each named key's label, so the reply can say "Length" for a key with nothing recorded.
-        "spec_labels": {key: registry[key].label for key in sorted(named)},
+        "spec_labels": {key: str(registry[key].label) for key in sorted(named)},
     }
 
 
@@ -196,17 +196,17 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
         return constraints, {}
     mm_keys = [
         row for row in active_registry(db)
-        if row.data_type == "numeric" and (row.unit or "").lower() == "mm"
+        if str(row.data_type) == "numeric" and str(row.unit or "").lower() == "mm"
     ]
     out = [c for c in constraints if c["key"] != SIZE_KEY]
     resolved: dict[str, str] = {}
     for size in [c for c in constraints if c["key"] == SIZE_KEY]:
         where = _where(out)
         holders = sorted(
-            row.spec_key for row in mm_keys
+            str(row.spec_key) for row in mm_keys
             if db.execute(
                 select(ProductSpecifications.product_id)
-                .where(where, _one({**size, "key": row.spec_key}))
+                .where(where, _one({**size, "key": str(row.spec_key)}))
                 .limit(1)
             ).first()
         )
@@ -215,7 +215,7 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
             resolved[SIZE_KEY] = holders[0]
             continue
         if holders:
-            labels = {row.spec_key: row.label for row in mm_keys if row.spec_key in holders}
+            labels = {str(row.spec_key): str(row.label) for row in mm_keys if str(row.spec_key) in holders}
             return None, {
                 "spec_ambiguous": [
                     {"key": SIZE_KEY, "value": size["value"], "candidates": holders}
@@ -225,11 +225,11 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
         alternatives = [
             _alternative(row, values)
             for row in mm_keys
-            if (values := _values_of(db, row.spec_key, where))
+            if (values := _values_of(db, str(row.spec_key), where))
         ]
         missing = db.execute(
             select(func.count(func.distinct(ProductSpecifications.product_id))).where(
-                where, *[~_present(row.spec_key) for row in mm_keys]
+                where, *[~_present(str(row.spec_key)) for row in mm_keys]
             )
         ).scalar()
         extra: dict = {"spec_alternatives": alternatives, "spec_unrecorded": {}}
