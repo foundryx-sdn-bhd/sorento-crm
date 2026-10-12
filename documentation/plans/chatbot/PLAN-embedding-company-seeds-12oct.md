@@ -23,17 +23,25 @@ Follow-up (a) of `PLAN-scope-leak-fix-12oct.md` (#1605).
 
 - Seed id becomes `debtor:<company_id>:<code>`; `source_key` stays `debtor:<code>` (the resolver
   strips the prefix to get the `Order.debtor_code` value). One parse helper
-  `parse_debtor_seed_id` in `embedding_worker.py`; legacy two-part ids parse as company None.
+  `parse_debtor_seed_id` (with `debtor_seed_id`) in `embedding_service.py`; legacy two-part ids parse as company None.
 - Backfill emits one seed per (company, debtor_code) whose company has no customer master row
   with that code; worker reads the debtor name from that company's orders only and stamps
   `company_id` from the id. A legacy two-part id is refused by the worker (it would otherwise
   recreate a company-less row).
 - `fuzzy_resolver` resolves a seed's debtor name within the seed's company.
+- Tier 3 keeps one row per debtor seed key before its confidence gap: the same code seeded in
+  two companies (identical vectors after the migration) is one answer for staff, not an
+  ambiguity.
+- The customer backfill pages the seeds after the master (it used to serve the first page of
+  seeds on every later page, so an unbounded run never ended) and skips a code whose id would
+  overflow `source_id` (varchar 128; the migration skips the same codes).
 - Migration `scope_seeds_debtor_company`: logs dry-run counts first, then (idempotent)
   copies each legacy seed document + current chunks to one per-company row per company whose
   live orders carry that code (vector reused, no re-embed needed), deletes the legacy two-part
   seed rows (derived data; staff lose nothing, the per-company copies replace them), and
   backfills `company_id` for `certificate` and `product_spec` rows from their source rows.
+  The copied seeds resolve straight after the deploy; their `source_hash` includes the old id,
+  so the next backfill re-embeds them once (cost only).
   NULL-company certificates are shared by design and stay NULL.
 - Narrow the #1605 `debtor:` exclusions in `_embedding_company_filter` and `_embedding_scope_sql`
   to company-less debtor rows: a per-company seed resolves inside its company, and a legacy

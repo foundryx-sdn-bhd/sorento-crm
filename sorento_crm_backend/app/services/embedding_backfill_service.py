@@ -14,7 +14,7 @@ from app.models.forms import Form
 from app.models.list_query_metadata import ListQueryResource
 from app.models.procurement import InboundShipment, InboundShipmentLine, SPOAllocation, PickingHeader, PickingLine
 from app.models.order import Order, OrderStatus, OrderLine, Customer, Transporter
-from app.services.embedding_service import EmbeddingEventService, debtor_seed_id
+from app.services.embedding_service import DEBTOR_SEED_ID_MAX, EmbeddingEventService, debtor_seed_id
 from app.services.mcp_tool_capability_service import build_capability_documents
 
 BackfillSource = Literal[
@@ -284,7 +284,9 @@ class EmbeddingBackfillService:
             # When the customer master is exhausted, also seed embeddings for each
             # company's distinct orders.debtor_code values that have no matching
             # Customer row in THAT company: one seed per (company, code), stamped with
-            # the company so it resolves inside it only.
+            # the company so it resolves inside it only. The seeds page on from where
+            # the master ends (offset past the customer count), so a later page never
+            # repeats them and the run reaches an empty page.
             if len(cust_rows) < limit:
                 from sqlalchemy import func as _sa_func
 
@@ -299,23 +301,21 @@ class EmbeddingBackfillService:
                     .filter(Order.company_id.isnot(None))
                     .filter(Order.deleted_at.is_(None))
                     .group_by(Order.company_id, Order.debtor_code)
-                    .order_by(_sa_func.min(Order.created_at).asc())
+                    .order_by(_sa_func.min(Order.created_at).asc(), Order.company_id, Order.debtor_code)
                     .all()
                 )
+                seeds: list[dict] = []
                 for company_id, raw_code in debtor_rows:
                     code = (raw_code or "").strip()
                     if not code or (str(company_id), code) in seen:
                         continue
                     seen.add((str(company_id), code))  # " X" and "X" are one seed
-                    out.append(
-                        {
-                            "id": debtor_seed_id(str(company_id), code),
-                            "source_key": f"debtor:{code}",
-                            "source_updated_at": None,
-                        }
-                    )
-                    if len(out) >= limit:
-                        break
+                    seed_id = debtor_seed_id(str(company_id), code)
+                    if len(seed_id) > DEBTOR_SEED_ID_MAX:
+                        continue  # would not fit embedding_*.source_id
+                    seeds.append({"id": seed_id, "source_key": f"debtor:{code}", "source_updated_at": None})
+                seed_offset = max(0, offset - self.db.query(Customer.id).count())
+                out.extend(seeds[seed_offset : seed_offset + limit - len(out)])
             return out
         if source == "transporter":
             rows = (

@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 DEBTOR_SEED_PREFIX = "debtor:"
+# embedding_{documents,chunks,queue}.source_id are String(128); a longer seed id is skipped.
+DEBTOR_SEED_ID_MAX = 128
 
 
 def debtor_seed_id(company_id: str, code: str) -> str:

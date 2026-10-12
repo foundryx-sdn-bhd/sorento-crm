@@ -60,6 +60,7 @@ from app.models.resources import Attachment, AttachmentType
 # it and get told "nothing incoming for container X" instead of never hearing of it.
 from app.services import customer_identity
 from app.services.company_scope_sql import company_sql_predicate
+from app.services.embedding_service import parse_debtor_seed_id
 from app.services.product_family import family_code_for
 from app.services.scm import spo_supply
 from app.services.scm.proforma_invoice_service import _DRAFT_SHIPMENT_STATUS
@@ -3087,6 +3088,18 @@ def _tier3_embedding_lookup(
     except Exception:
         logger.exception("Tier-3 vector query failed for token=%s", token)
         return []
+
+    # One debtor code seeded in several companies (scope None sees them all) is one
+    # answer, not an ambiguity: keep the best-ranked seed per key before the gap check.
+    seen_seed_keys: set[str] = set()
+    deduped = []
+    for r in rows:
+        if parse_debtor_seed_id(r.source_id) is not None:
+            if r.source_key in seen_seed_keys:
+                continue
+            seen_seed_keys.add(r.source_key)
+        deduped.append(r)
+    rows = deduped
 
     if not rows:
         return []

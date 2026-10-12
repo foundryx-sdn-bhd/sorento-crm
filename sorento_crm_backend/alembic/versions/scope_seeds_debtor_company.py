@@ -9,7 +9,8 @@ idempotent (every step is guarded by NOT EXISTS / IS NULL, so a second run is a 
    ``debtor:<company_id>:<code>`` rows with ``company_id`` set, one per company whose LIVE
    orders carry that code under the SAME name the legacy seed was embedded from, and whose
    company has no customer master row with that code (the backfill rule). The vector is
-   reused, so no re-embed is needed for those. A company whose orders name the code
+   reused, so the seed resolves straight after the deploy; the worker's source_hash
+   includes the id, so the next backfill re-embeds these once (cost only). A company whose orders name the code
    differently gets no copy here: copying would put another company's debtor text in its
    row. The next embedding backfill (``POST /api/v1/system/embeddings/backfill`` or
    ``app/scripts/seed_embeddings.py``) seeds it from its own orders.
@@ -23,7 +24,7 @@ idempotent (every step is guarded by NOT EXISTS / IS NULL, so a second run is a 
 Counts are logged before anything changes (the dry run) and after.
 
 Revision ID: scope_seeds_debtor_company
-Revises: rkind_0003_reference_kind_rows
+Revises: devf_0002_portal_link_copy
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "scope_seeds_debtor_company"
-down_revision = "rkind_0003_reference_kind_rows"
+down_revision = "devf_0002_portal_link_copy"
 branch_labels = None
 depends_on = None
 
@@ -60,6 +61,7 @@ _PAIRS = """
       AND o.company_id IS NOT NULL
       AND o.debtor_code IS NOT NULL
       AND btrim(o.debtor_code) <> ''
+      AND length(btrim(o.debtor_code)) <= 84  -- 44-char prefix + code must fit source_id varchar(128)
 """
 
 # Legacy seed document d joined to each company p it can be copied to.

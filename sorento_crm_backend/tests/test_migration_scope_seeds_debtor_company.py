@@ -224,3 +224,13 @@ def test_running_it_twice_changes_nothing(db, world):
     before = (_docs(db, sid), _chunks(db, sid))
     _run_upgrade(db)
     assert (_docs(db, sid), _chunks(db, sid)) == before
+
+
+def test_a_code_too_long_for_source_id_is_not_copied(db, world):
+    long_code = unique_code("L").upper().ljust(90, "X")
+    _order(db, world["a"], long_code, "LONG")
+    _embedding(db, "customer", f"debtor:{long_code}"[:128], "LONG")
+    _run_upgrade(db)  # would raise "value too long" without the guard
+    assert db.execute(
+        text("SELECT count(*) FROM embedding_documents WHERE source_id LIKE :p"), {"p": f"debtor:%{long_code[:12]}%"}
+    ).scalar() == 0

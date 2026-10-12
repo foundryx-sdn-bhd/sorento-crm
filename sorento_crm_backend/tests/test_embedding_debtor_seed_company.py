@@ -296,3 +296,60 @@ def test_fuzzy_resolver_expands_a_seed_to_its_own_companys_debtor_name(db, world
     assert f"ZZTSD ALPHA TRADING {world['suffix']}" in values
     assert world["code"] in values
     assert f"ZZTSD BETA HARDWARE {world['suffix']}" not in values
+
+
+def test_fuzzy_resolver_without_scope_pairs_code_with_the_seed_company(db, world, monkeypatch):
+    """Scope None (staff): only A's seed matches, so only A's name expands, never B's
+    name for the same code (the ORM listener filters nothing here)."""
+    import app.api.v1.external.rag as rag
+    from app.services.fuzzy_resolver import resolve_via_embedding_then_ilike
+
+    monkeypatch.setattr(rag, "_embed_query", lambda term: world["q"])
+    _seed_chunk(db, debtor_seed_id(world["a"], world["code"]), f"debtor:{world['code']}", world["a"], world["q"])
+    set_company_scope(db, None)
+    _, values = resolve_via_embedding_then_ilike(
+        db,
+        "zztsd alpha",
+        source_type="customer",
+        ilike_columns=[Order.debtor_name],
+        canonical_model=Customer,
+        canonical_fields=("customer_name", "customer_code"),
+    )
+    assert f"ZZTSD ALPHA TRADING {world['suffix']}" in values
+    assert f"ZZTSD BETA HARDWARE {world['suffix']}" not in values
+
+
+def test_tier3_one_code_seeded_in_two_companies_is_not_ambiguous_for_staff(db, world):
+    """The migration reuses one vector per company, so identical seeds are expected.
+    Staff (scope None) still get one confident debtor hit, as before the lane."""
+    _seed_chunk(db, debtor_seed_id(world["a"], world["code"]), f"debtor:{world['code']}", world["a"], world["q"])
+    _seed_chunk(db, debtor_seed_id(world["b"], world["code"]), f"debtor:{world['code']}", world["b"], world["q"])
+    set_company_scope(db, None)
+    hits = er._tier3_embedding_lookup(db, f"zztsd t3 {world['suffix']}", frozenset({"customer"}))
+    assert [h.canonical_code for h in hits] == [f"debtor:{world['code']}"]
+
+
+def test_backfill_pages_seeds_without_repeating_and_ends(db, world):
+    """Pages past the customer master continue through the seeds instead of serving the
+    first page again, so `_backfill_one` reaches an empty page."""
+    svc = EmbeddingBackfillService(db)
+    ids: list[str] = []
+    offset = 0
+    for _ in range(100_000):
+        rows = svc._fetch_rows(source="customer", limit=7, offset=offset)
+        if not rows:
+            break
+        ids.extend(str(r["id"]) for r in rows)
+        offset += len(rows)
+    else:
+        pytest.fail("customer backfill never reached an empty page")
+    assert len(ids) == len(set(ids))
+    assert debtor_seed_id(world["a"], world["code"]) in ids
+    assert debtor_seed_id(world["b"], world["code"]) in ids
+
+
+def test_backfill_skips_a_code_too_long_for_source_id(db, world):
+    long_code = ("ZZTSDL" + world["suffix"].upper()).ljust(90, "X")
+    _order(db, world["a"], long_code, "LONG")
+    rows = EmbeddingBackfillService(db)._fetch_rows(source="customer", limit=100_000, offset=0)
+    assert not [r for r in rows if long_code in str(r["id"])]
