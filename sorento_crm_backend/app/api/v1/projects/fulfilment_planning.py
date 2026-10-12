@@ -538,6 +538,11 @@ def _run_confirm_many(
 
 
 _SIMULATE_PROBE_LINE_CAP = 60
+#: Probe runs one simulate request may spend across ALL its orders; each is a full rolled-back
+#: confirm, so an unbounded probe would let one admin press pin a worker.
+_SIMULATE_PROBE_BUDGET = 200
+_SIMULATE_MAX_ORDERS = 50
+_NOT_PROBED = " (not probed: the simulation's per-line budget was spent)"
 
 
 @router.post("/fulfilment-planning/simulate-confirm", response_model=ConfirmManyResult)
@@ -555,6 +560,7 @@ def simulate_confirm(
     line (each line alone, still rolled back) so the failing line is named.
     """
     from app.services.confirm_simulation import (
+        MAX_ERROR_CHARS,
         error_text,
         install_commit_tripwire,
         simulating,
@@ -570,19 +576,71 @@ def simulate_confirm(
             message="Simulate confirm is for admins only.",
             code="simulate_admin_only",
         )
+    if len(payload.orders) > _SIMULATE_MAX_ORDERS:
+        raise AppException(
+            status_code=422,
+            message=f"Simulate at most {_SIMULATE_MAX_ORDERS} orders at a time.",
+            code="simulate_too_many_orders",
+        )
     install_commit_tripwire(db)
     db.info["confirm_simulate"] = True
     try:
         with simulating():
             results = _run_confirm_many(db, payload, current_user, preview=True, raw_errors=True)
             supply = ProjectSupplyService(db)
+            budget = _SIMULATE_PROBE_BUDGET
+
+            def line_error(entry, line_id, error):
+                mirror = next(
+                    (m for m in supply.lines_of(str(entry.pso_id)) if str(m.id) == line_id),
+                    None,
+                )
+                code = (
+                    db.query(Product.product_code)
+                    .filter(Product.id == mirror.product_id)
+                    .scalar()
+                    if mirror is not None and mirror.product_id
+                    else None
+                )
+                return {
+                    "line_no": mirror.line_no if mirror is not None else None,
+                    "item_code": code,
+                    "project_line_id": line_id,
+                    "error": error,
+                }
+
             for entry, result in zip(payload.orders, results):
                 result["simulated_errors"] = None
-                if result.get("ok") or result.get("failing_lines") or len(entry.lines) < 2:
+                if result.get("ok") or result.get("failing_lines"):
                     continue
+                # Only the lines the run actually posted: `only_line_ids` narrows them.
+                keep = (
+                    {str(x) for x in entry.only_line_ids}
+                    if entry.only_line_ids is not None
+                    else None
+                )
+                posted = [
+                    str(line.project_line_id)
+                    for line in entry.lines
+                    if keep is None or str(line.project_line_id) in keep
+                ]
+                if len(posted) == 1:
+                    result["simulated_errors"] = [
+                        line_error(entry, posted[0], result.get("error") or "")
+                    ]
+                    continue
+                to_probe = posted[:_SIMULATE_PROBE_LINE_CAP]
+                if len(to_probe) < 2:
+                    continue
+                if len(to_probe) > budget:
+                    result["error"] = (
+                        (result.get("error") or "")[: MAX_ERROR_CHARS - len(_NOT_PROBED)]
+                        + _NOT_PROBED
+                    )
+                    continue
+                budget -= len(to_probe)
                 failed = []
-                for posted in entry.lines[:_SIMULATE_PROBE_LINE_CAP]:
-                    line_id = str(posted.project_line_id)
+                for line_id in to_probe:
                     alone = payload.model_copy(
                         update={
                             "orders": [entry.model_copy(update={"only_line_ids": [line_id]})]
@@ -591,27 +649,14 @@ def simulate_confirm(
                     outcome = _run_confirm_many(
                         db, alone, current_user, preview=True, raw_errors=True
                     )[0]
-                    if outcome.get("ok"):
-                        continue
-                    mirror = next(
-                        (m for m in supply.lines_of(str(entry.pso_id)) if str(m.id) == line_id),
-                        None,
-                    )
-                    failed.append(
-                        {
-                            "line_no": mirror.line_no if mirror is not None else None,
-                            "item_code": (
-                                db.query(Product.product_code)
-                                .filter(Product.id == mirror.product_id)
-                                .scalar()
-                                if mirror is not None and mirror.product_id
-                                else None
-                            ),
-                            "project_line_id": line_id,
-                            "error": outcome.get("error") or "",
-                        }
-                    )
-                result["simulated_errors"] = failed or None
+                    if not outcome.get("ok"):
+                        failed.append((line_id, outcome.get("error") or ""))
+                # Every probed line failing the same way is the ORDER's failure, not a line's.
+                if len(failed) == len(to_probe) and len({text for _id, text in failed}) == 1:
+                    continue
+                result["simulated_errors"] = [
+                    line_error(entry, line_id, text) for line_id, text in failed
+                ] or None
         return {"results": results}
     except Exception as exc:
         db.rollback()

@@ -60,6 +60,7 @@ import {
 } from '../../_shared/hooks/useFulfilmentPlanning';
 import { usePlanningChangeBatchesByIds } from '../../_shared/hooks/usePlanningChanges';
 import { useSoLineAttachmentLookup } from '../../_shared/hooks/useSoLineAttachments';
+import { formatQty } from '../../_shared/lib/money';
 import { canQuickSave, suggestedDecisionFor } from '../../_shared/lib/boardAmend';
 import {
   annotationsByCell,
@@ -2466,7 +2467,7 @@ export function FulfilmentBoardPanel({
                     {result.ok && (result.lines_cancelled?.length ?? 0) > 0 &&
                     (result.lines_confirmed?.length ?? 0) === 0 &&
                     (result.inquiry_rows_created ?? 0) === 0
-                      ? `${label}: ${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'} transferred to Cancel SO`
+                      ? `${label}: ${simulated ? 'would transfer ' : ''}${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'}${simulated ? '' : ' transferred'} to Cancel SO`
                       : result.ok
                       ? simulated
                         ? `${label}: would confirm as revision ${result.decision_revision}`
@@ -2481,14 +2482,14 @@ export function FulfilmentBoardPanel({
                       <li className="text-sm font-medium">Would write</li>
                       {(result.inquiry_rows ?? []).map((row, index) => (
                         <li key={`row-${index}`} className="text-sm break-words">
-                          {`line ${row.line_no ?? '?'} ${row.item_code ?? ''}: ${row.verb} ${row.qty}${
+                          {`line ${row.line_no ?? '?'} ${row.item_code ?? ''}: ${row.verb} ${formatQty(String(row.qty))}${
                             row.stock_location ? ` at ${row.stock_location}` : ''
                           }${row.is_new === false ? ' (settles an existing row)' : ''}`}
                         </li>
                       ))}
                       {(result.transfers ?? []).map((move, index) => (
                         <li key={`move-${index}`} className="text-sm break-words">
-                          {`line ${move.line_no ?? '?'}: ${move.kind} ${move.qty} ${
+                          {`line ${move.line_no ?? '?'}: ${move.kind} ${formatQty(String(move.qty))} ${
                             move.from_location ?? '?'
                           } -> ${move.to_location ?? '?'}`}
                         </li>
@@ -2505,7 +2506,7 @@ export function FulfilmentBoardPanel({
                           key={entry.project_line_id}
                           className="text-sm break-words text-destructive"
                         >
-                          {`line ${entry.line_no ?? '?'} ${entry.item_code ?? ''}: ${entry.error}`}
+                          {`${`line ${entry.line_no ?? '?'} ${entry.item_code ?? ''}`.trim()}: ${entry.error}`}
                         </li>
                       ))}
                     </ul>
@@ -2516,7 +2517,7 @@ export function FulfilmentBoardPanel({
                       className="space-y-0.5"
                     >
                       <li className="text-sm break-words">
-                        {`Transferred to Cancel SO: ${result.lines_cancelled
+                        {`${simulated ? 'Would transfer' : 'Transferred'} to Cancel SO: ${result.lines_cancelled
                           .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
                           .join(' · ')}`}
                       </li>
@@ -2528,13 +2529,13 @@ export function FulfilmentBoardPanel({
                       className="space-y-0.5"
                     >
                       <li className="text-sm break-words">
-                        {`Confirmed: ${result.lines_confirmed
+                        {`${simulated ? 'Would confirm' : 'Confirmed'}: ${result.lines_confirmed
                           .map((line) => `line ${line.line_no ?? '?'} ${line.item_code ?? ''}`.trim())
                           .join(' · ')}`}
                       </li>
                       {(result.lines_carried ?? 0) > 0 && (
                         <li className="text-sm text-muted-foreground">
-                          {`${result.lines_carried} carried forward unchanged`}
+                          {`${result.lines_carried} ${simulated ? 'would carry' : 'carried'} forward unchanged`}
                         </li>
                       )}
                     </ul>
