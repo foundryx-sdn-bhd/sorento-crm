@@ -2468,9 +2468,48 @@ export function FulfilmentBoardPanel({
                     (result.inquiry_rows_created ?? 0) === 0
                       ? `${label}: ${result.lines_cancelled?.length} line${result.lines_cancelled?.length === 1 ? '' : 's'} transferred to Cancel SO`
                       : result.ok
-                      ? `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
+                      ? simulated
+                        ? `${label}: would confirm as revision ${result.decision_revision}`
+                        : `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
+                  {simulated && result.ok && (
+                    <ul
+                      data-testid={`board-simulate-writes-${result.pso_id}`}
+                      className="space-y-0.5"
+                    >
+                      <li className="text-sm font-medium">Would write</li>
+                      {(result.inquiry_rows ?? []).map((row, index) => (
+                        <li key={`row-${index}`} className="text-sm break-words">
+                          {`line ${row.line_no ?? '?'} ${row.item_code ?? ''}: ${row.verb} ${row.qty}${
+                            row.stock_location ? ` at ${row.stock_location}` : ''
+                          }${row.is_new === false ? ' (settles an existing row)' : ''}`}
+                        </li>
+                      ))}
+                      {(result.transfers ?? []).map((move, index) => (
+                        <li key={`move-${index}`} className="text-sm break-words">
+                          {`line ${move.line_no ?? '?'}: ${move.kind} ${move.qty} ${
+                            move.from_location ?? '?'
+                          } -> ${move.to_location ?? '?'}`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {simulated && (result.simulated_errors?.length ?? 0) > 0 && (
+                    <ul
+                      data-testid={`board-simulate-errors-${result.pso_id}`}
+                      className="space-y-0.5 rounded-md bg-destructive/5 px-2 py-1.5"
+                    >
+                      {(result.simulated_errors ?? []).map((entry) => (
+                        <li
+                          key={entry.project_line_id}
+                          className="text-sm break-words text-destructive"
+                        >
+                          {`line ${entry.line_no ?? '?'} ${entry.item_code ?? ''}: ${entry.error}`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {result.ok && result.lines_cancelled && result.lines_cancelled.length > 0 && (
                     <ul
                       data-testid={`board-cancelled-lines-${result.pso_id}`}
@@ -2501,7 +2540,7 @@ export function FulfilmentBoardPanel({
                     </ul>
                   )}
                   {(() => {
-                    if (!result.ok) return null;
+                    if (!result.ok || simulated) return null;
                     if (!result.lines_confirmed) {
                       return (
                         <p className="text-sm text-muted-foreground">
@@ -2700,7 +2739,7 @@ export function FulfilmentBoardPanel({
                 order it was for. */}
             <BoardTransfersPanel
               soNumbers={soNumbers}
-              justConfirmed={batchResults !== null}
+              justConfirmed={batchResults !== null && !simulated}
               inquiryRows={(batchResults ?? [])
                 .filter((result) => result.ok)
                 .reduce((total, result) => total + (result.inquiry_rows_created ?? 0), 0)}
