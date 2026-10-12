@@ -1,6 +1,6 @@
 # PLAN: Fulfilment Planning board, admin "Simulate confirm" (dry run)
 
-Status: Plan (behaviour card posted as crew-ask, awaiting owner answers). Track: standard (Size M,
+Status: Build (owner answered the card 12 Oct: (a) on Q1-Q5). Track: standard (Size M,
 LEAD pattern; touches an admin gate, so security-reviewer runs).
 Lane: SIMULATE-CONFIRM, branch `crew/simulate-confirm`, PR #1585.
 UAC: `board-simulate-confirm-12oct-acceptance-criteria.md` (written after the card is answered).
@@ -139,7 +139,13 @@ Q4. Per-line probing for an order that fails with no named line (one rolled-back
 Q5. Simulate runs as the admin (their own per-project rights), not impersonating the planner.
     Recommend: as the admin, because impersonation is a new auth surface for no stated need.
 
-## Slices (after answers)
+### Owner answers (12 Oct 2026, relayed by crew)
+
+(a) on all five: Q1 role slug `superadmin`/`admin`; Q2 raw error for admins, capped at 1,000
+chars; Q3 never-planned orders skipped and reported; Q4 per-line probe, capped at 60 lines per
+order; Q5 runs as the admin.
+
+## Slices
 
 1. Tester: red pytest (admin gate 403/200, nothing persists incl. tripwires, per-line probe on an
    injected non-AppException, batch path) + red vitest (gear entry admin-only, results block
