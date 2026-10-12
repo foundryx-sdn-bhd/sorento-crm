@@ -743,7 +743,8 @@ export function FulfilmentBoardPanel({
    * sees the first planner's saved lines") needs a later fetch to bring in a save nobody
    * here made. `!next[key]` is what keeps this from clobbering THIS session's own edit - the
    * same guard `preMarked` uses, and for the same reason: a verdict already given here is
-   * never overwritten by what the server happened to say a moment before. `pendingDeletes`
+   * never overwritten by what the server happened to say a moment before. A bare pre-mark is
+   * the one local entry this does replace, since it is no verdict at all. `pendingDeletes`
    * is the other half of that guard: a key whose Undo is still in flight is ALSO missing
    * from `draft`, and without the skip a same-tick refetch racing that DELETE puts the pill
    * straight back to Saved a moment after the click cleared it.
