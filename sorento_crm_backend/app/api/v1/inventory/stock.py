@@ -59,7 +59,7 @@ from app.dependencies import (
 )
 from app.services.inventory_service import StockService
 from app.services.uuid_list_param import parse_requested_quantities, parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys, request_tier
 from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.inventory import StockResponse, StockBalanceListResponse, StockDashboardResponse, BulkImportStockRequest, BulkImportStockResponse, StockLedgerResponse
 from app.schemas.common import ListResponse, ValidateImportResponse
@@ -404,7 +404,12 @@ def get_stock_balance(
             spec_constraints=parsed_spec_constraints,
             hidden_spec_keys=hidden_spec_keys,
             has_active_promotion=has_active_promotion,
-            access_levels=normalize_list_query_param(access_levels),
+            # No explicit tier on a contact's call: that contact's own (fail closed).
+            access_levels=(
+                request_tier(db, contact_id, space_id, normalize_list_query_param(access_levels))
+                if has_active_promotion
+                else normalize_list_query_param(access_levels)
+            ),
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (only on an empty result), bypass the strict

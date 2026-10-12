@@ -13,7 +13,7 @@ from app.services.product_service import ProductService
 from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
 from app.services.uuid_list_param import parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys, request_tier
 from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.product import (
     ProductCreate,
@@ -263,7 +263,12 @@ def get_products(
             spec_constraints=parsed_spec_constraints,
             hidden_spec_keys=hidden_spec_keys,
             has_active_promotion=has_active_promotion,
-            access_levels=normalize_list_query_param(access_levels),
+            # No explicit tier on a contact's call: that contact's own (fail closed).
+            access_levels=(
+                request_tier(db, contact_id, space_id, normalize_list_query_param(access_levels))
+                if has_active_promotion
+                else normalize_list_query_param(access_levels)
+            ),
             sort_field=sort or "created_at",
             sort_dir=dir or "asc"
         )

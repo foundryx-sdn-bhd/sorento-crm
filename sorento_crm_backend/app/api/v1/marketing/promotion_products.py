@@ -11,7 +11,7 @@ from app.dependencies import require_any_permission_with_api_key
 
 from app.services.marketing_service import PromotionProductService, _resolve_promotion_id_for_filter
 from app.services.uuid_list_param import parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys, request_tier
 from app.schemas.marketing import (
     PromotionProductCreate,
     PromotionProductUpdate,
@@ -326,6 +326,10 @@ async def list_all_promotion_products(
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
         contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
+        if contact_codes is None and contact_id:
+            # Security review S2: a contact's call with no explicit tier is read under that
+            # contact's own access codes; one that resolves to none sees no line (fail closed).
+            contact_codes = request_tier(db, contact_id, space_id, None)
         service = PromotionProductService(db)
         resolved_pid: Optional[str] = None
         resolved_pids: Optional[List[str]] = None

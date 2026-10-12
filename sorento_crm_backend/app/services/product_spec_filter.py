@@ -8,9 +8,10 @@ hard filter: constraints AND together, and a product with no recorded value for 
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
-from sqlalchemy import Float, and_, case, cast, func, or_, select, true
+from sqlalchemy import Float, and_, case, cast, false, func, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
@@ -26,10 +27,16 @@ OPS = ("eq", "between", "gte", "lte")
 # products matching the other constraints (card section 9, slice 1).
 SIZE_KEY = "size"
 CLASS_KEY = "class"
+# Bounds on what one request may ask (security review S1): the raw text, the number of
+# constraints, and the values one `eq` may list.
+MAX_RAW_CHARS = 4096
+MAX_CONSTRAINTS = 16
+MAX_EQ_VALUES = 50
 
 
 def _is_number(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    """A finite JSON number (never a bool, never NaN or Infinity, which Python's json reads)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def _bad(message: str) -> AppException:
@@ -47,12 +54,16 @@ def parse_spec_constraints(
     resolver drops a hidden key before it ranks (AC-18). None when nothing is left."""
     if raw is None or not raw.strip():
         return None
+    if len(raw) > MAX_RAW_CHARS:
+        raise _bad(f"`spec_constraints` is longer than {MAX_RAW_CHARS} characters.")
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):  # JSONDecodeError is a ValueError; deep nesting recurses
         raise _bad("`spec_constraints` must be a JSON list of {key, op, value}.")
     if not isinstance(parsed, list) or not parsed:
         raise _bad("`spec_constraints` must be a non-empty JSON list of {key, op, value}.")
+    if len(parsed) > MAX_CONSTRAINTS:
+        raise _bad(f"`spec_constraints` takes at most {MAX_CONSTRAINTS} constraints.")
     types: dict[str, str] = {str(row.spec_key): str(row.data_type or "") for row in active_registry(db)}
     types.setdefault(SIZE_KEY, "numeric")
     # `class` is what the product IS, its vocabulary the categories' `class_label` (the
@@ -74,10 +85,19 @@ def parse_spec_constraints(
             raise _bad(f"Unknown op '{op}' for spec key '{key}'; use eq, between, gte or lte.")
         if op == "eq":
             scalars = value if isinstance(value, list) else [value]
-            if not scalars or not all(isinstance(v, (str, int, float, bool)) for v in scalars):
-                raise _bad(f"Spec key '{key}': `value` must be a string, number, boolean or a list of them.")
-            if key == SIZE_KEY and not all(_is_number(v) for v in scalars):
-                raise _bad(f"Spec key '{SIZE_KEY}' takes a number in mm.")
+            if not scalars or len(scalars) > MAX_EQ_VALUES:
+                raise _bad(f"Spec key '{key}': `value` takes 1 to {MAX_EQ_VALUES} values.")
+            # The value's type is the key's type (security review N3): a number on an enum key
+            # or text on a numeric one would only ever match nothing, silently.
+            kind = types[key]
+            if kind == "numeric":
+                ok, want = all(_is_number(v) for v in scalars), "a number"
+            elif kind == "boolean":
+                ok, want = all(isinstance(v, bool) for v in scalars), "true or false"
+            else:
+                ok, want = all(isinstance(v, str) for v in scalars), "text"
+            if not ok:
+                raise _bad(f"Spec key '{key}': `value` must be {want}.")
         elif types[key] != "numeric":
             raise _bad(f"Spec key '{key}' is not numeric; op '{op}' does not apply.")
         elif op == "between":
@@ -85,9 +105,27 @@ def parse_spec_constraints(
                 raise _bad(f"Spec key '{key}': `between` takes [lo, hi].")
         elif not _is_number(value):
             raise _bad(f"Spec key '{key}': `{op}` takes a number.")
-        if key not in hidden:
-            out.append({"key": key, "op": op, "value": value})
+        constraint = {"key": key, "op": op, "value": value}
+        if key not in hidden and constraint not in out:  # an identical repeat is said once
+            out.append(constraint)
     return out or None
+
+
+def request_tier(
+    db: Session, contact_id: str | None, space_id: str | None, access_levels: list[str] | None
+) -> list[str] | None:
+    """The tier `has_active_promotion` is read under (security review S2). An explicit
+    `access_levels` wins; a staff call (no `contact_id`) has none (None, no restriction);
+    otherwise the asking contact's OWN access codes, resolved the way the spec visibility
+    is (`resolve_contact_with_null_workspace_fallback`). A contact that does not resolve or
+    holds no code gets `[]`: fail closed, no promotion counts (`product_filter_clause`)."""
+    if access_levels or not contact_id:
+        return access_levels
+    from app.services.contact_access_type_service import ContactAccessTypeService
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+    return ContactAccessTypeService(db).get_contact_access_codes(str(resolved)) if resolved else []
 
 
 def request_hidden_keys(db: Session, contact_id: str | None, space_id: str | None) -> frozenset[str]:
@@ -142,7 +180,8 @@ def product_filter_clause(
     if constraints:
         parts.append(spec_constraint_clause(db, constraints))
     if has_active_promotion:
-        parts.append(active_promotion_clause(db, access_levels))
+        # `[]` is a tier that resolved to nothing (`request_tier`): no promotion counts.
+        parts.append(false() if access_levels == [] else active_promotion_clause(db, access_levels))
     return and_(*parts) if parts else None
 
 
