@@ -27,6 +27,7 @@ import {
 import type { ProductVariantRef } from '../../types/product.types';
 import ProductVariantPickerDialog from './ProductVariantPickerDialog';
 import ProductAlternativesSection from './ProductAlternativesSection';
+import ProductCompatibilitySection from './ProductCompatibilitySection';
 
 interface ProductVariantsTabProps {
   /** The current product's id - required for variant curation mutations. */
@@ -400,6 +401,7 @@ export default function ProductVariantsTab({
         </div>
 
         <ProductAlternativesSection productId={productId} />
+        <ProductCompatibilitySection productId={productId} productCode={productCode} />
       </CardContent>
 
       {/* Set / change parent */}

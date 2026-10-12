@@ -19,11 +19,13 @@ Design notes
 """
 from __future__ import annotations
 
+import array
 import collections
 import copy
 import functools
 import logging
 import re
+import threading
 import time
 import uuid
 from contextvars import ContextVar
@@ -37,7 +39,7 @@ from operator import add
 from sqlalchemy import and_, case, func, or_, text, true
 from sqlalchemy.orm import Session
 
-from app.models.base import UNSET, get_company_scope
+from app.models.base import UNSET, get_brand_scope, get_company_scope
 from app.models.forms import Form
 from app.models.inventory import Warehouse
 from app.models.marketing import Promotion
@@ -57,6 +59,7 @@ from app.models.resources import Attachment, AttachmentType
 # assistant that could still NAME the draft via this resolver would ask incoming_list about
 # it and get told "nothing incoming for container X" instead of never hearing of it.
 from app.services import customer_identity
+from app.services.company_scope_sql import company_sql_predicate
 from app.services.product_family import family_code_for
 from app.services.scm import spo_supply
 from app.services.scm.proforma_invoice_service import _DRAFT_SHIPMENT_STATUS
@@ -3008,6 +3011,22 @@ def _drop_inactive_products(db: Session, hits: list[ResolvedEntity]) -> list[Res
     return [h for h in hits if h.entity_type != "product" or str(h.uuid) in active]
 
 
+def _embedding_scope_sql(db: Session) -> tuple[str, dict[str, Any]]:
+    """``AND`` fragment company-scoping a raw vector search over ``embedding_chunks ec``.
+
+    Raw SQL, so the scope listener never sees it. NULL-company chunks are shared
+    knowledge (forms), visible under every scope, as in
+    ``embedding_service._embedding_company_filter``; UNSET keeps only those (the
+    ``__company_shared__`` rule of ``company_sql_predicate``). A ``debtor:<code>`` seed
+    is company-less too (migration 304) although the orders it comes from are not, so
+    any company scope drops it; staff (scope None) still see it.
+    """
+    if get_company_scope(db) is None:
+        return "", {}
+    company_sql, params = company_sql_predicate(db, "ec.company_id", shared=True)
+    return f"AND {company_sql} AND ec.source_id NOT LIKE 'debtor:%'", params
+
+
 def _tier3_embedding_lookup(
     db: Session,
     token: str,
@@ -3024,7 +3043,7 @@ def _tier3_embedding_lookup(
         return []
 
     try:
-        query_vec = _memo_embedding(token, _embed_text_chunks)
+        query_vec = _memo_embedding(db, token, _embed_text_chunks)
     except Exception:
         logger.exception("Tier-3 query embedding failed for token=%s", token)
         return []
@@ -3037,24 +3056,30 @@ def _tier3_embedding_lookup(
         )
         if not allowed_types:
             return []
+    # Filtered in SQL so another company's chunk can neither come back nor take one of
+    # the 5 ranking slots and sink this company's own match on the confidence gap.
+    scope_sql, scope_params = _embedding_scope_sql(db)
     sql = text(
-        """
+        f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
                1 - (ec.embedding <=> CAST(:vec AS vector)) AS similarity
         FROM embedding_chunks ec
         JOIN embedding_documents ed ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
+          {scope_sql}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT 5
-        """
+        """  # noqa: S608 - fragment from _embedding_scope_sql, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
         # otherwise leaves the whole transaction aborted - every later
         # query in the request would die on InFailedSqlTransaction.
         with db.begin_nested():
-            rows = db.execute(sql, {"vec": list(query_vec), "types": list(allowed_types)}).all()
+            rows = db.execute(
+                sql, {"vec": list(query_vec), "types": list(allowed_types), **scope_params}
+            ).all()
     except Exception:
         logger.exception("Tier-3 vector query failed for token=%s", token)
         return []
@@ -4573,9 +4598,9 @@ def _attach_company_info(db: Session, matches: list[ResolvedEntity]) -> set[tupl
       reached us through a raw-SQL probe (trigram, embedding, variant graph) is
       dropped exactly as the ORM tiers already drop it. ``_company_scope_sql``
       already filters the probes that can carry the clause; this is the backstop
-      that holds for the probes that cannot (embedding hits come from
-      ``embedding_chunks``, which has no company column) and for any raw probe
-      added later.
+      that holds for the probes that cannot and for any raw probe added later
+      (the embedding probe filters ``embedding_chunks.company_id``, but that
+      column is a copy written by the pipeline, not the source row's owner).
 
     Done as a post-pass rather than inside each of the ~20 per-entity resolvers:
     those select explicit column tuples, so threading a company column through
@@ -5090,8 +5115,14 @@ def _with_resolve_memo(fn):
     return wrapper
 
 
-def _memo_key(probe, token: str, regions) -> tuple:
-    return (probe, token, None if regions is None else frozenset(regions))
+def _scope_key(db: Session) -> tuple:
+    """The caller's company + brand scope, part of every resolve cache key: an answer
+    or a query vector looked up under one scope is never served under another."""
+    return (get_company_scope(db), get_brand_scope(db))
+
+
+def _memo_key(probe, db: Session, token: str, regions) -> tuple:
+    return (probe, _scope_key(db), token, None if regions is None else frozenset(regions))
 
 
 def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
@@ -5100,7 +5131,7 @@ def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
     memo = _RESOLVE_MEMO.get()
     if memo is None:
         return _call_tier1(probe, db, tokens, regions)
-    todo = [t for t in tokens if _memo_key(probe, t, regions) not in memo]
+    todo = [t for t in tokens if _memo_key(probe, db, t, regions) not in memo]
     if todo:
         fresh = _call_tier1(probe, db, todo, regions)
         # A batch maps its rows back by NORMALISED code, so of two spellings of one code
@@ -5109,10 +5140,10 @@ def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
         folded = collections.Counter(_alnum_casefold(t) for t in todo)
         for t in todo:
             if folded[_alnum_casefold(t)] == 1:
-                memo[_memo_key(probe, t, regions)] = copy.deepcopy(fresh.get(t, []))
+                memo[_memo_key(probe, db, t, regions)] = copy.deepcopy(fresh.get(t, []))
     out: dict[str, list[ResolvedEntity]] = {}
     for t in tokens:
-        key = _memo_key(probe, t, regions)
+        key = _memo_key(probe, db, t, regions)
         out[t] = copy.deepcopy(memo[key]) if key in memo else fresh.get(t, [])
     return out
 
@@ -5126,7 +5157,7 @@ def _call_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
 def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]:
     """`probe(db, token)` (Tier-2, one token), once per request."""
     memo = _RESOLVE_MEMO.get()
-    key = _memo_key(probe, token, regions)
+    key = _memo_key(probe, db, token, regions)
     if memo is None or key not in memo:
         hits = (
             probe(db, token, regions=regions)
@@ -5139,15 +5170,99 @@ def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]
     return copy.deepcopy(memo[key])
 
 
-def _memo_embedding(token: str, embed) -> list[float]:
-    """The query vector for `token`, embedded once per request."""
+def _prefetch_embeddings(db: Session, tokens: list[str]) -> None:
+    """Embed every not-yet-embedded token in ONE provider call and remember the vectors,
+    so Tier 3's per-token `_memo_embedding` finds them (CHAT-SPEED, 12 Oct 2026).
+
+    One round trip is about 0.33 s and a batch of three about 0.39 s, with the same
+    vectors back (measured), so a message with N unknown words used to pay N round trips
+    in sequence. Best effort: on any failure, or an answer of the wrong length, nothing is
+    remembered and each token is embedded on its own exactly as before, with its own
+    error logged there.
+    """
     memo = _RESOLVE_MEMO.get()
-    key = ("embedding", token)
     if memo is None:
-        return embed([token])[0]
-    if key not in memo:
-        memo[key] = list(embed([token])[0])
-    return memo[key]
+        return
+    try:
+        from app.services.embedding_worker import _embed_text_chunks
+    except Exception:  # noqa: BLE001 - the per-token path below is the fallback
+        return
+    scope = _scope_key(db)
+    todo = []
+    for token in dict.fromkeys(tokens):
+        if ("embedding", scope, token) in memo:
+            continue
+        known = _known_vector(_embed_text_chunks, scope, token)
+        if known is not None:
+            memo[("embedding", scope, token)] = known
+        else:
+            todo.append(token)
+    if len(todo) < 2:
+        return
+    try:
+        vectors = _embed_text_chunks(todo)
+    except Exception:  # noqa: BLE001 - the per-token path below is the fallback
+        logger.info("Tier-3 batched embedding failed; embedding per token", exc_info=True)
+        return
+    if len(vectors) != len(todo):
+        return
+    for token, vector in zip(todo, vectors):
+        memo[("embedding", scope, token)] = _remember_vector(_embed_text_chunks, scope, token, vector)
+
+
+#: Query vectors kept across requests (CHAT-SPEED): a follow-up turn re-resolves the
+#: subject the conversation carries ("floor trap" again on "when is next container
+#: coming", measured), and each re-embed was another OpenAI round trip for a vector that
+#: does not change. Keyed by the embed seam, the model, the caller's scope (`_scope_key`:
+#: one company never reuses another's entry) and the text; bounded LRU of
+#: float64 arrays (12 KB a vector, about 6 MB at the cap) so the stored value is the
+#: one the provider returned.
+_VECTOR_CACHE_MAX = 512
+_VECTOR_CACHE: "collections.OrderedDict[tuple, Any]" = collections.OrderedDict()
+_VECTOR_CACHE_LOCK = threading.Lock()
+
+
+def _vector_key(embed, scope: tuple, token: str) -> tuple:
+    from app.config import settings
+
+    return (embed, getattr(settings, "embedding_model_name", None), scope, token)
+
+
+def _known_vector(embed, scope: tuple, token: str) -> Optional[list[float]]:
+    key = _vector_key(embed, scope, token)
+    with _VECTOR_CACHE_LOCK:
+        stored = _VECTOR_CACHE.get(key)
+        if stored is None:
+            return None
+        _VECTOR_CACHE.move_to_end(key)
+    return list(stored)
+
+
+def _remember_vector(embed, scope: tuple, token: str, vector) -> list[float]:
+    values = list(vector)
+    key = _vector_key(embed, scope, token)
+    with _VECTOR_CACHE_LOCK:
+        _VECTOR_CACHE[key] = array.array("d", values)
+        _VECTOR_CACHE.move_to_end(key)
+        while len(_VECTOR_CACHE) > _VECTOR_CACHE_MAX:
+            _VECTOR_CACHE.popitem(last=False)
+    return values
+
+
+def _memo_embedding(db: Session, token: str, embed) -> list[float]:
+    """The query vector for `token`: once per request, and across requests while the
+    process remembers it (`_VECTOR_CACHE`), per caller scope."""
+    memo = _RESOLVE_MEMO.get()
+    scope = _scope_key(db)
+    key = ("embedding", scope, token)
+    if memo is not None and key in memo:
+        return memo[key]
+    vector = _known_vector(embed, scope, token)
+    if vector is None:
+        vector = _remember_vector(embed, scope, token, embed([token])[0])
+    if memo is not None:
+        memo[key] = vector
+    return vector
 
 
 @_with_resolve_memo
@@ -5615,6 +5730,17 @@ def resolve_references(
 
     # ----- Tier 3: embedding fallback (only for tokens still empty AND not ambiguous) -----
     if enable_embedding_fallback:
+        # CHAT-SPEED: the tokens the loop below will embed, embedded in one call first.
+        _prefetch_embeddings(
+            db,
+            [
+                tok
+                for tok in tokens
+                if not per_token[tok]
+                and tok not in ambiguous_tokens
+                and not (_types_for(tok) is not None and not _types_for(tok))
+            ]
+        )
         for tok in tokens:
             if per_token[tok] or tok in ambiguous_tokens:
                 continue
@@ -5884,8 +6010,11 @@ def _rag_resolve_phrase(
         logger.exception("RAG embed failed for phrase=%s", phrase)
         return []
 
+    # Filtered in SQL: these hits carry no uuid, so the `_attach_company_info`
+    # backstop cannot drop them afterwards.
+    scope_sql, scope_params = _embedding_scope_sql(db)
     sql = text(
-        """
+        f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
                1 - (ec.embedding <=> CAST(:vec AS vector)) AS similarity
         FROM embedding_chunks ec
@@ -5893,9 +6022,10 @@ def _rag_resolve_phrase(
           ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
+          {scope_sql}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT :k
-        """
+        """  # noqa: S608 - fragment from _embedding_scope_sql, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
@@ -5904,7 +6034,7 @@ def _rag_resolve_phrase(
         with db.begin_nested():
             rows = db.execute(
                 sql,
-                {"vec": list(query_vec), "types": allowed_source_types, "k": top_k},
+                {"vec": list(query_vec), "types": allowed_source_types, "k": top_k, **scope_params},
             ).all()
     except Exception:
         logger.exception("RAG vector query failed for phrase=%s", phrase)

@@ -4,8 +4,8 @@
 #
 # A direct port of origin/main's own `tail/compile_state.py::_search_scope_header`
 # (deleted on this branch by the S3 turn re-architecture, `129c403c7`): main's whole
-# `_AXES` table, the two "always" axes (Customer, Product) plus the four ask-scoped
-# ones (Order/Transporter/Container/Warehouse), and the Dates line. The media-confirm
+# `_AXES` table, the two "always" axes (Customer, Product) plus the ask-scoped
+# ones (Delivery order or Order/Transporter/Container/Warehouse), and the Dates line. The media-confirm
 # / escalate-branch / empty-result-set guards main's version carries do not apply here
 # - the bridge's own callers already know this is a genuine, single-domain hit before
 # they ever reach this module. `tail/` (not `turn/`) because it is free to use `re`
@@ -49,10 +49,20 @@ _AXES: tuple[dict[str, Any], ...] = (
         "always": True,
         "all_text": "all products",
     },
+    # REF-PROBES names the kind only when the resolver placed the number as a delivery
+    # order (`customer_order`). A generic `order` / `order_number` row is a number of no
+    # known kind (an SO number among them), so it keeps main's own "Order" line, the same
+    # label the miss path prints (`lanes/business/answer.py` `axis_words`).
     {
         "label": "Delivery order",
-        "types": ("customer_order", "order", "order_number"),
+        "types": ("customer_order",),
         "hints": ("order", "customer_order", "order_number", "delivery_order"),
+        "always": False,
+    },
+    {
+        "label": "Order",
+        "types": ("order", "order_number"),
+        "hints": ("order", "order_number"),
         "always": False,
     },
     {

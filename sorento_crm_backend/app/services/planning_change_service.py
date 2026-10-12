@@ -85,6 +85,7 @@ from app.models.project_so import (
     INQUIRY_CANCELLED,
     INQUIRY_PARTLY_LINKED,
     INQUIRY_PLACED,
+    IV_CANCEL_BALANCE,
     IV_ORDER,
     IV_ORDER_BACK,
     IV_RESERVE_AND_ORDER,
@@ -1103,6 +1104,29 @@ def build_batch(
             else False
         )
         for e in group:
+            entry_line = e.get("project_line")
+            entry_line_id = str(entry_line.id) if entry_line is not None else None
+            # S4 (review round 1): the `core_line_id` fallback is what an `added` row's own
+            # NULL `project_line_id` needs - `entry["core_line_id"]` is resolved for every
+            # entry regardless of kind, so it finds an older `added` row this project-line
+            # lookup alone never can.
+            older = (
+                (pending_lines.get(entry_line_id) if entry_line_id else None)
+                or pending_by_core.get(e["core_line_id"])
+            )
+            # SO422492 BUG B: a NEW line AutoCount changes again while its `added` row is
+            # still undecided is still a new line nobody has planned. Retiring that row with
+            # no replacement left the line silent and its quantity was never ordered
+            # (SRTUB6503-NEW 4 on line 1440), so the replacement is another `added` row
+            # describing the line as it stands now.
+            replaces_added = (
+                older is not None
+                # A line the book closed is gone, not re-changed: its row just retires.
+                and e["change"].kind != CLOSED
+                and older.kind == "added"
+                and older.decision is None
+                and _entry_differs_from_older_row(e["change"], older)
+            )
             # Built against the FRESH batch first - `_build_row` only needs a `batch.id`
             # to stamp; which batch this row actually lands in is decided below, once its
             # own `project_line_id` is known.
@@ -1122,16 +1146,7 @@ def build_batch(
                 moved_transfers,
                 order_has_held_or_inquiry,
                 batch_line_ids,
-            )
-            entry_line = e.get("project_line")
-            entry_line_id = str(entry_line.id) if entry_line is not None else None
-            # S4 (review round 1): the `core_line_id` fallback is what an `added` row's own
-            # NULL `project_line_id` needs - `entry["core_line_id"]` is resolved for every
-            # entry regardless of kind, so it finds an older `added` row this project-line
-            # lookup alone never can.
-            older = (
-                (pending_lines.get(entry_line_id) if entry_line_id else None)
-                or pending_by_core.get(e["core_line_id"])
+                replaces_added=replaces_added,
             )
             if row is None:
                 # AC-G1/AC-G4: the line is neither held nor inquired, so it stays off the
@@ -2171,6 +2186,7 @@ def _build_row(
     moved_transfers: Optional[Dict[str, str]] = None,
     order_has_held_or_inquiry: bool = False,
     batch_line_ids: Sequence[str] = (),
+    replaces_added: bool = False,
 ) -> Optional[PlanningChangeRow]:
     c = entry["change"]
     project_line: Optional[ProjectSalesOrderLine] = entry["project_line"]
@@ -2198,7 +2214,16 @@ def _build_row(
         # rule 5): a new line has no mirror line to hold or inquire about YET, so the gate
         # is asked of the ORDER instead - an order with a held or inquired line already
         # carries a commitment the new line changes the shape of.
-        if not (c.kind == ADDED and order_has_held_or_inquiry):
+        if replaces_added:
+            # SO422492 BUG B: the line is still the undecided NEW line its older `added`
+            # row described, so its replacement is an `added` row for the line as it
+            # stands now (current product, qty and date), not a row about the move.
+            kind = "added"
+            from_json = {"required_date": None, "qty": None, "status": None, "item_code": None}
+            to_json = {**to_json, "item_code": None}
+            days_moved = None
+            old_date = None
+        elif not (c.kind == ADDED and order_has_held_or_inquiry):
             return None
 
     dealer_hot_selling = bool(product_id and product_id in dealer_where)
@@ -3644,6 +3669,21 @@ def _oi_demand_rows(
         ):
             product_by_core[str(cid)] = str(pid) if pid else None
 
+    # SO422492 D: the line's OWN location first (AC-H5, the one location an inquiry row
+    # names). Reading only the held reserve's location left every Buy-only line's CANCEL
+    # BALANCE with a blank location (SRTWT2200 118, SRTWB7099 7, ...).
+    line_ids = [str(r.project_line_id) for r in live_rows if r.project_line_id]
+    location_by_line: Dict[str, Optional[str]] = {}
+    if line_ids:
+        location_by_line = {
+            str(line_id): location
+            for line_id, location in db.query(
+                ProjectSalesOrderLine.id, ProjectSalesOrderLine.stock_location
+            )
+            .filter(ProjectSalesOrderLine.id.in_(line_ids))
+            .all()
+        }
+
     pool_cache: Dict[str, Optional[str]] = {}
     settled = {str(line_id) for line_id in (settled_line_ids or [])}
     date_move_line_ids = [
@@ -3667,15 +3707,47 @@ def _oi_demand_rows(
         for buy_row in buy_row_query.all():
             buy_rows_by_line.setdefault(str(buy_row.so_line_id), []).append(buy_row)
 
+    # Crew audit of SO422492 (A, later "Save all suggested"): what purchasing still holds
+    # on each qty-down line and has NOT already been asked to cancel, read AFTER this
+    # confirm's own netting. The netting had cancelled line 592's whole 25 (CANCEL BALANCE
+    # 25) and this reaction added CANCEL BALANCE 3 for AutoCount's cut on top: 28 for a 25
+    # row. A reaction never cancels more than is still held.
+    qty_down_line_ids = [
+        str(r.project_line_id)
+        for r in live_rows
+        if r.kind == "qty_down"
+        and r.project_line_id
+        and str(r.project_line_id) not in settled
+    ]
+    cancellable_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    if qty_down_line_ids:
+        held_query = db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.so_line_id.in_(qty_down_line_ids),
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+            OrderInquiryRow.verb.in_(
+                (IV_ORDER, IV_ORDER_BACK, IV_RESERVE_AND_ORDER, IV_CANCEL_BALANCE)
+            ),
+        )
+        if order_inquiry_id:
+            held_query = held_query.filter(
+                OrderInquiryRow.order_inquiry_id == order_inquiry_id
+            )
+        for held_row in held_query.all():
+            line_key = str(held_row.so_line_id)
+            if held_row.verb == IV_CANCEL_BALANCE:
+                cancellable_by_line[line_key] -= _dec(held_row.qty)
+            elif not held_row.redirected_to_pool:
+                cancellable_by_line[line_key] += _dec(held_row.qty)
+
     out: List[dict] = []
     counts: Dict[str, int] = {}
     for r in live_rows:
         if not r.project_line_id:
             continue
         held = r.held_json or {}
-        location = None
+        location = location_by_line.get(str(r.project_line_id)) or None
         reserve = held.get("reserve") or []
-        if reserve:
+        if reserve and not location:
             location = reserve[0].get("location")
         product_id = product_by_core.get(r.core_line_id or "")
 
@@ -3729,7 +3801,7 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
-            drop = from_qty - to_qty
+            drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
             if drop <= _ZERO:
                 continue
             out.append(

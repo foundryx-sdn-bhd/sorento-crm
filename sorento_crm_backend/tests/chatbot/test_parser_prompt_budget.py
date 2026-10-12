@@ -200,7 +200,11 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # MEMORY_ADDENDUM (-450), so CEILING is 51,883 (+4).
 # REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
 # CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
-CEILING = 52_268
+# RELEASE-FIX (12 Oct 2026, PR #1598): the five REF-PROBES reference kinds get their
+# `chatbot_entity_kinds` rows (AC-1502), so the policy blocks seed carries five more
+# "Entity kind" lines: 52,437 est. tokens without MEMORY_ADDENDUM (+169), so CEILING is
+# 52,441 (+4). Nothing else grew.
+CEILING = 52_441
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

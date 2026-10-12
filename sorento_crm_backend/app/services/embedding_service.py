@@ -28,7 +28,9 @@ def _embedding_company_filter(db: Session):
 
       None              -> None  (no filter - all companies / system / back-compat)
       frozenset({ids})  -> company_id IN (ids) OR company_id IS NULL
-                           (shared / company-less knowledge stays visible)
+                           (shared / company-less knowledge stays visible),
+                           minus ``debtor:<code>`` seeds: company-less (migration
+                           304) although the orders they come from are not
       UNSET / empty     -> false()  (fail-closed: 0 rows)
 
     Embedding rows are NOT CompanyScopedMixin (the ORM auto-filter never touches
@@ -38,9 +40,12 @@ def _embedding_company_filter(db: Session):
     if scope is None:
         return None
     if isinstance(scope, frozenset) and scope:
-        return or_(
-            EmbeddingChunk.company_id.is_(None),
-            EmbeddingChunk.company_id.in_(list(scope)),
+        return and_(
+            or_(
+                EmbeddingChunk.company_id.is_(None),
+                EmbeddingChunk.company_id.in_(list(scope)),
+            ),
+            ~EmbeddingChunk.source_id.startswith("debtor:"),
         )
     return sa_false()  # UNSET / empty frozenset -> fail-closed
 

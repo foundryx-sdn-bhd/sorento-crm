@@ -118,13 +118,8 @@ def test_confirm_all_echoes_the_named_lines_per_order(api):
     assert result["lines_decided"] == 4
 
 
-def test_a_held_back_line_is_in_lines_held_back_and_not_in_lines_confirmed(api):
-    """AC-S2 (#1362 hold-back, `_write_holding_back`). Setup: the pool holds 50 and two lines
-    of 50 each reserve all 50 from it. `_check_line` spends the pool as a running ledger
-    across the lines of one press (see the shared-capacity test in
-    test_so_supply_confirmation.py), so line B (20) is refused with a line-addressed 409;
-    the hold-back drops it and confirms line A (10)."""
-    client, world = api
+def _two_reserve_lines(world):
+    """The pool holds 50; two lines of 50 each on one order."""
     db = world.db
     _stock(db, world.product, world.pool_wh, on_hand=50)
     order = _project_so(db, world.project)
@@ -134,20 +129,29 @@ def test_a_held_back_line_is_in_lines_held_back_and_not_in_lines_confirmed(api):
     line_a = _project_line(db, order, line_no=10, product=world.product, core_line=core_a)
     line_b = _project_line(db, order, line_no=20, product=world.product, core_line=core_b)
     db.commit()
+    return order, line_a, line_b
 
-    response = client.post(
+
+def _confirm_all(client, order, lines):
+    return client.post(
         f"{BASE}/fulfilment-planning/confirm-all",
-        json={
-            "orders": [
-                {
-                    "pso_id": order.id,
-                    "lines": [
-                        _reserve(world, line_a, "50"),
-                        _reserve(world, line_b, "50"),
-                    ],
-                }
-            ]
-        },
+        json={"orders": [{"pso_id": order.id, "lines": lines}]},
+    )
+
+
+def test_a_held_back_line_is_in_lines_held_back_and_not_in_lines_confirmed(api):
+    """AC-S2 (#1362 hold-back, `_write_holding_back`): a line that cannot be written is
+    dropped by name and the rest confirm. Line B's components add up to 20 against 50
+    open, so it is held back; line A (10) confirms.
+
+    Restated to the owner rule of 12 Oct 2026 (OI-CLOSED-LINE, #1580): line B used to be
+    the second Reserve over a 50 pool, which is now a shortfall warning, not a hold-back
+    (pinned in the test below)."""
+    client, world = api
+    order, line_a, line_b = _two_reserve_lines(world)
+
+    response = _confirm_all(
+        client, order, [_reserve(world, line_a, "50"), _line_payload(line_b.id, buy_qty="20")]
     )
 
     assert response.status_code == 200, response.text
@@ -157,6 +161,26 @@ def test_a_held_back_line_is_in_lines_held_back_and_not_in_lines_confirmed(api):
     assert result["lines_confirmed"][0]["project_line_id"] == line_a.id
     assert [row["line_no"] for row in result["lines_held_back"]] == [20]
     assert len(result["lines_confirmed"]) + len(result["lines_held_back"]) == 2
+
+
+def test_a_short_reserve_is_in_lines_confirmed_with_a_shortfall_notice(api):
+    """Owner rule of 12 Oct 2026 (#1580 R2): `_check_line` still spends the pool as a running
+    ledger across the lines of one press, but a Reserve short of free stock confirms as
+    decided and the shortfall is named. Both lines are echoed in `lines_confirmed`."""
+    client, world = api
+    order, line_a, line_b = _two_reserve_lines(world)
+
+    response = _confirm_all(client, order, [_reserve(world, line_a, "50"), _reserve(world, line_b, "50")])
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert [row["line_no"] for row in result["lines_confirmed"]] == [10, 20]
+    assert {row["project_line_id"] for row in result["lines_confirmed"]} == {line_a.id, line_b.id}
+    assert result["lines_held_back"] == []
+    notices = result["stock_short_notices"] or []
+    assert [row["line_no"] for row in notices] == [20], result
+    assert "50 short" in notices[0]["reason"], notices
 
 
 def test_a_withdrawal_only_press_echoes_no_confirmed_lines(api):
