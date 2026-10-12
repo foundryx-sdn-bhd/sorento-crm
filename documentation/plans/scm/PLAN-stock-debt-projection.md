@@ -57,7 +57,8 @@ Known limits:
 - R40 keeps a book-S/O pin inside its own ownership group (`book_so_pins`), so a POOL
   document whose S/O ref names a PROJECT line credits nothing in Covered by, and the
   projection agrees (`test_a_pool_spo_naming_a_project_line_by_s_o_ref_agrees_with_covered_by`).
-  Asked on PR #1594; crossing it is a walk change for its own lane.
+  Decided (crew answer (a), 12 Oct 2026: "same logic as Covered by today, no new logic"):
+  R40 stays; a pool S/O ref counts for a project only after a placement or a confirm.
 - Reserve on hand counts for projects only once #1597's walk reads it, so until then a
   reserve SPO counts while incoming and not once received (no reserve exists before #1597).
 
