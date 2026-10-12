@@ -1278,7 +1278,10 @@ def blocks_of(template: str | None) -> str:
 # and flattened back before any reader sees them. One definition for the schema and for the
 # prompt text below. Key names inside a group are unchanged, so every rule above applies
 # as written. Measured on 20 strict live emissions (12 Oct 2026): these keys are empty on
-# 19 or 20 of the 20 turns.
+# 19 or 20 of the 20 turns. A group holds only keys that are NEXT TO EACH OTHER in the flat
+# schema, so the model makes every decision in the same order as on the flat wire (crew
+# eval of 12 Oct 2026, round 2: groups that pulled correction / topic_reset / is_active
+# ahead of the entities lost two cases that are right on the flat wire).
 OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
     "dates": ("date_mode", "date_filter_start", "date_filter_end"),
     "ranking": (
@@ -1295,16 +1298,6 @@ OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
         "sales_basis",
         "sales_company",
     ),
-    "conversation": (
-        "scope_intent",
-        "broaden_axis",
-        "broaden_to",
-        "continuation",
-        "correction",
-        "topic_reset",
-        "proceed_anyway",
-    ),
-    "filters": ("access_levels", "demand_qty", "contains_flyer", "person_mention", "is_active", "promotion_kind"),
 }
 #: The same, inside each entity: null on all but a few entities (2 of 10 measured).
 ENTITY_OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
@@ -1321,11 +1314,11 @@ GROUPED_OUTPUT_ADDENDUM = (
     + "".join(f'  - "{group}": {", ".join(keys)}\n' for group, keys in OUTPUT_GROUPS.items())
     + "".join(f'  - "{group}", inside each entity: {", ".join(keys)}\n' for group, keys in ENTITY_OUTPUT_GROUPS.items())
     + "A group is null when NONE of its keys says anything: every key in it would be null,\n"
-    "false or []. That is nearly every message: a plain question is \"conversation\": null,\n"
-    "\"filters\": null, \"dates\": null, \"ranking\": null, and an entity with no quantity\n"
-    "and no specification is \"detail\": null. Write the group object only when at least\n"
-    "one key in it is true or has a value, and then write every one of its keys, each with\n"
-    "the value the rules above give it (is_active false is a value: write \"filters\").\n"
+    "false or []. That is nearly every message: a plain question is \"dates\": null,\n"
+    "\"ranking\": null, and an entity with no quantity and no specification is\n"
+    "\"detail\": null. Write the group object only when at least one key in it is true or\n"
+    "has a value, and then write every one of its keys, each with the value the rules above\n"
+    "give it.\n"
     "escalation, open_question_answer, low_stock and anaphora work the same way: null when\n"
     "every key inside would be null, false or [], otherwise the whole object as the rules\n"
     "above say. This overrides any line above that says to write one of them on every object.\n"
@@ -1337,11 +1330,6 @@ GROUPED_OUTPUT_ADDENDUM = (
 #: schema allows them only true or null, so a group is never written just to say false.
 PLAIN_FLAGS: frozenset[str] = frozenset(
     {
-        "continuation",
-        "contains_flyer",
-        "correction",
-        "topic_reset",
-        "proceed_anyway",
         "ranking_refine",
         "is_escalation_confirmation",
         "backward_reference",

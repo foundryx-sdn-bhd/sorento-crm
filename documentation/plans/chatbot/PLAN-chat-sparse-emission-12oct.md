@@ -1,7 +1,7 @@
 # PLAN: chat-sparse-emission (lane CHAT-SPARSE)
 
-Status: Round 2 built (STRICT grouped emission), PR #1603; awaiting the crew per-PR eval gate and the
-owner's label move. Round 1 (non-strict sparse) FAILED the crew eval and is removed. Track: standard by
+Status: Round 3 built (STRICT grouped emission, flat decode order kept), PR #1603; awaiting the crew
+per-PR eval rerun and the owner's label move. Round 1 (non-strict sparse) FAILED the crew eval and is removed. Track: standard by
 size (M; one data-only migration, no auth/RBAC, no new ingest surface; no owner-visible change until a
 label moves). UAC: `chat-sparse-emission-acceptance-criteria.md`.
 
@@ -60,6 +60,24 @@ Lesson: the provider's constrained decoding is what guarantees the shape. Do not
    versions: the text the `production` label points at when it runs (v52 on prod), grouped; the code
    constant plus policy blocks, grouped. `scripts/publish_parser_grouped.py --from-version N` does the
    same for any later version (e.g. v63 on the eval DB, or #1582's specs-block version).
+
+## Round 2 eval and round 3 fix
+
+Crew full eval of a6d54734 (eval v67 = v63 + grouped): schema errors 0; hidden 177/214 vs main 182, dev
+89/107 = 89; p50 2.6 vs about 3.2 s; output tokens per case 515 vs 780. FAIL on answer-identical:
+cand-0067 (inventory.availability) and cand-0119 (order.delivery_status) wrong in both reruns; cand-0104
+(inventory.other) intermittently blank (also in round 1).
+
+Cause found in the shape itself: strict decoding writes keys in schema order, and each key conditions
+the next. The round 2 `conversation` and `filters` groups sat where their FIRST member was, so
+correction, topic_reset, proceed_anyway, is_active and promotion_kind were decided before the entities,
+entity_op and order_status instead of after them. Round 3 keeps only groups whose members are already
+next to each other in the flat schema (`dates`, `ranking`, the four objects in place, the entity
+`detail` at the end of each entity), so every decision is made in main's order;
+`test_the_grouped_wire_keeps_the_flat_decode_order` pins it. The flat flags go back to their full type
+and their OUTPUT lines are untouched; `PLAIN_FLAGS` (true or null) now covers only flags inside a group
+or object. The cand-0104 blank reply is still open: no reader turns a null plain flag into a failure
+(every read is truthiness or `is True`), and the per-turn outputs were asked of crew.
 
 ## Measurement (live, 12 Oct 2026, round 2: 66 parser calls)
 

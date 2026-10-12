@@ -256,7 +256,7 @@ def test_nothing_said_writes_every_group_and_object_as_null(wire):
     sent = to_wire(strict_base())
     for key in [*OUTPUT_GROUPS, *parser_mod.NULLABLE_OBJECTS]:
         assert sent[key] is None, key
-    assert len(json.dumps(sent)) < len(json.dumps(strict_base())) * 0.6
+    assert len(json.dumps(sent)) < len(json.dumps(strict_base())) * 0.7
 
 
 def test_a_null_object_reads_as_its_object_of_empties(wire):
@@ -272,9 +272,9 @@ def test_a_null_object_reads_as_its_object_of_empties(wire):
 
 def test_a_missing_group_is_still_a_failed_parse(wire):
     sent = to_wire(strict_base())
-    del sent["conversation"]
+    del sent["dates"]
     wire.content = json.dumps(sent)
-    with pytest.raises(parser_mod.ParserError, match="continuation"):
+    with pytest.raises(parser_mod.ParserError, match="date_mode"):
         parser_mod.parse(config(True), "block")
 
 
@@ -331,6 +331,25 @@ def test_the_grouped_schema_is_strict_valid_and_declares_the_same_leaves():
     # Building the grouped schema left the flat one untouched.
     assert set(FLAT["required"]) == parser_mod.DECLARED_KEYS
     assert "quantity" in FLAT["properties"]["entities"]["items"]["required"]
+
+
+def _leaves(properties: dict, groups: dict) -> list[str]:
+    out = []
+    for key, schema in properties.items():
+        out.extend(groups[key] if key in groups else [key])
+    return out
+
+
+def test_the_grouped_wire_keeps_the_flat_decode_order():
+    """The model writes keys in schema order, and every key it writes conditions the next.
+    Grouping must never move a decision: the grouped schema's keys, groups opened in place,
+    are the flat schema's keys in the flat order (round 2 eval: groups that pulled
+    correction / topic_reset / is_active ahead of the entities lost two cases)."""
+    assert _leaves(GROUPED["properties"], OUTPUT_GROUPS) == list(FLAT["properties"])
+    item = GROUPED["properties"]["entities"]["items"]["properties"]
+    assert _leaves(item, ENTITY_OUTPUT_GROUPS) == list(FLAT["properties"]["entities"]["items"]["properties"])
+    for group in OUTPUT_GROUPS:
+        assert list(GROUPED["properties"][group]["properties"]) == list(OUTPUT_GROUPS[group])
 
 
 def test_every_group_member_is_a_declared_key_in_one_group_only():
@@ -409,7 +428,8 @@ def test_grouped_prompt_changes_only_the_output_block_and_the_entity_line(line):
             assert not re.search(rf'^\s*"{key}"\s*:', block, re.MULTILINE), key
     assert '  "escalation": null, or {' in block
     assert '  "anaphora": null, or {' in block
-    assert '"topic_reset": true|null, true only when the message drops the current subject' in block
+    # Keys outside the groups keep their own lines, word for word.
+    assert '  "topic_reset": false, true only when the message drops the current subject' in block
     # Outside the block, only the entity format line changed.
     old_rest = (original[:start] + original[end:]).split("\n")
     new_rest = (text[:new_start] + text[new_end:].removesuffix(GROUPED_OUTPUT_ADDENDUM)).split("\n")
@@ -443,7 +463,7 @@ CANDIDATE = LINES["v52 candidate"]
     ("variant", "reason"),
     [
         (CANDIDATE.replace("\n}\n" + STRICT_OUTPUT_BLOCK_END, "\n}\n\n" + STRICT_OUTPUT_BLOCK_END, 1), "close"),
-        (CANDIDATE.replace('\n  "is_active":', '\n   "is_active":', 1), "is_active"),
+        (CANDIDATE.replace('\n  "date_mode":', '\n   "date_mode":', 1), "date_mode"),
         (
             CANDIDATE.replace(
                 '  "escalation": { "is_escalation_confirmation": false,',
@@ -467,7 +487,7 @@ def test_grouped_prompt_refuses_a_text_it_cannot_fold_cleanly(variant, reason):
 def test_gemini_drops_the_non_string_enum_of_a_grouped_flag():
     from app.services.llm_provider import _gemini_schema
 
-    flag = GROUPED["properties"]["conversation"]["properties"]["continuation"]
+    flag = GROUPED["properties"]["ranking"]["properties"]["ranking_refine"]
     assert _gemini_schema(flag) == {"type": "boolean", "nullable": True}
     assert _gemini_schema({"type": ["string", "null"], "enum": ["a", None]}) == {
         "type": "string", "nullable": True, "enum": ["a"],
