@@ -4749,7 +4749,11 @@ def apply(
             savepoint.commit()
         except Exception as exc:  # noqa: BLE001 - one order's failure must not sink the rest
             savepoint.rollback()
-            reason = _exc_message(exc)
+            # A simulated confirm (admin dry run) wants the raw class name too; a real one
+            # keeps the bare text its readers have always had.
+            from app.services.confirm_simulation import error_text, is_simulating
+
+            reason = error_text(exc) if is_simulating() else _exc_message(exc)
             logger.exception("planning change apply failed for order %s", so_number)
             for r in order_rows:
                 if (
