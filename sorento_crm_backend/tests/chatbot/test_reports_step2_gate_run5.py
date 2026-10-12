@@ -78,6 +78,8 @@ def test_a4_guard_with_no_held_report_nothing_is_narrowed(console, monkeypatch) 
 
 
 def test_a5_guard_a_topic_reset_is_not_a_narrowing(console, monkeypatch) -> None:
+    """A topic reset already drops the held report earlier in the turn, so the `topic_reset` clause in
+    `_narrows_held_sales_report` is a deliberate backstop; this pins the behaviour, not that clause."""
     _hold(console, monkeypatch)
     seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
     console.say(_exact_verdict(topic_reset=True), "something else")
