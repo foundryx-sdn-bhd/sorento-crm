@@ -282,12 +282,20 @@ def test_network_run_allocation_sums_to_buy_qty(scm_app):
     assert all(a.get("warehouse_code") for a in alloc)  # codes frozen, no bare UUIDs
 
 
-@pytest.mark.xfail(
-    reason="pre-existing #1/#4 network ROP/OUP netting bug, tracked as GH #495 - "
-    "restored to visibility by product-grain admission (2 Sep); remove this marker "
-    "(and drop the now-vacuous docstring caveat) once #495 is closed",
-    strict=True,
-)
+def _pin_reorder_point_global(db):
+    """Make the run resolve the policy this file's arithmetic assumes: one active global
+    `reorder_point`, safety 7 days. The run only seeds that default when the database has
+    no global row at all (`ensure_reorder_policy_defaults`), so on a database that holds
+    its own global the result depended on whatever that row said."""
+    db.execute(text("UPDATE scm.reorder_policy SET is_active = false WHERE scope_type = 'global'"))
+    db.execute(text(
+        "INSERT INTO scm.reorder_policy (id, scope_type, scope_ref, policy_type, "
+        "safety_stock_method, safety_days, is_active, priority, source_system, source_ref, "
+        "created_at, updated_at) VALUES (:id, 'global', NULL, 'reorder_point', 'fixed_days', "
+        "7, true, 0, 'test', 'pin', now(), now())"
+    ), {"id": str(uuid.uuid4())})
+
+
 def test_network_run_no_buy_when_net_above_rop_below_oup(scm_app):
     """#1/#4: a network reorder_point aggregate whose net sits ABOVE ROP but BELOW OUP
     must NOT emit a buy (sizing OUP-net>0 is not a trigger). agg_demand=10, safety 7,
@@ -297,12 +305,11 @@ def test_network_run_no_buy_when_net_above_rop_below_oup(scm_app):
     at EACH location, so agg_net drops from the uncommitted 500 to 498 and stays inside
     the band; the arithmetic under test is otherwise untouched.
 
-    XFAIL, strict (GH #495): the row-grain admission cut of S2 masked this pre-existing
-    bug by excluding the SKU from the run entirely (no committed demand -> 0 buys,
-    trivially satisfying `buys == 0` for the wrong reason). Product-grain admission
-    restores the SKU to the run and this assertion is genuinely live again - and
-    genuinely fails. `strict=True` turns an unexpected pass into a hard failure, so
-    fixing #495 forces this marker to be removed rather than leaving a silent XPASS.
+    GH #495 marked this xfail(strict) on 2 Sep, but the test never pinned its policy, so
+    the outcome was whatever global `reorder_policy` the database held. On a bootstrapped
+    database (the default reorder_point) it XPASSed from the day the marker went in. The
+    policy is pinned now. The SKU is in the run (the same cells below ROP do emit a buy),
+    and the aggregate trigger in `_plan_network` keeps the band quiet.
     """
     _, db, _, _ = scm_app
     wa = _mk_warehouse(db, "M3W-BANDA")
@@ -315,6 +322,9 @@ def test_network_run_no_buy_when_net_above_rop_below_oup(scm_app):
     _mk_committed(db, pid, wa)            # agg_net 500 -> 498, still inside the band
     _mk_committed(db, pid, wb)
     _link(db, pid, _mk_supplier(db, "M3 Band Supplier"), lead=30)
+    db.flush()
+
+    _pin_reorder_point_global(db)
     db.flush()
 
     created = svc.create_run(db, ["M3W-BANDA", "M3W-BANDB"], "network", enqueue=False)
@@ -405,7 +415,9 @@ def test_endpoints_full_flow(scm_app):
         assert launch.status_code == 202, launch.text
         run_id = launch.json()["run_id"]
         assert launch.json()["status"] == "running"
-        assert launch.json()["buy_scope"] == "network"  # buy_scope removed → network default
+        # buy_scope left the request (M8-D5) and defaults to per-warehouse planning
+        # (`create_run`, 1dc247982), not the aggregated network this used to expect.
+        assert launch.json()["buy_scope"] == "warehouse"
 
         # the enqueue path is a no-op here (no worker); drive the job synchronously
         svc.run_reorder(run_id, db=db)
@@ -426,9 +438,9 @@ def test_endpoints_full_flow(scm_app):
         assert row["type"] == "buy"
         assert row["order_qty"] and row["order_qty"] > 0
         assert row["supplier"] and row["supplier"]["supplier_code"]
-        # network aggregate buy: no per-row warehouse, but the allocation names it
-        assert row["is_network"] is True
-        assert any(a.get("warehouse_code") == "M3W-API" for a in (row["allocation"] or []))
+        # a per-warehouse buy (the default scope): the row names its own warehouse
+        assert row["is_network"] is False
+        assert row["warehouse_code"] == "M3W-API"
         # no UUIDs surface in display fields
         assert "-" not in str(row["sku"]) or not _looks_uuid(row["sku"])
 
