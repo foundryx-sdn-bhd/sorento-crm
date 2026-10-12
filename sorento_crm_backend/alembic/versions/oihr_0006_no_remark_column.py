@@ -15,7 +15,7 @@ text (#1349 D3). A database with no row gets one inserted. Idempotent. Downgrade
 `oihr_0005`'s document byte for byte (frozen below).
 
 Revision ID: oihr_0006_no_remark_column
-Revises: rkind_0002_parser_ref_kinds_v56
+Revises: rkind_0003_reference_kind_rows
 Create Date: 2026-10-12
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from alembic import op
 logger = logging.getLogger("alembic.runtime.migration")
 
 revision = "oihr_0006_no_remark_column"
-down_revision = "rkind_0002_parser_ref_kinds_v56"
+down_revision = "rkind_0003_reference_kind_rows"
 branch_labels = None
 depends_on = None
 

@@ -357,3 +357,31 @@ def test_product_swap_met_from_landed_stock_prints_item_code_and_new_item_code(
     assert len(lines) == 1, lines
     assert lines[0]["item_code"] == new_code and lines[0]["was"] == {"item_code": old_code}, lines[0]
     assert lines[0]["qty"] == "1", lines[0]
+
+
+def test_qty_rise_met_from_stock_alone_names_qty_change_in_the_headline(api, monkeypatch):
+    """Crew decision (12 Oct): the headline is never empty. A qty change that needs no
+    purchase action (1 -> 2, same date, landed stock meets it) as the mail's only line
+    reads QTY CHANGE."""
+    from app.models.inventory import Stock
+
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _so400236_dev_shape(api)
+    stock = world.db.query(Stock).filter(
+        Stock.product_id == world.product.id, Stock.warehouse_id == world.own_wh.id
+    ).one()
+    stock.quantity_on_hand = 2
+    world.db.commit()
+    calls.clear()
+
+    _apply_change(
+        world, fixture["core"], fixture["order"], fixture["core_so"], fixture["line"],
+        old_date=WAS_1, new_date=WAS_1, qty="1", new_qty="2",
+    )
+
+    entries = _line_entries(calls, fixture["row"].item_code)
+    assert len(entries) == 1 and entries[0]["was"] == {"qty": "1"}, entries
+    headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
+    assert headline == "QTY CHANGE", headline

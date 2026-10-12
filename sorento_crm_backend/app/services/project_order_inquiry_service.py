@@ -305,6 +305,7 @@ _HANDOVER_VERB_ORDER = (
     IV_CANCEL_BALANCE,
     "CHANGE_ITEM_CODE",
     "STOCK_SHORT",
+    "QTY_CHANGE",
 )
 _HANDOVER_VERB_LABEL = {
     IV_ORDER: "ORDER",
@@ -323,6 +324,10 @@ _HANDOVER_VERB_LABEL = {
     # OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow confirmed while short of
     # free stock, told to purchasing as its own line. No row is raised for it.
     "STOCK_SHORT": "STOCK SHORT",
+    # EMAIL-SO-CHANGES (crew decision, 12 Oct): the headline is never empty. A line whose
+    # quantity or date moved but that asks purchasing for nothing (landed stock meets a
+    # rise; a date set where none was) reads QTY CHANGE.
+    "QTY_CHANGE": "QTY CHANGE",
 }
 
 
@@ -2067,7 +2072,9 @@ class ProjectOrderInquiryService:
                 # Stock meets the line, so nothing is bought: a quantity that went UP
                 # prints its numbers but never puts ORDER in the headline.
                 item = self.db.info[_HANDOVER_PENDING_KEY][-1]
-                item["verb_keys"] = [k for k in item["verb_keys"] if k != IV_ORDER]
+                item["verb_keys"] = [
+                    k for k in item["verb_keys"] if k != IV_ORDER
+                ] or ["QTY_CHANGE"]
             return True
 
         links = self._links_of(row.id)
@@ -3799,7 +3806,13 @@ class ProjectOrderInquiryService:
                 #: `line_no` above.
                 "core_line_id": core_line_id,
                 "item_code": row.item_code,
-                "verb_keys": _handover_verb_keys(kind, row, was, qty),
+                #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
+                "verb_keys": _handover_verb_keys(kind, row, was, qty)
+                or (
+                    ["QTY_CHANGE"]
+                    if (was or {}).get("qty") or (was or {}).get("delivery_date")
+                    else []
+                ),
                 "line": line,
                 "actor": self._handover_actor(resolved_actor_id),
                 #: Which savepoint this was earned under (C2, `_notify_purchasing`'s own
