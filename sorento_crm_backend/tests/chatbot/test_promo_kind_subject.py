@@ -35,6 +35,29 @@ from tests.chatbot.test_promo_subject_filter import _services
 TODAY = date.today()
 NAMES = ["Sorento Dealer", "Sorento Office", "Mocha Dealer"]
 PROMO_TOOL = "crm_marketing_promotions_list"
+# Owner Q4 option (a), 12 Oct 2026: the ONE promotion path for an ask with a described subject.
+PRODUCTS_TOOL = "crm_marketing_promotion_products_list"
+
+
+def subject_of(args):
+    """The subject words a promotion call carried, normalised: the values of its
+    `spec_constraints` (owner Q4 option (a)) or, on the older list path, its `scope_terms`."""
+    values = [c.get("value") for c in (args.get("spec_constraints") or []) if isinstance(c, dict)]
+    values += list(args.get("scope_terms") or [])
+    return {str(v).lower().replace("_", " ") for v in values}
+
+
+def promotion_route(client, name, args, params):
+    """GET the route a promotion tool maps to; `spec_constraints` travels as a JSON string."""
+    import json as _json
+
+    params = dict(params)
+    if args.get("spec_constraints"):
+        params["spec_constraints"] = _json.dumps(args["spec_constraints"])
+    path = "/api/v1/marketing/promotion-products/" if name == PRODUCTS_TOOL else "/api/v1/marketing/promotions/"
+    res = client.get(path, params=params)
+    assert res.status_code == 200, res.text
+    return res
 
 
 # --------------------------------------------------------------------------- #
