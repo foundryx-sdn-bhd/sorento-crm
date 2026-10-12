@@ -35,11 +35,24 @@ Two more OUTPUT keys, on every object:
   "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
   "family": true | false | null
 
-sub_asks: when the CURRENT message asks TWO OR MORE different things, one object per thing, in
-the order asked, whatever they are. One thing asked: null. The date and quantity of the last
-receipt are ONE last_receipt ask.
-  measure: ONE of these values (what each means, then words people use for it, in any
-    language):
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
+  measure, ONE of:
+    "received_qty": HOW MANY came in, a quantity received over a period; never goods still
+      on the way.
+    "last_receipt": WHEN it last came in, a date (the last SPO line's delivery date), with
+      that delivery's quantity.
+    "incoming": only goods NOT yet arrived (on the way, ETA).
+    "stock": how many are on hand now.
+    "supplier": WHO supplies it.
+    "last_cost": the purchase price.
+    "sold_total": how many were sold in all.
+    "sold_by": how many were sold per group (salesman, customer, ...).
+    "other": anything else asked, such as margin or profit; the label says what.
+  Words people use for each measure, in any language:
 {{sub_ask_measures}}
   group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
     "location" | "channel" | "month"; else null.
@@ -90,5 +103,187 @@ WHERE NOT EXISTS (
   SELECT 1 FROM ai_prompt_versions v WHERE v.name = 'chatbot_semantic_parser' AND v.template = base.template
 );
 
+-- 3. The PRODUCTION line (crew 13 Oct 2026: the version to pin is on prod's own line, v52):
+-- the production-labelled text with SUB_ASKS_ADDENDUM right before its MEMORY block, else
+-- right before its policy blocks. No label moves. Idempotent on the exact template.
+WITH prod AS (
+  SELECT v.template, v.variables FROM ai_prompt_versions v JOIN ai_prompt_labels l ON l.version_id = v.id
+  WHERE l.name = 'chatbot_semantic_parser' AND l.label = 'production'
+), built AS (
+  SELECT CASE
+           WHEN position($q$
+
+== MEMORY ==
+$q$ IN template) > 0
+             THEN replace(template, $q$
+
+== MEMORY ==
+$q$, $q$
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUB ASKS AND FAMILY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two more OUTPUT keys, on every object:
+  "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
+  "family": true | false | null
+
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
+  measure, ONE of:
+    "received_qty": HOW MANY came in, a quantity received over a period; never goods still
+      on the way.
+    "last_receipt": WHEN it last came in, a date (the last SPO line's delivery date), with
+      that delivery's quantity.
+    "incoming": only goods NOT yet arrived (on the way, ETA).
+    "stock": how many are on hand now.
+    "supplier": WHO supplies it.
+    "last_cost": the purchase price.
+    "sold_total": how many were sold in all.
+    "sold_by": how many were sold per group (salesman, customer, ...).
+    "other": anything else asked, such as margin or profit; the label says what.
+  Words people use for each measure, in any language:
+{{sub_ask_measures}}
+  group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
+    "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
+    received_qty, sold_total, sold_by and incoming ask. Other measures: null. None named:
+    null, never this calendar year by default.
+  basis: sold_total / sold_by only, "delivered" or "ordered" when the message says which; a
+    plain "sold" is null, never the top selling default.
+  label: the asker's own words for this ask, short.
+A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
+and sub_asks null.
+
+family: true when the message's own words ask for the code's whole family of variants, false
+when they ask for only that exact code; a code typed with neither said is null (nearly always).
+
+A reply that chooses an option of the variant question ("just this code" / "all variants") or
+the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
+option's position, never yes, no or a new question.
+$q$ || $q$
+
+== MEMORY ==
+$q$)
+           ELSE replace(template, $q$
+
+<<<CHATBOT POLICY BLOCKS>>>$q$, $q$
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUB ASKS AND FAMILY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two more OUTPUT keys, on every object:
+  "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
+  "family": true | false | null
+
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
+  measure, ONE of:
+    "received_qty": HOW MANY came in, a quantity received over a period; never goods still
+      on the way.
+    "last_receipt": WHEN it last came in, a date (the last SPO line's delivery date), with
+      that delivery's quantity.
+    "incoming": only goods NOT yet arrived (on the way, ETA).
+    "stock": how many are on hand now.
+    "supplier": WHO supplies it.
+    "last_cost": the purchase price.
+    "sold_total": how many were sold in all.
+    "sold_by": how many were sold per group (salesman, customer, ...).
+    "other": anything else asked, such as margin or profit; the label says what.
+  Words people use for each measure, in any language:
+{{sub_ask_measures}}
+  group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
+    "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
+    received_qty, sold_total, sold_by and incoming ask. Other measures: null. None named:
+    null, never this calendar year by default.
+  basis: sold_total / sold_by only, "delivered" or "ordered" when the message says which; a
+    plain "sold" is null, never the top selling default.
+  label: the asker's own words for this ask, short.
+A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
+and sub_asks null.
+
+family: true when the message's own words ask for the code's whole family of variants, false
+when they ask for only that exact code; a code typed with neither said is null (nearly always).
+
+A reply that chooses an option of the variant question ("just this code" / "all variants") or
+the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
+option's position, never yes, no or a new question.
+$q$ || $q$
+
+<<<CHATBOT POLICY BLOCKS>>>$q$)
+         END AS template, variables
+  FROM prod
+  WHERE position($q$
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUB ASKS AND FAMILY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two more OUTPUT keys, on every object:
+  "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
+  "family": true | false | null
+
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
+  measure, ONE of:
+    "received_qty": HOW MANY came in, a quantity received over a period; never goods still
+      on the way.
+    "last_receipt": WHEN it last came in, a date (the last SPO line's delivery date), with
+      that delivery's quantity.
+    "incoming": only goods NOT yet arrived (on the way, ETA).
+    "stock": how many are on hand now.
+    "supplier": WHO supplies it.
+    "last_cost": the purchase price.
+    "sold_total": how many were sold in all.
+    "sold_by": how many were sold per group (salesman, customer, ...).
+    "other": anything else asked, such as margin or profit; the label says what.
+  Words people use for each measure, in any language:
+{{sub_ask_measures}}
+  group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
+    "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
+    received_qty, sold_total, sold_by and incoming ask. Other measures: null. None named:
+    null, never this calendar year by default.
+  basis: sold_total / sold_by only, "delivered" or "ordered" when the message says which; a
+    plain "sold" is null, never the top selling default.
+  label: the asker's own words for this ask, short.
+A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
+and sub_asks null.
+
+family: true when the message's own words ask for the code's whole family of variants, false
+when they ask for only that exact code; a code typed with neither said is null (nearly always).
+
+A reply that chooses an option of the variant question ("just this code" / "all variants") or
+the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
+option's position, never yes, no or a new question.
+$q$ IN template) = 0
+    AND (position($q$
+
+== MEMORY ==
+$q$ IN template) > 0 OR position($q$
+
+<<<CHATBOT POLICY BLOCKS>>>$q$ IN template) > 0)
+)
+INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, config_json, commit_message)
+SELECT gen_random_uuid(), 'chatbot_semantic_parser',
+       (SELECT max(version) + 1 FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'),
+       'text', built.template, built.variables, '{"wording_edit": true}'::jsonb, 'MULTI-ASK-PLAN2 (production line): the production parser text plus the sub_asks and family keys. Unlabelled, promote from the Chatbot Console.'
+FROM built
+WHERE NOT EXISTS (
+  SELECT 1 FROM ai_prompt_versions v WHERE v.name = 'chatbot_semantic_parser' AND v.template = built.template
+);
+
 SELECT version, commit_message FROM ai_prompt_versions
-WHERE name = 'chatbot_semantic_parser' AND commit_message = 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.';
+WHERE name = 'chatbot_semantic_parser' AND commit_message IN ('MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base plus DEV-FAILURES (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.', 'MULTI-ASK-PLAN2 (production line): the production parser text plus the sub_asks and family keys. Unlabelled, promote from the Chatbot Console.')
+ORDER BY version;
