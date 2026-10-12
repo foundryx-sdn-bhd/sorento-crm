@@ -23,6 +23,8 @@ own suite so the two files cannot come to disagree about what a board looks like
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -81,6 +83,7 @@ def _locations(db, order, product):
 # --------------------------------------------------------------------------- AC-V1
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_proof_is_five_rows_the_four_questions_and_buy():
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
