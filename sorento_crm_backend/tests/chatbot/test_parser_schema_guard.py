@@ -151,10 +151,13 @@ MEASURED_VERDICT_READS: dict[str, str] = {
     # 10 Oct 2026 (CA-3-CHAT-DATASET): the chat report's group_by / measure / subject, read by
     # `lanes/business/chat_report.settle`. 51 -> 52.
     "chat_report": "app/services/chatbot/lanes/business/chat_report.py",
+    # CHAT-FIND: the generic find filters, read by the lane override in `run_fetch` through
+    # `lanes/business/find.filter_keys`. 52 -> 53.
+    "find": "app/services/chatbot/lanes/business/find.py",
 }
 
 
-def test_measured_read_set_matches_the_52_declared_keys():
+def test_measured_read_set_matches_the_53_declared_keys():
     """The table above is complete and has no typo - every declared key is measured read
     exactly once, and the table names nothing DECLARED_KEYS does not also carry. Catches a
     stale table before it can hide a real drift in the two tests below."""

@@ -32,6 +32,7 @@ from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
+from app.services.chatbot.lanes.business import find as find_lane
 from app.services.chatbot.lanes.business import low_stock_ask
 from app.services.chatbot.lanes.business import chat_report
 from app.services.chatbot.lanes.business import report_ask
@@ -1765,6 +1766,15 @@ def run_fetch(
     tool_item = pick.items[0]["json"]
     tool_name = jsc.js_string(tool_item.get("name") or "")
 
+    # CHAT-FIND (PLAN-chat-generic-find-12oct 2.5): the parser's `find.filters` (registry keys
+    # only) pick the generic find tool over the domain's own. Only the products this message
+    # named are its subject; the args are built below by the same transformer.
+    find_keys = find_lane.filter_keys(parse_output)
+    if find_keys:
+        tool_name = find_lane.TOOL
+        tool_item = {"name": tool_name, "_tool_pick": {"source": "find_override"}}
+        entities = find_lane.named_this_turn(parse_output, jsc.array(entities))
+
     # S4 point 2 (PLAN-chatbot-outstanding-report.md), REWRITTEN by R13 (owner ruling,
     # 13 Sep 2026): domain "order" + an outstanding `order_status` picks the report over
     # the plain order-list tool `tool_filter` would otherwise have chosen. A PRODUCT is no
@@ -2255,6 +2265,12 @@ def run_fetch(
         args = fetch_mod.entity_ids_transformer(trigger, space_id=space_id)
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
+        if tool_name == find_lane.TOOL:
+            find_args = find_lane.route_args(args, find_keys)
+            if find_args is None:
+                # Card rule 6: no product named, so ask for the code; never pick one.
+                return _fixed_reply(find_lane.ASK_PRODUCT_LINE)
+            args = find_args
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.
         if trace is not None:

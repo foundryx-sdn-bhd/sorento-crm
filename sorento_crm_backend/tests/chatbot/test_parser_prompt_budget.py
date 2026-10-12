@@ -200,7 +200,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # MEMORY_ADDENDUM (-450), so CEILING is 51,883 (+4).
 # REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
 # CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
-CEILING = 52_268
+# CHAT-FIND (12 Oct 2026): FIND_ADDENDUM, the `"find"` key line plus the `{{find_filters}}`
+# token (the rule and the filter lines render live from the registry, so later filters add
+# nothing here): 52,298 est. tokens without MEMORY_ADDENDUM (+34), so CEILING is 52,302 (+4).
+CEILING = 52_302
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

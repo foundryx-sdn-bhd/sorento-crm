@@ -82,6 +82,13 @@ def _run(payload, call):
     return run_fetch(payload, services=FetchServices(mcp_call=call), space_id=SPACE)
 
 
+def _response(result: Any) -> Any:
+    """The lane's reply text: `run_fetch` nests the fetch under `delegate_payload.fetch`."""
+    result = result or {}
+    fetch = (result.get("delegate_payload") or {}).get("fetch") or {}
+    return result.get("response") if "response" in result else fetch.get("response")
+
+
 # --------------------------------------------------------------------------- L1
 
 
@@ -95,7 +102,7 @@ def test_l1_fits_calls_crm_find_with_the_resolved_product(session_factory) -> No
     assert args.get("filters") == [{"key": "fits", "product_ids": [PRODUCT_UUID]}], args
     assert args.get("contact_id") == str(CONTACT_ID), args
     assert args.get("space_id") == SPACE, args
-    assert (result or {}).get("response") == PRESENTER_TEXT, result
+    assert _response(result) == PRESENTER_TEXT, result
 
 
 def test_l1_the_structurer_uses_the_presenter_text_verbatim_and_owns_the_header() -> None:
@@ -115,7 +122,7 @@ def test_l2_no_product_entity_asks_for_the_code_and_calls_nothing(session_factor
     result = _run(_payload(parse=_find_parse(entities=[]), resolved=False), call)
 
     assert captured == [], captured
-    assert (result or {}).get("response") == ASK_LINE, result
+    assert _response(result) == ASK_LINE, result
 
 
 # --------------------------------------------------------------------------- L3
