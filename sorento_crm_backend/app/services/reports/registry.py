@@ -76,6 +76,9 @@ MONTHS_OF_YEAR: Tuple[Tuple[str, str], ...] = tuple(
 )
 
 
+AGGS = frozenset({"sum", "count_distinct"})
+
+
 @dataclass(frozen=True)
 class Column:
     """One catalog column: what it is called, what it holds, and how to select it."""
@@ -100,8 +103,16 @@ class Column:
     #: The period_months idea for years: every year of the period is a value, so a year
     #: with no sales is a blank row rather than a missing one.
     period_years: bool = False
+    #: How a measure aggregates: "sum" (default) or "count_distinct" (distinct values of
+    #: `expr`; a total is its own query over the whole set, never a sum of cells).
+    agg: str = "sum"
+    #: A ratio measure: (numerator key, denominator key) of two other measures. Computed
+    #: AFTER aggregation from their sums, in every cell and total; `expr` is not read.
+    ratio_of: Optional[Tuple[str, str]] = None
 
     def __post_init__(self) -> None:
+        if self.agg not in AGGS:
+            raise ValueError(f"Report column '{self.key}' has agg '{self.agg}'; expected one of {sorted(AGGS)}")
         if self.type not in COLUMN_TYPES:
             raise ValueError(
                 f"Report column '{self.key}' has type '{self.type}'; "
@@ -189,10 +200,15 @@ class PeriodParam:
     label: str
     #: The period the screen opens on. A CALLABLE (e.g. ``current_year_period``) when it
     #: means "now", so the answer is the user's year rather than the process's boot year.
-    default: Union[Dict[str, Any], Callable[[], Dict[str, Any]]]
+    default: Union[Dict[str, Any], Callable[..., Dict[str, Any]]]
+    #: The callable takes the session (or None, when there is none: registration) because the
+    #: period opens on something in the data (chat analytics: the earliest fact).
+    default_reads_db: bool = False
 
-    def resolved_default(self) -> Dict[str, Any]:
-        return dict(self.default() if callable(self.default) else self.default)
+    def resolved_default(self, db: Any = None) -> Dict[str, Any]:
+        if not callable(self.default):
+            return dict(self.default)
+        return dict(self.default(db) if self.default_reads_db else self.default())
 
 
 @dataclass(frozen=True)
@@ -213,10 +229,10 @@ class SelectParam:
 Param = Any  # DateBasisParam | PeriodParam | SelectParam
 
 
-def default_value(param: Param) -> Any:
+def default_value(param: Param, db: Any = None) -> Any:
     """What a param means when the caller names no value for it."""
     if isinstance(param, PeriodParam):
-        return param.resolved_default()
+        return param.resolved_default(db)
     if isinstance(param, SelectParam):
         return list(param.default)
     return param.default
@@ -284,7 +300,7 @@ class DetailLayout:
 
 
 PIVOT_VARIANCES = frozenset({"last_two_rows"})
-PIVOT_CHARTS = frozenset({"line"})
+PIVOT_CHARTS = frozenset({"line", "bar"})
 
 
 @dataclass(frozen=True)
@@ -295,7 +311,8 @@ class PivotLayout:
     #: columns the last row has (a year to date against the same months a year earlier).
     variance: Optional[str] = None
     #: "line": the screen draws the pivot as a line chart under the table, and the
-    #: workbook writes a native chart under the block.
+    #: workbook writes a native chart under the block. "bar": the screen draws grouped
+    #: bars (one per column value for each row value); the workbook writes no chart.
     chart: Optional[str] = None
     #: The screen prints whole ringgit; the workbook keeps the sen.
     whole_units: bool = False
@@ -380,6 +397,10 @@ class ReportDefinition:
     #: lines (finance S1). The datasets share the company param, the date basis key and the
     #: default view's pivot axes, so one saved view runs on any of them.
     datasets_by: Optional[Tuple[str, Dict[str, "Dataset"]]] = None
+    #: With `datasets_by`: per value of that param, the pivot ROWS column key the screen
+    #: switches to when the value is picked (Top asks: topics -> topic, products -> product).
+    #: None leaves the rows alone on a switch.
+    pivot_rows_by: Optional[Dict[str, str]] = None
 
     def dataset_for(self, values: Dict[str, Any]) -> Dataset:
         """The dataset a run with these bound param values reads."""
@@ -421,6 +442,7 @@ class ReportDefinition:
 
 def validate(definition: ReportDefinition) -> None:
     """Fail at import time rather than on the first run of the screen."""
+    _validate_pivot_rows_by(definition)
     for dataset in definition.datasets():
         _validate_against(definition, dataset)
     if definition.datasets_by is not None:
@@ -437,6 +459,28 @@ def validate(definition: ReportDefinition) -> None:
                 raise ValueError(
                     f"Report '{definition.key}' dataset '{dataset.key}' names another company param or scope"
                 )
+
+
+def _validate_pivot_rows_by(definition: ReportDefinition) -> None:
+    mapping = definition.pivot_rows_by
+    if mapping is None:
+        return
+    if definition.datasets_by is None:
+        raise ValueError(f"Report '{definition.key}' sets pivot_rows_by without datasets_by")
+    key = definition.datasets_by[0]
+    param = next((p for p in definition.params if isinstance(p, SelectParam) and p.key == key), None)
+    offered = {value for value, _label in param.options(None)} if param is not None else set()
+    for value, column_key in mapping.items():
+        if value not in offered:
+            raise ValueError(
+                f"Report '{definition.key}' pivot_rows_by names '{value}', which '{key}' does not offer"
+            )
+        column = definition.dataset_for({key: [value]}).column(column_key)
+        if column is None or column.tag != "dimension":
+            raise ValueError(
+                f"Report '{definition.key}' pivot_rows_by sets '{column_key}' for '{value}', "
+                "which is not a dimension of that dataset"
+            )
 
 
 def _validate_against(definition: ReportDefinition, dataset: Dataset) -> None:

@@ -2416,6 +2416,8 @@ def _resolve_input(
     # Local return-wrapper so every exit path gets `limit` applied
     # consistently. Skip the wrap for raw empty-shape payloads (they have no
     # rows; the cap is a no-op there anyway).
+    family_raw_by_token: dict[str, str] = {}
+
     def _ret(result: dict[str, Any]) -> dict[str, Any]:
         return _apply_limit(result, limit)
 
@@ -2455,6 +2457,11 @@ def _resolve_input(
         # so callers can pass conversational phrasing verbatim. Alignment with
         # positional `allowed_entity_types` is preserved (in-place clean).
         filtered = [_strip_entity_stopwords(t) for t in filtered]
+        # CODE-VARIANTS: the pre-fold text by (stripped) token, so the fallback re-run
+        # below, which cannot align raw_tokens by position, still knows each typed code.
+        if raw_tokens and tokens and len(raw_tokens) == len(tokens):
+            _typed = [r for t, r in zip(tokens, raw_tokens) if t]
+            family_raw_by_token = {t: r for t, r in zip(filtered, _typed) if r}
         prepared_tokens: list[str] = filtered
         input_for_or: list[str] | str = filtered
     synthesized_from_query = False
@@ -2646,6 +2653,7 @@ def _resolve_input(
         allowed_entity_types=fb_allowed,
         cross_type_expand=True,
         regions=regions,
+        family_raw_by_token=family_raw_by_token,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
     fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
@@ -3338,6 +3346,13 @@ def resolve_reference_post(
             log_usage=not payload.dry_run,
         )
         specs = _with_parser_brand(specs, payload.brand_tokens)
+        if understanding is None and not specs and not payload.scope_terms and not payload.free_terms:
+            # Nothing describes a set: the message held only predicate words ("Stock") and
+            # no spec, brand or class word grounded. A set built off the looked-up ids
+            # alone would be one over a CARRIED word of a kind the domain may not take
+            # (R13 hotfix, AC-1790..1792: a product_set carry then "Stock" is refused
+            # with the scope-needed sentence), so this answers as a plain resolution.
+            return _stamp_brand_on_products(db, result)
         # D3: a brand scopes the WHOLE set - kept OUT of `specs`' union-membership
         # role (a brand binding there would union in every OTHER certified product
         # of that brand, not just the described ones) and applied only as the

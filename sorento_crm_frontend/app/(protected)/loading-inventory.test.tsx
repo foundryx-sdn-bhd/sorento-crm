@@ -282,7 +282,9 @@ describe('every DataGrid list segment has a loading.tsx (M5-01)', () => {
     // PROMPT-DYNAMIC (#1405): `system-management/chatbot-status-words` is a new DataGrid list
     // segment (Chatbot Status Words) with its own `loading.tsx`, found by the walk itself - no
     // BODY_ONLY_SEGMENTS entry needed. Total: 152.
-    expect(requiredSegmentNames.length).toBe(152);
+    // CA-2 (#1551): `system-management/topic-audit` is a new DataGrid segment (Topic audit)
+    // with its own `loading.tsx` (ListPageSkeleton), found by the walk itself. Total: 153.
+    expect(requiredSegmentNames.length).toBe(153);
 
     for (const name of requiredSegmentNames) {
       const dir = path.join(PROTECTED_ROOT, name);

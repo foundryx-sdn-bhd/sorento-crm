@@ -60,6 +60,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -2793,7 +2794,11 @@ def _validate_composition_shape(
             .all()
         )
 
-    return {
+    # Stored in a JSONB column, so every value goes in JSON-shaped: a caller that hands over a
+    # `model_dump()` without `mode="json"` passes `date` objects (a borrow's
+    # `donor_required_date` / `arrival_date`), and the UPDATE died on them (prod,
+    # HOTFIX-CONFIRM-DATE). `_to_confirm_line` parses the ISO strings back.
+    return jsonable_encoder({
         "project_line_id": str(composition.get("project_line_id")),
         "timely_spo_qty": qty_text(timely),
         "reserve": [
@@ -2832,7 +2837,13 @@ def _validate_composition_shape(
         "buy_qty": qty_text(buy),
         "buy_reason": composition.get("buy_reason"),
         "amend_reason": composition.get("amend_reason"),
-    }
+        # The planner's own answers beside the components (`ConfirmLine`): the order-back
+        # and the document it cites, and "flag for investigation". Dropped here, Apply
+        # froze them as false on the revision whatever was ticked (CONFIRM-FOLLOWUPS).
+        "order_back": bool(composition.get("order_back", False)),
+        "cited_document": composition.get("cited_document"),
+        "suspected_system_issue": bool(composition.get("suspected_system_issue", False)),
+    })
 
 
 def set_row_decision(
@@ -2979,6 +2990,9 @@ def _to_confirm_line(payload: dict):
         buy_qty=payload["buy_qty"],
         buy_reason=payload.get("buy_reason"),
         amend_reason=payload.get("amend_reason"),
+        order_back=bool(payload.get("order_back", False)),
+        cited_document=payload.get("cited_document"),
+        suspected_system_issue=bool(payload.get("suspected_system_issue", False)),
     )
 
 

@@ -5,11 +5,14 @@
 writer the n8n mirror uses (``chat_history_ingest_service``), so the two feeds dedupe on
 ``(contact_id, message_id)`` and either one alone keeps the thread current.
 
-Auth is the webhook's own: the signing key entered on the Respond.io webhook
+Auth is the webhook's own: the signing key Respond.io generates for the webhook
 (``RESPOND_WEBHOOK_SECRET``) verifies an HMAC-SHA256 over the RAW request body against
 the signature header (``x-respond-signature``, or ``x-webhook-signature``; hex or base64
 accepted), or, for a webhook configured with a custom header instead of a signing key,
-``X-Respond-Webhook-Secret`` must equal the secret. Unset secret = 503, so a deploy that
+``X-Respond-Webhook-Secret`` must equal the secret. Respond.io makes one webhook per event
+type, each with its own key that cannot be set, so the setting holds several keys
+(separated by commas or whitespace) and a request passes on ANY of them (lane
+RESPOND-MULTI-KEY). Unset secret = 503, so a deploy that
 has not been configured cannot be written to by anyone. A bad signature is a 401 that
 writes nothing. Owner-side steps: ``documentation/reference/RESPOND-WEBHOOK-SETUP.md``.
 
@@ -24,6 +27,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -33,7 +37,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
 from app.database import get_db
 from app.models.access import RespondContact
 from app.schemas.integration import IntegrationLogCreate
@@ -58,6 +61,11 @@ INTEGRATION_CHANNEL = "respond_webhook"
 # A Respond message event is a few KB. The body is buffered before the signature can be
 # checked, so the cap is what stops an unauthenticated caller from spending API memory.
 MAX_BODY_BYTES = 256 * 1024
+# A Respond.io signing key is 44 base64 characters. Anything shorter than this is a stray
+# word pasted with the keys, and a guessable word must never verify (security review).
+MIN_KEY_LENGTH = 24
+# Each key is one HMAC over the body per unauthenticated request; Settings refuses more.
+MAX_KEYS = 10
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +88,28 @@ def _same(presented: str, expected: bytes) -> bool:
     return hmac.compare_digest(presented.encode("utf-8"), expected)
 
 
+def _any_same(presented: str, candidates: set[bytes]) -> bool:
+    # A list, not a generator: every candidate is compared, so timing does not tell
+    # whether a key matched early or late.
+    return any([_same(presented, expected) for expected in candidates])
+
+
+def split_keys(secret: Optional[str]) -> list[str]:
+    """Every token in the setting. Separators are commas and whitespace, which a base64
+    key never contains (its alphabet is letters, digits, ``+``, ``/`` and ``=``)."""
+    return [key for key in re.split(r"[\s,]+", secret or "") if key]
+
+
+def webhook_keys(secret: Optional[str]) -> list[str]:
+    """The keys a request may verify against: tokens of at least MIN_KEY_LENGTH, so an env
+    value or an older saved value with a stray short word fails closed on that word."""
+    return [key for key in split_keys(secret) if len(key) >= MIN_KEY_LENGTH][:MAX_KEYS]
+
+
 def verify_request(raw: bytes, headers: Any, secret: Optional[str]) -> bool:
-    """True when the request proves it came from the configured Respond.io webhook."""
-    if not secret:
+    """True when the request proves it came from one of the configured Respond.io webhooks."""
+    keys = webhook_keys(secret)
+    if not keys:
         return False
     presented = None
     for name in SIGNATURE_HEADERS:
@@ -94,10 +121,11 @@ def verify_request(raw: bytes, headers: Any, secret: Optional[str]) -> bool:
         # `sha256=<hex>` is a common prefix convention; accept it too.
         if presented.lower().startswith("sha256="):
             presented = presented.split("=", 1)[1]
-        return any(_same(presented, expected) for expected in _signatures_for(secret, raw))
+        expected = set().union(*(_signatures_for(key, raw) for key in keys))
+        return _any_same(presented, expected)
     shared = headers.get(SHARED_SECRET_HEADER)
     if shared:
-        return _same(str(shared).strip(), secret.encode("utf-8"))
+        return _any_same(str(shared).strip(), {key.encode("utf-8") for key in keys})
     return False
 
 
@@ -295,11 +323,14 @@ def _handle(db: Session, request: Request, raw: bytes) -> dict:
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def respond_message_webhook(request: Request, db: Session = Depends(get_db)):
     """Store one Respond.io message event (see the module docstring)."""
-    secret = settings.respond_webhook_secret
-    if not secret:
+    from app.services import runtime_settings
+
+    # Settings > Integrations first, RESPOND_WEBHOOK_SECRET as the fallback; read per request.
+    secret = await run_in_threadpool(runtime_settings.get, "respond_webhook_secret", db)
+    if not webhook_keys(secret):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Respond.io webhook is not configured (RESPOND_WEBHOOK_SECRET).",
+            detail="Respond.io webhook is not configured (Settings > Integrations).",
         )
     raw = await _read_capped_body(request)
     if not verify_request(raw, request.headers, secret):

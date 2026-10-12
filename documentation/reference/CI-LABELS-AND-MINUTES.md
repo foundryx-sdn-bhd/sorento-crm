@@ -1,54 +1,51 @@
 # CI labels and the minute budget
 
-The repo is private on GitHub Pro: 3,000 Linux runner minutes a month, billed per job and
-rounded up to the minute. One workflow, `.github/workflows/deploy.yml`, runs everything. This
-page says what each trigger runs, what it costs, and how to read the usage. The workflow file's
-comments are the authority on the mechanics; this page is the operator's view.
+The repo is private, moving to GitHub Enterprise (50,000 Linux runner minutes a month; owner,
+10 Oct 2026), billed per job and rounded up to the minute. One workflow,
+`.github/workflows/deploy.yml`, runs everything. This page says what each trigger runs, what it
+costs, and how to read the usage. The workflow file's comments are the authority on the
+mechanics; this page is the operator's view. The design and its measurements:
+`documentation/plans/ci/PLAN-ci-lean-10oct.md` (CI-LEAN).
 
 ## What runs when
 
-| Trigger | Runs | Job-minutes (typical) |
+| Trigger | Runs | Billed minutes (target) |
 | --- | --- | --- |
-| PR labelled `ci` | The cheap gate: alembic single head, PII guard, gitleaks, changed areas, validate backend and MCP imports, type-check and vitest only when the frontend changed, the SCM shards only when SCM paths changed, and the changed backend tests (the PR's changed test files plus the files that import a changed module, up to 3600 estimated CPU-s). The six main backend shards never run here. | 12 to 25 for a backend-only change, up to about 90 when frontend and SCM both changed |
-| PR labelled `ci-full` | The full suite, the merge gate: the fast gates and validate imports, plus the six main backend shards and the serial entry, the three SCM shards, the four vitest shards and the type-check, whatever changed (the changed-tests job skips: the shards cover every file). Deploys nothing. | 190 to 230 |
-| `workflow_dispatch` on main (the release) | The full suite, then build images and the owner-approved deploy. With `skip_tests=true`, the build and the deploy only. | 230, or about 15 with `skip_tests` |
-| `schedule` (nightly, 03:17 Malaysia time) | The full suite on main's head, unless the last green nightly already tested that head (then the fast gates only, under a minute). Deploys nothing. | 200 on a day main moved, under 2 otherwise |
-| Push to main | The alembic single-head gate, PII guard and gitleaks. No tests, no deploy. | under 2 |
+| PR labelled `ci` | Two jobs (CI-COST round 2): `Changed areas`, then `PR gate`, whose first steps are the alembic single-head, PII and gitleaks gates, then the app and worker import chains when the backend changed, the changed backend test files plus every test file that imports a changed module (tests/scm included, up to 3,600 estimated CPU-s) on Postgres, the MCP suite when MCP changed, and `tsc` plus `vitest run --changed` when the frontend changed. No shard runs on a PR. A merge tree whose PR gate already passed is not tested again. | ~2 docs-only or re-label, ~10 typical, ~20 at the selection cap |
+| PR labelled `ci-full` | REFUSED (owner, 9 Oct 2026: no full suite per PR). One job removes the label and fails with the reason; nothing else runs. | 1 |
+| `workflow_dispatch` on main (the release) | The lean release: the core tier (`sorento_crm_backend/tests/release_core.txt`) plus every test the batch since the last successful release reaches, in one `Release tests` job; build only the images whose service tree changed (an unchanged one is retagged); the owner-approved deploy. A selection over the cap stays in that job with the core tier plus the batch's changed test files (CI-COST). `full_suite=true`, a batch changing `tests/conftest.py` or `tests/_pg_fixture.py`, a batch at the compare API's 300-file cap or no earlier release runs the full shards instead. A tree whose release tests already passed is not tested again. `skip_tests=true`: build and deploy only. | ~25-50 lean; ~470 full (38099410256) |
+| Push to main | The alembic single-head gate only (PII and gitleaks ran on the same commits in the PR gate). No tests, no deploy. | 1 |
 | Any other label | Nothing (every job skips). | under 1 |
 
-Every labelled, queued, nightly or release run also reports one gate job that passes only
-when every needed job is `success` or `skipped` (a path filter) and fails on anything else:
-`failure`, `cancelled`, the `abandoned` GitHub reports for a job it never found a runner for
-or a matrix whose shard hit its cap, or any new value. It reports as `CI gate` on a `ci` run
-and `CI gate (full)` on every run of the full suite. A docs-only `ci` run is therefore green
-with the fast gates alone. A push to main or any other label reports no gate.
+There is no nightly of any kind (owner, 10 Oct 2026): the deploy.yml schedule is gone and the
+never-stuck smoke (`never-stuck-nightly.yml`) runs by hand only.
+
+`PR gate` is the one check a PR needs: it runs the fast gates itself and fails when `Changed
+areas` did not pass, and it runs with `always()` so a red root job never turns it into "skipped". The ruleset
+`protect-main-branch` requires it once crew switches the ruleset (owner Q3). A merge-queue
+entry reports `CI gate (full)`.
 
 ## The labels
 
-Both labels are one-shot: the run removes the label it was fired by, so adding it again
-re-runs against the PR's current head. A push to the PR branch never starts a run. Both labels
-share one concurrency group per PR with cancel-in-progress on: adding either label while a run
-is live cancels that run (a `ci-full` makes the cheap run redundant; a `ci` after `ci-full`
-means the head moved). Never change labels while a run you want is live; to re-run, remove the
-label, wait ten seconds, add it alone.
+`ci` is one-shot: the run removes it, so adding it again re-runs against the PR's current
+head. A push to the PR branch never starts a run. `ci` runs share one concurrency group per PR
+with cancel-in-progress on: adding `ci` while a `ci` run is live cancels that run (the head
+moved). A `ci-full` label is refused by its own job and joins no group, so it cancels nothing.
+Never change labels while a run you want is live; to re-run, remove the label, wait ten
+seconds, add it alone.
 
-- `ci` while a lane is being built: cheap, as often as needed.
-- `ci-full` once per PR, right before merge, after the head has settled. A PR is merge-ready
-  when its `ci-full` run is green on the head being merged.
+- `ci` once per PR head that is ready to merge (CI-LEAN budget: about ten PR runs a day).
 
 Above the 3600 CPU-s selection budget the `ci` run executes the PR's own changed test files
 only and says so in the "Select backend tests by import" step of the `Changed areas` job; the
-whole selection then runs under `ci-full`. That replaces the earlier behaviour (CI-SPEED,
+whole selection then runs in the release. That replaces the earlier behaviour (CI-SPEED,
 1 Oct 2026) of running all six shards on the PR, which fired on most backend PRs and was 59% of
 all minutes in the week of 29 Sep to 5 Oct 2026.
 
-The ruleset `protect-main-branch` requires five check names: `Single alembic head (fast
-gate)`, `Changed areas`, `Validate backend imports`, `Validate MCP imports` and `Type-check
-frontend`. Both labels report all five (a path-filtered one reports "skipped", which a ruleset
-accepts). The ruleset does not require any shard, so a merge on a `ci`-only PR is possible by
-hand; the `ci-full` run before merge is crew discipline, or the owner adds `CI gate (full)` to
-the required checks, which makes a green `ci-full` on the head being merged a condition of the
-merge (a `ci` run reports `CI gate`, a different name, so it cannot stand in).
+Until crew switches the ruleset to `PR gate`, it requires the five old names (`Single alembic
+head (fast gate)`, `Changed areas`, `Validate backend imports`, `Validate MCP imports`,
+`Type-check frontend`): the first two still run on a PR and the other three report "skipped",
+which a ruleset accepts.
 
 ## Timeouts
 
@@ -73,6 +70,19 @@ has drained (or to run fewer runs at once, or to add runners). Read the annotati
 job before blaming a cap.
 
 ## The budget
+
+CI-LEAN (owner, 10 Oct 2026, GitHub Enterprise: 50,000 minutes a month, 2-3 releases a day,
+release <= ~60 billed minutes, PR gate ~10-15, no nightly, no `ci-full` on PRs):
+
+| Item | Count a month | Each | Month |
+| --- | ---: | ---: | ---: |
+| Releases (lean) | 75 | ~35 | ~2,600 |
+| PR gate runs | 30 a day | ~10 | ~9,000 |
+| Full-suite releases (over the cap, by hand) | a few | ~250 | ~500-1,000 |
+| **Total** | | | **~12,000-13,000** |
+
+The release run of 10 Oct 2026 (38017372957, the old design) billed 280. The history below
+is what led here.
 
 Measured 29 Sep to 5 Oct 2026 (701 runs): 85,687 minutes in seven days, 512 of them
 `ci`-labelled PR runs at 126 minutes each. At that pace, about 73 PR runs a day:

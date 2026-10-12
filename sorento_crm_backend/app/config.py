@@ -76,6 +76,17 @@ class Settings(BaseSettings):
             return ','.join(v)
         return v
     
+    @field_validator('trusted_proxies')
+    @classmethod
+    def validate_trusted_proxies(cls, v: str) -> str:
+        """A bad CIDR fails at startup, not as a 500 on every sign-in."""
+        import ipaddress
+
+        for entry in (v or "").split(","):
+            if entry.strip():
+                ipaddress.ip_network(entry.strip(), strict=False)
+        return v
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Get CORS origins as a list."""
@@ -120,8 +131,8 @@ class Settings(BaseSettings):
     n8n_crm_webhook_secret: str | None = None
 
     # Respond.io's DIRECT message webhook into the CRM (lane CHAT-LOCAL-FIRST, R3):
-    # POST /api/v1/public/respond/webhook. RESPOND_WEBHOOK_SECRET is the signing key
-    # entered on the Respond.io webhook (HMAC-SHA256 of the raw body, compared against
+    # POST /api/v1/public/respond/webhook. RESPOND_WEBHOOK_SECRET holds the signing keys
+    # of the Respond.io webhooks, one per event type, comma separated (HMAC-SHA256 of the raw body, compared against
     # the signature header) and, for a webhook set up with a custom header instead, the
     # value of X-Respond-Webhook-Secret. Unset = the endpoint answers 503 and n8n stays
     # the only feed. See documentation/reference/RESPOND-WEBHOOK-SETUP.md.
@@ -172,6 +183,10 @@ class Settings(BaseSettings):
     # not arrived. When true the request enqueues on the `chat` queue and waits for the
     # result, the pattern `/external/media` already uses. CHATBOT_TURN_ON_WORKER.
     chatbot_turn_on_worker: bool = False
+    # Chat analytics CA-2: the nightly topic labeller (02:15 Malaysia, `analytics` queue) calls
+    # the LLM, so it is off until switched on. Owner, 9 Oct 2026: labelling on dev only for now.
+    # CHAT_TOPIC_LABELLER_ENABLED.
+    chat_topic_labeller_enabled: bool = False
     # How long the request waits for the offloaded turn before giving up on it.
     # CHATBOT_TURN_WAIT_SECONDS.
     chatbot_turn_wait_seconds: int = 60
@@ -232,6 +247,12 @@ class Settings(BaseSettings):
     # Per-IP rate limits on unauthenticated/abuse-prone endpoints (fixed window,
     # fail-open if Redis down) - see PLAN-fix-security-cluster Sub-plan A. All
     # env-overridable; set max<=0 to disable a given limiter.
+    # SORENTO-CLIENT-IP: proxies whose `X-Forwarded-For` is believed (comma-separated CIDRs).
+    # Empty = none: every per-IP limit and IP record uses the socket peer, which a client cannot
+    # forge (behind nginx that is the proxy's one address). Set it only once the edge nginx sets
+    # `X-Forwarded-For $proxy_add_x_forwarded_for`; for this deploy use
+    # `app.services.client_ip.RECOMMENDED_TRUSTED_PROXIES` (loopback + the docker private ranges).
+    trusted_proxies: str = ""                   # TRUSTED_PROXIES
     rate_limit_signup_max: int = 3              # signups per window per IP
     rate_limit_signup_window_seconds: int = 3600
     rate_limit_reset_max: int = 5              # password-reset requests per window per IP

@@ -1163,7 +1163,7 @@ def _confirm_a_planning_change(
 
     extra: list[dict] = []
     for line in payload.lines:
-        composition = line.model_dump()
+        composition = line.model_dump(mode="json")
         row = by_line.get(str(line.project_line_id))
         if row is None:
             extra.append(composition)

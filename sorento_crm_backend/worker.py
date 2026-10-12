@@ -134,6 +134,9 @@ QUEUES = (
     ('chat', 'fast'),
     ('project_docs', 'batch'),
     ('flyer_read', 'batch'),
+    # `analytics` (chat analytics CA-2): the nightly topic labeller, queued by the
+    # scheduler at 02:15 Malaysia. Minutes of model calls nobody waits on: batch.
+    ('analytics', 'batch'),
     ('notifications', 'fast'),
 )
 ROLES = ('batch', 'fast')

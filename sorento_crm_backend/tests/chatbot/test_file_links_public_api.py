@@ -43,7 +43,7 @@ def env(monkeypatch):
             "app.api.v1.public.file_links.download_bytes", lambda url: b"col1,col2\n1,2\n"
         )
         try:
-            yield TestClient(app, raise_server_exceptions=False), db, signed
+            yield TestClient(app, raise_server_exceptions=False, client=("10.0.0.1", 50000)), db, signed
         finally:
             app.dependency_overrides.clear()
 
@@ -183,6 +183,10 @@ def test_content_type_comes_from_the_extension_not_the_upload(env):
 def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     """Crew audit item 6: behind nginx every socket peer is the proxy; the bucket key is
     the forwarded client, so two dealers never share one limit."""
+    from app.config import settings
+    from app.services.client_ip import RECOMMENDED_TRUSTED_PROXIES
+
+    monkeypatch.setattr(settings, "trusted_proxies", RECOMMENDED_TRUSTED_PROXIES)
     client, db, _ = env
     _link(db, "PHOTO00006", "https://cdn.test/a.jpg", "a.jpg")
     idents: list[str | None] = []
@@ -194,7 +198,9 @@ def test_the_limit_is_keyed_per_client_behind_the_proxy(env, monkeypatch):
     monkeypatch.setattr(rate_limit, "hit", _hit)
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "203.0.113.7, 10.0.0.2"})
     client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "198.51.100.9"})
-    assert idents == ["203.0.113.7", "198.51.100.9"]
+    # SORENTO-CLIENT-IP: a forged left-most hop is not the key; the hop the proxy appended is.
+    client.get(f"{BASE}/PHOTO00006", headers={"X-Forwarded-For": "6.6.6.6, 203.0.113.8"})
+    assert idents == ["203.0.113.7", "198.51.100.9", "203.0.113.8"]
 
 
 def test_a_forwarded_value_that_is_not_an_ip_never_becomes_a_key(env, monkeypatch):
@@ -259,3 +265,76 @@ def test_a_stored_url_off_the_list_is_never_handed_out(env, monkeypatch):
     resp = client.get(f"{BASE}/PROMO00000000002")
     assert resp.status_code == 502
     assert "cdn-sorento.com" not in resp.text
+
+
+# --------------------------------------------------------------------------- #
+# LINK-XLSX-VIEWER: a sheet over 10 MB is not sent to the in-browser viewer.
+# --------------------------------------------------------------------------- #
+
+CAP = 10 * 1024 * 1024
+TOO_BIG = "This file is too big to show here."
+
+
+def _sized(monkeypatch, size: int) -> bytes:
+    payload = b"x" * size
+    monkeypatch.setattr("app.api.v1.public.file_links.download_bytes", lambda url: payload)
+    return payload
+
+
+def test_ac_b1_a_sheet_at_the_cap_answers_200_with_the_bytes(env, monkeypatch):
+    client, db, _ = env
+    payload = _sized(monkeypatch, CAP)
+    _link(db, "SHEETCAP001", "https://cdn.test/r.xlsx", "r.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP001/content")
+    assert resp.status_code == 200, resp.text[:200]
+    assert resp.content == payload
+
+
+def test_ac_b2_a_sheet_over_the_cap_answers_413_and_no_bytes(env, monkeypatch):
+    client, db, _ = env
+    _sized(monkeypatch, CAP + 1)
+    _link(db, "SHEETCAP002", "https://cdn.test/r.xlsx", "r.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP002/content")
+    assert resp.status_code == 413, resp.status_code
+    assert resp.json() == {"detail": TOO_BIG}
+    assert len(resp.content) < 1000
+
+
+def test_ac_b3_download_flag_serves_an_over_cap_sheet_in_full(env, monkeypatch):
+    client, db, _ = env
+    payload = _sized(monkeypatch, CAP + 1)
+    _link(db, "SHEETCAP003", "https://cdn.test/Big Sheet.xlsx", "Big Sheet.xlsx")
+    resp = client.get(f"{BASE}/SHEETCAP003/content?download=1")
+    assert resp.status_code == 200, resp.status_code
+    assert resp.content == payload
+    assert "Big Sheet.xlsx" in resp.headers["content-disposition"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("query", ["", "?download=1"])
+def test_ac_b4_unknown_and_expired_codes_still_404_with_download_flag(env, monkeypatch, query):
+    client, db, _ = env
+    _sized(monkeypatch, CAP + 1)
+    _link(
+        db,
+        "OLDCAP00001",
+        "https://cdn.test/old.xlsx",
+        "old.xlsx",
+        expires_at=datetime.utcnow() - timedelta(seconds=1),
+    )
+    for code in ("OLDCAP00001", "NOSUCHCODE"):
+        resp = client.get(f"{BASE}/{code}/content{query}")
+        assert resp.status_code == 404
+        assert resp.json() == {"detail": EXPIRED}
+
+
+def test_ac_b4_the_rate_limit_applies_with_download_flag(env, monkeypatch):
+    client, db, _ = env
+    _link(db, "SHEETCAP004", "https://cdn.test/r.xlsx", "r.xlsx")
+    monkeypatch.setattr(
+        rate_limit, "hit", lambda bucket, ident, **kw: rate_limit.RateResult(allowed=False, retry_after_seconds=30)
+    )
+    resp = client.get(f"{BASE}/SHEETCAP004/content?download=1")
+    assert resp.status_code == 429
+    assert resp.headers["retry-after"] == "30"

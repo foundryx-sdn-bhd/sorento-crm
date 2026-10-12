@@ -216,14 +216,17 @@ class TestRequestValidation:
         )
         assert res.status_code == 413
 
-    def test_a_batch_at_the_cap_is_not_refused(self, client, company_code):
+    def test_a_batch_at_the_cap_is_not_refused(self, client):
         # The boundary is inclusive; off-by-one here would reject a batch the
-        # ESB was told it could send.
+        # ESB was told it could send. The batch carries no company anchor, so
+        # the request stops at the anchor guard, the check that runs right
+        # AFTER the size check: reaching it proves the size check let a full
+        # batch through, without ingesting 1,000 warehouses to show it (59 s
+        # on a 4-core runner; CI-LEAN).
         batch = [_wh(code=f"ZZT-EDGE-{i}") for i in range(ingest_module.MAX_BATCH)]
-        assert client.post(
-            "/ingest/warehouses",
-            json={"companyCode": company_code, "records": batch},
-        ).status_code != 413
+        res = client.post("/ingest/warehouses", json={"records": batch})
+        assert res.status_code == 422, res.text[:300]
+        assert res.json()["detail"]["code"] == "COMPANY_ANCHOR_REQUIRED"
 
     def test_an_ingest_with_no_company_anchor_is_422(self, client, db):
         # AC-A1-1 at the route: the body parses, so the anchor guard is what

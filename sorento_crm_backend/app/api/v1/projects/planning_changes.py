@@ -84,7 +84,7 @@ def update_planning_change_row(
     try:
         validate_uuid_path(batch_id, resource="Planning change batch")
         validate_uuid_path(row_id, resource="Planning change row")
-        composition = body.composition.model_dump() if body.composition else None
+        composition = body.composition.model_dump(mode="json") if body.composition else None
         row = planning_change_service.set_row_decision(
             db, batch_id, row_id, body.decision, composition
         )

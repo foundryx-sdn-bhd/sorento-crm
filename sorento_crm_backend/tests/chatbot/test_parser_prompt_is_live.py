@@ -39,6 +39,7 @@ from app.services.chatbot_parser_prompt import (
     TRAP_SPECS_FALLBACK_BLOCK,
     LOW_STOCK_FILTERS_ADDENDUM,
     PROMOTION_KIND_ADDENDUM,
+    CHAT_REPORT_ADDENDUM,
     PO_REFS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
@@ -266,6 +267,9 @@ def _without_growth_r1_addendum(text: str) -> str:
         text = text[: -len(PROMOTION_KIND_ADDENDUM)]
     if text.endswith(CANONICAL_CODE_ADDENDUM):
         text = text[: -len(CANONICAL_CODE_ADDENDUM)]
+    # CA-3: CHAT_REPORT_ADDENDUM sits right after PO_REFS_ADDENDUM.
+    if text.endswith(CHAT_REPORT_ADDENDUM):
+        text = text[: -len(CHAT_REPORT_ADDENDUM)]
     if text.endswith(PO_REFS_ADDENDUM):
         text = text[: -len(PO_REFS_ADDENDUM)]
     # REPORT-ENGINE slice 1b: REPORT_ASK_ADDENDUM sits between ACCOUNT_LEDGER_ADDENDUM and MEMORY_ADDENDUM.

@@ -39,6 +39,7 @@ from fastapi.testclient import TestClient
 from app.main import app  # noqa: E402
 
 from tests._pg_fixture import blank_session
+from tests._portal_grant import link_contact_company
 
 EXTRACT_URL = "/api/v1/public/portal/ai-extract"
 
@@ -85,6 +86,7 @@ def _contact(db):
     )
     db.add(contact)
     db.flush()
+    link_contact_company(db, contact.id)
     return contact
 
 

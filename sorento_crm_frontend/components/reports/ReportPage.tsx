@@ -342,7 +342,7 @@ function SummaryBlock({
         <p className="text-sm text-muted-foreground">No sales in this period</p>
       )}
       <ReportPivotTable layout={layout} />
-      {layout.chart === 'line' && !empty && (
+      {(layout.chart === 'line' || layout.chart === 'bar') && !empty && (
         <Card>
           <CardContent className="py-4">
             <ReportPivotChart layout={layout} />
@@ -605,8 +605,21 @@ export function ReportPage({
     : null;
 
   const setParam = (key: string, value: ReportParamValue) => {
+    // A report that names its pivot rows per dataset value (Top asks: topic or product)
+    // moves the rows with the dataset param, so no saved view is needed to see them.
+    const picked = Array.isArray(value) ? value[0] : undefined;
+    const rows =
+      key === meta?.dataset_param && picked !== undefined
+        ? meta?.pivot_rows_by?.[picked]
+        : undefined;
     setState((prev) =>
-      prev ? { ...prev, params: { ...prev.params, [key]: value } } : prev,
+      prev
+        ? {
+            ...prev,
+            params: { ...prev.params, [key]: value },
+            ...(rows ? { pivot: { ...prev.pivot, rows } } : {}),
+          }
+        : prev,
     );
   };
 

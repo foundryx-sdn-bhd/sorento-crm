@@ -743,7 +743,8 @@ export function FulfilmentBoardPanel({
    * sees the first planner's saved lines") needs a later fetch to bring in a save nobody
    * here made. `!next[key]` is what keeps this from clobbering THIS session's own edit - the
    * same guard `preMarked` uses, and for the same reason: a verdict already given here is
-   * never overwritten by what the server happened to say a moment before. `pendingDeletes`
+   * never overwritten by what the server happened to say a moment before. A bare pre-mark is
+   * the one local entry this does replace, since it is no verdict at all. `pendingDeletes`
    * is the other half of that guard: a key whose Undo is still in flight is ALSO missing
    * from `draft`, and without the skip a same-tick refetch racing that DELETE puts the pill
    * straight back to Saved a moment after the click cleared it.
@@ -767,7 +768,13 @@ export function FulfilmentBoardPanel({
       const next = { ...current };
       for (const contribution of serverDrafts) {
         if (pendingDeletes.current.has(contribution.key)) continue;
-        if (!next[contribution.key] && contribution.draft) {
+        // A bare pre-mark is the board's own suggestion, never a decision, so the saved
+        // server draft replaces it (hotfix, SO422492): with the batch already cached, the
+        // pre-mark effect above runs first on the same render and would otherwise hide every
+        // saved line the batch names from Saved and Confirm, and offer it to "Save all
+        // suggested" to be overwritten.
+        const local = next[contribution.key];
+        if ((!local || local.preMarked) && contribution.draft) {
           next[contribution.key] = contribution.draft.decision;
           changed = true;
         }
