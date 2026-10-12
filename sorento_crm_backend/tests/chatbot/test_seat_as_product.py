@@ -299,3 +299,50 @@ def test_k3_the_parser_rule_keeps_the_domain_of_the_ask() -> None:
     rule = product_find.parser_vocabulary()
     assert "domain_hint is master_products" not in rule
     assert "Never emit it for facts about the named product itself" not in rule
+
+
+def test_k4_crm_find_is_no_chatbot_tool_any_more() -> None:
+    """The MCP tool and route stay (a generic read); the chatbot neither lists nor routes it."""
+    from app.services.chatbot.lanes.business.fetch import CHATBOT_READ_ONLY_TOOLS
+    from app.services.mcp_tool_domains import CHATBOT_TOOL_DOMAINS
+
+    assert "crm_find" not in CHATBOT_READ_ONLY_TOOLS
+    assert "crm_find" not in CHATBOT_TOOL_DOMAINS
+
+
+def test_e6_the_type_word_beside_the_wc_is_no_miss_and_no_narrowing(session_factory, monkeypatch) -> None:
+    """Crew live check 13 Oct ("SRTWC8383-RL-MBL 配什么马桶盖" printed "找不到 马桶盖"): the class
+    word the parser also emitted rides along exactly as it would beside the typed cover code:
+    measured, the replaced turn makes no miss line, so nothing drops it (kill test K-a)."""
+    word = {"raw": "马桶盖", "hint": "category", "canonical_code": None, "current_message": True, "confident": True}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_word")
+    control = _turn(
+        session_factory, monkeypatch, text=COVER_ONE, msg_id="ZZT-seat-word-control",
+        domain_hint="master_products", intent_hint="check_product", entities=[_product(COVER_ONE)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_word")
+    reply, calls = _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} 配什么马桶盖", msg_id="ZZT-seat-word-asked",
+        domain_hint="master_products", intent_hint="check_product", entities=[_product(WC_ONE), word], find=FITS,
+    )
+    assert "找不到" not in reply and "could not find" not in reply.lower(), reply
+    assert calls == control[1], (calls, control[1])
+
+
+def test_r9_a_stored_code_in_another_spelling_still_anchors(session_factory) -> None:
+    """The catalogue side is normalised too (`_norm_sql`, the indexed expression)."""
+    from app.models.product_compatibility import ProductCompatibility
+    from app.services.chatbot.lanes.business import find as find_lane
+    from tests._mc_lookup_seed import product as seed_product
+
+    db = session_factory()
+    wc = seed_product(db, company_id=DEFAULT_COMPANY_ID, code="zztwc7001 - a")
+    cover = seed_product(db, company_id=DEFAULT_COMPANY_ID, code="ZZTSCBD7001")
+    db.add(ProductCompatibility(company_id=DEFAULT_COMPANY_ID, seat_cover_product_id=cover.id,
+                                wc_product_id=wc.id, source="manual"))
+    db.commit()
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("ZZTWC7001-A"))
+    assert _codes(out) == ["ZZTSCBD7001"]

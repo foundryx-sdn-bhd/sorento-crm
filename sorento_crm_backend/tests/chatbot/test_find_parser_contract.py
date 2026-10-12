@@ -67,7 +67,9 @@ def test_p2_find_filters_variable_renders_the_rule_and_every_filter_line() -> No
     with blank_session() as db:
         text = chatbot_prompt_vars.VARIABLES["find_filters"].render(db)
     assert "find" in text.lower()
-    assert "master_products" in text, "the rule names the domain_hint to use"
+    # SEAT-AS-PRODUCT: the relation picks WHICH products; the domain is the ask's own.
+    assert "domain_hint is master_products" not in text
+    assert "domain_hint and intent_hint included" in text
     for key, row in registry.FILTERS.items():
         assert key in text
         assert row.vocabulary in text

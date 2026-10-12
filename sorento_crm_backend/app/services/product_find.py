@@ -190,12 +190,11 @@ FILTERS: dict[str, FindFilter] = {
             ask=ASK_PRODUCT_LINE,
             vocabulary=(
                 "fits: the products that fit or go with the named product: the seat cover(s) "
-                "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The named "
-                "product is a product entity as usual. The other side named beside a code with "
-                "nothing else asked is this filter too, in any language or order (\"seat cover "
-                "SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\"): emit "
-                "fits, keep that word out of the entities, and it is never a file or photo ask "
-                "unless a file word (photo, drawing, catalogue, cert) is said."
+                "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The other "
+                "side named beside a code, in any language or order, is this filter (\"seat "
+                "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
+                "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
+                "entities. A fact of the named code itself (\"SRTWC8383-RL-MBL stock\") is no find."
             ),
             labels={
                 FITS_COVERS_HEAD: {"ms": "Penutup tempat duduk untuk {code}:", "zh": "{code} 适配的马桶盖："},
@@ -218,16 +217,18 @@ FILTERS: dict[str, FindFilter] = {
 # --------------------------------------------------------------------------- vocabulary
 
 FIND_RULE = (
-    "FIND (key `find`): when the message asks WHICH products stand in a relation listed below "
-    "to a product it names (for example which seat cover fits a WC), emit "
+    "FIND (key `find`): when the message is about the products that stand in a relation listed "
+    "below to a product CODE it names (for example the seat cover of a WC), emit "
     '"find": {"filters": [{"key": <a key from the list>, "value": <the value its line asks for, '
-    'else null>, "unit": <the unit of a number value, else null>}]}. Never emit it for '
-    "facts about the named product itself (stock, price, ETA, photo, spec): those keep their "
-    "usual keys. The named product stays an ordinary product entity (hint product) and "
-    "domain_hint is master_products. A product entity here needs a product CODE: a type word "
-    "on its own (\"my WC\", \"the toilet\", \"seat cover\", \"马桶\") is no entity at all "
-    "(\"which seat cover fits my WC?\" -> the filter, entities []); never invent a code. Use "
-    "only the keys listed; otherwise emit \"find\": null."
+    'else null>, "unit": <the unit of a number value, else null>}]}. The relation only says WHICH '
+    "products the message is about: the named code stays an ordinary product entity (hint "
+    "product), and every other key, domain_hint and intent_hint included, is exactly what it "
+    "would be if the message had named the related product's own code instead (\"stock seat "
+    "cover for SRTWC8122\" is a stock ask, \"eta seat cover for SRTWC8122\" an incoming ask, "
+    "\"SRTWC8122 seat cover photo\" a file ask, \"seat cover for SRTWC8122\" with nothing else "
+    "asked is read as that code alone). The type word on its own (\"seat cover\", \"my WC\", "
+    "\"马桶盖\") is no entity at all (\"which seat cover fits my WC?\" -> the filter, entities "
+    "[]); never invent a code. Use only the keys listed; otherwise emit \"find\": null."
 )
 
 

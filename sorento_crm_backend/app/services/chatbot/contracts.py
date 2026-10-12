@@ -65,9 +65,6 @@ class ParserOutputError(ValueError):
 UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_complaint_analytics",
     "crm_complaints_list",
-    # CHAT-FIND: the generic product find. No domain row lists it: `run_fetch` reaches it
-    # by override when the parse carries `find.filters` (PLAN-chat-generic-find-12oct 2.5).
-    "crm_find",
     "crm_lookup_resolve",
     "crm_project_detail",
     "crm_project_forecast",

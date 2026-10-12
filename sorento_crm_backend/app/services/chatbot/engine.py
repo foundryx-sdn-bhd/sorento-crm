@@ -4912,6 +4912,25 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 verdict = picked_verdict
 
+        # SEAT-AS-PRODUCT (owner rule, 13 Oct 2026): "seat cover for <WC>" is a product
+        # resolution, not an answer lane. The WC code is replaced by its linked seat-cover
+        # codes here, before APPLY, so the turn runs on exactly as if the customer had typed
+        # them: the domain the parser resolved answers through its own tool and formatter.
+        # When no code the message names has a link, `seat_link_lines` is the whole reply.
+        from app.services.chatbot.lanes.business import find as find_lane
+
+        linked_verdict, seat_link_lines = find_lane.as_linked_products(db, verdict)
+        if linked_verdict is not verdict or seat_link_lines:
+            turn_trace.add(
+                "seat_link",
+                {
+                    "from": [c for e in verdict.get("entities") or [] if (c := find_lane.entity_code(e))],
+                    "to": [c for e in linked_verdict.get("entities") or [] if (c := find_lane.entity_code(e))],
+                    "lines": seat_link_lines,
+                },
+            )
+            verdict = linked_verdict
+
         # C APPLY, first pass: state and plan from the verdict alone.
         state_out, plan = turn_apply(state_in, verdict, policy)
 
@@ -5092,6 +5111,11 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope_refused = False
         gate_input: dict[str, Any] | None = None
         account_question: str | None = None
+        if seat_link_lines:
+            # SEAT-AS-PRODUCT Q1: no named code has a seat-cover link, so the reply is its
+            # line, said once for the turn through the refusal path's own seam: nothing below
+            # fetches, asks or arms anything, and the line is the answer.
+            customer_scope_refused, account_question = True, "\n".join(seat_link_lines)
         resolved_kinds: dict[str, dict[str, int]] = {}
         compatible_entities: list[dict[str, Any]] = []
         predicate: dict[str, Any] | None = None

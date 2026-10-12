@@ -1,29 +1,39 @@
-"""The generic find ask (CHAT-FIND): the parser's `find.filters` become one `crm_find` call.
+"""A seat cover is resolved like a product (SEAT-AS-PRODUCT, owner rule 13 Oct 2026).
 
-`documentation/plans/chatbot/PLAN-chat-generic-find-12oct.md` section 2.5. The parser decides
-what the message means (`find.filters`, keys from `product_find.FILTERS`); the resolver decides
-which products it names; the route (`GET /api/v1/master-data/products/find`, MCP `crm_find`)
-answers under the contact's company, brand and stock policy. This module only:
+"Resolving seat cover should just be like resolving product. The domain behind should depend
+on what's resolved by the parser, as usual. No new lanes in answering."
 
-* `filter_items`: the registered filters the parse carries, by key, in order, once each (an
-  unknown key is dropped: the registry is the vocabulary, never the model);
-* `named_this_turn`: the resolved product entities this message named, when it named any (a
-  product carried from an earlier turn is not the subject of a new find), else the carried ones
-  (a bare "which seat cover fits it?");
-* `route_args`: the transformer's args as the route's `filters` (products and typed values), or
-  None and the filter's own question when it has nothing to run on (card rule 6).
+The parser's `find.filters` (keys from `product_find.FILTERS`) say the message is about the
+products standing in a registered relation to a code it names ("seat cover for SRTWC8122",
+"WC for SRTSCBD330-UF"). `as_linked_products` is a RESOLUTION step only: each such code is
+replaced by its linked codes (`product_compatibility`, #1590; the data decides the direction,
+as `product_find._run_fits` reads it), and the turn runs on exactly as if the customer had typed
+those codes. The domain the parser resolved (stock, ETA, files, price, nothing asked) answers
+through its own tool and formatter; there is no find reply lane.
+
+Card `documentation/plans/chatbot/CARD-seat-as-product-13oct.md` (crew answers 13 Oct):
+
+* Q2 (b): only a code on a link is replaced; any other code the message names answers as typed.
+* Q3 (a): a code that is no product's exact code (a family prefix, a typo) goes on as typed,
+  to the resolver's own picker or miss.
+* Q1 (a): when no code the message names has a link, the reply is one line per code
+  (`NO_SEAT_COVER_LINE`), and nothing is fetched.
+
+`filter_items` / `filter_keys` stay the readers of the parse's `find` key (the resolve body's
+`keep_typed_codes`, the type-word miss filter in `turn_runtime.make_tool_runner`).
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.services import product_find
 from app.services.chatbot import jsc
 
-TOOL = "crm_find"
-ASK_PRODUCT_LINE = product_find.ASK_PRODUCT_LINE
-#: The transformer's args the route takes besides `filters`.
-_PASSED = ("contact_id", "space_id", "view")
+#: Q1 (a), the owner's wording to confirm: the reply when no named code has a link. One
+#: constant (with its ms / zh in `product_find`'s labels), so a new wording is a one-line edit.
+NO_SEAT_COVER_LINE = product_find.FITS_NONE_LINE
+#: The same line for a code the data calls a seat cover.
+NO_WC_LINE = product_find.FITS_NO_WC_LINE
 
 
 def filter_items(parse_output: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -42,85 +52,76 @@ def filter_keys(parse_output: dict[str, Any]) -> list[str]:
     return list(filter_items(parse_output))
 
 
-def _key(value: Any) -> str:
-    """A code compared by its letters and digits only, casefolded: the parser's token and the
-    resolved code may differ by dashes, spaces and case ("SRTWC8383 RL MBL" names
-    SRTWC8383-RL-MBL). Data against data; the user's words are never pattern-matched."""
-    return "".join(ch for ch in jsc.js_string(value or "").casefold() if ch.isalnum())
+def entity_code(entity: Any) -> str:
+    """A product entity's code (canonical, else as typed); "" for anything else."""
+    if not isinstance(entity, dict) or jsc.js_string(entity.get("hint") or "") != "product":
+        return ""
+    return jsc.js_string(entity.get("canonical_code") or entity.get("raw") or "").strip()
 
 
-def _is_product(entity: Any) -> bool:
-    return isinstance(entity, dict) and entity.get("entity_type") == "product"
+def _anchors(entities: list[Any]) -> list[int]:
+    """Positions of the product codes the relation is about: this message's own, else the
+    carried ones ("which seat cover fits it?")."""
+    coded = [i for i, e in enumerate(entities) if entity_code(e)]
+    own = [i for i in coded if entities[i].get("current_message") is not False]
+    return own or coded
 
 
-def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[Any]:
-    """`entities` with the products this find is about.
+def as_linked_products(db: Any, verdict: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """`verdict` with every named code that sits on a `fits` link replaced by its linked codes,
+    and the Q1 lines (non-empty only when no named code has a link). Nothing else changes: the
+    domain, the intent, every other key and every other entity stay the parser's."""
+    if "fits" not in filter_items(verdict):
+        return verdict, []
+    entities = list(jsc.array(verdict.get("entities")))
+    anchors = _anchors(entities)
+    if not anchors:
+        return verdict, []
 
-    * The parse names a product this message: the resolved products whose code matches one of
-      its tokens; when none matches, every resolved product (the resolver resolved what was
-      typed, so a mismatch in spelling never turns into asking again).
-    * The parse names no product this message but carries one (a product entity the parser
-      marked as not from this message, e.g. "which seat cover fits it?"): the resolved products.
-    * No product entity at all: no product, so the lane asks for the code (card rule 6).
-    """
-    parsed = [
-        e for e in jsc.array(parse_output.get("entities"))
-        if isinstance(e, dict) and jsc.js_string(e.get("hint") or "") == "product"
-    ]
-    if not parsed:
-        return [e for e in entities if not _is_product(e)]
-    tokens = {
-        _key(tok)
-        for e in parsed
-        if e.get("current_message") is True
-        for tok in (e.get("raw"), e.get("canonical_code"))
-        if jsc.truthy(tok)
-    }
-    tokens.discard("")
-    if not tokens:
-        return list(entities)
-    def _codes(e: Any) -> list[str]:
-        return [c for c in (_key(e.get("code")), _key(e.get("canonical_code"))) if c]
+    from app.models.product import Product
+    from app.services.product_alternative_service import _norm_sql, normalize_code
+    from app.services.product_compatibility_service import covers_for, wcs_for
 
-    # The exact code first: "SRTWC8088" names SRTWC8088, never also SRTWC8088-SC. A code the
-    # token is only part of counts when no product carries the token exactly.
-    named = [e for e in entities if _is_product(e) and any(c in tokens for c in _codes(e))]
-    if not named:
-        named = [e for e in entities if _is_product(e) and any(t in c for c in _codes(e) for t in tokens)]
-    if not named:
-        return list(entities)
-    return [e for e in entities if not _is_product(e)] + named
+    wanted = {normalize_code(entity_code(entities[i])) for i in anchors}
+    # The typed code against the catalogue's codes, both normalised (dashes, spaces, case):
+    # data against data. Read on the turn's company-scoped session, as every product read is.
+    rows = db.query(Product).filter(_norm_sql(Product.product_code).in_(wanted)).all()
+    by_code: dict[str, list[Any]] = {}
+    for row in rows:
+        by_code.setdefault(normalize_code(row.product_code), []).append(row)
+    ids = [str(r.id) for r in rows]
+    covers, wcs = covers_for(db, ids), wcs_for(db, ids)
 
-
-def _ids(value: Any) -> list[str]:
-    if isinstance(value, str):
-        value = [v for v in value.split(",")]
-    out: list[str] = []
-    for v in jsc.array(value):
-        s = jsc.js_string(v).strip()
-        if s and s not in out:
-            out.append(s)
-    return out
-
-
-def route_args(args: dict[str, Any], items: dict[str, dict[str, Any]]) -> tuple[Optional[dict[str, Any]], str]:
-    """The route's args, or None and the line to ask when a filter has nothing to run on
-    (its row's own `ask`: no product named, or no value given)."""
-    product_ids = _ids(args.get("product_ids"))
-    filters: list[dict[str, Any]] = []
-    for key, item in items.items():
-        row = product_find.FILTERS[key]
-        entry: dict[str, Any] = {"key": key}
-        if row.products:
-            if not product_ids:
-                return None, row.ask
-            entry["product_ids"] = product_ids
-        if row.value is not None:
-            value = item.get("value")
-            if value is None or (isinstance(value, str) and not value.strip()):
-                return None, row.ask
-            entry["value"], entry["unit"] = value, item.get("unit")
-        filters.append(entry)
-    out = {k: args[k] for k in _PASSED if k in args}
-    out["filters"] = filters
-    return out, ""
+    replaced: dict[int, list[str]] = {}
+    unlinked: list[Any] = []  # the products named, on no link
+    for i in anchors:
+        products = by_code.get(normalize_code(entity_code(entities[i])), [])
+        linked: list[str] = []
+        for p in products:
+            for other in [*covers.get(str(p.id), []), *wcs.get(str(p.id), [])]:
+                if other.product_code and other.product_code not in linked:
+                    linked.append(other.product_code)
+        if linked:
+            replaced[i] = linked
+        elif products:
+            unlinked.append(products[0])
+    if not replaced:
+        if not unlinked:
+            return verdict, []  # Q3 (a): no named code is a product's; the resolver decides
+        seat_covers = product_find._seat_covers(db, unlinked)
+        return verdict, [
+            (NO_WC_LINE if str(p.id) in seat_covers else NO_SEAT_COVER_LINE).format(code=p.product_code)
+            for p in unlinked
+        ]
+    out: list[Any] = []
+    for i, entity in enumerate(entities):
+        if i not in replaced:
+            out.append(entity)
+            continue
+        # The customer typed these codes: every other field the entity carries (a quantity,
+        # its confidence) rides on each.
+        out += [
+            {**entity, "raw": code, "canonical_code": code, "current_message": True}
+            for code in replaced[i]
+        ]
+    return {**verdict, "entities": out}, []
