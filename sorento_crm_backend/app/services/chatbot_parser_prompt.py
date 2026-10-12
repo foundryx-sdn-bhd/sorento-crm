@@ -1273,119 +1273,157 @@ def blocks_of(template: str | None) -> str:
 
 
 # CHAT-SPARSE (`documentation/plans/chatbot/PLAN-chat-sparse-emission-12oct.md`): the
-# emission carries only the keys that say something. Appended at the very END of a
-# version's text (after the policy blocks), so it is the last word on the OUTPUT shape and
-# overrides every "emit this key on every object" above it. A version whose text carries
-# SPARSE_OUTPUT_MARKER is called with the sparse schema in non-strict mode and hydrated
-# back to the full shape (`chatbot/head/parser.py::hydrate_emission`); every other version
-# keeps the strict schema. NOT part of SEMANTIC_PARSER_PROMPT: the fallback stays strict.
-SPARSE_OUTPUT_MARKER = "SPARSE OUTPUT (overrides every \"emit on every object\" above)"
-SPARSE_OUTPUT_ADDENDUM = """
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-""" + SPARSE_OUTPUT_MARKER + """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Write ONLY the keys that carry something. A key you leave out is read as exactly null,
-[] or false, so writing it costs time and adds nothing:
-  - leave out every key whose value is null, an empty list [] or false;
-  - leave out an object (routing, escalation, open_question_answer, low_stock,
-    chat_report, anaphora) when every key inside it would be left out, and inside an
-    object you write, leave out its empty keys the same way;
-  - inside each entity, leave out canonical_code, quantity, spec_key, spec_value and
-    account when they are null.
-ALWAYS write message_type and entity_op (it has no empty value: "reuse" is a value).
-These mean something different when false than when null, so write them whenever they
-are true OR false, and leave them out only when null:
-  - is_affirmative (false: the message declines; null: it is not a yes or a no at all);
-  - is_active (false: the message asks for INACTIVE records; null: no lifecycle filter);
-  - domain_in_message (always true or false, so always written);
-  - inside each entity: current_message, confident, hint_confident, and spec_value
-    (false is the answer of a yes-or-no specification key).
-Inside each entity, always write raw and hint.
-Decide every value exactly as the rules above say; this changes only which keys you
-write, never what any of them means.
-  - "thanks" -> {"message_type": "casual", "entity_op": "reuse", "domain_in_message": false}
-"""
-
-#: The OUTPUT block every parser line carries, byte for byte (the code constant, v42, v50,
-#: the v52 candidate and v56 all hash the same, measured 12 Oct 2026). A sparse version
-#: replaces it: the model copies the shape it is shown, so a template full of `false` and
-#: `[]` defaults is emitted in full whatever a later rule says (live probe, 12 Oct 2026).
-STRICT_OUTPUT_BLOCK_START = "== OUTPUT (exactly these keys, no others, no comments) =="
-STRICT_OUTPUT_BLOCK_END = "Return exactly one JSON object."
-SPARSE_OUTPUT_BLOCK = """== OUTPUT (these keys and no others, no comments; WRITE ONLY THE KEYS THAT CARRY A VALUE) ==
-A key whose value would be null, [] or false is LEFT OUT (SPARSE OUTPUT, at the end). What
-each key holds when it is written:
-{
-  "message_type": "request_for_help|business_query|clarification|casual|unknown" (always written),
-  "intent_hint": "string",
-  "domain_hint": "string",
-  "scope_intent": "broaden|specific",
-  "is_affirmative": true|false (false is a decline; a message that is neither: leave out),
-  "user_goal": "string",
-  "continuation": true,
-  "access_levels": ["..."],
-  "broaden_axis": "date|<entity hint>|all - the ONE axis the user is widening this turn; see BROADEN AXIS",
-  "broaden_to": "family|all - how far that axis is widened; see BROADEN AXIS",
-  "date_mode": "overlap|started|ended - only for promotion domain with a date filter",
-  "date_filter_start": "start date of filter if user explicitly mentions in the current message",
-  "date_filter_end": "end date of filter if user explicitly mentions in the current message",
-  "match_mode": "and|or",
-  "demand_qty": n,
-  "entities": [{...}],
-  "entity_op": "clear|replace_combine|replace|modify|reuse" (always written),
-  "domain_in_message": true|false (always written),
-  "requested_attributes": ["..."],
-  "contains_flyer": true,
-  "reference_positions": [n],
-  "reference_target": "result|dym - WHICH set a positional reply targets; only when a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
-  "person_mention": "the surface name the user mentioned",
-  "is_active": "true|false - lifecycle status filter from current message only" (written whenever true or false),
-  "order_status": "outstanding|delivered - ORDER delivery-status filter from current message only (order domain)",
-  "correction": true,
-  "routing": {
-    "suggested_team": "purchasing|purchasing_certification|customer_service|marketing_product|marketing_form|warehouse|marketing_promotion|it_admin",
-    "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support"
-  },
-  "escalation": { "is_escalation_confirmation": true, "company_pick": "string - ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" },
-  "document": ["SO|DO|PO|SPO|GRN"], the papers the message named
-  "status": "outstanding|delivered|sales_report - the delivery/order status axis from the current message only; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
-  "asks": [{"domain","intent"}] one per domain the message names, ONLY when it names more than one; see ASKS
-  "topic_reset": true, only when the message drops the current subject for a new one; see TOPIC RESET
-  "anaphora": { "backward_reference": true }
-}
-Return exactly one JSON object, holding only the keys that carry a value."""
-
-#: The addenda's own "emit on every object" lines, each told the same thing. Literal
-#: edits of PROMPT text (never of anything a customer typed); a phrase a line does not
-#: carry is skipped.
-SPARSE_PHRASE_EDITS: tuple[tuple[str, str], ...] = (
-    (
-        "Everything below is IN ADDITION to the OUTPUT object above. Emit",
-        "Everything below is IN ADDITION to the OUTPUT object above, and like every key it is\n"
-        "written only when it carries a value (SPARSE OUTPUT). Emit",
+# families of output keys that are empty on nearly every turn, nested in the STRICT wire
+# schema as one nullable object each (`chatbot/head/parser.py::PARSE_OUTPUT_GROUPED_JSON_SCHEMA`)
+# and flattened back before any reader sees them. One definition for the schema and for the
+# prompt text below. Key names inside a group are unchanged, so every rule above applies
+# as written. Measured on 20 strict live emissions (12 Oct 2026): these keys are empty on
+# 19 or 20 of the 20 turns.
+OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
+    "dates": ("date_mode", "date_filter_start", "date_filter_end"),
+    "ranking": (
+        "sales_channel",
+        "rank_by",
+        "basis",
+        "rank_group",
+        "rank_direction",
+        "sort_by",
+        "sort_dir",
+        "ranking_refine",
+        "ranking_drill",
+        "measure",
+        "sales_basis",
+        "sales_company",
     ),
-    ("what was asked. Emit on every object:", "what was asked. Emit when it carries a value:"),
-    ("One more OUTPUT key, on every object:", "One more OUTPUT key, written only when it carries a value:"),
+    "conversation": (
+        "scope_intent",
+        "broaden_axis",
+        "broaden_to",
+        "continuation",
+        "correction",
+        "topic_reset",
+        "proceed_anyway",
+    ),
+    "filters": ("access_levels", "demand_qty", "contains_flyer", "person_mention", "is_active", "promotion_kind"),
+}
+#: The same, inside each entity: null on all but a few entities (2 of 10 measured).
+ENTITY_OUTPUT_GROUPS: dict[str, tuple[str, ...]] = {
+    "detail": ("quantity", "spec_key", "spec_value", "account"),
+}
+
+GROUPED_OUTPUT_MARKER = "OUTPUT GROUPS (the schema nests these keys)"
+GROUPED_OUTPUT_ADDENDUM = (
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    + GROUPED_OUTPUT_MARKER
+    + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "The output schema puts some of the keys above inside a group object. Decide every key\n"
+    "exactly as the rules above say; only where it is written changes:\n"
+    + "".join(f'  - "{group}": {", ".join(keys)}\n' for group, keys in OUTPUT_GROUPS.items())
+    + "".join(f'  - "{group}", inside each entity: {", ".join(keys)}\n' for group, keys in ENTITY_OUTPUT_GROUPS.items())
+    + "A group is null when NONE of its keys says anything: every key in it would be null,\n"
+    "false or []. That is nearly every message: a plain question is \"conversation\": null,\n"
+    "\"filters\": null, \"dates\": null, \"ranking\": null, and an entity with no quantity\n"
+    "and no specification is \"detail\": null. Write the group object only when at least\n"
+    "one key in it is true or has a value, and then write every one of its keys, each with\n"
+    "the value the rules above give it (is_active false is a value: write \"filters\").\n"
+    "escalation, open_question_answer, low_stock and anaphora work the same way: null when\n"
+    "every key inside would be null, false or [], otherwise the whole object as the rules\n"
+    "above say. This overrides any line above that says to write one of them on every object.\n"
 )
 
 
-def sparse_prompt(template: str) -> str:
-    """A parser version's text turned into its SPARSE OUTPUT version (CHAT-SPARSE).
+#: Flags no reader tells false from null (pinned by `tests/chatbot/test_parser_grouped_
+#: emission.py::test_no_reader_tells_a_plain_flags_false_from_its_null`). Inside a group the
+#: schema allows them only true or null, so a group is never written just to say false.
+PLAIN_FLAGS: frozenset[str] = frozenset(
+    {
+        "continuation",
+        "contains_flyer",
+        "correction",
+        "topic_reset",
+        "proceed_anyway",
+        "ranking_refine",
+        "is_escalation_confirmation",
+        "backward_reference",
+        "all_categories",
+    }
+)
 
-    The OUTPUT block is swapped for `SPARSE_OUTPUT_BLOCK`, the addenda's "on every object"
-    lines are told the same, and `SPARSE_OUTPUT_ADDENDUM` goes last. Refuses a text that
-    does not carry the OUTPUT block exactly once, or that is already sparse: either is a
-    line this was not built for, and a half-sparse prompt would be graded as a sparse one.
-    """
-    if SPARSE_OUTPUT_MARKER in template:
-        raise ValueError("prompt is already a sparse version")
-    start = template.find(STRICT_OUTPUT_BLOCK_START)
-    if start < 0 or template.count(STRICT_OUTPUT_BLOCK_START) != 1:
+STRICT_OUTPUT_BLOCK_START = "== OUTPUT (exactly these keys, no others, no comments) =="
+STRICT_OUTPUT_BLOCK_END = "Return exactly one JSON object."
+#: The two objects the OUTPUT block spells out on one line each, shown as null by default.
+_NULLABLE_OBJECT_LINES = {
+    "escalation": '  "escalation": null, or { "is_escalation_confirmation": true, "company_pick": '
+    '"string_or_null - ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" } when either says something,',
+    "anaphora": '  "anaphora": null, or { "backward_reference": true } when the message refers backward,',
+}
+
+
+def _grouped_block(block: str) -> str:
+    """The OUTPUT block with each group's member lines folded into one line showing the
+    group as null (the model copies the shape it is shown; a template of `false` defaults
+    is written in full). Each member keeps its own description; a plain flag shows
+    `true|null`. Nothing outside the moved lines changes."""
+    import re
+
+    group_of = {key: group for group, keys in OUTPUT_GROUPS.items() for key in keys}
+    members: dict[str, list[str]] = {group: [] for group in OUTPUT_GROUPS}
+    lines: list[str] = []
+    for line in block.split("\n"):
+        match = re.match(r'  "(\w+)": (.*?),?$', line)
+        key = match.group(1) if match else None
+        if key in _NULLABLE_OBJECT_LINES:
+            lines.append(_NULLABLE_OBJECT_LINES[key])
+        elif key in group_of:
+            group = group_of[key]
+            value = "true|null" if key in PLAIN_FLAGS else match.group(2)
+            if not members[group]:
+                lines.append(f"<<{group}>>")
+            members[group].append(f'"{key}": {value}')
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    for group, keys in OUTPUT_GROUPS.items():
+        listed = {m.split('"')[1] for m in members[group]}
+        shown = members[group] + [f'"{key}": ...' for key in keys if key not in listed]
+        line = f'  "{group}": null, or {{ {", ".join(shown)} }} when one of them says something,'
+        if f"<<{group}>>" in text:
+            text = text.replace(f"<<{group}>>", line)
+        else:
+            # A group none of whose keys the block lists (they come from the addenda).
+            text = text.replace("\n}\n" + STRICT_OUTPUT_BLOCK_END, "\n" + line + "\n}\n" + STRICT_OUTPUT_BLOCK_END)
+    return text
+
+
+def grouped_prompt(template: str) -> str:
+    """A parser version's text in the grouped wire shape (CHAT-SPARSE): the OUTPUT block
+    shows each group as null (`_grouped_block`) and the OUTPUT GROUPS section goes last.
+    Nothing else in the text changes. Refuses a text that already carries the section or
+    does not carry the OUTPUT block exactly once."""
+    if GROUPED_OUTPUT_MARKER in template:
+        raise ValueError("prompt already carries the OUTPUT GROUPS section")
+    if template.count(STRICT_OUTPUT_BLOCK_START) != 1:
         raise ValueError("prompt does not carry the OUTPUT block exactly once")
+    start = template.index(STRICT_OUTPUT_BLOCK_START)
     end = template.index(STRICT_OUTPUT_BLOCK_END, start) + len(STRICT_OUTPUT_BLOCK_END)
-    text = template[:start] + SPARSE_OUTPUT_BLOCK + template[end:]
-    for old, new in SPARSE_PHRASE_EDITS:
-        text = text.replace(old, new)
-    return text + SPARSE_OUTPUT_ADDENDUM
+    text = template[:start] + _grouped_block(template[start:end]) + template[end:]
+    return _grouped_entity_line(text) + GROUPED_OUTPUT_ADDENDUM
+
+
+ENTITY_LINE_PREFIX = "Each entity: {"
+ENTITY_LINE_END = '"confident": true|false }'
+
+
+def _grouped_entity_line(text: str) -> str:
+    """The entity format line shows each entity group as null, as `_grouped_block` does for
+    the object. A text whose entity line ends some other way is left as it is."""
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        if line.startswith(ENTITY_LINE_PREFIX) and line.endswith(ENTITY_LINE_END):
+            groups = "".join(
+                f', "{group}": null, or {{ {", ".join(chr(34) + k + chr(34) for k in keys)} }} when one of them has a value'
+                for group, keys in ENTITY_OUTPUT_GROUPS.items()
+            )
+            lines[index] = line[: -len(" }")] + groups + " }"
+            break
+    return "\n".join(lines)

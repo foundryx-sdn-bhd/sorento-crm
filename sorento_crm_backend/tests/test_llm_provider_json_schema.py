@@ -90,19 +90,6 @@ def test_openai_forces_json_schema_strict(monkeypatch):
     assert rf["json_schema"]["schema"] is PARSE_RESULT_JSON_SCHEMA
 
 
-def test_openai_sends_non_strict_when_asked(monkeypatch):
-    """CHAT-SPARSE: a schema that leaves keys optional is refused by strict mode."""
-    stub = _StubOpenAIClient("{}")
-    monkeypatch.setattr("openai.OpenAI", lambda api_key=None: stub)
-    OpenAIProvider("k").chat(
-        [{"role": "user", "content": "hi"}],
-        json_schema=PARSE_RESULT_JSON_SCHEMA,
-        json_schema_name=PARSE_RESULT_SCHEMA_NAME,
-        json_schema_strict=False,
-    )
-    assert stub.last_kwargs["response_format"]["json_schema"]["strict"] is False
-
-
 def test_openai_json_schema_takes_precedence_over_response_format(monkeypatch):
     stub = _StubOpenAIClient("{}")
     monkeypatch.setattr("openai.OpenAI", lambda api_key=None: stub)

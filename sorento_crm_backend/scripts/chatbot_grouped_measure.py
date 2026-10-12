@@ -1,13 +1,13 @@
-"""CHAT-SPARSE: decode tokens and latency of the parser call, strict vs sparse, on the
+"""CHAT-SPARSE: decode tokens and latency of the parser call, strict vs grouped, on the
 same made-up turns (`documentation/plans/chatbot/PLAN-chat-sparse-emission-12oct.md`).
 
 Live provider calls, no database: the prompt comes from a text file, the user block from
 `turn/context.assemble`, the call from `head/parser.parse` (the production path, with its
 hydration and wire check). Every turn is synthetic.
 
-    venv/bin/python scripts/chatbot_sparse_measure.py \
+    venv/bin/python scripts/chatbot_grouped_measure.py \
         --prompt alembic/data/chatbot_semantic_parser.candidate-20261010.txt \
-        --arm strict --arm sparse --out /tmp/sparse.json
+        --arm strict --arm grouped --out /tmp/grouped.json
 
 Each arm costs one call per turn. Spend cap for the lane is about 60 calls.
 """
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.chatbot.head import parser  # noqa: E402
 from app.services.chatbot.turn import context as context_mod  # noqa: E402
-from app.services.chatbot_parser_prompt import sparse_prompt  # noqa: E402
+from app.services.chatbot_parser_prompt import grouped_prompt  # noqa: E402
 
 CURRENT_DATE = "Monday, 12 October 2026"
 
@@ -79,14 +79,14 @@ def user_block(message: str, previous: str | None, open_question: str | None) ->
 
 
 def run(prompt: str, arm: str, model: str, limit: int) -> list[dict]:
-    text = (sparse_prompt(prompt) if arm == "sparse" else prompt).replace("{{current_date}}", CURRENT_DATE)
+    text = (grouped_prompt(prompt) if arm == "grouped" else prompt).replace("{{current_date}}", CURRENT_DATE)
     config = parser.ParserConfig(
         system_prompt=text,
         prompt_version=None,
         provider="openai",
         model=model,
         api_key="injected-by-proxy",
-        sparse=arm == "sparse",
+        grouped=arm == "grouped",
     )
     from app.services.chatbot import llm_call
 
@@ -136,7 +136,7 @@ def summary(rows: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prompt", required=True)
-    ap.add_argument("--arm", action="append", choices=["strict", "sparse"], required=True)
+    ap.add_argument("--arm", action="append", choices=["strict", "grouped"], required=True)
     ap.add_argument("--model", default="gpt-5.4-mini")
     ap.add_argument("--limit", type=int, default=len(TURNS))
     ap.add_argument("--out", required=True)
