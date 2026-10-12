@@ -1,87 +1,109 @@
 # PLAN: chat-sparse-emission (lane CHAT-SPARSE)
 
-Status: Built, PR #1603; awaiting the crew per-PR eval gate and the owner's label move. Track: standard by
+Status: Round 2 built (STRICT grouped emission), PR #1603; awaiting the crew per-PR eval gate and the
+owner's label move. Round 1 (non-strict sparse) FAILED the crew eval and is removed. Track: standard by
 size (M; one data-only migration, no auth/RBAC, no new ingest surface; no owner-visible change until a
 label moves). UAC: `chat-sparse-emission-acceptance-criteria.md`.
 
 ## Problem (measured by CHAT-SPEED #1602, 12 Oct 2026)
 
 The semantic parser call is most of a chatbot turn: p50 about 3.0 s, of which about 1.9 s is DECODING
-the JSON emission (about 408 output tokens, no reasoning tokens, about 220 tok/s). About 70% of the
-emission is keys whose value is null / [] / false. Option D gate: turn p95 <= 8 s (main with
-embeddings: 10.9 s).
+the JSON emission (about 400 output tokens, no reasoning tokens). Most of the emission is key families
+that are empty on nearly every turn. Option D gate: turn p95 <= 8 s (main with embeddings: 10.9 s).
 
-## Design (simplest thing)
+## Round 1: non-strict sparse emission (FAILED, removed)
 
-1. **Absent == empty, in one place.** `head/parser.py::hydrate_emission` writes every absent declared
-   key as its empty value, derived from the strict schema itself: null wherever the key can be null,
-   otherwise [] for a list, false for a flag, and an object of its members' empties. A sparse emission
-   hydrates to the dict the strict schema would have produced for the same reading, so no reader
-   downstream changes. `TOLERATED_ABSENT` (`head/parser.py`) stays for recorded strict emissions.
-2. **Per-version switch, not a global one.** A version whose text carries `SPARSE_OUTPUT_MARKER`
-   (`chatbot_parser_prompt.py`) is called with `PARSE_OUTPUT_SPARSE_JSON_SCHEMA` in NON-strict mode
-   (strict mode requires every key). Every other version, including the current production label,
-   keeps the strict schema byte for byte, so nothing changes until the owner moves a label.
-3. **The strict guarantee, kept locally.** A non-strict answer is checked against the strict schema's
-   types, enums and maxItems (`_wire_errors`); a violation is a failed `understood` (R5), never a soft
-   default. Unknown keys are still ignored. Strict answers are never hydrated: a missing key there is
-   a fault to see.
-4. **Keys whose false is not their null are always written.** Readers test `is False` on
-   `is_affirmative` (`turn/decide.py:614`), `is_active` (`lanes/business/answer.py:3321`, passed to the
-   tool as-is by `fetch.py:731`), `domain_in_message` (`lanes/business/low_stock_ask.py:457`), and per
-   entity `current_message` / `confident` / `hint_confident` (`head/grounding.py:430,638`,
-   `engine.py:496`) and `spec_value` (a yes-or-no spec key's false, `head/grounding.py:612`).
-   `entity_op` has no empty value ("reuse" is a value: `turn/decide.py:393`, `turn_runtime.py:1290`).
-   `message_type`, `entity_op`, `domain_in_message` and an entity's `raw` / `hint` are required: the
-   wire check fails a sparse answer that drops one (a non-strict provider does not enforce
-   `required`). Every other flag is only ever read `is True` or truthy;
-   `test_no_reader_tells_a_plain_flags_false_from_its_null` pins that. Inside an object an
-   undeclared key is dropped (strict mode refused it); a float for an integer key is refused.
-5. **Prompt.** `sparse_prompt(text)`: the OUTPUT block (byte-identical on the code constant, v42, v50,
-   the v52 candidate and v56) is replaced by `SPARSE_OUTPUT_BLOCK`, the addenda's "emit on every
-   object" lines are told the same (three literal edits of prompt text), and `SPARSE_OUTPUT_ADDENDUM`
-   goes last. Appending the rule alone only took tokens from 420 to 315 on the probe: the model copies
-   the template it is shown.
-6. **Publish, label unmoved.** Migration `chs_0001_parser_sparse_output` publishes two unlabelled
-   versions: the text the `production` label points at when it runs (v52 on prod), made sparse; and
-   the code constant plus policy blocks (`chatbot_rearch_s4._body`), made sparse.
-   `scripts/publish_parser_sparse.py --from-version N` does the same for a version published later
-   (SPEC-PROMO-PARAMS' specs-block version, #1582).
+The parser emitted only non-empty keys, with the schema sent non-strict and a local check standing in.
+Crew full eval of 48478b36 (eval v66 = v63 + sparse, baseline main+emb): hidden 175/214 vs 180, dev
+85/107 vs 87; errors 9 vs 2 and 3 vs 0; p50 3.5 vs 4.1 s but p95 13.8 vs 10.9 s; output tokens per
+case 780 to 222. Cause: off-schema values a strict call can never produce
+(`open_question_answer.mode = "null"` as a string, `profile_statements[].key = "usual_products"`),
+random across reruns; four deterministic losses (hidden cand-0052, cand-0232, cand-0294; dev cand-0044).
+Lesson: the provider's constrained decoding is what guarantees the shape. Do not give it up for tokens.
 
-## Measurement (live, 12 Oct 2026; 60 parser calls, the cap)
+## Round 2 design: STRICT grouped emission
+
+1. **Same strict guarantee, a different wire shape.** A version whose text carries
+   `GROUPED_OUTPUT_MARKER` (`chatbot_parser_prompt.py`) is held to `PARSE_OUTPUT_GROUPED_JSON_SCHEMA`
+   (`head/parser.py`), still `strict: true`:
+   - `OUTPUT_GROUPS`: `dates` (3 keys), `ranking` (12 sales/ranking/sort keys), `conversation`
+     (scope / broaden / continuation / correction / topic_reset / proceed_anyway), `filters`
+     (access_levels, demand_qty, contains_flyer, person_mention, is_active, promotion_kind), each one
+     nullable object;
+   - `ENTITY_OUTPUT_GROUPS`: `detail` (quantity, spec_key, spec_value, account) inside each entity;
+   - `escalation`, `open_question_answer`, `low_stock`, `anaphora` may be null.
+   Key names inside a group are unchanged, so every prompt rule applies as written. Every other version
+   (the current production label included) keeps the flat strict schema byte for byte.
+2. **Flatten at the parser, nothing else changes.** `flatten_grouped` turns the answer back into the
+   flat shape before any reader: a null group writes each member's empty value (null, or [] for a
+   list), a null object writes its object of empties. A missing group is still caught by
+   `assert_emission` (the members are missing).
+3. **Plain flags are true or null inside a group.** `PLAIN_FLAGS` (continuation, contains_flyer,
+   correction, topic_reset, proceed_anyway, ranking_refine, is_escalation_confirmation,
+   backward_reference, all_categories) carry `enum: [true, null]` in the grouped schema, so the model
+   never writes a group just to say false. No reader tells their false from their null:
+   `test_no_reader_tells_a_plain_flags_false_from_its_null` pins it. Flags whose false is a value
+   (is_affirmative, is_active, domain_in_message, the entity flags, spec_value) keep their full type.
+4. **Prompt.** `grouped_prompt(text)`: inside the OUTPUT block (byte-identical on the code constant,
+   v42, v50, the v52 candidate and v56) each group's member lines fold into one line showing the group
+   as null, each member keeping its own description; the entity format line gains
+   `"detail": null, or {...}`; an OUTPUT GROUPS section goes last. Nothing else in the text changes
+   (pinned per line). The model copies the template it is shown: with the section alone it still
+   wrote every group as an object (probe, 12 Oct 2026).
+5. **Publish, label unmoved.** Migration `chs_0001_parser_sparse_output` (revision id kept, body now
+   grouped; a database that ran the round 1 body keeps those rows unlabelled) publishes two unlabelled
+   versions: the text the `production` label points at when it runs (v52 on prod), grouped; the code
+   constant plus policy blocks, grouped. `scripts/publish_parser_grouped.py --from-version N` does the
+   same for any later version (e.g. v63 on the eval DB, or #1582's specs-block version).
+
+## Measurement (live, 12 Oct 2026, round 2: 66 parser calls)
 
 gpt-5.4-mini, `head/parser.parse` production path, 20 made-up turns
-(`scripts/chatbot_sparse_measure.py`), prompt `alembic/data/chatbot_semantic_parser.candidate-20261010.txt`.
+(`scripts/chatbot_grouped_measure.py`), prompt `alembic/data/chatbot_semantic_parser.candidate-20261010.txt`.
 
-| arm | p50 | p95 | max | mean completion tokens | wire errors |
+| arm | p50 | p95 | max | mean completion tokens | errors |
 |---|---|---|---|---|---|
-| strict | 2.52 s | 2.94 s | 3.21 s | 396 | 0 |
-| sparse (20 turns) | 1.54 s | 1.80 s | 2.08 s | 97 | 0 |
-| sparse, final wording (12 turns) | 1.58 s | 2.28 s | 2.63 s | 104 | 0 |
+| strict (same hour) | 3.13 s | 4.64 s | 5.63 s | 396 | 0 |
+| grouped, final | 2.33 s | 3.03 s | 3.23 s | 246 | 0 |
 
-The `is_active` / `spec_value` lines (review round 1) were added after this measurement and the
-60-call cap, so the crew eval gate on the published sparse version (AC-8) is the run of record.
-After the `entity_op` fix, 12/12 turns match strict on `entity_op`, `domain_in_message` and
-`is_affirmative`. Other per-turn differences are within the run-to-run noise CHAT-SPEED measured
-(4/20 strict emissions byte-identical across two strict runs); the crew eval gate decides.
+Readings, flattened, vs strict on the same turns: 12 differing keys over 20 turns, against 8 between two
+strict runs of the same turns (the noise floor). Watch item: one grouped turn ("sales report for KIM
+HUAT March") dropped `status: sales_report` while keeping `order_status`; both strict runs kept it. The
+round 1 sparse arm dropped it once too. Single sample; the eval gate decides.
+
+## The round 1 p95 regression (13.8 vs 10.9 s), as far as this sandbox can see
+
+The run dirs are on the crew machine, so this is reasoned from what was measured here, with the check
+that would confirm it:
+- Not decode: output tokens fell 72%, so the slow cases are not slow because of what was written.
+- Not the errors: a failed parse ends the turn at `understood`, faster than a good one.
+- Provider tail at normal token counts: seen here at 16.9 s (grouped, 326 tokens) and by CHAT-SPEED at
+  10.5 s (strict). p95 over ~320 cases is the ~16 slowest, so two or three such calls move it by
+  seconds. The strict baseline run had its own tail.
+- Cold prompt cache on a NEW version: the parser's `prompt_cache_key` is per version, and the 40k-token
+  prefix of a version no run has used is a cache miss on each worker's first calls (CHAT-SPEED: 5.8 s
+  cold vs about 3 s warm; here the first call on a new version took 8.3 s). The baseline label is
+  warm from earlier runs.
+- Check: `ai_assistant_usage_logs.cached_tokens` and the parse duration of the 16 slowest cases. Near
+  zero cached tokens, or 8-17 s with normal token counts, means cache/provider, not the change. A warm-up
+  call per version before the timed run would make the p95 comparison fair.
 
 ## Test list
 
-- `tests/chatbot/test_parser_sparse_emission.py`: per key family (escalation, escalation declined,
-  open_question_answer pick / fill / all, low_stock, low_stock all categories, sales keys, entities
-  spec_key / quantity / account, lists and the rest, nothing said) a sparse wire form parses to the
-  strict emission; written false stays false, absent flag is null; absent objects read as empty
-  objects; strict call unchanged and still refuses a missing key; sparse call is non-strict with the
-  sparse schema; off-schema answers fail; no message_type fails; unknown keys ignored; config reads
-  the marker; `sparse_prompt` on four lines changes only the OUTPUT wording and refuses bad input; no
-  reader tells a plain flag's false from its null.
-- `tests/chatbot/test_parser_sparse_publish.py`: both lines published unlabelled, labels unmoved,
-  idempotent, unbuildable production text skipped not failed, downgrade keeps labelled rows.
+- `tests/chatbot/test_parser_grouped_emission.py`: per key family (nothing said, escalation, escalation
+  declined, open_question_answer pick/fill/all, low_stock, low_stock all categories, sales and ranking
+  keys, one ranking key, dates, conversation, conversation flags only false, filters, inactive records,
+  entities detail, lists) a grouped wire form parses to the flat emission; null groups and objects read
+  as empties; a missing group fails; flat versions called exactly as before; grouped schema strict-valid
+  and leaf-identical; group membership sane; config reads the marker; the plain-flag guard; the prompt
+  changes only the OUTPUT block and the entity line on four parser lines; refusals; every group named.
+- `tests/chatbot/test_parser_grouped_publish.py`: both lines published unlabelled, labels unmoved,
+  idempotent, unbuildable text skipped, downgrade keeps labelled rows.
 
 ## Not doing
 
 - No label move (owner's click, after the eval gate).
-- No change to `SEMANTIC_PARSER_PROMPT` itself: the registry fallback stays strict.
-- Harness mocks (`mock_reformulator_output`) stay full-shape: `test_harness_injections.py` pins that a
-  bad mock names every missing key. A recorded sparse turn is stored hydrated anyway.
-- Hedged parser requests (CHAT-SPEED option b): only if p95 is still over 8 s after both lanes.
+- No change to `SEMANTIC_PARSER_PROMPT` itself: the registry fallback stays flat.
+- No non-strict call anywhere (round 1 lesson).
+- Hedged parser requests (CHAT-SPEED option b): only if p95 stays over 8 s; the provider tail above is
+  exactly what it targets.

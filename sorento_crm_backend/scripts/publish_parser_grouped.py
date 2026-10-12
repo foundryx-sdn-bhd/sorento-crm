@@ -1,15 +1,15 @@
-"""Publish the SPARSE OUTPUT build of one parser version as a new UNLABELLED
-`chatbot_semantic_parser` version (CHAT-SPARSE, `chatbot_parser_prompt.sparse_prompt`).
+"""Publish the GROUPED OUTPUT build of one parser version as a new UNLABELLED
+`chatbot_semantic_parser` version (CHAT-SPARSE, `chatbot_parser_prompt.grouped_prompt`).
 
 Migration `chs_0001_parser_sparse_output` builds the production line and the code-constant
 line once, at upgrade. This is the same publish for a version that appears later, e.g. the
-one SPEC-PROMO-PARAMS' `publish_parser_specs_block` prints: the sparse edit is a pure
+one SPEC-PROMO-PARAMS' `publish_parser_specs_block` prints: the grouped edit is a pure
 function of the text, so it stacks on any line. Idempotent. Never moves a label: promote
 the printed version on the Prompts page.
 
 Usage, from `sorento_crm_backend/` with the backend env (`DATABASE_URL`) in place:
 
-    venv/bin/python -m scripts.publish_parser_sparse --from-version 87
+    venv/bin/python -m scripts.publish_parser_grouped --from-version 87
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def main() -> None:
     finally:
         session.close()
     if version is None:
-        print("nothing published: that text is already sparse, has no OUTPUT block, or its sparse build exists")
+        print("nothing published: that text is already grouped, has no OUTPUT block, or its grouped build exists")
     else:
         print(f"published chatbot_semantic_parser v{version} (unlabelled); promote it on the Prompts page")
 

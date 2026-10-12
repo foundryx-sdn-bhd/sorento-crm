@@ -1,23 +1,28 @@
-"""Publish the SPARSE OUTPUT parser prompt as two NEW unlabelled versions, label unmoved
+"""Publish the GROUPED-OUTPUT parser prompt as two NEW unlabelled versions, label unmoved
 (CHAT-SPARSE, documentation/plans/chatbot/PLAN-chat-sparse-emission-12oct.md).
 
-`chatbot_parser_prompt.sparse_prompt` turns a parser version's text into one that writes
-only the keys carrying a value (the live measurement: completion tokens 396 -> 97, parse
-p50 2.52 -> 1.54 s). `head/parser.py` reads the marker the text then carries, calls the
-provider non-strict and hydrates the answer back to the full shape.
+`chatbot_parser_prompt.grouped_prompt` turns a parser version's text into one whose STRICT
+wire shape nests the rarely used key families in nullable objects (live measurement:
+completion tokens 396 -> 246, parse p50 3.13 -> 2.33 s). `head/parser.py` reads the marker
+the text then carries, holds the provider to `PARSE_OUTPUT_GROUPED_JSON_SCHEMA` (still
+strict) and flattens the answer back to the flat shape.
+
+The revision id keeps its first name: an earlier body of this revision published the
+non-strict SPARSE OUTPUT build (crew eval of 12 Oct 2026: FAIL, schema drift), and a
+database already at this revision keeps those rows unlabelled. Such a database gets the
+grouped build from `scripts/publish_parser_grouped.py --from-version N`.
 
 Two bodies, each published only if no version already carries it:
 
 1. The PRODUCTION line: the text the `production` label points at when this runs (v52 on
-   prod), made sparse. Its variables are copied from that version. The label is read,
-   never written.
+   prod), grouped. Its variables are copied from that version. The label is read, never
+   written.
 2. The CODE CONSTANT line: `chatbot_rearch_s4`'s formula (the constant plus the rendered
-   policy blocks, as `rkind_0001_parser_ref_kinds` builds it), made sparse.
+   policy blocks, as `rkind_0001_parser_ref_kinds` builds it), grouped.
 
-A text that is already sparse, or that does not carry the OUTPUT block exactly once, is
-skipped with a log line, never a failed migration: promotion is the owner's call and a
-missing candidate is visible on the Prompts page. Promoting is one label move; rolling back
-is the reverse move.
+A text that is already grouped, or that does not carry the OUTPUT block exactly once, is
+skipped with a log line, never a failed migration. Promoting is one label move; rolling
+back is the reverse move.
 
 Revision ID: chs_0001_parser_sparse_output
 Revises: rkind_0003_reference_kind_rows
@@ -31,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.services.ai_prompt_registry import PROMPT_KEYS
-from app.services.chatbot_parser_prompt import sparse_prompt
+from app.services.chatbot_parser_prompt import grouped_prompt
 
 revision = "chs_0001_parser_sparse_output"
 down_revision = "rkind_0003_reference_kind_rows"
@@ -67,7 +72,7 @@ def _production(session: Session) -> AIPromptVersion | None:
 
 def _publish(session: Session, *, source: str, variables: list, line: str, base: str) -> int | None:
     try:
-        template = sparse_prompt(source)
+        template = grouped_prompt(source)
     except ValueError as exc:
         logger.info("chs_0001: %s line not published (%s)", line, exc)
         return None
@@ -77,7 +82,7 @@ def _publish(session: Session, *, source: str, variables: list, line: str, base:
         .first()
     )
     if existing is not None:
-        logger.info("chs_0001: sparse %s line already published as v%s", line, existing.version)
+        logger.info("chs_0001: grouped %s line already published as v%s", line, existing.version)
         return None
     versions = session.query(AIPromptVersion.version).filter(AIPromptVersion.name == PROMPT_NAME).all()
     next_version = max((int(v[0]) for v in versions), default=0) + 1
@@ -90,18 +95,18 @@ def _publish(session: Session, *, source: str, variables: list, line: str, base:
             variables=list(variables),
             config_json={MARKER_KEY: line, "built_on": base},
             commit_message=(
-                f"CHAT-SPARSE: SPARSE OUTPUT on the {line} line ({base}). "
+                f"CHAT-SPARSE: OUTPUT GROUPS on the {line} line ({base}). "
                 "Unlabelled, promote from the Prompts page."
             ),
         )
     )
     session.flush()
-    logger.info("chs_0001: published sparse %s line as v%s, label unmoved", line, next_version)
+    logger.info("chs_0001: published grouped %s line as v%s, label unmoved", line, next_version)
     return next_version
 
 
 def publish(session: Session) -> list[int]:
-    """Publish both sparse lines; returns the version numbers published (none when both
+    """Publish both grouped lines; returns the version numbers published (none when both
     already exist)."""
     published: list[int] = []
     production = _production(session)

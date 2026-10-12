@@ -1,24 +1,24 @@
 # UAC: chat-sparse-emission (lane CHAT-SPARSE)
 
 Plan: `PLAN-chat-sparse-emission-12oct.md`. No owner-visible change until the production label moves.
+Round 2 (strict grouped emission) replaces round 1 (non-strict sparse, failed the crew eval).
 
-- **AC-1** A parser version whose text carries the SPARSE OUTPUT marker is called with the sparse schema
-  in non-strict mode; every other version is called exactly as before (strict schema, strict mode).
-- **AC-2** A sparse emission reaches the engine as the full shape: every absent declared key reads as
-  its empty value (null; [] for a list; false for `self_reference`; an object of empties for routing,
-  escalation, open_question_answer, low_stock, anaphora; null for chat_report), recursively inside
-  entities and nested objects. Pinned per key family: escalation, open_question_answer, low_stock,
-  sales keys, entities[].spec_key / quantity / account.
-- **AC-3** A written `false` on is_affirmative, is_active, domain_in_message, and per entity
-  current_message, confident, hint_confident or spec_value stays false; an absent one is null.
-- **AC-4** A sparse answer with a wrong type (a float for an integer included), an off-enum value or too
-  many items fails the parse (failed `understood`, usage still recorded), and so does one missing
-  message_type, entity_op, domain_in_message, or an entity's raw or hint. Unknown top-level keys are
-  ignored; undeclared keys inside an object are dropped.
-- **AC-5** A strict answer missing a declared key still fails the parse (no hydration on the strict path).
-- **AC-6** Migration `chs_0001_parser_sparse_output` publishes the sparse build of the production-labelled
+- **AC-1** A parser version whose text carries the OUTPUT GROUPS marker is called with the grouped schema
+  in STRICT mode; every other version is called exactly as before (flat strict schema).
+- **AC-2** A grouped answer reaches the engine in the flat shape: a null group writes each member's empty
+  value, a null escalation / open_question_answer / low_stock / anaphora writes its object of empties, a
+  null entity `detail` writes null quantity / spec_key / spec_value / account. Pinned per key family:
+  escalation, open_question_answer, low_stock, sales and ranking keys, dates, conversation flags, filters
+  (is_active false included), entities detail.
+- **AC-3** Inside a group a plain flag is true or null only; no reader tells a plain flag's false from
+  its null. is_affirmative, is_active, domain_in_message, the entity flags and spec_value keep false.
+- **AC-4** A grouped answer missing a group fails the parse (failed `understood`), as a flat one missing
+  a key does.
+- **AC-5** The grouped prompt differs from its source only in the OUTPUT block and the entity format
+  line, plus the OUTPUT GROUPS section at the end.
+- **AC-6** Migration `chs_0001_parser_sparse_output` publishes the grouped build of the production-labelled
   text and of the code constant plus policy blocks, each as a new unlabelled version; no label moves;
   re-running publishes nothing; a text it cannot build is skipped with a log line, never a failed upgrade.
-- **AC-7** Live measurement on 20 made-up turns: completion tokens and parser latency lower on the sparse
-  build than on the strict one (measured: 396 to 97 tokens, p50 2.52 to 1.54 s, p95 2.94 to 1.80 s).
-- **AC-8** Crew per-PR eval gate on the sparse version: no topic worse, p95 down.
+- **AC-7** Live measurement on 20 made-up turns: completion tokens and parser latency lower on the grouped
+  build than on the strict one (measured: 396 to 246 tokens, p50 3.13 to 2.33 s, p95 4.64 to 3.03 s).
+- **AC-8** Crew per-PR eval gate on the grouped version: no topic worse, no new errors, p95 down.
