@@ -336,7 +336,7 @@ def test_backfill_pages_seeds_without_repeating_and_ends(db, world):
     ids: list[str] = []
     offset = 0
     for _ in range(100_000):
-        rows = svc._fetch_rows(source="customer", limit=7, offset=offset)
+        rows = svc._fetch_rows(source="customer", limit=500, offset=offset)
         if not rows:
             break
         ids.extend(str(r["id"]) for r in rows)
