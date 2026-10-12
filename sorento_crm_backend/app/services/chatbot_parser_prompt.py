@@ -1270,3 +1270,41 @@ def blocks_of(template: str | None) -> str:
     if BLOCKS_BEGIN in body and BLOCKS_END in body:
         return body.split(BLOCKS_BEGIN, 1)[1].split(BLOCKS_END, 1)[0].strip("\n") + "\n"
     return body
+
+
+# CHAT-SPARSE (`documentation/plans/chatbot/PLAN-chat-sparse-emission-12oct.md`): the
+# emission carries only the keys that say something. Appended at the very END of a
+# version's text (after the policy blocks), so it is the last word on the OUTPUT shape and
+# overrides every "emit this key on every object" above it. A version whose text carries
+# SPARSE_OUTPUT_MARKER is called with the sparse schema in non-strict mode and hydrated
+# back to the full shape (`chatbot/head/parser.py::hydrate_emission`); every other version
+# keeps the strict schema. NOT part of SEMANTIC_PARSER_PROMPT: the fallback stays strict.
+SPARSE_OUTPUT_MARKER = "SPARSE OUTPUT (overrides every \"emit on every object\" above)"
+SPARSE_OUTPUT_ADDENDUM = """
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+""" + SPARSE_OUTPUT_MARKER + """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Write ONLY the keys that carry something. A key you leave out is read as exactly null,
+[] or false, so writing it costs time and adds nothing:
+  - leave out every key whose value is null, an empty list [] or false;
+  - leave out an object (routing, escalation, open_question_answer, low_stock,
+    chat_report, anaphora) when every key inside it would be left out, and inside an
+    object you write, leave out its empty keys the same way;
+  - inside each entity, leave out canonical_code, quantity, spec_key, spec_value and
+    account when they are null.
+ALWAYS write, even when the value is false:
+  - message_type;
+  - is_affirmative when the message answers a yes/no question with NO (false); leave it
+    out only when the message is not a yes or a no at all (null);
+  - domain_in_message whenever it is true or false;
+  - inside each entity: raw, hint, current_message, confident and hint_confident.
+Decide every value exactly as the rules above say; this changes only which keys you
+write, never what any of them means.
+  - "stock SRTWC286" -> {"message_type": "business_query", "intent_hint": "check_stock",
+    "domain_hint": "inventory", "domain_in_message": true, "entities": [{"raw":
+    "SRTWC286", "hint": "product", "current_message": true, "confident": true,
+    "hint_confident": true}], "entity_op": "replace"}
+  - "thanks" -> {"message_type": "casual", "domain_in_message": false}
+"""

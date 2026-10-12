@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.ai_prompt_registry import agent_model, render
+from app.services.chatbot_parser_prompt import SPARSE_OUTPUT_MARKER
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -79,6 +80,8 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # CHAT-SPARSE: the rendered prompt asks for a sparse emission (`resolve_config`).
+    sparse: bool = False
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -664,6 +667,142 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 )
 
 
+# CHAT-SPARSE (12 Oct 2026, PLAN-chat-sparse-emission-12oct): a prompt version carrying
+# `chatbot_parser_prompt.SPARSE_OUTPUT_MARKER` emits only the keys that carry something.
+# CHAT-SPEED (#1602) measured about 70% of a strict emission as null / [] / false keys, and
+# decoding them was most of the parse. Strict mode forces every declared key onto the
+# wire, so a sparse version is called with this schema in NON-strict mode, and the strict
+# guarantee it gives up (types and enums) is checked here instead (`_wire_errors`). Every
+# other version keeps the strict schema byte for byte.
+#
+# Each object keeps the keys whose absence would lose a fact. `message_type` has no empty
+# value. Inside an entity, `raw` and `hint` name it, and `current_message` / `confident` /
+# `hint_confident` are read as `is False` (`head/grounding.py:430,638`, `engine.py:496`),
+# so their `false` is not their null. `is_affirmative` (`turn/decide.py:614`) and
+# `domain_in_message` (`lanes/business/low_stock_ask.py:457`) are read the same way: the
+# prompt tells the model to write their `false`, and an omitted one is null.
+SPARSE_REQUIRED: dict[str, list[str]] = {
+    "": ["message_type"],
+    "entities": ["raw", "hint", "current_message", "confident", "hint_confident"],
+}
+
+
+def _sparse_schema(node: Any, path: str = "") -> Any:
+    if isinstance(node, dict):
+        out = {}
+        for key, value in node.items():
+            if key == "properties":
+                out[key] = {
+                    name: _sparse_schema(child, name if not path else f"{path}.{name}")
+                    for name, child in value.items()
+                }
+            elif key == "items":
+                out[key] = _sparse_schema(value, path)
+            else:
+                out[key] = value
+        if "required" in out and "properties" in out:
+            out["required"] = list(SPARSE_REQUIRED.get(path, []))
+        return out
+    return node
+
+
+PARSE_OUTPUT_SPARSE_JSON_SCHEMA = _sparse_schema(PARSE_OUTPUT_JSON_SCHEMA)
+
+
+def _types(schema: dict) -> list[str]:
+    declared = schema.get("type")
+    return list(declared) if isinstance(declared, list) else [declared]
+
+
+def _empty_value(schema: dict) -> Any:
+    """What an absent key means: the value a strict emission writes for "nothing said".
+
+    null wherever the key can be null; otherwise [] for a list, False for a flag, and an
+    object of its own members' empties. A key with none of those (`message_type`, an
+    ask's `domain`) has no empty value, stays absent, and `assert_emission` rejects it.
+    """
+    types = _types(schema)
+    if "null" in types:
+        return None
+    if "array" in types:
+        return []
+    if "object" in types:
+        return {name: _empty_value(child) for name, child in schema.get("properties", {}).items()}
+    if "boolean" in types:
+        return False
+    return _ABSENT
+
+
+_ABSENT = object()
+
+
+def _hydrated(value: Any, schema: dict) -> Any:
+    if isinstance(value, dict) and "object" in _types(schema):
+        out = dict(value)
+        for name, child in schema.get("properties", {}).items():
+            if name in out:
+                out[name] = _hydrated(out[name], child)
+            else:
+                empty = _empty_value(child)
+                if empty is not _ABSENT:
+                    out[name] = empty
+        return out
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [_hydrated(item, schema["items"]) for item in value]
+    return value
+
+
+def hydrate_emission(emission: dict) -> dict:
+    """The emission with every absent declared key written as its empty value.
+
+    ONE place where absent == default, so no reader downstream has to know a key can be
+    missing: a sparse emission hydrates to the same dict the strict schema would have
+    produced for the same reading. A full emission comes back unchanged. Unknown keys
+    are kept, exactly as before (`DECLARED_KEYS`).
+    """
+    return _hydrated(emission, PARSE_OUTPUT_JSON_SCHEMA)
+
+
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "number": (int, float),
+    "integer": (int,),
+    "boolean": (bool,),
+    "array": (list,),
+    "object": (dict,),
+}
+
+
+def _type_ok(value: Any, types: list[str]) -> bool:
+    if value is None:
+        return "null" in types
+    if isinstance(value, bool):
+        return "boolean" in types
+    if isinstance(value, float) and "integer" in types and value.is_integer():
+        return True
+    return any(isinstance(value, _JSON_TYPES.get(t, ())) for t in types if t != "null")
+
+
+def _wire_errors(value: Any, schema: dict, path: str) -> list[str]:
+    """What strict mode would have refused: a wrong type, a value off an enum, too many
+    items. Keys the schema does not declare are not errors (they are ignored, as ever)."""
+    if not _type_ok(value, _types(schema)):
+        return [f"{path} has type {type(value).__name__}"]
+    if "enum" in schema and value not in schema["enum"]:
+        return [f"{path} = {value!r} is not one of the declared values"]
+    errors: list[str] = []
+    if isinstance(value, dict):
+        for name, child in schema.get("properties", {}).items():
+            if name in value:
+                errors += _wire_errors(value[name], child, f"{path}.{name}" if path else name)
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errors.append(f"{path} has more than {schema['maxItems']} items")
+        for index, item in enumerate(value):
+            errors += _wire_errors(item, schema["items"], f"{path}[{index}]")
+    return errors
+
+
 def resolve_config(
     db: Session, *, current_date: str, override_version_id: str | None = None
 ) -> ParserConfig:
@@ -700,6 +839,7 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        sparse=SPARSE_OUTPUT_MARKER in (system_prompt or ""),
     )
 
 
@@ -961,8 +1101,10 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             messages,
             temperature=0.0,
             max_tokens=PARSER_MAX_TOKENS,
-            json_schema=PARSE_OUTPUT_JSON_SCHEMA,
+            json_schema=PARSE_OUTPUT_SPARSE_JSON_SCHEMA if config.sparse else PARSE_OUTPUT_JSON_SCHEMA,
             json_schema_name=PARSE_OUTPUT_SCHEMA_NAME,
+            # CHAT-SPARSE: strict mode would force every key back onto the wire.
+            **({"json_schema_strict": False} if config.sparse else {}),
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
             prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
@@ -994,6 +1136,13 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             raise ParserError(f"parser returned non-JSON content: {exc}") from exc
         if not isinstance(parsed, dict):
             raise ParserError("parser returned a non-object")
+        if config.sparse:
+            # What strict mode guaranteed and a non-strict call does not (R5: a response
+            # that fails validation is a failed `understood`, never a soft default).
+            errors = _wire_errors(parsed, PARSE_OUTPUT_JSON_SCHEMA, "")
+            if errors:
+                raise ParserError("parser emission off the schema: " + "; ".join(errors[:5]))
+        parsed = hydrate_emission(parsed)
         assert_emission(parsed)
     except ParserError as exc:
         # The provider answered, so it billed. The turn fails either way; the spend is
