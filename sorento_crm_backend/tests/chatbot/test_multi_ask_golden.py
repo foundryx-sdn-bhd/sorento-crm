@@ -558,21 +558,28 @@ def test_p2_basis_only_from_a_delivered_or_ordered_word_never_the_default():
     assert "default" in block and "null" in block
 
 
-def test_p3_jin_cang_ku_is_received_never_incoming():
-    lines = [ln for ln in _addendum().splitlines() if "进仓库" in ln]
-    assert lines
-    assert any("never incoming" in ln.lower() for ln in lines)
+def test_p3_received_is_goods_already_in_never_goods_on_the_way():
+    block = _block(_addendum(), '"received_qty"', '"last_receipt"')
+    assert "already came in" in block and "never goods still on the" in block
 
 
-def test_p4_malay_jual_is_sold_in_the_sold_total_definition():
+def test_p4_no_word_lists_and_no_worked_examples():
+    """MULTI-ASK-PLAN2 (owner ruling 11 Oct, PROMPT-ABLATION): vocabulary lives in data, never in
+    the parser prompt; the addendum is keys plus a short English definition of each."""
     text = _addendum()
-    start = text.index('"sold_total"')
-    assert "jual" in text[start : start + 160].lower()
+    assert not any("\u3400" <= ch <= "\u9fff" for ch in text), "a Chinese word list is back"
+    lowered = text.lower()
+    for word in ("jual", "diterima", "masuk", "berapa", "bulan", "examples", "->"):
+        assert word not in lowered, word
 
 
 def test_p5_a_bare_product_mention_is_no_domain_and_no_asks():
-    text = _addendum()
-    assert "我想问" in text and "domain_hint null" in text
+    block = _block(_addendum(), "only names a product", "family:")
+    assert "domain_hint" in block and "sub_asks" in block and "null" in block
+
+
+def test_p7_the_addendum_stays_a_definition_not_a_lesson():
+    assert len(_addendum()) <= 2_100
 
 
 def test_p6_no_live_string_appears_verbatim_in_the_prompt():

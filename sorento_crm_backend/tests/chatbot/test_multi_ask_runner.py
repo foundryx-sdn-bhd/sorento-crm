@@ -636,25 +636,60 @@ def test_the_scope_question_remembers_a_basis_turn_one_already_said(session_fact
     assert "2026 总共卖出（已出货）: 860" in text.splitlines()
 
 
+def _family(session_factory, code: str, *, manual: dict[str, str] | None = None) -> list[str]:
+    """`engine._product_family(code)` codes, after any hand-set `family_code` in `manual`."""
+    from app.models.base import set_company_scope
+    from app.models.product import Product
+    from app.services.chatbot.engine import _product_family
+
+    from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+
+    db = session_factory()
+    try:
+        set_company_scope(db, frozenset({SORENTO}))
+        for pcode, family_code in (manual or {}).items():
+            row = db.query(Product).filter(Product.product_code == pcode).one()
+            row.family_code, row.family_code_manual = family_code, True
+        db.flush()
+        return [f["code"] for f in _product_family(db, code)]
+    finally:
+        db.rollback()
+        db.close()
+
+
 def test_all_variants_counts_the_whole_family_past_the_resolver_cap(session_factory):
     """The resolver's prefix probe stops at PREFIX_LIMIT (20); the family count does not."""
-    from app.services.chatbot.engine import _product_family
     from app.services.entity_resolver import PREFIX_LIMIT
 
     from tests.chatbot._r9_engine_console import _seed_products
 
-    codes = [f"ZZTFAMX-{i:02d}" for i in range(PREFIX_LIMIT + 5)]
+    codes = [f"ZZTFAM9-{i:02d}" for i in range(PREFIX_LIMIT + 5)]
     _seed_products(session_factory, codes)
-    db = session_factory()
-    try:
-        from app.models.base import set_company_scope
-        from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+    assert _family(session_factory, "zztfam9") == codes
 
-        set_company_scope(db, frozenset({SORENTO}))
-        family = _product_family(db, "zztfamx-")
-    finally:
-        db.close()
-    assert [f["code"] for f in family] == codes
+
+def test_the_family_is_products_family_code_never_a_code_prefix(session_factory):
+    """MULTI-ASK-PLAN2 (CODE-VARIANTS #1573): ZZTFQ123 starts with ZZTFQ12 but is its own model."""
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTFQ12", "ZZTFQ12-A", "ZZTFQ12-B", "ZZTFQ123"])
+    assert _family(session_factory, "ZZTFQ12") == ["ZZTFQ12", "ZZTFQ12-A", "ZZTFQ12-B"]
+    assert _family(session_factory, "zztfq12-a") == ["ZZTFQ12", "ZZTFQ12-A", "ZZTFQ12-B"]
+
+
+def test_a_hand_set_family_code_wins_over_the_code(session_factory):
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTFM55", "ZZTFM77"])
+    manual = {"ZZTFM55": "ZZTFMGRP1", "ZZTFM77": "ZZTFMGRP1"}
+    assert _family(session_factory, "ZZTFM55", manual=manual) == ["ZZTFM55", "ZZTFM77"]
+
+
+def test_a_code_with_no_family_is_no_family(session_factory):
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTNODIGIT-A"])
+    assert _family(session_factory, "ZZTNODIGIT") == []
 
 
 # ---------------------------------------------------------------- review round 2
@@ -688,20 +723,10 @@ def test_a_family_past_the_ceiling_is_todays_path(session_factory, monkeypatch, 
 
 
 def test_a_code_with_an_underscore_is_matched_as_typed(session_factory):
-    from app.services.chatbot.engine import _product_family
-
     from tests.chatbot._r9_engine_console import _seed_products
 
-    _seed_products(session_factory, ["ZZTUS_A-1", "ZZTUSXA-1"])
-    db = session_factory()
-    try:
-        from app.models.base import set_company_scope
-        from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
-
-        set_company_scope(db, frozenset({SORENTO}))
-        assert [f["code"] for f in _product_family(db, "ZZTUS_A")] == ["ZZTUS_A-1"]
-    finally:
-        db.close()
+    _seed_products(session_factory, ["ZZTU_9-1", "ZZTUX9-1"])
+    assert _family(session_factory, "ZZTU_9") == ["ZZTU_9-1"]
 
 
 # ---------------------------------------------------------------- crew live checks, 9 Oct
@@ -974,7 +999,7 @@ def test_a_lone_last_in_with_no_spo_line_says_none_on_record(session_factory, mo
 def test_the_parser_prompt_teaches_last_in_date_and_quantity_is_one_ask():
     from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
 
-    assert '"Srt38ss last in date and quantity" -> null (one ask)' in SUB_ASKS_ADDENDUM
+    assert "The date and quantity of the last receipt are ONE last_receipt ask." in " ".join(SUB_ASKS_ADDENDUM.split())
 
 
 def test_the_last_receipt_measure_is_the_spo_delivery_date_not_grn():
