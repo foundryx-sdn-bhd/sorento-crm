@@ -1716,7 +1716,19 @@ def run_fetch(
                 outcome="access_denied",
             )
 
-    candidates = fetch_mod.select_tool(domain)
+    # SPEC-PROMO-PARAMS (card section 9, slices 2 and 3): a described ask (no typed code)
+    # carries its subject and grounded specs as `spec_constraints` on the MCP call, and a
+    # promotion ask with a subject answers from the promotion products tool.
+    spec_constraints = (
+        fetch_mod.spec_constraints_for(parse_output, db)
+        if db is not None and jsc.js_string(domain or "") in fetch_mod.SPEC_CONSTRAINT_DOMAINS
+        else None
+    )
+    if spec_constraints:
+        semantic_input["spec_constraints"] = spec_constraints
+        if trace is not None:
+            trace.add("spec_constraints", {"constraints": spec_constraints})
+    candidates = fetch_mod.select_tool(domain, spec_constraints=spec_constraints)
 
     has_product = (
         any(isinstance(e, dict) and e.get("entity_type") == "product" for e in entities)
@@ -2217,7 +2229,14 @@ def run_fetch(
         # stay byte-inert for every non-HAS turn.
         "predicate": gate.get("predicate"),
     }
-    predicate = gate.get("predicate")
+    spec_filtered = bool(semantic_input.get("spec_constraints")) and tool_name in fetch_mod.SPEC_CONSTRAINT_TOOLS
+    if spec_filtered:
+        # The route filters by `spec_constraints` and its rows ARE the answer: the
+        # resolver's counted set (its total, its header, its product_ids slice) describes
+        # a different set (it never saw the size), so it neither gates nor heads this
+        # reply, and its zero is no reason not to ask the tool.
+        trigger["predicate"] = None
+    predicate = trigger["predicate"]
     if isinstance(predicate, dict) and not predicate.get("qualifying_total"):
         # Reviewer B2 on PR #833: a described set with nothing in it has no product to
         # send, and the tool called without one answers about every product. The miss
@@ -2503,6 +2522,15 @@ def run_fetch(
             alternative_tail, alternative_found = [], False
 
     structured = fetch_mod.output_structurer(envelope, trigger)
+    if spec_filtered and isinstance(structured, dict) and isinstance(envelope, dict):
+        if structured.get("has_result"):
+            # The subject and specs were satisfied by the filter; the resolver not
+            # placing a word of them (the size) is no miss (`answer_bridge._miss_triggers`).
+            structured["subject_filtered"] = True
+        elif envelope.get("spec_miss") is True:
+            # The presenter stated what the data holds (the values on file, the axis to
+            # pick); that is the reply, never the generic not-found line.
+            structured["spec_miss_stated"] = True
     if (
         tool_name == fetch_mod.TIER_PROBE_TOOL
         and args.get("scope_terms")

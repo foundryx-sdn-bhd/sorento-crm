@@ -1670,8 +1670,11 @@ def _miss_triggers(
     # PROMO-SUBJECT-FILTER: a subject word the fetch applied as a filter and answered rows for
     # is satisfied; the resolver having no entity for it is no miss.
     subject_filtered = isinstance(fetch_item, Mapping) and fetch_item.get("subject_filtered") is True
+    # SPEC-PROMO-PARAMS: a spec-filtered zero the presenter answered with what the data
+    # holds (values on file, the axis to pick) is the reply, never the generic miss.
+    spec_miss_stated = isinstance(fetch_item, Mapping) and fetch_item.get("spec_miss_stated") is True
     via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (
-        so_status_answered or low_stock_answered or subject_filtered
+        so_status_answered or low_stock_answered or subject_filtered or spec_miss_stated
     )
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
@@ -1696,6 +1699,7 @@ def _miss_triggers(
         and raw_fragment.get("kind") == "result"
         and isinstance(fetch_item, Mapping)
         and not fetch_item.get("has_result")
+        and not spec_miss_stated
     )
     return raw_fragment, fetch_item, (via_resolver_exit, via_error_fragment, via_fetched_empty)
 
