@@ -19,11 +19,13 @@ Design notes
 """
 from __future__ import annotations
 
+import array
 import collections
 import copy
 import functools
 import logging
 import re
+import threading
 import time
 import uuid
 from contextvars import ContextVar
@@ -5152,12 +5154,22 @@ def _prefetch_embeddings(tokens: list[str]) -> None:
     memo = _RESOLVE_MEMO.get()
     if memo is None:
         return
-    todo = list(dict.fromkeys(t for t in tokens if ("embedding", t) not in memo))
+    try:
+        from app.services.embedding_worker import _embed_text_chunks
+    except Exception:  # noqa: BLE001 - the per-token path below is the fallback
+        return
+    todo = []
+    for token in dict.fromkeys(tokens):
+        if ("embedding", token) in memo:
+            continue
+        known = _known_vector(_embed_text_chunks, token)
+        if known is not None:
+            memo[("embedding", token)] = known
+        else:
+            todo.append(token)
     if len(todo) < 2:
         return
     try:
-        from app.services.embedding_worker import _embed_text_chunks
-
         vectors = _embed_text_chunks(todo)
     except Exception:  # noqa: BLE001 - the per-token path below is the fallback
         logger.info("Tier-3 batched embedding failed; embedding per token", exc_info=True)
@@ -5165,18 +5177,59 @@ def _prefetch_embeddings(tokens: list[str]) -> None:
     if len(vectors) != len(todo):
         return
     for token, vector in zip(todo, vectors):
-        memo[("embedding", token)] = list(vector)
+        memo[("embedding", token)] = _remember_vector(_embed_text_chunks, token, vector)
+
+
+#: Query vectors kept across requests (CHAT-SPEED): a follow-up turn re-resolves the
+#: subject the conversation carries ("floor trap" again on "when is next container
+#: coming", measured), and each re-embed was another OpenAI round trip for a vector that
+#: does not change. Keyed by the embed seam, the model and the text; bounded LRU of
+#: float64 arrays (12 KB a vector, about 6 MB at the cap) so the stored value is the
+#: one the provider returned.
+_VECTOR_CACHE_MAX = 512
+_VECTOR_CACHE: "collections.OrderedDict[tuple, Any]" = collections.OrderedDict()
+_VECTOR_CACHE_LOCK = threading.Lock()
+
+
+def _vector_key(embed, token: str) -> tuple:
+    from app.config import settings
+
+    return (embed, getattr(settings, "embedding_model_name", None), token)
+
+
+def _known_vector(embed, token: str) -> Optional[list[float]]:
+    key = _vector_key(embed, token)
+    with _VECTOR_CACHE_LOCK:
+        stored = _VECTOR_CACHE.get(key)
+        if stored is None:
+            return None
+        _VECTOR_CACHE.move_to_end(key)
+    return list(stored)
+
+
+def _remember_vector(embed, token: str, vector) -> list[float]:
+    values = list(vector)
+    with _VECTOR_CACHE_LOCK:
+        _VECTOR_CACHE[_vector_key(embed, token)] = array.array("d", values)
+        _VECTOR_CACHE.move_to_end(_vector_key(embed, token))
+        while len(_VECTOR_CACHE) > _VECTOR_CACHE_MAX:
+            _VECTOR_CACHE.popitem(last=False)
+    return values
 
 
 def _memo_embedding(token: str, embed) -> list[float]:
-    """The query vector for `token`, embedded once per request."""
+    """The query vector for `token`: once per request, and across requests while the
+    process remembers it (`_VECTOR_CACHE`)."""
     memo = _RESOLVE_MEMO.get()
     key = ("embedding", token)
-    if memo is None:
-        return embed([token])[0]
-    if key not in memo:
-        memo[key] = list(embed([token])[0])
-    return memo[key]
+    if memo is not None and key in memo:
+        return memo[key]
+    vector = _known_vector(embed, token)
+    if vector is None:
+        vector = _remember_vector(embed, token, embed([token])[0])
+    if memo is not None:
+        memo[key] = vector
+    return vector
 
 
 @_with_resolve_memo

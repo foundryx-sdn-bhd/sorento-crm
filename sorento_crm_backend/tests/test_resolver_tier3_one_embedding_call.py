@@ -51,6 +51,15 @@ def db():
         yield session
 
 
+@pytest.fixture(autouse=True)
+def _fresh_vector_cache():
+    """The cross-request vector cache is process-wide; each test starts empty."""
+    cache = getattr(er, "_VECTOR_CACHE", {})
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def calls(monkeypatch):
     seen: list[list[str]] = []
@@ -84,6 +93,7 @@ def test_the_answers_match_one_call_per_token(db, calls, monkeypatch):
     batched = {r.token: [m.canonical_code for m in r.matches] for r in _resolve(db, ["SRTWC286", *MISSING]).resolutions}
     # The per-token path, as it ran before: no prefetch, one call per token.
     monkeypatch.setattr(er, "_prefetch_embeddings", lambda tokens: None)
+    getattr(er, "_VECTOR_CACHE", {}).clear()
     calls.clear()
     single = {r.token: [m.canonical_code for m in r.matches] for r in _resolve(db, ["SRTWC286", *MISSING]).resolutions}
 
@@ -105,3 +115,28 @@ def test_a_failed_batch_falls_back_to_one_call_per_token(db, monkeypatch):
 
     assert [r.token for r in rows.resolutions] == ["SRTWC286", *MISSING]
     assert sorted(t for b in seen[1:] for t in b) == sorted(MISSING)
+
+
+def test_a_phrase_embedded_by_one_request_is_not_embedded_again_by_the_next(db, calls):
+    """A follow-up turn re-resolves the subject the conversation carries."""
+    first = _resolve(db, ["SRTWC286", MISSING[0]])
+    second = _resolve(db, [MISSING[0]])
+
+    assert [t for batch in calls for t in batch] == [MISSING[0]]
+    assert [m.canonical_code for m in first.resolutions[1].matches] == [
+        m.canonical_code for m in second.resolutions[0].matches
+    ]
+
+
+def test_the_cache_is_bounded(monkeypatch):
+    monkeypatch.setattr(er, "_VECTOR_CACHE_MAX", 3)
+
+    def embed(chunks):
+        return [[1.0, 2.0] for _ in chunks]
+
+    for token in ["a", "b", "c", "d"]:
+        er._remember_vector(embed, token, [1.0, 2.0])
+
+    assert len(er._VECTOR_CACHE) == 3
+    assert er._known_vector(embed, "a") is None
+    assert er._known_vector(embed, "d") == [1.0, 2.0]
