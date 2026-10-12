@@ -5,10 +5,9 @@ SRTWC8088-SC. `narrow_code_tokens` (`product_code_family.py`) read the words "se
 code's line as a variant descriptor and swapped the typed code for its -SC sibling before any
 resolver tier ran. On a find those words name the relation's target, not a variant, so a find
 turn's resolve body carries `keep_typed_codes` and the route leaves the typed codes alone; every
-other ask keeps the word narrowing (PR #833's owner rule). `find.named_this_turn` takes the
-exact code first. SEAT-AS-PRODUCT removed the find reply lane (`find.named_this_turn` with it):
-a linked code now reaches the turn as a typed code (`find.as_linked_products`), and the flag
-still keeps it exact. Fake ZZT codes only.
+other ask keeps the word narrowing (PR #833's owner rule). SEAT-AS-PRODUCT removed the find reply
+lane: a linked code now reaches the turn as a typed code (`find.as_linked_products`), and the
+flag still keeps it exact. Fake ZZT codes only.
 """
 from __future__ import annotations
 
@@ -121,7 +120,7 @@ def test_e9_a_find_turn_keeps_the_typed_code_against_a_grounded_spec_too(session
 
 # --------------------------------------------------------------------------- the stray miss line
 
-FIND_TEXT = "Seat cover for SRTWT7445:\nCode: SRTSCBD823-MBL\nStock: 12"
+FIND_TEXT = "ZZT existing reply"
 
 
 def _find_turn(session_factory, monkeypatch, *, extra_entities, msg_id):

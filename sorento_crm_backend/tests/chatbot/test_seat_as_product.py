@@ -175,17 +175,75 @@ def test_the_reverse_wc_for_a_seat_cover_resolves_its_wc(session_factory, monkey
     assert a_reply == c_reply, (a_reply, c_reply)
 
 
-def test_q1_no_link_on_record_is_one_line_and_no_fetch(session_factory, monkeypatch) -> None:
+@pytest.mark.parametrize("domain,intent", [("inventory", "check_stock"), (None, None), ("master_products", "check_product")])
+def test_q1_no_link_on_record_is_one_line_and_no_fetch(session_factory, monkeypatch, domain, intent) -> None:
+    """Whatever domain the parser gave it: a bare code's null domain routes to the
+    entities-only arm, which must not answer "I have <WC>" (reviewer blocker 1)."""
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     reply, calls = _turn(
-        session_factory, monkeypatch, text=f"stock seat cover for {WC_NONE}", msg_id="ZZT-seat-none",
-        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_NONE)], find=FITS,
+        session_factory, monkeypatch, text=f"seat cover for {WC_NONE}", msg_id="ZZT-seat-none",
+        domain_hint=domain, intent_hint=intent, entities=[_product(WC_NONE)], find=FITS,
     )
     assert calls == [], calls
     assert reply.strip() == find_lane.NO_SEAT_COVER_LINE.format(code=WC_NONE), reply
+
+
+def test_q1_a_mistyped_code_beside_it_is_still_named(session_factory, monkeypatch) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    reply, calls = _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_NONE} and ZZTWC83", msg_id="ZZT-seat-typo",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_NONE), _product("ZZTWC83")],
+        find=FITS,
+    )
+    assert calls == [], calls
+    assert reply.strip().splitlines() == [
+        find_lane.NO_SEAT_COVER_LINE.format(code=WC_NONE),
+        find_lane.NOT_FOUND_LINE.format(names="ZZTWC83"),
+    ], reply
+
+
+def test_no_code_and_nothing_carried_asks_for_the_code(session_factory, monkeypatch) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    reply, calls = _turn(
+        session_factory, monkeypatch, text="which seat cover fits my WC?", msg_id="ZZT-seat-nocode",
+        domain_hint="master_products", intent_hint="check_product", entities=[], find=FITS,
+    )
+    assert calls == [], calls
+    assert reply.strip() == find_lane.ASK_PRODUCT_LINE, reply
+
+
+def test_which_seat_cover_fits_it_resolves_the_carried_wc(session_factory, monkeypatch) -> None:
+    """Reviewer blocker 2: turn 1 asks about the WC, turn 2 "stock of its seat cover?" names no
+    code. Turn 2 must fetch the COVER, exactly as "stock <cover>" after turn 1 does."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock {WC_ONE}", msg_id="ZZT-seat-carry-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_ONE)],
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_carry")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"stock {COVER_ONE}", msg_id="ZZT-seat-carry-control",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(COVER_ONE)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_carry")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text="stock of its seat cover?", msg_id="ZZT-seat-carry-2",
+        domain_hint="inventory", intent_hint="check_stock", entities=[], find=FITS,
+    )
+    assert c_calls, "the control must fetch"
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
 
 
 # --------------------------------------------------------------------------- the resolution step
@@ -265,7 +323,7 @@ def test_r6_q1_every_named_code_without_a_link_is_its_line(session_factory) -> N
     ]
 
 
-def test_r7_a_carried_product_is_no_anchor(session_factory) -> None:
+def test_r7_a_carried_product_in_the_parse_is_the_anchor(session_factory) -> None:
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
@@ -312,8 +370,8 @@ def test_k4_crm_find_is_no_chatbot_tool_any_more() -> None:
 
 def test_e6_the_type_word_beside_the_wc_is_no_miss_and_no_narrowing(session_factory, monkeypatch) -> None:
     """Crew live check 13 Oct ("SRTWC8383-RL-MBL 配什么马桶盖" printed "找不到 马桶盖"): the class
-    word the parser also emitted rides along exactly as it would beside the typed cover code:
-    measured, the replaced turn makes no miss line, so nothing drops it (kill test K-a)."""
+    word the parser also emitted is no miss line: `turn_runtime.make_tool_runner`'s type-word
+    filter drops it on a find turn (reviewer kill test: removing that filter turns this red)."""
     word = {"raw": "马桶盖", "hint": "category", "canonical_code": None, "current_message": True, "confident": True}
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
@@ -346,3 +404,13 @@ def test_r9_a_stored_code_in_another_spelling_still_anchors(session_factory) -> 
     db.commit()
     out, _lines = find_lane.as_linked_products(_scoped(session_factory), _verdict("ZZTWC7001-A"))
     assert _codes(out) == ["ZZTSCBD7001"]
+
+
+def test_r10_no_code_in_the_parse_takes_the_carried_codes(session_factory) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict(), [WC_TWO])
+    assert _codes(out) == COVERS_TWO and lines == []
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict(), [])
+    assert lines == [find_lane.ASK_PRODUCT_LINE]

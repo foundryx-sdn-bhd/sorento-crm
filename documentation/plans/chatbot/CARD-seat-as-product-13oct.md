@@ -70,3 +70,20 @@ directly; this sandbox has no dev data, so the live values come from the hand te
 - Q5 the rule text lives in the live `{{find_filters}}` variable (#1601 design), so the new wording
   reaches every version carrying the token on deploy (dev v88); prod v52 has no token and gets it
   through a NEW version from the publisher. Recommendation: keep the variable; no label moves.
+
+## Built (after crew answers and the lane review)
+
+- No code named and none carried ("which seat cover fits my WC?"): the #1601 ask line,
+  `Which product code? For example SRTWC8383-RL-MBL.` A code carried from the previous turn
+  ("which seat cover fits it?") is the anchor.
+- Q1 lines are said by the engine before any lane, whatever the parsed domain (a bare code's
+  null domain included). A mistyped code beside them is still named: `I could not find X.`
+
+## Known limits (trigger to revisit)
+
+- Q2 (b) replaces EVERY named code that sits on a link. "stock SRTWC8122 and its seat cover"
+  answers the covers only, and "stock SRTSCBD333-UF, seat cover for SRTWC8122" turns the typed
+  cover into its WC. The parse has no per-entity mark for which code the relation is about.
+  Trigger: a real turn of this shape; then the parser names the anchor code in `find.filters`.
+- A typed quantity rides on every linked code ("5 seat cover for SRTWC8122" asks 5 of each of
+  the two covers). Owner to confirm.

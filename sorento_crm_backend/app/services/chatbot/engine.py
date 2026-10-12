@@ -4916,10 +4916,19 @@ def _run_stages_body(  # noqa: PLR0915
         # resolution, not an answer lane. The WC code is replaced by its linked seat-cover
         # codes here, before APPLY, so the turn runs on exactly as if the customer had typed
         # them: the domain the parser resolved answers through its own tool and formatter.
-        # When no code the message names has a link, `seat_link_lines` is the whole reply.
+        # When nothing was replaced (no named code has a link, or no code at all),
+        # `seat_link_lines` is the whole reply, said right after routing below.
         from app.services.chatbot.lanes.business import find as find_lane
 
-        linked_verdict, seat_link_lines = find_lane.as_linked_products(db, verdict)
+        linked_verdict, seat_link_lines = find_lane.as_linked_products(
+            db,
+            verdict,
+            [
+                str(c)
+                for p in state_in.focus.products
+                if isinstance(p, dict) and (c := p.get("canonical_code") or p.get("code"))
+            ],
+        )
         if linked_verdict is not verdict or seat_link_lines:
             turn_trace.add(
                 "seat_link",
@@ -5111,11 +5120,6 @@ def _run_stages_body(  # noqa: PLR0915
         customer_scope_refused = False
         gate_input: dict[str, Any] | None = None
         account_question: str | None = None
-        if seat_link_lines:
-            # SEAT-AS-PRODUCT Q1: no named code has a seat-cover link, so the reply is its
-            # line, said once for the turn through the refusal path's own seam: nothing below
-            # fetches, asks or arms anything, and the line is the answer.
-            customer_scope_refused, account_question = True, "\n".join(seat_link_lines)
         resolved_kinds: dict[str, dict[str, int]] = {}
         compatible_entities: list[dict[str, Any]] = []
         predicate: dict[str, Any] | None = None
@@ -5790,6 +5794,30 @@ def _run_stages_body(  # noqa: PLR0915
             },
             raw={"item": item},
         )
+
+        # SEAT-AS-PRODUCT: a fit ask that resolved to no linked code (Q1) or named no code
+        # at all is answered with its line here, ahead of every lane and with nothing
+        # fetched or armed, whatever domain the parser gave it (a bare code's null domain
+        # included). A refused access keeps its refusal; an escalation keeps its arm.
+        if seat_link_lines and branch_kind not in ("access_denied", "out_of_scope"):
+            return _run_answer(
+                turn_id=turn_id,
+                ctx=ctx,
+                item=item,
+                branch_kind=branch_kind,
+                actions=actions,
+                answer=turn_compose.Answer(text="\n".join(seat_link_lines)),
+                state=state_out,
+                remembered_before=remembered_before,
+                dry_run=dry_run,
+                session_factory=session_factory,
+                turn_trace=turn_trace,
+                stage=stage,
+                contact_respond_id=contact_respond_id,
+                verdict=verdict,
+                recalled=recalled,
+                chat_console=_chat_console(envelope),
+            )
 
         # S3 (chatbot media-into-turn): bare entities, no domain, no carried focus -
         # resolved and answered deterministically here, never through the generic
