@@ -174,3 +174,54 @@ Track: standard (Size M), no migration, admin gate (security-reviewer ran).
    and 50-order cap on Simulate only).
 8. Tests on the merge with main (e3a29c8d5): BE 224 passed (9 Confirm / preview / planning-change
    / draft / cancel-line / simulate files); FE `project-sales/` 220 files, 3688 passed.
+
+## Owner change to Q3 (12 Oct 2026, verbatim)
+
+"simulate adopt too, I thought how this function works is it uses the same function as confirm,
+just that at the end it rolls back, so I can get a sense of whether this will succeed or not after
+confirm is clicked". Owner case: SO422024 (never planned, 232 saved) answered "is not being planned
+yet; Confirm would adopt it first, so it was not simulated."
+
+Requirement: Simulate runs the real Confirm's code path, adoption included, in one transaction
+that is always rolled back, with every side effect suppressed; any difference that cannot be
+removed is listed in the PR.
+
+### Redesign (v2)
+
+Differences between the v1 simulation and the real press, and what v2 does with each:
+
+| # | v1 difference | v2 |
+|---|---|---|
+| D1 | Never-planned orders skipped (no adopt) | Adopt with `ProjectSOAdoptionService.adopt` (the adopt route's own call) and `commit()`, inside the simulation |
+| D2 | Each order rolled back before the next (`confirm_many(preview=True)`), so order B never saw order A's holds/borrows | Run `confirm_many(preview=False)`, the real write: each ok order commits, a failed one rolls back, exactly as the real press |
+| D3 | `notify=not preview` path differs | Same code; notifications are refused by the simulation guards, not by a different branch |
+
+How "commit but never persist" works: the simulation opens its own connection, begins an outer
+transaction, and runs on `Session(bind=conn, join_transaction_mode="create_savepoint")`. Every
+`commit()` in the real code releases a savepoint, every `rollback()` returns to it, and the outer
+transaction is always rolled back (measured on Postgres 12 Oct: commit A kept, rollback B dropped,
+outer rollback leaves 0 rows). Company and brand scope are copied from the request session.
+
+Guards while simulating (contextvar `simulating()`):
+- Engine-level `commit` listener: any REAL root commit on any connection raises
+  `SimulationWouldCommit` (savepoint releases do not fire it; verified). This covers every
+  post-commit drain that opens a fresh `SessionLocal` (automation outbox, notifications, emails).
+- `enqueue_job` refuses (unchanged).
+- The simulation session carries `info["confirm_preview"]`, so the existing drains skip, and the
+  handover / undone email drains discard their queues instead of dispatching.
+
+Frontend: Simulate runs `buildConfirmOrders` (the same function as Confirm) with adoption deferred
+to the server: a never-planned order's lines carry `pending-adoption:<core line id>` (the board
+already uses a `pending-adoption` placeholder for its counts) and the entry names
+`sales_order_id`; the server adopts and swaps each placeholder for the new mirror line's id.
+
+Differences that remain (listed in the PR):
+- R1 The real press is two calls (a dry run, then the write narrowed to the lines the dry run
+  passed); Simulate runs the write once with the full body. Both pass through
+  `_write_holding_back`, so the same lines are held back.
+- R2 For a never-planned order the real press re-reads the board after adopting and builds the
+  body from that board; Simulate builds it from the board as loaded. The lines and compositions
+  come from the same saved drafts.
+- R3 The per-line probe is diagnostic: it re-runs a failed order's lines after the whole run.
+- R4 Anything time-dependent between the simulation and the real click (stock moving, another
+  planner confirming) is outside a dry run by nature.
