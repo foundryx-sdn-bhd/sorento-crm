@@ -1625,10 +1625,18 @@ export function confirmNoticeLines(result: {
     item_code?: string | null;
     reason: string;
   }> | null;
+  /** OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed short of stock. */
+  stock_short_notices?: Array<{
+    so_line_no?: number | null;
+    line_no?: number | null;
+    item_code?: string | null;
+    reason: string;
+  }> | null;
 }): string[] {
   const held = (result.lines_held_back ?? []).map((line) =>
     failingLineText({ ...line, reason: `held back, decision kept: ${line.reason}` }),
   );
   const landed = (result.landed_buy_notices ?? []).map((line) => failingLineText(line));
-  return [...held, ...landed];
+  const short = (result.stock_short_notices ?? []).map((line) => failingLineText(line));
+  return [...held, ...landed, ...short];
 }
