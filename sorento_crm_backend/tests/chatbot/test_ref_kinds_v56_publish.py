@@ -30,6 +30,15 @@ REF_KINDS_FILE = DATA / "chatbot_semantic_parser.refkinds-v56-20261011.txt"
 MIGRATION = BACKEND / "alembic" / "versions" / "rkind_0002_parser_ref_kinds_v56.py"
 PROMPT_NAME = "chatbot_semantic_parser"
 
+#: The entity format line's hint values as the ablation text has them. The rebuild extends this
+#: line itself with the five reference kinds (crew decision 12 Oct 2026: the REF_KINDS addendum
+#: alone left the model emitting "order" for a kind-worded number).
+ABLATION_HINTS = (
+    '"hint": "product|promotion|customer|transporter|inbound_shipment|warehouse|attachment|form'
+    '|order|category|brand|attachment_type"'
+)
+REF_KINDS = ("delivery_order", "sales_order", "customer_po_ref", "purchase_order", "purchase_request")
+
 
 def _text() -> str:
     return REF_KINDS_FILE.read_text(encoding="utf-8")
@@ -46,13 +55,33 @@ def _versions(db) -> list[AIPromptVersion]:
     return db.query(AIPromptVersion).filter(AIPromptVersion.name == PROMPT_NAME).all()
 
 
-def test_data_file_is_the_ablation_text_plus_the_two_sections_beneath_po_refs() -> None:
+def _entity_format_line(text: str) -> str:
+    (line,) = [l for l in text.splitlines() if l.startswith("Each entity: {")]
+    return line
+
+
+def test_data_file_is_the_ablation_text_plus_the_two_sections_and_the_hint_line() -> None:
     ablation = ABLATION_FILE.read_text(encoding="utf-8")
     assert ablation.count(PO_REFS_ADDENDUM) == 1
+    assert ablation.count(ABLATION_HINTS) == 1
     expected = ablation.replace(
         PO_REFS_ADDENDUM, PO_REFS_ADDENDUM + CHAT_REPORT_ADDENDUM + REF_KINDS_ADDENDUM
     )
-    assert _text() == expected
+    text = _text()
+    old_line = _entity_format_line(expected)
+    new_line = _entity_format_line(text)
+    # Only the entity format line differs, and only inside its hint value.
+    assert text.replace(new_line, old_line) == expected
+    head, _, tail = old_line.partition(ABLATION_HINTS)
+    assert new_line.startswith(head) and new_line.endswith(tail)
+
+
+def test_entity_format_line_lists_each_reference_kind_with_an_example() -> None:
+    line = _entity_format_line(_text())
+    for kind in REF_KINDS:
+        assert f"|{kind}" in line, kind
+        assert f"-> {kind}" in line, f"no example for {kind}"
+    assert ABLATION_HINTS not in line
 
 
 def test_data_file_carries_each_section_once_and_no_policy_blocks() -> None:
