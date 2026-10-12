@@ -4899,6 +4899,21 @@ def _run_stages_body(  # noqa: PLR0915
                 )
                 verdict = engine_verdict
 
+        # The sales report drill offer: `decide.picked_positions` is the one pick test. A declared
+        # `open_question_answer` pick with no position and no label match is not a pick, so it is
+        # stripped before APPLY would turn it into positions (the live parser declares `picked: [2]`
+        # beside the product code it typed on "only <code>").
+        from app.services.chatbot.turn import decide as _decide
+
+        if (
+            state_in.pending is not None
+            and state_in.pending.kind == "sales_report_detail"
+            and isinstance(verdict.get("open_question_answer"), dict)
+            and verdict["open_question_answer"].get("mode") == "pick"
+            and _decide.picked_positions(state_in.pending, verdict) is None
+        ):
+            verdict = {**verdict, "open_question_answer": dict(turn_question.NO_ANSWER)}
+
         # PR #1353 fix round 2: a bare pick answered in the roster's domain takes the
         # roster's axis from the option picked, never from a value the parser carried.
         roster_picks = _picks_in_the_roster_domain(state_in.pending, verdict)

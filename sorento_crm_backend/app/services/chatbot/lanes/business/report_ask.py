@@ -672,12 +672,18 @@ def settle(
         extras = _dict(slot.get("extras"))
         args = _dict(extras.get("args"))
         reply_dates = {"start": parse_output.get("date_filter_start"), "end": parse_output.get("date_filter_end")}
+        given = {**_given_choices(args), **_given_top_n(args, extras.get("top_n")), **_reply_choices(args, parse_output)}
+        own_count = top_n_from(parse_output.get("top_n"))
+        if args.get("group_by") and slot.get("asking") != "top_n" and own_count.status == "ok":
+            # An answering turn that restates its own count wins over the held one (like its metric and basis).
+            given["top_n"] = own_count
+            slot = {**slot, "values": {k: v for k, v in _dict(slot.get("values")).items() if k != "top_n"}}
         outcome = rf.collect(
             db,
             SALES_RANKING_ASK,
             slot=slot,
             reply=jsc.js_string(parse_output.get("required_ask_reply") or ""),
-            given={**_given_choices(args), **_given_top_n(args, extras.get("top_n")), **_reply_choices(args, parse_output)},
+            given=given,
             extras={
                 "reply_dates": reply_dates,
                 "reply_top_n": parse_output.get("top_n"),

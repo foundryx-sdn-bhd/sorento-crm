@@ -1818,17 +1818,15 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
 
 
 def _picks_the_open_drill_offer(out: dict[str, Any], pending: Any) -> bool:
-    """Is this verdict a pick of the open `sales_report_detail` offer? The engine's own signals:
-    a position, an entity matching an option's label (`decide.picked_positions`), or the parser's
-    declared `open_question_answer` pick."""
+    """Is this verdict a pick of the open `sales_report_detail` offer, by the engine's own test
+    (`decide.picked_positions`: a position, or an entity matching an option's label)?"""
     if pending is None or getattr(pending, "kind", None) != "sales_report_detail":
         return False
     from app.services.chatbot.turn.decide import picked_positions
 
-    if picked_positions(pending, out) is not None:
-        return True
-    answer = out.get("open_question_answer")
-    return isinstance(answer, dict) and (answer.get("mode") == "pick" or bool(answer.get("picked")))
+    # `picked_positions` is the engine's one pick test: a declared `open_question_answer` pick
+    # with no position and no label match is not read as a pick anywhere, so it is not one here.
+    return picked_positions(pending, out) is not None
 
 
 def _narrows_held_sales_report(out: dict[str, Any], pending: Any = None) -> bool:

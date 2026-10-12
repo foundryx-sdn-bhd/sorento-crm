@@ -1375,6 +1375,13 @@ def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
     order_status = verdict.get("order_status")
     if not (isinstance(order_status, str) and order_status.strip() in ("sales_report", "sales_analysis")):
         return False
+    if order_status.strip() == "sales_analysis" and (
+        str(verdict.get("group_by") or "").strip() not in ("", "product", "category")
+        or verdict.get("sales_basis") not in (None, "delivered", "ordered")
+        or verdict.get("sales_company")
+    ):
+        # A real analysis ask (a month or channel breakdown, another basis, a company) is not a ranking of items.
+        return False
     if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
         return False
     return not any(
