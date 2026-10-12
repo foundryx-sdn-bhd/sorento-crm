@@ -309,7 +309,6 @@ def clamp_discount_percent_for_db(value: Optional[float]) -> Optional[float]:
     return round(v, 2)
 
 
-
 def _promotion_kind_clause(kind_codes: list[str]):
     """Promotions whose type (`promotion_types.type_code`) is one of `kind_codes`: the kind
     narrowing the promotions list and the promotion products list share."""

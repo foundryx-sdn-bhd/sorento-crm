@@ -204,6 +204,11 @@ _SPEC_MISS_TOOLS = frozenset(
 )
 
 
+# The virtual `size` key's label, the same word the parser vocabulary gives it
+# (`chatbot_parser_prompt.specification_lines`: 'Specification size ("Size")').
+_SIZE_LABEL = "Size"
+
+
 def _spec_or(words: list[str]) -> str:
     return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} or {words[-1]}"
 
@@ -238,7 +243,8 @@ def _spec_miss_intro(data: dict) -> str | None:
         lines.append(f"{label} values on file: {values}.")
     for key, n in unrecorded.items():
         label = labels.get(key) or next(
-            (a.get("label") for a in alternatives if a.get("key") == key and a.get("label")), key
+            (a.get("label") for a in alternatives if a.get("key") == key and a.get("label")),
+            _SIZE_LABEL if key == "size" else key,
         )
         lines.append(f"{n} {'has' if n == 1 else 'have'} no {label} recorded.")
     return " ".join(lines)
