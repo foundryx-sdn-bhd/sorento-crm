@@ -290,6 +290,15 @@ export interface StockDebtSupplyEvent {
  * `sum(supply.free_qty) - sum(demand.short_qty)` is the balance of the cell that opened it
  * (R37), which is what the two tab footers print.
  */
+/** STOCK-DEBT-PROJECTION: how one month's projected balance is made up
+ *  (`projected = month_balance + pool_added + carried_in`). */
+export interface StockDebtProjection {
+  carried_in: number;
+  month_balance: number;
+  pool_added: number;
+  projected: number;
+}
+
 export interface StockDebtCell {
   demand: StockDebtDemandLine[];
   supply: StockDebtSupplyEvent[];
@@ -301,6 +310,8 @@ export interface StockDebtCell {
    */
   demand_total_qty?: number;
   supply_total_qty?: number;
+  /** Set only when the drill was opened with the "Projected balance" switch on. */
+  projection?: StockDebtProjection | null;
 }
 
 /**

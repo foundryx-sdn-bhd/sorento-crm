@@ -185,3 +185,33 @@ describe('exportStockDebt - real backend, due date range + multi supplier (R14/R
     await expect(exportStockDebt(EXPORT_PARAMS)).rejects.toThrow(/Narrow the plan first/);
   });
 });
+
+describe('STOCK-DEBT-PROJECTION - the projected flag on the wire', () => {
+  it('list: sends projected=true only while the switch is on', async () => {
+    mockedFetch.mockResolvedValue(ok(EMPTY_ENVELOPE));
+    await getStockDebtList({ ...LIST_PARAMS, projected: true });
+    expect(calledUrl(0).searchParams.get('projected')).toBe('true');
+
+    await getStockDebtList({ ...LIST_PARAMS, projected: false });
+    expect(calledUrl(1).searchParams.has('projected')).toBe(false);
+  });
+
+  it('cell: sends projected=true only when asked', async () => {
+    mockedFetch.mockResolvedValue(ok({ demand: [], supply: [] }));
+    await getStockDebtCell('p1', '2026-12', '', undefined, 'all', true);
+    expect(calledUrl(0).searchParams.get('projected')).toBe('true');
+
+    await getStockDebtCell('p1', '2026-12');
+    expect(calledUrl(1).searchParams.has('projected')).toBe(false);
+  });
+
+  it('export: carries projected in the body, false by default', async () => {
+    mockedFetch.mockResolvedValue(ok({ id: 'dl-1' }));
+    await exportStockDebt({ ...EXPORT_PARAMS, projected: true });
+    await exportStockDebt(EXPORT_PARAMS);
+    const body = (i: number) =>
+      JSON.parse((mockedFetch.mock.calls[i][1] as RequestInit).body as string);
+    expect(body(0).projected).toBe(true);
+    expect(body(1).projected).toBe(false);
+  });
+});

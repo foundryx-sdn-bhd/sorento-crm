@@ -174,6 +174,10 @@ function CoveredByEntry({ entry }: { entry: StockDebtAssignedFrom }) {
   );
 }
 
+function signedQty(value: number): string {
+  return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
+}
+
 export function StockDebtCellDialog({
   productId,
   productCode,
@@ -184,6 +188,7 @@ export function StockDebtCellDialog({
   dateFrom,
   dateTo,
   book,
+  projected = false,
   onClose,
 }: {
   productId: string;
@@ -201,12 +206,15 @@ export function StockDebtCellDialog({
   dateTo?: string;
   /** The board's own book (AC-11), same reason. */
   book?: StockDebtBook;
+  /** STOCK-DEBT-PROJECTION: the board's "Projected balance" switch, same reason. */
+  projected?: boolean;
   onClose: () => void;
 }) {
   // The board's own narrowing travels with the request AND with the cache key: the same
   // product and month answer differently under a due date range / a book, so the
   // drill has to be recomputed over the span the cell that opened it was.
-  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book);
+  const cell = useStockDebtCellQuery(productId, month, dateFrom, dateTo, book, projected);
+  const projection = cell.data?.projection ?? null;
 
   const demand = cell.data?.demand ?? EMPTY_DEMAND;
   const supply = cell.data?.supply ?? EMPTY_SUPPLY;
@@ -663,6 +671,19 @@ export function StockDebtCellDialog({
           <DialogDescription className="truncate text-xs" title={distinctProductName ?? undefined}>
             {distinctProductName}
           </DialogDescription>
+          {projection && (
+            <p
+              data-testid="stock-debt-projection-line"
+              className="text-xs text-muted-foreground"
+            >
+              {[
+                `Carried in ${signedQty(projection.carried_in)}`,
+                `This month ${signedQty(projection.month_balance)}`,
+                `Pool added ${signedQty(projection.pool_added)}`,
+                `Projected ${signedQty(projection.projected)}`,
+              ].join(' · ')}
+            </p>
+          )}
         </DialogHeader>
 
         <DialogBody className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
