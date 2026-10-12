@@ -366,3 +366,30 @@ def test_g9_a_real_product_keeps_its_entity_beside_the_split_spec(vdb):
     products = [e for e in verdict["entities"] if e.get("hint") == "product"]
     assert products and products[0]["raw"] == "ZZTWC286" and not products[0].get("spec_key"), verdict["entities"]
     assert ("dim_length", 600) in [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])], verdict["entities"]
+
+
+def test_r_s5a_an_axis_in_a_carried_category_raw_keeps_that_axis(vdb):
+    """Reviewer S5: the category came from an earlier turn ("600mm wide basin", current_message
+    False) and this message says no axis. Only the category's own words carry "wide"."""
+    carried = {**_category("600mm wide basin", "basin", spec_key="dim_width", spec_value=600), "current_message": False}
+    verdict = _ground(vdb, carried, message="got stock?")
+    specs = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("dim_width", 600) in specs and ("size", 600) not in specs, verdict["entities"]
+
+
+def test_r_s5b_an_axis_named_outright_drops_the_require_leg_like_a_size():
+    """Reviewer S5: "600mm length basin got stock?" grounds on dim_length; the route filters it,
+    so the resolver's counted set (which would hold every basin) is not built for it."""
+    from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
+
+    length = {"raw": "600mm length", "hint": "specification", "canonical_code": "600", "current_message": True,
+              "confident": True, "spec_key": "dim_length", "spec_value": 600, "spec_unit": "mm"}
+    out = resolve_entity_body({
+        "text": {"message": {"message": {"text": "600mm length basin got stock?"}}},
+        "contact": {"id": "1"},
+        "parse": {"output": {
+            "message_type": "business_query", "domain_hint": "inventory", "intent_hint": "check_stock",
+            "match_mode": "and", "access_levels": [], "entities": [_category("basin"), length],
+        }},
+    })
+    assert not out.get("require"), out.get("require")

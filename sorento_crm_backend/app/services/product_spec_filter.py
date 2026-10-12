@@ -309,7 +309,7 @@ def resolve_size(
         and str(row.spec_key) not in hidden
     ]
     out = [c for c in constraints if c["key"] != SIZE_KEY]
-    resolved: dict[str, str] = {}
+    resolved: dict[str, str | list[str]] = {}
     for size in [c for c in constraints if c["key"] == SIZE_KEY]:
         where = _where(out, base)
         holders = sorted(

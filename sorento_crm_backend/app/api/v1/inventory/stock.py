@@ -418,7 +418,7 @@ def get_stock_balance(
         # and emit the raw dict. `data` is always [] here, so encoding is trivial
         # and the with-data path stays byte-identical (AC-R1).
         if isinstance(result, dict) and (
-            result.get("alternatives") or "spec_alternatives" in result or "spec_ambiguous" in result
+            result.get("alternatives") or "spec_alternatives" in result
         ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))

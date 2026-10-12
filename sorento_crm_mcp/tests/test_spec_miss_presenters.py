@@ -3,9 +3,8 @@
 Card section 9, slice 4. Contract assumed (coordinator's brief):
   * `spec_alternatives`: `[{"key", "label", "unit", "values"}]`
   * `spec_unrecorded`: `{key: count of products with no value for that key}`
-  * `spec_ambiguous`: `[{"key": "size", "value": 250, "candidates": [...], "labels": [...]}]`
 and the sentence text is read from the whole envelope (intro, items, any extra field), because the
-brief does not say which envelope field carries it. Today the presenters ignore all three keys:
+brief does not say which envelope field carries it. Today the presenters ignore both keys:
 an empty `data` renders only "No matching results found.".
 """
 import json
@@ -48,20 +47,3 @@ def test_d2_no_unrecorded_sentence_when_nothing_is_unrecorded(tool, unrecorded):
     out = text(tool, body)
     assert "100 mm" in out
     assert "recorded" not in out
-
-
-@pytest.mark.parametrize("tool", TOOLS)
-def test_d3_ambiguous_size_asks_which_axis(tool):
-    """RED: the presenter ignores `spec_ambiguous`, so it prints the generic no-results line."""
-    out = text(
-        tool,
-        {
-            "spec_ambiguous": [
-                {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"], "labels": ["Length", "Width"]}
-            ]
-        },
-    )
-    assert "250 mm" in out
-    assert "length" in out and "width" in out
-    assert " or " in out
-    assert "no matching results" not in out

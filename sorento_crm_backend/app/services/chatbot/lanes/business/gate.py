@@ -484,16 +484,20 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
             intent = jsc.js_string(parser.get("intent_hint") or "")
             intent_allows_empty = intent in INTENTS_ALLOWING_EMPTY
             gate_passed = ALLOWS_EMPTY.get(domain) is True or intent_allows_empty
+            from app.services.chatbot.lanes.business.fetch import carries_size
+
             spec_page = parser.get("spec_page")
             if (
                 not gate_passed
+                and domain != "promotion"
                 and isinstance(spec_page, dict)
-                and isinstance(spec_page.get("spec_constraints"), list)
-                and spec_page["spec_constraints"]
+                and carries_size(spec_page.get("spec_constraints"))
             ):
                 # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the next page of a
                 # spec-filtered list is scoped by the list's own constraints, which the lane
-                # sends as `spec_constraints`; the page names no entity of its own.
+                # sends as `spec_constraints`; the page names no entity of its own. Only a
+                # carry the lane will send passes (`run_fetch` keeps a size list's filters);
+                # anything else fails closed (reviewer B1).
                 gate_passed = True
                 gate_reason = "no entities; a carried spec page scopes it"
             elif intent_allows_empty and ALLOWS_EMPTY.get(domain) is not True:

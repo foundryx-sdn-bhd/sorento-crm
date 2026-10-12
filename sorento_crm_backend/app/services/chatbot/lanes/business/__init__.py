@@ -1760,9 +1760,9 @@ def run_fetch(
     # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): the parser read this message as "more of
     # the same list" (`continuation`); the list's own constraints ride the carry
     # (`focus.set_page["spec_page"]`, handed in by `turn_runtime`'s runner) and the next page
-    # is asked with exactly those filters.
+    # is asked with exactly those filters, whatever subject the parser repeated (reviewer B1).
     spec_page_carry = parse_output.get("spec_page") if isinstance(parse_output.get("spec_page"), dict) else None
-    if not spec_constraints and spec_page_carry and isinstance(spec_page_carry.get("spec_constraints"), list):
+    if spec_page_carry and isinstance(spec_page_carry.get("spec_constraints"), list):
         spec_constraints = [c for c in spec_page_carry["spec_constraints"] if isinstance(c, dict)] or None
     if spec_constraints and jsc.js_string(domain or "") == "promotion" and not semantic_input.get("scope_terms"):
         # `promo_filter` (PROMO-SUBJECT-FILTER AC-17) found the class is not the subject: a
@@ -2601,9 +2601,9 @@ def run_fetch(
         end = min(page * limit, total)
         if limit and total > end:
             response = jsc.js_string(structured.get("response") or "").rstrip()
-            structured["response"] = (
-                f"{response}\n\nShowing {(page - 1) * limit + 1} to {end} of {total}. Reply to see more."
-            )
+            more = f"Showing {(page - 1) * limit + 1} to {end} of {total}. Reply to see more."
+            localizer = trigger.get("localizer")
+            structured["response"] = f"{response}\n\n{localizer.sentence(more) if localizer is not None else more}"
             structured["spec_carry"] = {
                 "domain": jsc.js_string(domain or ""),
                 "spec_constraints": list(spec_constraints or []),
@@ -2615,6 +2615,7 @@ def run_fetch(
             # The subject and specs were satisfied by the filter; the resolver not
             # placing a word of them (the size) is no miss (`answer_bridge._miss_triggers`).
             structured["subject_filtered"] = True
+            structured["spec_filtered"] = True
         elif envelope.get("spec_miss") is True:
             # The presenter stated what the data holds (the values on file, the axis to
             # pick); that is the reply, never the generic not-found line.

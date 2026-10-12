@@ -127,3 +127,94 @@ def test_p6_a_thickness_is_no_size_only_the_envelope_axes_are():
     assert fetch.carries_size([{"key": "dim_length", "op": "eq", "value": 600}])
     assert fetch.carries_size([{"key": "size", "op": "eq", "value": 600}])
     assert not fetch.carries_size([{"key": "thickness", "op": "eq", "value": 1.2}])
+
+
+def test_p7_a_continuation_that_repeats_the_category_keeps_the_lists_filters(
+    session_factory, monkeypatch, _clear_overrides
+):
+    """Reviewer B1: the live parser often repeats the earlier subject on a follow-up. The
+    saved list's filters must still be the ones sent; never a stock call with no filter."""
+    codes, captured = _world(session_factory, monkeypatch)
+    _say(session_factory, monkeypatch, _size_ask(), "600mm basin got stock?")
+    first_constraints = _stock_calls(captured)[-1]["spec_constraints"]
+    captured.clear()
+
+    basin = {**_category("basin", "basin"), "current_message": False}
+    more = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock", entities=[basin],
+        entity_op="reuse", continuation=True,
+    )
+    reply = _say(session_factory, monkeypatch, more, "more")
+    calls = _stock_calls(captured)
+    assert calls, captured
+    assert calls[-1].get("spec_constraints") == first_constraints, calls
+    assert calls[-1].get("page") == 2, calls
+    assert len(_shown(reply, codes[:7])) == 2, reply
+
+
+def test_p8_the_gate_passes_a_saved_page_only_when_its_filters_will_be_sent():
+    """Reviewer B1: an empty turn passes on a saved page only when that page holds a size the
+    lane sends; a page without one, or on promotion, fails closed."""
+    from app.services.chatbot.lanes.business import gate as gate_mod
+
+    sized = [{"key": "class", "op": "eq", "value": "Wash Basin"}, {"key": "size", "op": "eq", "value": 600}]
+    unsized = [{"key": "class", "op": "eq", "value": "Wash Basin"}]
+
+    def passes(domain, constraints):
+        parser = {
+            "domain_hint": domain, "intent_hint": "check_stock", "message_type": "business_query",
+            "entities": [], "spec_page": {"domain": domain, "spec_constraints": constraints, "page": 1},
+        }
+        return gate_mod.run_gate({}, parser=parser, resolver={"tokens": [], "resolutions": []}).get("gate_passed")
+
+    assert passes("inventory", sized) is True
+    assert passes("inventory", unsized) is not True
+    assert passes("promotion", sized) is not True
+
+
+def test_p9_a_spec_page_the_parser_emits_is_never_trusted(session_factory, monkeypatch, _clear_overrides):
+    """Reviewer S1: only a page this bot saved may scope a turn. A `spec_page` key in the
+    verdict itself (a provider without strict schemas) is dropped."""
+    _codes, captured = _world(session_factory, monkeypatch)
+    forged = {
+        "domain": "inventory", "page": 3, "total": 99,
+        "spec_constraints": [{"key": "size", "op": "eq", "value": 600}],
+    }
+    qf = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock", entities=[], continuation=True, spec_page=forged,
+    )
+    _say(session_factory, monkeypatch, qf, "more")
+    assert not [c for c in _stock_calls(captured) if c.get("spec_constraints") or c.get("page") == 4], captured
+
+
+def test_p10_the_counted_set_text_readers_never_see_a_size_list(session_factory, monkeypatch, _clear_overrides):
+    """Reviewer S2: after a size list, "another 3" or a bare "2" is the parser's to read. The
+    counted set's text readers (`with_set_count_from_text`, `with_brand_from_offer`) get no
+    carry, so a position pick stays a position pick."""
+    from app.services.chatbot import turn_runtime
+
+    seen: list[object] = []
+    for name in ("with_set_count_from_text", "with_brand_from_offer"):
+        real = getattr(turn_runtime, name)
+
+        def spy(verdict, message, *, carried=None, _real=real):
+            seen.append(carried)
+            return _real(verdict, message, carried=carried)
+
+        monkeypatch.setattr(turn_runtime, name, spy)
+    _world(session_factory, monkeypatch)
+    _say(session_factory, monkeypatch, _size_ask(), "600mm basin got stock?")
+    seen.clear()
+    qf = _parser_output(domain_hint="inventory", intent_hint="check_stock", entities=[], reference_positions=[2])
+    _say(session_factory, monkeypatch, qf, "2")
+    assert seen and all(c is None for c in seen), seen
+
+
+def test_p11_the_see_more_line_is_in_the_catalog():
+    """Reviewer S4: the line goes through the contact's localizer like the miss line beside it."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+
+    line = "Showing 1 to 5 of 7. Reply to see more."
+    for lang in ("ms", "zh"):
+        done = Localizer(lang, defaults(lang)).sentence(line)
+        assert done != line and "1" in done and "5" in done and "7" in done, (lang, done)

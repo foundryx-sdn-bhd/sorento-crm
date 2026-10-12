@@ -4628,13 +4628,18 @@ def _run_stages_body(  # noqa: PLR0915
         verdict, latest_user_message, carried=state_in.focus.set_clarify
     )
     verdict = _with_account_answer(verdict, state_in.focus.set_clarify)
+    # SPEC-PROMO-PARAMS (reviewer S2): a size list's page is no counted set; whether the next
+    # message asks for more of it is the parser's `continuation`, so these text readers get none.
+    counted_set = state_in.focus.set_page
+    if isinstance(counted_set, dict) and "spec_page" in counted_set:
+        counted_set = None
     verdict = turn_runtime.with_set_count_from_text(
-        verdict, latest_user_message, carried=state_in.focus.set_page
+        verdict, latest_user_message, carried=counted_set
     )
     # Round 7 on PR #833 (owner hand test, item 6): a brand the last set answer offered
     # narrows that set.
     verdict = turn_runtime.with_brand_from_offer(
-        verdict, latest_user_message, carried=state_in.focus.set_page
+        verdict, latest_user_message, carried=counted_set
     )
     # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): an echo of a row
     # the focus already holds settled is the carry restated, not an axis to rewrite with

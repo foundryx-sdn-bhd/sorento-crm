@@ -3488,6 +3488,10 @@ def make_tool_runner(
         lane_out = _spec_window(lane_out, spec)
         if isinstance(spec_page, dict):
             lane_out = {**lane_out, "spec_page": dict(spec_page)}
+        else:
+            # Only a page this bot saved scopes a turn; a key the verdict carried itself (a
+            # provider without strict schemas) is dropped (reviewer S1).
+            lane_out = {k: v for k, v in lane_out.items() if k != "spec_page"}
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the
             # one the menu was asked for rides the open pick's payload.
@@ -5295,11 +5299,12 @@ def envelope_of(
         "entities": codes,
         # The PRODUCT subjects alone, for the composer's "No stock found for X" line: a
         # customer pinned from an earlier turn is a subject too, and is not a stock code.
-        # SPEC-PROMO-PARAMS: none when the lane answered a FILTERED set (`subject_filtered`):
+        # SPEC-PROMO-PARAMS: none when the lane answered a spec-filtered set (`spec_filtered`):
         # its rows are the described set, so a class member the filter left out (a basin
-        # with no 600 mm on any axis) is not a product that "has no stock".
+        # with no 600 mm on any axis) is not a product that "has no stock". The promotion
+        # tier probe's `subject_filtered` keeps its codes (reviewer N4).
         "product_codes": []
-        if fetched.get("subject_filtered") is True
+        if fetched.get("spec_filtered") is True
         else [
             name
             for name in (

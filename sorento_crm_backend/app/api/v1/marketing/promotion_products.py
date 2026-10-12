@@ -454,9 +454,9 @@ async def list_all_promotion_products(
             brand_ids=parsed_brand_ids,
             promotion_types=normalize_list_query_param(promotion_types),
         )
-        # A virtual `size` the data could not place on one axis: no rows, and the clarify /
-        # miss keys the strict response_model would drop.
-        if "spec_ambiguous" in result or "spec_alternatives" in result:
+        # A virtual `size` no axis holds: no rows, and the miss keys the strict response_model
+        # would drop.
+        if "spec_alternatives" in result:
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
         # Map promo_selling_price to promotion_price for each product
