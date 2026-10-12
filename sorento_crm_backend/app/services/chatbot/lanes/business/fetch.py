@@ -732,6 +732,10 @@ def entity_ids_transformer(
         if jsc.has(semantic_input, key):
             out[key] = semantic_input[key]
 
+    # DEV-FAILURES RC-B: the form the parser named opens that tab of the portal.
+    if tool_name == "crm_portal_link_get" and jsc.has(semantic_input, "submission_type"):
+        out["submission_type"] = semantic_input["submission_type"]
+
     # PROMO-SUBJECT-FILTER AC-4: the class the parser named narrows a promotion ask to
     # promotions LINKED to products of that class. `scope_terms` is set only when the parser
     # named no product (`turn_runtime.promo_filter`), so any product ids here are the set the
@@ -1557,6 +1561,27 @@ def group_axis(ctx: Any) -> str:
 #: call a tool (`turn_runtime.make_tool_runner`'s unfiltered-fetch guard) says it in the
 #: same words, rather than printing a header with nothing under it.
 NO_RESULT_INTRO = "No matching results found."
+
+
+#: DEV-FAILURES RC-B: the reply copy that names the form a portal link opens
+#: (`chatbot_reply_copy.FALLBACK_REPLY_COPY`, editable in Settings > AI Prompts).
+PORTAL_LINK_COPY = {
+    "complaint": "portal_link_complaint",
+    "stock_inquiry": "portal_link_stock_inquiry",
+    "purchase_request": "portal_link_purchase_request",
+    "sponsorship_form": "portal_link_sponsorship_form",
+}
+
+
+def portal_submission_type(parse_output: dict[str, Any]) -> str | None:
+    """The portal tab a portal_link ask names, or None. A code the portal cannot deep-link
+    (`portal_service.SUPPORTED_TYPES`) is the parser guessing and names no form."""
+    from app.services.portal_service import SUPPORTED_TYPES
+
+    if parse_output.get("domain_hint") != "portal_link":
+        return None
+    form = parse_output.get("portal_form")
+    return form if isinstance(form, str) and form in SUPPORTED_TYPES else None
 
 
 def _extract_envelope(j: Any) -> dict[str, Any]:
@@ -2932,6 +2957,9 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             "own_header": True,
         }
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
+    if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):
+        # DEV-FAILURES RC-B: the copy line naming the form, already in the reply language.
+        e["intro"] = ctx["portal_intro"]
     # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
     # localizer only rewrites the strings printed below (absent = identity, byte-identical).
     # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
