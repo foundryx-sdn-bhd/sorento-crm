@@ -80,3 +80,21 @@ def test_h4_guard_a_different_brand_is_a_fresh_ask_and_the_metric_is_asked(conso
     qf["entities"] = [_e("ZZT CATEGORY", "category")]
     text, log = lane._say_all(console, monkeypatch, qf, "project sales top 40 ZZT CATEGORY products")
     assert "By quantity or by amount?" in text and not _ts_calls(log), (text, log)
+
+
+def test_h7_guard_the_same_brand_for_another_channel_is_a_fresh_ask(console, monkeypatch) -> None:
+    _ran_top_20(console, monkeypatch)
+    text, log = lane._say_all(
+        console, monkeypatch, _brand_ranking(top_n=40, rank_by=None, measure=None, sales_channel="dealer"),
+        "dealer sales top 40 Sorento products",
+    )
+    assert "By quantity or by amount?" in text and not _ts_calls(log), (text, log)
+
+
+def test_h8_guard_a_fresh_ask_with_no_filter_of_its_own_asks_the_metric(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _live(_ask(top_n=20)), "top 20 selling items")
+    assert "By quantity or by amount?" in text, text
+    text, log = lane._say_all(console, monkeypatch, _live(_answer(rank_by="quantity")), "quantity")
+    assert _ts_calls(log), (text, log)
+    text, log = lane._say_all(console, monkeypatch, _live(_ask(top_n=10)), "top 10 selling items")
+    assert "By quantity or by amount?" in text and not _ts_calls(log), (text, log)
