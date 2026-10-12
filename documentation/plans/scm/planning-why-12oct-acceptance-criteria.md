@@ -25,7 +25,8 @@ with message `Nothing on this planning change could be confirmed.` and no `faili
   `reason_code: Optional[str]` and `change: Optional[str]`. Existing callers that do not set them
   are unchanged.
 - **AC-W2** For an ADMIN presser, on that path, the order's result carries one `failing_lines`
-  entry per posted line of the batch that explains it, with `so_line_no`, `item_code`, and:
+  entry per pending or superseded planning change row of that order's batch (the rows that explain
+  why nothing confirmed; tests reach the path with `lines: []`), with `so_line_no`, `item_code`, and:
 
   | situation | `reason_code` | `reason` | `change` example |
   |---|---|---|---|
@@ -62,7 +63,7 @@ with message `Nothing on this planning change could be confirmed.` and no `faili
 ## R4 Cancel cause recorded
 
 - **AC-W8** Every code path that sets `order_inquiry_rows.state` to cancelled writes, in the same
-  transaction, one `audit_logs` row: `entity_type = "order_inquiry_rows"`, `entity_id` = the row,
+  transaction, one `audit_logs` row: `entity_type` = the model's pinned audit type (`project_order_inquiry_rows`), `entity_id` = the row,
   `action = "CANCEL"`, `user_id` = acting user or NULL, `root_entity_type = "project_sales_orders"`,
   `root_entity_id` = the row's order (planning record id) when resolvable,
   `new_values = {"revision_no": int|null, "supply_decision_id": str|null, "cause": <code>, "qty": number, "item_code": str, "so_line_no": int|null}`.
@@ -92,7 +93,7 @@ with message `Nothing on this planning change could be confirmed.` and no `faili
     `so_line_id`, `item_code` and `qty` counts in `reissued_unchanged` and is listed in neither.
   - `autocount_update`: one per (planning change batch, order); `at` = batch `created_at`,
     actor = `created_by` name; `counts` by kind (`qty_down`, `product_changed`, `added`, ...)
-    and by state now (`confirmed` = applied, `not_decided` = pending + decision NULL,
+    and by state now, flat keys in one `counts` dict (`confirmed` = applied, `not_decided` = pending + decision NULL,
     `replaced` = superseded); `lines` = `[{"so_line_no", "item_code", "kind", "change", "state"}]`.
   - `email_sent`: `email_outbox` rows whose `metadata_json.notification_id` names a
     `notifications` row with `data.source_kind = "order_inquiry_handover"` and `data.source_id`
