@@ -778,3 +778,66 @@ def test_staff_call_without_contact_still_sees_dim_width(api, db):
     assert size.json().get("spec_ambiguous") == [
         {"key": "size", "value": 250, "candidates": ["dim_length", "dim_width"]}
     ]
+
+
+# --------------------------------------------------------------------------------------- #
+# Owner Q4 option (a), 12 Oct: promotion-products takes brand_ids and promotion_types
+# --------------------------------------------------------------------------------------- #
+
+
+def test_promotion_products_route_narrows_by_brand_and_kind_with_spec_constraints(api, db, monkeypatch):
+    """R1. RED today: `brand_ids` and `promotion_types` are not params of
+    `GET /marketing/promotion-products`, so they are ignored and every line comes back."""
+    from app.models.marketing import PromotionType
+    from app.models.product import Brand
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
+    )
+    standard = PromotionType(
+        type_code="zzt_standard", type_name="ZZT Standard", show_expired=True, match_markers=[], match_priority=90,
+        is_default=True,
+    )
+    flyer = PromotionType(
+        type_code="zzt_flyer", type_name="ZZT Flyer", show_expired=True, match_markers=[], match_priority=40,
+        is_default=False,
+    )
+    db.add_all([standard, flyer])
+    b1 = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="ZZT One", company_id=DEFAULT_COMPANY_ID)
+    b2 = Brand(id=str(uuid.uuid4()), brand_code=f"ZZT{uuid.uuid4().hex[:6]}", brand_name="ZZT Two", company_id=DEFAULT_COMPANY_ID)
+    db.add_all([b1, b2])
+    db.flush()
+    p1 = _p(db, "RB1", {"class": _enum("Basin")})
+    p2 = _p(db, "RB2", {"class": _enum("Basin")})
+    p3 = _p(db, "RB3", {"class": _enum("Tap")})
+    p1.brand_id, p2.brand_id, p3.brand_id = b1.id, b2.id, b1.id
+    db.flush()
+    live = dict(start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    promo_std = _promo(db, p1, **live)
+    promo_std.promotion_type_id = standard.id
+    group = promo_std.promotion_groups[0]
+    db.add(
+        PromotionProduct(
+            id=str(uuid.uuid4()), promotion_id=promo_std.id, promotion_group_id=group.id,
+            product_id=p2.id, company_id=DEFAULT_COMPANY_ID,
+        )
+    )
+    promo_fly = _promo(db, p3, **live)
+    promo_fly.promotion_type_id = flyer.id
+    db.commit()
+
+    def lines(**params):
+        resp = api.get("/api/v1/marketing/promotion-products/", params={"active": "true", "limit": 100, **params})
+        assert resp.status_code == 200, resp.text
+        return {row["product"]["product_code"] for row in resp.json()["data"]}
+
+    assert lines() == _codes_of([p1, p2, p3]), "no narrowing: every live line"
+    assert lines(brand_ids=[b1.id]) == _codes_of([p1, p3])
+    assert lines(brand_ids=[b2.id]) == _codes_of([p2])
+    assert lines(promotion_types=["zzt_flyer"]) == _codes_of([p3])
+    assert lines(brand_ids=[b1.id], promotion_types=["zzt_standard"]) == _codes_of([p1])
+    assert lines(brand_ids=[b1.id], **_constraints({"key": "class", "op": "eq", "value": "Tap"})) == _codes_of([p3])
+    assert lines(
+        brand_ids=[b1.id], promotion_types=["zzt_standard"],
+        **_constraints({"key": "class", "op": "eq", "value": "Tap"}),
+    ) == set()

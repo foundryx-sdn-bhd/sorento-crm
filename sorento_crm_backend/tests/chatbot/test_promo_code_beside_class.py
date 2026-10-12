@@ -101,8 +101,9 @@ def test_a_code_beside_a_class_keeps_product_ids_and_sends_no_subject(session_fa
     turn(_qf(code_hint), f"kitchen sink {CODE} promo", f"zzt-cb-ask-{code_hint}")
     n = len(captured)
     reply = turn(_pick_qf(1), "1", f"zzt-cb-pick-{code_hint}")
-    # owner Q4 option (a), 12 Oct: the typed code keeps product_ids; the pick runs the promotion-products tool
-    calls = [a for name, a in captured[n:] if name == PRODUCTS_TOOL]
+    # owner Q4 option (a), 12 Oct: the typed code stays the stricter subject: product_ids and no
+    # spec_constraints, whichever promotion tool the pick turn runs
+    calls = [a for name, a in captured[n:] if name in (PROMO_TOOL, PRODUCTS_TOOL)]
     assert calls and len(captured) > n, captured
     for a in calls:
         assert a.get("product_ids") == [pid], a

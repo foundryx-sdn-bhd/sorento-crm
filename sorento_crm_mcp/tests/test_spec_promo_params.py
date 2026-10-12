@@ -152,3 +152,32 @@ def test_compiled_tool_signature_carries_access_levels(tool):
 async def test_access_levels_list_reaches_the_backend_query(tool):
     query = await _call(tool, {"access_levels": ["dealer"], "has_active_promotion": True})
     assert query is not None and query.get("access_levels") == ["dealer"], query
+
+
+# Owner Q4 option (a), 12 Oct: promotion products is the one promotion path for a described
+# subject, so it needs brand and kind narrowing for parity with the promotions list.
+PROMO_PRODUCTS = "crm_marketing_promotion_products_list"
+
+
+@pytest.mark.parametrize("param", ["brand_ids", "promotion_types", "spec_constraints"])
+def test_promotion_products_tool_declares_the_narrowing_params(param):
+    """RED (brand_ids, promotion_types): not in the ToolSpec, so FastMCP drops them."""
+    assert param in _spec(PROMO_PRODUCTS).query_params
+    fn = getattr(_compile_tool(_spec(PROMO_PRODUCTS)), "fn", _compile_tool(_spec(PROMO_PRODUCTS)))
+    assert param in inspect.signature(fn).parameters
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("param,value", [("brand_ids", ["b-1", "b-2"]), ("promotion_types", ["a3_flyer"])])
+async def test_promotion_products_forwards_a_list_to_the_backend(param, value):
+    """RED: the undeclared param never reaches the backend query."""
+    query = await _call(PROMO_PRODUCTS, {param: value})
+    assert query is not None and query.get(param) == value, query
+
+
+@pytest.mark.asyncio
+async def test_promotion_products_forwards_spec_constraints_as_json():
+    """A list of objects crosses FastMCP and arrives as a JSON string."""
+    query = await _call(PROMO_PRODUCTS, {"spec_constraints": CONSTRAINTS})
+    assert query is not None and "spec_constraints" in query, query
+    assert json.loads(query["spec_constraints"]) == CONSTRAINTS
