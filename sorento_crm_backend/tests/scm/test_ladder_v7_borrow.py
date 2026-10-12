@@ -19,6 +19,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -649,6 +651,7 @@ def _borrow_world(db, *, donor_days=WINDOW_DAY + 20, donor_qty="30", ask="30"):
     }
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_decided_later_order_lends_its_on_hand_and_the_component_names_the_donor():
     """AC-S3-2: kind `borrow`, rung `order_borrow`, the donor named, the order-back sized."""
     with blank_session() as db:
@@ -671,6 +674,7 @@ def test_a_decided_later_order_lends_its_on_hand_and_the_component_names_the_don
     assert donor_so is not None
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
     """AC-S3-2 / R4: same agent first, THEN the latest required date.
 
@@ -719,6 +723,7 @@ def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
 # --------------------------------------------------------------------------- AC-S3-3
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_between_two_other_agents_the_later_required_date_donates_first():
     """AC-S3-3: on equal agent standing, the order that can wait longest gives it up."""
     with blank_session() as db:
@@ -1229,6 +1234,7 @@ def test_the_pool_is_the_last_stock_step_and_its_free_pile_raises_nothing():
     assert raised == 0, "a FREE pool draw is owed to nobody (AC-L13's surviving half)"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_later_pool_order_lends_its_on_hand_and_is_owed_it_back():
     """AC-S3-7, second half (R34): when the pool's free pile cannot cover the unit, a LATER
     pool order holding stock there lends it - and that half is a `borrow` which raises an
@@ -1468,6 +1474,7 @@ def test_a_frozen_snapshot_carrying_the_retired_rung_still_renders():
 # --------------------------------------------------------------------------- AC-S3-14
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_every_walked_unit_carries_five_options_in_step_order_with_one_chosen():
     """AC-S3-14 (R36), the whole contract in one read: five entries, always, in step order;
     at most one `chosen`; `fulfil_date` and `days_late` null together; `days_late` never
@@ -1549,6 +1556,7 @@ def test_the_board_payload_declares_the_options_so_the_response_model_keeps_them
 # --------------------------------------------------- the review's trail + option fixes
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_pool_step_of_the_trail_states_the_borrow_half_and_names_the_donor():
     """Review finding: the pool step read only the FREE pile, so a step-4b borrow printed
     `answer=yes, took=60` beside `offered=0` and "No shared pool holds this product." over
@@ -1598,6 +1606,7 @@ def test_the_pool_step_of_the_trail_states_the_borrow_half_and_names_the_donor()
     assert donor_so is not None
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_another_groups_incoming_is_offered_as_water_and_dates_the_option_by_its_arrival():
     """Review finding: step 1's other-group half dropped `(arrival, kind)`, so another
     group's INCOMING SPO composed as an immediate Reserve and the option table dated the

@@ -397,6 +397,7 @@ def test_off_a_same_group_sibling_borrow_raises_an_order_back_on_this_line():
 # --------------------------------------------------------------------------- T8
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_k1_a_row_made_under_on_ends_as_one_row_on_the_borrowing_line_after_a_flip_to_off():
     with blank_session() as db:
         world = _borrow_world(db)
@@ -429,6 +430,7 @@ def test_k1_a_row_made_under_on_ends_as_one_row_on_the_borrowing_line_after_a_fl
 # --------------------------------------------------------------------------- T9
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_on_pins_todays_behaviour_donor_named_superseded_and_the_row_on_the_donor_line():
     with blank_session() as db:
         world = _borrow_world(db)
