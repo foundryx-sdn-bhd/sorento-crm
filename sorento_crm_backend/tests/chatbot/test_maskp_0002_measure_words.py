@@ -90,7 +90,7 @@ def test_the_variable_renders_the_tagged_rows_as_a_glossary():
     with blank_session() as db:
         _seeded(db)
         rendered = pv.render_value(db, "sub_ask_measures")
-        assert rendered.splitlines()[0].startswith('  - "received_qty"')
+        assert rendered.splitlines()[0].startswith('    "received_qty": ')
         assert '"进仓库"' in rendered and '"jual"' in rendered
         assert "Domain" not in rendered
         for other_list in ("statuses", "status_values", "status_field_values", "order_status_values"):

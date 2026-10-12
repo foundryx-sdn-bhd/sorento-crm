@@ -246,7 +246,10 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # nothing here): +34 est. tokens, so CEILING is 52,562.
 # Merge of main (#1601 CHAT-FIND, FIND_ADDENDUM) with MULTI-ASK-PLAN2: 53,177 est. tokens without
 # MEMORY_ADDENDUM (main's prompt + SUB_ASKS_ADDENDUM), so CEILING is 53,181 (+4).
-CEILING = 53_181
+# MULTI-ASK-PLAN2 crew live check (13 Oct 2026): the nine measure definitions inline again in
+# SUB_ASKS_ADDENDUM (2,387 chars), so the prompt defines them with no glossary rows: 53,400 est.
+# tokens without MEMORY_ADDENDUM (+223), so CEILING is 53,404 (+4).
+CEILING = 53_404
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

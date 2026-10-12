@@ -212,12 +212,12 @@ def _wrap(tokens: list[str], *, indent: str = "") -> str:
     return "\n".join(lines)
 
 
-def _status_line(row: dict, pad: int = 0, *, with_domain: bool = True) -> str:
+def _status_line(row: dict, pad: int = 0) -> str:
     """One status, the owner's layout: the quoted values padded so the arrows line up,
     the words wrapped at `WRAP_WIDTH` with a 4-space continuation."""
     words = [_quoted(w) for w in row["trigger_words"] or []]
     head = f'  - {_quoted(row["value"]).ljust(pad)} -> {_one_line(row["label"])}'
-    tail = [f'Domain {_quoted(row["domain"])}.'] if with_domain and row["domain"] != "order" else []
+    tail = [f'Domain {_quoted(row["domain"])}.'] if row["domain"] != "order" else []
     if not words:
         return _wrap([head + "."] + tail, indent="    ")
     tokens = [head + ":"] + [w + "," for w in words[:-1]] + [words[-1] + "."]
@@ -238,11 +238,15 @@ def render_statuses(db: Session) -> str:
 
 
 def render_sub_ask_measures(db: Session) -> str:
-    """The sub-ask measures glossary (MULTI-ASK-PLAN2): each value, what it means and the
-    words people use for it. A measure is not a domain, so no domain is named."""
-    rows = _listed(db, "sub_ask_measures")
-    pad = max((len(_quoted(r["value"])) for r in rows), default=0)
-    return "\n".join(_status_line(row, pad, with_domain=False) for row in rows)
+    """The words people use for each sub-ask measure (MULTI-ASK-PLAN2): one line per tagged
+    row, its value then its words. The meanings live in SUB_ASKS_ADDENDUM itself, so the
+    prompt still defines every measure when this table holds no rows."""
+    lines = []
+    for row in _listed(db, "sub_ask_measures"):
+        words = [_quoted(w) for w in row["trigger_words"] or []]
+        tokens = [f"    {_quoted(row['value'])}:"] + [w + "," for w in words[:-1]] + words[-1:]
+        lines.append(_wrap(tokens, indent="      "))
+    return "\n".join(lines)
 
 
 def render_domain_words(db: Session) -> str:

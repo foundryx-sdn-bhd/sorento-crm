@@ -578,7 +578,10 @@ def test_p5_a_bare_product_mention_is_no_domain_and_no_asks():
 
 
 def test_p7_the_addendum_stays_a_definition_not_a_lesson():
-    assert len(_addendum()) <= 2_100
+    # 2,400: the nine measure definitions are inline again (crew live check 13 Oct 2026: with
+    # them only in the data glossary, a database without its rows gave the parser no measure
+    # list at all). Still keys plus definitions, no examples and no word lists.
+    assert len(_addendum()) <= 2_400
 
 
 def test_p6_no_live_string_appears_verbatim_in_the_prompt():
