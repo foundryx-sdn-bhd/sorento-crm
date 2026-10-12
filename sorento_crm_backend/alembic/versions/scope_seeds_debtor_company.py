@@ -139,6 +139,7 @@ def upgrade():
         FROM embedding_documents nd
         JOIN embedding_documents od
           ON {_legacy('od')} AND od.source_id = 'debtor:' || substring(nd.source_id from {_CODE_FROM})
+         AND od.title = nd.title
         JOIN embedding_chunks c ON c.document_id = od.id AND c.is_current = TRUE
         WHERE nd.source_type = 'customer'
           AND nd.source_id ~ {_NEW_ID}
