@@ -25,6 +25,7 @@ OPS = ("eq", "between", "gte", "lte")
 # resolves it to the one active numeric mm key whose stored value holds the number among the
 # products matching the other constraints (card section 9, slice 1).
 SIZE_KEY = "size"
+CLASS_KEY = "class"
 
 
 def _is_number(v: Any) -> bool:
@@ -54,6 +55,10 @@ def parse_spec_constraints(
         raise _bad("`spec_constraints` must be a non-empty JSON list of {key, op, value}.")
     types: dict[str, str] = {str(row.spec_key): str(row.data_type or "") for row in active_registry(db)}
     types.setdefault(SIZE_KEY, "numeric")
+    # `class` is what the product IS, its vocabulary the categories' `class_label` (the
+    # registry row carries no choices of its own), so it is known even on an install whose
+    # registry has no row for it.
+    types.setdefault(CLASS_KEY, "enum")
     out: list[dict] = []
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str) or "value" not in item:
