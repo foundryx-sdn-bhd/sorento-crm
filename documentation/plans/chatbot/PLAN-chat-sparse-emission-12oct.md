@@ -59,6 +59,8 @@ gpt-5.4-mini, `head/parser.parse` production path, 20 made-up turns
 | sparse (20 turns) | 1.54 s | 1.80 s | 2.08 s | 97 | 0 |
 | sparse, final wording (12 turns) | 1.58 s | 2.28 s | 2.63 s | 104 | 0 |
 
+The `is_active` / `spec_value` lines (review round 1) were added after this measurement and the
+60-call cap, so the crew eval gate on the published sparse version (AC-8) is the run of record.
 After the `entity_op` fix, 12/12 turns match strict on `entity_op`, `domain_in_message` and
 `is_affirmative`. Other per-turn differences are within the run-to-run noise CHAT-SPEED measured
 (4/20 strict emissions byte-identical across two strict runs); the crew eval gate decides.

@@ -764,7 +764,8 @@ def hydrate_emission(emission: dict) -> dict:
     ONE place where absent == default, so no reader downstream has to know a key can be
     missing: a sparse emission hydrates to the same dict the strict schema would have
     produced for the same reading. A full emission comes back unchanged. Unknown keys
-    are kept, exactly as before (`DECLARED_KEYS`).
+    at the top are kept, exactly as before (`DECLARED_KEYS`); inside an object they are
+    dropped, as strict mode refused them.
     """
     return _hydrated(emission, PARSE_OUTPUT_JSON_SCHEMA, top=True)
 

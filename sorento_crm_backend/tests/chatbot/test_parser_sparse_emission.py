@@ -514,3 +514,12 @@ def test_no_reader_tells_a_plain_flags_false_from_its_null():
         if pattern.search(line)
     ]
     assert hits == []
+
+
+def test_the_prompt_names_every_key_the_code_keeps():
+    """The hydration side is pinned above; this pins the instruction that makes the model
+    write those keys at all (dropping the `is_active` line would bring back "expired
+    promotions" answered with active ones, every other test still green)."""
+    kept = FALSE_IS_A_VALUE | {key for keys in parser_mod.SPARSE_REQUIRED.values() for key in keys}
+    missing = sorted(key for key in kept if key not in SPARSE_OUTPUT_ADDENDUM)
+    assert missing == []
