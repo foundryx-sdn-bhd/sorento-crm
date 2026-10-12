@@ -5139,6 +5139,35 @@ def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]
     return copy.deepcopy(memo[key])
 
 
+def _prefetch_embeddings(tokens: list[str]) -> None:
+    """Embed every not-yet-embedded token in ONE provider call and remember the vectors,
+    so Tier 3's per-token `_memo_embedding` finds them (CHAT-SPEED, 12 Oct 2026).
+
+    One round trip is about 0.33 s and a batch of three about 0.39 s, with the same
+    vectors back (measured), so a message with N unknown words used to pay N round trips
+    in sequence. Best effort: on any failure, or an answer of the wrong length, nothing is
+    remembered and each token is embedded on its own exactly as before, with its own
+    error logged there.
+    """
+    memo = _RESOLVE_MEMO.get()
+    if memo is None:
+        return
+    todo = list(dict.fromkeys(t for t in tokens if ("embedding", t) not in memo))
+    if len(todo) < 2:
+        return
+    try:
+        from app.services.embedding_worker import _embed_text_chunks
+
+        vectors = _embed_text_chunks(todo)
+    except Exception:  # noqa: BLE001 - the per-token path below is the fallback
+        logger.info("Tier-3 batched embedding failed; embedding per token", exc_info=True)
+        return
+    if len(vectors) != len(todo):
+        return
+    for token, vector in zip(todo, vectors):
+        memo[("embedding", token)] = list(vector)
+
+
 def _memo_embedding(token: str, embed) -> list[float]:
     """The query vector for `token`, embedded once per request."""
     memo = _RESOLVE_MEMO.get()
@@ -5615,6 +5644,16 @@ def resolve_references(
 
     # ----- Tier 3: embedding fallback (only for tokens still empty AND not ambiguous) -----
     if enable_embedding_fallback:
+        # CHAT-SPEED: the tokens the loop below will embed, embedded in one call first.
+        _prefetch_embeddings(
+            [
+                tok
+                for tok in tokens
+                if not per_token[tok]
+                and tok not in ambiguous_tokens
+                and not (_types_for(tok) is not None and not _types_for(tok))
+            ]
+        )
         for tok in tokens:
             if per_token[tok] or tok in ambiguous_tokens:
                 continue
