@@ -98,3 +98,61 @@ def test_h8_guard_a_fresh_ask_with_no_filter_of_its_own_asks_the_metric(console,
     assert _ts_calls(log), (text, log)
     text, log = lane._say_all(console, monkeypatch, _live(_ask(top_n=10)), "top 10 selling items")
     assert "By quantity or by amount?" in text and not _ts_calls(log), (text, log)
+
+
+# ================================================================================ v92 shapes (made-up values)
+
+
+def _v92_project_brand(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="sales", intent_hint="check_order", order_status="sales_ranking", domain_in_message=True,
+        group_by="brand", top_n=20, rank_group="item", rank_direction="top", rank_by=None, basis=None, measure=None,
+        sales_channel="project", ranking_refine=False, entities=[], date_filter_start=None, date_filter_end=None,
+        report_ask_words={"brand": ["Sorento"], "category": [], "sales_agent": []},
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_h13_a_project_brand_item_ranking_with_the_brand_as_group_is_the_top_selling_ask(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _v92_project_brand(), "top 20 project sales Sorento products")
+    assert "By quantity or by amount?" in text and "crm_report" not in _names(log), (text, log)
+    text, log = lane._say_all(console, monkeypatch, _live(_answer(rank_by="quantity")), "quantity")
+    if not _ts_calls(log):
+        text, log = lane._say_all(console, monkeypatch, _live(_answer(basis="delivered")), "delivered")
+    (args,) = _ts_calls(log)
+    assert args["n"] == 20 and args.get("channel") == "project", args
+    assert console.ids["brand"] in (args.get("brand_ids") or []), args
+
+
+def test_h14_guard_a_real_brand_ranking_stays_on_the_ranking_lane(console, monkeypatch) -> None:
+    qf = _v92_project_brand(rank_group=None, report_ask_words={"brand": [], "category": [], "sales_agent": []},
+                            top_n=5, sales_channel=None)
+    text, log = lane._say_all(console, monkeypatch, qf, "top 5 brands")
+    assert "crm_top_selling_report" not in _names(log), log
+    assert PERIOD_Q in text or "crm_report" in _names(log), (text, log)
+
+
+def _v92_outstanding(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="outstanding", domain_in_message=True,
+        group_by="customer", top_n=5, rank_group=None, rank_by="amount", rank_direction=None, basis="outstanding",
+        measure=None, entities=[_e("Sorento", "brand"), _e("BRW", "warehouse")], report_ask_words=None, **SEP,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_h15_an_outstanding_verdict_with_a_ranking_shape_is_a_sales_ranking(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _v92_outstanding(), "top 5 customers for Sorento outstanding at BRW")
+    assert "crm_outstanding_report" not in _names(log), (text, log)
+    (args,) = [a for n, a in log if n == "crm_report"]
+    assert args["group_by"] == "customer" and args["top_n"] == 5, args
+    assert args["measure"] == "outstanding_amount" and args["warehouse_codes"] == ["BRW"], args
+    assert args["date_from"] == "2026-09-01" and args["date_to"] == "2026-09-30", args
+
+
+def test_h16_guard_a_plain_outstanding_ask_stays_the_outstanding_report(console, monkeypatch) -> None:
+    qf = _v92_outstanding(group_by=None, top_n=None, rank_by=None, basis=None, entities=[_e(lane.CUSTOMER_NAME, "customer")])
+    _text, log = lane._say_all(console, monkeypatch, qf, "outstanding for the customer")
+    assert "crm_report" not in _names(log), log
