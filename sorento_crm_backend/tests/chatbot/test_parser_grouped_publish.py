@@ -57,7 +57,7 @@ def test_revision_id_fits_and_chains() -> None:
     module = _module()
     assert module.revision == "chs_0001_parser_sparse_output"
     assert len(module.revision) <= 32
-    assert module.down_revision == "rkind_0003_reference_kind_rows"
+    assert module.down_revision == "devf_0002_portal_link_copy"
 
 
 def test_publishes_the_production_line_and_the_constant_line_unlabelled() -> None:

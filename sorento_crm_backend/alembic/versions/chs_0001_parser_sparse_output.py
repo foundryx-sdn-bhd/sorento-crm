@@ -25,7 +25,7 @@ skipped with a log line, never a failed migration. Promoting is one label move; 
 back is the reverse move.
 
 Revision ID: chs_0001_parser_sparse_output
-Revises: rkind_0003_reference_kind_rows
+Revises: devf_0002_portal_link_copy
 """
 import importlib.util
 import logging
@@ -39,7 +39,7 @@ from app.services.ai_prompt_registry import PROMPT_KEYS
 from app.services.chatbot_parser_prompt import grouped_prompt
 
 revision = "chs_0001_parser_sparse_output"
-down_revision = "rkind_0003_reference_kind_rows"
+down_revision = "devf_0002_portal_link_copy"
 branch_labels = None
 depends_on = None
 
