@@ -405,6 +405,11 @@ def test_grouped_prompt_changes_only_the_output_block_and_the_entity_line(line):
         assert f'  "{group}": null, or {{' in block
         for key in keys:
             assert f'"{key}":' in block
+            # Folded into the group line, never left on a line of its own.
+            assert not re.search(rf'^\s*"{key}"\s*:', block, re.MULTILINE), key
+    assert '  "escalation": null, or {' in block
+    assert '  "anaphora": null, or {' in block
+    assert '"topic_reset": true|null, true only when the message drops the current subject' in block
     # Outside the block, only the entity format line changed.
     old_rest = (original[:start] + original[end:]).split("\n")
     new_rest = (text[:new_start] + text[new_end:].removesuffix(GROUPED_OUTPUT_ADDENDUM)).split("\n")
@@ -429,3 +434,40 @@ def test_the_prompt_names_every_group_and_member():
             assert key in GROUPED_OUTPUT_ADDENDUM
     for key in parser_mod.NULLABLE_OBJECTS:
         assert key in GROUPED_OUTPUT_ADDENDUM
+
+
+CANDIDATE = LINES["v52 candidate"]
+
+
+@pytest.mark.parametrize(
+    ("variant", "reason"),
+    [
+        (CANDIDATE.replace("\n}\n" + STRICT_OUTPUT_BLOCK_END, "\n}\n\n" + STRICT_OUTPUT_BLOCK_END, 1), "close"),
+        (CANDIDATE.replace('\n  "is_active":', '\n   "is_active":', 1), "is_active"),
+        (
+            CANDIDATE.replace(
+                '  "escalation": { "is_escalation_confirmation": false,',
+                '  "escalation": {\n    "is_escalation_confirmation": false,',
+                1,
+            ),
+            "escalation",
+        ),
+        (CANDIDATE.replace('"confident": true|false }', '"confident": true|false, "hint_confident": true|false }', 1), "entity"),
+    ],
+)
+def test_grouped_prompt_refuses_a_text_it_cannot_fold_cleanly(variant, reason):
+    """A prompt line we have not seen (prod v52, the eval's v63) must be refused, never
+    published half-folded: the migration and the script skip a refused text."""
+    assert variant != CANDIDATE
+    with pytest.raises(ValueError, match=reason):
+        grouped_prompt(variant)
+
+
+def test_gemini_drops_the_non_string_enum_of_a_grouped_flag():
+    from app.services.llm_provider import _gemini_schema
+
+    flag = GROUPED["properties"]["conversation"]["properties"]["continuation"]
+    assert _gemini_schema(flag) == {"type": "boolean", "nullable": True}
+    assert _gemini_schema({"type": ["string", "null"], "enum": ["a", None]}) == {
+        "type": "string", "nullable": True, "enum": ["a"],
+    }

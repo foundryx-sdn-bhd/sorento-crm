@@ -36,8 +36,9 @@ Lesson: the provider's constrained decoding is what guarantees the shape. Do not
    (the current production label included) keeps the flat strict schema byte for byte.
 2. **Flatten at the parser, nothing else changes.** `flatten_grouped` turns the answer back into the
    flat shape before any reader: a null group writes each member's empty value (null, or [] for a
-   list), a null object writes its object of empties. A missing group is still caught by
-   `assert_emission` (the members are missing).
+   list), a null object writes its object of empties. Strict mode makes a missing group impossible;
+   if one were missing, its members are missing to `assert_emission` exactly as in a flat answer
+   (the ranking keys are in `TOLERATED_ABSENT`, so those would read as null).
 3. **Plain flags are true or null inside a group.** `PLAIN_FLAGS` (continuation, contains_flyer,
    correction, topic_reset, proceed_anyway, ranking_refine, is_escalation_confirmation,
    backward_reference, all_categories) carry `enum: [true, null]` in the grouped schema, so the model
@@ -48,7 +49,11 @@ Lesson: the provider's constrained decoding is what guarantees the shape. Do not
    v42, v50, the v52 candidate and v56) each group's member lines fold into one line showing the group
    as null, each member keeping its own description; the entity format line gains
    `"detail": null, or {...}`; an OUTPUT GROUPS section goes last. Nothing else in the text changes
-   (pinned per line). The model copies the template it is shown: with the section alone it still
+   (pinned per line). A text it cannot fold cleanly is refused, never published half-folded (review
+   round 2: a blank line before the block's last line, a member at another indent, a multi-line
+   escalation, an entity line ending otherwise). A plain flag keeps its description, only its `false`
+   default becomes `true|null`. `_gemini_schema` drops a non-string enum (Gemini has no spelling for
+   `[true, null]`). The model copies the template it is shown: with the section alone it still
    wrote every group as an object (probe, 12 Oct 2026).
 5. **Publish, label unmoved.** Migration `chs_0001_parser_sparse_output` (revision id kept, body now
    grouped; a database that ran the round 1 body keeps those rows unlabelled) publishes two unlabelled

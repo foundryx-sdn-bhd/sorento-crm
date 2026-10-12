@@ -1373,10 +1373,16 @@ def _grouped_block(block: str) -> str:
         match = re.match(r'  "(\w+)": (.*?),?$', line)
         key = match.group(1) if match else None
         if key in _NULLABLE_OBJECT_LINES:
+            value = match.group(2)
+            if not (value.startswith("{") and value.endswith("}")):
+                raise ValueError(f"OUTPUT block line for {key} is not a one-line object")
             lines.append(_NULLABLE_OBJECT_LINES[key])
         elif key in group_of:
             group = group_of[key]
-            value = "true|null" if key in PLAIN_FLAGS else match.group(2)
+            value = match.group(2)
+            if key in PLAIN_FLAGS:
+                # The flag's own description stays; only its `false` default goes.
+                value = "true|null" + value[len("false"):] if value.startswith("false") else "true|null"
             if not members[group]:
                 lines.append(f"<<{group}>>")
             members[group].append(f'"{key}": {value}')
@@ -1391,15 +1397,27 @@ def _grouped_block(block: str) -> str:
             text = text.replace(f"<<{group}>>", line)
         else:
             # A group none of whose keys the block lists (they come from the addenda).
-            text = text.replace("\n}\n" + STRICT_OUTPUT_BLOCK_END, "\n" + line + "\n}\n" + STRICT_OUTPUT_BLOCK_END)
+            anchor = "\n}\n" + STRICT_OUTPUT_BLOCK_END
+            if anchor not in text:
+                raise ValueError("OUTPUT block does not close with '}' right above its last line")
+            text = text.replace(anchor, "\n" + line + anchor)
+    # Refuse rather than publish a half-folded block: a member still on a line of its own
+    # (another indent, another spelling) would be named twice.
+    for key in group_of:
+        if re.search(rf'^\s*"{key}"\s*:', text, re.MULTILINE):
+            raise ValueError(f"OUTPUT block still lists {key} on a line of its own")
+    for key in _NULLABLE_OBJECT_LINES:
+        if text.count(f'"{key}":') != 1:
+            raise ValueError(f"OUTPUT block lists {key} more than once")
     return text
 
 
 def grouped_prompt(template: str) -> str:
     """A parser version's text in the grouped wire shape (CHAT-SPARSE): the OUTPUT block
     shows each group as null (`_grouped_block`) and the OUTPUT GROUPS section goes last.
-    Nothing else in the text changes. Refuses a text that already carries the section or
-    does not carry the OUTPUT block exactly once."""
+    Nothing else in the text changes. Refuses (ValueError, so the migration and the script
+    skip it with a log line) a text that already carries the section, does not carry the
+    OUTPUT block exactly once, or whose block or entity line it cannot fold cleanly."""
     if GROUPED_OUTPUT_MARKER in template:
         raise ValueError("prompt already carries the OUTPUT GROUPS section")
     if template.count(STRICT_OUTPUT_BLOCK_START) != 1:
@@ -1416,7 +1434,7 @@ ENTITY_LINE_END = '"confident": true|false }'
 
 def _grouped_entity_line(text: str) -> str:
     """The entity format line shows each entity group as null, as `_grouped_block` does for
-    the object. A text whose entity line ends some other way is left as it is."""
+    the object. Refuses a text whose entity line ends some other way."""
     lines = text.split("\n")
     for index, line in enumerate(lines):
         if line.startswith(ENTITY_LINE_PREFIX) and line.endswith(ENTITY_LINE_END):
@@ -1425,5 +1443,5 @@ def _grouped_entity_line(text: str) -> str:
                 for group, keys in ENTITY_OUTPUT_GROUPS.items()
             )
             lines[index] = line[: -len(" }")] + groups + " }"
-            break
-    return "\n".join(lines)
+            return "\n".join(lines)
+    raise ValueError("no entity format line ending in the confident flag")

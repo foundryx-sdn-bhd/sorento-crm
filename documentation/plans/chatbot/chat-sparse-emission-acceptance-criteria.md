@@ -12,10 +12,14 @@ Round 2 (strict grouped emission) replaces round 1 (non-strict sparse, failed th
   (is_active false included), entities detail.
 - **AC-3** Inside a group a plain flag is true or null only; no reader tells a plain flag's false from
   its null. is_affirmative, is_active, domain_in_message, the entity flags and spec_value keep false.
-- **AC-4** A grouped answer missing a group fails the parse (failed `understood`), as a flat one missing
-  a key does.
+- **AC-4** Strict mode makes a missing group impossible from the provider; if one is missing anyway, its
+  members are missing after flattening and `assert_emission` treats them as it treats a flat answer (a
+  failed parse, except for the members `TOLERATED_ABSENT` already lets an older prompt omit, e.g. the
+  ranking keys).
 - **AC-5** The grouped prompt differs from its source only in the OUTPUT block and the entity format
-  line, plus the OUTPUT GROUPS section at the end.
+  line, plus the OUTPUT GROUPS section at the end. A text it cannot fold cleanly (a member left on a
+  line of its own, a multi-line escalation or anaphora, a block not closing with `}` above its last line,
+  an entity line ending otherwise) is refused, so the migration and the script skip it.
 - **AC-6** Migration `chs_0001_parser_sparse_output` publishes the grouped build of the production-labelled
   text and of the code constant plus policy blocks, each as a new unlabelled version; no label moves;
   re-running publishes nothing; a text it cannot build is skipped with a log line, never a failed upgrade.
