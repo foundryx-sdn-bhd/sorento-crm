@@ -1,6 +1,6 @@
 # PLAN: REPORTS-HELP, offline replay of the reports gate cases
 
-Status: Review (harness built, reviewer round 1 folded; the #1572 gate passed on 12 Oct before any recorded chain
+Status: Review, reviewer READY on d1f46682 (harness built; the #1572 gate passed on 12 Oct before any recorded chain
 arrived, so no rpt fix was needed in this lane). Small fix track (tests plus one recorder script; no app code, no
 migration, no auth change). Helper lane for PR #1572 (REPORTS-STEP2), stacked on its branch `crew/reports-step2`.
 
