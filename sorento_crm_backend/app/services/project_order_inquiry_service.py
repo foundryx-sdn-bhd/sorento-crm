@@ -365,6 +365,13 @@ def _handover_verb_keys(
     `_handover_settle_diff` reads it."""
     if kind == "raised":
         keys = [row.verb] if row.verb else []
+        # EMAIL-SO-CHANGES: a fresh row that carries the line's date move (a redirected
+        # line's replacement) names DELAY/ADVANCE in the headline too.
+        date_key, _qty_key, _qty_diff = _handover_settle_diff(
+            row, {"delivery_date": (was or {}).get("delivery_date")}
+        )
+        if date_key and date_key not in keys:
+            keys.append(date_key)
         if (was or {}).get("item_code"):
             keys.append("CHANGE_ITEM_CODE")
         return keys
@@ -1676,14 +1683,29 @@ class ProjectOrderInquiryService:
                     # (`ORDER n` in its remark IS this row's quantity) prints no bare
                     # ORDER line beside it. OI-PRODUCT-FOLLOW: a fresh row that replaces
                     # supply of the OLD product says so (`previous_item_code` above).
+                    # EMAIL-SO-CHANGES (owner, 12 Oct; SO400236 SRTWB246): a fresh row
+                    # that replaces used supply carries the line's Was on its own
+                    # `previous_qty` / `previous_delivery_date` (the Order Inquiries
+                    # Was/Now dialog reads them) and its DELAY/ADVANCE row is suppressed
+                    # above, so the email prints the same moves off the same columns.
+                    raised_was: Dict[str, Any] = {}
+                    if raised_row.previous_item_code:
+                        raised_was["item_code"] = raised_row.previous_item_code
+                    if (
+                        raised_row.previous_qty is not None
+                        and _dec(raised_row.previous_qty) != _dec(raised_row.qty)
+                    ):
+                        raised_was["qty"] = raised_row.previous_qty
+                    if (
+                        raised_row.previous_delivery_date is not None
+                        and raised_row.delivery_date is not None
+                        and raised_row.previous_delivery_date != raised_row.delivery_date
+                    ):
+                        raised_was["delivery_date"] = raised_row.previous_delivery_date
                     self._record_handover(
                         raised_row,
                         kind="raised",
-                        was=(
-                            {"item_code": raised_row.previous_item_code}
-                            if raised_row.previous_item_code
-                            else None
-                        ),
+                        was=raised_was or None,
                         actor_user_id=actor_user_id,
                     )
                 raised += 1
