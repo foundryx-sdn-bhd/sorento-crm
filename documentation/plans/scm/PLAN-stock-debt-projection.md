@@ -27,9 +27,12 @@ A project reserve is a pool (some location's `pool_warehouse_id`) with `segment 
 not flagged for planning (HQ-PROJECT-RESERVE, PR #1597: HQ stock belongs to projects in
 general). Until #1597 lands its own predicate this lane's `_project_reserves()` is the
 definition; nothing matches it until `HQ.segment = project` ships with #1597. Reserve ON
-HAND is #1597's walk, not this layer. Book=All and Book=Project give the same projection: a
-reserve outside the span is read by walking the span with the reserves added, once, so a link
-on a reserve document from an order at the reserve is netted in both books. Row total = the
+HAND is #1597's walk, not this layer. `project(M)` always comes off the page's own walk, so
+each book's projection follows that book's Covered by (they differ only where Covered by
+does, e.g. an out-of-span link is honoured uncapped under Book=Project). The reserve term is
+the same in both books: a reserve outside the span is read by walking the span with every
+site pool added, once (all pools share one ownership group), so a link on a reserve document
+from an order at any pool is netted in both books. Row total = the
 sum over the axis of `project + reserve_supply`, plus TBA. Under the switch the walk ignores
 `date_from`; the axis still starts at its month.
 

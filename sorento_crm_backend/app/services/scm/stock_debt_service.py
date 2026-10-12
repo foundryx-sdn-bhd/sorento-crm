@@ -1810,9 +1810,11 @@ class StockDebtService:
         - `sources`: per month, the reserve supply by location and kind, for the drill line.
 
         A reserve outside the span (Book=Project, or a `group`) is read by walking the span
-        WITH the reserves, once, so a link on a reserve document from an order at the
-        reserve is netted exactly as under Book=All. The reserve is its own pool group, so
-        the project lines come out of that walk exactly as they do out of the page's own.
+        WITH every site pool, once. Every pool shares one ownership group (`POOL_GROUP`), so
+        an order at ANY pool may hold a reserve document through a link; walked this way it
+        is netted exactly as under Book=All. That walk answers for the reserve documents
+        only: `project` always comes off the page's own `assignments`, which is what its
+        Covered by shows (an out-of-span link is honoured there uncapped).
 
         Nothing here is written and nothing is assigned (R45).
         """
@@ -1823,10 +1825,15 @@ class StockDebtService:
         outside_codes = {row.warehouse_code for row in outside.values()}
         walked = assignments
         if outside and product_ids:
+            pools = {
+                wid: row
+                for wid, row in self.supply.site_pool_warehouses().items()
+                if wid not in warehouses
+            }
             caches = (self._event_cache, self._lead_cache)
             walked = self._assignments(
                 [(product_id, "", "") for product_id in product_ids],
-                {**warehouses, **outside},
+                {**warehouses, **pools},
                 date_to=date_to,
                 view=True,
             )
@@ -1834,29 +1841,34 @@ class StockDebtService:
 
         out: Dict[str, dict] = {}
         for product_id in product_ids:
+            page = assignments[product_id]
+            project: Dict[str, float] = {}
+            for row in page.lines:
+                if row.line.is_pool or not self._is_month_key(row.bucket):
+                    continue
+                project[row.bucket] = project.get(row.bucket, 0.0) - row.short_at_date
+            for event in page.supply:
+                if event.is_pool:
+                    continue
+                spare = page.free.get(event.key, 0.0)
+                if spare > 0:
+                    month = month_key(effective_date(event.at, as_of))
+                    project[month] = project.get(month, 0.0) + spare
             result = walked[product_id]
             taken: Dict[str, float] = {}
             assigned_to: Dict[str, Dict[Tuple[str, Optional[int]], float]] = {}
-            project: Dict[str, float] = {}
             for row in result.lines:
                 for item in row.assigned:
                     who = (row.line.so_number, row.line.core_line_no)
                     bucket = assigned_to.setdefault(item.event.key, {})
                     bucket[who] = bucket.get(who, 0.0) + item.qty
                     taken[item.event.key] = taken.get(item.event.key, 0.0) + item.qty
-                if row.line.is_pool or not self._is_month_key(row.bucket):
-                    continue
-                project[row.bucket] = project.get(row.bucket, 0.0) - row.short_at_date
             reserve_supply: Dict[str, float] = {}
             sources: Dict[str, Dict[str, float]] = {}
             left: Dict[str, float] = {}
             documents: List[SupplyEvent] = []
             for event in result.supply:
                 if not event.is_pool:
-                    spare = result.free.get(event.key, 0.0)
-                    if spare > 0:
-                        month = month_key(effective_date(event.at, as_of))
-                        project[month] = project.get(month, 0.0) + spare
                     continue
                 if event.warehouse not in reserve_codes or event.at is None:
                     continue

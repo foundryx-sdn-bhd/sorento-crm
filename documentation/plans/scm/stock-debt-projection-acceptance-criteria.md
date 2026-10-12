@@ -16,9 +16,10 @@ Plan: `PLAN-stock-debt-projection.md`. Owner answers 12 Oct 2026.
   the same before and after it is received (SRTWT2215's BRW SPO 333). Unlinked pool on hand
   and unlinked pool POs/SPOs never count. Pool orders are not project lines.
 - **AC-4** The projection agrees with Covered by line for line: under the switch a month's
-  `month_balance` is what Covered by leaves owed (less the project bins' spare). No quantity
-  is counted twice: Book=All and Book=Project give the same projection, and reserve supply a
-  link took is not offered again.
+  `month_balance` is what that book's Covered by leaves owed (less the project bins' spare).
+  No quantity is counted twice: the reserve term is the same in Book=All and Book=Project,
+  and reserve supply any link took (from an order at any pool or project bin) is not offered
+  again.
 - **AC-5** Nothing is allocated or written (R45): line statuses and "Covered by" are
   unchanged.
 - **AC-6** "Only products in debt" and the row sort read the projected months while the
