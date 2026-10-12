@@ -42,7 +42,9 @@ filled only on the lines that moved. Every date in the mail reads `dd/mm/yyyy`.
 * A quantity that moved 182 to 214 reads **QTY 182**, **NEW QTY 214**.
 * A date that moved reads **DELIVERY 01/09/2026**, **NEW DATE 01/04/2027**. A later new date
   is a delay, an earlier one an advance.
-* A cancelled line reads its old quantity in **QTY** and **0** in **NEW QTY**.
+* A cancelled line reads its old quantity in **QTY** and **0** in **NEW QTY**. A line cut
+  below what purchasing already placed reads the same way, for example **QTY 10**, **NEW QTY
+  6**.
 * A product change reads the old code in **ITEM CODE** and the new one in **NEW ITEM CODE**.
 * A plain new line prints **QTY** and **DELIVERY** only, with every **NEW** cell blank.
 

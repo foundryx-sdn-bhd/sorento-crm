@@ -472,6 +472,21 @@ def _handover_fmt_date(value: Any) -> Optional[str]:
     return str(value)
 
 
+_CANCEL_BALANCE_STAMP = re.compile(
+    r"(?:Placed|Was) (\d+(?:\.\d+)?), (?:new need|now) (\d+(?:\.\d+)?)"
+)
+
+
+def _cancel_balance_before_after(note: Optional[str]) -> Optional[Tuple[Decimal, Decimal]]:
+    """The line's quantity before and after, off a CANCEL BALANCE row's own stamp: the
+    confirm exception's "Placed 10, new need 6", or `_change_note`'s / the book change's
+    "Was 10, now 6". `None` when the note carries neither."""
+    match = _CANCEL_BALANCE_STAMP.search(note or "")
+    if not match:
+        return None
+    return Decimal(match.group(1)), Decimal(match.group(2))
+
+
 def _format_handover_was(was: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """`was` as recorded, with its two FORMATTABLE keys turned into the same strings the
     line itself prints (`_qty_str` / dd-mm-yyyy) - every other key (a CHANGE SO NO row's
@@ -3644,6 +3659,15 @@ class ProjectOrderInquiryService:
             .filter(OrderInquiry.id == row.order_inquiry_id)
             .first()
         )
+        if kind == "raised" and row.verb == IV_CANCEL_BALANCE and qty is None:
+            # EMAIL-SO-CHANGES (owner, 12 Oct): with no REMARK, a raised CANCEL BALANCE
+            # row printing only its own quantity (the drop) reads like an order for it.
+            # It prints the line's before and after instead, read off the fixed stamp its
+            # writer put on it ("Placed 10, new need 6" / "Was 10, now 6").
+            before_after = _cancel_balance_before_after(row.note)
+            if before_after and not (was or {}).get("qty"):
+                was = {**(was or {}), "qty": before_after[0]}
+                qty = before_after[1]
         resolved_actor_id = actor_user_id or (inquiry_scalars[0] if inquiry_scalars else None)
         pso_id = inquiry_scalars[1] if inquiry_scalars else None
         facts = self._handover_order_facts(pso_id) if pso_id else {}

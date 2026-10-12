@@ -25,7 +25,8 @@ removal is a template-document migration, `oihr_0006_no_remark_column`). Red tes
 ## Root cause, SO400236 / SRTWB246
 
 The line's one row was linked in full to SPO-2026/05-0037, already received.
-`_settle_row_in_place` (`:1915`) calls `_redirect_row_if_received` and declines. In `_write`,
+`_settle_row_in_place` (`:1915`) calls `_redirect_row_if_received` and declines. In
+`refresh_for_decision`,
 `_stamp_date_move` finds no target (the redirected row is excluded), the netting raises a fresh
 ORDER row and stamps `previous_qty` / `previous_delivery_date` off the redirected row
 (`:1575-1580`, "Replaces 1 used"), joins the line to `settled_in_place` so no separate DELAY
@@ -38,7 +39,9 @@ Red test: `tests/scm/test_oi_email_so_line_changes.py::test_redirected_line_prin
 
 ## Behaviour (card answered 12 Oct, PR #1596)
 
-- Q1 owner = (a): numbers + headline only. No REMARK column, no per-line label, no group row.
+- Q1 owner = (a): numbers + headline only. No REMARK column, no per-line action label, no
+  per-action group row. The existing grey `S/O NO` row that opens each order's lines in a
+  mail naming two or more orders stays (it is `oihr_0005`'s, not an action label).
 - Q2 = (a): one `Attachments:` line under the table, by item code.
 - Q3 = (a): the before values are the OI row's own (`previous_qty`, `previous_delivery_date`,
   `previous_item_code`), the same ones the Order Inquiries Was/Now dialog reads.
@@ -47,13 +50,24 @@ Red test: `tests/scm/test_oi_email_so_line_changes.py::test_redirected_line_prin
   product, the cell filled only on lines that changed.
 - Line table: `LOCATION | ITEM CODE | NEW ITEM CODE* | QTY | NEW QTY* | DELIVERY | NEW DATE*`.
 - A redirected line's date move also names DELAY/ADVANCE in the headline.
+- A raised CANCEL BALANCE row (the confirm's "Placed 10, new need 6" exception, an SO
+  amendment's or a book change's qty decrease, "Was 10, now 6") prints the line's before and
+  after (QTY 10, NEW QTY 6) off that stamp, not the bare drop, so it never reads as an order
+  (reviewer B1).
+- Known, accepted readings under Q1 (a), listed to the owner on the card: a CHANGE SO NO row
+  no longer names the SO it moved to, and PRE-ORDERED / ALREADY INBOUND / ORDER BACK lines
+  read like ORDER lines; the headline names those actions and Order Inquiries shows the row.
+- A line with a redirected row AND another live row whose date `_stamp_date_move` stamps
+  can print the same date move on two lines (the stamped row's and the fresh row's). Both
+  are true, the in-app Was/Now shows the same two rows; not reproduced on real data.
 - The `ALIGN-email-so-line-changes-12oct.html` renders predate the owner's Q1/item-code
   answers; the tests in `tests/test_oi_email_no_remark.py` are the current shape.
 
 ## Done
 
 - `app/services/project_order_inquiry_service.py`: the fresh row raised in place of used
-  supply records its `was` off its own before columns (`_write`, raised branch);
+  supply records its `was` off its own before columns (`refresh_for_decision`, raised branch);
+  `_record_handover` prints a raised CANCEL BALANCE row's before/after off its stamp;
   `_handover_verb_keys` adds the date verb for such a row.
 - `alembic/versions/oihr_0006_no_remark_column.py`: the new document, guarded on the
   unedited `oihr_0005` state, reversible.
