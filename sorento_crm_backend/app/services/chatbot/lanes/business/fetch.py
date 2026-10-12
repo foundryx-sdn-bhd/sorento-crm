@@ -168,51 +168,28 @@ SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory", "promotion"
 _SUBJECT_HINTS = frozenset({"category", "product_type"})
 
 
-def _phrase(text: Any) -> str:
-    return " ".join(re.findall(r"[a-z0-9]+", jsc.nullish_str(text).lower()))
-
-
 def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
-    """The category word the parser named, as a registry constraint, read off registry data
-    only: a `product_type` value whose own name or synonym IS the phrase (a plural read in
-    the singular), else the class the class vocabulary reads it as
-    (`product_spec_search._exact_classes`, the described set's own reader), else the
-    built-in class vocabulary the grounding also reads (`CLASS_SYNONYMS`, for an install
-    whose categories carry no class yet). None when none of them names it."""
-    from app.services.product_class_signal import CLASS_SYNONYMS
-    from app.services.product_spec_registry import active_registry, merged_allowed_values, merged_synonyms
-    from app.services.product_spec_search import SELF_SYNONYM_KEY, _exact_classes
+    """The category word the parser named, as a registry constraint, read ONLY through the
+    shared readers, never a word rule of the lane's own: the `product_type` value the
+    registry's term reader binds the phrase to (`product_spec_search.resolve_terms_to_specs`,
+    the reader `filter_specs` applies to scope terms), else the class the class vocabulary
+    reads it as (`product_spec_search._exact_classes`, which reads a plural itself). None
+    when neither names it, or the phrase binds two product types."""
+    from app.services.product_spec_search import _exact_classes, resolve_terms_to_specs
 
-    said = _phrase(raw)
-    if not said:
+    if not jsc.nullish_str(raw).strip():
         return None
-    singular = said[:-1] if said.endswith("s") and len(said) > 3 else ""
-    row = next((r for r in active_registry(db) if str(r.spec_key) == "product_type"), None)
-    if row is not None:
-        phrases: dict[str, Any] = {}
-        for value in merged_allowed_values(row):
-            phrases.setdefault(_phrase(str(value).replace("_", " ")), value)
-        for value, words in merged_synonyms(row).items():
-            if value != SELF_SYNONYM_KEY:
-                for word in words or []:
-                    phrases.setdefault(_phrase(word), value)
-        for candidate in (said, singular):
-            if candidate and candidate in phrases:
-                return {"key": "product_type", "op": "eq", "value": phrases[candidate]}
+    types = list(
+        dict.fromkeys(
+            s.get("value") for s in resolve_terms_to_specs(db, [raw]) if s.get("key") == "product_type" and s.get("value")
+        )
+    )
+    if len(types) == 1:
+        return {"key": "product_type", "op": "eq", "value": types[0]}
     classes = _exact_classes(db, raw) or []
-    if not classes:
-        for candidate in (said, singular):
-            classes = sorted(
-                label
-                for label, words in CLASS_SYNONYMS.items()
-                if candidate and candidate in {_phrase(w) for w in [label, *words]}
-            )
-            if classes:
-                break
     if classes:
         return {"key": "class", "op": "eq", "value": classes[0] if len(classes) == 1 else list(classes)}
     return None
-
 
 def constraints_for_terms(db: Any, terms: Any) -> list[dict[str, Any]] | None:
     """`promo_filter`'s `scope_terms` as `spec_constraints`, for a turn whose own parse names

@@ -1310,9 +1310,14 @@ class PromotionProductService:
             resolve_or_empty as _resolve_or_empty,
         )
 
-        from app.services.product_spec_filter import resolve_size, spec_constraint_clause
+        from app.services.product_spec_filter import promoted_clause, resolve_size, spec_constraint_clause
 
-        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
+        # The size is resolved among the products this route answers about: those on a line of
+        # a promotion live today, open to the caller's tier and of the product's own company
+        # (`promoted_clause`), not the whole catalogue. An explicit inactive-only ask
+        # (`active=False`, a staff grid) reads the catalogue as before.
+        spec_base = None if active is False else promoted_clause(self.db, contact_access_codes)
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
         if spec_constraints and sized_constraints is None:
             return {
                 "data": [],

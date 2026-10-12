@@ -180,9 +180,16 @@ def product_filter_clause(
     if constraints:
         parts.append(spec_constraint_clause(db, constraints))
     if has_active_promotion:
-        # `[]` is a tier that resolved to nothing (`request_tier`): no promotion counts.
-        parts.append(false() if access_levels == [] else active_promotion_clause(db, access_levels))
+        parts.append(promoted_clause(db, access_levels))
     return and_(*parts) if parts else None
+
+
+def promoted_clause(db: Session, access_levels: list[str] | None):
+    """Product is in a promotion live today, visible to `access_levels` (names or codes) and
+    of its own company (`active_promotion_clause`). `[]` is a tier that resolved to nothing
+    (`request_tier`): no promotion counts. Also the base the size resolution and the miss
+    detail read under when the answer is about promoted products only."""
+    return false() if access_levels == [] else active_promotion_clause(db, access_levels)
 
 
 def _sort_key(v: Any):
@@ -197,8 +204,11 @@ def _scoped(*columns):
     return select(*columns).join(Product, Product.id == ProductSpecifications.product_id)
 
 
-def _where(constraints: list[dict]):
-    return and_(*[_one(c) for c in constraints]) if constraints else true()
+def _where(constraints: list[dict], base=None):
+    """The constraints ANDed, plus `base` (a predicate over Product, e.g. "in a promotion
+    live today"), so the set read is the set the route answers about."""
+    parts = [_one(c) for c in constraints] + ([base] if base is not None else [])
+    return and_(*parts) if parts else true()
 
 
 def _present(key: str):
@@ -220,19 +230,23 @@ def _alternative(row, values: list) -> dict:
     return {"key": str(row.spec_key), "label": row.label, "unit": row.unit, "values": values}
 
 
-def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
+def spec_miss_detail(db: Session, constraints: list[dict], base=None) -> dict:
     """For a filtered zero: per constrained key, the values that exist among products matching
     the OTHER constraints (`spec_alternatives`, each item with the key's label and unit so the
     reply can name them) and how many of those have no value recorded for it
     (`spec_unrecorded`, zero counts left out), plus `spec_labels` for every key named. The
-    reply must never say "none exists" while products with nothing recorded remain."""
+    reply must never say "none exists" while products with nothing recorded remain.
+
+    Counts cover products that HAVE a `product_specifications` row; a product with no row at
+    all is in neither number. `base` (a Product predicate) narrows the set read to the one
+    the route answers about (the promoted products, on the promotion paths)."""
     registry = {str(row.spec_key): row for row in active_registry(db)}
     alternatives: list[dict] = []
     unrecorded: dict[str, int] = {}
     for key in dict.fromkeys(c["key"] for c in constraints):
         if key == BRAND_KEY or key not in registry:
             continue  # the brand lives on the product, not in the stored values
-        where = _where([c for c in constraints if c["key"] != key])
+        where = _where([c for c in constraints if c["key"] != key], base)
         values = _values_of(db, key, where)
         if values:
             alternatives.append(_alternative(registry[key], values))
@@ -254,7 +268,7 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
 
 
 def resolve_size(
-    db: Session, constraints: list[dict] | None, hidden: frozenset[str] = frozenset()
+    db: Session, constraints: list[dict] | None, hidden: frozenset[str] = frozenset(), base=None
 ) -> tuple[list[dict] | None, dict]:
     """Resolve the virtual `size` key against the data, before the route filters.
 
@@ -268,7 +282,9 @@ def resolve_size(
     Returns `(constraints, extra)`; constraints is None when the route must return no rows.
     No `size` constraint: `(constraints, {})` unchanged. A key in `hidden` (the asking
     contact's) is never a candidate and never listed; a product holding only hidden mm
-    values counts as having none recorded."""
+    values counts as having none recorded. `base` (a Product predicate) narrows the set read,
+    as in `spec_miss_detail`; the unrecorded count, like there, covers products that have a
+    `product_specifications` row."""
     if not constraints or not any(c["key"] == SIZE_KEY for c in constraints):
         return constraints, {}
     mm_keys = [
@@ -279,7 +295,7 @@ def resolve_size(
     out = [c for c in constraints if c["key"] != SIZE_KEY]
     resolved: dict[str, str] = {}
     for size in [c for c in constraints if c["key"] == SIZE_KEY]:
-        where = _where(out)
+        where = _where(out, base)
         holders = sorted(
             str(row.spec_key) for row in mm_keys
             if db.execute(

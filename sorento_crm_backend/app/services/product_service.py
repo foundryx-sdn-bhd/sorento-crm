@@ -185,7 +185,7 @@ from app.schemas.common import PaginationResponse
 from app.models.user import SystemSetting
 from app.services.embedding_events import publish_embedding_event
 from app.services.identifier_resolver import is_uuid, resolve_identifier
-from app.services.product_spec_filter import product_filter_clause, resolve_size, spec_miss_detail
+from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail
 
 
 # Lifted out of `bulk_import_products` (PLAN-autocount-pull-review.md, P11) so the
@@ -550,7 +550,10 @@ class ProductService:
 
         # The virtual `size` key resolves to one mm key from the data, or the answer is a
         # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
-        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
+        # With has_active_promotion the answer is about promoted products, so the size and the
+        # miss detail are read among those only.
+        spec_base = promoted_clause(self.db, access_levels) if has_active_promotion else None
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
         if spec_constraints and sized_constraints is None:
             payload = {
                 "data": [],
@@ -661,7 +664,7 @@ class ProductService:
         if total == 0:
             self._attach_product_alternatives(payload, query)
             if spec_constraints:
-                payload.update(spec_miss_detail(self.db, spec_constraints))
+                payload.update(spec_miss_detail(self.db, spec_constraints, spec_base))
         payload.update(spec_extra)
         return payload
 
