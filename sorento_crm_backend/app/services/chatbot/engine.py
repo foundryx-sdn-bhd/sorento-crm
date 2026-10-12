@@ -6365,7 +6365,14 @@ def _run_stages_body(  # noqa: PLR0915
                             else {}
                         ),
                         envelope=envelopes[0],
-                        parser=answer_parse_output,
+                        # The window the fetch ran over (`_spec_window`, as the hit's scope
+                        # block reads it), so the miss header's Dates line never says "all
+                        # dates" above a fetch a carried window narrowed (live check 13 Oct).
+                        parser=(
+                            turn_runtime._spec_window(answer_parse_output or {}, fetch_plan.fetch[0])
+                            if len(fetch_plan.fetch) == 1
+                            else answer_parse_output
+                        ),
                         ctx=ctx,
                         canned=copy_mod.resolve(db),
                         services=business_services.production_answer_services(db),

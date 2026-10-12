@@ -558,3 +558,61 @@ def test_a_miss_header_names_the_window_the_fetch_used(office, session_factory):
     orders = _orders(office)
     assert orders and orders[-1].get("actual_delivery_date_from") == "2026-09-01", office.calls
     assert "Dates: 01/09/2026 to 30/09/2026" in reply and "Dates: all dates" not in reply, reply
+
+
+def _staff_tier(session_factory) -> None:
+    from tests.chatbot.test_dealer_eta_stock_routing import CONTACT_ID
+
+    db = session_factory()
+    db.execute(
+        text("UPDATE respond_contacts SET chatbot_profile = CAST(:p AS jsonb) WHERE respond_io_id = :c"),
+        {"p": '{"tier": "office"}', "c": str(CONTACT_ID)},
+    )
+    db.commit()
+
+
+def _two_customer_groups(console) -> None:
+    import uuid
+
+    from app.models.base import set_company_scope
+    from app.models.order import Customer
+    from tests.chatbot.test_rearch_s3_attribute_first import SORENTO
+
+    db = console.sf()
+    set_company_scope(db, frozenset({SORENTO}))
+    for name in ("ZZT HANLIM SDN BHD", "ZZT HANLIM TRADING SDN BHD"):
+        db.add(Customer(id=str(uuid.uuid4()), customer_code=f"ZZT{uuid.uuid4().hex[:6]}", customer_name=name, company_id=SORENTO))
+    db.commit()
+
+
+def test_a_staff_miss_after_the_customer_pick_offers_no_routing_list(office, session_factory, monkeypatch):  # noqa: F811
+    """Live check 13 Oct item 3 (crew trace, prompt v52): staff (`tier: office`) are offered no
+    escalation (`turn/state.py::offers_escalation`), so a miss never prints "choose who to route
+    to"; and the miss header names the October window the fetch used."""
+    from app.services.chatbot.tail import member_offer as member_mod
+
+    rosters = [{"body": [{"user_id": "u1", "respond_user_id": "ru1", "name": "ZZT Staff A"}, {"user_id": "u2", "respond_user_id": "ru2", "name": "ZZT Staff B"}]}]
+    monkeypatch.setattr(member_mod, "fetch_rosters", lambda db, plan, ctx: rosters)
+    _staff_tier(session_factory)
+    _two_customer_groups(office)
+    office.say(f"{CODE} stock", verdict(domain_hint="inventory", intent_hint="check_stock", entities=[entity(CODE, hint="product")]))
+    office.say(
+        "delivery for zzt hanlim",
+        verdict(
+            domain_hint="order", intent_hint="check_order", domain_in_message=True, requested_attributes=["delivery"],
+            entities=[entity("ZZT HANLIM", hint="customer")],
+        ),
+    )
+    office.say(
+        "delivery in october",
+        verdict(
+            domain_hint="order", intent_hint="check_order", domain_in_message=True, continuation=True, entity_op="reuse",
+            requested_attributes=["delivery"], entities=[], date_filter_start="2026-10-01", date_filter_end="2026-10-31",
+        ),
+    )
+    office.say("1", _answer("pick", 1))
+    office.calls.clear()
+    reply = office.say("2", _answer("pick", 2))
+    assert "choose who to route to" not in reply.lower(), reply
+    assert "assign automatically" not in reply, reply
+    assert "Dates: all dates" not in reply, reply

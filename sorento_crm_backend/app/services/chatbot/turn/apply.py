@@ -2211,6 +2211,12 @@ def _subject_default_domain(verdict: dict[str, Any], lane: str | None, policy: P
     the lane is a generic menu, its row is `default`, and the message named a RESOLVED subject
     (a `canonical_code`) whose kind narrows a domain. Parsed fields only."""
     row = _MENU_LANE_ROWS.get(lane or "")
+    # Live check 13 Oct: the parser types a bare code `unknown`, which lands on the casual
+    # lane (the LLM clarifier, which cannot place a code); a resolved PRODUCT there is the same
+    # bare-subject turn as `entities_only`. A bare customer name stays casual (main's B1(b)).
+    products_only = lane == "casual"
+    if products_only:
+        row = "entities_only"
     if row is None or policy.clarify_mode(row) != "default":
         return None
     for e in verdict.get("entities") or []:
@@ -2219,6 +2225,7 @@ def _subject_default_domain(verdict: dict[str, Any], lane: str | None, policy: P
             and e.get("current_message") is True
             and e.get("canonical_code")
             and e.get("confident") is not False  # an unsure read is no resolved subject
+            and (not products_only or is_product_shaped_entity(e))
         ):
             # The kind's own resolver domain when it is one (a product's is master_products,
             # the product card), else the first domain that narrows on the kind.

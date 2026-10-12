@@ -1574,6 +1574,9 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
                     },
                 ],
                 reference_positions=[2],
+                # How the live parser reads "delivery to ...": the carry question's label
+                # follows it (CLARIFY-POLICY live check 13 Oct).
+                requested_attributes=["delivery"],
             ),
             text_body="delivery to hanlim",
             msg_id="ZZT-outstanding-scope-new-ask-guard-1",

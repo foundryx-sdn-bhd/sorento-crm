@@ -451,6 +451,7 @@ LABELS: dict[str, dict[str, str]] = {
     "Only {subject}": {"ms": "Hanya {subject}", "zh": "只看 {subject}"},
     "All {plural}": {"ms": "Semua {plural}", "zh": "全部{plural}"},
     "Delivery": {"ms": "Penghantaran", "zh": "送货"},
+    "Orders": {"ms": "Pesanan", "zh": "订单"},
     "products": {"ms": "produk", "zh": "产品"},
     "customers": {"ms": "pelanggan", "zh": "客户"},
     "today": {"ms": "hari ini", "zh": "今天"},

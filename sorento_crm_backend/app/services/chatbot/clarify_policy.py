@@ -212,9 +212,20 @@ def _subject_code(focus: Any, *, printable: bool = False, field: str | None = No
         for row in focus.get(key) or []:
             if not isinstance(row, dict):
                 continue
-            label = row.get("canonical_code") or row.get("name") or row.get("display_name")
-            values.add(str(label if printable else (row.get("canonical_code") or row.get("uuid")) or "").strip())
+            if printable and key == "customers":
+                # Owner rule: the chatbot prints a customer's company / group NAME, never its
+                # account code (live check 13 Oct, "I still need the period for 300-E002").
+                label = row.get("name") or row.get("display_name")
+            elif printable:
+                label = row.get("canonical_code") or row.get("name") or row.get("display_name")
+            else:
+                label = row.get("canonical_code") or row.get("uuid")
+            values.add(str(label or "").strip())
         values -= {""}
+        if values and printable and key == "customers":
+            from app.services.ledger_family import family_words
+
+            return family_words(sorted(values)) or ", ".join(sorted(values))
         if values:
             return ",".join(sorted(values))
     return None
@@ -499,6 +510,26 @@ _CARRY_KINDS: tuple[tuple[str, str, str], ...] = (
 #: The ask label per domain ("Delivery for ..."); any other domain uses its policy label.
 _ASK_LABELS = {"order": "Delivery"}
 
+#: The order ask's label when the parser did NOT read a delivery ask (`requested_attributes`
+#: without "delivery", no "DO" `document`, no `order_status` "delivered"): the user asked about orders (live check
+#: 13 Oct, "orders" was echoed back as "Delivery"). Parsed fields only.
+_ORDER_LABEL = "Orders"
+
+#: `turn/decide.py`'s REFINE reason for a message naming an entity with no domain word of its
+#: own: combine across kinds, replace within the same kind.
+COMBINES_ACROSS_KINDS = "refines_standing_subject"
+
+
+def _ask_label(domain: str, default: str, verdict: dict[str, Any]) -> str:
+    label = _ASK_LABELS.get(domain, default)
+    if domain != "order":
+        return label
+    attrs = {str(a).lower() for a in (verdict.get("requested_attributes") or []) if isinstance(a, str)}
+    documents = {str(d).upper() for d in (verdict.get("document") or []) if isinstance(d, str)}
+    if "delivery" in attrs or "DO" in documents or str(verdict.get("order_status") or "").lower() == "delivered":
+        return label
+    return _ORDER_LABEL
+
 
 @dataclass(frozen=True)
 class CarryOutcome:
@@ -599,8 +630,14 @@ def carry_conflict(
     from app.services.chatbot.turn.decide import ANSWER, REFINE
     from app.services.chatbot.turn.pending import ask as pending_ask
 
-    if getattr(decision, "kind", None) in (ANSWER, REFINE) or answers_task:
-        return None  # it answers or narrows the held question (an open task included)
+    if answers_task or getattr(decision, "kind", None) == ANSWER:
+        return None  # it answers the held question (an open task included)
+    if getattr(decision, "kind", None) == REFINE and getattr(decision, "why", None) != COMBINES_ACROSS_KINDS:
+        # It narrows an open question, or a pronoun points at the held subject: clear. A
+        # REFINE that only COMBINES a newly named subject with a carried one of another kind
+        # ("orders for X", then "how about <code>") is the unclear case (owner 13 Oct 2026,
+        # "always ask when we are unclear") and goes through the check below.
+        return None
     anaphora = verdict.get("anaphora") if isinstance(verdict.get("anaphora"), dict) else {}
     if anaphora.get("backward_reference") is True:
         return None
@@ -646,7 +683,7 @@ def carry_conflict(
 
             subject = family_words(list(dict.fromkeys(_row_label(r) for r in carried))) or subject
         parts = {
-            "label": _ASK_LABELS.get(domain_row.name, domain_row.label),
+            "label": _ask_label(domain_row.name, domain_row.label, verdict),
             "subject": subject,
             "plural": plural,
             "date_words": "" if others else _date_words(verdict),
