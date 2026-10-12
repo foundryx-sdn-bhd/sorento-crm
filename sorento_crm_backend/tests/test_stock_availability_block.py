@@ -193,14 +193,14 @@ def _incoming_shipment(
     status="in_transit",
     company_id=DEFAULT_COMPANY_ID,
 ) -> InboundShipment:
-    """A qualifying-or-not R5 candidate. `eta_delay_date` is seeded as a poison value
-    (R5: never read) the same way `test_earliest_packing_list_shipment.py` does it."""
+    """A qualifying-or-not R5 candidate, with no revised date (R5 as amended 13 Oct 2026
+    reads `eta_delay_date` first; `test_earliest_packing_list_shipment.py` covers it)."""
     row = InboundShipment(
         id=str(uuid.uuid4()),
         shipment_number=unique_code("SHP")[:50],
         shipment_date=date(2026, 1, 1),
         estimated_arrival_date=eta,
-        eta_delay_date=date(2099, 1, 1),
+        eta_delay_date=None,
         attachment_id=attachment_id,
         shipment_status=status,
         company_id=company_id,
@@ -1177,3 +1177,26 @@ def test_route_returns_is_discontinued_on_the_wire(client, db):
     (entry,) = res.json()["stock_availability"]
     assert entry["branch"] == "in_stock"
     assert entry["is_discontinued"] is True
+
+
+
+def test_a_dealer_is_told_the_revised_date_of_a_delayed_shipment(db, monkeypatch):
+    """Crew answer (b) then (a), 13 Oct 2026: a shipment delayed but still coming is told with
+    its revised date, never as "no incoming" and never with its past original date."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    _category_of(db, p).chatbot_max_qty = 200
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=0)
+    shipment = _incoming_shipment(db, eta=date(2026, 9, 13), attachment_id=_attachment(db).id)
+    shipment.eta_delay_date = date(2026, 11, 5)
+    _incoming_line(db, shipment_id=shipment.id, product_id=p.id)
+    contact = _contact(db, packing_list_allowed=False)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    entry = _entry(StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 1}), p.id)
+    assert entry["branch"] == "incoming"
+    assert entry["eta"] == "05/11/2026"

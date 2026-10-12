@@ -193,28 +193,32 @@ def earliest_packing_list_shipment(
     quantity > 0) on a `_not_draft_shipment_filter()` shipment that carries an
     `attachment_id` (the packing list) AND a non-NULL `estimated_arrival_date` -
     lavish review R10: a shipment lacking a date never qualifies, there is no
-    "ETA to be confirmed" answer. `eta_delay_date` is never read (R5). No warehouse
+    "ETA to be confirmed" answer. The date read is the one the shipment is now promised
+    for: its revised `eta_delay_date` when it has one, else its ETA (`eta_policy._told`'s
+    rule; R5 amended by crew ruling, 13 Oct 2026, owner truthful rule: a delayed shipment
+    that is still coming is never "no incoming"). No warehouse
     join: `spo_allocations` and purchase order lines are never a source for this
     read, so a shipment's line landing outside the asking contact's policy
     locations still qualifies (AC-SA307 - this read has no location dimension to
     filter by in the first place).
 
-    `not_before` (CHAT-FIND round 3, crew live check 13 Oct 2026): a shipment whose ETA is
-    before that day does not qualify. A past date cannot be told to a dealer as the day it
+    `not_before` (CHAT-FIND round 3, crew live check 13 Oct 2026): a shipment whose promised
+    date is before that day does not qualify. A past date cannot be told to a dealer as the day it
     comes (R10 has no "to be confirmed" answer), so the next dated one answers, else none.
     The dealer availability read passes today (`StockService._shipments_from_today`).
 
-    Returns `{product_id: (shipment_id, estimated_arrival_date, attachment_id)}` -
+    Returns `{product_id: (shipment_id, promised date, attachment_id)}` -
     one entry per product id with a qualifying shipment; a product id with none is
     simply absent.
     """
     if not product_ids:
         return {}
+    told = func.coalesce(InboundShipment.eta_delay_date, InboundShipment.estimated_arrival_date)
     rows = (
         db.query(
             InboundShipmentLine.product_id,
             InboundShipment.id,
-            InboundShipment.estimated_arrival_date,
+            told,
             InboundShipment.attachment_id,
         )
         .join(InboundShipment, InboundShipment.id == InboundShipmentLine.shipment_id)
@@ -227,14 +231,14 @@ def earliest_packing_list_shipment(
             InboundShipment.attachment_id.isnot(None),
             InboundShipment.estimated_arrival_date.isnot(None),
             *(
-                (InboundShipment.estimated_arrival_date >= not_before,)
+                (told >= not_before,)
                 if not_before is not None
                 else ()
             ),
         )
         .order_by(
             InboundShipmentLine.product_id,
-            InboundShipment.estimated_arrival_date.asc(),
+            told.asc(),
             # Nit, review round 1: two qualifying shipments on the same
             # `estimated_arrival_date` otherwise pick an arbitrary one (Postgres
             # makes no promise about which `DISTINCT ON` row wins a tie) - id is

@@ -1,7 +1,7 @@
 # PLAN: generic find (one MCP read tool for products + filter registry)
 
-Status: Merge-ready (lane CHAT-FIND, PR #1601, CI green on 84ae451b; card answered by crew 12 Oct, Q1-Q5 all (a);
-reviewer READY after 2 rounds, security review READY). Open: crew eval gate + owner hand test; filters 2 and 3 wait on #1582.
+Status: Review (lane CHAT-FIND, PR #1601; round 3 from the crew audit + eval gate of 13 Oct built red-first,
+see section 2.7; reviewer READY on rounds 1-2, security READY). Open: crew re-gate; filters 2 and 3 wait on #1582.
 Track: standard (new MCP tool surface, so security review runs; no migration, no FE change).
 
 Architecture: option D of `documentation/plans/chatbot/ARCH-scalable-chat-11oct.html` (PR #1566),
@@ -41,7 +41,8 @@ attaches stock. `parser_vocabulary(db=None) -> str` renders the rule plus one li
 `product_compatibility` read through `product_compatibility_service.covers_for` / `wcs_for`
 (company + brand scope apply through the ORM listener). Covers on record -> head
 `Seat cover for {code}:`; else WCs on record -> head `{code} fits these WCs:`; else one line
-`No seat cover or WC is on record for {code}.` (card Q3 a; a product with no link has no known
+`No seat cover is on record for {code}.`, or `No WC is on record for {code}.` when the data calls the
+product a seat cover (round 3; card Q3 a; a product with no link has no known
 role, so the line names neither as fact). A named product the caller cannot see is skipped.
 
 ### 2.2 Route `GET /api/v1/master-data/products/find`
@@ -79,7 +80,8 @@ role, so the line names neither as fact). A named product the caller cannot see 
   `_OBJECT_UNIONS` / `_normalize_query_value` change as PR #1582, identical hunks).
 - Presenter `_find_envelope` (PRESENTER_TOOLS): `{"response": text, "has_result": bool,
   "result_type": "find"}`. Text per group: head line; per row `Code: <code>`, then
-  `Status: Discontinued` when discontinued (card Q4 a), then `Stock: <value>`; blank line between
+  `Stock: <value>`, then the product replies' marker `⚠️  *(PRODUCT DISCONTINUED)*` when
+  discontinued (card Q4 a, round 3); blank line between
   rows and groups; `Showing 20 of N.` when `more`. Stock value: detailed/compact/none -> the
   number; availability -> `_verdict_tail(entry)` (the stock tool's own 1-unit verdict wording).
   Never " · ".
@@ -126,6 +128,42 @@ role, so the line names neither as fact). A named product the caller cannot see 
   the subject; no product entity at all asks for the code.
 - No group (nothing visible, or the contact resolved to nobody): `I have nothing on record for
   that product.`, localized; never "try again".
+
+## 2.7 Round 3 (crew audit + eval gate, 13 Oct)
+
+Crew live check of 3df87cee on v88 (v52 + find block), 19 turns, and eval gate v65 (no touched
+topic worse, compat 7/8). Each fix red-first:
+
+- Typed filter values: a registry row declares `products` and/or `value=ValueSpec(code | number
+  + units | enum values)`, plus its own `ask`; the route coerces and refuses (`bad_value`,
+  `value_required`), the runner gets one `FilterArg(product_ids, value, unit)`, the parser
+  emits `value` + `unit`. #1582's spec / promotion rows move in with no code branch
+  (`tests/test_product_find_values.py`).
+- chatfind-07 (dealer "seat cover for SRTWC8088" answered about SRTWC8088-SC):
+  `narrow_code_tokens` swapped the typed code for its -SC sibling from the words "seat cover".
+  A find turn's resolve body carries `keep_typed_codes` and the route keeps typed codes as
+  typed; every other ask keeps PR #833's word narrowing. `named_this_turn` takes the exact code
+  first (`tests/chatbot/test_find_exact_code.py`).
+- The stray "找不到 马桶盖。": on a find turn only an unplaced product code is a miss line; a
+  type word the parser also emitted is dropped from the envelope's unplaced words
+  (`turn_runtime`, beside the PO/SO word drops).
+- No-link wording: `No seat cover is on record for <code>.`; `No WC is on record for <code>.` when
+  the data calls it a seat cover (an `-SC` code, or derived `product_type` toilet_seat).
+- Discontinued: the existing marker, never a `Status:` line.
+- Past ETA (shared with the dealer stock reply; crew answer (b) then (a), 13 Oct): the date read
+  is the shipment's promised date, its revised `eta_delay_date` when it has one, else its ETA
+  (`eta_policy._told`'s rule; R5 amended: a delayed shipment still coming is never "no
+  incoming"), and `earliest_packing_list_shipment(not_before=)` drops a promised date before
+  today (Malaysia time) on the dealer read, so a past date is never told; the next dated
+  shipment answers, else the existing no-incoming line (R10 kept: no "to be confirmed").
+- File-ask misreads ("seat cover SRTWC8122", "SRTWC8383-RL-MBL 配什么马桶盖"): the `fits` row's
+  vocabulary names the shape (the other side beside a code is a fit ask, never a file ask without a
+  file word). Live parse on the prod-shaped snapshot: 19 cases x 3 runs = 57/57, incl. two file
+  asks that must stay file asks.
+- p95 (gate 14.2 s vs 11.8 s): measured parser time with and without the block on 8 non-find and
+  find messages (gpt-5.4-mini, prod-shaped snapshot): +339 uncached prompt tokens, p50 3.00 s ->
+  3.15 s; the block sits after the 33,024-token cached prefix. Not a 2.4 s shift: the gap is
+  elsewhere (crew: per-case latency on identical non-find cases, both runs).
 
 ## 3. Filters 2 and 3 (card Q5 a)
 

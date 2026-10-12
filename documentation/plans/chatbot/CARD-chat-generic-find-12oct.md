@@ -39,7 +39,7 @@ registry row plus eval cases, never prompt surgery, a new tool or a new domain.
 | what seat cover fits SRTWC8383-RL-MBL | `Seat cover for SRTWC8383-RL-MBL:` / `Code: SRTSCBD823-MBL` / `Stock: 12` |
 | which WC fits SRTSCBD823-MBL | `SRTSCBD823-MBL fits these WCs:` / `Code: SRTWC8383-RL-MBL` / `Stock: 4` (one block per linked WC SKU) |
 | SRTWC8122 pakai seat cover apa? (Malay) | Two blocks, SRTSCBD333-UF and SRTSCBD333A-UF, each with its stock line (flyer row 6 prints both) |
-| SRTWC191-G2 配什么马桶盖? (Chinese) | `No seat cover or WC is on record for SRTWC191-G2.` (intelligent seat, the flyer prints no cover code) |
+| SRTWC191-G2 配什么马桶盖? (Chinese) | `No seat cover is on record for SRTWC191-G2.` (intelligent seat, the flyer prints no cover code) |
 | SRTSCBD824-BL boleh pakai WC mana? (mixed) | `SRTSCBD824-BL fits these WCs:` then each WC SKU linked under printed SRTWC8383-BL and SRTWC8152-BL |
 
 Reply wording follows the conversation's language the same way every other templated reply does
@@ -81,7 +81,7 @@ a dealer nothing a "1 unit?" ask would not; (b) makes the dealer ask twice; (c) 
 headers per code.
 
 **Q3. No link on record.**
-(a) `No seat cover or WC is on record for <code>.` (a product with no link has no known role), nothing more;
+(a) `No seat cover is on record for <code>.` (round 3, crew: `No WC is on record for <code>.` when the data calls the product a seat cover), nothing more;
 (b) the same line plus the escalation offer used when a product ask misses.
 **Recommend (a)**: the question was answered truthfully; the owner ruled no fabrication, and an
 escalation offer on every unlinked SKU (the 7 intelligent-seat WCs, unprinted finishes) would page
