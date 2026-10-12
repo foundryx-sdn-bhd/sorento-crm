@@ -205,13 +205,13 @@ describe('STOCK-DEBT-PROJECTION - the projected flag on the wire', () => {
     expect(calledUrl(1).searchParams.has('projected')).toBe(false);
   });
 
-  it('export: carries projected in the body, false by default', async () => {
+  it('export: carries projected in the body only while the switch is on', async () => {
     mockedFetch.mockResolvedValue(ok({ id: 'dl-1' }));
     await exportStockDebt({ ...EXPORT_PARAMS, projected: true });
     await exportStockDebt(EXPORT_PARAMS);
     const body = (i: number) =>
       JSON.parse((mockedFetch.mock.calls[i][1] as RequestInit).body as string);
     expect(body(0).projected).toBe(true);
-    expect(body(1).projected).toBe(false);
+    expect(body(1).projected).toBeUndefined();
   });
 });

@@ -12,12 +12,14 @@ already"):
 
     carried_in(M) = carry(M-1)                 (0 before the first month)
     projected(M)  = month(M) + added(M) + carried_in(M)
-    carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M) + added(M))
+    carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M))
 
 - `month(M)` is the page's own figure, unchanged: the project bins are matched already.
-- `pool_free(M)` is pool supply the page already credits to M as spare. It is INSIDE
-  `month(M)`, so it is never added again; it is only allowed to CARRY from M.
-- `added(M)` is pool supply the page does not count at all (a site pool outside the span).
+- `added(M)` is the month figure of the site pools the page does not read (outside its
+  span), from the same walk over those pools alone: their supply less their own orders.
+- `pool_free(M)` is every pool's spare dated in M, in the span or outside it. It is
+  already inside `month(M) + added(M)`, so it is never added again; it only caps what may
+  CARRY from M.
 - Only pool stock carries. A month's own spare is spent on its own debt first (project
   spare cannot carry, so it is used or lost), and the carry is capped at the pool stock
   that month could have held. Debt never carries: a month that ends short starts the next
@@ -26,7 +28,7 @@ already"):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Sequence
+from typing import List, Mapping, Sequence
 
 from app.services.scm.supply_assignment import EPSILON
 
@@ -38,7 +40,8 @@ class ProjectedMonth:
     month_balance: float
     #: Pool stock still spare from earlier months.
     carried_in: float
-    #: Pool supply outside the page's span, dated in this month.
+    #: The month figure of the pools outside the page's span (their supply less their
+    #: own orders). Negative when those pools' own orders go short.
     pool_added: float
     projected: float
 
@@ -64,7 +67,7 @@ def project_months(
         added = float(pool_added.get(key, 0.0))
         carried_in = carry
         projected = own + added + carried_in
-        pool_held = carried_in + float(pool_free.get(key, 0.0)) + added
+        pool_held = carried_in + float(pool_free.get(key, 0.0))
         carry = max(0.0, min(projected, pool_held))
         out.append(
             ProjectedMonth(
@@ -78,13 +81,4 @@ def project_months(
     return out
 
 
-def sum_by_month(pairs) -> Dict[str, float]:
-    """`{month_key: qty}` from `(month_key, qty)` pairs, dropping noise."""
-    out: Dict[str, float] = {}
-    for key, qty in pairs:
-        if qty > EPSILON:
-            out[key] = out.get(key, 0.0) + qty
-    return out
-
-
-__all__ = ["ProjectedMonth", "project_months", "sum_by_month"]
+__all__ = ["ProjectedMonth", "project_months"]

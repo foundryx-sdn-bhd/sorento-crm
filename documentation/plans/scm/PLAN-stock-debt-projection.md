@@ -8,21 +8,29 @@ auth/RBAC change, no new ingest surface).
 
 ```
 month(M)      = the page's own figure for M, unchanged (project bins matched as today)
-pool_free(M)  = pool supply in the span the walk left spare (already inside month(M))
-added(M)      = pool supply outside the span (active, segment <> 'project'), dated as the page
-                dates its own (PO Delivery date, SPO ETA, today for on hand and past due),
-                less what a pinned hold took of it
+added(M)      = the month figure of the site pools OUTSIDE the span (active, segment <> 'project',
+                not flagged for planning), from the same walk over those pools alone: their
+                supply (PO Delivery date, SPO ETA, today for on hand and past due) less their
+                own sales orders, less what a hold in the page's walk took of that supply
+pool_free(M)  = every pool's spare dated in M, in the span or outside it
 carried_in(M) = carry(M-1), 0 before the current month
 projected(M)  = month(M) + added(M) + carried_in(M)
-carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M) + added(M))
+carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M))
 ```
 
-Only pool spare carries; project spare and debt never carry (R37). Pool spare already in a
-month figure is carried, never added again: the SRTWT2215-shaped route test gives the same
-projection whether the HQ PO is inside the span or outside it. Row total = today's total plus
-the pool supply added on the axis. "Only products in debt" and the sort read the projected
-months. Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection`
-/ `_project` / `_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
+Only pool spare carries; project spare and debt never carry (R37). A pool reads the same
+whether the span holds it or not (review B1): its own orders are netted either way, and pool
+spare already in a month figure only caps the carry, it is never added again. Under the switch
+the walk ignores `date_from` (demand before it still takes its share); the axis still starts at
+its month. Row total = today's total plus `added` on the axis. "Only products in debt" and the
+sort read the projected months. UAC: `stock-debt-projection-acceptance-criteria.md`.
+
+Known limit: a PO at an out-of-span pool whose AutoCount S/O names an order in the span is not
+pinned to that order (the page's own book-S/O pin reads in-span supply only); it counts as that
+pool's free supply.
+
+Code: `app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` /
+`_project` / `_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
 `StockDebtClient.projection.test.tsx`, `stockDebtService.real.test.ts`.
 
 The sections below are the behaviour card as it was put to the owner.

@@ -284,12 +284,6 @@ export interface StockDebtSupplyEvent {
   assigned_to: { so_number: string; line_no?: number | null; qty: number }[];
 }
 
-/**
- * The cell drill (R28): the two tables behind one product x month.
- *
- * `sum(supply.free_qty) - sum(demand.short_qty)` is the balance of the cell that opened it
- * (R37), which is what the two tab footers print.
- */
 /** STOCK-DEBT-PROJECTION: how one month's projected balance is made up
  *  (`projected = month_balance + pool_added + carried_in`). */
 export interface StockDebtProjection {
@@ -299,6 +293,12 @@ export interface StockDebtProjection {
   projected: number;
 }
 
+/**
+ * The cell drill (R28): the two tables behind one product x month.
+ *
+ * `sum(supply.free_qty) - sum(demand.short_qty)` is the balance of the cell that opened it
+ * (R37), which is what the two tab footers print.
+ */
 export interface StockDebtCell {
   demand: StockDebtDemandLine[];
   supply: StockDebtSupplyEvent[];

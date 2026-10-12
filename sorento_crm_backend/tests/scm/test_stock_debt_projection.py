@@ -9,7 +9,10 @@ FROM that month, never added a second time.
 
     carried_in(M) = carry(M-1)                         (0 before the first month)
     projected(M)  = month(M) + added(M) + carried_in(M)
-    carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M) + added(M))
+    carry(M)      = clamp(projected(M), 0, carried_in(M) + pool_free(M))
+
+`added(M)` is the month figure of the pools outside the span; `pool_free(M)` is every
+pool spare in M, inside or outside the span.
 
 The SRTWT2215 shape is the owner's prod row (12 Oct 2026): BRW on hand, PO 202610-S0042
 5,000 at HQ, months Oct +138, Nov -17, Dec -1,436, Jan -1,613, Feb -480, Mar -797.
@@ -33,7 +36,7 @@ def test_srtwt2215_po_outside_the_span_carries_dec_to_mar():
     """HQ outside the page's span: the 5,000 is in no month figure, so it is ADDED in
     October and carried. This is the owner's expectation."""
     rows = project_months(
-        KEYS, MONTHS, pool_free={"2026-10": 138.0}, pool_added={"2026-10": 5000.0}
+        KEYS, MONTHS, pool_free={"2026-10": 5138.0}, pool_added={"2026-10": 5000.0}
     )
     assert _balances(rows) == [5138.0, 5121.0, 3685.0, 2072.0, 1592.0, 795.0]
     assert rows[0].carried_in == 0.0 and rows[0].pool_added == 5000.0
@@ -91,6 +94,15 @@ def test_project_spare_is_spent_before_carried_pool_stock():
 def test_a_later_pool_document_lands_in_its_own_month():
     rows = project_months(
         ["2026-10", "2026-11", "2026-12"], {"2026-10": -5.0, "2026-11": -10.0, "2026-12": -20.0},
-        pool_free={}, pool_added={"2026-11": 25.0},
+        pool_free={"2026-11": 25.0}, pool_added={"2026-11": 25.0},
     )
     assert _balances(rows) == [-5.0, 15.0, -5.0]
+
+
+def test_an_outside_pool_whose_own_orders_go_short_adds_less():
+    """The out-of-span pool's own orders are netted like any pool's (review B1)."""
+    rows = project_months(
+        ["2026-10", "2026-11"], {"2026-10": -80.0, "2026-11": 0.0},
+        pool_free={"2026-10": 1020.0}, pool_added={"2026-10": 500.0},
+    )
+    assert _balances(rows) == [420.0, 420.0]

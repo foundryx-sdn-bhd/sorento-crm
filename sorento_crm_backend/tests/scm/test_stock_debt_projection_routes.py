@@ -71,7 +71,7 @@ def _po_line(db, product, warehouse, *, qty, delivery, number):
     return line
 
 
-def _seed(db, *, hq_in_span: bool):
+def _seed(db, *, hq_in_span: bool, hq_demand: float = 0):
     marker = f"ZZTPJ{_u()[:6]}".upper()
     pool = _warehouse(db, f"{marker}BRW", planning=False, segment="dealer")
     bin_ = _warehouse(db, f"{marker}BRW-BB", planning=True, segment="project", pool=pool)
@@ -87,6 +87,11 @@ def _seed(db, *, hq_in_span: bool):
     order, line = _demand(
         db, product, bin_, qty=300, required_date=_months_ahead(3), so_number=f"{marker}-SO3"
     )
+    if hq_demand:
+        _demand(
+            db, product, hq, qty=hq_demand, required_date=TODAY,
+            so_number=f"{marker}-SO-HQ",
+        )
     po_line = _po_line(
         db, product, hq, qty=1000, delivery=TODAY - timedelta(days=4),
         number=f"{marker}-202610-S0042",
@@ -195,3 +200,61 @@ def test_drill_states_the_projection_and_lists_the_added_pool_document(scm_app):
     assert f"{seed['marker']}-202610-S0042" in refs
     assert plain.get("projection") is None
     assert f"{seed['marker']}-202610-S0042" not in [row["po_number"] for row in plain["supply"]]
+
+
+def test_an_outside_pool_nets_its_own_orders_like_an_inside_one(scm_app):
+    """Review B1: a 500 order at HQ, due today. HQ's own order is netted whether the span
+    holds HQ or not, so both read the same: 420, 420, 220, -80."""
+    app, db = _client(scm_app)
+    inside = _seed(db, hq_in_span=True, hq_demand=500)
+    outside = _seed(db, hq_in_span=False, hq_demand=500)
+    with TestClient(app) as c:
+        projected_in, _ = _row(c, inside, projected="true")
+        projected_out, _ = _row(c, outside, projected="true")
+    assert _balances(projected_in) == [420.0, 420.0, 220.0, -80.0]
+    assert _balances(projected_out) == [420.0, 420.0, 220.0, -80.0]
+
+
+def test_a_placement_on_an_outside_pool_po_is_not_spent_twice(scm_app):
+    """Review B2: the page's walk honours a placement on the out-of-span PO (AC-S2-1b);
+    the projection takes that 100 off the PO's spare before it carries."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=False)
+    project_order, project_line = _project_line_for(db, seed["line"])
+    _order_back_link_on_po(db, project_order, project_line, po_line=seed["po_line"], qty=100)
+    with TestClient(app) as c:
+        projected, _ = _row(c, seed, projected="true")
+    assert _balances(projected) == [820.0, 820.0, 620.0, 420.0]
+
+
+def test_project_bin_spare_does_not_carry(scm_app):
+    """Review B3: 50 spare at a BB bin, a 30 order at an IB bin two months out. The seal
+    keeps BB off IB, and the projection does not carry project spare either."""
+    app, db = _client(scm_app)
+    marker = f"ZZTPJ{_u()[:6]}".upper()
+    pool = _warehouse(db, f"{marker}BRW", planning=False, segment="dealer")
+    bb = _warehouse(db, f"{marker}BRW-BB", planning=True, segment="project", pool=pool)
+    ib = _warehouse(db, f"{marker}BRW-IB", planning=True, segment="project", pool=pool)
+    product = _product(db, f"{marker}-SPARE")
+    _stock(db, product, bb, 50)
+    _demand(db, product, ib, qty=30, required_date=_months_ahead(2), so_number=f"{marker}-SO")
+    seed = {"product": product, "marker": marker}
+    with TestClient(app) as c:
+        today, _ = _row(c, seed)
+        projected, _ = _row(c, seed, projected="true")
+    assert _balances(today, 3) == [50.0, 0.0, -30.0]
+    assert _balances(projected, 3) == [50.0, 0.0, -30.0]
+
+
+def test_date_from_does_not_hand_earlier_orders_pool_stock(scm_app):
+    """Review should-fix 1: with the board starting two months out, the 100 due today
+    still takes its share before the pool stock carries, so the first column reads 720,
+    as it does unfiltered."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=False)
+    start = _months_ahead(2).replace(day=1)
+    with TestClient(app) as c:
+        projected, body = _row(c, seed, projected="true", date_from=start.isoformat())
+    assert body["months"][0] == month_key(start)
+    by_key = {month["key"]: month["balance"] for month in projected["months"]}
+    assert by_key[month_key(start)] == 720.0

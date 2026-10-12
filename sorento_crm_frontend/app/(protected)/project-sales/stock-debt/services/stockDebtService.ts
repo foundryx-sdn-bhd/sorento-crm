@@ -292,7 +292,8 @@ export async function exportStockDebt(params: StockDebtExportParams): Promise<My
       date_to: params.dateTo || undefined,
       split: params.split,
       show_aux: params.showAux,
-      projected: Boolean(params.projected),
+      // Only while the switch is on: the month view's body is what it was before.
+      ...(params.projected ? { projected: true } : {}),
     }),
   });
   if (!res.ok) throw new Error(await extractApiError(res, 'Failed to start the stock debt export'));
