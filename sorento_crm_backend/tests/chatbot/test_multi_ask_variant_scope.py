@@ -71,7 +71,7 @@ def test_all_about_the_head_never_widens_a_variant_typed_beside_it(session_facto
     assert asked.splitlines() == ["SRTWT7446 has 2 variants. Just SRTWT7446, or all 2?"]
     c.tools.calls.clear()
     c.say("all", pick(2))
-    wanted = sorted(c.uuid_of[code] for code in ("SRTWT7445-LV", "SRTWT7446", "SRTWT7446-A"))
-    assert c.tools.calls
-    for name, args in c.tools.calls:
-        assert sorted(_ids(args.get("product_ids"))) == wanted, name
+    wanted = {c.uuid_of[code] for code in ("SRTWT7445-LV", "SRTWT7446", "SRTWT7446-A")}
+    for tool in ("crm_inventory_stock_balance_list", "crm_procurement_po_last_cost_list"):
+        asked_ids = {i for args in c.tools.args(tool) for i in _ids(args.get("product_ids"))}
+        assert asked_ids == wanted, tool

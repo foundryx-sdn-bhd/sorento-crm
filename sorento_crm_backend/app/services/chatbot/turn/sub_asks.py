@@ -112,6 +112,8 @@ NOT_AVAILABLE = "not available yet"
 NONE_ON_RECORD = "none on record"
 CHECK_FAILED = "couldn't check right now"
 TOO_MANY_REPORTS = "too many sales reports just now, try again in a few minutes"
+#: The replayed verdict's key naming the code(s) a scope reply's answer is about.
+FAMILY_FOR = "family_for"
 VARIANT_QUESTION = "{code} has {n} variants. Just {code}, or all {n}?"
 JUST_CODE = "Just {code}"
 ALL_N = "All {n}"
@@ -286,9 +288,17 @@ def answer(
     if not products:
         return None
     top_basis = verdict.get("basis") if verdict.get("basis") in BASIS_WORD else None
-    # A `family` the parser left null with variants present was asked before this ran
-    # (`scope_question`), so null here is a code with no variants: the exact code.
-    return _answer(run, products, asks, family=bool(verdict.get("family")), basis=top_basis, filters=filters)
+    # A null `family` is the exact code: a family head with variants was asked before this
+    # ran (`scope_question`), and an exact variant is answered as typed (owner, 12 Oct).
+    family = bool(verdict.get("family"))
+    scoped = verdict.get(FAMILY_FOR)
+    if family and isinstance(scoped, list):
+        # The scope reply's "all" widens only the code it was asked about.
+        keys = {turn_state.token_key(str(code)) for code in scoped}
+        for p in products:
+            if p.exact is not None and turn_state.token_key(p.code) not in keys:
+                p.family = [p.exact]
+    return _answer(run, products, asks, family=family, basis=top_basis, filters=filters)
 
 
 def scope_question(
@@ -367,10 +377,12 @@ def scope_reply(verdict: Any, pending: Any) -> dict[str, Any] | None:
     position = _answered_position(reply, SCOPE_KIND, options) if isinstance(reply, dict) else None
     picked: str | None = None
     if position is not None:
+        # "All" answers the question about the ASKED code only (review B1, a4a02904): any
+        # other exact code typed in the message stays as typed (`answer`, FAMILY_FOR).
         if asked.exact is not None:
-            return {**replay, "family": position == 2, "open_question_answer": None}
+            return {**replay, "family": position == 2, FAMILY_FOR: [asked.code], "open_question_answer": None}
         if position == 1:
-            return {**replay, "family": True, "open_question_answer": None}
+            return {**replay, "family": True, FAMILY_FOR: [asked.code], "open_question_answer": None}
         picked = next((o.get("code") for o in options if isinstance(o, dict) and o.get("position") == position), None)
     else:
         # A full code typed to the over-20 question (no numbered line offered): the parser's
