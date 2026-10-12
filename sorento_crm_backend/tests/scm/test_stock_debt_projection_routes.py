@@ -497,9 +497,9 @@ def test_a_tba_pool_order_is_left_out_in_both_books(scm_app):
     assert str(seed["product"].id) not in [row["product_id"] for row in in_debt["data"]]
 
 
-def test_pool_sources_read_by_location_then_on_hand_before_po(scm_app):
+def test_pool_sources_read_in_location_order_and_name_no_on_hand(scm_app):
     """Review nit: an in-span pool that sorts after an out-of-span one still reads in
-    location order in the drill."""
+    location order in the drill; pool on hand is not a source (owner, 12 Oct)."""
     app, db = _client(scm_app)
     marker = f"ZZTPJ{_u()[:6]}".upper()
     inside = _warehouse(db, f"{marker}ZPOOL", planning=False, segment="dealer")
@@ -521,3 +521,26 @@ def test_pool_sources_read_by_location_then_on_hand_before_po(scm_app):
         {"label": f"{marker}APOOL PO", "qty": 10.0},
         {"label": f"{marker}ZPOOL PO", "qty": 5.0},
     ]
+
+
+def test_the_row_total_counts_pool_on_hand_only_against_dealer_orders(scm_app):
+    """Review K4: a 15 dealer order at BRW is met by BRW's 20 on hand, so it takes nothing
+    from the incoming HQ PO and the row total stays -600 + 1,000 = 400. The drill lists the
+    HQ PO and no out-of-span on-hand row."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=False)
+    _demand(
+        db, seed["product"], seed["pool"], qty=15, required_date=TODAY,
+        so_number=f"{seed['marker']}-SO-DEALER",
+    )
+    with TestClient(app) as c:
+        projected, _ = _row(c, seed, projected="true", book="project")
+        cell = c.get(
+            f"{BASE}/{seed['product'].id}/cell",
+            params={"month": month_key(TODAY), "projected": "true", "book": "project"},
+        ).json()
+    assert _balances(projected) == [900.0, 900.0, 700.0, 400.0]
+    assert projected["total"] == 400.0
+    kinds = {(row["kind"], row["warehouse_code"]) for row in cell["supply"]}
+    assert ("po", f"{seed['marker']}HQ") in kinds
+    assert ("on_hand", f"{seed['marker']}BRW") not in kinds

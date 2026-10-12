@@ -1913,7 +1913,11 @@ class StockDebtService:
                 "pool_on_hand": pool_on_hand, "sources": sources,
             }
             if keep_events:
-                out[product_id]["events"] = added_events
+                # The drill lists what the projection offers: incoming documents. Pool on
+                # hand outside the span is the pool's own and is not offered to project lines.
+                out[product_id]["events"] = [
+                    event for event in added_events if event.kind != KIND_ON_HAND
+                ]
                 out[product_id]["left"] = left
                 out[product_id]["assigned_to"] = assigned_to
         return out
