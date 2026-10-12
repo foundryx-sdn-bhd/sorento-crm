@@ -20,11 +20,16 @@ Entity kind attachment_type: resolver attachment_types. Did-you-mean on. Default
 Entity kind brand: resolver brands. Did-you-mean on. Default narrowing optional_filter.
 Entity kind category: resolver product_categories. Did-you-mean on. Default narrowing optional_filter.
 Entity kind customer: resolver customers. Did-you-mean on. Default narrowing must_narrow_one.
+Entity kind customer_po_ref: resolver sales_orders. Did-you-mean off. Default narrowing not_applicable.
+Entity kind delivery_order: resolver orders. Did-you-mean off. Default narrowing not_applicable.
 Entity kind form: resolver forms. Did-you-mean off. Default narrowing not_applicable.
 Entity kind inbound_shipment: resolver packing_lists. Did-you-mean off. Default narrowing optional_filter.
 Entity kind order: resolver orders. Did-you-mean off. Default narrowing not_applicable.
 Entity kind product: resolver master_products. Did-you-mean on. Default narrowing list_all.
 Entity kind promotion: resolver promotions. Did-you-mean on. Default narrowing optional_filter.
+Entity kind purchase_order: resolver purchase_orders. Did-you-mean off. Default narrowing not_applicable.
+Entity kind purchase_request: resolver purchase_requests. Did-you-mean off. Default narrowing not_applicable.
+Entity kind sales_order: resolver sales_orders. Did-you-mean off. Default narrowing not_applicable.
 Entity kind specification: resolver product_spec_registry. Did-you-mean off. Default narrowing optional_filter.
 Entity kind transporter: resolver transporters. Did-you-mean on. Default narrowing optional_filter.
 Entity kind warehouse: resolver warehouses. Did-you-mean on. Default narrowing optional_filter.
