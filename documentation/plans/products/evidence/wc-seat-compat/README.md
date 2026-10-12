@@ -12,4 +12,4 @@ agent-browser 0.27.0 headless, navigation by sidebar from `/`.
 - `section-1280.png`, `section-375.png`: the Compatible section (first pass, 12 Oct).
 - `c75a3ee80/r2-section-375.png`, `c75a3ee80/r2-sc-refused.png`: section at 375px and the
   `-SC` refusal toast (re-run on c75a3ee80).
-- The final-head pass is recorded in the PR's crew-note.
+- `867b61475/`: final-head pass (section at 375px, `-SC` refusal); the PASS/FAIL table is in the PR's crew-note.
