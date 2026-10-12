@@ -162,9 +162,8 @@ _PROMOTION_PRODUCTS_TOOL = "crm_marketing_promotion_products_list"
 SPEC_CONSTRAINT_TOOLS = frozenset(
     {"crm_master_products_list", "crm_inventory_stock_balance_list", _PROMOTION_PRODUCTS_TOOL}
 )
-# The lane domains that send them (`turn/policy_rows.py`). Promotion is not one yet: owner
-# decision Q4 is pending, so it keeps the promotions list with `scope_terms`.
-SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory"})
+# The domains whose tool is one of them (`turn/policy_rows.py`).
+SPEC_CONSTRAINT_DOMAINS = frozenset({"master_products", "inventory", "promotion"})
 _SUBJECT_HINTS = frozenset({"category", "product_type"})
 
 
@@ -312,13 +311,17 @@ def select_tool(domain: str | None, spec_constraints: list[dict[str, Any]] | Non
     name, and ended `not_found`; one that got past both guards would end the same way here,
     by falling off the table rather than by zeroing a `LIKE` filter.
 
-    `spec_constraints` (SPEC-PROMO-PARAMS) is accepted and does not change the pick today:
-    which tool a promotion ask with a described subject answers from is owner decision Q4,
-    still pending, so every domain keeps its first tool.
+    SPEC-PROMO-PARAMS (card section 9, slice 3, owner Q4 12 Oct): a promotion ask with a
+    described subject (`spec_constraints` non-empty) answers from the promotion products
+    tool, the promotions covering the subject together with the products on them, so
+    "which basins are on promotion" and "basin promotion" are one call. With no subject
+    the domain's first tool stands.
     """
     row = default_policy().domain(domain) if domain else None
     if row is None or not row.tools:
         return []
+    if spec_constraints and row.name == "promotion" and _PROMOTION_PRODUCTS_TOOL in row.tools:
+        return [{"name": _PROMOTION_PRODUCTS_TOOL, "similarity": 1.0}]
     return [{"name": row.tools[0], "similarity": 1.0}]
 
 

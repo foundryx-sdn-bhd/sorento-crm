@@ -1716,19 +1716,25 @@ def run_fetch(
                 outcome="access_denied",
             )
 
-    # SPEC-PROMO-PARAMS (card section 9, slice 2): on the product and stock lanes a described
-    # ask (no typed code) that carries the virtual size hands its subject and grounded specs
-    # to the route as `spec_constraints`. Without a size the resolver's described set already
-    # applies the subject and every registry key exactly (`extracted_specs`), with the
-    # counted-set answer the owner ruled on (header, brand lines, count-and-ask); only the
-    # size never reaches it (`resolve_gate`). The promotion domain is not wired yet (Q4
-    # pending): it keeps the promotions list with `scope_terms`.
+    # SPEC-PROMO-PARAMS (card section 9, slices 2 and 3): a described ask (no typed code)
+    # carries its subject and grounded specs as `spec_constraints` on the MCP call, and a
+    # promotion ask with a subject answers from the promotion products tool.
     spec_constraints = (
         fetch_mod.spec_constraints_for(parse_output, db)
         if db is not None and jsc.js_string(domain or "") in fetch_mod.SPEC_CONSTRAINT_DOMAINS
         else None
     )
-    if spec_constraints and not fetch_mod.carries_size(spec_constraints):
+    if not spec_constraints and picked and jsc.js_string(domain or "") == "promotion":
+        # The tier pick's own turn names no subject: the menu turn's constraints rode the
+        # open pick (`answer_bridge`, beside `promo_filter`) and `narrow` above put them here.
+        carried = semantic_input.get("spec_constraints")
+        spec_constraints = [c for c in carried if isinstance(c, dict)] if isinstance(carried, list) else None
+    if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
+        # On the product and stock lanes the resolver's described set already applies the
+        # subject and every registry key exactly (`extracted_specs`), with the counted-set
+        # answer the owner ruled on (header, brand lines, count-and-ask). Only the virtual
+        # size never reaches it (`resolve_gate`), so only a size ask hands the filtering to
+        # the route. A promotion ask with a subject always does (owner Q4: one path).
         spec_constraints = None
     if spec_constraints:
         semantic_input["spec_constraints"] = spec_constraints
