@@ -1930,8 +1930,8 @@ class StockDebtService:
         self, result: Assignment, axis: Sequence[str], product_id: str, pool: dict
     ) -> List[dict]:
         """`_months_on_axis`'s shape, the cell being the projected balance. Unlike the
-        month view a column past the row's last event is NOT 0: the pool stock carried
-        into it is still there."""
+        month view a column past the row's last event is NOT 0: the reserve stock
+        carried into it is still there."""
         as_of = date.today()
         lead = self._lead_cache.get(product_id, DEFAULT_LEAD_TIME_DAYS)
         by_key = {
