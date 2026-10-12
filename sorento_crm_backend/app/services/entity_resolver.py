@@ -57,6 +57,7 @@ from app.models.resources import Attachment, AttachmentType
 # assistant that could still NAME the draft via this resolver would ask incoming_list about
 # it and get told "nothing incoming for container X" instead of never hearing of it.
 from app.services import customer_identity
+from app.services.product_family import family_code_for
 from app.services.scm import spo_supply
 from app.services.scm.proforma_invoice_service import _DRAFT_SHIPMENT_STATUS
 
@@ -2827,6 +2828,49 @@ def _chat_visible_product_ids(db: Session, product_ids: Iterable[str]) -> set[st
     }
 
 
+def _family_alternatives(
+    db: Session, token: str, family_key: str, active_only: bool
+) -> list[ResolvedEntity]:
+    """CODE-VARIANTS AC-6: products of the typed code's own model family, most similar to
+    the token first. Same company scope and chat-visibility as `_trgm_lookup`; best-effort
+    so a probe error leaves the alternatives exactly as they were."""
+    try:
+        norm = _strip_all_ws(token).lower() or token.lower()
+        scope_sql, scope_params = _company_scope_sql(db)
+        n_code = _norm_sql("product_code")
+        active_sql = " AND is_active IS TRUE" if active_only else ""
+        with db.begin_nested():
+            rows = db.execute(
+                text(
+                    f"""
+                    SELECT id, product_code, product_name, similarity({n_code}, :pn) AS sim
+                    FROM products
+                    WHERE family_code = :fk AND {n_code} <> :pn{scope_sql}{active_sql}
+                    ORDER BY sim DESC, product_code
+                    LIMIT :n
+                    """
+                ),
+                {"pn": norm, "fk": family_key, "n": _ALTERNATIVES_CAP, **scope_params},
+            ).all()
+        visible = _chat_visible_product_ids(db, [r.id for r in rows])
+        return [
+            ResolvedEntity(
+                entity_type="product",
+                canonical_code=r.product_code,
+                uuid=str(r.id),
+                match_field="product_code",
+                match_tier="trgm",
+                similarity=float(r.sim or 0.0),
+                display={"product_name": r.product_name, "same_family": True},
+            )
+            for r in rows
+            if str(r.id) in visible
+        ]
+    except Exception:
+        logger.exception("family alternatives probe failed for token=%s", token)
+        return []
+
+
 def _drop_inactive_products(db: Session, hits: list[ResolvedEntity]) -> list[ResolvedEntity]:
     """`hits` minus inactive products (one bounded IN query); other types pass through."""
     ids = [str(h.uuid) for h in hits if h.entity_type == "product" and h.uuid]
@@ -4988,6 +5032,7 @@ def resolve_references(
     domain_hint: Optional[str] = None,
     entity_pins: Optional[dict[str, str]] = None,
     raw_tokens: Optional[list[str]] = None,
+    family_raw_by_token: Optional[dict[str, str]] = None,
     regions=None,
     code_reader: Optional[Callable[[list[tuple[str, Optional[str]]]], dict[str, Any]]] = None,
     alternatives_active_only: bool = False,
@@ -5534,9 +5579,24 @@ def resolve_references(
                 hits = [h for h in hits if str(h.uuid) not in member_uuids]
         if alternatives_active_only:
             hits = _drop_inactive_products(db, hits)
-        tr.alternatives = [
+        alternatives = [
             h for h in hits if (h.similarity or 0.0) >= ENTITY_MISS_SUGGEST_FLOOR
-        ][:_ALTERNATIVES_CAP]
+        ]
+        # CODE-VARIANTS: the typed code's own model family leads, exempt from the floor.
+        family_key = (
+            family_code_for(
+                raw_by_token.get(tr.token)
+                or (family_raw_by_token or {}).get(tr.token)
+                or tr.token
+            )
+            if not tr.matches and (tok_types is None or "product" in tok_types)
+            else None
+        )
+        if family_key:
+            family = _family_alternatives(db, tr.token, family_key, alternatives_active_only)
+            family_ids = {h.uuid for h in family}
+            alternatives = family + [h for h in alternatives if h.uuid not in family_ids]
+        tr.alternatives = alternatives[:_ALTERNATIVES_CAP]
 
     _apply_company_scope(db, resolutions)
     if regions is not None:
