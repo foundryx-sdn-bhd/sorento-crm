@@ -338,3 +338,41 @@ def test_orm_query_exists_over_product_is_scoped(db, world):
     set_company_scope(db, frozenset({world["a"]}))
     code_b = f"ZZT3B{world['suffix']}"
     assert db.query(db.query(Product.id).filter(Product.product_code == code_b).exists()).scalar() is False
+
+
+# ------------------------------------------------------------- debtor seeds (crew answer (b))
+# A `debtor:<code>` customer seed (an `orders.debtor_code` with no customer master row) is
+# written company-less (migration 304), so the shared-row rule alone lets company B's
+# master-less debtor reach company A's contact. Under any company scope the RAG phrase
+# probe drops these seeds; staff (scope None) still find them.
+
+
+def _seed_debtor(db, world) -> str:
+    code = f"ZZT3DEB{world['suffix']}"
+    q, _ = _vectors(int(world["suffix"], 16))
+    _seed_chunk(db, "customer", f"debtor:{code}", f"debtor:{code}", None, q)
+    return code
+
+
+def test_rag_phrase_never_returns_a_master_less_debtor_under_a_company_scope(db, world):
+    """Red before the fix: B's master-less debtor code came back to A's contact."""
+    code = _seed_debtor(db, world)
+    set_company_scope(db, frozenset({world["a"]}))
+    hits = er._rag_resolve_phrase(db, f"zzt3 debtor {world['suffix']}", frozenset({"customer"}))
+    assert code not in {h.canonical_code for h in hits}
+    assert f"ZZT3CA{world['suffix']}" in {h.canonical_code for h in hits}
+
+
+def test_rag_phrase_never_returns_a_master_less_debtor_under_unset_scope(db, world):
+    code = _seed_debtor(db, world)
+    set_company_scope(db, UNSET)
+    hits = er._rag_resolve_phrase(db, f"zzt3 debtor {world['suffix']}", frozenset({"customer"}))
+    assert code not in {h.canonical_code for h in hits}
+
+
+def test_rag_phrase_still_returns_a_master_less_debtor_to_staff(db, world):
+    """Guard: no company scope (staff) keeps finding master-less debtors."""
+    code = _seed_debtor(db, world)
+    set_company_scope(db, None)
+    hits = er._rag_resolve_phrase(db, f"zzt3 debtor {world['suffix']}", frozenset({"customer"}))
+    assert code in {h.canonical_code for h in hits}
