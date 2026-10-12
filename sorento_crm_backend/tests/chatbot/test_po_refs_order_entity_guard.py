@@ -3,10 +3,11 @@ number it ALSO emitted as an order entity into `po_refs`, minus its letters
 ("PS202609-0469" -> po_refs ["202609-0469"]). The turn then took the PO-ref arm and a
 contact without the SO grant was told "Sales order figures are not enabled".
 
-Rule: a `po_refs` string that is the same reference as a non-PO order/document entity of the
-same message is not a PO ref. "Same" is the reference fold (case, separators, a leading
-letters-only document prefix), never a word list. A PO ref the parser named as a PO kind,
-or one no entity repeats, is kept.
+Rule: a `po_refs` string that is a non-PO order/document entity of the same message with
+that entity's leading letters-only document prefix dropped is not a PO ref (reference fold:
+case and separators; never a word list). Kept: an exact repeat (SO-PO-REF puts a PO number in
+both on purpose, `test_po_ref_ask.TestPoNumberAlsoEmittedAsAnEntity`), a "PO" prefix
+(`po_ref_key` strips it, so it is the PO itself), a PO-kind entity, an unrepeated ref.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ def _reply(session_factory, monkeypatch, qf, *, attributes) -> str:
     return (result.reply or {}).get("text") or ""
 
 
-@pytest.mark.parametrize("po_ref", ["202609-0469", "2026090469", "ps202609-0469", "PS 202609 0469"])
+@pytest.mark.parametrize("po_ref", ["202609-0469", "2026090469", "202609 0469"])
 def test_po_ref_copied_from_an_order_entity_is_not_a_po_ref(session_factory, monkeypatch, po_ref):
     _seed_contact(session_factory, variables={})
     _seed_do(session_factory, DO_NO, None)
@@ -65,8 +66,15 @@ def test_unit_guard_keeps_po_kinds_and_unrepeated_refs():
         {"raw": "7781", "hint": "customer_po_ref", "current_message": True},
         {"raw": "SO2610-0127", "hint": "sales_order", "current_message": True},
     ]
-    refs = ["202609-0469", "4500123", "7781", "2610-0127", "9900", "PS1"]
-    assert _po_refs_not_order_entities(refs, ents) == ["4500123", "7781", "9900", "PS1"]
+    refs = ["202609-0469", "4500123", "7781", "2610-0127", "9900", "PS1", "PS202609-0469"]
+    assert _po_refs_not_order_entities(refs, ents) == ["4500123", "7781", "9900", "PS1", "PS202609-0469"]
+
+
+def test_unit_guard_keeps_a_po_prefixed_order_entity_ref():
+    from app.services.chatbot.turn_runtime import _po_refs_not_order_entities
+
+    ents = [{"raw": "PO 4500123", "hint": "order", "current_message": True}]
+    assert _po_refs_not_order_entities(["4500123"], ents) == ["4500123"]
 
 
 def test_unit_guard_ignores_earlier_turn_entities_and_digit_mismatch():
