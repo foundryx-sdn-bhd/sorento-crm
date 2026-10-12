@@ -683,6 +683,8 @@ def settle(
     args, line = _fresh_args(db, parse_output, entities, dealer=dealer, say=say)
     if args is None:
         return None, line
+    if frame and _restates_held_ranking(parse_output, frame, args):
+        return _refine(db, {**parse_output, "ranking_refine": True}, frame, dealer=dealer, say=say)
     if (
         parse_output.get("ranking_refine") is not True
         and not dealer  # the route forces a dealer's links, so a plain total can never widen
@@ -728,6 +730,29 @@ def settle(
             values=outcome.values, reply=f"{still}\n\n{PERIOD_QUESTION}", slot=slot, extras=outcome.extras
         ), None
     return outcome, None
+
+
+def _filters_of(args: dict[str, Any]) -> dict[str, Any]:
+    """The filter keys of a route args dict (not the axis, choices, period, count or provenance),
+    with list values order-free, empties dropped."""
+    skip = _NON_FILTER_ARGS | set(_FRAME_ONLY) | {"carried"}
+    return {
+        k: (sorted(str(i) for i in v) if isinstance(v, list) else v)
+        for k, v in args.items()
+        if k not in skip and v not in (None, [], "")
+    }
+
+
+def _restates_held_ranking(parse_output: dict[str, Any], frame: dict[str, Any], args: dict[str, Any]) -> bool:
+    """The parser read a fresh ask that is the held ranking again (same axis, same filters) and set
+    no period: only the count (or the choices) changed, so it is a refine of the held one."""
+    if parse_output.get("ranking_refine") is True or not frame.get("group_by"):
+        return False
+    if args.get("group_by") != frame.get("group_by"):
+        return False
+    if period_from(parse_output.get("date_filter_start"), parse_output.get("date_filter_end")) is not None:
+        return False
+    return _filters_of(args) == _filters_of(frame)
 
 
 def _refine(

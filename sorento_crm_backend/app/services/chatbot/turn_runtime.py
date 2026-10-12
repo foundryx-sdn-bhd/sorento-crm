@@ -1787,8 +1787,12 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
 
 
 def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
-    """The parser read a scoped sales ranking naming ONE product and no axis to rank by."""
-    if jsc.js_string(out.get("order_status") or "").strip() != "sales_ranking" or out.get("ranking_drill") != "scoped":
+    """The parser read a scoped sales ranking, or a plain sales report that names no domain word (its
+    own refinement signal: `domain_in_message` false, no topic reset), naming ONE product and no axis."""
+    status = jsc.js_string(out.get("order_status") or "").strip()
+    scoped_ranking = status == "sales_ranking" and out.get("ranking_drill") == "scoped"
+    refinement = status == "sales_report" and out.get("domain_in_message") is False and out.get("topic_reset") is not True
+    if not (scoped_ranking or refinement):
         return False
     if jsc.js_string(out.get("group_by") or "").strip():
         return False
@@ -1942,10 +1946,10 @@ def lane_parse_output(
     # which the lane asks about rather than guess); any other verdict never sees it.
     if (
         jsc.js_string(out.get("order_status") or "").strip() == "sales_ranking"
-        and out.get("ranking_drill") != "global"
         and focus is not None
         and focus.report
     ):
+        # A global reading rides it too: the lane decides whether it restates the held ranking.
         from app.services.chatbot.turn.state import frame_from_report
 
         out["sales_ranking_frame"] = frame_from_report(focus.report)
