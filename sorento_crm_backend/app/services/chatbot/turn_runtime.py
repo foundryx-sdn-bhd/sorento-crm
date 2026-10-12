@@ -1793,7 +1793,13 @@ def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
     The parser sometimes reads that refinement as `sales_analysis`; the same signal narrows it too."""
     status = jsc.js_string(out.get("order_status") or "").strip()
     scoped_ranking = status == "sales_ranking" and out.get("ranking_drill") == "scoped"
-    refinement = status in ("sales_report", "sales_analysis") and out.get("domain_in_message") is False and out.get("topic_reset") is not True
+    # The held report is delivered-only and company-free: an analysis naming another basis or a company is its own ask.
+    analysis_fits = status == "sales_analysis" and out.get("sales_basis") in (None, "delivered") and not out.get("sales_company")
+    refinement = (
+        (status == "sales_report" or analysis_fits)
+        and out.get("domain_in_message") is False
+        and out.get("topic_reset") is not True
+    )
     if not (scoped_ranking or refinement):
         return False
     if jsc.js_string(out.get("group_by") or "").strip():

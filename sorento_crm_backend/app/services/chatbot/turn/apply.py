@@ -1382,6 +1382,24 @@ def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
     )
 
 
+_AXIS_OF_RANK_GROUP = {"item": "product", "category": "category"}
+
+
+def _axis_is_the_held_one(verdict: dict[str, Any], slot: dict[str, Any]) -> bool:
+    """No axis of its own, or an echo of the one the held top selling ask ranks (parser enums only:
+    `item` is `product`, `category` is `category`). An echo counts only when the parser did not
+    say `ranking_refine` false (its "new ask"), and the stored `rank_group` must match, except under
+    the group question itself, where the echoed axis IS the answer."""
+    axis = str(verdict.get("group_by") or "").strip()
+    if not axis:
+        return True
+    if verdict.get("ranking_refine") is False:
+        return False
+    if slot.get("asked") == "group":
+        return axis in _AXIS_OF_RANK_GROUP.values()
+    return _AXIS_OF_RANK_GROUP.get(slot.get("rank_group")) == axis
+
+
 def _top_selling_rules(
     focus: Focus, verdict: dict[str, Any], decision: Decision, trace: Trace, *, was_ranking: bool = False
 ) -> None:
@@ -1413,14 +1431,16 @@ def _top_selling_rules(
     # a new intent always wins), never an answer inside an open top selling question.
     new_sales_ranking = isinstance(order_status, str) and order_status.strip() == "sales_ranking"
     # ... unless the parser flipped the status on a bare answer: no domain word, no axis of its
-    # own, nothing fresh, and a top selling question is open. Then it answers that question.
+    # own, nothing fresh, and a top selling question is open. Then it answers that question. Any
+    # open `asked` counts on purpose (how_many and who too): the worst case is a bounded re-ask of
+    # the same question.
     ranking_answers_open_ask = (
         new_sales_ranking
         and focus.status == TOP_SELLING_STATUS
         and isinstance(focus.top_selling, dict)
         and bool(focus.top_selling.get("asked"))
         and domain_in_message(verdict) is False
-        and not str(verdict.get("group_by") or "").strip()
+        and _axis_is_the_held_one(verdict, focus.top_selling)
         and not decision.starts_fresh
     )
     if ranking_answers_open_ask:
@@ -1467,6 +1487,10 @@ def _top_selling_rules(
         metric = {"qty": "quantity", "amount": "amount"}.get(verdict.get("measure"))
         if metric:
             own["rank_by"] = metric
+    if ranking_answers_open_ask and "rank_group" not in own and asked_last == "group":
+        group = {"product": "item", "category": "category"}.get(str(verdict.get("group_by") or "").strip())
+        if group:
+            own["rank_group"] = group
     if _top_selling_waiting(asked_last, own):
         # One turn: the lane input of THIS answer sends no channel (`lane_parse_output`).
         carried["answered"] = True
