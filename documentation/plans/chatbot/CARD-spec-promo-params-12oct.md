@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Review. Built and reviewed (reviewer READY, security review READY); last fixes in progress before the crew gate. Track: full (sections 2-5 are the pre-answer proposal; sections 8-10 are what shipped).
+Status: Review. Step-1 hand test round fixed (section 10b); one crew ask open (the axis pick). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10b are what shipped).
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -250,3 +250,25 @@ axis never reaches the resolver or the tool. Slices:
   or print; caps (16 constraints, 50 values per list, 4096 chars raw); non-finite numbers and
   wrong-typed values rejected; an inactive registry key (e.g. `seat_cover` once turned off) is absent
   from the parser vocabulary and rejected by the route.
+
+### 10b. Owner hand test step 1 round (12 Oct)
+
+Hand test step 1 failed on 2c6ec044 (parser v86, crew trace e2a6498a): "600mm basin got stock?"
+listed every basin. Three causes, each fixed red-first:
+
+- The parser put the size on the category entity (`spec_key dim_width`, `spec_value 600`) and
+  nothing read it. Grounding now splits a spec pair on a category entity into its own
+  specification entity; a millimetre number there is the virtual `size` key.
+- A millimetre spec whose own words name no axis ("600mm"; the registry's `ground_words` finds no
+  axis in it) is `size`, whatever axis the parser guessed. An axis word keeps the parser's key.
+- A size ask sends the resolver no `require` leg: its counted set never sees the size, so its
+  count, header and "no stock matched these" described a different set.
+
+The v84-v86 parser texts carry no `{{specs}}`, so the size line never reached the parser on that
+line. `chatbot_prompt_vars.publish_specs_block` (`scripts/publish_parser_specs_block.py`)
+publishes the production text word for word with the block as a new unlabelled version; the owner
+promotes it (PR release post-steps).
+
+Open: the answer to "Which one do you mean?" (Length or Width). The parser carries the subject
+but not the number, so "length" alone is not answered (crew ask on the PR, recommendation: a
+numbered pick carried like the promotion tier menu).
