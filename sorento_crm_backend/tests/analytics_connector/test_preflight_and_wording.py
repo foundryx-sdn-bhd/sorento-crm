@@ -16,14 +16,7 @@ from tests.analytics_connector._helpers import BASE, assert_error, pin_settings
 
 def test_a_refused_connector_call_with_x_source_writes_no_api_call_log(monkeypatch):
     import app.services.api_call_log_service as svc
-    import app.services.runtime_settings  # noqa: F401  (see below)
     from app.main import app
-
-    # The stub session below is for the api-call log only. `verify_token` imports
-    # runtime_settings lazily, and that module binds `SessionLocal` by name at import, so a
-    # worker that had not imported it yet bound the stub instead: the settings read failed,
-    # the connector secret failed closed and the call was 503 "not configured", not 401
-    # (release run 38287204810). Importing it first keeps its real session either way.
 
     written: list[dict] = []
     monkeypatch.setattr(svc, "write_call_log", lambda db, **fields: written.append(fields))
