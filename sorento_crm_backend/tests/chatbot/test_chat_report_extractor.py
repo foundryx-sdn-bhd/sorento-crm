@@ -5,8 +5,8 @@ Plan: documentation/plans/chatbot/PLAN-chat-analytics-ca3-chat-dataset-10oct.md 
 `extract_chat_report(db, message_text, *, today) -> dict | None` returns
 `{group_by, measure, subject, top_n, date_from, date_to}` and NEVER raises.
 
-No network: the provider seam is `get_provider` imported at module level of the extractor (the
-`ideation_extractor` pattern, patched as `<module>.get_provider`); `resolve_api_key` is patched
+No network: the provider seam is `app.services.llm_provider.get_provider`, which the chatbot's one
+wrapper `llm_call.chat` calls (hotfix: the extractor no longer imports it); `resolve_api_key` is patched
 with `create=True` because the plan names it but not where it lives. Red today with
 ModuleNotFoundError until the module exists.
 
@@ -82,7 +82,6 @@ def _run(db, provider, text="top 5 questions this week"):
 
     # The call goes through `llm_call.chat`, which reaches the provider via `llm_provider.get_provider`.
     with patch("app.services.llm_provider.get_provider", return_value=provider), \
-         patch(f"{MODULE}.get_provider", return_value=provider, create=True), \
          patch(f"{MODULE}.resolve_api_key", return_value="fake-key", create=True):
         return chat_report_extractor.extract_chat_report(db, text, today=TODAY)
 
@@ -154,8 +153,7 @@ def test_no_api_key_returns_none(db):
     from app.services.chatbot.analytics import chat_report_extractor
 
     with patch(f"{MODULE}.resolve_api_key", return_value=None, create=True), \
-         patch("app.services.llm_provider.get_provider", side_effect=AssertionError("no key: no call")), \
-         patch(f"{MODULE}.get_provider", side_effect=AssertionError("no key: no call"), create=True):
+         patch("app.services.llm_provider.get_provider", side_effect=AssertionError("no key: no call")):
         assert chat_report_extractor.extract_chat_report(db, "top 5 questions", today=TODAY) is None
 
 
