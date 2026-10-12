@@ -1788,7 +1788,8 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
 
 def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
     """The parser read a scoped sales ranking, or a plain sales report that names no domain word (its
-    own refinement signal: `domain_in_message` false, no topic reset), naming ONE product and no axis."""
+    own refinement signal: `domain_in_message` strictly false, no topic reset), naming ONE product and no
+    axis. A null `topic_reset` counts as no reset on purpose; only an explicit true blocks the narrowing."""
     status = jsc.js_string(out.get("order_status") or "").strip()
     scoped_ranking = status == "sales_ranking" and out.get("ranking_drill") == "scoped"
     refinement = status == "sales_report" and out.get("domain_in_message") is False and out.get("topic_reset") is not True

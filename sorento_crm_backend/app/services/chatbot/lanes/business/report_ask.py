@@ -788,6 +788,9 @@ def _refine(
         args["basis"] = parse_output["basis"]
     if parse_output.get("measure") in ("qty", "amount"):
         args["measure"] = parse_output["measure"]
+    if parse_output.get("rank_direction") in ("top", "bottom"):
+        # The same mapping a fresh ask uses; none keeps the held direction.
+        args["sort"] = "asc" if parse_output["rank_direction"] == "bottom" else "desc"
     top_n = parse_output.get("top_n")
     if top_n is None:
         top_n = frame.get("top_n")
