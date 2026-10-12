@@ -2562,6 +2562,20 @@ export interface ConfirmManyOrderBody {
   only_line_ids?: string[];
 }
 
+/**
+ * One order of a Simulate confirm: a never-planned order is named by its CORE
+ * `sales_order_id` (no `pso_id`) and its lines carry `pending-adoption:<core line id>`; the
+ * server adopts it inside the simulation and swaps each placeholder for the new mirror line.
+ */
+export type SimulateOrderBody = Omit<ConfirmManyOrderBody, 'pso_id'> & {
+  pso_id?: string;
+  sales_order_id?: string;
+};
+
+export interface SimulateConfirmBody extends Omit<ConfirmManyBody, 'orders'> {
+  orders: SimulateOrderBody[];
+}
+
 export interface ConfirmManyBody {
   orders: ConfirmManyOrderBody[];
   /**
@@ -2608,6 +2622,8 @@ export interface SimulatedLineError {
 
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: the simulation adopted this never-planned order first. */
+  adopted?: boolean | null;
   /** Simulate confirm only: lines that fail when run alone. */
   simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */

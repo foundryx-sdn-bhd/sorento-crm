@@ -1267,12 +1267,13 @@ export function FulfilmentBoardPanel({
    * adopts any order not yet adopted (the body needs the mirror ids), re-reads the board once
    * afterwards, and returns the per-order `orders` plus the orders left out with a reason.
    * `excludeKeys` are the lines the planner unticked in the preview; Preview itself passes none.
-   * `adopt: false` (the admin Simulate) never adopts: adopting writes, so a never-planned
-   * order is reported as not simulated instead.
+   * `adopt: 'defer'` (the admin Simulate) never adopts here: a never-planned order is named
+   * by its core `sales_order_id` and its lines carry `pending-adoption:<core line id>`, and
+   * the server adopts it inside the simulation.
    */
   const buildConfirmOrders = React.useCallback(
-    async (excludeKeys: ReadonlySet<string>, options: { adopt?: boolean } = {}) => {
-      const adoptFirst = options.adopt !== false;
+    async (excludeKeys: ReadonlySet<string>, options: { adopt?: 'now' | 'defer' } = {}) => {
+      const adoptFirst = options.adopt !== 'defer';
       if (!board.data) return null;
       let liveBoard = board.data;
       let contributions = allContributions;
@@ -1359,8 +1360,22 @@ export function FulfilmentBoardPanel({
         psoIdBySalesOrder.set(salesOrderId, psoId);
       }
 
+      if (!adoptFirst) {
+        // The board already reads a not-yet-adopted order's lines as `pending-adoption` for
+        // its counts; Simulate posts the same placeholder carrying the core line id.
+        contributions = contributions.map((contribution) =>
+          !contribution.project_line_id &&
+          contribution.line_id &&
+          !psoIdBySalesOrder.has(contribution.sales_order_id)
+            ? { ...contribution, project_line_id: `pending-adoption:${contribution.line_id}` }
+            : contribution,
+        );
+      }
+
       const orders: {
         pso_id: string;
+        /** Deferred adoption only: the core order the server adopts. */
+        sales_order_id?: string;
         lines: ReturnType<typeof confirmLinesFor>;
         batch_id: string | null;
         rejected_line_ids: string[];
@@ -1380,20 +1395,21 @@ export function FulfilmentBoardPanel({
         // answered without an id). There is nothing to post against, so the order is left
         // out - but it is left out OUT LOUD, beside every other order's outcome, because the
         // silent `continue` here ended the whole press with an empty screen.
-        if (!psoId) {
+        const deferred = !psoId && !adoptFirst;
+        if (!psoId && !deferred) {
           skipped.push({
             pso_id: '',
             so_number: soNumber,
             ok: false,
-            error: adoptFirst
-              ? 'is not being planned yet, so there is nothing to confirm it against. Press Start planning on it, then confirm again.'
-              : 'is not being planned yet; Confirm would adopt it first, so it was not simulated.',
+            error:
+              'is not being planned yet, so there is nothing to confirm it against. Press Start planning on it, then confirm again.',
           } as BoardBatchResult);
           continue;
         }
+        const orderPsoId = psoId ?? '';
         if (soNumber && appliedSoNumbers.has(soNumber)) {
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             ok: false,
             error: 'This planning change was already applied to this sales order.',
           } as ConfirmManyOrderResult);
@@ -1477,7 +1493,7 @@ export function FulfilmentBoardPanel({
                 ? 'saved Cancel SO'
                 : 'staged rejection';
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             so_number: soNumber,
             ok: false,
             heldBack: true,
@@ -1508,7 +1524,7 @@ export function FulfilmentBoardPanel({
           const everyLineOffTheRecord =
             blocked.length > 0 && blocked.every((entry) => entry.reason === 'no_mirror');
           skipped.push({
-            pso_id: psoId,
+            pso_id: orderPsoId,
             so_number: soNumber,
             ok: false,
             error: everyLineOffTheRecord
@@ -1518,7 +1534,8 @@ export function FulfilmentBoardPanel({
           continue;
         }
         orders.push({
-          pso_id: psoId,
+          pso_id: orderPsoId,
+          ...(deferred ? { sales_order_id: salesOrderId } : {}),
           lines,
           batch_id: orderBatchId,
           rejected_line_ids: rejectedLineIds,
@@ -1830,16 +1847,31 @@ export function FulfilmentBoardPanel({
     setConfirmingAll(true);
     setBatchResults(null);
     try {
-      const built = await buildConfirmOrders(new Set(), { adopt: false });
+      const built = await buildConfirmOrders(new Set(), { adopt: 'defer' });
       if (!built) {
         toast.error('Nothing could be sent for this press');
         return;
       }
       const { skipped } = built;
+      // A never-planned order goes by its core id alone: it has no planning record yet.
+      const orders = built.orders.map(({ pso_id, ...rest }) =>
+        rest.sales_order_id ? rest : { pso_id, ...rest },
+      );
       const answered =
-        built.orders.length > 0 ? (await simulateConfirm.mutateAsync(built.body)).results : [];
+        orders.length > 0
+          ? (await simulateConfirm.mutateAsync({ ...built.body, orders })).results
+          : [];
+      // The server answers in the order posted; an adopted order's record exists only inside
+      // the simulation, so its result is named by the board's own sales order number.
+      const named = answered.map((result, index) => {
+        const salesOrderId = built.orders[index]?.sales_order_id;
+        const standing = salesOrderId
+          ? board.data?.orders.find((order) => order.sales_order_id === salesOrderId)
+          : undefined;
+        return standing ? { ...result, so_number: standing.so_number } : result;
+      });
       setSimulated(true);
-      setBatchResults([...skipped, ...answered]);
+      setBatchResults([...skipped, ...named]);
     } catch {
       // The mutation's own `onError` already toasted the message.
     } finally {

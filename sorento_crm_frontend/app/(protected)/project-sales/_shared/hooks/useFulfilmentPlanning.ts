@@ -31,6 +31,7 @@ import type {
   BoardLineDraft,
   BoardSource,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmSupplyBody,
   FulfilmentPlanningListParams,
   PlanListParams,
@@ -509,7 +510,7 @@ export function usePreviewConfirmManyMutation() {
 /** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
 export function useSimulateConfirmMutation() {
   return useMutation({
-    mutationFn: (body: ConfirmManyBody) => simulateConfirm(body),
+    mutationFn: (body: SimulateConfirmBody) => simulateConfirm(body),
     onError: (error: Error) => {
       toast.error(error.message);
     },

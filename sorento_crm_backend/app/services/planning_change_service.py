@@ -3967,6 +3967,13 @@ def _notify_purchasing(
 ) -> bool:
     """AC-R09: purchasing told once per order, by a batch link. Best-effort - Apply has
     already written the plan and Order Inquiry changes by the time this runs."""
+    from app.services.confirm_simulation import is_simulating
+
+    if is_simulating():
+        # A simulated confirm tells nobody. The simulation guards would refuse the send too,
+        # but this call is made BEFORE them and a spy on it (and a real notification row
+        # inside the simulation) is still a notification attempted.
+        return False
     try:
         from app.services.notification_service import NotificationService
         from app.services.project_order_inquiry_service import ProjectOrderInquiryService
