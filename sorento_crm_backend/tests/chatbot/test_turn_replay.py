@@ -755,6 +755,13 @@ def _write_session_vars(session_factory, *, contact_id: Any, payload: dict[str, 
 # --------------------------------------------------------------------------- #
 
 
+def _recorded_calls(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    """The turn's recorded tool calls. A `{"kind": "tool", "domain": ...}` trace entry
+    (`turn/fetch.py::_fetch_one`) names no tool; the recorder reads it as `tool` None,
+    which is not a call and which no real call could ever match."""
+    return [e for e in turn.get("tool_results") or [] if isinstance(e, dict) and e.get("tool")]
+
+
 def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[dict[str, Any]]:
     """Installs the four stubs (AC-1590's own list) and returns the list every REAL
     MCP tool call this step makes gets appended to (`{"tool": name, "args": {...}}`,
@@ -805,7 +812,7 @@ def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[di
     )
     monkeypatch.setattr(engine_mod.business_services, "production_services", lambda db, *, space_id=None: bundle)
 
-    tool_results = turn.get("tool_results") or []
+    tool_results = _recorded_calls(turn)
     by_tool: dict[str, list[dict[str, Any]]] = {}
     for entry in tool_results:
         by_tool.setdefault(entry.get("tool"), []).append(entry)
@@ -813,8 +820,17 @@ def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[di
     tool_calls: list[dict[str, Any]] = []
 
     from app.services.ai_assistant_service import MCPRuntimeClient
+    from app.services.chatbot.lanes.business.services import REPORT_MEASURE_OF
+
+    legacy_of = {measure: legacy for legacy, measure in REPORT_MEASURE_OF.items()}
 
     def _fake_call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        # REPORTS-STEP2 S5a: the lane traces `crm_sales_report` / `crm_outstanding_report` with its own
+        # args and the MCP seam sends `crm_report` + the registry key (`services._mcp_call`), so the
+        # call is read back under the name and args the trace recorded.
+        legacy = legacy_of.get(arguments.get("measure")) if name == "crm_report" else None
+        if legacy and legacy in by_tool:
+            name, arguments = legacy, {k: v for k, v in arguments.items() if k != "measure"}
         tool_calls.append({"tool": name, "args": dict(arguments)})
         bucket = by_tool.get(name)
         if not bucket:
@@ -822,7 +838,13 @@ def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[di
                 f"replay case called tool {name!r} with no recorded tool_results entry for it"
             )
         entry = bucket.pop(0) if len(bucket) > 1 else bucket[0]
-        return json.dumps(entry.get("envelope") or {})
+        envelope = entry.get("envelope") or {}
+        if isinstance(envelope, dict) and envelope.get("truncated") is True:
+            raise AssertionError(
+                f"recorded {name!r} envelope was truncated by the trace's 8 KB cap "
+                f"(trace.cap_envelope, {envelope.get('bytes')} bytes): not replayable, re-record it whole"
+            )
+        return json.dumps(envelope)
 
     monkeypatch.setattr(MCPRuntimeClient, "call_tool", _fake_call_tool)
     return tool_calls
@@ -894,7 +916,7 @@ def _compare(
     # recorded `tool_results` entries directly (the ground truth `_pending_of`/
     # `_expected_of` derived `expected.tools`' `args_keys` summary FROM, so this is
     # the more precise source, not a second copy that can drift from it).
-    recorded_tool_results = (turn or {}).get("tool_results") or []
+    recorded_tool_results = _recorded_calls(turn or {})
     if recorded_tool_results or tool_calls:
         expected_pairs = {
             (r.get("tool"), tuple(sorted((r.get("args") or {}).keys()))) for r in recorded_tool_results
