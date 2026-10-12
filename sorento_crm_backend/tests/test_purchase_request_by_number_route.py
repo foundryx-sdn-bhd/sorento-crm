@@ -3,8 +3,8 @@
 * `GET /api/v1/procurement/purchase-requests/by-number/{number}` on the existing procurement
   router and auth (`get_current_user_or_api_key`); returns the request with its lines; 404 for
   an unknown number; no write method on the path.
-* MCP tool `crm_purchase_request_by_number`: a catalogue read (`read_only` True or GET) that is
-  also in the chatbot's frozen read-only allow-list.
+* The MCP tool allow-list check lives in tests/chatbot/test_purchase_request_by_number_tool.py
+  (it imports app.services.chatbot, which the import boundary keeps inside tests/chatbot/).
 
 Postgres only; rows seeded on a blank schema.
 """
@@ -23,7 +23,6 @@ from app.models.procurement import PurchaseRequestHeader, PurchaseRequestLine
 from tests._pg_fixture import blank_session, unique_code
 
 PATH = "/api/v1/procurement/purchase-requests/by-number/{number}"
-TOOL = "crm_purchase_request_by_number"
 
 
 @pytest.fixture
@@ -99,14 +98,3 @@ def test_by_number_requires_auth():
             app.dependency_overrides.pop(deps.get_db, None)
     assert resp.status_code in (401, 403), resp.status_code
 
-
-def test_mcp_tool_is_a_catalogue_read_and_in_the_chatbot_allow_list():
-    from app.services.chatbot.lanes.business.fetch import CHATBOT_READ_ONLY_TOOLS
-    from app.services.mcp_tool_capability_service import _load_catalog_specs
-
-    specs = {s.name: s for s in _load_catalog_specs()}
-    assert TOOL in specs, f"{TOOL} missing from the MCP catalogue"
-    spec = specs[TOOL]
-    assert str(spec.method).upper() == "GET" or spec.read_only is True
-    assert "purchase-requests/by-number" in str(spec.path)
-    assert TOOL in CHATBOT_READ_ONLY_TOOLS
