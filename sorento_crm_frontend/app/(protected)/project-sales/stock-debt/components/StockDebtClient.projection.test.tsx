@@ -188,7 +188,7 @@ describe('StockDebtClient projected balance', () => {
       'p1', '2026-12', '', undefined, 'all', true,
     );
     expect(line.textContent).toBe(
-      'This month -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month · Projected -305',
+      'Project bins -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month · Projected -305',
     );
   });
 
@@ -218,7 +218,7 @@ describe('StockDebtClient projected balance', () => {
     fireEvent.click(await screen.findByRole('button', { name: /SRTWT2215, Dec 26/ }));
     const line = await screen.findByTestId('stock-debt-projection-line');
     expect(line.textContent).toBe(
-      'This month -38 · Carried in +10 · Pool supply 5,191 (BRW on hand 191, HQ PO 5,000) applied to this month · Dealer orders -15 · Projected +5,148 · Carried forward +5,148',
+      'Project bins -38 · Carried in +10 · Pool supply 5,191 (BRW on hand 191, HQ PO 5,000) applied to this month · Dealer orders -15 · Projected +5,148 · Carried forward +5,148',
     );
   });
 });

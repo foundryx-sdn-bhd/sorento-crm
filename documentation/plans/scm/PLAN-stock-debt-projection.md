@@ -28,7 +28,7 @@ of `project + pool_supply - dealer` over the axis, plus TBA. Under the switch th
 `date_from` (demand before it still takes its share); the axis still starts at its month.
 
 The drill line states it plainly, for example (owner's C-FHSS12, Book=Project):
-"This month -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
+"Project bins -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
 Projected -305". Carried in, dealer orders and carried forward appear when not zero.
 
 Prod shape (owner, 12 Oct 2026, after HQ was made its own pool): Book=Project months Oct -38,

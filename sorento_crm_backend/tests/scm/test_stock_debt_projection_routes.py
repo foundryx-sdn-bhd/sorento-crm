@@ -23,6 +23,7 @@ from tests.scm.test_stock_debt_routes import (
     BASE,
     TODAY,
     _client,
+    _confirmed_hold,
     _demand,
     _months_ahead,
     _order_back_link_on_po,
@@ -435,3 +436,84 @@ def test_c_fhss12_pool_supply_applied_to_the_earliest_shortfall(scm_app):
         {"label": f"{marker}BRW PO", "qty": 15.0},
     ]
     assert cell["projection"]["carried_out"] == 0.0
+
+
+def test_a_pool_order_holding_project_stock_is_not_asked_of_the_pool_again(scm_app):
+    """Review T1: a BRW order of 80 holds 50 of BRW-BB's stock through a confirmed
+    decision. Only its other 30 is asked of the pool; the 50 left the BB pile, so the BB
+    line due today is short its full 100. Oct: 1,020 - 30 - 100 = 890."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True)
+    bin_ = _warehouse(
+        db, f"{seed['marker']}BRW-BB2", planning=True, segment="project", pool=seed["pool"]
+    )
+    # The BB line of `_seed` sits at its own bin; the held stock sits at a sister bin of
+    # the same group, so the BB line could have drawn it had nobody held it.
+    from app.models.order import SalesOrderLine
+
+    db.query(SalesOrderLine).filter(
+        SalesOrderLine.product_id == seed["product"].id,
+        SalesOrderLine.required_date == TODAY,
+    ).update({"warehouse_id": bin_.id})
+    _stock(db, seed["product"], bin_, 50)
+    _order, dealer_line = _demand(
+        db, seed["product"], seed["pool"], qty=80, required_date=TODAY,
+        so_number=f"{seed['marker']}-SO-DEALER",
+    )
+    _project_order, project_line = _project_line_for(db, dealer_line)
+    _confirmed_hold(db, project_line, bin_, 50)
+    with TestClient(app) as c:
+        projected, _ = _row(c, seed, projected="true")
+    assert _balances(projected) == [890.0, 890.0, 690.0, 390.0]
+
+
+def test_a_tba_pool_order_is_left_out_in_both_books(scm_app):
+    """Review T2: a pool order dated in the TBA range sits in its own column. Book=Project
+    (pools outside the span) must not subtract it any more than Book=All does."""
+    from app.services.scm.stock_debt_service import StockDebtService
+
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True)
+    tba = StockDebtService(db)._tba_from() + timedelta(days=30)
+    _demand(
+        db, seed["product"], seed["pool"], qty=500, required_date=tba,
+        so_number=f"{seed['marker']}-SO-TBA",
+    )
+    with TestClient(app) as c:
+        project, _ = _row(c, seed, projected="true", book="project")
+        every, _ = _row(c, seed, projected="true")
+        in_debt = c.get(
+            BASE, params={"query": seed["marker"], "projected": "true", "book": "project"}
+        ).json()
+    assert _balances(project) == [920.0, 920.0, 720.0, 420.0]
+    assert _balances(every) == _balances(project)
+    # Counted as a dated pool order it would drive a far month below 0 and list the
+    # product as in debt; it is TBA, so the projection never goes below 0.
+    assert str(seed["product"].id) not in [row["product_id"] for row in in_debt["data"]]
+
+
+def test_pool_sources_read_by_location_then_on_hand_before_po(scm_app):
+    """Review nit: an in-span pool that sorts after an out-of-span one still reads in
+    location order in the drill."""
+    app, db = _client(scm_app)
+    marker = f"ZZTPJ{_u()[:6]}".upper()
+    inside = _warehouse(db, f"{marker}ZPOOL", planning=False, segment="dealer")
+    inside.pool_warehouse_id = inside.id
+    outside = _warehouse(db, f"{marker}APOOL", planning=False, segment="dealer")
+    bin_ = _warehouse(db, f"{marker}ZPOOL-BB", planning=True, segment="project", pool=inside)
+    db.flush()
+    product = _product(db, f"{marker}-ORDER")
+    _stock(db, product, inside, 20)
+    _po_line(db, product, inside, qty=5, delivery=TODAY - timedelta(days=1), number=f"{marker}-P1")
+    _po_line(db, product, outside, qty=10, delivery=TODAY - timedelta(days=1), number=f"{marker}-P2")
+    _demand(db, product, bin_, qty=100, required_date=TODAY, so_number=f"{marker}-SO")
+    with TestClient(app) as c:
+        cell = c.get(
+            f"{BASE}/{product.id}/cell",
+            params={"month": month_key(TODAY), "projected": "true"},
+        ).json()
+    assert cell["projection"]["pool_sources"] == [
+        {"label": f"{marker}APOOL PO", "qty": 10.0},
+        {"label": f"{marker}ZPOOL on hand", "qty": 20.0},
+        {"label": f"{marker}ZPOOL PO", "qty": 5.0},
+    ]

@@ -21,7 +21,7 @@ Plan: `PLAN-stock-debt-projection.md`. Owner answers 12 Oct 2026.
 - **AC-7** A chip "Projected balance" shows while the switch is on and clears it; the
   export follows the switch.
 - **AC-8** A month drill opened while the switch is on states the month plainly, e.g.
-  "This month -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
+  "Project bins -377 · Pool supply 72 (BRW on hand 57, BRW PO 15) applied to this month ·
   Projected -305" (carried in, dealer orders and carried forward when not zero), and lists the
   out-of-span pool documents dated in that month in Supply.
 - **AC-9** With `date_from` set, demand before it still takes its share of pool stock before

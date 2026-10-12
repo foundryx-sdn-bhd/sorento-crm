@@ -179,10 +179,11 @@ function signedQty(value: number): string {
   return value > 0 ? `+${value.toLocaleString()}` : value.toLocaleString();
 }
 
-/** The drill's projection line, plainly: what this month is short or spare on its own,
- *  then each pool term that is not zero, then the result and what carries on. */
+/** The drill's projection line, plainly: what the project bins are short or spare this
+ *  month (the page's own figure under Book=Project), then each pool term that is not zero,
+ *  then the result and what carries on. */
 function projectionParts(projection: StockDebtProjection): string[] {
-  const parts = [`This month ${signedQty(projection.month_balance)}`];
+  const parts = [`Project bins ${signedQty(projection.month_balance)}`];
   if (projection.carried_in) parts.push(`Carried in ${signedQty(projection.carried_in)}`);
   if (projection.pool_supply) {
     const sources = (projection.pool_sources ?? [])
