@@ -4125,6 +4125,17 @@ class ProjectOrderInquiryService:
         # twice, once here and once on the row raised below; and re-raising the FULL hole
         # on top of it - which is what a plain `raised` test does to it - would have told
         # purchasing to buy the covered part a second time.
+        def _hole_key(row: OrderInquiryRow) -> Tuple[Any, Any, Any, bool]:
+            return (
+                str(row.so_line_id),
+                row.item_code or None,
+                row.stock_location or None,
+                _is_borrow_order_back(row),
+            )
+
+        # Read BEFORE the loop below overwrites a cancelled row's note, which is what
+        # `_is_borrow_order_back` reads.
+        key_before = {row.id: _hole_key(row) for row in rows}
         linked = self._linked_qty_by_row([row.id for row in rows])
         placed: Dict[Tuple[Optional[str], Optional[str]], Decimal] = {}
         cancelled_this_pass: List[OrderInquiryRow] = []
@@ -4153,14 +4164,6 @@ class ProjectOrderInquiryService:
         # Review round 2 Blocking 4 (AC-LT-18): an ORDER_BACK row is linkable and can
         # carry a suggestion, so a hole this pass cancels must not go on holding it.
         self._drop_suggested_links(cancelled_this_pass)
-
-        def _hole_key(row: OrderInquiryRow) -> Tuple[Any, Any, Any]:
-            return (
-                str(row.so_line_id),
-                row.item_code or None,
-                row.stock_location or None,
-                _is_borrow_order_back(row),
-            )
 
         re_raised: set = set()
         created = 0
@@ -4205,7 +4208,7 @@ class ProjectOrderInquiryService:
         # cancel - unless this pass re-raised the same hole, whose own line restates it. A
         # line CS switched from ORDER BACK to ORDER lost its order back here in silence.
         for row in cancelled_this_pass:
-            if _hole_key(row) not in re_raised:
+            if key_before[row.id] not in re_raised:
                 self._record_handover(
                     row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id
                 )

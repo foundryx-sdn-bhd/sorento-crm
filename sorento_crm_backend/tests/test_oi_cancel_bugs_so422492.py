@@ -477,3 +477,39 @@ def test_review_2_5_6_a_split_needs_same_date_a_kept_qty_and_no_reserve_link(api
     handled = service._apply_pure_splits(inquiry, decision, plain)
     assert handled == {str(line_x.id)} | {str(line.id) for line in fresh}, "control"
     assert Decimal(str(row_x.qty)) == Decimal("22")
+
+
+def test_review_r1_an_unchanged_borrow_hole_restated_prints_no_cancel(api):
+    """Review round 2, R1: a reconfirm that restates the SAME borrow hole (same line, item,
+    donor location) cancels the old raised row and raises the new one; only the raise is
+    told - E's cancel line is for a raise that is gone, not one restated."""
+    from types import SimpleNamespace
+
+    from app.models.project_so import INQUIRY_RAISED, IV_ORDER_BACK
+
+    client, world = api
+    db = world.db
+    _core_so_, order, _cores, (line_592, _line_other) = _two_bought_lines(api)
+    row_592 = _order_row(world, line_592)
+    note = "Order-back: borrowed 5 from BRW-BB"
+    hole = OrderInquiryRow(
+        company_id=row_592.company_id, order_inquiry_id=row_592.order_inquiry_id,
+        so_line_id=line_592.id, item_code=row_592.item_code, qty=Decimal("5"),
+        delivery_date=D_592, stock_location="BRW-BB", verb=IV_ORDER_BACK, note=note,
+        covered_by=None, supply_decision_id=row_592.supply_decision_id,
+        state=INQUIRY_RAISED,
+    )
+    db.add(hole)
+    db.flush()
+    service = ProjectOrderInquiryService(db)
+    inquiry = SimpleNamespace(id=row_592.order_inquiry_id)
+    decision = SimpleNamespace(id=row_592.supply_decision_id, revision_no=3)
+    service._raise_borrow_shortfalls(
+        order, inquiry, decision,
+        [{"line": line_592, "item_code": row_592.item_code, "qty": Decimal("5"),
+          "stock_location": "BRW-BB", "required_date": D_592, "note": note}],
+        covered_line_ids={str(line_592.id)},
+    )
+    db.flush()
+    assert hole.state == INQUIRY_CANCELLED, "premise: the old hole is superseded"
+    assert not _handovers_for(world, hole), [h["line"]["remark"] for h in _handovers_for(world, hole)]
