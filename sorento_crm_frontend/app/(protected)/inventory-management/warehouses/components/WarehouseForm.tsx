@@ -100,14 +100,15 @@ export default function WarehouseForm({ warehouseId, onSuccess }: WarehouseFormP
     }
   }, [warehouse, isEditMode, form]);
 
-  // Read during render so react-hook-form tracks it for the submit below.
-  const { dirtyFields } = form.formState;
+  // Read during render so react-hook-form keeps tracking it; the submit reads it fresh.
+  void form.formState.dirtyFields;
 
   const onSubmit = async (data: WarehouseSchemaType) => {
     try {
       if (isEditMode && warehouseId) {
         // An edit sends only what the user changed. The backend writes every key it is sent,
         // so a whole-form payload would overwrite a value the form cannot show with null.
+        const { dirtyFields } = form.formState;
         const changed = Object.fromEntries(
           Object.entries(data).filter(([key]) => dirtyFields[key as keyof WarehouseSchemaType]),
         ) as Partial<WarehouseSchemaType>;

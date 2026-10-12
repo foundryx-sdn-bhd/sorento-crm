@@ -1,6 +1,6 @@
 # PLAN: warehouse form keeps a self-pool
 
-Status: in progress (small fix track: FE form + BE pin tests, no migration, no auth change)
+Status: built, reviewer READY, browser PASS, PR #1595 awaiting CI and merge (small fix track: FE form + BE pin tests, no migration, no auth change)
 
 ## Defect
 
