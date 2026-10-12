@@ -263,27 +263,6 @@ function fallbackRung(
 }
 
 /**
- * Which kind this piece of supply is. The rung decides; the code never does.
- *
- * `kind` is consulted in two places and no others. FIRST, where there is no rung to consult:
- * Buy and incoming carry their own kind, and a component frozen before ladder v2 - or drafted
- * in the Amend dialog, which sends no rung at all - carries none (`SupplyComponent.rung` is
- * optional for exactly that reason). SECOND, on `group_take`, the one rung that composes two
- * kinds: floor stock as a Reserve, water as a `timely_spo`. That is not the code deciding -
- * the engine stamped the kind, and the two are different promises.
- *
- * Two different fallbacks, because a reserve and a borrow are not the same question:
- *
- * * an unrunged RESERVE is read on the OWNERSHIP GROUP (`fallbackRung`): the agent's own group
- *   at any site is "Use own location", a plain site code is the shared pool, and anybody
- *   else's group is stock this line has to borrow;
- * * an unrunged BORROW is a BORROW, whatever the location says. Reading it on the group would
- *   call a borrow from a donor at the line's own `-BB` location "Use own location", which is
- *   the one thing a borrow is not: the quantity belongs to another order and it raises an
- *   order-back. It reads `borrow_order` when the donor sales order is named and
- *   `borrow_other` when it is not, which is exactly what those two words distinguish.
- */
-/**
  * Owner rule, 12 Oct 2026 (`PLAN-plan-four-options-12oct.md`, Q2 + Q4(a)): every borrow READS
  * "Borrow", the line detail included. The planner no longer names a donor order or borrows a
  * later order's SPO, and an older decision that did still keeps its donor in its data; only
@@ -307,7 +286,29 @@ export function rowOf(
   return kind;
 }
 
-/** `rowOf` before the four-options fold: the ladder's own kind for this part. */
+/**
+ * Which kind this piece of supply is. The rung decides; the code never does.
+ *
+ * `kind` is consulted in two places and no others. FIRST, where there is no rung to consult:
+ * Buy and incoming carry their own kind, and a component frozen before ladder v2 - or drafted
+ * in the Amend dialog, which sends no rung at all - carries none (`SupplyComponent.rung` is
+ * optional for exactly that reason). SECOND, on `group_take`, the one rung that composes two
+ * kinds: floor stock as a Reserve, water as a `timely_spo`. That is not the code deciding -
+ * the engine stamped the kind, and the two are different promises.
+ *
+ * Two different fallbacks, because a reserve and a borrow are not the same question:
+ *
+ * * an unrunged RESERVE is read on the OWNERSHIP GROUP (`fallbackRung`): the agent's own group
+ *   at any site is "Use own location", a plain site code is the shared pool, and anybody
+ *   else's group is stock this line has to borrow;
+ * * an unrunged BORROW is a BORROW, whatever the location says. Reading it on the group would
+ *   call a borrow from a donor at the line's own `-BB` location "Use own location", which is
+ *   the one thing a borrow is not: the quantity belongs to another order and it raises an
+ *   order-back. It reads `borrow_order` when the donor sales order is named and
+ *   `borrow_other` when it is not, which is exactly what those two words distinguish.
+ *
+ * `rowOf` is this, with the four-options borrow fold applied on top.
+ */
 function rowOfLadder(
   part: SupplyPart,
   ownLocation?: string | null,
