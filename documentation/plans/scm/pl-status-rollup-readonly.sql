@@ -57,3 +57,30 @@ JOIN products pr ON pr.id = l.product_id
 LEFT JOIN spo_allocations a ON a.inbound_shipment_id = s.id AND a.product_id = l.product_id
 WHERE upper(trim(s.shipping_container_number)) = 'TCLU8176397'
 ORDER BY pr.product_code, a.retired_at NULLS FIRST, a.spo_number;
+
+-- Q4. Scope of the line-status change (reviewer finding 2): stored shipment lines whose
+--     product carries a retired, never-received allocation on the same container, so the
+--     visible total (what the fix judges the status on) is below the unfiltered one.
+--     lines_in_scope may change status. over_shipped_in_scope is the subset shipped above
+--     the visible allocation: once that allocation is received such a line reads
+--     'received' (the existing rule: received = the allocated part arrived), and the
+--     unallocated rest stops counting as incoming. The exact per-line flips are the
+--     backfill dry run (--stale-headers).
+WITH alloc AS (
+    SELECT a.inbound_shipment_id AS shipment_id, a.product_id,
+           sum(a.allocated_quantity) AS all_alloc,
+           sum(a.allocated_quantity) FILTER (
+               WHERE a.retired_at IS NULL OR coalesce(a.quantity_received, 0) > 0) AS visible_alloc
+    FROM spo_allocations a
+    WHERE a.inbound_shipment_id IS NOT NULL
+    GROUP BY 1, 2
+)
+SELECT count(*) AS lines_in_scope,
+       count(*) FILTER (WHERE coalesce(l.quantity_shipped, 0) > coalesce(al.visible_alloc, 0))
+           AS over_shipped_in_scope,
+       count(DISTINCT l.shipment_id) AS containers_in_scope
+FROM inbound_shipment_lines l
+JOIN alloc al ON al.shipment_id = l.shipment_id AND al.product_id = l.product_id
+JOIN inbound_shipments s ON s.id = l.shipment_id
+WHERE coalesce(al.visible_alloc, 0) < al.all_alloc
+  AND s.shipment_status NOT IN ('closed', 'draft');

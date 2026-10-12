@@ -319,7 +319,7 @@ class TestOwnerReadOnlyQueries:
             body = "\n".join(l for l in chunk.splitlines() if not l.strip().startswith("--")).strip()
             if body:
                 statements.append(body)
-        assert len(statements) == 3
+        assert len(statements) == 4
         return statements
 
     def _stale(self, db, seeded, line_status: str) -> None:
@@ -354,3 +354,45 @@ class TestOwnerReadOnlyQueries:
         q3 = self._queries()[2].replace("'TCLU8176397'", ":c")
         rows = db.execute(text(q3), {"c": seeded["container"].upper()}).mappings().all()
         assert sum(1 for r in rows if r["retired_at"] is not None) == 1
+
+
+class TestListReadRollup:
+    """`list_shipments` rolls the header up from the STORED line statuses on read, with
+    no refresh in between: the stored header is forced stale by raw UPDATE."""
+
+    def _stale_header(self, db, line_statuses: list[str]) -> str:
+        seeded = _container(db, [0] * len(line_statuses))
+        for line_id, status in zip(seeded["line_ids"], line_statuses):
+            db.execute(
+                text("UPDATE inbound_shipment_lines SET line_status = :s WHERE id = :id"),
+                {"s": status, "id": line_id},
+            )
+        db.commit()
+        return seeded["shipment_id"]
+
+    def test_all_stored_received_reads_fully_received(self, db):
+        shipment_id = self._stale_header(db, ["received", "received"])
+
+        assert _listed_status(db, shipment_id) == "fully_received"
+        assert _stored(db, shipment_id)[0] == "in_transit"
+
+    def test_some_stored_receipt_reads_partially_received(self, db):
+        shipment_id = self._stale_header(db, ["partially_received", "allocated"])
+
+        assert _listed_status(db, shipment_id) == "partially_received"
+
+    def test_no_stored_receipt_keeps_the_header(self, db):
+        shipment_id = self._stale_header(db, ["allocated", "in_transit"])
+
+        assert _listed_status(db, shipment_id) == "in_transit"
+
+
+def test_q4_counts_the_lines_the_status_change_can_reach(db):
+    queries = TestOwnerReadOnlyQueries._queries()
+    before = db.execute(text(queries[3])).mappings().one()
+    _container(db, [QTY, QTY, QTY], retired_on_first=True)
+
+    after = db.execute(text(queries[3])).mappings().one()
+    assert after["lines_in_scope"] == before["lines_in_scope"] + 1
+    assert after["containers_in_scope"] == before["containers_in_scope"] + 1
+    assert after["over_shipped_in_scope"] == before["over_shipped_in_scope"]
