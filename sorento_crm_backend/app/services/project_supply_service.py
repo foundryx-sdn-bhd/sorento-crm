@@ -3820,14 +3820,18 @@ class ProjectSupplyService:
         return self._borrow_from_order_value
 
     def _names_its_order(self, item: Any) -> bool:
-        """Is this confirmed borrow an ORDER borrow? The switch on AND the donor order named.
+        """Is this confirmed borrow an ORDER borrow? The switch on, AND the borrow names the
+        order it takes from: a donor sales order, or another project's hold.
 
         Owner, 12 Oct 2026: what the planner suggests confirms exactly as displayed. With the
         switch on, the planner still proposes a later order's stock as a location's Borrow
-        (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off), naming no order, so Confirm writes the
-        location shape for it; a borrow a person picked with the donor named keeps the
+        (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off), naming neither, so Confirm writes the
+        location shape for it; a borrow a person picked with the order named keeps the
         order-borrow shape. With the switch off this is always False, as before (K5)."""
-        return self.borrow_from_order and bool(getattr(item, "donor_so_number", None))
+        return self.borrow_from_order and (
+            bool(getattr(item, "donor_so_number", None))
+            or getattr(item, "source", None) == ALLOC_SOURCE_OTHER_PROJECT
+        )
 
     def _eligible_donor(
         self,

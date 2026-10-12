@@ -425,6 +425,7 @@ def test_qty_up_with_own_stock_for_the_whole_unit_reserves_it_and_cancels_the_bu
 # AC-B2: a later donor holding the WHOLE unit on hand borrows whole, order-back
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_qty_up_with_a_later_donor_holding_the_whole_unit_borrows_whole_and_raises_order_back():
     with blank_session() as db:
         borrow_from_order_on(db)

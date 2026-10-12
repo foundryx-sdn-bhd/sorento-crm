@@ -850,6 +850,7 @@ def test_the_step_two_refusal_names_the_window_date():
 # --------------------------------------------------------------------------- AC-S3-5
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_borrowing_from_a_decided_donor_supersedes_its_decision_and_raises_its_order_back():
     """AC-S3-5 (R9, R25). The donor's own decision is superseded in the SAME transaction,
     with the borrower named in the reason, and the donor gets an ORDER_BACK at its own
@@ -1041,6 +1042,7 @@ def test_the_engines_own_step_two_proposal_passes_the_confirm_gate_unchanged():
     assert sources == ["other_location"], sources
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_multi_line_donor_keeps_every_other_lines_hold_when_one_line_is_borrowed():
     """R25 as fixed 30 Aug (review finding: `_supersede_borrowed_donors`).
 
