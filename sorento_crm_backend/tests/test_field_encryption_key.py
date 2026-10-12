@@ -282,3 +282,40 @@ def test_an_implicit_development_default_does_not_pass_on_a_production_entrypoin
             call()
     else:
         call()
+
+
+def test_backfill_covers_every_runtime_settings_secret():
+    """runtime_settings stores its SECRET_FIELDS with encrypt_secret in system_settings.
+    A secret column the script does not list stays on the JWT-derived key after --apply,
+    and the JWT_SECRET rotation then makes it unreadable."""
+    from app.services.runtime_settings import SECRET_FIELDS
+    from scripts.reencrypt_field_secrets import COLUMNS
+
+    listed = {(table, column) for table, column, _ in COLUMNS}
+    for name in SECRET_FIELDS:
+        assert ("system_settings", f"{name}_ciphertext") in listed, name
+
+
+def test_runtime_settings_secrets_survive_apply_then_jwt_rotation(monkeypatch):
+    from app.models.user import SystemSetting
+    from app.services.runtime_settings import SECRET_FIELDS
+    from scripts.reencrypt_field_secrets import backfill
+
+    secret = "ZZT-fake-runtime-secret-6666"
+    with blank_session() as db:
+        row = SystemSetting()
+        db.add(row)
+        db.flush()
+        for name in SECRET_FIELDS:
+            db.execute(
+                text(f"UPDATE system_settings SET {name}_ciphertext = :t WHERE id = :i"),
+                {"t": _jwt_token(secret), "i": row.id},
+            )
+
+        backfill(db, apply=True)
+
+        monkeypatch.setattr(app_settings, "jwt_secret", "ZZT-jwt-after-rotation")
+        for name in SECRET_FIELDS:
+            stored = _raw(db, "system_settings", f"{name}_ciphertext", row.id)
+            assert _only(stored, KEY_A) == secret, name
+            assert decrypt_secret(stored) == secret, name
