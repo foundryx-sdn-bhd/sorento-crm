@@ -134,4 +134,8 @@ Q5. Simulate runs as the admin (their own per-project rights), not impersonating
 2. Coder: route `POST /fulfilment-planning/simulate-confirm` (body = `ConfirmManyBody`), tripwires,
    probe; FE service + hook + gear entry + results block mode.
 3. Reviewer + security-reviewer + cloud browser pass; hand test script.
-4. Rebase after PR #1580 (touches `confirm_supply`) merges.
+4. Rebase after PR #1580 (touches `confirm_supply`) merges. #1580 adds `stock_short_notices` to
+   the Confirm results (undelivered shortfall warnings, never a block); once on main, the
+   simulation result block renders them beside held-back lines (they are the owner's
+   "stock-short warnings"). Until then the block shows `lines_held_back` and
+   `landed_buy_notices`, which main already returns.
