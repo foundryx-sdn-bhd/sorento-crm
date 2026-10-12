@@ -1817,6 +1817,7 @@ PO 4500123", "PO no 4500123", "our PO 4500123", "my PO is 4500123", "PO#4500123"
 (you do not know the asker's audience): fill po_refs the same way whoever asks, and keep
 every other key as you would without it. A message with no PO number: null. Never invent
 a number, never take one from an earlier turn.
+po_refs is ONLY the customer's own PO reference. A number you put in entities as an order or document number (a delivery order, sales order or invoice number, e.g. "PS202609-1111" or "2609-0042") is never a po_ref, with or without its letters.
 
 
 == CHAT REPORT: a ranking, split, trend or count of what customers ASK THE BOT (questions, topics,

@@ -1,88 +1,67 @@
-"""SO-PO-REF guard (crew, 12 Oct 2026): the parser intermittently copies a delivery order
-number it ALSO emitted as an order entity into `po_refs`, minus its letters
-("PS202609-0469" -> po_refs ["202609-0469"]). The turn then took the PO-ref arm and a
-contact without the SO grant was told "Sales order figures are not enabled".
+"""SO-PO-REF (crew, 12 Oct 2026): the parser intermittently copied a delivery order number it
+ALSO emitted as an order entity into `po_refs`, minus its letters ("PS202609-0469" ->
+po_refs ["202609-0469"]); the turn then took the PO-ref arm and a contact without the SO
+grant was told "Sales order figures are not enabled".
 
-Rule: a `po_refs` string that is a non-PO order/document entity of the same message with
-that entity's leading letters-only document prefix dropped is not a PO ref (reference fold:
-case and separators; never a word list). Kept: an exact repeat (SO-PO-REF puts a PO number in
-both on purpose, `test_po_ref_ask.TestPoNumberAlsoEmittedAsAnEntity`), a "PO" prefix
-(`po_ref_key` strips it, so it is the PO itself), a PO-kind entity, an unrepeated ref.
+Reviewer ruling (12 Oct): a code guard that strips a letters-only prefix is a heuristic over
+parser text (our own DO numbers often carry no letters), so the PARSER decides: the v56
+rebuild's PO REFS section says a number emitted as an order/document entity is never a
+po_ref (`alembic/data/chatbot_semantic_parser.refkinds-v56-20261011.txt`, pinned by
+`test_ref_kinds_v56_publish.py`). This file replays the parser on that text.
+
+Opt-in, never in CI: `CHATBOT_LIVE_LLM=1` (the suite's `live_external` marker). Model
+`gpt-5.4-mini` at temperature 0, the production parser model.
 """
 from __future__ import annotations
 
-import uuid
-from typing import Any
+import os
+from pathlib import Path
 
 import pytest
 
-from tests.chatbot.test_engine import _parser_output
-from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
-from tests.chatbot.test_ref_probes_answer import DO_LIST, _seed_do
-from tests.chatbot.test_so_number_ask import OUTSTANDING_KEY, SO_NOT_ENABLED
+pytestmark = pytest.mark.live_external
 
-DO_NO = "PS202609-0469"
+TODAY = "Monday, 12 October 2026"
+TEXT = (
+    Path(__file__).resolve().parents[2] / "alembic" / "data" / "chatbot_semantic_parser.refkinds-v56-20261011.txt"
+)
+
+ASKS = [
+    "PS202609-0469 done deliver?",
+    "status PS202610-0123",
+    "PS 202610-0123 delivered?",
+    "PS202610-0777 sudah hantar?",
+    "PS202609-0555 已送货吗",
+    "order PS202610-0888 status",
+]
 
 
-def _qf(raw: str, hint: str, po_refs: list[str]) -> dict[str, Any]:
-    return _parser_output(
-        domain_hint="order",
-        intent_hint="check_order",
-        order_status=None,
-        entities=[{"raw": raw, "hint": hint, "canonical_code": None, "current_message": True, "confident": True}],
-        po_refs=po_refs,
+def _fold(value: str) -> str:
+    return "".join(ch for ch in value.upper() if ch.isalnum())
+
+
+def _parse(message: str) -> dict:
+    from app.services.chatbot.head import parser
+
+    config = parser.ParserConfig(
+        system_prompt=TEXT.read_text(encoding="utf-8").replace("{{current_date}}", TODAY),
+        prompt_version=0,
+        provider="openai",
+        model=os.environ.get("PO_REFS_LIVE_MODEL", "gpt-5.4-mini"),
+        api_key=os.environ.get("OPENAI_API_KEY") or "sk-proxy-injected",
     )
+    block = parser.build_user_block(previous_response="(none)", latest_user_message=message, pending_kind=None)
+    return dict(parser.parse(config, block))
 
 
-def _reply(session_factory, monkeypatch, qf, *, attributes) -> str:
-    result, _ = _run_turn(
-        session_factory,
-        monkeypatch,
-        qf=qf,
-        text_body=f"{DO_NO} done deliver?",
-        msg_id=f"ZZT-poguard-{uuid.uuid4().hex[:10]}",
-        attributes=list(attributes),
-        real_resolver=True,
-        mcp_response=DO_LIST,
-    )
-    return (result.reply or {}).get("text") or ""
-
-
-@pytest.mark.parametrize("po_ref", ["202609-0469", "2026090469", "202609 0469"])
-def test_po_ref_copied_from_an_order_entity_is_not_a_po_ref(session_factory, monkeypatch, po_ref):
-    _seed_contact(session_factory, variables={})
-    _seed_do(session_factory, DO_NO, None)
-    reply = _reply(session_factory, monkeypatch, _qf(DO_NO, "order", [po_ref]), attributes=())
-    assert reply.strip() != SO_NOT_ENABLED, reply
-    assert "not enabled" not in reply.lower(), reply
-
-
-def test_unit_guard_keeps_po_kinds_and_unrepeated_refs():
-    from app.services.chatbot.turn_runtime import _po_refs_not_order_entities
-
-    ents = [
-        {"raw": DO_NO, "hint": "order", "current_message": True},
-        {"raw": "4500123", "hint": "purchase_order", "current_message": True},
-        {"raw": "7781", "hint": "customer_po_ref", "current_message": True},
-        {"raw": "SO2610-0127", "hint": "sales_order", "current_message": True},
-    ]
-    refs = ["202609-0469", "4500123", "7781", "2610-0127", "9900", "PS1", "PS202609-0469"]
-    assert _po_refs_not_order_entities(refs, ents) == ["4500123", "7781", "9900", "PS1", "PS202609-0469"]
-
-
-def test_unit_guard_keeps_a_po_prefixed_order_entity_ref():
-    from app.services.chatbot.turn_runtime import _po_refs_not_order_entities
-
-    ents = [{"raw": "PO 4500123", "hint": "order", "current_message": True}]
-    assert _po_refs_not_order_entities(["4500123"], ents) == ["4500123"]
-
-
-def test_unit_guard_ignores_earlier_turn_entities_and_digit_mismatch():
-    from app.services.chatbot.turn_runtime import _po_refs_not_order_entities
-
-    ents = [
-        {"raw": DO_NO, "hint": "order", "current_message": False},
-        {"raw": "PS202609-0470", "hint": "order", "current_message": True},
-        {"raw": "A1B202609-0469", "hint": "order", "current_message": True},
-    ]
-    assert _po_refs_not_order_entities(["202609-0469"], ents) == ["202609-0469"]
+@pytest.mark.parametrize("message", ASKS)
+def test_an_order_entity_number_is_never_also_a_po_ref(message: str) -> None:
+    out = _parse(message)
+    order_keys = {
+        _fold(str(e.get("raw") or ""))
+        for e in out.get("entities") or []
+        if isinstance(e, dict) and e.get("hint") not in ("purchase_order", "customer_po_ref", "product")
+    }
+    for ref in out.get("po_refs") or []:
+        ref_key = _fold(ref)
+        assert not any(key.endswith(ref_key) for key in order_keys if ref_key), (message, out.get("po_refs"))

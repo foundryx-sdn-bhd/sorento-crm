@@ -6518,7 +6518,10 @@ def _run_stages_body(  # noqa: PLR0915
                         )
                         # REF-PROBES: a kind the asker NAMED that the data placed as another
                         # kind is said first ("No sales order X."), then the true kind's answer.
-                        narrowed_misses = narrowed_miss_lines(plan.trace.reconciled)
+                        narrowed_misses = narrowed_miss_lines(
+                            plan.trace.reconciled,
+                            visible=_reference_kinds(ctx, customer_scope, state_out.profile),
+                        )
                         if narrowed_misses and answer.text:
                             answer = dataclasses_replace(
                                 answer, text="\n".join(narrowed_misses) + "\n\n" + answer.text

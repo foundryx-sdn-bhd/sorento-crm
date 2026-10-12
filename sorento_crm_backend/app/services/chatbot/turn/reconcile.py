@@ -17,12 +17,18 @@ def kind_word(kind: str) -> str:
     return _KIND_WORDS.get(kind) or kind.replace("_", " ")
 
 
-def narrowed_miss_lines(reconciled: list[tuple[str, str, str]]) -> list[str]:
+def narrowed_miss_lines(
+    reconciled: list[tuple[str, str, str]], visible: list[str] | None = None
+) -> list[str]:
     """"No sales order X." for every token the asker NAMED a kind of that the data placed
-    as a kind outside it. An unnamed ("order") rewrite says nothing."""
+    as a kind outside it. An unnamed ("order") rewrite says nothing, and neither does a named
+    kind the asker may not see (`visible`, the turn's reference kinds; R5: a contact without
+    the SO grant never touches the SO kind)."""
     lines: list[str] = []
     for raw, old, new in reconciled:
         narrow = REFERENCE_NARROW.get(old)
+        if visible is not None and narrow is not None and not (narrow & set(visible)):
+            continue
         if narrow is not None and new not in narrow:
             lines.append(f"No {kind_word(old)} {raw}.")
     return lines

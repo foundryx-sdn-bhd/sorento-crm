@@ -3581,11 +3581,6 @@ def make_tool_runner(
         placed_so = placed_refs["so_numbers"]
         so_numbers = list(dict.fromkeys([*so_numbers, *placed_so]))
         envelope_unplaced = unplaced
-        if lane_out.get("po_refs"):
-            # SO-PO-REF guard (crew, 12 Oct 2026): a `po_refs` string the parser ALSO emitted
-            # as a non-PO order/document entity of this message is that entity, not a PO ref.
-            kept = _po_refs_not_order_entities(lane_out.get("po_refs"), jsc.array(jsc.get(verdict, "entities")))
-            lane_out = {**lane_out, "po_refs": kept or None}
         if not reads_customer_po_refs(profile) and lane_out.get("po_refs"):
             # SO-PO-REF: the audience decides what "PO" means. A staff turn never reads the
             # parser's `po_refs` (their PO is the supplier PO path, untouched).
@@ -4824,48 +4819,6 @@ def _code_of(entity: dict[str, Any]) -> str:
     spec that named an entity (every compatible row answered `"null"`).
     """
     return jsc.js_string(entity.get("code") or entity.get("canonical_code") or entity.get("raw")).strip().lower()
-
-
-#: Entity hints that name a PO kind: a `po_refs` string repeating one of these is the PO itself.
-_PO_KIND_HINTS = frozenset({"purchase_order", "customer_po_ref"})
-
-
-def _reference_fold(value: str) -> str:
-    """The resolver's reference fold (case and separators), as `po_ref_key` folds."""
-    return "".join(ch for ch in value.upper() if ch.isalnum())
-
-
-def _po_refs_not_order_entities(po_refs: Any, entities: list[Any]) -> list[str]:
-    """The parser's `po_refs` minus each one that is a current-message order/document entity
-    (not named a PO kind) with that entity's leading letters-only document prefix dropped
-    ("PS202609-0469" -> "202609-0469"). An exact repeat is kept: SO-PO-REF puts a PO number in
-    both on purpose (`test_po_ref_ask.TestPoNumberAlsoEmittedAsAnEntity`), and a PO prefix
-    `po_ref_key` already strips ("PO 4500123") is the PO itself. Structural, no word list."""
-    from app.services.scm.po_ref import po_ref_key
-
-    refs = [r for r in (po_refs if isinstance(po_refs, list) else []) if isinstance(r, str) and r.strip()]
-    keys: list[str] = []
-    for e in entities:
-        if not isinstance(e, dict) or e.get("current_message") is False:
-            continue
-        hint = e.get("hint")
-        if hint not in REFERENCE_NARROW or hint in _PO_KIND_HINTS:
-            continue
-        for word in (e.get("raw"), e.get("canonical_code")):
-            if isinstance(word, str) and (key := _reference_fold(word)):
-                keys.append(key)
-
-    def repeats(ref: str) -> bool:
-        ref_key = _reference_fold(ref)
-        if not ref_key or not any(ch.isdigit() for ch in ref_key):
-            return False
-        for key in keys:
-            prefix = key[: -len(ref_key)]
-            if key.endswith(ref_key) and prefix.isalpha() and po_ref_key(key) != po_ref_key(ref_key):
-                return True
-        return False
-
-    return [r for r in refs if not repeats(r)]
 
 
 def _po_ref_words(po_refs: Any, unplaced: dict[str, str]) -> list[str]:
