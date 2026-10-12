@@ -171,38 +171,66 @@ def test_gitignore_keeps_env_example_tracked(path):
 
 # AC-20 ---------------------------------------------------------------------
 
+GITLEAKS_SCRIPT = ROOT / "scripts" / "ci_gitleaks.sh"
+
+
 def _workflow() -> dict:
     return yaml.safe_load(_text(ROOT / ".github" / "workflows" / "deploy.yml"))
 
 
 def _gitleaks_job():
-    """The gitleaks job and its scan step (the step that runs `gitleaks git`)."""
+    """The job carrying the secret scan and its scan step.
+
+    Since CI-COST round 2 (#1577) the scan is a step of the PR gate that runs
+    `scripts/ci_gitleaks.sh`; a workflow step still running `gitleaks git` inline
+    counts too. The `gitleaks` job itself is gone."""
     jobs = _workflow()["jobs"]
     for name, job in jobs.items():
         for step in job.get("steps", []) or []:
-            if re.search(r"^\s*gitleaks git\b", str(step.get("run", "")), re.M):
+            run = str(step.get("run", ""))
+            if re.search(r"^\s*gitleaks git\b", run, re.M) or re.search(
+                r"^\s*bash scripts/ci_gitleaks\.sh\s*$", run, re.M
+            ):
                 return name, job, step
     return None, None, None
 
 
-def _gitleaks_install_step():
-    _, job, _ = _gitleaks_job()
-    assert job, "no gitleaks job"
-    for step in job.get("steps", []) or []:
-        if "releases/download" in str(step.get("run", "")):
-            return step
-    return None
+def _gitleaks_source() -> str:
+    """The text that installs and runs gitleaks: the script the step calls."""
+    _, _, step = _gitleaks_job()
+    assert step, "no gitleaks job or step in deploy.yml"
+    run = str(step.get("run", ""))
+    if "scripts/ci_gitleaks.sh" in run:
+        assert GITLEAKS_SCRIPT.is_file(), "deploy.yml calls scripts/ci_gitleaks.sh, which is missing"
+        return _text(GITLEAKS_SCRIPT)
+    return run
+
+
+def _expr(text: str, event: str, label: str = "", lean: str = "true"):
+    """Evaluate a GitHub Actions expression for one event (the subset deploy.yml uses)."""
+    expr = text.replace("${{", "").replace("}}", "").strip()
+    expr = re.sub(r"always\(\)", "True", expr)
+    expr = re.sub(r"github\.event\.label\.name", repr(label), expr)
+    expr = re.sub(r"github\.event_name", repr(event), expr)
+    expr = re.sub(r"needs\.changes\.outputs\.lean", repr(lean), expr)
+    expr = expr.replace("&&", " and ").replace("||", " or ").replace("!=", " != ")
+    expr = re.sub(r"(?<![=!<>])!(?!=)", " not ", expr)
+    return eval(expr, {"__builtins__": {}}, {"True": True})
 
 
 def test_deploy_workflow_has_gitleaks_step():
     name, _, _ = _gitleaks_job()
     assert name, "no gitleaks job or step in deploy.yml"
+    assert "gitleaks" in _gitleaks_source(), "the gitleaks step runs no gitleaks"
 
 
 def test_gitleaks_job_keeps_its_check_name():
-    # The CI gate and the ruleset key on job names.
-    _, job, _ = _gitleaks_job()
-    assert job and job.get("name") == "Secret scan (gitleaks)"
+    # The CI gate and the ruleset key on job names: the scan rides in the required
+    # `PR gate` check (CI-COST round 2, #1577), as its step "Secret scan (gitleaks)".
+    _, job, step = _gitleaks_job()
+    assert job and step, "no gitleaks job or step"
+    assert _expr(str(job.get("name", "")), "pull_request", "ci") == "PR gate"
+    assert step.get("name") == "Secret scan (gitleaks)"
 
 
 def test_no_workflow_uses_gitleaks_action():
@@ -215,39 +243,46 @@ def test_no_workflow_uses_gitleaks_action():
                 assert "gitleaks-action" not in uses, f"{wf.name}:{name} uses {uses!r}"
 
 
-def test_gitleaks_skips_merge_group_and_dispatch_but_runs_on_labelled_pr_and_push():
-    # AC-21 supersedes the old "same `if` as pii-guard" test: gitleaks must NOT
-    # run on merge_group or workflow_dispatch.
+def test_gitleaks_skips_merge_group_dispatch_and_push_but_runs_on_labelled_pr():
+    # AC-21: gitleaks must NOT run on merge_group or workflow_dispatch. CI-COST round 2
+    # (#1577, owner priority CI minutes): a push to main runs the alembic head gate only,
+    # because the same commits passed the scan in their PR gate. The job's `if` and the
+    # step's `if` both have to pass.
     name, job, step = _gitleaks_job()
     assert name, "no gitleaks job or step"
-    effective = str(step.get("if") or job.get("if") or "")
-    assert effective, "gitleaks has no if"
+    conditions = [str(c) for c in (job.get("if"), step.get("if")) if c]
+    assert conditions, "gitleaks has no if"
 
     def run(event: str, label: str = "") -> bool:
-        expr = effective.replace("${{", "").replace("}}", "").strip()
-        expr = re.sub(r"github\.event\.label\.name", repr(label), expr)
-        expr = re.sub(r"github\.event_name", repr(event), expr)
-        expr = expr.replace("&&", " and ").replace("||", " or ").replace("!=", " != ")
-        expr = re.sub(r"(?<![=!<>])!(?!=)", " not ", expr)
-        return bool(eval(expr, {"__builtins__": {}}, {}))
+        return all(bool(_expr(c, event, label)) for c in conditions)
 
     assert not run("merge_group")
     assert not run("workflow_dispatch")
     assert run("pull_request", "ci")
     assert not run("pull_request", "other")
-    assert run("push")
+    assert not run("push")
+    # The scan reads the PR's own commits.
+    rng = str((step.get("env") or {}).get("RANGE", ""))
+    assert "pull_request.base.sha" in rng and "pull_request.head.sha" in rng, rng
 
 
 def test_gitleaks_version_env_is_exact():
-    _, job, _ = _gitleaks_job()
-    ver = str((job.get("env") or {}).get("GITLEAKS_VERSION", ""))
-    assert re.fullmatch(r"\d+\.\d+\.\d+", ver), f"GITLEAKS_VERSION={ver!r}"
+    _, job, step = _gitleaks_job()
+    assert job, "no gitleaks job"
+    pinned = [
+        str(env["GITLEAKS_VERSION"])
+        for env in (job.get("env") or {}, step.get("env") or {})
+        if "GITLEAKS_VERSION" in env
+    ]
+    pinned += re.findall(r'GITLEAKS_VERSION="\$\{GITLEAKS_VERSION:-([^}]*)\}"', _gitleaks_source())
+    assert pinned, "GITLEAKS_VERSION is not pinned"
+    for ver in pinned:
+        assert re.fullmatch(r"\d+\.\d+\.\d+", ver), f"GITLEAKS_VERSION={ver!r}"
 
 
 def test_gitleaks_install_verifies_release_sha256():
-    step = _gitleaks_install_step()
-    assert step, "no step downloads the gitleaks release"
-    run = str(step.get("run", ""))
+    run = _gitleaks_source()
+    assert "releases/download" in run, "no step downloads the gitleaks release"
     assert "set -euo pipefail" in run
     assert "gitleaks_${GITLEAKS_VERSION}_checksums.txt" in run
     assert "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" in run
@@ -255,8 +290,8 @@ def test_gitleaks_install_verifies_release_sha256():
 
 
 def test_gitleaks_scan_uses_config_ignore_file_and_redacts():
-    _, _, step = _gitleaks_job()
-    run = str(step.get("run", ""))
+    run = _gitleaks_source()
+    assert re.search(r"gitleaks\"? git\b", run), "the scan does not run `gitleaks git`"
     for flag in ("--redact", "--config .gitleaks.toml", "--gitleaks-ignore-path .", "--log-opts="):
         assert flag in run, f"scan lacks {flag}"
     assert "--exit-code" not in run, "default exit code 1 must fail the job on findings"
