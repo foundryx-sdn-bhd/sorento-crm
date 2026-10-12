@@ -51,7 +51,7 @@ def _versions(db) -> list[AIPromptVersion]:
 def test_revision_ids() -> None:
     module = _module()
     assert module.revision == "devf_0001_parser_data_rules"
-    assert module.down_revision == "rkind_0002_parser_ref_kinds_v56"
+    assert module.down_revision == "wc_compat_0001_table"
     assert len(module.revision) <= 32
 
 
