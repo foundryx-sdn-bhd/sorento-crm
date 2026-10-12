@@ -1,8 +1,9 @@
 """Board Simulate confirm (admin dry run): the guards that make "nothing is saved" a fact.
 
 Plan `documentation/plans/scm/PLAN-board-simulate-confirm-12oct.md`. A simulation runs the
-real per-order confirm and rolls it back, so the risk is anything that escapes the rollback: a
-root `commit()` or a queued job. Both refuse loudly here instead of leaking a write.
+real Confirm path inside a savepoint that is always rolled back, so the risk is anything that
+escapes it: a real root commit on another connection or a queued job. Both refuse loudly here
+instead of leaking a write.
 """
 from __future__ import annotations
 
@@ -52,6 +53,13 @@ def _refuse_real_commit(conn) -> None:  # noqa: ANN001
     fire this event, so the simulation's own per-order commits pass; a drain that opens a
     fresh `SessionLocal()` and commits does not."""
     if is_simulating():
+        # Raising from this event leaves SQLAlchemy believing the transaction is closed, so
+        # the pool would take the connection back still inside its DBAPI transaction and the
+        # next checkout would fail its ping. Roll the DBAPI connection back ourselves first.
+        try:
+            conn.connection.rollback()
+        except Exception:  # noqa: BLE001 - the refusal below is what matters
+            pass
         raise SimulationWouldCommit(
             "Simulation refused a commit: nothing may be saved during a simulated confirm."
         )
@@ -68,7 +76,9 @@ def simulation_session(request_db: Session) -> Iterator[Session]:
     """
     conn = request_db.connection()
     outer = conn.begin_nested()
-    sim = Session(bind=conn, join_transaction_mode="create_savepoint")
+    sim = Session(
+        bind=conn, autoflush=request_db.autoflush, join_transaction_mode="create_savepoint"
+    )
     set_company_scope(sim, get_company_scope(request_db))
     set_brand_scope(sim, get_brand_scope(request_db))
     sim.info["confirm_preview"] = True
