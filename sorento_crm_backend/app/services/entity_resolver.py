@@ -57,6 +57,7 @@ from app.models.resources import Attachment, AttachmentType
 # assistant that could still NAME the draft via this resolver would ask incoming_list about
 # it and get told "nothing incoming for container X" instead of never hearing of it.
 from app.services import customer_identity
+from app.services.company_scope_sql import company_sql_predicate
 from app.services.product_family import family_code_for
 from app.services.scm import spo_supply
 from app.services.scm.proforma_invoice_service import _DRAFT_SHIPMENT_STATUS
@@ -3037,24 +3038,33 @@ def _tier3_embedding_lookup(
         )
         if not allowed_types:
             return []
+    # Raw SQL, so the scope listener never sees it: filter here, in SQL, so another
+    # company's chunk can neither come back nor take one of the 5 ranking slots and
+    # sink this company's own match on the confidence gap. NULL-company chunks are
+    # shared knowledge (forms), visible under every scope - same rule as
+    # `embedding_service._embedding_company_filter`.
+    scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
     sql = text(
-        """
+        f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
                1 - (ec.embedding <=> CAST(:vec AS vector)) AS similarity
         FROM embedding_chunks ec
         JOIN embedding_documents ed ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
+          {"AND " + scope_sql if scope_sql else ""}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT 5
-        """
+        """  # noqa: S608 - fragment from company_sql_predicate, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
         # otherwise leaves the whole transaction aborted - every later
         # query in the request would die on InFailedSqlTransaction.
         with db.begin_nested():
-            rows = db.execute(sql, {"vec": list(query_vec), "types": list(allowed_types)}).all()
+            rows = db.execute(
+                sql, {"vec": list(query_vec), "types": list(allowed_types), **scope_params}
+            ).all()
     except Exception:
         logger.exception("Tier-3 vector query failed for token=%s", token)
         return []
@@ -4573,9 +4583,9 @@ def _attach_company_info(db: Session, matches: list[ResolvedEntity]) -> set[tupl
       reached us through a raw-SQL probe (trigram, embedding, variant graph) is
       dropped exactly as the ORM tiers already drop it. ``_company_scope_sql``
       already filters the probes that can carry the clause; this is the backstop
-      that holds for the probes that cannot (embedding hits come from
-      ``embedding_chunks``, which has no company column) and for any raw probe
-      added later.
+      that holds for the probes that cannot and for any raw probe added later
+      (the embedding probe filters ``embedding_chunks.company_id``, but that
+      column is a copy written by the pipeline, not the source row's owner).
 
     Done as a post-pass rather than inside each of the ~20 per-entity resolvers:
     those select explicit column tuples, so threading a company column through
