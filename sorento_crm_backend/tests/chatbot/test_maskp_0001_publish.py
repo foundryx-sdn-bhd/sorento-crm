@@ -113,3 +113,54 @@ def test_the_downgrade_drops_only_its_own_unlabelled_row(monkeypatch):
         db.commit()
         db.expire_all()
         assert [v.version for v in _versions(db)] == [2, 3]
+
+
+# ---- crew live check 13 Oct 2026: the version crew pins is on PRODUCTION's line (prod v52),
+# so the migration also publishes the production text plus the addendum, unlabelled.
+
+
+def _production(db, template: str, version: int = 52) -> AIPromptVersion:
+    row = AIPromptVersion(id=str(uuid.uuid4()), name=NAME, version=version, type="text", template=template, variables=["current_date"])
+    db.add(row)
+    db.flush()
+    db.add(AIPromptLabel(name=NAME, label="production", version_id=row.id))
+    db.flush()
+    return row
+
+
+def test_the_production_line_version_puts_the_addendum_before_memory_once():
+    m = _migration()
+    with blank_session() as db:
+        prod = _production(db, "PROD {{domains}}" + m.MEMORY_ANCHOR + "memory")
+        version = m.publish_on_production(db)
+        new = next(v for v in _versions(db) if v.version == version)
+        assert new.template == "PROD {{domains}}" + SUB_ASKS_ADDENDUM + m.MEMORY_ANCHOR + "memory"
+        assert new.commit_message == m.PROD_MESSAGE
+        labels = db.query(AIPromptLabel).filter(AIPromptLabel.name == NAME).all()
+        assert [(lbl.label, lbl.version_id) for lbl in labels] == [("production", prod.id)]
+        assert m.publish_on_production(db) is None
+
+
+def test_the_production_line_falls_back_to_the_policy_blocks_anchor():
+    m = _migration()
+    with blank_session() as db:
+        tail = m.BLOCKS_ANCHOR + "\n{{domains_detail}}"
+        _production(db, "PROD" + tail)
+        version = m.publish_on_production(db)
+        assert next(v for v in _versions(db) if v.version == version).template == "PROD" + SUB_ASKS_ADDENDUM + tail
+
+
+def test_a_production_text_with_no_anchor_fails_loudly():
+    import pytest
+
+    m = _migration()
+    with blank_session() as db:
+        _production(db, "PROD with no anchor")
+        with pytest.raises(RuntimeError, match="no place to go"):
+            m.publish_on_production(db)
+
+
+def test_no_production_label_publishes_nothing_on_the_production_line():
+    m = _migration()
+    with blank_session() as db:
+        assert m.publish_on_production(db) is None
