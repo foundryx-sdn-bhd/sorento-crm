@@ -95,6 +95,80 @@ def _all_scoped_classes():
     return _SCOPED_CLASSES
 
 
+#: Per mapper: the keys of every table reachable from it through relationships, itself
+#: included. Built lazily, once per mapper, after the registry is configured.
+_REACHABLE_TABLES: dict[Any, frozenset] = {}
+
+
+def _table_key(table) -> tuple:
+    return (getattr(table, "schema", None), table.name)
+
+
+def _reachable_tables(mapper) -> frozenset:
+    """Tables a statement on `mapper` can pull in without naming them: the mapper's own,
+    and, transitively, every relationship target's (a `lazy="joined"` default, a
+    `joinedload` option or a `.join(Model.rel)` all go through one)."""
+    cached = _REACHABLE_TABLES.get(mapper)
+    if cached is not None:
+        return cached
+    keys: set = set()
+    seen: set = set()
+    stack = [mapper]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        keys.update(_table_key(t) for t in current.tables)
+        stack.extend(rel.mapper for rel in current.relationships)
+    result = frozenset(keys)
+    _REACHABLE_TABLES[mapper] = result
+    return result
+
+
+def _scoped_classes_in(statement) -> list:
+    """The scoped classes a statement can touch, in `_all_scoped_classes` order.
+
+    CHAT-SPEED (12 Oct 2026): the fallback used to hand EVERY scoped class (158) to
+    `with_loader_criteria`, on every SELECT whose top-level entity is not scoped - the
+    prompt registry, the spec registry, settings, turn rows. Each one costs about 14 ms of
+    CPU (15.3 vs 1.1 ms per query, measured), about 40 per chatbot turn. A criterion for
+    an entity the statement does not contain renders nothing, so keeping only the classes
+    whose table is in the statement, or reachable from an entity in it through a
+    relationship, emits the same SQL (`tests/test_company_scope_fallback.py` compares
+    them). Anything this walk cannot read keeps the old answer: every class.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.sql import visitors
+    from sqlalchemy.sql.elements import ColumnClause
+    from sqlalchemy.sql.lambdas import LambdaElement
+    from sqlalchemy.sql.selectable import TableClause
+
+    everything = _all_scoped_classes()
+    if isinstance(statement, LambdaElement):
+        return everything
+    try:
+        keys: set = set()
+        for element in visitors.iterate(statement):
+            if isinstance(element, TableClause):
+                keys.add(_table_key(element))
+            elif isinstance(element, ColumnClause) and isinstance(
+                getattr(element, "table", None), TableClause
+            ):
+                keys.add(_table_key(element.table))
+            annotations = getattr(element, "_annotations", None) or {}
+            for name in ("parententity", "parentmapper"):
+                entity = annotations.get(name)
+                if entity is not None:
+                    keys.update(_reachable_tables(sa_inspect(entity).mapper))
+    except Exception:  # noqa: BLE001 - never narrow on a walk that did not finish
+        logger.warning("company scope: statement walk failed, scoping every class", exc_info=True)
+        return everything
+    return [
+        cls for cls in everything if any(_table_key(t) in keys for t in cls.__mapper__.tables)
+    ]
+
+
 def _is_shared(cls) -> bool:
     """Whether ``cls`` keeps a permanently-nullable/shared company_id (attachments)."""
     return bool(getattr(cls, "__company_shared__", False))
@@ -300,11 +374,11 @@ def register_company_scope_listeners() -> None:
             if isinstance(m.class_, type) and issubclass(m.class_, CompanyScopedMixin)
         ]
         if not targets:
-            # ``.count()`` and other subquery-wrapped statements report no
-            # top-level mappers. Fall back to every scoped entity - with_loader_criteria
-            # is a no-op for entities not present in the statement, so this stays
-            # correct (just adds unused options to the less-frequent count path).
-            targets = _all_scoped_classes()
+            # ``.count()`` and other subquery-wrapped statements report no scoped
+            # top-level mappers. Fall back to every scoped entity the statement can
+            # contain - with_loader_criteria is a no-op for entities not present, so
+            # the rest are left off rather than paid for (see `_scoped_classes_in`).
+            targets = _scoped_classes_in(state.statement)
 
         for cls in targets:
             predicate = build_company_predicate(cls, scope)
