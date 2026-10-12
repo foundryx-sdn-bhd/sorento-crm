@@ -683,6 +683,21 @@ def _without_measure(raw: str, vocab: Vocabulary) -> str:
     return " ".join(w for w in _words(raw) if not (_NUMBER_RE.match(w) or w in units))
 
 
+def _measure_in(raw: str, vocab: Vocabulary) -> int | float | None:
+    """The one millimetre number `raw`'s own words hold ("250mm floor grating", "600 mm basin"):
+    a number followed by the registry's mm unit, read with the grounding's tokenizer like
+    `_only_a_measure`. None when there is none or more than one, or the registry has no mm key."""
+    if not any((k.unit or "").lower() == "mm" for k in vocab.keys):
+        return None
+    words = _words(raw)
+    found = [
+        float(w) for i, w in enumerate(words) if _NUMBER_RE.match(w) and i + 1 < len(words) and words[i + 1] == "mm"
+    ]
+    if len(found) != 1 or not math.isfinite(found[0]) or found[0] <= 0:
+        return None
+    return int(found[0]) if found[0].is_integer() else found[0]
+
+
 def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
     """The spec pair a category entity carries, as the parser emitted it. A millimetre number
     there was said with no axis word of its own (the parser named the axis on the category,
@@ -793,6 +808,16 @@ def ground(
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
         canonical = str(entity.get("canonical_code") or "").strip()
+        if (
+            (hint in _CLASS_HINTS or (hint == _PRODUCT_HINT and _only_a_measure(raw, vocab)))
+            and not str(entity.get("spec_key") or "").strip()
+            and (measure := _measure_in(raw, vocab)) is not None
+        ):
+            # SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser left the
+            # size in the subject's words with no spec pair ("250mm floor grating", "600mm
+            # basin"), or as a bare "250mm" product. Read as the pair the parser puts there:
+            # left alone, the canonical swap dropped it or the words named no type.
+            entity = {**entity, "spec_key": SIZE_KEY, "spec_value": measure}
         if (hint in _CLASS_HINTS or hint == _PRODUCT_HINT) and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
             # SPEC-PROMO-PARAMS hand test step 1 (owner, 12 Oct 2026, "600mm basin got stock?"):
             # a spec pair the parser put ON the category entity is a specification of the ask.
