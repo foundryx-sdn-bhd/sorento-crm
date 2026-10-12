@@ -107,9 +107,22 @@ minus the adopt step). Usable at 375px and 1280px like the block today.
 
 ### 5. Real examples from dev data
 
-Requested from crew (crew-data-request on PR #1585): SO422492 (batch path, the date JSON error),
-one order whose saved drafts raise a borrow transfer, one whose revision raised an order-back
-inquiry row. Filled in here when the rows arrive; they become the hand-test fixtures.
+From the crew dev-DB extract (12 Oct, read-only; only SO and line numbers kept here, the repo is
+public):
+
+- **E1, planning-change batch path: SO410515** (one pending `product_changed` row, line 1) and
+  **SO409325** (three `cancelled` rows, lines 46/72/98, plus three `added` rows in the same pending
+  batch). Expected: SO410515 "would confirm as revision N" with its inquiry rows under "Would
+  write"; SO409325 shows the cancel-and-re-add outcome or the exact refusal. After the simulation,
+  both batches are still pending (nothing applied).
+- **E2, borrow: SO325703 lines 45 and 46** (saved Approved drafts, borrow 52 + 26 at pool WH3 from
+  another order's line). Expected: "Would write" lists borrow transfers into the order's location
+  and an order-back inquiry row; the drafts are still saved afterwards.
+- **E3, order-back: SO400418** (an existing ORDER_BACK row on a borrowed line) or **SO418626**.
+  Expected: the existing row is listed as "settles an existing row" when the press keeps it.
+- **SO422492 is prod-only** (dev's highest SO is SO422100). Its date-JSON error is reproduced by a
+  synthetic fixture in pytest (AC-S6: one line raises `TypeError: Object of type date is not JSON
+  serializable`, the probe names that line only).
 
 ### 6. Questions (with recommendations)
 
