@@ -236,3 +236,39 @@ def test_an_unclaimed_reserve_line_stays_cascadable_for_an_order_inquiry_row(wor
     assert candidates[0]["target_id"] == lines[0]
     assert candidates[0]["cascadable"] is True
     assert candidates[0]["unattributed"] is False
+
+
+# --------------------------------------------------------------------------- supply_claim
+
+
+def test_a_plan_buy_at_the_reserve_writes_no_claim():
+    """A plan-raised PO line at HQ stays general project stock, exactly as an ordinary pool
+    line does (AC-6.10): `segment = project` on a pool does not make it a claimed bin."""
+    import uuid as _uuid
+
+    from sqlalchemy import text as _text
+
+    from app.models.base import company_scope
+    from app.services.scm.purchase_order_service import PurchaseOrderService
+    from tests._pg_fixture import pg_session
+    from tests.scm.conftest import SORENTO_COMPANY_ID, ensure_reference_data, seed_user
+    from tests.scm.test_write_time_supply_claim import (
+        MARKER, _claims_on, _draft_line, _pool_warehouse, _two_sizing_rows,
+    )
+
+    with pg_session() as db:
+        ensure_reference_data(db)
+        with company_scope(db, frozenset({SORENTO_COMPANY_ID})):
+            actor = seed_user(db, None)
+            hq_id = _pool_warehouse(db, f"{MARKER}HQ{_uuid.uuid4().hex[:6].upper()}")
+            db.execute(
+                _text("UPDATE warehouses SET segment = 'project' WHERE id = :i"),
+                {"i": hq_id},
+            )
+            db.flush()
+            pid, _x, _y = _two_sizing_rows(db, bin_id=hq_id)
+            po_id, line_id = _draft_line(db, product_id=pid, warehouse_id=hq_id, qty=114)
+
+            PurchaseOrderService(db).bulk_confirm([po_id], actor=actor)
+
+            assert _claims_on(db, line_id) == []
