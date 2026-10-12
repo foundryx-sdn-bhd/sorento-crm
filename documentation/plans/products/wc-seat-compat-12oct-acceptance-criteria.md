@@ -11,34 +11,29 @@ Plan: `PLAN-wc-seat-compat-12oct.md`. Owner rulings 12 Oct are binding.
 - A-4 A `-SC` SKU can be linked as a seat cover and never as a WC.
 - A-5 Links never cross companies; another company's product or link answers 404.
 
-## B. Flyer review (owner only applies)
+## B. One-off flyer script (`scripts/oneoff/link_seat_cover_flyer.py`)
 
-- B-1 The review lists every printed WC model once, with its printed codes in flyer order and
-  each printed cover marked found or missing. 49 printed pairs in total.
-- B-2 Each SKU of a printed model shows the printed code it maps to, its cover(s) and its extra
-  code segments. `-SC` SKUs are not listed.
-- B-3 A colour SKU maps only to the printed code carrying its colour (`SRTWC8383-RL-MBL` ->
-  `SRTWC8383-MBL` -> `SRTSCBD823-MBL`); MBL never matches BL.
-- B-4 A SKU that is not unambiguous is UNRESOLVED with its reason (finish not printed, sub-model
-  not printed, unknown segment, ambiguous) and cannot be ticked or applied.
-- B-5 SRTWC202 (Pink) and SRTWC203 (Blue) resolve through the row's printed note.
-- B-6 A SKU whose printed cover is missing from the catalogue cannot be ticked.
-- B-7 Apply writes links (source `flyer`) for the ticked SKUs only; SRTWC8122 gets both covers.
-  Re-applying writes nothing new. An id that is not a printed model's ready SKU is skipped with
-  its reason.
-- B-8 Reading needs `master_data.products.view`; applying needs `master_data.products.edit`.
+- B-1 It carries the 49 printed pairs as data; the 7 intelligent-seat WCs are not in it.
+- B-2 Dry run (the default) prints every pair it would link (row, printed code, cover, SKU),
+  every UNRESOLVED SKU with its reason, and every MISSING pair, and writes nothing.
+- B-3 A colour SKU links only through the printed code carrying its colour
+  (`SRTWC8383-RL-MBL` -> `SRTSCBD823-MBL`); MBL never matches BL. SRTWC8122 gets both covers.
+  A finish printed as a row note (rows 22, 23) counts as printed for that row.
+- B-4 A SKU that is not unambiguous (finish not printed, sub-model not printed, unknown
+  segment, ambiguous, grouped by hand) is UNRESOLVED and never linked.
+- B-5 `-SC` SKUs are never linked as WCs and never listed.
+- B-6 `--apply` writes source `flyer` links in each WC's own company; a second run writes
+  nothing; an existing manual link is kept as it is.
 
 ## C. Old Seat Cover spec
 
-- C-1 The review shows the old spec: active or not, and how many products hold a value.
-- C-2 Retire is disabled until at least one flyer link exists; the server refuses it (409) too.
-- C-3 Retire is a server-deferred destructive countdown, gated on
-  `master_data.spec_registry.edit`. When it lapses, every `seat_cover` value is removed, the key
-  is set inactive, and one audit row records the removed values.
+- C-1 `--retire-spec` runs only with `--apply`. It removes every `seat_cover` value, sets the
+  key inactive, clears its rules and writes one audit row with the removed values.
+- C-2 It is refused, writing nothing, while any company holding a value has no flyer link.
 
 ## D. Product page
 
-- D-1 The Variants tab shows a Compatible section under Alternatives on every product.
+- D-1 The product page's Variants tab shows a Compatible section directly under Alternatives, on every product. It is the only UI; there is no flyer page.
 - D-2 It lists "Seat covers that fit" (this product as a WC) and "Fits these WCs" (this product
   as a seat cover), each row linking to the product, with a Flyer / Manual source badge.
 - D-3 With no links it shows an empty state (heading + hint, no button).

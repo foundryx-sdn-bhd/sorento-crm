@@ -1,6 +1,6 @@
 # PLAN: WC to seat cover compatibility (data + admin slice)
 
-Status: Review (backend + frontend built, reviewer and security fixes applied, waiting on owner hand test). Track: full (new table + migration).
+Status: Review (scope cut 12 Oct: one-off script + product-page section; mock v3 approved). Track: full (new table + migration).
 Lane: WC-SEAT-COMPAT, PR #1590. Chatbot slice is a later lane, after #1582 merges.
 UAC: `wc-seat-compat-12oct-acceptance-criteria.md` (alongside).
 
@@ -34,14 +34,14 @@ links in a later lane.
 
 | Ask | Answer the data gives |
 |---|---|
-| Cover for SRTWC8383-RL-UF? | SRTSCBD331-UF, once the owner ticks it (printed SRTWC8383, row 3) |
+| Cover for SRTWC8383-RL-UF? | SRTSCBD331-UF, after the script runs with --apply (printed SRTWC8383, row 3) |
 | Cover for SRTWC8383-RL-MBL? | SRTSCBD823-MBL only (printed SRTWC8383-MBL, row 24) |
-| Cover for an SRTWC8383 SKU in a finish the flyer does not print (e.g. an MK segment)? | Nothing. UNRESOLVED on the review screen (finish not printed) |
+| Cover for an SRTWC8383 SKU in a finish the flyer does not print (e.g. an MK segment)? | Nothing. The script reports it UNRESOLVED (finish not printed) and never links it |
 | Cover for a plain (no colour) SRTWC8066-S SKU? | Nothing. UNRESOLVED (S is printed only with a colour) |
 | Cover for SRTWC8122? | SRTSCBD333-UF and SRTSCBD333A-UF |
 | Cover for a pink SRTWC202 SKU? | SRTSCBD326 (row 22 prints SRTWC202 with the note "Pink") |
 | Cover for SRTWC191-G2? | Nothing (intelligent seat, no code printed) |
-| WCs for SRTSCBD824-BL? | The SKUs ticked under printed SRTWC8383-BL and SRTWC8152-BL |
+| WCs for SRTSCBD824-BL? | The SKUs the script links under printed SRTWC8383-BL and SRTWC8152-BL |
 | SRTWC8383-SC? | A seat cover. Never listed as a WC; cannot be linked as one |
 
 ### Mapping a printed WC code to SKUs (`product_compatibility_service._classify`)
@@ -59,66 +59,63 @@ For each SKU of a printed model (`products.family_code`), `-SC` SKUs excluded:
    - `finish_not_printed`: a finish (`BL MBL GY RG GM NL NK CR FRG WH MG MK MW BW PINK BLUE`);
    - `unknown_segment`: anything else (`FT`, `LID`, `WEPLS`, `289UF`, ...).
 4. A finish printed as a row note (row 22 Pink, row 23 Blue) counts as printed for that row.
-5. A ready SKU whose printed cover is not in the catalogue is `cover_missing`, not tickable.
+5. A SKU whose printed cover is not in its company's catalogue is MISSING (`cover_missing`), not linked.
 
 Calibrated against the dev catalogue's 212 SKUs of the 35 printed models (crew, 12 Oct; data
-not committed). The review screen shows every SKU's extra segments so the owner judges each
-tick; UNRESOLVED SKUs are listed and cannot be ticked. Staff link them by hand on the product
-page if the owner decides they fit.
+not committed). The script prints every UNRESOLVED SKU with its reason and never links it.
+Staff link one by hand on the product page if the owner decides it fits.
 
-## 4. Design
+## 4. Design (owner scope decision 12 Oct, after mock v2)
+
+No flyer review page and no flyer routes. The flyer is linked ONCE by a script; from then on
+people keep the links by hand in the Compatible section of the product page. Mock v3
+(`mockups/07-wc-seat-compat.html`) was approved ("ok").
 
 ### Table `product_compatibility` (migration `wc_compat_0001_table`, additive)
 
 `id`, `company_id` (`CompanyScopedMixin`), `seat_cover_product_id` FK products CASCADE,
 `wc_product_id` FK products CASCADE, `source` (`flyer` | `manual`, CHECK), `created_at`,
-`created_by`. Unique (cover, wc); CHECK cover <> wc; index on `wc_product_id`. Audited
-(`__audit_track__`, entity `product_compatibility`).
+`created_by`. Unique (cover, wc); CHECK cover <> wc; index on `wc_product_id`. Audited.
 
-### Flyer data
+### One-off script `sorento_crm_backend/scripts/oneoff/link_seat_cover_flyer.py`
 
-`app/services/seat_cover_flyer_data.py`: the 35 printed rows, codes only, plus the row-note
-finishes. The PDF is not committed.
+- Carries the 49 printed pairs (35 rows) as data, codes as printed, plus the row-note
+  finishes (row 22 Pink, row 23 Blue). No PDF.
+- Section 3's rule decides each SKU: LINK, UNRESOLVED (printed with its reason, never linked)
+  or MISSING (no SKU for the printed model, or the printed cover is not in that company).
+  `-SC` SKUs are never treated or listed as WCs.
+- Dry run by default (prints every LINK / UNRESOLVED / MISSING line); `--apply` writes the
+  links with source `flyer` in each WC's own company; idempotent (an existing pair, flyer or
+  manual, is counted, never duplicated).
+- `--retire-spec` (only with `--apply`): removes every `seat_cover` spec value through
+  `product_spec_write.apply_spec_values` (op revert), sets the key inactive and clears its
+  derivation rules (derivation reads inactive keys too), with one audit row holding the
+  removed values per company. Refused, writing nothing, while a company holding a value has
+  no flyer link to replace it.
 
-### API
+### API (product page only)
 
 - `GET  /api/v1/master-data/products/{id}/compatibility` (products.view) -> `{covers, fits}`
 - `POST /api/v1/master-data/products/{id}/compatibility` (products.edit, session only)
   `{other_product_id, other_role: seat_cover|wc}`. A pair already linked in either
-  orientation is 409.
-- `GET  /api/v1/master-data/product-compatibility/flyer-review` (products.view)
-  -> `{models: [{family_code, printed: [{flyer_row, wc_code, covers: [{code, found}]}], skus:
-  [{product_id, product_code, status, reason, printed_code, flyer_row, cover_codes,
-  extra_segments, ...}]}], counts, seat_cover_spec}`
-- `POST /api/v1/master-data/product-compatibility/flyer-review/apply` (products.edit, session
-  only) `{wc_product_ids}`. The server re-derives every id; anything not ready is skipped with
-  its reason. Idempotent. No proposal tables: the review is derived on read from the fixed
-  flyer list and the live catalogue.
-- Pending actions: `product_compatibility.unlink` (reversible, products.edit) and
-  `seat_cover_spec.retire` (destructive, spec_registry.edit). Refused 409 unless flyer links
-  exist in EVERY company holding a value (the key is install-wide, so the gate is too), and
-  re-checked when the countdown lapses. Retire deactivates the key and clears its derivation
-  rules (derivation reads inactive keys too), reverts every value through
-  `product_spec_write.apply_spec_values`, and writes one audit row with the removed values per
-  company. Reverting re-derives each code, which also clears its spec verification stamp.
+  orientation is 409; a `-SC` SKU as the WC is 400.
+- Unlink: pending action `product_compatibility.unlink` (reversible, products.edit).
 
 ### Frontend
 
-- Review screen `/master-data-management/products/seat-cover-flyer`, linked from the Products
-  list header. One card per printed model: printed codes with their covers (found / missing),
-  then the SKU table with tick boxes for ready SKUs, Linked badges, and UNRESOLVED rows with
-  their reason. Model checkbox ticks every ready SKU of the model. Sticky apply bar. Retire
-  card at the top.
-- `ProductCompatibilitySection` under `ProductAlternativesSection` in the Variants tab: "Seat
-  covers that fit" and "Fits these WCs", Add dialog (pick product + role), Unlink countdown.
+`ProductCompatibilitySection` in the product page's **Variants** tab, directly under
+Alternatives (`products/[id]/components/ProductVariantsTab.tsx`): "Seat covers that fit" and
+"Fits these WCs", Flyer / Manual badge, Add dialog (pick product + role), Unlink countdown.
 
 ## 5. Test list
 
-Backend `tests/test_product_compatibility.py` (44): flyer data counts; table CHECKs and unique;
-reads with no inheritance; page API both directions, empty, 403s, 409 duplicate both ways,
-400 self, 422 role, -SC never a WC, cross-company 404 (GET, add, park); unlink park 202/404/403;
-review mapping by whole segment, every UNRESOLVED reason, row-note finish, -SC never listed,
-missing cover / model; apply only ticked, idempotent, skips unresolved / not-on-flyer, 422 bad
-id; retire registered destructive, 403 / 409 at park, removes values + deactivates + audit.
-
-Frontend (vitest): review screen states and ticking; section lists, empty state, add, unlink.
+- `tests/test_link_seat_cover_flyer.py` (9): flyer data counts; plan links only unambiguous
+  SKUs (colour row by whole segment, row 6 both covers, row-note Pink), every unresolved
+  reason, -SC never listed, missing cover; dry run prints the lines and writes nothing; apply
+  writes source flyer and is idempotent; keeps a manual link; links per company; retire needs
+  apply; apply + retire removes values, deactivates, clears rules, audits, idempotent; retire
+  refused while another company has no flyer link.
+- `tests/test_product_compatibility.py` (20): table CHECKs/unique; reads with no
+  inheritance; page API both directions, empty, 403s, 409 both orientations, 400 self / -SC,
+  422 role, cross-company 404; unlink park 202/404/403.
+- vitest `ProductCompatibilitySection.test.tsx`.

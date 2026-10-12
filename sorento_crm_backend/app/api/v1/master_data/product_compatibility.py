@@ -2,16 +2,12 @@
 
     GET  /products/{product_id}/compatibility                  (master_data.products.view)
     POST /products/{product_id}/compatibility                  (master_data.products.edit)
-    GET  /product-compatibility/flyer-review                   (master_data.products.view)
-    POST /product-compatibility/flyer-review/apply             (master_data.products.edit)
 
-Mounted with no prefix: the routes live under two path roots (the combos precedent). Writes
-are session-only (`require_permission`), as for alternatives: an integration key never
-rewrites what fits what.
-
-Unlink and retiring the old `Seat Cover` spec are server-deferred record actions
-(`product_compatibility.unlink`, `seat_cover_spec.retire`, `app/services/record_actions.py`)
-parked through `/api/v1/pending-actions`.
+The add is session-only (`require_permission`), as for alternatives: an integration key
+never rewrites what fits what. Unlink is the server-deferred record action
+`product_compatibility.unlink` (`app/services/record_actions.py`), parked through
+`/api/v1/pending-actions`. The flyer itself is linked once by
+`scripts/oneoff/link_seat_cover_flyer.py`; there is no flyer route.
 Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md.
 """
 from __future__ import annotations
@@ -22,9 +18,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.schemas.product_compatibility import (
-    FlyerApply,
-    FlyerApplyOut,
-    FlyerReviewOut,
     ProductCompatibilityCreate,
     ProductCompatibilityListOut,
     ProductCompatibilityRowOut,
@@ -63,21 +56,3 @@ def add_product_compatibility(
     other_id = validate_uuid_path(payload.other_product_id, resource="Product")
     row = compat.add_manual(db, product_id, other_id, payload.other_role, current_user.get("id"))
     return {"data": row}
-
-
-@router.get("/product-compatibility/flyer-review", response_model=FlyerReviewOut)
-def get_flyer_review(
-    current_user: dict = Depends(require_permission_with_api_key(VIEW)),
-    db: Session = Depends(get_db),
-):
-    return {"data": compat.flyer_review(db)}
-
-
-@router.post("/product-compatibility/flyer-review/apply", response_model=FlyerApplyOut)
-def apply_flyer_review(
-    payload: FlyerApply,
-    current_user: dict = Depends(require_permission(EDIT)),
-    db: Session = Depends(get_db),
-):
-    ids = [pid.lower() for pid in payload.wc_product_ids]
-    return {"data": compat.apply_flyer(db, ids, current_user.get("id"))}

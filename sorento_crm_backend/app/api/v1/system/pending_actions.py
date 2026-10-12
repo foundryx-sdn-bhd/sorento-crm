@@ -144,7 +144,6 @@ _UUID_ENTITY_ACTIONS = (
     "product_alternative.unlink",
     "product_alternatives.reset_auto",
     "product_compatibility.unlink",
-    "seat_cover_spec.retire",
 )
 
 
@@ -181,10 +180,6 @@ def _assert_entity_visible(db: Session, action_key: str, entity_id: str, actor_i
 
         if get_compat_link(db, entity_id) is None:
             raise handle_not_found("Compatibility link", entity_id)
-    elif action_key == "seat_cover_spec.retire":
-        from app.services.product_compatibility_service import assert_can_retire
-
-        assert_can_retire(db, entity_id)
     elif action_key == "contact_customer_link.unlink":
         from app.services.contact_customer_service import get_link_by_id
 

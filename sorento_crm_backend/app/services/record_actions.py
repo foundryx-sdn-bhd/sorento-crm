@@ -89,12 +89,6 @@ def _unlink_product_compatibility(db: Session, payload: dict):
     return unlink(db, _entity_id(payload))
 
 
-def _retire_seat_cover_spec(db: Session, payload: dict):
-    from app.services.product_compatibility_service import retire_seat_cover_spec
-
-    return retire_seat_cover_spec(db, _entity_id(payload), payload.get("requested_by_id"))
-
-
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -364,20 +358,6 @@ register(
         window=WINDOW_REVERSIBLE,
         permission="master_data.products.edit",
         label="Unlink",
-    )
-)
-
-# WC-SEAT-COMPAT (owner ruling 12 Oct, Q4): retire the hand-typed `Seat Cover` spec once
-# the flyer links replace it. Removes every value and deactivates the registry key, so it
-# is destructive and gated on the registry's own edit slug. Parked on the registry row.
-register(
-    FormAction(
-        key="seat_cover_spec.retire",
-        entity_types=("seat_cover_spec",),
-        execute=_retire_seat_cover_spec,
-        window=WINDOW_DESTRUCTIVE,
-        permission="master_data.spec_registry.edit",
-        label="Retire Seat Cover spec",
     )
 )
 

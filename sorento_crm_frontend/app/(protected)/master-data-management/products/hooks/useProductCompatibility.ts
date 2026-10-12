@@ -5,8 +5,6 @@ import { toast } from '@/lib/toast';
 import { useDeferredRowAction } from '@/hooks/useDeferredRowAction';
 import {
   addProductCompatibility,
-  applyFlyerReview,
-  getFlyerReview,
   getProductCompatibility,
 } from '../services/productCompatibilityService';
 import type { CompatibilityRole } from '../types/productCompatibility.types';
@@ -15,7 +13,6 @@ const compatibilityKey = (productId: string | undefined) => [
   'product-compatibility',
   productId,
 ];
-const flyerReviewKey = ['seat-cover-flyer-review'] as const;
 
 export function useProductCompatibility(productId: string | undefined) {
   return useQuery({
@@ -52,40 +49,5 @@ export function useProductCompatibilityUnlink() {
     verb: 'Unlinking',
     successMessage: 'Link removed',
     invalidateKeys: [['product-compatibility']],
-  });
-}
-
-export function useFlyerReview() {
-  return useQuery({ queryKey: flyerReviewKey, queryFn: getFlyerReview });
-}
-
-export function useApplyFlyerReview() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (wcProductIds: string[]) => applyFlyerReview(wcProductIds),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: flyerReviewKey });
-      queryClient.invalidateQueries({ queryKey: ['product-compatibility'] });
-      const skipped = result.skipped.length;
-      toast.success(
-        `${result.linked} link${result.linked === 1 ? '' : 's'} added` +
-          (skipped
-            ? `, ${skipped} SKU${skipped === 1 ? '' : 's'} skipped`
-            : ''),
-      );
-    },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to link the SKUs'),
-  });
-}
-
-/** Retiring the old Seat Cover spec is destructive: the long countdown, on the registry row. */
-export function useRetireSeatCoverSpec() {
-  return useDeferredRowAction({
-    actionKey: 'seat_cover_spec.retire',
-    entityType: 'seat_cover_spec',
-    verb: 'Retiring',
-    successMessage: 'Seat Cover spec retired',
-    invalidateKeys: [flyerReviewKey],
   });
 }
