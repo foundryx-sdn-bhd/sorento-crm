@@ -1504,6 +1504,15 @@ class ResolveReferenceRequest(BaseModel):
             "`require` is present."
         ),
     )
+    keep_typed_codes: bool = Field(
+        default=False,
+        description=(
+            "CHAT-FIND: leave every typed code as typed - skip `narrow_code_tokens`, which "
+            "reads the words on a code's line as a variant descriptor. Sent on a find turn, "
+            "where those words name the relation's target ('seat cover for SRTWC8088' asks "
+            "for SRTWC8088's seat cover, never SRTWC8088-SC)."
+        ),
+    )
     understand_phrase: bool = Field(
         default=False,
         description=(
@@ -3155,6 +3164,27 @@ def _typed_text_after_narrowing(
     return [typed_by_token.get(tok, "") for tok in narrowed]
 
 
+def _narrowed_payload(db: Session, payload: "ResolveReferenceRequest") -> "ResolveReferenceRequest":
+    """A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner hand
+    test of rounds 4 to 6 on PR #833, items 2 to 4): the code token becomes the variant codes
+    the words pick, and the description token those words came from is dropped, so the ask
+    resolves as that code's variants and never as a category set. Not on a find turn
+    (`keep_typed_codes`, CHAT-FIND): there the words name what fits the code, and the exact
+    code the customer typed is the subject."""
+    if payload.keep_typed_codes:
+        return payload
+    from app.services.product_code_family import narrow_code_tokens
+
+    narrowed = narrow_code_tokens(
+        db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
+    )
+    if narrowed is None:
+        return payload
+    return payload.model_copy(
+        update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
+    )
+
+
 @router.post("/resolve")
 def resolve_reference_post(
     payload: ResolveReferenceRequest,
@@ -3162,19 +3192,7 @@ def resolve_reference_post(
     db: Session = Depends(get_db),
 ):
     """POST variant for external callers that send JSON body (e.g. n8n HTTP node)."""
-    # A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner
-    # hand test of rounds 4 to 6 on PR #833, items 2 to 4): the code token becomes the
-    # variant codes the words pick, and the description token those words came from is
-    # dropped, so the ask resolves as that code's variants and never as a category set.
-    from app.services.product_code_family import narrow_code_tokens
-
-    narrowed = narrow_code_tokens(
-        db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
-    )
-    if narrowed is not None:
-        payload = payload.model_copy(
-            update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
-        )
+    payload = _narrowed_payload(db, payload)
     # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
     # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
     # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as

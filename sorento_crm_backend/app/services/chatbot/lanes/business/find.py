@@ -79,11 +79,14 @@ def named_this_turn(parse_output: dict[str, Any], entities: list[Any]) -> list[A
     tokens.discard("")
     if not tokens:
         return list(entities)
-    named = [
-        e for e in entities
-        if _is_product(e)
-        and any(tok in code for code in (_key(e.get("code")), _key(e.get("canonical_code"))) if code for tok in tokens)
-    ]
+    def _codes(e: Any) -> list[str]:
+        return [c for c in (_key(e.get("code")), _key(e.get("canonical_code"))) if c]
+
+    # The exact code first: "SRTWC8088" names SRTWC8088, never also SRTWC8088-SC. A code the
+    # token is only part of counts when no product carries the token exactly.
+    named = [e for e in entities if _is_product(e) and any(c in tokens for c in _codes(e))]
+    if not named:
+        named = [e for e in entities if _is_product(e) and any(t in c for c in _codes(e) for t in tokens)]
     if not named:
         return list(entities)
     return [e for e in entities if not _is_product(e)] + named
