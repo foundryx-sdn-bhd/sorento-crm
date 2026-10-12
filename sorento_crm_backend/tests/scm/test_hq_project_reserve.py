@@ -20,6 +20,7 @@ from decimal import Decimal
 import pytest
 
 from app.services.scm.supply_assignment import DemandLine, SupplyEvent, assign
+from tests.scm.conftest import scm_app  # noqa: F401  (pytest fixture)
 from tests.test_order_inquiry_dedication import world  # noqa: F401  (pytest fixture)
 
 
