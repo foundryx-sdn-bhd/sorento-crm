@@ -6,11 +6,17 @@ is one `FindFilter` row here plus eval cases: the parser learns it through the l
 `{{find_filters}}` prompt variable (`parser_vocabulary`), the reply through `labels` (merged
 into `chatbot/label_catalog.LABELS` for ms / zh), and the route / MCP tool / lane never change.
 
-Filter types:
+What a filter takes (declared on its row, checked by the route, never by the lane):
 
-* `product_ref`: the value is the resolved products the message names (the chatbot's resolver
-  fills `product_ids`; the model never invents an id). The filter answers one group per named
-  product.
+* products (`products=True`, type `product_ref`): the resolved products the message names (the
+  chatbot's resolver fills `product_ids`; the model never invents an id);
+* a value (`value=ValueSpec(...)`): `code` (a code-shaped string), `number` (finite, with a unit
+  from the row's `units`) or `enum` (one of the row's `values`, a tuple or read from the
+  database); the parser emits it as `value` + `unit`.
+
+A row may take both. Its runner gets one `FilterArg(product_ids, value, unit)` and answers groups
+(one per named product, or one group with no anchor), so a spec or promotion row (#1582) moves
+in with no branch in the route, the lane or the MCP tool.
 
 First filter, `fits` (owner request 13 Oct; card `CARD-chat-generic-find-12oct.md`): the WC
 <-> seat cover links of PR #1590 (`product_compatibility`). The direction comes from the data
@@ -27,14 +33,19 @@ Plan: `documentation/plans/chatbot/PLAN-chat-generic-find-12oct.md`.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Collection, Optional, Union
 
 from sqlalchemy.orm import Session
 
 from app.services.error_handler import AppException
 
 TYPE_PRODUCT_REF = "product_ref"
+TYPE_VALUE = "value"
+#: The value kinds a row may declare.
+VALUE_KINDS = ("code", "number", "enum")
+MAX_CODE_CHARS = 64
 
 #: Rows printed per group; the rest are counted in `more` ("Showing 20 of N.").
 ROWS_PER_GROUP = 20
@@ -68,22 +79,48 @@ COMMON_LABELS: dict[str, dict[str, str]] = {
 
 @dataclass(frozen=True)
 class Group:
-    anchor_id: str
-    anchor_code: str
+    #: The named product the group answers for; None for a group no product anchors.
+    anchor_id: Optional[str]
+    anchor_code: Optional[str]
     relation: Optional[str]
     head: str
     rows: list[Any] = field(default_factory=list)  # Product rows, ordered
 
 
 @dataclass(frozen=True)
+class ValueSpec:
+    kind: str  # one of VALUE_KINDS
+    #: `number`: the units accepted, the first being the one an unsaid unit means.
+    units: tuple[str, ...] = ()
+    #: `enum`: the accepted values, or a reader of them from the database.
+    values: Union[tuple[str, ...], Callable[[Any], Collection[str]]] = ()
+
+
+@dataclass(frozen=True)
+class FilterArg:
+    product_ids: list[str]
+    value: Any = None
+    unit: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class FindFilter:
     key: str
-    type: str
     #: One line for the parser policy block: what the key means and when to emit it.
     vocabulary: str
     #: English presenter lines (heads with `{code}`) -> {"ms", "zh"}.
     labels: dict[str, dict[str, str]]
-    run: Callable[[Session, list[str]], list[Group]]
+    run: Callable[[Session, FilterArg], list[Group]]
+    #: Takes the products the message names.
+    products: bool = False
+    #: Takes a typed value; None = no value.
+    value: Optional[ValueSpec] = None
+    #: What the lane asks when the message gives the filter nothing to run on.
+    ask: str = ASK_PRODUCT_LINE
+
+    @property
+    def type(self) -> str:
+        return TYPE_PRODUCT_REF if self.products else TYPE_VALUE
 
 
 # --------------------------------------------------------------------------- fits
@@ -93,8 +130,10 @@ FITS_WCS_HEAD = "{code} fits these WCs:"
 FITS_NONE_LINE = "No seat cover or WC is on record for {code}."
 
 
-def _run_fits(db: Session, product_ids: list[str]) -> list[Group]:
+def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     from app.models.product import Product
+
+    product_ids = arg.product_ids
     from app.services.product_compatibility_service import covers_for, wcs_for
 
     anchors = {
@@ -122,7 +161,8 @@ FILTERS: dict[str, FindFilter] = {
     for f in (
         FindFilter(
             key="fits",
-            type=TYPE_PRODUCT_REF,
+            products=True,
+            ask=ASK_PRODUCT_LINE,
             vocabulary=(
                 "fits: the products that fit or go with the named product: the seat cover(s) "
                 "for a WC (water closet / toilet), or the WC(s) a seat cover fits. The named "
@@ -147,7 +187,8 @@ FILTERS: dict[str, FindFilter] = {
 FIND_RULE = (
     "FIND (key `find`): when the message asks WHICH products stand in a relation listed below "
     "to a product it names (for example which seat cover fits a WC), emit "
-    '"find": {"filters": [{"key": <a key from the list>, "value": null}]}. Never emit it for '
+    '"find": {"filters": [{"key": <a key from the list>, "value": <the value its line asks for, '
+    'else null>, "unit": <the unit of a number value, else null>}]}. Never emit it for '
     "facts about the named product itself (stock, price, ETA, photo, spec): those keep their "
     "usual keys. The named product stays an ordinary product entity (hint product) and "
     "domain_hint is master_products. A product entity here needs a product CODE: a type word "
@@ -179,8 +220,33 @@ def _unprocessable(message: str, code: str) -> AppException:
     return AppException(422, message, code=code)
 
 
-def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
-    """The route's `filters` param: a JSON list of `{key, product_ids?, value?}`."""
+def _value(spec: ValueSpec, key: str, value: Any, unit: Any, db: Any) -> tuple[Any, Optional[str]]:
+    """`value` (and `unit`) as `spec` declares them, or a 422."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise _unprocessable(f"filter {key} needs a value", "value_required")
+    if spec.kind == "code":
+        if not isinstance(value, str) or len(value.strip()) > MAX_CODE_CHARS:
+            raise _unprocessable(f"filter {key} takes a code of at most {MAX_CODE_CHARS} characters", "bad_value")
+        return value.strip(), None
+    if spec.kind == "number":
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise _unprocessable(f"filter {key} takes a number", "bad_value")
+        if unit is None:
+            unit = spec.units[0] if spec.units else None
+        if spec.units and unit not in spec.units:
+            raise _unprocessable(f"filter {key} takes a unit of {', '.join(spec.units)}", "bad_value")
+        return value, unit
+    if spec.kind == "enum":
+        allowed = spec.values(db) if callable(spec.values) else spec.values
+        if not isinstance(value, str) or value not in allowed:
+            raise _unprocessable(f"filter {key} takes one of its listed values", "bad_value")
+        return value, None
+    raise _unprocessable(f"filter {key} has no reader", "unknown_filter")  # pragma: no cover
+
+
+def parse_filters(raw: Optional[str], db: Any = None) -> list[dict[str, Any]]:
+    """The route's `filters` param: a JSON list of `{key, product_ids?, value?, unit?}`, each
+    checked against its registry row. `db` reads an `enum` row's values when they live there."""
     from app.services.uuid_list_param import parse_uuid_list
 
     if raw is None or not str(raw).strip():
@@ -195,7 +261,8 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
         raise _unprocessable("filters must be a non-empty JSON list", "filters_required")
     if len(parsed) > MAX_FILTERS:
         raise _unprocessable(f"at most {MAX_FILTERS} filters", "too_many")
-    # One entry per key: a repeated key's products join the first entry's (one read per key).
+    # One entry per key: a repeated key's products join the first entry's (one read per key);
+    # a repeated value must be the same value.
     by_key: dict[str, dict[str, Any]] = {}
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str):
@@ -205,21 +272,24 @@ def parse_filters(raw: Optional[str]) -> list[dict[str, Any]]:
             raise _unprocessable(
                 f"unknown filter {item['key'][:40]!r}; allowed: {', '.join(FILTERS)}", "unknown_filter"
             )
-        if spec.type == TYPE_PRODUCT_REF:
+        entry = by_key.setdefault(spec.key, {"key": spec.key})
+        if spec.products:
             raw_ids = item.get("product_ids")
             if raw_ids is not None and not isinstance(raw_ids, list):
                 raise _unprocessable("product_ids must be a list", "product_ids_required")
             ids = parse_uuid_list([json.dumps(raw_ids)] if raw_ids else None, param_name="product_ids")
             if not ids:
                 raise _unprocessable(f"filter {spec.key} needs product_ids", "product_ids_required")
-            entry = by_key.setdefault(spec.key, {"key": spec.key, "product_ids": []})
+            entry.setdefault("product_ids", [])
             entry["product_ids"] += [i for i in ids if i not in entry["product_ids"]]
             if len(entry["product_ids"]) > MAX_PRODUCT_IDS:
                 raise _unprocessable(f"at most {MAX_PRODUCT_IDS} product_ids per filter", "too_many")
-        else:  # pragma: no cover - every registered type is handled above
-            raise _unprocessable(f"filter {spec.key} has no reader", "unknown_filter")
-    out = list(by_key.values())
-    return out
+        if spec.value is not None:
+            value, unit = _value(spec.value, spec.key, item.get("value"), item.get("unit"), db)
+            if "value" in entry and (entry["value"], entry["unit"]) != (value, unit):
+                raise _unprocessable(f"filter {spec.key} given two values", "bad_value")
+            entry["value"], entry["unit"] = value, unit
+    return list(by_key.values())
 
 
 # --------------------------------------------------------------------------- stock
@@ -316,7 +386,8 @@ def run_find(
         for pid in item.get("product_ids") or []:
             if pid not in seen:
                 seen.append(pid)
-        groups.extend((spec.key, g) for g in spec.run(db, seen))
+        arg = FilterArg(seen, item.get("value"), item.get("unit"))
+        groups.extend((spec.key, g) for g in spec.run(db, arg))
     shown_ids: list[str] = []
     for _, g in groups:
         for p in g.rows[:ROWS_PER_GROUP]:
@@ -333,7 +404,11 @@ def run_find(
         body_groups.append(
             {
                 "filter": key,
-                "anchor": {"product_id": g.anchor_id, "product_code": g.anchor_code},
+                "anchor": (
+                    {"product_id": g.anchor_id, "product_code": g.anchor_code}
+                    if g.anchor_id is not None
+                    else None
+                ),
                 "relation": g.relation,
                 "head": g.head,
                 "rows": [

@@ -41,7 +41,7 @@ def find_products(
     current_user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
-    parsed = product_find.parse_filters(filters)
+    parsed = product_find.parse_filters(filters, db=db)
     # Stock is the inventory module's data: with that module off for this caller the rows
     # come back without it, as `/inventory/stock` would refuse (security review L1).
     return product_find.run_find(

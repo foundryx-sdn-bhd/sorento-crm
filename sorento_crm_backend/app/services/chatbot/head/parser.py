@@ -515,9 +515,12 @@ def _build_json_schema() -> dict[str, Any]:
                             "additionalProperties": False,
                             "properties": {
                                 "key": {"type": "string"},
-                                "value": {"type": ["string", "null"]},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
                             },
-                            "required": ["key", "value"],
+                            "required": ["key", "value", "unit"],
                         },
                     },
                 },

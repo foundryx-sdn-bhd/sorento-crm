@@ -1769,8 +1769,8 @@ def run_fetch(
     # CHAT-FIND (PLAN-chat-generic-find-12oct 2.5): the parser's `find.filters` (registry keys
     # only) pick the generic find tool over the domain's own. Only the products this message
     # named are its subject; the args are built below by the same transformer.
-    find_keys = find_lane.filter_keys(parse_output)
-    if find_keys:
+    find_items = find_lane.filter_items(parse_output)
+    if find_items:
         tool_name = find_lane.TOOL
         tool_item = {"name": tool_name, "_tool_pick": {"source": "find_override"}}
         entities = find_lane.named_this_turn(parse_output, jsc.array(entities))
@@ -2266,10 +2266,11 @@ def run_fetch(
         if dry_run and tool_name == _LOW_STOCK_TOOL:
             args["dry_run"] = True
         if tool_name == find_lane.TOOL:
-            find_args = find_lane.route_args(args, find_keys)
+            find_args, ask = find_lane.route_args(args, find_items)
             if find_args is None:
-                # Card rule 6: no product named, so ask for the code; never pick one.
-                return _fixed_reply(find_lane.ASK_PRODUCT_LINE)
+                # Card rule 6: nothing to run on (no product named, no value given), so the
+                # filter's own question; never a guess.
+                return _fixed_reply(ask)
             args = find_args
     except fetch_mod.ScopeViolation as violation:
         # D4: the defence behind the engine's gate. No tool is called.

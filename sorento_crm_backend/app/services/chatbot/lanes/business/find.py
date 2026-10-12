@@ -5,13 +5,13 @@ what the message means (`find.filters`, keys from `product_find.FILTERS`); the r
 which products it names; the route (`GET /api/v1/master-data/products/find`, MCP `crm_find`)
 answers under the contact's company, brand and stock policy. This module only:
 
-* `filter_keys`: the registered keys the parse carries, in order, once each (an unknown key is
-  dropped: the registry is the vocabulary, never the model);
+* `filter_items`: the registered filters the parse carries, by key, in order, once each (an
+  unknown key is dropped: the registry is the vocabulary, never the model);
 * `named_this_turn`: the resolved product entities this message named, when it named any (a
   product carried from an earlier turn is not the subject of a new find), else the carried ones
   (a bare "which seat cover fits it?");
-* `route_args`: the transformer's args as the route's `filters`, or None when a product_ref
-  filter has no product (the lane asks for the code, card rule 6).
+* `route_args`: the transformer's args as the route's `filters` (products and typed values), or
+  None and the filter's own question when it has nothing to run on (card rule 6).
 """
 from __future__ import annotations
 
@@ -26,14 +26,20 @@ ASK_PRODUCT_LINE = product_find.ASK_PRODUCT_LINE
 _PASSED = ("contact_id", "space_id", "view")
 
 
-def filter_keys(parse_output: dict[str, Any]) -> list[str]:
+def filter_items(parse_output: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The registered filters the parse carries, by key, in order, first one per key (an
+    unknown key is dropped: the registry is the vocabulary, never the model)."""
     find = parse_output.get("find") if isinstance(parse_output, dict) else None
-    keys: list[str] = []
+    items: dict[str, dict[str, Any]] = {}
     for item in jsc.array(find.get("filters") if isinstance(find, dict) else None):
         key = item.get("key") if isinstance(item, dict) else None
-        if isinstance(key, str) and key in product_find.FILTERS and key not in keys:
-            keys.append(key)
-    return keys
+        if isinstance(key, str) and key in product_find.FILTERS and key not in items:
+            items[key] = item
+    return items
+
+
+def filter_keys(parse_output: dict[str, Any]) -> list[str]:
+    return list(filter_items(parse_output))
 
 
 def _key(value: Any) -> str:
@@ -94,14 +100,24 @@ def _ids(value: Any) -> list[str]:
     return out
 
 
-def route_args(args: dict[str, Any], keys: list[str]) -> Optional[dict[str, Any]]:
+def route_args(args: dict[str, Any], items: dict[str, dict[str, Any]]) -> tuple[Optional[dict[str, Any]], str]:
+    """The route's args, or None and the line to ask when a filter has nothing to run on
+    (its row's own `ask`: no product named, or no value given)."""
     product_ids = _ids(args.get("product_ids"))
     filters: list[dict[str, Any]] = []
-    for key in keys:
-        if product_find.FILTERS[key].type == product_find.TYPE_PRODUCT_REF:
+    for key, item in items.items():
+        row = product_find.FILTERS[key]
+        entry: dict[str, Any] = {"key": key}
+        if row.products:
             if not product_ids:
-                return None
-            filters.append({"key": key, "product_ids": product_ids})
+                return None, row.ask
+            entry["product_ids"] = product_ids
+        if row.value is not None:
+            value = item.get("value")
+            if value is None or (isinstance(value, str) and not value.strip()):
+                return None, row.ask
+            entry["value"], entry["unit"] = value, item.get("unit")
+        filters.append(entry)
     out = {k: args[k] for k in _PASSED if k in args}
     out["filters"] = filters
-    return out
+    return out, ""
