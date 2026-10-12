@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   MessageSquare,
   CloudDownload,
+  Armchair,
 } from 'lucide-react';
 import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { Badge, BadgeDot } from '@/components/ui/badge';
@@ -987,6 +988,12 @@ const ProductsList = () => {
                 label: 'Create product',
                 icon: Plus,
                 onClick: openCreateProduct,
+              },
+              {
+                key: 'seat-cover-flyer',
+                label: 'Seat cover flyer',
+                icon: Armchair,
+                onClick: () => router.push('/master-data-management/products/seat-cover-flyer'),
               },
               {
                 key: 'advanced-filter',
