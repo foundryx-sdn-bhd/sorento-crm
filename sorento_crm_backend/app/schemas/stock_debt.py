@@ -288,6 +288,16 @@ class StockDebtSupplyEvent(BaseModel):
     outstanding_qty: Optional[float] = None
 
 
+class StockDebtProjection(BaseModel):
+    """STOCK-DEBT-PROJECTION: how the projected balance of one month is made up.
+    `projected = month_balance + pool_added + carried_in`."""
+
+    carried_in: float
+    month_balance: float
+    pool_added: float
+    projected: float
+
+
 class StockDebtCell(BaseModel):
     """The two tables behind one cell. `sum(supply.free_qty) - sum(demand.short_qty)` is the
     balance the cell that opened them prints (R37)."""
@@ -299,6 +309,8 @@ class StockDebtCell(BaseModel):
     #: (Outstanding for an SPO, the on-hand figure otherwise), never recomputed by the FE.
     demand_total_qty: float
     supply_total_qty: float
+    #: Set only when the drill was opened with `projected=true` on a month column.
+    projection: Optional[StockDebtProjection] = None
 
 
 class StockDebtExportIn(BaseModel):
@@ -322,3 +334,5 @@ class StockDebtExportIn(BaseModel):
     book: Book = "all"
     split: ExportSplit = "none"
     show_aux: bool = False
+    #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
+    projected: bool = False
