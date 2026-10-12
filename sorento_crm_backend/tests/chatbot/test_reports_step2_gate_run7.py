@@ -170,10 +170,11 @@ def test_b20_guard_a_location_keeps_the_ranking_on_the_ranking_lane(console, mon
 
 
 def test_b21_guard_a_basis_top_selling_cannot_count_keeps_the_ranking_lane(console, monkeypatch) -> None:
-    text, log = lane._say_all(
-        console, monkeypatch, _brand_ranking(**{**COMPLETE, "basis": "outstanding"}), "outstanding top 40 Sorento products"
-    )
+    qf = _brand_ranking(**{**COMPLETE, "basis": "outstanding"})
+    text, log = lane._say_all(console, monkeypatch, qf, "outstanding top 40 Sorento products")
     assert "crm_top_selling_report" not in _names(log), (text, log)
+    (ranking,) = [a for n, a in log if n == "crm_report"]
+    assert "outstanding" in str(ranking.get("measure")), ranking
 
 
 def test_n1_a_two_word_category_survives_the_relabel(console, monkeypatch) -> None:
@@ -186,17 +187,19 @@ def test_n1_a_two_word_category_survives_the_relabel(console, monkeypatch) -> No
     assert kept, (text, log, slot)
 
 
-def test_a17_a_declared_pick_beside_the_typed_code_is_not_a_narrowing(console, monkeypatch) -> None:
-    """The live parser echoed `picked: [2]` (By product) beside the code it typed, with no
-    `reference_positions`. `decide.picked_positions` does not read `open_question_answer`, so the
-    engine does not run the drill from it (actual behaviour, pinned): but it is not an exact-code
-    narrowing either, and the code is never sent as the product."""
+@pytest.mark.parametrize("axis", [None, "product"])
+def test_a18_a_declared_pick_with_no_position_is_not_a_pick_the_code_narrows(console, monkeypatch, axis) -> None:
+    """`decide.picked_positions` is the engine's one pick test. The live parser declares a pick
+    (`picked: [2]`) beside the code it typed, with no `reference_positions`: the engine does not
+    treat that as a pick, so the typed code narrows the held report."""
     seen = _hold_with_offer(console, monkeypatch)
-    qf = _scoped_exact()
-    qf["open_question_answer"] = {**LIVE_NO_ANSWER, "mode": "pick", "picked": [2]}
+    qf = _live(_exact_verdict(group_by=axis, reference_positions=[]))
+    qf["open_question_answer"] = {"mode": "pick", "picked": [2], "items": [], "qty_for_all": None}
     console.say(qf, "only this exact model")
-    sent = _sent(seen)
-    assert not any(a.get("product_code_exact") for a in sent), sent
+    sent = [a for a in _sent(seen) if a.get("product_code_exact")]
+    assert sent and sent[0].get("product_code") == EXACT and not sent[0].get("group_by"), [
+        {k: v for k, v in a.items() if k not in ("_diagnostics", "view", "date_mode", "contact_id", "space_id")} for a in _sent(seen)
+    ]
 
 
 def test_a16_a_narrowed_empty_report_closes_the_drill_offer(console, monkeypatch) -> None:
@@ -238,3 +241,51 @@ def test_a15b_a_label_entity_is_a_pick_even_without_the_live_answer_object(conso
     sent = _sent(seen)
     assert not any(a.get("product_code_exact") or a.get("product_code") == "By product" for a in sent), sent
     assert any(a.get("group_by") == "product" for a in sent), sent
+
+
+# ================================================================================ restated ranking answers the open question
+
+
+def _basis_open(console) -> None:
+    text, calls = console.say(
+        _rank(_e("Sorento", "brand"), group_by="product", top_n=20, basis=None, measure="qty", **SEP), "top 20 products"
+    )
+    assert calls == [] and "Delivered" in text, (text, calls)
+
+
+def _restated_answer(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="sales_ranking", domain_in_message=False,
+        ranking_refine=True, group_by=None, top_n=40, basis="ordered", measure=None, entities=[],
+        date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_b24_a_restated_count_that_answers_the_open_question_wins_over_the_held_one(console) -> None:
+    _basis_open(console)
+    _text, calls = console.say(_restated_answer(), "ordered, top 40")
+    (args,) = calls
+    assert args["top_n"] == 40, args
+
+
+def test_b25_guard_an_answer_with_no_count_keeps_the_held_one(console) -> None:
+    _basis_open(console)
+    _text, calls = console.say(_restated_answer(top_n=None), "ordered")
+    (args,) = calls
+    assert args["top_n"] == 20, args
+
+
+def test_b26_guard_a_month_ranking_of_sales_stays_a_sales_analysis(console, monkeypatch) -> None:
+    qf = _analysis_ranking(top_n=3, group_by="month", sales_channel="dealer", entities=[])
+    text, log = lane._say_all(console, monkeypatch, qf, "top 3 months of dealer sales this year")
+    assert "By quantity or by amount?" not in text, text
+    assert not ((console.session_vars.get("focus") or {}).get("top_selling")), console.session_vars
+
+
+def test_b27_guard_an_invoiced_company_analysis_stays_a_sales_analysis(console, monkeypatch) -> None:
+    qf = _analysis_ranking(top_n=5, sales_basis="invoiced", sales_company="Mocha", sales_channel=None, entities=[])
+    text, log = lane._say_all(console, monkeypatch, qf, "top 5 Mocha invoiced sales")
+    assert "By quantity or by amount?" not in text, text
+    assert not ((console.session_vars.get("focus") or {}).get("top_selling")), console.session_vars
