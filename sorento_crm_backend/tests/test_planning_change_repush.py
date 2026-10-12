@@ -45,7 +45,15 @@ from app.models.project_so import (
 )
 from app.schemas.scm_orders import SalesOrderUpdate
 from app.services import planning_change_service
-from app.services.scm.outstanding_diff import ADDED, DATE_MOVED, PRODUCT_CHANGED, Change, Diff, Line
+from app.services.scm.outstanding_diff import (
+    ADDED,
+    DATE_MOVED,
+    PRODUCT_CHANGED,
+    QTY_CHANGED,
+    Change,
+    Diff,
+    Line,
+)
 from app.services.scm.sales_order_service import SalesOrderService
 
 from tests.scm.test_planning_change_diff_parity import (  # noqa: F401 - fixtures reused
@@ -111,6 +119,22 @@ def _product_changed(so_number: str, old_item_code: str, new_item_code: str, loc
             qty=qty, required_date=required_date, row_ref=str(core_line_id),
         ),
     )
+
+
+def _assert_one_live_added_row(db, batch_id, item_code, *, qty, on):
+    """AC-2 restated (SO422492 BUG B): exactly one live row for the line, an `added` row
+    for its current product, qty and date."""
+    live = [
+        r for r in _rows_for(db, batch_id)
+        if r.item_code == item_code and r.applied_state == "pending"
+    ]
+    assert len(live) == 1, [(r.kind, r.applied_state) for r in live]
+    row = live[0]
+    assert row.kind == "added"
+    assert row.decision is None
+    assert row.to_json["qty"] == qty
+    assert row.to_json["required_date"] == on.isoformat()
+    return row
 
 
 # --------------------------------------------------------------------------- #
@@ -183,14 +207,12 @@ def test_repush_supersedes_stale_added_row_when_line_moves_again(api):
         "AC-2: a re-push that moves an undecided line again must retire the older "
         "`added` row instead of leaving it pending at the stale date"
     )
-    assert stale.applied_reason == "Line changed again; the row no longer describes it"
+    assert stale.applied_reason == "Replaced by a later change"
 
-    still_for_l = [
-        r for r in _rows_for(db, batch1.id) if r.item_code == new_product.product_code
-    ]
-    assert len(still_for_l) == 1, (
-        "AC-2: an undecided line's move raises no NEW row - only the retirement of the old one"
-    )
+    # AC-2 as restated by SO422492 BUG B: the line still has exactly ONE live row - the old
+    # one retired, one `added` replacement describing the line as it stands now - never an
+    # extra row beside it.
+    _assert_one_live_added_row(db, batch1.id, new_product.product_code, qty="10", on=D2)
 
     db.refresh(new_core_line)
     assert new_core_line.required_date == D2
@@ -388,11 +410,8 @@ def test_repush_supersedes_via_the_core_line_id_fallback_when_push_1_had_no_mirr
         "the core_line_id fallback must find the older row even though it never carried "
         "a project_line_id"
     )
-    assert stale.applied_reason == "Line changed again; the row no longer describes it"
-    still_for_l = [
-        r for r in _rows_for(db, batch1.id) if r.item_code == new_product.product_code
-    ]
-    assert len(still_for_l) == 1
+    assert stale.applied_reason == "Replaced by a later change"
+    _assert_one_live_added_row(db, batch1.id, new_product.product_code, qty="10", on=D2)
 
 
 def test_repush_with_a_product_change_supersedes_the_stale_added_row(api):
@@ -455,7 +474,70 @@ def test_repush_with_a_product_change_supersedes_the_stale_added_row(api):
         "and date - `_entry_differs_from_older_row` treats a product swap as always "
         "different from what the older row describes"
     )
-    assert stale.applied_reason == "Line changed again; the row no longer describes it"
+    assert stale.applied_reason == "Replaced by a later change"
+    # SO422492 BUG B (SRTUB6503-NEW on line 1440): the replacement names the NEW product,
+    # so CS sees the line and can confirm it.
+    _assert_one_live_added_row(db, batch1.id, new_product.product_code, qty="10", on=D1)
+    assert not [
+        r for r in _rows_for(db, batch1.id)
+        if r.item_code == old_product.product_code and r.applied_state == "pending"
+    ]
+
+
+def test_so422492_a_qty_change_on_an_undecided_new_line_keeps_one_replacement_row(api):
+    """SO422492 BUG B (SRTWT2201 24 on line 748): AutoCount changes the qty of a NEW line
+    whose `added` row is still undecided. The old row is retired and exactly one `added`
+    row for the current qty replaces it, so the moved qty can still be confirmed and
+    ordered; a second identical push leaves that one row alone."""
+    world, project = api
+    db = world.db
+    core_so, _held_core_line, _held_product, order, held_mirror = _linked_line(
+        world, project, qty_ordered=72,
+    )
+    _freeze_with_a_full_buy(db, world, order, held_mirror)
+
+    product = _product(db)
+    core_line = _core_line(db, core_so, product, world.own_wh, qty_ordered="20", required_date=D1)
+    _project_line(db, order, line_no=748, product=product, core_line=core_line)
+    db.commit()
+
+    push1 = _added_change(
+        core_so.so_number, product.product_code, world.own_wh.warehouse_code,
+        qty=20, required_date=D1,
+    )
+    batch1 = planning_change_service.build_batch(
+        db, Diff(scope_documents=(core_so.so_number,), changes=[push1]),
+        applied_line_ids={id(push1): str(core_line.id)},
+        order_ids={core_so.so_number: str(core_so.id)},
+        actor=world.actor, import_job_id=None, file_name="push1.xlsx",
+    )
+    db.commit()
+    first = _assert_one_live_added_row(db, batch1.id, product.product_code, qty="20", on=D1)
+
+    core_line.qty_ordered = Decimal("24")
+    db.flush()
+
+    def _qty_push():
+        loc = world.own_wh.warehouse_code
+        return Change(
+            QTY_CHANGED, core_so.so_number, product.product_code, loc,
+            before=Line(doc_number=core_so.so_number, item_code=product.product_code,
+                        location=loc, qty=20.0, required_date=D1, row_ref=str(core_line.id)),
+            after=Line(doc_number=core_so.so_number, item_code=product.product_code,
+                       location=loc, qty=24.0, required_date=D1, row_ref=str(core_line.id)),
+        )
+
+    for push in (_qty_push(), _qty_push()):
+        planning_change_service.build_batch(
+            db, Diff(scope_documents=(core_so.so_number,), changes=[push]),
+            applied_line_ids={id(push): str(core_line.id)},
+            order_ids={core_so.so_number: str(core_so.id)},
+            actor=world.actor, import_job_id=None, file_name="push2.xlsx",
+        )
+        db.commit()
+        db.expire_all()
+        assert db.get(PlanningChangeRow, first.id).applied_state == "superseded"
+        _assert_one_live_added_row(db, batch1.id, product.product_code, qty="24", on=D1)
 
 
 def test_apply_after_a_gate_failed_repush_raises_no_oi_for_the_confirmed_stale_row(api):
@@ -693,10 +775,10 @@ def test_manual_edit_commits_the_supersede_even_when_the_second_call_keeps_no_ne
         ]),
         user_id=world.actor,
     )
-    assert result2["planning_change_batch"] is None, (
-        "the moved line is still undecided, so no NEW row is kept - only the older one's "
-        "supersede, which is what this test is about"
+    assert result2["planning_change_batch"] is not None, (
+        "SO422492 BUG B: the older row's replacement is kept in the same open batch"
     )
+    assert str(result2["planning_change_batch"]["id"]) == str(batch1_id)
 
     # A later, unrelated failure elsewhere in the SAME request rolls the session back to
     # its last commit - exactly why the supersede has to be committed here rather than left
@@ -721,7 +803,15 @@ def test_manual_edit_commits_the_supersede_even_when_the_second_call_keeps_no_ne
             "the supersede from a gate-failed manual edit must be committed, not left "
             "pending for whatever the caller does next"
         )
-        assert row["applied_reason"] == "Line changed again; the row no longer describes it"
+        assert row["applied_reason"] == "Replaced by a later change"
+        live = fresh.execute(
+            text(
+                "select kind from planning_change_rows where core_line_id = :c "
+                "and applied_state = 'pending'"
+            ),
+            {"c": str(new_core_line_id)},
+        ).scalars().all()
+        assert live == ["added"], live
     finally:
         fresh.close()
 
