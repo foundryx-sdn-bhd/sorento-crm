@@ -26,9 +26,11 @@ The audit for this lane found a third, and the owner added a fourth:
 - Tier 3 and RAG phrase: `company_sql_predicate(db, "ec.company_id", shared=True)`, the existing
   raw-SQL helper. NULL-company chunks are shared knowledge (forms), as in
   `embedding_service._embedding_company_filter`.
-- RAG phrase, owner decision (b): `debtor:<code>` seeds are company-less (migration 304) although
-  their orders are not, so any company scope excludes them. Staff (scope None) still see them.
-  Follow-up lane (a): stamp debtor seeds per company, then drop the exclusion.
+- Owner decision (b): `debtor:<code>` seeds are company-less (migration 304) although their
+  orders are not, so any company scope excludes them from tier 3, RAG phrase (one fragment,
+  `_embedding_scope_sql`) and `EmbeddingReadService.search_current` (`/external/rag/search`).
+  Staff (scope None) still see them. Follow-up lane (a): stamp debtor seeds per company, then
+  drop the exclusion.
 - `_scope_key(db)` = (company scope, brand scope) joins `_memo_key`, the per-request embedding
   memo key and `_vector_key`. Brand scope is in the key because the listener narrows Product
   reads by it, so tier-1/2 answers depend on it. Company in `_vector_key` is the owner's rule
