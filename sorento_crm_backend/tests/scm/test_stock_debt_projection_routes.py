@@ -352,3 +352,42 @@ def test_prod_srtwt2215_switch_off_reads_as_prod(scm_app):
         every, _ = _row(c, seed)
     assert _balances(project, 7) == PROD_PROJECT_MONTHS
     assert _balances(every, 7)[0] == 5138.0
+
+
+def test_an_order_at_another_pool_placed_on_the_reserve_po_is_netted_in_both_books(scm_app):
+    """Review round 1, blocker: every pool shares one ownership group, so a 300 order at
+    BRW can hold 300 of HQ's reserve PO through a placement. Under Book=Project neither
+    BRW nor HQ is in the page's span; the projection still nets that link, so both books
+    carry 700: 600, 600, 400, 100."""
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    _order, brw_line = _demand(
+        db, seed["product"], seed["pool"], qty=300, required_date=TODAY,
+        so_number=f"{seed['marker']}-SO-BRW",
+    )
+    project_order, project_line = _project_line_for(db, brw_line)
+    _order_back_link_on_po(db, project_order, project_line, po_line=seed["po_line"], qty=300)
+    with TestClient(app) as c:
+        for book in BOOKS:
+            assert _projected(c, seed, book)[0] == [600.0, 600.0, 400.0, 100.0], book
+
+
+def test_the_project_figure_is_the_pages_own_whatever_the_reserve_walk_caps(scm_app):
+    """Review round 1, should-fix: a placement of 300 on a reserve PO with only 200
+    outstanding. Under Book=Project the page honours the out-of-span link uncapped (its
+    Covered by says 300), so the projection's project figure is the page's: the 300 line
+    is covered and the PO has nothing left to carry. It reads exactly the switch-off
+    Book=Project months."""
+    from decimal import Decimal
+
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    seed["po_line"].qty_ordered = Decimal("200")
+    db.flush()
+    project_order, project_line = _project_line_for(db, seed["line"])
+    _order_back_link_on_po(db, project_order, project_line, po_line=seed["po_line"], qty=300)
+    with TestClient(app) as c:
+        plain, _ = _row(c, seed, book="project")
+        balances, _row_ = _projected(c, seed, "project")
+    assert _balances(plain) == [-100.0, 0.0, -200.0, 0.0]
+    assert balances == _balances(plain)
