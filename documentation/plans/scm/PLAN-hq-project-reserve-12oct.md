@@ -1,6 +1,6 @@
 # PLAN: HQ warehouse as a project reserve
 
-Status: Review READY (reviewer round 3, 12 Oct); waiting on CI and owner hand test. Track: standard (Stock Debt
+Status: Owner hand test PASS (13 Oct 00:20); waiting on CI. Track: standard (Stock Debt
 walk, planner pool set, G12 lock; no migration).
 
 ## Owner ask (12 Oct)
@@ -85,7 +85,7 @@ the data step right after it, never before.
     WHERE w.warehouse_code = 'HQ';                       -- expect 2 rows: SRT and MCH
    UPDATE warehouses SET segment = 'project', updated_at = now()
     WHERE warehouse_code = 'HQ'
-      AND company_id = (SELECT id FROM companies WHERE code = 'SRT');  -- expect 1 row
+      AND company_id = (SELECT id FROM companies WHERE code = 'SRT');  -- expect 1 row: 50aa5369
    ```
 2. What moves at that step: reorder / low stock / BRW on hand / PO book / SPO history /
    product economics / cover offers drop HQ; G12 and supply_claim skip it; the planner stops
