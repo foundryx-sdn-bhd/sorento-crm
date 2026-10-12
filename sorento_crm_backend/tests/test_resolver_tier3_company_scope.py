@@ -268,3 +268,42 @@ def test_rag_phrase_under_no_scope_still_returns_every_company(db, world):
     set_company_scope(db, None)
     hits = er._rag_resolve_phrase(db, f"zzt3 phrase {s}", frozenset({"customer"}))
     assert {f"ZZT3CA{s}", f"ZZT3CB{s}"} <= {h.canonical_code for h in hits}
+
+
+# ------------------------------------------------------------- caches (CHAT-SPEED #1602)
+# The per-request resolve memo (tier-1/2 answers, query vectors) and the cross-request
+# vector cache are keyed by the caller's company (and brand) scope, so an answer or a
+# vector looked up under one company is never served under another.
+
+
+def test_memo_does_not_serve_one_scopes_miss_to_another(db, world):
+    """Red before the fix: inside one memo, company B's empty tier-1 answer for A's
+    product code was replayed under A's scope, so A's own product went missing."""
+    code = f"ZZT3A{world['suffix']}"
+    with er.resolve_memo():
+        set_company_scope(db, frozenset({world["b"]}))
+        miss = er.resolve_references(db, [code], allowed_entity_types=["product"],
+                                     enable_embedding_fallback=False)
+        set_company_scope(db, frozenset({world["a"]}))
+        hit = er.resolve_references(db, [code], allowed_entity_types=["product"],
+                                    enable_embedding_fallback=False)
+    assert not {str(m.uuid) for tr in miss.resolutions for m in tr.matches}
+    assert world["prod_a"] in {str(m.uuid) for tr in hit.resolutions for m in tr.matches}
+
+
+def test_vector_cache_is_keyed_by_company_scope(db, world):
+    """Red before the fix: a vector remembered for company A's caller was a hit for B's."""
+    calls: list[list[str]] = []
+
+    def embed(texts):
+        calls.append(list(texts))
+        return [[0.5] * DIM for _ in texts]
+
+    token = f"zz-cache-{world['suffix']}"
+    set_company_scope(db, frozenset({world["a"]}))
+    er._memo_embedding(db, token, embed)
+    set_company_scope(db, frozenset({world["b"]}))
+    er._memo_embedding(db, token, embed)
+    set_company_scope(db, frozenset({world["a"]}))
+    er._memo_embedding(db, token, embed)
+    assert calls == [[token], [token]]
