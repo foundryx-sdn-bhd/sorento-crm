@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seat cover compatibility mockup</title>
+<!-- Lane WC-SEAT-COMPAT (PR #1590). Annotated mockup for the owner's Lavish review, not shipped
+     code. Plain inline CSS so it opens from a file.
+     Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md
+     UAC:  documentation/plans/products/wc-seat-compat-12oct-acceptance-criteria.md
+     Screens: (1) Products > Seat cover flyer (the one-time review), (2) a product > Variants >
+     Compatible section, (3) its Add dialog. SKU codes shown are shaped like the catalogue's,
+     not copied from it. -->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --fg:#09090b; --muted:#71717a; --line:#e4e4e7; --line-soft:#f1f1f3;
+  --primary:#3b82f6; --primary-soft:#eff6ff; --amber:#92400e; --amber-soft:#fef3c7;
+  --green:#065f46; --green-soft:#d1fae5; --red:#991b1b; --red-soft:#fee2e2; --grey-soft:#f4f4f5;
+  --callout:#e11d74; --font:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 var(--font)}
+.doc{max-width:1760px;margin:0 auto;padding:24px 16px 64px}
+.doc>h1{font-size:22px;margin:0 0 4px}
+.doc>.sub{color:var(--muted);margin:0 0 20px;max-width:900px}
+h2.ft{font-size:13px;margin:32px 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.layout{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.scroll{overflow-x:auto;max-width:100%;border-radius:12px}
+.frame{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.w1280{width:1280px}.w375{width:375px;flex:none}
+.notes{flex:1 1 360px;min-width:280px;max-width:560px}
+.notes ol{margin:0;padding:0;list-style:none}
+.notes li{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.notes li b{display:block;margin-bottom:2px}
+.notes .ref{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.co{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:50%;background:var(--callout);color:#fff;font-size:11px;font-weight:700;vertical-align:middle}
+.shell{display:flex;min-height:600px}
+.side{width:232px;flex:none;border-right:1px solid var(--line);padding:16px 12px;background:#fcfcfd;font-size:13px}
+.side .brand{font-weight:700;font-size:16px;margin:0 8px 18px}
+.side .grp{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 6px}
+.side .it{padding:6px 8px;border-radius:6px;color:#3f3f46}
+.side .it.on{background:var(--primary-soft);color:var(--primary);font-weight:600}
+.topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;padding:0 20px;color:var(--muted);font-size:13px}
+.main{flex:1;min-width:0}.content{padding:20px 24px 28px}
+.phrow{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+.phrow h1{font-size:20px;margin:0;font-weight:600}
+.crumbs{color:var(--muted);font-size:13px;margin-bottom:4px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;font:500 13px var(--font);color:var(--fg);white-space:nowrap}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.sm{padding:3px 9px;font-size:12px}.btn.dis{opacity:.45}
+.btn.count{background:#fff7ed;border-color:#fdba74;color:#9a3412}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 9px 1px 7px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--grey-soft);color:#3f3f46}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}.pill.green{background:var(--green-soft);color:var(--green)}
+.pill.red{background:var(--red-soft);color:var(--red)}.pill.blue{background:var(--primary-soft);color:#1e40af}
+.card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:12px 14px;margin-bottom:12px}
+.strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+.chk{width:14px;height:14px;border:1px solid #a1a1aa;border-radius:3px;display:inline-block;flex:none;vertical-align:middle}
+.chk.on{background:var(--primary);border-color:var(--primary)}.chk.off{opacity:.3}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.muted{color:var(--muted)}.small{font-size:12px}
+.printed{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
+.ptag{border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;background:#fafafa}
+.ptag b{font-weight:600}.ptag .miss{color:var(--red);text-decoration:line-through}
+.grid{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13px}
+.grid table{border-collapse:collapse;width:100%;table-layout:fixed}
+.grid th{background:#fafafa;color:var(--muted);font-weight:500;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.grid td{padding:7px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid tr:last-child td{border-bottom:0}
+.grid tr.un td{background:#fffbeb}
+.seg{display:inline-block;background:var(--grey-soft);border-radius:4px;padding:0 5px;margin-right:3px;font-size:11px}
+.seg.bad{background:var(--amber-soft);color:var(--amber);font-weight:600}
+.sticky{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 14px;box-shadow:0 6px 20px rgba(0,0,0,.10);background:#fff}
+.tabs{display:flex;gap:20px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;white-space:nowrap}
+.tabs span{padding:8px 0;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs span.on{color:var(--fg);border-bottom-color:var(--primary)}
+.row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-bottom:8px}
+.row .t{flex:1;min-width:0}.row .t a{font-weight:600;color:var(--fg);text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .t div{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{border:1px dashed var(--line);border-radius:6px;text-align:center;padding:18px 10px}
+.empty b{display:block;font-size:13px}.empty span{font-size:13px;color:var(--muted)}
+.sub-h{font-size:13px;font-weight:600;margin:14px 0 8px;color:#3f3f46}
+.modal{border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.14);width:480px;max-width:100%}
+.modal .mh{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:600}
+.modal .mb{padding:16px 18px}.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.lbl{font-size:12px;color:var(--muted);margin:0 0 4px}
+.sel{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;margin-bottom:14px}
+.radio{display:flex;gap:16px;margin-bottom:6px;font-size:13px}
+.radio i{display:inline-block;width:14px;height:14px;border:1px solid #a1a1aa;border-radius:50%;vertical-align:-2px;margin-right:6px}
+.radio i.on{border:4px solid var(--primary)}
+.phone .top{height:48px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 16px;font-weight:700}
+.phone .content{padding:14px 16px 20px}
+.skucard{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}
+.skucard.un{background:#fffbeb}
+.skucard .l1{display:flex;align-items:center;gap:8px}
+.skucard .l1 b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.skucard .l2{color:var(--muted);font-size:12px;margin:2px 0 0 22px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Seat cover compatibility</h1>
+<p class="sub">One-time review of the seat cover flyer (UPDATE 01.04.2026), then a Compatible section on every product page.
+Owner ruling 12 Oct: match only what the flyer prints. Nothing is linked until the owner ticks it, and anything that is not unambiguous is listed as UNRESOLVED and cannot be ticked.</p>
+
+<!-- ====================================================================== 1. REVIEW 1280 -->
+<h2 class="ft">1. Seat cover flyer review, 1280px</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side">
+    <div class="brand">Sorento CRM</div>
+    <div class="grp">Master data</div>
+    <div class="it on">Products</div><div class="it">Product sets</div><div class="it">Spec registry</div>
+  </div>
+  <div class="main">
+    <div class="topbar">Owner</div>
+    <div class="content">
+      <div class="phrow">
+        <div><div class="crumbs">Products / Seat cover flyer</div><h1>Seat Cover Flyer <span class="co">1</span></h1></div>
+      </div>
+
+      <div class="card strip">
+        <div><b>Old Seat Cover spec</b> <span class="pill amber">Active</span> <span class="muted small">11 products hold a value</span> <span class="co">2</span></div>
+        <span class="btn dis">Retire spec</span>
+      </div>
+
+      <div class="card strip">
+        <div class="small"><b>35</b> printed models &middot; <b>28</b> ready &middot; <b>0</b> linked &middot; <b class="muted">41</b> unresolved &middot; <b>2</b> models with no SKU &middot; <b>0</b> covers missing <span class="co">3</span></div>
+        <div style="display:flex;gap:8px"><span class="btn" style="color:var(--muted);min-width:220px">Search model or SKU</span><span class="btn">Hide linked</span></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px"><i class="chk on"></i><b>SRTWC8383</b><span class="pill">8 SKUs</span><span class="pill green">6 ready</span><span class="pill amber">2 unresolved</span> <span class="co">4</span></div>
+        <div class="printed">
+          <span class="ptag">Row 3 &middot; <b>SRTWC8383</b> &rarr; SRTSCBD331-UF</span>
+          <span class="ptag">Row 24 &middot; <b>SRTWC8383-MBL</b> &rarr; SRTSCBD823-MBL</span>
+          <span class="ptag">Row 25 &middot; <b>SRTWC8383-BL</b> &rarr; SRTSCBD824-BL</span>
+          <span class="ptag">Row 28 &middot; <b>SRTWC8383-GY</b> &rarr; SRTSCBD825-GY</span>
+          <span class="ptag">Row 29 &middot; <b>SRTWC8383-RG</b> &rarr; SRTSCBD826-RG</span>
+        </div>
+        <div class="grid"><table>
+          <colgroup><col style="width:40px"><col style="width:230px"><col style="width:190px"><col style="width:220px"><col style="width:200px"><col></colgroup>
+          <thead><tr><th></th><th>SKU</th><th>Flyer code</th><th>Seat cover</th><th>Other code parts</th><th>Status <span class="co">5</span></th></tr></thead>
+          <tbody>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-UF</td><td class="mono">SRTWC8383</td><td class="mono">SRTSCBD331-UF</td><td><span class="seg">RL</span><span class="seg">UF</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-UF-150</td><td class="mono">SRTWC8383</td><td class="mono">SRTSCBD331-UF</td><td><span class="seg">150</span><span class="seg">RL</span><span class="seg">UF</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-MBL</td><td class="mono">SRTWC8383-MBL</td><td class="mono">SRTSCBD823-MBL</td><td><span class="seg">RL</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-BL</td><td class="mono">SRTWC8383-BL</td><td class="mono">SRTSCBD824-BL</td><td><span class="seg">RL</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-GY</td><td class="mono">SRTWC8383-GY</td><td class="mono">SRTSCBD825-GY</td><td><span class="seg">RL</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr><td><i class="chk on"></i></td><td class="mono">SRTWC8383-RL-RG</td><td class="mono">SRTWC8383-RG</td><td class="mono">SRTSCBD826-RG</td><td><span class="seg">RL</span></td><td><span class="pill green">Ready</span></td></tr>
+          <tr class="un"><td><i class="chk off"></i></td><td class="mono">SRTWC8383-RL-MK</td><td class="muted">-</td><td class="muted">-</td><td><span class="seg">RL</span><span class="seg bad">MK</span></td><td><span class="pill amber">Unresolved</span> <span class="small muted">finish not on the flyer</span> <span class="co">6</span></td></tr>
+          <tr class="un"><td><i class="chk off"></i></td><td class="mono">SRTWC8383-RL-FT</td><td class="muted">-</td><td class="muted">-</td><td><span class="seg">RL</span><span class="seg bad">FT</span></td><td><span class="pill amber">Unresolved</span> <span class="small muted">code part not recognised</span></td></tr>
+          </tbody></table></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px"><i class="chk"></i><b>SRTWC8122</b><span class="pill">1 SKU</span><span class="pill green">1 ready</span></div>
+        <div class="printed"><span class="ptag">Row 6 &middot; <b>SRTWC8122</b> &rarr; SRTSCBD333-UF + SRTSCBD333A-UF</span> <span class="co">7</span></div>
+        <div class="grid"><table>
+          <colgroup><col style="width:40px"><col style="width:230px"><col style="width:190px"><col style="width:220px"><col style="width:200px"><col></colgroup>
+          <tbody><tr><td><i class="chk"></i></td><td class="mono">SRTWC8122</td><td class="mono">SRTWC8122</td><td class="mono">333-UF, 333A-UF</td><td class="muted">-</td><td><span class="pill green">Ready</span></td></tr></tbody>
+        </table></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px"><i class="chk off"></i><b>SRTWC6015</b><span class="pill red">No SKU in the catalogue</span> <span class="co">8</span></div>
+        <div class="printed"><span class="ptag">Row 7 &middot; <b>SRTWC6015</b> &rarr; SRTSCBD335-UF</span></div>
+      </div>
+
+      <div class="sticky"><span><b>6</b> SKUs ticked</span><span><span class="btn ghost">Clear</span> <span class="btn primary">Link 6 SKUs</span> <span class="co">9</span></span></div>
+    </div>
+  </div>
+</div></div></div>
+
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Where it lives</b>A "Seat cover flyer" button in the Products list header opens this page. It is a one-time review, so it is not a sidebar item.<span class="ref">UAC B-1</span></div></li>
+  <li><span class="co">2</span><div><b>Retire the old spec</b>Disabled until at least one flyer link exists. Clicking it starts the 10s destructive countdown (no confirm dialog); when it lapses every Seat Cover value is removed, the key goes inactive, and one audit row keeps the removed values.<span class="ref">UAC C-1..C-3, owner Q4</span></div></li>
+  <li><span class="co">3</span><div><b>Counts</b>Ready, linked, unresolved and missing, over the whole flyer. Search filters models and SKUs.<span class="ref">UAC B-1</span></div></li>
+  <li><span class="co">4</span><div><b>One card per printed model</b>The printed codes of that model with their covers, as the flyer words them. The model checkbox ticks every READY SKU of the model at once ("model by model"); single ticks work "SKU by SKU".<span class="ref">Owner Q1/Q3</span></div></li>
+  <li><span class="co">5</span><div><b>Each SKU, its flyer code and cover</b>A colour SKU maps only to the printed code with its colour (RL-MBL to SRTWC8383-MBL, never to BL or the plain row). "Other code parts" shows what the SKU carries beyond the printed code, so you judge each tick.<span class="ref">UAC B-2, B-3</span></div></li>
+  <li><span class="co">6</span><div><b>UNRESOLVED, never linked</b>A finish the flyer does not print, a part printed only with a colour (plain 8066-S), or a code part nobody has said is a plain variant. No tick box. Link it by hand on the product page if you decide it fits.<span class="ref">UAC B-4, owner ruling</span></div></li>
+  <li><span class="co">7</span><div><b>Two covers</b>SRTWC8122 links to both covers, as printed on row 6.<span class="ref">Owner decision c</span></div></li>
+  <li><span class="co">8</span><div><b>Nothing to link</b>A printed model with no SKU, or a SKU whose cover is not in the catalogue, shows why and cannot be ticked.<span class="ref">UAC B-6</span></div></li>
+  <li><span class="co">9</span><div><b>Apply</b>Writes the links for ticked SKUs only. The server re-checks every SKU; re-applying is harmless. Linked rows then show a Linked badge.<span class="ref">UAC B-7</span></div></li>
+</ol></div>
+</div>
+
+<!-- ====================================================================== 1b. REVIEW 375 -->
+<h2 class="ft">1b. Seat cover flyer review, 375px</h2>
+<div class="layout">
+<div class="frame w375 phone">
+  <div class="top">Seat Cover Flyer</div>
+  <div class="content">
+    <div class="card small"><b>Old Seat Cover spec</b> <span class="pill amber">Active</span><div class="muted">11 products hold a value</div><div style="margin-top:8px"><span class="btn sm dis">Retire spec</span></div></div>
+    <div class="card small"><b>28</b> ready &middot; <b>41</b> unresolved &middot; <b>0</b> linked</div>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px"><i class="chk on"></i><b>SRTWC8383</b><span class="pill green">6 ready</span></div>
+      <div class="printed"><span class="ptag">Row 3 <b>SRTWC8383</b> &rarr; 331-UF</span><span class="ptag">Row 24 <b>-MBL</b> &rarr; 823-MBL</span><span class="ptag">+3</span></div>
+      <div class="skucard"><div class="l1"><i class="chk on"></i><b class="mono">SRTWC8383-RL-UF</b><span class="pill green">Ready</span></div><div class="l2">SRTWC8383 &rarr; SRTSCBD331-UF</div></div>
+      <div class="skucard"><div class="l1"><i class="chk on"></i><b class="mono">SRTWC8383-RL-MBL</b><span class="pill green">Ready</span></div><div class="l2">SRTWC8383-MBL &rarr; SRTSCBD823-MBL</div></div>
+      <div class="skucard un"><div class="l1"><i class="chk off"></i><b class="mono">SRTWC8383-RL-MK</b><span class="pill amber">Unresolved</span></div><div class="l2">finish not on the flyer: <span class="seg bad">MK</span></div></div>
+    </div>
+    <div class="sticky small"><span><b>6</b> ticked</span><span class="btn primary sm">Link 6</span></div>
+  </div>
+</div>
+<div class="notes"><ol><li><span class="co">A</span><div><b>Phone</b>The SKU table folds into one card per SKU: code + status, then flyer code and cover. Nothing scrolls sideways.<span class="ref">UAC D-6 (same rule)</span></div></li></ol></div>
+</div>
+
+<!-- ====================================================================== 2. SECTION 1280 -->
+<h2 class="ft">2. Product page, Variants tab, Compatible section, 1280px</h2>
+<div class="layout">
+<div class="scroll"><div class="frame w1280"><div class="shell">
+  <div class="side"><div class="brand">Sorento CRM</div><div class="grp">Master data</div><div class="it on">Products</div></div>
+  <div class="main"><div class="topbar">Staff</div><div class="content">
+    <div class="phrow"><div><div class="crumbs">Products / SRTWC8383-RL-MBL</div><h1>SRTWC8383-RL-MBL</h1></div><span class="btn">Edit</span></div>
+    <div class="tabs"><span>Overview</span><span>Specifications</span><span class="on">Variants</span><span>Files</span></div>
+    <div class="card">
+      <div class="sub-h">Variant of / Variants</div><div class="muted small">(unchanged)</div>
+      <div class="sub-h" style="margin-top:18px">Alternatives</div><div class="empty"><b>No alternatives</b><span>None linked yet.</span></div>
+
+      <div style="display:flex;align-items:center;margin-top:20px"><h3 style="margin:0;font-size:14px">Compatible (1) <span class="co">1</span></h3><span style="margin-left:auto" class="btn sm">+ Add compatible</span></div>
+      <div class="sub-h">Seat covers that fit <span class="co">2</span></div>
+      <div class="row"><div class="t"><a href="#">SRTSCBD823-MBL</a><div>SRTSCBD823-MBL</div></div><span class="pill blue">Flyer</span><span class="btn ghost sm">Unlink</span> <span class="co">3</span></div>
+      <div class="sub-h">Fits these WCs</div>
+      <div class="empty"><b>None</b><span>This product is not linked as a seat cover.</span></div>
+    </div>
+    <div class="card">
+      <div class="muted small" style="margin-bottom:8px">Unlink pressed: the reversible 5s countdown</div>
+      <div class="row"><div class="t"><a href="#">SRTSCBD823-MBL</a><div>SRTSCBD823-MBL</div></div><span class="pill blue">Flyer</span><span class="btn sm count">Unlinking in 4s &middot; Cancel</span></div>
+    </div>
+  </div></div>
+</div></div></div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Same section on every product</b>Directly under Alternatives, built from the same pieces (ProductAlternativesSection rows, ProductVariantPickerDialog). Add needs products edit.<span class="ref">UAC D-1, owner Q5</span></div></li>
+  <li><span class="co">2</span><div><b>Both directions</b>On a WC: the covers that fit it. On a seat cover: the WCs it fits. Each row links to the product. A product usually fills one list; the other shows its empty state.<span class="ref">UAC D-2, D-3</span></div></li>
+  <li><span class="co">3</span><div><b>Source and Unlink</b>Flyer or Manual badge. Unlink is the reversible countdown with Cancel; no confirm dialog, Escape does not cancel.<span class="ref">UAC D-5</span></div></li>
+</ol></div>
+</div>
+
+<!-- ====================================================================== 3. ADD DIALOG -->
+<h2 class="ft">3. Add compatible dialog (1280 and 375 share it)</h2>
+<div class="layout">
+<div class="modal">
+  <div class="mh">Add compatible</div>
+  <div class="mb">
+    <p class="lbl">The other product is a <span class="co">1</span></p>
+    <div class="radio"><span><i class="on"></i>Seat cover</span><span><i></i>WC</span></div>
+    <p class="lbl" style="margin-top:12px">Product</p>
+    <div class="sel"><span>SRTSCBD823-MBL</span><span class="muted">&#9662;</span></div>
+    <p class="muted small" style="margin:0">Links this SKU only. <span class="co">2</span></p>
+  </div>
+  <div class="mf"><span class="btn">Cancel</span><span class="btn primary">Add</span></div>
+</div>
+<div class="notes"><ol>
+  <li><span class="co">1</span><div><b>Which side</b>Defaults to Seat cover on a WC code and to WC on a seat cover code (SRTSC... or a -SC SKU). A -SC SKU can never be added as a WC; the server refuses it with a toast.<span class="ref">UAC A-4, D-4, owner Q2</span></div></li>
+  <li><span class="co">2</span><div><b>One SKU at a time</b>No "whole model" option: nothing is inherited. The product picker is the shared searchable product select.<span class="ref">UAC A-1, A-2</span></div></li>
+</ol></div>
+</div>
+
+</div>
+</body>
+</html>
