@@ -859,8 +859,10 @@ a number, never take one from an earlier turn.
 # answered with dozens of messages and four asks missing). The parser names EVERY thing a
 # message asks, in order, so the engine runs one query per ask (`turn/sub_asks.py`), and
 # says whether a typed code means that exact code or its whole family. No code rule
-# decides either (owner: semantic parser, no keyword code). ADDITIVE, published as a new
-# UNLABELLED version (`maskp_0001_parser_sub_asks`).
+# decides either (owner: semantic parser, no keyword code). MULTI-ASK-PLAN2 (owner, 12 Oct
+# 2026): output keys plus a short English definition of each, no worked examples and no
+# word lists (vocabulary lives in data, PROMPT-ABLATION ruling 11 Oct). Published on the
+# trimmed base as a new UNLABELLED version (`maskp_0001_parser_sub_asks`).
 SUB_ASKS_ADDENDUM = """
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -871,65 +873,31 @@ Two more OUTPUT keys, on every object:
   "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
   "family": true | false | null
 
-== SUB_ASKS ==
-When the CURRENT message asks TWO OR MORE different things, list ALL of them, in the order
-asked, whatever they are (stock and incoming included): two asks are two sub_asks.
-ONE thing asked: null (every other key as usual), even with a period, family or basis word.
-"last in", "last incoming qty", "last in date and quantity", "最后一次进库日期和数量" are ONE
-last_receipt (it carries its own date, quantity and SPO number): never add incoming or
-received_qty; if that is all that is asked, sub_asks is null.
-Each object:
-  measure:
-    "received_qty" - how many ALREADY came in over a period: goods received, 入库, 进库,
-      进仓, 进仓库 (NEVER incoming), 入仓, 到了多少, 收货, "received", "came in", "diterima", "masuk gudang".
-      Past; with a count or a period it is
-      received_qty, never incoming.
-    "last_receipt" - WHEN it last came in: the last SPO line's delivery date. 最后一次进库/入库,
-      "last in", "last received".
-    "incoming" - ONLY goods NOT yet arrived: on the way, ETA, 到货, 在途, "arriving". Future.
-    "stock" (on hand now) | "supplier" (who supplies it) | "last_cost" (purchase price,
-    采购价) | "sold_total" (how many SOLD in all; jual / jualan / terjual = sold) | "sold_by" (sold per salesman / customer
-    / ...).
-    "other" - anything else asked (margin, profit, 毛利, lead time): still an ask, label
-      says what.
-  group_by: sold_by only - "sales_agent" (salesman, 业务员) | "customer" | "product" |
-    "brand" | "category" | "location" | "channel" | "month"; else null.
-  date_from / date_to: YYYY-MM-DD, the period THIS ask is about ("2026" -> 2026-01-01 /
-    2026-12-31). A period named once covers each ask that is about a period
-    (received_qty, sold_total, sold_by, incoming). last_receipt, supplier, last_cost, stock
-    and other are NEVER given one, even when "2026" is in the message. A period is ONLY one the
-    CURRENT message names; none named: both null, even though the sales report elsewhere reads
-    this calendar year by default (the bot then asks).
-  basis: sold_total / sold_by only - "delivered" when the message says delivered / shipped
-    / 已出货, "ordered" when it says ordered / 下单; a plain "sold" / "卖了" / "jual" is null, never the
-    top-selling "default, delivered": only a delivered / ordered word in the CURRENT message counts.
+sub_asks: when the CURRENT message asks TWO OR MORE different things, one object per thing, in
+the order asked, whatever they are. One thing asked: null. The date and quantity of the last
+receipt are ONE last_receipt ask.
+  measure: "received_qty" (how many already came in over a period, never goods still on the
+    way) | "last_receipt" (when it last came in: the last SPO line's delivery date) |
+    "incoming" (only goods not yet arrived) | "stock" (on hand now) | "supplier" |
+    "last_cost" (purchase price) | "sold_total" (how many sold) | "sold_by" (sold per group) |
+    "other" (anything else asked; label says what).
+  group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
+    "location" | "channel" | "month"; else null.
+  date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every
+    received_qty, sold_total, sold_by and incoming ask. Other measures: null. None named:
+    null, never this calendar year by default.
+  basis: sold_total / sold_by only, "delivered" or "ordered" when the message says which; a
+    plain "sold" is null, never the top selling default.
   label: the asker's own words for this ask, short.
-Examples (code anywhere in the message, any language, 2 to 6 asks):
-  "Is CB2290 in stock? also what is the supplier" -> stock, supplier.
-  "采购价和库存, SRTAB512" -> last_cost, stock.
-  "berapa jualan SRTQX88 bulan ni, dan siapa supplier" -> sold_total (this month), supplier.
-  "CWZP307 sold per customer in 2025, plus how many we received and the margin" ->
-  sold_by (customer, 2025), received_qty (2025), other (label "margin").
-  "SRTMK14 到了多少 2026, 在途多少, 毛利呢" -> received_qty (2026), incoming, other (label "毛利").
-  "Incoming and stock for 7445" -> incoming, stock.
-  "SRTXY12 进了多少仓, 还有多少在路上" -> received_qty, incoming.
-  "CB9001 terjual berapa tahun lepas" -> sold_total (last year).
-  "SRTWT7445 系列 2026 卖了多少" -> null (one ask), family true.
-  "Srt38ss last in date and quantity" -> null (one ask).
-  "SRT38-SS 最后一次进库日期和数量" -> null (one ask).
-A message that only names a product or code and asks nothing about it ("我想问 X", "about X",
-"X?"): domain_hint null, intent_hint null, asks null, sub_asks null (the bot asks what is wanted).
+A message that only names a product and asks nothing about it: domain_hint, intent_hint, asks
+and sub_asks null.
 
-== FAMILY ==
-A code the message names means that EXACT code (false: "only this", "just X", 只要这个) or
-every code starting with it (true: "all variants", 全部, 系列), from the message's own words;
-not said: null (nearly always).
+family: a typed code means only that exact code (false) or its whole family of variants
+(true), from the message's own words; not said: null.
 
-== REPLYING TO THE VARIANT OR SOLD-BASIS QUESTION ==
-Its Open question options have the codes "just this code" / "all variants" or "delivered" /
-"ordered". A reply that chooses one, in any words ("只要这个", "just that one", "全部",
-"all", "已出货", "按下单", "delivered"), is open_question_answer mode "pick" with that
-option's position: never "yes" or "no", never a new question.
+A reply that chooses an option of the variant question ("just this code" / "all variants") or
+the sold basis question ("delivered" / "ordered") is open_question_answer mode "pick" with that
+option's position, never yes, no or a new question.
 """
 
 

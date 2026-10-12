@@ -172,25 +172,34 @@ WHATSAPP_MESSAGE_MAX_CHARS = 3900
 
 
 def _product_family(db: Any, code: str) -> list[dict[str, str]]:
-    """Every chat-searchable product whose code starts with `code` (whitespace and case
-    folded the way the resolver's prefix probe folds them), code order: the WHOLE family
-    a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
-    Company-scoped by the session, as every product read in a turn is."""
+    """Every chat-searchable product in the typed code's model family, code order: the WHOLE
+    family a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
+    The family is `products.family_code` (CODE-VARIANTS #1573, MULTI-ASK-PLAN2): the one
+    stored on the product the code names exactly (dash, space and case folded, so a hand-set
+    family wins), else the one the typed code derives. Company-scoped by the session and
+    narrowed by the contact's brand scope, as every product read in a turn is (review R2)."""
     from app.models.product import Product, chat_searchable_products
     from app.services.contact_brand_scope import product_in_scope_clauses
     from app.services.entity_resolver import _strip_all_ws, _ws_insensitive_lower
+    from app.services.product_family import family_code_for
 
-    # A code is matched as typed: `%` and `_` in it are literal, never LIKE wildcards
-    # (review R4). The contact's brand scope narrows the family as it narrows every
-    # product read in the turn (review R2).
-    typed = _strip_all_ws(code).lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    scope = (chat_searchable_products(), *product_in_scope_clauses(db, Product.id))
+    family = (
+        db.query(Product.family_code)
+        .filter(
+            _ws_insensitive_lower(Product.product_code) == _strip_all_ws(code).lower(),
+            Product.family_code.isnot(None),
+            *scope,
+        )
+        .order_by(Product.product_code)
+        .limit(1)
+        .scalar()
+    ) or family_code_for(code)
+    if not family:
+        return []
     rows = (
         db.query(Product.id, Product.product_code)
-        .filter(
-            _ws_insensitive_lower(Product.product_code).like(f"{typed}%", escape="\\"),
-            chat_searchable_products(),
-            *product_in_scope_clauses(db, Product.id),
-        )
+        .filter(Product.family_code == family, *scope)
         .order_by(Product.product_code, Product.id)
         .limit(turn_sub_asks.FAMILY_MAX + 1)
         .all()
