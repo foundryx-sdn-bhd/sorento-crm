@@ -27,12 +27,16 @@ embeddings: 10.9 s).
    default. Unknown keys are still ignored. Strict answers are never hydrated: a missing key there is
    a fault to see.
 4. **Keys whose false is not their null are always written.** Readers test `is False` on
-   `is_affirmative` (`turn/decide.py:614`), `domain_in_message` (`lanes/business/low_stock_ask.py:457`),
-   and per entity `current_message` / `confident` / `hint_confident` (`head/grounding.py:430,638`,
-   `engine.py:496`). `entity_op` has no empty value ("reuse" is a value: `turn/decide.py:393`,
-   `turn_runtime.py:1290`). These, `message_type`, and an entity's `raw` / `hint` are required in the
-   sparse schema and named in the prompt. Every other flag is only ever read `is True` or truthy;
-   `test_no_reader_tells_a_plain_flags_false_from_its_null` pins that.
+   `is_affirmative` (`turn/decide.py:614`), `is_active` (`lanes/business/answer.py:3321`, passed to the
+   tool as-is by `fetch.py:731`), `domain_in_message` (`lanes/business/low_stock_ask.py:457`), and per
+   entity `current_message` / `confident` / `hint_confident` (`head/grounding.py:430,638`,
+   `engine.py:496`) and `spec_value` (a yes-or-no spec key's false, `head/grounding.py:612`).
+   `entity_op` has no empty value ("reuse" is a value: `turn/decide.py:393`, `turn_runtime.py:1290`).
+   `message_type`, `entity_op`, `domain_in_message` and an entity's `raw` / `hint` are required: the
+   wire check fails a sparse answer that drops one (a non-strict provider does not enforce
+   `required`). Every other flag is only ever read `is True` or truthy;
+   `test_no_reader_tells_a_plain_flags_false_from_its_null` pins that. Inside an object an
+   undeclared key is dropped (strict mode refused it); a float for an integer key is refused.
 5. **Prompt.** `sparse_prompt(text)`: the OUTPUT block (byte-identical on the code constant, v42, v50,
    the v52 candidate and v56) is replaced by `SPARSE_OUTPUT_BLOCK`, the addenda's "emit on every
    object" lines are told the same (three literal edits of prompt text), and `SPARSE_OUTPUT_ADDENDUM`

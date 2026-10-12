@@ -738,9 +738,13 @@ def _empty_value(schema: dict) -> Any:
 _ABSENT = object()
 
 
-def _hydrated(value: Any, schema: dict) -> Any:
+def _hydrated(value: Any, schema: dict, top: bool = False) -> Any:
     if isinstance(value, dict) and "object" in _types(schema):
-        out = dict(value)
+        # Inside an object a key the schema does not declare is dropped, as strict
+        # mode's `additionalProperties: false` refused it (`routing.team_source` must
+        # not exist); at the top it is kept, as it always was (`DECLARED_KEYS`).
+        declared = schema.get("properties", {})
+        out = dict(value) if top else {k: v for k, v in value.items() if k in declared}
         for name, child in schema.get("properties", {}).items():
             if name in out:
                 out[name] = _hydrated(out[name], child)
@@ -762,7 +766,7 @@ def hydrate_emission(emission: dict) -> dict:
     produced for the same reading. A full emission comes back unchanged. Unknown keys
     are kept, exactly as before (`DECLARED_KEYS`).
     """
-    return _hydrated(emission, PARSE_OUTPUT_JSON_SCHEMA)
+    return _hydrated(emission, PARSE_OUTPUT_JSON_SCHEMA, top=True)
 
 
 _JSON_TYPES: dict[str, tuple[type, ...]] = {
@@ -780,20 +784,24 @@ def _type_ok(value: Any, types: list[str]) -> bool:
         return "null" in types
     if isinstance(value, bool):
         return "boolean" in types
-    if isinstance(value, float) and "integer" in types and value.is_integer():
-        return True
     return any(isinstance(value, _JSON_TYPES.get(t, ())) for t in types if t != "null")
 
 
 def _wire_errors(value: Any, schema: dict, path: str) -> list[str]:
     """What strict mode would have refused: a wrong type, a value off an enum, too many
-    items. Keys the schema does not declare are not errors (they are ignored, as ever)."""
+    items, a key the sparse schema requires. Keys the schema does not declare are not
+    errors (ignored at the top, dropped inside an object by `hydrate_emission`)."""
     if not _type_ok(value, _types(schema)):
         return [f"{path} has type {type(value).__name__}"]
     if "enum" in schema and value not in schema["enum"]:
         return [f"{path} = {value!r} is not one of the declared values"]
     errors: list[str] = []
     if isinstance(value, dict):
+        # What the sparse schema calls required is not optional just because a
+        # non-strict provider does not enforce it (null is not "reuse").
+        for name in SPARSE_REQUIRED.get(path.split("[")[0], []):
+            if name not in value:
+                errors.append(f"{path}.{name} is missing" if path else f"{name} is missing")
         for name, child in schema.get("properties", {}).items():
             if name in value:
                 errors += _wire_errors(value[name], child, f"{path}.{name}" if path else name)

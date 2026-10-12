@@ -9,10 +9,12 @@ Plan: `PLAN-chat-sparse-emission-12oct.md`. No owner-visible change until the pr
   escalation, open_question_answer, low_stock, anaphora; null for chat_report), recursively inside
   entities and nested objects. Pinned per key family: escalation, open_question_answer, low_stock,
   sales keys, entities[].spec_key / quantity / account.
-- **AC-3** A written `false` on is_affirmative, domain_in_message, current_message, confident or
-  hint_confident stays false; an absent one is null. entity_op and message_type are always written.
-- **AC-4** A sparse answer with a wrong type, an off-enum value or too many items fails the parse
-  (failed `understood`, usage still recorded). A missing message_type fails it. Unknown keys are ignored.
+- **AC-3** A written `false` on is_affirmative, is_active, domain_in_message, and per entity
+  current_message, confident, hint_confident or spec_value stays false; an absent one is null.
+- **AC-4** A sparse answer with a wrong type (a float for an integer included), an off-enum value or too
+  many items fails the parse (failed `understood`, usage still recorded), and so does one missing
+  message_type, entity_op, domain_in_message, or an entity's raw or hint. Unknown top-level keys are
+  ignored; undeclared keys inside an object are dropped.
 - **AC-5** A strict answer missing a declared key still fails the parse (no hydration on the strict path).
 - **AC-6** Migration `chs_0001_parser_sparse_output` publishes the sparse build of the production-labelled
   text and of the code constant plus policy blocks, each as a new unlabelled version; no label moves;

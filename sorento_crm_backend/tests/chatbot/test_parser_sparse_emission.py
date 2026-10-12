@@ -70,7 +70,10 @@ def strict_base() -> dict:
 
 #: Flags whose `false` is not their null (read `is False`): the prompt has them written
 #: whenever true or false (`SPARSE_OUTPUT_ADDENDUM`).
-FALSE_IS_A_VALUE = {"is_affirmative", "domain_in_message", "current_message", "confident", "hint_confident"}
+FALSE_IS_A_VALUE = {
+    "is_affirmative", "is_active", "domain_in_message", "current_message", "confident", "hint_confident",
+    "spec_value",
+}
 
 #: Every other flag: no reader tells its false from its null (pinned by
 #: `test_no_reader_tells_a_plain_flags_false_from_its_null`), so a sparse emission leaves
@@ -221,6 +224,15 @@ FAMILIES = {
              "account": 1, "canonical_code": "C-001"},
         ],
     },
+    "inactive records and a no spec": {
+        "is_active": False,
+        "domain_hint": "promotion",
+        "entity_op": "replace_combine",
+        "entities": [
+            {**EMPTY_ENTITY, "raw": "non rimless", "hint": "specification", "current_message": True,
+             "confident": True, "hint_confident": True, "spec_key": "is_rimless", "spec_value": False},
+        ],
+    },
     "lists and the rest": {
         "document": ["DO"],
         "asks": [{"domain": "inventory", "intent": "check_stock"}, {"domain": "incoming_stock", "intent": None}],
@@ -260,14 +272,17 @@ def test_nothing_said_is_three_keys_on_the_wire(wire):
     ("key", "path"),
     [
         ("is_affirmative", ()),
+        ("is_active", ()),
+        ("spec_value", ("entities", 0)),
         ("current_message", ("entities", 0)),
         ("confident", ("entities", 0)),
         ("hint_confident", ("entities", 0)),
     ],
 )
 def test_a_written_false_stays_false_and_an_absent_flag_is_null(wire, key, path):
-    """The flags read as `is False` (`turn/decide.py:614`, `head/grounding.py:430,638`,
-    `engine.py:496`): an absent one must never come back as false."""
+    """The values read as `is False` (`turn/decide.py:614`, `head/grounding.py:430,612,638`,
+    `engine.py:496`, `lanes/business/answer.py:3321`): an absent one must never come back
+    as false."""
     entity = {"raw": "SRTWC286", "hint": "product"}
     written = {"message_type": "casual", "entity_op": "reuse", "domain_in_message": False, "entities": [entity]}
     target = written
@@ -359,6 +374,7 @@ def test_the_sparse_schema_declares_the_same_keys_and_requires_only_the_kept_one
         ({"top_n": "ten"}, "top_n"),
         ({"self_reference": None}, "self_reference"),
         ({"profile_statements": [{"key": "role", "value": "a"}] * 4}, "profile_statements"),
+        ({"entities": [{"raw": "x", "hint": "customer", "account": 2.0}]}, "entities[0].account"),
     ],
 )
 def test_a_sparse_answer_off_the_schema_fails_the_parse(wire, emission, fragment):
@@ -369,6 +385,45 @@ def test_a_sparse_answer_off_the_schema_fails_the_parse(wire, emission, fragment
         parser_mod.parse(config(True), "block")
     assert fragment in str(exc.value)
     assert exc.value.usage["completion_tokens"] == 50
+
+
+@pytest.mark.parametrize(
+    ("emission", "missing"),
+    [
+        ({"message_type": "casual", "domain_in_message": False}, "entity_op is missing"),
+        ({"message_type": "casual", "entity_op": "reuse"}, "domain_in_message is missing"),
+        (
+            {"message_type": "casual", "entity_op": "reuse", "domain_in_message": False,
+             "entities": [{"hint": "product"}]},
+            "entities[0].raw is missing",
+        ),
+        (
+            {"message_type": "casual", "entity_op": "reuse", "domain_in_message": False,
+             "entities": [{"raw": "SRTWC286", "spec_key": "is_rimless"}]},
+            "entities[0].hint is missing",
+        ),
+    ],
+)
+def test_a_sparse_answer_missing_a_kept_key_fails_the_parse(wire, emission, missing):
+    """A non-strict provider does not enforce `required`; hydrating a dropped entity_op to
+    null would route a "reuse" turn as something else (`turn/decide.py:393`)."""
+    wire.content = json.dumps(emission)
+    with pytest.raises(parser_mod.ParserError, match="off the schema") as exc:
+        parser_mod.parse(config(True), "block")
+    assert missing in str(exc.value)
+
+
+def test_an_undeclared_key_inside_an_object_is_dropped(wire):
+    """Strict mode refused it (`additionalProperties: false`); `routing.team_source` must
+    never reach a reader."""
+    wire.content = json.dumps({
+        "message_type": "request_for_help", "entity_op": "reuse", "domain_in_message": False,
+        "routing": {"suggested_team": "warehouse", "team_source": "guess"},
+        "entities": [{"raw": "a", "hint": "product", "colour": "red"}],
+    })
+    parsed = parser_mod.parse(config(True), "block")
+    assert parsed["routing"] == {"suggested_team": "warehouse", "suggested_agent": None}
+    assert "colour" not in parsed["entities"][0]
 
 
 def test_a_sparse_answer_with_no_message_type_fails_the_parse(wire):
@@ -445,9 +500,12 @@ def test_no_reader_tells_a_plain_flags_false_from_its_null():
     import re
 
     root = Path(parser_mod.__file__).resolve().parents[1]
+    flags = "|".join(sorted(FALSE_IS_NULL))
     pattern = re.compile(
-        r"[\"'](" + "|".join(sorted(FALSE_IS_NULL)) + r")[\"']\)?\s*(is False|is not False|== False|!= False"
+        r"[\"'](" + flags + r")[\"'][\)\]]?\s*(is False|is not False|== False|!= False"
         r"|is None|is not None|== None|!= None)"
+        # `_js_loose_eq_bool(jsc.get(v, "flag"), False)`, the idiom `lanes/business/answer.py` uses.
+        r"|_js_loose_eq_bool\([^\n]*[\"'](" + flags + r")[\"'][^\n]*,\s*(False|None)\s*\)"
     )
     hits = [
         f"{path.relative_to(root)}:{n}: {line.strip()}"

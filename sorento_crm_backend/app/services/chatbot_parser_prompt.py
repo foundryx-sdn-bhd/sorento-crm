@@ -1294,11 +1294,14 @@ Write ONLY the keys that carry something. A key you leave out is read as exactly
     object you write, leave out its empty keys the same way;
   - inside each entity, leave out canonical_code, quantity, spec_key, spec_value and
     account when they are null.
-ALWAYS write message_type and entity_op (it has no empty value: "reuse" is a value). Five flags mean something different when false than when
-null, so write them whenever they are true OR false, and leave them out only when null:
-is_affirmative (false: the message declines; null: it is not a yes or a no at all),
-domain_in_message (always true or false, so always written), and inside each entity
-current_message, confident and hint_confident.
+ALWAYS write message_type and entity_op (it has no empty value: "reuse" is a value).
+These mean something different when false than when null, so write them whenever they
+are true OR false, and leave them out only when null:
+  - is_affirmative (false: the message declines; null: it is not a yes or a no at all);
+  - is_active (false: the message asks for INACTIVE records; null: no lifecycle filter);
+  - domain_in_message (always true or false, so always written);
+  - inside each entity: current_message, confident, hint_confident, and spec_value
+    (false is the answer of a yes-or-no specification key).
 Inside each entity, always write raw and hint.
 Decide every value exactly as the rules above say; this changes only which keys you
 write, never what any of them means.
@@ -1338,7 +1341,7 @@ each key holds when it is written:
   "reference_positions": [n],
   "reference_target": "result|dym - WHICH set a positional reply targets; only when a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
   "person_mention": "the surface name the user mentioned",
-  "is_active": "true|false - lifecycle status filter from current message only",
+  "is_active": "true|false - lifecycle status filter from current message only" (written whenever true or false),
   "order_status": "outstanding|delivered - ORDER delivery-status filter from current message only (order domain)",
   "correction": true,
   "routing": {
