@@ -2487,7 +2487,9 @@ export function FulfilmentBoardPanel({
                         : `${label}: confirmed as revision ${result.decision_revision} (${result.inquiry_rows_created ?? 0} purchase row${(result.inquiry_rows_created ?? 0) === 1 ? '' : 's'} handed over)`
                       : `${label}: ${result.error ?? 'refused'}`}
                   </span>
-                  {simulated && result.ok && (
+                  {simulated &&
+                    result.ok &&
+                    (result.inquiry_rows?.length ?? 0) + (result.transfers?.length ?? 0) > 0 && (
                     <ul
                       data-testid={`board-simulate-writes-${result.pso_id}`}
                       className="space-y-0.5"
