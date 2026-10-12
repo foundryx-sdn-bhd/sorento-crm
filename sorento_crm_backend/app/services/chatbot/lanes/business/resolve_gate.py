@@ -597,6 +597,12 @@ def _reference_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[An
     return out
 
 
+#: The resolver kinds a typed reference number may be placed as; each is visibility gated.
+_RESOLVER_REFERENCE_KINDS = frozenset(
+    {"customer_order", "sales_order", "customer_po_ref", "purchase_order", "purchase_request"}
+)
+
+
 def _allowed_entity_types(
     ctx: dict[str, Any], entities: list[Any], parse_output: dict[str, Any] | None = None
 ) -> list[Any]:
@@ -610,7 +616,17 @@ def _allowed_entity_types(
         return base
     from app.services.chatbot.lanes.business.gate import ALLOWED
 
-    return list(dict.fromkeys([*base, *(t for d in domains for t in (ALLOWED.get(d) or []))]))
+    visible = _visible_reference_kinds(ctx)
+    widened: list[Any] = []
+    for t in (t for d in domains for t in (ALLOWED.get(d) or [])):
+        if t in REFERENCE_NARROW:
+            # A reference hint is resolved the way a typed one is: its narrow set (any visible kind
+            # when None) limited to the kinds this asker may probe, never passed through raw.
+            narrow = REFERENCE_NARROW[t]
+            widened += [k for k in visible if narrow is None or k in narrow]
+        elif t not in _RESOLVER_REFERENCE_KINDS or t in visible:
+            widened.append(t)
+    return list(dict.fromkeys([*base, *widened]))
 
 
 def _widened_entity_types(ctx: dict[str, Any], entities: list[Any], parse_output: dict[str, Any]) -> list[Any]:
