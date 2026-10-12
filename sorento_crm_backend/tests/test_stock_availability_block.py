@@ -1179,7 +1179,6 @@ def test_route_returns_is_discontinued_on_the_wire(client, db):
     assert entry["is_discontinued"] is True
 
 
-
 def test_a_dealer_is_told_the_revised_date_of_a_delayed_shipment(db, monkeypatch):
     """Crew answer (b) then (a), 13 Oct 2026: a shipment delayed but still coming is told with
     its revised date, never as "no incoming" and never with its past original date."""
@@ -1200,3 +1199,33 @@ def test_a_dealer_is_told_the_revised_date_of_a_delayed_shipment(db, monkeypatch
     entry = _entry(StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 1}), p.id)
     assert entry["branch"] == "incoming"
     assert entry["eta"] == "05/11/2026"
+
+
+def test_a_dealer_is_never_told_a_past_eta(db, monkeypatch):
+    """Reviewer round 3 (K7 hardening), end to end: a shipment whose only date is past is no
+    incoming for the dealer; the next dated one answers."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    _category_of(db, p).chatbot_max_qty = 200
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=0)
+    past = _incoming_shipment(db, eta=date(2026, 9, 13), attachment_id=_attachment(db).id)
+    _incoming_line(db, shipment_id=past.id, product_id=p.id)
+    contact = _contact(db, packing_list_allowed=False)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    def _ask():
+        return _entry(
+            StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 1}),
+            p.id,
+        )
+
+    assert _ask()["branch"] == "no_incoming"
+    nxt = _incoming_shipment(db, eta=date(2026, 11, 20), attachment_id=_attachment(db).id)
+    _incoming_line(db, shipment_id=nxt.id, product_id=p.id)
+    db.flush()
+    entry = _ask()
+    assert (entry["branch"], entry["eta"]) == ("incoming", "20/11/2026")

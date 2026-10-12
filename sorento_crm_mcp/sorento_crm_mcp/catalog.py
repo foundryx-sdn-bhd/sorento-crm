@@ -114,15 +114,18 @@ CATALOG: tuple[ToolSpec, ...] = (
     ToolSpec(
         "crm_find",
         (
-            "Find products by filters from the find registry, one group per named product. "
-            "`filters` = JSON list of {key, product_ids}. Keys: `fits` = the products linked as "
-            "fitting each named product (its seat covers when it is a WC, the WCs it fits when "
-            "it is a seat cover; links on record only, nothing inferred). Each group carries a "
-            "`head` line, `rows` (product_code, product_name, is_discontinued, stock) and "
-            "`more` (rows not printed). Stock follows the contact's stock visibility: on hand "
-            "for staff, a 1-unit availability verdict for a dealer (never a number). An unknown "
-            "key is 422 `unknown_filter`; a product filter without ids is 422 "
-            "`product_ids_required`.\n\n"
+            "Find products by filters from the find registry. `filters` = JSON list of "
+            "{key, product_ids?, value?, unit?}: a filter takes the products the message names "
+            "(`product_ids`, canonical UUIDs), a typed `value` (a code, a number with a `unit` "
+            "from the filter's list, or one of its listed words), or both, as its registry row "
+            "says. Keys: `fits` = the products linked as fitting each named product (its seat "
+            "covers when it is a WC, the WCs it fits when it is a seat cover; links on record "
+            "only, nothing inferred); takes product_ids, no value. Each group carries a `head` "
+            "line, `rows` (product_code, product_name, is_discontinued, stock) and `more` (rows "
+            "not printed). Stock follows the contact's stock visibility: on hand for staff, a "
+            "1-unit availability verdict for a dealer (never a number). 422 codes: "
+            "`unknown_filter`, `filters_required`, `product_ids_required`, `value_required`, "
+            "`bad_value`, `too_many`.\n\n"
             "COMPANY SCOPE: pass `contact_id` + `space_id` (both or neither) to answer as that "
             "contact; omit both for all-company results."
         ),

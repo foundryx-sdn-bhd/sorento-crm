@@ -154,9 +154,9 @@ def _seat_covers(db: Session, products: list[Any]) -> set[str]:
 
 def _run_fits(db: Session, arg: FilterArg) -> list[Group]:
     from app.models.product import Product
+    from app.services.product_compatibility_service import covers_for, wcs_for
 
     product_ids = arg.product_ids
-    from app.services.product_compatibility_service import covers_for, wcs_for
 
     anchors = {
         str(p.id): p for p in db.query(Product).filter(Product.id.in_(product_ids)).all()

@@ -82,6 +82,44 @@ def test_e3_the_find_lane_sends_the_flag_and_other_asks_do_not() -> None:
     assert "keep_typed_codes" not in resolve_entity_body(ctx(None))
 
 
+def _seed_specs(session_factory) -> None:
+    """The two products carry a derived product_type, so a grounded spec ("seat cover" =
+    toilet_seat, `product_spec_registry`) can pick the -SC sibling by VALUE."""
+    from app.models.product import Product
+    from app.models.product_spec import ProductSpecifications
+
+    db = _scoped(session_factory)
+    for code, kind in ((BASE, "water_closet"), (SPARE, "toilet_seat")):
+        pid = db.query(Product.id).filter(Product.product_code == code).scalar()
+        db.add(ProductSpecifications(product_id=pid, values={"product_type": {"value": kind}}))
+    db.commit()
+
+
+SPECS = [{"key": "product_type", "value": "toilet_seat"}]
+
+
+def test_e8_without_the_flag_a_grounded_spec_still_picks_the_variant(session_factory) -> None:
+    """Reviewer round 3, should-fix 1, the control: the spec swap (`narrow_code_tokens_by_specs`)
+    is PR #1513's owner rule for every other ask."""
+    from app.api.v1.system.references import _narrowed_payload
+
+    _seed(session_factory)
+    _seed_specs(session_factory)
+    from app.api.v1.system.references import ResolveReferenceRequest
+
+    payload = ResolveReferenceRequest(query=BASE, tokens=[BASE], extracted_specs=SPECS)
+    assert _narrowed_payload(_scoped(session_factory), payload).tokens == [SPARE]
+
+
+def test_e9_a_find_turn_keeps_the_typed_code_against_a_grounded_spec_too(session_factory) -> None:
+    from app.api.v1.system.references import ResolveReferenceRequest, _narrowed_payload
+
+    _seed(session_factory)
+    _seed_specs(session_factory)
+    payload = ResolveReferenceRequest(query=BASE, tokens=[BASE], extracted_specs=SPECS, keep_typed_codes=True)
+    assert _narrowed_payload(_scoped(session_factory), payload).tokens == [BASE]
+
+
 def _ent(uuid, code):
     return {"uuid": uuid, "entity_type": "product", "code": code, "canonical_code": code}
 

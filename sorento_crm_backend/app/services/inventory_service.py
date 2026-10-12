@@ -1656,10 +1656,7 @@ class StockService:
         # show the outstanding. Wording unchanged (MCP presenter).
         from app.models.product import ProductCategory
         from app.models.resources import Attachment
-        from app.services.incoming_stock_service import (
-            _attachment_payload,
-            earliest_packing_list_shipment,
-        )
+        from app.services.incoming_stock_service import _attachment_payload
         from app.services.eta_policy import rules_for_contact, visible_eta
         from app.services.stock_ask_branch import branch as compute_branch
         from app.services.stock_ask_branch import short_of

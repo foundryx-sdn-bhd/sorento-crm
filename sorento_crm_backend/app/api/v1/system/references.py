@@ -3165,12 +3165,16 @@ def _typed_text_after_narrowing(
 
 
 def _narrowed_payload(db: Session, payload: "ResolveReferenceRequest") -> "ResolveReferenceRequest":
-    """A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner hand
+    """The typed codes narrowed to the variants the message picks, two ways: by the words on
+    the code's line (`narrow_code_tokens`, PR #833) and by grounded spec values
+    (`narrow_code_tokens_by_specs`, PR #1513). Neither runs on a find turn
+    (`keep_typed_codes`, CHAT-FIND): there the words and specs name what fits the code, and
+    the exact code the customer typed is the subject.
+
+    A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner hand
     test of rounds 4 to 6 on PR #833, items 2 to 4): the code token becomes the variant codes
     the words pick, and the description token those words came from is dropped, so the ask
-    resolves as that code's variants and never as a category set. Not on a find turn
-    (`keep_typed_codes`, CHAT-FIND): there the words name what fits the code, and the exact
-    code the customer typed is the subject."""
+    resolves as that code's variants and never as a category set."""
     if payload.keep_typed_codes:
         return payload
     from app.services.product_code_family import narrow_code_tokens
@@ -3178,21 +3182,10 @@ def _narrowed_payload(db: Session, payload: "ResolveReferenceRequest") -> "Resol
     narrowed = narrow_code_tokens(
         db, query=payload.query or "", tokens=payload.tokens, allowed_types=payload.allowed_entity_types
     )
-    if narrowed is None:
-        return payload
-    return payload.model_copy(
-        update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
-    )
-
-
-@router.post("/resolve")
-def resolve_reference_post(
-    payload: ResolveReferenceRequest,
-    current_user: dict = Depends(get_external_api_user),
-    db: Session = Depends(get_db),
-):
-    """POST variant for external callers that send JSON body (e.g. n8n HTTP node)."""
-    payload = _narrowed_payload(db, payload)
+    if narrowed is not None:
+        payload = payload.model_copy(
+            update={"tokens": narrowed, "raw_tokens": _typed_text_after_narrowing(payload, narrowed)}
+        )
     # STOCK-QTY-PARTIAL-FILL, owner ruling Q4 (a) (6 Oct 2026): a spec said right after a
     # product answer ("How about p trap" after SRTWC286-SH) is that product's variant. The
     # parser carries the product (`entity_op "reuse"`) and the grounded spec arrives as
@@ -3225,6 +3218,17 @@ def resolve_reference_post(
                     "entity_pins": pins,
                 }
             )
+    return payload
+
+
+@router.post("/resolve")
+def resolve_reference_post(
+    payload: ResolveReferenceRequest,
+    current_user: dict = Depends(get_external_api_user),
+    db: Session = Depends(get_db),
+):
+    """POST variant for external callers that send JSON body (e.g. n8n HTTP node)."""
+    payload = _narrowed_payload(db, payload)
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None
