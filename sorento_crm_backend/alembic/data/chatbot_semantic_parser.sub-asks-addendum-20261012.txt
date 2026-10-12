@@ -8,10 +8,11 @@ Two more OUTPUT keys, on every object:
   "sub_asks": [{"measure", "group_by", "date_from", "date_to", "basis", "label"}] or null
   "family": true | false | null
 
-sub_asks: when the CURRENT message asks TWO OR MORE different things, one object per thing, in
-the order asked, whatever they are. One thing asked: null. A count AND its breakdown are two
-things: "how many sold, by salesman" is sold_total then sold_by. The date and quantity of the
-last receipt are ONE last_receipt ask.
+sub_asks: count the measures below that the CURRENT message asks about, however short the
+message: each one is one thing asked. TWO OR MORE: one object per thing, in the order asked,
+whatever they are ("stock and purchase price" is stock then last_cost). One thing asked: null.
+A count AND its breakdown are two things: "how many sold, by salesman" is sold_total then
+sold_by. The date and quantity of the last receipt are ONE last_receipt ask.
   measure, ONE of:
     "received_qty": HOW MANY came in, a quantity received over a period; never goods still
       on the way.
