@@ -8,8 +8,11 @@ AC-1502 contract (one `chatbot_entity_kinds` row per entity hint,
 an exact-match resolver probe, no did-you-mean, narrowing not applicable.
 
 Data only, no schema change. Idempotent: a kind already present is left alone, so bootstrap
-may call `insert_kinds(bind)` too. No parser publish: the promotion candidate
-(`rkind_0002`, the v56 text) carries no policy blocks, so these rows change no prompt.
+may call `insert_kinds(bind)` too. No parser publish. The promotion candidate (`rkind_0002`,
+the v56 text) carries no policy blocks and already names the five kinds on its hint line, so
+it does not change. A version that renders `{{entity_kinds}}` / `{{entity_kinds_detail}}` from
+this table (the `pdyn_0003` lineage, `app/services/chatbot_prompt_vars.py`) gains the five
+hint values and five "Entity kind" lines on the next turn after this runs.
 
 Revision ID: rkind_0003_reference_kind_rows
 Revises: rkind_0002_parser_ref_kinds_v56

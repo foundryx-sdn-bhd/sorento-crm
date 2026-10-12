@@ -1,6 +1,6 @@
 # PLAN: release blocker, 30 red backend tests (RELEASE-FIX 12 Oct)
 
-Status: BUILT 2026-10-12, awaiting review + CI label. Small fix track, with one exception: a
+Status: REVIEWED 2026-10-12 (reviewer READY, should-fixes taken), awaiting CI label + owner merge. Small fix track, with one exception: a
 data-only migration (`rkind_0003_reference_kind_rows`, no schema change). No auth/RBAC, no
 ingest surface change.
 
@@ -17,11 +17,13 @@ code.
 1. #1569 REF-PROBES, 16 tests.
    - Entity kinds x11: `ENTITY_HINTS` gained five kinds with no `chatbot_entity_kinds` row
      (AC-1502: one row per hint). Data migration + blank-schema fallback + bootstrap seed; the
-     prompt-blocks golden gains the five lines. The v56 parser text carries no policy blocks, so
-     no published prompt drifts.
-   - SO label (real bug, code fix): the hit-path scope header printed "Delivery order: SO12345".
-     A generic `order` row now prints "Order:"; a resolver-placed `customer_order` row keeps
-     "Delivery order:".
+     prompt-blocks golden gains the five lines. The v56 parser text carries no policy blocks;
+     a version rendering `{{entity_kinds}}` / `{{entity_kinds_detail}}` (pdyn_0003 lineage)
+     gains the five kinds live (owner to check which version holds `production`).
+   - SO label (code fix): the hit-path scope header labelled a generic `order` row "Delivery
+     order:". It now prints "Order:"; a resolver-placed `customer_order` row keeps "Delivery
+     order:". Reviewer: the resolver itself emits `customer_order` / `sales_order`, never
+     `order`, so this pins the reviewer-S6 rule rather than a defect seen in a real reply.
    - Brand scope x2: `crm_purchase_request_by_number` = `filtered` (already the runtime default).
    - Warehouse matrix + staff-check pins: deliberate #1569 changes, restated with their reasons.
 2. #1580 OI-CLOSED-LINE, 5 tests: 06dab0171 cherry-picked; three restated to R2 (a shortfall is a

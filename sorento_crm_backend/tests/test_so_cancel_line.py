@@ -811,12 +811,12 @@ def test_c17_a_preview_confirm_all_echoes_the_cancel_but_writes_nothing(api):
     )
 
 
-def test_c18_a_refused_line_beside_a_cancel_on_the_single_route_cancels_nothing(api):
+def test_c18_a_refused_line_beside_a_cancel_on_the_single_route_is_held_back_and_the_cancel_lands(api):
     """Restated to the owner rule of 12 Oct 2026 (OI-CLOSED-LINE, #1580): one line that
     cannot be written never refuses the whole order, and the single-order Confirm route runs
     through the #1362 hold-back. So the refused line beside a cancel is held back by name
-    and decides nothing, while the cancel itself still lands. (The name is kept so the
-    test's history reads; the rollback rule survives only beside a batch, AC-C24 / AC-C27.)"""
+    and decides nothing, while the cancel itself still lands. (Was
+    `..._cancels_nothing`; the rollback rule survives only beside a batch, AC-C24 / AC-C27.)"""
     client, world = api
     w = _cb_world(world)
     core_a, mirror_a, _p = w["a"]

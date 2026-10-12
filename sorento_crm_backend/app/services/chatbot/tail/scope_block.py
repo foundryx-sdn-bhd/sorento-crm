@@ -4,7 +4,7 @@
 #
 # A direct port of origin/main's own `tail/compile_state.py::_search_scope_header`
 # (deleted on this branch by the S3 turn re-architecture, `129c403c7`): main's whole
-# `_AXES` table, the two "always" axes (Customer, Product) plus the four ask-scoped
+# `_AXES` table, the two "always" axes (Customer, Product) plus the ask-scoped
 # ones (Delivery order or Order/Transporter/Container/Warehouse), and the Dates line. The media-confirm
 # / escalate-branch / empty-result-set guards main's version carries do not apply here
 # - the bridge's own callers already know this is a genuine, single-domain hit before
