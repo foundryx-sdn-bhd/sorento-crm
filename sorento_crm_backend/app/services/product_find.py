@@ -143,8 +143,10 @@ FIND_RULE = (
     '"find": {"filters": [{"key": <a key from the list>, "value": null}]}. Never emit it for '
     "facts about the named product itself (stock, price, ETA, photo, spec): those keep their "
     "usual keys. The named product stays an ordinary product entity (hint product) and "
-    "domain_hint is master_products. When no product is named, emit the filter with an empty "
-    "entity list; never invent a code. Use only the keys listed; otherwise emit \"find\": null."
+    "domain_hint is master_products. A product entity here needs a product CODE: a type word "
+    "on its own (\"my WC\", \"the toilet\", \"seat cover\", \"马桶\") is no entity at all "
+    "(\"which seat cover fits my WC?\" -> the filter, entities []); never invent a code. Use "
+    "only the keys listed; otherwise emit \"find\": null."
 )
 
 
