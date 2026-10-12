@@ -1,7 +1,7 @@
 # PLAN: chatbot reply latency p95 <= 8 s (lane CHAT-SPEED)
 
 Status: Step 2 built (three answer-identical fixes pushed); awaiting the crew eval gate. Track:
-small fix track (no migration, no auth/RBAC change, under 300 changed lines).
+small fix track (no migration, no auth/RBAC change, about 200 changed lines of code plus tests).
 
 ## Goal
 
@@ -37,6 +37,14 @@ Embeddings: Tier 3 of the resolver embedded each unresolved token in its own Ope
    call (same vectors, cosine 1.0). `tests/test_resolver_tier3_one_embedding_call.py`.
 3. `entity_resolver._VECTOR_CACHE`: query vectors remembered across requests (bounded LRU,
    512 float64 arrays).
+
+Known trade-off: if the provider hangs, a failed batch is followed by the per-token calls
+(the old path), so an outage costs one extra embedding timeout per resolve. Answers unchanged.
+
+Security review round (12 Oct): the walk also reads `column_property` expressions and the
+criteria inside loader options (`with_loader_criteria`, relationship `.and_()`); any other
+option type, or a lambda, scopes every class as before. Registry caches reset on
+`after_configured`.
 
 Measured and dropped: reusing one OpenAI HTTP connection (numbers through the sandbox proxy were
 noise, not evidence).

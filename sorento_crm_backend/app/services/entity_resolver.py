@@ -5209,9 +5209,10 @@ def _known_vector(embed, token: str) -> Optional[list[float]]:
 
 def _remember_vector(embed, token: str, vector) -> list[float]:
     values = list(vector)
+    key = _vector_key(embed, token)
     with _VECTOR_CACHE_LOCK:
-        _VECTOR_CACHE[_vector_key(embed, token)] = array.array("d", values)
-        _VECTOR_CACHE.move_to_end(_vector_key(embed, token))
+        _VECTOR_CACHE[key] = array.array("d", values)
+        _VECTOR_CACHE.move_to_end(key)
         while len(_VECTOR_CACHE) > _VECTOR_CACHE_MAX:
             _VECTOR_CACHE.popitem(last=False)
     return values

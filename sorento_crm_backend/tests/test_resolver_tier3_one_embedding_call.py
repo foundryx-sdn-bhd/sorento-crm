@@ -66,10 +66,15 @@ def calls(monkeypatch):
 
     def fake_embed(chunks):
         seen.append(list(chunks))
-        return [[0.0] * 1536 for _ in chunks]
+        return [_vector_for(c) for c in chunks]
 
     monkeypatch.setattr(embedding_worker, "_embed_text_chunks", fake_embed)
     return seen
+
+
+def _vector_for(text_value: str) -> list[float]:
+    """A different vector per text, so a batch paired with the wrong tokens shows."""
+    return [float(sum(map(ord, text_value)) % 997) + 1.0] + [0.0] * 1535
 
 
 def _resolve(db, tokens):
@@ -140,3 +145,24 @@ def test_the_cache_is_bounded(monkeypatch):
     assert len(er._VECTOR_CACHE) == 3
     assert er._known_vector(embed, "a") is None
     assert er._known_vector(embed, "d") == [1.0, 2.0]
+
+
+def test_each_batched_vector_lands_on_its_own_token(db, calls):
+    with er.resolve_memo():
+        er._prefetch_embeddings(list(MISSING))
+        remembered = {t: er._memo_embedding(t, lambda _c: pytest.fail("embedded again")) for t in MISSING}
+
+    assert len(calls) == 1
+    assert remembered == {t: _vector_for(t) for t in MISSING}
+
+
+def test_another_embedding_model_is_a_cache_miss(monkeypatch):
+    from app.config import settings
+
+    def embed(chunks):
+        return [[1.0] for _ in chunks]
+
+    er._remember_vector(embed, "zz-phrase", [1.0])
+    monkeypatch.setattr(settings, "embedding_model_name", "zz-other-model")
+
+    assert er._known_vector(embed, "zz-phrase") is None

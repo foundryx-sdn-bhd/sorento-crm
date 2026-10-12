@@ -10,13 +10,21 @@ from __future__ import annotations
 import os
 
 import pytest
-from sqlalchemy import event, exists, func, select
-from sqlalchemy.orm import Session, aliased, joinedload
+from sqlalchemy import Column, Integer, String, event, exists, func, select, text
+from sqlalchemy.orm import (
+    Session,
+    aliased,
+    column_property,
+    declarative_base,
+    joinedload,
+    with_loader_criteria,
+)
 from sqlalchemy.orm.util import LoaderCriteriaOption
 
 from app.database import SessionLocal
 from app.models.ai_prompt import AIPromptLabel, AIPromptVersion
 from app.models.product import Brand, Product
+from app.models.price_tag import PriceTagRequestLine, PriceTagRequestLinePart
 from app.models.product_set import ProductSetMember
 from app.services import company_scope as cs
 from app.services.company_scope import register_company_scope_listeners
@@ -29,6 +37,23 @@ pytestmark = pytest.mark.skipif(
 )
 
 SCOPE = frozenset({cs.DEFAULT_COMPANY_ID})
+
+# An unscoped model whose `column_property` selects from a scoped table (security review:
+# no app model has one today, the next one must still be scoped). Its own registry, so the
+# app's mapper set is untouched; its table is a TEMP table created per test.
+_Local = declarative_base()
+
+
+class _Thing(_Local):
+    __tablename__ = "zz_scope_thing"
+    id = Column(Integer, primary_key=True)
+    code = Column(String)
+    n_products = column_property(
+        select(func.count(Product.id))
+        .where(Product.product_code == code)
+        .correlate_except(Product)
+        .scalar_subquery()
+    )
 
 
 @pytest.fixture()
@@ -111,12 +136,33 @@ QUERIES = {
     .filter(AIPromptLabel.name == "zz")
     .first(),
     "a scalar select": lambda s: s.execute(select(func.now())).scalar(),
+    "unscoped column_property over a scoped table": lambda s: s.query(_Thing).first(),
+    "count of that model": lambda s: s.query(_Thing).count(),
+    "scoped subquery in a joinedload .and_()": lambda s: s.query(PriceTagRequestLine)
+    .options(
+        joinedload(
+            PriceTagRequestLine.parts.and_(
+                PriceTagRequestLinePart.line_id
+                == select(Product.id).limit(1).scalar_subquery()
+            )
+        )
+    )
+    .first(),
+    "scoped subquery in a with_loader_criteria": lambda s: s.query(AIPromptVersion)
+    .options(
+        with_loader_criteria(
+            AIPromptVersion, AIPromptVersion.name.in_(select(Product.product_code))
+        )
+    )
+    .first(),
 }
 
 
 def _emitted_sql(db, run) -> list[tuple[str, str]]:
     statements: list[tuple[str, str]] = []
     bind = db.get_bind()
+    # Rolled back with the rest after each run, so it is re-created each time.
+    db.execute(text("CREATE TEMP TABLE IF NOT EXISTS zz_scope_thing (id int primary key, code text)"))
 
     def capture(conn, cursor, statement, params, context, executemany):
         statements.append((statement, repr(params)))
