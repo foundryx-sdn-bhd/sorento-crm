@@ -10,6 +10,10 @@
  *   Planning          : Available for planning (switch), Fulfilment planning (switch),
  *                       Draws stock from (select)
  *
+ * A warehouse that is its own pool (`pool_warehouse_id == id`, the seeded state for site
+ * pools such as BRW and HQ) must survive an edit: it shows as "This warehouse (own pool)"
+ * and a save that never touched the field must not send it as null.
+ *
  * Plus two rules the current form breaks:
  * - "Draws stock from" is optional, so it must be clearable. The user-reported bug is that
  *     once a pool is chosen it can be changed but never unset.
@@ -90,6 +94,8 @@ const h = vi.hoisted(() => ({
   createMutate: vi.fn(),
   updateMutate: vi.fn(),
   loadingWarehouse: false,
+  // The record the edit form loads. Swapped per test for a self-pooled one.
+  current: null as Warehouse | null,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -103,7 +109,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('../hooks/useWarehouses', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks/useWarehouses')>()),
   useWarehouse: (id: string | null) => ({
-    data: id ? CURRENT : undefined,
+    data: id ? (h.current ?? CURRENT) : undefined,
     isLoading: h.loadingWarehouse,
     isError: false,
   }),
@@ -267,6 +273,7 @@ beforeEach(() => {
   h.createMutate.mockReset().mockResolvedValue(CURRENT);
   h.updateMutate.mockReset().mockResolvedValue(CURRENT);
   h.loadingWarehouse = false;
+  h.current = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -441,7 +448,7 @@ describe('WarehouseForm - Draws stock from', () => {
     });
   });
 
-  it('never offers the record being edited as its own pool', async () => {
+  it('offers the record being edited only as "This warehouse (own pool)"', async () => {
     renderForm();
     selectTab('Planning');
 
@@ -449,9 +456,73 @@ describe('WarehouseForm - Draws stock from', () => {
 
     await waitFor(() => expect(optionLabels().length).toBeGreaterThan(0));
     const labels = optionLabels().join(' | ');
+    expect(labels).toContain('This warehouse (own pool)');
     expect(labels).not.toContain('WH-CUR');
     expect(labels).not.toContain('Main Store');
     expect(labels).toContain('Overflow');
+  });
+
+  it('does not send the pool when only another field changed', async () => {
+    renderForm();
+    await waitFor(() => expect(screen.getByDisplayValue('Main Store')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByDisplayValue('Main Store'), { target: { value: 'Main Store 2' } });
+    fireEvent.click(screen.getByRole('button', { name: /save|update/i }));
+
+    await waitFor(() => expect(h.updateMutate).toHaveBeenCalledTimes(1));
+    const { data } = h.updateMutate.mock.calls[0][0];
+    expect(data).toMatchObject({ warehouse_name: 'Main Store 2' });
+    expect(data).not.toHaveProperty('pool_warehouse_id');
+  });
+});
+
+describe('WarehouseForm - a warehouse that is its own pool', () => {
+  const SELF: Warehouse = {
+    ...CURRENT,
+    pool_warehouse_id: CURRENT_ID,
+    pool_warehouse_code: 'WH-CUR',
+  };
+
+  it('shows "This warehouse (own pool)" as the selected pool', async () => {
+    h.current = SELF;
+    renderForm();
+    selectTab('Planning');
+
+    await waitFor(() => expect(poolTrigger()!.textContent).toContain('This warehouse (own pool)'));
+    expect(poolTrigger()!.textContent).not.toContain(CURRENT_ID);
+  });
+
+  it('keeps the self-pool on a save that never touched the field', async () => {
+    h.current = SELF;
+    renderForm();
+    await waitFor(() => expect(screen.getByDisplayValue('Main Store')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByDisplayValue('Main Store'), { target: { value: 'Main Store 2' } });
+    fireEvent.click(screen.getByRole('button', { name: /save|update/i }));
+
+    await waitFor(() => expect(h.updateMutate).toHaveBeenCalledTimes(1));
+    const { data } = h.updateMutate.mock.calls[0][0];
+    // Never null for an untouched field: the self-pool either goes out unchanged or not at all.
+    expect(data.pool_warehouse_id === undefined || data.pool_warehouse_id === CURRENT_ID).toBe(true);
+  });
+
+  it('can make a stand-alone warehouse its own pool', async () => {
+    h.current = { ...CURRENT, pool_warehouse_id: null, pool_warehouse_code: null };
+    renderForm();
+    selectTab('Planning');
+
+    fireEvent.click(poolTrigger()!);
+    await waitFor(() => expect(optionLabels()).toContain('This warehouse (own pool)'));
+    fireEvent.click(screen.getByRole('option', { name: 'This warehouse (own pool)' }));
+    await waitFor(() => expect(poolTrigger()!.textContent).toContain('This warehouse (own pool)'));
+
+    fireEvent.click(screen.getByRole('button', { name: /save|update/i }));
+
+    await waitFor(() => expect(h.updateMutate).toHaveBeenCalledTimes(1));
+    expect(h.updateMutate.mock.calls[0][0]).toMatchObject({
+      id: CURRENT_ID,
+      data: { pool_warehouse_id: CURRENT_ID },
+    });
   });
 });
 

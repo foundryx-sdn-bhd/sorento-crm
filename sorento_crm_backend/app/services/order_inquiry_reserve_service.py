@@ -1183,6 +1183,9 @@ def register_order_inquiry_reserve_post_commit_dispatch() -> None:
         pending = session.info.pop(key, None)
         if not pending:
             return
+        if session.info.get("confirm_preview"):
+            # A simulated confirm sends nothing: its queue is dropped, not dispatched.
+            return
         from app.database import SessionLocal
         from app.services.automation_service import AutomationService
 

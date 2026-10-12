@@ -1793,6 +1793,7 @@ def _spo_line(db, product, warehouse, *, qty, arrives, spo_number=None, line_no=
     return row
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_arriving_before_the_required_date_covers_its_line_through_the_group():
     """AC-K4, as ladder v5 answers it (section 1e). The SPO has no shipment and no ETA of
     its own beyond the line's `expected_date`, which is the only date an imported shipping
@@ -1829,6 +1830,7 @@ def test_an_spo_arriving_before_the_required_date_covers_its_line_through_the_gr
     assert "group" in components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_late_spo_is_inside_the_groups_net_and_outside_what_the_line_may_draw():
     """THE TWO HALVES OF THE WATER RULE (captain, 27 August 2026), in one fixture.
 
@@ -1910,6 +1912,7 @@ def test_a_dead_promise_is_still_inside_the_groups_net_and_still_draws_nothing()
     assert components[0]["qty"] == "40"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_promise_dated_today_covers_its_line():
     """The boundary, said out loud: a row dated today arrives today, and an arrival on the
     required date itself is cover. An exclusive comparison on either would look like a
@@ -1952,6 +1955,7 @@ def test_a_fully_received_line_is_not_supply_however_open_its_date_looks():
     assert [c["kind"] for c in components] == ["buy"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_shipment_backed_row_is_supply_the_group_holds():
     """Once a container is booked the arrival is tracked. Under v5 the arrival date no
     longer decides whether the row is cover - the group's net counts every open incoming -
@@ -2055,6 +2059,7 @@ def test_another_groups_free_pile_stands_where_that_groups_book_is_whole():
     assert short == {}
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_one_lending_groups_book_is_spent_once_across_the_whole_walk():
     """R-M's cap is a statement about the GROUP, so a BOARD spends it once (3 Sep 2026).
 

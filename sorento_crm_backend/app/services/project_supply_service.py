@@ -115,7 +115,7 @@ from app.models.projects import Project
 from app.models.scm import ItemClassification, ReorderLevel, SupplierPerformance
 from app.models.user import User
 from app.services.error_handler import AppException
-from app.services.scm import priority, spo_supply
+from app.services.scm import ladder_steps, priority, spo_supply
 from app.services.scm.history_sources import SPO_HISTORY_SOURCE
 from app.services.scm.supply_origin import buy_origin_by_product
 from app.services.scm.borrow_mode import borrow_from_order_enabled
@@ -129,6 +129,7 @@ from app.services.scm.spo_conversion_service import (
 from app.services.scm import sales_agent_service
 from app.services.scm.demand import demand_qty, is_open_demand, is_transferable_order
 from app.services.scm.group_netting import GroupNetting
+from app.services.scm.pool_predicate import is_project_reserve
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
@@ -1136,6 +1137,7 @@ class ProjectSupplyService:
         # sentinel rather than a falsy check.
         self._fulfilment_settings_cache: Optional[Dict[str, Any]] = None
         self._site_pools_cache: Optional[Dict[str, Warehouse]] = None
+        self._reserves_cache: Dict[str, Warehouse] = {}
         self._group_siblings_cache: Dict[str, Optional[Dict[str, Warehouse]]] = {}
         self._group_donor_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._warehouse_code_memo: Dict[str, Optional[Warehouse]] = {}
@@ -1682,14 +1684,22 @@ class ProjectSupplyService:
                         fact, landed, credit_tier1_qty, credit_tier2
                     ),
                 }]
+            # Owner, 12 Oct 2026 (`ladder_steps`): the planner proposes a later order's stock
+            # as a location's Borrow and never walks step 3.
+            location_only = not ladder_steps.ORDER_BORROW_NAMES_DONOR
             order_borrow = self.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_left
+                fact, as_of=as_of, borrow_left=borrow_left, location_only=location_only
             )
-            supply_borrow = self.supply_borrow_candidates_for(
-                fact, as_of=as_of, supply_left=supply_left
+            supply_borrow = (
+                self.supply_borrow_candidates_for(
+                    fact, as_of=as_of, supply_left=supply_left
+                )
+                if ladder_steps.SUPPLY_BORROW
+                else []
             )
             pool_borrow = self.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_left, pool=True
+                fact, as_of=as_of, borrow_left=borrow_left, pool=True,
+                location_only=location_only,
             )
         pools_net = fact.pools_net if pools_net_left is None else pools_net_left
         settings = self._fulfilment_settings()
@@ -2427,6 +2437,11 @@ class ProjectSupplyService:
         pool also happens to be a plain site code with no hyphen (`BRW`, `MWH`, ...), but
         that is a naming convention the data does not enforce, and a warehouse's OWN code
         says nothing about whether it is anybody's pool.
+
+        A PROJECT RESERVE (HQ: a pool with `segment = project`) is NOT here (owner, 12 Oct
+        2026): Fulfilment Planning never offers, draws or nets it. Its stock reaches a
+        project by a CS transfer in AutoCount, and Stock Debt is where it covers project
+        lines (`project_reserve_warehouses`, PLAN-hq-project-reserve-12oct).
         """
         if self._site_pools_cache is None:
             pool_ids = {
@@ -2436,14 +2451,30 @@ class ProjectSupplyService:
                 .distinct()
                 .all()
             }
-            self._site_pools_cache = {
+            pools = {
                 warehouse_id: warehouse
                 for warehouse_id, warehouse in (
                     self._warehouses(pool_ids) if pool_ids else {}
                 ).items()
                 if warehouse.is_active
             }
+            self._reserves_cache = {
+                warehouse_id: warehouse
+                for warehouse_id, warehouse in pools.items()
+                if is_project_reserve(warehouse.segment, is_pool=True)
+            }
+            self._site_pools_cache = {
+                warehouse_id: warehouse
+                for warehouse_id, warehouse in pools.items()
+                if warehouse_id not in self._reserves_cache
+            }
         return self._site_pools_cache
+
+    def project_reserve_warehouses(self) -> Dict[str, Warehouse]:
+        """`{warehouse_id: Warehouse}` for every active PROJECT RESERVE (HQ), read with the
+        site pools - Stock Debt's own extra span; the planner never reads it."""
+        self._site_pool_warehouses()
+        return self._reserves_cache
 
     def site_pool_warehouses(self) -> Dict[str, Warehouse]:
         """`{warehouse_id: Warehouse}` for every pool rung 2 may draw, public for the board.
@@ -2485,6 +2516,7 @@ class ProjectSupplyService:
             chain.append(
                 {
                     "location": fact.pool_code,
+                    "warehouse_id": str(fact.pool.id),
                     "free": fact.pool_free if stated is None else stated,
                     "available": fact.pool_available,
                     "on_hand": self._pile_facts()
@@ -2517,6 +2549,7 @@ class ProjectSupplyService:
             rest.append(
                 {
                     "location": pool.warehouse_code,
+                    "warehouse_id": pool_id,
                     "free": free,
                     "available": available,
                     "on_hand": triple["on_hand"],
@@ -3811,6 +3844,20 @@ class ProjectSupplyService:
             self._borrow_from_order_value = borrow_from_order_enabled(self.db)
         return self._borrow_from_order_value
 
+    def _names_its_order(self, item: Any) -> bool:
+        """Is this confirmed borrow an ORDER borrow? The switch on, AND the borrow names the
+        order it takes from: a donor sales order, or another project's hold.
+
+        Owner, 12 Oct 2026: what the planner suggests confirms exactly as displayed. With the
+        switch on, the planner still proposes a later order's stock as a location's Borrow
+        (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off), naming neither, so Confirm writes the
+        location shape for it; a borrow a person picked with the order named keeps the
+        order-borrow shape. With the switch off this is always False, as before (K5)."""
+        return self.borrow_from_order and (
+            bool(getattr(item, "donor_so_number", None))
+            or getattr(item, "source", None) == ALLOC_SOURCE_OTHER_PROJECT
+        )
+
     def _eligible_donor(
         self,
         row: Any,
@@ -3855,6 +3902,10 @@ class ProjectSupplyService:
         as_of: Optional[date] = None,
         borrow_left: Optional[Mapping[str, Decimal]] = None,
         pool: bool = False,
+        #: The PLANNER's own read (`ladder_steps.ORDER_BORROW_NAMES_DONOR` off): the stock
+        #: is told as a location's whatever the toggle says. A person's pick (the Borrow
+        #: dialog) leaves this False and keeps the toggle's meaning.
+        location_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """Step 2 (R3, R4, R5, R9, R12, R19, R25): the LATER orders holding on hand.
 
@@ -3946,7 +3997,7 @@ class ProjectSupplyService:
                     }
                 )
         out.sort(key=self._donor_order)
-        if not self.borrow_from_order:
+        if location_only or not self.borrow_from_order:
             # Same stock, same ranking (sorted above), told as a location (D2). Less a
             # donor only its agent's authorisation could release (B1): confirm refuses it.
             return [
@@ -4590,6 +4641,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             required_date = row.get("required_date")
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             timely_refs = [
@@ -4768,7 +4823,9 @@ class ProjectSupplyService:
         pct = self._fulfilment_settings().get("pool_share_pct")
         allowances: Dict[str, str] = {}
         for entry in self.pool_chain_for(fact):
-            warehouse_id = self.warehouse_id_for_code(entry.get("location"))
+            # By the pool's own id, never its code: two companies may each own an `HQ`
+            # (owner, 12 Oct 2026: per company, never by a code literal).
+            warehouse_id = entry.get("warehouse_id")
             if not warehouse_id:
                 continue
             allowances[warehouse_id] = qty_text(
@@ -6839,8 +6896,9 @@ class ProjectSupplyService:
         donor_line_no = getattr(item, "donor_line_no", None)
         line_text = f" line {donor_line_no}" if donor_line_no is not None else ""
         # "Borrow from another order" OFF (S2): a refusal names the location, never the
-        # donor order, whatever the payload carried.
-        by_order = self.borrow_from_order
+        # donor order, whatever the payload carried. ON, a borrow naming no order is a
+        # location's too (`_names_its_order`).
+        by_order = self._names_its_order(item)
         held = (
             f"{order.so_number or 'That sales order'}{line_text}"
             if by_order
@@ -7455,9 +7513,9 @@ class ProjectSupplyService:
                 donor_core_line_id = getattr(item, "donor_core_line_id", None)
                 if not donor_core_line_id or _dec(item.qty) <= _ZERO:
                     continue
-                if not self.borrow_from_order and not getattr(item, "supply_key", None):
-                    # "Borrow from another order" OFF borrows a location, so the donor's
-                    # own decision is left alone (Q2). A step-3 document borrow is
+                if not self._names_its_order(item) and not getattr(item, "supply_key", None):
+                    # A location borrow (switch OFF, or ON with no order named) leaves the
+                    # donor's own decision alone (Q2). A step-3 document borrow is
                     # unchanged in both states (D5).
                     continue
                 by_donor.setdefault(str(donor_core_line_id), line)
@@ -7642,7 +7700,9 @@ class ProjectSupplyService:
                 ConfirmSupplyBody(lines=[]),
                 actor_user_id=str(active.confirmed_by or actor_user_id),
                 uncover_line_ids=sorted(wanted),
-                uncover_reason_by_line=reason_by_line,
+                # Every withdrawn line carries a reason, so the order inquiry retires its
+                # rows even while an AutoCount change on it waits on CS (SO422492 A).
+                uncover_reason_by_line=reason_by_line or {line_id: reason for line_id in wanted},
             )
             # WHY the revision this call just retired was retired. `confirm` stamps its
             # own "Reconfirmed by CS.", which is not what happened here - nobody
@@ -7843,7 +7903,7 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not donor_core_line_id:
                     continue
                 supply_key = getattr(item, "supply_key", None)
-                if not by_order and not supply_key:
+                if not supply_key and not self._names_its_order(item):
                     continue
                 if supply_key:
                     # STEP 3, AND THE DONOR'S OWN ROW SAYS IT FIRST (S4, fixed 30 Aug).
@@ -7911,6 +7971,11 @@ class ProjectSupplyService:
         # the fact itself: the `-IR` group lent 40 to a `-BB` line and is owed 40 back.
         if not by_order:
             return order_backs + self._location_order_backs(checked, reference)
+        # ON, a later order's stock borrowed with no order named (the planner's own
+        # suggestion) is a location's, owed back on this line exactly as under OFF.
+        order_backs = order_backs + self._location_order_backs(
+            checked, reference, unnamed_order_borrows_only=True
+        )
         for line, entry, fact in checked:
             if not fact.product_id:
                 continue
@@ -7973,12 +8038,18 @@ class ProjectSupplyService:
         self,
         checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
         reference: str,
+        *,
+        unnamed_order_borrows_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """"Borrow from another order" OFF (D4, B3): every borrow that is not a document is
         owed back on the BORROWING line, at its own date, at the location it left from. The
         line's own location and its own group included (Q3): a project line is demand only
         through its OI rows, so nothing else would replace what it took. One row per (line,
-        location)."""
+        location).
+
+        `unnamed_order_borrows_only` is the switch-ON reading: only a later order's stock
+        borrowed with no order named (`_names_its_order` False). Every other ON borrow keeps
+        the order-back rule it always had."""
         backs: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for line, entry, fact in checked:
             for item in entry.borrow or []:
@@ -7986,6 +8057,11 @@ class ProjectSupplyService:
                 if qty <= _ZERO or not item.warehouse_id:
                     continue
                 if getattr(item, "supply_key", None):
+                    continue
+                if unnamed_order_borrows_only and (
+                    not getattr(item, "donor_core_line_id", None)
+                    or self._names_its_order(item)
+                ):
                     continue
                 back = backs.get((str(line.id), str(item.warehouse_id)))
                 if back is None:
@@ -8125,7 +8201,14 @@ class ProjectSupplyService:
                     "source_warehouse_id": str(item.warehouse_id),
                     # BR2: under OFF the project stays an id, never a shown code.
                     "donor_project_ref": (
-                        donor.project_code if donor and self.borrow_from_order else None
+                        donor.project_code
+                        if donor
+                        and (
+                            self._names_its_order(item)
+                            if is_group_borrow
+                            else self.borrow_from_order
+                        )
+                        else None
                     ),
                     "donor_project_id": str(donor.id) if donor else None,
                     "reason": (
@@ -8987,6 +9070,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             shares = attribution.get(key, {}).get(str(core.id) if core else "", {})
             ahead = _dec(shares.get("so_qty_ahead"))
@@ -11115,8 +11202,16 @@ class ProjectSupplyService:
         write: Optional[Callable[[ProjectSalesOrder, Any], Dict[str, Any]]] = None,
         can_hold_back: Optional[Callable[[Any], bool]] = None,
         preview: bool = False,
+        raw_errors: bool = False,
+        describe_writes: bool = False,
     ) -> List[Dict[str, Any]]:
         """"Confirm all approved" (D3): every order's Confirm, each in its OWN transaction.
+
+        `raw_errors` (the admin Simulate confirm only) reports a failure as the exception's
+        class name plus text, capped, instead of the bare message a planner reads.
+        `describe_writes` (also Simulate only) is the real write, committing or rolling
+        back each order as ever, that ALSO reads back the inquiry rows and transfers it
+        wrote, before the commit, the way a preview does.
 
         The board's Approve all composes a verdict per LINE across up to fifty orders; this is
         the same per-order write `confirm` already does, called once per order rather than once
@@ -11150,6 +11245,7 @@ class ProjectSupplyService:
         )
         can_hold_back = can_hold_back or (lambda _entry: True)
         results: List[Dict[str, Any]] = []
+        observe = preview or describe_writes
         for entry in entries:
             pso_id = str(entry.pso_id)
             # A malformed id would otherwise reach `get_order`'s query, and Postgres would
@@ -11196,7 +11292,7 @@ class ProjectSupplyService:
                 before_decision_id = None
                 before_rows: Set[str] = set()
                 before_moves: Set[str] = set()
-                if preview:
+                if observe:
                     active = self.active_decision(str(order.id))
                     before_decision_id = str(active.id) if active is not None else None
                     before_rows, before_moves = self._preview_baseline(order)
@@ -11204,7 +11300,7 @@ class ProjectSupplyService:
                     order, entry, write, can_hold_back(entry)
                 )
                 previewed = None
-                if preview:
+                if observe:
                     now_active = self.active_decision(str(order.id))
                     changed = now_active is not None and str(now_active.id) != before_decision_id
                     previewed = (
@@ -11212,6 +11308,7 @@ class ProjectSupplyService:
                         if changed
                         else {"inquiry_rows": [], "transfers": []}
                     )
+                if preview:
                     self.db.rollback()
                 else:
                     self.db.commit()
@@ -11219,7 +11316,7 @@ class ProjectSupplyService:
                     {
                         "pso_id": pso_id,
                         "ok": True,
-                        **({"preview": True, **previewed} if preview else {}),
+                        **({"preview": True, **previewed} if observe else {}),
                         "decision_revision": body.get("revision_no"),
                         "inquiry_rows_created": body.get("inquiry_rows_created"),
                         "lines_decided": body.get("lines_decided"),
@@ -11255,13 +11352,17 @@ class ProjectSupplyService:
             except Exception as exc:  # noqa: BLE001 - every order must get an answer
                 self.db.rollback()
                 message, failing_lines = _error_detail(exc)
+                if raw_errors:
+                    from app.services.confirm_simulation import error_text
+
+                    message = error_text(exc)
                 results.append(
                     {
                         "pso_id": pso_id,
                         "ok": False,
                         "error": message,
                         "failing_lines": failing_lines,
-                        **({"preview": True} if preview else {}),
+                        **({"preview": True} if observe else {}),
                     }
                 )
             finally:

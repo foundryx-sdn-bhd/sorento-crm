@@ -12,13 +12,13 @@ with the label moved onto it) is never touched. It deliberately does not call
 `seed_prompt_registry`, whose other steps can move a label (the `agent_system` v2 preserve).
 
 Revision ID: rep2_0001_wording_seed
-Revises: rkind_0002_parser_ref_kinds_v56
+Revises: devf_0002_portal_link_copy
 """
 from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "rep2_0001_wording_seed"
-down_revision = "rkind_0002_parser_ref_kinds_v56"
+down_revision = "devf_0002_portal_link_copy"
 branch_labels = None
 depends_on = None
 

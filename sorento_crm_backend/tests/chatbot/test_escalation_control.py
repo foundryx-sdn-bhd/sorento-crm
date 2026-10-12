@@ -207,7 +207,12 @@ class TestOffersEscalation:
         """Every bot-initiated offer gate reads `offers_escalation`, so a gate still calling
         `is_staff_profile` directly would offer a dealer. The one call left is
         `answer_bridge`'s staff-only roster trim, which the barred strip right after it
-        (`without_escalation`) covers."""
+        (`without_escalation`) covers.
+
+        REF-PROBES (#1569) added three calls that gate DATA, never an offer: `engine.py`
+        `_reference_scope` (staff skip the customer-link drop) and `_reference_kinds`
+        (which reference kinds the asker may probe), and `turn_runtime.py`'s `ref_staff`
+        flag (staff read PO / PR numbers). A fourth call in either file turns this red."""
         import ast
 
         root = Path(__file__).resolve().parents[2] / "app" / "services" / "chatbot"
@@ -217,7 +222,12 @@ class TestOffersEscalation:
                 if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "is_staff_profile":
                     key = str(path.relative_to(root))
                     calls[key] = calls.get(key, 0) + 1
-        assert calls == {"answer_bridge.py": 1, "turn/state.py": 1}, calls
+        assert calls == {
+            "answer_bridge.py": 1,
+            "turn/state.py": 1,
+            "engine.py": 2,
+            "turn_runtime.py": 1,
+        }, calls
 
 #: Every "no offer for this audience" scenario the staff suite pins, one per offer builder
 #: (`turn/compose.py`'s composer offer, `answer_bridge`'s cross-domain ladder rung, the

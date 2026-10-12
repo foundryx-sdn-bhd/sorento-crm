@@ -584,3 +584,63 @@ describe('previewConfirmMany', () => {
     expect(JSON.stringify(body)).toBe(before);
   });
 });
+
+/**
+ * board-simulate-confirm-12oct: the admin dry run posts the Confirm body, untouched, to its
+ * own route (the server ignores `preview` and always simulates).
+ */
+describe('simulateConfirm', () => {
+  const apiFetch = vi.fn();
+
+  async function load() {
+    vi.doMock('@/lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
+    vi.doMock('@/lib/api-client', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@/lib/api-client')>();
+      return { ...actual, extractApiError: vi.fn(async () => 'Backend said no') };
+    });
+    return import('./fulfilmentPlanningService');
+  }
+
+  const body = {
+    orders: [{ pso_id: 'pso-1', lines: [] as never[], batch_id: null }],
+    batch_id: null,
+  };
+
+  it('posts the body unchanged to simulate-confirm and returns the parsed result', async () => {
+    const answer = {
+      results: [
+        {
+          pso_id: 'pso-1',
+          ok: false,
+          preview: true,
+          error: 'TypeError: boom',
+          simulated_errors: [
+            { line_no: 8, item_code: 'SRTSH1040', project_line_id: 'pl-8', error: 'TypeError: boom' },
+          ],
+        },
+      ],
+    };
+    apiFetch.mockResolvedValue({ ok: true, json: async () => answer } as Response);
+    const { simulateConfirm } = await load();
+
+    const result = await simulateConfirm(body);
+
+    const [url, init] = apiFetch.mock.calls[0];
+    expect(url).toBe('/api/v1/project-sales/fulfilment-planning/simulate-confirm');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual(body);
+    expect(result).toEqual(answer);
+  });
+
+  it('reports a refusal through extractApiError', async () => {
+    apiFetch.mockResolvedValue({
+      ok: false,
+      headers: { get: () => 'application/json' },
+      json: async () => ({}),
+    } as unknown as Response);
+    const { simulateConfirm } = await load();
+
+    await expect(simulateConfirm(body)).rejects.toThrow('Backend said no');
+  });
+});

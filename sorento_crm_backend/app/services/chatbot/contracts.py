@@ -143,6 +143,8 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_project_quotations_list": "filtered",
     "crm_projects_list": "filtered",
     "crm_purchase_request_approve": "no_products",
+    # REF-PROBES: a PR's lines name products, so a brand-scoped contact's are guarded.
+    "crm_purchase_request_by_number": "filtered",
     "crm_purchase_request_reject": "no_products",
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",

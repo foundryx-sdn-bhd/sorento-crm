@@ -2517,3 +2517,69 @@ describe('FulfilmentBoardListView: Columns and Status filter', () => {
   });
 
 });
+
+/**
+ * Owner finding, 12 Oct 2026: opening the amber "What changed" lightbox beside Outstanding
+ * qty and then closing it left the row EXPANDED. The icon stops its own click, but the
+ * dialog is portalled from inside the cell, so a click on its body or its overlay still
+ * bubbled through React to the row and toggled it.
+ */
+describe('FulfilmentBoardListView: the change lightbox never toggles its row', () => {
+  const LINE_ID = 'line-oct12';
+
+  function qtyAnnotation(): BoardChangeAnnotation {
+    return {
+      rowId: 'row-oct12',
+      soNumber: 'SO422492',
+      lineNo: 3,
+      itemCode: 'SRTFVP08',
+      kind: 'qty_changed',
+      closed: false,
+      was: { qty: '50', date: '2026-09-01', decision: 'Buy 50' },
+      now: { qty: '40', date: '2026-09-01', decision: 'Buy 40' },
+      suggestionLines: ['Keep 40'],
+      lateDays: null,
+      shortfallQty: null,
+      productChangedFrom: null,
+      movedTransfer: null,
+      projectLineId: LINE_ID,
+    } as BoardChangeAnnotation;
+  }
+
+  it('opening the lightbox, clicking inside it, then closing it by overlay or Close leaves the row collapsed', async () => {
+    renderView({
+      contributions: [
+        contribution({
+          key: 'so-oct12:line-3',
+          so_number: 'SO422492',
+          line_no: 3,
+          item_code: 'SRTFVP08',
+          project_line_id: LINE_ID,
+        }),
+      ],
+      annotations: new Map([[LINE_ID, [qtyAnnotation()]]]),
+    });
+
+    const row = (await screen.findByText('SO422492')).closest('tr') as HTMLElement;
+    const icon = within(row).getByTestId('board-change-icon-row-oct12');
+    expect(icon).toHaveAttribute('data-column', 'outstanding');
+
+    // Open and click the body: the row stays as it was.
+    fireEvent.click(icon);
+    const dialog = await screen.findByTestId('board-change-dialog');
+    fireEvent.click(within(dialog).getByText('Only the fields that moved, then the suggestion.'));
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+
+    // Close on the overlay, the content's sibling in the same portal (`components/ui/dialog.tsx`).
+    const overlay = screen.getByTestId('board-change-dialog').previousElementSibling as HTMLElement;
+    expect(overlay).not.toBeNull();
+    fireEvent.click(overlay);
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+
+    // Open again, close on Close.
+    fireEvent.click(icon);
+    const again = await screen.findByTestId('board-change-dialog');
+    fireEvent.click(within(again).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+  });
+});

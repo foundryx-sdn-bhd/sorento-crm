@@ -41,7 +41,7 @@ PHONE = "+60100000001"
 RESPOND_IO_ID = "ZZT100000001"
 BASE = "/api/v1/sla-management/conversation-sla-tracking"
 WEBHOOK_URL = "/api/v1/public/respond/webhook"
-SECRET = "zzt-webhook-secret"
+SECRET = "zzt-webhook-secret-not-real-0002"  # made up; keys under 24 chars are ignored (#1565)
 
 # Respond message ids are epoch microseconds; the local lane only surfaces ids it can parse.
 FIRST_ID = 1786751891000000

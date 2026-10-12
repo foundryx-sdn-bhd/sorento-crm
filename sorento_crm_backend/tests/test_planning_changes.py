@@ -1628,12 +1628,15 @@ def test_apply_uncovers_a_replan_line_instead_of_letting_confirm_carry_it_forwar
     frozen = supply.frozen_lines_of(supply.active_decision(str(order.id)))
     assert str(line_b.id) not in frozen
 
-    # `refresh_for_decision` treats a line absent from `buy_lines` as dropped and cancels
-    # what it had raised - the same behaviour a genuinely-undecided line already gets.
+    # SO422492 BUG A: the line leaves the PLAN (above), but its raised Buy row stands - its
+    # AutoCount change is still undecided and the book still needs the 21. Cancelling it
+    # told purchasing CANCEL ALL; CS's later decision restates the row instead.
     db.refresh(buy_row_b)
-    assert buy_row_b.state == INQUIRY_CANCELLED
+    assert buy_row_b.state != INQUIRY_CANCELLED
+    assert Decimal(str(buy_row_b.qty)) == Decimal("21")
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_build_batch_proposal_for_a_covered_replan_row_is_the_boards_full_contribution(api):
     """Captain, 19 August 2026: the trail popover on an `advanced` row showed nothing - the
     row's `proposal_json` had one source and `trail: []`. Root cause: the ACTIVE decision
