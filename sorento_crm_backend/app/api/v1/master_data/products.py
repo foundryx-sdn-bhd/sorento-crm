@@ -13,7 +13,7 @@ from app.services.product_service import ProductService
 from app.services import product_purchase_history_service
 from app.services.attachment_field_link_service import AttachmentFieldLinkService
 from app.services.uuid_list_param import parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
 from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.product import (
     ProductCreate,
@@ -205,6 +205,15 @@ def get_products(
             "restriction; an unknown name matches nothing."
         ),
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "The contact this question is asked ON BEHALF OF (chatbot callers; with "
+            "`space_id`). Its spec visibility policy applies to `spec_constraints`: a hidden "
+            "key is neither filtered on nor named in the response."
+        ),
+    ),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id for `contact_id`."),
     sort: Optional[str] = Query("created_at"),
     dir: Optional[str] = Query("asc"),
     current_user: dict = Depends(get_current_user_or_api_key),
@@ -212,7 +221,8 @@ def get_products(
 ):
     """Get products with pagination, filtering, and sorting."""
     # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
-    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints)
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     started = time.perf_counter()
     logger.info(
         "products.get start page=%s limit=%s query=%s category_id=%s brand_id=%s status=%s item_type=%s",
@@ -251,6 +261,7 @@ def get_products(
             any_dimension_max=any_dimension_max,
             variant_filter=variant_filter,
             spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
             has_active_promotion=has_active_promotion,
             access_levels=normalize_list_query_param(access_levels),
             sort_field=sort or "created_at",

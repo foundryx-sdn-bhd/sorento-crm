@@ -226,6 +226,19 @@ def hidden_keys(policy: SpecPolicy, registry_keys: Iterable[str]) -> frozenset[s
     return hidden
 
 
+def contact_hidden_keys(db: Session, contact_id: str, space_id: Optional[str] = None) -> frozenset[str]:
+    """The registry keys hidden from one asking contact, resolved the way `check_access`
+    does: the NULL-workspace fallback first (SF-1, a contact with `workspace_id IS NULL`
+    would otherwise get the closed DEFAULT policy), then `resolve_policy`, then
+    `hidden_keys` over the FULL registry (B1). Shared by the references resolver and the
+    `spec_constraints` routes so the two can never disagree about one contact."""
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    resolved = resolve_contact_with_null_workspace_fallback(db, contact_id=contact_id, space_id=space_id)
+    policy = resolve_policy(db, resolved or contact_id, space_id)
+    return hidden_keys(policy, {key for key, _label in full_registry_rows(db)})
+
+
 # ------------------------------------------------------------------- admin writes
 
 

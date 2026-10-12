@@ -11,7 +11,7 @@ from app.dependencies import require_any_permission_with_api_key
 
 from app.services.marketing_service import PromotionProductService, _resolve_promotion_id_for_filter
 from app.services.uuid_list_param import parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
 from app.schemas.marketing import (
     PromotionProductCreate,
     PromotionProductUpdate,
@@ -298,12 +298,21 @@ async def list_all_promotion_products(
             "An unknown key is HTTP 422."
         ),
     ),
+    contact_id: Optional[str] = Query(
+        None,
+        description=(
+            "The contact asked on behalf of (with `space_id`): besides the company scope, its "
+            "spec visibility policy applies to `spec_constraints` (a hidden key is dropped)."
+        ),
+    ),
+    space_id: Optional[str] = Query(None, description="Respond.io workspace id for `contact_id`."),
     current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_PRODUCT_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get promotion products with pagination. Optional access_levels (names) intersection filter."""
     # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
-    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints)
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     try:
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
@@ -431,6 +440,7 @@ async def list_all_promotion_products(
             contact_access_codes=contact_codes,
             serving_policy=serving_policy,
             spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
         )
         # A virtual `size` the data could not place on one axis: no rows, and the clarify /
         # miss keys the strict response_model would drop.

@@ -35,9 +35,15 @@ def _bad(message: str) -> AppException:
     return AppException(422, message, code="INVALID_SPEC_CONSTRAINTS")
 
 
-def parse_spec_constraints(db: Session, raw: str | None) -> list[dict] | None:
+def parse_spec_constraints(
+    db: Session, raw: str | None, hidden: frozenset[str] = frozenset()
+) -> list[dict] | None:
     """`[{key, op, value}]` from the query string; None when blank. 422 on anything malformed,
-    an op outside eq|between|gte|lte, or a key that is not an active registry key."""
+    an op outside eq|between|gte|lte, or a key that is not an active registry key.
+
+    `hidden` (the asking contact's hidden keys, `request_hidden_keys`): a constraint on one
+    is dropped after validation, neither applied nor echoed, the way the references
+    resolver drops a hidden key before it ranks (AC-18). None when nothing is left."""
     if raw is None or not raw.strip():
         return None
     try:
@@ -70,8 +76,19 @@ def parse_spec_constraints(db: Session, raw: str | None) -> list[dict] | None:
                 raise _bad(f"Spec key '{key}': `between` takes [lo, hi].")
         elif not _is_number(value):
             raise _bad(f"Spec key '{key}': `{op}` takes a number.")
-        out.append({"key": key, "op": op, "value": value})
-    return out
+        if key not in hidden:
+            out.append({"key": key, "op": op, "value": value})
+    return out or None
+
+
+def request_hidden_keys(db: Session, contact_id: str | None, space_id: str | None) -> frozenset[str]:
+    """The registry keys hidden from the contact a chatbot call is asked for; none on a
+    staff call (no `contact_id`)."""
+    if not contact_id:
+        return frozenset()
+    from app.services.spec_visibility import contact_hidden_keys
+
+    return contact_hidden_keys(db, contact_id, space_id)
 
 
 def _stored(key: str):
@@ -124,6 +141,14 @@ def _sort_key(v: Any):
     return (0, v, "") if _is_number(v) else (1, 0, str(v).lower())
 
 
+def _scoped(*columns):
+    """A read of `product_specifications` joined to its product, so the company scope the
+    session carries (`products` is company scoped, `do_orm_execute`) holds here as it does
+    on the outer product query: a foreign company's product never contributes a value, a
+    size candidate or an unrecorded count."""
+    return select(*columns).join(Product, Product.id == ProductSpecifications.product_id)
+
+
 def _where(constraints: list[dict]):
     return and_(*[_one(c) for c in constraints]) if constraints else true()
 
@@ -137,7 +162,7 @@ def _values_of(db: Session, key: str, where) -> list:
     """The distinct stored values of `key` among the spec rows matching `where`, sorted."""
     stored = _stored(key)
     seen: dict[str, Any] = {}
-    for (value,) in db.execute(select(stored).where(where, _present(key)).distinct()).all():
+    for (value,) in db.execute(_scoped(stored).where(where, _present(key)).distinct()).all():
         for v in value if isinstance(value, list) else [value]:
             seen.setdefault(json.dumps(v, sort_keys=True), v)
     return sorted(seen.values(), key=_sort_key)
@@ -165,7 +190,7 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
             alternatives.append(_alternative(registry[key], values))
         stored = _stored(key)
         missing = db.execute(
-            select(func.count(func.distinct(ProductSpecifications.product_id))).where(
+            _scoped(func.count(func.distinct(ProductSpecifications.product_id))).where(
                 where, or_(stored.is_(None), func.jsonb_typeof(stored) == "null")
             )
         ).scalar()
@@ -180,7 +205,9 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
     }
 
 
-def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict] | None, dict]:
+def resolve_size(
+    db: Session, constraints: list[dict] | None, hidden: frozenset[str] = frozenset()
+) -> tuple[list[dict] | None, dict]:
     """Resolve the virtual `size` key against the data, before the route filters.
 
     Candidates are the active numeric registry keys in mm. Among products matching the other
@@ -191,12 +218,15 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
       * none: the route returns no rows; extra = `spec_alternatives` per mm key present and
         `spec_unrecorded: {"size": n}` (products with no mm value at all, left out when 0).
     Returns `(constraints, extra)`; constraints is None when the route must return no rows.
-    No `size` constraint: `(constraints, {})` unchanged."""
+    No `size` constraint: `(constraints, {})` unchanged. A key in `hidden` (the asking
+    contact's) is never a candidate and never listed; a product holding only hidden mm
+    values counts as having none recorded."""
     if not constraints or not any(c["key"] == SIZE_KEY for c in constraints):
         return constraints, {}
     mm_keys = [
         row for row in active_registry(db)
         if str(row.data_type) == "numeric" and str(row.unit or "").lower() == "mm"
+        and str(row.spec_key) not in hidden
     ]
     out = [c for c in constraints if c["key"] != SIZE_KEY]
     resolved: dict[str, str] = {}
@@ -205,7 +235,7 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
         holders = sorted(
             str(row.spec_key) for row in mm_keys
             if db.execute(
-                select(ProductSpecifications.product_id)
+                _scoped(ProductSpecifications.product_id)
                 .where(where, _one({**size, "key": str(row.spec_key)}))
                 .limit(1)
             ).first()
@@ -228,7 +258,7 @@ def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict
             if (values := _values_of(db, str(row.spec_key), where))
         ]
         missing = db.execute(
-            select(func.count(func.distinct(ProductSpecifications.product_id))).where(
+            _scoped(func.count(func.distinct(ProductSpecifications.product_id))).where(
                 where, *[~_present(str(row.spec_key)) for row in mm_keys]
             )
         ).scalar()

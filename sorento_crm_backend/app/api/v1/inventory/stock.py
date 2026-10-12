@@ -59,7 +59,7 @@ from app.dependencies import (
 )
 from app.services.inventory_service import StockService
 from app.services.uuid_list_param import parse_requested_quantities, parse_uuid_list
-from app.services.product_spec_filter import parse_spec_constraints
+from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
 from app.services.entity_filter_helpers import normalize_list_query_param
 from app.schemas.inventory import StockResponse, StockBalanceListResponse, StockDashboardResponse, BulkImportStockRequest, BulkImportStockResponse, StockLedgerResponse
 from app.schemas.common import ListResponse, ValidateImportResponse
@@ -378,7 +378,8 @@ def get_stock_balance(
     parsed_requested_quantities = parse_requested_quantities(requested_quantities)
     parsed_warehouse_ids = parse_uuid_list(warehouse_ids, param_name="warehouse_ids")
     parsed_product_ids = parse_uuid_list(product_ids, param_name="product_ids")
-    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints)
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     try:
         service = StockService(db)
         result = service.list_stock(
@@ -401,6 +402,7 @@ def get_stock_balance(
             requested_qty=requested_qty,
             requested_quantities=parsed_requested_quantities,
             spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
             has_active_promotion=has_active_promotion,
             access_levels=normalize_list_query_param(access_levels),
         )

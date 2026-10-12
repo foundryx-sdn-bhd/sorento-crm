@@ -535,6 +535,7 @@ class ProductService:
         spec_constraints: Optional[list[dict]] = None,
         has_active_promotion: bool = False,
         access_levels: Optional[list[str]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List products with filtering and pagination.
 
@@ -549,7 +550,7 @@ class ProductService:
 
         # The virtual `size` key resolves to one mm key from the data, or the answer is a
         # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
-        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints)
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
         if spec_constraints and sized_constraints is None:
             payload = {
                 "data": [],

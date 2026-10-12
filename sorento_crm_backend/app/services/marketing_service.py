@@ -1268,6 +1268,7 @@ class PromotionProductService:
         entities: Optional[list[str]] = None,
         serving_policy: bool = False,
         spec_constraints: Optional[list[dict]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List products for a promotion, several promotions, or all promotion products.
 
@@ -1305,7 +1306,7 @@ class PromotionProductService:
 
         from app.services.product_spec_filter import resolve_size, spec_constraint_clause
 
-        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints)
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
         if spec_constraints and sized_constraints is None:
             return {
                 "data": [],
