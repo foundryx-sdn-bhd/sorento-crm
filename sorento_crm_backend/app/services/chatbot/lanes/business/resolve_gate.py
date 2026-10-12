@@ -818,6 +818,10 @@ def resolve_entity_body(
         # matched these" describe a different set. A size ask is answered by the route, which
         # filters by the size (`fetch.spec_constraints_for`, `product_spec_filter.resolve_size`).
         require = None
+        # Crew latency trace a92941c7 (routed 3037 ms): with no `require`, an unplaced subject
+        # fell into the spec fallback's MODEL phrase read (2-3 s, `references.py`). The route
+        # filters this ask, so that read is wasted; the deterministic word read still runs.
+        body["understand_phrase"] = False
     # The class word the PARSER named, forwarded as a value (turn re-architecture,
     # D11): a `product_type` / `category` entity IS "which taps", and reading it off
     # the verdict is what lets a HAS turn be described by something other than this

@@ -404,3 +404,25 @@ def test_r_fg_the_split_measure_leaves_the_category_words(vdb, raw, left):
     cats = [e for e in verdict["entities"] if e.get("hint") == "category"]
     assert [c["raw"] for c in cats] == [left], verdict["entities"]
     assert ("size", int(raw.split("m")[0].strip())) in [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+
+
+def test_r_lat_a_size_the_route_filters_skips_the_resolvers_model_phrase_read():
+    """Crew latency trace (a92941c7: routed 3037 ms): a size ask that reaches a tool sends no
+    `require`, so an unplaced subject fell into the resolver's spec fallback and its model
+    phrase read (2-3 s, `references.py` `understand_phrase`). The route filters that ask; the
+    read is wasted. Any other ask keeps it."""
+    from app.services.chatbot.lanes.business.resolve_gate import resolve_entity_body
+
+    size = {"raw": "250", "hint": "specification", "canonical_code": "250", "current_message": True,
+            "confident": True, "spec_key": "size", "spec_value": 250, "spec_unit": "mm"}
+
+    def body(domain, intent, entities):
+        return resolve_entity_body({
+            "text": {"message": {"message": {"text": "250mm floor grating got stock?"}}},
+            "contact": {"id": "1"},
+            "parse": {"output": {"message_type": "business_query", "domain_hint": domain, "intent_hint": intent,
+                                 "match_mode": "and", "access_levels": [], "entities": entities}},
+        })
+
+    assert body("inventory", "check_stock", [_category("floor grating"), dict(size)])["understand_phrase"] is False
+    assert body("inventory", "check_stock", [_category("floor grating")])["understand_phrase"] is True
