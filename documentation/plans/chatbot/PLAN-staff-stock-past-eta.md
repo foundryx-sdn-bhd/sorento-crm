@@ -1,25 +1,55 @@
-# PLAN: staff stock reply shows past ETAs and a duplicate PO block
+# PLAN: staff stock reply, one PO block line per PO document, location and date
 
-Status: in progress (small fix track: expected diff under 300 lines, no migration, no auth/RBAC change)
+Status: built, in review (small fix track: under 300 changed lines, no migration, no auth/RBAC change). Rescoped 13 Oct 2026.
 
 ## Problem
 
-Crew live check on main (d01ca05cb): a STAFF (office) contact asking "stock SRTWC286" through
-`crm_inventory_stock_balance_list` is told ETAs already in the past (2026-09-08, 2026-09-20,
-delay 2026-10-05) and the SRTWC286-SH-PP purchase-order block is printed twice.
+Crew live check on main (d01ca05cb): a staff (office) contact asking "stock SRTWC286" read the
+SRTWC286-SH-PP purchase-order block twice.
 
-#1601 added a past-ETA rule only on the dealer incoming read
-(`StockService._shipments_from_today`, `incoming_stock_service.earliest_packing_list_shipment`
-`not_before`): the revised `eta_delay_date` first, never a past date.
+Investigation (posted on PR #1612): this is real data, not a render bug. One PO has two
+distinct open lines for the product (36 + 36, same location and PO date, each from a
+different SO line). The PO-placed read returns one row per open line
+(`purchase_order_service.purchase_orders_placed_rows`), and the stock reply's PO block
+(`lanes/business/answer.py::_crossdomain_rung_text`) prints one block per row without the
+document number (owner ruling D3, 12 Sep 2026). So the two lines read as a repeat.
 
-## Fix
+The past-ETA half of the original lane is dropped (owner ruling 13 Oct 2026: past ETAs on
+the staff reply are a data issue and staff need to see them). Staff ETA display is unchanged.
 
-1. Apply the same rule to the staff stock reply, reusing the same helper (no second rule).
-2. Fix the duplicate PO block.
-3. Evidence on whether both pre-date #1601.
+## Fix (owner ruling 13 Oct 2026)
 
-Owner rules: truthful, never a past date shown as future, one fact per line.
+In the stock reply's PO block, rows of the same product, same document (`kind` + PO/SPO
+number), same location and same PO date are consolidated into ONE row before rendering,
+with ordered and outstanding summed. Rows that differ in document, location or date stay
+separate. The existing formatter `_crossdomain_rung_text` is reused unchanged; the grouping
+is `answer._consolidate_rung_rows`, called on the rows just before it.
 
-## Tests (red first)
+- "Date" is the PO date: it is the only date the block prints, and the only date the rung
+  row carries. The MCP presenter drops the line's expected date.
+- A row merges only when both of its quantities are numbers and it has a document number.
+- The merged row keeps the first line's position.
 
-To be listed once the staff path is traced.
+## Other readers
+
+- `_crossdomain_rung_text` has one caller, `_apply_crossdomain_rung`, which serves both the
+  stock-origin and the incoming-origin ladder. Both are covered.
+- Dealer and customer replies do not reach this block. `crossdomain_zeroset` switches the
+  ladder off for an availability (dealer) stock reply and for a dealer incoming reply, and the
+  dealer incoming presenter prints ETAs only.
+- The direct PO ask and the `turn/fetch.py::_climb` PO rung render through the MCP presenter
+  (`sorento_crm_mcp/presenters.py::_purchase_orders_placed`). That is a different formatter
+  in a different package, and it prints the PO number. Not changed in this lane; reported to
+  the owner.
+
+## Tests
+
+- `sorento_crm_backend/tests/chatbot/test_po_rung_consolidate.py` (red first): two lines of
+  the same PO, location and date print as one line, 72/72. Three lines sum, including a
+  decimal. A different document, location, PO date or kind (PO vs SPO) stays separate. No
+  document number, or a non-numeric quantity, never merges. The merged line keeps the first
+  position.
+- `tests/chatbot/test_crossdomain_ladder.py::TestD11LinesFollowOneAnotherInToolOrder` is
+  updated to the ruling: its three same-PO lines now print as one row, 57.
+- Kill test: removing the grouping call turns 4 tests red. Dropping location and date from
+  the key turns 3 red.
