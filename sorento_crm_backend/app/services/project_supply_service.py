@@ -129,6 +129,7 @@ from app.services.scm.spo_conversion_service import (
 from app.services.scm import sales_agent_service
 from app.services.scm.demand import demand_qty, is_open_demand, is_transferable_order
 from app.services.scm.group_netting import GroupNetting
+from app.services.scm.pool_predicate import is_project_reserve
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
@@ -1136,6 +1137,7 @@ class ProjectSupplyService:
         # sentinel rather than a falsy check.
         self._fulfilment_settings_cache: Optional[Dict[str, Any]] = None
         self._site_pools_cache: Optional[Dict[str, Warehouse]] = None
+        self._reserves_cache: Dict[str, Warehouse] = {}
         self._group_siblings_cache: Dict[str, Optional[Dict[str, Warehouse]]] = {}
         self._group_donor_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._warehouse_code_memo: Dict[str, Optional[Warehouse]] = {}
@@ -2435,6 +2437,11 @@ class ProjectSupplyService:
         pool also happens to be a plain site code with no hyphen (`BRW`, `MWH`, ...), but
         that is a naming convention the data does not enforce, and a warehouse's OWN code
         says nothing about whether it is anybody's pool.
+
+        A PROJECT RESERVE (HQ: a pool with `segment = project`) is NOT here (owner, 12 Oct
+        2026): Fulfilment Planning never offers, draws or nets it. Its stock reaches a
+        project by a CS transfer in AutoCount, and Stock Debt is where it covers project
+        lines (`project_reserve_warehouses`, PLAN-hq-project-reserve-12oct).
         """
         if self._site_pools_cache is None:
             pool_ids = {
@@ -2444,14 +2451,30 @@ class ProjectSupplyService:
                 .distinct()
                 .all()
             }
-            self._site_pools_cache = {
+            pools = {
                 warehouse_id: warehouse
                 for warehouse_id, warehouse in (
                     self._warehouses(pool_ids) if pool_ids else {}
                 ).items()
                 if warehouse.is_active
             }
+            self._reserves_cache = {
+                warehouse_id: warehouse
+                for warehouse_id, warehouse in pools.items()
+                if is_project_reserve(warehouse.segment, is_pool=True)
+            }
+            self._site_pools_cache = {
+                warehouse_id: warehouse
+                for warehouse_id, warehouse in pools.items()
+                if warehouse_id not in self._reserves_cache
+            }
         return self._site_pools_cache
+
+    def project_reserve_warehouses(self) -> Dict[str, Warehouse]:
+        """`{warehouse_id: Warehouse}` for every active PROJECT RESERVE (HQ), read with the
+        site pools - Stock Debt's own extra span; the planner never reads it."""
+        self._site_pool_warehouses()
+        return self._reserves_cache
 
     def site_pool_warehouses(self) -> Dict[str, Warehouse]:
         """`{warehouse_id: Warehouse}` for every pool rung 2 may draw, public for the board.
@@ -2493,6 +2516,7 @@ class ProjectSupplyService:
             chain.append(
                 {
                     "location": fact.pool_code,
+                    "warehouse_id": str(fact.pool.id),
                     "free": fact.pool_free if stated is None else stated,
                     "available": fact.pool_available,
                     "on_hand": self._pile_facts()
@@ -2525,6 +2549,7 @@ class ProjectSupplyService:
             rest.append(
                 {
                     "location": pool.warehouse_code,
+                    "warehouse_id": pool_id,
                     "free": free,
                     "available": available,
                     "on_hand": triple["on_hand"],
@@ -4616,6 +4641,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             required_date = row.get("required_date")
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             timely_refs = [
@@ -4794,7 +4823,9 @@ class ProjectSupplyService:
         pct = self._fulfilment_settings().get("pool_share_pct")
         allowances: Dict[str, str] = {}
         for entry in self.pool_chain_for(fact):
-            warehouse_id = self.warehouse_id_for_code(entry.get("location"))
+            # By the pool's own id, never its code: two companies may each own an `HQ`
+            # (owner, 12 Oct 2026: per company, never by a code literal).
+            warehouse_id = entry.get("warehouse_id")
             if not warehouse_id:
                 continue
             allowances[warehouse_id] = qty_text(
@@ -9037,6 +9068,10 @@ class ProjectSupplyService:
                 if warehouse and warehouse.pool_warehouse_id
                 else None
             )
+            if pool is not None and is_project_reserve(pool.segment, is_pool=True):
+                # A bin whose pool is a project reserve (HQ) has no pool the planner
+                # may draw (owner, 12 Oct 2026).
+                pool = None
             key = (product_id or "", str(warehouse.id) if warehouse else "")
             shares = attribution.get(key, {}).get(str(core.id) if core else "", {})
             ahead = _dec(shares.get("so_qty_ahead"))
