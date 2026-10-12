@@ -375,3 +375,70 @@ describe('fix round 1: badges follow the filter, tables scroll', () => {
     expect(eventRow('ev-rev2').contains(table.closest('.overflow-x-auto'))).toBe(true);
   });
 });
+
+describe('fix round 2: email and AutoCount badges count the visible lines', () => {
+  const MAIL = {
+    id: 'ev-mail3',
+    kind: 'email_sent',
+    at: '2026-10-06T09:00:00',
+    actor: null,
+    pso_id: 'pso-1',
+    so_no: 'SO422492',
+    subject: 'OI: SO422492',
+    status: 'sent',
+    sent_at: '2026-10-06T09:00:00',
+    recipients: ['buyer1@example.test'],
+    body_text: 'x',
+    lines: [
+      { item_code: ITEM, remark: 'CANCEL ALL' },
+      { item_code: 'CB8001-5', remark: 'ORDER' },
+      { item_code: 'SRTWT2219', remark: 'ORDER BACK' },
+    ],
+    counts: { cancel: 1, order: 1, order_back: 1 },
+  };
+  const UPDATE = {
+    id: 'ev-update3',
+    kind: 'autocount_update',
+    at: '2026-10-06T10:00:00',
+    actor: 'Aina Lee',
+    pso_id: 'pso-1',
+    so_no: 'SO422492',
+    counts: { qty_down: 1, added: 1, product_changed: 1, confirmed: 1, not_decided: 1, replaced: 1 },
+    lines: [
+      { so_line_no: 592, item_code: ITEM, kind: 'qty_down', change: 'Qty 25 -> 22', state: 'not_decided' },
+      { so_line_no: 600, item_code: 'CB8001-5', kind: 'added', change: 'Added', state: 'confirmed' },
+      { so_line_no: 700, item_code: 'SRTWT2219', kind: 'product_changed', change: 'x', state: 'replaced' },
+    ],
+  };
+
+  it('an email shows only the badge of the filtered line', async () => {
+    getPlanningHistory.mockResolvedValue({ events: [MAIL] });
+    renderSheet();
+    await screen.findByTestId('history-timeline');
+
+    fireEvent.change(screen.getByLabelText(/product/i), { target: { value: ITEM } });
+
+    await waitFor(() =>
+      expect(within(eventRow('ev-mail3')).queryByText(/^Order( back)? \d/)).toBeNull(),
+    );
+    expect(within(eventRow('ev-mail3')).getByText('Cancel 1')).toBeInTheDocument();
+  });
+
+  it('an AutoCount update shows only the kind and state badges of the filtered line', async () => {
+    getPlanningHistory.mockResolvedValue({ events: [UPDATE] });
+    renderSheet();
+    await screen.findByTestId('history-timeline');
+
+    fireEvent.change(screen.getByLabelText(/product/i), { target: { value: ITEM } });
+
+    await waitFor(() =>
+      expect(within(eventRow('ev-update3')).queryByText(/^Added/)).toBeNull(),
+    );
+    const row = eventRow('ev-update3');
+    expect(within(row).getByText('Qty down 1')).toBeInTheDocument();
+    expect(within(row).getByText('Not decided 1')).toBeInTheDocument();
+    expect(within(row).queryByText(/Product changed/)).toBeNull();
+    expect(within(row).queryByText(/Confirmed/)).toBeNull();
+    expect(within(row).queryByText(/Replaced/)).toBeNull();
+  });
+});
