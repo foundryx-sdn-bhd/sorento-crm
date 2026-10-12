@@ -65,3 +65,55 @@ def test_a_simulated_batch_order_leaves_every_batch_row_pending_per_order_id(api
 def test_a_simulated_batch_order_leaves_every_batch_row_pending_body_level_id(api, monkeypatch):
     """AC-S3 (body-level batch_id)."""
     _check(api, monkeypatch, per_order=False)
+
+
+def test_a_raw_date_in_a_batch_composition_is_named_by_class_and_line(api, monkeypatch):
+    """AC-S6 on the batch path (SO422492, #1584): a composition holding a raw `date` makes
+    the JSONB flush raise `TypeError: Object of type date is not JSON serializable`
+    (wrapped as a StatementError). The result names the exception class, `simulated_errors`
+    names ONLY the bad line, and every batch row is still pending afterwards."""
+    import re
+    from datetime import date
+
+    from app.models.planning_change import PlanningChangeRow
+    from app.services import planning_change_service
+    from app.services.user_service import UserPermissionService
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_role_slugs", lambda self, user_id: {"admin"}
+    )
+    fixture = _form_three(api)
+    db = fixture["world"].db
+    line_1, line_2, _line_3 = fixture["lines"]
+    original = planning_change_service.set_row_decision
+
+    def poisoned(db_, batch_id, row_id, decision, composition=None):
+        out = original(db_, batch_id, row_id, decision, composition)
+        row = db_.query(PlanningChangeRow).filter(PlanningChangeRow.id == row_id).one()
+        if str(row.project_line_id) == str(line_1.id):
+            row.composition_json = {
+                **(row.composition_json or {}),
+                "bad_date": date(2026, 10, 12),
+            }
+        return out
+
+    monkeypatch.setattr(planning_change_service, "set_row_decision", poisoned)
+    before = _snapshot(fixture)
+    entry = {
+        "pso_id": str(fixture["order"].id),
+        "batch_id": str(fixture["batch"].id),
+        "lines": [_line_payload(line_1.id, buy_qty="25"), _line_payload(line_2.id)],
+    }
+
+    response = fixture["client"].post(URL, json={"orders": [entry]})
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is False, result
+    assert "date is not JSON serializable" in (result["error"] or "")
+    errors = result["simulated_errors"]
+    assert isinstance(errors, list) and len(errors) == 1, result
+    assert str(errors[0]["project_line_id"]) == str(line_1.id)
+    assert re.match(r"^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception): ", errors[0]["error"]), errors
+    assert "date is not JSON serializable" in errors[0]["error"]
+    assert _snapshot(fixture) == before

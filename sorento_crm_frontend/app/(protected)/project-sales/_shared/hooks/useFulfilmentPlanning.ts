@@ -497,6 +497,16 @@ export function usePreviewConfirmManyMutation() {
   });
 }
 
+/** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
+export function useSimulateConfirmMutation() {
+  return useMutation({
+    mutationFn: (body: ConfirmManyBody) => simulateConfirm(body),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
 /**
  * Patches ONE line's `draft` inside a cached board - the top-level `contributions` AND every
  * `cells[].contributions` entry that carries the same key, because Confirm-all, the List view

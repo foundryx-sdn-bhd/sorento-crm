@@ -2591,8 +2591,18 @@ export interface PreviewTransfer {
   to_location?: string | null;
 }
 
+/** One line the admin Simulate probe found failing on its own, with the server's raw reason. */
+export interface SimulatedLineError {
+  line_no?: number | null;
+  item_code?: string | null;
+  project_line_id: string;
+  error: string;
+}
+
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: lines that fail when run alone. */
+  simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
