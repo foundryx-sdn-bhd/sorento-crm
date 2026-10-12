@@ -579,3 +579,31 @@ def test_r6_the_probe_never_runs_a_line_outside_only_line_ids(api, monkeypatch):
         assert only != [str(b.id)] and lines != [str(b.id)], f"line B was run alone: {seen}"
     for entry in result["simulated_errors"] or []:
         assert str(entry["project_line_id"]) == str(a.id)
+
+
+# --------------------------------------------------------------------------- stock-short warnings
+
+
+def test_a_simulation_names_a_stock_short_reserve_and_persists_nothing(api, monkeypatch):
+    """Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a Reserve past the free stock confirms as
+    decided with a warning; the simulation shows `stock_short_notices` and saves nothing."""
+    client, world = api
+    _as_role(monkeypatch, "admin")
+    order, core_so, (a, _b) = _two_line_order(world, pool=30, qty_each="50")
+    before = _counts(world, order, core_so)
+
+    response = _post(
+        client,
+        order,
+        [_line_payload(a.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "50"}])],
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()["results"][0]
+    assert result["ok"] is True, result
+    assert result["preview"] is True
+    notices = result["stock_short_notices"]
+    assert notices and len(notices) == 1, result
+    assert notices[0]["line_no"] == 10
+    assert "20 short" in notices[0]["reason"], notices
+    assert _counts(world, order, core_so) == before

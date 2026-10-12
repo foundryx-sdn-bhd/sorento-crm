@@ -502,4 +502,25 @@ describe('fix round: simulated wording and number formatting (R7-R10)', () => {
     expect(within(lines).queryByText(/^Confirmed:/)).toBeNull();
     expect(within(lines).queryByText(/carried forward unchanged$/)).not.toBeNull;
   });
+
+  it('shows a stock-short warning on a simulated ok order', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated({
+          stock_short_notices: [
+            { line_no: 12, item_code: 'CB2807-DIY', reason: 'only 3 free at BRW, 2 short' },
+          ],
+        }),
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const results = await screen.findByTestId('board-confirm-results');
+    const notices = within(results).getByTestId('board-confirm-notices');
+    expect(notices.textContent).toMatch(/12/);
+    expect(notices.textContent).toContain('CB2807-DIY');
+    expect(notices.textContent).toContain('only 3 free at BRW, 2 short');
+  });
 });
