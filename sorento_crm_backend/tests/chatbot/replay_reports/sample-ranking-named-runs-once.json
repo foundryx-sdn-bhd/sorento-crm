@@ -1,5 +1,5 @@
 {
- "note": "Hand-built guard for the replay harness itself: a ranking with every field named runs crm_report once and answers.",
+ "note": "Hand-built guard for the replay harness itself: a ranking with every field named calls crm_report (compared as a set of tool name + arg keys, not a count) and answers.",
  "seed": {
   "brands": [
    {

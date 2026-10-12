@@ -49,3 +49,20 @@ def test_the_cli_takes_out_dir_and_the_reports_group() -> None:
     finally:
         argparse.ArgumentParser.parse_args = real_parse
     assert seen.get("out_dir") == "/tmp/x" and seen.get("group") == "reports", seen
+
+
+def _main_exit(argv: list[str]) -> int:
+    try:
+        recorder.main(argv)
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    return 0
+
+
+def test_s3_the_reports_group_without_an_out_dir_is_refused() -> None:
+    assert _main_exit(["--db-url", "postgresql://x/x", "--group", "reports", "--contact", "1"]) == 2
+
+
+def test_s4_an_out_dir_inside_the_repo_is_refused() -> None:
+    inside = str(_BACKEND / "tests" / "chatbot" / "zzt-not-here")
+    assert _main_exit(["--db-url", "postgresql://x/x", "--group", "reports", "--contact", "1", "--out-dir", inside]) == 2

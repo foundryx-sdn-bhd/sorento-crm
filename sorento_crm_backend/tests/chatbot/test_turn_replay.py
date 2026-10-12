@@ -829,7 +829,7 @@ def _install_stubs(monkeypatch, stub_parser, *, turn: dict[str, Any]) -> list[di
         # args and the MCP seam sends `crm_report` + the registry key (`services._mcp_call`), so the
         # call is read back under the name and args the trace recorded.
         legacy = legacy_of.get(arguments.get("measure")) if name == "crm_report" else None
-        if legacy and legacy in by_tool and name not in by_tool:
+        if legacy and legacy in by_tool:
             name, arguments = legacy, {k: v for k, v in arguments.items() if k != "measure"}
         tool_calls.append({"tool": name, "args": dict(arguments)})
         bucket = by_tool.get(name)

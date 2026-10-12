@@ -674,7 +674,12 @@ def main(argv: list[str] | None = None) -> int:
         "(gate case data stays out of git; see tests/chatbot/test_reports_replay.py)",
     )
     args = parser.parse_args(argv)
-    out_root = Path(args.out_dir).expanduser() if args.out_dir else None
+    out_root = Path(args.out_dir).expanduser().resolve() if args.out_dir else None
+    if args.group == "reports" and out_root is None:
+        parser.error("--group reports needs --out-dir: gate case data stays out of git")
+    repo_root = REPLAY_ROOT.parents[3]
+    if out_root is not None and (out_root == repo_root or repo_root in out_root.parents):
+        parser.error(f"--out-dir {out_root} is inside the repo; gate case data stays out of git")
 
     if args.turn_id and not args.slug:
         parser.error("--turn-id requires --slug")
