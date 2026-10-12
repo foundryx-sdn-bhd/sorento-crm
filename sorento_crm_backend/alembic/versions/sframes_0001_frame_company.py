@@ -14,9 +14,10 @@ belongs to exactly one company (the same resolution the worker uses,
 
 Certificates: the worker now embeds only the codes of the certificate's own company's
 products (a shared certificate: company-less products only). An embedding written before
-that keeps the other companies' codes until it is rebuilt, so every certificate covering a
-product of a different company (or any company-owned product, for a shared certificate) is
-queued for a rebuild; the scheduler's embedding drain picks the rows up. Plan:
+that keeps the other companies' codes until it is rebuilt, so every certificate that has an
+embedding is queued for a rebuild (the table is small, and today's links cannot tell which
+embedding was built from a link or product company since changed); the scheduler's
+embedding drain picks the rows up. Plan:
 documentation/plans/security/PLAN-embedding-scope-frames-12oct.md.
 
 Revision ID: sframes_0001_frame_company
@@ -58,15 +59,12 @@ def upgrade() -> None:
         for r in bind.execute(
             text(
                 """
-                SELECT DISTINCT c.id::text
+                SELECT c.id::text
                 FROM certificates c
-                JOIN certificate_products cp ON cp.certificate_id = c.id
-                JOIN products p ON p.id = cp.product_id
-                WHERE p.company_id IS DISTINCT FROM c.company_id
-                  AND EXISTS (
-                      SELECT 1 FROM embedding_documents d
-                      WHERE d.source_type = 'certificate' AND d.source_id = c.id::text
-                  )
+                WHERE EXISTS (
+                    SELECT 1 FROM embedding_documents d
+                    WHERE d.source_type = 'certificate' AND d.source_id = c.id::text
+                )
                 """
             )
         )
