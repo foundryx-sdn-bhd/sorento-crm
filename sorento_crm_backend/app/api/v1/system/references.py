@@ -1334,7 +1334,7 @@ class ResolveReferenceRequest(BaseModel):
         default=None,
         description=(
             "Kinds the caller ADDED to `allowed_entity_types` beyond its own hints (a message holding "
-            "several asks). A customer-scoped contact never gets `customer` among them."
+            "several asks). For a customer-scoped contact `customer` is stripped from the first pass only; the scope itself is enforced by the chatbot engine."
         ),
     )
     hint_locked_tokens: list[str] | None = Field(
@@ -3214,6 +3214,8 @@ def resolve_reference_post(
                     "entity_pins": pins,
                 }
             )
+    # The first pass only: a token that misses still reaches the per-token fallback, which probes
+    # customers again. A scoped contact's customers are held by the engine (`_scoped_compatible`).
     if payload.widened_entity_types and payload.contact_id and "customer" in payload.widened_entity_types:
         from app.services.contact_customer_scope import contact_customer_scope
         from app.services.field_access import resolve_contact_with_null_workspace_fallback

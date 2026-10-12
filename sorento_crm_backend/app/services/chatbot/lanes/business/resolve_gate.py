@@ -597,7 +597,9 @@ def _reference_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[An
     return out
 
 
-#: The resolver kinds a typed reference number may be placed as; each is visibility gated.
+#: The resolver kinds a typed reference number may be placed as; each is visibility gated. Today all
+#: of them are also `REFERENCE_NARROW` keys, so the widening's narrow branch handles them first; this
+#: set is the backstop for a gated kind added to `ALLOWED` without a `REFERENCE_NARROW` entry.
 _RESOLVER_REFERENCE_KINDS = frozenset(
     {"customer_order", "sales_order", "customer_po_ref", "purchase_order", "purchase_request"}
 )
