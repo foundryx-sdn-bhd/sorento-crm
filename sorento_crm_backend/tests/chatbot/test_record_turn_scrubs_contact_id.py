@@ -159,7 +159,7 @@ def test_default_contact_output_name_does_not_hold_the_real_id(monkeypatch):
     monkeypatch.setattr(recorder, "_row_to_dict", lambda row: {})
     monkeypatch.setattr(recorder, "_record_row", lambda row, **k: {})
 
-    def _fake_write(group, slug, turns):
+    def _fake_write(group, slug, turns, out_root=None):
         slugs.append(slug)
         return recorder.REPLAY_ROOT / group / f"{slug}.json"
 

@@ -608,12 +608,15 @@ def _record_row_raw(row: dict[str, Any], *, db_label: str, switches: dict[str, A
     }
 
 
-def _write(group: str, slug: str, turns: list[dict[str, Any]]) -> Path:
+def _write(group: str, slug: str, turns: list[dict[str, Any]], out_root: Path | None = None) -> Path:
     """Every file is `{"turns": [...]}` - a length-1 list for a standalone case, a
     longer list for a CHAIN replayed sequentially (state carried by the real engine
     run between steps, `test_turn_replay.py`'s own design - see that file's
-    docstring). One shape for both, so the harness has one reader."""
-    out_dir = REPLAY_ROOT / group
+    docstring). One shape for both, so the harness has one reader.
+
+    `out_root` (`--out-dir`) writes there instead of `replay_turns/<group>/`: gate case
+    data stays out of git (`test_reports_replay.py`'s `$REPORTS_REPLAY_DIR`)."""
+    out_dir = Path(out_root) if out_root is not None else REPLAY_ROOT / group
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{_slugify(slug)}.json"
     out_path.write_text(json.dumps({"turns": turns}, indent=2, sort_keys=True, default=str) + "\n")
@@ -644,7 +647,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--db-url", required=True, help="Source Postgres URL (read-only)")
-    parser.add_argument("--group", required=True, choices=["contract", "console", "prod_sample"])
+    parser.add_argument("--group", required=True, choices=["contract", "console", "prod_sample", "reports"])
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--turn-id")
     mode.add_argument("--turn-ids", help="Comma-separated turn ids, IN ORDER, as one chain")
@@ -665,7 +668,13 @@ def main(argv: list[str] | None = None) -> int:
         help="With --contact: group matching rows into one chain file per "
         "envelope.test_run_id (default), or 'none' for one file per row",
     )
+    parser.add_argument(
+        "--out-dir",
+        help="Write the case files here instead of tests/chatbot/replay_turns/<group>/ "
+        "(gate case data stays out of git; see tests/chatbot/test_reports_replay.py)",
+    )
     args = parser.parse_args(argv)
+    out_root = Path(args.out_dir).expanduser() if args.out_dir else None
 
     if args.turn_id and not args.slug:
         parser.error("--turn-id requires --slug")
@@ -687,7 +696,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"no turn found for id={args.turn_id}", file=sys.stderr)
                 return 1
             turn = _record_row(_row_to_dict(row), db_label=db_label, switches=switches)
-            written.append(_write(args.group, args.slug, [turn]))
+            written.append(_write(args.group, args.slug, [turn], out_root))
         elif args.turn_ids:
             ids = [i.strip() for i in args.turn_ids.split(",") if i.strip()]
             by_id: dict[str, Any] = {}
@@ -702,7 +711,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"turn id(s) not found: {missing}", file=sys.stderr)
                 return 1
             turns = [_record_row(_row_to_dict(by_id[i]), db_label=db_label, switches=switches) for i in ids]
-            written.append(_write(args.group, args.slug, turns))
+            written.append(_write(args.group, args.slug, turns, out_root))
         elif args.test_run_id:
             rows = conn.execute(
                 text(
@@ -716,7 +725,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             turns = [_record_row(_row_to_dict(r), db_label=db_label, switches=switches) for r in rows]
             slug = args.slug_prefix or _slugify(args.test_run_id)
-            written.append(_write(args.group, slug, turns))
+            written.append(_write(args.group, slug, turns, out_root))
         elif args.contact:
             clauses = ["contact_respond_id = :contact"]
             params: dict[str, Any] = {"contact": args.contact}
@@ -741,7 +750,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.chain_by == "none":
                 for i, row in enumerate(rows, start=1):
                     turn = _record_row(_row_to_dict(row), db_label=db_label, switches=switches)
-                    written.append(_write(args.group, f"{prefix}-{i:03d}", [turn]))
+                    written.append(_write(args.group, f"{prefix}-{i:03d}", [turn], out_root))
             else:
                 chains: dict[str, list[Any]] = {}
                 for row in rows:
@@ -749,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
                     chains.setdefault(run_id, []).append(row)
                 for i, (run_id, chain_rows) in enumerate(sorted(chains.items()), start=1):
                     turns = [_record_row(_row_to_dict(r), db_label=db_label, switches=switches) for r in chain_rows]
-                    written.append(_write(args.group, f"{prefix}-chain-{i:03d}-{_slugify(run_id)}", turns))
+                    written.append(_write(args.group, f"{prefix}-chain-{i:03d}-{_slugify(run_id)}", turns, out_root))
         else:  # --branch-kind (prod_sample): independent real turns, one per file
             clauses = ["branch_kind = :branch_kind"]
             params = {"branch_kind": args.branch_kind}
@@ -767,11 +776,11 @@ def main(argv: list[str] | None = None) -> int:
             prefix = args.slug_prefix or _slugify(args.branch_kind)
             for i, row in enumerate(rows, start=1):
                 turn = _record_row(_row_to_dict(row), db_label=db_label, switches=switches)
-                written.append(_write(args.group, f"{prefix}-{i:03d}", [turn]))
+                written.append(_write(args.group, f"{prefix}-{i:03d}", [turn], out_root))
 
     for path in written:
-        print(f"wrote {path.relative_to(REPLAY_ROOT.parent.parent.parent)}")
-    print(f"{len(written)} case(s) written to {args.group}/")
+        print(f"wrote {path if out_root is not None else path.relative_to(REPLAY_ROOT.parent.parent.parent)}")
+    print(f"{len(written)} case(s) written to {out_root or args.group + '/'}")
     return 0
 
 
