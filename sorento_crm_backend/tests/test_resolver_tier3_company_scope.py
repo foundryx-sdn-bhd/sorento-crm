@@ -410,3 +410,21 @@ def test_tier3_debtor_seed_does_not_sink_own_customer_under_a_company_scope(db, 
     set_company_scope(db, frozenset({world["a"]}))
     hits = er._tier3_embedding_lookup(db, f"zzt3 debtor t3 {world['suffix']}", frozenset({"customer"}))
     assert _uuids(hits) == {world["cust_a"]}
+
+
+def test_rag_search_never_returns_a_master_less_debtor_under_a_company_scope(db, world):
+    """`/external/rag/search` (`EmbeddingReadService.search_current`) applies the same
+    rule. Red before the fix: B's master-less debtor seed came back, text included."""
+    from app.services.embedding_service import EmbeddingReadService
+
+    code = _seed_debtor(db, world)
+    q, _ = _vectors(int(world["suffix"], 16))
+    set_company_scope(db, frozenset({world["a"]}))
+    rows = EmbeddingReadService(db).search_current(q, top_k=10, source_type="customer")
+    keys = {doc.source_key for _, doc, _ in rows}
+    assert f"debtor:{code}" not in keys
+    assert f"ZZT3CA{world['suffix']}" in keys
+
+    set_company_scope(db, None)
+    rows = EmbeddingReadService(db).search_current(q, top_k=10, source_type="customer")
+    assert f"debtor:{code}" in {doc.source_key for _, doc, _ in rows}
