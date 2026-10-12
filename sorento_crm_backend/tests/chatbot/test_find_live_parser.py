@@ -140,7 +140,13 @@ GOLDEN = [
 ]
 
 
-NOTHING_ASKED = {"seat cover for SRTWC8383-RL-MBL", "seat cover SRTWC8122", "SRTWC8383-RL-MBL 马桶盖"}
+NOTHING_ASKED = {
+    "seat cover for SRTWC8383-RL-MBL",
+    "seat cover SRTWC8122",
+    "SRTWC8383-RL-MBL 马桶盖",
+    # "which ... fits" asks which product it is: master_products, or a bare code like its control.
+    "which seat cover fits SRTWC8383-RL-MBL",
+}
 
 
 @pytest.mark.parametrize("message,code,control", GOLDEN)

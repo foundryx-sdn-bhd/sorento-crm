@@ -194,7 +194,11 @@ FILTERS: dict[str, FindFilter] = {
                 "side named beside a code, in any language or order, is this filter (\"seat "
                 "cover SRTWC8122\", \"SRTWC8383-RL-MBL 马桶盖\", \"WC for SRTSCBD330-UF\", "
                 "\"stock seat cover for SRTWC8122\"): emit fits and keep that word out of the "
-                "entities. A fact of the named code itself (\"SRTWC8383-RL-MBL stock\") is no find."
+                "entities. It stays this filter when the message ALSO asks something about that "
+                "other side (stock, ETA, photo, price): \"SRTWC8122 马桶盖 有货吗\" is fits with "
+                "domain inventory, \"SRTWC8088 seat cover photo\" is fits with domain "
+                "product_attachment. A fact of the named code itself, with no other side named "
+                "(\"SRTWC8383-RL-MBL stock\"), is no find."
             ),
             labels={
                 FITS_COVERS_HEAD: {"ms": "Penutup tempat duduk untuk {code}:", "zh": "{code} 适配的马桶盖："},
