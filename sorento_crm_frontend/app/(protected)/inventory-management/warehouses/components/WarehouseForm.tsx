@@ -67,17 +67,19 @@ export default function WarehouseForm({ warehouseId, onSuccess }: WarehouseFormP
     mode: 'onTouched',
   });
 
-  // Candidate pools. Any location can be a pool, so this is the warehouse list itself,
-  // minus the one being edited: a location pooling to itself is the default and is
-  // expressed by leaving the field empty, never by selecting itself.
+  // Candidate pools. Any location can be a pool, so this is the warehouse list itself. The
+  // warehouse being edited is offered once, by role rather than by name: a site pool such as
+  // BRW or HQ points at itself, and that state has to be visible and keepable here.
   const poolOptions = useMemo(
-    () =>
-      allWarehouses
+    () => [
+      ...(warehouseId ? [{ value: warehouseId, label: 'This warehouse (own pool)' }] : []),
+      ...allWarehouses
         .filter((w) => w.id !== warehouseId)
         .map((w) => ({
           value: w.id,
           label: w.warehouse_name ? `${w.warehouse_name} (${w.warehouse_code})` : w.warehouse_code,
         })),
+    ],
     [allWarehouses, warehouseId],
   );
 
@@ -92,20 +94,24 @@ export default function WarehouseForm({ warehouseId, onSuccess }: WarehouseFormP
         is_active: warehouse.is_active,
         counts_as_available: warehouse.counts_as_available ?? true,
         fulfilment_planning: warehouse.fulfilment_planning ?? false,
-        // A location whose pool is itself is the "no pooling" default, so it reads as empty.
-        pool_warehouse_id:
-          warehouse.pool_warehouse_id && warehouse.pool_warehouse_id !== warehouse.id
-            ? warehouse.pool_warehouse_id
-            : null,
+        pool_warehouse_id: warehouse.pool_warehouse_id ?? null,
         segment: (warehouse.segment as 'dealer' | 'project' | null) ?? null,
       });
     }
   }, [warehouse, isEditMode, form]);
 
+  // Read during render so react-hook-form tracks it for the submit below.
+  const { dirtyFields } = form.formState;
+
   const onSubmit = async (data: WarehouseSchemaType) => {
     try {
       if (isEditMode && warehouseId) {
-        await updateMutation.mutateAsync({ id: warehouseId, data });
+        // An edit sends only what the user changed. The backend writes every key it is sent,
+        // so a whole-form payload would overwrite a value the form cannot show with null.
+        const changed = Object.fromEntries(
+          Object.entries(data).filter(([key]) => dirtyFields[key as keyof WarehouseSchemaType]),
+        ) as Partial<WarehouseSchemaType>;
+        await updateMutation.mutateAsync({ id: warehouseId, data: changed });
       } else {
         await createMutation.mutateAsync(data);
       }
