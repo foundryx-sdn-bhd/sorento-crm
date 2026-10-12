@@ -39,7 +39,7 @@ from operator import add
 from sqlalchemy import and_, case, func, or_, text, true
 from sqlalchemy.orm import Session
 
-from app.models.base import UNSET, get_company_scope
+from app.models.base import UNSET, get_brand_scope, get_company_scope
 from app.models.forms import Form
 from app.models.inventory import Warehouse
 from app.models.marketing import Promotion
@@ -3027,7 +3027,7 @@ def _tier3_embedding_lookup(
         return []
 
     try:
-        query_vec = _memo_embedding(token, _embed_text_chunks)
+        query_vec = _memo_embedding(db, token, _embed_text_chunks)
     except Exception:
         logger.exception("Tier-3 query embedding failed for token=%s", token)
         return []
@@ -5102,8 +5102,14 @@ def _with_resolve_memo(fn):
     return wrapper
 
 
-def _memo_key(probe, token: str, regions) -> tuple:
-    return (probe, token, None if regions is None else frozenset(regions))
+def _scope_key(db: Session) -> tuple:
+    """The caller's company + brand scope, part of every resolve cache key: an answer
+    or a query vector looked up under one scope is never served under another."""
+    return (get_company_scope(db), get_brand_scope(db))
+
+
+def _memo_key(probe, db: Session, token: str, regions) -> tuple:
+    return (probe, _scope_key(db), token, None if regions is None else frozenset(regions))
 
 
 def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, list[ResolvedEntity]]:
@@ -5112,7 +5118,7 @@ def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
     memo = _RESOLVE_MEMO.get()
     if memo is None:
         return _call_tier1(probe, db, tokens, regions)
-    todo = [t for t in tokens if _memo_key(probe, t, regions) not in memo]
+    todo = [t for t in tokens if _memo_key(probe, db, t, regions) not in memo]
     if todo:
         fresh = _call_tier1(probe, db, todo, regions)
         # A batch maps its rows back by NORMALISED code, so of two spellings of one code
@@ -5121,10 +5127,10 @@ def _memo_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
         folded = collections.Counter(_alnum_casefold(t) for t in todo)
         for t in todo:
             if folded[_alnum_casefold(t)] == 1:
-                memo[_memo_key(probe, t, regions)] = copy.deepcopy(fresh.get(t, []))
+                memo[_memo_key(probe, db, t, regions)] = copy.deepcopy(fresh.get(t, []))
     out: dict[str, list[ResolvedEntity]] = {}
     for t in tokens:
-        key = _memo_key(probe, t, regions)
+        key = _memo_key(probe, db, t, regions)
         out[t] = copy.deepcopy(memo[key]) if key in memo else fresh.get(t, [])
     return out
 
@@ -5138,7 +5144,7 @@ def _call_tier1(probe, db: Session, tokens: list[str], regions) -> dict[str, lis
 def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]:
     """`probe(db, token)` (Tier-2, one token), once per request."""
     memo = _RESOLVE_MEMO.get()
-    key = _memo_key(probe, token, regions)
+    key = _memo_key(probe, db, token, regions)
     if memo is None or key not in memo:
         hits = (
             probe(db, token, regions=regions)
@@ -5151,7 +5157,7 @@ def _memo_tier2(probe, db: Session, token: str, regions) -> list[ResolvedEntity]
     return copy.deepcopy(memo[key])
 
 
-def _prefetch_embeddings(tokens: list[str]) -> None:
+def _prefetch_embeddings(db: Session, tokens: list[str]) -> None:
     """Embed every not-yet-embedded token in ONE provider call and remember the vectors,
     so Tier 3's per-token `_memo_embedding` finds them (CHAT-SPEED, 12 Oct 2026).
 
@@ -5168,13 +5174,14 @@ def _prefetch_embeddings(tokens: list[str]) -> None:
         from app.services.embedding_worker import _embed_text_chunks
     except Exception:  # noqa: BLE001 - the per-token path below is the fallback
         return
+    scope = _scope_key(db)
     todo = []
     for token in dict.fromkeys(tokens):
-        if ("embedding", token) in memo:
+        if ("embedding", scope, token) in memo:
             continue
-        known = _known_vector(_embed_text_chunks, token)
+        known = _known_vector(_embed_text_chunks, scope, token)
         if known is not None:
-            memo[("embedding", token)] = known
+            memo[("embedding", scope, token)] = known
         else:
             todo.append(token)
     if len(todo) < 2:
@@ -5187,13 +5194,14 @@ def _prefetch_embeddings(tokens: list[str]) -> None:
     if len(vectors) != len(todo):
         return
     for token, vector in zip(todo, vectors):
-        memo[("embedding", token)] = _remember_vector(_embed_text_chunks, token, vector)
+        memo[("embedding", scope, token)] = _remember_vector(_embed_text_chunks, scope, token, vector)
 
 
 #: Query vectors kept across requests (CHAT-SPEED): a follow-up turn re-resolves the
 #: subject the conversation carries ("floor trap" again on "when is next container
 #: coming", measured), and each re-embed was another OpenAI round trip for a vector that
-#: does not change. Keyed by the embed seam, the model and the text; bounded LRU of
+#: does not change. Keyed by the embed seam, the model, the caller's scope (`_scope_key`:
+#: one company never reuses another's entry) and the text; bounded LRU of
 #: float64 arrays (12 KB a vector, about 6 MB at the cap) so the stored value is the
 #: one the provider returned.
 _VECTOR_CACHE_MAX = 512
@@ -5201,14 +5209,14 @@ _VECTOR_CACHE: "collections.OrderedDict[tuple, Any]" = collections.OrderedDict()
 _VECTOR_CACHE_LOCK = threading.Lock()
 
 
-def _vector_key(embed, token: str) -> tuple:
+def _vector_key(embed, scope: tuple, token: str) -> tuple:
     from app.config import settings
 
-    return (embed, getattr(settings, "embedding_model_name", None), token)
+    return (embed, getattr(settings, "embedding_model_name", None), scope, token)
 
 
-def _known_vector(embed, token: str) -> Optional[list[float]]:
-    key = _vector_key(embed, token)
+def _known_vector(embed, scope: tuple, token: str) -> Optional[list[float]]:
+    key = _vector_key(embed, scope, token)
     with _VECTOR_CACHE_LOCK:
         stored = _VECTOR_CACHE.get(key)
         if stored is None:
@@ -5217,9 +5225,9 @@ def _known_vector(embed, token: str) -> Optional[list[float]]:
     return list(stored)
 
 
-def _remember_vector(embed, token: str, vector) -> list[float]:
+def _remember_vector(embed, scope: tuple, token: str, vector) -> list[float]:
     values = list(vector)
-    key = _vector_key(embed, token)
+    key = _vector_key(embed, scope, token)
     with _VECTOR_CACHE_LOCK:
         _VECTOR_CACHE[key] = array.array("d", values)
         _VECTOR_CACHE.move_to_end(key)
@@ -5228,16 +5236,17 @@ def _remember_vector(embed, token: str, vector) -> list[float]:
     return values
 
 
-def _memo_embedding(token: str, embed) -> list[float]:
+def _memo_embedding(db: Session, token: str, embed) -> list[float]:
     """The query vector for `token`: once per request, and across requests while the
-    process remembers it (`_VECTOR_CACHE`)."""
+    process remembers it (`_VECTOR_CACHE`), per caller scope."""
     memo = _RESOLVE_MEMO.get()
-    key = ("embedding", token)
+    scope = _scope_key(db)
+    key = ("embedding", scope, token)
     if memo is not None and key in memo:
         return memo[key]
-    vector = _known_vector(embed, token)
+    vector = _known_vector(embed, scope, token)
     if vector is None:
-        vector = _remember_vector(embed, token, embed([token])[0])
+        vector = _remember_vector(embed, scope, token, embed([token])[0])
     if memo is not None:
         memo[key] = vector
     return vector
@@ -5710,6 +5719,7 @@ def resolve_references(
     if enable_embedding_fallback:
         # CHAT-SPEED: the tokens the loop below will embed, embedded in one call first.
         _prefetch_embeddings(
+            db,
             [
                 tok
                 for tok in tokens

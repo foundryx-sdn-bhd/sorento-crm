@@ -307,3 +307,34 @@ def test_vector_cache_is_keyed_by_company_scope(db, world):
     set_company_scope(db, frozenset({world["a"]}))
     er._memo_embedding(db, token, embed)
     assert calls == [[token], [token]]
+
+
+# ------------------------------------------------------------- bare exists() (known gap)
+# Measured 12 Oct 2026: `with_loader_criteria` does not reach a bare Core `exists()`, so
+# the `do_orm_execute` listener leaves `db.query(exists().where(Product...))` and
+# `select(exists().where(Product...))` unscoped. No app code on the chatbot resolve or
+# MCP read paths issues that uncorrelated shape (every `exists()` there is correlated to
+# a scoped outer row or carries its own company predicate, e.g.
+# `product_predicate_service`), so nothing leaks today. This pins the listener gap so a
+# listener change that closes it is noticed, and so new code knows to add
+# `build_company_predicate` itself. The ORM `.exists()` shape IS scoped (guard below).
+
+
+@pytest.mark.xfail(strict=True, reason="listener does not scope a bare Core exists(); see comment above")
+def test_bare_exists_over_product_is_scoped_by_the_listener(db, world):
+    from sqlalchemy import exists, select
+
+    from app.models.product import Product
+
+    set_company_scope(db, frozenset({world["a"]}))
+    code_b = f"ZZT3B{world['suffix']}"
+    assert db.query(exists().where(Product.product_code == code_b)).scalar() is False
+    assert db.scalar(select(exists().where(Product.product_code == code_b))) is False
+
+
+def test_orm_query_exists_over_product_is_scoped(db, world):
+    from app.models.product import Product
+
+    set_company_scope(db, frozenset({world["a"]}))
+    code_b = f"ZZT3B{world['suffix']}"
+    assert db.query(db.query(Product.id).filter(Product.product_code == code_b).exists()).scalar() is False
