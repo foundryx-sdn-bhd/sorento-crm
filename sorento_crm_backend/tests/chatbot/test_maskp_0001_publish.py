@@ -150,14 +150,19 @@ def test_the_production_line_falls_back_to_the_policy_blocks_anchor():
         assert next(v for v in _versions(db) if v.version == version).template == "PROD" + SUB_ASKS_ADDENDUM + tail
 
 
-def test_a_production_text_with_no_anchor_fails_loudly():
-    import pytest
+def test_a_production_text_with_no_anchor_never_fails_the_deploy(caplog):
+    """Review N2 (crew 13 Oct 2026): a production text with neither the MEMORY block nor the
+    policy-blocks marker publishes nothing on the production line and says so in the log;
+    the deploy goes on (the v56 candidate is still published)."""
+    import logging
 
     m = _migration()
     with blank_session() as db:
         _production(db, "PROD with no anchor")
-        with pytest.raises(RuntimeError, match="no place to go"):
-            m.publish_on_production(db)
+        with caplog.at_level(logging.WARNING, logger="alembic.runtime.migration"):
+            assert m.publish_on_production(db) is None
+        assert "no place to go" in caplog.text
+        assert len(_versions(db)) == 1
 
 
 def test_no_production_label_publishes_nothing_on_the_production_line():
