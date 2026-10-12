@@ -1032,6 +1032,16 @@ SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
 SEMANTIC_PARSER_PROMPT += TRAP_SPECS_FALLBACK_BLOCK
 SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 
+# DEV-FAILURES RC-B (PLAN-dev-failures-12oct.md): the `portal_form` output key, so the strict
+# schema and this fallback declare the same keys. MEMORY_ADDENDUM stays the tail, as above. The
+# published version (`devf_0001_parser_data_rules`) carries it on the v56 text instead.
+PORTAL_FORM_ADDENDUM = (_ADDENDA_DIR / "chatbot_semantic_parser.portal-form.addendum.txt").read_text(
+    encoding="utf-8"
+)
+SEMANTIC_PARSER_PROMPT = SEMANTIC_PARSER_PROMPT.removesuffix(MEMORY_ADDENDUM)
+SEMANTIC_PARSER_PROMPT += PORTAL_FORM_ADDENDUM
+SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
+
 # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): a long answer shows a few matches and says the
 # customer can reply to see more; whether the next message asks for more of THAT list is the
 # parser's call, on the `continuation` key the schema already carries. No word rule in code.

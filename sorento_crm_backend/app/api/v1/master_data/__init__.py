@@ -20,6 +20,7 @@ from app.api.v1.master_data import (
     product_companions,
     product_alternatives,
     product_combos,
+    product_compatibility,
     sales_agents,
 )
 
@@ -51,6 +52,8 @@ router.include_router(
 # hang one on. Registered here beside product_companions, the #779 precedent this
 # slice copies.
 router.include_router(product_combos.router, tags=["product-combos"])
+# NO prefix either: `/products/{id}/compatibility` and `/product-compatibility/...`.
+router.include_router(product_compatibility.router, tags=["product-compatibility"])
 router.include_router(sales_agents.router, prefix="/sales-agents", tags=["sales-agents"])
 router.include_router(lookup_sets.router, prefix="/lookup-sets", tags=["lookup-sets"])
 router.include_router(lookup_eligibility.router, prefix="/lookup-eligibility", tags=["lookup-eligibility"])

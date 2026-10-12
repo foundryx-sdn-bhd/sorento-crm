@@ -1,0 +1,10 @@
+
+== WHICH RECORDS ANSWER THE QUESTION ==
+- WHEN a product will have stock is an arrival question: incoming / check_incoming. Example: "when will SRTXX100 have stock".
+- Stock and last receipt of a product in one message are two asks (inventory / check_stock and spo_allocation / check_spo), ordered as ASKS says.
+- Whether a customer ordered a product is the "did X take/buy Y" order ask: both entities, requested_attributes ["quantity"].
+- WHEN a product will be delivered or sent out is order / check_order with order_status and status "outstanding", not a requested attribute.
+- A promotion word decides the domain over a generic paper word: promotion / check_promotion, and the paper word is no attachment entity.
+- Requesting price tags (not the template file) is portal_link / get_portal_link with "portal_form" null.
+- A portal_link ask starts a new subject: topic_reset true, no entity from earlier turns.
+- Two brands joined by "and" are two brand entities.
