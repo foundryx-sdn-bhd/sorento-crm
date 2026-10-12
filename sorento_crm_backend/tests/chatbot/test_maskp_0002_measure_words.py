@@ -182,3 +182,11 @@ def test_the_glossary_renders_the_words_only():
         rendered = pv.render_value(db, "sub_ask_measures")
         first = rendered.splitlines()[0]
         assert first.startswith('    "received_qty": ') and "never goods" not in first
+
+
+def test_each_measure_the_message_names_is_one_thing_asked():
+    """Crew live check 13 Oct 2026 ("CB88SS stok berapa dan harga beli" read as one ask):
+    every measure named counts, however short the message (800d1f9)."""
+    text = " ".join(SUB_ASKS_ADDENDUM.split())
+    assert "count the measures below that the CURRENT message asks about, however short the message" in text
+    assert '"stock and purchase price" is stock then last_cost' in text
