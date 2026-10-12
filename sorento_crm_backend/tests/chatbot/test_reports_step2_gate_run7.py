@@ -289,3 +289,85 @@ def test_b27_guard_an_invoiced_company_analysis_stays_a_sales_analysis(console, 
     text, log = lane._say_all(console, monkeypatch, qf, "top 5 Mocha invoiced sales")
     assert "By quantity or by amount?" not in text, text
     assert not ((console.session_vars.get("focus") or {}).get("top_selling")), console.session_vars
+
+
+# ================================================================================ live shapes, round 3
+
+
+def test_b28_a_brand_tagged_as_the_company_is_still_the_top_selling_ask(console, monkeypatch) -> None:
+    qf = _analysis_ranking(sales_company="Sorento")
+    text, log = lane._say_all(console, monkeypatch, qf, "top 20 project sales Sorento products")
+    assert "crm_sales_analysis" not in _names(log), log
+    assert "By quantity or by amount?" in text, text
+
+
+def test_b29_a_company_equal_to_a_brand_entity_is_not_forwarded_to_the_analysis(console, monkeypatch) -> None:
+    qf = _analysis_ranking(top_n=None, group_by="month", sales_company="Sorento", sales_channel=None)
+    _text, log = lane._say_all(console, monkeypatch, qf, "Sorento sales this year")
+    sent = [a for n, a in log if n == "crm_sales_analysis"]
+    assert sent and not sent[0].get("company"), sent
+
+
+def test_b30_a_fresh_ask_with_a_declared_answer_is_not_swallowed_as_the_basis_reply(console) -> None:
+    _basis_open(console)
+    qf = _live(_parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_ranking", domain_in_message=True,
+        ranking_refine=False, group_by="product", top_n=40, sales_channel="project", rank_group="item",
+        rank_by="quantity", measure="qty", basis=None, entities=[_e("Sorento", "brand")],
+        date_filter_start=None, date_filter_end=None,
+    ))
+    qf["open_question_answer"] = {"mode": "pick", "picked": [2], "items": [], "qty_for_all": None}
+    text, _calls = console.say(qf, "project sales top 40 Sorento products")
+    assert "as a basis" not in text, text
+
+
+def test_b31_guard_a_plain_reply_with_a_declared_pick_still_answers_the_basis_question(console) -> None:
+    _basis_open(console)
+    qf = _restated_answer(top_n=None, basis="delivered")
+    qf["open_question_answer"] = {"mode": "pick", "picked": [1], "items": [], "qty_for_all": None}
+    _text, calls = console.say(qf, "1")
+    (args,) = calls
+    assert args["top_n"] == 20 and "delivered" in str(args.get("measure")), args
+
+
+# ================================================================================ review round 4
+
+
+def _declared_pick(picked: int, **kw: Any) -> dict[str, Any]:
+    """A worded pick the parser is taught to declare in `open_question_answer`: no positions, no entities."""
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="sales_report", entities=[],
+        domain_in_message=False, reference_positions=[], group_by=None, **SEP,
+    )
+    base.update(kw)
+    qf = _live(_parser_output(**base))
+    qf["open_question_answer"] = {"mode": "pick", "picked": [picked], "items": [], "qty_for_all": None}
+    return qf
+
+
+@pytest.mark.parametrize("said, picked, axis, want", [
+    ("the second one", 2, None, "product"),
+    ("kedua", 2, None, "product"),
+    ("by customer", 1, "customer", "customer"),
+])
+def test_a19_a_worded_declared_pick_still_drills(console, monkeypatch, said, picked, axis, want) -> None:
+    seen = _hold_with_offer(console, monkeypatch)
+    console.say(_declared_pick(picked, group_by=axis), said)
+    assert any(a.get("group_by") == want for a in _sent(seen)), [
+        {k: v for k, v in a.items() if k in ("group_by", "product_code", "product_code_exact")} for a in _sent(seen)
+    ]
+
+
+def test_b32_guard_a_period_answer_with_a_stray_count_keeps_the_held_count(console) -> None:
+    text, calls = console.say(
+        _rank(_e("Sorento", "brand"), group_by="customer", top_n=10, date_filter_start=None, date_filter_end=None),
+        "top 10 customers for Sorento",
+    )
+    assert calls == [] and PERIOD_Q in text, (text, calls)
+    qf = _live(_parser_output(
+        domain_hint="order", intent_hint="check_order", order_status="sales_ranking", domain_in_message=False,
+        ranking_refine=None, group_by=None, top_n=3, basis=None, measure=None, entities=[], **SEP,
+    ))
+    _text, calls = console.say(qf, "last 3 months")
+    (args,) = calls
+    assert args["top_n"] == 10, args
