@@ -156,7 +156,9 @@ def test_an_order_number_searches_every_link_whatever_the_carry():
 def test_a_do_number_header_prints_no_customer_line_of_forced_links():
     gate = {
         "compatible_entities": [
-            {"uuid": "o1", "entity_type": "order", "code": "202609-0916", "title": "202609-0916"},
+            # The row the resolver places for a DO number (`customer_order`): a generic
+            # `order` row is a number of no known kind and prints "Order:" (REF-PROBES).
+            {"uuid": "o1", "entity_type": "customer_order", "code": "202609-0916", "title": "202609-0916"},
             {"uuid": _A, "entity_type": "customer", "code": "A1", "display_name": "ZZT A", "scope": True},
             {"uuid": _B, "entity_type": "customer", "code": "B1", "display_name": "ZZT B", "scope": True},
         ]
