@@ -2406,7 +2406,7 @@ def _apply_top_selling_updates(focus: Any, updates: dict[str, Any]) -> None:
     if isinstance(held, dict) and any(held.get(k) for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS) and all(
         sorted(map(str, held.get(k) or [])) == sorted(map(str, slot.get(k) or []))
         for k in _turn_apply_mod.TOP_SELLING_RESTATE_FILTERS
-    ):
+    ) and held.get("held_channel") == slot.get("held_channel"):
         for key in ("rank_by", "basis"):
             if slot.get(key) is None and held.get(key) is not None:
                 slot[key] = held[key]

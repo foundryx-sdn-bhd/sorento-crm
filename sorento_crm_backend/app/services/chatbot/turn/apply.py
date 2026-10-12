@@ -1294,7 +1294,7 @@ TOP_SELLING_BROADEN_KEYS = {
 
 #: The held top selling keys a restatement compares (the filters) and keeps (the metric and basis).
 TOP_SELLING_RESTATE_FILTERS = ("brand_ids", "agent_ids", "customer_ids", "category_words", "category_code")
-TOP_SELLING_RESTATE_KEYS = ("rank_by", "basis", *TOP_SELLING_RESTATE_FILTERS)
+TOP_SELLING_RESTATE_KEYS = ("rank_by", "basis", "held_channel", *TOP_SELLING_RESTATE_FILTERS)
 
 
 def _narrows_the_ranking(verdict: dict[str, Any]) -> bool:
@@ -1589,6 +1589,7 @@ def _top_selling_rules(
     if categories:
         own["category_words"] = categories
         carried.pop("category_code", None)
+    fresh_ask = False
     if asked and names_its_ask and not only_narrows and not _top_selling_waiting(asked_last, own):
         # A fresh ask names the ask ITSELF ("top 10 selling items": `domain_in_message`);
         # "by amount" under a ranking names only the axis it changes. A fresh ask states
@@ -1601,7 +1602,15 @@ def _top_selling_rules(
         carried = {"restates": held} if held.get("rank_by") else {}
         _drop_unnamed_filters(focus, verdict)
         trace.rules_fired.append("top_selling_fresh_ask")
+        fresh_ask = True
     carried.update(own)
+    # The channel this ask runs under, kept on the slot (`focus.sales_channel` is overwritten by every
+    # turn before these rules run) so a restatement can tell a different channel from the same one.
+    channel = verdict.get("sales_channel")
+    if channel and (fresh_ask or not _top_selling_waiting(asked_last, own)):
+        carried["held_channel"] = str(channel)
+    elif fresh_ask:
+        carried.pop("held_channel", None)
     focus.top_selling = carried
 
 
