@@ -300,3 +300,44 @@ def test_retire_refused_while_a_company_holding_a_value_has_no_flyer_link(db, se
     db.refresh(seat_cover_spec)
     assert seat_cover_spec.is_active is True
     assert _holding(db) == 2
+
+
+def test_a_sku_grouped_under_a_printed_model_by_hand_is_unresolved_and_never_linked(db, catalogue):
+    sku = product(db, company_id=DEFAULT_COMPANY_ID, code="SRTWC8383X-RL")
+    sku.family_code, sku.family_code_manual = "SRTWC8383", True
+    db.commit()
+    db.refresh(sku)
+    assert sku.family_code == "SRTWC8383"
+    plan = script.plan(db)
+    assert ("SRTWC8383X-RL", "not_printed") in {(u["wc_code"], u["reason"]) for u in plan["unresolved"]}
+    _run(db, "--apply")
+    assert covers_for(db, [sku.id]) == {}
+
+
+def test_a_pair_linked_the_other_way_round_is_not_linked_again(db, catalogue):
+    wc, cover = catalogue["SRTWC8383-RL-UF"], catalogue["SRTSCBD331-UF"]
+    db.add(
+        ProductCompatibility(
+            company_id=wc.company_id,
+            seat_cover_product_id=wc.id,
+            wc_product_id=cover.id,
+            source="manual",
+        )
+    )
+    db.commit()
+    _run(db, "--apply")
+    assert (
+        db.query(ProductCompatibility)
+        .filter(ProductCompatibility.seat_cover_product_id == cover.id)
+        .filter(ProductCompatibility.wc_product_id == wc.id)
+        .count()
+        == 0
+    )
+
+
+def test_dry_run_marks_an_inactive_sku(db, catalogue):
+    sku = catalogue["SRTWC8383-RL-BL"]
+    sku.is_active = False
+    db.commit()
+    _, out = _run(db)
+    assert "SKU SRTWC8383-RL-BL  (inactive SKU)" in out

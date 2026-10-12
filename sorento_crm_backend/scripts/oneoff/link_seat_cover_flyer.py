@@ -236,7 +236,11 @@ def plan(db) -> dict:
                         "company_id": str(sku.company_id),
                         "wc_id": sku.id,
                         "cover_id": cover.id,
-                        "already": (str(cover.id), str(sku.id)) in linked,
+                        # Either orientation counts: a pair already linked the other way
+                        # round must not gain a second, opposite row.
+                        "already": (str(cover.id), str(sku.id)) in linked
+                        or (str(sku.id), str(cover.id)) in linked,
+                        "inactive": not sku.is_active,
                     }
                 )
     return {"links": links, "unresolved": unresolved, "missing": missing}
@@ -335,7 +339,9 @@ def retire_spec(db) -> int:
 
 def _report(the_plan: dict, out: TextIO) -> None:
     for link in sorted(the_plan["links"], key=lambda x: (x["flyer_row"], x["wc_code"], x["cover_code"])):
-        tag = "  (already linked)" if link["already"] else ""
+        tag = ("  (inactive SKU)" if link["inactive"] else "") + (
+            "  (already linked)" if link["already"] else ""
+        )
         out.write(
             f"LINK  row {link['flyer_row']}  {link['printed_code']} -> {link['cover_code']}"
             f"  SKU {link['wc_code']}{tag}\n"
