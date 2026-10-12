@@ -1,17 +1,63 @@
 # PLAN: chat-sparse-emission (lane CHAT-SPARSE)
 
-Status: Round 3 built (STRICT grouped emission, flat decode order kept), PR #1603; awaiting the crew
-per-PR eval rerun and the owner's label move. Round 1 (non-strict sparse) FAILED the crew eval and is removed. Track: standard by
-size (M; one data-only migration, no auth/RBAC, no new ingest surface; no owner-visible change until a
-label moves). UAC: `chat-sparse-emission-acceptance-criteria.md`.
+Status: RESCOPED (crew/owner ruling, round 3 eval) to the out_of_scope never-blank fix, PR #1603. The
+output-token work (rounds 1 to 3) failed answer-identical in three full evals and is reverted; its
+findings are below for a later structural lane. Track: small fix track (engine fix plus tests, no
+migration, no auth/RBAC, no ingest surface). UAC: `chat-sparse-emission-acceptance-criteria.md`.
 
-## Problem (measured by CHAT-SPEED #1602, 12 Oct 2026)
+## What ships: never a blank out_of_scope reply
+
+Every `out_of_scope` hand-over persisted `reply.text = null`: `escalate-catalog` runs with
+`includeResponse: false` (`tail/outcome.py`), `compose_reply` sets the text to None
+(`tail/reply_ladder.py`), and the lane's one customer message ("Routed to your PIC, they will reply
+shortly.", `lanes/escalation.py`) lived only in the `send_message` action. The eval, the console bubble,
+the next turn's `Previous response:` and the chat-history link all read the empty reply. Main has it.
+Fix: `run_tail` falls back to the lane's own message text when it composed none (`engine.py`,
+`lane_text` from `_run_escalation_arm` through `complete_turn`). The customer is sent the same one
+message as before; what changes is the RECORDED reply text of an out_of_scope turn ("" becomes that
+line), so an eval that reads `reply_text` sees the change on those cases.
+
+Tests: `tests/chatbot/test_out_of_scope_never_blank.py` (red before, green after: the eval's verdict,
+and the same verdict with the "No team found" preview 404); the strict xfail
+`test_s5_escalation_seams.py::test_a_clarifys_text_reaches_the_persisted_reply` (this defect) is
+green and unmarked; console tests read the customer's bubbles as reply plus extras (`_bubbles`).
+
+## Findings for a later structural lane (rounds 1 to 3, all reverted)
+
+Three crew full evals, each against current main:
+
+| round | change | schema errors | hidden vs main | p95 | output tokens per case |
+|---|---|---|---|---|---|
+| 1 | non-strict sparse (absent == empty) | 9 + 3 | 175 vs 180 | 13.8 vs 10.9 s | 222 vs 780 |
+| 2 | strict grouped, groups placed at first member | 0 | 177 vs 182 | p50 2.6 vs 3.2 s | 515 vs 780 |
+| 3 | strict grouped, contiguous groups only | 0 | 176 vs 182 (6 lost, 0 gained) | 7.0 vs 8.9 s | not reported |
+
+What the per-turn data taught:
+1. Never give up strict structured output for tokens: non-strict drifted off the schema.
+2. Decode order is part of the reading: strict decoding writes keys in schema order and each key
+   conditions the next. Moving correction / topic_reset / is_active ahead of the entities changed
+   answers.
+3. Template default values bias the reading: a group line showing `continuation` as `true|null` made the
+   model set it true where main did not.
+4. A nullable answer object (`open_question_answer`) lets the model decide "not an answer" before the
+   mode: an open product roster went unanswered.
+5. Even order-preserving grouping (round 3) moved 6 hidden cases deterministically, among them
+   specification and certificate asks (the entity `detail` group held spec_key / spec_value) and an
+   order delivery-status ask that also failed in round 2. Any change to the output shape or the prompt
+   perturbs the reading; a recorded-output replay cannot prove such a change, only a live full run can.
+6. The latency is real and large: round 3 met the p95 <= 8 s gate (7.0 s). A later lane should treat the
+   parser's output contract as a model change (owner-approved full runs, per-topic review), not as a
+   transport change, or reach the gate another way (CHAT-SPEED's hedged parser request for the tail).
+
+## Background: rounds 1 to 3 in detail (reverted)
+
+### Problem (measured by CHAT-SPEED #1602, 12 Oct 2026)
 
 The semantic parser call is most of a chatbot turn: p50 about 3.0 s, of which about 1.9 s is DECODING
 the JSON emission (about 400 output tokens, no reasoning tokens). Most of the emission is key families
 that are empty on nearly every turn. Option D gate: turn p95 <= 8 s (main with embeddings: 10.9 s).
 
-## Round 1: non-strict sparse emission (FAILED, removed)
+### Round 1: non-strict sparse emission (FAILED, removed)
 
 The parser emitted only non-empty keys, with the schema sent non-strict and a local check standing in.
 Crew full eval of 48478b36 (eval v66 = v63 + sparse, baseline main+emb): hidden 175/214 vs 180, dev
@@ -21,7 +67,7 @@ case 780 to 222. Cause: off-schema values a strict call can never produce
 random across reruns; four deterministic losses (hidden cand-0052, cand-0232, cand-0294; dev cand-0044).
 Lesson: the provider's constrained decoding is what guarantees the shape. Do not give it up for tokens.
 
-## Round 2 design: STRICT grouped emission
+### Round 2 design: STRICT grouped emission
 
 1. **Same strict guarantee, a different wire shape.** A version whose text carries
    `GROUPED_OUTPUT_MARKER` (`chatbot_parser_prompt.py`) is held to `PARSE_OUTPUT_GROUPED_JSON_SCHEMA`
@@ -61,7 +107,7 @@ Lesson: the provider's constrained decoding is what guarantees the shape. Do not
    constant plus policy blocks, grouped. `scripts/publish_parser_grouped.py --from-version N` does the
    same for any later version (e.g. v63 on the eval DB, or #1582's specs-block version).
 
-## Round 2 eval and round 3 fix
+### Round 2 eval and round 3 fix
 
 Crew full eval of a6d54734 (eval v67 = v63 + grouped): schema errors 0; hidden 177/214 vs main 182, dev
 89/107 = 89; p50 2.6 vs about 3.2 s; output tokens per case 515 vs 780. FAIL on answer-identical:
@@ -79,7 +125,7 @@ and their OUTPUT lines are untouched; `PLAIN_FLAGS` (true or null) now covers on
 or object. The cand-0104 blank reply is still open: no reader turns a null plain flag into a failure
 (every read is truthiness or `is True`), and the per-turn outputs were asked of crew.
 
-## Round 3, second part: per-turn data from crew
+### Round 3, second part: per-turn data from crew
 
 - Round 2's grouped OUTPUT line showed `continuation` as `true|null`, and the candidate set
   `continuation: true` where main did not, turning a new order ask into "refines the standing subject".
@@ -97,7 +143,7 @@ or object. The cand-0104 blank reply is still open: no reader turns a null plain
   `test_s5_escalation_seams.py::test_a_clarifys_text_reaches_the_persisted_reply` (this defect) is now
   green; console tests read the customer's bubbles as reply plus extras (`_bubbles`).
 
-## Measurement (live, 12 Oct 2026, round 2: 66 parser calls)
+### Measurement (live, 12 Oct 2026, round 2: 66 parser calls)
 
 gpt-5.4-mini, `head/parser.parse` production path, 20 made-up turns
 (`scripts/chatbot_grouped_measure.py`), prompt `alembic/data/chatbot_semantic_parser.candidate-20261010.txt`.
@@ -112,7 +158,7 @@ strict runs of the same turns (the noise floor). Watch item: one grouped turn ("
 HUAT March") dropped `status: sales_report` while keeping `order_status`; both strict runs kept it. The
 round 1 sparse arm dropped it once too. Single sample; the eval gate decides.
 
-## The round 1 p95 regression (13.8 vs 10.9 s), as far as this sandbox can see
+### The round 1 p95 regression (13.8 vs 10.9 s), as far as this sandbox can see
 
 The run dirs are on the crew machine, so this is reasoned from what was measured here, with the check
 that would confirm it:
@@ -129,7 +175,7 @@ that would confirm it:
   zero cached tokens, or 8-17 s with normal token counts, means cache/provider, not the change. A warm-up
   call per version before the timed run would make the p95 comparison fair.
 
-## Test list
+### Test list
 
 - `tests/chatbot/test_parser_grouped_emission.py`: per key family (nothing said, escalation, escalation
   declined, open_question_answer pick/fill/all, low_stock, low_stock all categories, sales and ranking
@@ -141,7 +187,7 @@ that would confirm it:
 - `tests/chatbot/test_parser_grouped_publish.py`: both lines published unlabelled, labels unmoved,
   idempotent, unbuildable text skipped, downgrade keeps labelled rows.
 
-## Not doing
+### Not doing
 
 - No label move (owner's click, after the eval gate).
 - No change to `SEMANTIC_PARSER_PROMPT` itself: the registry fallback stays flat.
