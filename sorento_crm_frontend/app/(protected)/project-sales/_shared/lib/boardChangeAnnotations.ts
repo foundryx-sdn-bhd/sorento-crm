@@ -531,30 +531,38 @@ export function lineKeyOf(
 }
 
 /**
- * A row that is HISTORY, never worth drawing on the board: one another, later row in the same
- * batch has already replaced (S1/S4, `PLAN-esb-change-row-refresh.md`, issue #1240), or one an
- * earlier Confirm already APPLIED (BOARD-FROZEN-DISPLAY, 12 Oct 2026). `get_batch` returns
- * every row a batch ever carried, by design, so the batch lightbox and history still show
- * them; only the LIVE overlay (this file) drops one.
+ * A row another, later row in the same batch has already replaced (S1/S4,
+ * `PLAN-esb-change-row-refresh.md`, issue #1240) - never worth drawing on the board a second
+ * time, whatever the batch itself has been applied or not. `get_batch` returns every row a
+ * batch ever carried, superseded and applied included, the append-only record, by design, so
+ * the batch lightbox and history still show them; only the LIVE overlay (this file) drops one.
  *
  * ONE predicate, used everywhere a row feeds the board overlay - `proposalsByLine` (and
  * through it `uncoverChangedLines`, `changedLineIds`, `preMarkedKeys`), `annotationsByLine`
  * and `annotationsByCell` (review round 1, B1 ruling: the S2 list-vs-grid split this used to
- * carry was a defect, not a feature).
- *
- * WHY AN APPLIED ROW IS RETIRED TOO (reverses the R3 ruling of
- * `PLAN-board-draft-on-confirmed-line.md`, review round 3). A batch stays open while ANY of
- * its rows is pending (S5b, #1245), so after a partial Confirm the rows that press DID apply
- * kept uncovering their lines and pre-marking them with the batch's OLD `proposal_json`,
- * painted over the line's frozen decision. SO422492 on prod: C-FH14, confirmed BUY in rev 3
- * and rev 4 and handed to purchasing as ORDER, read "Own N (BRW-NTC)" as both Suggested and
- * Decided. What an applied row asked for is already in the active revision; the line shows
- * that. A failed row is NOT retired: its order's apply rolled back, so the change it carries
- * is still undone. Confirm's own block still reads only the batch's `applied_at`
- * (`FulfilmentBoardPanel.change.test.tsx`, "does not block Confirm ...").
+ * carry was a defect, not a feature). An APPLIED row is retired from the proposal half only
+ * (`isAppliedChangeRow`, `proposalsByLine`): its change icon still says what the book did.
  */
 function isRetiredChangeRow(row: PlanningChangeRow): boolean {
-  return row.applied_state === 'superseded' || row.applied_state === 'applied';
+  return row.applied_state === 'superseded';
+}
+
+/**
+ * A row an earlier Confirm already APPLIED: what it asked for is in the active revision, so it
+ * never uncovers or pre-marks its line again (BOARD-FROZEN-DISPLAY, 12 Oct 2026; reverses the
+ * R3 ruling of `PLAN-board-draft-on-confirmed-line.md`, review round 3).
+ *
+ * A batch stays open while ANY of its rows is pending (S5b, #1245), so after a partial Confirm
+ * the rows that press DID apply kept painting the batch's OLD `proposal_json` over the line's
+ * frozen decision. SO422492 on prod: C-FH14, confirmed BUY in rev 3 and rev 4 and handed to
+ * purchasing as ORDER, read "Own N (BRW-NTC)" as both Suggested and Decided. The change icon
+ * (`annotationsByLine` / `annotationsByCell`) still draws: a deep link to an applied batch has
+ * to say what it applied. A failed row is not applied: its order's apply rolled back, so the
+ * change it carries is still undone. Confirm's own block still reads only the batch's
+ * `applied_at` (`FulfilmentBoardPanel.change.test.tsx`, "does not block Confirm ...").
+ */
+function isAppliedChangeRow(row: PlanningChangeRow): boolean {
+  return row.applied_state === 'applied';
 }
 
 /**
@@ -649,16 +657,16 @@ export function uncoverChangedLines<
   };
 }
 
-/** The planning lines a batch names, and the fresh proposal it holds for each. A retired row
- * is skipped (`isRetiredChangeRow`): a superseded one was replaced by another row (S4/B1), an
- * applied one is already in the active revision (BOARD-FROZEN-DISPLAY). */
+/** The planning lines a batch names, and the fresh proposal it holds for each. A superseded
+ * row is skipped (S4/B1) - another row in the same batch already replaced it - and so is an
+ * applied one (`isAppliedChangeRow`): what it asked for is already in the active revision. */
 function proposalsByLine(
   batch: Pick<PlanningChangeBatch, 'orders'> | null | undefined,
 ): Map<string, { proposal: BoardContribution | null }> {
   const out = new Map<string, { proposal: BoardContribution | null }>();
   for (const order of batch?.orders ?? []) {
     for (const row of order.rows ?? []) {
-      if (isRetiredChangeRow(row)) continue;
+      if (isRetiredChangeRow(row) || isAppliedChangeRow(row)) continue;
       const proposal = (row.proposal ?? null) as BoardContribution | null;
       const lineId = row.project_line_id ?? proposal?.project_line_id ?? null;
       if (lineId) out.set(lineId, { proposal });
@@ -694,7 +702,8 @@ export function preMarkedKeys(
   contributions: BoardContribution[],
 ): string[] {
   if (!batch) return [];
-  // `changed` drops a retired (superseded or applied) row's line (`isRetiredChangeRow`).
+  // `changed` drops a superseded or applied row's line (`isRetiredChangeRow`,
+  // `isAppliedChangeRow`).
   // The `covered` check below is a SEPARATE guard this function still needs: it takes
   // `Pick<PlanningChangeBatch, 'orders'>`, never the
   // batch's own `applied_at`, so a batch that resolves APPLIED after the board's contributions

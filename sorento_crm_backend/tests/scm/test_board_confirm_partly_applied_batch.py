@@ -257,11 +257,11 @@ def test_the_batch_stays_open_while_a_genuinely_pending_row_is_left(api):
     assert db.get(PlanningChangeBatch, batch.id).applied_at is None
 
 
-def test_a_named_line_the_batch_cannot_apply_fails_the_order_and_names_the_line(api):
-    """Never fail silently: a line the press named through a LIVE row that the apply then
-    drops (here the book cancelled the line between compose and apply, so the row is
-    superseded) fails the whole order with the line named - nothing is written, rather than
-    a revision quietly missing the line."""
+def test_a_named_line_the_book_cancelled_is_superseded_and_the_rest_still_applies(api):
+    """OI-CLOSED-LINE AC-5 still holds on the board path: a line the press named whose SO
+    line the book cancelled between compose and press is superseded with the reason on its
+    row, and the rest of the order still applies. The no-silent-drop guard leaves it alone -
+    refusing here held the row pending and the batch open forever (review round 1)."""
     client, world = api
     db = world.db
     _stock(db, world.product, world.pool_wh, on_hand=200)
@@ -282,11 +282,43 @@ def test_a_named_line_the_batch_cannot_apply_fails_the_order_and_names_the_line(
         order,
     )
 
-    assert result["ok"] is False
-    assert "line 2" in (result.get("error") or ""), result.get("error")
-    assert [f["line_no"] for f in result.get("failing_lines") or []] == [2]
+    assert result["ok"] is True, (result.get("error"), result.get("failing_lines"))
     db.expire_all()
-    assert _active(db, order).revision_no == before
+    after = _active(db, order)
+    assert after.revision_no == before + 1
+    assert _snapshot_buy(_snapshot(after, line_1)) == Decimal("24")
+    rows = {
+        str(r.project_line_id): r
+        for r in db.query(PlanningChangeRow).filter_by(batch_id=batch.id).all()
+    }
+    assert rows[str(line_2.id)].applied_state == "superseded"
+    assert rows[str(line_2.id)].applied_reason == "the sales-order line is cancelled"
+    assert db.get(PlanningChangeBatch, batch.id).applied_at is not None
+
+
+def test_the_guard_refuses_a_named_line_missing_from_the_revision_and_names_it():
+    """The backstop itself (`_refuse_dropped_named_lines`): a line the press named that is
+    neither composed nor retired fails the order with the line named and its row's reason."""
+    import pytest
+
+    from app.services.project_supply_service import SupplyLinesRefused
+
+    named = PlanningChangeRow(
+        project_line_id="pl-688", line_no=688, item_code="SRTWT2201",
+        applied_reason="the planning change could not take this decision",
+    )
+    composed = PlanningChangeRow(project_line_id="pl-16", line_no=16, item_code="C-FH14")
+    with pytest.raises(SupplyLinesRefused) as refused:
+        planning_change_service._refuse_dropped_named_lines(
+            [named, composed], ["pl-16", "pl-688"], {"pl-16"}, [],
+        )
+    assert "line 688 (SRTWT2201)" in refused.value.message
+    assert "The planning change could not take this decision" in refused.value.message
+    assert [f["line_no"] for f in refused.value.failing_lines] == [688]
+    # Composed, retired, or cancelled by the book: nothing to refuse.
+    planning_change_service._refuse_dropped_named_lines(
+        [named, composed], ["pl-16", "pl-688"], {"pl-16"}, ["pl-688"],
+    )
 
 
 def test_reconfirming_a_line_purchasing_was_told_to_cancel_raises_a_fresh_order(api):

@@ -4168,7 +4168,7 @@ def _refuse_dropped_named_lines(
         status_code=422,
         message=(
             f"Nothing was confirmed: {named} could not be confirmed with the rest of this "
-            f"order. {failing[0]['reason']}"
+            f"order. {failing[0]['reason'][:1].upper()}{failing[0]['reason'][1:]}"
         ),
         failing_lines=failing,
         code="planning_change_line_dropped",
@@ -4271,6 +4271,10 @@ def _apply_one_order(
             )
             .all()
         }
+    # The lines the book cancelled under a named row are not a silent drop: their rows say
+    # why, and the rest of the order still applies (OI-CLOSED-LINE AC-5), so the guard below
+    # leaves them out.
+    book_cancelled_line_ids: List[str] = []
     if cancelled_core_line_ids:
         still_live: List[PlanningChangeRow] = []
         for r in live:
@@ -4281,11 +4285,13 @@ def _apply_one_order(
             ):
                 r.applied_state = PLANNING_CHANGE_STATE_SUPERSEDED
                 r.applied_reason = "the sales-order line is cancelled"
+                if r.project_line_id:
+                    book_cancelled_line_ids.append(str(r.project_line_id))
             else:
                 still_live.append(r)
         live = still_live
     if not live and not extra_lines:
-        _refuse_dropped_named_lines(order_rows, named_line_ids, set(), ())
+        _refuse_dropped_named_lines(order_rows, named_line_ids, set(), book_cancelled_line_ids)
         return empty_result
 
     by_line_id = {r.project_line_id: r for r in live if r.project_line_id}
@@ -4436,7 +4442,7 @@ def _apply_one_order(
         order_rows,
         named_line_ids,
         {str(p.get("project_line_id")) for p in confirm_lines if p.get("project_line_id")},
-        retired_line_ids,
+        [*retired_line_ids, *book_cancelled_line_ids],
     )
 
     # The book closed these lines. Their rows are CANCELLED, never deleted - they are what
@@ -4941,8 +4947,6 @@ def apply(
             revision_by_pso[pso_id] = current_revision_no(db, pso_id)
         return not row_is_overtaken(r, revision_by_pso[pso_id])
 
-    if orders_revised:
-        db.flush()
     left_out_pending = any(_still_reachable(r) for r in rows)
     if orders_revised and not left_out_pending:
         batch.applied_at = datetime.utcnow()

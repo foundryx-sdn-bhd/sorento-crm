@@ -874,7 +874,8 @@ describe('uncoverChangedLines', () => {
    * press DID apply went on painting its batch's old `proposal_json` over the line's frozen
    * decision: SO422492's C-FH14 lines, confirmed BUY in rev 3 and rev 4 (and sent to
    * purchasing as ORDER), read "Own N (BRW-NTC)" as both Suggested and Decided. An applied
-   * row is history now, the same as a superseded one - the line shows its frozen decision.
+   * row no longer uncovers or pre-marks - the line shows its frozen decision - while its
+   * change icon still says what the book did.
    * A second, PENDING row on the same line (an order the upload named twice) still
    * overlays: only the applied one is retired. The Confirm block still reads only the
    * batch's `applied_at` (`FulfilmentBoardPanel.change.test.tsx`).
@@ -919,7 +920,10 @@ describe('uncoverChangedLines', () => {
     expect(
       preMarkedKeys(appliedBatch, [{ ...live, covered: false }]),
     ).toEqual([]);
-    expect(annotationsByLine(appliedBatch).get('pl-1')).toBeUndefined();
+    // The change icon still says what the book did (a deep link to an applied batch).
+    expect(
+      annotationsByLine(appliedBatch).get('pl-1')?.map((entry) => entry.rowId),
+    ).toEqual(['pcr-applied']);
   });
 
   it('SO422492: a partly-applied batch overlays only its genuinely pending rows', () => {
@@ -982,7 +986,7 @@ describe('uncoverChangedLines', () => {
     expect(byKey.get('k-moved')?.sources).toEqual([{ kind: 'buy', qty: '3' }]);
     expect(preMarkedKeys(batch, out.contributions)).toEqual(['k-moved']);
     const byLine = annotationsByLine(batch);
-    expect(byLine.get('pl-16')).toBeUndefined();
+    expect(byLine.get('pl-16')?.map((entry) => entry.rowId)).toEqual(['pcr-cfh14']);
     expect(byLine.get('pl-20')?.map((entry) => entry.rowId)).toEqual(['pcr-moved']);
   });
 });
