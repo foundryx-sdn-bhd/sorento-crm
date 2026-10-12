@@ -348,6 +348,26 @@ def test_delete_event_for_a_row_that_still_exists_keeps_the_embedding(db, world)
     assert _doc(db, "product", pid) is not None
 
 
+def test_product_delete_also_removes_its_product_spec_embedding(db, world):
+    """product_spec is keyed on the product's id: it goes with the product."""
+    gone = str(uuid.uuid4())
+    _seed_chunk(db, "product", gone, world["a"], world["vec"])
+    _seed_chunk(db, "product_spec", gone, world["a"], world["vec"])
+    out = embedding_worker.process_embedding_queue_item(_queue(db, "product", gone, "product.deleted"))
+    assert out["status"] == "removed", out
+    assert out["documents"] == 2
+    assert _doc(db, "product", gone) is None
+    assert _doc(db, "product_spec", gone) is None
+
+
+def test_existence_check_on_a_malformed_id_does_not_poison_the_session(db, world):
+    """The existence check runs in a SAVEPOINT: an id that is not a uuid fails that one
+    statement and reads as "present" (nothing removed), and the session stays usable for
+    the worker's next statement instead of failing on an aborted transaction."""
+    assert embedding_worker._source_row_exists(db, "product", "not-a-uuid") is True
+    assert db.query(Company).filter(Company.id == world["a"]).count() == 1
+
+
 def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
     pid = _seed_product(db, world["a"], f"ZZSFQ{world['suffix']}")
     live_frame = _seed_frame(db, _seed_contact(db, world["a"]))
@@ -412,11 +432,12 @@ def test_shared_certificate_embeds_no_company_owned_codes(db, world):
     carried company A's and company B's product codes to every scope."""
     s = world["suffix"]
     cert_id, _ = _seed_certificate(
-        db, None, {world["a"]: f"ZZSFA{s}", world["b"]: f"ZZSFB{s}"}
+        db, None, {world["a"]: f"ZZSFA{s}", world["b"]: f"ZZSFB{s}", None: f"ZZSFN{s}"}
     )
     set_company_scope(db, None)
     src = embedding_worker._canonical_for_source(db, "certificate", cert_id)
-    assert src["metadata"]["covered_products"] == []
+    # A company-less product is shared like the certificate, so its code stays.
+    assert src["metadata"]["covered_products"] == [f"ZZSFN{s}"]
     assert f"ZZSFA{s}" not in src["body_text"]
     assert f"ZZSFB{s}" not in src["body_text"]
     chunks = embedding_worker._chunks_for_source("certificate", src)

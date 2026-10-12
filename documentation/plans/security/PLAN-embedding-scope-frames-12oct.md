@@ -33,12 +33,29 @@ Is (1) reachable today with real prod callers? Answered in the PR body.
   `conversation_frame` row is returned (crew ruling (a), 12 Oct: a frame is one contact's private
   conversation; recall stays on `/external/memory/frames/search`). Scope None still sees them.
 - `process_embedding_queue_item`: a `.deleted` event whose source row is gone deletes the
-  document and chunks (status `removed`); a stale delete for a live row removes nothing.
+  document and chunks (status `removed`), plus the `product_spec` document on `product.deleted`;
+  a stale delete for a live row removes nothing.
 - `purge_orphan_embeddings` + `scripts/purge_orphan_embeddings.py`: dry-run count by default,
   `--apply` deletes. `debtor:` seeds and row-less types are never touched.
 - Certificate codes: own company only; a shared certificate embeds company-less products only.
 - Migration `sframes_0001_frame_company`: additive company backfill on frame embeddings, and
   a rebuild queued for every certificate whose embedding carries another company's codes.
+
+The frame company stamp has no reader today: a scoped search drops every frame and an
+unscoped one ignores `company_id`. It is kept on purpose (crew ruling (a), 12 Oct) as defence
+in depth, so the frame rows obey the same company rule as every other embedding if the
+blanket exclusion is ever relaxed.
+
+## Release steps (owner)
+
+1. `python scripts/purge_orphan_embeddings.py` (dry run: counts), then `--apply`.
+2. Confirm `ENABLE_SCHEDULER` is on, so the queued certificate rebuilds drain.
+
+## Follow-ups (outside this lane, pre-existing)
+
+- `/external/memory/frames/search` trusts the body's `contact_id`/`space_id`; any key holding
+  `integration.conversation_context.edit` can read any contact's frames by naming them.
+- `Attachment` and `ConversationFrame` raise no delete event; their orphans need the sweep.
 
 ## Reachability (finding 1)
 

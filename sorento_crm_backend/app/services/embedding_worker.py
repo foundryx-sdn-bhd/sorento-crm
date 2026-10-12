@@ -856,10 +856,14 @@ def process_embedding_queue_item(queue_id: str) -> dict[str, Any]:
         if (queue_item.event_type or "").endswith(".deleted") and not _source_row_exists(
             db, queue_item.source_type, queue_item.source_id
         ):
+            # product_spec is keyed on the product's id, so it goes with the product.
+            source_types = [queue_item.source_type]
+            if queue_item.source_type == "product":
+                source_types.append("product_spec")
             removed = _delete_documents(
                 db,
                 db.query(EmbeddingDocument.id).filter(
-                    EmbeddingDocument.source_type == queue_item.source_type,
+                    EmbeddingDocument.source_type.in_(source_types),
                     EmbeddingDocument.source_id == queue_item.source_id,
                 ),
             )

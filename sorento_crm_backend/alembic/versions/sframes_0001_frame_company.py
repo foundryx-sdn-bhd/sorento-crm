@@ -21,7 +21,7 @@ embedding drain picks the rows up. Plan:
 documentation/plans/security/PLAN-embedding-scope-frames-12oct.md.
 
 Revision ID: sframes_0001_frame_company
-Revises: devf_0002_portal_link_copy
+Revises: oihr_0006_no_remark_column
 """
 import logging
 
@@ -30,7 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 revision = "sframes_0001_frame_company"
-down_revision = "devf_0002_portal_link_copy"
+down_revision = "oihr_0006_no_remark_column"
 branch_labels = None
 depends_on = None
 
