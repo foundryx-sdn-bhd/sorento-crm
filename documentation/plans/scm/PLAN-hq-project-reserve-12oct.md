@@ -1,6 +1,6 @@
 # PLAN: HQ warehouse as a project reserve
 
-Status: Build (owner answered the card 12 Oct; reviewer next). Track: standard (Stock Debt
+Status: Review READY (reviewer round 3, 12 Oct); waiting on CI and owner hand test. Track: standard (Stock Debt
 walk, planner pool set, G12 lock; no migration).
 
 ## Owner ask (12 Oct)
