@@ -139,10 +139,8 @@ def test_a_reserve_po_carries_to_the_earliest_shortfall_in_both_books(scm_app):
     seed = _seed(db, hq_in_span=True, reserve=True)
     with TestClient(app) as c:
         every, _ = _row(c, seed)
-        project, _ = _row(c, seed, book="project")
         results = {book: _projected(c, seed, book) for book in BOOKS}
     assert _balances(every) == [920.0, 0.0, -200.0, -300.0]
-    assert _balances(project) == [-100.0, 0.0, -200.0, -300.0]
     for book, (balances, row) in results.items():
         assert balances == [900.0, 900.0, 700.0, 400.0], book
         assert row["total"] == 400.0, book
@@ -228,6 +226,8 @@ def test_drill_states_the_projection_and_lists_the_reserve_document(scm_app):
         now = cell(c, current, projected="true", book="project")
         now_all = cell(c, current, projected="true")
         plain = cell(c, current, book="project")
+    # Listed once in each book, whether the page's own span shows it (Book=All; and
+    # Book=Project once #1597 puts the reserve in that span) or the projection adds it.
     assert later["projection"] == {
         "carried_in": 900.0, "month_balance": -200.0, "reserve_supply": 0.0,
         "reserve_sources": [], "projected": 700.0, "carried_out": 700.0,
@@ -238,10 +238,8 @@ def test_drill_states_the_projection_and_lists_the_reserve_document(scm_app):
     ]
     [listed] = [row for row in now["supply"] if row.get("po_number") == po_number]
     assert listed["free_qty"] == 1000.0
-    # Book=All already lists it off its own span; it is not added a second time.
     assert [row.get("po_number") for row in now_all["supply"]].count(po_number) == 1
     assert plain.get("projection") is None
-    assert po_number not in [row.get("po_number") for row in plain["supply"]]
 
 
 def test_reserve_sources_read_po_before_spo(scm_app):
@@ -387,7 +385,8 @@ def test_the_project_figure_is_the_pages_own_whatever_the_reserve_walk_caps(scm_
     with TestClient(app) as c:
         plain, _ = _row(c, seed, book="project")
         balances, _row_ = _projected(c, seed, "project")
-    assert _balances(plain) == [-100.0, 0.0, -200.0, 0.0]
+    # The page's own figure, however its book reads the link (uncapped while HQ is out of
+    # Book=Project's span; capped once #1597 puts it in).
     assert balances == _balances(plain)
 
 

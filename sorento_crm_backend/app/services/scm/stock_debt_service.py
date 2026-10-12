@@ -1814,10 +1814,10 @@ class StockDebtService:
           link took of them, so linked stock is not offered twice.
         - `sources`: per month, the reserve supply by location and kind, for the drill line.
 
-        A reserve outside the span (Book=Project, or a `group`) is read by walking the span
-        WITH every site pool, once. Every pool shares one ownership group (`POOL_GROUP`), so
-        an order at ANY pool may hold a reserve document through a link; walked this way it
-        is netted exactly as under Book=All. That walk answers for the reserve documents
+        When a reserve exists and any pool or reserve is outside the span (Book=Project, or
+        a `group`), the span is walked once more WITH every site pool and reserve: an order
+        at ANY pool may hold a reserve document through a link (a placement pins across
+        groups), and walked this way it is netted exactly as under Book=All. That walk answers for the reserve documents
         only: `project` always comes off the page's own `assignments`, which is what its
         Covered by shows (an out-of-span link is honoured there uncapped).
 
@@ -1840,12 +1840,12 @@ class StockDebtService:
                     event.key for event in events if event.kind in (KIND_PO, KIND_SPO)
                 )
         walked = assignments
-        if outside and product_ids:
-            pools = {
-                wid: row
-                for wid, row in self.supply.site_pool_warehouses().items()
-                if wid not in warehouses
-            }
+        pools = {
+            wid: row
+            for wid, row in self.supply.site_pool_warehouses().items()
+            if wid not in warehouses
+        }
+        if reserves and (outside or pools) and product_ids:
             caches = (self._event_cache, self._lead_cache)
             walked = self._assignments(
                 [(product_id, "", "") for product_id in product_ids],

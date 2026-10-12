@@ -23,10 +23,14 @@ projected(M)      = project(M) + remainder(M)
 carried_in(M+1)   = max(0, min(remainder(M), projected(M)))
 ```
 
-A project reserve is a pool (some location's `pool_warehouse_id`) with `segment = project`,
-not flagged for planning (HQ-PROJECT-RESERVE, PR #1597: HQ stock belongs to projects in
-general). Until #1597 lands its own predicate this lane's `_project_reserves()` is the
-definition; nothing matches it until `HQ.segment = project` ships with #1597. Reserve ON
+A project reserve is exactly #1597's `is_project_reserve`: a pool (some location's
+`pool_warehouse_id`) with `segment = project`, per warehouse row, so one company's HQ can be
+a reserve while another company's same-coded HQ stays a dealer pool. #1597 keeps R45 for HQ
+documents, so an unlinked HQ PO/SPO is covered ONLY by this display-only layer.
+`_project_reserves()` reads `site_pool_warehouses()` and, once #1597 is on main, its
+`project_reserve_warehouses()`, so either merge order holds; reserve documents are matched by
+key at the reserve warehouses' ids, never by code. A trial merge with #1597 (4bc34cb8) passes
+both lanes' tests. Reserve ON
 HAND is #1597's walk, not this layer. `project(M)` always comes off the page's own walk, so
 each book's projection follows that book's Covered by (they differ only where Covered by
 does, e.g. an out-of-span link is honoured uncapped under Book=Project). The reserve term is
