@@ -23,7 +23,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({
@@ -48,7 +48,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
 
 import { BoardCellBreakdownDialog, sourceAt } from './BoardCellBreakdownDialog';
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
-import { LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
+import { borrowKinds, LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
 import {
   buildBoard,
   PREVIEW_POLICY,
@@ -3252,6 +3252,7 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
   });
 
   it('tells the two borrows apart by rung (AC-A3)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     renderWithSources([
       // Names its donor SO: a donor-less one reads as a location borrow
       // (BORROW-LOCATION-ONLY D3).
@@ -4119,4 +4120,8 @@ describe('AC-B1/AC-B11: the Decision column carries the same Verdict trio as the
       screen.queryByRole('button', { name: /decision trail/i }),
     ).not.toBeInTheDocument();
   });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });

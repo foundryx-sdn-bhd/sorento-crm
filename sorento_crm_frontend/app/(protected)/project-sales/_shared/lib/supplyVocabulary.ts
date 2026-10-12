@@ -283,7 +283,32 @@ function fallbackRung(
  *   order-back. It reads `borrow_order` when the donor sales order is named and
  *   `borrow_other` when it is not, which is exactly what those two words distinguish.
  */
+/**
+ * Owner rule, 12 Oct 2026 (`PLAN-plan-four-options-12oct.md`, Q2 + Q4(a)): every borrow READS
+ * "Borrow", the line detail included. The planner no longer names a donor order or borrows a
+ * later order's SPO, and an older decision that did still keeps its donor in its data; only
+ * the word shown folds. The backend twin is `ladder_steps.ORDER_BORROW_NAMES_DONOR`;
+ * `shownApart` on restores "Borrow from another order" and "Borrow incoming" as their own
+ * kinds (tests that pin those words switch it on).
+ */
+export const borrowKinds = { shownApart: false };
+
 export function rowOf(
+  part: SupplyPart,
+  ownLocation?: string | null,
+): SupplyKind | null {
+  const kind = rowOfLadder(part, ownLocation);
+  if (
+    !borrowKinds.shownApart &&
+    (kind === 'borrow_order' || kind === 'borrow_incoming')
+  ) {
+    return 'borrow_other';
+  }
+  return kind;
+}
+
+/** `rowOf` before the four-options fold: the ladder's own kind for this part. */
+function rowOfLadder(
   part: SupplyPart,
   ownLocation?: string | null,
 ): SupplyKind | null {
