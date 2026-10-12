@@ -48,8 +48,11 @@ from app.services.chatbot.contracts import (
     TURN_FAILURE_STAGES,
     Envelope,
     named_count,
+    visible_reference_kinds,
 )
 from app.services.chatbot.delegate import enabled_lanes_from
+from app.services.chatbot.turn.reconcile import narrowed_miss_lines
+from app.services.chatbot.turn.state import is_staff_profile
 from app.services.customer_group_service import family_overrides
 from app.services.error_handler import AppException
 from app.services.ledger_family import customer_groups
@@ -1964,6 +1967,28 @@ def _top_selling_dealer_scope(
         else:
             slot["dealer_customer_ids"] = ids
     return {**parse_output, "entities": [e for e in entities if not _is_customer(e)]}
+
+
+def _reference_scope(customer_scope: dict[str, Any] | None, profile: Any) -> list[Any] | None:
+    """REF-PROBES: the customer links a reference-number match must belong to, or None when
+    no scope applies. Enforced dealers and any non-staff contact are held to their links (an
+    unlinked dealer has none, so another customer's sales order is never offered)."""
+    scope = customer_scope or {}
+    if scope.get("enforced"):
+        return list(scope.get("linked") or [])
+    return None if is_staff_profile(profile) else list(scope.get("linked") or [])
+
+
+def _reference_kinds(
+    ctx: dict[str, Any], customer_scope: dict[str, Any] | None, profile: Any, *, per_match_scope: bool = True
+) -> list[str]:
+    """The reference kinds this asker may have probed. A lane with no per-match scope drop
+    (`per_match_scope=False`, the casual clarifier) loses the customer-owned kinds (sales order,
+    PO ref) for any contact held to links."""
+    kinds = visible_reference_kinds((ctx.get("access") or {}).get("attributes"), is_staff_profile(profile))
+    if not per_match_scope and _reference_scope(customer_scope, profile) is not None:
+        kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
+    return kinds
 
 
 def _customer_scope_gate(
@@ -4592,6 +4617,8 @@ def _run_stages_body(  # noqa: PLR0915
     # below is made against the CARRIED agent, not the default. No `session=` (reviewer
     # round 1, SHOULD-4): no writer ever produces a prior-turn agent nest to read.
     verdict = turn_runtime.with_routing_agent_default(verdict, pending=state_in.pending)
+    # REF-PROBES step 10: a bare "order" number the parser's own `document` names a kind of.
+    verdict = turn_runtime.with_document_kind(verdict)
     # #865 round 5 (R1): an escalate word plus a named team, in the parser's own reading
     # of the message, is a help request whatever product words follow.
     verdict = turn_runtime.with_named_team_escalation(verdict)
@@ -5241,6 +5268,8 @@ def _run_stages_body(  # noqa: PLR0915
             resolver_ctx = {
                 **ctx,
                 "parse": {**(ctx.get("parse") or {}), "output": resolver_parse_output},
+                # REF-PROBES: the reference kinds this asker may have probed.
+                "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile),
             }
             resolve_outcome = (
                 turn_runtime.resolve_kinds(
@@ -5284,6 +5313,7 @@ def _run_stages_body(  # noqa: PLR0915
                     ),
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
+                    scope_linked=_reference_scope(customer_scope, state_out.profile),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds
@@ -5324,6 +5354,15 @@ def _run_stages_body(  # noqa: PLR0915
                 if exact is not None:
                     resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens = exact
                     turn_trace.add("exact_codes_only", {"kept": [e.get("code") for e in compatible_entities]})
+                    if isinstance(resolver_payload, dict):
+                        # The answer bridge reads the GATE's list, not the local one.
+                        resolver_payload = {
+                            **resolver_payload,
+                            "gate": {
+                                **(resolver_payload.get("gate") or {}),
+                                "compatible_entities": compatible_entities,
+                            },
+                        }
             # ACCOUNT-LEDGER Q4: staff asked a level the typed name lacks.
             staff_account_refusal = ((resolver_payload or {}).get("resolved") or {}).get("account_refusal")
             if staff_account_refusal and not (gate_scope or {}).get("enforced"):
@@ -5807,7 +5846,9 @@ def _run_stages_body(  # noqa: PLR0915
         clarifier_setup_error: str | None = None
         if branch_kind == "low_signal" and completes_here:
             try:
-                resolved_for_prompt = casual.resolve_for_prompt(db, ctx=ctx)
+                resolved_for_prompt = casual.resolve_for_prompt(
+                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile, per_match_scope=False)}
+                )
                 clarifier_prompt = casual.construct_user_prompt(ctx, resolved_for_prompt)
                 clarifier_config = casual.resolve_clarifier_config(
                     db,
@@ -6505,6 +6546,16 @@ def _run_stages_body(  # noqa: PLR0915
                             db=db,
                             ctx=ctx,
                         )
+                        # REF-PROBES: a kind the asker NAMED that the data placed as another
+                        # kind is said first ("No sales order X."), then the true kind's answer.
+                        narrowed_misses = narrowed_miss_lines(
+                            plan.trace.reconciled,
+                            visible=_reference_kinds(ctx, customer_scope, state_out.profile),
+                        )
+                        if narrowed_misses and answer.text:
+                            answer = dataclasses_replace(
+                                answer, text="\n".join(narrowed_misses) + "\n\n" + answer.text
+                            )
             except Exception as fetch_error:  # noqa: BLE001 - a lane failure, not a crash
                 logger.exception("chatbot turn %s: fetch or compose failed", turn_id)
                 lane_error_text = f"{type(fetch_error).__name__}: {fetch_error}"

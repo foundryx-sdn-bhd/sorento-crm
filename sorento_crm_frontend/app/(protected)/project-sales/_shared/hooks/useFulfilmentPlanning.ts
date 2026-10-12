@@ -7,6 +7,7 @@ import {
   adoptSalesOrder,
   confirmMany,
   previewConfirmMany,
+  simulateConfirm,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
@@ -30,6 +31,7 @@ import type {
   BoardLineDraft,
   BoardSource,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmSupplyBody,
   FulfilmentPlanningListParams,
   PlanListParams,
@@ -281,6 +283,14 @@ export function useReconciliationMutations() {
       for (const notice of result.landed_buy_notices ?? []) {
         toast.warning(failingLineText(notice));
       }
+      // OI-CLOSED-LINE (owner, 12 Oct 2026): confirmed short of stock, or held back so the
+      // rest of the order confirmed. Never silent.
+      for (const notice of result.stock_short_notices ?? []) {
+        toast.warning(failingLineText(notice));
+      }
+      for (const notice of result.lines_held_back ?? []) {
+        toast.warning(failingLineText({ ...notice, reason: `held back, decision kept: ${notice.reason}` }));
+      }
       // Only when something went wrong. The successful count is on the Transfers page and
       // does not need saying twice; an unwritten movement has no other way to be noticed.
       const failed = result.transfers_failed ?? 0;
@@ -491,6 +501,16 @@ export function useConfirmManyMutation() {
 export function usePreviewConfirmManyMutation() {
   return useMutation({
     mutationFn: (body: ConfirmManyBody) => previewConfirmMany(body),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+/** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
+export function useSimulateConfirmMutation() {
+  return useMutation({
+    mutationFn: (body: SimulateConfirmBody) => simulateConfirm(body),
     onError: (error: Error) => {
       toast.error(error.message);
     },

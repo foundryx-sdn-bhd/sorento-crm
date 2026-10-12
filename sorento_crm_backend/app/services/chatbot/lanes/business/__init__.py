@@ -1468,7 +1468,11 @@ def run_fetch(
                     },
                 )
             fragment = _fixed_reply(
-                so_status.reply_text(looked, refusal=str(customer_scope.get("refusal") or ""))
+                so_status.reply_text(
+                    looked,
+                    refusal=str(customer_scope.get("refusal") or ""),
+                    kind_word="Sales order" if parse_output.get("so_placed") is True else None,
+                )
             )
             # The reply names its own missing numbers, so the resolver's own `not_found`
             # exit (nothing placed the SO words) is not a second miss to compose
@@ -1494,7 +1498,8 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            linked = list(customer_scope.get("linked") or [])
+            # REF-PROBES: staff carry no customer links and no enforced scope (`ref_staff`).
+            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1511,6 +1516,29 @@ def run_fetch(
                 texts.append(so_status.po_ref_reply_text(looked, ref))
             if texts:
                 fragment = _fixed_reply("\n\n".join(texts))
+                fragment["fetch"]["so_status"] = True
+                return fragment
+    # REF-PROBES: our own PO number and a purchase request number the resolver placed, answered
+    # in process (`chatbot/ref_status.py`) for staff holding `purchase_orders.placed` only. The
+    # resolver never probes these kinds for anyone else, so this is the second lock.
+    po_numbers = [w for w in jsc.array(parse_output.get("po_numbers")) if isinstance(w, str) and w.strip()]
+    pr_numbers = [w for w in jsc.array(parse_output.get("pr_numbers")) if isinstance(w, str) and w.strip()]
+    if (po_numbers or pr_numbers) and db is not None and parse_output.get("ref_staff") is True:
+        access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
+        granted_raw = access_ctx.get("attributes")
+        granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
+        if "purchase_orders.placed" in granted:
+            from app.services.chatbot import ref_status
+
+            cards: list[str] = []
+            if po_numbers:
+                cards += ref_status.lookup_purchase_orders(db, po_numbers).cards
+            if pr_numbers:
+                cards += ref_status.lookup_purchase_requests(db, pr_numbers).cards
+            if trace is not None:
+                trace.add("ref_status", {"po": po_numbers, "pr": pr_numbers, "cards": len(cards)})
+            if cards:
+                fragment = _fixed_reply("\n\n".join(cards))
                 fragment["fetch"]["so_status"] = True
                 return fragment
     # SO-NUMBER-ASK, the SO list ("all my sales orders"): the customers in scope (the

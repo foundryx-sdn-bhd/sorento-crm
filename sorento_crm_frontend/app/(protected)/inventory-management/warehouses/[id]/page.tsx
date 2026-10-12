@@ -123,10 +123,11 @@ export default function WarehouseDetailPage({
     );
   }
 
+  // Same label the edit form gives the self option, so View and Edit read alike.
   const poolCode =
-    warehouse.pool_warehouse_code && warehouse.pool_warehouse_id !== warehouse.id
-      ? warehouse.pool_warehouse_code
-      : null;
+    warehouse.pool_warehouse_id === warehouse.id
+      ? 'This warehouse (own pool)'
+      : warehouse.pool_warehouse_code || null;
 
   return (
     <>

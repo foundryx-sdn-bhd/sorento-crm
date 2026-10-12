@@ -87,6 +87,7 @@ from app.services.project_supply_service import (
     _open_of,
     plan_qty_of,
 )
+from app.services.scm import ladder_steps
 from app.services.scm import priority
 from app.services.scm import sales_agent_service
 from app.services.scm import supply_assignment
@@ -3335,7 +3336,8 @@ class FulfilmentBoardService:
             []
             if outside_window
             else self.supply.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_open, pool=True
+                fact, as_of=as_of, borrow_left=borrow_open, pool=True,
+                location_only=not ladder_steps.ORDER_BORROW_NAMES_DONOR,
             )
         )
         # LADDER V8 (R-B, R-L, R-N): what the CHAIN can offer this line is each pool's own
@@ -3421,11 +3423,18 @@ class FulfilmentBoardService:
                 own_left=own_group_open,
             )
         )
+        # Use incoming is disabled (`ladder_steps`): the question offers what the walk read.
+        group_take_candidates = ladder_steps.without_water(group_take_candidates)
+        other_group_candidates = ladder_steps.without_water(other_group_candidates)
         # What the group has ON THE WATER, both halves. The timely half is already inside
         # `group_take_candidates`; the late half is named in the sentence and drawn by
         # nobody (captain, 27 August 2026), because a promise landing after the required
         # date covers nothing and silence about it reads as "there is none".
-        group_water = [] if outside_window else self.supply.group_water_for(fact)
+        group_water = (
+            []
+            if outside_window or not ladder_steps.USE_INCOMING
+            else self.supply.group_water_for(fact)
+        )
         group_taken = took_at("group_take")
         # WHAT WAS ACTUALLY DRAWN, per component: the quantity, the location, and whether it
         # came off a floor or off the water. Read from `components` and not from the
@@ -3515,7 +3524,8 @@ class FulfilmentBoardService:
             # to the pool question: the proof has to be the answer the engine actually got,
             # not a fresh read of a donor an earlier unit has already spent.
             else self.supply.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_open
+                fact, as_of=as_of, borrow_left=borrow_open,
+                location_only=not ladder_steps.ORDER_BORROW_NAMES_DONOR,
             )
         )
         order_borrow_taken = took_at(RUNG_ORDER_BORROW)
@@ -3548,27 +3558,29 @@ class FulfilmentBoardService:
         # own smaller quantity, the proof offered a document the walk had refused.
         supply_borrow_candidates = (
             []
-            if outside_window
+            if outside_window or not ladder_steps.SUPPLY_BORROW
             else self.supply.supply_borrow_candidates_for(
                 fact, as_of=as_of, supply_left=supply_open, need=row.unit_qty
             )
         )
-        add(
-            RUNG_SUPPLY_BORROW,
-            "Can we borrow incoming from a later order?",
-            taken=took_at(RUNG_SUPPLY_BORROW),
-            offered=sum((_dec(c.get("qty")) for c in supply_borrow_candidates), _ZERO),
-            sources=drawn_at(RUNG_SUPPLY_BORROW),
-            eligible=not outside_window,
-            note=self._supply_borrow_note(supply_borrow_candidates),
-            why=lambda outcome: (
-                _RESERVE_WINDOW_RUNG_WHY
-                if outside_window
-                else self._supply_borrow_why(
-                    outcome, supply_borrow_candidates, components, window=window
-                )
-            ),
-        )
+        # Borrow incoming is disabled (`ladder_steps`): its question is hidden, not asked.
+        if ladder_steps.SUPPLY_BORROW:
+            add(
+                RUNG_SUPPLY_BORROW,
+                "Can we borrow incoming from a later order?",
+                taken=took_at(RUNG_SUPPLY_BORROW),
+                offered=sum((_dec(c.get("qty")) for c in supply_borrow_candidates), _ZERO),
+                sources=drawn_at(RUNG_SUPPLY_BORROW),
+                eligible=not outside_window,
+                note=self._supply_borrow_note(supply_borrow_candidates),
+                why=lambda outcome: (
+                    _RESERVE_WINDOW_RUNG_WHY
+                    if outside_window
+                    else self._supply_borrow_why(
+                        outcome, supply_borrow_candidates, components, window=window
+                    )
+                ),
+            )
 
         # ------------------------------------------- 4. Buy
         #

@@ -710,6 +710,13 @@ export interface ConfirmResult {
   lines_fulfilled_skipped?: number | null;
   /** Buys confirmed as decided over goods that landed for their line (#1362). */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed as decided while short
+   * of free stock on its undelivered part. Only what exists is held; purchasing is told.
+   */
+  stock_short_notices?: SupplyFailingLine[] | null;
+  /** Lines this press could not write, left out so the rest of the order confirmed. */
+  lines_held_back?: SupplyFailingLine[] | null;
 }
 
 export interface FulfilmentPlanningListEnvelope {
@@ -2555,6 +2562,20 @@ export interface ConfirmManyOrderBody {
   only_line_ids?: string[];
 }
 
+/**
+ * One order of a Simulate confirm: a never-planned order is named by its CORE
+ * `sales_order_id` (no `pso_id`) and its lines carry `pending-adoption:<core line id>`; the
+ * server adopts it inside the simulation and swaps each placeholder for the new mirror line.
+ */
+export type SimulateOrderBody = Omit<ConfirmManyOrderBody, 'pso_id'> & {
+  pso_id?: string;
+  sales_order_id?: string;
+};
+
+export interface SimulateConfirmBody extends Omit<ConfirmManyBody, 'orders'> {
+  orders: SimulateOrderBody[];
+}
+
 export interface ConfirmManyBody {
   orders: ConfirmManyOrderBody[];
   /**
@@ -2591,8 +2612,20 @@ export interface PreviewTransfer {
   to_location?: string | null;
 }
 
+/** One line the admin Simulate probe found failing on its own, with the server's raw reason. */
+export interface SimulatedLineError {
+  line_no?: number | null;
+  item_code?: string | null;
+  project_line_id: string;
+  error: string;
+}
+
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: the simulation adopted this never-planned order first. */
+  adopted?: boolean | null;
+  /** Simulate confirm only: lines that fail when run alone. */
+  simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
@@ -2636,6 +2669,8 @@ export interface ConfirmManyOrderResult {
    * purchasing adjusts it off the Buy's order inquiry row.
    */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /** The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE). */
+  stock_short_notices?: SupplyFailingLine[] | null;
   error?: string | null;
   failing_lines?: SupplyFailingLine[] | null;
 }

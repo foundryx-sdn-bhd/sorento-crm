@@ -130,6 +130,7 @@ def test_question_one_names_the_whole_line_rule_when_it_had_stock_but_not_enough
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_overdue_promise_that_still_lands_in_time_is_drawn_as_water_and_dated():
     """R-O (3 September 2026, #586) SUPERSEDES R31 (29 August 2026) for a document that is
     late but not dead.
@@ -210,6 +211,7 @@ def test_an_overdue_promise_that_still_lands_in_time_is_drawn_as_water_and_dated
         )
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_water_arriving_after_the_required_date_is_named_with_its_date_and_never_drawn():
     """THE CAPTAIN'S RULING ON THE WATER, second half: "30 on the water, arrives 1 Mar, not
     counted".
@@ -372,6 +374,7 @@ def _prose_strings(contribution) -> list:
     return out
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_trail_is_five_rows_with_no_leaked_rung_vocabulary_and_a_note_that_agrees():
     """AC-V1 shape (five rows, each with `answer` / `took` / `from` / `why`) plus two
     things the existing proof pins do not: a scan of EVERY rendered sentence in the whole
@@ -585,6 +588,7 @@ def test_a_board_of_76_lines_does_not_scale_its_query_count_with_the_line_count(
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_floor_and_the_water_of_question_one_come_off_one_ledger_at_confirm():
     """Review finding S6/S7. 80 owed, 40 on the floor and 40 on the water arriving in time:
     the group nets 0 and offers this line 80, which is exactly 40 + 40 and not 80 of each.
@@ -712,6 +716,7 @@ def test_the_composition_question_one_offered_confirms_without_complaint():
         )
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_water_is_drawn_at_the_location_it_is_coming_to_not_at_the_lines_own():
     """Review finding S2. The group's SPO used to be summed across every `*-<group>` site
     and booked wholesale at `fact.own_code`, so a cell read "40 from BRW-BB" beside a BRW-BB

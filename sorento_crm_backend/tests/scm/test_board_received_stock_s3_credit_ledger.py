@@ -189,7 +189,7 @@ def test_ac_s3_11_compose_never_covers_the_same_units_twice():
         ]["sources"]
 
 
-def test_ac_s3_11_confirm_never_covers_the_same_units_twice():
+def test_ac_s3_11_confirm_never_holds_the_same_units_twice():
     """AC-S3-11 confirm half: same world (on hand 40, one bin, two orders each needing 40,
     one with its own PO line received 40). A live `ProjectSupplyService.confirm()` covering
     ORDER B first (ordinary Reserve 40) and then ORDER A (own-arrival Reserve 40, asked for
@@ -202,11 +202,14 @@ def test_ac_s3_11_confirm_never_covers_the_same_units_twice():
     40. A's confirm then asks for the SAME 40 as an own-arrival Reserve, and
     `_check_reserve_against_on_hand` (R14) - independent of `_check_line`'s own
     ledger, the seam AC-S3-11's finding actually names - reads live `Stock` and B's now-real
-    hold and refuses A's ask as `ReserveOverHand` (409, `supply_reserve_over_hand`): "40 on
-    hand, 40 already reserved by ORDER B, you asked 40". The reverse order (A confirms
+    hold and finds 0 free: A confirms as decided, holds nothing and is recorded 40 short
+    (owner rule 12 Oct 2026, OI-CLOSED-LINE: a stock shortfall is a warning, never a
+    refusal), so the 40 units are held once, by B. The reverse order (A confirms
     first, B second) and a single `confirm()` call naming both of ONE order's two lines were
-    also measured and refused the same way; this test pins the shape closest to AC-S3-11's
-    own wording (two orders, B first).
+    also measured and recorded short the same way; this test pins the shape closest to
+    AC-S3-11's own wording (two orders, B first).
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     within_window = date.today() + timedelta(days=10)
     with blank_session() as db:
@@ -256,25 +259,34 @@ def test_ac_s3_11_confirm_never_covers_the_same_units_twice():
         line_a = _project_line(db, order_a, line_no=1, product=product, core_line=core_line_a)
         db.commit()
 
-        with pytest.raises(AppException) as refused:
-            ProjectSupplyService(db).confirm(
-                order_a,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=str(line_a.id),
-                            reserve=[{"warehouse_id": str(own.id), "qty": "40"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=actor,
-            )
-        assert refused.value.status_code == 409, refused.value.detail
-        assert refused.value.detail.get("code") == "supply_reserve_over_hand", (
-            refused.value.detail
+        result_a = ProjectSupplyService(db).confirm(
+            order_a,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=str(line_a.id),
+                        reserve=[{"warehouse_id": str(own.id), "qty": "40"}],
+                    ),
+                ]
+            ),
+            actor_user_id=actor,
         )
-        failing = refused.value.detail.get("failing_lines") or []
-        assert failing and "40" in failing[0]["reason"], failing
+        [notice] = result_a["stock_short_notices"]
+        assert notice["line_no"] == 1, notice
+        assert f"only 0 free at {own.warehouse_code}" in notice["reason"], notice
+        assert ", 40 short" in notice["reason"], notice
+        from app.models.project_so import SOLineAllocation
+
+        db.expire_all()
+        held = {
+            row.so_line_id: Decimal(str(row.qty))
+            for row in db.query(SOLineAllocation).filter(
+                SOLineAllocation.so_line_id.in_([line_a.id, line_b.id])
+            )
+        }
+        assert held == {line_b.id: Decimal("40")}, (
+            "the 40 on hand are held once, by the order that confirmed first"
+        )
 
 
 # ============================================================================
@@ -355,10 +367,13 @@ def test_confirm_credit_is_stated_through_the_capacity_ledger():
     file's own docstring above, never by the netted 40). `proposal_for` composes it
     Reserve 40 (own_arrival) + Buy 40 - the credit alone does not clear the whole 80.
 
-    A confirm posting Reserve 80 at that bin must be REFUSED: the bin truly holds only
-    40 free once the earlier, competing demand is honoured, and the credit is a second
-    STATEMENT about that same physical pile ("this line's own PO put at least 40 of it
-    there"), not a second, additional 40 stacked on top of the ordinary reading.
+    A confirm posting Reserve 80 at that bin holds only 40 and records 40 short: the bin
+    truly holds only 40 free once the earlier, competing demand is honoured, and the credit
+    is a second STATEMENT about that same physical pile ("this line's own PO put at least 40
+    of it there"), not a second, additional 40 stacked on top of the ordinary reading. If
+    the two were summed the line would hold 80 and report nothing short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
 
     R14 (`_check_reserve_against_on_hand`) cannot be the guard that catches this: the
     competing line is an open, UNCONFIRMED core SO line with no `SOLineAllocation` of its
@@ -426,27 +441,35 @@ def test_confirm_credit_is_stated_through_the_capacity_ledger():
             f"components={components}"
         )
 
-        with pytest.raises(AppException) as refused:
-            ProjectSupplyService(db).confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=str(line.id),
-                            reserve=[{"warehouse_id": str(own.id), "qty": "80"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=actor,
-            )
-        assert refused.value.status_code == 409, refused.value.detail
-        failing = refused.value.detail.get("failing_lines") or []
-        assert failing and str(line.line_no) == str(failing[0].get("line_no")), failing
-        reason = (failing[0].get("reason") or "") if failing else ""
-        assert "40" in reason and "80" in reason, (
-            "the bin's true free floor (40, the ordinary reading and the credit stating "
-            f"the SAME pile, never their sum) refuses an 80-unit ask: reason={reason!r}"
+        result = ProjectSupplyService(db).confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=str(line.id),
+                        reserve=[{"warehouse_id": str(own.id), "qty": "80"}],
+                    ),
+                ]
+            ),
+            actor_user_id=actor,
         )
+        [notice] = result["stock_short_notices"]
+        assert str(line.line_no) == str(notice["line_no"]), notice
+        reason = notice["reason"]
+        assert f"only 40 free at {own.warehouse_code}" in reason and ", 40 short" in reason, (
+            "the bin's true free floor (40, the ordinary reading and the credit stating "
+            f"the SAME pile, never their sum) caps an 80-unit ask: reason={reason!r}"
+        )
+        from app.models.project_so import SOLineAllocation
+
+        db.expire_all()
+        held = sum(
+            (Decimal(str(row.qty)) for row in db.query(SOLineAllocation).filter(
+                SOLineAllocation.so_line_id == line.id
+            )),
+            Decimal("0"),
+        )
+        assert held == Decimal("40"), "held once at the stated floor, never 80 off a pile of 40"
 
 
 def test_confirm_credit_reserve_within_capacity_is_accepted():

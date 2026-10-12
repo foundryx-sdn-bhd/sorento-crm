@@ -1634,6 +1634,7 @@ def test_apply_uncovers_a_replan_line_instead_of_letting_confirm_carry_it_forwar
     assert buy_row_b.state == INQUIRY_CANCELLED
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_build_batch_proposal_for_a_covered_replan_row_is_the_boards_full_contribution(api):
     """Captain, 19 August 2026: the trail popover on an `advanced` row showed nothing - the
     row's `proposal_json` had one source and `trail: []`. Root cause: the ACTIVE decision
@@ -2030,11 +2031,15 @@ def test_apply_of_an_already_challenged_revision_still_reports_its_bystanders(ap
     assert returned["reason"] != "Reconfirmed by CS."
 
 
-def test_apply_of_a_genuinely_unconfirmable_target_line_still_fails_with_its_reason(api):
+def test_apply_of_a_target_line_whose_pool_was_claimed_applies_holding_nothing_and_records_the_short(api):
     """The fix above stops a BYSTANDER line from being re-validated - it must not also stop
-    the line the batch actually decided from being checked. A target line whose own
-    composition no longer clears live facts (its Reserve pool was claimed by a rival between
-    the decision and Apply) still refuses, and nothing is written for that order."""
+    the line the batch actually decided from being checked. A target line whose Reserve pool
+    was claimed by a rival between the decision and Apply is still re-read against live
+    facts: it applies as decided, holds nothing (0 free) and the active decision records the
+    5 short on that line.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     _stock(db, world.product, world.pool_wh, on_hand=5)
@@ -2091,6 +2096,109 @@ def test_apply_of_a_genuinely_unconfirmable_target_line_still_fails_with_its_rea
         .one()
     )
     pool_stock.quantity_reserved = pool_stock.quantity_on_hand
+    db.commit()
+
+    result = planning_change_service.apply(db, str(batch.id), world.actor)
+    db.commit()
+    assert result["failed_orders"] == [], result["failed_orders"]
+    assert result["applied_orders"] == [core_so.so_number]
+
+    from app.models.planning_change import PlanningChangeRow as PlanningChangeRowModel
+    from app.models.project_so import SOLineAllocation, SOSupplyDecision
+
+    row_model = db.query(PlanningChangeRowModel).filter(
+        PlanningChangeRowModel.id == row["id"]
+    ).one()
+    assert row_model.applied_state == "applied", row_model.applied_reason
+
+    # The new active revision carries the shortfall on THIS line, with the right figure,
+    # and no unit of the claimed pool is held for it.
+    decision = (
+        db.query(SOSupplyDecision)
+        .filter(SOSupplyDecision.project_sales_order_id == order.id,
+                SOSupplyDecision.state == "active")
+        .one()
+    )
+    assert decision.revision_no == 2
+    snap = next(s for s in decision.line_snapshots if s["project_line_id"] == str(line.id))
+    assert [Decimal(str(entry["short"])) for entry in snap["stock_short"]] == [Decimal("5")]
+    held_at_pool = (
+        db.query(SOLineAllocation)
+        .filter(SOLineAllocation.decision_id == decision.id,
+                SOLineAllocation.warehouse_id == world.pool_wh.id)
+        .all()
+    )
+    assert sum((a.qty for a in held_at_pool), Decimal("0")) == Decimal("0")
+
+
+def test_apply_of_a_target_line_whose_components_no_longer_add_up_still_fails_with_its_reason(api):
+    """The structural half of the check above: Apply is never held back, so a target line
+    whose hand-amended components no longer add up to what the line is open for (the line
+    shrank between the decision and Apply) still fails the order with its reason, and
+    nothing is written for it. A stock shortfall no longer does this; arithmetic still does.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
+    client, world = api
+    db = world.db
+    _stock(db, world.product, world.pool_wh, on_hand=5)
+    core_so = _core_so(db, world.company_id)
+    core_line = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="10",
+                            required_date=date(2026, 9, 4))
+    order = _project_so(db, world.project, so_id=core_so.id, status=SO_STATUS_PUBLISHED,
+                         autocount_doc_no=core_so.so_number)
+    line = _project_line(db, order, line_no=1, product=world.product, core_line=core_line)
+    db.commit()
+
+    _confirm(client, order.id, {"lines": [
+        _line_payload(line.id, buy_qty="10", buy_reason="Nothing free elsewhere."),
+    ]})
+
+    core_line.qty_ordered = Decimal("15")
+    db.flush()
+    changed = _diff_change(
+        QTY_CHANGED, core_line, doc_number=core_so.so_number, item_code="ZZT-TARGET",
+        location=world.own_wh.warehouse_code, old_date=date(2026, 9, 4),
+        new_date=date(2026, 9, 4), old_qty="10", new_qty="15",
+    )
+    diff = Diff(scope_documents=(core_so.so_number,), changes=[changed])
+    batch = planning_change_service.build_batch(
+        db, diff, applied_line_ids={id(changed): str(core_line.id)},
+        order_ids={core_so.so_number: str(core_so.id)}, actor=world.actor,
+        import_job_id=None, file_name="book.xlsx",
+    )
+    db.commit()
+    out = planning_change_service.get_batch(db, str(batch.id))
+    row = out["orders"][0]["rows"][0]
+    assert row["suggestion"]["components"], row["suggestion"]
+
+    # A hand-amended composition: the extra 5 comes off the pool, 10 stays Buy - legal
+    # shape at PUT time (totals to the 15 the line is open for).
+    planning_change_service.set_row_decision(
+        db, str(batch.id), row["id"], "amend",
+        composition={
+            "project_line_id": str(line.id),
+            "timely_spo_qty": "0",
+            "reserve": [{"warehouse_id": world.pool_wh.id, "qty": "5"}],
+            "borrow": [],
+            "buy_qty": "10",
+            "buy_reason": "Nothing free elsewhere.",
+            "amend_reason": "The extra 5 comes off the pool.",
+        },
+    )
+    db.commit()
+
+    # A rival claims the pool dry before Apply runs.
+    pool_stock = (
+        db.query(Stock)
+        .filter(Stock.product_id == world.product.id, Stock.warehouse_id == world.pool_wh.id)
+        .one()
+    )
+    pool_stock.quantity_reserved = pool_stock.quantity_on_hand
+    db.commit()
+
+    # The line shrinks back to 12: reserve 5 + buy 10 is now 15 against an open qty of 12.
+    core_line.qty_ordered = Decimal("12")
     db.commit()
 
     result = planning_change_service.apply(db, str(batch.id), world.actor)

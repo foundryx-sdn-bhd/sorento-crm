@@ -4,7 +4,7 @@
 2026: focused extractor". The parser only ROUTES a chat report; this one small, schema-forced
 call reads the message into `{group_by, measure, subject, top_n, date_from, date_to}`.
 
-Same plumbing as `ideation_extractor`: `get_provider` + `resolve_api_key`, the prompt from the
+The call goes through the chatbot's one provider wrapper (`llm_call.chat`) with `resolve_api_key`, the prompt from the
 registry (`chat_report_extractor`, code fallback), the per-key model override. Any failure (no
 key, provider error, timeout, output outside the contract) returns None and is logged; it never
 raises, so the lane can say one clear line instead of hanging.
@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.services import ai_prompt_registry
 from app.services.chatbot import llm_call
 from app.services.ai_assistant_service import AIAssistantConfigService
-from app.services.llm_provider import get_provider, resolve_api_key, resolve_model
+from app.services.llm_provider import resolve_api_key, resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -176,14 +176,15 @@ def extract_chat_report(
         system = system.replace("{today}", today.isoformat()).replace("{domains}", "; ".join(_describe(d) for d in domains))
         system = system.replace("{brands}", "; ".join(_brands(db)))
         system = system.replace("{categories}", "; ".join(_category_kinds(db)))
-        provider = get_provider(provider_name, api_key, model=model)
-        result = provider.chat(
+        result = llm_call.chat(
+            provider_name,
+            api_key,
+            model,
             [
                 {"role": "system", "content": system},
                 {"role": "user", "content": f"{_open_block(open_ask)}\n\nMessage: {raw}" if open_ask else raw},
             ],
             temperature=0.0,
-            model=model,
             max_tokens=256,
             timeout=llm_call.ATTEMPT_TIMEOUT_SECONDS,
             json_schema=_schema(codes),
