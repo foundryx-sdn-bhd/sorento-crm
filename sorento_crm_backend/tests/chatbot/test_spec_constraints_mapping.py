@@ -107,15 +107,66 @@ def test_c3_a_specification_without_a_value_is_not_mapped(vdb):
     assert not [c for c in out if c["key"] == "finish"]
 
 
-def test_c7_the_subject_is_decided_by_category_data_with_no_code_side_word_rules(vdb):
-    """Reviewer round. `_subject_constraint` / `_exact_classes` today read a plural in the singular
-    in code (`phrase[-1][:-1]`, `said[:-1]`). Contract: category and registry data decide, code adds
-    no word rules. A seeded class label maps; the same word with a trailing "s" that is neither a
-    label nor a synonym maps to nothing (the ask stays on the resolver path).
+def _shared_reader_constraint(db, raw):
+    """What the SHARED readers say about a category raw, with none of the lane's own rules:
+    the grounding vocabulary's `product_type` phrases (`ground_words`), else the class
+    vocabulary's `_exact_classes` (which reads a plural in the singular itself)."""
+    from app.services.chatbot.head.grounding import ground_words, load_vocabulary
+    from app.services.product_spec_search import _exact_classes
 
-    A made-up class ("Zzt Gizmo") is used rather than "basin", because the built-in class
-    vocabulary (`CLASS_SYNONYMS`) already lists "basin" and would answer for a plural too.
-    RED: the plural maps to the class, via the code-side "s" strip."""
+    found, _used = ground_words(raw, load_vocabulary(db))
+    types = [g for g in found if g.key == "product_type" and g.value is not None]
+    if len(types) == 1:
+        return {"key": "product_type", "op": "eq", "value": types[0].value}
+    classes = _exact_classes(db, raw) or []
+    if classes:
+        return {"key": "class", "op": "eq", "value": classes[0] if len(classes) == 1 else list(classes)}
+    return None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Zzt Gizmo",
+        "zzt gizmos",
+        "ZZT GIZMO",
+        "basins",
+        "no such thing",
+        "jacuzzi",
+        "jacuzzis",
+    ],
+)
+def test_c7_the_lane_subject_equals_what_the_shared_class_readers_say(vdb, raw):
+    """Captain ruling (plural reading stays in the shared `_exact_classes`; the headline ask is
+    "which basins are on promotion"): the LANE adds no word rules of its own. Whatever the shared
+    readers produce for a raw is exactly the subject constraint, no more and no less.
+
+    Seeded: a made-up class "Zzt Gizmo" and a Wash Basin class with synonym "basin" (the plural
+    "basins" is read by the shared reader, so it must keep mapping). RED for "jacuzzi" and
+    "jacuzzis": no category carries that class, the shared readers map nothing, but the lane's own
+    `CLASS_SYNONYMS` fallback (and its own `said[:-1]` strip) turns them into class "Jacuzzi"."""
+    import uuid
+
+    from app.models.product import ProductCategory
+    from app.services.chatbot.lanes.business.fetch import spec_constraints_for
+
+    for label, synonyms in (("Zzt Gizmo", []), ("Wash Basin", ["basin"])):
+        vdb.add(
+            ProductCategory(
+                id=str(uuid.uuid4()), category_code=f"ZZT{uuid.uuid4().hex[:6].upper()}-X",
+                category_name=f"ZZT {label} category", class_label=label, is_searchable=True,
+                search_synonyms=list(synonyms),
+            )
+        )
+    vdb.commit()
+
+    expected = _shared_reader_constraint(vdb, raw)
+    got = spec_constraints_for(_ask(_category(raw)), vdb)
+    assert got == ([expected] if expected else None), (raw, expected, got)
+
+
+def test_c7b_the_headline_plural_still_maps_through_the_shared_reader(vdb):
+    """Guard: "basins" with a seeded Wash Basin class (synonym "basin") keeps mapping."""
     import uuid
 
     from app.models.product import ProductCategory
@@ -123,16 +174,15 @@ def test_c7_the_subject_is_decided_by_category_data_with_no_code_side_word_rules
 
     vdb.add(
         ProductCategory(
-            id=str(uuid.uuid4()), category_code=f"ZZT{uuid.uuid4().hex[:6].upper()}-GZ",
-            category_name="ZZT gizmo category", class_label="Zzt Gizmo", is_searchable=True, search_synonyms=[],
+            id=str(uuid.uuid4()), category_code=f"ZZT{uuid.uuid4().hex[:6].upper()}-WB",
+            category_name="ZZT basin category", class_label="Wash Basin", is_searchable=True,
+            search_synonyms=["basin"],
         )
     )
     vdb.commit()
-
-    single = spec_constraints_for(_ask(_category("zzt gizmo")), vdb)
-    assert single == [{"key": "class", "op": "eq", "value": "Zzt Gizmo"}], single
-
-    assert spec_constraints_for(_ask(_category("zzt gizmos")), vdb) is None
+    assert spec_constraints_for(_ask(_category("basins")), vdb) == [
+        {"key": "class", "op": "eq", "value": "Wash Basin"}
+    ]
 
 
 # ------------------------------------------------------------------ entity_ids_transformer
