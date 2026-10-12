@@ -67,6 +67,14 @@ def test_a10_guard_a_sales_analysis_naming_another_basis_is_not_narrowed(console
         assert not sent.get("product_code_exact"), sent
 
 
+def test_a11_guard_a_sales_analysis_naming_a_company_is_not_narrowed(console, monkeypatch) -> None:
+    _hold(console, monkeypatch)
+    seen = _route_calls(console, monkeypatch, lambda args: _present(EMPTY_REPORT))
+    console.say(_exact_verdict(order_status="sales_analysis", sales_company="Mocha"), "Mocha sales of this model")
+    for sent in _sent(seen):
+        assert not sent.get("product_code_exact"), sent
+
+
 # ================================================================================ B
 
 YEAR = {"date_filter_start": "2026-01-01", "date_filter_end": "2026-12-31"}
