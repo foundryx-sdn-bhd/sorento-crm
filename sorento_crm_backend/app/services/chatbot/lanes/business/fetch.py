@@ -213,6 +213,13 @@ def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
     return None
 
 
+def carries_size(spec_constraints: Any) -> bool:
+    """Does the list hold the virtual `size` key (the route resolves its axis)?"""
+    from app.services.chatbot.head.grounding import SIZE_KEY
+
+    return any(isinstance(c, dict) and c.get("key") == SIZE_KEY for c in jsc.array(spec_constraints))
+
+
 def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | None:
     """The described ask as `spec_constraints` (card section 9, slices 2 and 3): the subject
     (the category / product type entity, mapped through registry data, never matched

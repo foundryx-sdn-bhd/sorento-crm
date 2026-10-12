@@ -1724,6 +1724,13 @@ def run_fetch(
         if db is not None and jsc.js_string(domain or "") in fetch_mod.SPEC_CONSTRAINT_DOMAINS
         else None
     )
+    if spec_constraints and jsc.js_string(domain or "") != "promotion" and not fetch_mod.carries_size(spec_constraints):
+        # On the product and stock lanes the resolver's described set already applies the
+        # subject and every registry key exactly (`extracted_specs`), with the counted-set
+        # answer the owner ruled on (header, brand lines, count-and-ask). Only the virtual
+        # size never reaches it (`resolve_gate`), so only a size ask hands the filtering to
+        # the route. A promotion ask with a subject always does (owner Q4: one path).
+        spec_constraints = None
     if spec_constraints:
         semantic_input["spec_constraints"] = spec_constraints
         if trace is not None:
