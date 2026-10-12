@@ -463,3 +463,24 @@ def test_r_hm_guard_no_mm_measure_no_size(vdb, ents):
     """Guard: a code with digits, a subject with no number, a number in another unit."""
     verdict = _ground(vdb, *ents(), message="got stock?")
     assert not [s for s in _specs(verdict["entities"]) if s.get("spec_key") == "size"], verdict["entities"]
+
+
+@pytest.mark.parametrize("ents", [
+    lambda: [_category("1.2mm kitchen sink"), _spec_entity("1.2mm thick", "thickness", 1.2)],
+    lambda: [_product("1.2mm"), _category("kitchen sink"), _spec_entity("1.2mm thick", "thickness", 1.2)],
+])
+def test_r_hm_b1_a_number_the_parser_already_keyed_is_not_also_a_size(vdb, ents):
+    """Reviewer B1: the parser repeated the measure in the subject's words AND emitted it as a
+    thickness. A second, size reading of the same number turned a thickness ask into a size ask
+    (no counted set, no 1.2 mm sinks). The parser's key stands."""
+    verdict = _ground(vdb, *ents(), message="1.2mm thick kitchen sink got stock?")
+    keys = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("size", 1.2) not in keys, verdict["entities"]
+    assert ("thickness", 1.2) in keys, verdict["entities"]
+
+
+def test_r_hm_s1_an_axis_said_in_the_message_names_the_key(vdb):
+    """Reviewer S1: "600mm length basin got stock?" with the parser's category "600mm basin" and
+    no pair: the customer named the axis, so it is Length, never any axis."""
+    verdict = _ground(vdb, _category("600mm basin", "basin"), message="600mm length basin got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("dim_length", 600)], verdict["entities"]

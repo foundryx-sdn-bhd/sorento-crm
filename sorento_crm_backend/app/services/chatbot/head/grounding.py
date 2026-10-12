@@ -819,6 +819,12 @@ def ground(
             )
             and not str(entity.get("spec_key") or "").strip()
             and (measure := _measure_in(raw, vocab)) is not None
+            # Reviewer B1: the parser already keyed this number elsewhere ("1.2mm kitchen sink"
+            # beside a thickness 1.2): its key stands, never a second, size reading.
+            and not any(
+                isinstance(e, dict) and e is not entity and e.get("spec_value") == measure
+                for e in entities
+            )
         ):
             # SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser left the
             # size in the subject's words with no spec pair ("250mm floor grating", "600mm
@@ -826,7 +832,17 @@ def ground(
             # left alone, the canonical swap dropped it or the words named no type. Only a
             # type said exactly beside the measure; any other word ("thicnkess", round 10
             # "exact only") leaves the words as they were.
-            entity = {**entity, "spec_key": SIZE_KEY, "spec_value": measure}
+            # Reviewer S1: an axis the customer said in the message ("600mm length basin") is the
+            # key, read by the registry's word reader as `_spec_of_category` reads it.
+            said_axis = next(
+                (
+                    g.key
+                    for g in (ground_words(message, vocab)[0] if message and entity.get("current_message") is not False else [])
+                    if (g.unit or "").lower() == "mm" and g.value == measure
+                ),
+                None,
+            )
+            entity = {**entity, "spec_key": said_axis or SIZE_KEY, "spec_value": measure}
         if (hint in _CLASS_HINTS or hint == _PRODUCT_HINT) and str(entity.get("spec_key") or "").strip() and entity.get("spec_value") not in (None, ""):
             # SPEC-PROMO-PARAMS hand test step 1 (owner, 12 Oct 2026, "600mm basin got stock?"):
             # a spec pair the parser put ON the category entity is a specification of the ask.

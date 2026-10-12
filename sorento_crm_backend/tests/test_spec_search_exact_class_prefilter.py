@@ -4,8 +4,9 @@ then dropped in Python each one whose stored class the words did not name. Profi
 seeded products: 1.5 s of the resolver's 2.0 s, for a size ask whose candidates the lane
 then discards (the route filters by `spec_constraints`).
 
-The class test now runs in SQL as well, so only the named class is loaded. The answer is
-the same; the rows read are fewer. Made-up codes only (ZZT-SXP-*).
+The class test now runs in SQL as well, so only the named class is loaded. The candidates are
+the same (a variant family whose parent holds another class aside, reviewer S2); the rows
+read are fewer. Made-up codes only (ZZT-SXP-*).
 """
 from __future__ import annotations
 
