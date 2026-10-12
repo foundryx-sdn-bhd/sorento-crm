@@ -228,22 +228,19 @@ def test_ac_6_9_reserve_covered_by_delivered_qty_needs_no_free_stock_and_holds_n
     assert _held_qty(world.db, line) == Decimal("0")
 
 
-def test_ac_7_only_the_delivered_part_is_exempt_zero_free_is_refused(api):
-    """AC-7 (refusal half): ordered 10, delivered 4, Reserve 10 at 0 free is refused as
-    today: the 6 undelivered units need stock."""
+def test_ac_7_short_undelivered_part_confirms_as_decided_with_a_warning(api):
+    """AC-7, owner rule 12 Oct 2026 (an undelivered shortfall is a warning, never a block):
+    ordered 10, delivered 4, Reserve 10 at 0 free CONFIRMS as decided, holds nothing, and
+    the result and the decision both say 6 were short."""
     client, world, order, line = _confirm_world(
         api, ordered="10", delivered="4", on_hand=10, reserved=10
     )
 
     response = _reserve(client, world, order, line, "10")
 
-    assert response.status_code in (409, 422), response.text
-    failing = response.json()["failing_lines"]
-    assert any(
-        "has nothing free for this line now" in e["reason"]
-        or "now has 0 free for this line" in e["reason"]
-        for e in failing
-    ), failing
+    assert response.status_code == 200, response.text
+    assert _held_qty(world.db, line) == Decimal("0")
+    _assert_short(response, world, order, line, short="6", free="0")
 
 
 def test_ac_7_9_only_the_delivered_part_is_exempt_six_free_succeeds_and_holds_six(api):
@@ -259,16 +256,18 @@ def test_ac_7_9_only_the_delivered_part_is_exempt_six_free_succeeds_and_holds_si
     assert _held_qty(world.db, line) == Decimal("6")
 
 
-def test_ac_8_a_line_with_nothing_delivered_is_rechecked_as_today(api):
-    """AC-8: nothing delivered, 5 free, Reserve 10 is an over-reserve and is refused."""
+def test_ac_8_nothing_delivered_short_reserve_confirms_holding_what_is_free(api):
+    """AC-8, owner rule 12 Oct 2026: nothing delivered, 5 free, Reserve 10 confirms as
+    decided, holds the 5 that exist and records 5 short."""
     client, world, order, line = _confirm_world(
         api, ordered="10", delivered="0", on_hand=10, reserved=5
     )
 
     response = _reserve(client, world, order, line, "10")
 
-    assert response.status_code in (409, 422), response.text
-    assert response.json()["failing_lines"], response.text
+    assert response.status_code == 200, response.text
+    assert _held_qty(world.db, line) == Decimal("5")
+    _assert_short(response, world, order, line, short="5", free="5")
 
 
 def test_ac_6_borrow_covered_by_delivered_qty_needs_no_free_stock(api):
@@ -430,15 +429,18 @@ def test_ac_7_r14_guard_partial_delivery_with_six_left_by_the_holder_succeeds(ap
     assert response.status_code == 200, response.text
 
 
-def test_ac_7_r14_guard_partial_delivery_with_five_left_by_the_holder_is_refused(api):
-    """AC-7 via R14: holder B leaves only 5 free, 6 undelivered units need stock: refused."""
+def test_ac_7_r14_guard_partial_delivery_with_five_left_by_the_holder_warns(api):
+    """AC-7 via R14, owner rule 12 Oct 2026: holder B leaves only 5 free, 6 undelivered
+    units asked: confirms, holds 5, records 1 short, never refuses the order."""
     client, world, order_a, line_a = _holder_world(
         api, holder_qty="5", ordered_a="10", delivered_a="4"
     )
 
     response = _reserve(client, world, order_a, line_a, "10")
 
-    assert response.status_code in (409, 422), response.text
+    assert response.status_code == 200, response.text
+    assert _held_qty(world.db, line_a) == Decimal("5")
+    _assert_short(response, world, order_a, line_a, short="1", free="5")
 
 
 def _holds_by_warehouse(db, line):
@@ -482,13 +484,19 @@ def test_credit_front_first_the_written_holds_match_what_was_checked(api):
     assert holds.get(donor.id) == Decimal("4"), holds
 
 
-def test_credit_front_first_borrow_beyond_the_donor_is_refused(api):
-    """Same shape, donor has only 3 free for the 4 borrowed: refused (consistent check)."""
+def test_credit_front_first_borrow_beyond_the_donor_warns(api):
+    """Same shape, donor has only 3 free for the 4 borrowed. Owner rule 12 Oct 2026: the
+    line confirms, the donor holds the 3 it has, and 1 is recorded short."""
     client, world, donor, line, response = _reserve_and_borrow_world(
         api, pool_free=2, donor_free=3
     )
 
-    assert response.status_code in (409, 422), response.text
+    assert response.status_code == 200, response.text
+    holds = _holds_by_warehouse(world.db, line)
+    assert holds.get(world.pool_wh.id) == Decimal("2"), holds
+    assert holds.get(donor.id) == Decimal("3"), holds
+    notices = response.json()["stock_short_notices"]
+    assert notices and "only 3 free" in notices[0]["reason"], notices
 
 
 def test_ac_9_an_adopted_unowned_hold_never_pushes_the_total_hold_past_what_is_owed(api):
@@ -514,3 +522,128 @@ def test_ac_9_an_adopted_unowned_hold_never_pushes_the_total_hold_past_what_is_o
 
     assert response.status_code == 200, response.text
     assert _held_qty(db, line) <= Decimal("6"), _held_qty(db, line)
+
+
+# ------------------------------------------------- owner rule 12 Oct: warn, never block
+
+
+def _assert_short(response, world, order, line, *, short, free):
+    """The shortfall is said in three places: the Confirm result, the decision snapshot,
+    and (see the email test) the purchasing handover."""
+    from app.models.project_so import SOSupplyDecision
+
+    notices = response.json()["stock_short_notices"]
+    assert notices and len(notices) == 1, response.text
+    assert notices[0]["line_no"] == line.line_no
+    assert f"only {free} free" in notices[0]["reason"], notices
+    assert f"{short} short" in notices[0]["reason"], notices
+    world.db.expire_all()
+    active = (
+        world.db.query(SOSupplyDecision)
+        .filter(
+            SOSupplyDecision.project_sales_order_id == order.id,
+            SOSupplyDecision.state == "active",
+        )
+        .one()
+    )
+    snap = next(
+        s for s in active.line_snapshots if s["project_line_id"] == str(line.id)
+    )
+    assert snap.get("stock_short"), snap
+    assert Decimal(str(snap["stock_short"][0]["short"])) == Decimal(short), snap
+
+
+def test_owner_example_delivered_line_reserve_98_and_order_back_2_over_77_free(api):
+    """SO424764 line 144's shape (fake codes): plan 100, delivered 100, the pool shows 77
+    free. CS decides Reserve 98 + order back 2. The delivered part is never capped, so this
+    confirms with no warning and holds nothing (nothing is still owed)."""
+    client, world, order, line = _confirm_world(
+        api, ordered="100", delivered="100", on_hand=77, reserved=0
+    )
+    payload = _line_payload(
+        line.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "98"}], buy_qty="2",
+        amend_reason="98 used from BB, 2 order back.",
+    )
+    payload["order_back"] = True
+
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm", json={"lines": [payload]}
+    )
+
+    assert response.status_code == 200, response.text
+    assert not response.json().get("stock_short_notices"), response.text
+    # No STOCK is held (nothing is still owed); the order back's own Buy row is not stock.
+    assert _holds_by_warehouse(world.db, line).get(world.pool_wh.id) in (None, Decimal("0"))
+
+
+def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
+    """Owner rule 12 Oct 2026: the shortfall is listed in the purchasing email that the
+    Confirm already sends, as its own line (no purchasing row is raised for it)."""
+    client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    client, world, order, line = _confirm_world(
+        api, ordered="10", delivered="0", on_hand=10, reserved=5
+    )
+    calls.clear()
+
+    response = _reserve(client, world, order, line, "10")
+
+    assert response.status_code == 200, response.text
+    handover = _handover_calls(calls)
+    assert len(handover) == 1, [c["trigger_type"] for c in calls]
+    context = handover[0]["context"]["handover"]
+    assert "STOCK SHORT" in context["verbs"], context["verbs"]
+    short_lines = [e for e in context["lines"] if "short" in (e.get("remark") or "").lower()]
+    assert len(short_lines) == 1, context["lines"]
+    assert short_lines[0]["qty"] == "5", short_lines[0]
+    world.db.expire_all()
+    assert (
+        world.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id).count()
+        == 0
+    ), "a shortfall raises no purchasing row"
+
+
+def test_one_line_that_cannot_be_written_is_held_back_and_the_rest_confirms(api):
+    """Owner rule 12 Oct 2026: one bad line never refuses the whole order. Line 10 is a
+    good Reserve; line 20's components do not add up. Line 10 confirms and holds; line 20
+    is named in `lines_held_back`."""
+    client, world = api
+    _stock(world.db, world.product, world.pool_wh, on_hand=50)
+    core_so = _core_so(world.db, world.company_id)
+    order = _project_so(world.db, world.project, so_id=core_so.id, autocount_doc_no=core_so.so_number)
+    lines = []
+    for line_no in (10, 20):
+        core = _core_line(
+            world.db, core_so, world.product, world.own_wh, qty_ordered="10",
+            qty_delivered="0", required_date=IN_WINDOW,
+        )
+        lines.append(_project_line(world.db, order, line_no=line_no, product=world.product, core_line=core))
+    world.db.commit()
+    good, bad = lines
+
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm",
+        json={"lines": [
+            _line_payload(good.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "10"}]),
+            _line_payload(bad.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "3"}]),
+        ]},
+    )
+
+    assert response.status_code == 200, response.text
+    held_back = response.json()["lines_held_back"]
+    assert [entry["line_no"] for entry in held_back] == [20], held_back
+    assert _held_qty(world.db, good) == Decimal("10")
+    assert _held_qty(world.db, bad) == Decimal("0")
+
+
+def test_a_lone_line_that_cannot_be_written_is_still_refused(api):
+    """Nothing left to confirm: the one bad line is refused by name, as before."""
+    client, world, order, line = _confirm_world(
+        api, ordered="10", delivered="0", on_hand=10, reserved=0
+    )
+
+    response = _reserve(client, world, order, line, "3")
+
+    assert response.status_code in (409, 422), response.text
+    assert response.json()["failing_lines"], response.text
