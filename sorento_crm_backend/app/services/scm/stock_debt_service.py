@@ -1773,19 +1773,24 @@ class StockDebtService:
     # ------------------------------------------------------------------ the projection
 
     def _project_reserves(self) -> Dict[str, Warehouse]:
-        """Every active PROJECT RESERVE: a pool (some location's `pool_warehouse_id`, the
-        set the walk reads as pool) with `segment = project` (HQ-PROJECT-RESERVE, #1597:
-        HQ stock belongs to projects in general). A bin flagged for fulfilment planning is a
-        project bin, walked as one ("matched already"), so it is never read as a reserve.
+        """Every active PROJECT RESERVE, as HQ-PROJECT-RESERVE (#1597) defines it
+        (`pool_predicate.is_project_reserve`): a pool (some location's
+        `pool_warehouse_id`) with `segment = project`. Read per warehouse row, so one
+        company's HQ can be a reserve while another company's HQ stays a dealer pool; no
+        code is named.
 
-        Until #1597 lands its own predicate beside `pool_predicate.is_site_pool`, this is
-        the definition; no warehouse matches it until `HQ.segment = project` ships."""
-        return {
+        Today the pools come from `site_pool_warehouses()`. #1597 moves the reserves out of
+        that set into `project_reserve_warehouses()`; both are read, so this holds whichever
+        of the two PRs merges first (drop the first half once #1597 is on main)."""
+        reserves = {
             warehouse_id: row
             for warehouse_id, row in self.supply.site_pool_warehouses().items()
             if (row.segment or "dealer") == PROJECT_SEGMENT
-            and not row.fulfilment_planning
         }
+        own = getattr(self.supply, "project_reserve_warehouses", None)
+        if own is not None:
+            reserves.update(own())
+        return reserves
 
     def _projection_series(
         self,
@@ -1820,9 +1825,20 @@ class StockDebtService:
         """
         as_of = date.today()
         reserves = self._project_reserves()
-        reserve_codes = {row.warehouse_code for row in reserves.values()}
         outside = {wid: row for wid, row in reserves.items() if wid not in warehouses}
-        outside_codes = {row.warehouse_code for row in outside.values()}
+        # The reserve documents, by KEY (one PO line or SPO line each), read at the reserve
+        # warehouses' own ids: a code can name two warehouses (one HQ per company), and
+        # whether the walk flags a reserve as pool depends on #1597.
+        reserve_docs: Set[str] = set()
+        if reserves and product_ids:
+            codes = {wid: row.warehouse_code or wid for wid, row in reserves.items()}
+            for events in self._supply(
+                list(product_ids), list(reserves), codes, set(), as_of=as_of,
+                include_po=True, delivery_dated=True, documents_pin_only=True,
+            ).values():
+                reserve_docs.update(
+                    event.key for event in events if event.kind in (KIND_PO, KIND_SPO)
+                )
         walked = assignments
         if outside and product_ids:
             pools = {
@@ -1833,7 +1849,7 @@ class StockDebtService:
             caches = (self._event_cache, self._lead_cache)
             walked = self._assignments(
                 [(product_id, "", "") for product_id in product_ids],
-                {**warehouses, **pools},
+                {**warehouses, **pools, **outside},
                 date_to=date_to,
                 view=True,
             )
@@ -1848,12 +1864,15 @@ class StockDebtService:
                     continue
                 project[row.bucket] = project.get(row.bucket, 0.0) - row.short_at_date
             for event in page.supply:
-                if event.is_pool:
+                if event.is_pool or event.key in reserve_docs:
+                    # Pool stock counts only through a link (already in the lines); a
+                    # reserve document's unlinked part is the reserve term below.
                     continue
                 spare = page.free.get(event.key, 0.0)
                 if spare > 0:
                     month = month_key(effective_date(event.at, as_of))
                     project[month] = project.get(month, 0.0) + spare
+            on_page = {event.key for event in page.supply}
             result = walked[product_id]
             taken: Dict[str, float] = {}
             assigned_to: Dict[str, Dict[Tuple[str, Optional[int]], float]] = {}
@@ -1868,12 +1887,7 @@ class StockDebtService:
             left: Dict[str, float] = {}
             documents: List[SupplyEvent] = []
             for event in result.supply:
-                if not event.is_pool:
-                    continue
-                if event.warehouse not in reserve_codes or event.at is None:
-                    continue
-                if event.kind not in (KIND_PO, KIND_SPO):
-                    # Reserve on hand is the walk's business (#1597), never this layer's.
+                if event.key not in reserve_docs or event.at is None:
                     continue
                 qty = float(event.qty) - taken.get(event.key, 0.0)
                 left[event.key] = qty
@@ -1891,7 +1905,7 @@ class StockDebtService:
             if keep_events:
                 # The drill lists the reserve documents the page's own span does not show.
                 out[product_id]["events"] = [
-                    event for event in documents if event.warehouse in outside_codes
+                    event for event in documents if event.key not in on_page
                 ]
                 out[product_id]["left"] = left
                 out[product_id]["assigned_to"] = assigned_to

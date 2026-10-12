@@ -292,15 +292,13 @@ def test_date_from_does_not_hand_earlier_orders_reserve_stock(scm_app):
     assert by_key[month_key(start)] == 700.0
 
 
-def test_a_planning_bin_is_never_read_as_a_reserve(scm_app):
-    """A bin flagged for planning with `segment = project` that is its own pool is a
-    project location: under `group=BB` it is out of the span, and its unlinked PO is not
-    added as reserve supply."""
+def test_a_project_bin_is_never_read_as_a_reserve(scm_app):
+    """#1597's predicate: a reserve is a POOL with `segment = project`. A planning bin
+    with `segment = project` that no location names as its pool is a project bin: under
+    `group=BB` it is out of the span, and its unlinked PO is not added as reserve supply."""
     app, db = _client(scm_app)
     seed = _seed(db, hq_in_span=True)
     other = _warehouse(db, f"{seed['marker']}BRW-IB", planning=True, segment="project")
-    other.pool_warehouse_id = other.id
-    db.flush()
     _po_line(
         db, seed["product"], other, qty=500, delivery=TODAY - timedelta(days=4),
         number=f"{seed['marker']}-IBPO",
@@ -391,3 +389,41 @@ def test_the_project_figure_is_the_pages_own_whatever_the_reserve_walk_caps(scm_
         balances, _row_ = _projected(c, seed, "project")
     assert _balances(plain) == [-100.0, 0.0, -200.0, 0.0]
     assert balances == _balances(plain)
+
+
+def test_a_second_companys_hq_with_the_same_code_is_not_a_reserve(scm_app):
+    """Owner, 12 Oct: the reserve is per company, decided by warehouse settings alone.
+    Sorento's HQ is a reserve; a second company's warehouse with the SAME code, a dealer
+    self-pool holding an unlinked 700 PO of the same product, is not, so its PO is never
+    read as reserve supply (documents are told apart by key, never by code)."""
+    import uuid as _uuid
+
+    from app.models.company import Company
+    from app.models.inventory import Warehouse
+
+    app, db = _client(scm_app)
+    seed = _seed(db, hq_in_span=True, reserve=True)
+    other = Company(
+        id=str(_uuid.uuid4()), name="ZZT Mocha", code=f"ZM{_uuid.uuid4().hex[:6]}"
+    )
+    db.add(other)
+    db.flush()
+    twin = Warehouse(
+        id=_u(), warehouse_code=seed["hq"].warehouse_code,
+        warehouse_name=seed["hq"].warehouse_code, location="ZZT", is_active=True,
+        fulfilment_planning=False, segment="dealer", company_id=other.id,
+    )
+    db.add(twin)
+    db.flush()
+    twin.pool_warehouse_id = twin.id
+    db.flush()
+    line = _po_line(
+        db, seed["product"], twin, qty=700, delivery=TODAY - timedelta(days=4),
+        number=f"{seed['marker']}-MOCHAPO",
+    )
+    line.company_id = other.id
+    db.flush()
+    with TestClient(app) as c:
+        for book in BOOKS:
+            balances, row = _projected(c, seed, book)
+            assert balances == [900.0, 900.0, 700.0, 400.0], book
