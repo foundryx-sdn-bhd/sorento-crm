@@ -382,3 +382,20 @@ def test_s1_run_case_sends_the_empty_state_on_turn_one(session_factory, stub_par
     monkeypatch.setattr(me, "_envelope", _spy)
     run_case(json.loads(SAMPLE.read_text()), "sample", session_factory, stub_parser, monkeypatch)
     assert states == [{}], states
+
+
+def test_run_case_hands_the_previous_turn_reply_to_the_grader(session_factory, stub_parser, monkeypatch) -> None:
+    """The stuck check needs the reply before the graded one (`runner.py`'s previous bot reply)."""
+    import tests.chatbot.test_reports_replay as me
+
+    seen: list[Any] = []
+    real = me._grade
+
+    def _spy(spec, result, trace, previous_reply, user_texts):
+        seen.append(previous_reply)
+        return real(spec, result, trace, previous_reply, user_texts)
+
+    monkeypatch.setattr(me, "_grade", _spy)
+    payload = json.loads((IN_REPO_ROOT / "sample-ranking-period-answered-next-turn.json").read_text())
+    out = run_case(payload, "chain", session_factory, stub_parser, monkeypatch)
+    assert seen == [out["replies"][0]] and seen[0], (seen, out["replies"])
