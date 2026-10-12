@@ -36,6 +36,23 @@ pytestmark = requires_pg
 _PO_CANONICAL = re.compile(r"^PO-\d{4}/\d{2}-\d{4}$")
 
 
+def _ensure_po_numbering(db) -> None:
+    """The canonical `purchase_order` rule confirm numbers from. Migration 274 seeds it, but
+    a bootstrapped database (CI, `scripts/bootstrap_env.py`) has none, and confirm then keeps
+    the draft number. Seeded here, unscoped and inside the test's transaction, only when
+    the database holds no enabled rule of its own."""
+    exists = db.execute(text(
+        "SELECT 1 FROM document_numbering_rules WHERE doc_type = 'purchase_order' AND enabled"
+    )).first()
+    if exists is None:
+        db.execute(text(
+            "INSERT INTO document_numbering_rules (id, company_id, doc_type, enabled, "
+            "prefix_template, number_digits, next_value, start_value, reset_policy, "
+            "created_at, updated_at) VALUES (:id, NULL, 'purchase_order', true, "
+            "'PO-{year}/{month:02d}-', 4, 1, 1, 'monthly', now(), now())"
+        ), {"id": str(uuid.uuid4())})
+
+
 # ===========================================================================
 # fixture builders (all inside the savepoint)
 # ===========================================================================
@@ -317,6 +334,7 @@ def test_draft_excluded_from_on_order_until_confirmed(scm_app):
 
 def test_confirm_renumbers_draft_to_canonical_sequential(scm_app):
     _, db, _, _ = scm_app
+    _ensure_po_numbering(db)
     wid_code, a, b, c = _seed_same_supplier(db)
     run_id = _run_buys(db, wid_code, product_codes=_SAME_SUPPLIER_CODES)
     recs = {str(r["product_id"]): r for r in _buy_recs(db, run_id)}
@@ -552,6 +570,7 @@ def test_create_gr_stamps_received_and_rejects_draft(scm_app):
 def test_list_decisions_reflects_status_and_confirmed_number(scm_app):
     app, db = _client(scm_app, "purchasing")
     _, db2, _, _ = scm_app
+    _ensure_po_numbering(db)
     wid_code, a, b, c = _seed_same_supplier(db)
     run_id = _run_buys(db, wid_code, product_codes=_SAME_SUPPLIER_CODES)
     recs = {str(r["product_id"]): r for r in _buy_recs(db, run_id)}
