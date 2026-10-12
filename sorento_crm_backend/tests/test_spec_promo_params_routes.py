@@ -442,3 +442,45 @@ def test_without_either_param_both_routes_return_the_full_set(api, db):
     assert _codes(_list(api, db, rows)) == _codes_of(rows)
     resp = api.get(BALANCE, params={"product_ids": [r.id for r in rows], "limit": 100})
     assert _stock_codes(resp, rows) == _codes_of(rows)
+
+
+# --------------------------------------------------------------------------------------- #
+# Tier: has_active_promotion honours the caller's access_levels (SEC-S1 rule kept)
+# --------------------------------------------------------------------------------------- #
+
+
+def _tier_world(db):
+    """Two products, each in a live promotion restricted to ONE tier."""
+    from app.models.access import ContactAccessType
+
+    db.add(ContactAccessType(code="zzt_end_user", name="ZZT End User Tier"))
+    db.add(ContactAccessType(code="zzt_dealer", name="ZZT Dealer Tier"))
+    db.flush()
+    prod_a = _p(db, "TIERA")
+    prod_b = _p(db, "TIERB")
+    _promo(db, prod_a).access_levels = ["zzt_end_user"]
+    _promo(db, prod_b).access_levels = ["zzt_dealer"]
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    for p in (prod_a, prod_b):
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+    db.commit()
+    return prod_a, prod_b
+
+
+@pytest.mark.parametrize("route", ["products", "stock"])
+def test_has_active_promotion_counts_only_promotions_open_to_the_callers_tier(api, db, route):
+    """RED today: `access_levels` is not a param of either route, so it is ignored and both
+    products (A: end_user promo, B: dealer promo) come back for a dealer."""
+    prod_a, prod_b = _tier_world(db)
+    rows = [prod_a, prod_b]
+
+    def ask(**extra):
+        params = {"product_ids": [r.id for r in rows], "limit": 100, "has_active_promotion": "true", **extra}
+        resp = api.get(PRODUCTS if route == "products" else BALANCE, params=params)
+        return _codes(resp) if route == "products" else _stock_codes(resp, rows)
+
+    assert ask(access_levels="ZZT Dealer Tier") == _codes_of([prod_b])
+    assert ask(access_levels="zzt_end_user") == _codes_of([prod_a])
+    assert ask(access_levels=["zzt_dealer", "zzt_end_user"]) == _codes_of(rows), "repeated list accepted"
+    assert ask(access_levels="zzt-no-such-tier-zz") == set(), "unknown tier matches nothing"
+    assert ask() == _codes_of(rows), "absent access_levels = no tier restriction"

@@ -133,3 +133,22 @@ async def test_has_active_promotion_reaches_the_backend_as_true(tool):
     """Booleans are stringified to lowercase for FastAPI's bool parser."""
     query = await _call(tool, {"has_active_promotion": True})
     assert query is not None and query.get("has_active_promotion") == "true", query
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_catalog_declares_access_levels(tool):
+    """The chatbot sends the contact's tier; undeclared means FastMCP drops it."""
+    assert "access_levels" in _spec(tool).query_params
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_compiled_tool_signature_carries_access_levels(tool):
+    fn = getattr(_compile_tool(_spec(tool)), "fn", _compile_tool(_spec(tool)))
+    assert "access_levels" in inspect.signature(fn).parameters
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", TOOLS)
+async def test_access_levels_list_reaches_the_backend_query(tool):
+    query = await _call(tool, {"access_levels": ["dealer"], "has_active_promotion": True})
+    assert query is not None and query.get("access_levels") == ["dealer"], query
