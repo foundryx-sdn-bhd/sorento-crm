@@ -497,6 +497,48 @@ def _apportion(total: int, lines: list) -> dict[str, int]:
     return out
 
 
+#: Header states the line rollup never overwrites: `closed` is a person's word and `draft`
+#: is a PI convert not yet published (`proforma_invoice_service._DRAFT_SHIPMENT_STATUS`).
+_ROLLUP_UNTOUCHED_HEADER_STATUSES = ("closed", "draft")
+#: Header states that only the rollup itself writes, so a rollup that finds no receipt
+#: takes them back to `in_transit`.
+_ROLLUP_RECEIPT_HEADER_STATUSES = ("received", "fully_received", "partially_received")
+
+
+def rollup_shipment_status(current: Optional[str], total_lines: int, received_lines: int, receiving_lines: int) -> Optional[str]:
+    """The packing-list header status its stored line statuses add up to (PL-STATUS-ROLLUP).
+
+    `received_lines` counts lines `received`; `receiving_lines` counts lines with any
+    receipt at all (`received` or `partially_received`). Every line received ->
+    `fully_received`; some receipt -> `partially_received` (both already in the
+    `inbound_shipments_shipment_status_check` vocabulary, `coverage_service.py`); no
+    receipt -> the header as it was (`in_transit`, `arrived_at_port`, `at_warehouse` are
+    not the lines' to judge), except a receipt state the lines no longer back, which
+    falls back to `in_transit`. A container with no lines has nothing to roll up.
+    """
+    status = (current or "").strip().lower()
+    if status in _ROLLUP_UNTOUCHED_HEADER_STATUSES or total_lines <= 0:
+        return current
+    if received_lines >= total_lines:
+        return "fully_received"
+    if receiving_lines > 0:
+        return "partially_received"
+    if status in _ROLLUP_RECEIPT_HEADER_STATUSES:
+        return "in_transit"
+    return current
+
+
+def _line_status_counts(lines: list) -> tuple[int, int, int]:
+    """`(total, received, any receipt)` over these lines' `line_status`, the three
+    figures `rollup_shipment_status` takes."""
+    statuses = [(line.line_status or "").strip().lower() for line in lines]
+    return (
+        len(statuses),
+        sum(1 for s in statuses if s == "received"),
+        sum(1 for s in statuses if s in ("received", "partially_received")),
+    )
+
+
 def shipment_supplier_predicate(supplier_id):
     """Containers this supplier is ON: the header names them, or any of their lines does.
 
@@ -955,7 +997,8 @@ class InboundShipmentService:
 
         shipment_ids = [s.id for s in shipments]
         line_counts: dict[str, int] = {}
-        non_received_counts: dict[str, int] = {}
+        received_counts: dict[str, int] = {}
+        receiving_counts: dict[str, int] = {}
         spo_counts: dict[str, int] = {}
         if shipment_ids:
             # Counted per CONTAINER, over the line TABLE rather than the ORM entity:
@@ -981,7 +1024,10 @@ class InboundShipmentService:
                 }
 
             line_counts = _line_counts()
-            non_received_counts = _line_counts(lines_table.c.line_status != "received")
+            received_counts = _line_counts(lines_table.c.line_status == "received")
+            receiving_counts = _line_counts(
+                lines_table.c.line_status.in_(("received", "partially_received"))
+            )
             from app.services.scm import spo_supply
 
             spo_counts = {
@@ -1004,13 +1050,14 @@ class InboundShipmentService:
         for shipment in shipments:
             shipment_id = str(shipment.id)
             total_lines = line_counts.get(shipment_id, 0)
-            non_received_lines = non_received_counts.get(shipment_id, 0)
             setattr(shipment, "lines_count", total_lines)
             setattr(shipment, "spo_allocations_count", spo_counts.get(shipment_id, 0))
-            if total_lines > 0 and non_received_lines == 0:
-                shipment.shipment_status = "fully_received"
-            elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
-                shipment.shipment_status = "in_transit"
+            shipment.shipment_status = rollup_shipment_status(
+                shipment.shipment_status,
+                total_lines,
+                received_counts.get(shipment_id, 0),
+                receiving_counts.get(shipment_id, 0),
+            )
 
         return {
             "data": shipments,
@@ -1241,38 +1288,56 @@ class InboundShipmentService:
             line.spo_allocated_quantity = alloc
             line.quantity_received = recv
             line.line_status = status
-        all_lines_received = all((line.line_status or "").strip().lower() == "received" for line in lines)
-        if all_lines_received:
-            shipment.shipment_status = "fully_received"
-        elif (shipment.shipment_status or "").strip().lower() in ("received", "fully_received"):
-            shipment.shipment_status = "in_transit"
+        shipment.shipment_status = rollup_shipment_status(
+            shipment.shipment_status, *_line_status_counts(lines)
+        )
         self.db.commit()
 
     def compute_shipment_line_figures(self, shipment: InboundShipment) -> dict[str, tuple[int, int, str]]:
         """`line id -> (spo_allocated_quantity, quantity_received, line_status)` as
         `refresh_shipment_line_statuses` would store them, without writing anything
         (the dry run of `scripts/oneoff/refresh_container_received.py` prints these
-        beside the stored figures)."""
+        beside the stored figures).
+
+        The STATUS is judged against the VISIBLE allocation total, the one the packing
+        list page shows (`packing_lists.get_packing_list`, `spo_supply.
+        visible_line_clauses`), while `spo_allocated_quantity` stays the unfiltered
+        total its purchasing readers (`container_request_service.PL_UNALLOCATED_SQL`,
+        the allocation suggestion) were built on (PL-STATUS-ROLLUP). A retired
+        allocation AutoCount stopped naming used to double a product's allocated
+        figure here, so the page said Received 529/529 while the stored line said
+        `partially_received` and the header never rolled up (TCLU8176397)."""
+        from app.services.scm import spo_supply
+
         shipment_id = shipment.id
         lines = list(shipment.shipment_lines)
-        totals_alloc = (
-            self.db.query(SPOAllocation.product_id, func.sum(SPOAllocation.allocated_quantity).label("total"))
-            .filter(SPOAllocation.inbound_shipment_id == shipment_id)
-            .group_by(SPOAllocation.product_id)
-            .all()
-        )
-        spo_by_product = {str(p): int(t) for p, t in totals_alloc}
+
+        def _alloc_by_product(*extra_filters) -> dict[str, int]:
+            rows = (
+                self.db.query(SPOAllocation.product_id, func.sum(SPOAllocation.allocated_quantity).label("total"))
+                .filter(SPOAllocation.inbound_shipment_id == shipment_id, *extra_filters)
+                .group_by(SPOAllocation.product_id)
+                .all()
+            )
+            return {str(p): int(t) for p, t in rows}
+
+        spo_by_product = _alloc_by_product()
+        visible_spo_by_product = _alloc_by_product(*spo_supply.visible_line_clauses())
         received_by_product = self.get_received_quantities_by_product(shipment_id)
 
         lines_by_product: dict[str, list] = {}
         for line in lines:
             lines_by_product.setdefault(str(line.product_id), []).append(line)
         alloc_by_line: dict[str, int] = {}
+        visible_alloc_by_line: dict[str, int] = {}
         recv_by_line: dict[str, int] = {}
         for product_id, product_lines in lines_by_product.items():
             product_lines.sort(key=lambda l: (l.created_at or datetime.min, str(l.id)))
             alloc_by_line.update(
                 _apportion(spo_by_product.get(product_id, 0), product_lines)
+            )
+            visible_alloc_by_line.update(
+                _apportion(visible_spo_by_product.get(product_id, 0), product_lines)
             )
             recv_by_line.update(
                 _apportion(received_by_product.get(product_id, 0), product_lines)
@@ -1285,7 +1350,9 @@ class InboundShipmentService:
             figures[str(line.id)] = (
                 alloc,
                 recv,
-                compute_inbound_shipment_line_status(line.quantity_shipped or 0, alloc, recv),
+                compute_inbound_shipment_line_status(
+                    line.quantity_shipped or 0, visible_alloc_by_line.get(str(line.id), 0), recv
+                ),
             )
         return figures
 
