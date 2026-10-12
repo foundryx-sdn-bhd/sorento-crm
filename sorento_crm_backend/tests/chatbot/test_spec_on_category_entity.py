@@ -393,3 +393,14 @@ def test_r_s5b_an_axis_named_outright_drops_the_require_leg_like_a_size():
         }},
     })
     assert not out.get("require"), out.get("require")
+
+
+@pytest.mark.parametrize("raw,left", [("250mm floor grating", "floor grating"), ("600 mm basin", "basin")])
+def test_r_fg_the_split_measure_leaves_the_category_words(vdb, raw, left):
+    """Crew live trace a92941c7 (v87): the parser put the size INSIDE the category's words.
+    Once the size is its own specification, the category keeps only what the thing is, so it
+    names the type to the resolver ("floor grating" does; "250mm floor grating" did not)."""
+    verdict = _ground(vdb, _category(raw, None, spec_key="size", spec_value=int(raw.split("m")[0].strip())), message=f"{raw} got stock?")
+    cats = [e for e in verdict["entities"] if e.get("hint") == "category"]
+    assert [c["raw"] for c in cats] == [left], verdict["entities"]
+    assert ("size", int(raw.split("m")[0].strip())) in [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]

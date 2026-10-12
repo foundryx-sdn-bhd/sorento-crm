@@ -676,6 +676,13 @@ def _only_a_measure(raw: str, vocab: Vocabulary) -> bool:
     return bool(words) and all(_NUMBER_RE.match(w) or w in units for w in words)
 
 
+def _without_measure(raw: str, vocab: Vocabulary) -> str:
+    """`raw`'s words without its numbers and registry units ("250mm floor grating" -> "floor
+    grating"), read like `_only_a_measure`; empty when nothing else is said."""
+    units = {str(k.unit).lower() for k in vocab.keys if k.unit}
+    return " ".join(w for w in _words(raw) if not (_NUMBER_RE.match(w) or w in units))
+
+
 def _spec_of_category(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
     """The spec pair a category entity carries, as the parser emitted it. A millimetre number
     there was said with no axis word of its own (the parser named the axis on the category,
@@ -806,6 +813,15 @@ def ground(
             add(carried, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in carried], "spec_on_category": True})
             entity = {k: v for k, v in entity.items() if k not in ("spec_key", "spec_value")}
+            if hint in _CLASS_HINTS and any(g.unit for g in carried):
+                # Crew live trace a92941c7 (v87): ONE entity, category "250mm floor grating"
+                # with size 250. The measure is now its own specification; left in the
+                # category's words it names no type ("floor grating" does) and no tool ran.
+                # The same reader as `_only_a_measure`: numbers and registry units.
+                kept = _without_measure(raw, vocab)
+                if kept and kept != raw:
+                    entity = {**entity, "raw": kept}
+                    raw = kept
             if hint == _PRODUCT_HINT and carried and _only_a_measure(raw, vocab):
                 # A prompt line whose entity hints list no "specification" (v52, v86) puts a
                 # size on a "product" entity ("600mm"). Its words are nothing but that measure,

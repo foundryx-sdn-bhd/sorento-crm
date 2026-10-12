@@ -355,3 +355,22 @@ def test_p14_a_promotion_list_shows_a_few_one_line_each_then_pages(session_facto
     assert calls2[-1].get("access_levels") == calls[-1].get("access_levels") == ["Sorento Office"], (calls, calls2)
     assert set(_shown(second, codes)) == set(codes[5:]), second
     assert SEE_MORE not in second, second
+
+
+def test_p15_a_size_inside_the_category_words_leaves_the_type_named(session_factory, monkeypatch, _clear_overrides):
+    """Crew live trace a92941c7 (v87, adf7b727): ONE entity, category raw "250mm floor grating"
+    with spec size 250. Grounding split the size off but the category kept "250mm" in its words,
+    so they named no product type, no tool ran and the reply was "Couldn't find". The measure
+    leaves the category's words; the type is asked with the size, and a size no grating holds
+    is answered from what the data holds (the values on file), never "Couldn't find"."""
+    codes = _seed_gratings(session_factory, (("A", {"dim_length": 150}), ("B", {"dim_width": 130})))
+    call, captured = _route_backed_stock(monkeypatch, session_factory)
+    monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
+    entity = {**_category("250mm floor grating", None), "spec_key": "size", "spec_value": 250}
+    qf = _parser_output(domain_hint="inventory", intent_hint="check_stock", entities=[entity])
+    reply = _say(session_factory, monkeypatch, qf, "250mm floor grating got stock?")
+    calls = _stock_calls(captured)
+    assert calls, (captured, reply)
+    assert {"key": "product_type", "op": "eq", "value": "floor_grating"} in calls[-1]["spec_constraints"], calls
+    assert "Couldn't find" not in reply, reply
+    assert "150" in reply and "130" in reply, reply
