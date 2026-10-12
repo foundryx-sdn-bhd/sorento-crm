@@ -1060,9 +1060,11 @@ def confirm_supply(
 ):
     """Confirm the lines the planner has decided, in one action (AC-C01 as amended).
 
-    Every line IN THIS CONFIRMATION commits together or none of them does: the service
-    rechecks each against authoritative facts, and one stale, unbalanced or unmapped line
-    refuses the lot with `failing_lines` naming each by line number and item code. A line
+    The service rechecks each line against authoritative facts. A stock shortfall on a
+    line's undelivered part is confirmed as decided and named in `stock_short_notices`;
+    a line that still cannot be written (unbalanced, unmapped, stale) is held back and
+    named in `lines_held_back` while the rest confirm, and only a press with nothing left
+    to confirm is refused with `failing_lines` (OI-CLOSED-LINE, owner rule 12 Oct 2026). A line
     the body does not name is left undecided on purpose (13.4) and keeps counting as
     demand; a body naming no line at all AND withdrawing none is refused. The Order Inquiry
     handoff runs inside this same transaction, so purchasing can never be told to buy
@@ -1080,17 +1082,28 @@ def confirm_supply(
         service = ProjectSupplyService(db)
         order = service.get_order(pso_id)
         _assert_can_act_on(db, order, current_user)
-        body = _confirm_with_possible_rejects(
-            db,
-            service,
+        # OI-CLOSED-LINE (owner rule, 12 Oct 2026): one line that cannot be written never
+        # refuses the whole order. The lines the recheck refuses are held back and named, and
+        # the rest confirm - the same seam Confirm all uses (#1362). A planning-change press
+        # names its lines on purpose, so it is never applied in part.
+        body, _entry, held = service._write_holding_back(
             order,
             payload,
-            actor_user_id=current_user["id"],
-            batch_id=payload.batch_id,
-            confirm_batch=lambda: _confirm_a_planning_change(
-                db, order, payload, current_user["id"]
+            lambda target, entry: _confirm_with_possible_rejects(
+                db,
+                service,
+                target,
+                entry,
+                actor_user_id=current_user["id"],
+                batch_id=entry.batch_id,
+                confirm_batch=lambda: _confirm_a_planning_change(
+                    db, target, entry, current_user["id"]
+                ),
             ),
+            hold_back=not payload.batch_id,
         )
+        if held:
+            body["lines_held_back"] = held
         db.commit()
         return body
     except Exception as exc:

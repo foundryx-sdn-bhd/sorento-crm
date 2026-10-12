@@ -347,6 +347,8 @@ def test_confirm_reads_the_same_claim_netting_as_the_proposal_did():
     OTHERS and seeds the ledger unclaimed, and the line that owns the pool then reads that
     stale figure back instead of its own claim-netted one. Same world as the proposal-time
     test above, checked at the write path the board actually calls.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     near = date.today() + timedelta(days=10)
     far = date.today() + timedelta(days=17)
@@ -373,27 +375,36 @@ def test_confirm_reads_the_same_claim_netting_as_the_proposal_did():
             line.line_no: line for line in ProjectSupplyService(db).lines_of(str(order.id))
         }
 
-        # Asking for the whole 8 must be REFUSED at 7, the line's own netted floor - not
-        # silently accepted off the ledger's stale, unclaimed 10.
-        with pytest.raises(AppException) as refused:
-            ProjectSupplyService(db).confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(project_line_id=lines_by_no[1].id, buy_qty="1"),
-                        ConfirmLine(
-                            project_line_id=lines_by_no[2].id,
-                            reserve=[{"warehouse_id": str(pool2.id), "qty": "8"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        failing = refused.value.detail["failing_lines"]
-        assert len(failing) == 1
-        assert failing[0]["reason"] == (
-            f"{pool2.warehouse_code} now has 7 free for this line, and 8 was asked for."
+        # Asking for the whole 8 holds only 7, the line's own netted floor - not the
+        # ledger's stale, unclaimed 10 - and records the 1 unit short on that line.
+        result = ProjectSupplyService(db).confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(project_line_id=lines_by_no[1].id, buy_qty="1"),
+                    ConfirmLine(
+                        project_line_id=lines_by_no[2].id,
+                        reserve=[{"warehouse_id": str(pool2.id), "qty": "8"}],
+                    ),
+                ]
+            ),
+            actor_user_id=eling,
         )
+        [notice] = result["stock_short_notices"]
+        assert notice["line_no"] == 2, notice
+        assert notice["reason"] == (
+            f"Reserve 8 at {pool2.warehouse_code} confirmed as decided; only 7 free at "
+            f"{pool2.warehouse_code} when confirmed, 1 short"
+        ), notice
+        from app.models.project_so import SOLineAllocation
+
+        held = [
+            (str(a.so_line_id), str(a.warehouse_id), Decimal(str(a.qty)))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id == lines_by_no[2].id)
+            .all()
+        ]
+        assert held == [(str(lines_by_no[2].id), str(pool2.id), Decimal("7"))], held
 
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
