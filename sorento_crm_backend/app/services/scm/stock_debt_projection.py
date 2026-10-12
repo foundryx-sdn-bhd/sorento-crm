@@ -2,38 +2,35 @@
 
 PURE maths, no I/O, the same discipline `supply_assignment` keeps.
 
-**The question.** "Do the open POs at the pool cover the sales orders that come after
-them?" The month view cannot say: a month states its own month and nothing else (R37), and
-a document covers a line only through a link (R45). The projection answers it as a DISPLAY,
-never as an assignment: nothing is pinned, no line changes status.
+**The question.** "Do the open POs cover the sales orders that come after them?" The month
+view cannot say: a month states its own month and nothing else (R37), and a document
+covers a line only through a link (R45). The projection answers it as a DISPLAY, never as
+an assignment: nothing is pinned, no line changes status.
 
-**The rule** (owner, 12 Oct 2026: "only consider pool, those project locations are matched
-already"; "pool a": pool supply first covers the dealer/retail orders due in its month, and
-only the remainder goes to project shortfalls):
+**The rule** (owner, 12 Oct 2026, option D; crew answer (b) the same day):
 
-    dealer_left(M)  = dealer(M) less what pool ON HAND (carried, earliest first) meets
-    remainder(M)    = carried_in(M) + pool_supply(M) - dealer_left(M)
+    remainder(M)    = carried_in(M) + reserve_supply(M)
     projected(M)    = project(M) + remainder(M)
     carried_in(M+1) = max(0, min(remainder(M), projected(M)))
 
-- `project(M)` is the project bins' own month figure, matched as the page matches them:
-  their spare in M less their lines' shortfalls in M.
-- `pool_supply(M)` is INCOMING pool supply dated in M: an open PO on its Delivery date, an
-  open SPO that has not landed on its arrival, anything past due today - the documents and
-  dates the page's own "Covered by" uses - less what a project line's hold took of it.
-- `pool_on_hand(M)` is pool stock on the floor (landed goods included). Owner, 12 Oct 2026
-  after hand testing: it is shared and decided at planning time ("Use BRW"), so it meets
-  dealer / retail orders only and never a project shortfall; what it leaves waits for later
-  dealer orders.
-- `dealer(M)` is the open orders at pool locations due in M.
-- Pool stock is applied to the EARLIEST shortfall first and only a SURPLUS carries: a
+- `project(M)` is the project lines' own month figure off the page's walk: the project
+  bins' spare in M less their lines' shortfalls in M. Pool supply reaches a project line
+  ONLY through a link (the S/O ref on the PO/SPO line, an OI placement, a confirmed
+  decision), incoming or landed alike, and the walk already pins every link to its line
+  at any date. So this term is exactly what the drill's Covered by leaves owed. Unlinked
+  pool on hand and unlinked pool POs/SPOs never count.
+- `reserve_supply(M)` is the one exception: a PROJECT RESERVE's unlinked incoming documents
+  dated in M (a PO on its Delivery date, an SPO not landed on its ETA, past due today),
+  less what a link already took. A project reserve is a pool with `segment = project`
+  (HQ-PROJECT-RESERVE, #1597): its supply belongs to projects in general.
+- Reserve supply is applied to the EARLIEST shortfall first and only a SURPLUS carries: a
   month's own project spare is spent on its own shortfall first (it cannot carry), and a
   month that ends short starts the next one at 0 carried. Debt never accumulates (R37).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Mapping, Optional, Sequence
+from typing import List, Mapping, Sequence
 
 from app.services.scm.supply_assignment import EPSILON
 
@@ -41,17 +38,14 @@ from app.services.scm.supply_assignment import EPSILON
 @dataclass(frozen=True)
 class ProjectedMonth:
     key: str
-    #: The project bins' own month figure (their spare less their shortfalls).
+    #: The project lines' own month figure (the bins' spare less their shortfalls).
     month_balance: float
-    #: Pool stock still spare from earlier months.
+    #: Reserve supply still spare from earlier months.
     carried_in: float
-    #: Incoming pool supply (POs, SPOs not landed) dated in this month.
-    pool_supply: float
-    #: Open orders at pool locations (dealer / retail) due in this month that pool on hand
-    #: did not meet - what is asked of the incoming supply.
-    dealer_demand: float
+    #: A project reserve's unlinked incoming supply dated in this month.
+    reserve_supply: float
     projected: float
-    #: Pool stock that carries into the next month.
+    #: Reserve supply that carries into the next month.
     carried_out: float
 
 
@@ -64,25 +58,17 @@ def project_months(
     keys: Sequence[str],
     project_balance: Mapping[str, float],
     *,
-    pool_supply: Mapping[str, float],
-    dealer_demand: Mapping[str, float],
-    pool_on_hand: Optional[Mapping[str, float]] = None,
+    reserve_supply: Mapping[str, float],
 ) -> List[ProjectedMonth]:
     """One `ProjectedMonth` per key, in the order given (the caller passes consecutive
     months from the first month anything can land in)."""
     out: List[ProjectedMonth] = []
     carry = 0.0
-    floor = 0.0
     for key in keys:
         own = float(project_balance.get(key, 0.0))
-        supply = float(pool_supply.get(key, 0.0))
-        floor += float((pool_on_hand or {}).get(key, 0.0))
-        asked = float(dealer_demand.get(key, 0.0))
-        met = min(floor, asked)
-        floor -= met
-        dealer = asked - met
+        supply = float(reserve_supply.get(key, 0.0))
         carried_in = carry
-        remainder = carried_in + supply - dealer
+        remainder = carried_in + supply
         projected = own + remainder
         carry = max(0.0, min(remainder, projected))
         out.append(
@@ -90,8 +76,7 @@ def project_months(
                 key=key,
                 month_balance=_round(own),
                 carried_in=_round(carried_in),
-                pool_supply=_round(supply),
-                dealer_demand=_round(dealer),
+                reserve_supply=_round(supply),
                 projected=_round(projected),
                 carried_out=_round(carry),
             )

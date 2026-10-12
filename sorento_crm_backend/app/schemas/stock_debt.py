@@ -288,23 +288,24 @@ class StockDebtSupplyEvent(BaseModel):
     outstanding_qty: Optional[float] = None
 
 
-class StockDebtPoolSource(BaseModel):
-    """One location and kind of pool supply in a month (`BRW on hand`, `HQ PO`)."""
+class StockDebtReserveSource(BaseModel):
+    """One location and kind of project-reserve supply in a month (`HQ reserve PO`)."""
 
     label: str
     qty: float
 
 
 class StockDebtProjection(BaseModel):
-    """STOCK-DEBT-PROJECTION ("pool a", 12 Oct 2026): how one month's projected balance is
-    made up. `projected = month_balance + carried_in + pool_supply - dealer_demand`;
-    `carried_out` is the pool surplus the next month starts with."""
+    """STOCK-DEBT-PROJECTION (owner, 12 Oct 2026, option D): how one month's projected
+    balance is made up. `projected = month_balance + carried_in + reserve_supply`, where
+    `month_balance` is the project lines' own figure (pool supply counts only through a
+    link, as Covered by shows) and `reserve_supply` a project reserve's unlinked incoming
+    documents; `carried_out` is the reserve surplus the next month starts with."""
 
     carried_in: float
     month_balance: float
-    pool_supply: float
-    pool_sources: List[StockDebtPoolSource] = []
-    dealer_demand: float
+    reserve_supply: float
+    reserve_sources: List[StockDebtReserveSource] = []
     projected: float
     carried_out: float
 

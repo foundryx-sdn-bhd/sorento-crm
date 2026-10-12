@@ -94,9 +94,10 @@ def list_stock_debt(
     projected: bool = Query(
         False,
         description=(
-            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - each "
-            "month's own figure plus pool stock still spare from earlier months plus pool "
-            "supply outside the span. Display only; nothing is assigned."
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
         ),
     ),
     page: int = Query(1, ge=1),
@@ -164,9 +165,10 @@ def stock_debt_cell(
     projected: bool = Query(
         False,
         description=(
-            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - each "
-            "month's own figure plus pool stock still spare from earlier months plus pool "
-            "supply outside the span. Display only; nothing is assigned."
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
         ),
     ),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),

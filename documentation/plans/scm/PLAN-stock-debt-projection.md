@@ -1,54 +1,68 @@
 # PLAN: Stock Debt projected coverage (sales orders only) (STOCK-DEBT-PROJECTION)
 
-Status: built; reviewer READY after two fix rounds, browser pass PASS (12 Oct 2026); waiting on owner hand test. Owner answered card v2: Q1-Q4 (a); locations "only
-consider pool, those project locations are matched already". Small fix track (no migration, no
+Status: built; rule D implemented and tests green, waiting on reviewer, browser pass and owner hand test (12 Oct 2026). Earlier: owner answered card v2 Q1-Q4 (a); locations "only consider pool, those project locations are matched already". Small fix track (no migration, no
 auth/RBAC change, no new ingest surface).
 
-## Implemented rule (owner, 12 Oct 2026; "pool a"; incoming only, after hand testing)
+## Implemented rule (owner, 12 Oct 2026, 22:20: option D; crew answer (b) the same day)
 
 ```
-project(M)      = the project bins' own month figure off the page's walk (their spare less
-                  their lines' shortfalls), matched exactly as today
-incoming(M)     = every active pool's INCOMING supply dated in M (segment <> 'project', not
-                  flagged for planning): open PO lines on their Delivery date, open SPO lines
-                  not landed on their ETA, past due today - the documents and dates the page's
-                  own "Covered by" uses - less what a project line's hold took of it
-pool_on_hand    = pool stock on the floor, landed goods included: meets dealer orders only
-dealer_left(M)  = the open orders at pool locations due in M, less what pool on hand meets
-                  (earliest first; what the floor leaves waits for later dealer orders)
-remainder(M)    = carried_in(M) + incoming(M) - dealer_left(M)
-projected(M)    = project(M) + remainder(M)
-carried_in(M+1) = max(0, min(remainder(M), projected(M)))
+project(M)        = the project lines' own month figure off the page's walk: the project
+                    bins' spare less their lines' shortfalls. Pool supply (BRW and every
+                    other pool) reaches a project line ONLY through a link - an OI
+                    placement, a confirmed planning decision, or the S/O ref on the PO/SPO
+                    line - incoming or landed alike, and the walk already pins every link to
+                    its line at any date (a placed SPO that lands becomes an on-hand hold,
+                    SPO-RECEIVED-PIN). So project(M) is what the drill's Covered by leaves
+                    owed, line for line. Unlinked pool on hand and unlinked pool POs/SPOs
+                    never count; pool (dealer/retail) orders are not project lines.
+reserve_supply(M) = a PROJECT RESERVE's unlinked INCOMING documents dated in M (open PO
+                    lines on their Delivery date, open not-landed SPO lines on their ETA,
+                    past due today), less what any line's link took of them
+remainder(M)      = carried_in(M) + reserve_supply(M)
+projected(M)      = project(M) + remainder(M)
+carried_in(M+1)   = max(0, min(remainder(M), projected(M)))
 ```
 
-Owner rulings, 12 Oct 2026: "pool a" (pool supply covers its month's dealer / retail orders
-first, then project shortfalls, earliest first; only a SURPLUS carries; debt never accumulates,
-R37), and after hand testing: pool ON HAND (e.g. BRW on hand) is shared and decided at planning
-time ("Use BRW"), so it never meets a project shortfall; only INCOMING pool supply carries,
-counted and dated as "Covered by" counts and dates documents. Book=All and Book=Project give the
-same projection. Row total = the sum over the axis of `project + incoming - dealer_left`, plus
-TBA. Under the switch the walk ignores `date_from`; the axis still starts at its month.
+A project reserve is a pool (some location's `pool_warehouse_id`) with `segment = project`,
+not flagged for planning (HQ-PROJECT-RESERVE, PR #1597: HQ stock belongs to projects in
+general). Until #1597 lands its own predicate this lane's `_project_reserves()` is the
+definition; nothing matches it until `HQ.segment = project` ships with #1597. Reserve ON
+HAND is #1597's walk, not this layer. Book=All and Book=Project give the same projection: a
+reserve outside the span is read by walking the span with the reserves added, once, so a link
+on a reserve document from an order at the reserve is netted in both books. Row total = the
+sum over the axis of `project + reserve_supply`, plus TBA. Under the switch the walk ignores
+`date_from`; the axis still starts at its month.
 
-The drill line, owner's C-FHSS12 under Book=Project (BRW on hand 57, BRW PO 15):
-"Project bins -377 · Pool supply 15 (BRW PO 15) applied to this month · Projected -362".
-Carried in, dealer orders and carried forward appear when not zero.
+Superseded the same day: "pool a" (pool supply meets dealer orders first, then project
+shortfalls) and "incoming only" (unlinked incoming pool POs/SPOs carried, pool on hand meets
+dealer orders). Rule D replaced both after the owner saw the projection jump on receipt
+(SRTWT2215's BRW SPO 333: +333 while incoming, gone once received).
+
+The drill line, e.g. SRTWT2215 with HQ a reserve, December: "Project bins -1,436 · Carried in
++4,945 · Projected +3,509 · Carried forward +3,509"; in the PO's own month "Reserve supply
+5,000 (HQ reserve PO 5,000) applied to this month". The drill's Supply tab lists a reserve
+document outside the span in its month.
 
 Prod shape (owner, 12 Oct 2026): Book=Project months Oct -38, Nov -17, Dec -1,436, Jan
--1,613, Feb -480, Mar -797, Apr -368; BRW on hand 191 (meets the 15 dealer order); HQ PO 5,000
-delivered 8 Oct. Projected: 4,962, 4,945, 3,509, 1,896, 1,416, 619, 251 under Book=Project
-and Book=All (`test_prod_srtwt2215_book_project_carries_the_pool_po`).
+-1,613, Feb -480, Mar -797, Apr -368; HQ PO 5,000 delivered 8 Oct, unlinked. HQ a dealer
+warehouse (today): projected = those months in both books
+(`test_prod_srtwt2215_unlinked_hq_po_and_brw_on_hand_never_count`). HQ a project reserve:
+4,962, 4,945, 3,509, 1,896, 1,416, 619, 251
+(`test_prod_srtwt2215_with_hq_a_project_reserve_carries_the_5000`).
 
 Known limits:
-- A pool PO whose AutoCount S/O names a project order is pinned to it only when the PO is inside
-  the page's span (the book-S/O pin reads in-span supply). Under Book=Project it counts as pool
-  supply and is applied to the earliest shortfall; the row's total is the same.
-- An order at a pool OUTSIDE the span that holds project stock through a placement is still
-  counted in full as a pool order (inside the span the held part is taken off).
+- R40 keeps a book-S/O pin inside its own ownership group (`book_so_pins`), so a POOL
+  document whose S/O ref names a PROJECT line credits nothing in Covered by, and the
+  projection agrees (`test_a_pool_spo_naming_a_project_line_by_s_o_ref_agrees_with_covered_by`).
+  Asked on PR #1594; crossing it is a walk change for its own lane.
+- Reserve on hand counts for projects only once #1597's walk reads it, so until then a
+  reserve SPO counts while incoming and not once received (no reserve exists before #1597).
 
 UAC: `stock-debt-projection-acceptance-criteria.md`. Code:
-`app/services/scm/stock_debt_projection.py`, `StockDebtService._pool_projection` / `_project` /
-`_projected_on_axis`; tests `tests/scm/test_stock_debt_projection*.py`,
-`StockDebtClient.projection.test.tsx`, `stockDebtService.real.test.ts`.
+`app/services/scm/stock_debt_projection.py`, `StockDebtService._project_reserves` /
+`_projection_series` / `_project` / `_projected_on_axis`; tests
+`tests/scm/test_stock_debt_projection*.py`, `StockDebtClient.projection.test.tsx`,
+`stockDebtService.real.test.ts`.
 
 The sections below are the behaviour card as it was put to the owner.
 

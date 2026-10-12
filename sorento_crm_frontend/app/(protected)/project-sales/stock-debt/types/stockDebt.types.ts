@@ -284,21 +284,21 @@ export interface StockDebtSupplyEvent {
   assigned_to: { so_number: string; line_no?: number | null; qty: number }[];
 }
 
-/** One location and kind of pool supply in a month (`BRW on hand`, `HQ PO`). */
-export interface StockDebtPoolSource {
+/** One location and kind of project-reserve supply in a month (`HQ reserve PO`). */
+export interface StockDebtReserveSource {
   label: string;
   qty: number;
 }
 
-/** STOCK-DEBT-PROJECTION ("pool a"): how one month's projected balance is made up
- *  (`projected = month_balance + carried_in + pool_supply - dealer_demand`);
- *  `carried_out` is the pool surplus the next month starts with. */
+/** STOCK-DEBT-PROJECTION (option D): how one month's projected balance is made up
+ *  (`projected = month_balance + carried_in + reserve_supply`). `month_balance` is the
+ *  project lines' own figure, pool supply counted only through a link (as Covered by);
+ *  `carried_out` is the reserve surplus the next month starts with. */
 export interface StockDebtProjection {
   carried_in: number;
   month_balance: number;
-  pool_supply: number;
-  pool_sources: StockDebtPoolSource[];
-  dealer_demand: number;
+  reserve_supply: number;
+  reserve_sources: StockDebtReserveSource[];
   projected: number;
   carried_out: number;
 }

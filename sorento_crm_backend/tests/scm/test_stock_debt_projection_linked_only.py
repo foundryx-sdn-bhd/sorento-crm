@@ -35,6 +35,7 @@ from tests.scm.test_stock_debt_routes import (
     BASE,
     TODAY,
     _client,
+    _confirmed_hold,
     _demand,
     _months_ahead,
     _order_back_link_on_spo,
@@ -50,17 +51,20 @@ pytestmark = requires_pg
 BOOKS = ("all", "project")
 
 
-def _spo_333(db, *, linked: bool, received: bool, placed: float = 333):
+def _spo_333(
+    db, *, linked: bool, received: bool, placed: float = 333, so_ref: bool = False
+):
     """BRW (own pool), BRW-BB owing 500 in two months, SPO 333 at BRW due next month.
     `received`: the SPO is fully received and its 333 sit on BRW's floor. `linked`: an OI
-    placement of `placed` of the 333 on the BB line."""
+    placement of `placed` of the 333 on the BB line. `so_ref`: instead, the SPO line's
+    AutoCount S/O ref names the BB line."""
     marker = f"ZZTPD{_u()[:6]}".upper()
     pool = _warehouse(db, f"{marker}BRW", planning=False, segment="dealer")
     pool.pool_warehouse_id = pool.id
     bin_ = _warehouse(db, f"{marker}BRW-BB", planning=True, segment="project", pool=pool)
     db.flush()
     product = _product(db, f"{marker}-SRTWT2215")
-    _order, line = _demand(
+    order, line = _demand(
         db, product, bin_, qty=500, required_date=_months_ahead(2),
         so_number=f"{marker}-SO1",
     )
@@ -72,6 +76,10 @@ def _spo_333(db, *, linked: bool, received: bool, placed: float = 333):
     )
     if received:
         _stock(db, product, pool, 333)
+    if so_ref:
+        order.source_ref = f"ZZTBOOK:{marker}"
+        line.source_ref = f"ZZTBOOK:{marker}:1"
+        allocation.from_so_line_ref = f"ZZTBOOK:{marker}:1"
     if linked:
         project_order, project_line = _project_line_for(db, line)
         _order_back_link_on_spo(
@@ -110,15 +118,58 @@ def test_linked_spo_333_covers_the_same_before_and_after_receipt(scm_app):
 
 
 def test_a_partly_placed_spo_counts_only_the_placed_part_either_side_of_receipt(scm_app):
-    """The dev book's own shape (SPO-2026/09-0036, 333 at BRW): one order inquiry placed 36
-    of it on a BRW-BB line. Only the 36 counts, incoming or landed; the other 297 are
-    unlinked pool supply."""
+    """The dev book's own shape: one order inquiry placed 36 of the BRW SPO 333 on a
+    BRW-BB line. Only the 36 counts, incoming or landed; the other 297 are unlinked pool
+    supply."""
     app, db = _client(scm_app)
     incoming = _spo_333(db, linked=True, received=False, placed=36)
     landed = _spo_333(db, linked=True, received=True, placed=36)
     for book in BOOKS:
         assert _projected(app, incoming, book) == [0.0, 0.0, -464.0, 0.0], book
         assert _projected(app, landed, book) == [0.0, 0.0, -464.0, 0.0], book
+
+
+def test_a_pool_spo_naming_a_project_line_by_s_o_ref_agrees_with_covered_by(scm_app):
+    """The S/O ref on a POOL document does not cross into a project group: R40 keeps a
+    book-S/O pin inside its own ownership group (`book_so_pins`; only a Confirm moves
+    supply across a group), so Covered by credits nothing and the projection agrees, line
+    for line, before and after receipt. (Raised with the owner on PR #1594: rule D names
+    the S/O ref as a link; crossing R40 is a walk change, not this layer's.)"""
+    app, db = _client(scm_app)
+    incoming = _spo_333(db, linked=False, received=False, so_ref=True)
+    landed = _spo_333(db, linked=False, received=True, so_ref=True)
+    month = month_key(_months_ahead(2))
+    for seed in (incoming, landed):
+        for book in BOOKS:
+            assert _projected(app, seed, book) == [0.0, 0.0, -500.0, 0.0], book
+            with TestClient(app) as c:
+                cell = c.get(
+                    f"{BASE}/{seed['product'].id}/cell",
+                    params={"month": month, "projected": "true", "book": book},
+                ).json()
+            [line] = cell["demand"]
+            assert (line["assigned_qty"], line["short_qty"]) == (0, 500), book
+
+
+def test_a_confirmed_decision_on_pool_stock_counts(scm_app):
+    """A confirmed planning decision holding 100 of BRW's on hand for the BB line counts;
+    BRW's other 233 do not."""
+    app, db = _client(scm_app)
+    seed = _spo_333(db, linked=False, received=True)
+    from app.models.inventory import Warehouse
+    from app.models.order import SalesOrderLine
+
+    marker = seed["marker"]
+    pool = db.query(Warehouse).filter(Warehouse.warehouse_code == f"{marker}BRW").one()
+    line = (
+        db.query(SalesOrderLine)
+        .filter(SalesOrderLine.product_id == seed["product"].id)
+        .one()
+    )
+    _order, project_line = _project_line_for(db, line)
+    _confirmed_hold(db, project_line, pool, 100)
+    for book in BOOKS:
+        assert _projected(app, seed, book) == [0.0, 0.0, -400.0, 0.0], book
 
 
 def test_the_projection_agrees_with_covered_by_line_for_line(scm_app):

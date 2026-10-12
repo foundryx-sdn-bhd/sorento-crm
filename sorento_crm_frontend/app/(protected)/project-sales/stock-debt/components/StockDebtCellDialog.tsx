@@ -180,21 +180,18 @@ function signedQty(value: number): string {
 }
 
 /** The drill's projection line, plainly: what the project bins are short or spare this
- *  month (the page's own figure under Book=Project), then each pool term that is not zero,
- *  then the result and what carries on. */
+ *  month (pool stock only through a link, as Covered by shows), then each reserve term
+ *  that is not zero, then the result and what carries on. */
 function projectionParts(projection: StockDebtProjection): string[] {
   const parts = [`Project bins ${signedQty(projection.month_balance)}`];
   if (projection.carried_in) parts.push(`Carried in ${signedQty(projection.carried_in)}`);
-  if (projection.pool_supply) {
-    const sources = (projection.pool_sources ?? [])
+  if (projection.reserve_supply) {
+    const sources = (projection.reserve_sources ?? [])
       .map((source) => `${source.label} ${source.qty.toLocaleString()}`)
       .join(', ');
     parts.push(
-      `Pool supply ${projection.pool_supply.toLocaleString()}${sources ? ` (${sources})` : ''} applied to this month`,
+      `Reserve supply ${projection.reserve_supply.toLocaleString()}${sources ? ` (${sources})` : ''} applied to this month`,
     );
-  }
-  if (projection.dealer_demand) {
-    parts.push(`Dealer orders ${(-projection.dealer_demand).toLocaleString()}`);
   }
   parts.push(`Projected ${signedQty(projection.projected)}`);
   if (projection.carried_out) {
