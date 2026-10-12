@@ -9,7 +9,10 @@ order, so promotion is one label move. No policy blocks (v56 carries none).
 
 The text is `alembic/data/chatbot_semantic_parser.refkinds-v56-20261011.txt`, published verbatim:
 the ablation file with `PO_REFS_ADDENDUM` replaced by `PO_REFS_ADDENDUM + CHAT_REPORT_ADDENDUM +
-REF_KINDS_ADDENDUM` (`tests/chatbot/test_ref_kinds_v56_publish.py` pins that formula).
+REF_KINDS_ADDENDUM`, and the entity format line's hint values extended with the five reference
+kinds, one example each (crew decision 12 Oct 2026: with the addendum alone the parser kept
+emitting "order" for a kind-worded number). `tests/chatbot/test_ref_kinds_v56_publish.py` pins
+both edits.
 
 The production label is never moved and `ai_prompt_labels` is never touched. Idempotent: a
 version already carrying this exact template publishes nothing.
