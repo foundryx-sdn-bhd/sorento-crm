@@ -1,6 +1,6 @@
 # PLAN: Planning "why" trail - why was this cancelled, why can I not confirm
 
-Status: Plan (behaviour card + Lavish mock pending owner). Track: standard (Size M, LEAD pattern).
+Status: Plan. All five answered 13 Oct (Q1-Q5 (a)); mock v2 with the owner. Track: standard (Size M, LEAD pattern).
 Lane: PLANNING-WHY, branch `crew/planning-why`.
 UAC: `planning-why-12oct-acceptance-criteria.md` (written after the card is answered).
 
@@ -59,7 +59,18 @@ OIS = `BE/services/project_order_inquiry_service.py`, PCS = `BE/services/plannin
    revisions, saved draft, raises, planning-change note stamps; no cancels, no emails, no
    refusals. Opened by `DecisionTrailButton` on the worklist and the board.
 
-## Behaviour card (v1, 13 Oct 2026; awaiting owner)
+## Behaviour card (v1, 13 Oct 2026)
+
+Answers (crew, 13 Oct 2026): Q2 (a) audit_logs, no migration. Q3 (a) every press that showed a
+refusal, dry run included, not admin Simulate. Q5 (a) cause only when provable, else "cause not
+recorded". Owner, 13 Oct: Q1 (a) one History page, line History icons open it filtered; Q4 (a) recipients
+shown to anyone who can see the board.
+
+Owner on mock v1 (verbatim): "too many words, i need structure, reuse components, you just give
+me a history page to debug, don't show too many things to the user"; "i am okay with the
+timeline, just make sure I can filter by product, SO etc". Mock v2: refusal = table rows (line,
+product, change, one reason badge, one action); History = one page "Planning history" under
+Project Demand with filters SO, product, line, event, user, date; no new board button.
 
 Mock: `documentation/mockups/PLANNING-WHY/index.html` (real SO422492, masked).
 
