@@ -323,6 +323,7 @@ class TestPrompt:
             PO_REFS_ADDENDUM,
             SUB_ASKS_ADDENDUM,
             REF_KINDS_ADDENDUM,
+            FIND_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
@@ -339,6 +340,7 @@ class TestPrompt:
         # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
         # PROMO-SUBJECT-FILTER: PROMOTION_KIND_ADDENDUM follows CANONICAL_CODE_ADDENDUM.
         # DEV-FAILURES RC-B: PORTAL_FORM_ADDENDUM sits between TRAP_SPECS_FALLBACK_BLOCK and MEMORY.
+        # CHAT-FIND (#1601): FIND_ADDENDUM follows REF_KINDS_ADDENDUM.
         from app.services.chatbot_parser_prompt import PORTAL_FORM_ADDENDUM, TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
@@ -350,6 +352,7 @@ class TestPrompt:
             + SUB_ASKS_ADDENDUM
             + CHAT_REPORT_ADDENDUM
             + REF_KINDS_ADDENDUM
+            + FIND_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK

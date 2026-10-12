@@ -22,6 +22,35 @@ from app.services.queue_service import enqueue_job
 logger = logging.getLogger(__name__)
 
 
+DEBTOR_SEED_PREFIX = "debtor:"
+# embedding_{documents,chunks,queue}.source_id are String(128); a longer seed id is skipped.
+DEBTOR_SEED_ID_MAX = 128
+
+
+def debtor_seed_id(company_id: str, code: str) -> str:
+    """``source_id`` of the synthetic customer seed for an ``orders.debtor_code`` with no
+    customer master row in ``company_id``. One seed per (company, code), so the seed
+    carries its company and resolves only inside it."""
+    return f"{DEBTOR_SEED_PREFIX}{company_id}:{code}"
+
+
+def parse_debtor_seed_id(source_id: Any) -> Optional[tuple[Optional[str], str]]:
+    """``(company_id, code)`` of a debtor seed id, or None when it is not one.
+
+    A legacy ``debtor:<code>`` id (written company-less before SCOPE-SEEDS) parses as
+    ``(None, code)``."""
+    if not isinstance(source_id, str) or not source_id.startswith(DEBTOR_SEED_PREFIX):
+        return None
+    rest = source_id[len(DEBTOR_SEED_PREFIX):]
+    head, sep, tail = rest.partition(":")
+    if sep:
+        try:
+            return str(uuid.UUID(head)), tail
+        except ValueError:
+            pass
+    return None, rest
+
+
 def _embedding_company_filter(db: Session):
     """Company-scope predicate for vector search over embedding rows (multi-company
     isolation, AC-I4). Reads the four-state scope stamped on the session:
@@ -29,8 +58,8 @@ def _embedding_company_filter(db: Session):
       None              -> None  (no filter - all companies / system / back-compat)
       frozenset({ids})  -> company_id IN (ids) OR company_id IS NULL
                            (shared / company-less knowledge stays visible),
-                           minus ``debtor:<code>`` seeds: company-less (migration
-                           304) although the orders they come from are not
+                           except a company-less ``debtor:`` seed: a debtor is never
+                           shared knowledge (a legacy row an old worker wrote)
       UNSET / empty     -> false()  (fail-closed: 0 rows)
 
     Embedding rows are NOT CompanyScopedMixin (the ORM auto-filter never touches
@@ -40,12 +69,12 @@ def _embedding_company_filter(db: Session):
     if scope is None:
         return None
     if isinstance(scope, frozenset) and scope:
-        return and_(
-            or_(
+        return or_(
+            EmbeddingChunk.company_id.in_(list(scope)),
+            and_(
                 EmbeddingChunk.company_id.is_(None),
-                EmbeddingChunk.company_id.in_(list(scope)),
+                ~EmbeddingChunk.source_id.startswith(DEBTOR_SEED_PREFIX),
             ),
-            ~EmbeddingChunk.source_id.startswith("debtor:"),
         )
     return sa_false()  # UNSET / empty frozenset -> fail-closed
 

@@ -537,6 +537,31 @@ def _build_json_schema() -> dict[str, Any]:
             # without the word PO. Read by the business lane for a non-staff profile only
             # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
             "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
+                            },
+                            "required": ["key", "value", "unit"],
+                        },
+                    },
+                },
+                "required": ["filters"],
+            },
             "anaphora": {
                 "type": "object",
                 "additionalProperties": False,
@@ -635,6 +660,7 @@ def _build_json_schema() -> dict[str, Any]:
             "po_refs",
             "sub_asks",
             "family",
+            "find",
         ],
     }
 
@@ -704,6 +730,9 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         # emits either; absent reads as one ask, scope not said.
         "sub_asks",
         "family",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
 

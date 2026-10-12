@@ -446,6 +446,14 @@ LABELS: dict[str, dict[str, str]] = {
     "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak pasti yang mana satu anda maksudkan. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法确定您指的是哪一个。请再次索取低库存报告，并提供类别或 \"all\"。"},
 }
 
+# CHAT-FIND: the generic find tool's presenter lines live with their filter in the registry
+# (`app/services/product_find.py`), so a filter registered there is translated with no edit
+# here. A label already catalogued above keeps its own wording.
+from app.services.product_find import catalog_labels as _find_labels  # noqa: E402
+
+for _english, _entry in _find_labels().items():
+    LABELS.setdefault(_english, _entry)
+
 #: Presenter field key -> English label (slices 1 and 2).
 FIELD_KEYS: dict[str, str] = {
     "company_name": "Company",
@@ -696,11 +704,12 @@ LABELS.update(
     }
 )
 #: The per-ask runner's keys are whole labels and values of ITS reply, filled by key
-#: (`Localizer.fill`), never matched inside another reply's running text: "Stock" or
-#: "delivered" inside a stock or order answer must stay exactly as that answer wrote it.
+#: (`Localizer.fill`), never matched inside another reply's running text: "delivered" inside
+#: an order answer must stay exactly as that answer wrote it. "Stock" is not here: CHAT-FIND
+#: (#1601) translates a "Stock:" line in any reply, with the same words.
 _SUB_ASK_KEYS = frozenset(
     {
-        "Received {window}", "Received", "Last in", "Last cost", "Stock", "Incoming", "Incoming {window}",
+        "Received {window}", "Received", "Last in", "Last cost", "Incoming", "Incoming {window}",
         "Sold {window} ({basis})", "Sold {axis} {window} ({basis})", "per salesman",
         "per customer", "per product", "per brand", "per category", "per location",
         "per channel", "per month", "delivered", "ordered", "not shared with you",

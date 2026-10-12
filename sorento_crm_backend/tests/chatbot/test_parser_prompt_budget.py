@@ -241,7 +241,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # 53,040 with it, so CEILING is 52,528 (+4; the whole-prompt assertion is CEILING + 512).
 # Merge of main (#1583 DEV-FAILURES, PORTAL_FORM_ADDENDUM) with MULTI-ASK-PLAN2: 53,143 est. tokens
 # without MEMORY_ADDENDUM (main's 52,524 + SUB_ASKS_ADDENDUM), so CEILING is 53,147 (+4).
-CEILING = 53_147
+# CHAT-FIND (12 Oct 2026): FIND_ADDENDUM, the `"find"` key line plus the `{{find_filters}}`
+# token (the rule and the filter lines render live from the registry, so later filters add
+# nothing here): +34 est. tokens, so CEILING is 52,562.
+# Merge of main (#1601 CHAT-FIND, FIND_ADDENDUM) with MULTI-ASK-PLAN2: 53,177 est. tokens without
+# MEMORY_ADDENDUM (main's prompt + SUB_ASKS_ADDENDUM), so CEILING is 53,181 (+4).
+CEILING = 53_181
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

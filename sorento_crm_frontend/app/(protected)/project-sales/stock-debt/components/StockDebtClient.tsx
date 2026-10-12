@@ -201,6 +201,9 @@ export function StockDebtClient() {
   // Default ON (AC-S2-10): the whole catalogue is ~4,000 products and the answer the
   // planner came for is the short list that owes something.
   const [onlyDebt, setOnlyDebt] = React.useState(true);
+  // STOCK-DEBT-PROJECTION (owner, 12 Oct 2026): month cells read the running projected
+  // balance instead of the month's own. Display only; default off.
+  const [projected, setProjected] = React.useState(false);
   // Display preference, not a filter: remembered per browser, default ON. Read after mount
   // so the server render and first client render agree.
   const [showAux, setShowAux] = React.useState(true);
@@ -229,7 +232,7 @@ export function StockDebtClient() {
   // (AC-24).
   React.useEffect(() => {
     setPagination((previous) => ({ ...previous, pageIndex: 0 }));
-  }, [debounced, onlyDebt, book, supplierIds, dateFrom, dateTo]);
+  }, [debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, projected]);
 
   const list = useStockDebtQuery({
     pageIndex: pagination.pageIndex,
@@ -240,6 +243,7 @@ export function StockDebtClient() {
     supplierIds,
     dateFrom,
     dateTo,
+    projected,
   });
 
   const rows = React.useMemo(() => list.data?.data ?? [], [list.data]);
@@ -579,7 +583,8 @@ export function StockDebtClient() {
     (book !== 'all' ? 1 : 0) +
     (supplierIds.length > 0 ? 1 : 0) +
     (dateFrom || dateTo ? 1 : 0) +
-    (onlyDebt ? 0 : 1);
+    (onlyDebt ? 0 : 1) +
+    (projected ? 1 : 0);
 
   // R14c: both ends reads "Delivery: 1 Nov 26 to 30 Nov 26"; either end alone reads
   // "from" or "to" rather than padding the other side with a placeholder.
@@ -609,6 +614,7 @@ export function StockDebtClient() {
         }
       : null,
     !onlyDebt ? { label: 'Including covered products', onClear: () => setOnlyDebt(true) } : null,
+    projected ? { label: 'Projected balance', onClear: () => setProjected(false) } : null,
   ].filter((chip): chip is { label: string; onClear: () => void } => chip !== null);
 
   return (
@@ -747,6 +753,17 @@ export function StockDebtClient() {
 
                     <div className="flex items-center gap-2">
                       <Switch
+                        id="projected"
+                        checked={projected}
+                        onCheckedChange={setProjected}
+                      />
+                      <Label htmlFor="projected" className="text-sm whitespace-nowrap">
+                        Projected balance
+                      </Label>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Switch
                         id="show-aux"
                         checked={showAux}
                         onCheckedChange={changeShowAux}
@@ -761,7 +778,10 @@ export function StockDebtClient() {
               primaryAction={
                 <StockDebtExportPopover
                   envelope={list.data}
-                  filters={{ query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, showAux }}
+                  filters={{
+                    query: debounced, onlyDebt, book, supplierIds, dateFrom, dateTo, showAux,
+                    projected,
+                  }}
                 />
               }
             />
@@ -850,6 +870,7 @@ export function StockDebtClient() {
           dateFrom={dateFrom}
           dateTo={dateTo || undefined}
           book={book}
+          projected={projected}
           onClose={() => setOpenCell(null)}
         />
       )}
