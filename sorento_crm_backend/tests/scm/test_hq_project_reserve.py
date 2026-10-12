@@ -272,3 +272,26 @@ def test_a_plan_buy_at_the_reserve_writes_no_claim():
             PurchaseOrderService(db).bulk_confirm([po_id], actor=actor)
 
             assert _claims_on(db, line_id) == []
+
+
+# --------------------------------------------------------------------------- reorder / low stock
+
+
+def test_reorder_does_not_count_the_reserves_stock_as_dealer_on_hand():
+    """Reorder and low stock read pool on hand for the DEALER book; HQ's stock is project
+    stock, so a reserve reads 0 there (the `segment` test already does this - pinned)."""
+    from app.services.scm import reorder_run_service as svc
+    from tests._pg_fixture import pg_session
+    from tests.scm.test_pool_only_on_hand import _product, _stock, _warehouse
+
+    with pg_session() as db:
+        p = _product(db)
+        hq = _warehouse(db, segment="project")
+        hq.pool_warehouse_id = hq.id
+        db.flush()
+        _stock(db, p.id, hq.id, 5000)
+
+        rows = svc._planning_rows(db, [str(hq.id)], [p.id])
+
+    assert len(rows) == 1
+    assert rows[0]["quantity_on_hand"] == 0
