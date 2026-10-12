@@ -3,6 +3,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional, Tuple
 from app.database import get_db
@@ -10,6 +11,7 @@ from app.dependencies import require_any_permission_with_api_key
 
 from app.services.marketing_service import PromotionProductService, _resolve_promotion_id_for_filter
 from app.services.uuid_list_param import parse_uuid_list
+from app.services.product_spec_filter import parse_spec_constraints
 from app.schemas.marketing import (
     PromotionProductCreate,
     PromotionProductUpdate,
@@ -288,10 +290,20 @@ async def list_all_promotion_products(
             "not come back at all."
         ),
     ),
+    spec_constraints: Optional[str] = Query(
+        None,
+        description=(
+            "JSON list of {key, op, value}: keeps only lines whose product satisfies the "
+            "product spec registry constraints (same contract as GET /master-data/products). "
+            "An unknown key is HTTP 422."
+        ),
+    ),
     current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_PRODUCT_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get promotion products with pagination. Optional access_levels (names) intersection filter."""
+    # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints)
     try:
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
@@ -371,6 +383,7 @@ async def list_all_promotion_products(
             or (product_id and product_id.strip())
             or (text_query and text_query.strip())
             or norm_entities
+            or parsed_spec_constraints
         )
         # Gate "no filter = empty page" guard to API-key / MCP callers only.
         # FE DataGrid lands on this endpoint with no filters and expects the
@@ -417,13 +430,23 @@ async def list_all_promotion_products(
             any_dimension_max=filter_state["any_dimension_max"],
             contact_access_codes=contact_codes,
             serving_policy=serving_policy,
+            spec_constraints=parsed_spec_constraints,
         )
+        # A virtual `size` the data could not place on one axis: no rows, and the clarify /
+        # miss keys the strict response_model would drop.
+        if "spec_ambiguous" in result or "spec_alternatives" in result:
+            from fastapi.encoders import jsonable_encoder
+            return JSONResponse(content=jsonable_encoder(result))
         # Map promo_selling_price to promotion_price for each product
         products = result.get("data", [])
         for product in products:
             if hasattr(product, 'promo_selling_price'):
                 product.promotion_price = product.promo_selling_price
         result["data"] = products
+        if result.get("spec_resolved"):
+            body = PromotionServingListResponse[PromotionProductResponse].model_validate(result).model_dump(mode="json")
+            body["spec_resolved"] = result["spec_resolved"]
+            return JSONResponse(content=body)
         return result
     except HTTPException:
         raise

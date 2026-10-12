@@ -21,6 +21,10 @@ from app.services.product_spec_registry import active_registry
 from app.services.product_spec_search import BRAND_KEY, membership_clause
 
 OPS = ("eq", "between", "gte", "lte")
+# The virtual key for a size said with no axis word ("250mm"). Not a registry key: the route
+# resolves it to the one active numeric mm key whose stored value holds the number among the
+# products matching the other constraints (card section 9, slice 1).
+SIZE_KEY = "size"
 
 
 def _is_number(v: Any) -> bool:
@@ -43,6 +47,7 @@ def parse_spec_constraints(db: Session, raw: str | None) -> list[dict] | None:
     if not isinstance(parsed, list) or not parsed:
         raise _bad("`spec_constraints` must be a non-empty JSON list of {key, op, value}.")
     types = {row.spec_key: row.data_type for row in active_registry(db)}
+    types.setdefault(SIZE_KEY, "numeric")
     out: list[dict] = []
     for item in parsed:
         if not isinstance(item, dict) or not isinstance(item.get("key"), str) or "value" not in item:
@@ -56,6 +61,8 @@ def parse_spec_constraints(db: Session, raw: str | None) -> list[dict] | None:
             scalars = value if isinstance(value, list) else [value]
             if not scalars or not all(isinstance(v, (str, int, float, bool)) for v in scalars):
                 raise _bad(f"Spec key '{key}': `value` must be a string, number, boolean or a list of them.")
+            if key == SIZE_KEY and not all(_is_number(v) for v in scalars):
+                raise _bad(f"Spec key '{SIZE_KEY}' takes a number in mm.")
         elif types[key] != "numeric":
             raise _bad(f"Spec key '{key}' is not numeric; op '{op}' does not apply.")
         elif op == "between":
@@ -117,26 +124,46 @@ def _sort_key(v: Any):
     return (0, v, "") if _is_number(v) else (1, 0, str(v).lower())
 
 
+def _where(constraints: list[dict]):
+    return and_(*[_one(c) for c in constraints]) if constraints else true()
+
+
+def _present(key: str):
+    stored = _stored(key)
+    return and_(stored.isnot(None), func.jsonb_typeof(stored) != "null")
+
+
+def _values_of(db: Session, key: str, where) -> list:
+    """The distinct stored values of `key` among the spec rows matching `where`, sorted."""
+    stored = _stored(key)
+    seen: dict[str, Any] = {}
+    for (value,) in db.execute(select(stored).where(where, _present(key)).distinct()).all():
+        for v in value if isinstance(value, list) else [value]:
+            seen.setdefault(json.dumps(v, sort_keys=True), v)
+    return sorted(seen.values(), key=_sort_key)
+
+
+def _alternative(row, values: list) -> dict:
+    return {"key": row.spec_key, "label": row.label, "unit": row.unit, "values": values}
+
+
 def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
     """For a filtered zero: per constrained key, the values that exist among products matching
-    the OTHER constraints (`spec_alternatives`) and how many of those have no value recorded
-    for it (`spec_unrecorded`, zero counts left out). The reply must never say "none exists"
-    while products with nothing recorded remain."""
+    the OTHER constraints (`spec_alternatives`, each item with the key's label and unit so the
+    reply can name them) and how many of those have no value recorded for it
+    (`spec_unrecorded`, zero counts left out). The reply must never say "none exists" while
+    products with nothing recorded remain."""
+    registry = {row.spec_key: row for row in active_registry(db)}
     alternatives: list[dict] = []
     unrecorded: dict[str, int] = {}
     for key in dict.fromkeys(c["key"] for c in constraints):
-        if key == BRAND_KEY:
+        if key == BRAND_KEY or key not in registry:
             continue  # the brand lives on the product, not in the stored values
-        others = [_one(c) for c in constraints if c["key"] != key]
-        where = and_(*others) if others else true()
+        where = _where([c for c in constraints if c["key"] != key])
+        values = _values_of(db, key, where)
+        if values:
+            alternatives.append(_alternative(registry[key], values))
         stored = _stored(key)
-        present = and_(stored.isnot(None), func.jsonb_typeof(stored) != "null")
-        seen: dict[str, Any] = {}
-        for (value,) in db.execute(select(stored).where(where, present).distinct()).all():
-            for v in value if isinstance(value, list) else [value]:
-                seen.setdefault(json.dumps(v, sort_keys=True), v)
-        if seen:
-            alternatives.append({"key": key, "values": sorted(seen.values(), key=_sort_key)})
         missing = db.execute(
             select(func.count(func.distinct(ProductSpecifications.product_id))).where(
                 where, or_(stored.is_(None), func.jsonb_typeof(stored) == "null")
@@ -145,3 +172,62 @@ def spec_miss_detail(db: Session, constraints: list[dict]) -> dict:
         if missing:
             unrecorded[key] = int(missing)
     return {"spec_alternatives": alternatives, "spec_unrecorded": unrecorded}
+
+
+def resolve_size(db: Session, constraints: list[dict] | None) -> tuple[list[dict] | None, dict]:
+    """Resolve the virtual `size` key against the data, before the route filters.
+
+    Candidates are the active numeric registry keys in mm. Among products matching the other
+    constraints, the candidates holding the number decide:
+      * one key: the constraint is rewritten onto it; extra = `{"spec_resolved": {"size": key}}`.
+      * several: the route returns no rows; extra = `spec_ambiguous` (candidates sorted) plus
+        `spec_labels` (each candidate's label, so the reply can ask "Length or Width?").
+      * none: the route returns no rows; extra = `spec_alternatives` per mm key present and
+        `spec_unrecorded: {"size": n}` (products with no mm value at all, left out when 0).
+    Returns `(constraints, extra)`; constraints is None when the route must return no rows.
+    No `size` constraint: `(constraints, {})` unchanged."""
+    if not constraints or not any(c["key"] == SIZE_KEY for c in constraints):
+        return constraints, {}
+    mm_keys = [
+        row for row in active_registry(db)
+        if row.data_type == "numeric" and (row.unit or "").lower() == "mm"
+    ]
+    out = [c for c in constraints if c["key"] != SIZE_KEY]
+    resolved: dict[str, str] = {}
+    for size in [c for c in constraints if c["key"] == SIZE_KEY]:
+        where = _where(out)
+        holders = sorted(
+            row.spec_key for row in mm_keys
+            if db.execute(
+                select(ProductSpecifications.product_id)
+                .where(where, _one({**size, "key": row.spec_key}))
+                .limit(1)
+            ).first()
+        )
+        if len(holders) == 1:
+            out.append({**size, "key": holders[0]})
+            resolved[SIZE_KEY] = holders[0]
+            continue
+        if holders:
+            labels = {row.spec_key: row.label for row in mm_keys if row.spec_key in holders}
+            return None, {
+                "spec_ambiguous": [
+                    {"key": SIZE_KEY, "value": size["value"], "candidates": holders}
+                ],
+                "spec_labels": labels,
+            }
+        alternatives = [
+            _alternative(row, values)
+            for row in mm_keys
+            if (values := _values_of(db, row.spec_key, where))
+        ]
+        missing = db.execute(
+            select(func.count(func.distinct(ProductSpecifications.product_id))).where(
+                where, *[~_present(row.spec_key) for row in mm_keys]
+            )
+        ).scalar()
+        extra: dict = {"spec_alternatives": alternatives, "spec_unrecorded": {}}
+        if missing:
+            extra["spec_unrecorded"] = {SIZE_KEY: int(missing)}
+        return None, extra
+    return out, {"spec_resolved": resolved}

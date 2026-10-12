@@ -233,6 +233,8 @@ def _with_sellable(service: StockService, result: dict) -> JSONResponse:
                 _attach_total(entry, pid, entry["total_on_hand"])
             summary.append(entry)
         body["stock_summary"] = summary
+    if result.get("spec_resolved"):
+        body["spec_resolved"] = result["spec_resolved"]
     return JSONResponse(content=body)
 
 
@@ -407,11 +409,18 @@ def get_stock_balance(
         # `ListResponse` response_model - which would silently drop those keys - 
         # and emit the raw dict. `data` is always [] here, so encoding is trivial
         # and the with-data path stays byte-identical (AC-R1).
-        if isinstance(result, dict) and (result.get("alternatives") or "spec_alternatives" in result):
+        if isinstance(result, dict) and (
+            result.get("alternatives") or "spec_alternatives" in result or "spec_ambiguous" in result
+        ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
         if include_sellable and isinstance(result, dict):
             return _with_sellable(service, result)
+        if isinstance(result, dict) and result.get("spec_resolved"):
+            # Bypasses response_model, which would drop the undeclared key.
+            body = StockBalanceListResponse.model_validate(result).model_dump(mode="json")
+            body["spec_resolved"] = result["spec_resolved"]
+            return JSONResponse(content=body)
         return result
     except Exception as e:
         raise handle_internal_error(str(e))

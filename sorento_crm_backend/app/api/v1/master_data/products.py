@@ -104,6 +104,9 @@ def _with_specs_and_or_specifications(
             serialized["specifications"] = specifications_by_product.get(str(row.id))
         if include_specs:
             serialized["specs"] = specs_by_product.get(str(row.id)) or []
+    if result.get("spec_resolved"):
+        # The axis a virtual `size` constraint resolved to (SPEC-PROMO-PARAMS).
+        body["spec_resolved"] = result["spec_resolved"]
     return JSONResponse(content=body)
 
 
@@ -267,10 +270,12 @@ def get_products(
         # response_model - which would silently drop those keys - and emit the raw
         # dict. `data` is always [] here, so the with-data path stays byte-identical
         # (AC-R1).
-        if isinstance(result, dict) and (result.get("alternatives") or "spec_alternatives" in result):
+        if isinstance(result, dict) and (
+            result.get("alternatives") or "spec_alternatives" in result or "spec_ambiguous" in result
+        ):
             from fastapi.encoders import jsonable_encoder
             return JSONResponse(content=jsonable_encoder(result))
-        if (include_specifications or include_specs) and isinstance(result, dict):
+        if (include_specifications or include_specs or result.get("spec_resolved")) and isinstance(result, dict):
             return _with_specs_and_or_specifications(
                 service,
                 result,

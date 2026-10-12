@@ -1267,8 +1267,14 @@ class PromotionProductService:
         contact_access_codes: Optional[list[str]] = None,
         entities: Optional[list[str]] = None,
         serving_policy: bool = False,
+        spec_constraints: Optional[list[dict]] = None,
     ):
         """List products for a promotion, several promotions, or all promotion products.
+
+        `spec_constraints` (parsed by `product_spec_filter.parse_spec_constraints`) keeps
+        only lines whose product satisfies them; a virtual `size` constraint is resolved
+        first and, when the data cannot place it on one axis, the answer is no rows plus
+        the clarify / miss keys `resolve_size` returns (SPEC-PROMO-PARAMS).
 
         `serving_policy=True` replaces the parent-promotion active gate with the
         per-type serving policy (see `app/services/promotion_serving.py`), so the
@@ -1297,6 +1303,18 @@ class PromotionProductService:
             resolve_or_empty as _resolve_or_empty,
         )
 
+        from app.services.product_spec_filter import resolve_size, spec_constraint_clause
+
+        sized_constraints, spec_extra = resolve_size(self.db, spec_constraints)
+        if spec_constraints and sized_constraints is None:
+            return {
+                "data": [],
+                "pagination": {"total": 0, "page": page, "limit": limit},
+                "empty": True,
+                **spec_extra,
+            }
+        spec_constraints = sized_constraints
+
         _entity_buckets = _resolve_or_empty(self.db, entities)
         if _entity_buckets is not None and not _entity_buckets.has_resolved_filter:
             from app.schemas.common import PaginationResponse
@@ -1321,6 +1339,13 @@ class PromotionProductService:
 
         if product_ids_filter:
             q = q.filter(PromotionProduct.product_id.in_(product_ids_filter))
+
+        if spec_constraints:
+            q = q.filter(
+                PromotionProduct.product_id.in_(
+                    select(Product.id).where(spec_constraint_clause(self.db, spec_constraints))
+                )
+            )
 
         if promotion_ids:
             resolved_bulk: list[str] = []
@@ -1510,6 +1535,7 @@ class PromotionProductService:
             or any_dimension_min is not None
             or any_dimension_max is not None
             or contact_access_codes is not None
+            or bool(spec_constraints)
         )
         today = datetime.utcnow().date()
         active_clause = _promotion_active_clause(today)
@@ -1601,6 +1627,7 @@ class PromotionProductService:
             payload["serving_policy_applied"] = True
         if _entity_buckets is not None:
             payload["resolved_entities"] = _entity_buckets.as_echo()
+        payload.update(spec_extra)
         return payload
 
     def get_promotion_line(self, promotion_id: str, line_id: str):
