@@ -8,6 +8,7 @@ from app.api.v1.master_data import (
     units_of_measure,
     countries,
     products_select,
+    product_find,
     product_attachments,
     lookup_sets,
     lookup_eligibility,
@@ -27,6 +28,8 @@ from app.api.v1.master_data import (
 router = APIRouter()
 
 router.include_router(products_select.router, prefix="/products", tags=["products"])
+# CHAT-FIND: `/products/find` before `products.router`, whose `/{product_id}` would read it as an id.
+router.include_router(product_find.router, prefix="/products", tags=["products"])
 router.include_router(product_alternatives.router, prefix="/products", tags=["products"])
 router.include_router(products.router, prefix="/products", tags=["products"])
 router.include_router(brands.router, prefix="/brands", tags=["brands"])

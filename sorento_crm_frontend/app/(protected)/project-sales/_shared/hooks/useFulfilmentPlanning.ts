@@ -12,6 +12,7 @@ import {
   getClassificationEvidence,
   getPileQueue,
   getPlanningBoard,
+  getPlanningHistory,
   confirmSupply,
   getReconciliation,
   getStockDetail,
@@ -504,6 +505,18 @@ export function usePreviewConfirmManyMutation() {
     onError: (error: Error) => {
       toast.error(error.message);
     },
+  });
+}
+
+export const PLANNING_HISTORY_KEY = 'planning-history';
+
+/** The admin History of the named orders; read only while the sheet is open. */
+export function usePlanningHistory(psoIds: string[], enabled = true) {
+  return useQuery({
+    queryKey: [PLANNING_HISTORY_KEY, [...psoIds].sort().join(',')],
+    queryFn: () => getPlanningHistory(psoIds),
+    enabled: enabled && psoIds.length > 0,
+    retry: 1,
   });
 }
 

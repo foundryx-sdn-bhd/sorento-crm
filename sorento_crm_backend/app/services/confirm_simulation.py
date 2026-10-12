@@ -99,9 +99,32 @@ def simulation_session(request_db: Session) -> Iterator[Session]:
             outer.rollback()
 
 
+LOCK_BUSY_MESSAGE = (
+    "Another change to this order is being saved right now. Nothing was simulated for it; "
+    "run Simulate confirm again in a moment."
+)
+#: Postgres LockNotAvailable (the simulation's `lock_timeout`) and QueryCanceled.
+_BUSY_PGCODES = {"55P03", "57014"}
+
+
+def is_lock_busy(exc: BaseException) -> bool:
+    """A concurrent writer held the order's lock past the simulation's timeout."""
+    import psycopg2.errors
+    from sqlalchemy.exc import DBAPIError
+
+    if not isinstance(exc, DBAPIError):
+        return False
+    orig = exc.orig
+    return getattr(orig, "pgcode", None) in _BUSY_PGCODES or isinstance(
+        orig, (psycopg2.errors.LockNotAvailable, psycopg2.errors.QueryCanceled)
+    )
+
+
 def error_text(exc: BaseException) -> str:
     """The raw reason an order failed, capped. An `AppException` keeps its own message; any
     other exception leads with its class name, which is the whole point of a dry run."""
+    if is_lock_busy(exc):
+        return LOCK_BUSY_MESSAGE
     if isinstance(exc, AppException):
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         text = detail.get("message") or str(exc)

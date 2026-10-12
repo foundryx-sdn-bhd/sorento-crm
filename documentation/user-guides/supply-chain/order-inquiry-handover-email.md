@@ -18,54 +18,59 @@ location: `OI: SO397450 , SO397460`.
 1. A red headline naming the verb(s) in the mail: **ORDER**, **RESERVE & ORDER**, **ORDER
    BACK**, **PRE-ORDERED**, **ALREADY INBOUND**, **ADVANCE**, **DELAY**, **CHANGE SO NO**,
    **CANCEL BALANCE**.
-2. A sales-order table: **S/O NO**, **CUSTOMER**, **PROJECT**. This is the only place
-   **CUSTOMER** and **PROJECT** appear.
-3. A line table: **SO DATE**, **S/O NO**, **LOCATION**, **ITEM CODE**, **QTY**, **QTY CHANGE
-   TO**, **DELIVERY DATE**, **DELIVERY DATE CHANGE TO**, **REMARK**.
-4. "Raised by \<name\> (\<email\>) on \<date\>."
-5. A link, **Open in Order Inquiries**, that opens the order inquiry's own detail page - see
+2. A sales-order table: **S/O NO**, **SO DATE**, **CUSTOMER**, **PROJECT**. This is the only
+   place **CUSTOMER** and **PROJECT** appear.
+3. A line table: **LOCATION**, **ITEM CODE**, **NEW ITEM CODE**, **QTY**, **NEW QTY**,
+   **DELIVERY**, **NEW DATE**. When the mail covers more than one sales order, a grey
+   **S/O NO** row opens each order's lines.
+4. When any line carries files, one **Attachments:** line under the table names them by item
+   code.
+5. "Raised by \<name\> (\<email\>) on \<date\>."
+6. A link, **Open in Order Inquiries**, that opens the order inquiry's own detail page - see
    [Order inquiries: the Documents view and the OI detail
    page](order-inquiry-documents.md). When the mail covers more than one sales order, the link
    opens the first order inquiry named in it.
 
-**How a change reads.** **QTY** and **DELIVERY DATE** always print what the line was; when
-either one moved, the new value prints in its own **QTY CHANGE TO** or **DELIVERY DATE CHANGE
-TO** column next to it - no strikethrough to decode, no cell holding two numbers. A line whose
-quantity moved 182 to 214 reads **QTY 182**, **QTY CHANGE TO 214**. A line whose delivery date
-moved reads **DELIVERY DATE 01/09/2026**, **DELIVERY DATE CHANGE TO 01/04/2027**, and **REMARK**
-reads DELAY or ADVANCE depending on which way it moved. Every date in the mail reads
-`dd/mm/yyyy`. A cancelled line prints its old quantity in **QTY** and **0** in **QTY CHANGE TO**,
-with **REMARK** reading **CANCEL BALANCE 280 NOS** - the same figure either way, never a
-separate cancel-then-order pair. A plain new line prints **QTY** only, both **CHANGE TO**
-columns blank, **REMARK ORDER**.
+There is no REMARK column. The numbers say what moved, and the red headline lists the
+actions in the mail.
 
-A line whose confirm restates the line itself - a fresh row raised in its place, with its own
-Was/Now - never raises its own DELAY or ADVANCE line in the mail; only a line the confirm leaves
-in place still gets one.
+**How a change reads.** **ITEM CODE**, **QTY** and **DELIVERY** always print what the line
+was. When one of them moved, the new value prints in the **NEW** column next to it. A
+**NEW** column only appears when some line in that mail moved that value, and its cell is
+filled only on the lines that moved. Every date in the mail reads `dd/mm/yyyy`.
+
+* A quantity that moved 182 to 214 reads **QTY 182**, **NEW QTY 214**.
+* A date that moved reads **DELIVERY 01/09/2026**, **NEW DATE 01/04/2027**. A later new date
+  is a delay, an earlier one an advance.
+* A cancelled line reads its old quantity in **QTY** and **0** in **NEW QTY**. A line cut
+  below what purchasing already placed reads the same way, for example **QTY 10**, **NEW QTY
+  6**.
+* A product change reads the old code in **ITEM CODE** and the new one in **NEW ITEM CODE**.
+* A plain new line prints **QTY** and **DELIVERY** only, with every **NEW** cell blank.
+
+The before values are the same ones the Order Inquiries Was/Now dialog shows for the row. A
+line whose received supply the change sends back to the pool (its fresh row carries
+"Replaces N used" in Order Inquiries) prints its own move the same way, for example
+**DELIVERY 01/10/2026**, **NEW DATE 02/11/2026**.
 
 **One line per sales order line, in line totals.** When a planning change moves a line whose
 existing order inquiry row purchasing already placed (or a line carrying two open rows), the row
 keeps its own quantity in Order Inquiries and the extra quantity is raised as its own ORDER
 row there. The mail still prints ONE line for it: **QTY** is what purchasing already held for
-the line (its open rows added up), **QTY CHANGE TO** is the line's new Buy, and **REMARK**
-reads the date verb plus what to do about the difference, for example **ADVANCE, ORDER 264** for
-a line that moved 172 to 436 and came forward. No separate bare **ORDER** line is printed for
-that same line. Two shapes keep today's one-line-per-row reading instead: a line marked
-Order back (its **ORDER BACK** line names the document), and a line whose received supply the
-change sends back to the pool (its fresh **ORDER** line carries "Replaces N used").
+the line (its open rows added up) and **NEW QTY** is the line's new Buy, for example **QTY
+172**, **NEW QTY 436** for a line that moved 172 to 436. No separate line is printed for
+that same line.
 
-**Width.** The handover mail uses the wide email card (900px) so its nine columns read on one
-line each; dates and quantities never wrap, only **REMARK** does. The width is a setting on
-the template in **System Management → Email Templates** (**Width**: Standard or Wide); every
-other mail stays on the standard 600px card.
+**Width.** The handover mail uses the print card (672px), sized to one A4 portrait page.
+Codes, quantities and dates never wrap. The width is a setting on the template in **System Management → Email
+Templates** (**Width**); every other mail stays on the standard 600px card.
 
-**How an item swap reads.** Swapping the product on a line prints as two lines in the table: a
-CANCEL BALANCE line for the old item and an ORDER line for the new one, not a single combined
-row.
+**How an item swap reads.** Swapping the product on a line that has no row to restate prints
+as two lines: the old item with **NEW QTY 0**, and the new item as a plain new line.
 
-A line whose quantity and delivery date are unchanged from the last mail never appears - only
-what actually moved or was cancelled is printed. Confirming a second time with nothing left to
-change sends no mail at all, not an empty one.
+A line whose item code, quantity and delivery date are unchanged from the last mail never
+appears - only what actually moved or was cancelled is printed. Confirming a second time with
+nothing left to change sends no mail at all, not an empty one.
 
 **Still-open amendment instructions.** If the order also carries amendment rows raised by an SO
 change (DELAY, ADVANCE, CANCEL BALANCE, CHANGE SO) that purchasing has not yet actioned, they're
@@ -114,8 +119,8 @@ Two cases still print as separate cancel-and-order lines rather than one combine
 * Moving lines to a different sales order number (**CHANGE SO NO** across two sales orders).
 * Replacing one item for another on a single line.
 
-Both arrive as a CANCEL BALANCE line and an ORDER line, the same as any other item swap, until a
-dedicated combined line is built.
+Both arrive as a cancelled line (**NEW QTY 0**) and a plain new line, the same as any other
+item swap, until a dedicated combined line is built.
 
 ## See also
 
