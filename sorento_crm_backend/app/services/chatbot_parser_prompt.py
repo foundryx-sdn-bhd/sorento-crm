@@ -861,8 +861,9 @@ a number, never take one from an earlier turn.
 # says whether a typed code means that exact code or its whole family. No code rule
 # decides either (owner: semantic parser, no keyword code). MULTI-ASK-PLAN2 (owner, 12 Oct
 # 2026): output keys plus a short English definition of each, no worked examples and no
-# word lists (vocabulary lives in data, PROMPT-ABLATION ruling 11 Oct). Published on the
-# trimmed base as a new UNLABELLED version (`maskp_0001_parser_sub_asks`).
+# word lists. The measures and their words are data, `chatbot_status_words` rows read
+# through `{{sub_ask_measures}}` (`maskp_0002_measure_words`; crew decision 12 Oct). Published
+# on the trimmed base as a new UNLABELLED version (`maskp_0001_parser_sub_asks`).
 SUB_ASKS_ADDENDUM = """
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -876,11 +877,9 @@ Two more OUTPUT keys, on every object:
 sub_asks: when the CURRENT message asks TWO OR MORE different things, one object per thing, in
 the order asked, whatever they are. One thing asked: null. The date and quantity of the last
 receipt are ONE last_receipt ask.
-  measure: "received_qty" (how many already came in over a period, never goods still on the
-    way) | "last_receipt" (when it last came in: the last SPO line's delivery date) |
-    "incoming" (only goods not yet arrived) | "stock" (on hand now) | "supplier" |
-    "last_cost" (purchase price) | "sold_total" (how many sold) | "sold_by" (sold per group) |
-    "other" (anything else asked, such as margin or profit; label says what).
+  measure: ONE of these values (what each means, then words people use for it, in any
+    language):
+{{sub_ask_measures}}
   group_by: sold_by only, "sales_agent" | "customer" | "product" | "brand" | "category" |
     "location" | "channel" | "month"; else null.
   date_from / date_to: YYYY-MM-DD, only a period the CURRENT message names; it covers every

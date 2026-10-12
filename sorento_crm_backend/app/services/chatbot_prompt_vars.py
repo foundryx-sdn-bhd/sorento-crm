@@ -66,7 +66,9 @@ def _domain_words(db: Session) -> list[str]:
     for row in db.execute(sql("SELECT switch_words FROM chatbot_domains ORDER BY sort_order, name")):
         words.extend(row[0] or [])
     for row in _status_rows(db):
-        words.extend(row["trigger_words"] or [])
+        # The sub-ask measure words are not domain words (MULTI-ASK-PLAN2).
+        if "sub_ask_measures" not in (row.get("prompt_lists") or []):
+            words.extend(row["trigger_words"] or [])
     return _dedupe(words)
 
 
@@ -210,12 +212,12 @@ def _wrap(tokens: list[str], *, indent: str = "") -> str:
     return "\n".join(lines)
 
 
-def _status_line(row: dict, pad: int = 0) -> str:
+def _status_line(row: dict, pad: int = 0, *, with_domain: bool = True) -> str:
     """One status, the owner's layout: the quoted values padded so the arrows line up,
     the words wrapped at `WRAP_WIDTH` with a 4-space continuation."""
     words = [_quoted(w) for w in row["trigger_words"] or []]
     head = f'  - {_quoted(row["value"]).ljust(pad)} -> {_one_line(row["label"])}'
-    tail = [f'Domain {_quoted(row["domain"])}.'] if row["domain"] != "order" else []
+    tail = [f'Domain {_quoted(row["domain"])}.'] if with_domain and row["domain"] != "order" else []
     if not words:
         return _wrap([head + "."] + tail, indent="    ")
     tokens = [head + ":"] + [w + "," for w in words[:-1]] + [words[-1] + "."]
@@ -233,6 +235,14 @@ def render_statuses(db: Session) -> str:
     rows = _listed(db, "statuses")
     pad = max((len(_quoted(r["value"])) for r in rows), default=0)
     return "\n".join(_status_line(row, pad) for row in rows)
+
+
+def render_sub_ask_measures(db: Session) -> str:
+    """The sub-ask measures glossary (MULTI-ASK-PLAN2): each value, what it means and the
+    words people use for it. A measure is not a domain, so no domain is named."""
+    rows = _listed(db, "sub_ask_measures")
+    pad = max((len(_quoted(r["value"])) for r in rows), default=0)
+    return "\n".join(_status_line(row, pad, with_domain=False) for row in rows)
 
 
 def render_domain_words(db: Session) -> str:
@@ -322,6 +332,12 @@ VARIABLES: dict[str, RegistryVariable] = {
             ("chatbot_status_words",),
             lambda db: "|".join(_one_line(r["value"]) for r in _status_rows(db) if r["domain"] == "order"),
             lambda db: sum(1 for r in _status_rows(db) if r["domain"] == "order"),
+        ),
+        RegistryVariable(
+            # MULTI-ASK-PLAN2: the sub-ask measures and their words, read by SUB_ASKS_ADDENDUM.
+            "sub_ask_measures", "Sub-ask measures", "Chatbot Status Words", _STATUS_HREF,
+            ("chatbot_status_words",), render_sub_ask_measures,
+            lambda db: len(_listed(db, "sub_ask_measures")),
         ),
         RegistryVariable(
             "entity_kinds", "Entity kinds", "Chatbot Entity Kinds", "/system-management/chatbot-entity-kinds",
