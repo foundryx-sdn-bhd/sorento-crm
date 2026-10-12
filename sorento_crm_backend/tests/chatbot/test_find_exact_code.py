@@ -96,3 +96,59 @@ def test_e5_a_typed_prefix_with_no_exact_row_still_matches_by_containment() -> N
     parse = {"entities": [{"raw": "zztwc8088", "hint": "product", "canonical_code": "zztwc8088", "current_message": True}]}
     entities = [_ent("a", SPARE)]
     assert [e["uuid"] for e in find_lane.named_this_turn(parse, entities)] == ["a"]
+
+
+# --------------------------------------------------------------------------- the stray miss line
+
+FIND_TEXT = "Seat cover for SRTWT7445:\nCode: SRTSCBD823-MBL\nStock: 12"
+
+
+def _find_turn(session_factory, monkeypatch, *, extra_entities, msg_id):
+    from tests.chatbot.test_outstanding_lane import PRODUCT_CODE, PRODUCT_UUID, _qf, _run_turn, _seed_contact
+
+    _seed_contact(session_factory, variables={})
+    result, captured = _run_turn(
+        session_factory,
+        monkeypatch,
+        qf=_qf(
+            domain_hint="master_products",
+            intent_hint="check_product",
+            find={"filters": [{"key": "fits", "value": None, "unit": None}]},
+            entities=[
+                {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": PRODUCT_CODE,
+                 "current_message": True, "confident": True},
+                *extra_entities,
+            ],
+        ),
+        text_body=f"{PRODUCT_CODE} 配什么马桶盖",
+        msg_id=msg_id,
+        matches={PRODUCT_CODE: {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE}},
+        mcp_response=__import__("json").dumps({"response": FIND_TEXT, "has_result": True, "result_type": "find"}),
+    )
+    return (result.reply or {}).get("text") or "", captured
+
+
+def test_e6_a_type_word_the_parser_also_emitted_is_no_miss_line(session_factory, monkeypatch) -> None:
+    """Crew live check: "SRTWC8383-RL-MBL 配什么马桶盖" printed a stray "找不到 马桶盖。"."""
+    reply, captured = _find_turn(
+        session_factory,
+        monkeypatch,
+        extra_entities=[{"raw": "马桶盖", "hint": "category", "canonical_code": None,
+                         "current_message": True, "confident": True}],
+        msg_id="ZZT-find-stray-1",
+    )
+    assert captured and captured[0][0] == "crm_find", captured
+    # The message is Chinese, so the reply is too: the head line names 马桶盖 itself.
+    assert reply.splitlines()[:3] == ["SRTWT7445 适配的马桶盖：", "代码: SRTSCBD823-MBL", "库存: 12"], reply
+    assert "找不到" not in reply and "could not find" not in reply.lower(), reply
+
+
+def test_e7_a_mistyped_second_code_is_still_named(session_factory, monkeypatch) -> None:
+    reply, _captured = _find_turn(
+        session_factory,
+        monkeypatch,
+        extra_entities=[{"raw": "ZZTNOPE999", "hint": "product", "canonical_code": "ZZTNOPE999",
+                         "current_message": True, "confident": True}],
+        msg_id="ZZT-find-stray-2",
+    )
+    assert "ZZTNOPE999" in reply, reply
