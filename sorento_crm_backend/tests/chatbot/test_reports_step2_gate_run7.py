@@ -295,15 +295,18 @@ def test_b27_guard_an_invoiced_company_analysis_stays_a_sales_analysis(console, 
 
 
 def test_b28_a_brand_tagged_as_the_company_is_still_the_top_selling_ask(console, monkeypatch) -> None:
-    qf = _analysis_ranking(sales_company="Sorento")
-    text, log = lane._say_all(console, monkeypatch, qf, "top 20 project sales Sorento products")
+    # A brand no company row goes by (the seeded default company is itself named Sorento).
+    qf = _analysis_ranking(sales_company="Cabana", entities=[_e("Cabana", "brand")])
+    text, log = lane._say_all(console, monkeypatch, qf, "top 20 project sales Cabana products")
     assert "crm_sales_analysis" not in _names(log), log
     assert "By quantity or by amount?" in text, text
 
 
 def test_b29_a_company_equal_to_a_brand_entity_is_not_forwarded_to_the_analysis(console, monkeypatch) -> None:
-    qf = _analysis_ranking(top_n=None, group_by="month", sales_company="Sorento", sales_channel=None)
-    _text, log = lane._say_all(console, monkeypatch, qf, "Sorento sales this year")
+    qf = _analysis_ranking(
+        top_n=None, group_by="month", sales_company="Cabana", sales_channel=None, entities=[_e("Cabana", "brand")]
+    )
+    _text, log = lane._say_all(console, monkeypatch, qf, "Cabana sales this year")
     sent = [a for n, a in log if n == "crm_sales_analysis"]
     assert sent and not sent[0].get("company"), sent
 
@@ -371,3 +374,89 @@ def test_b32_guard_a_period_answer_with_a_stray_count_keeps_the_held_count(conso
     _text, calls = console.say(qf, "last 3 months")
     (args,) = calls
     assert args["top_n"] == 10, args
+
+
+# ================================================================================ scoping the two review rules
+
+
+def _flags(qf: dict[str, Any]) -> dict[str, Any]:
+    return {**qf, "domain_in_message": True, "ranking_refine": False}
+
+
+def test_c2_a_sales_ranking_answer_that_names_its_own_ask_is_dropped_as_a_fresh_ask() -> None:
+    from app.services.chatbot.lanes.business import report_ask as ra
+
+    fresh = dict(order_status="sales_ranking", group_by="product", top_n=10, rank_direction="top", basis="delivered",
+                 measure=None, entities=[], date_filter_start=None, date_filter_end=None, ranking_refine=False)
+    first, _line = ra.settle(None, fresh, [])
+    verdict = _flags({"order_status": "sales_ranking", "intent_hint": "check_order", "message_type": "business_query",
+                      "open_question_answer": {"mode": "pick", "picked": [1], "items": [], "qty_for_all": None}})
+    _out, rule = rf.reply_verdict(verdict, first.slot, "project sales top 40 products")
+    assert rule == "required_ask_dropped", rule
+
+
+def test_c3_guard_a_low_stock_declared_answer_with_the_same_flags_still_answers() -> None:
+    slot = {"ask": "low_stock_report", "asking": "category", "values": {}, "options": [], "misses": 0, "extras": {}}
+    verdict = _flags({
+        "order_status": None, "intent_hint": "low_stock_report", "message_type": "business_query",
+        "open_question_answer": {"mode": "fill", "picked": [], "items": [], "qty_for_all": None},
+    })
+    _out, rule = rf.reply_verdict(verdict, slot, "water closet")
+    assert rule == "required_ask_answer", rule
+
+
+def test_b33_a_real_company_named_like_the_brand_keeps_the_company(console, monkeypatch) -> None:
+    from app.models.company import Company
+
+    db = console.session_factory()
+    try:
+        row = Company(name="Quillon Brandco", code="QUILBCO")
+        db.add(row)
+        db.commit()
+        row_id = row.id
+    finally:
+        db.close()
+    try:
+        qf = _analysis_ranking(
+            top_n=None, group_by="month", sales_company="Quillon Brandco", sales_channel=None,
+            entities=[_e("Quillon Brandco", "brand")],
+        )
+        _text, log = lane._say_all(console, monkeypatch, qf, "Quillon Brandco sales this year")
+        sent = [a for n, a in log if n == "crm_sales_analysis"]
+        assert sent and sent[0].get("company") == "Quillon Brandco", (_text, log)
+    finally:
+        db = console.session_factory()
+        try:
+            db.query(Company).filter(Company.id == row_id).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+# ================================================================================ analysis that names a subject
+
+
+def _subject_analysis(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="sales_analysis", domain_in_message=True,
+        sales_company=None, group_by=None, top_n=None, entities=[lane._hit(EXACT, "product")], **SEP,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_b34_an_analysis_naming_a_product_runs_the_plain_report_and_can_be_narrowed(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, _answer)
+    console.say(_subject_analysis(), f"total sales {EXACT}")
+    names = [n for n, _a in seen]
+    assert "crm_sales_analysis" not in names, names
+    first = [a for n, a in seen if n in ("crm_sales_report", "crm_report")]
+    assert first and first[0].get("product_code") == EXACT, seen
+    console.say(_live(_exact_verdict()), f"only {EXACT}")
+    assert any(a.get("product_code_exact") for a in _sent(seen)), seen
+
+
+def test_b35_guard_a_company_totals_analysis_still_calls_the_analysis(console, monkeypatch) -> None:
+    qf = _subject_analysis(entities=[], group_by="month")
+    _text, log = lane._say_all(console, monkeypatch, qf, "sales by month this year")
+    assert "crm_sales_analysis" in _names(log), log
