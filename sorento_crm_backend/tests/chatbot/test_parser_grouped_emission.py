@@ -256,14 +256,12 @@ def test_nothing_said_writes_every_group_and_object_as_null(wire):
     sent = to_wire(strict_base())
     for key in [*OUTPUT_GROUPS, *parser_mod.NULLABLE_OBJECTS]:
         assert sent[key] is None, key
-    assert len(json.dumps(sent)) < len(json.dumps(strict_base())) * 0.7
+    assert len(json.dumps(sent)) < len(json.dumps(strict_base())) * 0.8
 
 
 def test_a_null_object_reads_as_its_object_of_empties(wire):
     wire.content = json.dumps(to_wire(strict_base()))
     parsed = parser_mod.parse(config(True), "block")
-    assert parsed["escalation"] == {"is_escalation_confirmation": None, "company_pick": None}
-    assert parsed["open_question_answer"] == {"mode": None, "picked": [], "items": [], "qty_for_all": None}
     assert parsed["low_stock"] == {"group_by": None, "categories": [], "all_categories": None, "brands": [], "suppliers": []}
     assert parsed["anaphora"] == {"backward_reference": None}
     assert parsed["access_levels"] == []
@@ -426,7 +424,8 @@ def test_grouped_prompt_changes_only_the_output_block_and_the_entity_line(line):
             assert f'"{key}":' in block
             # Folded into the group line, never left on a line of its own.
             assert not re.search(rf'^\s*"{key}"\s*:', block, re.MULTILINE), key
-    assert '  "escalation": null, or {' in block
+    # escalation and open_question_answer keep main's shape and line, word for word.
+    assert '  "escalation": { "is_escalation_confirmation": false,' in block
     assert '  "anaphora": null, or {' in block
     # Keys outside the groups keep their own lines, word for word.
     assert '  "topic_reset": false, true only when the message drops the current subject' in block
@@ -466,11 +465,11 @@ CANDIDATE = LINES["v52 candidate"]
         (CANDIDATE.replace('\n  "date_mode":', '\n   "date_mode":', 1), "date_mode"),
         (
             CANDIDATE.replace(
-                '  "escalation": { "is_escalation_confirmation": false,',
-                '  "escalation": {\n    "is_escalation_confirmation": false,',
+                '  "anaphora": { "backward_reference": false }',
+                '  "anaphora": {\n    "backward_reference": false }',
                 1,
             ),
-            "escalation",
+            "anaphora",
         ),
         (CANDIDATE.replace('"confident": true|false }', '"confident": true|false, "hint_confident": true|false }', 1), "entity"),
         (CANDIDATE.replace('\n  "anaphora": { "backward_reference": false }', "", 1), "anaphora exactly once"),

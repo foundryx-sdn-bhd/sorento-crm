@@ -680,7 +680,10 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 # `null`. Strict mode still guarantees every key and every enum (the non-strict sparse
 # attempt drifted off the schema in the crew eval of 12 Oct 2026). `flatten_grouped` turns
 # the answer back into the flat shape below before any reader sees it.
-NULLABLE_OBJECTS: tuple[str, ...] = ("escalation", "open_question_answer", "low_stock", "anaphora")
+# Only objects whose null is a side matter: `escalation` and `open_question_answer` keep the
+# flat shape, because a single `null` token decided before `mode` / the confirmation flag is
+# a different reading (eval round 2: an open product roster came back unanswered).
+NULLABLE_OBJECTS: tuple[str, ...] = ("low_stock", "anaphora")
 
 
 def _empty_value(schema: dict) -> Any:

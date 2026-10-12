@@ -1319,7 +1319,7 @@ GROUPED_OUTPUT_ADDENDUM = (
     "\"detail\": null. Write the group object only when at least one key in it is true or\n"
     "has a value, and then write every one of its keys, each with the value the rules above\n"
     "give it.\n"
-    "escalation, open_question_answer, low_stock and anaphora work the same way: null when\n"
+    "low_stock and anaphora work the same way: null when\n"
     "every key inside would be null, false or [], otherwise the whole object as the rules\n"
     "above say. This overrides any line above that says to write one of them on every object.\n"
 )
@@ -1331,7 +1331,6 @@ GROUPED_OUTPUT_ADDENDUM = (
 PLAIN_FLAGS: frozenset[str] = frozenset(
     {
         "ranking_refine",
-        "is_escalation_confirmation",
         "backward_reference",
         "all_categories",
     }
@@ -1339,10 +1338,8 @@ PLAIN_FLAGS: frozenset[str] = frozenset(
 
 STRICT_OUTPUT_BLOCK_START = "== OUTPUT (exactly these keys, no others, no comments) =="
 STRICT_OUTPUT_BLOCK_END = "Return exactly one JSON object."
-#: The two objects the OUTPUT block spells out on one line each, shown as null by default.
+#: The nullable object the OUTPUT block spells out on one line, shown as null by default.
 _NULLABLE_OBJECT_LINES = {
-    "escalation": '  "escalation": null, or { "is_escalation_confirmation": true, "company_pick": '
-    '"string_or_null - ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" } when either says something,',
     "anaphora": '  "anaphora": null, or { "backward_reference": true } when the message refers backward,',
 }
 
