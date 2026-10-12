@@ -28,7 +28,12 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({ resetToDefaults: vi.fn(), isLoading: false }),
 }));
 
+import { toast } from '@/lib/toast';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
+
+vi.mock('@/lib/toast', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}));
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
 
 function contribution(overrides: Partial<BoardContribution> = {}): BoardContribution {
@@ -1083,8 +1088,9 @@ describe('FulfilmentBoardListView: the Decide claim order survives a rows change
     fireEvent.click(screen.getByRole('button', { name: /^Save \d line/ }));
 
     // The grid still shows SO397451 (line 20) on top, so it claims the pool FIRST and covers in
-    // full; SO397450 (line 10) is left with only 50 free and is skipped for it, never the other
-    // way around.
+    // full; SO397450 (line 10) is left with only 50 free and is the SHORT one, never the other
+    // way around. OI-CLOSED-LINE (owner, 12 Oct 2026): a short line is saved as decided with a
+    // warning rather than skipped, so the order shows in the toast that names it.
     await waitFor(() => expect(onDecideBatch).toHaveBeenCalledTimes(1));
     expect(onDecide).toHaveBeenCalledWith(
       'so-2:line-20',
@@ -1094,9 +1100,10 @@ describe('FulfilmentBoardListView: the Decide claim order survives a rows change
         ]),
       }),
     );
-    expect(onDecide).not.toHaveBeenCalledWith(
-      'so-1:line-10',
-      expect.anything(),
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        expect.stringContaining('1 short: B2155-NL-BLUE line 10 (only 50 free at BRW)'),
+      ),
     );
   });
 });

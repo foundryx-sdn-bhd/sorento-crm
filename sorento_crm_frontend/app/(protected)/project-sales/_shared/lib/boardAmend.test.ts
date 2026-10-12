@@ -25,6 +25,7 @@ import {
   suggestionDraftFrom,
 } from './boardAmend';
 import { buildBoard, type BoardDemandLine } from './__testsupport__/boardFixture';
+import { toMinor } from './supplyComposition';
 import type { BoardContribution, BoardDraft } from '../types/fulfilmentPlanning.types';
 
 const TODAY = '2026-08-18';
@@ -1109,7 +1110,7 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
    * `own`/`shared` tally read at `:793` (site_pool/own-location rows) was unguarded, since
    * killing it left `boardAmend.test.ts` and `BoardDecideControl.test.tsx` fully green.
    */
-  it('AC-10: a running tally makes the second of two rows contesting one BRW pile skip', () => {
+  it('AC-10: a running tally makes the second of two rows contesting one BRW pile short (OI-CLOSED-LINE: warned, not skipped)', () => {
     const pool = {
       location: 'BRW',
       where: 'site_pool' as const,
@@ -1129,7 +1130,8 @@ describe('decideComposition: the six Decide items (D1, AC-5 to AC-9, AC-51)', ()
     const firstResult = decideComposition(first, 'shared', undefined, claimed);
     expect(firstResult.skip).toBeUndefined();
     const secondResult = decideComposition(second, 'shared', undefined, claimed);
-    expect(secondResult.skip).toBe('only 50 free at BRW');
+    expect(secondResult.skip).toBeUndefined();
+    expect(secondResult.warning).toBe('only 50 free at BRW');
   });
 
   it('AC-5/AC-6/AC-7: the suggested reserve/BRW item never draws a site_pool row for own location', () => {
@@ -1363,7 +1365,7 @@ describe('decideComposition: the delivered part needs no free stock (OI-CLOSED-L
     expect(result.warning).toBeUndefined();
     expect(result.reserve).toEqual([{ warehouse_id: 'wh-pool', location: 'BRW', qty: '10' }]);
     // Only the undelivered 6 claims the pile; the next ticked row sees 0 left, not -4.
-    expect([...claimed.values()]).toEqual([600]);
+    expect([...claimed.values()]).toEqual([toMinor('6')]);
   });
 
   it('Use BRW short on the undelivered part warns with what is free, and still composes', () => {
