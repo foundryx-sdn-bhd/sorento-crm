@@ -1666,6 +1666,35 @@ def with_company_pick(verdict: dict[str, Any], *, pending: Pending | None, messa
     }
 
 
+#: REF-PROBES step 10 (crew trace 751f634d, 12 Oct 2026): the parser's own `document` field
+#: names the kind of a reference number it left as the bare "order" hint. SO only: a DO
+#: mapping would also relabel numbers the parser filed under "DO" by mistake.
+_DOCUMENT_KIND = {"SO": "sales_order"}
+
+
+def with_document_kind(verdict: dict[str, Any]) -> dict[str, Any]:
+    """The verdict with each current-message bare "order" entity named by the parser's own
+    single-valued `document` ("sales order 202610-0107 delivery": hint "order", document
+    ["SO"] -> hint "sales_order"). Read before `so_status.so_list_verdict` rewrites
+    `document`. Structured parser fields only, never the message text."""
+    document = verdict.get("document")
+    if not (isinstance(document, list) and len(document) == 1):
+        return verdict
+    kind = _DOCUMENT_KIND.get(str(document[0]))
+    entities = verdict.get("entities")
+    if kind is None or not isinstance(entities, list):
+        return verdict
+    changed = False
+    out: list[Any] = []
+    for e in entities:
+        if isinstance(e, dict) and e.get("hint") == "order" and e.get("current_message") is not False:
+            out.append({**e, "hint": kind})
+            changed = True
+        else:
+            out.append(e)
+    return {**verdict, "entities": out} if changed else verdict
+
+
 def with_routing_agent_default(
     verdict: dict[str, Any],
     *,

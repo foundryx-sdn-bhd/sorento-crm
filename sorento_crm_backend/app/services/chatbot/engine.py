@@ -4609,6 +4609,8 @@ def _run_stages_body(  # noqa: PLR0915
     # below is made against the CARRIED agent, not the default. No `session=` (reviewer
     # round 1, SHOULD-4): no writer ever produces a prior-turn agent nest to read.
     verdict = turn_runtime.with_routing_agent_default(verdict, pending=state_in.pending)
+    # REF-PROBES step 10: a bare "order" number the parser's own `document` names a kind of.
+    verdict = turn_runtime.with_document_kind(verdict)
     # #865 round 5 (R1): an escalate word plus a named team, in the parser's own reading
     # of the message, is a help request whatever product words follow.
     verdict = turn_runtime.with_named_team_escalation(verdict)
