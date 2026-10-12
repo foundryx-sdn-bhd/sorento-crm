@@ -435,6 +435,21 @@ def test_r1_the_same_type_error_on_every_line_is_not_attributable(api, monkeypat
     assert result["simulated_errors"] is None
 
 
+def _second_order(world):
+    """A second two-line order on the same product; the pool stock is already seeded."""
+    db = world.db
+    order = _project_so(db, world.project)
+    core_so = _core_so(db, world.company_id)
+    lines = []
+    for line_no in (10, 20):
+        core_line = _core_line(db, core_so, world.product, world.own_wh, qty_ordered="50")
+        lines.append(
+            _project_line(db, order, line_no=line_no, product=world.product, core_line=core_line)
+        )
+    db.commit()
+    return order, lines[0], lines[1]
+
+
 def test_r3_the_probe_budget_is_per_request_and_an_unprobed_order_says_so(api, monkeypatch):
     """R3: budget 3 over two orders each failing on one of two lines: the first order is
     probed (2 runs), the second runs out and is marked as not probed."""
@@ -444,7 +459,7 @@ def test_r3_the_probe_budget_is_per_request_and_an_unprobed_order_says_so(api, m
     _as_role(monkeypatch, "admin")
     monkeypatch.setattr(fp, "_SIMULATE_PROBE_BUDGET", 3, raising=False)
     order1, _c1, (a1, b1) = _two_line_order(world)
-    order2, _c2, (a2, b2) = _two_line_order(world)
+    order2, a2, b2 = _second_order(world)
     from app.services.project_supply_service import ProjectSupplyService
 
     original = ProjectSupplyService.confirm

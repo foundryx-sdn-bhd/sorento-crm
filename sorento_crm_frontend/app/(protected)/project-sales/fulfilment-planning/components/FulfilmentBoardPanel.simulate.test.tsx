@@ -408,3 +408,98 @@ describe('AC-S10: the results block', () => {
     expect(putLineDraft).not.toHaveBeenCalled();
   });
 });
+
+describe('fix round: simulated wording and number formatting (R7-R10)', () => {
+  it('R7: Cancel SO wording is future tense in a simulation', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated({
+          lines_confirmed: [],
+          inquiry_rows: [],
+          transfers: [],
+          lines_cancelled: [
+            { project_line_id: 'pl-so-a-1', line_no: 3, item_code: 'WESERP10B' },
+          ],
+        }),
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const results = await screen.findByTestId('board-confirm-results');
+    expect(within(results).getByText(/would transfer 1 line to Cancel SO/)).toBeInTheDocument();
+    expect(
+      within(results).getByText('Would transfer to Cancel SO: line 3 WESERP10B'),
+    ).toBeInTheDocument();
+    expect(within(results).queryByText(/transferred/i)).toBeNull();
+  });
+
+  it('R8: a simulated error with no item code reads "line 8: <error>"', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        {
+          pso_id: 'pso-so-a',
+          ok: false,
+          preview: true,
+          error: SIM_ERROR,
+          simulated_errors: [
+            { line_no: 8, item_code: null, project_line_id: 'pl-so-a-2', error: SIM_ERROR },
+          ],
+        },
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const errors = await screen.findByTestId('board-simulate-errors-pso-so-a');
+    expect(within(errors).getByText(`line 8: ${SIM_ERROR}`)).toBeInTheDocument();
+  });
+
+  it('R9: quantities print without trailing zeros', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [
+        okSimulated({
+          inquiry_rows: [
+            {
+              line_no: 10,
+              item_code: 'ITEM',
+              verb: 'ORDER',
+              qty: '12.5000',
+              stock_location: 'LOC',
+              is_new: true,
+            },
+          ],
+          transfers: [
+            { line_no: 10, kind: 'pool', qty: '50.0000', from_location: 'BRW', to_location: 'OWN' },
+          ],
+        }),
+      ],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const writes = await screen.findByTestId('board-simulate-writes-pso-so-a');
+    expect(within(writes).getByText('line 10 ITEM: ORDER 12.5 at LOC')).toBeInTheDocument();
+    expect(within(writes).getByText('line 10: pool 50 BRW -> OWN')).toBeInTheDocument();
+  });
+
+  it('R10: confirmed and carried lines read in the conditional mood', async () => {
+    simulateConfirm.mockResolvedValue({
+      results: [okSimulated({ lines_carried: 2 })],
+    });
+    renderPanel();
+
+    await pressSimulate();
+
+    const lines = await screen.findByTestId('board-confirm-lines-pso-so-a');
+    expect(
+      within(lines).getByText('Would confirm: line 1 WESERP10B · line 2 TPE-9204'),
+    ).toBeInTheDocument();
+    expect(within(lines).getByText('2 would carry forward unchanged')).toBeInTheDocument();
+    expect(within(lines).queryByText(/^Confirmed:/)).toBeNull();
+    expect(within(lines).queryByText(/carried forward unchanged$/)).not.toBeNull;
+  });
+});
