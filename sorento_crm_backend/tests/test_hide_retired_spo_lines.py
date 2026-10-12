@@ -938,15 +938,17 @@ class TestAcH17PackingListQuantityAndStatusAgree:
         `received(0) == 0` -> `allocated` - so an ungated status cannot pass
         by coincidence.
 
-        `refresh_shipment_line_statuses`' PERSISTED column and status are
-        deliberately NOT filtered (they feed the reorder engine's ask, not
-        the screen), so the request is also asserted NOT to have narrowed
-        the stored row: `inbound_shipment_lines.line_status`/
-        `spo_allocated_quantity` read the UNFILTERED figures (1009 /
-        "allocated") after the very request whose own RESPONSE reports the
-        filtered ones (10 / "partially_allocated") - proving the fix lives
-        only in the response, and catching a future over-filter that would
-        silently starve the reorder engine's ask.
+        `refresh_shipment_line_statuses`' PERSISTED `spo_allocated_quantity` is
+        deliberately NOT filtered (it feeds the reorder engine's ask, not the
+        screen), so the request is also asserted NOT to have narrowed the
+        stored figure: it reads the UNFILTERED 1009 after the very request
+        whose own RESPONSE reports 10, catching a future over-filter that
+        would silently starve the reorder engine's ask. The persisted
+        `line_status` DOES follow the visible total since PL-STATUS-ROLLUP
+        (`compute_shipment_line_figures`): the header rollup and the list page
+        read it, and judging it on the unfiltered total left a container the
+        page showed fully received reading In Transit (TCLU8176397). So it
+        persists "partially_allocated", the same status the response reports.
 
         RED today at the response assertions: `get_packing_list` persists
         `line_status` via `refresh_shipment_line_statuses`, whose own
@@ -1000,9 +1002,8 @@ class TestAcH17PackingListQuantityAndStatusAgree:
         assert line_body["spo_allocated_quantity"] == 10, line_body
         assert line_body["line_status"] == "partially_allocated", line_body
 
-        # The PERSISTED row: unchanged by the request's own visibility filter -
-        # still the unfiltered figures, exactly as `refresh_shipment_line_statuses`
-        # (unfiltered by design, round 5) computed and wrote them.
+        # The PERSISTED row: the allocated figure stays unfiltered (round 5); the
+        # status follows the visible total (PL-STATUS-ROLLUP).
         db.expire_all()
         persisted = db.execute(
             text(
@@ -1012,7 +1013,7 @@ class TestAcH17PackingListQuantityAndStatusAgree:
             {"sid": shipment.id, "pid": product.id},
         ).mappings().first()
         assert persisted["spo_allocated_quantity"] == 1009, persisted
-        assert persisted["line_status"] == "allocated", persisted
+        assert persisted["line_status"] == "partially_allocated", persisted
 
 
 # =================================================================================== #
