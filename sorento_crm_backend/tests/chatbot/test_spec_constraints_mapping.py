@@ -107,6 +107,34 @@ def test_c3_a_specification_without_a_value_is_not_mapped(vdb):
     assert not [c for c in out if c["key"] == "finish"]
 
 
+def test_c7_the_subject_is_decided_by_category_data_with_no_code_side_word_rules(vdb):
+    """Reviewer round. `_subject_constraint` / `_exact_classes` today read a plural in the singular
+    in code (`phrase[-1][:-1]`, `said[:-1]`). Contract: category and registry data decide, code adds
+    no word rules. A seeded class label maps; the same word with a trailing "s" that is neither a
+    label nor a synonym maps to nothing (the ask stays on the resolver path).
+
+    A made-up class ("Zzt Gizmo") is used rather than "basin", because the built-in class
+    vocabulary (`CLASS_SYNONYMS`) already lists "basin" and would answer for a plural too.
+    RED: the plural maps to the class, via the code-side "s" strip."""
+    import uuid
+
+    from app.models.product import ProductCategory
+    from app.services.chatbot.lanes.business.fetch import spec_constraints_for
+
+    vdb.add(
+        ProductCategory(
+            id=str(uuid.uuid4()), category_code=f"ZZT{uuid.uuid4().hex[:6].upper()}-GZ",
+            category_name="ZZT gizmo category", class_label="Zzt Gizmo", is_searchable=True, search_synonyms=[],
+        )
+    )
+    vdb.commit()
+
+    single = spec_constraints_for(_ask(_category("zzt gizmo")), vdb)
+    assert single == [{"key": "class", "op": "eq", "value": "Zzt Gizmo"}], single
+
+    assert spec_constraints_for(_ask(_category("zzt gizmos")), vdb) is None
+
+
 # ------------------------------------------------------------------ entity_ids_transformer
 
 

@@ -1030,3 +1030,43 @@ def test_n3_value_type_must_match_the_key_type(api, db):
     assert numeric_string.status_code == 422, numeric_string.text[:300]
     fine = _raw_list(api, json.dumps([_one(value=250)]))
     assert fine.status_code == 200, fine.text[:300]
+
+
+def test_promotion_products_size_and_miss_detail_see_only_promoted_products(api, db, monkeypatch):
+    """Reviewer round. RED today if size resolution and the miss detail read every product:
+    unpromoted basin B (dim_width 600, dim_length 450) makes size 600 ambiguous, lists 450 as an
+    alternative and inflates `spec_unrecorded` with unpromoted basin D."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
+    )
+    live = dict(start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    promoted_a = _p(db, "PSA", {"class": _enum("Basin"), "dim_length": _num(600)})
+    promoted_c = _p(db, "PSC", {"class": _enum("Basin")})  # promoted, no mm value recorded
+    unpromoted_b = _p(db, "PSB", {"class": _enum("Basin"), "dim_width": _num(600), "dim_length": _num(450)})
+    unpromoted_d = _p(db, "PSD", {"class": _enum("Basin")})  # not promoted, no mm value
+    _promo(db, promoted_a, **live)
+    _promo(db, promoted_c, **live)
+    db.commit()
+    assert unpromoted_b.id and unpromoted_d.id
+
+    def ask(value):
+        resp = api.get(
+            "/api/v1/marketing/promotion-products/",
+            params={
+                "active": "true", "limit": 100,
+                **_constraints({"key": "class", "op": "eq", "value": "Basin"}, {"key": "size", "op": "eq", "value": value}),
+            },
+        )
+        assert resp.status_code == 200, resp.text[:300]
+        return resp.json()
+
+    hit = ask(600)
+    assert {row["product"]["product_code"] for row in hit["data"]} == _codes_of([promoted_a]), hit
+    assert hit.get("spec_resolved") == {"size": "dim_length"}, hit
+    assert not hit.get("spec_ambiguous"), hit
+
+    miss = ask(450)
+    assert miss["data"] == []
+    assert "450" not in json.dumps(miss.get("spec_alternatives")), miss
+    assert _alts(miss).get("dim_length") == [600], miss
+    assert miss.get("spec_unrecorded") == {"size": 1}, "only the promoted basin without a size counts"
