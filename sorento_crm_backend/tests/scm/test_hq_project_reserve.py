@@ -19,6 +19,7 @@ from decimal import Decimal
 import pytest
 
 from app.services.scm.supply_assignment import DemandLine, SupplyEvent, assign
+from tests.test_order_inquiry_dedication import world  # noqa: F401  (pytest fixture)
 
 
 def _dec(value) -> Decimal:
@@ -210,3 +211,28 @@ def test_an_open_unclaimed_line_at_the_reserve_is_not_g12_locked():
             assert count_unclaimed_project_bin_lines(db, world.company_id) == 1, (
                 "only the project bin's line is counted, never the reserve's"
             )
+
+
+# --------------------------------------------------------------------------- the OI link pass
+
+
+def test_an_unclaimed_reserve_line_stays_cascadable_for_an_order_inquiry_row(world):
+    """The automatic Order Inquiry pass may take an unclaimed HQ PO line like any pool line:
+    `segment = project` on a POOL makes it a reserve, not a G12-locked project bin."""
+    from sqlalchemy import text as _text
+
+    from tests.test_order_inquiry_dedication import SOON
+
+    world.db.execute(
+        _text("UPDATE warehouses SET segment = 'project' WHERE id = :i"),
+        {"i": world.warehouses["BRW"]},
+    )
+    world.db.flush()
+    lines = world.purchase_order("ZZT-PO-HQR-1", date(2026, 8, 1), [("BRW", 40, SOON, "1")])
+    world.set_own_so_number("ZZT-SO-HQR-OWN")
+    row = world.row("ORDER", 10, location="BRW-IB")
+
+    candidates = world.svc._candidates_for_row(row)
+    assert candidates[0]["target_id"] == lines[0]
+    assert candidates[0]["cascadable"] is True
+    assert candidates[0]["unattributed"] is False

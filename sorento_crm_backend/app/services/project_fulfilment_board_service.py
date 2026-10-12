@@ -5052,6 +5052,7 @@ class FulfilmentBoardService:
                     available,
                     netting.pools_net(product_id).net,
                     self.supply.fulfilment_settings().get("pool_share_pct"),
+                    reserve=netting.is_reserve(warehouse_id),
                 )
             )
         }

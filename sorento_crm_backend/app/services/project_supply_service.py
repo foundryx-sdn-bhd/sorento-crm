@@ -129,6 +129,7 @@ from app.services.scm.spo_conversion_service import (
 from app.services.scm import sales_agent_service
 from app.services.scm.demand import demand_qty, is_open_demand, is_transferable_order
 from app.services.scm.group_netting import GroupNetting
+from app.services.scm.pool_predicate import is_project_reserve
 from app.services.scm.planning_predicate import (
     OUTSIDE_FULFILMENT_PLANNING,
     fulfilment_planning_predicate,
@@ -1932,7 +1933,8 @@ class ProjectSupplyService:
                         continue
                     if code not in shares:
                         shares[code] = available_for_project(
-                            entry.get("available"), unit_fact.pools_net, pct
+                            entry.get("available"), unit_fact.pools_net, pct,
+                            reserve=bool(entry.get("reserve")),
                         )
                     # The FLOOR beside the share, off the same chain and for the same
                     # reason (AC-N.12): the share is what the policy lets a pool lend and
@@ -2493,6 +2495,7 @@ class ProjectSupplyService:
             chain.append(
                 {
                     "location": fact.pool_code,
+                    "reserve": is_project_reserve(fact.pool.segment, is_pool=True),
                     "free": fact.pool_free if stated is None else stated,
                     "available": fact.pool_available,
                     "on_hand": self._pile_facts()
@@ -2525,6 +2528,7 @@ class ProjectSupplyService:
             rest.append(
                 {
                     "location": pool.warehouse_code,
+                    "reserve": is_project_reserve(pool.segment, is_pool=True),
                     "free": free,
                     "available": available,
                     "on_hand": triple["on_hand"],
@@ -4798,7 +4802,10 @@ class ProjectSupplyService:
             if not warehouse_id:
                 continue
             allowances[warehouse_id] = qty_text(
-                available_for_project(entry.get("available"), fact.pools_net, pct)
+                available_for_project(
+                    entry.get("available"), fact.pools_net, pct,
+                    reserve=bool(entry.get("reserve")),
+                )
             )
         return allowances
 
@@ -6291,8 +6298,18 @@ class ProjectSupplyService:
         if pooled <= _ZERO or pooled != from_stock:
             return False
         pct = settings.get("pool_share_pct")
-        return pooled <= max(_dec(fact.pools_net), _ZERO) and all(
-            qty <= available_for_project(chain[code].get("available"), fact.pools_net, pct)
+        # A project reserve (HQ) is outside the dealer pools' net: only the dealer pools'
+        # part of the draw is bounded by it.
+        dealer_pooled = sum(
+            (qty for code, qty in per_pool.items() if not chain[code].get("reserve")),
+            _ZERO,
+        )
+        return dealer_pooled <= max(_dec(fact.pools_net), _ZERO) and all(
+            qty
+            <= available_for_project(
+                chain[code].get("available"), fact.pools_net, pct,
+                reserve=bool(chain[code].get("reserve")),
+            )
             for code, qty in per_pool.items()
         )
 
@@ -8396,7 +8413,8 @@ class ProjectSupplyService:
                 )
                 pct = self._fulfilment_settings().get("pool_share_pct")
                 allowance = available_for_project(
-                    pool.get("available") if pool else None, fact.pools_net, pct
+                    pool.get("available") if pool else None, fact.pools_net, pct,
+                    reserve=bool(pool and pool.get("reserve")),
                 )
                 return pool_share_reason(str(location), qty, allowance)
         for candidate in self._group_take_candidates(fact):
@@ -10595,8 +10613,10 @@ class ProjectSupplyService:
         if is_pool:
             where = "site_pool"
             pct = self.fulfilment_settings().get("pool_share_pct")
+            pool_row = self.site_pool_warehouses()[warehouse_id]
             avail_for_project = available_for_project(
-                available, self.netting().pools_net(product_id).net, pct
+                available, self.netting().pools_net(product_id).net, pct,
+                reserve=is_project_reserve(pool_row.segment, is_pool=True),
             )
         else:
             where = "other_group" if rung == RUNG_GROUP_TAKE else "group"
@@ -10893,6 +10913,11 @@ class ProjectSupplyService:
                 # group index so a flagged-off bin can never be a group member.
                 planning_warehouse_ids=set(planning),
                 pool_warehouse_ids=set(pools),
+                reserve_warehouse_ids={
+                    warehouse_id
+                    for warehouse_id, warehouse in pools.items()
+                    if is_project_reserve(warehouse.segment, is_pool=True)
+                },
             )
         return self._netting_cache
 
