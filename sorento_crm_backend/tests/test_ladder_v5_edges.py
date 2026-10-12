@@ -34,6 +34,7 @@ from .test_fulfilment_board import (  # noqa: F401  (helpers, not fixtures)
     _incoming,
     _line,
     _order,
+    _pool,
     _product,
     _service,
     _step,
@@ -102,7 +103,7 @@ def test_question_one_names_the_whole_line_rule_when_it_had_stock_but_not_enough
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own = _warehouse(db, f"ZZTN{_uid()[:5]}-BB"[:20])
-        pool = _warehouse(db, f"ZZTN{_uid()[:5]}"[:20])
+        pool = _pool(db, f"ZZTN{_uid()[:5]}"[:20])
         own.pool_warehouse_id = pool.id
         db.flush()
         _stock(db, product, own, on_hand=10)
@@ -389,7 +390,7 @@ def test_the_trail_is_five_rows_with_no_leaked_rung_vocabulary_and_a_note_that_a
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own = _warehouse(db, f"ZZTR{_uid()[:5]}-BB"[:20])
-        pool = _warehouse(db, f"ZZTR{_uid()[:5]}"[:20])
+        pool = _pool(db, f"ZZTR{_uid()[:5]}"[:20])
         own.pool_warehouse_id = pool.id
         db.flush()
         donor = _warehouse(db, f"ZZTR{_uid()[:5]}-NTC"[:20])
