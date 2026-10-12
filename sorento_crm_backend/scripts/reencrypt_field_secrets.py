@@ -6,6 +6,10 @@ Covers every column `app/utils/field_encryption.py` encrypts:
   ideation_embed_signing_secret_ciphertext, chatbot_retry_ingress_key_ciphertext
   (app/services/respond_workspace_service.py)
 - integrations.credentials_json (app/services/integration_admin_service.py)
+- system_settings: connector_ss_to_product_secret_ciphertext,
+  connector_product_to_ss_secret_ciphertext, analytics_ro_database_url_ciphertext,
+  respond_webhook_secret_ciphertext (runtime_settings.SECRET_FIELDS,
+  app/services/runtime_settings.py)
 - ai_assistant_configs: api_key_ciphertext, anthropic_api_key_ciphertext,
   gemini_api_key_ciphertext (EncryptedText, app/models/ai_assistant.py)
 
@@ -54,6 +58,10 @@ COLUMNS = (
     ("respond_workspaces", "ideation_embed_signing_secret_ciphertext", False),
     ("respond_workspaces", "chatbot_retry_ingress_key_ciphertext", False),
     ("integrations", "credentials_json", False),
+    ("system_settings", "connector_ss_to_product_secret_ciphertext", False),
+    ("system_settings", "connector_product_to_ss_secret_ciphertext", False),
+    ("system_settings", "analytics_ro_database_url_ciphertext", False),
+    ("system_settings", "respond_webhook_secret_ciphertext", False),
     ("ai_assistant_configs", "api_key_ciphertext", True),
     ("ai_assistant_configs", "anthropic_api_key_ciphertext", True),
     ("ai_assistant_configs", "gemini_api_key_ciphertext", True),
