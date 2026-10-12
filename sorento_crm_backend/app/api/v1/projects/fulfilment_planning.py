@@ -1080,17 +1080,28 @@ def confirm_supply(
         service = ProjectSupplyService(db)
         order = service.get_order(pso_id)
         _assert_can_act_on(db, order, current_user)
-        body = _confirm_with_possible_rejects(
-            db,
-            service,
+        # OI-CLOSED-LINE (owner rule, 12 Oct 2026): one line that cannot be written never
+        # refuses the whole order. The lines the recheck refuses are held back and named, and
+        # the rest confirm - the same seam Confirm all uses (#1362). A planning-change press
+        # names its lines on purpose, so it is never applied in part.
+        body, _entry, held = service._write_holding_back(
             order,
             payload,
-            actor_user_id=current_user["id"],
-            batch_id=payload.batch_id,
-            confirm_batch=lambda: _confirm_a_planning_change(
-                db, order, payload, current_user["id"]
+            lambda target, entry: _confirm_with_possible_rejects(
+                db,
+                service,
+                target,
+                entry,
+                actor_user_id=current_user["id"],
+                batch_id=entry.batch_id,
+                confirm_batch=lambda: _confirm_a_planning_change(
+                    db, target, entry, current_user["id"]
+                ),
             ),
+            hold_back=not payload.batch_id,
         )
+        if held:
+            body["lines_held_back"] = held
         db.commit()
         return body
     except Exception as exc:

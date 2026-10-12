@@ -5275,6 +5275,10 @@ class ProjectSupplyService:
         # `_write_decision` puts the landed fact on the Buy's order inquiry row for
         # purchasing, and the result returns it. Project line id -> notice line.
         self._landed_buy_notices: Dict[str, Dict[str, Any]] = {}
+        # OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow short of free stock
+        # on the part not yet delivered is confirmed as decided, never refused. Project line
+        # id -> one entry per short component; only what exists is held.
+        self._stock_short: Dict[str, List[Dict[str, Any]]] = {}
         # What is still available as the payload is walked, so two lines of the SAME
         # confirmation cannot each be sold the whole pile. The per-line facts say what was
         # free when the sheet was read; these say what is left after the lines before it
@@ -5446,7 +5450,105 @@ class ProjectSupplyService:
         )
         body["lines_fulfilled_skipped"] = len(fulfilled)
         body["landed_buy_notices"] = list(self._landed_buy_notices.values()) or None
+        body["stock_short_notices"] = self._stock_short_notices(checked) or None
+        if self._stock_short:
+            self._hand_stock_short_to_purchasing(order, checked, actor_user_id=actor_user_id)
         return body
+
+    def _record_short(
+        self,
+        line_id: str,
+        kind: str,
+        index: int,
+        location: Optional[str],
+        asked: Decimal,
+        short: Decimal,
+    ) -> None:
+        """One component's shortfall, added to what an earlier check already found short."""
+        if short <= _ZERO:
+            return
+        entries = self._stock_short.setdefault(line_id, [])
+        for entry in entries:
+            if entry["kind"] == kind and entry["index"] == index:
+                entry["short"] = min(entry["short"] + short, entry["asked"])
+                return
+        entries.append(
+            {
+                "kind": kind,
+                "index": index,
+                "location": location,
+                "asked": asked,
+                "short": min(short, asked),
+            }
+        )
+
+    def _short_of(self, line_id: str, kind: str, index: int) -> Decimal:
+        for entry in (getattr(self, "_stock_short", None) or {}).get(line_id, ()):
+            if entry["kind"] == kind and entry["index"] == index:
+                return entry["short"]
+        return _ZERO
+
+    @staticmethod
+    def _short_sentence(entry: Dict[str, Any]) -> str:
+        where = entry["location"] or "that location"
+        word = "Reserve" if entry["kind"] == RESERVE else "Borrow"
+        free = max(entry["asked"] - entry["short"], _ZERO)
+        return (
+            f"{word} {qty_text(entry['asked'])} at {where} confirmed as decided; only "
+            f"{qty_text(free)} free at {where} when confirmed, {qty_text(entry['short'])} short"
+        )
+
+    def _stock_short_snapshot(self, line_id: str) -> List[Dict[str, Any]]:
+        return [
+            {
+                "kind": entry["kind"],
+                "location": entry["location"],
+                "asked": qty_text(entry["asked"]),
+                "short": qty_text(entry["short"]),
+                "note": self._short_sentence(entry),
+            }
+            for entry in (getattr(self, "_stock_short", None) or {}).get(line_id, ())
+        ]
+
+    def _stock_short_notices(
+        self, checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]]
+    ) -> List[Dict[str, Any]]:
+        notices: List[Dict[str, Any]] = []
+        for line, _entry, fact in checked:
+            for entry in self._stock_short.get(str(line.id), ()):
+                notices.append(
+                    {
+                        "line_no": line.line_no,
+                        "so_line_no": fact.core.line_no if fact.core is not None else None,
+                        "item_code": fact.item_code,
+                        "reason": self._short_sentence(entry),
+                    }
+                )
+        return notices
+
+    def _hand_stock_short_to_purchasing(
+        self,
+        order: ProjectSalesOrder,
+        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
+        *,
+        actor_user_id: str,
+    ) -> None:
+        """Each shortfall as its own line of the purchasing email this Confirm already sends
+        (owner rule 12 Oct 2026). No purchasing row is raised for it."""
+        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+        service = ProjectOrderInquiryService(self.db)
+        for line, _entry, fact in checked:
+            for entry in self._stock_short.get(str(line.id), ()):
+                service.record_stock_short(
+                    pso_id=str(order.id),
+                    line=line,
+                    item_code=fact.item_code,
+                    qty_short=entry["short"],
+                    location=entry["location"],
+                    remark=self._short_sentence(entry),
+                    actor_user_id=actor_user_id,
+                )
 
     def _carried_lines(
         self,
@@ -5992,29 +6094,20 @@ class ProjectSupplyService:
                 capacity[warehouse] = max(capacity.get(warehouse, _ZERO), qty)
             if warehouse not in capacity:
                 # The location IS this line's own or its pool; it simply has nothing left for
-                # this line. `pool_reserve_capacity` omits a location contributing zero, so
-                # this used to fall through to the message above and report a location error
-                # for a quantity problem - which is what the planner saw as "Reserve may only
-                # come from this line's own location" printed about their own location.
-                refuse(
-                    stale,
-                    f"{warehouse} has nothing free for this line now, so none of the "
-                    f"{qty_text(ask)} asked for can be reserved from it. Buy that quantity "
-                    "instead, or borrow it on the order's own sheet.",
-                )
+                # this line. OI-CLOSED-LINE (owner rule, 12 Oct 2026): confirmed as decided
+                # with the shortfall recorded, never a refusal of the order. Nothing new is
+                # held here; what the line already carries stays.
+                self._record_short(str(line.id), RESERVE, index, warehouse, qty, ask)
                 continue
             if qty > capacity[warehouse]:
-                # Named for the INCREASE, not the whole resubmitted quantity: `capacity`
-                # never had the carried part subtracted from it (it was excluded, not
-                # credited), so what remains for the increase alone is `capacity` less
-                # what this line already carries.
-                room = capacity[warehouse] - carried
-                refuse(
-                    stale,
-                    f"{warehouse} now has {qty_text(room if room > _ZERO else _ZERO)} free "
-                    f"for this line, and {qty_text(ask)} was asked for.",
-                )
-                continue
+                # Short by what `capacity` cannot give. `capacity` never had the carried part
+                # subtracted (it was excluded, not credited), so the carried part is never
+                # counted short. Only what exists is taken and held.
+                short = min(ask, qty - max(capacity[warehouse], carried, _ZERO))
+                self._record_short(str(line.id), RESERVE, index, warehouse, qty, short)
+                qty -= short
+                if qty <= _ZERO:
+                    continue
             capacity[warehouse] -= qty
             warehouse_id = location_ids.get(warehouse)
             if warehouse_id:
@@ -6095,7 +6188,12 @@ class ProjectSupplyService:
                 if covered == _dec(item.qty):
                     continue
                 item = item.model_copy(update={"qty": _dec(item.qty) - covered})
-            self._check_borrow(item, fact, borrow_left, refuse, stale, invalid, carried_holds)
+            self._check_borrow(
+                item, fact, borrow_left, refuse, stale, invalid, carried_holds,
+                record_short=lambda location, asked, short, _i=index: self._record_short(
+                    str(line.id), BORROW, _i, location, asked, short
+                ),
+            )
 
         total = timely + reserve_total + borrow_total + buy
         if total != fact.open_qty:
@@ -6241,8 +6339,13 @@ class ProjectSupplyService:
         for line, entry, fact in checked:
             reserve_credit, _borrow_credit = delivered_credits(fact.core, fact.open_qty, entry)
             for index, item in enumerate(entry.reserve or []):
-                # What the customer already received needs no stock on the floor.
-                qty = _dec(item.qty) - reserve_credit[index]
+                # What the customer already received needs no stock on the floor, and what
+                # the free-stock recheck already found short is not held either.
+                qty = (
+                    _dec(item.qty)
+                    - reserve_credit[index]
+                    - self._short_of(str(line.id), RESERVE, index)
+                )
                 warehouse_id = str(getattr(item, "warehouse_id", "") or "")
                 if qty <= _ZERO or not warehouse_id or not fact.product_id:
                     continue
@@ -6255,7 +6358,19 @@ class ProjectSupplyService:
                 # about it ("Buy that quantity instead, or borrow it on the order's own
                 # sheet"). This rule exists to name the line that has the rest, so it only
                 # speaks when there IS one.
-                if holders and qty > on_hand - held:
+                if holders and qty > on_hand - held and hasattr(self, "_stock_short"):
+                    # OI-CLOSED-LINE (owner rule, 12 Oct 2026): short, not refused. Holds
+                    # only what is left on the floor once the other lines are counted.
+                    room = max(on_hand - held, _ZERO)
+                    warehouse = self._warehouse_row(warehouse_id)
+                    self._record_short(
+                        str(line.id), RESERVE, index,
+                        warehouse.warehouse_code if warehouse else None,
+                        _dec(item.qty) - reserve_credit[index],
+                        qty - room,
+                    )
+                    qty = room
+                elif holders and qty > on_hand - held:
                     warehouse = self._warehouse_row(warehouse_id)
                     code = warehouse.warehouse_code if warehouse else "That location"
                     asking = self._so_number_of(fact)
@@ -6423,6 +6538,7 @@ class ProjectSupplyService:
         stale: List[Dict[str, Any]],
         invalid: List[Dict[str, Any]],
         carried_holds: Dict[str, Dict[str, Any]],
+        record_short: Optional[Callable[[Optional[str], Decimal, Decimal], None]] = None,
     ) -> None:
         qty = _dec(item.qty)
         if not (item.reason or "").strip():
@@ -6488,13 +6604,21 @@ class ProjectSupplyService:
             )
             if qty > available:
                 room = available - carried
-                refuse(
-                    stale,
-                    f"{warehouse.warehouse_code} has {qty_text(room if room > _ZERO else _ZERO)} "
-                    f"free, and {qty_text(ask)} was asked for.",
-                )
-                return
-            borrow_left.take_free(fact.product_id, str(warehouse.id), qty)
+                if record_short is None:
+                    refuse(
+                        stale,
+                        f"{warehouse.warehouse_code} has "
+                        f"{qty_text(room if room > _ZERO else _ZERO)} free, and "
+                        f"{qty_text(ask)} was asked for.",
+                    )
+                    return
+                # OI-CLOSED-LINE (owner rule, 12 Oct 2026): short, not refused. Only what
+                # is free is taken.
+                short = min(ask, qty - max(available, carried, _ZERO))
+                record_short(warehouse.warehouse_code, qty, short)
+                qty -= short
+            if qty > _ZERO:
+                borrow_left.take_free(fact.product_id, str(warehouse.id), qty)
             return
 
         if not item.donor_project_id:
@@ -6541,16 +6665,24 @@ class ProjectSupplyService:
         if qty > held + free:
             room = held + free - carried
             room_text = qty_text(room if room > _ZERO else _ZERO)
-            refuse(
-                stale,
-                f"{donor.project_code} has {room_text} at {warehouse.warehouse_code}, and "
-                f"{qty_text(ask)} was asked for."
-                if self.borrow_from_order
-                # "Borrow from another order" OFF (fix round 2): the bin, never the project.
-                else f"Stock held at {warehouse.warehouse_code} now has {room_text}, and "
-                f"{qty_text(ask)} was asked for.",
-            )
-            return
+            if record_short is None:
+                refuse(
+                    stale,
+                    f"{donor.project_code} has {room_text} at {warehouse.warehouse_code}, "
+                    f"and {qty_text(ask)} was asked for."
+                    if self.borrow_from_order
+                    # "Borrow from another order" OFF (fix round 2): the bin, never the
+                    # project.
+                    else f"Stock held at {warehouse.warehouse_code} now has {room_text}, "
+                    f"and {qty_text(ask)} was asked for.",
+                )
+                return
+            # OI-CLOSED-LINE (owner rule, 12 Oct 2026): short, not refused.
+            short = min(ask, qty - max(held + free, carried, _ZERO))
+            record_short(warehouse.warehouse_code, qty, short)
+            qty -= short
+            if qty <= _ZERO:
+                return
         from_hold = min(qty, held)
         borrow_left.take_held(fact.product_id, str(warehouse.id), str(donor.id), from_hold)
         borrow_left.take_free(fact.product_id, str(warehouse.id), qty - from_hold)
@@ -8179,6 +8311,13 @@ class ProjectSupplyService:
             ),
             "buy_qty": qty_text(_dec(entry.buy_qty)),
             "components": components,
+            # OI-CLOSED-LINE (owner rule, 12 Oct 2026): what was short of free stock on the
+            # undelivered part when this was confirmed. Present only when something was.
+            **(
+                {"stock_short": self._stock_short_snapshot(str(line.id))}
+                if self._stock_short_snapshot(str(line.id))
+                else {}
+            ),
             # What the ENGINE proposed for this line at this moment, beside what was
             # decided (AC-D1). Always present, empty on a line the ladder could not plan -
             # an ABSENT key is the one thing that means "this revision predates the field",
@@ -8410,7 +8549,12 @@ class ProjectSupplyService:
         # The adopted holds count: the line's total held never passes what it still owes.
         hold_left = max(_open_of(fact.core) - sum(unowned.values(), _ZERO), _ZERO)
         for index, item in enumerate(entry.reserve or []):
-            qty = _dec(item.qty) - reserve_credit[index]
+            # OI-CLOSED-LINE: what the recheck found short is not held (owner, 12 Oct 2026).
+            qty = (
+                _dec(item.qty)
+                - reserve_credit[index]
+                - self._short_of(str(line.id), RESERVE, index)
+            )
             if qty <= _ZERO:
                 continue
             # A hold this line already has that belongs to NO revision is this reserve,
@@ -8462,7 +8606,11 @@ class ProjectSupplyService:
             )
 
         for index, item in enumerate(entry.borrow or []):
-            qty = _dec(item.qty) - borrow_credit[index]
+            qty = (
+                _dec(item.qty)
+                - borrow_credit[index]
+                - self._short_of(str(line.id), BORROW, index)
+            )
             if qty <= _ZERO:
                 continue
             if getattr(item, "supply_key", None):
@@ -11181,6 +11329,7 @@ class ProjectSupplyService:
                         "lines_held_back": held_back,
                         # #1362: Buys confirmed over goods that landed for their line.
                         "landed_buy_notices": body.get("landed_buy_notices"),
+                        "stock_short_notices": body.get("stock_short_notices"),
                     }
                 )
             except Exception as exc:  # noqa: BLE001 - every order must get an answer
