@@ -241,3 +241,116 @@ class TestPartial:
         InboundShipmentService(db).refresh_shipment_line_statuses(seeded["shipment_id"])
 
         assert _stored(db, seeded["shipment_id"])[0] == header
+
+
+def _backfill(db, *, apply: bool = False) -> tuple[int, str]:
+    from scripts.oneoff import refresh_container_received as script
+
+    lines: list[str] = []
+    code = script.run(db, db.info["test_company_code"], stale_headers=True, apply=apply, out=lines.append)
+    return code, "\n".join(lines)
+
+
+class TestStaleHeaderBackfill:
+    """`refresh_container_received.py --stale-headers`: dry-run by default, and a
+    second run after --apply finds nothing left to change."""
+
+    def test_dry_run_reports_the_owner_case_and_writes_nothing(self, db):
+        seeded = _container(db, [QTY, QTY, QTY], retired_on_first=True)
+
+        code, out = _backfill(db)
+
+        assert code == 0, out
+        assert "DRY-RUN (no writes)" in out
+        assert seeded["shipment_id"] in out
+        assert "header in_transit -> fully_received  CHANGED" in out
+        assert "headers to change 1" in out
+        assert _stored(db, seeded["shipment_id"])[0] == "in_transit"
+
+    def test_apply_fixes_it_and_a_rerun_changes_nothing(self, db):
+        seeded = _container(db, [QTY, QTY, QTY], retired_on_first=True)
+
+        code, out = _backfill(db, apply=True)
+        assert code == 0, out
+        assert _stored(db, seeded["shipment_id"])[0] == "fully_received"
+
+        code, again = _backfill(db)
+        assert code == 0, again
+        assert seeded["shipment_id"] not in again
+        assert "lines to change 0, headers to change 0" in again
+
+    def test_a_header_behind_lines_already_stored_received_is_selected(self, db):
+        """Not reachable through --all-open: every stored line already says received."""
+        seeded = _container(db, [QTY, QTY])
+        InboundShipmentService(db).refresh_shipment_line_statuses(seeded["shipment_id"])
+        db.execute(
+            text("UPDATE inbound_shipments SET shipment_status = 'in_transit' WHERE id = :id"),
+            {"id": seeded["shipment_id"]},
+        )
+        db.commit()
+
+        code, out = _backfill(db, apply=True)
+
+        assert code == 0, out
+        assert "header in_transit -> fully_received  CHANGED" in out
+        assert _stored(db, seeded["shipment_id"])[0] == "fully_received"
+
+    def test_a_closed_header_is_not_selected(self, db):
+        seeded = _container(db, [QTY, 0], header="closed")
+
+        code, out = _backfill(db, apply=True)
+
+        assert code == 0, out
+        assert seeded["shipment_id"] not in out
+        assert _stored(db, seeded["shipment_id"])[0] == "closed"
+
+
+class TestOwnerReadOnlyQueries:
+    """The SELECTs handed to the owner (`documentation/plans/scm/
+    pl-status-rollup-readonly.sql`) find the pre-fix states they describe."""
+
+    @staticmethod
+    def _queries() -> list[str]:
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[2] / "documentation/plans/scm/pl-status-rollup-readonly.sql"
+        statements = []
+        for chunk in path.read_text().split(";"):
+            body = "\n".join(l for l in chunk.splitlines() if not l.strip().startswith("--")).strip()
+            if body:
+                statements.append(body)
+        assert len(statements) == 3
+        return statements
+
+    def _stale(self, db, seeded, line_status: str) -> None:
+        """Put the container back the way main left it: header in_transit, stored lines
+        carrying `line_status`, received figures stored."""
+        db.execute(
+            text("UPDATE inbound_shipments SET shipment_status = 'in_transit' WHERE id = :id"),
+            {"id": seeded["shipment_id"]},
+        )
+        db.execute(
+            text("UPDATE inbound_shipment_lines SET quantity_received = :q, line_status = :s WHERE id = :id"),
+            {"q": QTY, "s": line_status, "id": seeded["line_ids"][0]},
+        )
+        db.commit()
+
+    def test_q1_counts_a_header_behind_lines_all_stored_received(self, db):
+        seeded = _container(db, [QTY, QTY])
+        InboundShipmentService(db).refresh_shipment_line_statuses(seeded["shipment_id"])
+        before = db.execute(text(self._queries()[0])).scalar()
+        self._stale(db, seeded, "received")
+
+        assert db.execute(text(self._queries()[0])).scalar() == before + 1
+
+    def test_q2_lists_the_owner_case_and_q3_shows_its_retired_allocation(self, db):
+        seeded = _container(db, [QTY, QTY, QTY], retired_on_first=True)
+        InboundShipmentService(db).refresh_shipment_line_statuses(seeded["shipment_id"])
+        self._stale(db, seeded, "partially_received")
+
+        containers = [row[0] for row in db.execute(text(self._queries()[1])).all()]
+        assert seeded["container"] in containers
+
+        q3 = self._queries()[2].replace("'TCLU8176397'", ":c")
+        rows = db.execute(text(q3), {"c": seeded["container"].upper()}).mappings().all()
+        assert sum(1 for r in rows if r["retired_at"] is not None) == 1

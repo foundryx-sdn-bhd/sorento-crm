@@ -528,10 +528,10 @@ def rollup_shipment_status(current: Optional[str], total_lines: int, received_li
     return current
 
 
-def _line_status_counts(lines: list) -> tuple[int, int, int]:
-    """`(total, received, any receipt)` over these lines' `line_status`, the three
-    figures `rollup_shipment_status` takes."""
-    statuses = [(line.line_status or "").strip().lower() for line in lines]
+def line_status_counts(line_statuses) -> tuple[int, int, int]:
+    """`(total, received, any receipt)` over these line statuses, the three figures
+    `rollup_shipment_status` takes."""
+    statuses = [(status or "").strip().lower() for status in line_statuses]
     return (
         len(statuses),
         sum(1 for s in statuses if s == "received"),
@@ -1289,7 +1289,7 @@ class InboundShipmentService:
             line.quantity_received = recv
             line.line_status = status
         shipment.shipment_status = rollup_shipment_status(
-            shipment.shipment_status, *_line_status_counts(lines)
+            shipment.shipment_status, *line_status_counts(line.line_status for line in lines)
         )
         self.db.commit()
 
