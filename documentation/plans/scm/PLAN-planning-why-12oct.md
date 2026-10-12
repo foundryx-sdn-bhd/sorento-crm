@@ -1,6 +1,6 @@
 # PLAN: Planning "why" trail - why was this cancelled, why can I not confirm
 
-Status: Plan. All five answered 13 Oct (Q1-Q5 (a)); mock v3 with the owner. Track: standard (Size M, LEAD pattern).
+Status: Build. Owner approved mock v3 13 Oct ("ok all good"); UAC final. Track: standard (Size M, LEAD pattern).
 Lane: PLANNING-WHY, branch `crew/planning-why`.
 UAC: `planning-why-12oct-acceptance-criteria.md` (written after the card is answered).
 
@@ -157,3 +157,20 @@ Mock: `documentation/mockups/PLANNING-WHY/index.html` (real SO422492, masked).
   (exact: the note names N; N's confirmed_by/at), cause derived only when an undecided AutoCount
   change for that line existed before revision N, else "cause not recorded"; (b) who/when only.
   Rec (a): answers E1/E2 for the cases that already happened, and says so when it cannot.
+
+## Slices (one lane, one PR #1600)
+
+- **S1 BE refusal detail + recording** (AC-W0..W7): `SupplyFailingLine.reason_code/change`;
+  explain rows on the `planning_change_not_confirmed` path for admins; `CONFIRM_REFUSED` audit
+  row after rollback in `confirm_all` and `confirm_supply`.
+- **S2 BE cancel cause** (AC-W8, W9): `_record_cancel` helper beside every cancelled-state
+  assignment (OIS, PCS); guard test. Coordinated with #1599 (crew-note posted there).
+- **S3 BE history read** (AC-W10, W11): `GET /fulfilment-planning/history`, admin-only.
+- **S4 FE** (AC-W12..W15): admin refusal table, gear menu History, History Sheet with filters,
+  Open email dialog.
+
+Test list (tester writes red first): pytest `tests/test_planning_why_refusal.py` (W1..W7),
+`tests/test_planning_why_cancel_cause.py` (W8, W9 guard), `tests/test_planning_why_history.py`
+(W10, W11 incl. a seeded SO422492-shaped case: line 592 ORDER 25 rev 1, pending qty_down 25->22,
+rev 4 cancel -> `undecided_change`; 50-style unchanged re-issue counted); vitest beside
+`FulfilmentBoardPanel` and the new History sheet (W12..W14, admin vs non-admin).
