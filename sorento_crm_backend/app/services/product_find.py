@@ -262,7 +262,11 @@ def _value(spec: ValueSpec, key: str, value: Any, unit: Any, db: Any) -> tuple[A
             raise _unprocessable(f"filter {key} takes a code of at most {MAX_CODE_CHARS} characters", "bad_value")
         return value.strip(), None
     if spec.kind == "number":
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        try:
+            finite = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+        except OverflowError:  # an int too large for a float (security review round 3, N1)
+            finite = False
+        if not finite:
             raise _unprocessable(f"filter {key} takes a number", "bad_value")
         if unit is None:
             unit = spec.units[0] if spec.units else None

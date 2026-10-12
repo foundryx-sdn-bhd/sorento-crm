@@ -162,3 +162,11 @@ def test_v12_the_vocabulary_names_every_row(rows):
     text = pf.parser_vocabulary()
     for key in ("fits", "code_of", "size_of", "finish_of", "both"):
         assert f"{key}:" in text
+
+
+def test_v13_a_number_too_large_for_a_float_is_422_not_500(rows):
+    """Security review round 3, N1: `math.isfinite(10**400)` raises OverflowError."""
+    raw = '[{"key": "size_of", "value": 1' + "0" * 400 + ', "unit": "mm"}]'
+    with pytest.raises(AppException) as raised:
+        pf.parse_filters(raw)
+    assert (raised.value.status_code, raised.value.code) == (422, "bad_value")
