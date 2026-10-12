@@ -16,6 +16,8 @@ Revises: maskp_0001_parser_sub_asks
 """
 from __future__ import annotations
 
+import logging
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -25,6 +27,8 @@ branch_labels = None
 depends_on = None
 
 PROMPT_LIST = "sub_ask_measures"
+
+logger = logging.getLogger("alembic.runtime.migration")
 
 # (domain, value, label, trigger words) in prompt order. Frozen here: later changes are the
 # owner's, on the Chatbot Status Words page. The words are the vocabulary the r7 prompt text
@@ -66,7 +70,9 @@ MEASURE_WORDS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
 )
 
 
-def apply(bind) -> None:
+def apply(bind) -> list[str]:
+    """Seed the rows; return (and log) the measure values an existing untagged row already
+    holds, which stay the owner's and are therefore missing from `{{sub_ask_measures}}`."""
     for i, (domain, value, label, words) in enumerate(MEASURE_WORDS):
         bind.execute(
             sa.text(
@@ -80,6 +86,25 @@ def apply(bind) -> None:
             {"domain": domain, "value": value, "label": label, "words": list(words), "sort": 100 + i,
              "lists": [PROMPT_LIST]},
         )
+    values = [v for _d, v, _l, _w in MEASURE_WORDS]
+    tagged = set(
+        bind.execute(
+            sa.text(
+                "SELECT value FROM chatbot_status_words WHERE value = ANY(CAST(:values AS text[])) "
+                "AND :tag = ANY(prompt_lists)"
+            ),
+            {"values": values, "tag": PROMPT_LIST},
+        ).scalars()
+    )
+    missing = [v for v in values if v not in tagged]
+    if missing:
+        logger.warning(
+            "maskp_0002: status word value(s) %s already exist untagged and were kept, so they are "
+            "missing from {{%s}}: tag them on the Chatbot Status Words page",
+            ", ".join(missing),
+            PROMPT_LIST,
+        )
+    return missing
 
 
 def upgrade() -> None:

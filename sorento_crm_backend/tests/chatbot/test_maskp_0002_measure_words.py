@@ -124,3 +124,23 @@ def test_measure_words_never_leak_into_the_domain_words_fallback():
         db.execute(text("DELETE FROM chatbot_domain_words"))
         pv.clear_cache()
         assert "进仓库" not in pv.render_value(db, "domain_words")
+
+
+def test_a_value_the_owner_already_uses_is_named_never_silently_skipped(caplog):
+    """Review S2: an existing untagged `stock` row keeps the owner's row, and the seed says
+    that measure is missing from {{sub_ask_measures}}."""
+    import logging
+
+    m = _migration()
+    with blank_session() as db:
+        db.execute(
+            text(
+                "INSERT INTO chatbot_status_words (id, domain, value, label, trigger_words, sort_order, prompt_lists) "
+                "VALUES (gen_random_uuid(), 'inventory', 'stock', 'owner row', '{}', 0, '{}')"
+            )
+        )
+        with caplog.at_level(logging.WARNING, logger="alembic.runtime.migration"):
+            missing = m.apply(db.connection())
+        assert missing == ["stock"]
+        assert "stock" in caplog.text and "sub_ask_measures" in caplog.text
+        assert _rows(db).get("stock") is None
