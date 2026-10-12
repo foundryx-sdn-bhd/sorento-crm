@@ -3629,6 +3629,21 @@ def make_tool_runner(
                 focus,
                 [{"entity_type": kind, "raw": w} for w in po_words for kind in ("product", "order")],
             )
+        from app.services.chatbot.lanes.business import find as find_lane
+
+        if find_lane.filter_keys(verdict):
+            # CHAT-FIND: on a find only a product CODE is a subject; a type word the parser
+            # also emitted ("马桶盖", "seat cover") names the relation's target, so it is no
+            # "could not find" word for compose to print (crew live check, 13 Oct 2026). An
+            # unplaced code stays: a mistyped code is still named.
+            product_words = {
+                _token_key(jsc.nullish_str(e.get(field)).strip())
+                for e in jsc.array(jsc.get(verdict, "entities"))
+                if isinstance(e, dict) and e.get("hint") == "product"
+                for field in ("raw", "canonical_code")
+                if jsc.truthy(e.get(field))
+            }
+            envelope_unplaced = {k: v for k, v in envelope_unplaced.items() if k in product_words}
         if so_numbers:
             lane_out = {**lane_out, "so_numbers": so_numbers, **({"so_placed": True} if placed_so else {})}
             envelope_unplaced = {k: v for k, v in unplaced.items() if v not in so_numbers}

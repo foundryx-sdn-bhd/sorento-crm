@@ -2381,6 +2381,80 @@ def row_is_live(row: PlanningChangeRow, current_revision: int) -> bool:
     )
 
 
+def _ddmmyyyy(value) -> str:
+    parsed = _as_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else str(value or "")
+
+
+def change_text(row: PlanningChangeRow) -> Optional[str]:
+    """What the book did to a row's line, in one phrase: qty, then product, then date; the
+    first that differs. An `added` row reads `New, qty N`. PLANNING-WHY AC-W2."""
+    before = row.from_json or {}
+    after = row.to_json or {}
+    if row.kind == "added":
+        return f"New, qty {after.get('qty')}" if after.get("qty") is not None else "New"
+    if before.get("qty") != after.get("qty") and after.get("qty") is not None:
+        return f"Qty {before.get('qty')} -> {after.get('qty')}"
+    if after.get("item_code") and before.get("item_code") != after.get("item_code"):
+        return f"Product {before.get('item_code')} -> {after.get('item_code')}"
+    if before.get("required_date") != after.get("required_date") and after.get("required_date"):
+        return (
+            f"Date {_ddmmyyyy(before.get('required_date'))} -> "
+            f"{_ddmmyyyy(after.get('required_date'))}"
+        )
+    return None
+
+
+def explain_refusal(db: Session, pso_id: str, batch_id: str) -> List[dict]:
+    """One entry per pending or superseded row of this order's batch: why a Confirm that
+    reached the apply confirmed nothing (PLANNING-WHY AC-W2). Read at the throw, BEFORE the
+    order's rollback, so a row the apply just superseded still says why."""
+    rows = (
+        db.query(PlanningChangeRow)
+        .filter(
+            PlanningChangeRow.batch_id == batch_id,
+            PlanningChangeRow.project_sales_order_id == str(pso_id),
+            PlanningChangeRow.applied_state.in_(
+                [PLANNING_CHANGE_STATE_PENDING, PLANNING_CHANGE_STATE_SUPERSEDED]
+            ),
+        )
+        .order_by(PlanningChangeRow.line_no.asc(), PlanningChangeRow.created_at.asc())
+        .all()
+    )
+    revision = current_revision_no(db, str(pso_id))
+    out: List[dict] = []
+    for row in rows:
+        reason_applied = row.applied_reason or ""
+        overtaken = row_is_overtaken(row, revision)
+        if row.applied_state == PLANNING_CHANGE_STATE_SUPERSEDED:
+            if reason_applied.startswith("The board confirmed a newer revision"):
+                code = "already_confirmed"
+            elif reason_applied == "the sales-order line is cancelled":
+                code = "line_cancelled"
+            else:
+                code = "changed_again"
+        elif overtaken:
+            code = "already_confirmed"
+        else:
+            code = "not_decided"
+        reason, change = {
+            "not_decided": ("Not decided", change_text(row)),
+            "changed_again": ("Changed again", change_text(row)),
+            "already_confirmed": (f"Already confirmed in revision {revision}", None),
+            "line_cancelled": ("Line cancelled", None),
+        }[code]
+        out.append(
+            {
+                "so_line_no": row.line_no,
+                "item_code": row.item_code,
+                "reason_code": code,
+                "reason": reason,
+                "change": change,
+            }
+        )
+    return out
+
+
 def _row_is_superseded(db: Session, row: PlanningChangeRow) -> bool:
     if (row.held_json or {}).get("revision_no") is None:
         return False
@@ -3450,6 +3524,9 @@ def _move_reserve(
     receiving.note = f"{receiving.note}\n{found}" if receiving.note else found
     if take >= _dec(receiving.qty):
         receiving.state = INQUIRY_CANCELLED
+        from app.services.project_order_inquiry_service import _record_cancel
+
+        _record_cancel(db, receiving, "reserve_moved", actor_user_id=actor)
     else:
         receiving.qty = _dec(receiving.qty) - take
     db.flush()
@@ -3596,6 +3673,26 @@ def _execute_reallocations(
         for row_id, said in done.items()
         if any(said.values())
     }
+
+
+def _line_changes(
+    rows: Sequence[PlanningChangeRow], line_ids: Sequence[str]
+) -> Dict[str, Dict[str, Any]]:
+    """Per project line id this apply restates: the SO line's own qty and date before and
+    after, off the batch rows' `from_json` / `to_json`."""
+    wanted = {str(line_id) for line_id in line_ids}
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if not r.project_line_id or str(r.project_line_id) not in wanted:
+            continue
+        before, after = r.from_json or {}, r.to_json or {}
+        out[str(r.project_line_id)] = {
+            "from_qty": _dec(before.get("qty")) if before.get("qty") is not None else None,
+            "to_qty": _dec(after.get("qty")) if after.get("qty") is not None else None,
+            "from_date": _as_date(before.get("required_date")),
+            "to_date": _as_date(after.get("required_date")),
+        }
+    return out
 
 
 def _oi_demand_rows(
@@ -3770,6 +3867,9 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_DATE_LATER if r.kind == "delayed" else CHANGE_DATE_EARLIER,
                     "note": f"Was {from_date}" if from_date else "No previous delivery date",
+                    # EMAIL-SO-CHANGES: the same date, structured, for the email's
+                    # DELIVERY / NEW DATE.
+                    "from_date": _as_date(from_date),
                 }
             )
             counts["DELAY" if r.kind == "delayed" else "ADVANCE"] = (
@@ -3791,6 +3891,10 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_QTY_DECREASE,
                     "note": f"Was {qty_text(from_qty)}, now {qty_text(to_qty)}",
+                    # EMAIL-SO-CHANGES: the same two figures, structured, for the email's
+                    # QTY / NEW QTY.
+                    "from_qty": from_qty,
+                    "to_qty": to_qty,
                 }
             )
             counts["CANCEL_BALANCE"] = counts.get("CANCEL_BALANCE", 0) + 1
@@ -3798,7 +3902,7 @@ def _oi_demand_rows(
 
 
 def _retire_inquiry_rows(
-    db: Session, project_line_id: Optional[str], reason: str
+    db: Session, project_line_id: Optional[str], reason: str, actor: Optional[str] = None
 ) -> List[str]:
     """`closed` (AC-R06, amended by AC-P3-6): the line is gone from the book, so what it
     asked purchasing for is cancelled - never deleted, because a cancelled row is still
@@ -3817,6 +3921,8 @@ def _retire_inquiry_rows(
 
     Returns THE ROWS IT CANCELLED, by id, and the shift below takes exactly those: a row
     somebody cancelled last month is not this apply's to move documents off."""
+    from app.services.project_order_inquiry_service import _record_cancel
+
     if not project_line_id:
         return []
     rows = (
@@ -3834,6 +3940,7 @@ def _retire_inquiry_rows(
             row.note = note
         else:
             row.state = INQUIRY_CANCELLED
+            _record_cancel(db, row, "planning_change_retired", actor_user_id=actor)
             row.note = note
             cancelled.append(str(row.id))
     return cancelled
@@ -4539,7 +4646,7 @@ def _apply_one_order(
     for line_id in retired_line_ids:
         cancelled_row_ids.extend(
             _retire_inquiry_rows(
-                db, line_id, "The line was closed by a planning change batch."
+                db, line_id, "The line was closed by a planning change batch.", actor
             )
         )
     if cancelled_row_ids:
@@ -4567,6 +4674,9 @@ def _apply_one_order(
         result = supply.confirm(
             order, body, actor_user_id=actor, uncover_line_ids=uncover_line_ids,
             settle_in_place_line_ids=settle_line_ids,
+            # EMAIL-SO-CHANGES: what the book did to each line this apply restates (the
+            # "What changed" source), for the handover email's Was -> Now.
+            line_changes=_line_changes(live, settle_line_ids),
             # The cascade waits for the shift below. Run inside `confirm`, it filled the
             # survivor's headroom from ANY free purchase-order line first, so the closed
             # lines' own documents arrived a moment later to a row with nothing left to

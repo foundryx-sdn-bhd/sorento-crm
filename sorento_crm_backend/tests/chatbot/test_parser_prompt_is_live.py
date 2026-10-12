@@ -42,6 +42,7 @@ from app.services.chatbot_parser_prompt import (
     PROMOTION_KIND_ADDENDUM,
     CHAT_REPORT_ADDENDUM,
     PO_REFS_ADDENDUM,
+    FIND_ADDENDUM,
     REF_KINDS_ADDENDUM,
     PO_SPO_WAREHOUSE_ADDENDUM,
     QUANTITY_ADDENDUM,
@@ -272,6 +273,9 @@ def _without_growth_r1_addendum(text: str) -> str:
         text = text[: -len(PROMOTION_KIND_ADDENDUM)]
     if text.endswith(CANONICAL_CODE_ADDENDUM):
         text = text[: -len(CANONICAL_CODE_ADDENDUM)]
+    # CHAT-FIND: the `{{find_filters}}` token sits right after REF_KINDS_ADDENDUM.
+    if text.endswith(FIND_ADDENDUM):
+        text = text[: -len(FIND_ADDENDUM)]
     if text.endswith(REF_KINDS_ADDENDUM):
         text = text[: -len(REF_KINDS_ADDENDUM)]
     # CA-3: CHAT_REPORT_ADDENDUM sits right after PO_REFS_ADDENDUM.

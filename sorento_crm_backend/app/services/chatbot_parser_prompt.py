@@ -904,6 +904,14 @@ SEMANTIC_PARSER_PROMPT += REPORT_ASK_ADDENDUM
 SEMANTIC_PARSER_PROMPT += PO_REFS_ADDENDUM
 SEMANTIC_PARSER_PROMPT += CHAT_REPORT_ADDENDUM
 SEMANTIC_PARSER_PROMPT += REF_KINDS_ADDENDUM
+# CHAT-FIND (`documentation/plans/chatbot/PLAN-chat-generic-find-12oct.md`): the generic find
+# rule and the registry's filter lines arrive through the live `{{find_filters}}` variable
+# (`chatbot_prompt_vars.VARIABLES["find_filters"]`, filled by `ai_prompt_registry.render` for the
+# code fallback as for a published version), so the constant grows by the token only and a
+# filter registered later needs no prompt edit. Published versions get it from
+# `chatbot_find_prompt.publish_find_block`.
+FIND_ADDENDUM = '\n\nOne more OUTPUT key, on every object: "find" (below), null when it does not apply.\n{{find_filters}}\n'
+SEMANTIC_PARSER_PROMPT += FIND_ADDENDUM
 # RESOLVE-SEMANTIC-FALLBACK (owner report, 6 Oct 2026 20:02 MYT, prod: the stock-check
 # line "TAP SRTWT5608 x 5" came back "I could not find TAP SRTWT5608" while SRTWT5608
 # exists). The parser emitted ONE product entity, raw "TAP SRTWT5608", canonical_code

@@ -76,6 +76,7 @@ from app.services.scm.front_planning_engine import (
 # "narrow it first" past a size nobody opens a workbook to page through.
 from app.services.scm.low_stock_report_service import MAX_LOW_STOCK_ROWS
 from app.services.scm.planning_predicate import fulfilment_planning_predicate
+from app.services.scm.stock_debt_projection import ProjectedMonth, project_months
 from app.services.scm.workbook_split import split_rows, unique_sheet_title
 from app.services.scm.supply_assignment import (
     BUCKET_TBA,
@@ -314,6 +315,14 @@ AUX_EXPORT_HEADERS = [
 ]
 
 
+def _source_order(label: str) -> tuple:
+    """`("HQ", 0)` for "HQ reserve on hand", then its PO, then its SPO."""
+    for rank, suffix in enumerate((" reserve on hand", " reserve PO", " reserve SPO")):
+        if label.endswith(suffix):
+            return (label[: -len(suffix)], rank)
+    return (label, 3)
+
+
 class StockDebtService:
     def __init__(self, db: Session):
         self.db = db
@@ -336,6 +345,7 @@ class StockDebtService:
         date_to: Optional[date] = None,
         supplier_ids: Optional[Sequence[str]] = None,
         book: str = "all",
+        projected: bool = False,
     ) -> Dict[str, Any]:
         """The month x product board (AC-S2-6, extended AC-1 to AC-9; R14/R15 owner round).
 
@@ -358,16 +368,29 @@ class StockDebtService:
         assignments = self._assignments(
             [(pid, code, name) for pid, code, name, _cat in products],
             warehouses,
-            date_from=date_from,
+            # STOCK-DEBT-PROJECTION: the projection runs from today, so demand before
+            # `date_from` stays in the walk. Dropped, the pool stock it would have met
+            # carried into the first column untouched (review should-fix 1). The axis
+            # still starts at `date_from`'s month.
+            date_from=None if projected else date_from,
             date_to=date_to,
             view=True,
         )
         supplier_map = self._last_supplier_map(product_ids)
+        # STOCK-DEBT-PROJECTION (owner, 12 Oct 2026): the switch's own reading. Computed
+        # off the SAME assignment, so the month figures it starts from are the page's.
+        pool = (
+            self._projection_series(
+                product_ids, warehouses, assignments, date_to=date_to
+            )
+            if projected
+            else {}
+        )
 
         pre_supplier = []
         for product_id, code, name, category_code in products:
             result = assignments[product_id]
-            if only_debt and not self._in_debt(result):
+            if only_debt and not self._in_debt(result, pool.get(product_id)):
                 continue
             supplier = supplier_map.get(product_id) or {"id": None, "name": None}
             pre_supplier.append((product_id, code, name, category_code, supplier, result))
@@ -395,7 +418,11 @@ class StockDebtService:
         axis = self._axis(
             (row[5] for row in filtered), date_from=date_from, date_to=date_to
         )
-        filtered.sort(key=lambda row: self._sort_key(row[5], row[1]))
+        filtered.sort(
+            key=lambda row: self._sort_key(
+                row[5], row[1], pool.get(row[0]), product_id=row[0]
+            )
+        )
 
         # The four auxiliary columns reuse the board's own readers (no new arithmetic), once
         # over every filtered product; they read the pool and the open book, so `book` and
@@ -409,6 +436,18 @@ class StockDebtService:
             # longer folded in (the "No date"/"No location" columns leave the screen and
             # the workbook both); the two still ride the row unchanged, just not here.
             total = sum(month["balance"] for month in months) + result.tba
+            if projected:
+                # The projection moves reserve stock between months; its total is what
+                # the months hold in all: the project figure plus the reserve supply.
+                series = pool[product_id]
+                total = result.tba + sum(
+                    row.projected - row.carried_in
+                    for row in self._project(result, series, axis[-1] if axis else None)
+                    if row.key in set(axis)
+                )
+                months = self._projected_on_axis(
+                    result, axis, product_id, pool[product_id]
+                )
             data_rows.append(
                 {
                     "product_id": product_id,
@@ -496,6 +535,7 @@ class StockDebtService:
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         book: str = "all",
+        projected: bool = False,
     ) -> Dict[str, Any]:
         """The demand and the supply behind one cell (AC-S2-7, R28; extended AC-11).
 
@@ -528,11 +568,49 @@ class StockDebtService:
             )
         products = [(str(product.id), product.product_code, product.product_name)]
         assignments = self._assignments(
-            products, warehouses, keep_events=True, date_from=date_from, date_to=date_to,
+            products, warehouses, keep_events=True,
+            # STOCK-DEBT-PROJECTION: the same reading `list()` takes under the switch.
+            date_from=None if projected else date_from, date_to=date_to,
             view=True,
         )
         result = assignments[str(product.id)]
         events = self._event_cache[str(product.id)]
+        # STOCK-DEBT-PROJECTION: the switch's reading of this month, and the reserve
+        # documents outside the span that it adds (listed below in their month).
+        pool = (
+            self._projection_series(
+                [str(product.id)], warehouses, assignments, date_to=date_to,
+                keep_events=True,
+            )[str(product.id)]
+            if projected
+            else None
+        )
+        projection = None
+        if pool is not None and month not in BUCKET_KEYS:
+            row = next(
+                (
+                    entry
+                    for entry in self._project(result, pool, month)
+                    if entry.key == month
+                ),
+                None,
+            )
+            if row is not None:
+                projection = {
+                    "carried_in": row.carried_in,
+                    "month_balance": row.month_balance,
+                    "reserve_supply": row.reserve_supply,
+                    # By location, then PO before SPO ("HQ reserve PO 5,000").
+                    "reserve_sources": [
+                        {"label": name, "qty": round(qty, 4)}
+                        for name, qty in sorted(
+                            pool["sources"].get(month, {}).items(),
+                            key=lambda item: _source_order(item[0]),
+                        )
+                    ],
+                    "projected": row.projected,
+                    "carried_out": row.carried_out,
+                }
 
         # R29: Supply's own "Assigned to" entries carry `line_no` (the CORE line's own
         # AutoCount `Seq`, `DemandLine.core_line_no`) beside `so_number`, so keyed on the
@@ -677,6 +755,57 @@ class StockDebtService:
                         ],
                     }
                 )
+                if pool is not None and event.key in pool["left"]:
+                    # A reserve's stock under the switch: stated as the projection reads
+                    # it, every link netted (an order at ANY pool may hold it), so the row
+                    # foots with the projection line above it.
+                    supply[-1]["free_qty"] = (
+                        round(max(pool["left"][event.key], 0.0), 4) if home else 0.0
+                    )
+                    supply[-1]["assigned_to"] = [
+                        {"so_number": so_number, "qty": round(qty, 4), "line_no": line_no}
+                        for (so_number, line_no), qty in sorted(
+                            pool["assigned_to"].get(event.key, {}).items(),
+                            key=lambda item: (item[0][0], item[0][1] or 0),
+                        )
+                    ]
+            for event in (pool or {}).get("events", []):
+                # A late document sits on today, with its paperwork date beside it.
+                arrival = effective_date(event.at, as_of)
+                late = event.at is not None and event.at < as_of
+                if month_key(arrival) != month:
+                    continue
+                is_document = event.kind in (KIND_SPO, KIND_PO)
+                supply.append(
+                    {
+                        "kind": event.kind,
+                        "ref": event.ref,
+                        "spo_number": event.spo_number,
+                        "spo_line_number": event.spo_line_number,
+                        **self._po_fields(event),
+                        "warehouse_code": event.warehouse,
+                        "date": arrival,
+                        "stated_date": event.at if late else None,
+                        "days_late": (as_of - event.at).days if late else 0,
+                        "bought_for": event.bought_for,
+                        "qty": event.ordered_qty
+                        if is_document and event.ordered_qty is not None
+                        else event.qty,
+                        "received_qty": event.received_qty if is_document else None,
+                        "outstanding_qty": event.qty if is_document else None,
+                        # What the projection offers of it: less what a link already
+                        # took.
+                        "free_qty": round(max(pool["left"].get(event.key, 0.0), 0.0), 4),
+                        "overdue": False,
+                        "assigned_to": [
+                            {"so_number": so_number, "qty": round(qty, 4), "line_no": line_no}
+                            for (so_number, line_no), qty in sorted(
+                                pool["assigned_to"].get(event.key, {}).items(),
+                                key=lambda item: (item[0][0], item[0][1] or 0),
+                            )
+                        ],
+                    }
+                )
             supply.sort(key=lambda row: (row["date"] or date.max, row["ref"] or ""))
 
         # R25: the envelope's own quantity totals, over the WHOLE tab (never the page - a
@@ -696,6 +825,7 @@ class StockDebtService:
             "supply": supply,
             "demand_total_qty": demand_total_qty,
             "supply_total_qty": supply_total_qty,
+            "projection": projection,
         }
 
     # ------------------------------------------------------------------ the reads
@@ -1568,8 +1698,7 @@ class StockDebtService:
         except (ValueError, AttributeError):
             return False
 
-    @staticmethod
-    def _in_debt(result: Assignment) -> bool:
+    def _in_debt(self, result: Assignment, pool: Optional[dict] = None) -> bool:
         """Anything owed and unsupplied - a negative month, or bucketed demand.
 
         The three buckets count, and the AC's "no negative month" wording is read that way
@@ -1577,19 +1706,43 @@ class StockDebtService:
         debt is 2030 demand, or an order nobody has given a location, would otherwise be
         dropped from the one screen that exists to list what is owed.
         """
+        balances = (
+            [row.projected for row in self._project(result, pool)]
+            if pool is not None
+            else [month.balance for month in result.months]
+        )
         return (
-            any(month.balance < 0 for month in result.months)
+            any(balance < 0 for balance in balances)
             or result.tba < 0
             or result.undated < 0
             or result.unlocated < 0
         )
 
-    @staticmethod
-    def _sort_key(result: Assignment, code: str) -> tuple:
+    def _sort_key(
+        self,
+        result: Assignment,
+        code: str,
+        pool: Optional[dict] = None,
+        product_id: Optional[str] = None,
+    ) -> tuple:
         """Earliest red month, then product code; no red month sorts after every red one.
 
         Red is "cannot be bought in time", so the order is the order the work is urgent in.
+        Under the projection, red is read off the projected balance.
         """
+        if pool is not None:
+            as_of = date.today()
+            lead = self._lead_cache.get(product_id or "", DEFAULT_LEAD_TIME_DAYS)
+            red = next(
+                (
+                    row.key
+                    for row in self._project(result, pool)
+                    if tone_for(row.projected, row.key, as_of=as_of, lead_days=lead)
+                    == "red"
+                ),
+                None,
+            )
+            return (red is None, red or "", code or "")
         red = next(
             (month.key for month in result.months if month.tone == "red"), None
         )
@@ -1649,6 +1802,161 @@ class StockDebtService:
                 }
             )
         return out
+
+    # ------------------------------------------------------------------ the projection
+
+    def _project_reserves(self) -> Dict[str, Warehouse]:
+        """Every active PROJECT RESERVE, exactly as HQ-PROJECT-RESERVE (#1597) reads it
+        (`pool_predicate.is_project_reserve`: a pool with `segment = project`, per warehouse
+        row, so one company's HQ can be a reserve while another's same-coded HQ is not)."""
+        return dict(self.supply.project_reserve_warehouses())
+
+    def _projection_series(
+        self,
+        product_ids: Sequence[str],
+        warehouses: Dict[str, Warehouse],
+        assignments: Dict[str, Assignment],
+        *,
+        date_to: Optional[date] = None,
+        keep_events: bool = False,
+    ) -> Dict[str, dict]:
+        """STOCK-DEBT-PROJECTION: per product, the two month series `project_months` takes
+        (`stock_debt_projection` states the rule; owner, 12 Oct 2026, option D).
+
+        - `project`: the project lines' own month figure off the page's walk - the project
+          bins' spare less their lines' shortfalls. A pool reaches a project line only
+          through a link (a placement, the S/O ref, a decision), which the walk has already
+          pinned at any date, so this is what the drill's Covered by leaves owed. A pool
+          bin's own events and lines are left out: unlinked pool stock never counts.
+        - `reserve_supply`: a project reserve's stock by month, less what any line took of
+          it: its unlinked documents (PO on its Delivery date, SPO not landed on its ETA,
+          past due today; #1597 keeps R45, so only this layer counts them) and what its on
+          hand the walk left spare (#1597 walks it for project lines first). Linked or
+          walked stock is never offered twice.
+        - `sources`: per month, the reserve supply by location and kind, for the drill line.
+
+        When a reserve exists and any pool or reserve is outside the span (Book=Project, or
+        a `group`), the span is walked once more WITH every site pool and reserve: an order
+        at ANY pool may hold a reserve document through a link (a placement pins across
+        groups), and walked this way it is netted exactly as under Book=All. That walk
+        answers for the reserve stock only: `project` always comes off the page's own `assignments`, which is what its
+        Covered by shows (an out-of-span link is honoured there uncapped).
+
+        Nothing here is written and nothing is assigned (R45).
+        """
+        as_of = date.today()
+        reserves = self._project_reserves()
+        outside = {wid: row for wid, row in reserves.items() if wid not in warehouses}
+        walked = assignments
+        pools = {
+            wid: row
+            for wid, row in self.supply.site_pool_warehouses().items()
+            if wid not in warehouses
+        }
+        if reserves and (outside or pools) and product_ids:
+            caches = (self._event_cache, self._lead_cache)
+            walked = self._assignments(
+                [(product_id, "", "") for product_id in product_ids],
+                {**warehouses, **pools, **outside},
+                date_to=date_to,
+                view=True,
+            )
+            self._event_cache, self._lead_cache = caches
+
+        out: Dict[str, dict] = {}
+        for product_id in product_ids:
+            page = assignments[product_id]
+            project: Dict[str, float] = {}
+            for row in page.lines:
+                if row.line.is_pool or not self._is_month_key(row.bucket):
+                    continue
+                project[row.bucket] = project.get(row.bucket, 0.0) - row.short_at_date
+            for event in page.supply:
+                if event.is_pool:
+                    # Pool stock counts only through a link (already in the lines); a
+                    # reserve (#1597 flags it pool AND reserve) is the reserve term below.
+                    continue
+                spare = page.free.get(event.key, 0.0)
+                if spare > 0:
+                    month = month_key(effective_date(event.at, as_of))
+                    project[month] = project.get(month, 0.0) + spare
+            on_page = {event.key for event in page.supply}
+            result = walked[product_id]
+            taken: Dict[str, float] = {}
+            assigned_to: Dict[str, Dict[Tuple[str, Optional[int]], float]] = {}
+            for row in result.lines:
+                for item in row.assigned:
+                    who = (row.line.so_number, row.line.core_line_no)
+                    bucket = assigned_to.setdefault(item.event.key, {})
+                    bucket[who] = bucket.get(who, 0.0) + item.qty
+                    taken[item.event.key] = taken.get(item.event.key, 0.0) + item.qty
+            reserve_supply: Dict[str, float] = {}
+            sources: Dict[str, Dict[str, float]] = {}
+            left: Dict[str, float] = {}
+            documents: List[SupplyEvent] = []
+            for event in result.supply:
+                if not event.is_reserve or event.at is None:
+                    continue
+                qty = float(event.qty) - taken.get(event.key, 0.0)
+                left[event.key] = qty
+                documents.append(event)
+                if qty <= 0:
+                    continue
+                month = month_key(effective_date(event.at, as_of))
+                reserve_supply[month] = reserve_supply.get(month, 0.0) + qty
+                kind = {KIND_ON_HAND: "on hand", KIND_PO: "PO"}.get(event.kind, "SPO")
+                name = f"{event.warehouse} reserve {kind}"
+                by_label = sources.setdefault(month, {})
+                by_label[name] = by_label.get(name, 0.0) + qty
+            out[product_id] = {
+                "project": project, "reserve_supply": reserve_supply, "sources": sources,
+            }
+            if keep_events:
+                # The drill lists the reserve stock the page's own span does not show.
+                out[product_id]["events"] = [
+                    event for event in documents if event.key not in on_page
+                ]
+                out[product_id]["left"] = left
+                out[product_id]["assigned_to"] = assigned_to
+        return out
+
+    @staticmethod
+    def _project(
+        result: Assignment, series: dict, last: Optional[str] = None
+    ) -> List[ProjectedMonth]:
+        """`project_months` over every month from today's to the latest month either
+        series names, or `last`."""
+        first = month_key(date.today())
+        candidates = [first, *series["project"], *series["reserve_supply"]]
+        if last:
+            candidates.append(last)
+        keys = month_axis(first, max(candidates))
+        return project_months(
+            keys, series["project"], reserve_supply=series["reserve_supply"],
+        )
+
+    def _projected_on_axis(
+        self, result: Assignment, axis: Sequence[str], product_id: str, pool: dict
+    ) -> List[dict]:
+        """`_months_on_axis`'s shape, the cell being the projected balance. Unlike the
+        month view a column past the row's last event is NOT 0: the reserve stock
+        carried into it is still there."""
+        as_of = date.today()
+        lead = self._lead_cache.get(product_id, DEFAULT_LEAD_TIME_DAYS)
+        by_key = {
+            row.key: row.projected
+            for row in self._project(result, pool, axis[-1] if axis else None)
+        }
+        return [
+            {
+                "key": key,
+                "balance": by_key.get(key, 0.0),
+                "tone": tone_for(
+                    by_key.get(key, 0.0), key, as_of=as_of, lead_days=lead
+                ),
+            }
+            for key in axis
+        ]
 
     def _assigned_from(
         self, line, *, order_ids: Optional[Dict[str, Optional[str]]] = None
@@ -2131,6 +2439,7 @@ class StockDebtService:
         book: str = "all",
         split: str = "none",
         show_aux: bool = False,
+        projected: bool = False,
     ) -> Tuple[bytes, str, str, Dict[str, int]]:
         """The workbook for the CURRENT filters (AC-17): `(bytes, content_type, filename,
         {"rows": n, "sheets": m})`, the same tuple shape `low_stock_report_service.
@@ -2146,7 +2455,7 @@ class StockDebtService:
         listing = self.list(
             query=query, group=group, only_debt=only_debt, date_from=date_from,
             date_to=date_to, supplier_ids=supplier_ids, book=book, page=1,
-            limit=MAX_LOW_STOCK_ROWS + 1,
+            limit=MAX_LOW_STOCK_ROWS + 1, projected=projected,
         )
         if listing["pagination"]["total"] > MAX_LOW_STOCK_ROWS:
             raise AppException(422, "Narrow the filters first")

@@ -288,6 +288,10 @@ class SupplyFailingLine(BaseModel):
     so_line_no: Optional[int] = None
     item_code: Optional[str] = None
     reason: str
+    #: PLANNING-WHY AC-W1: why the planning change row stopped a Confirm (admin only) and the
+    #: phrase for what the book did to it. Both stay null for every other refusal.
+    reason_code: Optional[str] = None
+    change: Optional[str] = None
 
 
 class SupplyProposal(BaseModel):

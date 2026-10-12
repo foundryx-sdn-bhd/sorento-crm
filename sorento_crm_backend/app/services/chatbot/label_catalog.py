@@ -447,6 +447,14 @@ LABELS: dict[str, dict[str, str]] = {
     "I still can't tell which one you mean. Ask for the low stock report again with a category or \"all\".": {"ms": "Saya masih tidak pasti yang mana satu anda maksudkan. Minta laporan stok rendah sekali lagi dengan kategori atau \"all\".", "zh": "我仍然无法确定您指的是哪一个。请再次索取低库存报告，并提供类别或 \"all\"。"},
 }
 
+# CHAT-FIND: the generic find tool's presenter lines live with their filter in the registry
+# (`app/services/product_find.py`), so a filter registered there is translated with no edit
+# here. A label already catalogued above keeps its own wording.
+from app.services.product_find import catalog_labels as _find_labels  # noqa: E402
+
+for _english, _entry in _find_labels().items():
+    LABELS.setdefault(_english, _entry)
+
 #: Presenter field key -> English label (slices 1 and 2).
 FIELD_KEYS: dict[str, str] = {
     "company_name": "Company",

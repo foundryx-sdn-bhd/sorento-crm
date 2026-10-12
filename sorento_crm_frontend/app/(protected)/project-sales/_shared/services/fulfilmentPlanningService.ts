@@ -17,6 +17,7 @@ import type {
   FulfilmentPlanningListParams,
   FulfilmentPlanningRow,
   PileQueue,
+  PlanningHistory,
   ReconciliationSummary,
   StockDetail,
   SupplyFailingLine,
@@ -621,6 +622,20 @@ export async function simulateConfirm(body: SimulateConfirmBody): Promise<Confir
   });
   if (!response.ok)
     throw new Error(await extractApiError(response, 'Failed to simulate the confirmation'));
+  return response.json();
+}
+
+/**
+ * Admin History of the named orders (PLANNING-WHY): what happened to each plan, newest first.
+ *
+ *   GET /project-sales/fulfilment-planning/history?pso_ids=<id>[,<id>...]  (at most 50)
+ *       -> { events: PlanningHistoryEvent[] }
+ */
+export async function getPlanningHistory(psoIds: string[]): Promise<PlanningHistory> {
+  const search = new URLSearchParams({ pso_ids: psoIds.join(',') });
+  const response = await apiFetch(`${BASE}/fulfilment-planning/history?${search.toString()}`);
+  if (!response.ok)
+    throw new Error(await extractApiError(response, 'Failed to load the history'));
   return response.json();
 }
 

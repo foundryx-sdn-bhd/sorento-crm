@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Planning why trail (mockup v3)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set as documentation/mockups/so-cancel-line */
+:root{--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-soft:#eff6ff;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--page:#f7f7f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1400px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:940px}
+.nav{position:sticky;top:0;z-index:5;background:var(--page);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-size:12px;text-decoration:none;border:1px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;color:var(--muted-fg)}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:900px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.desk{width:1280px;max-width:100%;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.screen{overflow:auto;background:#fff;position:relative}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:760px}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+.main{padding:22px 26px}
+.phone .main{padding:14px}
+.pagehead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.pagehead .t{font-size:22px;font-weight:600}
+.phone .pagehead .t{font-size:18px}
+.sub{font-size:13px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;font-weight:500;white-space:nowrap;color:var(--foreground)}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.icon{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;color:var(--muted-fg)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;white-space:nowrap}
+th{font-size:12px;color:var(--muted-fg);font-weight:500}
+td.n{font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:0 8px;font-size:11px;line-height:20px;font-weight:600;white-space:nowrap}
+.pill.warn{background:#fef3c7;color:#92400e}
+.pill.mute{background:#e2e8f0;color:#334155}
+.pill.ok{background:var(--success-soft);color:var(--success)}
+.pill.bad{background:var(--destructive-soft);color:var(--destructive)}
+.pill.info{background:var(--primary-soft);color:#1d4ed8}
+.pill.ac{background:#ede9fe;color:#6d28d9}
+a,.lk{color:#1d4ed8;text-decoration:underline;cursor:pointer;font-size:13px}
+.res{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:13px}
+.res .h{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin:0 0 6px}
+.old{opacity:.7}
+.new-tag{display:inline-block;font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 16px}
+.sel{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;height:30px;min-width:160px;padding:0 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;background:#fff;color:var(--muted-fg)}
+.sel.set{color:var(--foreground);border-color:#a1a1aa}
+.sel .x{color:var(--muted-fg)}
+.phone .sel{min-width:0;width:100%}
+.day{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-fg);margin:0 0 10px}
+.tl{list-style:none;margin:0 0 18px;padding:0}
+.tl>li{position:relative;display:flex;gap:12px;padding-bottom:14px}
+.tl>li:before{content:"";position:absolute;left:5px;top:14px;bottom:0;width:1px;background:var(--border)}
+.tl>li:last-child:before{display:none}
+.dot{width:11px;height:11px;border-radius:50%;background:#a1a1aa;margin-top:4px;flex:none}
+.dot.r{background:var(--destructive)}.dot.g{background:var(--success)}.dot.b{background:var(--primary)}.dot.a{background:#8b5cf6}
+.ev{min-width:0;flex:1}
+.ev .top{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.ev .ti{font-weight:500;font-size:13.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ev .tm{font-size:12px;color:var(--muted-fg);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ev .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;align-items:center}
+.ev table{margin-top:6px;font-size:12.5px;border:1px solid var(--border);border-radius:6px}
+.ev th,.ev td{padding:4px 8px}
+.ev .more{font-size:12px}
+.sheetwrap{position:relative;background:#fafafa}
+.scrim{position:absolute;inset:0;background:rgba(9,9,11,.25)}
+.dlg{position:absolute;left:50%;top:40px;transform:translateX(-50%);width:640px;max-width:calc(100% - 24px);background:#fff;border-radius:12px;border:1px solid var(--border);padding:18px;box-shadow:0 12px 32px rgba(0,0,0,.14)}
+.dlg h3{margin:0 0 4px;font-size:16px}
+.mailbody{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--muted);border-radius:6px;padding:10px 12px;white-space:pre;overflow:auto;margin-top:10px}
+.mailbody .hl{background:#fee2e2}
+.note{font-size:12px;color:var(--muted-fg);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0;max-width:900px}
+.map{font-size:12.5px;max-width:1100px;background:#fff}
+.map th,.map td{white-space:normal;vertical-align:top;padding:5px 8px}
+.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:4px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cmp .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg);margin:0 0 6px}
+.sidebar{width:220px;border-right:1px solid var(--border);padding:14px 10px;font-size:13px;flex:none}
+.sidebar div{padding:5px 8px;border-radius:6px;color:var(--muted-fg)}
+.sidebar .grp{font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:8px}
+.sidebar .on{background:var(--muted);color:var(--foreground);font-weight:500}
+.shell{display:flex}
+</style>
+<style>
+.sheetwrap{position:relative;background:#fff;height:860px;overflow:hidden}
+.sheet{position:absolute;right:0;top:0;bottom:0;width:600px;background:#fff;border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,.08);display:flex;flex-direction:column}
+.phone .sheet{width:100%;border-left:0}
+.sheet .hd{padding:14px 16px 10px;border-bottom:1px solid var(--border)}
+.sheet .hd .t{font-size:16px;font-weight:600}
+.sheet .bd{flex:1;overflow:auto;padding:14px 16px}
+.sheet .filters{margin:10px 0 0}
+.sheet .sel{min-width:130px}
+.menu{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;z-index:3;font-size:13px}
+.menu div{padding:6px 8px;border-radius:4px}
+.menu .hl{background:var(--muted)}
+.admin{font-size:10px;font-weight:600;color:#6d28d9;background:#ede9fe;border-radius:4px;padding:0 5px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Planning "why" trail, mock v3</h1>
+<p class="intro">v3 (13 Oct 2026) after the owner's notes on v2: "make these visible by admin which is me only" (the refusal detail) and "i don't need this page, i just need this as side panel (lightbox) from the fulfilment planning page of the SO(s)". So: the refusal detail and History are admin-only, using the check Simulate confirm already uses (role slug <code>superadmin</code>/<code>admin</code>, <code>fulfilment_planning.py:573-581</code>; FE <code>isSuperadminUser</code>, <code>lib/is-superadmin.ts:19</code>); everyone else sees today's short message. History is a side panel opened from the board's gear menu, for the SO(s) on the board, with filters SO, product, line, event, user, date. No page, no route, no menu entry, no change to the Order Inquiries worklist. Real case SO422492, people masked to roles, Malaysia time (stored +8 h). <span class="new-tag">NEW</span> marks new elements; <span class="admin">admin</span> marks admin-only.</p>
+<div class="nav"><a href="#s1">1 Confirm refusal: admin vs others</a><a href="#s2">2 Gear menu: History</a><a href="#s3">3 History panel</a><a href="#s4">4 Filtered: product</a><a href="#s5">5 Open email</a><a href="#s6">6 375 px</a><a href="#s7">7 Reason badges</a><a href="#s8">8 Component mapping</a></div>
+
+<section id="s1">
+<h2><span class="nb">1</span>Confirm refusal: admin sees the rows, everyone else the short message</h2>
+<p class="why">Same results block under the board. The server sends the per-line rows only to an admin; a non-admin's answer carries none. Rows illustrative: the 12 Oct press's own lines were never recorded. Every refusal is still recorded for the History either way.</p>
+<div class="cmp">
+<div><p class="lbl">CS user (not admin): unchanged</p>
+<div class="res"><div class="h">0 of 1 orders confirmed</div><div>SO422492: Nothing on this planning change could be confirmed.</div></div></div>
+<div><p class="lbl">Admin <span class="admin">admin</span></p>
+<div class="res"><div class="h"><span>0 of 1 orders confirmed · SO422492</span><a>History</a></div>
+<table><tr><th>Line</th><th>Product</th><th>Change</th><th>Reason</th><th></th></tr>
+<tr><td class="n">592</td><td>SRTWC8840-SC</td><td class="n">Qty 25 → 22</td><td><span class="pill warn">Not decided</span></td><td><a>Go to line</a></td></tr>
+<tr><td class="n">528</td><td>SRTWT2200</td><td class="n">Qty 140 → 22</td><td><span class="pill warn">Not decided</span></td><td><a>Go to line</a></td></tr>
+<tr><td class="n">1056</td><td>SRTWC8318-RL-N</td><td class="n">New, qty 2</td><td><span class="pill mute">Changed again</span></td><td><a>Reload</a></td></tr>
+</table></div></div>
+</div>
+</section>
+
+<section id="s2">
+<h2><span class="nb">2</span>Gear menu: "History" under "Simulate confirm" (admin only)</h2>
+<p class="why">The board's existing gear menu. A non-admin sees only "Undo all", as today.</p>
+<div class="desk"><div class="screen"><div class="main" style="position:relative;height:300px">
+ <div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div>
+ <div class="menu" style="right:120px;top:62px"><div>Undo all</div><div>Simulate confirm <span class="admin">admin</span></div><div class="hl">History <span class="admin">admin</span><span class="new-tag">NEW</span></div></div>
+ <table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table>
+</div></div><div class="cap">1280 · gear menu</div></div>
+</section>
+
+<section id="s3">
+<h2><span class="nb">3</span>History side panel over the board</h2>
+<p class="why">Sheet from the right, board still behind it. The SO filter lists only the SO(s) on this board and starts with all of them; a one-order board starts on that order. Timeline newest first: title, count badges, small table on click.</p>
+<div class="desk"><div class="sheetwrap"><div class="main" style="opacity:.45"><div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div><table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table></div><div class="scrim"></div>
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div><div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel">Product <span>▾</span></span><span class="sel">Line <span>▾</span></span><span class="sel">Event: all <span>▾</span></span><span class="sel">User <span>▾</span></span><span class="sel">Any date <span>▾</span></span><span class="btn">Clear</span></div></div><div class="bd"><p class="day">12 Oct 2026</p>
+ <ol class="tl">
+  <li><span class="dot r"></span><div class="ev"><div class="top"><span class="ti">Confirm refused · SO422492 <span class="new-tag">NEW</span></span><span class="tm">(example) · CS user A</span></div>
+   <div class="chips"><span class="pill warn">Not decided 2</span><span class="pill mute">Changed again 1</span><span class="lk more">▾ 3 lines</span></div></div></li>
+  <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: SO422492</span><span class="tm">2:42 pm</span></div>
+   <div class="chips"><span class="pill bad">Cancel 1</span><span class="pill info">Order 1</span><span class="pill info">Order back 1</span><a>Open email</a></div></div></li>
+  <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 4 confirmed · SO422492</span><span class="tm">2:42 pm · CS user A</span></div>
+   <div class="chips"><span class="pill bad">Cancelled 1</span><span class="pill info">Ordered 1</span><span class="pill info">Order back 1</span><span class="pill mute">Re-issued unchanged 50</span><span class="lk more">▴ hide</span></div>
+   <table><tr><th>Line</th><th>Product</th><th>Action</th><th>Qty</th><th>Cause</th></tr>
+   <tr><td class="n">592</td><td>SRTWC8840-SC</td><td><span class="pill bad">Cancelled</span></td><td class="n">25</td><td><span class="pill warn">Not decided</span> <span class="sub">Qty 25 → 22</span></td></tr>
+   <tr><td class="n">1771</td><td>CB8001-5</td><td><span class="pill info">Ordered</span></td><td class="n">23</td><td></td></tr>
+   <tr><td class="n">160</td><td>SRTWT2219</td><td><span class="pill info">Order back</span></td><td class="n">6</td><td><span class="sub">BRW-BB</span></td></tr>
+   </table></div></li>
+  <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: SO422492</span><span class="tm">1:24 pm</span></div>
+   <div class="chips"><span class="pill bad">Cancel</span><span class="pill info">Order</span><span class="pill info">Order back</span><span class="pill info">New item code</span><a>Open email</a></div></div></li>
+  <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 3 confirmed · SO422492</span><span class="tm">1:24 pm · CS user A</span></div>
+   <div class="chips"><span class="pill bad">Cancelled 5</span><span class="pill bad">Reduced 4</span><span class="pill mute">Re-issued unchanged 2</span><span class="lk more">▾ 9 lines</span></div></div></li>
+ </ol>
+ <p class="day">8 Oct 2026</p>
+ <ol class="tl">
+  <li><span class="dot a"></span><div class="ev"><div class="top"><span class="ti">AutoCount update · SO422492</span><span class="tm">4:39 pm · Integration (system)</span></div>
+   <div class="chips"><span class="pill ac">Qty cut 22</span><span class="pill ac">Product change 2</span><span class="pill ac">New line 76</span><span class="sub">now:</span><span class="pill ok">Confirmed 58</span><span class="pill warn">Not decided 36</span><span class="pill mute">Replaced 6</span><span class="lk more">▾ 100 lines</span></div></div></li>
+ </ol>
+ <p class="day">24 Sep 2026</p>
+ <ol class="tl">
+  <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 2 confirmed · SO422492</span><span class="tm">5:25 pm · Admin user A</span></div><div class="chips"><span class="pill info">Ordered 3</span><span class="pill mute">Re-issued unchanged 15</span><a>Open email</a></div></div></li>
+  <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Revision 1 confirmed · SO422492 · OI-2609-0764 raised</span><span class="tm">11:30 am · CS user A</span></div><div class="chips"><span class="pill info">Ordered</span><a>Open email</a></div></div></li>
+ </ol></div></div>
+</div><div class="cap">1280 · History panel (Sheet, side right) over the Fulfilment planning board</div></div>
+</section>
+
+<section id="s4">
+<h2><span class="nb">4</span>Filtered by product: "why was SRTWC8840-SC 25 cancelled?"</h2>
+<p class="why">Read bottom to top: ordered 25, AutoCount cut it to 22 and nobody decided, revision 4 cancelled the 25, CANCEL ALL email.</p>
+<div class="desk"><div class="sheetwrap" style="height:560px"><div class="main" style="opacity:.45"><div class="pagehead"><div><div class="t">Fulfilment planning</div><div class="sub">SO422492 · 36 to confirm · 0 rejected · Revision 4, confirmed by CS user A, 98 lines</div></div>
+ <div style="display:flex;gap:8px"><span class="btn">Save all suggested (36)</span><span class="btn">⚙</span><span class="btn pri">Confirm (0)</span></div></div><table><tr><th>Line</th><th>Product</th><th>Required date</th><th>Planned qty</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+ <tr><td class="n">528</td><td>SRTWT2200</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">560</td><td>SRTWCX8840-S-RL</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC</td><td>09/11/2026</td><td class="n">0</td><td>Buy 22</td><td></td><td><span class="pill warn">Change proposed</span></td></tr>
+ <tr><td class="n">1771</td><td>CB8001-5</td><td>09/11/2026</td><td class="n">23</td><td>Buy 23</td><td>Buy 23</td><td><span class="pill ok">Confirmed</span></td></tr></table></div><div class="scrim"></div>
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div><div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel set">SRTWC8840-SC <span class="x">✕</span></span><span class="sel">Line <span>▾</span></span><span class="sel">Event: all <span>▾</span></span><span class="sel">User <span>▾</span></span><span class="sel">Any date <span>▾</span></span><span class="btn">Clear</span></div></div><div class="bd"><p class="day">12 Oct 2026</p>
+ <ol class="tl">
+  <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: SO422492</span><span class="tm">2:42 pm</span></div><div class="chips"><span class="pill bad">Cancel all 25</span><a>Open email</a></div></div></li>
+  <li><span class="dot r"></span><div class="ev"><div class="top"><span class="ti">Order cancelled · line 592 · 25</span><span class="tm">2:42 pm · CS user A</span></div><div class="chips"><span class="pill mute">Revision 4</span><span class="pill warn">Not decided</span><span class="sub">Qty 25 → 22</span></div></div></li>
+ </ol>
+ <p class="day">8 Oct 2026</p>
+ <ol class="tl"><li><span class="dot a"></span><div class="ev"><div class="top"><span class="ti">AutoCount update · line 592</span><span class="tm">4:39 pm · Integration (system)</span></div><div class="chips"><span class="pill ac">Qty 25 → 22</span><span class="pill warn">Not decided</span></div></div></li></ol>
+ <p class="day">24 Sep 2026</p>
+ <ol class="tl">
+  <li><span class="dot b"></span><div class="ev"><div class="top"><span class="ti">Email · OI: BRW-NTC @ SO422492</span><span class="tm">11:30 am</span></div><div class="chips"><span class="pill info">Order 25</span><a>Open email</a></div></div></li>
+  <li><span class="dot g"></span><div class="ev"><div class="top"><span class="ti">Ordered · line 592 · 25 at BRW-NTC</span><span class="tm">11:30 am · CS user A</span></div><div class="chips"><span class="pill mute">Revision 1</span><span class="pill mute">OI-2609-0764</span></div></div></li>
+ </ol></div></div>
+</div><div class="cap">1280 · same panel, product filter set</div></div>
+</section>
+
+<section id="s5">
+<h2><span class="nb">5</span>Open email: the exact email purchasing got</h2>
+<p class="why">Dialog over the panel with the stored email, read only, recipients shown (owner Q4). Lines for the filtered product highlighted.</p>
+<div class="desk"><div class="sheetwrap" style="height:440px"><div class="scrim"></div>
+<div class="dlg">
+ <div style="display:flex;justify-content:space-between"><h3>OI: SO422492</h3><span class="icon">✕</span></div>
+ <div class="sub">12/10/2026 2:42 pm · <span class="pill ok">Sent</span></div><div class="sub">To: purchasing A &lt;user@example.test&gt;, purchasing B &lt;user@example.test&gt; (masked)</div>
+<div class="mailbody">ORDER, ORDER BACK, CANCEL BALANCE
+
+SO422492 - 22/09/2026 - (customer) - 18 STRY MENARA MAJLIS PERBANDARAN SEPANG
+
+LOCATION | ITEM CODE       | QTY | NEW QTY | DELIVERY   | REMARK
+BRW-BB   | SRTWT2219       | 6   |         | 09/11/2026 | ORDER BACK
+<span class="hl">BRW-NTC  | SRTWC8840-SC    | 25  | 0       | 09/11/2026 | CANCEL ALL</span>
+BRW-NTC  | CB8001-5        | 23  |         | 09/11/2026 | ORDER
+
+Raised by CS user A on 12/10/2026.</div>
+</div></div><div class="cap">1280 · Dialog</div></div>
+</section>
+
+<section id="s6">
+<h2><span class="nb">6</span>375 px</h2>
+<div class="row">
+<div class="phone"><div class="screen"><div class="sheetwrap" style="height:760px">
+<div class="sheet"><div class="hd"><div style="display:flex;justify-content:space-between"><div class="t">History<span class="admin">admin</span></div><span class="icon">✕</span></div>
+<div class="filters"><span class="sel set">SO422492 <span class="x">✕</span></span><span class="sel set">SRTWC8840-SC <span class="x">✕</span></span><span class="btn">Filters (4)</span><span class="btn">Clear</span></div></div>
+<div class="bd">
+ <p class="day">12 Oct 2026</p>
+ <ol class="tl">
+  <li><span class="dot b"></span><div class="ev"><div class="ti">Email · OI: SO422492</div><div class="tm">2:42 pm</div><div class="chips"><span class="pill bad">Cancel all 25</span><a>Open email</a></div></div></li>
+  <li><span class="dot r"></span><div class="ev"><div class="ti">Order cancelled · line 592 · 25</div><div class="tm">2:42 pm · CS user A</div><div class="chips"><span class="pill mute">Revision 4</span><span class="pill warn">Not decided</span></div></div></li>
+ </ol>
+ <p class="day">8 Oct 2026</p>
+ <ol class="tl"><li><span class="dot a"></span><div class="ev"><div class="ti">AutoCount update · line 592</div><div class="tm">4:39 pm · Integration (system)</div><div class="chips"><span class="pill ac">Qty 25 → 22</span></div></div></li></ol>
+ <p class="day">24 Sep 2026</p>
+ <ol class="tl"><li><span class="dot g"></span><div class="ev"><div class="ti">Ordered · line 592 · 25</div><div class="tm">11:30 am · CS user A</div></div></li></ol>
+</div></div></div></div><div class="cap">375 · panel full width; other filters in a Filters popover</div></div>
+<div class="phone"><div class="screen"><div class="main">
+ <div class="res"><div class="h"><span>0 of 1 confirmed · SO422492</span><a>History</a></div>
+ <table><tr><th>Line</th><th>Product</th><th>Reason</th></tr>
+ <tr><td class="n">592</td><td>SRTWC8840-SC<div class="sub">Qty 25 → 22</div></td><td><span class="pill warn">Not decided</span><div><a>Go to line</a></div></td></tr>
+ <tr><td class="n">528</td><td>SRTWT2200<div class="sub">Qty 140 → 22</div></td><td><span class="pill warn">Not decided</span><div><a>Go to line</a></div></td></tr>
+ <tr><td class="n">1056</td><td>SRTWC8318-RL-N<div class="sub">New, qty 2</div></td><td><span class="pill mute">Changed again</span><div><a>Reload</a></div></td></tr>
+ </table></div>
+</div></div><div class="cap">375 · admin Confirm refusal</div></div>
+</div>
+</section>
+<section id="s7">
+<h2><span class="nb">7</span>Reason badges (the whole vocabulary)</h2>
+<table class="map">
+<tr><th>Badge</th><th>When</th><th>Action</th><th>Source</th></tr>
+<tr><td><span class="pill warn">Not decided</span></td><td>AutoCount changed the line; no decision saved</td><td>Go to line</td><td><code>planning_change_rows.decision</code> NULL, pending (PCS:4353-4360)</td></tr>
+<tr><td><span class="pill mute">Changed again</span></td><td>AutoCount changed the line again; this change is replaced</td><td>Reload</td><td><code>applied_state</code> superseded (PCS:1145, 1157, 1255)</td></tr>
+<tr><td><span class="pill mute">Already confirmed</span></td><td>A newer revision settled it (hover: revision, who, when)</td><td>Reload</td><td>PCS:4246-4257</td></tr>
+<tr><td><span class="pill mute">Line cancelled</span></td><td>The SO line is cancelled in AutoCount</td><td>none</td><td>PCS:4285-4302</td></tr>
+<tr><td><span class="pill mute">Product changed</span></td><td>OI row cancelled because AutoCount changed the product (History only)</td><td>none</td><td>OIS:1937</td></tr>
+<tr><td><span class="pill mute">Cancel SO</span> / <span class="pill mute">Manual</span> / <span class="pill mute">Cause not recorded</span></td><td>Transfer to Cancel SO; a person marked it; a row cancelled before this release with no provable cause</td><td>none</td><td>OIS:4208, OIS:6061, Q5</td></tr>
+</table>
+</section>
+
+<section id="s8">
+<h2><span class="nb">8</span>Component mapping</h2>
+<table class="map">
+<tr><th>Element</th><th>Reuses</th><th>Repo path</th></tr>
+<tr><td>Admin gate (server + UI)</td><td>Role slug <code>superadmin</code>/<code>admin</code> via <code>UserPermissionService.get_user_role_slugs</code>, as Simulate confirm; FE <code>isSuperadminUser</code> as <code>canSimulate</code></td><td><code>sorento_crm_backend/app/api/v1/projects/fulfilment_planning.py:573-581</code>; <code>sorento_crm_frontend/lib/is-superadmin.ts:19</code>; <code>FulfilmentBoardPanel.tsx:1265</code></td></tr>
+<tr><td>Refusal rows in the results block</td><td>Results block + <code>failing_lines</code>; <code>Table</code> + <code>Badge</code></td><td><code>sorento_crm_frontend/app/(protected)/project-sales/fulfilment-planning/components/FulfilmentBoardPanel.tsx:2495-2694</code>; <code>sorento_crm_frontend/components/ui/table.tsx</code>, <code>components/ui/badge.tsx</code></td></tr>
+<tr><td>"Go to line"</td><td>Left-out banner link (List view, open + scroll the row)</td><td><code>FulfilmentBoardPanel.tsx:343-349</code>, <code>FulfilmentBoardListView.tsx:137</code></td></tr>
+<tr><td>Gear menu item "History"</td><td><code>DropdownMenuItem</code> beside "Simulate confirm"</td><td><code>FulfilmentBoardPanel.tsx:2310-2330</code></td></tr>
+<tr><td>History side panel</td><td><code>Sheet</code> side right, as <code>FulfilmentPlanningSheet</code></td><td><code>sorento_crm_frontend/components/ui/sheet.tsx</code>, <code>fulfilment-planning/components/FulfilmentPlanningSheet.tsx</code></td></tr>
+<tr><td>Filters</td><td><code>SearchableSelect</code> (SO from the board's orders, product, line, user; clearable), <code>SearchableMultiSelect</code> (event), date range picker</td><td><code>components/common/SearchableSelect.tsx</code>, <code>components/common/SearchableMultiSelect.tsx</code>, <code>components/ui/date-range-picker.tsx</code></td></tr>
+<tr><td>Timeline</td><td><code>EventTimeline</code> (<code>tags</code> slot for badges, <code>detail</code> for the small table)</td><td><code>sorento_crm_frontend/components/common/EventTimeline.tsx</code></td></tr>
+<tr><td>Open email dialog</td><td><code>Dialog</code> over the stored <code>email_outbox</code> row</td><td><code>sorento_crm_backend/app/models/email_outbox.py:16-63</code></td></tr>
+</table>
+<p class="note">Unchanged for everyone: the line History icon and its dialog (<code>DecisionTrailButton</code>), the Order Inquiries worklist, the board header.</p>
+</section>
+</div>
+</body>
+</html>

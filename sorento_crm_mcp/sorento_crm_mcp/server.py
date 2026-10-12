@@ -145,10 +145,12 @@ TOOL_OBJECT_QUERY_PARAMS: dict[str, tuple[str, ...]] = {
     # SPEC-PROMO-PARAMS: a JSON LIST of {key, op, value} objects (see `_OBJECT_UNIONS`).
     "crm_master_products_list": ("spec_constraints",),
     "crm_marketing_promotion_products_list": ("spec_constraints",),
+    # CHAT-FIND: a JSON LIST of {key, product_ids} filters (see `_OBJECT_UNIONS`).
+    "crm_find": ("filters",),
 }
 
 # Annotation per object param when it is not the default `dict[str, int] | str`.
-_OBJECT_UNIONS: dict[str, str] = {"spec_constraints": "list[dict] | str"}
+_OBJECT_UNIONS: dict[str, str] = {"spec_constraints": "list[dict] | str", "filters": "list[dict] | str"}
 
 
 TOOL_DEFAULT_QUERY_PARAMS: dict[str, dict[str, str]] = {
