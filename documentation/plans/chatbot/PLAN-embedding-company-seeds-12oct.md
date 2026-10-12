@@ -1,6 +1,6 @@
 # PLAN: per-company debtor seeds + certificate embedding company backfill (SCOPE-SEEDS)
 
-Status: in progress (normal track: carries a data migration; security-reviewer joins because the
+Status: implemented, in review (normal track: carries a data migration; security-reviewer joins because the
 diff touches multi-company scoping).
 
 Follow-up (a) of `PLAN-scope-leak-fix-12oct.md` (#1605).
@@ -35,7 +35,9 @@ Follow-up (a) of `PLAN-scope-leak-fix-12oct.md` (#1605).
   seed rows (derived data; staff lose nothing, the per-company copies replace them), and
   backfills `company_id` for `certificate` and `product_spec` rows from their source rows.
   NULL-company certificates are shared by design and stay NULL.
-- Remove the #1605 `debtor:` exclusions in `_embedding_company_filter` and `_embedding_scope_sql`.
+- Narrow the #1605 `debtor:` exclusions in `_embedding_company_filter` and `_embedding_scope_sql`
+  to company-less debtor rows: a per-company seed resolves inside its company, and a legacy
+  company-less row (say one an old worker writes mid-deploy) never reads as shared knowledge.
 
 ## Tests (red first, two companies)
 
