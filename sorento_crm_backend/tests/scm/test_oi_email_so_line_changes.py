@@ -279,3 +279,36 @@ def test_redirected_and_met_from_stock_delay_notice_carries_its_was(api, monkeyp
     assert dated[0]["was"]["delivery_date"] == WAS_FMT, dated[0]
     assert dated[0]["delivery_date"] == later.strftime("%d/%m/%Y"), dated[0]
     assert not any(e["qty"] == "0" for e in entries), entries
+
+
+def test_qty_up_met_from_stock_prints_its_numbers_but_never_order(api, monkeypatch):
+    """Reviewer B1 (dev-shape round): the book moves the line 1 -> 2 and later, landed
+    stock meets all of it, so nothing is bought. The email prints QTY 1 / NEW QTY 2 and
+    the date move, with DELAY in the headline and never ORDER."""
+    from app.models.inventory import Stock
+
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _so400236_dev_shape(api)
+    stock = world.db.query(Stock).filter(
+        Stock.product_id == world.product.id, Stock.warehouse_id == world.own_wh.id
+    ).one()
+    stock.quantity_on_hand = 2
+    world.db.commit()
+    later = WAS_1.replace(month=WAS_1.month + 2)
+    calls.clear()
+
+    _apply_change(
+        world, fixture["core"], fixture["order"], fixture["core_so"], fixture["line"],
+        old_date=WAS_1, new_date=later, qty="1", new_qty="2",
+    )
+
+    live = [r for r in _rows_of(world, fixture["line"]) if r.state != INQUIRY_CANCELLED]
+    assert not [r for r in live if r.verb == IV_ORDER], "sanity: stock meets it, no buy"
+    entries = _line_entries(calls, fixture["row"].item_code)
+    assert len(entries) == 1, entries
+    assert entries[0]["qty"] == "2", entries[0]
+    assert entries[0]["was"] == {"qty": "1", "delivery_date": WAS_FMT}, entries[0]
+    headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
+    assert "DELAY" in headline and "ORDER" not in headline, headline

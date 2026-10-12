@@ -2026,10 +2026,20 @@ class ProjectOrderInquiryService:
             from_date, to_date = line_change.get("from_date"), line_change.get("to_date")
             if from_date and to_date and from_date != to_date:
                 line_was["delivery_date"] = from_date
+            # The product AutoCount swapped, as every settle tells it (OI-PRODUCT-FOLLOW).
+            new_item_code = entry.get("item_code") or None
+            item_code = row.item_code
+            if (
+                new_item_code
+                and new_item_code != row.item_code
+                and self._is_catalogue_code(row.item_code)
+            ):
+                line_was["item_code"] = row.item_code
+                item_code = new_item_code
             if line_was:
                 stand_in = SimpleNamespace(
                     id=row.id, order_inquiry_id=row.order_inquiry_id,
-                    so_line_id=row.so_line_id, item_code=row.item_code,
+                    so_line_id=row.so_line_id, item_code=item_code,
                     stock_location=row.stock_location, verb=row.verb,
                     cited_document=row.cited_document, note=row.note,
                     qty=to_qty, delivery_date=to_date or row.delivery_date,
@@ -2037,6 +2047,10 @@ class ProjectOrderInquiryService:
                 self._record_handover(
                     stand_in, kind="settled", was=line_was, actor_user_id=actor_user_id
                 )
+                # Stock meets the line, so nothing is bought: a quantity that went UP
+                # prints its numbers but never puts ORDER in the headline.
+                item = self.db.info[_HANDOVER_PENDING_KEY][-1]
+                item["verb_keys"] = [k for k in item["verb_keys"] if k != IV_ORDER]
             return True
 
         links = self._links_of(row.id)
