@@ -436,13 +436,6 @@ def test_r_lat_a_size_the_route_filters_skips_the_resolvers_model_phrase_read():
 # in the entity's own words is read like the pair the parser puts there.
 
 
-def _product(raw: str) -> dict[str, Any]:
-    return {
-        "raw": raw, "hint": "product", "canonical_code": raw,
-        "current_message": True, "confident": True, "hint_confident": True, "quantity": None,
-    }
-
-
 @pytest.mark.parametrize(
     "raw,canonical,left,size",
     [("250mm floor grating", None, "floor grating", 250), ("600mm basin", "basin", "basin", 600), ("600 mm basin", None, "basin", 600)],
