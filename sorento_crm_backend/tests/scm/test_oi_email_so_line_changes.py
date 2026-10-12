@@ -92,3 +92,45 @@ def test_redirected_line_prints_its_date_move_as_was_now(api, monkeypatch):
     )
     # Same quantity before and after: no NEW QTY for it.
     assert "qty" not in (entry["was"] or {}), entry
+
+
+def test_redirected_line_with_a_product_swap_prints_item_code_and_new_item_code(api, monkeypatch):
+    """Owner, 12 Oct: the item code can change too, and the email must show it - off the
+    same OI before values (`previous_item_code`), including the redirected / fresh-row path
+    that hid SRTWB246's date. Rendered through the no-REMARK document."""
+    from app.models.procurement import PurchaseOrderLine
+
+    from ..test_oi_email_no_remark import ORDER, _line_table, _render
+    from ..test_oi_email_print import _ctx
+    from ..test_oi_product_follow_apply import _apply, _swap_fixture
+
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fx = _swap_fixture(api, linked=True, acknowledged=True)
+    po_line = world.db.get(PurchaseOrderLine, fx["link"].po_line_id)
+    po_line.qty_received = po_line.qty_ordered
+    world.db.commit()
+    calls.clear()
+
+    response = _apply(fx)
+    assert response.status_code == 200, response.text
+    world.db.commit()
+    world.db.expire_all()
+
+    old, new = fx["old"].product_code, fx["new"].product_code
+    fresh = [
+        r for r in _rows_of(world, fx["line"])
+        if r.verb == IV_ORDER and r.state != INQUIRY_CANCELLED and not r.redirected_to_pool
+    ]
+    assert len(fresh) == 1 and fresh[0].previous_item_code == old, fresh
+
+    entries = _line_entries(calls, new)
+    assert len(entries) == 1, entries
+    assert (entries[0]["was"] or {}).get("item_code") == old, entries[0]
+    assert "qty" not in (entries[0]["was"] or {}), "same quantity: no NEW QTY"
+    assert "delivery_date" not in (entries[0]["was"] or {}), "same date: no NEW DATE"
+
+    body = _line_table(_render(_ctx(ORDER, entries)))
+    assert body[0] == ["LOCATION", "ITEM CODE", "NEW ITEM CODE", "QTY", "DELIVERY"], body
+    assert body[1][1:3] == [old, new], body
