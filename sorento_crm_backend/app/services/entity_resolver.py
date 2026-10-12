@@ -5894,8 +5894,11 @@ def _rag_resolve_phrase(
         logger.exception("RAG embed failed for phrase=%s", phrase)
         return []
 
+    # Company scope in SQL, as in `_tier3_embedding_lookup`: these hits carry no
+    # uuid, so the `_attach_company_info` backstop cannot drop them afterwards.
+    scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
     sql = text(
-        """
+        f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
                1 - (ec.embedding <=> CAST(:vec AS vector)) AS similarity
         FROM embedding_chunks ec
@@ -5903,9 +5906,10 @@ def _rag_resolve_phrase(
           ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
+          {"AND " + scope_sql if scope_sql else ""}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT :k
-        """
+        """  # noqa: S608 - fragment from company_sql_predicate, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
@@ -5914,7 +5918,7 @@ def _rag_resolve_phrase(
         with db.begin_nested():
             rows = db.execute(
                 sql,
-                {"vec": list(query_vec), "types": allowed_source_types, "k": top_k},
+                {"vec": list(query_vec), "types": allowed_source_types, "k": top_k, **scope_params},
             ).all()
     except Exception:
         logger.exception("RAG vector query failed for phrase=%s", phrase)
