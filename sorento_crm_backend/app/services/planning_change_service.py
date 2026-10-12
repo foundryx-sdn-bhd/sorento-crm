@@ -60,6 +60,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -2793,7 +2794,11 @@ def _validate_composition_shape(
             .all()
         )
 
-    return {
+    # Stored in a JSONB column, so every value goes in JSON-shaped: a caller that hands over a
+    # `model_dump()` without `mode="json"` passes `date` objects (a borrow's
+    # `donor_required_date` / `arrival_date`), and the UPDATE died on them (prod,
+    # HOTFIX-CONFIRM-DATE). `_to_confirm_line` parses the ISO strings back.
+    return jsonable_encoder({
         "project_line_id": str(composition.get("project_line_id")),
         "timely_spo_qty": qty_text(timely),
         "reserve": [
@@ -2832,7 +2837,13 @@ def _validate_composition_shape(
         "buy_qty": qty_text(buy),
         "buy_reason": composition.get("buy_reason"),
         "amend_reason": composition.get("amend_reason"),
-    }
+        # The planner's own answers beside the components (`ConfirmLine`): the order-back
+        # and the document it cites, and "flag for investigation". Dropped here, Apply
+        # froze them as false on the revision whatever was ticked (CONFIRM-FOLLOWUPS).
+        "order_back": bool(composition.get("order_back", False)),
+        "cited_document": composition.get("cited_document"),
+        "suspected_system_issue": bool(composition.get("suspected_system_issue", False)),
+    })
 
 
 def set_row_decision(
@@ -2979,6 +2990,9 @@ def _to_confirm_line(payload: dict):
         buy_qty=payload["buy_qty"],
         buy_reason=payload.get("buy_reason"),
         amend_reason=payload.get("amend_reason"),
+        order_back=bool(payload.get("order_back", False)),
+        cited_document=payload.get("cited_document"),
+        suspected_system_issue=bool(payload.get("suspected_system_issue", False)),
     )
 
 
@@ -4160,35 +4174,38 @@ def _apply_one_order(
     if not live and not extra_lines:
         return empty_result
 
-    # AC-S1-3 / R3 minimum: the book closed a line this batch was built against, between
+    # AC-S1-3 / R3 minimum: the book cancelled a line this batch was built against, between
     # compose and apply - a stale row's SO line is now gone, so the batch records nothing
     # was carried out for it rather than failing (or silently applying) a composition about
-    # a line that no longer accepts one. `cancelled` rows are excluded: a closed core line
+    # a line that no longer accepts one. `cancelled` rows are excluded: a cancelled core line
     # is exactly what a `cancelled` row already expects and handles on its own path below.
+    # A `closed` line is NOT dropped here (owner ruling 11 Oct 2026): the line status must
+    # not decide whether a CS decision applies, because delivered qty and planned qty are
+    # decoupled. A closed line flows on to confirm like an open one.
     core_line_ids_live = {
         r.core_line_id for r in live if r.core_line_id and r.kind != "cancelled"
     }
-    closed_core_line_ids: set = set()
+    cancelled_core_line_ids: set = set()
     if core_line_ids_live:
-        closed_core_line_ids = {
+        cancelled_core_line_ids = {
             str(line_id)
             for (line_id,) in db.query(SalesOrderLine.id)
             .filter(
                 SalesOrderLine.id.in_(list(core_line_ids_live)),
-                SalesOrderLine.line_status.in_(("closed", "cancelled")),
+                SalesOrderLine.line_status == "cancelled",
             )
             .all()
         }
-    if closed_core_line_ids:
+    if cancelled_core_line_ids:
         still_live: List[PlanningChangeRow] = []
         for r in live:
             if (
                 r.kind != "cancelled"
                 and r.core_line_id
-                and str(r.core_line_id) in closed_core_line_ids
+                and str(r.core_line_id) in cancelled_core_line_ids
             ):
                 r.applied_state = PLANNING_CHANGE_STATE_SUPERSEDED
-                r.applied_reason = "the sales-order line is closed"
+                r.applied_reason = "the sales-order line is cancelled"
             else:
                 still_live.append(r)
         live = still_live

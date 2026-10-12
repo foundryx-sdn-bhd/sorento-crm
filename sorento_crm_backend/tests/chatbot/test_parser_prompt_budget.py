@@ -198,10 +198,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # re-pin 10 Oct 2026 (CA-3-CHAT-DATASET, PR #1553, extractor ruling): CHAT_REPORT_ADDENDUM shrinks to
 # routing only (240 est. tokens, the focused extractor reads the fields): 51,879 est. tokens without
 # MEMORY_ADDENDUM (-450), so CEILING is 51,883 (+4).
-# DEV-FAILURES RC-B (12 Oct): PORTAL_FORM_ADDENDUM (the `portal_form` output key, 262 chars)
-# measures 51,966 est. tokens without MEMORY_ADDENDUM and 52,482 with it, so CEILING is
-# 51,970 (+4; the whole-prompt assertion is CEILING + 512).
-CEILING = 51_970
+# REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
+# CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
+# DEV-FAILURES RC-B (12 Oct, merged over REF-PROBES): PORTAL_FORM_ADDENDUM (the `portal_form`
+# output key, 262 chars): 52,352 est. tokens without MEMORY_ADDENDUM (+84) and 52,867 with it, so
+# CEILING is 52,356 (+4; the whole-prompt assertion is CEILING + 512).
+CEILING = 52_356
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

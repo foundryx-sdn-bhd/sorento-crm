@@ -15,7 +15,7 @@ touched: promoting is one label move in the Chatbot Console, and the owner decid
 Idempotent: a version already carrying this exact template publishes nothing.
 
 Revision ID: devf_0001_parser_data_rules
-Revises: family_code_0001
+Revises: rkind_0002_parser_ref_kinds_v56
 """
 import logging
 from pathlib import Path
@@ -25,7 +25,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "devf_0001_parser_data_rules"
-down_revision = "family_code_0001"
+down_revision = "rkind_0002_parser_ref_kinds_v56"
 branch_labels = None
 depends_on = None
 
