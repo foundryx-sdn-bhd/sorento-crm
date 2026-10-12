@@ -1,23 +1,26 @@
-"""WC-SEAT-COMPAT: seat cover <-> WC compatibility links.
+"""WC-SEAT-COMPAT: seat cover -> WC compatibility links, SKU to SKU.
 
 Plan: documentation/plans/products/PLAN-wc-seat-compat-12oct.md.
 UAC:  documentation/plans/products/wc-seat-compat-12oct-acceptance-criteria.md.
 
     GET  /api/v1/master-data/products/{id}/compatibility
-         -> {"data": {"covers": [cover row], "fits": [fit row]}}
+         -> {"data": {"covers": [row], "fits": [row]}}
     POST /api/v1/master-data/products/{id}/compatibility
-         {"other_product_id", "other_role": "seat_cover"|"wc", "scope": "sku"|"model"} -> 201 row
+         {"other_product_id", "other_role": "seat_cover"|"wc"} -> 201 row
     Unlink = server-deferred pending action `product_compatibility.unlink` on the link row.
-    GET  /api/v1/master-data/product-compatibility/flyer-proposals
-    POST /api/v1/master-data/product-compatibility/flyer-proposals/apply {"keys": [...]}
+    GET  /api/v1/master-data/product-compatibility/flyer-review
+    POST /api/v1/master-data/product-compatibility/flyer-review/apply {"wc_product_ids": [...]}
+    Retire = server-deferred pending action `seat_cover_spec.retire` on the registry row.
 
-Resolution for a WC SKU (owner decisions a, b, 12 Oct): its own exact links if it has any;
-else nothing for a colour SKU (BL / MBL / GY / RG segment) or a spare (SC segment); else the
-links of its model (`family_code`).
+Owner ruling 12 Oct: match only what the flyer prints; no inheritance, no guesses. A WC SKU
+has a cover only when a link names it. A SKU whose mapping to a printed code is not
+unambiguous is UNRESOLVED on the review screen and cannot be applied. A `-SC` SKU is a seat
+cover, never a WC.
 """
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 
 import pytest
 from fastapi import Depends
@@ -26,15 +29,18 @@ from sqlalchemy.exc import IntegrityError
 
 from app.main import app  # noqa: E402
 
+from app.services import record_actions  # noqa: F401  (registers the actions)
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.models.audit import AuditLog
 from app.models.base import set_company_scope
 from app.models.product_compatibility import ProductCompatibility
+from app.models.product_spec import ProductSpecifications, ProductSpecRegistry
 from app.models.user import User, UserStatus
 from app.services import product_compatibility_service as compat
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from app.services.company_scope_resolver import apply_company_scope
-import app.services.record_actions  # noqa: F401  (registers the actions)
+from app.services.form_action_grace import WINDOW_DESTRUCTIVE, WINDOW_REVERSIBLE
 from app.services.form_action_registry import get_action
 from app.services.seat_cover_flyer_data import FLYER_ROWS, flyer_pairs
 from app.services.user_service import UserPermissionService
@@ -44,6 +50,7 @@ from tests._pg_fixture import blank_session, unique_code
 
 VIEW = "master_data.products.view"
 EDIT = "master_data.products.edit"
+SPEC_EDIT = "master_data.spec_registry.edit"
 
 
 @pytest.fixture()
@@ -95,23 +102,11 @@ def _p(db, code, company_id=DEFAULT_COMPANY_ID):
 
 
 def _stem(prefix="ZZWC"):
-    # Letters then digits, so `family_code_for` reads a model out of it.
+    # Letters then a digit, so `family_code_for` reads a model out of it.
     return f"{prefix}{unique_code(alpha=True)[:10].upper()}9"
 
 
-def _model_link(db, cover, family_code, source=compat.SOURCE_MANUAL):
-    link = ProductCompatibility(
-        company_id=cover.company_id,
-        seat_cover_product_id=cover.id,
-        wc_family_code=family_code,
-        source=source,
-    )
-    db.add(link)
-    db.flush()
-    return link
-
-
-def _sku_link(db, cover, wc, source=compat.SOURCE_MANUAL):
+def _link(db, cover, wc, source=compat.SOURCE_MANUAL):
     link = ProductCompatibility(
         company_id=cover.company_id,
         seat_cover_product_id=cover.id,
@@ -123,8 +118,8 @@ def _sku_link(db, cover, wc, source=compat.SOURCE_MANUAL):
     return link
 
 
-def _cover_codes(result: dict, wc_id: str) -> list[str]:
-    return sorted(p.product_code for p in result.get(wc_id, []))
+def _codes(products) -> list[str]:
+    return sorted(p.product_code for p in products)
 
 
 # --------------------------------------------------------------------------- flyer data
@@ -141,9 +136,6 @@ def test_flyer_data_is_the_49_printed_pairs():
         ("SRTWC8122", "SRTSCBD333-UF"),
         ("SRTWC8122", "SRTSCBD333A-UF"),
     }
-    # Each WC code has exactly one cover except SRTWC8122.
-    from collections import Counter
-
     per_wc = Counter(wc for _, wc, _ in pairs)
     assert {wc for wc, n in per_wc.items() if n > 1} == {"SRTWC8122"}
 
@@ -157,16 +149,11 @@ def test_flyer_data_never_holds_an_intelligent_seat_wc():
 # --------------------------------------------------------------------------- table
 
 
-def test_check_rejects_a_link_with_both_targets(db):
-    stem = _stem()
-    cover, wc = _p(db, f"{stem}C"), _p(db, f"{stem}W-RL")
+def test_link_to_itself_is_refused_by_the_table(db):
+    p = _p(db, f"{_stem()}-UF")
     db.add(
         ProductCompatibility(
-            company_id=cover.company_id,
-            seat_cover_product_id=cover.id,
-            wc_family_code=wc.family_code,
-            wc_product_id=wc.id,
-            source="manual",
+            company_id=p.company_id, seat_cover_product_id=p.id, wc_product_id=p.id, source="manual"
         )
     )
     with pytest.raises(IntegrityError):
@@ -174,19 +161,7 @@ def test_check_rejects_a_link_with_both_targets(db):
             db.flush()
 
 
-def test_check_rejects_a_link_with_no_target(db):
-    cover = _p(db, f"{_stem()}C")
-    db.add(
-        ProductCompatibility(
-            company_id=cover.company_id, seat_cover_product_id=cover.id, source="manual"
-        )
-    )
-    with pytest.raises(IntegrityError):
-        with db.begin_nested():
-            db.flush()
-
-
-def test_check_rejects_an_unknown_source(db):
+def test_unknown_source_is_refused_by_the_table(db):
     stem = _stem()
     cover, wc = _p(db, f"{stem}C"), _p(db, f"{stem}W")
     db.add(
@@ -202,106 +177,63 @@ def test_check_rejects_an_unknown_source(db):
             db.flush()
 
 
-# --------------------------------------------------------------------------- resolution
-
-
-def test_segment_rules():
-    assert compat.is_colour_sku("SRTWC8383-RL-MBL")
-    assert compat.is_colour_sku("SRTWC8066-S-BL")
-    assert compat.is_colour_sku("SRTWC8318 - GY")
-    assert compat.is_colour_sku("srtwc8383-rg")
-    assert not compat.is_colour_sku("SRTWC8383-RL-UF")
-    assert not compat.is_colour_sku("SRTWC8383")
-    # Whole segments only: BLUE is not BL, and the model's own letters never count.
-    assert not compat.is_colour_sku("SRTWC8383-BLUE")
-    assert not compat.is_colour_sku("SRTBL8383")
-    assert compat.is_spare_sku("SRTWC8383-SC")
-    assert compat.is_spare_sku("SRTWC8383-RL-SC")
-    assert not compat.is_spare_sku("SRTWC8383-RL-UF")
-
-
-def test_plain_sku_gets_its_model_link(db):
+def test_duplicate_pair_is_refused_by_the_table(db):
     stem = _stem()
-    cover = _p(db, f"{stem}SEAT")
-    wc = _p(db, f"{stem}-RL-UF")
-    _model_link(db, cover, wc.family_code)
-    assert _cover_codes(compat.covers_for(db, [wc.id]), wc.id) == [cover.product_code]
+    cover, wc = _p(db, f"{stem}C"), _p(db, f"{stem}W")
+    _link(db, cover, wc)
+    db.add(
+        ProductCompatibility(
+            company_id=cover.company_id,
+            seat_cover_product_id=cover.id,
+            wc_product_id=wc.id,
+            source="manual",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.flush()
 
 
-def test_exact_link_beats_the_model_link(db):
+# --------------------------------------------------------------------------- reads
+
+
+def test_spare_segment_marks_a_seat_cover():
+    assert compat.is_spare_seat_cover("SRTWC8383-SC")
+    assert compat.is_spare_seat_cover("srtwc8383 - rl - sc")
+    assert not compat.is_spare_seat_cover("SRTWC8383-RL-UF")
+    assert not compat.is_spare_seat_cover("SRTSC8383")
+
+
+def test_covers_for_reads_only_the_skus_own_links(db):
     stem = _stem()
-    white, black = _p(db, f"{stem}SEATW"), _p(db, f"{stem}SEATB-MBL")
-    wc_white = _p(db, f"{stem}-RL-UF")
+    white, black = _p(db, f"{stem}SEAT"), _p(db, f"{stem}SEATB-MBL")
+    wc_white, wc_sibling = _p(db, f"{stem}-RL-UF"), _p(db, f"{stem}-SH-UF")
     wc_black = _p(db, f"{stem}-RL-MBL")
-    _model_link(db, white, wc_white.family_code)
-    _sku_link(db, black, wc_black)
-    result = compat.covers_for(db, [wc_white.id, wc_black.id])
-    assert _cover_codes(result, wc_white.id) == [white.product_code]
-    # Owner decision a: the colour SKU shows only its colour-matched cover.
-    assert _cover_codes(result, wc_black.id) == [black.product_code]
+    _link(db, white, wc_white)
+    _link(db, black, wc_black)
+    result = compat.covers_for(db, [wc_white.id, wc_sibling.id, wc_black.id])
+    assert _codes(result[wc_white.id]) == [white.product_code]
+    assert _codes(result[wc_black.id]) == [black.product_code]
+    # No inheritance: a sibling of the same model with no link of its own has nothing.
+    assert wc_sibling.id not in result
 
 
-def test_colour_sku_without_its_own_link_gets_nothing(db):
-    stem = _stem()
-    white = _p(db, f"{stem}SEAT")
-    wc_white = _p(db, f"{stem}-RL-UF")
-    wc_grey = _p(db, f"{stem}-RL-GY")
-    _model_link(db, white, wc_white.family_code)
-    # Owner decision b: no white fallback for an unlisted colour.
-    assert compat.covers_for(db, [wc_grey.id]).get(wc_grey.id, []) == []
-
-
-def test_spare_sku_never_inherits_the_model_link(db):
-    stem = _stem()
-    cover = _p(db, f"{stem}SEAT")
-    wc = _p(db, f"{stem}-RL-UF")
-    spare = _p(db, f"{stem}-SC")
-    _model_link(db, cover, wc.family_code)
-    assert compat.covers_for(db, [spare.id]).get(spare.id, []) == []
-
-
-def test_two_covers_on_one_model_both_show(db):
+def test_two_covers_on_one_sku_both_show(db):
     stem = _stem()
     a, b = _p(db, f"{stem}SEAT-UF"), _p(db, f"{stem}SEATA-UF")
     wc = _p(db, f"{stem}-UF")
-    _model_link(db, a, wc.family_code)
-    _model_link(db, b, wc.family_code)
-    assert _cover_codes(compat.covers_for(db, [wc.id]), wc.id) == sorted(
-        [a.product_code, b.product_code]
-    )
+    _link(db, a, wc)
+    _link(db, b, wc)
+    assert _codes(compat.covers_for(db, [wc.id])[wc.id]) == sorted([a.product_code, b.product_code])
 
 
-def test_unlinked_wc_gets_nothing(db):
-    wc = _p(db, f"{_stem()}-UF")
-    assert compat.covers_for(db, [wc.id]) == {}
-
-
-def test_model_link_never_crosses_companies(db):
-    seed_mocha(db)
-    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
-    stem = _stem()
-    cover = _p(db, f"{stem}SEAT")
-    wc_here = _p(db, f"{stem}-UF")
-    wc_there = _p(db, f"{stem}-UF", company_id=MOCHA_ID)
-    _model_link(db, cover, wc_here.family_code)
-    result = compat.covers_for(db, [wc_here.id, wc_there.id])
-    assert _cover_codes(result, wc_here.id) == [cover.product_code]
-    assert result.get(wc_there.id, []) == []
-
-
-def test_wcs_for_cover_lists_models_and_skus(db):
+def test_wcs_for_lists_the_linked_skus(db):
     stem = _stem()
     cover = _p(db, f"{stem}SEAT-BL")
-    model_wc = _p(db, f"{stem}-UF")
-    other_stem = _stem()
-    sku_wc = _p(db, f"{other_stem}-RL-BL")
-    _model_link(db, cover, model_wc.family_code)
-    _sku_link(db, cover, sku_wc)
-    fits = compat.wcs_for(db, [cover.id])[cover.id]
-    assert {(f["scope"], f.get("family_code"), f.get("product_code")) for f in fits} == {
-        ("model", model_wc.family_code, None),
-        ("sku", None, sku_wc.product_code),
-    }
+    wc1, wc2 = _p(db, f"{stem}-RL-BL"), _p(db, f"{_stem()}-RL-BL")
+    _link(db, cover, wc1)
+    _link(db, cover, wc2)
+    assert _codes(compat.wcs_for(db, [cover.id])[cover.id]) == sorted([wc1.product_code, wc2.product_code])
 
 
 # --------------------------------------------------------------------------- product page API
@@ -316,142 +248,116 @@ def test_get_requires_view(db, monkeypatch):
     assert _client(db, set(), monkeypatch).get(_page(wc)).status_code == 403
 
 
-def test_get_on_a_wc_lists_resolved_covers_with_their_scope(db, monkeypatch):
+def test_get_lists_both_directions(db, monkeypatch):
     stem = _stem()
-    white, black = _p(db, f"{stem}SEAT"), _p(db, f"{stem}SEATB-BL")
-    wc = _p(db, f"{stem}-RL-UF")
-    wc_black = _p(db, f"{stem}-RL-BL")
-    _model_link(db, white, wc.family_code, source=compat.SOURCE_FLYER)
-    _sku_link(db, black, wc_black)
+    cover, wc = _p(db, f"{stem}SEAT"), _p(db, f"{stem}-RL-UF")
+    link = _link(db, cover, wc, source=compat.SOURCE_FLYER)
     client = _client(db, {VIEW}, monkeypatch)
 
-    data = client.get(_page(wc)).json()["data"]
-    [row] = data["covers"]
-    assert row["product_id"] == white.id
-    assert row["product_code"] == white.product_code
-    assert row["scope"] == "model"
-    assert row["family_code"] == wc.family_code
-    assert row["source"] == "flyer"
-    assert row["id"]
-    assert data["fits"] == []
+    on_wc = client.get(_page(wc)).json()["data"]
+    assert on_wc["fits"] == []
+    [row] = on_wc["covers"]
+    assert row == {
+        "id": link.id,
+        "product_id": cover.id,
+        "product_code": cover.product_code,
+        "product_name": cover.product_name,
+        "source": "flyer",
+        "is_discontinued": False,
+    }
 
-    [black_row] = client.get(_page(wc_black)).json()["data"]["covers"]
-    assert black_row["product_id"] == black.id
-    assert black_row["scope"] == "sku"
+    on_cover = client.get(_page(cover)).json()["data"]
+    assert on_cover["covers"] == []
+    assert [r["product_id"] for r in on_cover["fits"]] == [wc.id]
 
 
-def test_get_on_a_cover_lists_what_it_fits(db, monkeypatch):
-    stem = _stem()
-    cover = _p(db, f"{stem}SEAT")
-    wc1 = _p(db, f"{stem}-RL-UF")
-    _p(db, f"{stem}-SL-UF")
-    _p(db, f"{stem}-RL-MBL")  # colour SKU: not covered by the model link
-    _p(db, f"{stem}-SC")  # spare: not covered
-    _model_link(db, cover, wc1.family_code)
-    data = _client(db, {VIEW}, monkeypatch).get(_page(cover)).json()["data"]
-    assert data["covers"] == []
-    [fit] = data["fits"]
-    assert fit["scope"] == "model"
-    assert fit["family_code"] == wc1.family_code
-    assert fit["sku_count"] == 2
+def test_get_empty_for_an_unlinked_product(db, monkeypatch):
+    wc = _p(db, f"{_stem()}-UF")
+    data = _client(db, {VIEW}, monkeypatch).get(_page(wc)).json()["data"]
+    assert data == {"covers": [], "fits": []}
 
 
 def test_add_requires_edit(db, monkeypatch):
     stem = _stem()
     wc, cover = _p(db, f"{stem}-UF"), _p(db, f"{stem}SEAT")
     response = _client(db, {VIEW}, monkeypatch).post(
-        _page(wc), json={"other_product_id": cover.id, "other_role": "seat_cover", "scope": "sku"}
+        _page(wc), json={"other_product_id": cover.id, "other_role": "seat_cover"}
     )
     assert response.status_code == 403
 
 
-def test_add_from_a_wc_page_whole_model(db, monkeypatch):
+def test_add_a_cover_from_a_wc_page(db, monkeypatch):
     stem = _stem()
-    wc, sibling, cover = _p(db, f"{stem}-RL-UF"), _p(db, f"{stem}-SL-UF"), _p(db, f"{stem}SEAT")
+    wc, sibling, cover = _p(db, f"{stem}-RL-UF"), _p(db, f"{stem}-SH-UF"), _p(db, f"{stem}SEAT")
     response = _client(db, {VIEW, EDIT}, monkeypatch).post(
-        _page(wc),
-        json={"other_product_id": cover.id, "other_role": "seat_cover", "scope": "model"},
+        _page(wc), json={"other_product_id": cover.id, "other_role": "seat_cover"}
     )
     assert response.status_code == 201, response.text
     row = response.json()["data"]
+    assert row["product_id"] == cover.id
     link = db.get(ProductCompatibility, row["id"])
-    assert link.seat_cover_product_id == cover.id
-    assert link.wc_family_code == wc.family_code
-    assert link.wc_product_id is None
+    assert (link.seat_cover_product_id, link.wc_product_id) == (cover.id, wc.id)
     assert link.source == "manual"
     assert link.created_by
-    assert _cover_codes(compat.covers_for(db, [sibling.id]), sibling.id) == [cover.product_code]
+    # One SKU only: the sibling is not linked.
+    assert sibling.id not in compat.covers_for(db, [sibling.id])
 
 
-def test_add_from_a_cover_page_one_sku(db, monkeypatch):
+def test_add_a_wc_from_a_cover_page(db, monkeypatch):
     stem = _stem()
     cover, wc = _p(db, f"{stem}SEAT-MBL"), _p(db, f"{stem}-RL-MBL")
     response = _client(db, {VIEW, EDIT}, monkeypatch).post(
-        _page(cover), json={"other_product_id": wc.id, "other_role": "wc", "scope": "sku"}
+        _page(cover), json={"other_product_id": wc.id, "other_role": "wc"}
     )
     assert response.status_code == 201, response.text
     link = db.get(ProductCompatibility, response.json()["data"]["id"])
     assert (link.seat_cover_product_id, link.wc_product_id) == (cover.id, wc.id)
 
 
+def test_a_spare_sc_sku_is_never_a_wc(db, monkeypatch):
+    stem = _stem()
+    spare, cover, wc = _p(db, f"{stem}-SC"), _p(db, f"{stem}SEAT"), _p(db, f"{stem}-UF")
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    # As the other product, named as a WC (400: the service's validation answer).
+    assert client.post(
+        _page(cover), json={"other_product_id": spare.id, "other_role": "wc"}
+    ).status_code == 400
+    # As the page product, given a cover (which would make it the WC).
+    assert client.post(
+        _page(spare), json={"other_product_id": cover.id, "other_role": "seat_cover"}
+    ).status_code == 400
+    # As a seat cover, it links like any other.
+    assert client.post(
+        _page(spare), json={"other_product_id": wc.id, "other_role": "wc"}
+    ).status_code == 201
+
+
 def test_add_duplicate_is_409(db, monkeypatch):
     stem = _stem()
     wc, cover = _p(db, f"{stem}-UF"), _p(db, f"{stem}SEAT")
     client = _client(db, {VIEW, EDIT}, monkeypatch)
-    body = {"other_product_id": cover.id, "other_role": "seat_cover", "scope": "sku"}
+    body = {"other_product_id": cover.id, "other_role": "seat_cover"}
     assert client.post(_page(wc), json=body).status_code == 201
     assert client.post(_page(wc), json=body).status_code == 409
+    # The same pair added from the other side is the same link.
+    assert client.post(
+        _page(cover), json={"other_product_id": wc.id, "other_role": "wc"}
+    ).status_code == 409
 
 
-def test_add_self_is_422(db, monkeypatch):
-    wc = _p(db, f"{_stem()}-UF")
-    response = _client(db, {VIEW, EDIT}, monkeypatch).post(
-        _page(wc), json={"other_product_id": wc.id, "other_role": "seat_cover", "scope": "sku"}
-    )
-    assert response.status_code == 422
-
-
-def test_add_bad_role_or_scope_is_422(db, monkeypatch):
+def test_add_self_is_400_and_bad_role_is_422(db, monkeypatch):
     stem = _stem()
     wc, cover = _p(db, f"{stem}-UF"), _p(db, f"{stem}SEAT")
     client = _client(db, {VIEW, EDIT}, monkeypatch)
-    for body in (
-        {"other_product_id": cover.id, "other_role": "lid", "scope": "sku"},
-        {"other_product_id": cover.id, "other_role": "seat_cover", "scope": "family"},
-    ):
-        assert client.post(_page(wc), json=body).status_code == 422
+    assert client.post(
+        _page(wc), json={"other_product_id": wc.id, "other_role": "seat_cover"}
+    ).status_code == 400
+    assert client.post(
+        _page(wc), json={"other_product_id": cover.id, "other_role": "lid"}
+    ).status_code == 422
 
 
-def test_add_other_company_product_is_404(db, monkeypatch):
-    seed_mocha(db)
-    stem = _stem()
-    wc = _p(db, f"{stem}-UF")
-    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
-    foreign = _p(db, f"{stem}SEAT", company_id=MOCHA_ID)
-    response = _client(db, {VIEW, EDIT}, monkeypatch).post(
-        _page(wc), json={"other_product_id": foreign.id, "other_role": "seat_cover", "scope": "sku"}
-    )
-    assert response.status_code == 404
-
-
-def test_unlink_is_a_registered_reversible_action(db):
-    action = get_action("product_compatibility.unlink")
-    assert action.entity_types == ("product_compatibility",)
-    assert action.permission == EDIT
-
-
-def test_unlink_deletes_the_link(db):
-    stem = _stem()
-    cover, wc = _p(db, f"{stem}SEAT"), _p(db, f"{stem}-UF")
-    link = _sku_link(db, cover, wc)
-    link_id = link.id
-    compat.unlink(db, link_id)
-    assert db.get(ProductCompatibility, link_id) is None
-    # Already gone: ends quietly.
-    compat.unlink(db, link_id)
-
-
-def _park(client, entity_id):
+def _park_unlink(client, entity_id):
     return client.post(
         "/api/v1/pending-actions",
         json={
@@ -463,169 +369,356 @@ def _park(client, entity_id):
     )
 
 
-def test_unlink_parks_and_refuses_unknown_link(db, monkeypatch):
-    stem = _stem()
-    link = _sku_link(db, _p(db, f"{stem}SEAT"), _p(db, f"{stem}-UF"))
-    client = _client(db, {VIEW, EDIT}, monkeypatch)
-    parked = _park(client, link.id)
-    assert parked.status_code == 202, parked.text
-    assert db.get(ProductCompatibility, link.id) is not None
-    assert _park(client, str(uuid.uuid4())).status_code == 404
-    assert _park(client, "not-a-uuid").status_code in (400, 404, 422)
-    assert _park(_client(db, {VIEW}, monkeypatch), link.id).status_code == 403
-
-
 def test_another_companys_product_and_link_are_404(db, monkeypatch):
     seed_mocha(db)
     set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
     stem = _stem()
+    mine = _p(db, f"{stem}-UF")
     cover = _p(db, f"{stem}SEAT", company_id=MOCHA_ID)
     wc = _p(db, f"{stem}-UF", company_id=MOCHA_ID)
-    link = _sku_link(db, cover, wc)
+    link = _link(db, cover, wc)
     client = _client(db, {VIEW, EDIT}, monkeypatch)  # Sorento only
     assert client.get(_page(wc)).status_code == 404
-    assert _park(client, link.id).status_code == 404
+    assert client.post(
+        _page(mine), json={"other_product_id": cover.id, "other_role": "seat_cover"}
+    ).status_code == 404
+    assert _park_unlink(client, link.id).status_code == 404
     set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
     assert db.get(ProductCompatibility, link.id) is not None
 
 
-# --------------------------------------------------------------------------- flyer proposals
+def test_unlink_is_a_registered_reversible_action():
+    action = get_action("product_compatibility.unlink")
+    assert action.entity_types == ("product_compatibility",)
+    assert action.permission == EDIT
+    assert action.window == WINDOW_REVERSIBLE
 
 
-FLYER_URL = "/api/v1/master-data/product-compatibility/flyer-proposals"
+def test_unlink_parks_and_refuses_unknown_link(db, monkeypatch):
+    stem = _stem()
+    link = _link(db, _p(db, f"{stem}SEAT"), _p(db, f"{stem}-UF"))
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    parked = _park_unlink(client, link.id)
+    assert parked.status_code == 202, parked.text
+    assert db.get(ProductCompatibility, link.id) is not None
+    assert _park_unlink(client, str(uuid.uuid4())).status_code == 404
+    assert _park_unlink(client, "not-a-uuid").status_code in (400, 404, 422)
+    assert _park_unlink(_client(db, {VIEW}, monkeypatch), link.id).status_code == 403
+
+
+def test_unlink_deletes_the_link_and_is_quiet_when_gone(db):
+    stem = _stem()
+    link = _link(db, _p(db, f"{stem}SEAT"), _p(db, f"{stem}-UF"))
+    link_id = link.id
+    compat.unlink(db, link_id)
+    assert db.get(ProductCompatibility, link_id) is None
+    compat.unlink(db, link_id)
+
+
+# --------------------------------------------------------------------------- flyer review
+
+
+REVIEW_URL = "/api/v1/master-data/product-compatibility/flyer-review"
+
+CATALOGUE = [
+    "SRTSCBD331-UF",
+    "SRTSCBD823-MBL",
+    "SRTSCBD824-BL",
+    "SRTSCBD333-UF",
+    "SRTSCBD333A-UF",
+    "SRTSCBD841-BL",
+    "SRTSCBD407",
+    "SRTSCBD323",
+    "SRTSCBD326",
+    # SRTWC8383: plain row 3, colour rows 24 (MBL), 25 (BL), 28 (GY), 29 (RG).
+    "SRTWC8383-RL-UF",
+    "SRTWC8383-SH-UF",
+    "SRTWC8383-RL-MBL",
+    "SRTWC8383-RL-BL",
+    "SRTWC8383-RL-GM",  # a finish (gunmetal) the flyer never prints for 8383
+    "SRTWC8383-SH-MK",  # a finish the spec engine does not know, but the catalogue uses
+    "SRTWC8383-RL-FT",  # a segment nobody has said is a plain variant marker
+    "SRTWC8383-RL-UF-150-NEW",  # trap, seat, size and packaging markers only
+    "SRTWC8383-SC",  # a seat cover, never a WC
+    "SRTWC8152-RL-BL",
+    "SRTWC8122-UF",
+    # SRTWC8066: plain row 15, 8066-S colour rows 32-35.
+    "SRTWC8066-RL",
+    "SRTWC8066-S-BL",
+    "SRTWC8066-S",  # a plain 8066-S: S is only ever printed with a colour
+    "SRTWC8318",  # the exact printed code
+    "SRTWC202-S-PINK",  # row 22 prints SRTWC202 with the note "Pink"
+    "SRTWC203-S-PINK",  # row 23 prints SRTWC203 as Blue: a pink one is not printed
+]
 
 
 @pytest.fixture()
-def flyer_catalogue(db):
-    """A slice of the real catalogue shape: flyer codes with their SKU suffixes."""
-    codes = [
-        "SRTSCBD331-UF",
-        "SRTSCBD823-MBL",
-        "SRTSCBD824-BL",
-        "SRTSCBD333-UF",
-        "SRTSCBD333A-UF",
-        "SRTSCBD841-BL",
-        "SRTSCBD407",
-        "SRTWC8383-RL-UF",
-        "SRTWC8383-SL-UF",
-        "SRTWC8383-RL-MBL",
-        "SRTWC8383-RL-BL",
-        "SRTWC8383-SC",
-        "SRTWC8152-RL-BL",
-        "SRTWC8122-UF",
-        "SRTWC8066-S-BL",
-        "SRTWC8066-RL",
-    ]
-    return {code: _p(db, code) for code in codes}
+def catalogue(db):
+    return {code: _p(db, code) for code in CATALOGUE}
 
 
-def _proposals(client) -> list[dict]:
-    response = client.get(FLYER_URL)
+def _review(client) -> dict:
+    response = client.get(REVIEW_URL)
     assert response.status_code == 200, response.text
-    return response.json()["data"]["proposals"]
+    return response.json()["data"]
 
 
-def _by_pair(proposals, wc, cover) -> dict:
-    [hit] = [p for p in proposals if p["flyer_wc_code"] == wc and p["flyer_cover_code"] == cover]
+def _model(review, family) -> dict:
+    [hit] = [m for m in review["models"] if m["family_code"] == family]
     return hit
 
 
-def test_proposals_require_view(db, monkeypatch):
-    assert _client(db, set(), monkeypatch).get(FLYER_URL).status_code == 403
+def _sku(model, code) -> dict:
+    [hit] = [s for s in model["skus"] if s["product_code"] == code]
+    return hit
 
 
-def test_proposals_one_per_flyer_pair(db, flyer_catalogue, monkeypatch):
-    proposals = _proposals(_client(db, {VIEW}, monkeypatch))
-    assert len(proposals) == 49
-    assert len({p["key"] for p in proposals}) == 49
+def test_review_requires_view(db, monkeypatch):
+    assert _client(db, set(), monkeypatch).get(REVIEW_URL).status_code == 403
 
 
-def test_plain_model_proposal_lists_the_skus_it_covers(db, flyer_catalogue, monkeypatch):
-    proposals = _proposals(_client(db, {VIEW}, monkeypatch))
-    row = _by_pair(proposals, "SRTWC8383", "SRTSCBD331-UF")
-    assert row["flyer_row"] == 3
-    assert row["scope"] == "model"
-    assert row["family_code"] == "SRTWC8383"
-    assert row["status"] == "ready"
-    assert [c["product_code"] for c in row["covers"]] == ["SRTSCBD331-UF"]
-    skus = {s["product_code"]: s for s in row["skus"]}
-    assert skus["SRTWC8383-RL-UF"]["covered"] is True
-    assert skus["SRTWC8383-SL-UF"]["covered"] is True
-    assert (skus["SRTWC8383-RL-MBL"]["covered"], skus["SRTWC8383-RL-MBL"]["reason"]) == (False, "colour")
-    assert (skus["SRTWC8383-SC"]["covered"], skus["SRTWC8383-SC"]["reason"]) == (False, "spare")
-
-
-def test_colour_proposal_maps_to_the_exact_sku_by_whole_segment(db, flyer_catalogue, monkeypatch):
-    proposals = _proposals(_client(db, {VIEW}, monkeypatch))
-    mbl = _by_pair(proposals, "SRTWC8383-MBL", "SRTSCBD823-MBL")
-    assert mbl["scope"] == "sku"
-    assert [s["product_code"] for s in mbl["skus"]] == ["SRTWC8383-RL-MBL"]
-    bl = _by_pair(proposals, "SRTWC8383-BL", "SRTSCBD824-BL")
-    # MBL is never a match for BL.
-    assert [s["product_code"] for s in bl["skus"]] == ["SRTWC8383-RL-BL"]
-    s_bl = _by_pair(proposals, "SRTWC8066-S-BL", "SRTSCBD841-BL")
-    assert [s["product_code"] for s in s_bl["skus"]] == ["SRTWC8066-S-BL"]
-
-
-def test_missing_cover_or_wc_is_not_tickable(db, flyer_catalogue, monkeypatch):
-    proposals = _proposals(_client(db, {VIEW}, monkeypatch))
-    # Cover SRTSCBD330-UF is not in this catalogue.
-    assert _by_pair(proposals, "SRTWC8088", "SRTSCBD330-UF")["status"] == "cover_missing"
-    # Cover exists, but no SRTWC8318 SKU does.
-    assert _by_pair(proposals, "SRTWC8318-MBL", "SRTSCBD834-MBL")["status"] == "cover_missing"
-    # SRTSCBD824-BL exists and SRTWC8152-RL-BL carries the printed BL segment.
-    assert _by_pair(proposals, "SRTWC8152-BL", "SRTSCBD824-BL")["status"] == "ready"
-    # SRTSCBD407 exists, SRTWC286 does not.
-    assert _by_pair(proposals, "SRTWC286", "SRTSCBD407")["status"] == "wc_missing"
-
-
-def test_apply_requires_edit(db, flyer_catalogue, monkeypatch):
-    client = _client(db, {VIEW}, monkeypatch)
-    assert client.post(f"{FLYER_URL}/apply", json={"keys": []}).status_code == 403
-
-
-def test_apply_writes_only_the_ticked_pairs(db, flyer_catalogue, monkeypatch):
-    client = _client(db, {VIEW, EDIT}, monkeypatch)
-    proposals = _proposals(client)
-    keys = [
-        _by_pair(proposals, "SRTWC8383", "SRTSCBD331-UF")["key"],
-        _by_pair(proposals, "SRTWC8383-MBL", "SRTSCBD823-MBL")["key"],
-        _by_pair(proposals, "SRTWC8122", "SRTSCBD333-UF")["key"],
-        _by_pair(proposals, "SRTWC8122", "SRTSCBD333A-UF")["key"],
+def test_review_lists_every_printed_model_once(db, catalogue, monkeypatch):
+    review = _review(_client(db, {VIEW}, monkeypatch))
+    families = [m["family_code"] for m in review["models"]]
+    assert len(families) == len(set(families))
+    # 48 printed codes fold onto their models: SRTWC8383 carries five printed codes.
+    m8383 = _model(review, "SRTWC8383")
+    assert [(p["flyer_row"], p["wc_code"]) for p in m8383["printed"]] == [
+        (3, "SRTWC8383"),
+        (24, "SRTWC8383-MBL"),
+        (25, "SRTWC8383-BL"),
+        (28, "SRTWC8383-GY"),
+        (29, "SRTWC8383-RG"),
     ]
-    response = client.post(f"{FLYER_URL}/apply", json={"keys": keys})
-    assert response.status_code == 200, response.text
-    assert response.json()["data"]["applied"] == 4
+    printed_pairs = sum(len(p["covers"]) for m in review["models"] for p in m["printed"])
+    assert printed_pairs == 49
 
-    c = flyer_catalogue
-    result = compat.covers_for(
-        db,
-        [c["SRTWC8383-RL-UF"].id, c["SRTWC8383-RL-MBL"].id, c["SRTWC8383-RL-BL"].id, c["SRTWC8122-UF"].id],
+
+def test_plain_and_colour_codes_map_to_skus_by_whole_segment(db, catalogue, monkeypatch):
+    m = _model(_review(_client(db, {VIEW}, monkeypatch)), "SRTWC8383")
+    for code in ("SRTWC8383-RL-UF", "SRTWC8383-SH-UF"):
+        sku = _sku(m, code)
+        assert (sku["status"], sku["printed_code"], sku["cover_codes"]) == (
+            "ready",
+            "SRTWC8383",
+            ["SRTSCBD331-UF"],
+        )
+    mbl = _sku(m, "SRTWC8383-RL-MBL")
+    assert (mbl["status"], mbl["printed_code"], mbl["cover_codes"]) == (
+        "ready",
+        "SRTWC8383-MBL",
+        ["SRTSCBD823-MBL"],
     )
-    assert _cover_codes(result, c["SRTWC8383-RL-UF"].id) == ["SRTSCBD331-UF"]
-    assert _cover_codes(result, c["SRTWC8383-RL-MBL"].id) == ["SRTSCBD823-MBL"]
-    # 8383-BL was not ticked, and a colour SKU gets no white fallback.
-    assert result.get(c["SRTWC8383-RL-BL"].id, []) == []
-    assert _cover_codes(result, c["SRTWC8122-UF"].id) == ["SRTSCBD333-UF", "SRTSCBD333A-UF"]
-    links = db.query(ProductCompatibility).all()
-    assert {link.source for link in links} == {"flyer"}
-
-    # Now linked, and a second apply writes nothing.
-    assert _by_pair(_proposals(client), "SRTWC8383", "SRTSCBD331-UF")["status"] == "linked"
-    again = client.post(f"{FLYER_URL}/apply", json={"keys": keys}).json()["data"]
-    assert again["applied"] == 0
-    assert again["already_linked"] == 4
+    # MBL is never a match for BL.
+    bl = _sku(m, "SRTWC8383-RL-BL")
+    assert (bl["printed_code"], bl["cover_codes"]) == ("SRTWC8383-BL", ["SRTSCBD824-BL"])
+    sized = _sku(m, "SRTWC8383-RL-UF-150-NEW")
+    assert (sized["status"], sized["printed_code"]) == ("ready", "SRTWC8383")
+    assert sized["extra_segments"] == ["150", "NEW", "RL", "UF"]
 
 
-def test_apply_skips_a_pair_that_cannot_resolve(db, flyer_catalogue, monkeypatch):
+def test_a_finish_the_row_prints_as_a_note_resolves(db, catalogue, monkeypatch):
+    review = _review(_client(db, {VIEW}, monkeypatch))
+    pink = _sku(_model(review, "SRTWC202"), "SRTWC202-S-PINK")
+    assert (pink["status"], pink["printed_code"], pink["cover_codes"]) == (
+        "ready",
+        "SRTWC202",
+        ["SRTSCBD326"],
+    )
+
+
+def test_ambiguous_skus_are_unresolved_and_never_linked(db, catalogue, monkeypatch):
     client = _client(db, {VIEW, EDIT}, monkeypatch)
-    key = _by_pair(_proposals(client), "SRTWC286", "SRTSCBD407")["key"]
-    data = client.post(f"{FLYER_URL}/apply", json={"keys": [key]}).json()["data"]
-    assert data["applied"] == 0
-    assert data["skipped"] == [{"key": key, "reason": "wc_missing"}]
+    review = _review(client)
+    pink = _sku(_model(review, "SRTWC8383"), "SRTWC8383-RL-GM")
+    assert (pink["status"], pink["reason"], pink["printed_code"]) == (
+        "unresolved",
+        "finish_not_printed",
+        None,
+    )
+    for code, reason in (
+        ("SRTWC8383-SH-MK", "finish_not_printed"),
+        ("SRTWC8383-RL-FT", "unknown_segment"),
+    ):
+        sku = _sku(_model(review, "SRTWC8383"), code)
+        assert (sku["status"], sku["reason"]) == ("unresolved", reason), code
+    blue_row = _sku(_model(review, "SRTWC203"), "SRTWC203-S-PINK")
+    assert (blue_row["status"], blue_row["reason"]) == ("unresolved", "finish_not_printed")
+    s_plain = _sku(_model(review, "SRTWC8066"), "SRTWC8066-S")
+    assert (s_plain["status"], s_plain["reason"]) == ("unresolved", "sub_model_not_printed")
+    # 8066-RL is a plain SKU of the plain printed 8066: resolved.
+    assert _sku(_model(review, "SRTWC8066"), "SRTWC8066-RL")["status"] == "ready"
+    # An apply that names them anyway writes nothing.
+    data = client.post(
+        f"{REVIEW_URL}/apply",
+        json={"wc_product_ids": [catalogue["SRTWC8383-RL-GM"].id, catalogue["SRTWC8066-S"].id]},
+    ).json()["data"]
+    assert data["linked"] == 0
+    assert {s["reason"] for s in data["skipped"]} == {"unresolved"}
+    assert db.query(ProductCompatibility).count() == 0
 
 
-def test_apply_unknown_key_is_422(db, flyer_catalogue, monkeypatch):
+def test_sc_skus_are_never_listed_as_wcs(db, catalogue, monkeypatch):
+    m = _model(_review(_client(db, {VIEW}, monkeypatch)), "SRTWC8383")
+    assert "SRTWC8383-SC" not in {s["product_code"] for s in m["skus"]}
+
+
+def test_missing_cover_and_missing_model_are_shown_not_tickable(db, catalogue, monkeypatch):
+    review = _review(_client(db, {VIEW}, monkeypatch))
+    # SRTWC8088 has no SKU in this catalogue and its cover SRTSCBD330-UF is missing too.
+    m8088 = _model(review, "SRTWC8088")
+    assert m8088["skus"] == []
+    [printed] = m8088["printed"]
+    assert printed["covers"] == [{"code": "SRTSCBD330-UF", "found": False}]
+    # SRTWC8318 exists exactly; its plain cover SRTSCBD323 exists.
+    assert _sku(_model(review, "SRTWC8318"), "SRTWC8318")["status"] == "ready"
+    assert review["counts"]["covers_missing"] == 36 - 9
+
+
+def test_a_sku_whose_cover_is_missing_is_not_tickable(db, monkeypatch):
+    _p(db, "SRTWC8088-RL-UF")  # its cover SRTSCBD330-UF is not in the catalogue
+    review = _review(_client(db, {VIEW}, monkeypatch))
+    assert _sku(_model(review, "SRTWC8088"), "SRTWC8088-RL-UF")["status"] == "cover_missing"
+
+
+def test_apply_requires_edit(db, catalogue, monkeypatch):
+    client = _client(db, {VIEW}, monkeypatch)
+    assert client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": []}).status_code == 403
+
+
+def test_apply_writes_only_the_ticked_skus(db, catalogue, monkeypatch):
     client = _client(db, {VIEW, EDIT}, monkeypatch)
-    response = client.post(f"{FLYER_URL}/apply", json={"keys": ["99|SRTWC1|SRTSC1"]})
+    c = catalogue
+    ticked = [c["SRTWC8383-RL-UF"].id, c["SRTWC8383-RL-MBL"].id, c["SRTWC8122-UF"].id]
+    response = client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": ticked})
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["linked"] == 4  # 331-UF, 823-MBL, 333-UF + 333A-UF
+    assert data["skipped"] == []
+
+    result = compat.covers_for(db, [p.id for p in c.values()])
+    assert _codes(result[c["SRTWC8383-RL-UF"].id]) == ["SRTSCBD331-UF"]
+    assert _codes(result[c["SRTWC8383-RL-MBL"].id]) == ["SRTSCBD823-MBL"]
+    assert _codes(result[c["SRTWC8122-UF"].id]) == ["SRTSCBD333-UF", "SRTSCBD333A-UF"]
+    # Not ticked: nothing, even for a sibling of a ticked SKU.
+    assert c["SRTWC8383-SH-UF"].id not in result
+    assert {link.source for link in db.query(ProductCompatibility).all()} == {"flyer"}
+
+    review = _review(client)
+    assert _sku(_model(review, "SRTWC8383"), "SRTWC8383-RL-UF")["status"] == "linked"
+    again = client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": ticked}).json()["data"]
+    assert (again["linked"], again["already_linked"]) == (0, 3)
+
+
+def test_apply_refuses_a_product_that_is_not_a_printed_wc(db, catalogue, monkeypatch):
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    stray = _p(db, f"{_stem()}-UF")
+    data = client.post(
+        f"{REVIEW_URL}/apply",
+        json={"wc_product_ids": [stray.id, catalogue["SRTWC8383-SC"].id]},
+    ).json()["data"]
+    assert data["linked"] == 0
+    assert {s["reason"] for s in data["skipped"]} == {"not_on_flyer"}
+
+
+def test_apply_bad_id_is_422(db, catalogue, monkeypatch):
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    response = client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": ["not-a-uuid"]})
     assert response.status_code == 422
+
+
+# --------------------------------------------------------------------------- spec retire
+
+
+@pytest.fixture()
+def seat_cover_spec(db, catalogue):
+    from app.services.product_spec_write import apply_spec_values
+
+    registry = db.query(ProductSpecRegistry).filter_by(spec_key="seat_cover").one_or_none()
+    if registry is None:
+        registry = ProductSpecRegistry(
+            spec_key="seat_cover",
+            label="Seat Cover",
+            data_type="enum",
+            allowed_values=["SRTSCBD331-UF"],
+            source="user",
+            is_active=True,
+        )
+        db.add(registry)
+        db.flush()
+    apply_spec_values(
+        db,
+        "SRTWC8383-RL-UF",
+        [{"spec_key": "seat_cover", "value": "SRTSCBD331-UF", "source": "human"}],
+        commit=False,
+    )
+    db.flush()
+    return registry
+
+
+def _park_retire(client, registry_id):
+    return client.post(
+        "/api/v1/pending-actions",
+        json={
+            "action_key": "seat_cover_spec.retire",
+            "entity_type": "seat_cover_spec",
+            "entity_id": registry_id,
+            "payload": {},
+        },
+    )
+
+
+def test_retire_is_a_registered_destructive_action():
+    action = get_action("seat_cover_spec.retire")
+    assert action.entity_types == ("seat_cover_spec",)
+    assert action.permission == SPEC_EDIT
+    assert action.window == WINDOW_DESTRUCTIVE
+
+
+def test_review_reports_the_old_spec(db, seat_cover_spec, monkeypatch):
+    spec = _review(_client(db, {VIEW}, monkeypatch))["seat_cover_spec"]
+    assert spec == {
+        "registry_id": seat_cover_spec.id,
+        "is_active": True,
+        "value_count": 1,
+        "can_retire": False,  # no flyer link applied yet
+    }
+
+
+def test_retire_is_refused_before_any_flyer_link(db, seat_cover_spec, monkeypatch):
+    client = _client(db, {VIEW, EDIT, SPEC_EDIT}, monkeypatch)
+    assert _park_retire(client, seat_cover_spec.id).status_code == 409
+
+
+def test_retire_needs_the_spec_registry_edit_permission(db, seat_cover_spec, monkeypatch):
+    client = _client(db, {VIEW, EDIT}, monkeypatch)
+    assert _park_retire(client, seat_cover_spec.id).status_code == 403
+
+
+def test_retire_removes_the_values_and_deactivates_the_key(db, catalogue, seat_cover_spec, monkeypatch):
+    client = _client(db, {VIEW, EDIT, SPEC_EDIT}, monkeypatch)
+    client.post(f"{REVIEW_URL}/apply", json={"wc_product_ids": [catalogue["SRTWC8383-RL-UF"].id]})
+    assert _review(client)["seat_cover_spec"]["can_retire"] is True
+    assert _park_retire(client, seat_cover_spec.id).status_code == 202
+
+    compat.retire_seat_cover_spec(db, seat_cover_spec.id)
+    db.refresh(seat_cover_spec)
+    assert seat_cover_spec.is_active is False
+    holding = (
+        db.query(ProductSpecifications)
+        .filter(ProductSpecifications.values.has_key("seat_cover"))  # noqa: W601
+        .count()
+    )
+    assert holding == 0
+    audit = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.entity_type == "product_spec_registry",
+            AuditLog.entity_id == seat_cover_spec.id,
+        )
+        .all()
+    )
+    assert audit, "the retire leaves an audit row"
+    assert "SRTWC8383-RL-UF" in str(audit[-1].old_values)
+    spec = _review(client)["seat_cover_spec"]
+    assert (spec["is_active"], spec["value_count"], spec["can_retire"]) == (False, 0, False)

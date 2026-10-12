@@ -56,6 +56,12 @@ FLYER_ROWS: tuple[tuple[int, tuple[str, ...], tuple[str, ...]], ...] = (
 )
 
 
+#: A finish the flyer prints as a note beside the WC code rather than in it: row 22 prints
+#: SRTWC202 with "Pink" and a pink dot, row 23 prints SRTWC203 with "Blue" and a blue dot.
+#: Every other colour row prints its finish inside the code (SRTWC8383-MBL).
+FLYER_ROW_FINISH: dict[int, str] = {22: "PINK", 23: "BLUE"}
+
+
 def flyer_pairs() -> list[tuple[int, str, str]]:
     """Every (row, WC code, seat cover code) the flyer prints, in flyer order: 49 pairs."""
     return [
