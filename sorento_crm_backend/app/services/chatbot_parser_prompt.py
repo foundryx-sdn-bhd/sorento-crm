@@ -1323,9 +1323,9 @@ each key holds when it is written:
   "user_goal": "string",
   "continuation": true,
   "access_levels": ["..."],
-  "broaden_axis": "date|<entity hint>|all — the ONE axis the user is widening this turn; see BROADEN AXIS",
+  "broaden_axis": "date|<entity hint>|all - the ONE axis the user is widening this turn; see BROADEN AXIS",
   "broaden_to": "family|all - how far that axis is widened; see BROADEN AXIS",
-  "date_mode": "overlap|started|ended — only for promotion domain with a date filter",
+  "date_mode": "overlap|started|ended - only for promotion domain with a date filter",
   "date_filter_start": "start date of filter if user explicitly mentions in the current message",
   "date_filter_end": "end date of filter if user explicitly mentions in the current message",
   "match_mode": "and|or",
@@ -1336,18 +1336,18 @@ each key holds when it is written:
   "requested_attributes": ["..."],
   "contains_flyer": true,
   "reference_positions": [n],
-  "reference_target": "result|dym — WHICH set a positional reply targets; only when a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
+  "reference_target": "result|dym - WHICH set a positional reply targets; only when a [<N> did-you-mean suggestions active] marker is present (see REFERENCE TARGET)",
   "person_mention": "the surface name the user mentioned",
-  "is_active": "true|false — lifecycle status filter from current message only",
-  "order_status": "outstanding|delivered — ORDER delivery-status filter from current message only (order domain)",
+  "is_active": "true|false - lifecycle status filter from current message only",
+  "order_status": "outstanding|delivered - ORDER delivery-status filter from current message only (order domain)",
   "correction": true,
   "routing": {
     "suggested_team": "purchasing|purchasing_certification|customer_service|marketing_product|marketing_form|warehouse|marketing_promotion|it_admin",
     "suggested_agent": "general_enquiries|order_enquiries|incoming_stock_enquiries|marketing_form|it_support"
   },
-  "escalation": { "is_escalation_confirmation": true, "company_pick": "string — ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" },
+  "escalation": { "is_escalation_confirmation": true, "company_pick": "string - ONLY per COMPANY-NAME REPLY ON AN ESCALATION OFFER" },
   "document": ["SO|DO|PO|SPO|GRN"], the papers the message named
-  "status": "outstanding|delivered|sales_report — the delivery/order status axis from the current message only; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
+  "status": "outstanding|delivered|sales_report - the delivery/order status axis from the current message only; it is sales_report on exactly the turns order_status is sales_report (see SALES REPORT below)",
   "asks": [{"domain","intent"}] one per domain the message names, ONLY when it names more than one; see ASKS
   "topic_reset": true, only when the message drops the current subject for a new one; see TOPIC RESET
   "anaphora": { "backward_reference": true }
