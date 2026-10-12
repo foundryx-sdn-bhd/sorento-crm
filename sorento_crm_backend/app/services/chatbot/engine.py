@@ -176,25 +176,26 @@ def _product_family(db: Any, code: str) -> list[dict[str, str]]:
     family a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
     The family is `products.family_code` (CODE-VARIANTS #1573, MULTI-ASK-PLAN2): the one
     stored on the product the code names exactly (dash, space and case folded, so a hand-set
-    family wins), else the one the typed code derives. Company-scoped by the session and
-    narrowed by the contact's brand scope, as every product read in a turn is (review R2)."""
+    family wins), else the typed code itself when it is a family head. Company-scoped by
+    the session and narrowed by the contact's brand scope, as every product read in a turn
+    is (review R2)."""
     from app.models.product import Product, chat_searchable_products
     from app.services.contact_brand_scope import product_in_scope_clauses
     from app.services.entity_resolver import _strip_all_ws, _ws_insensitive_lower
     from app.services.product_family import family_code_for
 
+    typed = _strip_all_ws(code).lower()
     scope = (chat_searchable_products(), *product_in_scope_clauses(db, Product.id))
-    family = (
-        db.query(Product.family_code)
-        .filter(
-            _ws_insensitive_lower(Product.product_code) == _strip_all_ws(code).lower(),
-            Product.family_code.isnot(None),
-            *scope,
-        )
-        .order_by(Product.product_code)
-        .limit(1)
-        .scalar()
-    ) or family_code_for(code)
+    family = db.query(Product.family_code).filter(
+        _ws_insensitive_lower(Product.product_code) == typed,
+        Product.family_code.isnot(None),
+        *scope,
+    ).order_by(Product.product_code).limit(1).scalar()
+    if family is None:
+        # No product carries the typed code: only a family HEAD ("SRTWT7445") names a family.
+        # A missing variant ("SRT38-ZZ") is no family, never its siblings (review B1).
+        derived = family_code_for(code)
+        family = derived if derived is not None and derived.lower() == typed else None
     if not family:
         return []
     rows = (

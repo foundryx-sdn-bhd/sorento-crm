@@ -685,6 +685,24 @@ def test_a_hand_set_family_code_wins_over_the_code(session_factory):
     assert _family(session_factory, "ZZTFM55", manual=manual) == ["ZZTFM55", "ZZTFM77"]
 
 
+def test_a_missing_dashed_code_is_no_family_never_its_siblings(session_factory):
+    """Review B1: ZZTQW6-ZZ does not exist; ZZTQW6-A is never answered in its place."""
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTQW6-A", "ZZTQW6-B"])
+    assert _family(session_factory, "ZZTQW6-ZZ") == []
+    assert _family(session_factory, "ZZTQW6") == ["ZZTQW6-A", "ZZTQW6-B"]
+
+
+def test_a_typed_variant_code_has_its_siblings_as_family(session_factory):
+    """Review S1, pinned: a typed variant that exists is in its model family (CODE-VARIANTS),
+    so a 2+ ask turn with `family` null asks the scope question for it."""
+    from tests.chatbot._r9_engine_console import _seed_products
+
+    _seed_products(session_factory, ["ZZTQX7", "ZZTQX7-GM", "ZZTQX7-SS"])
+    assert _family(session_factory, "ZZTQX7-GM") == ["ZZTQX7", "ZZTQX7-GM", "ZZTQX7-SS"]
+
+
 def test_a_code_with_no_family_is_no_family(session_factory):
     from tests.chatbot._r9_engine_console import _seed_products
 

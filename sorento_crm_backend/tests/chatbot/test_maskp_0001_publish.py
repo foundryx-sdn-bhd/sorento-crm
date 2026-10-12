@@ -49,6 +49,11 @@ def test_revision_ids_chain_onto_mains_head():
     assert len(m.revision) <= 32
 
 
+def test_the_frozen_addendum_is_the_code_constant():
+    """Editing SUB_ASKS_ADDENDUM needs a new publish revision: this revision's text is frozen."""
+    assert _migration().ADDENDUM.read_text(encoding="utf-8") == SUB_ASKS_ADDENDUM
+
+
 def test_it_publishes_the_ablation_text_plus_the_addendum_unlabelled_once():
     m = _migration()
     base = _base()

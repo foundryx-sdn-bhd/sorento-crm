@@ -1,7 +1,8 @@
 """Publish the chatbot parser prompt with the SUB ASKS and FAMILY keys as a NEW version,
 label unmoved (MULTI-ASK-PLAN S2, documentation/plans/chatbot/CARD-multi-ask-plan-09oct.md).
 
-`app/services/chatbot_parser_prompt.SUB_ASKS_ADDENDUM` defines `sub_asks` (every thing a
+`app/services/chatbot_parser_prompt.SUB_ASKS_ADDENDUM` (frozen for this revision in
+`alembic/data/chatbot_semantic_parser.sub-asks-addendum-20261012.txt`) defines `sub_asks` (every thing a
 message asks, in order, when it asks two or more) and `family` (a typed code means the exact
 code or its whole family). The engine's per-ask runner (`turn/sub_asks.py`) answers a
 two-or-more-ask message from them.
@@ -34,7 +35,11 @@ depends_on = None
 logger = logging.getLogger("alembic.runtime.migration")
 
 PROMPT_NAME = "chatbot_semantic_parser"
-BASE = Path(__file__).resolve().parents[1] / "data" / "chatbot_semantic_parser.ablation-20261011.txt"
+DATA = Path(__file__).resolve().parents[1] / "data"
+BASE = DATA / "chatbot_semantic_parser.ablation-20261011.txt"
+#: SUB_ASKS_ADDENDUM as this revision publishes it, frozen so a later edit of the code
+#: constant never changes what this revision writes (a test holds the two equal today).
+ADDENDUM = DATA / "chatbot_semantic_parser.sub-asks-addendum-20261012.txt"
 #: The head of MEMORY_ADDENDUM, the base text's tail block.
 MEMORY_ANCHOR = "\n\n== MEMORY ==\n"
 MESSAGE = (
@@ -44,12 +49,10 @@ MESSAGE = (
 
 
 def template() -> str:
-    from app.services.chatbot_parser_prompt import SUB_ASKS_ADDENDUM
-
     base = BASE.read_text(encoding="utf-8")
     if base.count(MEMORY_ANCHOR) != 1:
         raise RuntimeError("maskp_0001: the ablation base has no single MEMORY block to put the addendum before")
-    return base.replace(MEMORY_ANCHOR, SUB_ASKS_ADDENDUM + MEMORY_ANCHOR)
+    return base.replace(MEMORY_ANCHOR, ADDENDUM.read_text(encoding="utf-8") + MEMORY_ANCHOR)
 
 
 def publish(session: Session) -> int | None:
