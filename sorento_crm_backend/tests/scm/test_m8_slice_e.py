@@ -40,6 +40,20 @@ from tests.scm.test_m5_explainer import _install_provider, _seed_run, _user_bloc
 pytestmark = requires_pg
 
 
+def _answer_call(fake) -> dict:
+    """The chat-ANSWER call of an `answer_run_chat` turn. Since M8-F16 that turn also runs the
+    schema-forced action parse (`json_schema` kwarg) whenever the run has costed buys, and
+    it runs first, so `fake.calls[0]` is the parse, not the answer."""
+    answers = [c for c in fake.calls if not c["kwargs"].get("json_schema")]
+    assert len(answers) == 1, [c["kwargs"] for c in fake.calls]
+    return answers[0]
+
+
+def _answer_block(fake) -> str:
+    """The user message content of the chat-answer call (see `_answer_call`)."""
+    return _answer_call(fake)["messages"][1]["content"]
+
+
 # ===========================================================================
 # direct-insert helpers (E10 history - precise control of category + variants)
 # ===========================================================================
@@ -472,7 +486,7 @@ def test_chat_market_intent_attaches_proposal_when_lines_match(scm_app, monkeypa
     assert out["proposal"] is not None, "a mapped signal attaches a confirm-gated proposal"
     assert len(out["proposal"]["lines"]) == 2
     # the live reading was folded into the context the LLM reasoned over
-    assert '"live_market_scan"' in _user_block(fake)
+    assert '"live_market_scan"' in _answer_block(fake)
 
 
 def test_chat_market_intent_no_signal_gives_no_proposal(scm_app, monkeypatch):
@@ -485,7 +499,7 @@ def test_chat_market_intent_no_signal_gives_no_proposal(scm_app, monkeypatch):
 
     out = explainer_service.answer_run_chat(db, run_id, "any market trend I should know about?")
     assert out["proposal"] is None
-    assert '"live_market_scan"' in _user_block(fake)
+    assert '"live_market_scan"' in _answer_block(fake)
 
 
 def test_chat_plain_question_never_runs_market_search(scm_app, monkeypatch):
@@ -503,7 +517,7 @@ def test_chat_plain_question_never_runs_market_search(scm_app, monkeypatch):
     out = explainer_service.answer_run_chat(db, run_id, "which buys eat the most cash?")
     assert out["proposal"] is None
     assert called["n"] == 0, "a plain plan question must not trigger a live market search"
-    assert '"live_market_scan"' not in _user_block(fake)
+    assert '"live_market_scan"' not in _answer_block(fake)
 
 
 def test_chat_market_path_writes_no_recommendation_column(scm_app, monkeypatch):
@@ -576,7 +590,7 @@ def test_chat_injects_past_plans_for_no_sku_similar_question(scm_app, monkeypatc
     out = explainer_service.answer_run_chat(
         db, today["run_id"], "tell me about the previous plan for similar plans"
     )
-    block = _user_block(fake)
+    block = _answer_block(fake)
     assert '"past_plans"' in block, "a no-SKU 'previous/similar plans' question must inject history"
     assert out["proposal"] is None, "a history question is not a market-trend ask"
 
@@ -587,7 +601,7 @@ def test_chat_no_past_plans_block_for_plain_no_sku_question(scm_app, monkeypatch
     run_id = _seed_run(db)
     fake = _install_provider(monkeypatch, "ok")
     explainer_service.answer_run_chat(db, run_id, "which buys are most urgent?")
-    assert '"past_plans"' not in _user_block(fake)
+    assert '"past_plans"' not in _answer_block(fake)
 
 
 def test_run_chat_system_prompt_is_hygienic():
@@ -609,7 +623,7 @@ def test_chat_uses_hygienic_system_prompt(scm_app, monkeypatch):
     run_id = _seed_run(db)
     fake = _install_provider(monkeypatch, "ok")
     explainer_service.answer_run_chat(db, run_id, "tell me about similar previous plans")
-    sysmsg = fake.calls[0]["messages"][0]
+    sysmsg = _answer_call(fake)["messages"][0]
     assert sysmsg["role"] == "system"
     assert sysmsg["content"] == explainer_service._RUN_CHAT_SYSTEM
 
@@ -744,16 +758,19 @@ def test_chat_action_intent_empty_parse_yields_no_proposal(scm_app, monkeypatch)
     assert out["action_proposal"] is None
 
 
-def test_chat_plain_question_never_runs_action_parse(scm_app, monkeypatch):
-    """A plain analytical question does NOT trip the action gate (no structured parse)."""
+def test_chat_plain_question_gets_no_action_proposal(scm_app, monkeypatch):
+    """A plain analytical question gets no action card. M8-F16 made the schema-forced parse
+    itself the gate (`answer_run_chat`: "we always run it and let an empty resolution be the
+    real gate"), so the parse runs, resolves nothing, and the turn is answered in prose.
+    This test used to assert the parse never ran, the keyword gate that same change removed."""
     _, db, _, _ = scm_app
     run_id, _cat = _seed_run_with_category(db)
-    fake = _install_action_provider(monkeypatch, structured="{}")
+    fake = _install_action_provider(monkeypatch, structured="{}", prose="Two buys take most of it.")
     out = explainer_service.answer_run_chat(db, run_id, "which buys eat the most cash?")
-    assert out["action_proposal"] is None
-    assert not any(c["kwargs"].get("json_schema") for c in fake.calls), (
-        "a plain question must not attempt the structured action parse"
-    )
+    assert out["action_proposal"] is None, "an empty parse is no proposal"
+    assert any(c["kwargs"].get("json_schema") for c in fake.calls), "the parse is the gate"
+    assert out["answer"] == "Two buys take most of it."
+    assert _answer_call(fake)["messages"][0]["content"] == explainer_service._RUN_CHAT_SYSTEM
 
 
 def test_chat_action_path_writes_no_recommendation_column(scm_app, monkeypatch):
