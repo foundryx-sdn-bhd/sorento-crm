@@ -105,8 +105,8 @@ def publish(session: Session) -> int | None:
 def publish_on_production(session: Session) -> int | None:
     """The production-labelled text (prod's own line) with the addendum right before its
     MEMORY block, else right before its policy blocks, as a new UNLABELLED version. None on
-    a database with no production label (a fresh one) or when this text is already
-    published; a production text with neither anchor fails loudly."""
+    a database with no production label (a fresh one), when this text is already published,
+    or (with a warning, never a failed deploy) when the production text has neither anchor."""
     from app.models.ai_prompt import AIPromptVersion
 
     row = session.execute(
@@ -127,10 +127,14 @@ def publish_on_production(session: Session) -> int | None:
         return None
     anchor = MEMORY_ANCHOR if MEMORY_ANCHOR in production else BLOCKS_ANCHOR if BLOCKS_ANCHOR in production else None
     if anchor is None:
-        raise RuntimeError(
+        # Review N2 (crew 13 Oct 2026): never fail the deploy over it. The v56 candidate is
+        # still published; the production line is then published by hand.
+        logger.warning(
             "maskp_0001: the production parser text carries neither the MEMORY block nor the policy "
-            "blocks, so the sub asks addendum has no place to go; publish it by hand"
+            "blocks, so the sub asks addendum has no place to go; production line not published, "
+            "publish it by hand"
         )
+        return None
     template = production.replace(anchor, addendum + anchor, 1)
     existing = (
         session.query(AIPromptVersion.version)
