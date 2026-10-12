@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Plan. Behaviour card posted as one crew ask; no code until it is answered. Track: full
+Status: Build. Owner answered Q1-Q5 on 12 Oct (section 8); backend + MCP half done (c1fb5c32), chatbot slice in progress. Track: full
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -191,3 +191,18 @@ should have captured that".
 `crew-data-request:` for (a) the 11 Oct spot-check turn ("250mm floor grating") trace: parser
 output and tool calls, and (b) per numeric mm key, how many `floor_grating` products carry a
 value and the distinct values (counts only). Feeds question 2 and the example replies.
+
+## 8. Owner answers (12 Oct)
+
+1. Q1 yes, not restrictive: the spec filter applies whenever the parser gives a spec constraint, in any
+   phrasing ("which ones", "got 600mm basin?", "basin 600mm price"). A miss lists the values that exist.
+2. Q2 yes: virtual `size` key, axis resolved by data (one key: use it; several: ask which; none: list
+   the sizes that exist and, when true, say how many have no size recorded).
+3. Q3 yes: active = live now and visible to the contact's tier.
+4. Q4 reworked: "which basins are on promotion" and "basin promotion" / "any promo?" must give ONE
+   consistent answer from one path (the promotions covering basins together with the basins on them).
+   No `on_promotion` split, no new parser key for it.
+5. Q5 yes: product + stock lanes only; `resolve_product_set` stays.
+6. Owner rule: replies state only what the data holds; no invented lines, no unconfigured fallbacks.
+7. `seat_cover` registry key will be turned off (separate WC seat-cover lane); it must not reach the
+   parser spec vocabulary.
