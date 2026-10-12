@@ -938,12 +938,29 @@ def run_until_exit(
     return {"delegate": DELEGATE, "payload": payload}
 
 
+def _company_is_only_a_brand(db: Any, parse_output: dict[str, Any]) -> bool:
+    """The parser tagged a brand entity's name as the sales company too, and no company row goes by
+    that name or code (the analysis route's own match): then it is the brand, not a company."""
+    if not contracts.company_is_a_brand(parse_output):
+        return False
+    if db is None:
+        return True
+    from app.models.company import Company
+
+    wanted = " ".join(str(parse_output.get("sales_company") or "").split()).casefold()
+    return not any(
+        wanted in (str(name).strip().casefold(), str(code).strip().casefold())
+        for name, code in db.query(Company.name, Company.code).all()
+    )
+
+
 def _fetch_semantic_input(
     parse_output: dict[str, Any],
     *,
     tier_gate: dict[str, Any] | None,
     contact_id: Any,
     space_id: str | None,
+    company_is_brand: bool = False,
 ) -> dict[str, Any]:
     """`Call 'sub-get-results'`'s `semantic_input`, all thirteen fields plus growth r1's two.
 
@@ -1007,7 +1024,7 @@ def _fetch_semantic_input(
         # delivered) and the company the contact named, straight to the tool's params.
         "sales_basis": parse_output.get("sales_basis"),
         # A company the parser also tagged as a brand entity is that brand, not a company (the route 422s it).
-        "sales_company": None if contracts.company_is_a_brand(parse_output) else parse_output.get("sales_company"),
+        "sales_company": None if company_is_brand else parse_output.get("sales_company"),
         # CHATBOT-SELFREF-SCOPE (owner rule Q6a): "my" / "me" / "our" means ALL the
         # asker's linked accounts. Read by `entity_ids_transformer`'s two report arms
         # (a carried account never narrows a self-reference ask) and by
@@ -1442,7 +1459,8 @@ def run_fetch(
     contact_id = (ctx.get("contact") or {}).get("id")
     entities = gate.get("compatible_entities") or []
     semantic_input = _fetch_semantic_input(
-        parse_output, tier_gate=tier_gate, contact_id=contact_id, space_id=space_id
+        parse_output, tier_gate=tier_gate, contact_id=contact_id, space_id=space_id,
+        company_is_brand=_company_is_only_a_brand(db, parse_output),
     )
     # PROMO-SUBJECT-FILTER: the class words the parser named narrow a promotions fetch
     # (probe and main call alike); carried across a tier pick by the parse output.
@@ -2059,7 +2077,7 @@ def run_fetch(
             so_refused = order_status_raw != "outstanding"
         semantic_input["outstanding_scope"] = scope
         semantic_input["outstanding_so_refused"] = so_refused
-    elif order_status_raw == "sales_analysis" and not has_own_accounts:
+    elif order_status_raw == "sales_analysis" and not has_own_accounts and not (has_product or has_customer):
         # PLAN-retail-sales-reports-26sep S1: a sales ANALYSIS (a company's sales by
         # month, by year, by channel) is the reports kernel's own query, answered as the
         # whole table in text and the same query as an Excel (Owner ruling 26 Sep 07:16
@@ -2076,7 +2094,7 @@ def run_fetch(
         domain in contracts.ORDER_OR_SALES_DOMAINS
         and (has_product or has_customer or carried_subject)
         and order_status_raw == "sales_report"
-    ) or (order_status_raw == "sales_analysis" and has_own_accounts):
+    ) or (order_status_raw == "sales_analysis" and (has_own_accounts or has_product or has_customer)):
         # S4 wiring point 3 (AC-1650): domain "order" + a resolved product OR
         # customer + `order_status: "sales_report"` picks THIS tool - one more
         # branch beside the outstanding override above, never `tools[0]`. R7
@@ -2091,7 +2109,11 @@ def run_fetch(
         # other sales ask of a scoped contact runs. Its reply is TEXT (the presenter's
         # month blocks), never a file.
         tool_name = "crm_sales_report"
-        if order_status_raw == "sales_analysis":
+        if order_status_raw == "sales_analysis" and not has_own_accounts:
+            # An analysis that names a resolved product or customer is that subject's report: the
+            # analysis is a company's totals and has no subject (the parser's own rule).
+            tool_item = {"name": tool_name, "_tool_pick": {"source": "sales_analysis_with_subject"}}
+        elif order_status_raw == "sales_analysis":
             tool_item = {"name": tool_name, "_tool_pick": {"source": "customer_scope_sales_report"}}
             # A linked STAFF contact is not forced by the engine (not enforced), so its
             # links may not have been handed over as entities ("sales this month" with no

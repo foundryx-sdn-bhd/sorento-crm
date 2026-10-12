@@ -133,6 +133,9 @@ class AskType:
     #: the original capture (a short reply is the answer, a longer other ask or a "?" drops
     #: it), which IDEATION-CAPTURE (#1444) is written and tested against.
     answered_by_parser: bool = False
+    #: A verdict naming its own ask (`domain_in_message` true, `ranking_refine` false) is a new question
+    #: that wins over any reply reading, a declared answer included (the sales ranking ask only).
+    new_ask_wins: bool = False
     #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
     #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
     answer_drops: tuple[str, ...] = ()
@@ -344,6 +347,10 @@ def collect(
     return Outcome(values=values, extras=carried)
 
 
+def _names_its_own_ask(verdict: dict[str, Any]) -> bool:
+    return verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False
+
+
 def reply_verdict(
     verdict: dict[str, Any],
     slot: dict[str, Any] | None,
@@ -368,7 +375,7 @@ def reply_verdict(
     mode = answer.get("mode") if isinstance(answer, dict) else None
     # A verdict that names its own ask (a domain word, not a refine) is a new question, which wins
     # over an answer the parser also declared.
-    names_its_own_ask = verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False
+    names_its_own_ask = ask.new_ask_wins and _names_its_own_ask(verdict)
     answers = mode in ANSWER_MODES and not names_its_own_ask
     if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
@@ -391,7 +398,7 @@ def _reply_verdict_by_shape(
     words = (text or "").split()
     if not words or "?" in text:
         return verdict, "required_ask_dropped"
-    if verdict.get("domain_in_message") is True and verdict.get("ranking_refine") is False:
+    if ask.new_ask_wins and _names_its_own_ask(verdict):
         return verdict, "required_ask_dropped"  # names its own ask: a new question wins
     same_ask = verdict.get("intent_hint") == ask.reroute.get("intent_hint")
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (

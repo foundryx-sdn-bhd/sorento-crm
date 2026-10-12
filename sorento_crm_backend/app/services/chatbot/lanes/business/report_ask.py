@@ -240,6 +240,7 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
     give_up=GIVE_UP,
     answer_drops=("sales_channel", "report_ask_words"),
     stated_to_parser=True,
+    new_ask_wins=True,
 ))
 
 
