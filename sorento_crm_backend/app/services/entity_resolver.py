@@ -6000,6 +6000,11 @@ def _rag_resolve_phrase(
     # Company scope in SQL, as in `_tier3_embedding_lookup`: these hits carry no
     # uuid, so the `_attach_company_info` backstop cannot drop them afterwards.
     scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
+    if get_company_scope(db) is not None:
+        # A `debtor:<code>` seed is company-less (migration 304) although the orders it
+        # comes from are not, so the shared-row rule would hand any company's
+        # master-less debtor to this caller. Scoped callers never see them; staff do.
+        scope_sql = " AND ".join(f for f in (scope_sql, "ec.source_id NOT LIKE 'debtor:%'") if f)
     sql = text(
         f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
