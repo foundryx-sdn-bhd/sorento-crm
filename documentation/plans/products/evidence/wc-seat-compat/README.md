@@ -21,3 +21,13 @@ Run:
 7. Retire spec: "Retiring in 8s" countdown, then the card shows Retired; registry key
    inactive, 0 products hold a value, one audit row `seat_cover_spec.retire` with the removed
    value.
+
+## Re-run on c75a3ee80 (crew audit, 12 Oct)
+
+Fresh servers on c75a3ee80, links cleared and the old spec re-seeded first. Screenshots in
+`c75a3ee80/`. All checks passed: review screen (flyer order, counts), UNRESOLVED (MK, FT,
+plain 8066-S, no tick box), approve 7 SKUs (8 links, 8122 both covers), Compatible section
+(8383-RL-MBL -> 823-MBL only, 8383-RL-UF -> 331-UF only, 8122 both, MK SKU none, cover page
+lists its WCs, manual add + unlink countdown, 375px no sideways scroll), -SC refused with a
+toast and no row, retire countdown (key inactive, rules cleared, 0 values, audit row per
+company).
