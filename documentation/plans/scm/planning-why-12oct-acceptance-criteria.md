@@ -53,9 +53,11 @@ with message `Nothing on this planning change could be confirmed.` and no `faili
   refuses an order (`ok: false` / 4xx), exactly ONE `audit_logs` row per refused order is
   committed after the order's rollback, on its own session:
   `entity_type = "project_sales_orders"`, `entity_id` = the order (planning record id),
-  `action = "CONFIRM_REFUSED"`, `user_id` = the presser, `root_entity_type/id` = the same order,
+  `action = "EVENT"`, `event = "CONFIRM_REFUSED"` (prod CHECK `audit_logs_action_check` admits only
+  CREATE/READ/UPDATE/DELETE/IMPORT/EVENT, `alembic/versions/aud_0001_audit_standard_s0.py:127`),
+  `company_id` = the order's company, `user_id` = the presser, `root_entity_type/id` = the same order,
   `reason` = the order-level error text,
-  `new_values = {"preview": bool, "batch_id": str|null, "lines": [{"so_line_no", "item_code", "reason_code", "reason", "change"}]}`
+  `new_values = {"preview": bool, "batch_id": str|null (null unless a valid UUID), "lines": [{"so_line_no", "item_code", "reason_code", "reason", "change"}]}`
   (`lines` is filled for admin AND non-admin pressers; the gate only limits what the response shows).
 - **AC-W7** A successful order writes no `CONFIRM_REFUSED` row. `POST /fulfilment-planning/simulate-confirm`
   writes none. A failure to write the row is logged and never changes the Confirm's answer.
@@ -64,7 +66,7 @@ with message `Nothing on this planning change could be confirmed.` and no `faili
 
 - **AC-W8** Every code path that sets `order_inquiry_rows.state` to cancelled writes, in the same
   transaction, one `audit_logs` row: `entity_type` = the model's pinned audit type (`project_order_inquiry_rows`), `entity_id` = the row,
-  `action = "CANCEL"`, `user_id` = acting user or NULL, `root_entity_type = "project_sales_orders"`,
+  `action = "EVENT"`, `event = "OI_ROW_CANCELLED"`, `company_id` = the row's company, `user_id` = acting user or NULL, `root_entity_type = "project_sales_orders"`,
   `root_entity_id` = the row's order (planning record id) when resolvable,
   `new_values = {"revision_no": int|null, "supply_decision_id": str|null, "cause": <code>, "qty": number, "item_code": str, "so_line_no": int|null}`.
   Cause codes: `undecided_change` (the line had a pending, undecided, non-`cancelled` planning
