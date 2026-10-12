@@ -1817,7 +1817,21 @@ def _report_status_means_order_domain(out: dict[str, Any]) -> None:
     out["domain_corrected"] = f"{prior}->{target} (order_status {status})"
 
 
-def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
+def _picks_the_open_drill_offer(out: dict[str, Any], pending: Any) -> bool:
+    """Is this verdict a pick of the open `sales_report_detail` offer? The engine's own signals:
+    a position, an entity matching an option's label (`decide.picked_positions`), or the parser's
+    declared `open_question_answer` pick."""
+    if pending is None or getattr(pending, "kind", None) != "sales_report_detail":
+        return False
+    from app.services.chatbot.turn.decide import picked_positions
+
+    if picked_positions(pending, out) is not None:
+        return True
+    answer = out.get("open_question_answer")
+    return isinstance(answer, dict) and (answer.get("mode") == "pick" or bool(answer.get("picked")))
+
+
+def _narrows_held_sales_report(out: dict[str, Any], pending: Any = None) -> bool:
     """The parser read a scoped sales ranking, or a plain sales report that names no domain word (its
     own refinement signal: `domain_in_message` strictly false, no topic reset), naming ONE product and no
     axis. A null `topic_reset` counts as no reset on purpose; only an explicit true blocks the narrowing.
@@ -1833,13 +1847,13 @@ def _narrows_held_sales_report(out: dict[str, Any]) -> bool:
     )
     if not (scoped_ranking or refinement):
         return False
+    if _picks_the_open_drill_offer(out, pending):
+        return False
     axis = jsc.js_string(out.get("group_by") or "").strip()
-    if axis:
-        # With the drill offer open the parser echoes the offered axis on "only <code>": `product`
-        # is no axis of its own there, unless the verdict is a pick of that offer.
-        picks = bool(jsc.array(out.get("reference_positions"))) or bool(out.get("open_question_answer"))
-        if axis != "product" or picks:
-            return False
+    # With the drill offer open the parser echoes the offered axis on "only <code>": `product` is
+    # no axis of its own there (a pick of the offer was ruled out above).
+    if axis and axis != "product":
+        return False
     products = [
         e for e in jsc.array(out.get("entities"))
         if isinstance(e, dict) and e.get("current_message") is not False
@@ -1860,6 +1874,7 @@ def lane_parse_output(
     declined_offer_copy: bool = False,
     prior_session: Any = None,
     policy: Any = None,
+    open_offer: Pending | None = None,
 ) -> dict[str, Any]:
     """`ctx.parse.output` for the kept lanes, projected from the v3 verdict.
 
@@ -1998,7 +2013,7 @@ def lane_parse_output(
 
         out["sales_ranking_frame"] = frame_from_report(focus.report)
     held_plain = focus.report if focus is not None and isinstance(focus.report, dict) and focus.report.get("kind") == "sales_report" else None
-    if held_plain is not None and _narrows_held_sales_report(verdict):
+    if held_plain is not None and _narrows_held_sales_report(verdict, pending or open_offer):
         # Read off the parser's own verdict: `out["order_status"]` was re-projected from the focus status above.
         # A plain sales report is held (no ranking): "only this one" narrows IT. The same report
         # runs again for the exact code the parser typed, with the held customers and period.
@@ -3495,6 +3510,7 @@ def make_tool_runner(
     not_checked: list[str] | None = None,
     asked_promo_filter: dict[str, list[str]] | None = None,
     profile: Any = None,
+    open_offer: Pending | None = None,
 ) -> Callable[[str, FetchSpec], dict[str, Any]]:
     """The ONE seam that reaches a tool: `run_fetch` calls it once per `FetchSpec`.
 
@@ -3567,7 +3583,7 @@ def make_tool_runner(
         # ARGS (access levels, date filters, entities), never an escalate sentence
         # or a pending write, both of which read the turn's real `ctx.parse.output`
         # instead. Flagged here so the next reader does not assume parity.
-        lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
+        lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy, open_offer=open_offer)
         lane_out = _spec_window(lane_out, spec)
         if asked_promo_filter and domain == "promotion":
             # PROMO-SUBJECT-FILTER AC-6: the tier pick's own turn names no subject; the

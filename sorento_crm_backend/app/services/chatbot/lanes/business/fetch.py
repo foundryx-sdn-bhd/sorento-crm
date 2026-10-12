@@ -2588,6 +2588,8 @@ def _sales_report_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
         "requested_attributes": [],
         "keys_served": False,
         "outstanding_ask": outstanding_ask,
+        # A narrowed report with nothing sold shows no options: the engine closes the drill offer.
+        "narrowed_miss": narrowed_miss,
         # The plain report that ran, held as `Focus.report` (kind marks it non-ranking) so a
         # narrowing to one product next turn re-runs it.
         "report": _held_sales_report(ctx),

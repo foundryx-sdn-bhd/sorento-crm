@@ -6174,6 +6174,7 @@ def _run_stages_body(  # noqa: PLR0915
                         else None
                     ),
                     profile=state_out.profile,
+                    open_offer=state_in.pending,
                     resolver_gate=(
                         resolver_payload.get("gate")
                         if isinstance(resolver_payload, dict)
@@ -6753,6 +6754,13 @@ def _run_stages_body(  # noqa: PLR0915
                     # crew-tester re-run on PR #1435 (3 Oct 2026): "1" under the summary got
                     # the SO list's period question, and the sticky detail offer then read
                     # "september" as narrowing the summary. The SO list answered: it closes.
+                    state_out = dataclasses_replace(state_out, pending=None)
+                if (
+                    state_out.pending is not None
+                    and state_out.pending.kind == "sales_report_detail"
+                    and _answered_by_narrowed_miss(envelopes)
+                ):
+                    # A narrowed report with nothing sold lists no drill options: the old offer closes.
                     state_out = dataclasses_replace(state_out, pending=None)
                 turn_trace.record(
                     "looked_up",
@@ -9134,6 +9142,16 @@ def _stock_ask_packing_list_files(envelopes: list[dict[str, Any]]) -> list[dict[
                 }
             )
     return files
+
+
+def _answered_by_narrowed_miss(envelopes: list[dict[str, Any]]) -> bool:
+    """Did a narrowed sales report with no sales (`fetch._sales_report_output`) answer this turn?"""
+    for env in envelopes:
+        raw = env.get("raw_fragment") if isinstance(env, dict) else None
+        fetched = raw.get("fetch") if isinstance(raw, dict) else None
+        if isinstance(fetched, dict) and fetched.get("narrowed_miss") is True:
+            return True
+    return False
 
 
 def _answered_by_so_list(envelopes: list[dict[str, Any]]) -> bool:

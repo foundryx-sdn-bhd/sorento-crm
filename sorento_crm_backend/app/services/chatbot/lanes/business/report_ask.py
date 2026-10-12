@@ -260,6 +260,17 @@ def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
         return verdict
     if verdict.get("rank_group") not in ("item", "category"):
         return verdict
+    # The top selling route filters by brand, category, sales agent and customer, and counts delivered or
+    # ordered sales: a location or another basis would be dropped silently, so that ask stays here.
+    hints = {
+        jsc.js_string(e.get("hint") or "").strip().lower()
+        for e in jsc.array(verdict.get("entities"))
+        if isinstance(e, dict) and e.get("current_message") is not False
+    }
+    if not hints <= {"brand", "category", "sales_agent", "customer"}:
+        return verdict
+    if verdict.get("basis") not in (None, "delivered", "ordered"):
+        return verdict
     held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
     if held_ranking and verdict.get("ranking_drill") in ("scoped", "unsure"):
         return verdict

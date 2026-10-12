@@ -1373,7 +1373,7 @@ def _is_unsubjected_sales_ranking(verdict: dict[str, Any]) -> bool:
     direction and no product or customer to total. That is the top selling ask (the lane asks
     quantity or amount), never the per-subject sales report, which needs a subject."""
     order_status = verdict.get("order_status")
-    if not (isinstance(order_status, str) and order_status.strip() == "sales_report"):
+    if not (isinstance(order_status, str) and order_status.strip() in ("sales_report", "sales_analysis")):
         return False
     if verdict.get("top_n") is None and verdict.get("rank_direction") is None:
         return False
