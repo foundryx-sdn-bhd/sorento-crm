@@ -42,6 +42,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -115,7 +116,7 @@ from app.services.company_scope import build_company_predicate
 from app.services.error_handler import AppException
 from app.services.scm import order_link_service, priority, spo_supply
 from app.services.scm.front_planning_engine import DEFAULT_LEAD_TIME_DAYS
-from app.services.scm.pool_predicate import is_site_pool
+from app.services.scm.pool_predicate import is_project_reserve, is_site_pool
 from app.services.scm.supply_assignment import (
     KIND_PO as SA_KIND_PO,
     KIND_SPO as SA_KIND_SPO,
@@ -1068,7 +1069,11 @@ class ProjectOrderInquiryService:
         #: OI-PRODUCT-FOLLOW (review S2): product moves made on the DECLINED-settle path,
         #: told to purchasing once the line's own handover lines are queued.
         product_moves: List[Tuple[List[OrderInquiryRow], str]] = []
+        split_line_ids = self._apply_pure_splits(inquiry, decision, buy_lines)
+        settled_in_place.extend(sorted(split_line_ids))
         for entry in buy_lines:
+            if entry.get("line") is not None and str(entry["line"].id) in split_line_ids:
+                continue
             # R9 (owner ruling, S9, `PLAN-oi-worklist-one-header.md`, superseding the old
             # S3 `PLAN-local-supplier-oi-routing.md` rule below): a line decided as a
             # LOCAL buy is not purchasing's job at all, so any of its still-RAISED order
@@ -1837,6 +1842,9 @@ class ProjectOrderInquiryService:
                 and _dec(entry.get("buy_qty")) > _ZERO
             },
             actor_user_id=actor_user_id,
+            covered_line_ids={
+                str(entry["line"].id) for entry in buy_lines if entry.get("line")
+            },
         )
         created += shortfalls
         raised += shortfalls
@@ -4125,6 +4133,7 @@ class ProjectOrderInquiryService:
         shortfalls: Sequence[Dict[str, Any]],
         buy_line_ids: Optional[set] = None,
         actor_user_id: Optional[str] = None,
+        covered_line_ids: Optional[set] = None,
     ) -> int:
         """One row per donor location this confirmation left oversold (PLAN 13.11).
 
@@ -4179,6 +4188,22 @@ class ProjectOrderInquiryService:
             # apart: the hole names no cover, because nothing covers it yet.
             and not (row.covered_by or "").strip()
         ]
+        if covered_line_ids is not None:
+            # SO422492 A, second writer: a board "Order back" row on a line this revision
+            # dropped while its AutoCount change waits on CS stands, exactly as
+            # `_retire_uncovered_rows` keeps that line's ORDER row.
+            board_rows_off_revision = [
+                str(row.so_line_id)
+                for row in rows
+                if not _is_borrow_order_back(row)
+                and row.so_line_id
+                and str(row.so_line_id) not in covered_line_ids
+            ]
+            awaiting_cs = self._lines_with_undecided_planning_change(board_rows_off_revision)
+            rows = [
+                row for row in rows
+                if _is_borrow_order_back(row) or str(row.so_line_id) not in awaiting_cs
+            ]
         # A PARTLY LINKED row is netted HALF, exactly as an ORDER row is one method up:
         # the quantity sitting on a document is real supply and counts against the hole,
         # and the remainder is a hole this revision is about to restate, so the row is
@@ -4187,6 +4212,17 @@ class ProjectOrderInquiryService:
         # twice, once here and once on the row raised below; and re-raising the FULL hole
         # on top of it - which is what a plain `raised` test does to it - would have told
         # purchasing to buy the covered part a second time.
+        def _hole_key(row: OrderInquiryRow) -> Tuple[Any, Any, Any, bool]:
+            return (
+                str(row.so_line_id),
+                row.item_code or None,
+                row.stock_location or None,
+                _is_borrow_order_back(row),
+            )
+
+        # Read BEFORE the loop below overwrites a cancelled row's note, which is what
+        # `_is_borrow_order_back` reads.
+        key_before = {row.id: _hole_key(row) for row in rows}
         linked = self._linked_qty_by_row([row.id for row in rows])
         placed: Dict[Tuple[Optional[str], Optional[str]], Decimal] = {}
         cancelled_this_pass: List[OrderInquiryRow] = []
@@ -4217,6 +4253,7 @@ class ProjectOrderInquiryService:
         # carry a suggestion, so a hole this pass cancels must not go on holding it.
         self._drop_suggested_links(cancelled_this_pass)
 
+        re_raised: set = set()
         created = 0
         for entry in shortfalls:
             key = (entry.get("item_code") or None, entry.get("stock_location") or None)
@@ -4252,7 +4289,17 @@ class ProjectOrderInquiryService:
             )
             self.db.add(shortfall_row)
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
+            # Every row this method raises is a borrow hole, whatever its note says.
+            re_raised.add(_hole_key(shortfall_row)[:3] + (True,))
             created += 1
+        # SO422492 E: a cancelled raise purchasing was told about is told again, as a
+        # cancel - unless this pass re-raised the same hole, whose own line restates it. A
+        # line CS switched from ORDER BACK to ORDER lost its order back here in silence.
+        for row in cancelled_this_pass:
+            if key_before[row.id] not in re_raised:
+                self._record_handover(
+                    row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id
+                )
         return created
 
     def retire_rows_for_cancelled_lines(
@@ -4409,6 +4456,26 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.supply_decision_id != decision.id,
             )
         stale = query.all()
+        # SO422492 BUG A: a line AutoCount changed that CS has not decided yet leaves the
+        # revision (uncovered by the apply, or not carried because its snapshot drifted),
+        # but the book still needs it: cancelling its row told purchasing CANCEL ALL 25 for
+        # a line the book had only cut to 22. Its row stands until CS decides the change,
+        # and that confirm restates it (settle in place). A book cancellation is excluded:
+        # that line is genuinely leaving. Not for a line CS or purchasing withdrew on purpose
+        # (`only_line_ids`, or named in `reason_by_line`).
+        # A line CS (or purchasing) withdrew carries its own reason in `reason_by_line`.
+        withdrawn = {str(line_id) for line_id in (reason_by_line or {})}
+        awaiting_cs = (
+            self._lines_with_undecided_planning_change(
+                [
+                    str(row.so_line_id)
+                    for row in stale
+                    if row.so_line_id and str(row.so_line_id) not in withdrawn
+                ]
+            )
+            if only_line_ids is None
+            else set()
+        )
 
         def _stamp_for(row: OrderInquiryRow) -> str:
             """This ROW's own note (S2/S3): a per-line bare reason wins when the caller
@@ -4426,7 +4493,7 @@ class ProjectOrderInquiryService:
         stale_links = self._links_by_row([str(row.id) for row in stale])
         retired_this_pass: List[OrderInquiryRow] = []
         for row in stale:
-            if str(row.so_line_id) in covered:
+            if str(row.so_line_id) in covered or str(row.so_line_id) in awaiting_cs:
                 continue
             # AC-H19 (plan 3.1, revised 16 Sep): a retired row prints ALWAYS, no pairing
             # to whatever else the same commit raises - the qty it once asked for is
@@ -4462,6 +4529,225 @@ class ProjectOrderInquiryService:
         # go on holding capacity against every other row for a line CS took back out of
         # the confirmation.
         self._drop_suggested_links(retired_this_pass)
+
+    def _apply_pure_splits(
+        self, inquiry: OrderInquiry, decision: Any, buy_lines: Sequence[Dict[str, Any]]
+    ) -> set:
+        """A line SPLIT across new lines moves its instruction, it does not cancel and re-buy
+        it (SO422492 C: B2155-NL-BLUE 139 -> 22 + 9 new lines of 117 printed CANCEL 117 while
+        the same email ordered 117 on the new lines).
+
+        Pure split, in ONE confirm: a named line's single live ORDER row holds more than its
+        new Buy, and lines with no row at all yet, for the same product and location, take
+        exactly that difference. The difference moves to a row per new line, with the links
+        that cover it (latest arrival first, the over-cover rule) and purchasing's
+        acknowledgement, and nothing is told as a cancel or an order. Anything else - two
+        live rows, a different total, product, location or required date, a line given back
+        whole, a row holding a CS reserve link - is left to the netting. A manual link moves
+        too: unlike a CANCEL_BALANCE drop, the total purchasing placed is still owed by this
+        order, only by other lines.
+
+        Returns every line it handled (the source and the new lines)."""
+        entries = [
+            entry for entry in buy_lines
+            if entry.get("line") is not None
+            and not entry.get("carried")
+            and entry.get("origin") != "local"
+            and not entry.get("order_back")
+        ]
+        if len(entries) < 2:
+            return set()
+        line_ids = [str(entry["line"].id) for entry in entries]
+        rows_by_line: Dict[str, List[OrderInquiryRow]] = defaultdict(list)
+        for row in self.db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.order_inquiry_id == inquiry.id,
+            OrderInquiryRow.so_line_id.in_(line_ids),
+        ):
+            rows_by_line[str(row.so_line_id)].append(row)
+
+        def _key(item_code: Any, location: Any) -> Tuple[Any, Any]:
+            return (item_code or None, location or None)
+
+        fresh_by_key: Dict[Tuple[Any, Any], List[Dict[str, Any]]] = defaultdict(list)
+        sources_by_key: Dict[Tuple[Any, Any], List[Tuple[Dict[str, Any], OrderInquiryRow]]] = (
+            defaultdict(list)
+        )
+        for entry in entries:
+            line_id = str(entry["line"].id)
+            need = _dec(entry.get("buy_qty"))
+            # The required date is part of the key: a split that also moves a date is a
+            # change purchasing has to hear about, so it is left to the netting.
+            key = _key(entry.get("item_code"), entry.get("stock_location")) + (
+                entry.get("required_date"),
+            )
+            rows = rows_by_line.get(line_id, [])
+            if not rows:
+                if need > _ZERO:
+                    fresh_by_key[key].append(entry)
+                continue
+            live = [
+                row for row in rows
+                if row.state != INQUIRY_CANCELLED and row.verb != IV_CANCEL_BALANCE
+            ]
+            if len(live) != 1:
+                continue
+            row = live[0]
+            if (
+                row.verb == IV_ORDER
+                and row.state in (INQUIRY_RAISED, INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                and not row.redirected_to_pool
+                and row.ack_state != ACK_REJECTED
+                and _key(row.item_code, row.stock_location) + (row.delivery_date,) == key
+                and _ZERO < need < _dec(row.qty)
+                # A CS reserve link is tied to its reserve request row; it never moves.
+                and not any(
+                    link.reserve_request_row_id for link in self._links_of(row.id)
+                )
+            ):
+                sources_by_key[key].append((entry, row))
+
+        handled: set = set()
+        for key, sources in sources_by_key.items():
+            fresh = fresh_by_key.get(key, [])
+            if len(sources) != 1 or not fresh:
+                continue
+            entry, source = sources[0]
+            need = _dec(entry.get("buy_qty"))
+            moved = _dec(source.qty) - need
+            if sum((_dec(e.get("buy_qty")) for e in fresh), _ZERO) != moved:
+                continue
+            self._split_row(source, need, fresh, decision)
+            handled.add(str(entry["line"].id))
+            handled.update(str(e["line"].id) for e in fresh)
+        return handled
+
+    def _split_row(
+        self,
+        source: OrderInquiryRow,
+        keep: Decimal,
+        fresh: Sequence[Dict[str, Any]],
+        decision: Any,
+    ) -> None:
+        """`_apply_pure_splits`' write: `source` keeps `keep`, each fresh line gets a row for
+        its own Buy, and the links above `keep` follow the quantity."""
+        source_line = self.db.get(ProjectSalesOrderLine, source.so_line_id)
+        source_no = source_line.line_no if source_line is not None else None
+        links = sorted(
+            self._links_of(source.id),
+            key=lambda link: (
+                self._link_expected_date(link) or date.max,
+                link.linked_at or datetime.min,
+            ),
+            reverse=True,
+        )
+        excess = sum((_dec(link.qty) for link in links), _ZERO) - keep
+        new_rows: List[OrderInquiryRow] = []
+        for entry in fresh:
+            qty = _dec(entry.get("buy_qty"))
+            row = OrderInquiryRow(
+                company_id=source.company_id,
+                order_inquiry_id=source.order_inquiry_id,
+                so_line_id=entry["line"].id,
+                item_code=source.item_code,
+                qty=qty,
+                delivery_date=entry.get("required_date") or source.delivery_date,
+                stock_location=source.stock_location,
+                verb=IV_ORDER,
+                covered_by=None,
+                supply_decision_id=decision.id,
+                state=INQUIRY_RAISED,
+                # Purchasing already holds this quantity: the split moves their
+                # acknowledgement with it, it does not ask them to confirm it again.
+                ack_state=source.ack_state,
+                acknowledged_by=source.acknowledged_by,
+                acknowledged_at=source.acknowledged_at,
+                note=f"Split from line {source_no}" if source_no is not None else "Split",
+            )
+            self.db.add(row)
+            self.db.flush()
+            new_rows.append(row)
+            room = qty
+            while excess > _ZERO and room > _ZERO and links:
+                link = links[0]
+                take = min(_dec(link.qty), room, excess)
+                if take == _dec(link.qty):
+                    link.row_id = row.id
+                    links.pop(0)
+                else:
+                    self.db.add(
+                        OrderInquiryLink(
+                            company_id=link.company_id,
+                            row_id=row.id,
+                            po_line_id=link.po_line_id,
+                            spo_allocation_id=link.spo_allocation_id,
+                            document=link.document,
+                            qty=take,
+                            linked_by=link.linked_by,
+                            linked_at=link.linked_at,
+                            auto=bool(link.auto),
+                            claim_id=link.claim_id,
+                        )
+                    )
+                    link.qty = _dec(link.qty) - take
+                room -= take
+                excess -= take
+                self.db.flush()
+                self._invalidate_link_cache()
+        moved_to = ", ".join(
+            str(e["line"].line_no) for e in fresh if e["line"].line_no is not None
+        )
+        stamp = f"Split: {_qty_str(_dec(source.qty) - keep)} moved to line {moved_to}"
+        source.note = f"{source.note}; {stamp}" if source.note else stamp
+        source.qty = keep
+        source.supply_decision_id = decision.id
+        self.db.flush()
+        self._invalidate_link_cache()
+        # A suggestion sized for the old quantity is stale on the smaller row.
+        self._drop_suggested_links([source])
+        self.refresh_link_state([source, *new_rows])
+
+    def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
+        """The lines among `line_ids` carrying a LIVE planning change row nobody has decided
+        yet, other than a book cancellation (SO422492 BUG A). A row a newer revision
+        overtook can never be decided, so it holds nothing back. Live means held against
+        the order's latest revision or the one just before it: inside a confirm the
+        revision being replaced is still what the batch's leftover rows name, until the
+        apply re-bases them (`_apply_one_order`, "Re-based onto the new revision")."""
+        if not line_ids:
+            return set()
+        from app.models.planning_change import (
+            PLANNING_CHANGE_STATE_PENDING,
+            PlanningChangeRow,
+        )
+        rows = (
+            self.db.query(PlanningChangeRow)
+            .filter(
+                PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
+                PlanningChangeRow.decision.is_(None),
+                PlanningChangeRow.kind != "cancelled",
+                PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
+            )
+            .all()
+        )
+        from app.models.project_so import SOSupplyDecision
+
+        live_revisions: Dict[str, set] = {}
+        out: set = set()
+        for row in rows:
+            pso_id = str(row.project_sales_order_id)
+            if pso_id not in live_revisions:
+                live_revisions[pso_id] = {
+                    revision_no
+                    for (revision_no,) in self.db.query(SOSupplyDecision.revision_no)
+                    .filter(SOSupplyDecision.project_sales_order_id == pso_id)
+                    .order_by(SOSupplyDecision.revision_no.desc())
+                    .limit(2)
+                    .all()
+                } or {0}
+            held_revision = (row.held_json or {}).get("revision_no")
+            if held_revision is None or held_revision in live_revisions[pso_id]:
+                out.add(str(row.project_line_id))
+        return out
 
     def retire_rows_for_dropped_lines(
         self,
@@ -7371,6 +7657,16 @@ class ProjectOrderInquiryService:
                 total += claim["reserved"]
         return total
 
+    def _is_project_bin(self, warehouse: Optional[Warehouse]) -> bool:
+        """G12's test: `segment = project` and NOT a project reserve. HQ is a pool with
+        `segment = project` - general project stock, so its lines are not locked to one
+        project's claim (`pool_predicate.is_project_reserve`, PLAN-hq-project-reserve-12oct)."""
+        segment = warehouse.segment if warehouse else None
+        if is_site_pool(segment):
+            return False
+        code = str(warehouse.warehouse_code or "").strip().upper() if warehouse else ""
+        return not is_project_reserve(segment, is_pool=code in self._pool_codes())
+
     def _pool_codes(self) -> set:
         """Every warehouse that is SOME location's pool, by code.
 
@@ -7596,7 +7892,7 @@ class ProjectOrderInquiryService:
             remaining = max(
                 remaining - self._reserved_for_netting(target_id, own_so_number), _ZERO
             )
-            project_bin = not is_site_pool(warehouse.segment if warehouse else None)
+            project_bin = self._is_project_bin(warehouse)
             candidates.append(
                 self._candidate(
                     kind="po",
@@ -7683,7 +7979,7 @@ class ProjectOrderInquiryService:
                     not in pools
                 ):
                     continue
-                project_bin = not is_site_pool(warehouse.segment if warehouse else None)
+                project_bin = self._is_project_bin(warehouse)
                 candidates.append(
                     self._candidate(
                         kind="spo",
