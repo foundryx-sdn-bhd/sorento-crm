@@ -12,7 +12,7 @@ import { BoardDecideControl } from './BoardDecideControl';
 import type { BoardContribution, BoardDraft } from '../../_shared/types/fulfilmentPlanning.types';
 
 vi.mock('@/lib/toast', () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), warning: vi.fn(), error: vi.fn() }),
 }));
 
 // The real SearchableSelect drives a cmdk popover - out of scope here (AC-36 pins it as
@@ -346,9 +346,11 @@ describe('BoardDecideControl: the lenient toast (AC-16, R10)', () => {
     });
     fireEvent.click(within(dialog).getByRole('button', { name: /^Save/ }));
 
+    // OI-CLOSED-LINE (owner, 12 Oct 2026): a short line is saved as decided and named as
+    // short, never skipped.
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        '1 saved as Use own location · 1 skipped: CB6633 line 20 (only 10 free at own location)',
+      expect(toast.warning).toHaveBeenCalledWith(
+        '2 saved as Use own location · 1 short: CB6633 line 20 (only 10 free at own location)',
       ),
     );
     expect(alertSpy).not.toHaveBeenCalled();
@@ -471,5 +473,78 @@ describe('BoardDecideControl: Borrow from another order follows the switch (BR1)
     const select = within(dialog).getByLabelText('donor-or-location');
     expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
     expect(within(select).queryByText('MWH-IB')).not.toBeInTheDocument();
+  });
+});
+
+describe('BoardDecideControl: Use BRW on a delivered or short line (OI-CLOSED-LINE hand test)', () => {
+  const pool = (free: string) => ({
+    location: 'BRW',
+    where: 'site_pool' as const,
+    warehouse_id: 'wh-pool',
+    qty_free_remaining: free,
+    available_for_project: free,
+  });
+
+  it('a fully delivered line with 0 free at BRW is not skipped and saves as Use BRW', async () => {
+    const delivered = row({
+      item_code: 'ZZT-DIY',
+      qty: '2',
+      qty_delivered: '2',
+      sources: [{ kind: 'buy', qty: '2', reason: 'Nothing free.' }],
+      locations: [pool('0')],
+    });
+    const { onSave } = renderControl({ contributions: [delivered] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use BRW' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText(/will be skipped/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/short/)).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), {
+      target: { value: 'Delivered using BRW stock.' },
+    });
+    const save = within(dialog).getByRole('button', { name: 'Save 1 line' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [entries] = (onSave as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
+      { key: string; decision: { reserve: unknown[]; buy_qty: string } }[],
+    ];
+    expect(entries[0].decision.reserve).toEqual([
+      { warehouse_id: 'wh-pool', location: 'BRW', qty: '2' },
+    ]);
+    expect(entries[0].decision.buy_qty).toBe('0');
+  });
+
+  it('a line short on its undelivered part warns with what is free and still saves', async () => {
+    const short = row({
+      item_code: 'ZZT-DIY',
+      qty: '10',
+      qty_delivered: '4',
+      sources: [{ kind: 'buy', qty: '10', reason: 'Nothing free.' }],
+      locations: [pool('2')],
+    });
+    const { onSave } = renderControl({ contributions: [short] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use BRW' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('1 line short: only 2 free at BRW')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/will be skipped/)).not.toBeInTheDocument();
+    const save = within(dialog).getByRole('button', { name: 'Save 1 line' });
+    expect(save).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), {
+      target: { value: 'Taking what BRW has.' },
+    });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        '1 saved as Use BRW · 1 short: ZZT-DIY line 10 (only 2 free at BRW)',
+      ),
+    );
+    expect(onSave).toHaveBeenCalled();
   });
 });
