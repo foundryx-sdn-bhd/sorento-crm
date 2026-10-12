@@ -2837,6 +2837,12 @@ def _validate_composition_shape(
         "buy_qty": qty_text(buy),
         "buy_reason": composition.get("buy_reason"),
         "amend_reason": composition.get("amend_reason"),
+        # The planner's own answers beside the components (`ConfirmLine`): the order-back
+        # and the document it cites, and "flag for investigation". Dropped here, Apply
+        # froze them as false on the revision whatever was ticked (CONFIRM-FOLLOWUPS).
+        "order_back": bool(composition.get("order_back", False)),
+        "cited_document": composition.get("cited_document"),
+        "suspected_system_issue": bool(composition.get("suspected_system_issue", False)),
     })
 
 
@@ -2984,6 +2990,9 @@ def _to_confirm_line(payload: dict):
         buy_qty=payload["buy_qty"],
         buy_reason=payload.get("buy_reason"),
         amend_reason=payload.get("amend_reason"),
+        order_back=bool(payload.get("order_back", False)),
+        cited_document=payload.get("cited_document"),
+        suspected_system_issue=bool(payload.get("suspected_system_issue", False)),
     )
 
 
