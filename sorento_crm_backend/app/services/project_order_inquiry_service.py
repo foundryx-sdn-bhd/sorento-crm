@@ -4320,6 +4320,20 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.supply_decision_id != decision.id,
             )
         stale = query.all()
+        # SO422492 BUG A: a line AutoCount changed that CS has not decided yet leaves the
+        # revision (uncovered by the apply, or not carried because its snapshot drifted),
+        # but the book still needs it: cancelling its row told purchasing CANCEL ALL 25 for
+        # a line the book had only cut to 22. Its row stands until CS decides the change,
+        # and that confirm restates it (settle in place). A book cancellation is excluded:
+        # that line is genuinely leaving. Not on the `only_line_ids` path: there CS took the
+        # line out on purpose.
+        awaiting_cs = (
+            self._lines_with_undecided_planning_change(
+                [str(row.so_line_id) for row in stale if row.so_line_id]
+            )
+            if only_line_ids is None
+            else set()
+        )
 
         def _stamp_for(row: OrderInquiryRow) -> str:
             """This ROW's own note (S2/S3): a per-line bare reason wins when the caller
@@ -4337,7 +4351,7 @@ class ProjectOrderInquiryService:
         stale_links = self._links_by_row([str(row.id) for row in stale])
         retired_this_pass: List[OrderInquiryRow] = []
         for row in stale:
-            if str(row.so_line_id) in covered:
+            if str(row.so_line_id) in covered or str(row.so_line_id) in awaiting_cs:
                 continue
             # AC-H19 (plan 3.1, revised 16 Sep): a retired row prints ALWAYS, no pairing
             # to whatever else the same commit raises - the qty it once asked for is
@@ -4371,6 +4385,28 @@ class ProjectOrderInquiryService:
         # go on holding capacity against every other row for a line CS took back out of
         # the confirmation.
         self._drop_suggested_links(retired_this_pass)
+
+    def _lines_with_undecided_planning_change(self, line_ids: Sequence[str]) -> set:
+        """The lines among `line_ids` carrying a PENDING planning change row nobody has
+        decided yet, other than a book cancellation (SO422492 BUG A)."""
+        if not line_ids:
+            return set()
+        from app.models.planning_change import (
+            PLANNING_CHANGE_STATE_PENDING,
+            PlanningChangeRow,
+        )
+
+        return {
+            str(line_id)
+            for (line_id,) in self.db.query(PlanningChangeRow.project_line_id)
+            .filter(
+                PlanningChangeRow.project_line_id.in_(list(set(line_ids))),
+                PlanningChangeRow.decision.is_(None),
+                PlanningChangeRow.kind != "cancelled",
+                PlanningChangeRow.applied_state == PLANNING_CHANGE_STATE_PENDING,
+            )
+            .all()
+        }
 
     def retire_rows_for_dropped_lines(
         self,
