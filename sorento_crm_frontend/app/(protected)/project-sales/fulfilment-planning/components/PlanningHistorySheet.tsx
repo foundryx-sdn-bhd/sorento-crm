@@ -121,6 +121,26 @@ function chipsOf(event: PlanningHistoryEvent): Chip[] {
   return chips;
 }
 
+/** An email's or AutoCount update's server counts, recounted from the lines on show. */
+function countsOf(event: PlanningHistoryEvent, lines: PlanningHistoryLine[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const bump = (key: string) => {
+    counts[key] = (counts[key] ?? 0) + 1;
+  };
+  for (const line of lines) {
+    if (event.kind === 'autocount_update') {
+      if (line.kind) bump(line.kind);
+      if (line.state) bump(line.state);
+    } else if (event.kind === 'email_sent') {
+      const remark = (line.remark ?? '').toUpperCase();
+      if (remark.startsWith('CANCEL')) bump('cancel');
+      else if (remark.includes('ORDER BACK')) bump('order_back');
+      else if (remark.startsWith('ORDER')) bump('order');
+    }
+  }
+  return counts;
+}
+
 /** `dd/mm/yyyy` (Malaysia) to `yyyy-mm-dd`, so a day compares with the range picker's value. */
 function isoDay(at: string | null): string | null {
   if (!at) return null;
@@ -394,7 +414,7 @@ export function PlanningHistorySheet({
     const isOpen = expanded.has(event.id);
     // The badges count what is on show: a product or line filter narrows `lines`.
     const narrowed = lines.length !== event.lines.length;
-    const chips = chipsOf(narrowed ? { ...event, lines, reissued_unchanged: 0 } : event);
+    const chips = chipsOf(narrowed ? { ...event, lines, reissued_unchanged: 0, counts: countsOf(event, lines) } : event);
     return {
       id: event.id,
       testId: `history-event-${event.id}`,
