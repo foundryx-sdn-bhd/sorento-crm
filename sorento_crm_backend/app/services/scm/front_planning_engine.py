@@ -75,6 +75,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 #: `YYYY-MM` - the Stock Debt cell a debt lands in. IMPORTED, never restated: the option's
 #: `debt_month` and the view's own column key are the same string, and two spellings of one
 #: key is how a lightbox comes to open on a month the cell did not mean.
+from app.services.scm import ladder_steps
 from app.services.scm.supply_assignment import month_key
 
 ZERO = Decimal("0")
@@ -1223,6 +1224,13 @@ def walk_line(
             ),
         )
 
+    # The steps the owner disabled on 12 Oct 2026 (`ladder_steps`): their candidates are
+    # never drawn, so the walk falls to the next step exactly as if none were offered.
+    group_take_candidates = ladder_steps.without_water(group_take_candidates)
+    other_group_candidates = ladder_steps.without_water(other_group_candidates)
+    if not ladder_steps.SUPPLY_BORROW:
+        supply_borrow_candidates = None
+
     offers: Dict[str, "_Offer"] = {}
 
     # 0b. pool_share - EVERY site pool of the chain, and the share of each a project may
@@ -1935,6 +1943,9 @@ def _options(
     whole_line = open_qty if open_qty is not None else need
     out: List[Option] = []
     for step in OPTION_STEPS:
+        # A disabled step is hidden, not printed as a step that gave nothing.
+        if step == STEP_SUPPLY_BORROW and not ladder_steps.SUPPLY_BORROW:
+            continue
         if step == STEP_BUY:
             out.append(
                 Option(
