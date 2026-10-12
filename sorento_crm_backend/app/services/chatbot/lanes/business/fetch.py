@@ -222,23 +222,16 @@ def constraints_for_terms(db: Any, terms: Any) -> list[dict[str, Any]] | None:
     return out
 
 
-def carries_size(spec_constraints: Any, db: Any = None) -> bool:
-    """Does the list hold a size: the virtual `size` key (the route resolves its axis), or,
-    given `db`, a registry key measured in mm ("600mm length")? Owner ruling (12 Oct 2026):
-    every size ask is answered by the route, a few matches first."""
+def carries_size(spec_constraints: Any) -> bool:
+    """Does the list hold a size: the virtual `size` key (the route resolves its axis), or an
+    envelope axis named outright ("600mm length")? Owner ruling (12 Oct 2026): every size ask
+    is answered by the route, a few matches first. A thickness is mm too but no envelope axis;
+    its ask keeps the resolver's counted set."""
     from app.services.chatbot.head.grounding import SIZE_KEY
+    from app.services.product_spec_search import _ENVELOPE_KEYS
 
     keys = {c.get("key") for c in jsc.array(spec_constraints) if isinstance(c, dict)}
-    if SIZE_KEY in keys:
-        return True
-    if db is None or not keys:
-        return False
-    from app.services.product_spec_registry import active_registry
-
-    return any(
-        str(row.spec_key) in keys and str(row.data_type) == "numeric" and str(row.unit or "").lower() == "mm"
-        for row in active_registry(db)
-    )
+    return SIZE_KEY in keys or bool(keys & _ENVELOPE_KEYS)
 
 
 def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | None:

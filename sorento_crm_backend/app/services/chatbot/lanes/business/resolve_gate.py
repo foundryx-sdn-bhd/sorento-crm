@@ -672,11 +672,12 @@ def resolve_entity_body(
     # SPEC-PROMO-PARAMS: the virtual `size` key is no registry key, so the resolver never
     # sees it (an unknown key there); it travels only as a `spec_constraints` item on the
     # MCP call (`fetch.spec_constraints_for`), where the route resolves its axis.
-    # A size: the virtual key, or any grounded value measured in mm ("600mm length"); either
-    # is answered by the route (owner ruling, 12 Oct 2026), so no counted set is built for it.
-    sized = any(
-        g.get("spec_key") == SIZE_KEY or str(g.get("spec_unit") or "").lower() == "mm" for g in grounded
-    )
+    # A size: the virtual key, or an envelope axis named outright ("600mm length"); either is
+    # answered by the route (owner ruling, 12 Oct 2026), so no counted set is built for it. A
+    # thickness is mm too but no envelope axis: it keeps the counted set.
+    from app.services.product_spec_search import _ENVELOPE_KEYS
+
+    sized = any(g.get("spec_key") == SIZE_KEY or g.get("spec_key") in _ENVELOPE_KEYS for g in grounded)
     grounded = [g for g in grounded if g.get("spec_key") != SIZE_KEY]
     if excluded_entity_ids:
         entities = [e for e in entities if id(e) not in excluded_entity_ids]

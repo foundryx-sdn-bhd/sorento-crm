@@ -116,3 +116,14 @@ def test_p5_an_axis_word_narrows_to_that_axis(session_factory, monkeypatch, _cle
     assert codes[0] in reply and codes[1] not in reply, reply
     sent = [c for a in _stock_calls(captured) for c in a.get("spec_constraints") or []]
     assert {"key": "dim_length", "op": "eq", "value": 600} in sent, sent
+
+
+def test_p6_a_thickness_is_no_size_only_the_envelope_axes_are():
+    """The ruling is about the product's envelope (length, width, height). A thickness is
+    measured in mm too, but its ask keeps the established path (round 8/9: every brand's
+    1.2mm sinks, through the resolver's counted set)."""
+    from app.services.chatbot.lanes.business import fetch
+
+    assert fetch.carries_size([{"key": "dim_length", "op": "eq", "value": 600}])
+    assert fetch.carries_size([{"key": "size", "op": "eq", "value": 600}])
+    assert not fetch.carries_size([{"key": "thickness", "op": "eq", "value": 1.2}])

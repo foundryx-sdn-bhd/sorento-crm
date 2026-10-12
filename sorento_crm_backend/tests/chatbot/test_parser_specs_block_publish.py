@@ -176,8 +176,12 @@ def test_p7_the_continuation_rule_rides_every_published_version(db):
     assert pv.publish_specs_block(db, from_version=version) is None
 
 
-def test_p8_the_code_prompt_carries_the_continuation_rule():
-    """The code-constant prompt (fresh installs, tests) defines `continuation` the same way."""
+def test_p8_the_rule_rides_the_published_version_not_the_code_constant():
+    """The rule defines `continuation`; it reaches the parser through the published version.
+    The code constant stays as measured (`test_parser_prompt_budget` pins its size and tail)."""
+    from app.services import chatbot_prompt_vars as pv
     from app.services.chatbot_parser_prompt import CONTINUATION_RULE, SEMANTIC_PARSER_PROMPT
 
-    assert '"continuation"' in CONTINUATION_RULE and CONTINUATION_RULE.strip() in SEMANTIC_PARSER_PROMPT
+    assert '"continuation"' in CONTINUATION_RULE
+    assert CONTINUATION_RULE.strip() not in SEMANTIC_PARSER_PROMPT
+    assert pv._with_continuation_rule(SEMANTIC_PARSER_PROMPT).count(CONTINUATION_RULE.strip()) == 1

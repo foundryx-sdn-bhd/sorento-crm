@@ -1035,7 +1035,9 @@ SEMANTIC_PARSER_PROMPT += MEMORY_ADDENDUM
 # SPEC-PROMO-PARAMS (owner ruling, 12 Oct 2026): a long answer shows a few matches and says the
 # customer can reply to see more; whether the next message asks for more of THAT list is the
 # parser's call, on the `continuation` key the schema already carries. No word rule in code.
-# `chatbot_prompt_vars.publish_specs_block` adds the same text to a published version.
+# `chatbot_prompt_vars.publish_specs_block` adds it to the published version, the text prod runs;
+# the code fallback above stays as measured (`test_parser_prompt_budget`: the static prompt does
+# not grow, and its addenda keep their order).
 CONTINUATION_RULE = """
 
 == MORE OF THE SAME LIST ==
@@ -1046,7 +1048,6 @@ no new subject: entities [], entity_op "reuse", domain_hint and intent_hint the 
 turn's. A message that names a product, a category, a size or a question of its own is not a
 continuation: continuation false, read it as usual. Default false.
 """
-SEMANTIC_PARSER_PROMPT += CONTINUATION_RULE
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in
