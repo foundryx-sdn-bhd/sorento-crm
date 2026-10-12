@@ -1984,6 +1984,9 @@ class ProjectOrderInquiryService:
             # instruction; `_remove_links` writes its own "Unlinked from ..." stamp.
             links = self._links_of(row.id)
             had_links = bool(links)
+            # EMAIL-SO-CHANGES: read before the links go. A row whose own bought supply
+            # has already landed was fulfilled, not withdrawn (SO400236 SRTWB246).
+            supply_landed = bool(links) and bool(self._received_documents_for(links))
             if links:
                 self._remove_links(row, links)
             row.state = INQUIRY_CANCELLED
@@ -2006,7 +2009,11 @@ class ProjectOrderInquiryService:
             # AC-H5: the honest end of a line the book reduced to nothing, whether or not
             # it carried a link - the handover email is not conditioned on that the way
             # `order_inquiry_changed_with_links` above is.
-            still_asked = line_change is not None and _dec(line_change.get("to_qty")) > _ZERO
+            still_asked = (
+                line_change is not None
+                and _dec(line_change.get("to_qty")) > _ZERO
+                and supply_landed
+            )
             if not still_asked:
                 self._record_handover(
                     row, kind="cancelled", was={"qty": previous_qty},
@@ -2015,7 +2022,9 @@ class ProjectOrderInquiryService:
                 return True
             # EMAIL-SO-CHANGES (crew audit, SO400236 SRTWB246 on dev): the book still asks
             # for the line, and what it moved is the date (or the quantity); the buy
-            # went to nothing only because landed stock now meets it. The email says what
+            # went to nothing only because the supply purchasing bought for it has
+            # landed and now meets it. (A row whose instruction CS withdrew, no supply
+            # landed, still prints its cancel above.) The email says what
             # the book did to the line, never a cancel to 0: QTY / NEW QTY and DELIVERY /
             # NEW DATE off the batch row's own from/to, on a stand-in carrying the line's
             # new values (the cancelled row keeps its own record untouched).

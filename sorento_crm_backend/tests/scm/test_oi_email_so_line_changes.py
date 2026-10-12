@@ -312,3 +312,48 @@ def test_qty_up_met_from_stock_prints_its_numbers_but_never_order(api, monkeypat
     assert entries[0]["was"] == {"qty": "1", "delivery_date": WAS_FMT}, entries[0]
     headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
     assert "DELAY" in headline and "ORDER" not in headline, headline
+
+
+def test_product_swap_met_from_landed_stock_prints_item_code_and_new_item_code(
+    api, monkeypatch
+):
+    """Reviewer round: the stock-met settle also tells an AutoCount product swap, off the
+    row's own code (before) and the line's live code (after), quantity and date as they
+    were. Drives `_settle_row_in_place` directly at the zero-need seam."""
+    from types import SimpleNamespace
+
+    from app.models.project_so import OrderInquiry
+    from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+    from ..test_planning_changes import _product
+
+    _client, world = api
+    _register(world)
+    calls = _captured_dispatches(monkeypatch)
+    fixture = _so400236_dev_shape(api)
+    row = fixture["row"]
+    old_code = row.item_code
+    new_code = _product(world.db).product_code
+    world.db.commit()
+    calls.clear()
+
+    service = ProjectOrderInquiryService(world.db)
+    settled = service._settle_row_in_place(
+        world.db.get(OrderInquiry, row.order_inquiry_id),
+        {"item_code": new_code, "required_date": row.delivery_date},
+        [row],
+        Decimal("0"),
+        SimpleNamespace(id=row.supply_decision_id, revision_no=2),
+        actor_user_id=world.actor,
+        line_change={
+            "from_qty": Decimal("1"), "to_qty": Decimal("1"),
+            "from_date": row.delivery_date, "to_date": row.delivery_date,
+        },
+    )
+    world.db.commit()
+
+    assert settled is True
+    lines = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
+    assert len(lines) == 1, lines
+    assert lines[0]["item_code"] == new_code and lines[0]["was"] == {"item_code": old_code}, lines[0]
+    assert lines[0]["qty"] == "1", lines[0]
