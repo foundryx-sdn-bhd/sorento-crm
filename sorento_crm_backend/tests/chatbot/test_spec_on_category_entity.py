@@ -129,6 +129,8 @@ def test_m1_the_lane_sends_the_size_constraint(vdb, session_factory):
 
 STOCK_TOOL = "crm_inventory_stock_balance_list"
 STOCK_PATH = "/api/v1/inventory/stock/balance"
+PRODUCTS_TOOL = "crm_master_products_list"
+ROUTES = {STOCK_TOOL: STOCK_PATH, PRODUCTS_TOOL: "/api/v1/master-data/products/"}
 
 
 def _seed_basins(session_factory) -> None:
@@ -155,7 +157,7 @@ def _seed_basins(session_factory) -> None:
 
 
 def _route_backed_stock(monkeypatch, session_factory):
-    """The stock tool answered by the real route and the real MCP presenter."""
+    """The stock and products tools answered by the real routes and the real MCP presenter."""
     from app.dependencies import get_current_user, get_current_user_or_api_key, get_db
     from app.services.company_scope_resolver import apply_company_scope
     from app.services.user_service import UserPermissionService
@@ -177,14 +179,14 @@ def _route_backed_stock(monkeypatch, session_factory):
 
     def call(name: str, args: dict[str, Any]) -> Any:
         captured.append((name, dict(args)))
-        if name != STOCK_TOOL:
+        if name not in ROUTES:
             return json.dumps({"has_result": False, "items": []})
         params = {
             k: (json.dumps(v) if k == "spec_constraints" else v)
             for k, v in args.items()
             if k != "view" and v not in (None, "", [])
         }
-        res = client.get(STOCK_PATH, params=params)
+        res = client.get(ROUTES[name], params=params)
         assert res.status_code == 200, res.text
         return _present_response()(name, res.text)
 
@@ -254,9 +256,11 @@ def test_g6_an_axis_word_in_the_spec_keeps_that_axis(vdb, raw, key):
     assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [(key, 600)], verdict["entities"]
 
 
-def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, _clear_overrides):
-    """RED: the live parse's own shape (a category plus a dim_width spec on "600mm") listed only
-    the width basin, while 600 sits on Length for two basins."""
+@pytest.mark.parametrize("domain,intent", [("inventory", "check_stock"), ("master_products", "check_product")])
+def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, _clear_overrides, domain, intent):
+    """RED: the live parse's own shape (a category plus a dim_width spec on "600mm"; the live
+    parse named `master_products`) listed only the width basin, while 600 sits on Length for two
+    basins."""
     from tests.chatbot.test_engine import _parser_output
     from tests.chatbot.test_outstanding_lane import _run_turn
     from tests.chatbot import test_outstanding_lane as harness
@@ -265,7 +269,7 @@ def test_t2_live_parse_shape_asks_length_or_width(session_factory, monkeypatch, 
     call, captured = _route_backed_stock(monkeypatch, session_factory)
     monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
     qf = _parser_output(
-        domain_hint="inventory", intent_hint="check_stock",
+        domain_hint=domain, intent_hint=intent,
         entities=[_category("basin", "basin"), _spec_entity("600mm", "dim_width", 600)],
     )
     result, _ = _run_turn(

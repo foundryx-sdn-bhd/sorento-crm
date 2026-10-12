@@ -631,6 +631,13 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary) -> list[Grounded]:
             except (TypeError, ValueError, IndexError):
                 number = None
             if number is not None:
+                if (entry.unit or "").lower() == "mm" and not any(
+                    (g.unit or "").lower() == "mm" for g in ground_words(raw, vocab)[0]
+                ):
+                    # Owner Q2 (12 Oct 2026): a millimetre number whose own words name no axis
+                    # ("600mm") is a size; the data says which axis holds it, not the parser's
+                    # guess (live parse: "600mm" -> dim_width while 600 sits on Length).
+                    return _validate_size(raw, value, vocab)
                 return [Grounded(entry.key, entry.label, said, int(number) if number.is_integer() else number, entry.unit)]
         else:
             spoken = " ".join(_words(value))
