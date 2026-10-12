@@ -9,19 +9,21 @@ planner COMPOSE an amendment by hand, and a hand-typed 15 against 10 on hand use
 back as "BRW-AM now has 9 free for this line, and 15 was asked for" - true, and it does not
 say who has the other one or where to go and look. The refusal now names SO383850.
 
-The two cases the UAC pins (AC-E1, AC-E2): 15 refused, 9 confirmed. Nothing on the order is
-written on the refusal - not the line that was too big, and not its siblings.
+The two cases the UAC pins (AC-E1, AC-E2): 15 asked holds the 9 left and records 6 short, 9
+confirms in full. Since the owner rule of 12 Oct 2026 (OI-CLOSED-LINE) the guard no longer
+refuses: the shortfall is a notice and only what is on hand less other holds is written.
 
 Postgres, blank scratch schema, every FK target seeded here (PRINCIPLES).
 """
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 import pytest
 
 from app.models.base import company_scope
-from app.models.project_so import SOSupplyDecision
+from app.models.project_so import SOLineAllocation, SOSupplyDecision
 from app.services import project_seed_service
 
 from ._pg_fixture import blank_session
@@ -126,8 +128,25 @@ def _hold_one_at_the_own_location(client, world):
     return core_so
 
 
-def test_a_reserve_beyond_on_hand_less_other_lines_holds_is_refused_and_names_them(api):
-    """AC-E1: 10 on hand, 1 already reserved by SO383850, 15 asked for."""
+def _holds(db, lines, warehouse):
+    """{line id: qty held at `warehouse`}, a fresh read."""
+    db.expire_all()
+    out = {}
+    for row in db.query(SOLineAllocation).filter(
+        SOLineAllocation.so_line_id.in_([line.id for line in lines]),
+        SOLineAllocation.warehouse_id == warehouse.id,
+    ):
+        out[row.so_line_id] = out.get(row.so_line_id, Decimal("0")) + row.qty
+    return out
+
+
+def test_a_reserve_beyond_on_hand_less_other_lines_holds_confirms_holding_what_is_left_and_records_the_short(api):
+    """AC-E1: 10 on hand, 1 already reserved by SO383850, 15 asked for. The line confirms,
+    holds the 9 that are left and records 6 short; the two orders together never hold more
+    than the 10 on hand.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     held_by = _hold_one_at_the_own_location(client, world)
@@ -144,29 +163,32 @@ def test_a_reserve_beyond_on_hand_less_other_lines_holds_is_refused_and_names_th
         },
     )
 
-    assert response.status_code == 409, response.text
+    assert response.status_code == 200, response.text
     body = response.json()
-    assert body["message"] == (
-        f"{world.own_wh.warehouse_code}: 10 on hand, 1 already reserved by "
-        f"{held_by.so_number}, you asked 15"
+    # The shortfall is recorded against the right line with the right figures: 9 of the 10
+    # on hand are left (1 is the earlier order's), so 6 of the 15 asked are short.
+    notices = body["stock_short_notices"]
+    assert [notice["line_no"] for notice in notices] == [22], notices
+    assert f"only 9 free at {world.own_wh.warehouse_code}" in notices[0]["reason"], notices
+    assert ", 6 short" in notices[0]["reason"], notices
+    assert _holds(db, [line], world.own_wh) == {line.id: Decimal("9")}
+    # Together with SO383850's 1, nothing held at the location exceeds what is on hand.
+    db.expire_all()
+    total = sum(
+        (row.qty for row in db.query(SOLineAllocation).filter(
+            SOLineAllocation.warehouse_id == world.own_wh.id
+        )),
+        Decimal("0"),
     )
-    conflict = body["reserve_conflict"]
-    assert conflict["line"] == 22
-    assert conflict["warehouse_code"] == world.own_wh.warehouse_code
-    assert conflict["on_hand"] == "10"
-    assert conflict["asked"] == "15"
-    assert conflict["held_by"] == [
-        {"so_number": held_by.so_number, "line_no": 7, "qty": "1"}
-    ]
-    # The row is pinned the way every other refusal is, so the board needs no second reader.
-    assert [entry["line_no"] for entry in body["failing_lines"]] == [22]
-
-    # NOTHING on that order is written.
+    assert total == Decimal("10"), total
     assert (
         db.query(SOSupplyDecision)
-        .filter(SOSupplyDecision.project_sales_order_id == mine.id)
+        .filter(
+            SOSupplyDecision.project_sales_order_id == mine.id,
+            SOSupplyDecision.state == "active",
+        )
         .count()
-        == 0
+        == 1
     )
 
 
@@ -220,9 +242,13 @@ def test_re_confirming_a_lines_own_hold_is_not_refused_by_its_own_hold(api):
     assert again.status_code == 200, again.text
 
 
-def test_two_lines_of_one_confirmation_cannot_each_be_sold_the_same_pile(api):
+def test_two_lines_of_one_confirmation_are_never_sold_the_same_pile(api):
     """The guard runs over the whole payload, not per line in isolation: 6 and 6 against 10
-    on hand is 12, and the second line is what gets named."""
+    on hand is 12, so the first line holds its 6, the second holds the 4 left and is the
+    one recorded 2 short. The two never hold the same units.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     client, world = api
     db = world.db
     core_so = _core_so(db, world.company_id)
@@ -251,25 +277,18 @@ def test_two_lines_of_one_confirmation_cannot_each_be_sold_the_same_pile(api):
         },
     )
 
-    assert response.status_code == 409, response.text
-    body = response.json()
-    conflict = body["reserve_conflict"]
-    assert conflict["line"] == 20
-    # The sibling that took first is named, by its own order and line number.
-    assert conflict["held_by"] == [
-        {"so_number": core_so.so_number, "line_no": 10, "qty": "6"}
-    ]
-    # And the SENTENCE says "line 10 of this order", not the order's own number: a planner
-    # reading their own document number back at them has to go and check whether some other
-    # copy of it is holding stock, when the competitor is on the screen in front of them.
-    assert body["message"] == (
-        f"{world.own_wh.warehouse_code}: 10 on hand, 6 already reserved by "
-        "line 10 of this order, you asked 6"
-    )
-    assert core_so.so_number not in body["message"]
+    assert response.status_code == 200, response.text
+    notices = response.json()["stock_short_notices"]
+    assert [notice["line_no"] for notice in notices] == [20], notices
+    assert f"only 4 free at {world.own_wh.warehouse_code}" in notices[0]["reason"], notices
+    assert ", 2 short" in notices[0]["reason"], notices
+    assert _holds(db, [first, second], world.own_wh) == {
+        first.id: Decimal("6"),
+        second.id: Decimal("4"),
+    }
     assert (
         db.query(SOSupplyDecision)
         .filter(SOSupplyDecision.project_sales_order_id == order.id)
         .count()
-        == 0
+        == 1
     )

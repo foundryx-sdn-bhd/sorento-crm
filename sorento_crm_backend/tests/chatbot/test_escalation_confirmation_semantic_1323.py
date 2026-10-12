@@ -322,6 +322,7 @@ class TestPrompt:
             CHAT_REPORT_ADDENDUM,
             PO_REFS_ADDENDUM,
             SUB_ASKS_ADDENDUM,
+            REF_KINDS_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
@@ -347,6 +348,7 @@ class TestPrompt:
             + PO_REFS_ADDENDUM
             + SUB_ASKS_ADDENDUM
             + CHAT_REPORT_ADDENDUM
+            + REF_KINDS_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK

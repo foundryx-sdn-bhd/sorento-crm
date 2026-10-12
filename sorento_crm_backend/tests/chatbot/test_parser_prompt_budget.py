@@ -225,7 +225,12 @@ POLICY_BLOCKS_SEED_FILE = FIXTURES_DIR / "prompt_blocks_seed.txt"
 # a bare name asks what is wanted): 53,139 est. tokens without MEMORY_ADDENDUM (+200), so CEILING is 53,143 (+4).
 # Merge of main (#1553 CA-3, CHAT_REPORT_ADDENDUM) with MULTI-ASK-PLAN r7: 53,417 est. tokens without
 # MEMORY_ADDENDUM, so CEILING is 53,421 (+4).
-CEILING = 53_421
+# REF-PROBES (11 Oct 2026): REF_KINDS_ADDENDUM (the reference-number kind hints, after
+# CHAT_REPORT_ADDENDUM): 52,264 est. tokens without MEMORY_ADDENDUM (+381), so CEILING is 52,268 (+4).
+# Merge of main (#1569 REF-PROBES) with MULTI-ASK-PLAN2 (SUB_ASKS_ADDENDUM trimmed to 1,716 chars,
+# its measure list rendered from data): 52,883 est. tokens without MEMORY_ADDENDUM (+615 over
+# main's 52,264), so CEILING is 52,887 (+4).
+CEILING = 52_887
 # The memory addendum on its own, bounded separately so this PR's growth stays bounded.
 # 26 Sep baseline (lane d89110c0): 339 est. tokens. Round 4 (baf4c813, 28 Sep: the history
 # question in any wording, the number re-run, commercial_request) took it to 512, which is

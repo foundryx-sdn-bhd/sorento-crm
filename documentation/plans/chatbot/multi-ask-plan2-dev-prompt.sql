@@ -13,12 +13,12 @@ INSERT INTO chatbot_status_words (id, domain, value, label, trigger_words, sort_
 INSERT INTO chatbot_status_words (id, domain, value, label, trigger_words, sort_order, prompt_lists) VALUES (gen_random_uuid(), 'sales', 'other', 'anything else asked; the label says what', ARRAY['margin', 'profit', 'lead time', '毛利', '利润']::text[], 108, ARRAY['sub_ask_measures']::text[]) ON CONFLICT (value) DO NOTHING;
 
 -- 2.
--- A NEW UNLABELLED chatbot_semantic_parser version = the PROMPT-ABLATION base that
--- pab_0001_parser_ablation published (dev v56) with SUB_ASKS_ADDENDUM right before its
--- MEMORY block. No label moves. Idempotent: a version already holding the result inserts nothing.
--- Precondition: pab_0001's version is on the database (the first SELECT returns one row).
+-- A NEW UNLABELLED chatbot_semantic_parser version = the v56 text with CHAT_REPORT and
+-- REF_KINDS that rkind_0002_parser_ref_kinds_v56 published, with SUB_ASKS_ADDENDUM right
+-- before its MEMORY block. No label moves. Idempotent: a version already holding the result inserts nothing.
+-- Precondition: rkind_0002's version is on the database (the first SELECT returns one row).
 SELECT version, length(template) FROM ai_prompt_versions
-WHERE name = 'chatbot_semantic_parser' AND commit_message = 'pab_0001_parser_ablation: v50 minus language teaching and the class map (PROMPT-ABLATION, eval v56 fe4f3509), unlabelled';
+WHERE name = 'chatbot_semantic_parser' AND commit_message = 'rkind_0002_parser_ref_kinds_v56: v56 ablation text plus CHAT_REPORT and REF_KINDS (REF-PROBES), unlabelled';
 
 WITH base AS (
   SELECT replace(template, $q$
@@ -62,17 +62,17 @@ $q$ || $q$
 == MEMORY ==
 $q$) AS template
   FROM ai_prompt_versions
-  WHERE name = 'chatbot_semantic_parser' AND commit_message = 'pab_0001_parser_ablation: v50 minus language teaching and the class map (PROMPT-ABLATION, eval v56 fe4f3509), unlabelled'
+  WHERE name = 'chatbot_semantic_parser' AND commit_message = 'rkind_0002_parser_ref_kinds_v56: v56 ablation text plus CHAT_REPORT and REF_KINDS (REF-PROBES), unlabelled'
   ORDER BY version DESC LIMIT 1
 )
 INSERT INTO ai_prompt_versions (id, name, version, type, template, variables, config_json, commit_message)
 SELECT gen_random_uuid(), 'chatbot_semantic_parser',
        (SELECT max(version) + 1 FROM ai_prompt_versions WHERE name = 'chatbot_semantic_parser'),
-       'text', base.template, '["current_date"]'::jsonb, NULL, 'MULTI-ASK-PLAN2: the sub_asks and family keys on the PROMPT-ABLATION base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.'
+       'text', base.template, '["current_date"]'::jsonb, NULL, 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.'
 FROM base
 WHERE NOT EXISTS (
   SELECT 1 FROM ai_prompt_versions v WHERE v.name = 'chatbot_semantic_parser' AND v.template = base.template
 );
 
 SELECT version, commit_message FROM ai_prompt_versions
-WHERE name = 'chatbot_semantic_parser' AND commit_message = 'MULTI-ASK-PLAN2: the sub_asks and family keys on the PROMPT-ABLATION base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.';
+WHERE name = 'chatbot_semantic_parser' AND commit_message = 'MULTI-ASK-PLAN2: the sub_asks and family keys on the v56 REF-KINDS base (one entry per thing a message asks; exact code or family). Unlabelled, promote from the Chatbot Console.';

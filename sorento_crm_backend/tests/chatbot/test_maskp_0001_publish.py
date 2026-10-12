@@ -23,7 +23,7 @@ from tests._pg_fixture import blank_session
 
 NAME = "chatbot_semantic_parser"
 BACKEND = Path(__file__).resolve().parents[2]
-ABLATION_FILE = BACKEND / "alembic" / "data" / "chatbot_semantic_parser.ablation-20261011.txt"
+ABLATION_FILE = BACKEND / "alembic" / "data" / "chatbot_semantic_parser.refkinds-v56-20261011.txt"
 
 
 def _migration():
@@ -45,7 +45,7 @@ def _base() -> str:
 def test_revision_ids_chain_onto_mains_head():
     m = _migration()
     assert m.revision == "maskp_0001_parser_sub_asks"
-    assert m.down_revision == "family_code_0001"
+    assert m.down_revision == "rkind_0002_parser_ref_kinds_v56"
     assert len(m.revision) <= 32
 
 
