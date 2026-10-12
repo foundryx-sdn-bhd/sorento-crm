@@ -48,7 +48,11 @@ TOOL_REQUIRED_NARROWING_FILTERS: dict[str, tuple[str, ...]] = {
     # here, "the files for this certificate" short-circuits to an empty page
     # even though the filter itself works - a silent wrong answer.
     "crm_master_product_attachments_list": ("product_ids", "attachment_ids", "certificate_ids"),
-    "crm_marketing_promotion_products_list": ("promotion_ids", "product_ids"),
+    # SPEC-PROMO-PARAMS (owner Q4 option (a)): a described subject (`spec_constraints`),
+    # a brand or a promotion kind narrows the lines as well as an id does.
+    "crm_marketing_promotion_products_list": (
+        "promotion_ids", "product_ids", "spec_constraints", "brand_ids", "promotion_types",
+    ),
     "crm_marketing_promotion_attachments_list": ("promotion_ids", "attachment_ids"),
     "crm_order_management_orders_by_product_list": ("product_ids",),
     "crm_incoming_stock_by_product": ("product_ids",),

@@ -398,6 +398,10 @@ class PromotionSimple(BaseModel):
     id: str
     is_active: Optional[bool] = None
     description: Optional[str] = None
+    # The promotion's window, so a promotion-products answer can state it under the
+    # promotion's heading (owner Q4 option (a)); null when the promotion has none.
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
     @field_validator("id", mode="before")
     @classmethod

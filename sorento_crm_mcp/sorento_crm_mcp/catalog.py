@@ -317,7 +317,9 @@ CATALOG: tuple[ToolSpec, ...] = (
             "REQUIRED - at least ONE narrowing filter or the tool returns an empty page:\n"
             "  • `promotion_ids` (canonical promotion UUIDs)\n"
             "  • `product_ids` (canonical product UUIDs)\n"
-            "  • `spec_constraints` (described products, see SPEC FILTER)\n\n"
+            "  • `spec_constraints` (described products, see SPEC FILTER)\n"
+            "  • `brand_ids` (brand UUIDs: lines whose product is of that brand) / `promotion_types` "
+            "(promotion type codes, e.g. a3_flyer: lines under a promotion of that kind)\n\n"
             "SPEC FILTER: `spec_constraints` = JSON list of {key, op, value}, the same contract as "
             "crm_master_products_list: keeps only lines whose product satisfies every constraint, so a "
             "described subject (\"basin\", \"250mm floor grating\") returns the promotions covering it "
@@ -349,7 +351,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             "height_min", "height_max",
             "any_dimension_min", "any_dimension_max",
             "access_levels",
-            "spec_constraints",
+            "spec_constraints", "brand_ids", "promotion_types",
             "contact_id", "space_id",
         ),
         domain="promotions",
