@@ -1294,14 +1294,15 @@ Write ONLY the keys that carry something. A key you leave out is read as exactly
     object you write, leave out its empty keys the same way;
   - inside each entity, leave out canonical_code, quantity, spec_key, spec_value and
     account when they are null.
-ALWAYS write message_type. Five flags mean something different when false than when
+ALWAYS write message_type and entity_op (it has no empty value: "reuse" is a value). Five flags mean something different when false than when
 null, so write them whenever they are true OR false, and leave them out only when null:
 is_affirmative (false: the message declines; null: it is not a yes or a no at all),
-domain_in_message, and inside each entity current_message, confident and hint_confident.
+domain_in_message (always true or false, so always written), and inside each entity
+current_message, confident and hint_confident.
 Inside each entity, always write raw and hint.
 Decide every value exactly as the rules above say; this changes only which keys you
 write, never what any of them means.
-  - "thanks" -> {"message_type": "casual", "domain_in_message": false}
+  - "thanks" -> {"message_type": "casual", "entity_op": "reuse", "domain_in_message": false}
 """
 
 #: The OUTPUT block every parser line carries, byte for byte (the code constant, v42, v50,
@@ -1330,8 +1331,8 @@ each key holds when it is written:
   "match_mode": "and|or",
   "demand_qty": n,
   "entities": [{...}],
-  "entity_op": "clear|replace_combine|replace|modify|reuse",
-  "domain_in_message": true|false (written whenever it is true or false),
+  "entity_op": "clear|replace_combine|replace|modify|reuse" (always written),
+  "domain_in_message": true|false (always written),
   "requested_attributes": ["..."],
   "contains_flyer": true,
   "reference_positions": [n],

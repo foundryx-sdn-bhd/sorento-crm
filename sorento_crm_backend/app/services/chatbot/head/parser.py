@@ -675,14 +675,16 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
 # guarantee it gives up (types and enums) is checked here instead (`_wire_errors`). Every
 # other version keeps the strict schema byte for byte.
 #
-# Each object keeps the keys whose absence would lose a fact. `message_type` has no empty
-# value, and `raw` / `hint` name an entity. Five flags are read as `is False`, so their
+# Each object keeps the keys whose absence would lose a fact. `message_type` and
+# `entity_op` have no empty value (null is not "reuse" at `turn/decide.py:393` and
+# `turn_runtime.py:1290`; the live probe of 12 Oct 2026 dropped "reuse" when it was
+# optional), and `raw` / `hint` name an entity. Five flags are read as `is False`, so their
 # `false` is not their null: `is_affirmative` (`turn/decide.py:614`), `domain_in_message`
 # (`lanes/business/low_stock_ask.py:457`) and, per entity, `current_message` / `confident`
 # / `hint_confident` (`head/grounding.py:430,638`, `engine.py:496`). The prompt tells the
 # model to write their `false`; an omitted one is null, as on the strict wire.
 SPARSE_REQUIRED: dict[str, list[str]] = {
-    "": ["message_type"],
+    "": ["message_type", "entity_op", "domain_in_message"],
     "entities": ["raw", "hint"],
 }
 
