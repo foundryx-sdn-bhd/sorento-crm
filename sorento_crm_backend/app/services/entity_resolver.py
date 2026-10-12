@@ -3011,6 +3011,22 @@ def _drop_inactive_products(db: Session, hits: list[ResolvedEntity]) -> list[Res
     return [h for h in hits if h.entity_type != "product" or str(h.uuid) in active]
 
 
+def _embedding_scope_sql(db: Session) -> tuple[str, dict[str, Any]]:
+    """``AND`` fragment company-scoping a raw vector search over ``embedding_chunks ec``.
+
+    Raw SQL, so the scope listener never sees it. NULL-company chunks are shared
+    knowledge (forms), visible under every scope, as in
+    ``embedding_service._embedding_company_filter``; UNSET keeps only those (the
+    ``__company_shared__`` rule of ``company_sql_predicate``). A ``debtor:<code>`` seed
+    is company-less too (migration 304) although the orders it comes from are not, so
+    any company scope drops it; staff (scope None) still see it.
+    """
+    if get_company_scope(db) is None:
+        return "", {}
+    company_sql, params = company_sql_predicate(db, "ec.company_id", shared=True)
+    return f"AND {company_sql} AND ec.source_id NOT LIKE 'debtor:%'", params
+
+
 def _tier3_embedding_lookup(
     db: Session,
     token: str,
@@ -3040,13 +3056,9 @@ def _tier3_embedding_lookup(
         )
         if not allowed_types:
             return []
-    # Raw SQL, so the scope listener never sees it: filter here, in SQL, so another
-    # company's chunk can neither come back nor take one of the 5 ranking slots and
-    # sink this company's own match on the confidence gap. NULL-company chunks are
-    # shared knowledge (forms), visible under every scope, as in
-    # `embedding_service._embedding_company_filter`; UNSET keeps only those (the
-    # `__company_shared__` rule of `company_sql_predicate`).
-    scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
+    # Filtered in SQL so another company's chunk can neither come back nor take one of
+    # the 5 ranking slots and sink this company's own match on the confidence gap.
+    scope_sql, scope_params = _embedding_scope_sql(db)
     sql = text(
         f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
@@ -3055,10 +3067,10 @@ def _tier3_embedding_lookup(
         JOIN embedding_documents ed ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
-          {"AND " + scope_sql if scope_sql else ""}
+          {scope_sql}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT 5
-        """  # noqa: S608 - fragment from company_sql_predicate, values bound
+        """  # noqa: S608 - fragment from _embedding_scope_sql, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
@@ -5998,14 +6010,9 @@ def _rag_resolve_phrase(
         logger.exception("RAG embed failed for phrase=%s", phrase)
         return []
 
-    # Company scope in SQL, as in `_tier3_embedding_lookup`: these hits carry no
-    # uuid, so the `_attach_company_info` backstop cannot drop them afterwards.
-    scope_sql, scope_params = company_sql_predicate(db, "ec.company_id", shared=True)
-    if get_company_scope(db) is not None:
-        # A `debtor:<code>` seed is company-less (migration 304) although the orders it
-        # comes from are not, so the shared-row rule would hand any company's
-        # master-less debtor to this caller. Scoped callers never see them; staff do.
-        scope_sql = " AND ".join(f for f in (scope_sql, "ec.source_id NOT LIKE 'debtor:%'") if f)
+    # Filtered in SQL: these hits carry no uuid, so the `_attach_company_info`
+    # backstop cannot drop them afterwards.
+    scope_sql, scope_params = _embedding_scope_sql(db)
     sql = text(
         f"""
         SELECT ec.source_type, ec.source_id, ed.source_key,
@@ -6015,10 +6022,10 @@ def _rag_resolve_phrase(
           ON ed.source_type = ec.source_type AND ed.source_id = ec.source_id
         WHERE ec.is_current = TRUE
           AND ec.source_type = ANY(:types)
-          {"AND " + scope_sql if scope_sql else ""}
+          {scope_sql}
         ORDER BY ec.embedding <=> CAST(:vec AS vector)
         LIMIT :k
-        """  # noqa: S608 - fragment from company_sql_predicate, values bound
+        """  # noqa: S608 - fragment from _embedding_scope_sql, values bound
     )
     try:
         # SAVEPOINT: this lookup is best-effort, and a failed statement
