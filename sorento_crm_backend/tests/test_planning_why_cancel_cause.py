@@ -185,6 +185,33 @@ def test_a_supersede_of_a_line_with_an_undecided_change_records_undecided_change
     assert entry.new_values["revision_no"] == 2
 
 
+def test_a_supersede_over_an_overtaken_undecided_change_reads_superseded(api):
+    """#1599's rule: an undecided row held against a revision older than the one before the
+    latest can never be decided, so it holds nothing back and the cause stays `superseded`."""
+    fx = _with_two_owed_rows(_confirmed_order(api))
+    world = fx["world"]
+    fx["core"].qty_ordered = Decimal("20")
+    fx["line"].qty = Decimal("20")
+    world.db.commit()
+    batch = _build(
+        world,
+        [_change(QTY_CHANGED, fx["core"], so_number=fx["core_so"].so_number, old_date=WAS_1,
+                 new_date=WAS_1, old_qty="25", new_qty="20")],
+        fx["core_so"], [str(fx["core"].id)],
+    )
+    pending = world.db.query(PlanningChangeRow).filter(PlanningChangeRow.batch_id == batch.id).one()
+    assert pending.decision is None and pending.applied_state == "pending"
+    pending.held_json = {**(pending.held_json or {}), "revision_no": 999}
+    world.db.commit()
+
+    response = _confirm(fx["client"], fx["order"].id, [_line_payload(fx["line"].id, buy_qty="20")])
+    assert response.status_code == 200, response.text
+    world.db.commit()
+
+    entry = _one_cancel(world, fx["row"])
+    assert entry.new_values["cause"] == "superseded"
+
+
 # --------------------------------------------------------------------------- manual
 
 
