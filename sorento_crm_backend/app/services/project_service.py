@@ -519,6 +519,12 @@ def serialize_projects(
             for row in db.query(ProjectLead).filter(ProjectLead.id.in_(lead_ids)).all()
         }
 
+    # The customer is the lead's buyer (owner, 13 Oct): the Overview shows it and the
+    # quotation header defaults its name, phone and Attn from it. Bulk like the rest.
+    customers = _customers_for(
+        db, [lead.customer_id for lead in leads.values() if lead.customer_id]
+    )
+
     # Next action is DERIVED from the earliest open task (AC-N6). One bulk query for
     # the whole page, because the board renders every open project at once.
     from app.services.project_task_service import next_action_for_projects
@@ -574,6 +580,11 @@ def serialize_projects(
                 ),
                 "lead_owner_user_id": (
                     leads[project.lead_id].owner_user_id
+                    if project.lead_id in leads
+                    else None
+                ),
+                **_customer_fields(
+                    customers.get(leads[project.lead_id].customer_id)
                     if project.lead_id in leads
                     else None
                 ),
@@ -959,6 +970,49 @@ def update_project(
             permissions=permissions,
         )
     return project
+
+
+def _customers_for(db: Session, customer_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Name, phone and main contact per customer, in two queries for the whole page."""
+    ids = {cid for cid in customer_ids if cid}
+    if not ids:
+        return {}
+    from app.models.order import Customer, CustomerContact
+
+    rows = db.query(Customer).filter(Customer.id.in_(ids)).all()
+    contacts = {
+        row.customer_id: row
+        for row in db.query(CustomerContact)
+        .filter(
+            CustomerContact.customer_id.in_(ids),
+            CustomerContact.contact_role == "main",
+        )
+        .all()
+    }
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        contact = contacts.get(row.id)
+        out[row.id] = {
+            "customer_id": row.id,
+            "customer_name": row.customer_name,
+            # The office line first, then the mobile, then the main contact's own number.
+            "customer_phone": row.phone_number
+            or row.mobile_number
+            or (contact.phone or contact.mobile if contact else None),
+            "customer_attn": contact.full_name if contact else None,
+        }
+    return out
+
+
+def _customer_fields(customer: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if customer:
+        return customer
+    return {
+        "customer_id": None,
+        "customer_name": None,
+        "customer_phone": None,
+        "customer_attn": None,
+    }
 
 
 def set_critical(project: Project, critical: bool) -> None:
