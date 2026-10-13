@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from functools import cmp_to_key
 from typing import Any, Literal
 
@@ -1335,7 +1336,67 @@ def _crossdomain_rung_row(it: Any, field_by_key: Any) -> dict[str, Any]:
         "qty": field_by_key(it, "outstanding_qty"),
         "po_date": field_by_key(it, "po_date"),
         "location": field_by_key(it, "location"),
+        # Never rendered: PO numbers are unique per company only, so the document key
+        # in `_consolidate_rung_rows` needs it beside the number.
+        "company": field_by_key(it, "company_name"),
     }
+
+
+def _rung_qty(value: Any) -> Decimal | None:
+    """A rung quantity as a number to sum, or None when it is not one (blank, a word)."""
+    if value is None or isinstance(value, bool) or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        number = Decimal(str(value).strip())
+    except InvalidOperation:
+        return None
+    return number if number.is_finite() else None
+
+
+def _consolidate_rung_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Owner ruling 13 Oct 2026 (STAFF-STOCK-ETA): open lines of the same product on the
+    same document (`kind` + company + PO/SPO number), at the same location and with the same PO
+    date, are ONE row with `ordered_qty` and `qty` summed. The block never prints the
+    document number (D3), so two such lines read as the same row printed twice (live:
+    one PO with two open lines of 36, each from a different SO line).
+
+    A row merges only when both quantities on it and on the row it joins are numbers,
+    and only when it has a document number - without one, "same document" is not known.
+    The merged row keeps the first line's position; rows that differ stay as they were.
+    """
+    out: list[dict[str, Any]] = []
+    index_by_key: dict[tuple[Any, ...], int] = {}
+    for row in rows:
+        ordered, outstanding = _rung_qty(row.get("ordered_qty")), _rung_qty(row.get("qty"))
+        number = jsc.js_string(row.get("number") or "").strip()
+        if ordered is None or outstanding is None or not number:
+            out.append(row)
+            continue
+        key = (
+            row.get("kind"),
+            row.get("company"),
+            number,
+            _norm_code(row.get("product_code")),
+            row.get("location"),
+            row.get("po_date"),
+        )
+        if key not in index_by_key:
+            index_by_key[key] = len(out)
+            out.append({**row, "ordered_qty": ordered, "qty": outstanding})
+            continue
+        merged = out[index_by_key[key]]
+        merged["ordered_qty"] += ordered
+        merged["qty"] += outstanding
+    for row in out:
+        for field in ("ordered_qty", "qty"):
+            if isinstance(row.get(field), Decimal):
+                row[field] = _fmt_rung_qty(row[field])
+    return out
+
+
+def _fmt_rung_qty(number: Decimal) -> str:
+    """`72`, never `72.0` or `7.2E+1`; a fraction keeps its digits (`13.5`)."""
+    return format(number.normalize(), "f")
 
 
 def _crossdomain_rung_text(rows: list[dict[str, Any]]) -> str:
@@ -1452,7 +1513,9 @@ def _apply_crossdomain_rung(
         still_nothing = [c for c in codes if c not in lines_by_code]
         parts: list[str] = []
         if found:
-            found_rows = [row for c in found for row in lines_by_code[c]]
+            found_rows = _consolidate_rung_rows(
+                [row for c in found for row in lines_by_code[c]]
+            )
             po_lines = _crossdomain_rung_text(found_rows)
             # The header names what the rows ARE: "PO is placed" (D2: no article, the
             # owner's wording) when any row is a PO line, "stock is on order from the
