@@ -41,6 +41,6 @@ Neither category nor attachment-type schemas expose `search_synonyms` today, so 
 - Seeds: precedence rows for the `CLASS_SYNONYMS` words two classes share (bathtub, bath tub, tub -> bathtub;
   jacuzzi -> jacuzzi). Attachment aliases from recorded chat words + en/zh/ms (owner 13 Oct: seed them).
 - Lanes meet via the contract types; until PV2-CORE's `schema.py` and PV2-CARRY's `state.py` land, `resolve.py`
-  imports them when present and the tests carry a local copy of the contract shapes (`tests/chatbot/pv2/_contract_types.py`),
-  deleted at integration.
+  imports them when present and otherwise defines the contract shapes itself (a `try/except ImportError` stand-in,
+  deleted at integration). Tests build every type with all fields, so they run against CORE's strict models too.
 - Spec attribute null + a number: real data ranges come from `product_specifications` for the held class.

@@ -20,6 +20,16 @@ from tests._pg_fixture import unique_code
 from tests.chatbot.pv2 import _resolve_seed as S
 
 
+def ent(kind, key=None, phrase=None, op="set", refers_to_held=False) -> Entity:
+    """Every field given: PV2-CORE's `schema.Entity` is strict (no defaults)."""
+    return Entity(kind=kind, key=key, phrase=phrase, op=op, refers_to_held=refers_to_held)
+
+
+def sp(attribute=None, value_key=None, number=None, number_to=None, unit=None, comparator="eq", op="set", phrase=None):
+    return Spec(attribute=attribute, value_key=value_key, number=number, number_to=number_to, unit=unit,
+                comparator=comparator, op=op, phrase=phrase)
+
+
 @pytest.fixture()
 def db():
     with S.resolve_session() as session:
@@ -27,7 +37,8 @@ def db():
 
 
 def held(**refs) -> Held:
-    return Held(refs={k: v for k, v in refs.items()})
+    return Held(domain=None, refs={k: v for k, v in refs.items()}, specs=[], attachment_type=None, period=None,
+                report=None, idea_draft_id=None)
 
 
 def resolver(db, **pinned) -> DbResolver:
@@ -60,12 +71,12 @@ def test_closest_rows_and_ranges_never_read_another_companys_products(db):
     S.specs(db, theirs, klass="Water Closet", dim_length=4900)
     r = resolver(db, spec_attribute={"dim_length"})
 
-    far = r.resolve_specs([Spec(number=5000, unit="mm")], held=held())[0]
+    far = r.resolve_specs([sp(number=5000, unit="mm")], held=held())[0]
     assert far.status == "none"
     assert [o.key for o in far.closest] == ["MINE-1"]
 
     # 4900 is inside the range only if the other company's row widens it.
-    inside_theirs = r.resolve_specs([Spec(number=4900, unit="mm")], held=held())[0]
+    inside_theirs = r.resolve_specs([sp(number=4900, unit="mm")], held=held())[0]
     assert inside_theirs.status == "none"
 
 
@@ -75,7 +86,7 @@ def test_closest_rows_skip_products_in_an_unsearchable_category(db):
     shown = S.category(db, class_label="Water Closet")
     S.specs(db, S.product(db, "HIDE-1", cat=hidden), klass="Water Closet", dim_length=990)
     S.specs(db, S.product(db, "SHOW-1", cat=shown), klass="Water Closet", dim_length=500)
-    out = resolver(db, spec_attribute={"dim_length"}).resolve_specs([Spec(number=1000)], held=held())[0]
+    out = resolver(db, spec_attribute={"dim_length"}).resolve_specs([sp(number=1000)], held=held())[0]
     assert [o.key for o in out.closest] == ["SHOW-1"]
 
 
@@ -87,7 +98,7 @@ def test_closest_uses_each_attribute_in_its_own_unit(db):
     S.specs(db, p, klass="Water Closet", hose_length=50, dim_length=500)
     # 9 m: neither range holds it; both attributes offer their real row, in their own unit.
     out = resolver(db, spec_attribute={"dim_length", "hose_length"}).resolve_specs(
-        [Spec(number=9, unit="m")], held=held()
+        [sp(number=9, unit="m")], held=held()
     )[0]
     assert out.status == "none"
     assert out.closest and out.closest[0].key == "HOSE-1"
@@ -96,7 +107,7 @@ def test_closest_uses_each_attribute_in_its_own_unit(db):
 def test_number_in_cm_on_a_cm_attribute_asked_in_mm_converts(db):
     S.registry(db, "hose_length", "Hose length", "numeric", unit="cm")
     out = resolver(db, spec_attribute={"hose_length"}).resolve_specs(
-        [Spec(attribute="hose_length", number=500, unit="mm")], held=held()
+        [sp(attribute="hose_length", number=500, unit="mm")], held=held()
     )[0]
     assert out.status == "exact" and out.specs[0].value == 50 and out.specs[0].unit == "cm"
 
@@ -107,7 +118,7 @@ def test_null_brand_key_offers_only_brands_with_visible_products(db):
     S.brand(db, "Ghost Brand", code="GHOST")  # live, pinned, but no product the contact can see
     S.product(db, "BR-1", brand_row=sold)
     out = resolver(db, brand={"SORENTO", "GHOST"}).resolve_entities(
-        [Entity(kind="brand", key=None, phrase="that brand", op="set", refers_to_held=False)], held=held()
+        [ent(kind="brand", key=None, phrase="that brand", op="set", refers_to_held=False)], held=held()
     )[0]
     assert [o.label for o in out.options] == ["Sorento Brand"]
     assert out.unrecognised is True
@@ -118,7 +129,7 @@ def test_null_product_class_key_with_phrase_is_never_resolved_from_the_phrase(db
     S.product(db, "WC-1", cat=cat)
     S.category(db, class_label="Basin")  # live class, but no product the contact can see
     out = resolver(db, product_class={"water_closet", "basin"}).resolve_entities(
-        [Entity(kind="product_class", key=None, phrase="Water Closet", op="set", refers_to_held=False)], held=held()
+        [ent(kind="product_class", key=None, phrase="Water Closet", op="set", refers_to_held=False)], held=held()
     )[0]
     assert out.status == "ambiguous" and out.refs == []
     assert [(o.key, o.label) for o in out.options] == [("water_closet", "Water Closet")]
@@ -131,24 +142,24 @@ def test_an_inactive_customer_never_resolves(db):
     gone.is_active = False
     db.flush()
     r = resolver(db)
-    assert r.resolve_entities([Entity(kind="customer", phrase="C-OLD")], held=held())[0].status == "none"
-    assert r.resolve_entities([Entity(kind="customer", phrase="old")], held=held())[0].status == "none"
+    assert r.resolve_entities([ent(kind="customer", phrase="C-OLD")], held=held())[0].status == "none"
+    assert r.resolve_entities([ent(kind="customer", phrase="old")], held=held())[0].status == "none"
 
 
 # --------------------------------------------------------------------------- S8
 def test_clear_needs_no_lookup_and_remove_resolves_like_set(db):
     S.product(db, "SRTWC6003")
     r = resolver(db)
-    cleared = r.resolve_entities([Entity(kind="product", phrase=None, op="clear")], held=held())[0]
+    cleared = r.resolve_entities([ent(kind="product", phrase=None, op="clear")], held=held())[0]
     assert cleared.status == "exact" and cleared.refs == []
-    removed = r.resolve_entities([Entity(kind="product", phrase="srtwc6003", op="remove")], held=held())[0]
+    removed = r.resolve_entities([ent(kind="product", phrase="srtwc6003", op="remove")], held=held())[0]
     assert removed.status == "exact" and removed.refs[0].key == "SRTWC6003"
 
 
 def test_remove_refers_to_held_picks_from_held(db):
-    ref = ResolvedRef(kind="brand", key="SORENTO", label="Sorento Brand")
+    ref = ResolvedRef(kind="brand", key="SORENTO", label="Sorento Brand", phrase=None)
     out = resolver(db).resolve_entities(
-        [Entity(kind="brand", op="remove", refers_to_held=True)], held=held(brand=[ref])
+        [ent(kind="brand", op="remove", refers_to_held=True)], held=held(brand=[ref])
     )[0]
     assert out.status == "exact" and out.refs == [ref]
 
@@ -157,7 +168,7 @@ def test_enum_value_with_no_attribute_places_on_its_only_owner(db):
     S.registry(db, "trap_type", "Trap", "enum", allowed=["p_trap", "s_trap"])
     S.registry(db, "finish", "Finish", "enum", allowed=["matte"])
     out = resolver(db, spec_attribute={"trap_type", "finish"}).resolve_specs(
-        [Spec(value_key="p_trap")], held=held()
+        [sp(value_key="p_trap")], held=held()
     )[0]
     assert out.status == "exact" and out.inferred is True
     assert out.specs[0].attribute == "trap_type" and out.specs[0].value == "p_trap"
@@ -167,7 +178,7 @@ def test_enum_value_with_no_attribute_and_two_owners_asks(db):
     S.registry(db, "trap_type", "Trap", "enum", allowed=["round"])
     S.registry(db, "shape", "Shape", "enum", allowed=["round"])
     out = resolver(db, spec_attribute={"trap_type", "shape"}).resolve_specs(
-        [Spec(value_key="round")], held=held()
+        [sp(value_key="round")], held=held()
     )[0]
     assert out.status == "ambiguous"
     assert sorted(o.key for o in out.options) == ["shape", "trap_type"]
@@ -178,7 +189,7 @@ def test_enum_value_with_no_attribute_and_two_owners_asks(db):
 
 def test_enum_attribute_with_no_value_offers_its_values(db):
     S.registry(db, "trap_type", "Trap", "enum", allowed=["p_trap", "s_trap"])
-    out = resolver(db, spec_attribute={"trap_type"}).resolve_specs([Spec(attribute="trap_type")], held=held())[0]
+    out = resolver(db, spec_attribute={"trap_type"}).resolve_specs([sp(attribute="trap_type")], held=held())[0]
     assert out.status == "ambiguous"
     assert [o.label for o in out.options] == ["P trap", "S trap"]
     assert [o.payload["value"] for o in out.options] == ["p_trap", "s_trap"]
@@ -187,9 +198,9 @@ def test_enum_attribute_with_no_value_offers_its_values(db):
 def test_boolean_value_keys_are_true_false_only(db):
     S.registry(db, "has_overflow", "Has an overflow", "boolean")
     r = resolver(db, spec_attribute={"has_overflow"})
-    assert r.resolve_specs([Spec(attribute="has_overflow", value_key="false")], held=held())[0].specs[0].value is False
-    assert r.resolve_specs([Spec(attribute="has_overflow")], held=held())[0].specs[0].value is True
-    odd = r.resolve_specs([Spec(attribute="has_overflow", value_key="no")], held=held())[0]
+    assert r.resolve_specs([sp(attribute="has_overflow", value_key="false")], held=held())[0].specs[0].value is False
+    assert r.resolve_specs([sp(attribute="has_overflow")], held=held())[0].specs[0].value is True
+    odd = r.resolve_specs([sp(attribute="has_overflow", value_key="no")], held=held())[0]
     assert odd.status == "none" and odd.unrecognised is True
 
 
@@ -201,6 +212,6 @@ def test_null_brand_key_never_offers_a_brand_only_another_company_sells(db):
         theirs.brand_id = mine.id
         db.flush()
     out = resolver(db, brand={"SORENTO"}).resolve_entities(
-        [Entity(kind="brand", key=None, phrase="x", op="set", refers_to_held=False)], held=held()
+        [ent(kind="brand", key=None, phrase="x", op="set", refers_to_held=False)], held=held()
     )[0]
     assert out.options == [] and out.status == "none"

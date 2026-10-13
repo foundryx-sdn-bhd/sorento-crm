@@ -24,6 +24,9 @@ def spec(*filters):
     return NS(filters=[NS(dimension=d, op=op, keys=list(keys), values=[]) for d, op, keys in filters])
 
 
+EMPTY = Held(domain=None, refs={}, specs=[], attachment_type=None, period=None, report=None, idea_draft_id=None)
+
+
 def resolver(db, **pinned):
     return DbResolver(db, pinned={k: set(v) for k, v in pinned.items()})
 
@@ -32,7 +35,7 @@ def test_brand_and_category_keys_become_ids_with_display_labels(db):
     b = S.brand(db, "Sorento Brand", code="SORENTO")
     c = S.category(db, class_label="Basin")
     out = resolver(db, brand={"SORENTO"}, product_class={"basin"}).resolve_report_spec(
-        spec(("brand", "in", ["SORENTO"]), ("category", "in", ["basin"])), held=Held()
+        spec(("brand", "in", ["SORENTO"]), ("category", "in", ["basin"])), held=EMPTY
     )
     assert out.status == "exact"
     assert out.refs["brand"] == [{"kind": "brand", "key": b.id, "label": "Sorento Brand"}]
@@ -41,13 +44,13 @@ def test_brand_and_category_keys_become_ids_with_display_labels(db):
 
 def test_an_unpinned_brand_key_is_unresolved_never_looked_up(db):
     S.brand(db, "Sorento Brand", code="SORENTO")
-    out = resolver(db, brand=set()).resolve_report_spec(spec(("brand", "in", ["SORENTO"])), held=Held())
+    out = resolver(db, brand=set()).resolve_report_spec(spec(("brand", "in", ["SORENTO"])), held=EMPTY)
     assert out.status == "none" and out.unresolved == ["brand"] and out.refs == {}
 
 
 def test_exact_customer_name_resolves_to_the_customer_id(db):
     cust = S.customer(db, "C-001", "Acme Trading")
-    out = resolver(db).resolve_report_spec(spec(("customer", "in", ["acme  trading"])), held=Held())
+    out = resolver(db).resolve_report_spec(spec(("customer", "in", ["acme  trading"])), held=EMPTY)
     assert out.status == "exact"
     assert out.refs["customer"] == [{"kind": "customer", "key": cust.id, "label": "Acme Trading"}]
 
@@ -55,7 +58,7 @@ def test_exact_customer_name_resolves_to_the_customer_id(db):
 def test_inexact_customer_name_offers_real_names_keyed_by_id(db):
     a = S.customer(db, "C-001", "Acme Trading")
     b = S.customer(db, "C-002", "Acme Hardware")
-    out = resolver(db).resolve_report_spec(spec(("customer", "in", ["acme"])), held=Held())
+    out = resolver(db).resolve_report_spec(spec(("customer", "in", ["acme"])), held=EMPTY)
     assert out.status == "ambiguous" and out.phrase == "acme"
     assert sorted(o["label"] for o in out.options) == ["Acme Hardware", "Acme Trading"]
     assert {o["key"] for o in out.options} == {a.id, b.id}
@@ -67,11 +70,11 @@ def test_inexact_customer_name_offers_real_names_keyed_by_id(db):
 
 def test_filters_the_engine_cannot_run_are_left_to_the_report_lane(db):
     out = resolver(db).resolve_report_spec(
-        spec(("customer", "not_in", ["acme"]), ("channel", "in", ["online"])), held=Held()
+        spec(("customer", "not_in", ["acme"]), ("channel", "in", ["online"])), held=EMPTY
     )
     assert out.status == "exact" and out.refs == {} and out.unresolved == []
 
 
 def test_a_dimension_this_resolver_does_not_hold_stays_unresolved(db):
-    out = resolver(db).resolve_report_spec(spec(("sales_agent", "in", ["ali"])), held=Held())
+    out = resolver(db).resolve_report_spec(spec(("sales_agent", "in", ["ali"])), held=EMPTY)
     assert out.status == "none" and out.unresolved == ["sales_agent"]
