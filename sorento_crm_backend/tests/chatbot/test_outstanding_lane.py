@@ -3966,7 +3966,7 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
         )
         assert captured == [], captured
         reply = (result.reply or {}).get("text") or ""
-        assert "Which customer do you mean?" in reply, reply
+        assert "Which one do you mean?" in reply, reply
         assert " - no DO" not in reply, reply
         assert " - has DO" not in reply, reply
         assert "None of these have" not in reply, (

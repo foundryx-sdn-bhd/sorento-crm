@@ -15,7 +15,7 @@ from app.services.chatbot.turn.state import (
 # Core owns the ledger-family rule (`app/services/ledger_family.py`): the stock-ask record
 # names a customer-less ask by it too, and core may not import this package. `compose.py`
 # and `session_state.py` keep reading the two names from here.
-from app.services.ledger_family import ledger_family_key, ledger_family_label
+from app.services.ledger_family import customer_group_of, ledger_family_key, ledger_family_label
 
 # Which suffix an ask carries, by policy value.
 _ROSTER_POLICIES = {"narrow_to_code", "must_narrow_one", "narrow_by_tier"}
@@ -134,6 +134,7 @@ def _options(
     built: list[dict[str, Any]] = []
     by_label: dict[Any, dict[str, Any]] = {}
     companies_of: dict[int, list[str]] = {}
+    exact_of: dict[int, str] = {}
     for c in candidates:
         code = c.get("canonical_code") or c.get("raw")
         identity = c.get("uuid") or code
@@ -194,6 +195,8 @@ def _options(
             option["name"] = name
         if stamp:
             option["stamp"] = stamp
+        if family:
+            exact_of[id(option)] = str(name or c.get("raw") or code or "").strip()
         by_label[key] = option
         companies_of[id(option)] = list(codes)
         built.append(option)
@@ -205,6 +208,14 @@ def _options(
     # (every direct `decide()` call in the tests), the same role `gate.py`'s named
     # legacy default plays on its side.
     built = built[: cap if isinstance(cap, int) and cap > 0 else _ROSTER_CAP]
+    # PICKER-ONE: a family of ONE ungrouped ledger is printed by its exact name
+    # ("SOON HENG TRADING [A/C I]", ACCOUNT-LEDGER AC-8) - the gate's own rule, now the
+    # only one: the marker is the one thing that says which ledger a staff pick reaches.
+    # Several ledgers, or a customer group, print the family label.
+    for option in built:
+        exact = exact_of.get(id(option))
+        if exact and len(set(option["uuids"])) <= 1 and customer_group_of(exact) is None:
+            option["label"] = exact
     # PICKER-ONE (owner, 13 Oct 2026): a customer line names the companies it sits in
     # ("HANLIM (MCH, SRT)") ONLY when the options' companies differ - the tag is there to
     # tell two lines apart, and one company set across every line tells nothing apart.

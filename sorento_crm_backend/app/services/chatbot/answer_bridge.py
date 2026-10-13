@@ -755,7 +755,8 @@ def _picker_family_uuids(payload: Mapping[str, Any], uuid_val: Any) -> list[str]
     key = str(uuid_val)
     for family in families.values():
         if isinstance(family, list) and key in {str(u) for u in family}:
-            return [str(u) for u in family]
+            # The gate's families can list one uuid twice (it counts them with a set).
+            return list(dict.fromkeys(str(u) for u in family))
     return None
 
 

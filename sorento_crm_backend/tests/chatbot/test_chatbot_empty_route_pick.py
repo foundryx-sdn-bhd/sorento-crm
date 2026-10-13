@@ -441,7 +441,7 @@ def test_owner_turn_inside_the_open_list_asks_which_customer(owner_chat, one_cs_
     """The owner's turn. The phantom pick rides as `reference_positions: [1]` as well
     (the console's post-processed output showed `picked [1]`): `lanes/business/gate.py`
     reads a non-empty `reference_positions` as "a pick was already applied" and skips
-    "Which customer do you mean?" - which is how an ambiguous "Zhin heng" fell through
+    "Which one do you mean?" - which is how an ambiguous "Zhin heng" fell through
     to a fetch it could not scope and "No orders matched these." (item 3 of the lane).
     With the phantom answer dropped, v37's emission asks the same question v40's did.
     The positions go with the DECLARED pick (RELEASE-HOTFIX-0930B: a bare number with a
@@ -455,7 +455,7 @@ def test_owner_turn_inside_the_open_list_asks_which_customer(owner_chat, one_cs_
     reply, calls, _ = chat.turn("Zhin heng delivered on 23/9", _zhin_heng_ask(reference_positions=[1]))
 
     assert chat.kind() == "business_query", reply
-    assert "Which customer do you mean? Please choose:" in reply, reply
+    assert "Which one do you mean?" in reply, reply
     assert all(name in reply for name in ZHIN_HENG_FAMILIES), reply
     assert PICKER_HEADER not in reply and "reply 'yes'" not in reply, reply
     assert (_open_question(chat) or {}).get("kind") == "customer_pick", _open_question(chat)
