@@ -51,7 +51,6 @@ from app.models.project_so import (
     INQUIRY_RAISED,
     IV_ALREADY_INBOUND,
     IV_CHANGE_SO,
-    IV_DELAY,
     IV_ORDER,
     IV_ORDER_BACK,
     IV_PRE_ORDERED,
@@ -2907,14 +2906,13 @@ def test_subject_ignores_blank_locations(locations, expected_subject):
 
 
 # --------------------------------------------------------------------------- #
-# AC-R2-16/17: still-raised amendment rows ride along on the next Confirm's   #
-# own email, queued once - AC-2 (24 Sep, issue #1166) then sorts the WHOLE    #
-# queue by AutoCount line_no, so being a carried-forward amendment row rather #
-# than the confirm's own new line no longer decides where it PRINTS.         #
+# ORDERBACK-DELTA (owner, 13 Oct 2026, overturning AC-R2-16): a Confirm's     #
+# email carries only what that Confirm decided. An earlier amendment's still- #
+# raised row was sent on its own publish email and does not ride along.      #
 # --------------------------------------------------------------------------- #
 
 
-def test_confirm_email_appends_still_raised_amendment_rows_once(api, monkeypatch):
+def test_confirm_email_does_not_repeat_an_earlier_amendments_rows(api, monkeypatch):
     client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
@@ -2971,21 +2969,10 @@ def test_confirm_email_appends_still_raised_amendment_rows_once(api, monkeypatch
     own_lines = [l for l in lines if l["qty"] == "6" and l["remark"] == "ORDER"]
     assert own_lines, f"the confirm's own line must be present, got {lines}"
 
-    delay_lines = [
-        l for l in lines
-        if l["remark"] == "DELAY" and (l.get("was") or {}).get("delivery_date")
-    ]
-    assert len(delay_lines) == 1, (
-        f"AC-R2-16: the still-raised amendment row must ride along exactly once, got {lines}"
+    assert [l for l in lines if l["remark"] == "DELAY"] == [], (
+        f"the amendment's DELAY was already sent on its own email: {lines}"
     )
-    assert delay_lines[0]["was"]["delivery_date"] == "01/09/2026"
-    # AC-2 (24 Sep, issue #1166): the amendment row names line 1, the confirm's own
-    # new line is line 2 - print order follows AutoCount line_no, so the amendment row
-    # (queued AFTER the confirm's own line, AC-R2-16's own append order) prints FIRST.
-    assert lines.index(delay_lines[0]) < lines.index(own_lines[0]), (
-        "AC-2: within one S/O, lines print in AutoCount line_no order regardless of "
-        "queue order"
-    )
+    assert lines == own_lines, lines
 
 
 def test_confirm_without_amendment_rows_appends_nothing(api, monkeypatch):
@@ -3113,74 +3100,6 @@ def test_so314594_shape_full_reconfirm_prints_two_lines(api, monkeypatch):
 # =============================================================================== #
 
 
-def test_amendment_delay_row_with_legacy_iso_note_prints_parsed_date_and_bare_verb(
-    api, monkeypatch
-):
-    """S1 (review round 1): a PRE-LANE amendment row - `previous_delivery_date` NULL,
-    note in the OLD ISO shape `_change_note` wrote before AC-R2-07's dd/mm/yyyy fix
-    (`Was 2026-09-01`) - must still have its delivery-date move recognised when it
-    rides along on the next Confirm's own email (AC-R2-16). `_amendment_row_was`'s own
-    regex (`Was (\\d{2})/(\\d{2})/(\\d{4})`) only matches the NEW dd/mm/yyyy shape, so a
-    legacy note falls through to `was = None` today, and `handover_remark` prints the
-    whole legacy sentence back onto REMARK instead (`DELAY - Was 2026-09-01`)."""
-    client, world = api
-    _register(world)
-    calls = _captured_dispatches(monkeypatch)
-    db = world.db
-
-    fixture = _raise_one_row(api, qty="10")
-    db.commit()
-
-    core_line_b = _core_line(
-        db, fixture["core_so"], world.product, world.warehouse,
-        qty_ordered="6", required_date=WAS,
-    )
-    line_b = _project_line(
-        db, fixture["order"], line_no=2, product=world.product, core_line=core_line_b
-    )
-    db.commit()
-
-    amendment = SOAmendment(
-        company_id=world.company_id, project_sales_order_id=fixture["order"].id,
-        from_version_kind="schedule", status=AMENDMENT_PUBLISHED,
-    )
-    db.add(amendment)
-    db.flush()
-    inquiry = OrderInquiry(
-        company_id=world.company_id, project_sales_order_id=fixture["order"].id,
-        amendment_id=amendment.id, state=INQUIRY_RAISED, raised_by=world.cs_user,
-    )
-    db.add(inquiry)
-    db.flush()
-    legacy_row = OrderInquiryRow(
-        company_id=world.company_id, order_inquiry_id=inquiry.id,
-        so_line_id=fixture["line"].id, item_code=world.product.product_code,
-        qty=Decimal("10"), verb=IV_DELAY, state=INQUIRY_RAISED,
-        # PRE-LANE shape: no `previous_delivery_date` write, and the note in the
-        # ISO format the OLD `_change_note` wrote, before AC-R2-07 landed.
-        note="Was 2026-09-01",
-    )
-    db.add(legacy_row)
-    db.commit()
-    calls.clear()
-
-    response = _confirm(client, fixture["order"].id, [_line_payload(line_b.id, buy_qty="6")])
-    assert response.status_code == 200, response.text
-    db.commit()
-
-    matches = _handover_calls(calls)
-    assert matches, "the confirm must dispatch its own handover"
-    lines = matches[-1]["context"]["handover"]["lines"]
-    delay_lines = [l for l in lines if l["remark"] == "DELAY"]
-    assert delay_lines, (
-        f"S1: expected a bare DELAY line even for a legacy ISO note, got {lines}"
-    )
-    assert delay_lines[0]["was"] == {"delivery_date": "01/09/2026"}, (
-        f"S1: a legacy ISO note must still parse to dd/mm/yyyy, got "
-        f"{delay_lines[0]['was']!r}"
-    )
-
-
 def test_silent_reconfirm_queues_no_amendment_rows_and_no_email(api, monkeypatch):
     """S4 (captain ruling, review round 1): a re-confirm that settles every named
     line silently (AC-R2-10 shape - no line of its OWN reaches the handover queue)
@@ -3191,9 +3110,8 @@ def test_silent_reconfirm_queues_no_amendment_rows_and_no_email(api, monkeypatch
     purchasing gets an email whose only line is one they already saw on the
     amendment's own publish email.
 
-    The companion half of this ruling ("a confirm with one own line still appends
-    them") is already pinned by `test_confirm_email_appends_still_raised_amendment_
-    rows_once` above - not duplicated here.
+    ORDERBACK-DELTA (13 Oct 2026) later dropped the ride-along altogether
+    (`test_confirm_email_does_not_repeat_an_earlier_amendments_rows`).
     """
     client, world = api
     _register(world)
@@ -3482,23 +3400,15 @@ def test_two_orders_confirmed_together_group_by_so_number_each_in_line_no_order(
 
 
 def test_amendment_row_without_so_line_id_sorts_after_rows_with_one(api, monkeypatch):
-    """AC-3: a still-raised amendment row that names no line (no `so_line_id`) prints
-    AFTER every row of its own S/O that has one, in item code order among themselves."""
-    client, world = api
+    """AC-3: an amendment row that names no line (no `so_line_id`) prints AFTER every
+    row of its own S/O that has one, in item code order among themselves. Read off the
+    amendment's own email: since ORDERBACK-DELTA a later Confirm no longer repeats it."""
+    _client, world = api
     _register(world)
     calls = _captured_dispatches(monkeypatch)
     db = world.db
 
     fixture = _raise_one_row(api, qty="10")
-    db.commit()
-
-    core_line_b = _core_line(
-        db, fixture["core_so"], world.product, world.warehouse,
-        qty_ordered="6", required_date=WAS,
-    )
-    line_b = _project_line(
-        db, fixture["order"], line_no=2, product=world.product, core_line=core_line_b
-    )
     db.commit()
 
     # Should fix 1 (reviewer pass 1): fixed, ordering-discriminating codes, not
@@ -3531,17 +3441,20 @@ def test_amendment_row_without_so_line_id_sorts_after_rows_with_one(api, monkeyp
                     "product_code": other_product_a.product_code,
                     "qty": "3", "from_value": "2026-09-01", "to_value": "2026-10-01",
                 },
+                {
+                    # Queued LAST, so only the sort puts the row with a line first.
+                    "row_key": "2", "verb": "DELAY", "so_line_id": str(fixture["line"].id),
+                    "product_id": str(world.product.id),
+                    "product_code": world.product.product_code,
+                    "qty": "10", "from_value": "2026-09-01", "to_value": "2026-10-01",
+                },
             ]
         },
     )
     db.add(amendment)
     db.flush()
-    ProjectOrderInquiryService(db).derive_for_amendment(amendment, actor_user_id=world.cs_user)
-    db.commit()
     calls.clear()
-
-    response = _confirm(client, fixture["order"].id, [_line_payload(line_b.id, buy_qty="6")])
-    assert response.status_code == 200, response.text
+    ProjectOrderInquiryService(db).derive_for_amendment(amendment, actor_user_id=world.cs_user)
     db.commit()
 
     matches = _handover_calls(calls)

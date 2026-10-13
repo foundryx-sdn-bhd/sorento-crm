@@ -437,7 +437,7 @@ def handover_remark(
         if row.verb == IV_CHANGE_SO:
             # The one fact a note carries that IS the instruction: where the line moved
             # (`_change_note`'s "Moved to <SO>" for a repoint). Read back off that fixed
-            # stamp, the way `_amendment_row_was` reads "Was dd/mm/yyyy".
+            # stamp.
             # Anchored to one order-number token, so the book re-upload's cascade stamp
             # ("Moved to the <x> line of <doc> after the book was re-uploaded") never
             # matches and never leaks into REMARK.
@@ -977,10 +977,8 @@ class ProjectOrderInquiryService:
         self._handover_order_facts_cache: Dict[str, Dict[str, Any]] = {}
         self._handover_actor_cache: Dict[str, Optional[Dict[str, str]]] = {}
         # AC-2 (issue #1166, reviewer nit): `_record_handover`'s own `so_line_id ->
-        # line_no` read, memoised the same way. `_append_still_raised_amendment_rows`
-        # preloads this in ONE query for every row it is about to queue - a re-confirm
-        # carrying thirty still-raised amendment rows would otherwise cost thirty PK
-        # round trips, one per `_record_handover` call, inside the same transaction.
+        # line_no` read, memoised the same way, so one confirm's lines on the same SO
+        # line cost one PK round trip, not one per `_record_handover` call.
         # #1312: widened to also carry `core_sales_order_line_id` - the id the line's
         # attachments key on - off the SAME `ProjectSalesOrderLine` read, so this stays
         # one round trip rather than two.
@@ -1968,21 +1966,10 @@ class ProjectOrderInquiryService:
         # S1: the one-task-per-header guard is `_hand_to_purchasing`'s own now.
         if raised:
             self._hand_to_purchasing(order, inquiry, raised)
-        # AC-R2-16/17 (owner ruling Q4, 18 Sep), narrowed by S4 (captain ruling, review
-        # round 1): still-raised amendment rows ride along on THIS confirm's own email,
-        # appended after the confirm's own lines - but ONLY when this order actually
-        # queued at least one line of its own this commit. AC-R2-10's widened settle
-        # gate (S2) means a re-confirm can settle every named line SILENTLY (same id,
-        # no handover line at all), and appending the amendment rows onto a commit that
-        # said nothing of its own would dispatch an email whose only content purchasing
-        # already read on the amendment's own publish email.
+        # An earlier amendment's still-raised rows do NOT ride along on this email any
+        # more (ORDERBACK-DELTA, owner 13 Oct 2026, overturning AC-R2-16/17): a Confirm
+        # sends what it decided, and those rows went out on their own publish email.
         self._tell_product_moves(product_moves, actor_user_id=actor_user_id)
-        queued_own_line = any(
-            item.get("pso_id") == str(order.id)
-            for item in self.db.info.get(_HANDOVER_PENDING_KEY, [])
-        )
-        if queued_own_line:
-            self._append_still_raised_amendment_rows(order, actor_user_id=actor_user_id)
         return {
             "inquiry": inquiry,
             "created": created,
@@ -3993,9 +3980,8 @@ class ProjectOrderInquiryService:
         }
         self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
             {
-                #: AC-R2-16: what `_append_still_raised_amendment_rows` dedups on, so a
-                #: row already queued (by whichever caller queued it first) never prints
-                #: twice inside the same commit's email.
+                #: Which row this line tells (a STOCK SHORT line has none and names
+                #: its line and location instead).
                 "row_id": str(row.id),
                 "order_inquiry_id": str(row.order_inquiry_id),
                 "pso_id": pso_id,
@@ -4087,132 +4073,6 @@ class ProjectOrderInquiryService:
                 "tx": tx_chain[-1] if tx_chain else None,
             }
         )
-
-    def _amendment_row_was(self, row: OrderInquiryRow) -> Optional[Dict[str, Any]]:
-        """AC-R2-16: what a still-raised amendment row's own `was` is, read off the row
-        itself rather than re-derived - `previous_qty` / `previous_delivery_date` when a
-        later write set them (a settle this row never gets today, but the columns exist
-        and a future writer may), else parsed back out of the row's own note, which
-        `_change_note` writes as `Was dd/mm/yyyy` (AC-R2-07) for exactly this reason."""
-        was: Dict[str, Any] = {}
-        if row.previous_qty is not None:
-            was["qty"] = row.previous_qty
-        if row.previous_delivery_date is not None:
-            was["delivery_date"] = row.previous_delivery_date
-        if not was and row.note:
-            match = re.search(r"Was (\d{2})/(\d{2})/(\d{4})", row.note)
-            if match:
-                day, month, year = match.groups()
-                was["delivery_date"] = date(int(year), int(month), int(day))
-            else:
-                # S1 (review round 1): a PRE-LANE row's note is still in the ISO shape
-                # `_change_note` wrote before AC-R2-07's dd/mm/yyyy fix ("Was
-                # 2026-09-01") - every amendment row confirmed before that migration
-                # landed reads this way, SO314593/SO314594 included, and must still
-                # parse rather than fall through to `was = None`.
-                iso_match = re.search(r"Was (\d{4})-(\d{2})-(\d{2})", row.note)
-                if iso_match:
-                    year, month, day = iso_match.groups()
-                    was["delivery_date"] = date(int(year), int(month), int(day))
-        return was or None
-
-    def _append_still_raised_amendment_rows(
-        self, order: ProjectSalesOrder, *, actor_user_id: Optional[str] = None
-    ) -> None:
-        """AC-R2-16/17 (owner ruling Q4, 18 Sep): a Confirm's own email also carries
-        every row this order's amendments raised (DELAY / ADVANCE / CANCEL BALANCE /
-        CHANGE SO) that is STILL `raised` - an amendment writes its own inquiry
-        (`amendment_id` set) and no `supply_decision_id`, so undo, journalled or
-        reconstructed, never touches these rows and a Confirm never re-derives them;
-        without this they would only ever have appeared on their own publish email,
-        which by the time purchasing reads a re-confirm may be long buried. Appended
-        AFTER the confirm's own lines (the caller queues those first), deduped by row
-        id against whatever THIS commit's queue already carries so a row already
-        recorded by another path in the same commit is never printed twice. A Confirm
-        on an order with no such rows appends nothing (AC-R2-17)."""
-        rows = (
-            self.db.query(OrderInquiryRow)
-            .join(OrderInquiry, OrderInquiryRow.order_inquiry_id == OrderInquiry.id)
-            .filter(
-                OrderInquiry.project_sales_order_id == order.id,
-                OrderInquiry.amendment_id.isnot(None),
-                OrderInquiryRow.state == INQUIRY_RAISED,
-            )
-            .all()
-        )
-        if not rows:
-            return
-        already_queued = {
-            item.get("row_id") for item in self.db.info.get(_HANDOVER_PENDING_KEY, [])
-        }
-        # Reviewer nit: preload every one of THESE rows' `line_no` in one query, rather
-        # than leaving `_record_handover` to hit `ProjectSalesOrderLine` per row below -
-        # the confirm's own lines are typically already in the identity map (loaded
-        # earlier in the same transaction), but a still-raised amendment row's line
-        # usually is not.
-        uncached_line_ids = {
-            row.so_line_id
-            for row in rows
-            if row.so_line_id and row.so_line_id not in self._handover_line_no_cache
-        }
-        if uncached_line_ids:
-            for line_id, line_no, core_line_id in self.db.query(
-                ProjectSalesOrderLine.id,
-                ProjectSalesOrderLine.line_no,
-                ProjectSalesOrderLine.core_sales_order_line_id,
-            ).filter(ProjectSalesOrderLine.id.in_(uncached_line_ids)):
-                self._handover_line_no_cache[line_id] = (line_no, core_line_id)
-        # EMAIL-SO-CHANGES: a qty move's rows hold only the difference; the line's
-        # before/after is the amendment delta's own `from_value` / `to_value`, printed
-        # once per (amendment, SO line), the way `_write` printed it on publish.
-        moves: Dict[Tuple[str, str], Tuple[Decimal, Decimal]] = {}
-        for inquiry_id, delta in (
-            self.db.query(OrderInquiry.id, SOAmendment.delta_json)
-            .join(SOAmendment, SOAmendment.id == OrderInquiry.amendment_id)
-            .filter(OrderInquiry.id.in_({row.order_inquiry_id for row in rows}))
-        ):
-            for delta_row in (delta or {}).get("rows") or []:
-                change = _DELTA_VERB_CHANGE.get(str(delta_row.get("verb") or ""))
-                move = (
-                    _delta_qty_move(delta_row)
-                    if change in (CHANGE_QTY_DECREASE, CHANGE_QTY_INCREASE)
-                    else None
-                )
-                if move and delta_row.get("so_line_id"):
-                    moves[(str(inquiry_id), str(delta_row["so_line_id"]))] = move
-        told: Dict[Tuple[str, str], Dict[str, Any]] = {}
-        for row in rows:
-            if str(row.id) in already_queued:
-                continue
-            key = (str(row.order_inquiry_id), str(row.so_line_id))
-            move = (
-                moves.get(key)
-                if row.verb not in (IV_DELAY, IV_ADVANCE, IV_CHANGE_SO)
-                else None
-            )
-            if move is None:
-                self._record_handover(
-                    row,
-                    kind="raised",
-                    was=self._amendment_row_was(row),
-                    actor_user_id=actor_user_id,
-                )
-                continue
-            if key in told:
-                told[key]["verb_keys"] = list(
-                    dict.fromkeys(
-                        [*told[key]["verb_keys"], *_handover_verb_keys("raised", row, None)]
-                    )
-                )
-                continue
-            self._record_handover(
-                row,
-                kind="raised",
-                was={"qty": move[0]},
-                qty=move[1],
-                actor_user_id=actor_user_id,
-            )
-            told[key] = self.db.info[_HANDOVER_PENDING_KEY][-1]
 
     def _handover_order_facts(self, pso_id: Optional[str]) -> Dict[str, Any]:
         """SO number / customer / project / SO date for ONE project sales order, kept
@@ -11730,8 +11590,7 @@ def _build_handover_context(
     cannot see a write that is still open under a savepoint). `None` on an empty queue.
 
     AC-2/AC-3: the LINE TABLE is built off a copy sorted by `_handover_sort_key` -
-    a still-raised amendment row `_append_still_raised_amendment_rows` appends to this
-    same queue is not a special case, it sorts exactly like every other item. The SO
+    every queued item sorts the same way, whichever path queued it. The SO
     summary table (`orders`) is separately re-sorted by S/O no after it is built, so
     the two tables agree on which order comes first (reviewer nit) - everything ELSE
     below (`so_numbers`/location aggregation for the subject, `first_inquiry_id`)
