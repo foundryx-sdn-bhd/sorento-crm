@@ -767,3 +767,75 @@ def test_h43b_a_report_entry_notes_an_order_list_answer_after_it() -> None:
     ranking = {"measure": "delivered_amount", "args": {"group_by": "sales_agent"}, "shown": None}
     assert is_open_order_list(Focus(domains=["order"], status=None, report={**ranking, "listed_after": True})) is True
     assert is_open_order_list(Focus(domains=["order"], status=None, report=ranking)) is False
+
+
+# ================================================================================ prod v52 shapes
+
+
+def test_h45_the_held_rankings_axis_is_in_the_parsers_current_subject() -> None:
+    from app.services.chatbot.head import parser
+    from app.services.chatbot.turn.state import Focus
+
+    ranking = {"measure": "delivered_amount", "args": {"group_by": "sales_agent", "top_n": 5, "channel": "dealer"}, "shown": None}
+    line = parser.current_subject_line(Focus(domains=["order"], report=ranking))
+    assert "ranking by sales_agent, top 5, channel dealer" in line, line
+
+
+def test_h45b_a_plain_report_or_no_report_leaves_the_subject_line_as_it_was() -> None:
+    from app.services.chatbot.head import parser
+    from app.services.chatbot.turn.state import Focus
+
+    plain = {"kind": "sales_report", "measure": "delivered_sales", "args": {"group_by": "product"}, "shown": None}
+    assert parser.current_subject_line(Focus(domains=["order"], report=plain)) == "Current subject: domain order."
+    assert parser.current_subject_line(Focus(domains=["order"])) == "Current subject: domain order."
+
+
+def _ordered_status(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="ordered",
+        basis="ordered", group_by="sales_agent", ranking_refine=True, domain_in_message=False, entities=[],
+        date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_h44_a_basis_value_as_order_status_over_a_held_ranking_is_its_basis(console, monkeypatch) -> None:
+    _held_ranking(console)
+    text, log = lane._say_all(console, monkeypatch, _ordered_status(), "ordered not delivered")
+    (after,) = _ranking_calls(log)
+    assert after["measure"].startswith("ordered_") and after["group_by"] == "sales_agent", (text, after)
+
+
+def test_h44b_guard_without_a_held_ranking_it_stays_an_order_ask(console, monkeypatch) -> None:
+    text, log = lane._say_all(console, monkeypatch, _ordered_status(), "ordered not delivered")
+    assert not _ranking_calls(log), log
+
+
+def test_h44c_guard_a_held_ranking_without_the_refine_signal_stays_an_order_ask(console, monkeypatch) -> None:
+    _held_ranking(console)
+    text, log = lane._say_all(console, monkeypatch, _ordered_status(ranking_refine=False), "ordered orders")
+    assert not _ranking_calls(log), log
+
+
+_HELD = {"measure": "delivered_amount", "args": {"group_by": "sales_agent"}, "shown": None}
+_ORDERED = {"order_status": "ordered", "basis": "ordered", "ranking_refine": True, "group_by": "sales_agent"}
+
+
+def test_h44d_unit_a_basis_order_status_over_a_held_ranking_becomes_the_ranking() -> None:
+    from app.services.chatbot.lanes.business import report_ask
+
+    out = report_ask.as_ranking_basis_status(dict(_ORDERED), _HELD)
+    assert out["order_status"] == "sales_ranking" and out["basis"] == "ordered" and out["status"] is None, out
+
+
+def test_h44e_unit_the_guards_leave_the_verdict_alone() -> None:
+    from app.services.chatbot.lanes.business import report_ask
+
+    verdict = dict(_ORDERED)
+    assert report_ask.as_ranking_basis_status(verdict, None) == verdict  # no held ranking
+    assert report_ask.as_ranking_basis_status(verdict, {**_HELD, "kind": "sales_report"}) == verdict  # not a ranking
+    not_refine = {**_ORDERED, "ranking_refine": False}
+    assert report_ask.as_ranking_basis_status(not_refine, _HELD) == not_refine  # no refine signal
+    contradictory = {**_ORDERED, "basis": "delivered"}
+    assert report_ask.as_ranking_basis_status(contradictory, _HELD) == contradictory  # basis says otherwise
