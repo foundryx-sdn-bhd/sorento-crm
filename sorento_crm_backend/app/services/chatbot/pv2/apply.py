@@ -19,6 +19,7 @@ the pending question; two misses on the same question offer a hand-over.
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, datetime
 from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
@@ -34,6 +35,7 @@ from app.services.chatbot.pv2.state import (
     HandOver,
     Held,
     Lookup,
+    Miss,
     OfferHandover,
     Option,
     PendingQuestion,
@@ -206,14 +208,14 @@ def _one_ask(
         rest = [t for j, t in enumerate(st.topics) if j != idx]
         st.topics = push_topic(rest, st.held)
         st.held = back.model_copy(deep=True)
-        qs: list[ClarifyAct] = []
+        qs = _Qs()
         held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
         return _commit(st, i, held, ask, qs), False
 
     if ask.act == "new_topic":
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
-        qs = []
+        qs = _Qs()
         held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False, today=today)
         return _commit(st, i, held, ask, qs), False
 
@@ -227,7 +229,7 @@ def _one_ask(
         if not (1 <= ask.row_pick <= len(st.last_rows)):
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
-    qs = []
+    qs = _Qs()
     base = st.held
     drilled = False
     if row is not None and base.report is not None and _is_report_row(row):
@@ -278,7 +280,27 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
     st.held = held
     if qs:
         return qs[0]
-    return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask)
+    return Lookup(
+        ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask,
+        misses=list(getattr(qs, "misses", [])),
+    )
+
+
+class _Qs(list):
+    """The questions an ask raised, plus the list items that found nothing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.misses: list[Miss] = []
+
+
+#: A reference found under a different kind than the parser named answers in the domain of
+#: the data actually found (a bare number the parser called a container that is a delivery).
+DOMAIN_BY_FOUND_KIND: dict[str, str] = {
+    "delivery_order": "order", "sales_order": "order", "customer_po_ref": "order",
+    "inbound_shipment": "incoming",
+    "purchase_order": "purchase_order", "purchase_request": "purchase_order",
+}
 
 
 def _answer(
@@ -332,7 +354,7 @@ def _answer(
         )
 
     held = apply_payload(st.held, picked.payload)
-    qs: list[ClarifyAct] = []
+    qs = _Qs()
     if "report" in picked.payload and held.report is not None:
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
@@ -507,7 +529,7 @@ def _apply_entities(
     refine: bool,
 ) -> Held:
     to_resolve: list[Entity] = []
-    for ent in ask.entities:
+    for ent in _fold_quantity_only(ask.entities):
         has_held = bool(base.refs.get(ent.kind)) if refine else False
         if ent.refers_to_held and not refine:
             # A new ask about "this one": the subject held before this message.
@@ -535,10 +557,23 @@ def _apply_entities(
 
     results = resolver.resolve_entities(to_resolve, held=held)
     set_kinds: set[str] = set()
+    listed = Counter(e.kind for e in to_resolve)
+    found = {
+        e.kind for e, r in zip(to_resolve, results)
+        if getattr(r, "status", "none") == "exact" and getattr(r, "refs", None)
+    }
     for ent, res in zip(to_resolve, results):
         status = getattr(res, "status", "none")
         refs = list(getattr(res, "refs", None) or [])
         options = list(getattr(res, "options", None) or [])
+        if (
+            listed[ent.kind] >= 2
+            and ent.kind in found
+            and (status == "none" or (status == "ambiguous" and getattr(res, "did_you_mean", False)))
+            and isinstance(qs, _Qs)
+        ):
+            qs.misses.append(Miss(kind=ent.kind, phrase=ent.phrase))
+            continue
         if status == "ambiguous" and len(options) == 1 and policy.decide("entity", held.domain) == "default":
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
@@ -573,6 +608,8 @@ def _apply_entities(
             options = _which_held_options([*carried, *refs])
             qs.append(_clarify(st, i, "which_held", None, language, options=options, kind=ent.kind))
             continue
+        if refs[0].kind != ent.kind and refs[0].kind in DOMAIN_BY_FOUND_KIND:
+            held.domain = DOMAIN_BY_FOUND_KIND[refs[0].kind]
         if ent.quantity is not None:
             refs = [r.model_copy(update={"quantity": ent.quantity}) for r in refs]
         # Several entities of one kind in one ask are one list: the first "set" replaces
@@ -581,6 +618,21 @@ def _apply_entities(
         set_kinds.add(ent.kind)
         held.refs = set_refs(held.refs, ent.kind, refs, op)
     return held
+
+
+def _fold_quantity_only(ents: list[Entity]) -> list[Entity]:
+    """A count that names no item, beside exactly one named item of its kind, is that
+    item's quantity."""
+    out = list(ents)
+    for j, e in enumerate(ents):
+        if e.quantity is None or e.key is not None or e.phrase is not None or e.refers_to_held:
+            continue
+        named = [k for k, o in enumerate(out) if k != j and o is not None and o.kind == e.kind
+                 and (o.key is not None or o.phrase is not None) and o.quantity is None]
+        if len(named) == 1:
+            out[named[0]] = out[named[0]].model_copy(update={"quantity": e.quantity})
+            out[j] = None  # type: ignore[call-overload]
+    return [e for e in out if e is not None]
 
 
 def _qty_payload(ent: Entity) -> dict[str, Any]:

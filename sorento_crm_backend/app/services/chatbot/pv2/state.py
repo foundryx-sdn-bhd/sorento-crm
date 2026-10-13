@@ -100,6 +100,14 @@ class ConversationState(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
+class Miss(BaseModel):
+    """An item of a list that found nothing (or only a did-you-mean) while its siblings
+    resolved: v1 says it is not found beside the answer for the rest."""
+
+    kind: str
+    phrase: str | None = None
+
+
 class Lookup(BaseModel):
     """Answer this ask from data. `held` is the held subject AFTER this ask applied
     (resolved codes only). `picked` / `free_value` carry an answer to a pending
@@ -114,6 +122,7 @@ class Lookup(BaseModel):
     pending_kind: str | None = None
     free_value: str | None = None
     row: Option | None = None
+    misses: list[Miss] = Field(default_factory=list)
 
 
 class ClarifyAct(BaseModel):

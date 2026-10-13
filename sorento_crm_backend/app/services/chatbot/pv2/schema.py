@@ -123,6 +123,8 @@ class Ask(_Strict):
     report: ReportSpec | None
     low_stock: LowStock | None
     ideation: IdeationSignal | None
+    status: Literal["outstanding", "delivered"] | None = None
+    portal_form: Literal["complaint", "stock_inquiry", "purchase_request", "sponsorship_form"] | None = None
 
 
 class Escalation(_Strict):
