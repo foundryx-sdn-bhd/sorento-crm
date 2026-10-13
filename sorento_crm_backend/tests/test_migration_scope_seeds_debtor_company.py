@@ -57,7 +57,8 @@ def _index_state(db):
     row = db.execute(
         text(
             "SELECT i.indisvalid, pg_get_indexdef(i.indexrelid) FROM pg_index i "
-            "WHERE i.indexrelid = to_regclass(:n)"
+            "JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE i.indrelid = 'embedding_chunks'::regclass AND c.relname = :n"
         ),
         {"n": DOC_INDEX},
     ).first()
@@ -320,7 +321,14 @@ def test_the_index_revision_replaces_an_invalid_leftover(db):
     """A failed CREATE INDEX CONCURRENTLY leaves an INVALID index IF NOT EXISTS would keep."""
     db.execute(text(f"DROP INDEX IF EXISTS {DOC_INDEX}"))
     db.execute(text(f"CREATE INDEX {DOC_INDEX} ON embedding_chunks (document_id)"))
-    db.execute(text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass(:n)"), {"n": DOC_INDEX})
+    db.execute(
+        text(
+            "UPDATE pg_index SET indisvalid = false WHERE indrelid = 'embedding_chunks'::regclass "
+            "AND indexrelid = (SELECT oid FROM pg_class WHERE relname = :n AND relnamespace = "
+            "(SELECT relnamespace FROM pg_class WHERE oid = 'embedding_chunks'::regclass))"
+        ),
+        {"n": DOC_INDEX},
+    )
     assert _index_state(db)[0] is False
     _run_index_revision(db)
     assert _index_state(db)[0] is True

@@ -122,7 +122,12 @@ def _counts() -> dict[str, int]:
 def _index_valid(bind, name: str):
     """pg_index.indisvalid for ``name`` (True / False), or None when there is no such index."""
     return bind.execute(
-        sa.text("SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(:name)"),
+        sa.text(
+            # Through the table, not to_regclass(name): an unqualified index name resolves along
+            # the search_path, so a same-named index in a later schema would answer for it.
+            "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE i.indrelid = 'embedding_chunks'::regclass AND c.relname = :name"
+        ),
         {"name": name},
     ).scalar()
 
