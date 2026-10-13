@@ -191,7 +191,7 @@ def live(session_factory, monkeypatch):
     system = _rendered_production_prompt(current_date=TODAY)
     monkeypatch.setattr(
         parser_mod, "resolve_config",
-        lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+        lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
             system_prompt=system, prompt_version=0, provider="openai",
             model=os.environ.get("REPORT_DRILL_LIVE_MODEL", "gpt-5.4-mini"),
             api_key=os.environ.get("OPENAI_API_KEY") or "sk-proxy-injected",

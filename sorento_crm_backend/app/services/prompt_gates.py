@@ -90,7 +90,7 @@ PROMPT_GATES: tuple[PromptGate, ...] = (
             "TOP SELLING", "sales_channel", "rank_by", "sales_basis",
         ),
         refused_domains=("sales",),
-        refused_order_statuses=("sales_report", "sales_analysis", "top_selling"),
+        refused_order_statuses=("sales_report", "sales_analysis", "top_selling", "sales_ranking"),
         words=("sales report", "sales analysis", "top selling"),
     ),
     PromptGate(

@@ -39,7 +39,7 @@ def fake_provider(monkeypatch):
 
     monkeypatch.setattr(
         parser_mod, "resolve_config",
-        lambda db, *, current_date, override_version_id=None: parser_mod.ParserConfig(
+        lambda db, *, current_date, override_version_id=None, grants=None: parser_mod.ParserConfig(
             system_prompt="stub", prompt_version=52, provider="openai", model="gpt-5.4-mini", api_key="sk-test"),
     )
     monkeypatch.setattr("app.services.llm_provider.get_provider", lambda *a, **k: FakeProvider())

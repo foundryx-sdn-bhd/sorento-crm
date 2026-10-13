@@ -176,7 +176,7 @@ class TestPromptGatesShape:
         sales = rows[("sales", None)]
         assert sales.blocks == ("SALES REPORT", "SALES ANALYSIS", "TOP SELLING")
         assert sales.refused_domains == ("sales",)
-        assert sales.refused_order_statuses == ("sales_report", "sales_analysis", "top_selling")
+        assert sales.refused_order_statuses == ("sales_report", "sales_analysis", "top_selling", "sales_ranking")
         low = rows[("inventory", "low_stock_report")]
         assert low.blocks == ("LOW STOCK REPORT",)
         assert low.refused_intents == ("low_stock_report",)
