@@ -296,7 +296,7 @@ def test_list_datasets(chat):
     resp = c.get(f"{BASE}/datasets")
     assert resp.status_code == 200, resp.text
     keys = {d["key"] for d in resp.json()["datasets"]}
-    assert keys == {"messages", "contacts", "bot_turns", "episodes"}
+    assert keys == {"messages", "contacts", "bot_turns", "episodes", "turn_costs", "llm_calls"}
     msgs = next(d for d in resp.json()["datasets"] if d["key"] == "messages")
     assert msgs["row_count"] >= 5 and msgs["description"]
 
