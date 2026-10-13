@@ -620,10 +620,19 @@ def test_a_staff_miss_after_the_customer_pick_offers_no_routing_list(office, ses
 
 def test_a_refine_after_a_delivery_ask_keeps_the_word_delivery(office):  # noqa: F811
     """Reviewer S1: "how about <code>" carries no delivery attribute of its own; the held ask
-    was a delivery ask (its resolved document / status), so the question says Delivery."""
+    was a delivery ask (the parser's own reading, kept on the focus), so it says Delivery."""
     office.say(
         "delivery for zzt dealer last month",
-        _orders_for_customer_last_month() | {"requested_attributes": ["delivery"], "document": ["DO"]},
+        # The live shape (15 of 48 recorded delivery turns): the attribute alone, no document.
+        _orders_for_customer_last_month() | {"requested_attributes": ["delivery"]},
     )
     reply = office.say(f"how about {CODE}", _how_about_the_product())
     assert reply.startswith(f"Delivery for {CODE}: only {CUSTOMER} (from earlier)"), reply
+
+
+def test_the_held_delivery_reading_survives_the_session_wire():
+    from app.services.chatbot.turn.state import Focus, focus_from_wire, focus_to_wire
+
+    assert focus_from_wire(focus_to_wire(Focus(delivery_ask=True))).delivery_ask is True
+    assert focus_from_wire(focus_to_wire(Focus(delivery_ask=False))).delivery_ask is False
+    assert focus_from_wire({}).delivery_ask is None  # a focus stored before this slot
