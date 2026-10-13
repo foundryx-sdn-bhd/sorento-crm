@@ -14,14 +14,14 @@ changes nothing. The downgrade removes only a "Back to registered" edge on the e
 apart from ours and would go with it.
 
 Revision ID: spec_in_0001_stage_label
-Revises: ctc_0001_turn_costs
+Revises: maskp_0002_measure_words
 """
 from alembic import op
 import sqlalchemy as sa
 
 
 revision = "spec_in_0001_stage_label"
-down_revision = "ctc_0001_turn_costs"
+down_revision = "maskp_0002_measure_words"
 branch_labels = None
 depends_on = None
 
