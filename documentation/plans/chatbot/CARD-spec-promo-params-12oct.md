@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Review. Step-1 hand test round fixed (section 10b); owner size ruling built (section 10c). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10c are what shipped).
+Status: Review. Step-1 hand test round fixed (section 10b); owner size ruling built (section 10c); owner promotion hand test ruling built (section 10d, supersedes the promotion parts of sections 9 and 10). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10c are what shipped).
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -222,7 +222,7 @@ axis never reaches the resolver or the tool. Slices:
 2. Product and stock lanes: grounded specs (plus the class / product type, resolved through registry
    data, never text matching) become `spec_constraints` on the MCP call for every described ask (no
    typed code), whatever the phrasing; the MCP call then carries no resolver `product_ids`.
-3. Promotion: a promotion ask with a described subject calls `crm_marketing_promotion_products_list`
+3. SUPERSEDED by section 10d (13 Oct). Promotion: a promotion ask with a described subject calls `crm_marketing_promotion_products_list`
    with `spec_constraints` (the promotions covering the subject together with the products on them);
    "which basins are on promotion" and "basin promotion" give the same call. A promotion ask with no
    subject keeps `crm_marketing_promotions_list`.
@@ -232,7 +232,7 @@ axis never reaches the resolver or the tool. Slices:
 
 ## 10. As shipped (12 Oct)
 
-- Q4 follow-up, owner chose option (a): `crm_marketing_promotion_products_list` is the ONE promotion path
+- SUPERSEDED by section 10d (13 Oct). Q4 follow-up, owner chose option (a): `crm_marketing_promotion_products_list` is the ONE promotion path
   for a promotion ask with a described subject (first turn and tier-pick turn). The route takes
   `spec_constraints`, `brand_ids`, `promotion_types` (and `access_levels`); the reply groups product
   lines under their promotion (code, name, promo price; dates when the promotion holds them); the
@@ -295,3 +295,23 @@ Live parse on the v52 line (prod shape + publisher, gpt-5.4-mini, 7 calls): "600
 stock?" lists 5 of 7 with the offer; "more", "show more", "lagi", "ada lagi?" and a Chinese
 variant each return page 2 in the customer's language; "600mm length basin" returns the length
 basins only.
+
+## 10d. Owner promotion hand test ruling (13 Oct)
+
+Hand test FAIL on "any 600mm basin promo": the reply listed per-product price lines. Ruling: a
+promotion ask reuses the promotion-list lane; a size or spec only RESOLVES the products, and the
+selling price is never shown in the chatbot.
+
+What ships instead of the promotion parts of sections 9 and 10:
+
+- Every promotion ask calls `crm_marketing_promotions_list`, as on main. The promotion-products
+  route, service, schema, MCP ToolSpec and presenter are main's; the grouped price lines, group
+  names and the one-line renderer are removed.
+- A size in a promotion ask sends `spec_constraints` on that same call. The route keeps only
+  promotions with a linked product holding the size on any mm axis the contact may see (hidden
+  spec keys are passed through to `resolve_size`); a size no product holds returns no rows, and
+  the inactive fallback is off for a spec-filtered ask.
+- A class-only or code promotion ask carries no `spec_constraints` and replies exactly as on main,
+  including the "No <Level> promotion for <subject>." tier line and its miss handling.
+- Parity test (`tests/chatbot/test_promo_spec_parity.py`): the reply body to "any 600mm basin
+  promo" equals the reply body to "promotion for <the 600 mm basin code>".
