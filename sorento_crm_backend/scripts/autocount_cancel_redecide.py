@@ -12,6 +12,9 @@ the same code the ingest runs (`rematch_lines`, which decides each line's whole 
 and are skipped. With `--apply`, each batch commits and then runs the ingest's own post-commit
 hooks (a line that became fully cancelled retires its OI rows; a partial cancel that moved a
 live line's planned qty raises the planning change). OI rows already retired stay retired.
+A hook that fails is logged (`ingest.cancel_oi_hook_failed` / `ingest.cancel_planning_change_
+failed`) and, as on the ingest, is not redone by a re-run: the line decision it followed is
+already committed, so a second run sees no change. Check the log after `--apply`.
 
 Dry run by default: counts only, never a row, and it ends with a rollback. Re-running after
 `--apply` changes nothing.

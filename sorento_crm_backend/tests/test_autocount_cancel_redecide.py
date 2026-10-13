@@ -143,3 +143,50 @@ def test_apply_hands_a_partial_cancel_to_the_planning_change_hook(env, monkeypat
     summary = _run(env, dry_run=False)
     assert summary["plan_moves"] == 1
     assert [d.plan_moves for d in calls] == [[(lines[5001], Decimal("10"), Decimal("6"))]]
+
+
+def test_a_run_for_one_company_leaves_the_other_companys_guess_alone(env):
+    """Security review nit: both companies hold a stale guess; applying for A moves A only."""
+    from datetime import date
+
+    from app.models.autocount_cancel import AutocountCancelDoc
+    from app.models.inventory import Warehouse
+    from app.models.order import SalesOrder, SalesOrderLine
+
+    a_lines = _old_tie_break(env)
+    b = env.company_b
+    product = env.product("ZZAC-PB", company_id=b)
+    wh = Warehouse(warehouse_code="ZZAC-WHB", warehouse_name="whb", company_id=b)
+    so = SalesOrder(so_number="ZZSO-C001", company_id=b, source_system="autocount")
+    env.db.add_all([wh, so])
+    env.db.flush()
+    b_lines = []
+    for dtl in (6001, 6002):
+        line = SalesOrderLine(sales_order_id=so.id, product_id=product, warehouse_id=wh.id,
+                              qty_ordered=12, qty_delivered=12, line_status="closed",
+                              source_ref=f"SRT_DB:4002:{dtl}", company_id=b, line_no=dtl % 1000)
+        env.db.add(line)
+        env.db.flush()
+        b_lines.append(str(line.id))
+    doc = AutocountCancelDoc(company_id=b, kind="cancel_so", source_book="db1", doc_key=950901,
+                             doc_no="ZZXS-B001", doc_date=date(2026, 10, 1))
+    env.db.add(doc)
+    env.db.flush()
+    stale = AutocountCancelLine(company_id=b, cancel_doc_id=doc.id, dtl_key=951901, qty=12,
+                                item_code="ZZAC-PB", location_code="ZZAC-WHB",
+                                from_doc_type="SO", from_doc_no="ZZSO-C001",
+                                match_status="matched", match_reason="tie_break",
+                                sales_order_line_id=b_lines[1], candidate_line_ids=b_lines)
+    env.db.add(stale)
+    row = env.db.get(SalesOrderLine, b_lines[1])
+    row.qty_cancelled, row.line_status, row.cancelled_by_cancel_doc = 12, "cancelled", True
+    env.db.commit()
+
+    summary = _run(env, dry_run=False)
+    assert summary["moves"] == {"matched:tie_break -> unmatched:undetermined": 1}
+    assert _so_line(env, a_lines[5002]).qty_cancelled == Decimal("0")
+    env.db.expire_all()
+    kept = env.db.get(AutocountCancelLine, stale.id)
+    assert (kept.match_reason, kept.sales_order_line_id) == ("tie_break", b_lines[1])
+    line = env.db.get(SalesOrderLine, b_lines[1])
+    assert (line.qty_cancelled, line.line_status) == (Decimal("12"), "cancelled")
