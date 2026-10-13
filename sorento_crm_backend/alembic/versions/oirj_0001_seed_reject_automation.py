@@ -11,7 +11,7 @@ Idempotent by `email_templates.code` and `(trigger_type, name)`: a re-run SKIPS 
 already exist, so an admin's own edit is never overwritten.
 
 Revision ID: oirj_0001_seed_reject
-Revises: ctc_0001_turn_costs
+Revises: maskp_0002_measure_words
 Create Date: 2026-10-13
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ from alembic import op
 
 
 revision = "oirj_0001_seed_reject"
-down_revision = "ctc_0001_turn_costs"
+down_revision = "maskp_0002_measure_words"
 branch_labels = None
 depends_on = None
 
