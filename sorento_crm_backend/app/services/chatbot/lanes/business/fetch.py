@@ -307,6 +307,73 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
     return out or None
 
 
+#: The parser's own word for a follow-up that keeps the last ask and changes (or adds) only the
+#: axes it names (`chatbot_parser_prompt` ENTITY_OP). "clear" starts over.
+_NARROWING_OPS = frozenset({"reuse", "replace_combine", "replace", "modify"})
+
+
+#: The one axis every mm size key filters (`_axis`).
+SIZE_KEY_OF_AXES = "size"
+
+
+def _axis(key: Any) -> str:
+    """The axis a constraint filters: every mm size key is the one size axis (a named axis
+    replaces a bare size and the reverse); every other key is its own."""
+    from app.services.chatbot.head.grounding import SIZE_KEY
+    from app.services.product_spec_search import _ENVELOPE_KEYS
+
+    return SIZE_KEY if key == SIZE_KEY or key in _ENVELOPE_KEYS else jsc.js_string(key)
+
+
+def ask_constraints(parse_output: Any, db: Any) -> tuple[list[dict[str, Any]] | None, list[str], bool]:
+    """This turn's `spec_constraints` and the product ids they narrow, the carried ask included.
+
+    The parser names only what is NEW on a follow-up and says how it relates (`entity_op`):
+    "reuse" is the same ask, "replace_combine" replaces the axis it names and keeps every other
+    (crew live check on 1e3250479: "only sorento", "length only", "200mm only", "180 then" and
+    the dealer's "5" each lost the size or the family). When the turn names no new subject (no
+    class word, no product code of its own) and the last ask is carried (`spec_ask`, handed in
+    from `Focus.spec_ask`), this turn's constraints are laid over the carried ones per axis and
+    the carried code's ids stay. Returns `(constraints, carried ids, carried?)`; otherwise
+    `(spec_constraints_for, [], False)`."""
+    from app.services.chatbot.lanes.business.resolve_gate import _names_a_typed_code
+
+    own = spec_constraints_for(parse_output, db)
+    carry = parse_output.get("spec_ask") if isinstance(parse_output, dict) else None
+    if not isinstance(carry, dict) or jsc.js_string(parse_output.get("entity_op") or "") not in _NARROWING_OPS:
+        return own, [], False
+    current = [e for e in parse_output.get("entities") or [] if isinstance(e, dict) and e.get("current_message") is not False]
+    if _names_a_typed_code({"entities": current}) or any(
+        jsc.nullish_str(e.get("hint")).strip().lower() in _SUBJECT_HINTS for e in current
+    ):
+        return own, [], False
+    carried = [dict(c) for c in carry.get("spec_constraints") or [] if isinstance(c, dict)]
+    ids = [jsc.js_string(i) for i in carry.get("product_ids") or [] if is_uuid(i)]
+    asked = [jsc.js_string(i) for i in carry.get("asked_ids") or [] if is_uuid(i)]
+    if (parse_output.get("demand_qty") or parse_output.get("slot_quantities")) and asked:
+        # The dealer's quantity reply to "How many units for each?" (the engine has filled the
+        # open stock task's `slot_quantities` from it): those products, never a re-read of the
+        # filter that can bring in one the reply never asked about.
+        ids = asked
+    if not carried and not ids:
+        return own, [], False
+    from app.services.chatbot.head.grounding import specification_entities
+
+    # An axis named with no number ("length only"): the carried size, on that axis.
+    axes = [
+        jsc.js_string(e.get("spec_key"))
+        for e in specification_entities(current)
+        if e.get("spec_axis_only") and e.get("spec_key")
+    ]
+    if axes:
+        sizes = [c for c in carried if _axis(c.get("key")) == SIZE_KEY_OF_AXES]
+        on_axis = [{**{k: v for k, v in c.items() if k != "any_of"}, "key": axes[0]} for c in sizes[:1]]
+        carried = [c for c in carried if _axis(c.get("key")) != SIZE_KEY_OF_AXES] + on_axis
+    named = {_axis(c.get("key")) for c in own or []}
+    merged = [c for c in carried if _axis(c.get("key")) not in named] + list(own or [])
+    return (merged or None), ids, True
+
+
 def select_tool(domain: str | None) -> list[dict[str, Any]]:
     """The domain's tool, read off `turn.policy.default_policy()` (AC-1594: was
     `contracts.DOMAIN_SPEC`, now the frozen seed `chatbot_domains` is migrated from). No
@@ -1349,6 +1416,8 @@ def entity_ids_transformer(
     if tool_name in SPEC_CONSTRAINT_TOOLS and isinstance(spec_constraints, list) and spec_constraints:
         if not jsc.get(semantic_input, "spec_keeps_ids"):
             out.pop("product_ids", None)
+        elif jsc.array(jsc.get(semantic_input, "spec_carried_ids")):
+            out["product_ids"] = [jsc.js_string(i) for i in jsc.array(semantic_input["spec_carried_ids"])]
         out["spec_constraints"] = [dict(c) for c in spec_constraints if isinstance(c, dict)]
         if tool_name == _PROMOTIONS_TOOL:
             # A promotion the resolver matched by NAME off the same words is not the subject;

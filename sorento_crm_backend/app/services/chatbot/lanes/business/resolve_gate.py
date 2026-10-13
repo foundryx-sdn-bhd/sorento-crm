@@ -789,7 +789,7 @@ def resolve_entity_body(
             "known": list(g.get("spec_known") or []),
         }
         for g in grounded
-        if g.get("spec_value") is None and (g.get("raw") or "").strip()
+        if g.get("spec_value") is None and (g.get("raw") or "").strip() and not g.get("spec_axis_only")
     ]
     if unknown_values:
         body["unknown_values"] = unknown_values

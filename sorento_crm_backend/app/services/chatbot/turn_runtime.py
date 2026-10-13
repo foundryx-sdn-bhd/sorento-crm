@@ -3393,7 +3393,7 @@ def _route_filters_the_ask(parse_output: Any, db: Any) -> bool:
 
     if db is None or not isinstance(parse_output, dict):
         return False
-    constraints = fetch_mod.spec_constraints_for(parse_output, db)
+    constraints, _ids, _carried = fetch_mod.ask_constraints(parse_output, db)
     return bool(constraints) and fetch_mod.carries_size(constraints)
 
 
@@ -3499,6 +3499,11 @@ def make_tool_runner(
         # instead. Flagged here so the next reader does not assume parity.
         lane_out = lane_parse_output(verdict, focus=focus, domain=domain, policy=policy)
         lane_out = _spec_window(lane_out, spec)
+        # The last ask the lane answered (`Focus.spec_ask`), so a follow-up the parser reads as
+        # the same ask narrows it (`fetch.ask_constraints`). Only what this bot saved.
+        lane_out = {k: v for k, v in lane_out.items() if k != "spec_ask"}
+        if focus is not None and isinstance(focus.spec_ask, dict):
+            lane_out = {**lane_out, "spec_ask": dict(focus.spec_ask)}
         if isinstance(spec_page, dict):
             lane_out = {**lane_out, "spec_page": dict(spec_page)}
         else:
@@ -5508,6 +5513,8 @@ def envelope_of(
         # spec-filtered answer that offered "Reply to see more"; `engine.py` keeps it on
         # `focus.set_page` for the parser's `continuation`. None when nothing is left.
         "spec_carry": fetched.get("spec_carry") if isinstance(fetched.get("spec_carry"), dict) else None,
+        # Crew live check on 1e3250479: this ask's own filters, for `Focus.spec_ask`.
+        "spec_ask": fetched.get("spec_ask") if isinstance(fetched.get("spec_ask"), dict) else None,
         # The top selling question this reply asked (`group` / `metric` / `basis` /
         # `how_many`), or None when it asked nothing. `engine.py` records it on
         # `focus.top_selling` (`turn/apply.record_top_selling_asked`), reviewer B2 on

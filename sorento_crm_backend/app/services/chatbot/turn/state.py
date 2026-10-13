@@ -196,6 +196,12 @@ class Focus:
     # answered two of them - and rather than a `pending`, because a new ask CLOSES a
     # roster and must only PARK a task.
     tasks: tuple[Task, ...] = ()
+    # SPEC-PROMO-PARAMS (crew live check on 1e3250479): the last stock / product / promotion ask
+    # the lane answered, as its own filters (`domain`, `spec_constraints`, the typed code's
+    # `product_ids`), so a follow-up the parser reads as the same ask (`entity_op` reuse /
+    # replace_combine, no new subject) narrows THAT ask (`lanes/business/fetch.ask_constraints`).
+    # Written by `engine.py` from the lane's envelope; kept across a turn in another domain.
+    spec_ask: dict[str, Any] | None = None
     extra: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
@@ -312,6 +318,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
     wire["sales_ranking_frame"] = dict(focus.sales_ranking_frame) if focus.sales_ranking_frame else None
     wire["low_stock"] = dict(focus.low_stock) if focus.low_stock else None
+    wire["spec_ask"] = dict(focus.spec_ask) if focus.spec_ask else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
     # could disagree with it.
@@ -377,6 +384,8 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.sales_ranking_frame = dict(frame) if isinstance(frame, dict) else None
     low_stock = raw.get("low_stock")
     focus.low_stock = dict(low_stock) if isinstance(low_stock, dict) else None
+    spec_ask = raw.get("spec_ask")
+    focus.spec_ask = dict(spec_ask) if isinstance(spec_ask, dict) else None
     tasks = raw.get("tasks")
     if isinstance(tasks, list):
         # Ported from PR #1118 (not merged): a focus persisted before this slice

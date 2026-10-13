@@ -265,8 +265,16 @@ class Grounded:
     known: list[str] = field(default_factory=list)
     #: the registry's own words for the value ("gunmetal" for a typed "gunmetl")
     words: str | None = None
+    #: a measure axis the customer named with no number of its own ("length only" after a
+    #: size list): no unknown value, the number is the last ask's (`fetch.ask_constraints`)
+    axis_only: bool = False
 
     def entity(self, template: dict[str, Any]) -> dict[str, Any]:
+        if self.axis_only:
+            return {**self._entity(template), "spec_axis_only": True}
+        return self._entity(template)
+
+    def _entity(self, template: dict[str, Any]) -> dict[str, Any]:
         return {
             **{k: template.get(k) for k in ("current_message", "confident", "hint_confident", "quantity")},
             "raw": self.said,
@@ -618,12 +626,19 @@ def _axis_said(key: str, texts: list[str | None], vocab: Vocabulary) -> bool:
     """Does any of `texts` (the entity's own words, the customer's message) name the mm axis
     `key`, read by the registry's own word reader (`ground_words`)? The parser's axis stands
     only when the customer said it (owner Q2 and the 12 Oct ruling: a bare mm size is any axis)."""
-    return any(
+    if any(
         (g.unit or "").lower() == "mm" and g.key == key
         for text in texts
         if text
         for g in ground_words(str(text), vocab)[0]
-    )
+    ):
+        return True
+    # Crew live check on 1e3250479: "length only" after a size list. The entity's own words name
+    # the axis with no number (the number is the last ask's), by the registry's own words for
+    # the key (`_Key.names`); the parser's axis stands.
+    entry = next((k for k in vocab.keys if k.key == key), None)
+    own = texts[0] if texts else None
+    return bool(entry and own and entry.names & set(_words(own)))
 
 
 def _validate(entity: dict[str, Any], vocab: Vocabulary, message: str | None = None) -> list[Grounded]:
@@ -635,6 +650,16 @@ def _validate(entity: dict[str, Any], vocab: Vocabulary, message: str | None = N
     entry = next((k for k in vocab.keys if k.key == key_name), None)
     if key_name == SIZE_KEY and entry is None:
         return _validate_size(raw, value, vocab)
+    if (
+        entry is not None
+        and value in (None, "")
+        and entry.data_type == "numeric"
+        and (entry.unit or "").lower() == "mm"
+        and entry.names & set(_words(raw))
+    ):
+        # Crew live check on 1e3250479: a follow-up naming an axis with no number of its own
+        # ("length only"): the axis stands, the number is the last ask's (`fetch.ask_constraints`).
+        return [Grounded(entry.key, entry.label, raw, None, entry.unit, axis_only=True)]
     if entry is not None and value not in (None, ""):
         said = raw or str(value)
         if entry.data_type == "numeric":

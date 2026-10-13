@@ -3678,7 +3678,16 @@ def _apply(
     if isinstance(spec_page, dict):
         carried_set = None
         domain = spec_page.get("domain")
-        if verdict.get("continuation") is True and domain and not _names_a_subject(verdict):
+        # The parser's "reuse" naming nothing new and no quantity (crew live check on 1e3250479:
+        # "yes" to "Reply to see more." parsed so on dev) asks the same list: its next page.
+        same_list = (
+            verdict.get("entity_op") == "reuse"
+            and not verdict.get("demand_qty")
+            # A quantity reply the engine already filled into the open stock task.
+            and not verdict.get("slot_quantities")
+            and verdict.get("domain_hint") in (None, "", domain)
+        )
+        if (verdict.get("continuation") is True or same_list) and domain and not _names_a_subject(verdict):
             trace.rules_fired.append("spec_page_continued")
             return new_state, Plan(
                 domains=[domain],

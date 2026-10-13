@@ -6955,6 +6955,17 @@ def _run_stages_body(  # noqa: PLR0915
                     None,
                 )
                 state_out.focus.low_stock = low_stock_frame
+                # Crew live check on 1e3250479: the last stock / product / promotion ask's own
+                # filters (`Focus.spec_ask`). A turn in another domain keeps it, so the customer
+                # can come back to it; a stock or product turn that asked something else drops it.
+                spec_ask = next(
+                    (e["spec_ask"] for e in envelopes or [] if isinstance(e, dict) and isinstance(e.get("spec_ask"), dict)),
+                    None,
+                )
+                if spec_ask is not None:
+                    state_out.focus.spec_ask = spec_ask
+                elif any(d in ("inventory", "master_products") for d in (plan.domains or [])):
+                    state_out.focus.spec_ask = None
                 if (
                     (state_out.focus.top_selling or {}).get("asked")
                     and state_out.pending is not None

@@ -1144,6 +1144,11 @@ The size entity is never dropped, whatever is asked about those products: stock,
 or a promotion. A size or other specification stated with a promotion ask filters the products
 the promotions must contain, so it stays its own specification entity beside the category entity,
 as on a stock ask.
+A follow-up that narrows the last answer by a measure axis, a size, a brand or another
+specification names only that narrowing, entity_op "replace_combine", and domain_hint and
+intent_hint stay the previous turn's: it is the same question, narrowed. A measure axis named
+without a number is a specification entity on that axis whose spec_value is the size the last
+ask stated; a size is a specification entity even when it is the only thing said.
 """
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
