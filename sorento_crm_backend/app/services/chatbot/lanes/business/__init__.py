@@ -31,6 +31,8 @@ from app.services.chatbot import jsc
 from app.services.chatbot.lanes.business import brand_guard
 from app.services.chatbot import do_ask
 from app.services.chatbot.lanes.business import alternatives as alternatives_mod
+from app.services.chatbot import required_fields
+from app.services.chatbot.lanes.business import analysis_ask
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import find as find_lane
 from app.services.chatbot.lanes.business import low_stock_ask
@@ -2106,7 +2108,22 @@ def run_fetch(
         # whole table in text and the same query as an Excel (Owner ruling 26 Sep 07:16
         # Q2). An override like the two reports beside it, never `tools[0]`; the grant
         # was checked above, before anything was fetched.
-        group_by = jsc.js_string(parse_output.get("group_by") or "")
+        slot = parse_output.get("required_ask")
+        if isinstance(slot, dict) and slot.get("ask") == analysis_ask.ASK_NAME:
+            # The reply to the company question (stored when the route asked): the parser's pick or its
+            # `sales_company` names the option; the filters the first message carried ride the slot.
+            company = analysis_ask.company_named(parse_output, slot)
+            if company is None:
+                misses = int(slot.get("misses") or 0) + 1
+                if misses >= required_fields.MAX_MISSES:
+                    return _fixed_reply("I still can't place that company. Ask again naming one.")
+                return _fixed_reply(slot.get("question") or analysis_ask.QUESTION_FALLBACK, required_ask={**slot, "misses": misses})
+            for key, value in ((slot.get("extras") or {}).get("args") or {}).items():
+                if semantic_input.get(key) is None:
+                    semantic_input[key] = value
+            semantic_input["sales_company"] = company
+            parse_output = {**parse_output, "sales_company": company}
+        group_by = jsc.js_string(semantic_input.get("group_by") or parse_output.get("group_by") or "")
         if group_by and group_by not in fetch_mod.SALES_ANALYSIS_GROUP_BY:
             # Review round 2 S1: "sales by customer" is not answered with a by-channel
             # table and no word that the ask was changed; it is said, and nothing fetched.

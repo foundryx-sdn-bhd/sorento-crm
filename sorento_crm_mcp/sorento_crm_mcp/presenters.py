@@ -3561,7 +3561,12 @@ def _sales_analysis_envelope(payload: dict) -> dict:
     status = payload.get("status")
     envelope = {"result_type": "sales_analysis", "attachments": [], "has_result": True}
     if status in ("clarify", "refused", "busy"):
-        return {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR)}
+        out = {**envelope, "response": str(payload.get("message") or _SALES_ANALYSIS_ERROR)}
+        companies = payload.get("companies")
+        if status == "clarify" and isinstance(companies, list) and companies:
+            # The question's options, structured: the caller stores it as an open question.
+            out["company_options"] = [str(c) for c in companies]
+        return out
     if status not in ("ready", "pending", "error") or not isinstance(payload.get("rows"), list):
         return {**envelope, "response": _SALES_ANALYSIS_ERROR}
     text = _sales_analysis_text(payload)

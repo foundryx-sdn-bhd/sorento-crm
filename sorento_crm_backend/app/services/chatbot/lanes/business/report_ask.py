@@ -249,6 +249,54 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
 # --------------------------------------------------------------------------- #
 
 
+def as_ranking_basis_status(verdict: dict[str, Any]) -> dict[str, Any]:
+    """Engine seam: beside a sales ranking, the parser's v3 `status` key is sometimes the basis it answered
+    ("delivered" to the basis question). It is the ranking's basis, not an order status: dropped before it
+    is projected onto `order_status` (which would turn the ranking into the DO list). Only a sales ranking;
+    a top selling list with an outstanding status is the outstanding path and is left alone."""
+    if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME:
+        return verdict
+    status = verdict.get("status")
+    if status not in BASES:
+        return verdict
+    out = {**verdict, "status": None}
+    if out.get("basis") is None:
+        out["basis"] = status
+    return out
+
+
+def as_ranking_filter_refine(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
+    """Engine seam, before `as_ranking_refine`: a held sales ranking is on screen and the parser read a
+    follow-up that only changes filters the ranking carries ("dealer sales only", "mocha only", "ordered
+    not delivered") as a company sales analysis or a plain report. With no new subject (no company, no
+    entity but a brand), no axis of its own (none, or the held one), no period and no topic reset, it is
+    a refine of the held ranking with those filters replaced. A new axis, period or company is its own
+    ask and is left alone. Parser fields and the held args only."""
+    if jsc.js_string(verdict.get("order_status") or "").strip() not in ("sales_analysis", "sales_report"):
+        return verdict
+    held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
+    if not held_ranking or verdict.get("topic_reset") is True or verdict.get("sales_company"):
+        return verdict
+    raw_group = jsc.js_string(verdict.get("group_by") or "").strip().lower()
+    held_axis = _dict(held_report.get("args")).get("group_by")
+    if raw_group and GROUP_BY.get(raw_group, raw_group) != held_axis:
+        return verdict
+    if verdict.get("date_filter_start") or verdict.get("date_filter_end") or verdict.get("date_mode"):
+        return verdict
+    current = [e for e in jsc.array(verdict.get("entities")) if isinstance(e, dict) and e.get("current_message") is not False]
+    if any(jsc.js_string(e.get("hint") or "").strip().lower() != "brand" for e in current):
+        return verdict
+    basis = verdict.get("basis") or verdict.get("sales_basis")
+    held_basis = str(held_report.get("measure") or "").partition("_")[0]
+    basis = basis if basis in BASES and basis != held_basis else None  # the held basis restated changes nothing
+    if not (verdict.get("sales_channel") in ("dealer", "project") or current or basis):
+        return verdict  # it changes none of the filters the ranking carries
+    out = {**verdict, "order_status": ASK_NAME, "ranking_refine": True}
+    if basis:
+        out["basis"] = basis
+    return out
+
+
 def as_ranking_refine(verdict: dict[str, Any], held_report: Any, top_selling_slot: Any) -> dict[str, Any]:
     """Engine seam, before `as_top_selling`: the parser read a bare follow-up ("bottom 5") as a top
     selling ask, but a sales ranking is on screen and no top selling question is open. With no axis of

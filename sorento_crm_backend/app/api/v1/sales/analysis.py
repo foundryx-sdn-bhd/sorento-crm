@@ -299,7 +299,7 @@ def read_answer(
 
         names = [companies[c][0] for c in sorted(grants, key=lambda c: (c != DEFAULT_COMPANY_ID,
                                                                         companies[c][0]))]
-        return {"status": "clarify", "message": _company_question(names)}
+        return {"status": "clarify", "message": _company_question(names), "companies": names}
     else:
         return {"status": "error", "message": "Could not run the sales report right now."}
 

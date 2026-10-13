@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.services.chatbot import jsc
+from app.services.chatbot.lanes.business import analysis_ask
 from app.services.chatbot.label_catalog import IDENTITY, Localizer
 from app.services.chatbot.contracts import (
     SALES_REPORT_GROUP_BYS,
@@ -3043,10 +3044,19 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # The same envelope: the presenter's text and, when there is one, the Excel. It
         # states its own scope (company, channel, basis, period), so the order domain's
         # generic Customer/Product/Dates header must not print above it.
-        return {
+        output = {
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
         }
+        options = result.get("company_options") if isinstance(result, dict) else None
+        if isinstance(options, list) and options:
+            # The company question is an OPEN question: stored, so the next reply is read as its answer.
+            si = ctx.get("semantic_input")
+            si = _safe_json(si) if isinstance(si, str) else si
+            output["required_ask"] = analysis_ask.slot_for(
+                [str(o) for o in options], output["response"], si if isinstance(si, dict) else {}
+            )
+        return output
     e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
     if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):
         # DEV-FAILURES RC-B: the copy line naming the form, already in the reply language.
