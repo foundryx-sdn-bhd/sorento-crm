@@ -3,75 +3,102 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OI Reject: CS Next</title>
+<title>OI Reject: CS Next v2</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb;
-          --red-bg:#fee2e2; --red-ink:#991b1b; --green:#047857; --amber:#92400e; --blue:#2563eb; }
+          --red-bg:#fee2e2; --red-ink:#991b1b; --red:#dc2626; --green:#047857; --blue:#2563eb; --done:#ecfdf5; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
           --bg:#0f1115; --card:#171a21; --ink:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a;
-          --red-bg:#3b1414; --red-ink:#fca5a5; --green:#34d399; --amber:#fbbf24; --blue:#60a5fa; } }
+          --red-bg:#3b1414; --red-ink:#fca5a5; --red:#f87171; --green:#34d399; --blue:#60a5fa; --done:#0f2a20; } }
   body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   main { max-width:1040px; margin:0 auto; padding:24px 16px 48px; }
   h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:16px; margin:28px 0 8px; }
   .muted { color:var(--muted); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:12px 0; }
   .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; }
-  .chip { display:inline-block; border-radius:999px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .chip { display:inline-block; border-radius:999px; padding:1px 8px; font-size:12px; font-weight:600; white-space:nowrap; }
   .red { background:var(--red-bg); color:var(--red-ink); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   th { color:var(--muted); font-weight:600; }
-  .scroll { overflow-x:auto; }
+  .scroll { overflow-x:auto; } .scroll table { min-width:760px; }
+  .reason { color:var(--red); }
+  .icons { color:var(--muted); letter-spacing:6px; margin-left:6px; }
   .pop { display:inline-block; margin-top:6px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; background:var(--card); box-shadow:0 4px 12px rgba(0,0,0,.08); }
-  ol li { margin:6px 0; } .rec { color:var(--green); font-weight:600; }
-  .tag { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:0 6px; margin-left:6px; }
-  img { max-width:100%; border:1px solid var(--line); border-radius:8px; }
+  ol li, ul li { margin:6px 0; }
+  .decided { background:var(--done); border-radius:8px; padding:2px 8px; font-weight:600; color:var(--green); white-space:nowrap; }
+  .mail { max-width:560px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
+  .mail .head { background:var(--blue); color:#fff; text-align:center; padding:14px; font-weight:700; }
+  .mail .body { padding:16px 20px; }
+  .mail table { table-layout:auto; font-size:12px; margin:8px 0; }
+  .mail th, .mail td { border:1px solid var(--line); padding:4px 8px; }
+  .btn { display:inline-block; background:#2563EB; color:#fff; font-weight:700; padding:10px 24px; border-radius:8px; text-decoration:none; margin-top:8px; }
+  .foot { color:var(--muted); font-size:11px; text-align:center; border-top:1px solid var(--line); padding:10px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>After purchasing rejects: what CS sees and does next</h1>
-  <p class="muted">PR #1622, owner hand test 13 Oct 2026. The top half shows what is built on the branch now (screenshots in <code>evidence/oi-reject-notify/</code>). The bottom half is the decision the owner is asked to make.</p>
+  <h1>After purchasing rejects: what CS sees and does next (v2)</h1>
+  <p class="muted">PR #1622. v2 applies the owner's five notes from 13 Oct (section 4). Everything below is built on the branch; screenshots in <code>documentation/plans/scm/evidence/oi-reject-notify/</code>.</p>
 
-  <h2>1. Where the email and bell land (built)</h2>
+  <h2>1. The board row: one line, nothing taller (note 1)</h2>
   <div class="card">
     <div class="bar">
       <strong>Planning 1 sales order: SO416732</strong>
       <span class="muted">0 to confirm · 0 rejected · <b>1 rejected by purchasing</b></span>
     </div>
-    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip, already on the board</span></p>
-    <p class="muted" style="margin:4px 0 8px">Filter applied by the link: <span class="tag">Status: Rejected by purchasing</span>, the refused line expanded and scrolled to.</p>
+    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip</span> &nbsp; <span class="chip" style="border:1px solid var(--line)">Status: Rejected by purchasing</span> <span class="muted">filter set by the email / bell link</span></p>
     <div class="scroll">
       <table>
-        <tr><th>Line</th><th>Item</th><th>Outstanding</th><th>Suggested</th><th>Decided</th><th>OI</th><th>Verdict</th></tr>
-        <tr><td>3</td><td>B2155-NL-BLUE</td><td>10</td><td>Buy 10</td><td>Not decided</td><td>OI-2610-0007</td>
-            <td><span class="chip red">Rejected by purchasing</span><br>
-                <span class="pop">Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish</span></td></tr>
+        <colgroup><col style="width:60px"><col style="width:130px"><col style="width:90px"><col style="width:90px"><col style="width:230px"><col style="width:220px"></colgroup>
+        <tr><th>Line</th><th>Item</th><th>Outstanding</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+        <tr><td>3</td><td>B2155-NL-BLUE</td><td>10</td><td>Buy 10</td>
+            <td class="reason" title="Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish">Supplier discontinued this finish (Joey, 13/10/2026, 2:05 pm)</td>
+            <td><span class="chip red">Rejected by purchasing</span><span class="icons">↺ ✓ ✕ ✎</span></td></tr>
       </table>
     </div>
-  </div>
-  <p class="muted">Before this round the line read Verdict "Suggested", OI "-": the reject's own re-confirm was cancelling the refused row on a multi-line order, so the board had nothing to show. That is fixed in this PR.</p>
-
-  <h2>2. What CS can do next, with what exists today</h2>
-  <div class="card">
-    <ol>
-      <li><b>Re-decide on the board</b>: open the line, choose another source (own location, borrow, site pool) and Confirm. The refusal clears once the line is decided again. <span class="tag">board, today</span></li>
-      <li><b>Ask purchasing again</b>: keep Buy and Confirm. A fresh order inquiry row goes to purchasing. CS's Reason is kept on the board's decision (Decision trail) but does <b>not</b> reach purchasing's order inquiry row today. <span class="tag">board, today</span></li>
-      <li><b>Cancel the line</b>: Decide, Cancel SO, with the mandatory reason, Confirm. The line is retired. <span class="tag">board, today</span></li>
-      <li><b>Change the item in AutoCount</b> (e.g. the customer accepts another finish): edit the SO line in AutoCount, re-sync the SO book. The board shows the line as "Change proposed"; CS confirms it and the new item goes to purchasing. <span class="tag">AutoCount, then board</span></li>
-      <li><b>Cancel the line in AutoCount</b>: re-sync; the board shows it Cancelled; Confirm retires it. <span class="tag">AutoCount, then board</span></li>
-    </ol>
-    <p class="rec">Recommended default: CS calls the customer, then (4) when the customer takes a substitute item, otherwise (1) or (3) on the board. (2) only when purchasing's reason is temporary (factory closed, back-order).</p>
+    <p class="muted" style="margin:8px 0 0">The reason, who and when read in red in the Decided cell, truncated, with the whole sentence on hover. Tapping the pill (375px) opens it:</p>
+    <span class="pop">Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish</span>
+    <p class="muted" style="margin:8px 0 0">✓ keeps the Buy (re-raise to purchasing), ✕ withdraws the line, ✎ opens the panel to choose another source or Cancel SO.</p>
   </div>
 
-  <h2>3. Questions for the owner (recommendations in bold)</h2>
+  <h2>2. The email: one call to action (note 5)</h2>
+  <div class="mail">
+    <div class="head">Sorento</div>
+    <div class="body">
+      <div style="color:#b91c1c;font-weight:700">Rejected: OI-2610-0007</div>
+      <table><tr><th>OI NO</th><th>S/O NO</th><th>CUSTOMER</th><th>PROJECT</th></tr>
+             <tr><td>OI-2610-0007</td><td>SO416732</td><td>ABC Builders Sdn Bhd</td><td>Residensi Yotu</td></tr></table>
+      <table><tr><th>ITEM CODE</th><th>QTY</th><th>DELIVERY DATE</th></tr>
+             <tr><td>B2155-NL-BLUE</td><td>10</td><td>25/10/2026</td></tr></table>
+      <div>Reason: Supplier discontinued this finish</div>
+      <div>Rejected by Joey (joey@...) on 13/10/2026 14:05.</div>
+      <a class="btn" href="#">Open sales order</a>
+      <div class="muted" style="font-size:12px;margin-top:6px">Opens the SO's planning board on the rejected lines. No action list, no second link.</div>
+    </div>
+    <div class="foot">You received this email because you have an account on Sorento. It is a service message about your work in the system.</div>
+  </div>
+  <p class="muted">The bell notice opens the same place: <code>OI-2610-0007: 1 line rejected by purchasing</code>.</p>
+
+  <h2>3. What CS does next</h2>
   <div class="card">
     <ol>
-      <li>When CS buys a refused line again, should CS's Reason travel to purchasing's new order inquiry row (shown beside it on the Order Inquiries page)? <b>Yes: otherwise purchasing sees the same request it just refused with no word on what changed. Small follow-up lane; no new button.</b></li>
-      <li>Should an unanswered refusal remind the raiser after a few days? <b>Not now: the bell, the email and the header count are new; measure first.</b></li>
-      <li>Should purchasing be told when CS answers the refusal (re-decides, cancels or changes the item)? <b>Yes, as a small follow-up lane: one bell to the rejecter, no email.</b></li>
-      <li>Should the email list these next actions? <b>No: the email links straight to the line; the how-to belongs in the Outline guide.</b></li>
+      <li><b>Re-decide on the board</b>: another source (own location, borrow, site pool), Confirm. Purchasing is not notified (they have nothing to buy).</li>
+      <li><b>Buy again</b>: keep Buy, type why in REASON, Save, Confirm. Purchasing gets the usual new order inquiry; its "Why this instruction" reads <code>CS: &lt;your reason&gt;</code> (note 2).</li>
+      <li><b>Cancel the line</b>: ✕ or Cancel SO with its reason, Confirm.</li>
+      <li><b>Change the item in AutoCount</b> when the customer takes a substitute, re-sync; the board shows "Change proposed"; Confirm sends the new item to purchasing as a normal order inquiry.</li>
     </ol>
+  </div>
+
+  <h2>4. Owner decisions (13 Oct)</h2>
+  <div class="card">
+    <ul>
+      <li><span class="decided">Built</span> One row: badge with reason and who/when on the same line, truncated, tooltip.</li>
+      <li><span class="decided">Built</span> Q1 yes: CS's reason on a re-Buy reaches purchasing's new order inquiry row.</li>
+      <li><span class="decided">Decided</span> Q2 no reminders.</li>
+      <li><span class="decided">Decided</span> Q3 no extra notice to purchasing: a re-Buy already raises the normal order inquiry; re-deciding from stock, borrowing or cancelling needs nothing from them.</li>
+      <li><span class="decided">Built</span> Q4 email: one "Open sales order" button to the SO planning board, no action list.</li>
+    </ul>
   </div>
 </main>
 </body>

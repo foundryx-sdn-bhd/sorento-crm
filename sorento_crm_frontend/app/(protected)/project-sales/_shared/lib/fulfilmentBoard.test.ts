@@ -1215,6 +1215,31 @@ describe('confirmLinesFor reads the engine’s numbers', () => {
     expect(lines[0].buy_qty).toBe('30');
   });
 
+  // PR 1622 (owner Q1): what CS types in REASON on a line they keep as Buy travels as the Buy's
+  // own reason, so it reaches purchasing's new order inquiry row.
+  it('carries the reason typed on an approved Buy as buy_reason', () => {
+    const buying = { ...base, qty_proposed_buy: '100', qty_proposed_reserve: '0', qty_proposed_incoming: '0' };
+    const lines = confirmLinesFor([buying], 'so-a', {
+      [base.key]: { verdict: 'approved', reason: '  Customer accepted the chrome finish ' },
+    });
+    expect(lines[0].buy_qty).toBe('100');
+    expect(lines[0].buy_reason).toBe('Customer accepted the chrome finish');
+  });
+
+  it('sends no buy_reason for an approved Buy nobody gave a reason for', () => {
+    const buying = { ...base, qty_proposed_buy: '100', qty_proposed_reserve: '0', qty_proposed_incoming: '0' };
+    const lines = confirmLinesFor([buying], 'so-a', { [base.key]: { verdict: 'approved' } });
+    expect(lines[0].buy_reason).toBeUndefined();
+  });
+
+  it('sends no buy_reason when the approved line buys nothing', () => {
+    const stocked = { ...base, qty_proposed_buy: '0', qty_proposed_reserve: '100', qty_proposed_incoming: '0' };
+    const lines = confirmLinesFor([stocked], 'so-a', {
+      [base.key]: { verdict: 'approved', reason: 'Took it from stock' },
+    });
+    expect(lines[0].buy_reason).toBeUndefined();
+  });
+
   it('posts the DOCUMENT a step-3 borrow names, on an approved line', () => {
     // The approval path never goes through the editor: it maps the source strip straight
     // into the confirm body. Dropping the address here turned a document borrow into a

@@ -626,7 +626,15 @@ function lineFor(
     // reason it posted was always the engine's own sentence, however this Save actually read.
     borrow: borrowComponents(contribution, decision?.borrow ?? []),
     buy_qty: fromMinor(buy),
-    buy_reason: buyReason,
+    // PR 1622 (owner Q1): the words a planner typed in REASON on a line kept as Buy are that
+    // Buy's own reason - the server carries them to purchasing's new order inquiry row. On the
+    // approving branch `decision.reason` is only ever the box's own text, never an engine
+    // sentence (`BoardLineDecisionPanel`'s approving Save).
+    buy_reason:
+      buyReason ??
+      (decision?.verdict === 'approved' && buy > 0
+        ? decision.reason?.trim() || undefined
+        : undefined),
     // Present only on the legacy single-number amendment, which is still an override.
     amend_reason: decision?.verdict === 'amended' ? decision.reason : undefined,
     // An approved or untouched line can still carry the flag (R10).
