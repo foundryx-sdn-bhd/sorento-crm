@@ -5,10 +5,7 @@ import { cn } from '@/lib/utils';
 import { COLOURS, LABELS } from '../../_shared/lib/supplyVocabulary';
 import type { SupplyKind } from '../../_shared/lib/supplyVocabulary';
 import { SupplyKindCard } from '../../_shared/components/SupplyKindCard';
-import {
-  decisionStripTotals,
-  rejectedLineCount,
-} from '../../_shared/lib/decisionStrip';
+import { decisionStripTotals } from '../../_shared/lib/decisionStrip';
 import { toMinor } from '../../_shared/lib/supplyComposition';
 import type {
   BoardContribution,
@@ -49,13 +46,6 @@ export function DecisionStrip({
   const totals = React.useMemo(
     () => decisionStripTotals(contributions, draft),
     [contributions, draft],
-  );
-  // Purchasing refused these lines and they are back with CS (AC-RB2). Beside the cards
-  // rather than on one, because a refusal is not a kind of supply - it is a line with no
-  // supply decided at all.
-  const rejected = React.useMemo(
-    () => rejectedLineCount(contributions),
-    [contributions],
   );
 
   return (
@@ -116,14 +106,6 @@ export function DecisionStrip({
           );
         })}
       </div>
-      {rejected > 0 ? (
-        <span
-          data-testid="decision-strip-rejected"
-          className="inline-flex rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive"
-        >
-          {`${rejected} rejected`}
-        </span>
-      ) : null}
     </div>
   );
 }

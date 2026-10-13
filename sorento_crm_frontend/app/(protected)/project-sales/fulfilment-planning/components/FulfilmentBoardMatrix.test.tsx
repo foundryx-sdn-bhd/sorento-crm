@@ -440,12 +440,36 @@ describe('FulfilmentBoardMatrix: a refused line', () => {
       },
     });
 
-  it('reads Rejected, and the title names who refused it and why', () => {
-    renderMatrix([cellWith([refused()])]);
+  it('names the inquiry with the Rejected pill, the title saying who, when and why (PR 1622 v3)', () => {
+    renderMatrix([
+      cellWith([
+        contribution({
+          order_inquiry: {
+            inquiry_no: 'OI-000101',
+            state: 'raised',
+            ack_state: 'rejected',
+            rejected_by_name: 'Joey',
+            rejected_reason: 'No supplier until November',
+            rejected_at: '2026-10-13T06:05:00',
+          } as BoardContribution['order_inquiry'],
+        }),
+      ]),
+    ]);
 
-    const badge = screen.getByTestId('cell-rejected');
-    expect(badge).toHaveTextContent('Rejected');
-    expect(badge).toHaveAttribute('title', 'Rejected by Joey: No supplier until November');
+    const mark = screen.getByTestId('cell-rejected');
+    expect(mark).toHaveTextContent(/^OI-000101Rejected$/);
+    expect(mark.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026, 2:05\s?pm: No supplier until November$/i,
+    );
+    // No sentence printed in the cell, and no nested button inside the cell's own button.
+    expect(screen.queryByText(/Rejected by Joey/)).toBeNull();
+    expect(mark.querySelector('button')).toBeNull();
+  });
+
+  it('shows one mark per refused inquiry, not one per line', () => {
+    renderMatrix([cellWith([refused(), { ...refused(), key: 'second-line' }])]);
+
+    expect(screen.getAllByTestId('cell-rejected')).toHaveLength(1);
   });
 
   it('says nothing on a cell nobody refused', () => {
@@ -471,7 +495,7 @@ describe('FulfilmentBoardMatrix: a refused line', () => {
 
     expect(screen.getByTestId('cell-rejected')).toHaveAttribute(
       'title',
-      'Rejected by purchasing: no reason given',
+      'Rejected: no reason given',
     );
   });
 });
