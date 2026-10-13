@@ -23,6 +23,13 @@ idempotent (every step is guarded by NOT EXISTS / IS NULL, so a second run is a 
 
 Counts are logged before anything changes (the dry run) and after.
 
+MIGRATION-INDEX (``documentation/plans/ci/PLAN-migration-index-13oct.md``): the first release
+of this revision stalled past the 240 s health window. ``embedding_chunks.document_id`` had no
+index, so each document 1c deletes cost the cascade a sequential scan of the vector table. The
+index is built first (CONCURRENTLY, in its own autocommit block), and the data statements run
+under a lock and statement timeout so a release fails fast instead of hanging.
+mig_idx_chunks_document_id builds the same index for a database that already ran this revision.
+
 Revision ID: scope_seeds_debtor_company
 Revises: oihr_0006_no_remark_column
 """
@@ -39,6 +46,11 @@ branch_labels = None
 depends_on = None
 
 log = logging.getLogger("alembic.runtime.migration")
+
+LOCK_TIMEOUT = "5s"
+STATEMENT_TIMEOUT = "120s"
+DOCUMENT_ID_INDEX = "ix_embedding_chunks_document_id"
+INDEX_LOCK_TIMEOUT = "30s"
 
 # A per-company seed id: 'debtor:' + uuid + ':' + code. Anything else under 'debtor:' is
 # a legacy company-less seed.
@@ -107,7 +119,68 @@ def _counts() -> dict[str, int]:
     return out
 
 
+def _index_valid(bind, name: str):
+    """pg_index.indisvalid for ``name`` (True / False), or None when there is no such index."""
+    return bind.execute(
+        sa.text(
+            # Through the table, not to_regclass(name): an unqualified index name resolves along
+            # the search_path, so a same-named index in a later schema would answer for it.
+            "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE i.indrelid = 'embedding_chunks'::regclass AND c.relname = :name"
+        ),
+        {"name": name},
+    ).scalar()
+
+
+def _ensure_document_id_index(bind, *, concurrently: bool) -> None:
+    """Build ``ix_embedding_chunks_document_id`` unless a VALID one exists (no lock taken then).
+
+    A failed CREATE INDEX CONCURRENTLY leaves an INVALID index that IF NOT EXISTS would keep
+    forever, so an INVALID one is dropped first (aud_0001_audit_standard_s0's pattern).
+    """
+    if _index_valid(bind, DOCUMENT_ID_INDEX) is True:
+        return
+    c = "CONCURRENTLY" if concurrently else ""
+    if _index_valid(bind, DOCUMENT_ID_INDEX) is False:
+        bind.execute(sa.text(f"DROP INDEX {c} IF EXISTS {DOCUMENT_ID_INDEX}"))
+    bind.execute(sa.text(f"CREATE INDEX {c} IF NOT EXISTS {DOCUMENT_ID_INDEX} ON embedding_chunks (document_id)"))
+    if _index_valid(bind, DOCUMENT_ID_INDEX) is not True:
+        raise RuntimeError(
+            f"scope_seeds_debtor_company: index {DOCUMENT_ID_INDEX} is INVALID after the build; drop it and rerun."
+        )
+
+
 def upgrade():
+    # CREATE INDEX CONCURRENTLY cannot run inside a transaction; the autocommit block commits
+    # the revisions before this one and builds the index on its own.
+    with op.get_context().autocommit_block():
+        bind = op.get_bind()
+        # The build waits for every open transaction on embedding_chunks (the live colour's
+        # API and worker write to it). Bound that wait so a release fails instead of hanging;
+        # the INVALID index a timeout leaves is dropped and rebuilt by the next run. Session
+        # level, since SET LOCAL does nothing outside a transaction; restored after.
+        previous = bind.execute(sa.text("SELECT current_setting('lock_timeout')")).scalar()
+        bind.execute(sa.text(f"SET lock_timeout = '{INDEX_LOCK_TIMEOUT}'"))
+        try:
+            _ensure_document_id_index(bind, concurrently=True)
+        finally:
+            bind.execute(sa.text("SELECT set_config('lock_timeout', :v, false)"), {"v": previous})
+    _upgrade(build_index=False)
+
+
+def _upgrade(*, build_index: bool) -> None:
+    """The data steps. ``build_index=True`` builds the index plainly in the caller's
+    transaction (the tests' scratch schema, which an autocommit block would commit)."""
+    bind = op.get_bind()
+    if build_index:
+        _ensure_document_id_index(bind, concurrently=False)
+    previous = [
+        bind.execute(sa.text(f"SELECT current_setting('{name}')")).scalar()
+        for name in ("lock_timeout", "statement_timeout")
+    ]
+    bind.execute(sa.text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
+    bind.execute(sa.text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
+
     log.info("scope_seeds_debtor_company dry run (before): %s", _counts())
 
     # 1a. One per-company document per copyable (legacy seed, company).
@@ -177,6 +250,10 @@ def upgrade():
             )
 
     log.info("scope_seeds_debtor_company after: %s", _counts())
+
+    # Revisions after this one in the same run must not inherit the timeouts.
+    bind.execute(sa.text("SELECT set_config('lock_timeout', :v, true)"), {"v": previous[0]})
+    bind.execute(sa.text("SELECT set_config('statement_timeout', :v, true)"), {"v": previous[1]})
 
 
 def downgrade():
