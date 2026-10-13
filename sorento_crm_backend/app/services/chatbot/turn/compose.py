@@ -525,6 +525,9 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
     # per turn, under the first section that carries it.
     named_not_checked: set[str] = set()
+    # A section left out because every subject is a token nobody could place: the
+    # did-you-mean below still runs when it was the reply's only section.
+    spared_unplaced = False
 
     for env in envelopes:
         domain = env.get("domain")
@@ -628,6 +631,19 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             # the customer read `*orders* for HANLIM TRADING SDN BHD:` and nothing else,
             # which reads as "there are none" rather than "ask me again".
             block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif (
+            codes
+            and not header_override
+            and env.get("tool_ran") is not True
+            and subjects
+            and {str(t).casefold() for t in env.get("unresolved") or []} >= {str(c).casefold() for c in subjects}
+        ):
+            # MULTI-ASK-PLAN2 crew live check (13 Oct 2026, "SRTWT7445-ZZ stock and supplier"):
+            # every subject is a token nobody could place, so no tool ran because there is
+            # nothing to look up. "Please try again" would be false; the turn's did-you-mean
+            # (below) names the token, and this section says nothing of its own.
+            block = ""
+            spared_unplaced = True
         elif codes and not header_override and (
             env.get("tool_has_result") is True or env.get("tool_ran") is not True
         ):
@@ -746,7 +762,8 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         if not_checked:
             named_not_checked.update(not_checked)
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
-        text_parts.append(block)
+        if block:
+            text_parts.append(block)
 
         for f in env_files:
             key = _file_key(f)
@@ -801,7 +818,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     lane_question = _lane_question(envelopes, getattr(state, "turn_no", None))
     dym_question = None
     dym_listed = False
-    if unplaced and text.strip():
+    if unplaced and (text.strip() or spared_unplaced):
         # MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): a
         # token with a did-you-mean gets the one it gets when asked alone; the rest keep
         # this sentence.
@@ -816,6 +833,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             ctx,
             lane_asked=lane_question is not None or asked_this_turn,
         )
+        text = text.lstrip("\n")
 
     offer = None
     # ONE open question per turn, and when a lane asked one it is the lane's: a domain

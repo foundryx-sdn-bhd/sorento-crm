@@ -30,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from functools import cmp_to_key
 from typing import Any, Literal
 
@@ -1347,6 +1348,9 @@ def _crossdomain_rung_row(it: Any, field_by_key: Any) -> dict[str, Any]:
         "qty": field_by_key(it, "outstanding_qty"),
         "po_date": field_by_key(it, "po_date"),
         "location": field_by_key(it, "location"),
+        # Never rendered: PO numbers are unique per company only, so the document key
+        # in `_consolidate_rung_rows` needs it beside the number.
+        "company": field_by_key(it, "company_name"),
     }
 
 
@@ -1388,8 +1392,14 @@ def _crossdomain_rung_text(rows: list[dict[str, Any]]) -> str:
     for row in rows:
         # A row with no number has no identity to merge on.
         key = (
-            (row.get("kind"), row.get("number"), row.get("po_date"), row.get("location"))
-            if row.get("number") not in (None, "")
+            (
+                row.get("kind"),
+                row.get("company"),
+                row.get("number"),
+                row.get("po_date"),
+                row.get("location"),
+            )
+            if jsc.js_string(row.get("number") or "").strip()
             else (id(row),)
         )
         into = merged.get(key)
@@ -1406,7 +1416,7 @@ def _crossdomain_rung_text(rows: list[dict[str, Any]]) -> str:
         label = "SPO" if row.get("kind") == "spo" else "PO"
         number = row.get("number")
         # No number, no heading line (never a placeholder).
-        lines = [f"*{label}:* {_fmt_xd_value(number)}"] if number not in (None, "") else []
+        lines = [f"*{label}:* {_fmt_xd_value(number)}"] if jsc.js_string(number or "").strip() else []
         ordered_qty = row.get("ordered_qty")
         if ordered_qty not in (None, ""):
             lines.append(f"*Ordered:* {_fmt_xd_value(ordered_qty)}")
@@ -2723,6 +2733,9 @@ def not_understood_line(words: Any) -> str:
 #: shape followed the COUNT and the leg word, not the ask. The leg now chooses only what the
 #: rows under it show (stock figures, incoming lines, files); the opener is the same.
 SET_OPENER = "Here's what you want:"
+
+#: The empty reply of a lone "last in" (the last SPO line's delivery date); a `label_catalog` key.
+LAST_IN_NONE = "Last in: none on record"
 
 #: What "But no ... matched these" names per leg: the product-code miss's own words
 #: ("But no incoming matched these.").
@@ -4291,6 +4304,38 @@ def not_found_error_message(
                     if esc:
                         order_lines[-1] = f"{order_lines[-1]} {esc}"
                     escalate_message = "\n".join(order_lines)
+                elif use_breakdown and jsc.js_string(domain_hint) == "spo_allocation":
+                    # Owner ruling R-LASTIN (9 Oct 2026): a lone "last in" with no SPO line
+                    # says so in the multi-ask's own words, never "no spo allocation matched
+                    # these". The scope the generic breakdown names stays, one whole line each
+                    # so the reply pass localizes every one: a warehouse (or other non-product
+                    # entity) as typed, the unresolved codes, the companies checked. The
+                    # escalate offer is its own last line, as the localizer only matches it at
+                    # a line start.
+                    unresolved_keys = {_nf_norm_raw(t) for t in not_found_raw}
+                    lines_out = [LAST_IN_NONE]
+                    for line in found_lines:
+                        kind = line[2:].split(":", 1)[0]
+                        if kind == "product":
+                            continue
+                        typed_raws = [
+                            jsc.js_string(jsc.get(e, "raw"))
+                            for e in all_ents
+                            if _prettify_type(jsc.get(e, "hint")) == kind
+                            and jsc.truthy(jsc.get(e, "raw"))
+                            and _nf_norm_raw(jsc.get(e, "raw")) not in unresolved_keys
+                        ]
+                        lines_out.append(f"{kind.capitalize()}: {', '.join(typed_raws)}" if typed_raws else line)
+                    if not_found_raw:
+                        lines_out.append(
+                            f"Couldn't find: {', '.join(jsc.js_string(raw_of_token(t)) for t in not_found_raw)}."
+                        )
+                    if multi_co:
+                        lines_out.append(f"Checked in: {_and_list(searched_cos)}")
+                    esc = _esc_offer()
+                    if esc:
+                        lines_out.append(esc)
+                    escalate_message = "\n".join(lines_out)
                 elif use_breakdown:
                     escalate_message = build_breakdown_msg(
                         f"{status_label}{jsc.js_string(domain_hint)}"

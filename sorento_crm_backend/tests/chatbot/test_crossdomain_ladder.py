@@ -732,6 +732,9 @@ class TestD11LinesFollowOneAnotherInToolOrder:
             po_response={"answers": rows, "has_result": True},
         )
         block = result["render"]["_xdBlock"]["block"]
+        # Owner ruling 13 Oct 2026 (STAFF-STOCK-ETA): the three open lines of
+        # 202607-S0054 share product, location and PO date, so they print as ONE row
+        # summed (42 + 12 + 3) at the first line's position; the SPO stays its own row.
         assert block == (
             "*Product Code:* SRTWC8517\n*Stock:* none\n*Incoming:* none\n"
             + "\n".join([
