@@ -17,7 +17,8 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   Project,
   ProjectQuotation,
@@ -48,6 +49,9 @@ const deleteQuotationLine = vi.fn();
 const replaceQuotationLines = vi.fn();
 const recomputeQuotationVersion = vi.fn();
 const judgeQuotationLine = vi.fn();
+// Fix round 2: the service the coder must add to _shared/services/projectService.ts, read through
+// the hook `useQuotationLineImages(productId)` in _shared/hooks/useProjects.ts.
+const getQuotationLineImages = vi.fn();
 
 vi.mock('../../_shared/services/projectService', async (importOriginal) => {
   const actual = await importOriginal<
@@ -64,6 +68,7 @@ vi.mock('../../_shared/services/projectService', async (importOriginal) => {
     replaceQuotationLines: (...args: unknown[]) => replaceQuotationLines(...args),
     recomputeQuotationVersion: (...args: unknown[]) => recomputeQuotationVersion(...args),
     judgeQuotationLine: (...args: unknown[]) => judgeQuotationLine(...args),
+    getQuotationLineImages: (...args: unknown[]) => getQuotationLineImages(...args),
   };
 });
 
@@ -1734,5 +1739,144 @@ describe('QuotationVersionEditor lines grid, fix round 1 (QUOTATION-UX)', () => 
     expect(photo.closest('span')?.textContent?.trim()).toBe('');
     expect(drawing.closest('span')?.textContent?.trim()).toBe('');
     expect(screen.queryByRole('button', { name: /^(Choose|Change) (photo|drawing) on / })).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ fix round 2 (QUOTATION-UX)
+
+const NO_PHOTO = () =>
+  PHOTO({ state: 'not_chosen', url: null, preview_url: null, attachment_id: null, filename: null });
+
+describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
+  beforeEach(() => {
+    getProductsForLineSelect.mockResolvedValue(PRODUCTS);
+    getQuotationLineImages.mockResolvedValue({
+      product_image: NO_PHOTO(),
+      technical_drawing: DRAWING(),
+    });
+  });
+
+  it('fills Description, Brand and UOM from a select row that carries them (defect 1)', async () => {
+    getProductsForLineSelect.mockResolvedValue([
+      {
+        id: 'p9',
+        product_code: 'SRTWC8356-RL',
+        product_name: 'SORENTO ONE PIECE TOILET',
+        description: 'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)  SRTWC8356-RL',
+        brand_id: 'b1',
+        base_uom_id: 'u1',
+        list_price: '560.00',
+      },
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRTWC8356-RL/ }));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Description on SRT-WC-01' })).toHaveValue(
+        'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)  SRTWC8356-RL',
+      ),
+    );
+    expect(screen.getByRole('combobox', { name: 'Brand on SRT-WC-01' })).toHaveTextContent('SORENTO');
+    expect(screen.getByRole('combobox', { name: 'UOM on SRT-WC-01' })).toHaveTextContent('PCS');
+  });
+
+  it('shows photo and drawing on a new line once a product is picked, and stages a pick (defect 2)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Product on line 2' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+
+    await waitFor(() => expect(getQuotationLineImages).toHaveBeenCalledWith('p9'));
+    // The drawing resolves to its default; two photos and none chosen asks for a choice.
+    expect(await screen.findByRole('img', { name: /technical drawing$/ })).toHaveAttribute(
+      'src',
+      'https://cdn.test/d.png',
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /^Choose photo on / }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use wc side.jpg' }));
+    await waitFor(() =>
+      expect(stagedBody()[1]).toMatchObject({ product_id: 'p9', image_attachment_id: 'a2' }),
+    );
+    expectNothingWritten();
+  });
+
+  it('a product change on a saved line resolves the new product\'s cells from the route (defect 2)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await waitFor(() => expect(getQuotationLineImages).toHaveBeenCalledWith('p9'));
+    expect(await screen.findByRole('img', { name: /technical drawing$/ })).toBeInTheDocument();
+  });
+
+  it('a picked photo and drawing on a saved line show, reach the save body and dirty the scope (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({ product_id: 'p1', product_image: NO_PHOTO(), technical_drawing: DRAWING() }),
+    ]);
+    await renderEditing();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Choose photo on SRT-WC-01' }));
+    await user.click(await screen.findByRole('button', { name: 'Use wc side.jpg' }));
+    expect(await screen.findByRole('img', { name: 'SRT-WC-01 product photo' })).toHaveAttribute(
+      'src',
+      'https://cdn.test/s.jpg',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Change drawing on SRT-WC-01' }));
+    await user.click(await screen.findByRole('button', { name: 'Use wc drawing 2.png' }));
+    expect(screen.getByRole('img', { name: 'SRT-WC-01 technical drawing' })).toHaveAttribute(
+      'src',
+      'https://cdn.test/d2.png',
+    );
+
+    await waitFor(() =>
+      expect(stagedBody()[0]).toMatchObject({ image_attachment_id: 'a2', drawing_attachment_id: 'd2' }),
+    );
+    expect(session?.isDirty).toBe(true);
+    expect(session?.changedScopes).toHaveLength(1);
+    expectNothingWritten();
+  });
+
+  it('marks an empty custom description as soon as it is left, before anything is typed (defect 4)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    const description = await screen.findByRole('textbox', { name: 'Description on line 2' });
+    expect(screen.queryByText('A custom item needs a description')).toBeNull();
+    fireEvent.focus(description);
+    fireEvent.blur(description);
+    expect(await screen.findByText('A custom item needs a description')).toBeInTheDocument();
+    expect(description).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('carries Complete set typed on a never-saved line in the first save body (defect 5)', async () => {
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a line' }));
+    await screen.findByRole('textbox', { name: 'Description on line 2' });
+    await chooseMenuItem('line 2', 'Line details');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Complete set on line 2' }), {
+      target: { value: 'c/w seat cover' },
+    });
+    await waitFor(() => expect(stagedBody()[1]).toMatchObject({ complete_set: 'c/w seat cover' }));
+  });
+
+  describe('console', () => {
+    let errors: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+    afterEach(() => errors.mockRestore());
+
+    it('logs no DOM-nesting error with a section bar and a footer in edit mode (defect 6)', async () => {
+      listQuotationLines.mockResolvedValue([
+        line({ id: 'l1', product_code: 'A-1', description: 'First', band_label: 'BILL NO 1' }),
+        line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+      ]);
+      await renderEditing();
+      expect(footerText()).not.toBe('');
+      const nesting = errors.mock.calls
+        .map((call) => call.map(String).join(' '))
+        .filter((text) => /cannot contain a nested|validateDOMNesting/.test(text));
+      expect(nesting).toEqual([]);
+    });
   });
 });
