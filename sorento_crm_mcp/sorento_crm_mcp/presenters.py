@@ -1143,11 +1143,16 @@ def _promotion_products(rows: list[dict], b: _Builder, *, one_line: bool = False
             # product, "<code> <name>: <promo price>", the section heading carrying the
             # promotion. The whole line is the TITLE, as `_incoming_dealer` does.
             code = prod.get("product_code")
-            head = " ".join(str(x) for x in (code, _distinct_name(code, prod.get("product_name"))) if _filled(x))
+            # The name when it says more than the code, else the description (crew, 045a0fea: a
+            # name that repeats the code printed no name at all).
+            name = _distinct_name(code, prod.get("product_name")) or prod.get("description")
+            head = " ".join(str(x) for x in (code, name) if _filled(x))
             money = _money(price)
+            group = pp.get("promotion_group_name")
             if _filled(head):
+                line = f"{head}: {money}" if money else head
                 b.raw_item(
-                    f"{head}: {money}" if money else head,
+                    f"{line} ({group})" if _filled(group) else line,
                     [],
                     {"discontinued": prod.get("is_discontinued") is True, "expired": pp.get("is_expired") is True},
                 )

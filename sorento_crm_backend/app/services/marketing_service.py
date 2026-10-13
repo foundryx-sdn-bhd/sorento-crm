@@ -1639,6 +1639,8 @@ class PromotionProductService:
             )
             line.promotion_type_code = code
             line.promotion_type_name = name
+            group = getattr(line, "promotion_group", None)
+            line.promotion_group_name = getattr(group, "group_name", None) if group is not None else None
             if serving_verdict is not None:
                 line.expired_but_usable = serving_verdict.is_expired_but_usable(line.promotion_id)
 

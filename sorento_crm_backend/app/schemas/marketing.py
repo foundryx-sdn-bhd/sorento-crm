@@ -421,6 +421,9 @@ class PromotionProductResponse(BaseModel):
     company_name: Optional[str] = None
     promotion_id: str
     promotion_group_id: Optional[str] = None
+    # The group's own name ("LESS 40% + 5%"): one product can sit in two groups of one promotion
+    # at one price, and only the group says which offer a line is (SPEC-PROMO-PARAMS).
+    promotion_group_name: Optional[str] = None
     product_id: str
     promotion_price: Optional[Decimal] = None  # Maps from promo_selling_price
     discount_amount: Optional[Decimal] = None
@@ -464,6 +467,7 @@ class PromotionProductResponse(BaseModel):
                 'dealer_discount_percent', 'dealer_cost', 'list_to_dealer_margin_amount',
                 'created_at', 'updated_at', 'promotion', 'promotion_attachments', 'is_expired',
                 'promotion_type_code', 'promotion_type_name', 'expired_but_usable',
+                'promotion_group_name',
             ]:
                 if hasattr(obj, key):
                     value = getattr(obj, key)
