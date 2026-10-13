@@ -607,8 +607,8 @@ def test_every_company_id_table_is_registered():
     #   by product, so the mixin's filter is what hides another company's links = 158.
     # + 1 (WC-SEAT-COMPAT): `product_compatibility`, one company's own "seat cover fits WC"
     #   link between two of its products, read by product like the alternatives = 159.
-    # + 2 (AC-CANCEL-CRM): `autocount_cancel_docs` and `autocount_cancel_lines`, AutoCount Cancel SO / PO
-    #   (and stored-only consignment) documents of ONE company's book. The lines are owned
+    # + 2 (AC-CANCEL-CRM): `autocount_cancel_docs` and `autocount_cancel_lines`, AutoCount
+    #   Cancel SO / PO (and stored-only consignment) documents of ONE company's book. The lines are owned
     #   too, not left to their parent: the waiting retry and the order-push relink read them
     #   directly, by company, without the doc = 161.
     expected_owned = 161
