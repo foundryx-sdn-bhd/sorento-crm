@@ -965,3 +965,31 @@ def test_a_urn_form_attachment_id_is_a_pick_refusal_not_a_500(api):
         ):
             assert response.status_code == 422, response.text
             assert response.json()["code"] == code
+
+
+def test_resending_the_same_product_without_the_picks_keeps_them(api):
+    client, db, env, a, _b, version_id = _two_products(api)
+    photo = _photo(db, env, a, "a.jpg")
+    drawing = _drawing(db, env, a, "a-d.jpg")
+    db.commit()
+    url = f"{BASE}/quotation-versions/{version_id}/lines"
+    saved = _bulk(
+        client,
+        version_id,
+        [_line_body(a, image_attachment_id=photo.id, drawing_attachment_id=drawing.id)],
+    )
+    assert saved.status_code == 200, saved.text
+    line_id = saved.json()["data"][0]["id"]
+
+    again = _bulk(
+        client, version_id, [{"id": line_id, "product_id": a.id, "unit_price": "2"}]
+    )
+    assert again.status_code == 200, again.text
+    row = again.json()["data"][0]
+    assert row["image_attachment_id"] == photo.id
+    assert row["drawing_attachment_id"] == drawing.id
+
+    single = client.put(f"{url}/{line_id}", json={"product_id": a.id, "unit_price": "3"})
+    assert single.status_code == 200, single.text
+    assert single.json()["image_attachment_id"] == photo.id
+    assert single.json()["drawing_attachment_id"] == drawing.id
