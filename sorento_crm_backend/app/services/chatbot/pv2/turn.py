@@ -314,7 +314,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
                 message_text=hctx.text,
                 session_vars=session_vars,
                 is_test=is_test,
-                submitter_name=None,
+                submitter_name=_first_name(envelope),
             ),
             trace={
                 "index_sha": config.index_sha,
@@ -326,6 +326,14 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         state_in = getattr(hctx, "state_in", None)
         ctx.base_focus = getattr(state_in, "focus", None)
         return _run(ctx, v1_pending=getattr(state_in, "pending", None))
+
+
+def _first_name(envelope: Any) -> str | None:
+    """The submitter name v1's ideate lane sends (`lanes/ideate.build_arguments`): the
+    respond.io contact's `firstName`, when it has one."""
+    contact = getattr(envelope, "contact", None)
+    name = contact.get("firstName") if isinstance(contact, dict) else None
+    return str(name) if name else None
 
 
 class _LazyResolver:

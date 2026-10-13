@@ -118,34 +118,50 @@ def _runner():
     return answer.default_report_answer(mcp_call=lambda *a, **k: {}, contact_id="c", space_id=None, dealer=False)
 
 
+#: A live customer id, as report rows carry (`reports._rows` keys).
+CUST_ID = "6f1c2a9e-0b7d-4c55-9a3e-1d2f3b4c5d6e"
+
+
+def _pick_row(monkeypatch, drill):
+    """"the 2nd one" on a held report whose last rows hold ROW at position 1."""
+    monkeypatch.setattr(reports, "drill_row", drill)
+    h = held("sales", {"brand": ["SORENTO"]}, report=_report())
+    state = mk_state(h, last_rows=[ROW])
+    return apply_turn(state, out(ask(act="refines_held", row_pick=1)), resolver=FakeResolver(), now=NOW)
+
+
 def test_b3_a_refused_drill_says_the_v1_line_and_runs_nothing(monkeypatch):
     def refuse(*a, **k):
         raise reports.DrillRefused("line")
 
-    monkeypatch.setattr(reports, "drill_row", refuse)
-    monkeypatch.setattr(reports, "answer_report", lambda *a, **k: pytest.fail("must not run"))
-    res = _runner()(_report(), {}, TODAY, ROW, None)
-    assert res.text == "line"
+    state, actions = _pick_row(monkeypatch, refuse)
+    assert isinstance(actions[0], ClarifyAct) and actions[0].pending.asked == "line"
+    assert state.held.report == _report()
+    r = answer.build_result(state, actions, out(ask()), today=TODAY,
+                            report_answer=lambda *a: pytest.fail("a refused drill must not run"))
+    assert r.direct_reply == "line"
 
 
-def test_b3_drill_refs_land_on_held_through_build_result(monkeypatch):
+def test_b3_drill_lands_on_held_in_apply_turn(monkeypatch):
     drilled = _report(filters=[Filter(dimension="customer", op="in", keys=["Ahmad Trading"], values=[])])
-    extra = {"customer": [{"kind": "customer", "key": "C1", "label": "Ahmad Trading"}]}
+    extra = {"customer": [{"kind": "customer", "key": CUST_ID, "label": "Ahmad Trading"}]}
+    state, actions = _pick_row(monkeypatch, lambda s, r, incoming=None: (drilled, extra))
+    assert isinstance(actions[0], Lookup)
+    assert state.held.report.filters == drilled.filters
+    assert [x.key for x in state.held.refs["customer"]] == [CUST_ID]
+    assert [x.key for x in state.held.refs["brand"]] == ["SORENTO"]
+    # The answer layer runs the drilled spec with those refs and drills nothing again.
     seen = {}
 
-    def fake_answer(s, **k):
-        seen.update(k)
-        return SimpleNamespace(text="Drilled", plan=SimpleNamespace(spec=drilled, status="run"), rows=[], pending=None)
+    def fake_answer(spec, **k):
+        seen["spec"], seen["refs"] = spec, k["refs"]
+        return SimpleNamespace(text="Drilled", plan=SimpleNamespace(spec=spec, status="run"), rows=[], pending=None)
 
-    monkeypatch.setattr(reports, "drill_row", lambda s, r, incoming=None: (drilled, extra))
     monkeypatch.setattr(reports, "answer_report", fake_answer)
-    h = held("sales", {"brand": ["SORENTO"]}, report=_report())
-    lk = Lookup(ask_index=0, domain="sales", held=h, ask=ask(act="refines_held", row_pick=1), row=ROW)
-    r = answer.build_result(mk_state(h), [lk], out(ask()), today=TODAY, report_answer=_runner())
-    assert r.direct_reply == "Drilled"
-    assert [x.key for x in r.state.held.refs["customer"]] == ["C1"]
-    assert [x.key for x in r.state.held.refs["brand"]] == ["SORENTO"]
-    assert seen["refs"]["customer"] == extra["customer"]
+    monkeypatch.setattr(reports, "drill_row", lambda *a, **k: pytest.fail("drilled twice"))
+    r = answer.build_result(state, actions, out(ask()), today=TODAY, report_answer=_runner())
+    assert r.direct_reply == "Drilled" and seen["spec"].filters == drilled.filters
+    assert seen["refs"]["customer"] == [{"kind": "customer", "key": CUST_ID, "label": "Ahmad Trading"}]
 
 
 # -- B4: the hook envelope is read by attribute ------------------------------------------------ #

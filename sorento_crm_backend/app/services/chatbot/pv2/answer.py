@@ -29,7 +29,6 @@ from app.services.chatbot.pv2.state import (
     OfferHandover,
     Option,
     PendingQuestion,
-    ResolvedRef,
     SmallTalk,
 )
 from app.services.chatbot.turn.state import Focus
@@ -231,12 +230,6 @@ def build_result(
             if spec is not None:
                 st.held.report = spec
             st.pending = _pending_from(_attr(rep, "pending"), st.turn_no)
-            for dim, refs in (_attr(rep, "drill_refs") or {}).items():
-                # The drilled row's filter refs stay held, so "by qty" next turn runs on it.
-                st.held.refs[dim] = [
-                    ResolvedRef(kind=str(_attr(r, "kind") or dim), key=str(_attr(r, "key")), label=str(_attr(r, "label")))
-                    for r in refs
-                ]
             rows = _rows_from(_attr(rep, "rows"))
             if rows:
                 st.last_rows = rows[:20]
@@ -261,21 +254,13 @@ def build_result(
 
 
 def default_report_answer(*, mcp_call: Callable, contact_id: str | None, space_id: str | None, dealer: bool) -> ReportAnswer:
-    """`pv2/reports.answer_report` bound to this turn's egress and grants (PV2-REPORTS);
-    a picked report row drills in first (`reports.drill_row`)."""
+    """`pv2/reports.answer_report` bound to this turn's egress and grants (PV2-REPORTS). A
+    picked report row was already drilled into the held spec by `apply_turn`."""
 
     def run(spec: Any, refs: dict[str, list[dict[str, str]]], today: date, row: Option | None, incoming: Any) -> Any:
         from app.services.chatbot.pv2 import reports
 
-        extra: dict[str, Any] = {}
-        if row is not None and reports.ROW_PAYLOAD in row.payload:
-            try:
-                spec, extra = reports.drill_row(spec, row, incoming=incoming)
-            except reports.DrillRefused as exc:
-                # v1's own line for a row the report cannot narrow by.
-                return _Said(text=exc.line)
-            refs = {**refs, **(extra or {})}
-        rep = reports.answer_report(
+        return reports.answer_report(
             spec,
             refs=refs,
             today=today,
@@ -284,20 +269,8 @@ def default_report_answer(*, mcp_call: Callable, contact_id: str | None, space_i
             space_id=space_id,
             dealer=dealer,
         )
-        rep.drill_refs = extra or {}
-        return rep
 
     return run
-
-
-@dataclass
-class _Said:
-    """A report turn that only says a line (a refused drill)."""
-
-    text: str
-    plan: Any = None
-    pending: Any = None
-    rows: list[Any] = field(default_factory=list)
 
 
 def default_idea_answer(

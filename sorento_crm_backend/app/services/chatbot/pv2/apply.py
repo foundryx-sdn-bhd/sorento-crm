@@ -228,13 +228,48 @@ def _one_ask(
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
     qs = []
-    held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
-    if row is not None:
+    base = st.held
+    drilled = False
+    if row is not None and base.report is not None and _is_report_row(row):
+        base, drilled = _drill(st, base, row, ask, language, i, qs)
+    held = _apply_fields(st, base, ask, resolver, policy, language, i, qs, refine=True, today=today)
+    if row is not None and not drilled:
         held = apply_payload(held, row.payload)
+    if drilled and ask.report is None and not qs:
+        _plan_report(st, held, resolver, language, i, qs, today)
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
         action.row = row
     return action, False
+
+
+def _is_report_row(row: Option) -> bool:
+    from app.services.chatbot.pv2 import reports
+
+    return reports.ROW_PAYLOAD in row.payload
+
+
+def _drill(
+    st: ConversationState, held: Held, row: Option, ask: Ask, language: str, i: int, qs: list[ClarifyAct]
+) -> tuple[Held, bool]:
+    """Section 5: "the 2nd one" on a report drills into that row (`reports.drill_row`): the
+    held spec narrows to the row, its filter refs ride on `held.refs`. A row the report
+    cannot narrow by says v1's own line instead (`DrillRefused`), held unchanged."""
+    from app.services.chatbot.pv2 import reports
+
+    try:
+        spec, extra = reports.drill_row(held.report, row, incoming=ask.report)
+    except reports.DrillRefused as exc:
+        qs.append(_clarify(st, i, "other", None, language, options=[], asked=exc.line))
+        return held, False
+    out = held.model_copy(deep=True)
+    out.report = spec
+    for dim, refs in (extra or {}).items():
+        out.refs[dim] = [
+            ResolvedRef(kind=str(_get(r, "kind") or dim), key=str(_get(r, "key")), label=str(_get(r, "label")))
+            for r in refs
+        ]
+    return out, True
 
 
 def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[ClarifyAct]) -> Action:
