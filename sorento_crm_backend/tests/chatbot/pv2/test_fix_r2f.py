@@ -130,3 +130,54 @@ def test_a_chat_report_refine_is_not_refused_as_a_sales_report():
     )
     r = turn._run(ctx)
     assert r.direct_reply != SALES_REPORT_NOT_ENABLED_MESSAGE
+
+
+def _held_chat_ctx(asks_kw):
+    from app.services.chatbot.pv2 import turn
+    from app.services.chatbot.pv2.history import MemoryProfile
+    from app.services.chatbot.pv2.schema import Ask, ReportSpec
+    from app.services.chatbot.pv2.state import dump_state
+    from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask as _base_ask, held as mk_held, mk_state, out
+
+    def spec(**kw):
+        base = dict(dataset=None, measures=[], group_by=[], top_n_per_group=None, filters=[], period=None,
+                    compare_to=None, compare_period=None, grain=None, threshold=None, sort=None,
+                    top_n=None, basis=None)
+        base.update(kw)
+        return ReportSpec.model_validate(base)
+
+    def per(preset):
+        return {"preset": preset, "n": None, "date_from": None, "date_to": None}
+
+    held = mk_held("chat_analytics")
+    held.report = spec(dataset="chat", measures=["failed"], group_by=["topic"], period=per("this_week"), top_n=5)
+    asks = []
+    for kw in asks_kw:
+        base = _base_ask().model_dump()
+        if kw["kind"] == "chat_refine":
+            base.update(act="refines_held", domain="chat_analytics",
+                        report=spec(period=per("last_month")).model_dump(mode="json"))
+        else:
+            base.update(act="new_topic", domain="sales",
+                        report=spec(measures=["amount"], group_by=["product"]).model_dump(mode="json"))
+        asks.append(Ask.model_validate(base))
+    parsed = out(*asks)
+    return turn.TurnV2Context(
+        text="x", now=NOW, raw_state=dump_state(mk_state(held)), profile=MemoryProfile(audience="staff"),
+        parse=lambda m, u: parsed, resolver=FakeResolver({}), load_exchanges=lambda s: [],
+        report_answer=lambda *a, **k: None, granted_reveals=frozenset(),
+    ), turn
+
+
+def test_a_new_sales_report_is_refused_even_while_a_chat_report_is_held():
+    from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+    ctx, turn = _held_chat_ctx([{"kind": "sales_new"}])
+    assert turn._run(ctx).direct_reply == SALES_REPORT_NOT_ENABLED_MESSAGE
+
+
+def test_a_chat_refine_plus_a_new_sales_report_is_refused():
+    from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+    ctx, turn = _held_chat_ctx([{"kind": "chat_refine"}, {"kind": "sales_new"}])
+    assert turn._run(ctx).direct_reply == SALES_REPORT_NOT_ENABLED_MESSAGE
