@@ -519,12 +519,13 @@ class AttachmentTypeService:
         synonyms = data.pop("search_synonyms", None)
         attachment_type = AttachmentType(**data)
         self.db.add(attachment_type)
+        words = None
         if synonyms is not None:
             self.db.flush()
-            self._set_search_synonyms(attachment_type, synonyms)
+            words = self._set_search_synonyms(attachment_type, synonyms)
         self.db.commit()
         self.db.refresh(attachment_type)
-        return self._with_search_synonyms(attachment_type)
+        return self._with_search_synonyms(attachment_type, words)
 
     # PV2 aliases (CONTRACT-PV2-13oct s.4). `attachment_types.search_synonyms` arrives with
     # PV2-CORE's migration; until its model column is mapped the column is read and written
@@ -538,7 +539,7 @@ class AttachmentTypeService:
         ).first()
         return list(row[0]) if row else []
 
-    def _set_search_synonyms(self, attachment_type, synonyms) -> None:
+    def _set_search_synonyms(self, attachment_type, synonyms) -> list:
         import json
 
         from sqlalchemy import text
@@ -557,10 +558,14 @@ class AttachmentTypeService:
                 text("UPDATE attachment_types SET search_synonyms = CAST(:w AS jsonb) WHERE id = :id"),
                 {"w": json.dumps(words, ensure_ascii=False), "id": attachment_type.id},
             )
+        return words
 
-    def _with_search_synonyms(self, attachment_type):
-        if "search_synonyms" not in AttachmentType.__table__.columns:
-            attachment_type.__dict__["search_synonyms"] = self._stored_search_synonyms(attachment_type)
+    @staticmethod
+    def _with_search_synonyms(attachment_type, words):
+        # Unmapped column: echo what this save wrote. A save that sent no words touches
+        # nothing, so a caller that never sends them sees exactly today's behaviour.
+        if words is not None and "search_synonyms" not in AttachmentType.__table__.columns:
+            attachment_type.__dict__["search_synonyms"] = words
         return attachment_type
     
     def update_type(self, type_id: str, type_data: AttachmentTypeUpdate):
@@ -580,12 +585,13 @@ class AttachmentTypeService:
         synonyms = update_data.pop("search_synonyms", None)
         for key, value in update_data.items():
             setattr(attachment_type, key, value)
+        words = None
         if synonyms is not None:
-            self._set_search_synonyms(attachment_type, synonyms)
+            words = self._set_search_synonyms(attachment_type, synonyms)
         
         self.db.commit()
         self.db.refresh(attachment_type)
-        return self._with_search_synonyms(attachment_type)
+        return self._with_search_synonyms(attachment_type, words)
     
     def delete_type(self, type_id: str):
         """Delete an attachment type."""
