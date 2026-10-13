@@ -7,13 +7,16 @@ the user's message in the context of the current draft (its status, still-missin
 required fields, the next optional field to ask, and any duplicate candidate) and
 emits:
 
-    { fields, remove, skip, title, review_action, change_text, duplicate_choice }
+    { fields, use_cases, remove, skip, title, review_action, change_text, duplicate_choice }
 
 - ``fields`` - answer-key -> value updates the user just supplied. R17 (owner ruling,
   24 Sep 2026): the field a message updates is decided by the MEANING of the whole
   draft so far, never by which field ``next_field`` happened to ask - the hint is
   only a hint. A message that reads as more problem detail updates ``problem`` even
-  while ``proposed_solution`` was the one asked (AC-1219).
+  while ``desired_outcome`` was the one asked (AC-1219). The keys are exactly
+  ``problem`` / ``desired_outcome`` / ``current_workaround`` (IDEA-CAPTURE, 13 Oct).
+- ``use_cases`` - the concrete situations the user named, as plain strings (at most 5,
+  never suggested by the model); empty when none.
 - ``remove`` - answer keys the user asked to clear ("remove who", "forget the module").
 - ``skip`` - OPTIONAL answer keys the user explicitly declined ("skip", "don't know",
   "later", "dunno lah"). Never ``problem`` - the one required field can't be skipped
@@ -65,7 +68,11 @@ IDEATE_EXTRACTION_SCHEMA_NAME = "ideate_extraction"
 
 # Only these answer keys can ever be skipped (AC-1205) - the one required field,
 # `problem`, cannot appear in `skip` no matter what the model emits.
-_SKIPPABLE_KEYS = {"proposed_solution", "impact", "department"}
+_SKIPPABLE_KEYS = {"desired_outcome", "use_cases", "current_workaround"}
+
+# The only answer keys `fields` may carry (IDEA-CAPTURE); anything else the model emits is dropped.
+_FIELD_KEYS = ("problem", "desired_outcome", "current_workaround")
+_MAX_USE_CASES = 5
 
 _REVIEW_ACTIONS = {"submit", "change", "cancel", "none"}
 _DUPLICATE_CHOICES = {"vote", "separate", "none"}
@@ -82,23 +89,42 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
             "type": "array",
             "description": (
                 "Field updates the user supplied this turn, as {key,value} pairs. "
-                "key is the intake answer key (one of: problem, proposed_solution, "
-                "impact, department); value is the user's answer as plain text. "
-                "Decide which key a message updates by its MEANING, never by which "
-                "field was just asked (next_field is only a hint) - e.g. a reply "
-                "that reads as more problem detail updates problem even while "
-                "proposed_solution was the one asked. Empty when the turn adds "
+                "key is the intake answer key, value is the user's answer as plain "
+                "text. problem = the Business problem: what is wrong or missing "
+                "today, including the cost the user names. desired_outcome = what "
+                "the user wants to be true afterwards; a solution the user states "
+                "counts here, in their words. current_workaround = how they cope "
+                "today. Decide which key a message updates by its MEANING, never by "
+                "which field was just asked (next_field is only a hint). A field "
+                "the user did not state stays out. Empty when the turn adds "
                 "nothing."
             ),
             "items": {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "key": {"type": "string"},
+                    "key": {
+                        "type": "string",
+                        "enum": list(_FIELD_KEYS),
+                        "description": (
+                            "problem = the Business problem (what is wrong or missing "
+                            "today, with any cost named); desired_outcome = what the "
+                            "user wants to be true afterwards; current_workaround = "
+                            "how they cope today."
+                        ),
+                    },
                     "value": {"type": "string"},
                 },
                 "required": ["key", "value"],
             },
+        },
+        "use_cases": {
+            "type": "array",
+            "description": (
+                "Each concrete situation the user named, one string each, at most 5. "
+                "Never suggest a use case the user did not name. Empty when none."
+            ),
+            "items": {"type": "string"},
         },
         "remove": {
             "type": "array",
@@ -111,7 +137,7 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
                 "OPTIONAL answer keys the user explicitly declined this turn "
                 "('skip', 'don't know', 'later', 'dunno lah'). Never include "
                 "problem - it is the one required field and cannot be skipped. "
-                "A question ABOUT a field ('what do you mean impact?') is not a "
+                "A question ABOUT a field ('what do you mean desired outcome?') is not a "
                 "skip - leave skip empty for that turn."
             ),
             "items": {"type": "string"},
@@ -175,6 +201,7 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
     },
     "required": [
         "fields",
+        "use_cases",
         "remove",
         "skip",
         "title",
@@ -190,6 +217,7 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
 @dataclass
 class IdeateExtraction:
     fields: dict[str, str] = field(default_factory=dict)
+    use_cases: list[str] = field(default_factory=list)
     remove: list[str] = field(default_factory=list)
     skip: list[str] = field(default_factory=list)
     title: str = ""
@@ -215,7 +243,6 @@ _WORD_RE = re.compile(r"[a-z]+|[\u4e00-\u9fff]+")
 # never part of the value. Sentence-final "." and "。" are kept on a sentence field.
 _EDGE_PUNCT = "?？!！,，;；:："
 _QUOTES = "\"'“”‘’「」『』"
-_DEPARTMENT_ARTICLES = ("the ", "our ", "my ")
 
 
 def _yes_tokens(message_text: str) -> list[str]:
@@ -260,29 +287,14 @@ def _strip_edges(value: str) -> str:
     return text
 
 
-def _title_case_word(word: str) -> str:
-    # Keep an acronym ("IT", "HR") as typed; otherwise capitalise the first letter.
-    if len(word) > 1 and word.isupper():
-        return word
-    return word[:1].upper() + word[1:].lower()
-
-
 def normalise_field_value(key: str, value: str) -> str:
     """W2 (#1279 round 2): the deterministic clean-up every extracted value goes
     through before it reaches the intake. The prompt's CLEAN VALUES rule does the
     wording and the spelling; this guarantees the mechanical part whatever the
-    model emitted: no quotes or typed ``?``/``!`` at either end, a first capital,
-    and a department as a short Title Case name without a leading "the"/"our"."""
+    model emitted: no quotes or typed ``?``/``!`` at either end and a first capital."""
     text = _strip_edges(value)
     if not text:
         return ""
-    if key == "department":
-        lowered = text.lower()
-        for article in _DEPARTMENT_ARTICLES:
-            if lowered.startswith(article):
-                text = text[len(article):].strip()
-                break
-        return " ".join(_title_case_word(w) for w in text.split())
     return text[:1].upper() + text[1:]
 
 
@@ -399,7 +411,15 @@ def extract_ideate_turn(
     fields: dict[str, str] = {}
     for pair in data.get("fields") or []:
         if isinstance(pair, dict) and pair.get("key"):
-            fields[str(pair["key"])] = str(pair.get("value", ""))
+            if str(pair["key"]) in _FIELD_KEYS:
+                fields[str(pair["key"])] = str(pair.get("value", ""))
+    use_cases: list[str] = []
+    raw_cases = data.get("use_cases")
+    for item in raw_cases if isinstance(raw_cases, list) else []:
+        cleaned = normalise_field_value("use_cases", str(item or ""))
+        if cleaned and cleaned not in use_cases:
+            use_cases.append(cleaned)
+    use_cases = use_cases[:_MAX_USE_CASES]
     remove = [str(k) for k in (data.get("remove") or []) if k]
 
     # AC-1205: only optional keys can ever be skipped - `problem` is dropped from
@@ -433,6 +453,7 @@ def extract_ideate_turn(
 
     return IdeateExtraction(
         fields=fields,
+        use_cases=use_cases,
         language=language,
         has_idea=has_idea,
         remove=remove,

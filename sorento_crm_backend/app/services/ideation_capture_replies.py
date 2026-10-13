@@ -82,7 +82,7 @@ def render_reply(
             _template(name, lang, db),
             idea_number=facts.get("idea_number"),
             title=facts.get("title"),
-            missing=", ".join(facts.get("missing") or []),
+            missing="\n".join(f"- {name}" for name in facts.get("missing") or []),
             link=facts.get("link"),
         )
 

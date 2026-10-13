@@ -316,17 +316,20 @@ IDEATION_CAPTURE_SIMILAR_PICKED_NO_LINK = {
 IDEATION_CAPTURE_COMPLETE = {
     "en": (
         "Idea {{idea_number}} is in: {{title}}\n"
-        "Open it to add what I didn't catch: {{missing}}.\n"
+        "Open it to add what I didn't catch:\n"
+        "{{missing}}\n"
         "{{link}}"
     ),
     "ms": (
         "Idea {{idea_number}} sudah diterima: {{title}}\n"
-        "Buka untuk menambah apa yang saya tidak tangkap: {{missing}}.\n"
+        "Buka untuk menambah apa yang saya tidak tangkap:\n"
+        "{{missing}}\n"
         "{{link}}"
     ),
     "zh": (
         "创意 {{idea_number}} 已收到：{{title}}\n"
-        "打开它补充我没有记录到的内容：{{missing}}。\n"
+        "打开它补充我没有记录到的内容：\n"
+        "{{missing}}\n"
         "{{link}}"
     ),
 }

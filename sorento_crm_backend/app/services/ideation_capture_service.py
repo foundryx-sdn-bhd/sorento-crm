@@ -59,11 +59,12 @@ _HOLD_MAX_AGE = timedelta(hours=24)
 _MAX_SIMILAR = 3
 _PHOTOS = "Photos or files"
 #: What the one message may not have given, in the order the reply lists it. The names stay
-#: English in every language (owner: "exact").
+#: English in every language (owner: "exact"). `use_cases` is a list on the payload; the
+#: other two are strings.
 _OPTIONAL_FIELDS: tuple[tuple[str, str], ...] = (
-    ("proposed_solution", "Proposed solution"),
-    ("impact", "Impact"),
-    ("department", "Department"),
+    ("desired_outcome", "Desired outcome"),
+    ("use_cases", "Use cases"),
+    ("current_workaround", "Current workaround"),
 )
 _REQUIRED_FIELDS: tuple[str, ...] = ("problem",)
 _EDGE = " \t\r\n.,!?;:'\"()[]"
@@ -307,6 +308,7 @@ def handle_capture_turn(
         # Create from the HELD message: its fields, title and intake_ref ride on the pointer.
         fields = dict(held.get("fields") or {})
         title = str(held.get("title") or "")
+        use_cases = [str(u) for u in (held.get("use_cases") or []) if str(u).strip()]
         source_text = held["message_text"]
         intake_ref = _valid_uuid(held.get("intake_ref")) or str(uuid.uuid4())
     else:
@@ -318,6 +320,7 @@ def handle_capture_turn(
             if (cleaned := normalise_field_value(key, value))
         }
         title = normalise_title(extraction.title)
+        use_cases = list(extraction.use_cases)
         # An intent-only message ("I have an idea") carries no idea whatever the extractor
         # wrote into problem, so problem is not counted when has_idea is False.
         checked = (
@@ -372,6 +375,7 @@ def handle_capture_turn(
                 "message_text": text_in,
                 "fields": fields,
                 "title": title,
+                "use_cases": use_cases,
                 "similar": shown,
                 "intake_ref": intake_ref,
                 "updated_at": _now_iso(),
@@ -390,9 +394,11 @@ def handle_capture_turn(
         "is_test": bool(is_test),
         "intake_ref": intake_ref,
     }
-    for key, _label in _OPTIONAL_FIELDS:
+    for key in ("desired_outcome", "current_workaround"):
         if fields.get(key):
             payload[key] = fields[key]
+    if use_cases:
+        payload["use_cases"] = use_cases
     name = contact.display_name or _derive_display_name(submitter_name, None, None)
     if name:
         payload["submitter_name"] = name
