@@ -22,13 +22,28 @@ from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.services.error_handler import AppException
 from app.services.user_service import UserPermissionService
-from app.services.ideation_gateway_service import UNREACHABLE, call_ss, relay, ss_path
+from app.services.ideation_gateway_service import UNREACHABLE, call_ss, relay, require_uuid, ss_path
 
 VIEW = "ideation.board.view"
 MANAGE = "ideation.ideas.manage"
 #: ss's own upload ceiling (ss `routers/embed.py`); read at most one byte past it.
 ATTACHMENT_CAP_BYTES = 25 * 1024 * 1024
 _STAFF_NAME = "Sorento staff"
+#: The idea fields a create or an edit may carry to ss. The last three are legacy (retired from the
+#: CRM UI, still forwardable for old clients and the chatbot).
+IDEA_FIELDS = (
+    "title",
+    "problem",
+    "desiredOutcome",
+    "useCases",
+    "currentWorkaround",
+    "rawText",
+    "proposedSolution",
+    "impact",
+    "department",
+)
+#: The idea fields a merge may take from a chosen idea (ss `POST /embed/ideas/merge` `fields`).
+MERGE_FIELD_KEYS = ("title", "problem", "desiredOutcome", "useCases", "currentWorkaround", "rawText")
 
 router = APIRouter()
 
@@ -51,6 +66,21 @@ def _comment_body(payload: dict) -> dict:
     if not isinstance(body, str) or not body.strip():
         raise AppException(422, "Comment cannot be empty.", code="VALIDATION_ERROR")
     return _pick(payload, ("body", "parentId"))
+
+
+def _merge_fields(value: Any) -> dict[str, list[str]]:
+    """A merge `fields` map: allowed keys to non-empty lists of UUIDs, else 422 before ss is called."""
+    out: dict[str, list[str]] = {}
+    if isinstance(value, dict):
+        for key, ids in value.items():
+            if key in MERGE_FIELD_KEYS and isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids):
+                out[key] = [require_uuid(i, "fields") for i in ids]
+                continue
+            out = {}
+            break
+    if not out:
+        raise AppException(422, "Merge fields are not valid.", code="VALIDATION_ERROR")
+    return out
 
 
 def _masked_comment(resp: httpx.Response) -> Response:
@@ -91,6 +121,11 @@ def get_merged(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db))
     return _forward(db, user, "GET", ss_path("embed", "ideas", str(idea_id), "merged"))
 
 
+@router.get("/ideas/{idea_id}/similar")
+def similar_ideas(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
+    return _forward(db, user, "GET", ss_path("embed", "ideas", str(idea_id), "similar"))
+
+
 @router.get("/ideas/{idea_id}/attachments/{attachment_id}/content")
 def attachment_content(
     idea_id: UUID, attachment_id: UUID, user: dict = _read, db: Session = Depends(get_db)
@@ -109,7 +144,7 @@ def list_comments(idea_id: UUID, user: dict = _read, db: Session = Depends(get_d
 
 @router.post("/ideas", status_code=201)
 def create_idea(payload: dict = Body(...), user: dict = _write, db: Session = Depends(get_db)):
-    body = _pick(payload, ("problem", "proposedSolution", "impact", "department", "rawText"))
+    body = _pick(payload, IDEA_FIELDS)
     return _forward(db, user, "POST", ss_path("embed", "ideas"), json=body)
 
 
@@ -165,7 +200,7 @@ def edit_comment(
 @router.patch("/ideas/{idea_id}")
 def update_idea(idea_id: UUID, payload: dict = Body(...), user: dict = _write, db: Session = Depends(get_db)):
     # The product is the workspace's, never edited from here, so `productId` is not forwarded.
-    body = _pick(payload, ("problem", "proposedSolution", "impact", "department", "rawText"))
+    body = _pick(payload, IDEA_FIELDS)
     path = ss_path("embed", "ideas", str(idea_id))
     # A manager edits any idea. Anyone else (view only) edits only their own, and ss alone says
     # whose it is (`isMine`); a non-2xx on the lookup is relayed by `call_ss` (404 stays 404).
@@ -196,6 +231,8 @@ def reorder(payload: dict = Body(...), user: dict = _manage, db: Session = Depen
 @router.post("/ideas/merge")
 def merge(payload: dict = Body(...), user: dict = _manage, db: Session = Depends(get_db)):
     body = _pick(payload, ("survivorId", "ideaIds"))
+    if "fields" in payload:
+        body["fields"] = _merge_fields(payload["fields"])
     return _forward(db, user, "POST", ss_path("embed", "ideas", "merge"), json=body)
 
 

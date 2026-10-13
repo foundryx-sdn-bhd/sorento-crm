@@ -193,12 +193,14 @@ def mint_embed_assertion(
     return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
 
 
-def post_embed_session(base_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+def post_embed_session(
+    base_url: str, payload: dict[str, Any], *, path: str = _EMBED_SESSION_PATH
+) -> dict[str, Any]:
     """POST the signed assertion to shared-service ``/embed/session`` (server-to-server).
 
     Raises ``IdeationEmbedUpstreamError`` on any transport/HTTP/parse failure so the
     caller returns a clean 502 instead of a 500 crash (AC-44)."""
-    url = base_url.rstrip("/") + _EMBED_SESSION_PATH
+    url = base_url.rstrip("/") + path
     try:
         with httpx.Client(timeout=_TIMEOUT_SECONDS) as client:
             resp = client.post(url, json=payload)
