@@ -281,3 +281,42 @@ def test_a_staff_not_found_document_has_no_offer():
 def test_a_delivery_order_kind_reads_delivery_order():
     _, act = _not_found("delivery_order", offer=False)
     assert answer_mod.reply_for(act, "en") == 'Couldn\'t find: "202610-0151" (delivery order).'
+
+
+# ------------------------------------------------------------------ E2 multi-line text stays whole
+
+
+def _env(inner_text=None, reply_to=None):
+    from tests.chatbot.test_engine import _envelope
+
+    env = _envelope()
+    inner = env.message["message"]["message"]
+    if inner_text is None:
+        inner.pop("text", None)
+    else:
+        inner["text"] = inner_text
+    env.message["message"].pop("replyTo", None)
+    if reply_to:
+        env.message["message"]["replyTo"] = {"message": {"text": reply_to}}
+    return env
+
+
+def test_pv2_text_keeps_a_multi_line_message_whole_when_there_is_no_inner_text():
+    from app.services.chatbot import engine as engine_mod
+
+    body = "Check stock\nSrt2367 2pc\nSrt2565 2pc"
+    assert engine_mod._pv2_text(_env(), body) == body
+
+
+def test_pv2_text_drops_only_the_reply_to_line_when_there_is_no_inner_text():
+    from app.services.chatbot import engine as engine_mod
+
+    got = engine_mod._pv2_text(_env(reply_to="Which one?"),
+                               "Check stock\nSrt2367 2pc\nreply to: Which one?\n")
+    assert got == "Check stock\nSrt2367 2pc"
+
+
+def test_pv2_text_keeps_multi_line_typed_text():
+    from app.services.chatbot import engine as engine_mod
+
+    assert engine_mod._pv2_text(_env("a\nb"), "a\nb\n\n") == "a\nb"
