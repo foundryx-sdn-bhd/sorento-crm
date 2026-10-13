@@ -227,11 +227,24 @@ def _spec_miss_intro(data: dict) -> str | None:
     unrecorded = {k: n for k, n in unrecorded.items() if isinstance(n, int) and n > 0}
     if not alternatives and not unrecorded:
         return None
-    lines = ["No exact match."]
-    for a in alternatives:
-        label = a.get("label") or labels.get(a.get("key")) or a.get("key")
-        values = ", ".join(_spec_value(v, a.get("unit")) for v in a["values"])
-        lines.append(f"{label} values on file: {values}.")
+    asked = data.get("spec_size_asked") if isinstance(data.get("spec_size_asked"), dict) else None
+    if asked is not None:
+        # Owner ruling 13 Oct 2026 (option b): the size asked, then one sorted list of the sizes
+        # on file over every axis, never one line per axis.
+        unit = asked.get("unit") or "mm"
+        sizes = sorted(
+            {_qty(v) for a in alternatives if (a.get("unit") or unit) == unit for v in a["values"]
+             if isinstance(v, (int, float)) and not isinstance(v, bool)}
+        )
+        lines = [f"No {_spec_value(asked.get('value'), unit)}."]
+        if sizes:
+            lines.append(f"Sizes on file: {', '.join(_spec_value(v, unit) for v in sizes)}.")
+    else:
+        lines = ["No exact match."]
+        for a in alternatives:
+            label = a.get("label") or labels.get(a.get("key")) or a.get("key")
+            values = ", ".join(_spec_value(v, a.get("unit")) for v in a["values"])
+            lines.append(f"{label} values on file: {values}.")
     for key, n in unrecorded.items():
         label = labels.get(key) or next(
             (a.get("label") for a in alternatives if a.get("key") == key and a.get("label")),

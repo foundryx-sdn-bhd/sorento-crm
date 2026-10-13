@@ -266,6 +266,9 @@ LABELS: dict[str, dict[str, str]] = {
     "{code}: customers and months": {"ms": "{code}: pelanggan dan bulan", "zh": "{code}：客户和月份"},
     "How many items do you want to see? Reply with a number from 1 to {max}.": {"ms": "Berapa banyak item yang anda mahu lihat? Balas dengan nombor dari 1 hingga {max}.", "zh": "您想看多少个项目？请回复 1 到 {max} 之间的数字。"},
     "How many categories do you want to see? Reply with a number from 1 to {max}.": {"ms": "Berapa banyak kategori yang anda mahu lihat? Balas dengan nombor dari 1 hingga {max}.", "zh": "您想看多少个类别？请回复 1 到 {max} 之间的数字。"},
+    # Owner ruling 13 Oct 2026 (size-miss wording, option b; the MCP presenter's sentences).
+    "No {size}.": {"ms": "Tiada {size}.", "zh": "没有 {size}。"},
+    "Sizes on file: {sizes}.": {"ms": "Saiz yang ada: {sizes}.", "zh": "现有尺寸：{sizes}。"},
     "Showing {from} to {to} of {total}. Reply to see more.": {
         "ms": "Menunjukkan {from} hingga {to} daripada {total}. Balas untuk lihat lagi.",
         "zh": "显示第 {from} 至 {to} 项，共 {total} 项。回复即可查看更多。",
@@ -556,6 +559,8 @@ INLINE = frozenset(
         "I could not fetch {label} just now, please try again.",
         "*{label}*: this is not enabled for your account.",
         "Nothing on {names} either.",
+        "No {size}.",
+        "Sizes on file: {sizes}.",
         "Not checked: {names}.",
         "I could not find {names}.",
         "I have attached the file(s) below.",

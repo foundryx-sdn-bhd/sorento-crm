@@ -341,5 +341,8 @@ def resolve_size(
         extra: dict = {"spec_alternatives": alternatives, "spec_unrecorded": {}}
         if missing:
             extra["spec_unrecorded"] = {SIZE_KEY: int(missing)}
+        # Owner ruling 13 Oct 2026 (size-miss wording, option b): "No 250 mm. Sizes on file: ...";
+        # the reply echoes the size asked, so the route says which.
+        extra["spec_size_asked"] = {"value": size["value"], "unit": "mm"}
         return None, extra
     return out, {"spec_resolved": resolved}

@@ -64,6 +64,6 @@ def test_d4_a_size_miss_echoes_the_size_and_merges_every_axis(tool):
             "spec_unrecorded": {"size": 28},
         },
     )
-    assert "No 250 mm. Sizes on file: 130 mm, 150 mm." in out, out
-    assert "values on file" not in out and "No exact match" not in out, out
-    assert "28 have no Size recorded." in out, out
+    assert "no 250 mm. sizes on file: 130 mm, 150 mm." in out, out  # `text()` lowercases
+    assert "values on file" not in out and "no exact match" not in out, out
+    assert "28 have no size recorded." in out, out
