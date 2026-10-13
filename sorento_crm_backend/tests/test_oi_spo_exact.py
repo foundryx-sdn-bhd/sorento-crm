@@ -312,3 +312,42 @@ def test_repair_moves_the_fallback_link_and_leaves_manual_links(ctx, capsys):
     capsys.readouterr()
     assert repair.main(["--apply"], db=db) == 0
     assert "0 row(s) re-linked" in capsys.readouterr().out
+
+
+def test_repair_leaves_every_auto_link_the_book_states(ctx, capsys):
+    """The repair never touches an auto link the book itself states: on an allocation
+    naming the row's own PO line, on one naming the SO line directly (`from_so_line_ref`),
+    or on one naming a PO line of the row that was cancelled after the link was written."""
+    from scripts import repair_oi_spo_exact as repair
+
+    db = ctx.db
+    row, own, sibling_allocation, core_line, _so, po, product = _case_one(db, ctx)
+    own_allocation = _seed_spo_line(
+        db, company_id=ctx.company_a, product_id=product.id, from_po_number=po.po_number,
+        from_po_line_ref=own.source_ref, allocated_quantity=10,
+    )
+    direct_allocation = _seed_spo_line(
+        db, company_id=ctx.company_a, product_id=product.id, from_po_number=po.po_number,
+        from_so_line_ref=core_line.source_ref, allocated_quantity=10,
+    )
+    cancelled = _sibling_line(
+        db, po=po, product_id=product.id, qty_ordered="12",
+        from_so_line_ref=core_line.source_ref,
+    )
+    cancelled.line_status = "cancelled"
+    cancelled_allocation = _seed_spo_line(
+        db, company_id=ctx.company_a, product_id=product.id, from_po_number=po.po_number,
+        from_po_line_ref=cancelled.source_ref, allocated_quantity=12,
+    )
+    for allocation, qty in (
+        (own_allocation, "10"), (direct_allocation, "10"), (cancelled_allocation, "12"),
+    ):
+        _fallback_link(db, ctx, row, allocation, qty=qty)
+    db.commit()
+    before = sorted(str(link.id) for link in _links_of(db, row.id))
+
+    assert repair.main(["--apply"], db=db) == 0
+
+    db.expire_all()
+    assert sorted(str(link.id) for link in _links_of(db, row.id)) == before
+    assert "0 row(s) re-linked" in capsys.readouterr().out

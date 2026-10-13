@@ -253,7 +253,8 @@ def derived_spo_open_clauses() -> tuple:
     Declared ONCE, at one seam, so `links_for_rows`' display entries and
     `OrderInquiryWorklistService`'s `kind=spo` / `linked=spo` / `spo_number` filters -
     the same rule, read from two different files - can never drift apart. The caller
-    has already joined `SPOAllocation` (matched on `from_po_number` + `product_id`)
+    has already joined `SPOAllocation` (matched on `from_po_number` + the PO line's
+    `from_po_line_ref` + `product_id`, OI-SPO-EXACT)
     and outer-joined `InboundShipment` on it; this states only the openness test.
     """
     return (
@@ -6238,16 +6239,16 @@ class ProjectOrderInquiryService:
         is `spo_supply.open_incoming_clauses()` (line open, not received, shipment not
         landed) AND `retired_at IS NULL` AND `allocated_quantity > coalesce(quantity_
         received, 0)` - a landed shipment has already measured out, not incoming any
-        more. Two open allocations on the same PO and product both appear; there is no
+        more. Two open allocations of the same PO line both appear; there is no
         tie-break to pick between them (the owner's ruling, 16 Sep). A row linked to two
         purchase orders carries BOTH POs' allocations (AC-D13), which is why the map
         above holds a SET of pairs per row.
 
         COMPANY-SCOPED BY HAND (AC-D14), not only by the session listener. The join is
-        on `from_po_number` (plain text off the AutoCount feed) and `product_id`, and
-        neither is company-scoped in itself, so another company's allocation naming the
-        same PO number string and the same product would otherwise read as this row's
-        incoming stock. The listener does fire here - `SPOAllocation` is an entity of
+        on `from_po_number` and `from_po_line_ref` (plain text off the AutoCount feed)
+        and `product_id`, and none is company-scoped in itself, so another company's
+        allocation naming the same strings and the same product would otherwise read as
+        this row's incoming stock. The listener does fire here - `SPOAllocation` is an entity of
         this query - but the worklist's own reader states the predicate explicitly, and
         the two seams must not be able to differ if the listener ever changes.
 
@@ -6290,7 +6291,7 @@ class ProjectOrderInquiryService:
         )
         if not allocations:
             return
-        by_pair: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        by_pair: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
         for (
             spo_number,
             from_po_number,

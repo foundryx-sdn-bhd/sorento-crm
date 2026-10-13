@@ -232,6 +232,28 @@ def test_oi_spo_exact_an_allocation_of_a_sibling_po_line_is_not_derived(world):
     }, links
 
 
+def test_oi_spo_exact_a_po_line_with_no_source_ref_derives_nothing(world):
+    """A PO line with a blank `source_ref` names no line an allocation can quote, so even an
+    allocation whose `from_po_line_ref` is blank too is not derived (blank never matches
+    blank), in the display entries or the cards."""
+    db, company_id, _raiser, project, supplier = world
+    product, po, row = _po_linked_row(
+        db, company_id, project, supplier, po_number_suffix="B"
+    )
+    db.query(PurchaseOrderLine).filter(
+        PurchaseOrderLine.purchase_order_id == po.id
+    ).update({PurchaseOrderLine.source_ref: ""})
+    _spo(
+        db, company_id, spo_number=f"ZZT-SPO-BLANK-{_uid()[:6]}", product_id=product.id,
+        from_po_number=po.po_number, from_po_line_ref="", allocated_quantity=5,
+    )
+    db.commit()
+
+    links = ProjectOrderInquiryService(db).links_for_rows([row.id])[row.id]
+    assert not any(link.get("derived") for link in links), links
+    assert _kinds_for(db)["spo"] == "0"
+
+
 # ------------------------------------------------------------------------------ AC-D2
 
 

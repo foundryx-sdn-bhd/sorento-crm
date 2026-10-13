@@ -22,12 +22,22 @@ repaired when it carries the fallback's signature, read off AutoCount's own colu
   (`from_so_line_ref`), not a book-named PO line (`from_po_number` + `from_po_line_ref`),
   not a book claim.
 
+A PO line the book names counts whatever its status: a link written through a line that
+was cancelled afterwards is not the fallback's.
+
 Each such link is removed through the service's own `_remove_links` (its audit claim with
 it), and the row's freed need is paired again through `pair_needs`, the one rule the
 importer and `follow_book_for_rows` both call, and written through `_write_link` with
 `auto: oi_spo_exact_repair` - so the row lands on its own line's container, or on the PO
 line itself when no allocation names it. Manual links are never read, removed or moved.
-Any other auto link is left alone, whatever it points at.
+
+READ THE DRY RUN BEFORE `--apply`. The signature is the fallback's, but it is not only
+the fallback's: an older cascade auto link (`auto_place_for_products`) that placed the
+remainder of a line on a sibling PO line's open SPO looks the same, and is moved too
+(the owner's rule: explicit links only). A row whose re-pair cannot place everything it
+gave back is printed with `SHORT BY <qty>`; it is left partly linked, not re-cascaded.
+This script runs `pair_needs` only: not `follow_book_for_rows`' linkable-row filter nor
+its D3 displacement of another line's holder.
 
 SAFETY / IDEMPOTENCY
 --------------------
@@ -141,6 +151,17 @@ def _book_documents(db, core_line: SalesOrderLine) -> Dict[str, set]:
     allocations, po_lines = _bought_rows(db, [core_line])
     allocation_ids = {str(a.id) for a in allocations}
     po_line_ids = {str(line.id) for line in po_lines}
+    ref = (core_line.source_ref or "").strip()
+    if ref:
+        # Every status, unlike `_bought_rows`: a line cancelled after the link was written
+        # still is the line the link was written through.
+        po_line_ids |= {
+            str(line_id)
+            for (line_id,) in db.query(PurchaseOrderLine.id).filter(
+                PurchaseOrderLine.from_so_line_ref == ref,
+                PurchaseOrderLine.product_id == core_line.product_id,
+            )
+        }
     for claim in order_link_service._claim_rows(db, so_line_ids={str(core_line.id)}):
         if claim["source"] not in _BOOK_CLAIM_SOURCES:
             continue
@@ -241,8 +262,11 @@ def run_company(db, company_id: str) -> List[Dict[str, Any]]:
             .filter(Product.id == core_line.product_id)
             .scalar()
         )
+        gave_back = sum((t["qty"] for t in old), _ZERO)
+        placed = sum((_dec(t["qty"]) for t in new), _ZERO)
         changes.append({
             "row_id": str(row.id),
+            "short": max(gave_back - placed, _ZERO),
             "inquiry_no": inquiry_no,
             "product_code": product_code or row.item_code,
             "old": old,
@@ -293,7 +317,14 @@ def run(db, *, apply: bool, company_ids: Optional[Sequence[str]] = None) -> Dict
         for change in changes:
             old = "; ".join(_target_label(t) for t in change["old"])
             new = "; ".join(_target_label(t) for t in change["new"]) or "(nothing)"
-            print(f"  {change['inquiry_no']}  {change['product_code']}  {old}  ->  {new}")
+            short = (
+                f"  SHORT BY {format(change['short'].normalize(), 'f')}"
+                if change["short"] > _ZERO
+                else ""
+            )
+            print(
+                f"  {change['inquiry_no']}  {change['product_code']}  {old}  ->  {new}{short}"
+            )
     return out
 
 
