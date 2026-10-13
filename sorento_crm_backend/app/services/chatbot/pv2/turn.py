@@ -280,6 +280,17 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     raw_state = session_vars.get("pv2")
     profile = hctx.profile
 
+    def _reference_kinds(rdb: Any) -> list[str]:
+        from app.services.chatbot.contracts import visible_reference_kinds
+        from app.services.chatbot.head.access import _granted_field_reveal_keys
+        from app.services.chatbot.turn.state import is_staff_profile
+
+        try:
+            attrs = _granted_field_reveal_keys(rdb, contact_id=contact, space_id=space_id)
+        except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
+            attrs = []
+        return visible_reference_kinds(attrs, is_staff_profile(profile))
+
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
             return load_exchanges(edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since)
@@ -299,7 +310,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys))),
+            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), reference_kinds=_reference_kinds(db))),
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile),
             report_answer=answer_mod.default_report_answer(
