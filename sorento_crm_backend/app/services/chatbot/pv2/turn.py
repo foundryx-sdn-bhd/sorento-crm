@@ -187,13 +187,17 @@ def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any, held_report
         return None
     from app.services.chatbot.pv2 import reports
 
-    merged = held_report
+    running = held_report
     for ask in getattr(out, "asks", None) or []:
         report = getattr(ask, "report", None)
+        # Mirror apply: only a refine merges onto the held report, a new topic starts bare.
+        base = running if getattr(ask, "act", None) in ("refines_held", "switch_back") else None
         if report is None:
+            running = base
             continue
-        # Judge the spec the turn will run (held + this refine), never a partial refine.
-        merged = reports.edit_report(merged, report, cleared=getattr(ask, "cleared", None) or ())
+        # Judge the spec this ask will run (held + this refine), never a partial refine.
+        merged = reports.edit_report(base, report, cleared=getattr(ask, "cleared", None) or ())
+        running = merged
         if ask.domain in answer_mod.REPORT_DOMAINS and merged is not None and _is_sales_dataset(merged):
             from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
