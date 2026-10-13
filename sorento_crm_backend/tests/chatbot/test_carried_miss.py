@@ -17,7 +17,8 @@ not contain never turns an answer into "Couldn't find" when the domain cannot us
 token of that kind at all. A carried token of a kind the domain DOES look up (a product
 under `incoming`) is still the subject of the ask, so its miss stands; a token the
 current message typed that resolves to nothing is still a miss. No domain list: the
-domain's own `ALLOWED` row (`gate_debug.allowed_lookup`) says which kinds it can use.
+domain's own `ALLOWED` row (`gate_debug.allowed_lookup`) says which kinds it can use, and
+a turn with no row excuses nothing.
 
 Every uuid here is synthetic.
 """
@@ -130,8 +131,6 @@ def _entity(raw: str, hint: str, *, current: bool) -> dict[str, Any]:
     [
         ("portal_link", []),
         ("forms", ["form"]),
-        # An unmapped domain (chat_analytics, help): no `allowed_lookup` at all.
-        ("chat_analytics", None),
     ],
 )
 def test_a_carried_token_the_domain_cannot_use_is_no_miss(domain, allowed):
@@ -154,6 +153,17 @@ def test_a_carried_order_number_under_a_domain_that_looks_up_references_is_still
     ctx = _ctx(unresolved=[ORDER_TOKEN], domain="purchase_order", allowed=["purchase_order", "customer_po_ref", "product"])
 
     assert resolve_gate.if3_miss(ctx, parser=parser) is True
+
+
+@pytest.mark.parametrize("domain", [None, "chat_analytics"])
+def test_a_domain_with_no_allowed_row_excuses_nothing(domain):
+    """No `ALLOWED` row (no domain at all, as on a quick-reply pick "2" after "sorento
+    grab bar promotion", or an unmapped one): the gate passed every entity through, so the
+    carried word keeps its miss and the turn takes today's path
+    (`test_promo_round3_detection.py`'s brand pick went red when it was excused)."""
+    parser = {"domain_hint": domain, "entities": [_entity("grab bar", "category", current=False)]}
+
+    assert resolve_gate.if3_miss(_ctx(unresolved=["grab bar"], domain=domain, allowed=None), parser=parser) is True
 
 
 def test_a_typed_token_that_resolves_to_nothing_is_still_a_miss():

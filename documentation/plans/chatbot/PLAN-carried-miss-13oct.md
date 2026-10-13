@@ -32,6 +32,10 @@ Deliberately narrower than "a carried token is never a miss": a carried token of
 domain DOES look up (a product under `incoming`, an order number under `purchase_order`) is the
 subject of the ask, so its miss stands. Answering a broad list there would answer a question
 nobody asked. A reference hint (`order`) counts by the kinds it narrows to (`REFERENCE_NARROW`).
+A turn whose domain has no `ALLOWED` row (no domain at all, as on a quick-reply pick, or an
+unmapped one) excuses nothing: the gate passes every entity through there, and excusing the
+carried word sent a promotion brand pick down the wrong path (`test_promo_round3_detection.py`,
+caught by the local suite run).
 
 ## Fix
 
@@ -48,6 +52,7 @@ carried-only excuses in `engine.py` (product-scoped fetch, chat_analytics) are u
 - U2: a token the CURRENT message typed that does not resolve is still a miss.
 - U3: a carried token of a kind the domain looks up and that does not resolve is still a miss; a
   settled carried product ("eta?" after a product) still answers it (`test_stale_extra_carry.py`).
-- U4: forms / chat_analytics with a stale carried order number: no miss.
+- U4: forms with a stale carried order number: no miss. chat_analytics keeps its own engine
+  excuse; a no-row turn (quick-reply pick) keeps today's behaviour.
 
 Tests: `sorento_crm_backend/tests/chatbot/test_carried_miss.py`.
