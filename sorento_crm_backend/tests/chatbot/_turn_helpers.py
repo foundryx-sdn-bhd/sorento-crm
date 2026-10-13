@@ -230,14 +230,15 @@ def make_office_tier(session_factory: Any, respond_io_id: Any) -> None:
     from sqlalchemy import text
 
     db = session_factory()
-    db.execute(
+    marked = db.execute(
         text(
             "UPDATE respond_contacts SET chatbot_profile = "
             "COALESCE(chatbot_profile, '{}'::jsonb) || '{\"tier\": \"office\"}'::jsonb "
             "WHERE respond_io_id = :c"
         ),
         {"c": str(respond_io_id)},
-    )
+    ).rowcount
+    assert marked == 1, f"no single seeded contact {respond_io_id!r} to mark as staff ({marked})"
     db.commit()
 
 
@@ -255,11 +256,12 @@ def make_office_access_type(session_factory: Any, respond_io_id: Any) -> None:
         text("INSERT INTO contact_access_types (code, name, is_active) VALUES (:c, 'Sorento Office', true)"),
         {"c": code},
     )
-    db.execute(
+    marked = db.execute(
         text(
             "INSERT INTO respond_contact_access_types (contact_id, access_type_code) "
             "SELECT id, :c FROM respond_contacts WHERE respond_io_id = :cid"
         ),
         {"c": code, "cid": str(respond_io_id)},
-    )
+    ).rowcount
+    assert marked == 1, f"no single seeded contact {respond_io_id!r} to mark as staff ({marked})"
     db.commit()
