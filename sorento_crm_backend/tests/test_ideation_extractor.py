@@ -565,10 +565,9 @@ def test_extractor_prompt_cleans_every_value_and_never_keeps_typed_punctuation()
 
     text = ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback()
     lower = text.lower()
-    # W2: the owner's own example, and the punctuation rule.
-    assert "the manufactuirng?" in lower and "'manufacturing'" in lower
+    # W2: the punctuation rule (the department example is gone with the department field, AC-07/08).
     assert "question mark" in lower
-    assert "title case" in lower
+    assert "manufactuirng" not in lower and "title case" not in lower
     # W1: a stated idea gets the need behind it as its problem; a raw captured value is re-cleaned.
     assert "the need behind it" in lower and "never invent a problem for a message that names no idea" in lower
     assert "re-emit" in lower

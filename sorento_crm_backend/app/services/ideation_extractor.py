@@ -92,8 +92,11 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
                 "key is the intake answer key, value is the user's answer as plain "
                 "text. problem = the Business problem: what is wrong or missing "
                 "today, including the cost the user names. desired_outcome = what "
-                "the user wants to be true afterwards; a solution the user states "
-                "counts here, in their words. current_workaround = how they cope "
+                "the user wants to be true afterwards or wants built; a solution the "
+                "user states counts here, in their words (the problem keeps the need "
+                "behind it, the outcome keeps the stated solution), but leave it empty "
+                "when the user said no such thing and never fill it with a situation "
+                "that went into use_cases. current_workaround = how they cope "
                 "today. Decide which key a message updates by its MEANING, never by "
                 "which field was just asked (next_field is only a hint). A field "
                 "the user did not state stays out. Empty when the turn adds "
@@ -122,7 +125,8 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
             "type": "array",
             "description": (
                 "Each concrete situation the user named, one string each, at most 5. "
-                "Never suggest a use case the user did not name. Empty when none."
+                "Never suggest a use case the user did not name. A situation listed here is "
+                "never repeated in problem or desired_outcome. Empty when none."
             ),
             "items": {"type": "string"},
         },
