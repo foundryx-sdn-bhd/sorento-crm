@@ -112,12 +112,12 @@ def test_adopted_untracked_row_before_cutover_is_assumed(env, delivered, cutover
 
 def test_adopted_row_with_a_date_keeps_its_tracking(env, delivered, cutover):
     """AC-DH32: any tracking wins."""
-    _excel_row(env, "ZZDO-0001", actual_delivery_date=datetime(2024, 3, 6))
+    _excel_row(env, "ZZDO-0001", actual_delivery_date=date(2024, 3, 6))
     env.push_do([_dated(do_records()[0], "2024-03-05")])
     o = env.order(900001)
     assert str(o.order_status_id) == env.new_status
     assert o.tracking_assumed_at is None
-    assert o.actual_delivery_date == datetime(2024, 3, 6)
+    assert o.actual_delivery_date == date(2024, 3, 6)
 
 
 def test_adopted_row_with_another_status_keeps_it(env, delivered, cutover):
@@ -162,7 +162,7 @@ def test_delivered_rule_accepts_the_marker_in_place_of_a_date(env, delivered):
     assumed = Order(order_number="ZZDH-A", company_id=env.company, order_status_id=delivered,
                     tracking_assumed_at=datetime(2026, 10, 13, tzinfo=timezone.utc))
     dated = Order(order_number="ZZDH-D", company_id=env.company, order_status_id=delivered,
-                  actual_delivery_date=datetime(2026, 9, 1))
+                  actual_delivery_date=date(2026, 9, 1))
     bare = Order(order_number="ZZDH-B", company_id=env.company, order_status_id=delivered)
     marked_new = Order(order_number="ZZDH-N", company_id=env.company,
                        order_status_id=env.new_status,

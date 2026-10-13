@@ -829,6 +829,31 @@ class AutocountDocIngestService(MasterRefResolver):
         warnings.append(WARN_BRANCH_UNRESOLVED)
         return None
 
+    def _delivered_status_id(self) -> Optional[str]:
+        key = ("order_statuses", "code", "delivered")
+        if key not in self._memo:
+            row = (
+                self.db.query(OrderStatus.id)
+                .filter(OrderStatus.status_code.ilike("delivered"))
+                .first()
+            )
+            self._memo[key] = str(row[0]) if row else None
+        return self._memo[key]
+
+    def _assumed_delivered_status(self, doc_date) -> Optional[str]:
+        """DO-HISTORY: the delivered status when a DO dated `doc_date` has no tracking to come
+        (`settings.do_assume_delivered_before`, owner 13 Oct 2026), else None. Read per call so
+        the setting can be switched for a backfill window without a restart."""
+        from app.config import settings
+
+        cutover = getattr(settings, "do_assume_delivered_before", None)
+        if cutover is None or doc_date is None or doc_date >= cutover:
+            return None
+        status_id = self._delivered_status_id()
+        if status_id is None:
+            logger.warning("ingest.assume_delivered_skipped: no 'delivered' order status")
+        return status_id
+
     def _new_status_id(self) -> Optional[str]:
         key = ("order_statuses", "code", "new")
         if key not in self._memo:
@@ -1115,9 +1140,15 @@ class AutocountDocIngestService(MasterRefResolver):
 
         counts = _line_counts()
         counts["skipped"] = sum(1 for line in doc.lines if line.item_code is None)
+        # DO-HISTORY: only the first landing assumes delivery; an update never does.
+        assumed_status = self._assumed_delivered_status(doc.doc_date)
         if existing is None:
-            order = Order(company_id=self.company_id, order_status_id=self._new_status_id(),
+            order = Order(company_id=self.company_id,
+                          order_status_id=assumed_status or self._new_status_id(),
                           last_synced_at=datetime.utcnow(), **header)
+            if assumed_status:
+                # Delivered by assumption: status only, `actual_delivery_date` stays empty.
+                order.tracking_assumed_at = datetime.now(timezone.utc)
             self.db.add(order)
             self.db.flush()
             for values in lines:
@@ -1129,6 +1160,13 @@ class AutocountDocIngestService(MasterRefResolver):
 
         if adopted:
             warnings.append(WARN_ADOPTED)
+            # An adopted Order Tracking row with no tracking yet (no date, status empty or
+            # new) is assumed delivered like a created one; any tracking it holds wins.
+            if (assumed_status and existing.actual_delivery_date is None
+                    and (existing.order_status_id is None
+                         or str(existing.order_status_id) == self._new_status_id())):
+                existing.order_status_id = assumed_status
+                existing.tracking_assumed_at = datetime.now(timezone.utc)
         if existing.source_vanished_at is not None:
             warnings.append(WARN_RESTORED)
         changed = self._write_lines(

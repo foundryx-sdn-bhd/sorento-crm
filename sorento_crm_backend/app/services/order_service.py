@@ -79,7 +79,8 @@ def _delivered_status_ids(db) -> list:
 
 
 def _delivered_clause(delivered_status_ids: list):
-    """The canonical delivered predicate: delivered/completed status AND a set date.
+    """The canonical delivered predicate: delivered/completed status AND a set date (or the
+    DO-HISTORY `tracking_assumed_at` marker in its place).
 
     With no delivered statuses configured nothing is delivered (``false()``), so a
     "delivered" bucket returns no rows and a summary counts zero delivered.
@@ -88,13 +89,15 @@ def _delivered_clause(delivered_status_ids: list):
         return false()
     return and_(
         Order.order_status_id.in_(delivered_status_ids),
-        Order.actual_delivery_date.is_not(None),
+        # DO-HISTORY (owner 13 Oct 2026): the assumed-delivery marker stands in for the date
+        # on a backfilled pre-July DO, which is delivered with no delivery date.
+        or_(Order.actual_delivery_date.is_not(None), Order.tracking_assumed_at.is_not(None)),
     )
 
 
 def _outstanding_clause(delivered_status_ids: list):
     """Null-safe negation of ``_delivered_clause``: NULL status, non-delivered
-    status, or no date. ``~_delivered_clause`` is NOT this - for a NULL
+    status, or neither a date nor the assumed-delivery marker. ``~_delivered_clause`` is NOT this - for a NULL
     ``order_status_id`` it evaluates to SQL NULL and drops the row from a
     FILTER (WHERE ...) aggregate while ``total - delivered`` still counts it
     (cross-model review, 2026-08-25)."""
@@ -103,7 +106,7 @@ def _outstanding_clause(delivered_status_ids: list):
     return or_(
         Order.order_status_id.is_(None),
         Order.order_status_id.not_in(delivered_status_ids),
-        Order.actual_delivery_date.is_(None),
+        and_(Order.actual_delivery_date.is_(None), Order.tracking_assumed_at.is_(None)),
     )
 
 
