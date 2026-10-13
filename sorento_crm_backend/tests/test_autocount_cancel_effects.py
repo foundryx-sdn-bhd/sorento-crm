@@ -340,3 +340,15 @@ def test_po_detail_names_the_cancel_documents(env):
     line = PurchaseOrderService(env.db).get_one(str(po_id))["lines"][0]
     assert LineSchema.model_validate(line).model_dump()["cancels"] == [
         {"doc_no": "ZZXP-960001", "qty": 3.0, "match_reason": "item"}]
+
+
+def test_so_detail_lists_the_cancel_documents_oldest_first(env):
+    """Review nit: the tooltip reads the documents in the order they were raised."""
+    from app.services.scm.sales_order_service import SalesOrderService
+
+    _push_so(env, "ZZ-CX-SQ3", ordered=10, delivered=10)
+    _push_xs(env, "ZZ-CX-SQ3", 2, doc_key=950009)
+    _push_xs(env, "ZZ-CX-SQ3", 3, doc_key=950002)
+    so_id = str(_line(env, "ZZ-CX-SQ3").sales_order_id)
+    line = SalesOrderService(env.db).get(so_id)["lines"][0]
+    assert [c["doc_no"] for c in line["cancels"]] == ["ZZXS-950002", "ZZXS-950009"]
