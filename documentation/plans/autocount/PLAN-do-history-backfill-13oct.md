@@ -1,8 +1,8 @@
 # PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan v3 (crew answer to v2, 13 Oct): cutover = 2023-09-01; unique-match links stay;
-building C1 (location narrowing) and C3 (backfill flag). C2 held on one ask (section 8). The
-line-key source for the ambiguous case is pending with crew.** Track: full
+Status: **plan v3; C1 (location narrowing) and C3 (backfill flag) built on top of slice 1
+(marker column). C2 (assume delivered) is held on the cutover ask (section 8). The line-key source
+for ambiguous lines is pending with crew.** Track: full
 (migration column, ingest behaviour change). Slice 1 (the `tracking_assumed_at` column) is built
 and pushed at `cb05abdf`; nothing else is built. PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
@@ -180,7 +180,7 @@ MCH DOs a month, about 3.4 lines each) that is on the order of 270,000 DOs and 9
 Through the push route that means 270,000 header audit rows and more than a million embedding
 events.
 
-**Contract 2.9 (additive).** An optional envelope flag `"backfill": true` on
+**Contract (additive, no version bump).** An optional envelope flag `"backfill": true` on
 `POST /external/ingest/delivery_orders`. With the flag, the route:
 - runs the ingest under `suppress_embedding_events("order", "order_line")`
   (`embedding_change_listener.py:34`, as the tracking import does at `order_service.py:3328`);
@@ -236,12 +236,14 @@ original ask. C2 is not built until this is answered.
 
 ## 9. Build slices (after K and the ask)
 
-1. Built: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
+1. **Built**: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
    cleared by a tracking row.
-2. C1: location narrowing for several unique-product candidates; tests (key, unique match,
+2. **Built**: C1 location narrowing for several unique-product candidates; tests (key, unique match,
    ambiguous unlinked, location-narrowed link, location still ambiguous).
 3. C2: assumed delivery in the ingest, behind the setting; tests.
-4. C3: the contract 2.9 `backfill` flag; tests; section 13 of the contract doc updated for the SS lane.
+4. **Built**: C3, the optional `backfill` envelope flag. Its tests are in `tests/test_do_history_backfill_flag.py`, and
+   section 13.2 of `PLAN-autocount-cross-repo-contract.md` is updated for the SS lane. The flag is additive and
+   optional, so the contract version string stays as is (avoids a clash with #1623's 2.8).
 5. The #1623 gate (Q4 a), after #1623 merges.
 
 Not built: SO history, and a UI badge for assumed rows (trigger: the owner asks to tell them apart).
