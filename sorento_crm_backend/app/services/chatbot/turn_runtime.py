@@ -3133,12 +3133,17 @@ def stamp_customer_ask(
         from app.services.chatbot.lanes.business import services as business_services
 
         gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
+        from app.services.chatbot.lanes.business.fetch import is_uuid as is_uuid_value
+
+        # An option the resolver placed nowhere (typed words) carries its code as identity,
+        # not a uuid: it goes as a name, so the probe reads the window unfiltered and the
+        # family-base rule attributes the rows (a saturated page reads as not measured).
         entities: list[dict[str, Any]] = []
         for option in options:
             for uuid in option.get("uuids") or [option.get("uuid")]:
                 entities.append(
                     {
-                        "uuid": uuid if uuid else None,
+                        "uuid": uuid if is_uuid_value(uuid) else None,
                         "entity_type": "customer",
                         "code": option.get("code"),
                         "raw": option.get("name") or option.get("label"),

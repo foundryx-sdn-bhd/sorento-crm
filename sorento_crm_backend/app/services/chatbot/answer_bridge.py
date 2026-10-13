@@ -597,9 +597,9 @@ def _roster_option(row: dict[str, Any], *, kind: str, position: int) -> dict[str
     # "name")` specifically, not "label") can put the NAME on the focus entity a
     # pick just settled, not the account code nobody typed. Missing here left a
     # picked customer's own scope-block line reading its code back at the
-    # customer who just read the name on the roster. `title` first: the gate's own
-    # ambiguous-customer picker rows (`resolve_gate.if_customer_picker`) carry the
-    # printed name under `title`, never `name` (measured live writing this fix).
+    # customer who just read the name on the roster. `title` first for a row that
+    # carries one (the gate's customer rows do, but they are built by
+    # `_customer_offer_options` now, PICKER-ONE).
     name = row.get("title") or row.get("name")
     if name:
         option["name"] = name
@@ -859,21 +859,24 @@ def _offer_answer(
         # every other customer roster asks, so it prints the same way - through
         # `compose_question`, never the production text ladder's "Which customer do you
         # mean? Please choose:" with its own label and stamp rules.
+        # Always returned from here: the gate writes no customer picker text any more, so
+        # there is no other rendering to fall back to. The gate's families and
+        # `ledger_family_key` group by the same rule (`gate._cust_base`, rule for rule), so
+        # its two or more representatives stay two or more options.
         options = _customer_offer_options(payload, entities, db)
-        if len(options) >= _MIN_ROSTER_OPTIONS:
-            question = pending.ask(
-                "customer_pick",
-                options,
-                team=team,
-                asked_at_turn=asked_at_turn,
-                payload=_offer_ask_payload(parser),
-            )
-            text = turn_compose.compose_question(question).text
-            # The gate's own "Couldn't find: ..." rides in the same message (R3).
-            dropped = str(payload.get("dropped_filter_line") or "").strip()
-            if dropped:
-                text = f"{dropped}\n\n{text}"
-            return turn_compose.Answer(text=text, question=question)
+        question = pending.ask(
+            "customer_pick",
+            options,
+            team=team,
+            asked_at_turn=asked_at_turn,
+            payload=_offer_ask_payload(parser),
+        )
+        text = turn_compose.compose_question(question).text
+        # The gate's own "Couldn't find: ..." rides in the same message (R3).
+        dropped = str(payload.get("dropped_filter_line") or "").strip()
+        if dropped:
+            text = f"{dropped}\n\n{text}"
+        return turn_compose.Answer(text=text, question=question)
     lane_item = {**payload, "branch_kind": "not_found"}
     # The resolver's OWN gate (`require_specific` is True for the incoming/product picker
     # exit, per `resolve_gate.if_incoming_picker`) - passed through so

@@ -5282,7 +5282,7 @@ def _run_stages_body(  # noqa: PLR0915
                             for e in (verdict.get("entities") or [])
                             if isinstance(e, dict)
                         )
-                        and not _asks_outstanding(verdict)
+                        and not _roster_is_outstanding(verdict, state_out.focus)
                     ),
                     # Rows 1 and 7: the promotion and purchase-order product rosters carry
                     # has promo / no promo and has PO / no PO, read the same way

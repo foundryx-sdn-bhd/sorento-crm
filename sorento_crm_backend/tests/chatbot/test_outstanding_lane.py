@@ -3585,13 +3585,14 @@ class TestOwnerRoundFivePickerAndOfferScope:
             f"the warehouse-hinted token must never inflate the customer count: "
             f"{out.get('gate_reason')!r}"
         )
-        clarification = out.get("gate_clarification") or ""
-        assert "STOCK TRANSFER" not in clarification.upper(), (
+        # PICKER-ONE: the gate writes no picker text; its rows ARE the picker's lines
+        # (`answer_bridge._offer_answer` prints them through the one builder).
+        rows = [e.get("title") for e in out.get("compatible_entities") or []]
+        assert not any("STOCK TRANSFER" in str(r).upper() for r in rows), (
             f"a warehouse token resolved (however wrongly) as a customer must never "
-            f"become a line in the customer picker: {clarification!r}"
+            f"become a line in the customer picker: {rows!r}"
         )
-        assert "1. HANLIM TRADING SDN BHD (SRT)" in clarification, clarification
-        assert "2. HANLIM HARDWARE SDN BHD (SRT)" in clarification, clarification
+        assert rows == ["HANLIM TRADING SDN BHD (SRT)", "HANLIM HARDWARE SDN BHD (SRT)"], rows
 
 
 # --------------------------------------------------------------------------- #
@@ -3979,10 +3980,11 @@ class TestOutstandingAskPickerHasNoDeliveryHint:
     def test_plain_delivery_ask_picker_keeps_the_do_hint(self, session_factory, monkeypatch) -> None:
         """Guard: R20 is scoped to an OUTSTANDING ask - a plain order/delivery ask
         against the SAME ambiguous customer keeps today's `- has DO` / `- no DO`
-        hint unchanged. `pickers.py`'s own unit-level guards already pin the
-        underlying `annotate_customer` behaviour this end-to-end turn exercises
-        (`tests/chatbot/test_resolve_gate_unit.py::TestPickerProbeArms::
-        test_a_defaulted_window_bounds_the_miss_claim`,
+        hint unchanged. The unit-level guards already pin the underlying
+        measurement this end-to-end turn exercises (PICKER-ONE:
+        `resolve_gate.measure_customer_picker` + `pickers.customer_stamp`;
+        `tests/chatbot/test_resolve_gate_unit.py::TestPickerProbeArms::
+        test_a_defaulted_window_is_reported`,
         `test_an_order_with_no_delivery_order_is_not_counted_as_one`); this test is
         the LANE-level regression lock that a sloppy R20 implementation (e.g. gating
         on `domain_hint == "order"` instead of the order_status axis) does not also

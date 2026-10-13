@@ -221,7 +221,9 @@ def _options(
     # tell two lines apart, and one company set across every line tells nothing apart.
     # Printed in the label itself, so a reply that types the whole line back still matches
     # the option it read.
-    company_sets = {tuple(companies_of[id(o)]) for o in built}
+    # Compared as SETS ("MCH, SRT" and "SRT, MCH" are one set); printed first-seen. A line
+    # with no company code (a shared row) prints no tag of its own.
+    company_sets = {frozenset(companies_of[id(o)]) for o in built}
     if len(company_sets) > 1:
         for option in built:
             codes = companies_of[id(option)]

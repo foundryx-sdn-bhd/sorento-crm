@@ -256,6 +256,17 @@ class TestCompanyTagOnlyWhenCompaniesDiffer:
         assert "(SRT)" not in text, text
 
 
+    def test_the_same_companies_in_another_order_are_the_same_set(self) -> None:
+        """Reviewer S1: "MCH, SRT" and "SRT, MCH" are one company set, so no tag."""
+        options = narrow.customer_options(
+            [
+                {"name": "JYL JUBIN SDN BHD", "uuid": UUID_A, "company_codes": ["MCH", "SRT"]},
+                {"name": "YI HONG TILING", "uuid": UUID_B, "company_codes": ["SRT", "MCH"]},
+            ]
+        )
+        assert [o["label"] for o in options] == ["JYL JUBIN SDN BHD", "YI HONG TILING"]
+
+
 class TestNotMeasuredMeansNoStamp:
     """`None` bases is the probe's NOT MEASURED arm (failed, saturated, or R20's outstanding
     ask that never probes): no stamp on any path, never a confident "no DO"."""
@@ -302,3 +313,76 @@ class TestOneStampHelper:
         assert out["customer_bases_with_do"] == sorted(_bases())
         out = resolve_gate.measure_customer_picker(dict(gate), probe=None, parser={})
         assert out["customer_bases_with_do"] is None
+
+
+# --------------------------------------------------------------------------- #
+# The engine's ask point, end to end (reviewer B1): a typed-names roster - two customer
+# words the resolver placed nowhere - is stamped by the same helper on a real turn, and
+# an outstanding ask (R20) is neither probed nor stamped.
+# --------------------------------------------------------------------------- #
+
+
+def _typed_names_turn(session_factory, monkeypatch, *, order_status: str | None):
+    from app.services.chatbot.lanes.business.services import ResolveGateServices
+    from tests.chatbot.conftest import validating_resolve_entity
+    from tests.chatbot.test_engine import _parser_output
+    from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
+
+    probes: list[Any] = []
+
+    def probe(*, tool, contact_id, entities, semantic_input, user_prompt):
+        probes.append(entities)
+        return {
+            "items": [
+                {
+                    "title": "DO-1",
+                    "fields": [
+                        {"label": "Customer", "value": "HANLIM TRADING SDN BHD"},
+                        {"label": "Actual Delivery Date", "value": "2026-10-01"},
+                    ],
+                }
+            ],
+            "has_result": True,
+        }
+
+    services = ResolveGateServices(
+        access_types=lambda **_: [{"name": "Sorento Dealer"}],
+        resolve_entity=validating_resolve_entity(
+            lambda body: {"tokens": [], "resolutions": [], "unresolved_tokens": []}
+        ),
+        probe=probe,
+    )
+    _seed_contact(session_factory, variables={})
+    result, _captured = _run_turn(
+        session_factory,
+        monkeypatch,
+        qf=_parser_output(
+            domain_hint="order",
+            intent_hint="check_order",
+            order_status=order_status,
+            entities=[
+                {"raw": "hanlim trading", "hint": "customer", "canonical_code": None,
+                 "current_message": True, "confident": True},
+                {"raw": "hanlim hardware", "hint": "customer", "canonical_code": None,
+                 "current_message": True, "confident": True},
+            ],
+        ),
+        text_body="DO for hanlim trading and hanlim hardware",
+        msg_id=f"zzt-picker-one-typed-{order_status}",
+        resolve_services=services,
+    )
+    return (result.reply or {}).get("text") or "", probes
+
+
+class TestAskPointStampsATypedNamesRoster:
+    def test_the_typed_names_roster_is_stamped_on_a_real_turn(self, session_factory, monkeypatch) -> None:
+        reply, probes = _typed_names_turn(session_factory, monkeypatch, order_status=None)
+        assert reply == "Which one do you mean?\n1. hanlim trading - has DO\n2. hanlim hardware - no DO"
+        assert len(probes) == 1, probes
+
+    def test_an_outstanding_typed_names_roster_is_neither_probed_nor_stamped(
+        self, session_factory, monkeypatch
+    ) -> None:
+        reply, probes = _typed_names_turn(session_factory, monkeypatch, order_status="outstanding")
+        assert reply == "Which one do you mean?\n1. hanlim trading\n2. hanlim hardware"
+        assert probes == []
