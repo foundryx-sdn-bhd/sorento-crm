@@ -663,3 +663,24 @@ def test_manifest_offers_the_cost_datasets():
     tools = {t["name"]: t for t in build_manifest()["tools"]}
     assert {"turn_costs", "llm_calls"} <= set(tools["chat_query"]["input_schema"]["properties"]["dataset"]["enum"])
     assert "turn_costs" in tools["chat_list_datasets"]["description"]
+
+
+def test_the_local_client_signs_calls_the_connector_accepts(monkeypatch):
+    """`scripts/connector_local_call.py` stands in for SS on a local copy (claude.ai cannot reach
+    one): its token must pass the real verifier, permission checks and route, end to end."""
+    from scripts.connector_local_call import build_request
+
+    with pg_session() as db:
+        with client_for(db, monkeypatch) as client:
+            _ensure(db)
+            s = _seed(db)
+            user = make_user(db, "localclient", perms=(USE, CHAT_VIEW))
+            method, url, raw, headers = build_request(
+                "chat_query", {}, {"dataset": "turn_costs", "columns": ["id", "contact_phone"],
+                                   "filters": [{"column": "id", "op": "eq", "value": s["priced"]}]}, user.id)
+            resp = client.request(method, url, content=raw or None, headers=headers)
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["rows"] == [[s["priced"], "+60100000001"]]
+            method, url, raw, headers = build_request("chat_describe_dataset", {"key": "llm_calls"}, None, user.id)
+            assert url == f"{BASE}/datasets/llm_calls"
+            assert client.request(method, url, headers=headers).status_code == 200
