@@ -1436,38 +1436,79 @@ def test_openai_reports_the_answering_model_and_reasoning_tokens(monkeypatch):
     assert result.model == "gpt-5.4-mini-2026-03-17"
 
 
-def test_gemini_maps_reasoning_effort_onto_the_thinking_budget(monkeypatch):
+def test_gemini_3_keeps_its_default_budget_but_gets_answer_headroom(monkeypatch):
+    """Crew gate, 13 Oct: flash-lite truncated a parser answer at the 2048 cap that the
+    same answer fits under on mini. On 3.x `thinkingBudget` is a legacy hint, not a
+    ceiling, so thinking can eat the answer budget it is billed against. The default
+    (budget 1, the only value 3.x takes that means "barely think") is kept and the
+    answer gets `GEMINI_3_ANSWER_HEADROOM` on top; output is billed as used, so room
+    that is not needed costs nothing."""
+    import app.services.llm_provider as llm
+
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    GeminiProvider("k").chat(
+        [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100
+    )
+    generation = t.body["generationConfig"]
+    assert generation["thinkingConfig"] == {"thinkingBudget": 1}
+    assert generation["maxOutputTokens"] == 100 + 1 + llm.GEMINI_3_ANSWER_HEADROOM
+
+
+def test_gemini_3_takes_an_effort_as_its_thinking_level(monkeypatch):
+    """`thinkingLevel` is the 3.x control (`thinkingBudget` is kept there only for
+    backward compatibility, and the two together are a 400), so an effort goes out as a
+    level, never beside a budget."""
+    import app.services.llm_provider as llm
+
     t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
     provider = GeminiProvider("k")
+    for effort, level in (("none", "minimal"), ("minimal", "minimal"), ("low", "low"), ("medium", "medium"), ("high", "high")):
+        provider.chat(
+            [{"role": "user", "content": "hi"}],
+            model="gemini-3.5-flash-lite",
+            max_tokens=100,
+            reasoning_effort=effort,
+        )
+        generation = t.body["generationConfig"]
+        assert generation["thinkingConfig"] == {"thinkingLevel": level}, effort
+        assert generation["maxOutputTokens"] == (
+            100 + llm.GEMINI_3_ANSWER_HEADROOM + llm.GEMINI_EFFORT_BUDGETS.get(effort, 0)
+        ), effort
 
-    # Unset: the provider default this file already pins, unchanged.
-    provider.chat([{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100)
-    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1}
-    assert t.body["generationConfig"]["maxOutputTokens"] == 101
 
+def test_gemini_2_5_maps_an_effort_onto_its_budget_as_before(monkeypatch):
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    provider = GeminiProvider("k")
+    provider.chat([{"role": "user", "content": "hi"}], model="gemini-2.5-flash", max_tokens=100)
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    assert t.body["generationConfig"]["maxOutputTokens"] == 100
     provider.chat(
-        [{"role": "user", "content": "hi"}],
-        model="gemini-3.5-flash-lite",
-        max_tokens=100,
-        reasoning_effort="low",
+        [{"role": "user", "content": "hi"}], model="gemini-2.5-flash", max_tokens=100, reasoning_effort="low"
     )
-    budget = t.body["generationConfig"]["thinkingConfig"]["thinkingBudget"]
-    assert budget > 1
-    assert t.body["generationConfig"]["maxOutputTokens"] == 100 + budget
-
-    # "none" / "minimal" is the smallest budget the model takes (3.x refuses zero).
-    provider.chat(
-        [{"role": "user", "content": "hi"}],
-        model="gemini-3.5-flash-lite",
-        reasoning_effort="minimal",
-    )
-    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1}
-
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1024}
+    assert t.body["generationConfig"]["maxOutputTokens"] == 100 + 1024
     # A model with no thinking (2.0) still gets no thinkingConfig, whatever is asked.
     provider.chat(
         [{"role": "user", "content": "hi"}], model="gemini-2.0-flash", reasoning_effort="high"
     )
     assert "thinkingConfig" not in t.body["generationConfig"]
+
+
+def test_a_truncated_gemini_answer_says_where_the_tokens_went(monkeypatch):
+    """The failed `understood` record is the only place a truncation shows; it has to
+    say whether thinking or the answer used the budget, or the next cap is a guess."""
+    payload = {
+        "candidates": [{"content": {"parts": [{"text": '{"a": "'}]}, "finishReason": "MAX_TOKENS"}],
+        "usageMetadata": {"promptTokenCount": 9000, "candidatesTokenCount": 300, "thoughtsTokenCount": 1800},
+    }
+    _install(monkeypatch, _GeminiTransport(payload))
+    with pytest.raises(RuntimeError) as caught:
+        GeminiProvider("k").chat(
+            [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100
+        )
+    message = str(caught.value)
+    assert "MAX_TOKENS" in message
+    assert "thinking 1800" in message and "answer 300" in message
 
 
 def test_gemini_reports_the_answering_model_and_reasoning_tokens(monkeypatch):

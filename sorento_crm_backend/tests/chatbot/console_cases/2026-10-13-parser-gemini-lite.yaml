@@ -150,10 +150,20 @@ cases:
         covers: [opening]
         expect:  # VERIFIED 2026-09-27-top-selling-round5.yaml (transcript 1)
           reply_contains: ["By quantity or by amount?"]
+      # Crew gate 13 Oct: since REPORT-ENGINE (#1447) "qty" settles the metric and the
+      # bot then asks the BASIS (`lanes/business/__init__.py` `_top_selling_question`).
+      # The first version of this case expected the ranking here and never answered that
+      # question, so every later turn re-asked it on any model.
       - text: "qty"
         covers: [short_reply]
-        expect:  # VERIFIED same
+        expect:  # VERIFIED basis line 2026-09-26-top-selling.yaml ("Basis" case)
+          reply_contains: ["Delivered (transferred to DO) or ordered?"]
+          parser: {rank_by: quantity}
+      - text: "delivered"
+        covers: [short_reply]
+        expect:  # NEW; the answer rule is the TOP SELLING addendum's own example
           reply_contains: ["*Top 100 selling items*"]
+          parser: {basis: delivered}
       - text: "2026"
         covers: [short_reply, narrow]
         expect:  # NEW; the "2025?" form is VERIFIED in the same file (worst selling)
@@ -170,7 +180,7 @@ cases:
           branch_kind: business_query
           reply_contains: ["*Product:* SRTWT7445", "*Total:* Qty"]
           no_uuid: true
-      - text: "back to the top 100 selling items in 2026 by quantity"
+      - text: "back to the top 100 delivered items in 2026 by quantity"
         covers: [back]
         expect:  # NEW
           reply_contains: ["*Top 100 selling items*", "Delivery date: 01/01/2026 to 31/12/2026"]
