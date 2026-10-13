@@ -221,10 +221,18 @@ def test_so_detail_shows_delivered_without_the_cancel(env):
 
 
 # ======================================================================= review round 2
-def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env):
+def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env, monkeypatch):
     """Review N1: XS 10 + XS 2 on 10 ordered (capped, cancelled), then AutoCount raises the line
     to 12 ordered / 12 transferred: the push reopens it, the relink derives 12 of 12 and the
-    line must read cancelled again, not stay closed."""
+    line must read cancelled again, not stay closed. N1b: that re-cancel is not a NEW one, so
+    the OI rows are retired and flagged once over the whole story, never again."""
+    import app.services.project_order_inquiry_service as oi
+
+    retired, flagged = [], []
+    monkeypatch.setattr(oi.ProjectOrderInquiryService, "retire_rows_for_cancelled_lines",
+                        lambda self, cancelled, actor_user_id=None: retired.append(1) or 0)
+    monkeypatch.setattr(oi, "flag_rows_for_cancelled_lines",
+                        lambda db, ids: flagged.append(list(ids)) or 0)
     _push_so(env, "ZZ-CX-SN1", ordered=10, delivered=10)
     _push_xs(env, "ZZ-CX-SN1", 10)
     _push_xs(env, "ZZ-CX-SN1", 2, doc_key=950002)
@@ -232,6 +240,8 @@ def test_a_full_cancel_after_the_push_raised_ordered_still_cancels(env):
     _push_so(env, "ZZ-CX-SN1", ordered=12, delivered=12)
     line = _line(env, "ZZ-CX-SN1")
     assert (line.qty_cancelled, line.line_status) == (Decimal("12"), "cancelled")
+    assert len(retired) == 1
+    assert flagged == [[str(line.id)]]
 
 
 def test_the_partial_cancel_change_reads_the_cs_required_basis(env, monkeypatch):
