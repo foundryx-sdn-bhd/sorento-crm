@@ -721,6 +721,10 @@ class SalesOrderLine(Base, CompanyScopedMixin):
     warehouse_id = Column(UUID(as_uuid=False), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=True)
     qty_ordered = Column(Numeric(15, 4), default=0, nullable=False)
     qty_delivered = Column(Numeric(15, 4), default=0, nullable=False)
+    # AC-CANCEL-CRM: what AutoCount Cancel SO (XS) documents cancelled on this line, derived on
+    # every sync from `autocount_cancel_lines` (never hand-written). `qty_delivered` stays
+    # AutoCount's TransferedQty, which INCLUDES this; delivered shown = qty_delivered - this.
+    qty_cancelled = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
     # What the customer pays for this line. The column has always been on the table and
     # was simply never mapped (same as `source_doc_no` / `internal_note` on the header
     # above), so every read through the ORM dropped it and a schema built from the models

@@ -64,6 +64,11 @@ from app.services.autocount_doc_ingest_service import (
     link_waiting_grn_lines,
     run_grn_receipt_hook as _run_grn_receipt_hook,
 )
+from app.services.autocount_cancel_ingest_service import (
+    AUTOCOUNT_CANCEL_ENTITIES,
+    AutocountCancelIngestService,
+    run_cancel_hooks as _run_cancel_hooks,
+)
 from app.services.document_ingest_service import (
     DOCUMENT_ENTITIES,
     DocumentIngestService,
@@ -126,6 +131,10 @@ INGEST_PERMISSIONS = {
     "delivery_orders": "order_management.orders.edit",
     "goods_receive_notes": "procurement.grn.edit",
     "branches": "order_management.branches.edit",
+    # AC-CANCEL-CRM (contract 2.8): a Cancel SO / Cancel PO changes what the SO / PO line
+    # reads, so it is the same act as pushing that order, and the same slug.
+    "cancel_sales_orders": "scm.sales_orders.edit",
+    "cancel_purchase_orders": "scm.purchase_orders.edit",
 }
 READ_PERMISSIONS = {
     "product_categories": "master_data.product_categories.view",
@@ -145,6 +154,9 @@ READ_PERMISSIONS = {
     "goods_receive_notes": "procurement.grn.view",
     # Mapped so every map covers every entity; the route itself answers 404 (no read door).
     "branches": "order_management.branches.view",
+    # Mapped for completeness; the route answers 404 (no read door, like branches).
+    "cancel_sales_orders": "scm.sales_orders.view",
+    "cancel_purchase_orders": "scm.purchase_orders.view",
 }
 # Deleting through the ESB is its own act, so it takes its own slug on top of the
 # ingest guard the router already carries (group A4 mounts the route). Declared
@@ -169,6 +181,9 @@ DELETE_PERMISSIONS = {
     "delivery_orders": "order_management.orders.delete",
     "goods_receive_notes": "procurement.grn.delete",
     "branches": "order_management.branches.delete",
+    # 2.8: the sweep's vanished cancel docs stop cancelling; nothing is removed.
+    "cancel_sales_orders": "scm.sales_orders.delete",
+    "cancel_purchase_orders": "scm.purchase_orders.delete",
 }
 
 # A batch cap the ESB can design against. Exceeding it errors rather than
@@ -242,6 +257,7 @@ SUPPORTED_ENTITIES = (
     | set(BILLING_DOCUMENT_ENTITIES)
     | set(AUTOCOUNT_DOC_ENTITIES)
     | set(AUTOCOUNT_BRANCH_ENTITIES)
+    | set(AUTOCOUNT_CANCEL_ENTITIES)
 )
 
 # Bumped whenever the wire shape of an entity changes in a way the ESB must gate
@@ -278,7 +294,13 @@ SUPPORTED_ENTITIES = (
 # the envelope adds a required `book`, the idempotency key is (company, book, DocKey), a DO / GRN
 # adopts an upload-created row by its number, and `/deletions` takes the sweep's vanished
 # `doc_keys` for a DocDate range and cancels them, never deletes. Additive.
-CONTRACT_VERSION = "2.7"
+# "2.8" (AC-CANCEL-CRM): `cancel_sales_orders` (AutoCount XS) and `cancel_purchase_orders` (XP)
+# join as push entities in the 2.7 vendor shape (envelope `book`, key (company, book, DocKey),
+# source_ref {book}:XS:{DocKey} / {book}:XP:{DocKey}). Each line is matched to the SO / PO / SPO
+# line it cancels and the line's cancelled qty is derived on every sync; `/deletions` marks the
+# vanished docs, which then cancel nothing. No read door. `cancel_line_waiting` and
+# `cancel_line_unmatched` join `warnings`. Additive.
+CONTRACT_VERSION = "2.8"
 
 
 def _principal_may_delete(db: Session, current_user: dict, entity: str) -> bool:
@@ -761,7 +783,12 @@ def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, cur
             code="BATCH_TOO_LARGE",
         )
     company_id = resolve_company_anchor(db, payload, current_user)
-    service = AutocountDocIngestService(
+    service_class = (
+        AutocountCancelIngestService
+        if entity in AUTOCOUNT_CANCEL_ENTITIES
+        else AutocountDocIngestService
+    )
+    service = service_class(
         db, current_user.get("integration_id"), company_id=company_id, book=book
     )
     result = service.delete(entity, doc_keys, date_from, date_to, dry_run=dry_run)
@@ -771,6 +798,8 @@ def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, cur
         db.commit()
         if entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
+        elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+            _run_cancel_hooks(db, service, actor=current_user.get("id"))
     summary = result.as_dict()["summary"]
     logger.info(
         "deletion.batch entity=%s integration=%s company=%s dry_run=%s "
@@ -865,7 +894,11 @@ def ingest_masters(
             code="BATCH_TOO_LARGE",
         )
 
-    book = _book(payload) if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES else None
+    book = (
+        _book(payload)
+        if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES | AUTOCOUNT_CANCEL_ENTITIES
+        else None
+    )
 
     company_id = resolve_company_anchor(db, payload, current_user)
 
@@ -897,6 +930,10 @@ def ingest_masters(
     elif entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES:
         # Contract 2.7: the AutoCount record as the vendor API returned it, keyed per book.
         ingester = AutocountDocIngestService
+        extra["book"] = book
+    elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+        # Contract 2.8: Cancel SO / Cancel PO, same vendor shape and envelope as 2.7.
+        ingester = AutocountCancelIngestService
         extra["book"] = book
     else:
         ingester = MasterIngestService
@@ -948,6 +985,8 @@ def ingest_masters(
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
         elif entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
+        elif entity in AUTOCOUNT_CANCEL_ENTITIES:
+            _run_cancel_hooks(db, service, actor=current_user.get("id"))
 
     logger.info(
         "ingest.batch entity=%s integration=%s company=%s dry_run=%s "
@@ -1004,7 +1043,7 @@ def delete_records(
     entity = _entity(entity)
     _no_branch_door(entity)
 
-    if entity in AUTOCOUNT_DOC_ENTITIES:
+    if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_CANCEL_ENTITIES:
         return _cancel_vanished(entity, payload, dry_run, db, current_user)
 
     source_refs = payload.get("source_refs")
@@ -1135,6 +1174,12 @@ def read_current_state(
     """
     entity = _entity(entity)
     _no_branch_door(entity)
+    if entity in AUTOCOUNT_CANCEL_ENTITIES:
+        raise AppException(
+            status_code=404,
+            message=f"'{entity}' has no read door",
+            code="UNKNOWN_ENTITY",
+        )
 
     source_refs = payload.get("source_refs")
     if not isinstance(source_refs, list):

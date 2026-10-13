@@ -18,6 +18,7 @@ from app.models.sales import SalesTeam, SalesTeamMember
 from app.models.stock_ask import StockAsk
 from app.models.finance import BillingDocument, BillingDocumentLine
 from app.models.autocount_branch import Branch
+from app.models.autocount_cancel import AutocountCancelDoc, AutocountCancelLine
 from app.models.autocount_compare_mapping import AutocountCompareMapping
 from app.models.inventory import Warehouse, StorageZone, Stock, StockBatch, StockLedger
 from app.models.procurement import Supplier, ProductSupplier, InboundShipment, InboundShipmentLine, SPOAllocation, PickingHeader, PickingLine, StockInquiry, PurchaseRequestHeader, PurchaseRequestLine, PurchaseOrder, PurchaseOrderLine
@@ -401,6 +402,8 @@ __all__ = [
     "BillingDocumentLine",
     # AutoCount branch table (#1354 S2)
     "Branch",
+    "AutocountCancelDoc",
+    "AutocountCancelLine",
     "AutocountCompareMapping",
     # Dealer Kit (schema: dealer_kit)
     "Page",

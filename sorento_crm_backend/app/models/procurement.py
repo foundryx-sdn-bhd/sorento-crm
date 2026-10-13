@@ -578,6 +578,10 @@ class SPOAllocation(Base, CompanyScopedMixin):
     #: writes `max(stated_received, its share of the approved picking total)`.
     #: NULL reads as 0: every row written before this column existed stated nothing.
     stated_received = Column(Integer, nullable=True)
+    #: AC-CANCEL-CRM: what AutoCount Cancel PO (XP) documents cancelled on this SPO line,
+    #: derived on every sync. AutoCount adds a cancel to the line's TransferedQty, so
+    #: `stated_received` already INCLUDES this; received shown = received - this.
+    qty_cancelled = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
     #: When the ESB stopped naming this line (spo-xlsx-supersede D28d, migration
     #: 488). Set by the leftover sweep (a re-push of the same DocKey no longer
     #: states it) and by the DocKey-change path (the document was re-created, so
@@ -922,6 +926,9 @@ class PurchaseOrderLine(Base, CompanyScopedMixin):
     warehouse_id = Column(UUID(as_uuid=False), ForeignKey("warehouses.id", ondelete="RESTRICT"), nullable=True)
     qty_ordered = Column(Numeric(15, 4), default=0, nullable=False)
     qty_received = Column(Numeric(15, 4), default=0, nullable=False)
+    # AC-CANCEL-CRM: what AutoCount Cancel PO (XP) documents cancelled on this line, derived
+    # on every sync. `qty_received` stays TransferedQty, which INCLUDES this.
+    qty_cancelled = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=True)
     # The rest of the money line the AutoCount PO detail listing states, and the unit the
     # quantity was ordered IN. All three nullable, and an absent figure stays absent: a 0
