@@ -59,15 +59,30 @@ def _now(turn: dict[str, Any]) -> str:
     recorded = (turn.get("source") or {}).get("recorded_at")
     if recorded:
         return str(recorded)
-    ts = ((turn.get("envelope") or {}).get("message") or {}).get("timestamp")
+    ts = _inner(turn).get("timestamp")
     if isinstance(ts, (int, float)):
         return datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
     return "2026-10-13T10:00:00+08:00"
 
 
+def _inner(turn: dict[str, Any]) -> dict[str, Any]:
+    """The respond.io message object with its text, found by walking `message` keys from
+    the envelope (the console and webhook shapes nest it at different depths), with the
+    nearest `timestamp` seen on the way."""
+    node: Any = turn.get("envelope") or {}
+    timestamp = None
+    for _ in range(4):
+        if not isinstance(node, dict):
+            break
+        timestamp = node.get("timestamp", timestamp)
+        if isinstance(node.get("text"), str):
+            return {**node, "timestamp": timestamp}
+        node = node.get("message")
+    return {"timestamp": timestamp}
+
+
 def _text(turn: dict[str, Any]) -> str:
-    inner = ((turn.get("envelope") or {}).get("message") or {}).get("message") or {}
-    return str(inner.get("text") or "")
+    return str(_inner(turn).get("text") or "")
 
 
 def _language(text: str) -> str:
@@ -144,7 +159,9 @@ def _entities(verdict: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None
     return ents, attachment_type, specs
 
 
-def _resolver(turn: dict[str, Any], ents: list[dict[str, Any]]) -> dict[str, Any]:
+def _resolver(
+    turn: dict[str, Any], ents: list[dict[str, Any]], attachment_type: str | None = None
+) -> dict[str, Any]:
     """The fake resolver config from the turn's recorded resolutions: one exact match ->
     exact, several -> ambiguous (options keyed and labelled by code, never a uuid), none ->
     none. Index-kind entities resolve to their own key."""
@@ -188,7 +205,14 @@ def _resolver(turn: dict[str, Any], ents: list[dict[str, Any]]) -> dict[str, Any
             }
         else:
             entities[lookup] = {"status": "none", "refs": [], "options": []}
-    return {"entities": entities, "specs": {}, "attachment_types": {}}
+    attachment_types: dict[str, Any] = {}
+    if attachment_type:
+        attachment_types[attachment_type] = {
+            "status": "exact",
+            "refs": [{"kind": "attachment_type", "key": attachment_type, "label": attachment_type}],
+            "options": [],
+        }
+    return {"entities": entities, "specs": {}, "attachment_types": attachment_types}
 
 
 def _answer_key(verdict: dict[str, Any]) -> str | None:
@@ -284,7 +308,7 @@ def convert_replays() -> list[dict[str, Any]]:
             text = _text(turn)
             parser_out = convert_verdict(verdict, text=text, has_prior=i > 1, prior_pending=prior_pending)
             ents = parser_out["asks"][0]["entities"]
-            resolver = _resolver(turn, ents)
+            resolver = _resolver(turn, ents, parser_out["asks"][0]["attachment_type"])
             pending = (turn.get("expected") or {}).get("pending")
             rows.append(
                 {
@@ -313,31 +337,34 @@ def convert_console_cases() -> list[dict[str, Any]]:
         turn_no = 0
         case_name = None
         for case in doc.get("cases") or []:
-            if case.get("cold", False) or case_name is None:
+            if case.get("cold", False) or case_name is None or case.get("turns"):
                 case_name = f"console/{Path(path).stem}/{case.get('name')}"
                 turn_no = 0
-            turn_no += 1
-            expect = case.get("expect") or {}
-            must_not = [" · ", *[str(x) for x in expect.get("reply_not_contains") or []]]
-            rows.append(
-                {
-                    "case": case_name,
-                    "turn": turn_no,
-                    "now": "2026-10-13T10:00:00+08:00",
-                    "state_in": None,
-                    "text": case.get("text"),
-                    "index_sha": None,
-                    "parser_out": None,
-                    "source": f"converted:{rel}",
-                    "resolver": None,
-                    "expect": {
-                        "reply_must": [str(x) for x in expect.get("reply_contains") or []],
-                        "reply_must_not": must_not,
-                        "no_uuid": bool(expect.get("no_uuid", True)),
-                        "v1": {"branch_kind": expect.get("branch_kind")},
-                    },
-                }
-            )
+            steps = case.get("turns") or [{"text": case.get("text"), "expect": case.get("expect")}]
+            for step in steps:
+                turn_no += 1
+                expect = step.get("expect") or {}
+                must_not = [" · ", *[str(x) for x in expect.get("reply_not_contains") or []]]
+                rows.append(
+                    {
+                        "case": case_name,
+                        "turn": turn_no,
+                        "now": "2026-10-13T10:00:00+08:00",
+                        "state_in": None,
+                        "text": step.get("text"),
+                        "index_sha": None,
+                        "parser_out": None,
+                        "source": f"converted:{rel}",
+                        "resolver": None,
+                        "live_only": bool(case.get("live_only", False)),
+                        "expect": {
+                            "reply_must": [str(x) for x in expect.get("reply_contains") or []],
+                            "reply_must_not": must_not,
+                            "no_uuid": bool(expect.get("no_uuid", True)),
+                            "v1": {"branch_kind": expect.get("branch_kind")},
+                        },
+                    }
+                )
     return rows
 
 
