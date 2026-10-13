@@ -19,7 +19,9 @@ the pending question; two misses on the same question offer a hand-over.
 """
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Literal, Protocol
+from zoneinfo import ZoneInfo
 
 from app.services.chatbot.pv2 import clarify_copy
 from app.services.chatbot.pv2.schema import Ask, Entity, ParserV2Output, Spec
@@ -55,6 +57,10 @@ PASS_THROUGH_PENDING = frozenset({"idea_similar", "idea_missing_field", "idea_mu
 
 #: Pending kinds whose question is an open one: a free value answers it.
 FREE_VALUE_PENDING = frozenset({"idea_missing_field", "v1_open_question"})
+
+def local_date(now: datetime) -> date:
+    return now.astimezone(ZoneInfo("Asia/Kuala_Lumpur")).date() if now.tzinfo else now.date()
+
 
 #: `Ask.cleared` names (section 1).
 CLEARABLE = frozenset({"attachment_type", "period", "report", "specs"})
@@ -102,6 +108,7 @@ def apply_turn(
     resolver: ResolverLike,
     policy: ClarifyPolicy = DEFAULT_POLICY,
     can_offer_handover: bool = True,
+    now: datetime | None = None,
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -111,6 +118,7 @@ def apply_turn(
     st = state.model_copy(deep=True)
     st.turn_no = state.turn_no + 1
     language = out.language
+    today = local_date(now) if now is not None else None
     actions: list[Action] = []
 
     if out.escalation is not None and out.escalation.requested:
@@ -129,7 +137,7 @@ def apply_turn(
     for i, ask in enumerate(out.asks):
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
-            action, answered = _one_ask(st, i, ask, pending_in, out, resolver, policy, language)
+            action, answered = _one_ask(st, i, ask, pending_in, out, resolver, policy, language, today)
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
             action = _miss(st, i, pending_in, miss, language, can_offer_handover)
@@ -163,6 +171,7 @@ def _one_ask(
     resolver: ResolverLike,
     policy: ClarifyPolicy,
     language: str,
+    today: date | None,
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
     if ask.act == "unclear":
@@ -173,7 +182,7 @@ def _one_ask(
         return SmallTalk(ask_index=i), False
 
     if ask.act == "answers_bot_question":
-        return _answer(st, i, ask, pending, resolver, policy, language)
+        return _answer(st, i, ask, pending, resolver, policy, language, today)
 
     if ask.act == "switch_back":
         idx = topic_index(ask.switch_back_to, st.topics)
@@ -184,14 +193,14 @@ def _one_ask(
         st.topics = push_topic(rest, st.held)
         st.held = back.model_copy(deep=True)
         qs: list[ClarifyAct] = []
-        held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True)
+        held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
         return _commit(st, i, held, ask, qs), False
 
     if ask.act == "new_topic":
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
         qs = []
-        held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False)
+        held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False, today=today)
         return _commit(st, i, held, ask, qs), False
 
     # refines_held
@@ -205,7 +214,7 @@ def _one_ask(
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
     qs = []
-    held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True)
+    held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
     if row is not None:
         held = apply_payload(held, row.payload)
     action = _commit(st, i, held, ask, qs)
@@ -231,6 +240,7 @@ def _answer(
     resolver: ResolverLike,
     policy: ClarifyPolicy,
     language: str,
+    today: date | None,
 ) -> tuple[Action, bool]:
     if pending is None:
         raise _Miss("other")
@@ -274,7 +284,9 @@ def _answer(
 
     held = apply_payload(st.held, picked.payload)
     qs: list[ClarifyAct] = []
-    held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True)
+    if "report" in picked.payload and held.report is not None:
+        _plan_report(st, held, resolver, language, i, qs, today)
+    held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
         action.picked = picked
@@ -298,6 +310,7 @@ def _apply_fields(
     qs: list[ClarifyAct],
     *,
     refine: bool,
+    today: date | None = None,
 ) -> Held:
     """`base` with this ask's fields applied. An item that needs the user appends its
     question to `qs` and is left out; every other item still applies (section 3: held =
@@ -328,36 +341,73 @@ def _apply_fields(
             )
     if ask.period is not None:
         held.period = ask.period
-    if ask.report is not None:
-        held.report = _merge_report(held.report, ask.report) if refine else ask.report
-        _resolve_report(st, held, resolver, language, i, qs)
+    if ask.report is not None or (held.report is not None and ({"report", "period"} & set(ask.cleared))):
+        from app.services.chatbot.pv2 import reports
+
+        held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
+        if held.report is not None:
+            _plan_report(st, held, resolver, language, i, qs, today)
     return held
 
 
-def _resolve_report(
-    st: ConversationState, held: Held, resolver: Any, language: str, i: int, qs: list[ClarifyAct]
+def _plan_report(
+    st: ConversationState,
+    held: Held,
+    resolver: Any,
+    language: str,
+    i: int,
+    qs: list[ClarifyAct],
+    today: date | None,
 ) -> None:
-    """Section 4 REPORTS: the held spec through `resolve_report_spec` when the resolver
-    has one. A spec the policy table cannot run yet (a missing measure / basis, asked
-    together in ONE question) becomes this ask's question with the lane's own copy and
-    options; a resolved spec replaces the held one."""
+    """Section 4/5 REPORTS: the held spec's filters through `resolve_report_spec` (when
+    the resolver has one), then `reports.plan_report`. Ambiguous filter names, and the ONE
+    combined policy question for missing fields (owner ruling 4 Oct: a ranking never
+    defaults the metric or the basis), become this ask's question with the lane's own copy
+    and options. Settled filter refs ride on `held.refs` under their dimension."""
+    from app.services.chatbot.pv2 import reports
+
     resolve = getattr(resolver, "resolve_report_spec", None)
-    if resolve is None:
+    res = resolve(held.report, held=held, profile=None) if resolve is not None else None
+    if res is not None:
+        options = [_option(o) for o in (getattr(res, "options", None) or [])]
+        if getattr(res, "status", None) == "ambiguous" and options:
+            qs.append(_clarify(st, i, "entity", getattr(res, "phrase", None), language, options=options))
+            return
+        for dim, refs in (getattr(res, "refs", None) or {}).items():
+            held.refs[dim] = [
+                ResolvedRef(kind=dim, key=str(_get(r, "key")), label=str(_get(r, "label") or _get(r, "key")))
+                for r in refs
+            ]
+    if today is None:
         return
-    res = resolve(held.report, held=held, profile=None)
-    if res is None:
-        return
-    spec = getattr(res, "spec", None)
-    if spec is not None:
-        held.report = spec
-    if getattr(res, "status", None) in ("ask", "ambiguous", "none"):
+    plan = reports.plan_report(held.report, refs=report_refs(held), today=today)
+    if plan.status == "ask":
+        held.report = plan.spec
         qs.append(
             _clarify(
-                st, i, getattr(res, "about", None) or "report_measure", None, language,
-                options=list(getattr(res, "options", None) or []),
-                asked=getattr(res, "asked", None) or getattr(res, "reply", None),
+                st, i, plan.about or "report_measure", None, language,
+                options=[_option(o) for o in plan.options],
+                asked=plan.reply,
             )
         )
+
+
+def report_refs(held: Held) -> dict[str, list[dict[str, str]]]:
+    """`held.refs` in the shape `reports.plan_report` / `answer_report` read: dimension ->
+    [{kind, key, label}]."""
+    return {
+        kind: [{"kind": r.kind, "key": r.key, "label": r.label} for r in refs] for kind, refs in held.refs.items()
+    }
+
+
+def _get(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _option(o: Any) -> Option:
+    if isinstance(o, Option):
+        return o
+    return Option(key=str(_get(o, "key")), label=str(_get(o, "label")), payload=dict(_get(o, "payload") or {}))
 
 
 def _apply_entities(
@@ -486,23 +536,6 @@ def _apply_specs(
             else:
                 held.specs = [h for h in held.specs if h.attribute != r.attribute] + [r]
     return held
-
-
-def _merge_report(held: Any, new: Any) -> Any:
-    """Section 5: a follow-up edits the held report spec field by field: a field the
-    new spec states replaces the held one, a field it leaves null/empty keeps it."""
-    if held is None:
-        return new
-    merged = held.model_copy(deep=True)
-    for name, value in new:
-        if value is None or value == []:
-            continue
-        if name == "filters":
-            dims = {f.dimension for f in value}
-            merged.filters = [f for f in merged.filters if f.dimension not in dims] + list(value)
-        else:
-            setattr(merged, name, value)
-    return merged
 
 
 # --------------------------------------------------------------------------- #

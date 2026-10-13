@@ -133,7 +133,7 @@ def test_report_lookup_calls_the_injected_report_answer_and_lands_pending_and_ro
                             report_answer=report_answer)
     assert len(calls) == 1
     got_spec, refs, today, got_row, incoming = calls[0]
-    assert got_spec == spec and refs == {"customer": ["C1"]} and today == TODAY
+    assert got_spec == spec and refs == {"customer": [{"kind": "customer", "key": "C1", "label": "C1"}]} and today == TODAY
     assert got_row == row and incoming == spec
     assert r.route == "report" and r.direct_reply == "Top customers" and r.verdict is None
     assert r.state.pending.kind == "clarify_report_measure" and [o.key for o in r.state.pending.options] == ["amount"]

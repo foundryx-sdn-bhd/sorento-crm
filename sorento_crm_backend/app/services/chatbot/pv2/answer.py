@@ -95,11 +95,25 @@ def replay_reply(state: ConversationState, actions: list[Action]) -> str:
     formatters, so it contributes nothing here."""
     language = None
     parts = [reply_for(a, language) for a in actions]
+    for a in actions:
+        if isinstance(a, Lookup) and _is_report(a):
+            parts.append(_report_preview(a, state.last_turn_at.date()))
     return "\n\n".join(p for p in parts if p)
 
 
-def _lookup_refs(lookup: Lookup) -> dict[str, list[str]]:
-    return {kind: [r.key for r in refs] for kind, refs in lookup.held.refs.items()}
+def _report_preview(lookup: Lookup, today: date) -> str:
+    """A report lookup's own lines without the data call: the `*Read as:*` header, the
+    "not available yet" notes, or the one line it says instead (`reports.plan_report`)."""
+    from app.services.chatbot.pv2 import reports
+
+    plan = reports.plan_report(lookup.held.report, refs=_lookup_refs(lookup), today=today)
+    return "\n".join(x for x in [plan.header, *plan.notes, plan.reply or ""] if x)
+
+
+def _lookup_refs(lookup: Lookup) -> dict[str, list[dict[str, str]]]:
+    from app.services.chatbot.pv2.apply import report_refs
+
+    return report_refs(lookup.held)
 
 
 def _pending_from(raw: Any, turn_no: int) -> PendingQuestion | None:
@@ -240,12 +254,12 @@ def default_report_answer(*, mcp_call: Callable, contact_id: str | None, space_i
     """`pv2/reports.answer_report` bound to this turn's egress and grants (PV2-REPORTS);
     a picked report row drills in first (`reports.drill_row`)."""
 
-    def run(spec: Any, refs: dict[str, list[str]], today: date, row: Option | None, incoming: Any) -> Any:
+    def run(spec: Any, refs: dict[str, list[dict[str, str]]], today: date, row: Option | None, incoming: Any) -> Any:
         from app.services.chatbot.pv2 import reports
 
         if row is not None and reports.ROW_PAYLOAD in row.payload:
             spec, extra = reports.drill_row(spec, row, incoming=incoming)
-            refs = {**refs, **{k: [str(_attr(r, "key")) for r in v] for k, v in (extra or {}).items()}}
+            refs = {**refs, **(extra or {})}
         return reports.answer_report(
             spec,
             refs=refs,

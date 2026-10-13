@@ -218,6 +218,9 @@ def topic_index(key: str | None, topics: list[Held]) -> int | None:
 def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
     """What picking an option sets, applied to a copy of `held`."""
     out = held.model_copy(deep=True)
+    if isinstance(payload.get("report"), dict) and out.report is not None:
+        # A report policy pick (`reports._question`): the fields it names, onto the held spec.
+        out.report = out.report.model_copy(update=payload["report"], deep=True)
     kind = payload.get("kind")
     if not kind:
         return out

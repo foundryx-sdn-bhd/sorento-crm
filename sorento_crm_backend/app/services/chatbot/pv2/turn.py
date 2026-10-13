@@ -105,6 +105,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         resolver=ctx.resolver,
         policy=ctx.policy,
         can_offer_handover=ctx.can_offer_handover,
+        now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
     result = answer_mod.build_result(
