@@ -6144,6 +6144,13 @@ class ProjectSupplyService:
             warehouse_id = location_ids.get(warehouse)
             if warehouse_id:
                 capacity_left.take(fact.product_id, warehouse_id, qty)
+            if warehouse == fact.own_code and fact.warehouse is not None:
+                # BORROW-OWN-LOC: a Borrow at the own location is judged against the free
+                # stock THIS Reserve leaves there, or one confirmation would hold the same
+                # units once as Reserve and again as Borrow.
+                own_id = str(fact.warehouse.id)
+                borrow_left.free(fact.product_id, own_id, self._free_at)
+                borrow_left.take_free(fact.product_id, own_id, qty)
             lender = sales_agent_service.group_of_warehouse_code(warehouse)
             if lender and lender != fact.group_code:
                 # R-M: and off the LENDING GROUP's budget, so the next line of this
@@ -6550,19 +6557,13 @@ class ProjectSupplyService:
             return
 
         if item.source == ALLOC_SOURCE_OTHER_LOCATION:
-            if fact.warehouse and str(item.warehouse_id) == str(fact.warehouse.id):
-                # Ladder v3: this line's own location is never a BORROW source - free
-                # stock there has no donor to ask, its demand IS this line, and rung 2
-                # reaches it as a Reserve already. The only thing left to borrow here is
-                # ANOTHER SO's committed quantity, which names that line by id.
-                refuse(
-                    invalid,
-                    f"{warehouse.warehouse_code} is this line's own location. Free stock "
-                    "there cannot be borrowed - name the sales-order line it should come "
-                    "from, on the order's own sheet.",
-                )
-                return
-            if str(item.warehouse_id) in self._reserve_location_ids(fact):
+            # BORROW-OWN-LOC (owner, 13 Oct 2026): the line's own location IS a Borrow
+            # source now. It confirms like any other location borrow below: what is free
+            # there (after this line's own Reserve) is held, the rest is recorded short.
+            own = fact.warehouse is not None and str(item.warehouse_id) == str(
+                fact.warehouse.id
+            )
+            if not own and str(item.warehouse_id) in self._reserve_location_ids(fact):
                 refuse(
                     invalid,
                     f"{warehouse.warehouse_code} is inside this line's Reserve pool. "
@@ -10474,6 +10475,31 @@ class ProjectSupplyService:
                 for c in candidates
                 if not (c.get("rung") == RUNG_GROUP_BORROW and not c.get("lower_ranked"))
             ]
+        # BORROW-OWN-LOC (owner, 13 Oct 2026): the line's OWN location is always a Borrow
+        # choice too, whatever holds the stock there and whatever the switch says, even with
+        # nothing there ("planning can be done after delivery"). A plain location row, LAST
+        # and never `recommended`, so the ranked donors keep the head and, in the dialog's
+        # merged bin, a typed quantity beyond the bin's free rides on this row. Confirm
+        # holds what is free after this line's own Reserve and records the rest short.
+        if fact.warehouse is not None:
+            own_id = str(fact.warehouse.id)
+            own_free = free_here.get(own_id, _ZERO)
+            candidates.append(
+                {
+                    "source": ALLOC_SOURCE_OTHER_LOCATION,
+                    "warehouse_code": fact.own_code,
+                    "warehouse_id": own_id,
+                    "free_qty": qty_text(own_free),
+                    **self._donor_pile(fact.product_id, own_id, _ZERO, need),
+                    "donor_impact": {
+                        "free_before": qty_text(own_free),
+                        "free_after_full_borrow": qty_text(_ZERO),
+                        "committed_qty": qty_text(_ZERO),
+                    },
+                    "rung": None,
+                    "recommended": False,
+                }
+            )
         # S4 (`PLAN-local-supplier-oi-routing.md`, AC-2.20): the per-order sheet's own
         # `BorrowCandidate.location`, the board's `_donors_for` wrapper is not on this call
         # path at all - `SupplyLineCard`'s Borrow modal reads THIS list directly. Built by
