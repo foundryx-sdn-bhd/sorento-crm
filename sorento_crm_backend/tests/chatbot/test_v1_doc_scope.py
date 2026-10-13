@@ -3,7 +3,8 @@
 Owner rule: unlinked != customer. A contact with no customer link that is not staff owns no
 documents, so every customer-owned document (delivery order, sales order) is another
 customer's. Staff = `chatbot_profile.tier == "office"` OR an active office access type
-(`engine`'s `ctx["doc_staff"]`). A linked dealer sees only its links'; staff are unchanged.
+(read once per turn by `services.customer_scope_and_staff`; the lane sees `doc_staff`). A
+linked dealer sees only its links'; staff are unchanged.
 
 Paths under test, each found answering for ANY customer on production (2ba0cf0ee):
 

@@ -2056,21 +2056,26 @@ def _top_selling_dealer_scope(
 
 
 def _reference_scope(
-    customer_scope: dict[str, Any] | None, profile: Any, *, doc_staff: bool = False
+    customer_scope: dict[str, Any] | None, profile: Any, *, office_access: bool = False
 ) -> list[Any] | None:
     """REF-PROBES: the customer links a reference-number match must belong to, or None when
     no scope applies. Enforced dealers and any non-staff contact are held to their links (an
     unlinked dealer has none, so another customer's sales order is never offered).
-    `doc_staff` is the turn's V1-DOC-SCOPE staff read (`ctx["doc_staff"]`): the tier, or
-    an active office access type."""
+    V1-DOC-SCOPE: staff is the tier OR an active office access type (`office_access`, read
+    with the scope by `services.customer_scope_and_staff`)."""
     scope = customer_scope or {}
     if scope.get("enforced"):
         return list(scope.get("linked") or [])
-    return None if (doc_staff or is_staff_profile(profile)) else list(scope.get("linked") or [])
+    return None if (office_access or is_staff_profile(profile)) else list(scope.get("linked") or [])
 
 
 def _reference_kinds(
-    ctx: dict[str, Any], customer_scope: dict[str, Any] | None, profile: Any, *, per_match_scope: bool = True
+    ctx: dict[str, Any],
+    customer_scope: dict[str, Any] | None,
+    profile: Any,
+    *,
+    per_match_scope: bool = True,
+    office_access: bool = False,
 ) -> list[str]:
     """The reference kinds this asker may have probed. A lane with no per-match scope drop
     (`per_match_scope=False`, the casual clarifier) loses the customer-owned kinds (sales order,
@@ -2078,7 +2083,7 @@ def _reference_kinds(
     kinds = visible_reference_kinds((ctx.get("access") or {}).get("attributes"), is_staff_profile(profile))
     if (
         not per_match_scope
-        and _reference_scope(customer_scope, profile, doc_staff=bool(ctx.get("doc_staff"))) is not None
+        and _reference_scope(customer_scope, profile, office_access=office_access) is not None
     ):
         kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
     return kinds
@@ -5140,7 +5145,6 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
-        ctx["doc_staff"] = bool(is_staff_profile(state_out.profile) or office_access)
         # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
         # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
         # every other use (the lane applies `chat_report.scope_for` to its own fetch).
@@ -5395,7 +5399,7 @@ def _run_stages_body(  # noqa: PLR0915
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
                     scope_linked=_reference_scope(
-                        doc_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
+                        doc_scope, state_out.profile, office_access=office_access
                     ),
                 )
             )
@@ -5933,12 +5937,14 @@ def _run_stages_body(  # noqa: PLR0915
         if branch_kind == "low_signal" and completes_here:
             try:
                 resolved_for_prompt = casual.resolve_for_prompt(
-                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, doc_scope, state_out.profile, per_match_scope=False)}
+                    db, ctx={**ctx, "reference_kinds": _reference_kinds(
+                        ctx, doc_scope, state_out.profile, per_match_scope=False, office_access=office_access
+                    )}
                 )
                 # V1-DOC-SCOPE: the clarifier prompt names every match, so another customer's
                 # document numbers are dropped from it the way the business lane drops them.
                 clarifier_scope = _reference_scope(
-                    doc_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
+                    doc_scope, state_out.profile, office_access=office_access
                 )
                 if clarifier_scope is not None and isinstance(resolved_for_prompt, dict):
                     resolved_for_prompt = turn_runtime._without_foreign_sales_orders(
@@ -6433,6 +6439,7 @@ def _run_stages_body(  # noqa: PLR0915
                     # what this message's token is, not the parser's hint.
                     resolved_kinds=resolved_kinds,
                     customer_scope=customer_scope,
+                    office_access=office_access,
                     # MULTI-CODE-DYM: each unplaced token's did-you-mean, the same
                     # candidates a lone miss of that token offers.
                     unplaced_suggestions=_unplaced_suggestions(resolver_payload, unplaced_tokens),

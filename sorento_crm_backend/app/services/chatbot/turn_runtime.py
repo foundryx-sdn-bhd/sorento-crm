@@ -3582,6 +3582,7 @@ def make_tool_runner(
     customer_scope: dict[str, Any] | None = None,
     localizer: Any = None,
     unplaced_suggestions: dict[str, list[dict[str, Any]]] | None = None,
+    office_access: bool = False,
     not_checked: list[str] | None = None,
     asked_promo_filter: dict[str, list[str]] | None = None,
     profile: Any = None,
@@ -3786,12 +3787,9 @@ def make_tool_runner(
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
         # Both ALWAYS written, never only when true: `lane_out` starts as the parser's own
         # verdict, so a key the model emitted must not survive as a grant (V1-DOC-SCOPE).
-        # `doc_staff`: may see any customer's DO / SO (`engine`'s `ctx["doc_staff"]`).
-        lane_out = {
-            **lane_out,
-            "ref_staff": is_staff_profile(profile),
-            "doc_staff": bool(is_staff_profile(profile) or ctx.get("doc_staff")),
-        }
+        # `doc_staff`: may see any customer's DO / SO (the tier, or an office access type).
+        ref_staff = is_staff_profile(profile)
+        lane_out = {**lane_out, "ref_staff": ref_staff, "doc_staff": bool(ref_staff or office_access)}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to

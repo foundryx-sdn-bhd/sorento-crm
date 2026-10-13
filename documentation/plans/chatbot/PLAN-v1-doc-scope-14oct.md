@@ -23,9 +23,13 @@ account. I can only check on your own account.").
 ## Who is staff (crew ruling (a), 14 Oct)
 
 Staff = `chatbot_profile.tier == "office"` OR an active office access type
-(`contact_customer_scope.is_office_staff`), the same rule in all three fixes. The engine stamps it
-once per turn as `ctx["doc_staff"]`; `ref_staff` (tier only) is untouched because it also gates our
-own PO / PR reveals. About 30 existing tests seeded an unlinked, tierless contact playing an office
+(`contact_customer_scope.is_office_staff`), the same rule in all three fixes. The engine reads the
+scope and the office access bit once per turn (`services.customer_scope_and_staff`) and hands the
+bit to the resolver drop and the tool runner, which writes `doc_staff` for the lane every turn.
+`ref_staff` (tier only) still gates our own PO / PR reveals. Both keys are engine-only
+(`required_fields.ENGINE_KEYS`), so a parser-emitted copy is dropped.
+
+About 30 existing tests seeded an unlinked, tierless contact playing an office
 role; they now mark it staff explicitly, assertions unchanged.
 
 ## Open before merge
