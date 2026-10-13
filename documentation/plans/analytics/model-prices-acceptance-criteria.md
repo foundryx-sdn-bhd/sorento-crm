@@ -52,3 +52,29 @@ Card: `CARD-model-prices-13oct.md` (approved 13 Oct, all recommendations: Q1a Q2
 | 35,726 / 0 / 363 | gpt-5.4-mini | $0.0284 (0.028428) |
 | 5,064 / 0 / 38 | gpt-5.4-mini | $0.0040 (0.003969) |
 | 3,005 / 0 / 690 | gemini-3.5-flash (no price) | — "No price for gemini-3.5-flash" |
+
+## Cost truthfulness: unknown cache use (crew scope add, 13 Oct)
+
+Cause: #1621's backfill (`analytics_connector/backfill.py:16-31`) wrote `cached_tokens =
+COALESCE(fact, 0)`; turns before #1476 (deploy run 37206117313, finished 2026-10-04 14:12:49 UTC =
+22:12 MYT) never captured the fact, so those calls read 0 cached and price fully uncached. Only
+`chatbot/usage.py:107` writes `cached_tokens`; every other usage writer leaves it NULL.
+
+- CU-1 `cached_tokens` NULL means "cache use unknown". `cost_sql` returns cost NULL, `priced` false,
+  `cached_price_missing` false and a new `cache_unknown` true for such a call. A recorded 0 still
+  prices normally.
+- CU-2 The backfill writes NULL (not 0) when the turn's trace has no `cached_tokens` fact; the
+  chatbot usage writer writes NULL when the usage dict carries no `cached_tokens` key.
+- CU-3 Every other usage writer (spec_search, spec_extract, ai_assistant, ai_extract,
+  ai_document_extract, ticket_reply_draft, resolver) records the provider's `cached_tokens` from now on.
+- CU-4 Recent queries: a cache-unknown call shows "—" with tooltip "Cache use not recorded before
+  4 Oct" for `chatbot_parser`, "Cache use not recorded" for any other feature. Never a number.
+- CU-5 Totals (summary card, top users, top contacts, per day) carry `unknown_cache_calls` and show
+  "N calls with unknown cache use" when N > 0; those calls are excluded from the cost sum, like
+  unpriced calls, and do not count as "not priced".
+- CU-6 Connector views `llm_calls` / `turn_costs` follow the same rule (they call `cost_sql`); a new
+  additive alembic migration re-creates them (new column `cache_unknown` appended last). No data change
+  in alembic.
+- CU-7 Data fix for existing rows, run by crew on dev and by the owner on prod (not alembic):
+  `UPDATE ai_assistant_usage_logs SET cached_tokens = NULL WHERE feature = 'chatbot_parser' AND
+  cached_tokens = 0 AND created_at < '2026-10-04 14:12:49';`
