@@ -972,6 +972,45 @@ GEMINI_PRO_THINKING_BUDGET = 1024
 # Google's own documented scale for 2.5 Flash (dynamic tops out at 24576).
 GEMINI_EFFORT_BUDGETS: dict[str, int] = {"low": 1024, "medium": 8192, "high": 24576}
 
+# The 3.x family's own thinking control. `thinkingBudget` is accepted there for backward
+# compatibility only (Google advises against it) and is a hint rather than a ceiling, and
+# a request carrying both fields is a 400, so an effort goes out as a level on 3.x.
+GEMINI_3_THINKING_LEVELS: dict[str, str] = {
+    "none": "minimal",
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+}
+
+# Extra `maxOutputTokens` on every 3.x call, on top of the caller's answer budget and any
+# thinking budget. Crew gate, 13 Oct 2026: flash-lite truncated a parser answer at the
+# 2048 cap that the same answer fits under on gpt-5.4-mini, because 3.x thinking is
+# billed against the cap and is not held to the budget. Output is billed as used, so
+# headroom that is not needed costs nothing.
+GEMINI_3_ANSWER_HEADROOM = 2048
+
+
+def _gemini_thinking(model: Optional[str], effort: Optional[str]) -> tuple[Optional[dict], int]:
+    """`(thinkingConfig, tokens to add to the caller's answer budget)` for this call.
+
+    `(None, 0)` for a model with no thinking to configure (2.0 and older). 2.5 keeps its
+    exact budget. 3.x takes an effort as `thinkingLevel`, and with none set keeps the
+    budget `_gemini_thinking_budget` gives it; either way the cap grows by
+    `GEMINI_3_ANSWER_HEADROOM` so thinking cannot spend the answer's room.
+    """
+    budget = _gemini_thinking_budget(model, effort)
+    if budget is None:
+        return None, 0
+    version = re.search(r"gemini-(\d+)", (model or "").lower())
+    if version is None or int(version.group(1)) < 3:
+        return {"thinkingBudget": budget}, budget
+    key = (effort or "").strip().lower()
+    level = GEMINI_3_THINKING_LEVELS.get(key)
+    if level is not None:
+        return {"thinkingLevel": level}, GEMINI_3_ANSWER_HEADROOM + GEMINI_EFFORT_BUDGETS.get(key, 0)
+    return {"thinkingBudget": budget}, budget + GEMINI_3_ANSWER_HEADROOM
+
 
 def _gemini_thinking_budget(model: Optional[str], effort: Optional[str] = None) -> Optional[int]:
     """How many tokens this model may spend thinking before it answers.
@@ -1455,11 +1494,11 @@ class GeminiProvider:
         # a pool the model gets to think out of. A model with no thinking to
         # budget (2.0 and older) gets no `thinkingConfig` and the caller's
         # `max_tokens` unchanged, because the field itself is a 400 there.
-        thinking_budget = _gemini_thinking_budget(model_name, reasoning_effort)
-        if thinking_budget is not None:
-            generation["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+        thinking_config, thinking_room = _gemini_thinking(model_name, reasoning_effort)
+        if thinking_config is not None:
+            generation["thinkingConfig"] = thinking_config
         if max_tokens is not None:
-            generation["maxOutputTokens"] = max_tokens + (thinking_budget or 0)
+            generation["maxOutputTokens"] = max_tokens + thinking_room
         # Structured output is native here: `responseSchema` constrains decoding
         # the same way OpenAI's strict json_schema does, so `content` comes back
         # as a schema-valid JSON string and the caller parses it identically.
@@ -1518,7 +1557,14 @@ class GeminiProvider:
         # already topped up with the thinking budget above, so reaching it means
         # the answer itself ran out of room.
         if finish == "MAX_TOKENS":
-            raise RuntimeError("Gemini stopped early: MAX_TOKENS (response truncated).")
+            # Where the budget went, so the trace says whether thinking or the answer
+            # ran out of room (crew gate, 13 Oct 2026).
+            spent = body.get("usageMetadata") or {}
+            raise RuntimeError(
+                "Gemini stopped early: MAX_TOKENS (response truncated; "
+                f"thinking {int(spent.get('thoughtsTokenCount') or 0)}, "
+                f"answer {int(spent.get('candidatesTokenCount') or 0)} tokens)."
+            )
         if finish and finish != "STOP":
             raise RuntimeError(f"Gemini stopped early: {finish}.")
 
