@@ -82,6 +82,10 @@ class AttachmentType(Base):
     # this later touches no existing row (R1); it only changes what the NEXT
     # upload of this type does.
     is_shared = Column(Boolean, default=False, nullable=False, server_default="false")
+    # PV2 (CONTRACT-PV2-13oct.md section 4): other words people use for this type, shown
+    # as "aka" in the parser v2 index so the MODEL picks the key; code never matches text
+    # with them.
+    search_synonyms = Column(JSONB, nullable=False, server_default="[]", default=list)
     # The folder an upload of this type files into by default (R4, purchasing
     # consolidation batch 6 Sep 2026). NULL = no default, same as today; the type form
     # and the generic Create Attachment dialog both let the user pick another one anyway.

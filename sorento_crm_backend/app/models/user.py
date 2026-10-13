@@ -699,6 +699,9 @@ class SystemSetting(Base):
         server_default='{"enabled": false, "default_level": "full"}',
         default=lambda: _default_chatbot_memory(),
     )
+    # PV2 (CONTRACT-PV2-13oct.md section 6): 'v2' routes every turn through parser v2.
+    # Dev copies only; production stays 'v1'. Rollback = set 'v1'.
+    chatbot_parser_mode = Column(Text, nullable=False, server_default="v1", default="v1")
     # Which lanes the CRM is allowed to FINISH, by `branch_kind`, one at a time.
     #
     # `contracts.CRM_COMPLETED_BRANCH_KINDS` says what the code CAN complete; this says

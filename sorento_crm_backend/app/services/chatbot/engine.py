@@ -28,6 +28,7 @@ import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, replace as dataclasses_replace
+from dataclasses import replace as _pv2_replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator, Mapping
 
@@ -70,6 +71,8 @@ from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, r
 # is everything that has to touch a database or a tool on its behalf.
 from app.services.chatbot import label_catalog, language as language_mod, session_state, turn_runtime
 from app.services.chatbot import quick_reply_guard
+from app.services.chatbot.pv2 import call as pv2_call, flag as pv2_flag, hook as pv2_hook
+from app.services.chatbot.pv2 import index as pv2_index
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
 from app.services.chatbot.turn import sub_asks as turn_sub_asks
@@ -1394,10 +1397,13 @@ def _inject_harness_session(
         value = _harness_value(envelope, "previous_conversation_state")
         value = value if isinstance(value, dict) else {}
         session_vars.pop("variables", None)
-        for key in session_state.FIVE_KEYS:
+        # PV2: the parser v2 state rides the same harness value as the five keys, so a
+        # console turn carries it to the next one (a dry run never writes it).
+        harness_keys = tuple(dict.fromkeys((*session_state.FIVE_KEYS, pv2_hook.STATE_KEY)))
+        for key in harness_keys:
             session_vars.pop(key, None)
-        if value == {} or any(key in value for key in session_state.FIVE_KEYS):
-            for key in session_state.FIVE_KEYS:
+        if value == {} or any(key in value for key in harness_keys):
+            for key in harness_keys:
                 session_vars[key] = value.get(key)
         else:
             session_vars["variables"] = value
@@ -4184,7 +4190,136 @@ def _run_stages(envelope: Envelope, *, session_factory: SessionFactory, **kwargs
     with _session(session_factory) as db:
         groups = family_overrides(db)
     with customer_groups(groups):
-        return _run_stages_body(envelope, session_factory=session_factory, **kwargs)
+        result = _run_stages_body(envelope, session_factory=session_factory, **kwargs)
+    _pv2_keep_state(result, envelope, session_factory=session_factory, **kwargs)
+    return result
+
+
+def _pv2_keep_state(
+    result: TurnResult, envelope: Envelope, *, session_factory: SessionFactory, **kwargs: Any
+) -> None:
+    """PV2: the turn's ConversationState under `session_vars["pv2"]`, AFTER every v1 write
+    of the turn (the v1 tail rewrites the session wholesale and would drop it). A dry run
+    writes nothing and hands the state back in `session_patch`, like the v1 five keys."""
+    media_box = kwargs.get("media_box") or {}
+    if "pv2_state" not in media_box or media_box["pv2_state"] is None:
+        return
+    # A failed or refused turn moves nothing, exactly like the v1 five keys: a retry must
+    # start from the state the user last saw answered.
+    if result.status not in ("done", "delegated"):
+        return
+    state = media_box["pv2_state"]
+    if kwargs.get("dry_run"):
+        # A direct reply has no v1 patch of its own: start from the five keys the turn
+        # began with, so the next console turn keeps its v1 focus and open question.
+        patch = dict(result.session_patch or media_box.get("pv2_v1_before") or {})
+        patch[pv2_hook.STATE_KEY] = pv2_hook.state_dump(state)
+        result.session_patch = patch
+        return
+    try:
+        with _session(session_factory) as db:
+            pv2_hook.persist_state(
+                db,
+                respond_io_id=kwargs["contact_respond_id"],
+                contact_pk=media_box.get("pv2_contact_pk"),
+                state=state,
+            )
+    except Exception:  # noqa: BLE001 - the reply is already decided; log, do not fail it
+        logger.exception("pv2: could not write session_vars.pv2 for turn %s", kwargs.get("turn_id"))
+
+
+def _pv2_direct_reply(
+    pv2_result: Any,
+    *,
+    session_factory: SessionFactory,
+    turn_trace: trace_mod.TurnTrace,
+    turn_id: str,
+    contact_respond_id: str,
+    dry_run: bool,
+    actions: list[dict[str, Any]],
+    started: float,
+) -> TurnResult:
+    """PV2: close a turn whose answer `run_turn_v2` already wrote (a clarify, small talk,
+    a report, an idea step). Same close as every other arm: the understood/replied/
+    remembered records, the usage row, the turn row with its reply (which is what the
+    next turn's last-3-exchanges history reads), and a `send_message` action."""
+    reply_text = str(pv2_result.direct_reply or "")
+    branch_kind = getattr(pv2_result, "branch_kind", None) or "low_signal"
+    from app.services.chatbot.contracts import BRANCH_KINDS
+
+    if branch_kind not in BRANCH_KINDS:
+        branch_kind = "low_signal"
+    quick_replies = getattr(pv2_result, "quick_replies", None)
+    usage = getattr(pv2_result, "usage", {}) or {}
+    facts = pv2_hook.trace_facts(pv2_result)
+    turn_trace.record(
+        "understood",
+        summary="Read the message with parser v2.",
+        why="Parser v2 read the message against the pinned index; code decided the answer.",
+        facts={
+            "parser_mode": "v2",
+            "prompt_version": facts.get("version"),
+            "tokens": int(usage.get("total_tokens") or 0),
+            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+            "completion_tokens": int(usage.get("completion_tokens") or 0),
+            "cached_tokens": int(usage.get("cached_tokens") or 0),
+        },
+        raw={"pv2": facts},
+    )
+    turn_trace.record(
+        "replied",
+        summary=f"Replied: {reply_text}" if reply_text else "Sent no reply.",
+        why="Parser v2 answered this turn directly (a question back, small talk, a report or an idea step).",
+        facts={"lane": branch_kind, "sections": 0, "asking": None, "files": 0},
+        raw={"reply": {"text": reply_text, "quick_replies": quick_replies}},
+    )
+    turn_trace.record(
+        "remembered",
+        summary=(
+            "Nothing was written: this is a test turn (D14)."
+            if dry_run
+            else "Kept the parser v2 conversation state."
+        ),
+        why="Parser v2 keeps its own state under session_vars.pv2.",
+        facts={"written": not dry_run, "dry_run": dry_run},
+        raw=None,
+    )
+    lane_actions = list(actions)
+    if reply_text:
+        lane_actions.append(
+            {"kind": "send_message", "text": reply_text, "quick_replies": quick_replies, "dry_run": dry_run}
+        )
+    with _session(session_factory) as close_db:
+        if usage:
+            _record_parser_usage(
+                close_db,
+                usage=usage,
+                started=started,
+                contact_respond_id=contact_respond_id,
+                dry_run=dry_run,
+                answered=True,
+                turn_id=turn_id,
+            )
+        _close_turn(
+            close_db,
+            turn_id,
+            status="done",
+            stage="sent",
+            branch_kind=branch_kind,
+            error=None,
+            records=turn_trace.persisted(),
+            response={"actions": lane_actions, "reply": {"text": reply_text, "quick_replies": quick_replies}},
+        )
+    return TurnResult(
+        turn_id=turn_id,
+        is_test=dry_run,
+        branch_kind=branch_kind,
+        delegate=None,
+        reply={"text": reply_text, "quick_replies": quick_replies},
+        actions=lane_actions,
+        status="done",
+        stage="sent",
+    )
 
 
 def _run_stages_body(  # noqa: PLR0915
@@ -4492,6 +4627,19 @@ def _run_stages_body(  # noqa: PLR0915
         promotion_kinds = turn_runtime.promotion_kind_rows(db)
         product_types = turn_runtime.product_type_names(db)
         product_details = turn_runtime.product_detail_values(db)
+        # PV2 (CONTRACT-PV2-13oct.md section 6): which parser this turn runs on. Default
+        # v1; v2 for a console turn, a v2 test contact or a v2 dev copy. A build without
+        # PV2-CARRY's `pv2.turn` runs v1 and says so on the trace.
+        pv2_on = (
+            pv2_flag.parser_mode(
+                db,
+                pv2_flag.contact_settings(
+                    db, contact_respond_id, contact_pk=memory_intake.get("contact_pk")
+                ),
+                envelope,
+            )
+            == "v2"
+        )
 
     # -- B PARSER (NO DB SESSION IS OPEN HERE) ------------------------------ #
     # One call, one schema. What comes back IS the verdict - a plain dict, validated once
@@ -4542,9 +4690,88 @@ def _run_stages_body(  # noqa: PLR0915
     # G6: a dry run may supply the emission instead of paying for it.
     parser_bypassed = dry_run and "mock_reformulator_output" in harness_present
     parse_started = time.perf_counter()
+    # -- PV2 (the ONE engine hook, CONTRACT-PV2-13oct.md section 6) ------------------ #
+    # `run_turn_v2` parses with the v2 prompt and either hands back a v1 verdict built
+    # from resolved codes (the stages below then run exactly as on a v1 parse) or a
+    # direct reply (clarify, small talk, report, idea) that closes the turn here.
+    pv2_result: Any = None
+    pv2_error: Exception | None = None
+    if pv2_on and not parser_bypassed and not pv2_hook.available():
+        pv2_on = False
+        turn_trace.add("pv2_turn", {"parser_mode": "v1", "why": "pv2.turn is not on this build"})
+    if pv2_on and not parser_bypassed:
+        try:
+            pv2_result = pv2_hook.run_v2(
+                pv2_hook.TurnV2Context(
+                    session_factory=session_factory,
+                    envelope=envelope,
+                    turn_id=turn_id,
+                    contact_respond_id=contact_respond_id,
+                    contact_pk=memory_intake.get("contact_pk"),
+                    text=(latest_user_message or "").strip(),
+                    session_block=session_block,
+                    state_in=state_in,
+                    profile=profile,
+                    recent=recent,
+                    memory_intake=memory_intake,
+                    now=datetime.now(timezone.utc),
+                    dry_run=bool(dry_run),
+                    turn_trace=turn_trace,
+                    override_version_id=_prompt_override(
+                        envelope, pv2_index.PROMPT_KEY_V2, dry_run=dry_run
+                    ),
+                )
+            )
+        except pv2_call.ParserV2Error as exc:
+            pv2_error = exc
+        except Exception as exc:  # noqa: BLE001 - a resolver/DB fault is a failed parse too
+            logger.exception("pv2: run_turn_v2 failed for turn %s", turn_id)
+            pv2_error = pv2_call.ParserV2Error(
+                f"parser v2 turn failed: {exc}", usage=getattr(exc, "usage", None) or {}
+            )
+        if pv2_result is not None:
+            media_box["pv2_state"] = getattr(pv2_result, "state", None)
+            media_box["pv2_contact_pk"] = memory_intake.get("contact_pk")
+            media_box["pv2_v1_before"] = {
+                key: remembered_before.get(key) for key in session_state.FIVE_KEYS
+            }
+            pv2_facts = pv2_hook.trace_facts(pv2_result)
+            turn_trace.add("pv2_turn", pv2_facts)
+            # The `understood` record and the eval read the prompt that actually ran.
+            parser_config = _pv2_replace(
+                parser_config,
+                prompt_version=pv2_facts.get("version"),
+                model=(getattr(pv2_result, "usage", {}) or {}).get("model") or parser_config.model,
+            )
+            user_block = pv2_facts.get("user_message") or "(parser v2: see the pv2_turn event)"
+            if getattr(pv2_result, "direct_reply", None) is not None:
+                return _pv2_direct_reply(
+                    pv2_result,
+                    session_factory=session_factory,
+                    turn_trace=turn_trace,
+                    turn_id=turn_id,
+                    contact_respond_id=contact_respond_id,
+                    dry_run=dry_run,
+                    actions=actions,
+                    started=parse_started,
+                )
+            if getattr(pv2_result, "focus", None) is not None:
+                state_in = _pv2_replace(state_in, focus=pv2_result.focus)
     try:
         if parser_bypassed:
             parser_raw = _harness_value(envelope, "mock_reformulator_output")
+        elif pv2_error is not None:
+            raise parser.ParserError(
+                str(pv2_error),
+                usage=getattr(pv2_error, "usage", {}) or {},
+                rate_limited=bool(getattr(pv2_error, "rate_limited", False)),
+            )
+        elif pv2_result is not None:
+            parser_raw = parser.ParsedOutput(
+                dict(pv2_result.verdict), getattr(pv2_result, "usage", {}) or {}
+            )
+            # The bridge's verdict is held to the same declared keys a provider's is.
+            parser.assert_emission(parser_raw)
         else:
             parser_raw = parser.parse(parser_config, user_block)
         # Empty on a bypassed parse: no call, no spend to record.

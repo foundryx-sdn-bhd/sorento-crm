@@ -189,6 +189,20 @@ def write_merged(
                     merged[key] = mine
                     if theirs != start and theirs != mine:
                         clobbered.append(key)
+    if "pv2" not in merged:
+        # PV2 (CONTRACT-PV2-13oct.md section 3): the parser v2 state is written by its own
+        # step after this one, and must survive a v1 write of the five keys (a delegated
+        # turn's completion, an overlapping v1 tail). Carried as stored, never changed here.
+        kept = None
+        if base is not None:
+            kept = stored.get("pv2")
+        elif db is not None:
+            try:
+                kept = get_for_contact(db, respond_io_id=respond_io_id).get("pv2")
+            except Exception:  # noqa: BLE001 - the write below reports a missing contact itself
+                kept = None
+        if kept is not None:
+            merged = {**merged, "pv2": kept}
     written = overwrite_for_contact(db, respond_io_id=respond_io_id, state=merged)
     if clobbered or merged_any:
         # Looked up AFTER the write committed, outside the lock: a failed lookup must
