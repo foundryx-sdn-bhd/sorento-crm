@@ -7,14 +7,14 @@ Tracking, together with the delivered status and `actual_delivery_date` = DocDat
 Additive and nullable, no default, nothing backfilled.
 
 Revision ID: do_hist_0001_tracking_assumed
-Revises: maskp_0002_measure_words
+Revises: oirj_0002_theme_sorento
 """
 from __future__ import annotations
 
 from alembic import op
 
 revision = "do_hist_0001_tracking_assumed"
-down_revision = "maskp_0002_measure_words"
+down_revision = "oirj_0002_theme_sorento"
 branch_labels = None
 depends_on = None
 
