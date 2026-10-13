@@ -202,3 +202,18 @@ def test_p9_the_size_and_class_rule_rides_every_published_version(db):
     new = _row(db, version).template
     assert new.count(SIZE_AND_CLASS_RULE.strip()) == 1
     assert pv.publish_specs_block(db, from_version=version) is None
+
+
+def test_p10_the_size_and_class_rule_teaches_no_language():
+    """Owner rule (11 Oct): no language teaching in the prompt. The rule states the business rule
+    (a class word in any language carries its English class word as canonical_code; a size is
+    its own specification) and names no translation; the resolver's translation data does that."""
+    import unicodedata
+
+    from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
+
+    assert all(ord(ch) < 128 for ch in SIZE_AND_CLASS_RULE), "a non-English word is a translation example"
+    for word in ("sinki", "dapur", "mangkuk", "tandas", "->"):
+        assert word not in SIZE_AND_CLASS_RULE, word
+    assert "canonical_code" in SIZE_AND_CLASS_RULE and '"size"' in SIZE_AND_CLASS_RULE
+    assert unicodedata.normalize("NFKC", SIZE_AND_CLASS_RULE) == SIZE_AND_CLASS_RULE
