@@ -447,6 +447,10 @@ class SalesOrderService:
         for ln in sorted(so.lines, key=_line_sort_key):
             qo = float(ln.qty_ordered or 0)
             qd = float(ln.qty_delivered or 0)
+            # AC-CANCEL-CRM: AutoCount Cancel SO adds to TransferedQty (`qty_delivered`), so
+            # what is SHOWN as delivered leaves the cancelled part out. Outstanding keeps
+            # `ordered - TransferedQty`, which already treats a cancelled unit as not owed.
+            qc = float(getattr(ln, "qty_cancelled", None) or 0)
             saved_entry = saved.get(str(ln.id))
             # A CLOSED line is outstanding NOTHING, whatever its two quantities say. When a
             # re-uploaded book closes a line by absence, what actually shipped is unknown, so
@@ -481,7 +485,8 @@ class SalesOrderService:
                 "sku": ln.product.product_code if ln.product else "",
                 "product_name": ln.product.product_name if ln.product else "",
                 "qty_ordered": qo,
-                "qty_delivered": qd,
+                "qty_delivered": max(qd - qc, 0.0),
+                "qty_cancelled": qc,
                 # What is still to go out on THIS line, stated rather than left to be
                 # recomputed. The grid, its footer and the header total all read this one
                 # figure, so a closed line cannot read Completed beside a full outstanding

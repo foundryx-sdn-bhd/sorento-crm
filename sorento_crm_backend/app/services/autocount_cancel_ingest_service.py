@@ -554,12 +554,25 @@ def _settled_status(ordered: Any, transferred: Any) -> str:
     return "closed" if ordered > 0 and (transferred or 0) >= ordered else "open"
 
 
-def recompute_cancelled(db: Session, touched: Touched) -> list[tuple[str, str]]:
+@dataclass
+class Derived:
+    """What a recompute moved, for the post-commit hooks: SO lines that BECAME fully cancelled
+    (`(line id, cancel doc no)`, R5) and SO lines whose planned qty moved while they stayed
+    live (`(line id, planned before, planned after)`, Q4 a)."""
+    newly_cancelled: list[tuple[str, str]] = field(default_factory=list)
+    plan_moves: list[tuple[str, Decimal, Decimal]] = field(default_factory=list)
+
+    def extend(self, other: "Derived") -> None:
+        self.newly_cancelled.extend(other.newly_cancelled)
+        self.plan_moves.extend(other.plan_moves)
+
+
+def recompute_cancelled(db: Session, touched: Touched) -> Derived:
     """R3/R5/R6: write `qty_cancelled` (capped at ordered) on every touched line and move the
-    status of SO / PO lines that became, or stopped being, fully cancelled. Returns the
-    `(sales order line id, cancel doc no)` pairs that BECAME fully cancelled, for the OI
-    retire hook. In the caller's transaction."""
-    newly_cancelled: list[tuple[str, str]] = []
+    status of SO / PO lines that became, or stopped being, fully cancelled. In the caller's
+    transaction."""
+    derived = Derived()
+    newly_cancelled = derived.newly_cancelled
     if touched.so_line_ids:
         sums = _live_sums(db, AutocountCancelLine.sales_order_line_id, touched.so_line_ids)
         rows = (
@@ -569,8 +582,14 @@ def recompute_cancelled(db: Session, touched: Touched) -> list[tuple[str, str]]:
             .all()
         )
         for row, header_status in rows:
+            before_c, before_status = Decimal(row.qty_cancelled or 0), row.line_status
             if _apply(row, sums.get(str(row.id), _ZERO), row.qty_delivered, header_status):
                 newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
+            elif (row.qty_cancelled != before_c and before_status != CANCELLED
+                  and row.line_status != CANCELLED):
+                ordered = Decimal(row.qty_ordered or 0)
+                derived.plan_moves.append((str(row.id), max(ordered - before_c, _ZERO),
+                                           max(ordered - Decimal(row.qty_cancelled), _ZERO)))
     if touched.po_line_ids:
         sums = _live_sums(db, AutocountCancelLine.purchase_order_line_id, touched.po_line_ids)
         rows = (
@@ -589,7 +608,7 @@ def recompute_cancelled(db: Session, touched: Touched) -> list[tuple[str, str]]:
             if row.qty_cancelled != value:
                 row.qty_cancelled = value
     db.flush()
-    return newly_cancelled
+    return derived
 
 
 def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) -> bool:
@@ -693,8 +712,8 @@ class AutocountCancelIngestService:
         self.integration_id = integration_id
         self.company_id = str(company_id)
         self.book = book
-        # SO lines that became fully cancelled in this batch, for the post-commit OI hook.
-        self.newly_cancelled_so_lines: list[tuple[str, str]] = []
+        # What this batch's derivation moved, for the post-commit hooks (R5, Q4 a).
+        self.derived = Derived()
         # status:reason -> lines decided in the last batch (the sync log line).
         self.match_counts: dict[str, int] = {}
 
@@ -744,7 +763,7 @@ class AutocountCancelIngestService:
                 kinds = self._kinds(lines)
                 counts: dict[str, int] = {}
                 rematch_lines(self.db, self.company_id, lines, kinds, touched, counts)
-                self.newly_cancelled_so_lines = recompute_cancelled(self.db, touched)
+                self.derived = recompute_cancelled(self.db, touched)
                 self._warn_unmatched(entity, result)
                 self.match_counts = counts
             if counts:
@@ -918,7 +937,7 @@ class AutocountCancelIngestService:
                     result.records.append(
                         self._delete_one(entity, value, date_from, date_to, touched))
                 self.db.flush()
-                self.newly_cancelled_so_lines = recompute_cancelled(self.db, touched)
+                self.derived = recompute_cancelled(self.db, touched)
         finally:
             if dry_run:
                 self.db.rollback()
@@ -955,12 +974,12 @@ class AutocountCancelIngestService:
                                     entity_id=str(row.id))
 
 
-def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> list[tuple[str, str]]:
+def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Derived:
     """An SO, PO or shipping order push landed: re-match the cancel lines that name those
     numbers (waiting ones link now; an ordered qty change re-caps) and derive again. In the
-    caller's transaction; returns the SO lines that became fully cancelled."""
+    caller's transaction."""
     if not numbers:
-        return []
+        return Derived()
     touched = Touched()
     with company_scope(db, frozenset({str(company_id)})):
         lines = (
@@ -971,7 +990,7 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> lis
             .all()
         )
         if not lines:
-            return []
+            return Derived()
         kinds = {
             str(r[0]): r[1] for r in db.query(AutocountCancelDoc.id, AutocountCancelDoc.kind)
             .filter(AutocountCancelDoc.id.in_({str(l.cancel_doc_id) for l in lines})).all()
@@ -981,29 +1000,79 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> lis
 
 
 def run_cancel_hooks(db: Session, service: Any, *, actor: Optional[str]) -> None:
-    """R5, after the batch's own commit: the order inquiry rows of every SO line that just
-    became fully cancelled are retired the way a board Cancel SO retires them (#1530: rows
-    cancelled, links removed, handover queued, "Transferred to Cancel SO: <XS no>") and the
-    acknowledged ones flagged. Best effort, its own commit: a failure costs the reaction only
-    (logged), never the ingest. Rows already retired stay retired (owner, 13 Oct)."""
-    pairs = list(getattr(service, "newly_cancelled_so_lines", []) or [])
-    if not pairs:
-        return
-    try:
-        from app.services.project_order_inquiry_service import (
-            ProjectOrderInquiryService,
-            flag_rows_for_cancelled_lines,
-        )
+    """After the batch's own commit, each reaction best effort with its own commit (a failure
+    costs that reaction only, logged, never the ingest):
 
-        ProjectOrderInquiryService(db).retire_rows_for_cancelled_lines(
-            [(line_id, doc_no or "AutoCount") for line_id, doc_no in pairs],
-            actor_user_id=actor,
-        )
-        flag_rows_for_cancelled_lines(db, [line_id for line_id, _ in pairs])
-        db.commit()
-    except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
-        db.rollback()
-        logger.warning("ingest.cancel_oi_hook_failed error=%s", _safe_error(exc))
+    - R5: the order inquiry rows of every SO line that just became fully cancelled are retired
+      the way a board Cancel SO retires them (#1530: rows cancelled, links removed, handover
+      queued, "Transferred to Cancel SO: <XS no>") and the acknowledged ones flagged. Rows
+      already retired stay retired (owner, 13 Oct).
+    - Q4 a: a partial cancel moved a live line's planned qty, so the AutoCount planning change
+      is raised for CS on the board exactly as an SO push's qty edit raises it (#1599 flow;
+      `planning_change_service.build_batch` keeps its own gate: held or inquired lines only).
+    """
+    derived = getattr(service, "derived", None) or Derived()
+    if derived.newly_cancelled:
+        try:
+            from app.services.project_order_inquiry_service import (
+                ProjectOrderInquiryService,
+                flag_rows_for_cancelled_lines,
+            )
+
+            ProjectOrderInquiryService(db).retire_rows_for_cancelled_lines(
+                [(line_id, doc_no or "AutoCount") for line_id, doc_no in derived.newly_cancelled],
+                actor_user_id=actor,
+            )
+            flag_rows_for_cancelled_lines(db, [line_id for line_id, _ in derived.newly_cancelled])
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
+            db.rollback()
+            logger.warning("ingest.cancel_oi_hook_failed error=%s", _safe_error(exc))
+    if derived.plan_moves:
+        try:
+            _raise_planning_change(db, derived.plan_moves, actor=actor)
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - the ingest itself already committed
+            db.rollback()
+            logger.warning("ingest.cancel_planning_change_failed error=%s", _safe_error(exc))
+
+
+def _raise_planning_change(db: Session, moves: list[tuple[str, Decimal, Decimal]], *,
+                           actor: Optional[str]) -> None:
+    from app.services import planning_change_service
+    from app.services.scm.outstanding_diff import Line, diff_lines
+
+    rows = (
+        db.query(SalesOrderLine, SalesOrder.id, SalesOrder.so_number, Product.product_code,
+                 Warehouse.warehouse_code)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+        .join(Product, Product.id == SalesOrderLine.product_id)
+        .outerjoin(Warehouse, Warehouse.id == SalesOrderLine.warehouse_id)
+        .filter(SalesOrderLine.id.in_([m[0] for m in moves]))
+        .all()
+    )
+    by_id = {str(r[0].id): r for r in rows}
+    before, after, order_ids = [], [], {}
+    for line_id, was, now in moves:
+        found = by_id.get(line_id)
+        if found is None:
+            continue
+        line, header_id, so_number, item_code, location = found
+        order_ids[so_number] = str(header_id)
+        for side, qty in ((before, was), (after, now)):
+            side.append(Line(doc_number=so_number, item_code=item_code or "",
+                             location=location or "", qty=float(qty),
+                             required_date=line.required_date, row_ref=line_id,
+                             line_id=line_id))
+    diff = diff_lines(before, after)
+    applied = {}
+    for change in diff.changes:
+        ref = (change.after.row_ref if change.after else None) or (
+            change.before.row_ref if change.before else None)
+        if ref:
+            applied[id(change)] = ref
+    planning_change_service.build_batch(db, diff, applied_line_ids=applied, order_ids=order_ids,
+                                        actor=actor, import_job_id=None, file_name=None)
 
 
 __all__ = [
@@ -1013,6 +1082,7 @@ __all__ = [
     "CONTRACT_2_8_WARNINGS",
     "AutocountCancelIngestService",
     "CancelLineMatcher",
+    "Derived",
     "recompute_cancelled",
     "relink_for_orders",
     "run_cancel_hooks",

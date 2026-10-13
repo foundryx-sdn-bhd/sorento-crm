@@ -67,6 +67,7 @@ from app.services.autocount_doc_ingest_service import (
 from app.services.autocount_cancel_ingest_service import (
     AUTOCOUNT_CANCEL_ENTITIES,
     AutocountCancelIngestService,
+    relink_for_orders as relink_cancels_for_orders,
     run_cancel_hooks as _run_cancel_hooks,
 )
 from app.services.document_ingest_service import (
@@ -356,15 +357,39 @@ def _run_document_hooks(
     if entity == "sales_orders":
         _run_plan_exception_hook(db, service, actor=actor)
         _run_planning_change_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.so_numbers, actor=actor)
     elif entity == "purchase_orders":
         book_repair_moves_dropped = _run_supersede_and_relink_hooks(db, service, actor=actor)
         book_follow_rows_dropped = _run_follow_book_po_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.po_numbers, actor=actor)
     elif entity == "shipping_orders":
         _run_shipping_order_forward_match_hook(db, service, actor=actor)
         _run_shipping_order_shipment_refresh_hook(db, service, actor=actor)
         book_repair_moves_dropped = _run_shipping_order_book_repair_hook(db, service, actor=actor)
         book_follow_rows_dropped = _run_follow_book_spo_hook(db, service, actor=actor)
+        _run_cancel_relink_hook(db, service, service.spo_numbers_touched, actor=actor)
     return book_repair_moves_dropped, book_follow_rows_dropped
+
+
+def _run_cancel_relink_hook(db: Session, service, numbers, *, actor: Optional[str]) -> None:
+    """AC-CANCEL-CRM: the orders this push wrote may be what a waiting Cancel SO / Cancel PO
+    line names, or their quantities moved what a cancel caps at or how a key-less one is
+    decided. Re-match those lines, derive again, then retire the OI rows of any SO line that
+    became fully cancelled. Best effort, its own commit, like every hook here."""
+    if not numbers:
+        return
+    from types import SimpleNamespace
+
+    try:
+        derived = relink_cancels_for_orders(
+            db, company_id=service.company_id, numbers=set(numbers)
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - best-effort, the ingest already succeeded
+        db.rollback()
+        logger.warning("ingest.cancel_relink_hook_failed", exc_info=True)
+        return
+    _run_cancel_hooks(db, SimpleNamespace(derived=derived), actor=actor)
 
 
 def _run_plan_exception_hook(db: Session, service, *, actor: Optional[str]) -> None:
