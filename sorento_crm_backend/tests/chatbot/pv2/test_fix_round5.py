@@ -220,8 +220,10 @@ def test_new_topic_without_status_clears_it():
 # ------------------------------------------------------------------ 5 did-you-mean always asked
 
 
-def test_single_did_you_mean_candidate_is_asked_even_under_a_default_policy():
+def test_single_did_you_mean_candidate_goes_to_v1s_miss_lane_under_any_policy():
     policy = ClarifyPolicy({("entity", "inventory"): "default"})
     _, actions = _run(mk_state(), {"product|MKS9505-HC-SS": ("ambiguous", [("product", "MKS9505-SS-HC")], True)},
                       policy=policy, domain="inventory", entities=[_e(phrase="MKS9505-HC-SS")])
-    assert isinstance(actions[0], ClarifyAct)
+    # PV2-FIX r5c: crew 14 Oct, single did-you-mean uses v1's own miss lane
+    assert isinstance(actions[0], Lookup)
+    assert [m.phrase for m in actions[0].misses] == ["MKS9505-HC-SS"]

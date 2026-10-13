@@ -155,10 +155,12 @@ def test_a_product_not_found_for_staff_is_the_sentence_alone():
     assert res.direct_reply.strip() == 'Couldn\'t find: "SRTXYZ9" (product).', res.direct_reply
 
 
-def test_a_did_you_mean_candidate_is_still_asked():
+def test_a_did_you_mean_candidate_goes_to_v1s_own_miss_lane():
+    # PV2-FIX r5c: crew 14 Oct, single did-you-mean uses v1's own miss lane
     table = {"product|SRTXYZ9": ("ambiguous", [("product", "SRTXYZ8")], True)}
     state, actions = apply_turn(mk_state(), _product_parsed(), resolver=_Fake(table))
-    assert isinstance(actions[0], ClarifyAct) and actions[0].pending.options
+    assert isinstance(actions[0], Lookup)
+    assert [(m.kind, m.phrase) for m in actions[0].misses] == [("product", "SRTXYZ9")]
 
 
 # ------------------------------------------------------------------ 5 duplicate order
