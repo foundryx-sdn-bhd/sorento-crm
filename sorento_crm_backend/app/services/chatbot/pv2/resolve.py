@@ -139,6 +139,7 @@ _BOOLEAN_KEYS = {"true": True, "false": False}
 INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_class", "product_type", "attachment_type"})
 
 #: Owner 13 Oct 23:50: at most this many customer-name candidates.
+CUSTOMER_FAMILY_ROW_LIMIT = 200
 CUSTOMER_CANDIDATE_CAP = 8
 #: Real candidates offered when an index key is null.
 INDEX_CANDIDATE_CAP = 8
@@ -620,11 +621,8 @@ class DbResolver:
             .order_by(Customer.customer_name, Customer.id)
             .all()
         )
-        if len(exact) == 1:
-            cid, code, name = exact[0]
-            return Resolution(status="exact", refs=[self._customer_ref(cid, code, name, phrase)])
         if exact:
-            return Resolution(status="ambiguous", options=self._customer_options(exact, phrase), phrase=phrase)
+            return self._customer_families(exact, phrase)
 
         # Owner-approved (13 Oct 23:50): the ONE containing-name search. Options only.
         pattern = f"%{_like_escape(norm(phrase))}%"
@@ -632,19 +630,37 @@ class DbResolver:
             self._customer_query()
             .filter(func.lower(func.regexp_replace(Customer.customer_name, r"\s+", " ", "g")).like(pattern, escape="\\"))
             .order_by(Customer.customer_name, Customer.id)
-            .limit(CUSTOMER_CANDIDATE_CAP)
+            .limit(CUSTOMER_FAMILY_ROW_LIMIT)
             .all()
         )
         if not candidates:
             return Resolution(status="none", phrase=phrase)
-        return Resolution(status="ambiguous", options=self._customer_options(candidates, phrase), phrase=phrase)
+        return self._customer_families(candidates, phrase, candidates_only=True)
 
-    def _customer_options(self, rows: list, phrase: str | None) -> list[Option]:
-        out = []
-        for cid, code, name in rows:
-            ref = self._customer_ref(cid, code, name, phrase)
-            out.append(Option(key=ref.key, label=ref.label, payload={"kind": "customer", "key": ref.key, "label": ref.label}))
-        return out
+    def _customer_families(self, rows: list, phrase: str | None, *, candidates_only: bool = False) -> Resolution:
+        """Accounts of one trading family are one customer (v1 `gate._cust_base`): one family
+        is exact with a ref per account; several families are asked once per family. The cap
+        counts families, never accounts, so a family is not cut in half."""
+        from app.services.ledger_family import group_names, ledger_family_key
+
+        families: dict[str, list] = {}
+        for row in rows:
+            families.setdefault(ledger_family_key(row[2]) or str(row[2]), []).append(row)
+        # A lone candidate account is still only an option; a whole family is one customer.
+        if len(families) == 1 and not (candidates_only and len(rows) == 1):
+            members = next(iter(families.values()))
+            return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
+        options = []
+        for members in list(families.values())[:CUSTOMER_CANDIDATE_CAP]:
+            refs = [self._customer_ref(c, k, n, phrase) for c, k, n in members]
+            names = [str(n) for _c, _k, n in members]
+            label = (group_names(names) or [names[0]])[0].strip()
+            keys = [r.key for r in refs]
+            payload: dict[str, Any] = {"kind": "customer", "key": keys[0], "label": label}
+            if len(keys) > 1:
+                payload["keys"] = keys
+            options.append(Option(key=keys[0], label=label, payload=payload))
+        return Resolution(status="ambiguous", options=options, phrase=phrase)
 
     # ------------------------------------------------------------------ warehouses
     def _warehouse(self, phrase: str | None) -> Resolution:

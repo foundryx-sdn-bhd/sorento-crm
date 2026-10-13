@@ -252,14 +252,19 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
     elif kind in SCALAR_PAYLOAD_KINDS:
         pass
     else:
-        ref = ResolvedRef(
-            kind=kind,
-            key=str(payload.get("key")),
-            label=str(payload.get("label") or payload.get("key")),
-            phrase=payload.get("phrase"),
-            quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
-        )
-        out.refs = set_refs(out.refs, kind, [ref], payload.get("op") or "set")
+        # A "keys" payload is one family of accounts: one ref per key, one label.
+        keys = [str(k) for k in payload.get("keys") or []] or [str(payload.get("key"))]
+        refs = [
+            ResolvedRef(
+                kind=kind,
+                key=key,
+                label=str(payload.get("label") or key),
+                phrase=payload.get("phrase"),
+                quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
+            )
+            for key in keys
+        ]
+        out.refs = set_refs(out.refs, kind, refs, payload.get("op") or "set")
     return out
 
 

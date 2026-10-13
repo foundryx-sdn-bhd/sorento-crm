@@ -35,6 +35,7 @@ from app.services.chatbot.pv2.history import (
 )
 from app.services.chatbot.pv2.schema import ParserV2Output
 from app.services.chatbot.pv2.state import (
+    Lookup,
     LAST_ROWS_CAP,
     ConversationState,
     Option,
@@ -69,6 +70,8 @@ class TurnV2Context:
     report_answer: answer_mod.ReportAnswer | None = None
     idea_answer: answer_mod.IdeaAnswer | None = None
     trace: dict[str, Any] = field(default_factory=dict)
+    # The contact's granted field-reveal keys; the closed default grants nothing.
+    granted_reveals: frozenset[str] = frozenset()
 
 
 def local_today(now: datetime) -> date:
@@ -112,6 +115,11 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
+    refusal = _grant_refusal(ctx, actions, out)
+    if refusal is not None:
+        language = clarify_copy.lang(out.language)
+        trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
+        return answer_mod.TurnV2Result(None, None, refusal[0], state_out, actions, refusal[1], language, trace)
     result = answer_mod.build_result(
         state_out,
         actions,
@@ -139,6 +147,39 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     )
     result.usage = usage
     return result
+
+
+#: Whole-domain grants (v1 `turn_runtime.domain_denial_text`, `engine` sales-report seam).
+PO_GRANT = "purchase_orders.placed"
+SALES_REPORT_GRANT = "sales_orders.sales_report"
+PO_DOMAIN_SUBJECT = {"purchase_order": "purchase orders", "spo_allocation": "purchase order allocation"}
+
+
+def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[str, str] | None:
+    """(reply, route) when this turn asks for a domain the contact holds no grant for, else
+    None. Refused before any lookup or report question, so nothing of the data is read."""
+    granted = ctx.granted_reveals or frozenset()
+    lookups = [a for a in actions if isinstance(a, Lookup)]
+    last = lookups[-1] if lookups else None
+    if last is not None and last.domain in PO_DOMAIN_SUBJECT and PO_GRANT not in granted:
+        from app.services.chatbot import copy as copy_mod
+        from app.services.chatbot.lanes import canned as canned_lanes
+
+        text = canned_lanes.field_grant_denied_text(copy_mod.fallback_copy(), PO_DOMAIN_SUBJECT[last.domain])
+        return text, "clarify"
+    if SALES_REPORT_GRANT in granted:
+        return None
+    for ask in getattr(out, "asks", None) or []:
+        report = getattr(ask, "report", None)
+        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and getattr(report, "dataset", None) in (None, "sales"):
+            from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+            return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+    if last is not None and answer_mod._is_report(last) and getattr(last.held.report, "dataset", None) in (None, "sales"):
+        from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+    return None
 
 
 def wire(result: answer_mod.TurnV2Result) -> dict[str, Any]:
@@ -301,6 +342,7 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
         "reference_kinds": resolver_reference_kinds(attrs, staff, held),
         "regions": regions,
         "customer_scope": scope,
+        "granted_reveals": frozenset(attrs),
     }
 
 
@@ -326,6 +368,10 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     session_vars = session_block.get("session_vars") if isinstance(session_block.get("session_vars"), dict) else session_block
     raw_state = session_vars.get("pv2")
     profile = hctx.profile
+    # The contact's scope, read once before the parse (closed on any failure inside).
+    with _session(factory) as sdb:
+        scope = scope_for_resolver(sdb, contact, space_id, profile)
+    granted = scope.pop("granted_reveals")
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -346,9 +392,10 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope_for_resolver(db, contact, space_id, profile))),
+            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope)),
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile),
+            granted_reveals=granted,
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,
