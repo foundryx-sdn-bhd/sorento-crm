@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 PV2 = Path(__file__).resolve().parents[3] / "app" / "services" / "chatbot" / "pv2"
-MODULES = ["apply", "state", "history", "clarify_copy", "bridge"]
-REQUIRED = {"apply", "state"}
+MODULES = ["apply", "state", "history", "clarify_copy", "bridge", "answer", "turn"]
+REQUIRED = {"apply", "state", "history", "clarify_copy", "bridge", "answer", "turn"}
 BANNED_IMPORTS = {"re", "difflib", "rapidfuzz"}
 BANNED_ATTRS = {"lower", "casefold", "ilike", "startswith"}
 

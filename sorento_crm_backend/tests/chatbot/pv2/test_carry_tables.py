@@ -13,6 +13,8 @@ turn's output within the case (a case's first turn: a fresh state). `roll_sessio
   options       labels of state.pending.options
   last_rows_n   len(state.last_rows)
   entity_lookups  exact list of resolver entity lookup keys made this turn
+Every turn also checks the PV2-written reply (`answer.replay_reply`): no " \u00b7 ", no UUID,
+no internal option key. `carry_handtest.jsonl` is the contract section 8 hand-test A and D.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from app.services.chatbot.pv2.answer import replay_reply
 from app.services.chatbot.pv2.apply import apply_turn
 from app.services.chatbot.pv2.schema import ParserV2Output
 from app.services.chatbot.pv2.state import (
@@ -108,6 +111,14 @@ def _check_invariants(rolled, new, actions, out):
                 last_pending = a.pending
     if last_pending is not None:
         assert new.pending == last_pending
+    # Owner rule: whatever PV2 writes itself carries no " . " separator, UUID or internal key.
+    reply = replay_reply(new, actions)
+    assert " \u00b7 " not in reply and not UUID_RE.search(reply)
+    for a in actions:
+        if isinstance(a, (ClarifyAct, OfferHandover)):
+            for o in a.pending.options:
+                if "_" in o.key or UUID_RE.search(o.key):
+                    assert o.key not in reply, f"internal key {o.key!r} leaked into the reply"
 
 
 def _check_action(i: int, exp: dict[str, Any], act: Any):

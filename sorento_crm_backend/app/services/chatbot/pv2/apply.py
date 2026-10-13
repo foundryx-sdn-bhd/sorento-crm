@@ -95,14 +95,6 @@ class _Miss(Exception):
         self.nothing_held = nothing_held
 
 
-class _Ask(Exception):
-    """Resolution needs the user: a ClarifyAct for this ask."""
-
-    def __init__(self, act: ClarifyAct):
-        super().__init__(act.about)
-        self.act = act
-
-
 def apply_turn(
     state: ConversationState,
     out: ParserV2Output,
@@ -141,9 +133,6 @@ def apply_turn(
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
             action = _miss(st, i, pending_in, miss, language, can_offer_handover)
-        except _Ask as needs:
-            st.held, st.topics = held_before, topics_before
-            action = needs.act
         else:
             answered_pending = answered_pending or answered
         actions.append(action)
@@ -194,34 +183,43 @@ def _one_ask(
         rest = [t for j, t in enumerate(st.topics) if j != idx]
         st.topics = push_topic(rest, st.held)
         st.held = back.model_copy(deep=True)
-        held = _apply_fields(st, st.held, ask, resolver, policy, language, i, refine=True)
-        return _commit(st, i, held, ask), False
+        qs: list[ClarifyAct] = []
+        held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True)
+        return _commit(st, i, held, ask, qs), False
 
     if ask.act == "new_topic":
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
-        held = _apply_fields(st, Held(), ask, resolver, policy, language, i, refine=False)
-        return _commit(st, i, held, ask), False
+        qs = []
+        held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False)
+        return _commit(st, i, held, ask, qs), False
 
     # refines_held
     if st.held.is_empty() and not ask.domain and ask.row_pick is None:
         raise _Miss("which_held", nothing_held=True)
     if i > 0:
         st.topics = push_topic(st.topics, st.held)
-    held = _apply_fields(st, st.held, ask, resolver, policy, language, i, refine=True)
     row = None
     if ask.row_pick is not None:
         if not (1 <= ask.row_pick <= len(st.last_rows)):
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
+    qs = []
+    held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True)
+    if row is not None:
         held = apply_payload(held, row.payload)
-    action = _commit(st, i, held, ask)
-    action.row = row
+    action = _commit(st, i, held, ask, qs)
+    if isinstance(action, Lookup):
+        action.row = row
     return action, False
 
 
-def _commit(st: ConversationState, i: int, held: Held, ask: Ask) -> Lookup:
+def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[ClarifyAct]) -> Action:
+    """Held becomes this ask's subject; the first open question (if any) is the action,
+    else a Lookup."""
     st.held = held
+    if qs:
+        return qs[0]
     return Lookup(ask_index=i, domain=held.domain, held=held.model_copy(deep=True), ask=ask)
 
 
@@ -275,10 +273,12 @@ def _answer(
         )
 
     held = apply_payload(st.held, picked.payload)
-    held = _apply_fields(st, held, ask, resolver, policy, language, i, refine=True)
-    action = _commit(st, i, held, ask)
-    action.picked = picked
-    action.pending_kind = pending.kind
+    qs: list[ClarifyAct] = []
+    held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True)
+    action = _commit(st, i, held, ask, qs)
+    if isinstance(action, Lookup):
+        action.picked = picked
+        action.pending_kind = pending.kind
     return action, True
 
 
@@ -295,9 +295,13 @@ def _apply_fields(
     policy: ClarifyPolicy,
     language: str,
     i: int,
+    qs: list[ClarifyAct],
     *,
     refine: bool,
 ) -> Held:
+    """`base` with this ask's fields applied. An item that needs the user appends its
+    question to `qs` and is left out; every other item still applies (section 3: held =
+    this ask, then the unresolved items go to the resolver and are asked)."""
     held = base.model_copy(deep=True)
     if ask.domain:
         held.domain = ask.domain
@@ -306,8 +310,8 @@ def _apply_fields(
         if name in CLEARABLE:
             setattr(held, name, [] if name == "specs" else None)
 
-    held = _apply_entities(st, held, base, ask, resolver, policy, language, i, refine=refine)
-    held = _apply_specs(st, held, ask.specs, resolver, policy, language, i)
+    held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine)
+    held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
     if ask.attachment_type is not None:
         res = resolver.resolve_attachment_type(ask.attachment_type, held=held)
@@ -316,7 +320,7 @@ def _apply_fields(
         if status == "exact" and refs:
             held.attachment_type = refs[0].key
         else:
-            raise _Ask(
+            qs.append(
                 _clarify(
                     st, i, "attachment_type", ask.attachment_type, language,
                     options=list(getattr(res, "options", None) or []),
@@ -326,7 +330,34 @@ def _apply_fields(
         held.period = ask.period
     if ask.report is not None:
         held.report = _merge_report(held.report, ask.report) if refine else ask.report
+        _resolve_report(st, held, resolver, language, i, qs)
     return held
+
+
+def _resolve_report(
+    st: ConversationState, held: Held, resolver: Any, language: str, i: int, qs: list[ClarifyAct]
+) -> None:
+    """Section 4 REPORTS: the held spec through `resolve_report_spec` when the resolver
+    has one. A spec the policy table cannot run yet (a missing measure / basis, asked
+    together in ONE question) becomes this ask's question with the lane's own copy and
+    options; a resolved spec replaces the held one."""
+    resolve = getattr(resolver, "resolve_report_spec", None)
+    if resolve is None:
+        return
+    res = resolve(held.report, held=held, profile=None)
+    if res is None:
+        return
+    spec = getattr(res, "spec", None)
+    if spec is not None:
+        held.report = spec
+    if getattr(res, "status", None) in ("ask", "ambiguous", "none"):
+        qs.append(
+            _clarify(
+                st, i, getattr(res, "about", None) or "report_measure", None, language,
+                options=list(getattr(res, "options", None) or []),
+                asked=getattr(res, "asked", None) or getattr(res, "reply", None),
+            )
+        )
 
 
 def _apply_entities(
@@ -338,6 +369,7 @@ def _apply_entities(
     policy: ClarifyPolicy,
     language: str,
     i: int,
+    qs: list[ClarifyAct],
     *,
     refine: bool,
 ) -> Held:
@@ -366,14 +398,16 @@ def _apply_entities(
             held = apply_payload(held, {**options[0].payload, "op": ent.op})
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
-            raise _Ask(_clarify(st, i, "entity", ent.phrase or ent.key, language, options=options, kind=ent.kind))
+            qs.append(_clarify(st, i, "entity", ent.phrase or ent.key, language, options=options, kind=ent.kind))
+            continue
         if status != "exact" or not refs:
-            raise _Ask(
+            qs.append(
                 _clarify(
                     st, i, "entity", ent.phrase or ent.key, language,
                     options=options, kind=ent.kind, not_found=not options,
                 )
             )
+            continue
         if ent.op == "remove":
             current = {r.key for r in held.refs.get(ent.kind, [])}
             if not current.intersection(r.key for r in refs):
@@ -390,7 +424,8 @@ def _apply_entities(
             and not {r.key for r in carried}.issuperset(r.key for r in refs)
         ):
             options = _which_held_options([*carried, *refs])
-            raise _Ask(_clarify(st, i, "which_held", None, language, options=options, kind=ent.kind))
+            qs.append(_clarify(st, i, "which_held", None, language, options=options, kind=ent.kind))
+            continue
         held.refs = set_refs(held.refs, ent.kind, refs, ent.op)
     return held
 
@@ -403,6 +438,7 @@ def _apply_specs(
     policy: ClarifyPolicy,
     language: str,
     i: int,
+    qs: list[ClarifyAct],
 ) -> Held:
     clears = [s for s in specs if s.op == "clear"]
     for s in clears:
@@ -427,20 +463,21 @@ def _apply_specs(
             # Code placed the number on the one attribute whose real range holds it: the
             # policy decides, and tonight's policy asks with the resolver's labelled option
             # (section 4). Without an option there is nothing truthful to print: taken.
-            raise _Ask(_clarify(st, i, "spec_attribute", spec.phrase, language, options=options))
+            qs.append(_clarify(st, i, "spec_attribute", spec.phrase, language, options=options))
+            continue
         if status == "none" and not options:
-            options = list(getattr(res, "closest", None) or [])
-            if options:
-                raise _Ask(
-                    _clarify(st, i, "spec_attribute", spec.phrase, language, options=options, not_found=True)
-                )
+            closest = list(getattr(res, "closest", None) or [])
+            if closest:
+                qs.append(_clarify(st, i, "spec_attribute", spec.phrase, language, options=closest, not_found=True))
+                continue
         if status != "exact" or not resolved:
-            raise _Ask(
+            qs.append(
                 _clarify(
                     st, i, "spec_attribute", spec.phrase, language,
                     options=options, not_found=status == "none" and not options,
                 )
             )
+            continue
         for r in resolved:
             if spec.op == "remove":
                 held.specs = [h for h in held.specs if h.attribute != r.attribute]
@@ -502,8 +539,9 @@ def _clarify(
     options: list[Option],
     kind: str | None = None,
     not_found: bool = False,
+    asked: str | None = None,
 ) -> ClarifyAct:
-    asked = clarify_copy.question_for(about, phrase, language, kind=kind, not_found=not_found)
+    asked = asked or clarify_copy.question_for(about, phrase, language, kind=kind, not_found=not_found)
     pending = PendingQuestion(
         kind=f"clarify_{about}",
         asked=asked,

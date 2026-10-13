@@ -54,6 +54,10 @@ def five_keys(session_block: Any) -> dict[str, Any]:
     read = _five_keys(session_block)
     if read.get("reply_language") not in LANGUAGES:
         read["reply_language"] = None
+    # PV2: present only when a v2 turn wrote it, so a v1 contact's keys read exactly as
+    # they did before `pv2` joined FIVE_KEYS.
+    if read.get("pv2") is None:
+        read.pop("pv2", None)
     return read
 
 

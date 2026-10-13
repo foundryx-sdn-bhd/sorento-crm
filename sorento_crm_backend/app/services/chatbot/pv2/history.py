@@ -142,7 +142,9 @@ def render_memory(state: ConversationState, profile: MemoryProfile, now: datetim
         q = state.pending
         lines.append(f'PENDING QUESTION: kind={q.kind}; asked="{q.asked}"')
         if q.options:
-            lines.append("  options: " + " | ".join(f"{o.key} ({o.label})" for o in q.options))
+            lines.append(
+                "  options: " + " | ".join(f"{n}={o.key} ({o.label})" for n, o in enumerate(q.options, start=1))
+            )
         else:
             lines.append(f"  options: {NONE}")
     if state.topics:
