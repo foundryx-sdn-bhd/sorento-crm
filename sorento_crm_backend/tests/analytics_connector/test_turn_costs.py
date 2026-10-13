@@ -190,6 +190,32 @@ def test_unpriced_model_gives_null_cost_never_zero():
         assert call["cost_usd"] is None and call["priced"] is False
 
 
+def test_a_turn_with_one_unpriced_call_costs_null_not_a_partial_sum():
+    """Q3 (a): a priced parser plus an unpriced clarifier must not report the parser's cost
+    as the turn's cost."""
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        _usage(db, turn_id=s["priced"], contact_id=s["contact_id"], feature="chatbot_clarifier",
+               model=s["m_unpriced"], prompt=100, cached=0, completion=10, ms=5)
+        db.flush()
+        row = _row(db, "turn_costs", "id", s["priced"])
+        assert row["llm_calls"] == 3
+        assert row["cost_usd"] is None and row["priced"] is False
+
+
+def test_provider_name_is_matched_case_insensitively():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        model = f"zzt-claude-ci-{s['tag']}"
+        _price(db, model, "2.00", "0.10", "10.00")
+        _usage(db, turn_id=s["no_calls"], contact_id=s["contact_id"], feature="chatbot_parser", model=model,
+               prompt=1000, cached=5000, completion=100, ms=10, provider=" Anthropic ")
+        db.flush()
+        assert _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])["cost_usd"] == Decimal("0.003500")
+
+
 def test_turn_without_llm_calls_costs_zero():
     with pg_session() as db:
         _ensure(db)

@@ -194,7 +194,10 @@ class LLMModelPrice(Base):
     output_usd_per_1m: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     # Where the price came from and when it was read.
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    # `onupdate` covers an ORM edit; a hand-written UPDATE sets it itself.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class AIAssistantWishlistCluster(Base):

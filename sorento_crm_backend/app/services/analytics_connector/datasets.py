@@ -168,7 +168,8 @@ CATALOG: dict[str, Dataset] = {
             Col("created_at", "datetime", "Turn start (Malaysia time)"),
             *_CONTACT_COLS,
             Col("contact_respond_id", "text", "Respond.io contact id", groupable=True),
-            Col("customer_name", "text", "Primary customer name of the contact", groupable=True),
+            Col("customer_name", "text", "Customer the turn's ask was recorded against; empty while the turn has"
+                " no fact row (still open)", groupable=True),
             Col("episode_id", "text", "Conversation episode the turn belongs to (episodes.id); empty while the"
                 " episode is still open", groupable=True),
             Col("inbound_text", "text", "What the customer wrote (sign-in codes masked)"),

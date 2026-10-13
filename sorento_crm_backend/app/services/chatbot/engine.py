@@ -8188,7 +8188,7 @@ def _run_casual_lane(
     reply_language: str | None = None
     # CHAT-TURN-COST: what the clarifier call billed, recorded once a session is open again.
     clarifier_calls: list[dict[str, Any]] = []
-    clarifier_started = time.perf_counter()
+    clarifier_ms = 0
     if failed is not None:
         # SETUP failure (the resolver, the registry, the AI config, the API key). The
         # customer gets a FIXED sentence, never `str(exc)`: these messages carry provider
@@ -8197,8 +8197,12 @@ def _run_casual_lane(
         text = casual.CLARIFIER_UNAVAILABLE_REPLY
     else:
         try:
-            with llm_call.capture_usage() as clarifier_calls:
-                raw = casual.call_clarifier(clarifier_config, user_message)
+            clarifier_started = time.perf_counter()
+            try:
+                with llm_call.capture_usage() as clarifier_calls:
+                    raw = casual.call_clarifier(clarifier_config, user_message)
+            finally:
+                clarifier_ms = int((time.perf_counter() - clarifier_started) * 1000)
             said = fallback_mod.read_clarifier(casual.central_exchange({"text": raw}))
             if said is None:
                 raise casual.ClarifierAnswerEmpty("the clarifier returned nothing to say")
@@ -8225,21 +8229,25 @@ def _run_casual_lane(
             failed = f"{type(exc).__name__}: {exc}"
             text = GENERIC_ERROR_REPLY
     if clarifier_calls and not dry_run:
-        # LIVE turns only, like the parser's row (`_record_parser_usage`, D14).
-        clarifier_ms = int((time.perf_counter() - clarifier_started) * 1000)
-        with _session(session_factory) as db:
-            for call in clarifier_calls:
-                record_turn_llm_usage(
-                    db,
-                    feature=CLARIFIER_FEATURE,
-                    usage=call,
-                    response_time_ms=clarifier_ms // len(clarifier_calls),
-                    contact_respond_id=contact_respond_id,
-                    # The call answered (capture only sees answered calls); whether the
-                    # turn did is the turn row's own record (usage.py).
-                    answered=True,
-                    chatbot_turn_id=turn_id,
-                )
+        # LIVE turns only, like the parser's row (`_record_parser_usage`, D14). Telemetry never
+        # fails the customer's turn: opening the session can raise too, so the whole write is
+        # guarded here, not only inside `record_turn_llm_usage`.
+        try:
+            with _session(session_factory) as db:
+                for call in clarifier_calls:
+                    record_turn_llm_usage(
+                        db,
+                        feature=CLARIFIER_FEATURE,
+                        usage=call,
+                        response_time_ms=clarifier_ms // len(clarifier_calls),
+                        contact_respond_id=contact_respond_id,
+                        # The call answered (capture only sees answered calls); whether the
+                        # turn did is the turn row's own record (usage.py).
+                        answered=True,
+                        chatbot_turn_id=turn_id,
+                    )
+        except Exception:  # noqa: BLE001 - telemetry must never fail a customer's turn
+            logger.warning("chatbot turn %s: clarifier usage log failed", turn_id, exc_info=True)
     if failed is not None and fallback is not None and fallback.kind == "history" and fallback.copy is not None:
         # The history list needs no model: behind the canned ack it still answers.
         reply_language = _fallback_language(ctx, fallback, remembered_before, None)

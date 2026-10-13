@@ -168,7 +168,9 @@ VIEWS = (MESSAGES_V, CONTACTS_V, BOT_TURNS_V, EPISODES_V)
 # drafts) only to `system.ai_assistant_settings.view`, which the connector's chat gate is not.
 # Anthropic reports cache reads OUTSIDE `prompt_tokens` (`llm_provider.py`), OpenAI and Gemini
 # inside it, so the uncached part is computed per provider. A model with no price row is NULL
-# (unpriced), never 0. A missing cached price bills cached tokens at the input price.
+# (unpriced), never 0. A missing cached price bills cached tokens at the input price. Anthropic
+# cache WRITES (`cache_creation_input_tokens`, 1.25x input) are not captured: nothing in `app/`
+# sets `cache_control` today, so they are zero; capture them when prompt caching is turned on.
 _CACHED = "COALESCE(u.cached_tokens, 0)"
 LLM_CALLS_V = f"""
 CREATE OR REPLACE VIEW {SCHEMA}.llm_calls AS
@@ -187,7 +189,7 @@ SELECT u.id::text AS id,
        u.response_time_ms,
        u.was_answered,
        CASE WHEN p.model IS NULL THEN NULL ELSE round((
-              (CASE WHEN u.provider = 'anthropic' THEN u.prompt_tokens
+              (CASE WHEN lower(btrim(u.provider)) = 'anthropic' THEN u.prompt_tokens
                     ELSE GREATEST(u.prompt_tokens - {_CACHED}, 0) END) * p.input_usd_per_1m
             + {_CACHED} * COALESCE(p.cached_input_usd_per_1m, p.input_usd_per_1m)
             + u.completion_tokens * p.output_usd_per_1m

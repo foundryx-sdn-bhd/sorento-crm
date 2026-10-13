@@ -1,0 +1,20 @@
+# CHAT-TURN-COST acceptance criteria
+
+Plan: `PLAN-chat-turn-cost-13oct.md`. Tests: `sorento_crm_backend/tests/analytics_connector/test_turn_costs.py`
+(TC), `tests/chatbot/test_s4_casual_lane.py` (CL), `tests/chatbot/test_chat_facts_record.py` (CF).
+
+| ID | Criterion | Test |
+| --- | --- | --- |
+| CTC-01 | `chat_list_datasets` lists `turn_costs` and `llm_calls`; `chat_query`'s dataset enum offers both. | TC `test_list_datasets_includes_the_cost_datasets`, `test_manifest_offers_the_cost_datasets` |
+| CTC-02 | `chat_describe_dataset` documents every column of both datasets; `cost_usd` is a measurable `number`. | TC `test_describe_documents_every_cost_column` |
+| CTC-03 | `turn_costs` has one row per live turn; test turns never appear. | TC `test_test_turns_are_not_in_turn_costs` |
+| CTC-04 | A turn's row sums every LLM call of the turn (calls, prompt / cached / completion / total tokens, LLM ms) and carries latency, lane, contact, customer, episode, category (domain, intent, topic), outcome and prompt version. | TC `test_turn_costs_sums_every_llm_call_of_a_turn_and_prices_it` |
+| CTC-05 | Cost = (uncached x input + cached x cached input + completion x output) / 1e6 from `llm_model_prices`; uncached is prompt minus cached, except Anthropic (prompt alone); provider matched case-insensitively; a missing cached price bills at the input price. | TC `test_llm_calls_prices_each_call`, `test_anthropic_prompt_tokens_exclude_cache_reads`, `test_provider_name_is_matched_case_insensitively`, `test_missing_cached_price_falls_back_to_input_price` |
+| CTC-06 | A model with no price is reported unpriced (`cost_usd` NULL, `priced` false), never 0, and one unpriced call makes the whole turn NULL. A turn with no call costs 0. | TC `test_unpriced_model_gives_null_cost_never_zero`, `test_a_turn_with_one_unpriced_call_costs_null_not_a_partial_sum`, `test_turn_without_llm_calls_costs_zero` |
+| CTC-07 | Seeds are only the three prices the repo cites with a source; seeding never overwrites an edited price. | TC `test_seeded_prices_are_only_the_sourced_ones`, `test_seed_never_overwrites_an_edited_price` |
+| CTC-08 | The parser usage row stores `cached_tokens`; existing rows are backfilled from the turn trace. | TC `test_parser_usage_row_carries_cached_tokens`, `test_backfill_takes_cached_tokens_from_the_turn_trace` |
+| CTC-09 | The clarifier call of a live low-signal turn is logged as `chatbot_clarifier` with the turn id; a dry run logs nothing; a failing usage write never fails the turn. | CL `test_a_live_low_signal_turn_logs_the_clarifier_call`, `test_a_dry_run_low_signal_turn_logs_no_clarifier_call`, `test_a_failing_usage_write_never_fails_the_turn`; TC `test_llm_call_capture_collects_usage_of_calls_made_inside_it` |
+| CTC-10 | The CA-1 fact row keeps the parser prompt version; existing facts are backfilled. | CF `test_the_fact_keeps_the_parser_prompt_version`; TC `test_backfill_takes_prompt_version_from_the_turn_trace` |
+| CTC-11 | Exposure: no phone, envelope, trace, user id or credential column; OTP codes masked; `llm_calls` holds chatbot calls only; the read-only role reads the views and no base table. | TC `test_cost_views_expose_no_secret_columns`, `test_turn_costs_masks_otp_in_inbound_text`, `test_llm_calls_holds_chatbot_calls_only`, `test_read_only_role_reads_the_cost_views_and_no_base_table`, `test_describe_documents_every_cost_column` |
+| CTC-12 | Number filters accept finite numbers only; anything else is a 422. | TC `test_cost_filters_compare_numbers`, `test_cost_filters_reject_what_is_not_a_finite_number` |
+| CTC-13 | Group-by over 100k turns and a newest-first page stay well inside the 10 s statement timeout. | Plan "Performance" (measured, not a CI test) |
