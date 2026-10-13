@@ -4510,6 +4510,9 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
     echo is what keeps the product on a new ask that starts fresh."""
+    # CARRY-ATTACH (reviewer S1): the key is the engine's own, never the parser's; one the
+    # emission carried is dropped before any exit, so it cannot keep a kind a NEW ASK drops.
+    verdict = {k: v for k, v in verdict.items() if k != RESTATED_KINDS_KEY}
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):

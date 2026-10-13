@@ -1123,6 +1123,8 @@ def _focus_rules(
             # CARRY-ATTACH: a kind the parser RESTATED (its echo of the settled row,
             # dropped by `turn_runtime.without_restated_rows`) is named too: the parser
             # said the subject is still that row, so it is neither dropped nor replaced.
+            # Per KIND, not per row: every settled row of that kind stays (an echo of a
+            # few of fifty listed products keeps the fifty, as ATTACH-SET round 2 wants).
             kept_kinds = set(by_kind) | restated_kinds(verdict)
             for kind, attr in KIND_FIELD_MAP.items():
                 if kind in kept_kinds:

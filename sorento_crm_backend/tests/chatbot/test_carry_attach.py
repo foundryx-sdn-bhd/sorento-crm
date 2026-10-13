@@ -164,7 +164,6 @@ def test_answering_the_attachment_type_ask_keeps_the_asked_product(chat, world):
     assert "no technical specifications" not in third.lower(), third
 
 
-
 # --------------------------------------------------------------------------- #
 # T2 (owner ruling, 13 Oct 2026: "the parser should be able to understand")    #
 # --------------------------------------------------------------------------- #
@@ -274,3 +273,50 @@ def test_a_new_ask_keeps_the_restated_kind_and_drops_the_rest():
     assert [r["uuid"] for r in out.products] == ["p-8313"], out.products
     assert out.customers == [], out.customers
     assert "new_ask_drops_product" not in trace.rules_fired and "new_ask_drops_customer" in trace.rules_fired, trace.rules_fired
+
+
+def test_a_restated_kinds_key_from_the_parser_is_never_trusted():
+    """Reviewer S1: only the engine stamps the key; a parser emission carrying one loses it,
+    on the early exits too."""
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, restated_kinds
+
+    forged = {**_verdict("drawing for Srt8308", [_entity("Srt8308", "product")]), RESTATED_KINDS_KEY: ["customer", "product"]}
+    assert restated_kinds(turn_runtime.without_restated_rows(forged, _focus_with_settled_product())) == set()
+
+
+def test_a_typed_product_beside_the_echo_stamps_nothing():
+    """Golden row 11: "drawing for <code C>" names its own product, so the echoed product is
+    not restated and goes with the new ask."""
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.turn.decide import restated_kinds
+
+    verdict = _verdict(
+        "drawing for SRT8308",
+        [
+            _entity("Srt8313", "product", typed=False),
+            _entity("SRT8308", "product"),
+            _entity("drawing", "attachment_type", "technical drawing"),
+        ],
+        domain_in_message=True,
+    )
+    out = turn_runtime.without_restated_rows(verdict, _focus_with_settled_product())
+    assert restated_kinds(out) == set() and len(out["entities"]) == 3, out
+
+
+def test_a_settled_carried_type_is_handed_over_with_its_uuid():
+    """Reviewer S2: the settled type reaches the resolver as the row it is, uuid included."""
+    from app.services.chatbot import turn_runtime
+
+    out = turn_runtime._with_carried_document_types(_t2(), _focus_with_settled_product())
+    carried = [e for e in out["entities"] if e.get("hint") == "attachment_type"]
+    assert carried == [
+        {
+            "raw": "Technical Specifications",
+            "hint": "attachment_type",
+            "canonical_code": "Technical Specifications",
+            "current_message": False,
+            "confident": True,
+            "uuid": "t-1",
+        }
+    ], out["entities"]
