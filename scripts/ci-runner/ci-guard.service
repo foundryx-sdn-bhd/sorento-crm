@@ -1,0 +1,14 @@
+[Unit]
+Description=CI runner network guard (jobs reach the internet, never the Mac or the LAN)
+Before=docker.service
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/ci-guard.nft
+
+[Install]
+# Docker does not start without the guard.
+RequiredBy=docker.service
+WantedBy=multi-user.target

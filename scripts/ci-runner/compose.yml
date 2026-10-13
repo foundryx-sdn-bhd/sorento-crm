@@ -1,0 +1,48 @@
+# Two self-hosted runners (sorento-mac-1, sorento-mac-2) inside the colima VM
+# "ci". Each runner shares the network namespace of its own Docker daemon
+# (dind), so the jobs' Postgres/Redis service containers publish 5432/6379
+# on that runner's localhost and two jobs never clash. See README.md.
+name: sorento-ci-runners
+
+x-dind: &dind
+  image: docker:29.8.1-dind
+  privileged: true
+  restart: unless-stopped
+  environment:
+    DOCKER_TLS_CERTDIR: ""
+  # Unix socket only (no TCP listener); group 123 = the runner image's docker group.
+  command: ["--host=unix:///var/run/dind/docker.sock", "--group=123"]
+
+x-runner: &runner
+  image: sorento-ci-runner:local
+  build: .
+  restart: unless-stopped
+  environment:
+    DOCKER_HOST: unix:///var/run/dind/docker.sock
+    ACTIONS_RUNNER_HOOK_JOB_STARTED: /usr/local/bin/job-started.sh
+
+services:
+  dind1:
+    <<: *dind
+    volumes: [docker1:/var/lib/docker, sock1:/var/run/dind]
+  runner1:
+    <<: *runner
+    network_mode: service:dind1
+    depends_on: [dind1]
+    volumes: [sock1:/var/run/dind, state1:/runner-state]
+  dind2:
+    <<: *dind
+    volumes: [docker2:/var/lib/docker, sock2:/var/run/dind]
+  runner2:
+    <<: *runner
+    network_mode: service:dind2
+    depends_on: [dind2]
+    volumes: [sock2:/var/run/dind, state2:/runner-state]
+
+volumes:
+  docker1:
+  sock1:
+  state1:
+  docker2:
+  sock2:
+  state2:
