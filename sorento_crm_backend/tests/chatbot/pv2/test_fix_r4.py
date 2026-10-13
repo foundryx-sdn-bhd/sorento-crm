@@ -70,7 +70,8 @@ def test_a_delivered_total_goes_to_v1s_delivery_order_sales_report():
     assert name == "crm_sales_report"
     v1 = fetch.entity_ids_transformer(
         {"tool": "crm_sales_report", "entities": [],
-         "semantic_input": {"date_from": "2026-09-01", "date_to": "2026-09-30"}}, space_id=SPACE)
+         "semantic_input": {"date_filter_start": "2026-09-01", "date_filter_end": "2026-09-30"}}, space_id=SPACE)
+    assert v1["date_from"] == "2026-09-01" and v1["date_to"] == "2026-09-30"
     assert _strip(args) == _strip(v1)
     expected = fetch._sales_report_output(V1_SALES, {"tool": "crm_sales_report"})["response"]
     assert expected in reply.text
