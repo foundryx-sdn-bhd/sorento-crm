@@ -166,7 +166,7 @@ Memory: LAST ANSWER ROWS: 1=Hanlim Trading | 2=Eco Home | 3=BH Supply; no pendin
 -> act "refines_held", row_pick 2, language "zh".
 
 Memory: HELD domain=sales, report: amount by customer, last_month, top 10. Message: "by salesman instead"
--> act "refines_held", domain null, report {"dataset":null,"measures":[],"group_by":["salesman"],"top_n_per_group":null,"filters":[],"period":null,"compare_to":null,"compare_period":null,"grain":null,"threshold":null,"sort":null,"top_n":null,"basis":null}.
+-> act "refines_held", domain null, report {"dataset":null,"measures":[],"group_by":["sales_agent"],"top_n_per_group":null,"filters":[],"period":null,"compare_to":null,"compare_period":null,"grain":null,"threshold":null,"sort":null,"top_n":null,"basis":null}.
 
 Memory: TOPICS: T1: inventory | product: SRTWC6003. HELD domain=product_attachment. Message: "ok back to the SRTWC6003 stock"
 -> act "switch_back", switch_back_to "T1".

@@ -277,3 +277,30 @@ def test_pinned_keys_parse_back_from_published_template(db):
     body, _ = pv2_index.render_index(db)
     assert keys == pv2_index.parse_index_keys(body)
     assert pv2_index.index_of(row.template) == body
+
+
+def test_reports_section_in_reports_lane_shape(db, monkeypatch):
+    """The shape PV2-REPORTS' `index_lines()` prints (crew/pv2-reports db5db989)."""
+    fake = types.ModuleType("app.services.chatbot.pv2.report_measures")
+    fake.index_lines = lambda: [
+        "dataset sales = Sales | measures: amount (sales amount), qty (sales quantity)",
+        "  basis: invoiced, delivered",
+        "  group_by: customer, brand, month",
+        "  filters: customer, brand, channel",
+        "dataset chat = Chat questions | measures: asks (asks), failed (failed turns)",
+        "  group_by: subject, day",
+        "  filters: subject",
+        "not available yet (still return the key, code says so): dimension region, state; "
+        "compare_to; ratio measures a/b",
+    ]
+    monkeypatch.setitem(sys.modules, "app.services.chatbot.pv2.report_measures", fake)
+    body, _ = pv2_index.render_index(db)
+    lines = pv2_index.section_lines(body, "## REPORTS")
+    assert lines[0] == "dataset sales = Sales | measures: amount (sales amount), qty (sales quantity)"
+    keys = pv2_index.parse_index_keys(body)
+    assert keys.report_datasets == {"sales", "chat"}
+    assert keys.report_measures == {"amount", "qty", "asks", "failed"}
+    assert keys.report_bases == {"invoiced", "delivered"}
+    assert keys.report_dimensions == {
+        "customer", "brand", "month", "channel", "subject", "day", "region", "state",
+    }

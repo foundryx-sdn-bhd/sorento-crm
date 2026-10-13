@@ -236,7 +236,8 @@ def _report_lines() -> list[str]:
         if exc.name == "app.services.chatbot.pv2.report_measures":
             return []  # PV2-REPORTS not merged yet
         raise
-    return [_clean(line) for line in mod.index_lines()]
+    # Not `_clean`: PV2-REPORTS' lines use `|` themselves; only line breaks are folded.
+    return [" ".join(str(line).replace("\n", " ").split()) for line in mod.index_lines()]
 
 
 def _teams() -> list[str]:
@@ -399,11 +400,7 @@ def parse_index_keys(template: str) -> IndexKeys:
         vals = _row_part(line, "values: ")
         if vals:
             spec_values[_row_key(line)] = frozenset(vals)
-    report: dict[str, set[str]] = defaultdict(set)
-    for line in section_lines(template, S_REPORTS):
-        head = line.split(" = ", 1)[0].split()
-        if len(head) == 2:
-            report[head[0]].add(head[1])
+    report = _report_keys(section_lines(template, S_REPORTS))
     brands = frozenset(keys(S_BRANDS))
     return IndexKeys(
         domains=frozenset(keys(S_DOMAINS)),
@@ -422,6 +419,47 @@ def parse_index_keys(template: str) -> IndexKeys:
         report_bases=frozenset(report["basis"]),
         teams=frozenset(keys(S_TEAMS)),
     )
+
+
+def _items(text_: str) -> list[str]:
+    """`a (Label), b (Label)` or `a, b` -> [a, b]."""
+    return [i.split(" (", 1)[0].strip() for i in text_.split(",") if i.split(" (", 1)[0].strip()]
+
+
+def _report_keys(lines: list[str]) -> dict[str, set[str]]:
+    """REPORTS rows, in either shape PV2-REPORTS prints:
+
+    - `dataset <key> = <label> | measures: a (A), b (B)`, then `basis: x, y`,
+      `group_by: c, d`, `filters: e, f`, and one `not available yet ...: dimension g, h; ...`
+      line whose dimension keys are still accepted (code answers "not available yet");
+    - or one row per key: `<dataset|measure|dimension|basis> <key> = <label>`.
+    """
+    report: dict[str, set[str]] = defaultdict(set)
+    for line in lines:
+        head, _, rest = line.partition(" = ")
+        words = head.split()
+        if words and words[0] == "dataset" and len(words) == 2:
+            report["dataset"].add(words[1])
+            for part in rest.split(" | ")[1:]:
+                if part.startswith("measures:"):
+                    report["measure"].update(_items(part[len("measures:"):]))
+            continue
+        if rest and len(words) == 2 and words[0] in ("measure", "dimension", "basis"):
+            report[words[0]].add(words[1])
+            continue
+        label, colon, values = line.partition(":")
+        label = label.strip()
+        if not colon:
+            continue
+        if label == "basis":
+            report["basis"].update(_items(values))
+        elif label in ("group_by", "filters"):
+            report["dimension"].update(_items(values))
+        elif label.startswith("not available yet"):
+            first = values.split(";", 1)[0].strip()
+            if first.startswith("dimension "):
+                report["dimension"].update(_items(first[len("dimension "):]))
+    return report
 
 
 # --------------------------------------------------------------------------- publish
