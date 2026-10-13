@@ -177,3 +177,9 @@ def test_a_production_text_with_an_older_sub_asks_block_gets_no_second_one():
     with blank_session() as db:
         _production(db, "PROD\n\nSUB ASKS AND FAMILY\nold r7 rules" + m.MEMORY_ANCHOR + "memory")
         assert m.publish_on_production(db) is None
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

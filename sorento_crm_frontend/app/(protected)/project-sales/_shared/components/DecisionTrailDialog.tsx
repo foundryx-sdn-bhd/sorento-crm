@@ -31,6 +31,8 @@ const DECISION_TRAIL_KIND_LABEL: Record<string, string> = {
   reconfirmed: 'Reconfirmed',
   sheet: 'Sheet',
   planning_change: 'Planning change',
+  // PR 1622: purchasing's refusal, kept in the line's history after the badge clears.
+  rejected: 'Rejected by purchasing',
 };
 
 /**

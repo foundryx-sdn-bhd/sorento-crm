@@ -137,7 +137,13 @@ function pickerOptions(
     for (const candidate of borrowCandidatesOf(row)) {
       if (way === 'borrow_order') {
         if (candidate.donor_so_number) seen.add(candidate.donor_so_number);
-      } else if (candidate.source === 'other_location' && !candidate.donor_so_number) {
+      } else if (
+        candidate.source === 'other_location' &&
+        !candidate.donor_so_number &&
+        // BORROW-OWN-LOC (review S5): the line's own location is offered at 0 free, for a
+        // person's own pick in "Add a borrow"; a bulk fill could never draw on it.
+        toMinor(candidate.free_qty) > 0
+      ) {
         // K8: a donor-named candidate is an order borrow, never a location's.
         seen.add(candidate.warehouse_code);
       }

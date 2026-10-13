@@ -120,6 +120,7 @@ LABELS: dict[str, dict[str, str]] = {
     # Slice 2: PO / SO / SPO / orders rows. PO, SO, SPO and GR stay as printed (owner Q3).
     "Order Number": {"ms": "No. Pesanan", "zh": "订单号"},
     "Customer": {"ms": "Pelanggan", "zh": "客户"},
+    "Branch": {"ms": "Cawangan", "zh": "分店"},
     "Order Date": {"ms": "Tarikh Pesanan", "zh": "订单日期"},
     "Actual Delivery Date": {"ms": "Tarikh Penghantaran Sebenar", "zh": "实际送货日期"},
     "Status": {"ms": "Status", "zh": "状态"},

@@ -188,57 +188,27 @@ describe('DecisionStrip render order', () => {
 });
 
 /**
- * AC-RB2 (`PLAN-scm-oi-handshake.md` section 11): the strip counts the lines purchasing
- * refused, so CS sees the bounce without visiting Order Inquiries.
- *
- * Beside the cards rather than on one: a refusal is not a kind of supply, it is a line with
- * no supply decided at all. Two figures the count is NOT allowed to be: the number of cells
- * (a cell holds several lines) and the number of rows (one line, several inquiry rows).
+ * AC-RB2 retired by the owner's mock v3 notes on PR 1622 ("i don't need this indicator"): a
+ * refusal is an order inquiry status, shown on the OI column, and the header keeps its count.
+ * The strip carries no refusal chip of its own.
  */
 describe('DecisionStrip: refused lines', () => {
-  const refused = (key: string) =>
-    line({
-      key,
-      order_inquiry: {
-        inquiry_no: 'OI-000101',
-        state: 'raised',
-        ack_state: 'rejected',
-        rejected_by_name: 'Joey',
-        rejected_reason: 'No supplier until November',
-      },
-    });
-
-  it('counts the refused lines', () => {
-    renderStrip([rich, refused('line-a'), refused('line-b')]);
-
-    expect(screen.getByTestId('decision-strip-rejected')).toHaveTextContent(
-      '2 rejected',
-    );
-  });
-
-  it('says nothing when nobody has refused anything', () => {
-    renderStrip([rich]);
-
-    expect(screen.queryByTestId('decision-strip-rejected')).toBeNull();
-  });
-
-  it('drops back to nothing once CS has answered the refusal', () => {
-    // The board clears `ack_state` on a line CS has decided again, so the count follows it
-    // down with no second rule of its own.
+  it('shows no refusal chip even when purchasing has refused lines', () => {
     renderStrip([
       rich,
       line({
-        key: 'answered',
+        key: 'line-a',
         order_inquiry: {
           inquiry_no: 'OI-000101',
           state: 'raised',
-          ack_state: null,
-          rejected_by_name: null,
-          rejected_reason: null,
+          ack_state: 'rejected',
+          rejected_by_name: 'Joey',
+          rejected_reason: 'No supplier until November',
         },
       }),
     ]);
 
     expect(screen.queryByTestId('decision-strip-rejected')).toBeNull();
+    expect(screen.queryByText(/\d+ rejected$/)).toBeNull();
   });
 });

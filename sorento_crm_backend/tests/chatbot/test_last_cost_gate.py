@@ -658,3 +658,7 @@ def test_ac33_tool_is_skipped_from_embedding_and_hides_the_grant_key() -> None:
         "the internal field-reveal key must never reach the customer-visible "
         "capability summary"
     )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows
