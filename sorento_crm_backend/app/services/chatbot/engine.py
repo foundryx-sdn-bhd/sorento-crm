@@ -4928,7 +4928,20 @@ def _run_stages_body(  # noqa: PLR0915
                 for p in state_in.focus.products
                 if isinstance(p, dict) and (c := p.get("canonical_code") or p.get("code"))
             ],
+            carried_relation=state_in.focus.relation,
         )
+        # The conversation's subject is now the linked codes (APPLY copies this slot onto the
+        # turn's focus); a message naming a code of its own that links nothing ends it.
+        linked_as = [
+            e["linked_as"] for e in linked_verdict.get("entities") or [] if isinstance(e, dict) and e.get("linked_as")
+        ]
+        if linked_as:
+            state_in.focus.relation = linked_as[0]
+        elif any(
+            find_lane.entity_code(e) and e.get("current_message") is not False
+            for e in linked_verdict.get("entities") or []
+        ):
+            state_in.focus.relation = None
         if linked_verdict is not verdict or seat_link_lines:
             turn_trace.add(
                 "seat_link",

@@ -71,21 +71,57 @@ def _anchors(entities: list[Any]) -> list[int]:
     return own or coded
 
 
+def _bare_continuation(verdict: dict[str, Any], entities: list[Any]) -> bool:
+    """The parser's own reading of a continuation: no domain word in THIS message
+    (`domain_in_message` false) and nothing named but product codes."""
+    own = [e for e in entities if isinstance(e, dict) and e.get("current_message") is not False]
+    return verdict.get("domain_in_message") is False and bool(own) and all(entity_code(e) for e in own)
+
+
 def as_linked_products(
-    db: Any, verdict: dict[str, Any], carried_codes: list[str] | tuple[str, ...] = ()
+    db: Any,
+    verdict: dict[str, Any],
+    carried_codes: list[str] | tuple[str, ...] = (),
+    *,
+    carried_relation: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """`verdict` with every named code that sits on a `fits` link replaced by its linked codes,
-    and the lines that are the whole reply when nothing was replaced (empty otherwise). Nothing
-    else changes: the domain, the intent, every other key and every other entity stay the
-    parser's.
+    """`verdict` with every named code that sits on a `fits` link replaced by its linked codes
+    (each marked `linked_from` and `linked_as`, the side listed), and the lines that are the whole reply when nothing was
+    replaced (empty otherwise). Nothing else changes: the domain, the intent, every other key
+    and every other entity stay the parser's.
 
     `carried_codes` are the conversation's product codes (`focus.products`): the subject of
     "which seat cover fits it?", whose parse names no code. With neither, the reply asks for
-    the code (#1601 card rule 6)."""
-    if "fits" not in filter_items(verdict):
-        return verdict, []
+    the code (#1601 card rule 6). `carried_relation` (`focus.relation`, "covers" or "wcs")
+    says those codes answered a fit ask, and which side they are (crew v94 check and carry
+    ruling, 13 Oct; the #1626 pattern):
+
+    * a bare new code the parser reads as a continuation repeats the fit ask in the same
+      direction, even when the parse dropped `find` (a bare cover code after "seat cover for
+      <WC>" is that cover, never its WCs);
+    * a code of that answer is never re-anchored ("only the 333A one" narrows it);
+    * a relation nothing in THIS message names (`value` null) applies only on such a
+      continuation, never to a message with its own domain word.
+    """
+    items = filter_items(verdict)
     entities = list(jsc.array(verdict.get("entities")))
+    if "fits" in items:
+        said = bool(jsc.js_string(items["fits"].get("value") or "").strip())
+    elif carried_relation and _bare_continuation(verdict, entities):
+        said = False
+    else:
+        return verdict, []
+    from app.services.product_alternative_service import normalize_code
+
     anchors = _anchors(entities)
+    if anchors:
+        if not said and (verdict.get("domain_in_message") is True or not carried_relation):
+            return verdict, []
+        if carried_relation:
+            answered = {normalize_code(c) for c in carried_codes}
+            anchors = [i for i in anchors if normalize_code(entity_code(entities[i])) not in answered]
+            if not anchors:
+                return verdict, []
     if not anchors:
         if not carried_codes:
             return verdict, [ASK_PRODUCT_LINE]
@@ -97,7 +133,7 @@ def as_linked_products(
         anchors = _anchors(entities)
 
     from app.models.product import Product
-    from app.services.product_alternative_service import _norm_sql, normalize_code
+    from app.services.product_alternative_service import _norm_sql
     from app.services.product_compatibility_service import covers_for, wcs_for
 
     wanted = {normalize_code(entity_code(entities[i])) for i in anchors}
@@ -108,26 +144,32 @@ def as_linked_products(
     for row in rows:
         by_code.setdefault(normalize_code(row.product_code), []).append(row)
     ids = [str(r.id) for r in rows]
-    covers, wcs = covers_for(db, ids), wcs_for(db, ids)
+    covers = covers_for(db, ids) if said or carried_relation != "wcs" else {}
+    wcs = wcs_for(db, ids) if said or carried_relation != "covers" else {}
 
-    replaced: dict[int, list[str]] = {}
+    replaced: dict[int, tuple[str, list[str]]] = {}
     unlinked: list[Any] = []  # the products named, on no link
     unknown: list[str] = []  # the codes named that are no product's, as typed
     for i in anchors:
         products = by_code.get(normalize_code(entity_code(entities[i])), [])
         linked: list[str] = []
+        side = ""
         for p in products:
-            for other in [*covers.get(str(p.id), []), *wcs.get(str(p.id), [])]:
-                if other.product_code and other.product_code not in linked:
-                    linked.append(other.product_code)
+            for listed, others in (("covers", covers.get(str(p.id), [])), ("wcs", wcs.get(str(p.id), []))):
+                for other in others:
+                    if other.product_code and other.product_code not in linked:
+                        linked.append(other.product_code)
+                        side = side or listed
         if linked:
-            replaced[i] = linked
+            replaced[i] = (side, linked)
         elif products:
             unlinked.append(products[0])
         else:
             unknown.append(entity_code(entities[i]))
     if not replaced:
-        if not unlinked or unknown:
+        if not said or not unlinked or unknown:
+            # A carried, unsaid relation that links nothing in its direction is no fit ask:
+            # the code answers as typed (the Q1 line is for a message that asked one).
             # Q3 (a): a named code that is no product's exact code (a family prefix, a typo)
             # is the resolver's to place, picker or miss, so the turn runs on as typed.
             return verdict, []
@@ -144,8 +186,10 @@ def as_linked_products(
             continue
         # The customer typed these codes: every other field the entity carries (a quantity,
         # its confidence) rides on each.
+        side, codes = replaced[i]
         out += [
-            {**entity, "raw": code, "canonical_code": code, "current_message": True}
-            for code in replaced[i]
+            {**entity, "raw": code, "canonical_code": code, "current_message": True,
+             "linked_from": entity_code(entity), "linked_as": side}
+            for code in codes
         ]
     return {**verdict, "entities": out}, []
