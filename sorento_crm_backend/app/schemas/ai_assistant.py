@@ -167,6 +167,7 @@ class UsageSummaryResponse(BaseModel):
     total_tokens: int = 0
     cost_usd: float = 0.0
     unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class UsageByDayItem(BaseModel):
@@ -175,6 +176,7 @@ class UsageByDayItem(BaseModel):
     tokens: int
     cost_usd: float = 0.0
     unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class TopUserItem(BaseModel):
@@ -184,6 +186,7 @@ class TopUserItem(BaseModel):
     tokens: int
     cost_usd: float = 0.0
     unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class TopContactItem(BaseModel):
@@ -194,6 +197,7 @@ class TopContactItem(BaseModel):
     tokens: int
     cost_usd: float = 0.0
     unpriced_calls: int = 0
+    unknown_cache_calls: int = 0
 
 
 class RecentQueryItem(BaseModel):
@@ -211,6 +215,7 @@ class RecentQueryItem(BaseModel):
     cost_usd: Optional[float] = None
     priced: bool = False
     cached_price_missing: bool = False
+    cache_unknown: bool = False
 
 
 class QueryDetailResponse(BaseModel):

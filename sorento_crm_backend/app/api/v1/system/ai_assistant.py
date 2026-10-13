@@ -101,13 +101,18 @@ def _feature_filters(feature: Optional[str]) -> list:
 _COST = cost_sql(AIAssistantUsageLog.__tablename__, LLMModelPrice.__tablename__)
 _COST_COL = literal_column(_COST.cost_usd)
 _PRICED_COL = literal_column(_COST.priced)
+_UNKNOWN_COL = literal_column(_COST.cache_unknown)
 
 
-def _cost_aggregates() -> tuple[Any, Any]:
-    """(sum of priced call cost, count of calls with no cost) for a grouped usage query."""
+def _cost_aggregates() -> tuple[Any, Any, Any]:
+    """(sum of priced call cost, calls with no price, calls with unknown cache use) for a grouped query.
+
+    A cache-unknown call is neither priced nor "not priced": it has its own count (CU-5).
+    """
     return (
         func.coalesce(func.sum(_COST_COL), 0).label("cost"),
-        func.coalesce(func.sum(case((_PRICED_COL, 0), else_=1)), 0).label("unpriced"),
+        func.coalesce(func.sum(case((_PRICED_COL, 0), (_UNKNOWN_COL, 0), else_=1)), 0).label("unpriced"),
+        func.coalesce(func.sum(case((_UNKNOWN_COL, 1), else_=0)), 0).label("unknown"),
     )
 
 
@@ -643,6 +648,7 @@ def usage_summary(
         total_tokens=int(row.total or 0),
         cost_usd=float(row.cost or 0),
         unpriced_calls=int(row.unpriced or 0),
+        unknown_cache_calls=int(row.unknown or 0),
     )
 
 
@@ -691,6 +697,7 @@ def usage_by_day(
                 tokens=int(r.tokens or 0),
                 cost_usd=float(r.cost or 0),
                 unpriced_calls=int(r.unpriced or 0),
+                unknown_cache_calls=int(r.unknown or 0),
             )
         )
     return out
@@ -735,6 +742,7 @@ def usage_top_users(
             tokens=int(r.tokens or 0),
             cost_usd=float(r.cost or 0),
             unpriced_calls=int(r.unpriced or 0),
+            unknown_cache_calls=int(r.unknown or 0),
         )
         for r in rows
     ]
@@ -789,6 +797,7 @@ def usage_top_contacts(
             tokens=int(r.tokens or 0),
             cost_usd=float(r.cost or 0),
             unpriced_calls=int(r.unpriced or 0),
+            unknown_cache_calls=int(r.unknown or 0),
         )
         for r in rows
     ]
@@ -815,6 +824,7 @@ def usage_recent_queries(
             _COST_COL.label("cost_usd"),
             _PRICED_COL.label("priced"),
             literal_column(_COST.cached_price_missing).label("cached_price_missing"),
+            _UNKNOWN_COL.label("cache_unknown"),
         )
         .outerjoin(User, User.id == AIAssistantUsageLog.user_id)
         .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
@@ -830,7 +840,7 @@ def usage_recent_queries(
         .all()
     )
     out: list[RecentQueryItem] = []
-    for log, user_name, contact_name, contact_phone, asst_created, conv_id, cost, priced, cached_missing in rows:
+    for log, user_name, contact_name, contact_phone, asst_created, conv_id, cost, priced, cached_missing, unknown in rows:
         # Find the user message that prompted this assistant turn:
         # most recent user message in the same conversation BEFORE the assistant message.
         preview = ""
@@ -867,6 +877,7 @@ def usage_recent_queries(
                 cost_usd=float(cost) if cost is not None else None,
                 priced=bool(priced),
                 cached_price_missing=bool(cached_missing),
+                cache_unknown=bool(unknown),
             )
         )
     return out

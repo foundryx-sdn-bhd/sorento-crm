@@ -196,7 +196,9 @@ SELECT u.id::text AS id,
        u.was_answered,
        {_COST.cost_usd} AS cost_usd,
        {_COST.priced} AS priced,
-       {_COST.cached_price_missing} AS cached_price_missing
+       {_COST.cached_price_missing} AS cached_price_missing,
+       -- New columns go LAST (CREATE OR REPLACE VIEW cannot reorder).
+       {_COST.cache_unknown} AS cache_unknown
   FROM ai_assistant_usage_logs u
   LEFT JOIN respond_contacts rc ON rc.id = u.contact_id
   LEFT JOIN llm_model_prices p ON p.model = u.model
@@ -245,7 +247,8 @@ SELECT t.id::text AS id,
        COALESCE(calls.cached_price_missing, false) AS cached_price_missing,
        -- New columns go LAST: CREATE OR REPLACE VIEW cannot insert or reorder columns, and a
        -- database that already holds an earlier version of this view upgrades in place.
-       rc.phone_number AS contact_phone
+       rc.phone_number AS contact_phone,
+       COALESCE(calls.cache_unknown, false) AS cache_unknown
   FROM chatbot.turns t
   LEFT JOIN LATERAL (
         SELECT r.id, r.name, r.phone_number FROM respond_contacts r
@@ -265,7 +268,8 @@ SELECT t.id::text AS id,
                sum(lc.response_time_ms) AS llm_ms,
                sum(lc.cost_usd) AS cost_usd,
                bool_and(lc.priced) AS priced,
-               bool_or(lc.cached_price_missing) AS cached_price_missing
+               bool_or(lc.cached_price_missing) AS cached_price_missing,
+               bool_or(lc.cache_unknown) AS cache_unknown
           FROM {SCHEMA}.llm_calls lc
          WHERE lc.chatbot_turn_id = t.id::text
          GROUP BY lc.chatbot_turn_id
