@@ -43,18 +43,17 @@ def _resolve(db, ent, **kw):
 # ------------------------------------------------------------------ R1 resolver
 
 
-def test_r1_inbound_shipment_number_falls_back_to_the_delivery_order(db):
+# PV2-FIX r2: crew 14 Oct, no cross-type document retry (replaces the round-2 fallback tests).
+def test_r1_inbound_shipment_number_never_retries_as_a_delivery_order(db):
     _order(db, "202610-0838")
-    res = _resolve(db, _ent("inbound_shipment", "202610-0838", "202610-0838"))
-    assert res.status == "exact"
-    assert res.refs[0].kind == "delivery_order" and res.refs[0].key == "202610-0838"
+    res = _resolve(db, _ent("inbound_shipment", "202610-0838", None))
+    assert res.status == "none"
 
 
-def test_r1_purchase_order_kind_the_asker_cannot_see_falls_back_to_delivery_order(db):
+def test_r1_purchase_order_kind_the_asker_cannot_see_is_none(db):
     _order(db, "PS202609-0469")
-    res = _resolve(db, _ent("purchase_order", "PS202609-0469", "PS202609-0469"))
-    assert res.status == "exact"
-    assert res.refs[0].kind == "delivery_order" and res.refs[0].key == "PS202609-0469"
+    res = _resolve(db, _ent("purchase_order", "PS202609-0469", None))
+    assert res.status == "none"
 
 
 def test_r1_unresolved_number_reruns_across_types_products_last(db):
