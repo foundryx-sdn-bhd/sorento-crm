@@ -107,6 +107,8 @@ interface GridContextValue {
   bandOpen: Set<string>;
   closeEmptyBand: (key: string) => void;
   openPreview: (kind: LineFileKind, shown: LineFileShown) => void;
+  /** The row's name in every label (`describeLine`). */
+  labelOf: (row: GridRow) => string;
   /** Rows whose description was left at least once: an empty one is marked from then on. */
   visited: Set<string>;
   markVisited: (key: string) => void;
@@ -121,12 +123,18 @@ function useGrid(): GridContextValue {
   return value;
 }
 
-/** How a row is named in labels: the stored code, else its description, else its position. */
+/**
+ * How a row is named in labels: the stored code, else its stored description; a line never saved
+ * goes by the product picked on it, so its name does not change when it is moved; else its
+ * position.
+ */
 export function describeLine(
   line: QuotationLine | null,
   index: number,
+  pickedCode?: string | null,
 ): string {
-  return line?.product_code ?? line?.description ?? `line ${index + 1}`;
+  if (line) return line.product_code ?? line.description ?? `line ${index + 1}`;
+  return pickedCode || `line ${index + 1}`;
 }
 
 /**
@@ -214,7 +222,7 @@ function FileCell({ row, kind }: { row: GridRow; kind: LineFileKind }) {
     <QuotationLineFileCell
       kind={kind}
       line={line}
-      label={describeLine(staged.line, row.index)}
+      label={grid.labelOf(row)}
       pickedId={staged.draft[field] ?? ''}
       editable={grid.editing && !staged.removed}
       onPick={(attachmentId) => grid.update(row.key, { [field]: attachmentId })}
@@ -251,7 +259,7 @@ function ProductCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const grid = useGrid();
   const row = tableRow.original;
   const { staged } = row;
-  const label = describeLine(staged.line, row.index);
+  const label = grid.labelOf(row);
   const editable = grid.editing && !staged.removed;
 
   return (
@@ -316,7 +324,7 @@ function DescriptionCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         variant="sm"
         rows={1}
         value={value}
-        aria-label={`Description on ${describeLine(staged.line, row.index)}`}
+        aria-label={`Description on ${grid.labelOf(row)}`}
         aria-invalid={message ? true : undefined}
         aria-describedby={message ? errorId : undefined}
         placeholder="Type what the customer reads"
@@ -351,7 +359,7 @@ function BrandCell({ row: tableRow }: CellContext<GridRow, unknown>) {
 
   return (
     <CellSelect
-      label={`Brand on ${describeLine(staged.line, row.index)}`}
+      label={`Brand on ${grid.labelOf(row)}`}
       clearable
       value={brand}
       onChange={(next) => grid.update(row.key, { brand_snapshot: next })}
@@ -368,7 +376,7 @@ function QtyCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const grid = useGrid();
   const row = tableRow.original;
   const { staged } = row;
-  const label = describeLine(staged.line, row.index);
+  const label = grid.labelOf(row);
   const quantity = staged.draft.quantity ?? '';
   const uom = staged.draft.uom ?? '';
   const productId = staged.draft.product_id ?? '';
@@ -461,7 +469,7 @@ function RateCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         value={price}
         inputMode="decimal"
         placeholder="0.00"
-        aria-label={`Unit price on ${describeLine(staged.line, row.index)}`}
+        aria-label={`Unit price on ${grid.labelOf(row)}`}
         aria-invalid={invalid || undefined}
         title={invalid ? 'Must be a number' : undefined}
         className="w-full text-end tabular-nums"
@@ -500,7 +508,7 @@ function TotalCell({ row: tableRow }: CellContext<GridRow, unknown>) {
         <label className="flex items-center gap-1 text-2xs whitespace-nowrap text-muted-foreground">
           <Checkbox
             size="sm"
-            aria-label={`Rate only on ${describeLine(staged.line, row.index)}`}
+            aria-label={`Rate only on ${grid.labelOf(row)}`}
             checked={rateOnly}
             onCheckedChange={(next) =>
               grid.update(row.key, {
@@ -529,7 +537,7 @@ function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
   const grid = useGrid();
   const row = tableRow.original;
   const { staged } = row;
-  const label = describeLine(staged.line, row.index);
+  const label = grid.labelOf(row);
   const [open, setOpen] = React.useState(false);
   /** Set by an action that puts the caret somewhere itself, so the menu does not take it back. */
   const keepFocus = React.useRef(false);
@@ -629,7 +637,7 @@ function ActionsCell({ row: tableRow }: CellContext<GridRow, unknown>) {
 function LineDetails({ row }: { row: GridRow }) {
   const grid = useGrid();
   const { staged } = row;
-  const label = describeLine(staged.line, row.index);
+  const label = grid.labelOf(row);
   const unitType = staged.draft.unit_type ?? '';
   return (
     <div className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,16rem)_minmax(0,1fr)]">
@@ -699,7 +707,7 @@ function SectionBar({ row }: { row: GridRow }) {
       variant="sm"
       value={value}
       data-band-key={row.key}
-      aria-label={`Section heading on ${describeLine(staged.line, row.index)}`}
+      aria-label={`Section heading on ${grid.labelOf(row)}`}
       title={value}
       placeholder="e.g. BILL NO 3 PAGE 15/4, OPTIONAL ITEMS"
       maxLength={150}
@@ -879,6 +887,8 @@ export interface QuotationLinesGridProps {
   filterEmptyHint: string;
   fetchProducts: GridContextValue['fetchProducts'];
   resolveProduct: GridContextValue['resolveProduct'];
+  /** The code of a product picked in this session, or null when it is not known here. */
+  productCodeOf: (productId: string) => string | null;
   /** What picking a product decides for the rest of its line (null for a cleared pick). */
   fillFromProduct: (option: SearchableSelectOption) => LineDraft;
   uomOptions: SearchableSelectOption[];
@@ -908,6 +918,7 @@ export function QuotationLinesGrid({
   filterEmptyHint,
   fetchProducts,
   resolveProduct,
+  productCodeOf,
   fillFromProduct,
   uomOptions,
   uomError,
@@ -1157,6 +1168,18 @@ export function QuotationLinesGrid({
     [galleries],
   );
 
+  const labelOf = React.useCallback(
+    (row: GridRow) => {
+      const productId = row.staged.draft.product_id ?? '';
+      return describeLine(
+        row.staged.line,
+        row.index,
+        !row.staged.line && productId ? productCodeOf(productId) : null,
+      );
+    },
+    [productCodeOf],
+  );
+
   const context = React.useMemo<GridContextValue>(
     () => ({
       editing,
@@ -1180,6 +1203,7 @@ export function QuotationLinesGrid({
       openPreview,
       visited,
       markVisited,
+      labelOf,
     }),
     [
       act,
@@ -1189,6 +1213,7 @@ export function QuotationLinesGrid({
       editing,
       fetchProducts,
       firstKey,
+      labelOf,
       lastKey,
       markVisited,
       onToggleRemoved,

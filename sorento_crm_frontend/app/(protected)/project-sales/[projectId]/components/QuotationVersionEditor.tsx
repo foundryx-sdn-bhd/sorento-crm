@@ -280,6 +280,12 @@ export function QuotationVersionEditor({
     [],
   );
 
+  /** A product picked in this session, by id: what a never-saved line is named after. */
+  const productCodeOf = React.useCallback(
+    (productId: string) => productsById.current.get(productId)?.product_code ?? null,
+    [],
+  );
+
   /**
    * Edit mode for THIS scope: the screen asked for it, and the server still allows it.
    *
@@ -500,6 +506,7 @@ export function QuotationVersionEditor({
           filterEmptyHint={`No line matches "${lineSearch.trim()}".`}
           fetchProducts={fetchProducts}
           resolveProduct={resolveProduct}
+          productCodeOf={productCodeOf}
           fillFromProduct={fillFromProduct}
           uomOptions={uomOptions}
           uomError={uoms.error}
