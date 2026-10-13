@@ -282,20 +282,11 @@ def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
         return verdict
     if verdict.get("rank_group") not in ("item", "category"):
         return verdict
-    # The parser may hand the words it found as `report_ask_words` instead of entities: top selling
-    # takes them as entities (its narrowing resolves a brand, category or agent word itself).
-    word_entities = [
-        {"raw": w, "hint": hint, "canonical_code": None, "current_message": True, "confident": True}
-        for hint in WORD_HINTS
-        for w in jsc.array(_dict(verdict.get("report_ask_words")).get(hint))
-        if isinstance(w, str) and w.strip()
-    ]
-    entities = [*jsc.array(verdict.get("entities")), *word_entities]
     # The top selling route filters by brand, category, sales agent and customer, and counts delivered or
     # ordered sales: a location or another basis would be dropped silently, so that ask stays here.
     hints = {
         jsc.js_string(e.get("hint") or "").strip().lower()
-        for e in entities
+        for e in jsc.array(verdict.get("entities"))
         if isinstance(e, dict) and e.get("current_message") is not False
     }
     if not hints <= {"brand", "category", "sales_agent", "customer"}:
@@ -307,11 +298,7 @@ def as_top_selling(verdict: dict[str, Any], held_report: Any) -> dict[str, Any]:
     held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
     if held_ranking and verdict.get("ranking_drill") in ("scoped", "unsure"):
         return verdict
-    out = {**verdict, "order_status": "top_selling", "entities": entities}
-    if group == "brand":
-        out["group_by"] = None  # the brand it grouped by is the filter it named; items are what is ranked
-    if word_entities:
-        out["report_ask_words"] = None
+    out = {**verdict, "order_status": "top_selling"}
     if out.get("rank_by") is None:
         metric = {"qty": "quantity", "amount": "amount"}.get(out.get("measure"))
         if metric:

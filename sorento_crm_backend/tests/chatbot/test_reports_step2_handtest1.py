@@ -107,8 +107,8 @@ def _v92_project_brand(**kw: Any) -> dict[str, Any]:
     base: dict[str, Any] = dict(
         domain_hint="sales", intent_hint="check_order", order_status="sales_ranking", domain_in_message=True,
         group_by="brand", top_n=20, rank_group="item", rank_direction="top", rank_by=None, basis=None, measure=None,
-        sales_channel="project", ranking_refine=False, entities=[], date_filter_start=None, date_filter_end=None,
-        report_ask_words={"brand": ["Sorento"], "category": [], "sales_agent": []},
+        sales_channel="project", ranking_refine=False, entities=[_e("Sorento", "brand")],
+        date_filter_start=None, date_filter_end=None,
     )
     base.update(kw)
     return _live(_parser_output(**base))
@@ -123,11 +123,12 @@ def test_h13_a_project_brand_item_ranking_with_the_brand_as_group_is_the_top_sel
     (args,) = _ts_calls(log)
     assert args["n"] == 20 and args.get("channel") == "project", args
     assert console.ids["brand"] in (args.get("brand_ids") or []), args
+    assert args.get("group") != "brand", args  # top selling ranks items; a brand axis is never sent
 
 
 def test_h14_guard_a_real_brand_ranking_stays_on_the_ranking_lane(console, monkeypatch) -> None:
-    qf = _v92_project_brand(rank_group=None, report_ask_words={"brand": [], "category": [], "sales_agent": []},
-                            top_n=5, sales_channel=None)
+    # rank_group "item" with no brand named: it reaches the "brand named" check and stays on the ranking lane.
+    qf = _v92_project_brand(rank_group="item", entities=[], top_n=5, sales_channel=None)
     text, log = lane._say_all(console, monkeypatch, qf, "top 5 brands")
     assert "crm_top_selling_report" not in _names(log), log
     assert PERIOD_Q in text or "crm_report" in _names(log), (text, log)
@@ -156,3 +157,11 @@ def test_h16_guard_a_plain_outstanding_ask_stays_the_outstanding_report(console,
     qf = _v92_outstanding(group_by=None, top_n=None, rank_by=None, basis=None, entities=[_e(lane.CUSTOMER_NAME, "customer")])
     _text, log = lane._say_all(console, monkeypatch, qf, "outstanding for the customer")
     assert "crm_report" not in _names(log), log
+
+
+def test_h17_guard_an_outstanding_verdict_with_an_axis_but_no_count_or_direction_stays_outstanding(
+    console, monkeypatch
+) -> None:
+    qf = _v92_outstanding(top_n=None, rank_direction=None)
+    _text, log = lane._say_all(console, monkeypatch, qf, "outstanding by customer for Sorento at BRW")
+    assert "crm_report" not in _names(log) and "crm_outstanding_report" in _names(log), log
