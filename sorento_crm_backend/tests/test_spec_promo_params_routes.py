@@ -1217,3 +1217,28 @@ def test_a_promotion_line_names_its_group(api, db, monkeypatch):
     assert resp.status_code == 200, resp.text
     rows = [r for r in resp.json()["data"] if r["product"]["product_code"] == prod.product_code]
     assert rows and rows[0].get("promotion_group_name") == "G", rows
+
+
+def test_a_dealers_spec_entry_matches_the_dealers_direct_entry_for_that_code(db):
+    """Crew live check #2 (b12d0334): a dealer's "600mm basin got stock?" now asks "How many units
+    for each?" (the availability flow). Evidence that each entry is the same answer a dealer gets
+    asking for that one code directly: the same entry, field for field."""
+    from app.services.inventory_service import StockService
+    from tests.test_stock_availability_block import _contact, _policy_row
+
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    hit = _p(db, "DEV1", {"class": _enum("Basin"), "dim_length": _num(600)})
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=hit.id, warehouse_id=wh.id, on_hand=5)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id], contact=contact)
+    db.flush()
+    svc = StockService(db)
+    by_spec = svc.list_stock(
+        contact_id=contact.id, page=1, limit=5,
+        spec_constraints=[{"key": "class", "op": "eq", "value": "Basin"}, {"key": "size", "op": "eq", "value": 600}],
+    )
+    direct = svc.list_stock(contact_id=contact.id, product_ids=[hit.id], page=1, limit=5)
+    spec_entry = next(e for e in by_spec["stock_availability"] if e.get("product_id") == hit.id)
+    direct_entry = next(e for e in direct["stock_availability"] if e.get("product_id") == hit.id)
+    assert spec_entry == direct_entry, (spec_entry, direct_entry)
+    assert spec_entry.get("needs_quantity") is True, spec_entry
