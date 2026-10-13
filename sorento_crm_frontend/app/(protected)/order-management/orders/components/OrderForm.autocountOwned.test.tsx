@@ -102,3 +102,24 @@ describe('OrderForm on an AutoCount-owned DO', () => {
     expect(screen.queryByText('From AutoCount')).not.toBeInTheDocument();
   });
 });
+
+describe('OrderForm: Branch (DO-BRANCH-NAME)', () => {
+  it('shows the AutoCount branch name read-only, in both places the View shows it', async () => {
+    mockOrder({ autocount_owned_fields: AUTOCOUNT_FIELDS, branch_name: 'KLCC SITE OFFICE' });
+    await renderForm();
+    const branch = await waitFor(() => screen.getAllByDisplayValue('KLCC SITE OFFICE'));
+    expect(branch.length).toBeGreaterThan(0);
+    branch.forEach((input) => expect(input).toBeDisabled());
+  });
+
+  it('leaves the branch out of the update it sends', async () => {
+    mockOrder({ autocount_owned_fields: AUTOCOUNT_FIELDS, branch_name: 'KLCC SITE OFFICE' });
+    updateMutation.mutateAsync.mockResolvedValue({});
+    await renderForm();
+    fireEvent.click(screen.getByRole('button', { name: /Update Delivery Order/ }));
+    await waitFor(() => expect(updateMutation.mutateAsync).toHaveBeenCalled());
+    const sent = JSON.stringify(updateMutation.mutateAsync.mock.calls[0]);
+    expect(sent).not.toContain('branch_name');
+    expect(sent).not.toContain('KLCC SITE OFFICE');
+  });
+});

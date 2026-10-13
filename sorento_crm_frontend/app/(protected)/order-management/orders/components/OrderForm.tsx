@@ -23,6 +23,7 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -533,6 +534,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                       </FormItem>
                     )}
                   />
+                  {isEditMode && (
+                    // DO-BRANCH-NAME: AutoCount's branch name, shown read-only so Edit keeps the View layout.
+                    <div className="space-y-2">
+                      <Label htmlFor="order-branch-name">Branch</Label>
+                      <Input id="order-branch-name" value={order?.branch_name ?? ''} placeholder="-" disabled readOnly />
+                      {fromAutoCount('branch_name') && <p className="text-sm text-muted-foreground">From AutoCount</p>}
+                    </div>
+                  )}
 
                   <FormField
                     control={form.control}
@@ -694,6 +703,14 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                         </FormItem>
                       )}
                     />
+                    {isEditMode && (
+                      // DO-BRANCH-NAME: AutoCount's branch name, shown read-only so Edit keeps the View layout.
+                      <div className="space-y-2">
+                        <Label htmlFor="order-branch-name">Branch</Label>
+                        <Input id="order-branch-name" value={order?.branch_name ?? ''} placeholder="-" disabled readOnly />
+                        {fromAutoCount('branch_name') && <p className="text-sm text-muted-foreground">From AutoCount</p>}
+                      </div>
+                    )}
                     <FormField
                       control={form.control}
                       name="agent"

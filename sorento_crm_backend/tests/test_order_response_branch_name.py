@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 
-from app.schemas.order import OrderCreate, OrderResponse, OrderUpdate
+from app.schemas.order import OrderCreate, OrderResponse, OrderSimpleRef, OrderUpdate
 
 
 def _row(**overrides):
@@ -39,3 +39,8 @@ def test_order_response_branch_name_is_null_when_unset() -> None:
 def test_branch_name_is_not_writable() -> None:
     assert "branch_name" not in OrderCreate.model_fields
     assert "branch_name" not in OrderUpdate.model_fields
+
+
+def test_the_by_product_row_carries_the_branch_name() -> None:
+    dumped = OrderSimpleRef.model_validate(_row(matched_products=[])).model_dump()
+    assert dumped["branch_name"] == "KLCC SITE OFFICE"

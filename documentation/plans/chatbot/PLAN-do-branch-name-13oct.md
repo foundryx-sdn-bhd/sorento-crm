@@ -1,6 +1,6 @@
 # PLAN - DO branch name in the chatbot DO list and the DO UI (DO-BRANCH-NAME)
 
-Status: Plan; behaviour card posted to the owner, awaiting the default-access answer. Track: small fix
+Status: Build (owner answer 13 Oct: default ON via the DEFAULT_ON_KEYS prefix rule, no migration). Track: small fix
 (no migration, no RBAC permission change, no new ingest surface; one new chatbot field reveal key).
 
 ## Owner ask (13 Oct 2026)
@@ -37,7 +37,7 @@ the DO UI also so I can cross check".
   (`sorento_crm_mcp/sorento_crm_mcp/catalog.py:670`). The pin test keeps them equal. Contacts >
   Access > Field reveals lists it with no UI change (it reads `field_reveal_keys()`).
 - Default: ON for every contact (the `delivery_orders.` prefix rule, `DEFAULT_ON_KEYS`), same as
-  the other DO fields; the owner switches it off per contact. **Owner decision pending (card Q1).**
+  the other DO fields; the owner switches it off per contact. Owner confirmed (a) 13 Oct 2026.
 - Labels: `Branch` gets ms `Cawangan` / zh `分店` in `app/services/chatbot/label_catalog.py`.
 
 ### DO UI

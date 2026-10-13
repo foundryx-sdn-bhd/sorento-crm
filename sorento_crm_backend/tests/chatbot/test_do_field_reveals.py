@@ -260,3 +260,19 @@ def test_the_catalogue_declares_the_branch_switch_on_the_do_list() -> None:
     spec = next(t for t in catalog if t.name == "crm_order_management_orders_list")
     assert ("delivery_orders.branch", "DO branch") in tuple(spec.restricted_fields)
     assert ("delivery_orders.branch", "DO branch") in FIELD_REVEAL_KEYS
+
+
+def test_the_by_product_do_list_prints_and_switches_the_branch_too() -> None:
+    body = {"data": [{
+        "order_number": "202609-0916", "debtor_name": "HANLIM TRADING SDN BHD [A/C I]",
+        "branch_name": "KLCC SITE OFFICE",
+        "order_date": "2026-09-07", "actual_delivery_date": "2026-09-07",
+        "matched_products": [{"product_code": "SRT320-CR", "quantity": 200, "warehouse_code": "BRW"}],
+    }]}
+
+    def said_with(keys: list[str]) -> str:
+        envelope = json.loads(_mcp()[1]("crm_order_management_orders_by_product_list", json.dumps(body)))
+        return fetch.output_structurer(envelope, {"semantic_input": {}, "access": {"attributes": keys}})["response"]
+
+    assert "*Branch:* KLCC SITE OFFICE" in said_with(list(ALL_DO_FIELDS))
+    assert "KLCC SITE OFFICE" not in said_with([k for k in ALL_DO_FIELDS if k != "delivery_orders.branch"])
