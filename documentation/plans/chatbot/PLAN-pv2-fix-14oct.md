@@ -1,6 +1,28 @@
 # PLAN: PV2-FIX - close the PV2 dev-eval gap (14 Oct 2026)
 
-Status: Build (size M, LEAD pattern; base `crew/pv2` @ 923c3709b, branch `crew/pv2-fix`).
+Status: Review (size M, LEAD pattern; base `crew/pv2` @ 923c3709b, branch `crew/pv2-fix`, PR #1646). Dev split:
+run 1 79/107, run 2 88/107 (mt 29/40), run 3 88/107 (mt 28/40, must_not 0), run 4 on the review-fix head 87/107
+(mt 27/40; its two new losses are parser non-determinism on identical prompt + MEMORY, PR #1646).
+
+## Rounds (red test commit -> fix commits)
+
+1. ef5058ade -> 33a06284d, 1a37dcd44: product candidates via v1 search, `Entity.quantity`, `Entity.doc_number`, doc/form
+   resolver branch.
+2. 88d318438 -> 29f08b744, 89b433efd: cross-type document fallback (v1's re-run), list misses answered like v1,
+   `Ask.status` / `Ask.portal_form`, prompt misreads.
+3. 97340979f -> 77c0248d7: an ask with `portal_form` answers as portal_link (dev run 2 must_not: v1 listed every form).
+4. 21d8d838f -> 017fac309, f5af39225 (security review): v1's reference-kind scope for a lane with no per-match drop
+   (non-staff lose sales_order / customer_po_ref), contact regions on every v1 lookup, documents exact only.
+5. 8131e7f5b (+ db79d6725) -> 311bde159, 321865fdf (review): module-level resolver scope incl. customer scope,
+   cross-kind hits held under the kind found, status / portal_form held, did-you-mean never auto-applied.
+
+## Left open (crew / owner)
+
+- A list ask whose other item raises a question drops its misses (v1 never says "not found X" after the pick).
+- Candidates stop at 8 with no "and N more".
+- Non-staff dealers cannot reach their own sales order through PV2 (v1's closed rule for a lane without the per-match
+  customer drop, engine.py:2064-2083); a per-match drop in PV2 would lift it.
+- Multi-turn media / v1-menu flows still lost on dev: cand-0161, 0258, 0259, 0306.
 UAC: `pv2-fix-14oct-acceptance-criteria.md` (beside this file).
 
 ## Why
