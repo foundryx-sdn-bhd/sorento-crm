@@ -2480,12 +2480,7 @@ def run_fetch(
         tiers = picked_tier if isinstance(picked_tier, list) else [picked_tier]
         levels = " or ".join(TIER_DISPLAY.get(str(t), str(t).replace("_", " ")) for t in tiers)
         subject = ", ".join(str(t) for t in semantic_input["scope_terms"])
-        fragment = _fixed_reply(f"No {levels} promotion for {subject}.")
-        # The tool answered for the subject word (empty at this level), so the resolver not
-        # placing it is no miss of its own (`answer_bridge._miss_triggers`): no "Couldn't
-        # find" and no escalate offer under the one line.
-        fragment["fetch"]["subject_filtered"] = True
-        return fragment
+        return _fixed_reply(f"No {levels} promotion for {subject}.")
     if trace is not None:
         # A9: ONE call, ONE tool, ONE envelope this turn - the same "the read" this
         # whole function is named for. `envelope` rides through `trace.add`'s own
