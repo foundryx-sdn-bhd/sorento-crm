@@ -1,6 +1,6 @@
 # PLAN: parser prompt rendered per contact audience
 
-Status: Built, review READY (reviewer + security-reviewer, 5 Oct 2026), hand test owed. Track: full. G1 split to draft PR #1487 (crew ruling 5 Oct). Crew ruling (a) 5 Oct: ppa_0001 builds the tagged version from the production-labelled template at migration time (keeps every #1405 variable, adds the #1470 low-stock block once); registry list rows are filtered per audience. UAC: `parser-per-audience-2oct-acceptance-criteria.md`.
+Status: Built, review READY, hand test owed. Track: full. Crew ruling (b) 13 Oct 2026: ships the backend refusals, the order did-you-mean customer scope fix and the Access tab hint with the prompt trim INERT: ppa_0001 fails closed on today's parser line (prod v52 / dev v103 lack '== LOW STOCK REPORT'), so it writes nothing. Follow-up lane re-tags ppa_0001 against live anchors once the parser line settles. G1 split to draft PR #1487. UAC: `parser-per-audience-2oct-acceptance-criteria.md`.
 
 crew-lane: PARSER-PER-AUDIENCE
 
