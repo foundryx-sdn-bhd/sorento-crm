@@ -494,7 +494,8 @@ def test_backfill_takes_cached_tokens_from_the_turn_trace():
         got = dict(db.execute(text("SELECT id::text, cached_tokens FROM ai_assistant_usage_logs WHERE id IN (:a, :b)"),
                               {"a": legacy, "b": no_fact}).all())
         assert got[legacy] == 36000
-        assert got[no_fact] == 0
+        # CU-2: a trace with no cached_tokens fact stays NULL ("unknown"), it is not made 0.
+        assert got[no_fact] is None
 
 
 def test_backfill_takes_prompt_version_from_the_turn_trace():
@@ -635,3 +636,41 @@ def test_the_local_client_signs_calls_the_connector_accepts(monkeypatch):
             method, url, raw, headers = build_request("chat_describe_dataset", {"key": "llm_calls"}, None, user.id)
             assert url == f"{BASE}/datasets/llm_calls"
             assert client.request(method, url, headers=headers).status_code == 200
+
+
+def test_cu6_views_carry_cache_unknown_as_the_last_column():
+    with pg_session() as db:
+        _ensure(db)
+        for view in ("llm_calls", "turn_costs"):
+            cols = db.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_schema = 'analytics_connector' "
+                     "AND table_name = :v ORDER BY ordinal_position"), {"v": view}).scalars().all()
+            assert cols[-1] == "cache_unknown", (view, cols[-3:])
+
+
+def test_cu6_a_call_with_unknown_cache_use_has_no_cost_and_taints_its_turn():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        tid = s["no_calls"]
+        _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_parser", model=s["m_priced"],
+               prompt=1000, cached=0, completion=10, ms=1)
+        unknown = _usage(db, turn_id=tid, contact_id=s["contact_id"], feature="chatbot_clarifier",
+                         model=s["m_priced"], prompt=1000, cached=None, completion=10, ms=1)
+        db.flush()
+        calls = {r["feature"]: r for r in db.execute(
+            text("SELECT * FROM analytics_connector.llm_calls WHERE chatbot_turn_id = :t"), {"t": tid}).mappings()}
+        assert calls["chatbot_parser"]["cache_unknown"] is False and calls["chatbot_parser"]["cost_usd"] is not None
+        c = calls["chatbot_clarifier"]
+        assert c["id"] == unknown and c["cache_unknown"] is True
+        assert c["cost_usd"] is None and c["priced"] is False and c["cached_price_missing"] is False
+        turn = _row(db, "turn_costs", "id", tid)
+        assert turn["cache_unknown"] is True and turn["cost_usd"] is None
+
+
+def test_cu6_a_turn_with_every_cache_use_recorded_is_not_cache_unknown():
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        assert _row(db, "turn_costs", "id", s["priced"])["cache_unknown"] is False
+        assert _row(db, "turn_costs", "id", s["priced"])["cost_usd"] is not None

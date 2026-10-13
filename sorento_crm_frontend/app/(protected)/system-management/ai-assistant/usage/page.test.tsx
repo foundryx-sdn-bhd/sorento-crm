@@ -32,6 +32,7 @@ const SUMMARY = {
   total_tokens: 1100,
   cost_usd: 0.0372,
   unpriced_calls: 6,
+  unknown_cache_calls: 0,
 };
 
 function query(over: Record<string, unknown>) {
@@ -50,6 +51,7 @@ function query(over: Record<string, unknown>) {
     cost_usd: 0.00482715,
     priced: true,
     cached_price_missing: false,
+    cache_unknown: false,
     ...over,
   };
 }
@@ -160,5 +162,53 @@ describe('Usage page top tables (UC-5)', () => {
     const unpriced = screen.getByText('Unpriced Contact').closest('tr') as HTMLElement;
     expect(within(priced).getByText('$2.5000')).toBeInTheDocument();
     expect(within(unpriced).getByText(DASH)).toBeInTheDocument();
+  });
+});
+
+describe('Usage page unknown cache use (CU-4, CU-5)', () => {
+  it('a chatbot_parser call with unknown cache use shows a dash and the 4 Oct tooltip', () => {
+    recent.mockReturnValue(
+      ok([query({ cost_usd: null, priced: false, cache_unknown: true, feature: 'chatbot_parser' })]),
+    );
+    render(<AIUsagePage />);
+    expect(screen.getByTitle('Cache use not recorded before 4 Oct').textContent).toBe(DASH);
+  });
+
+  it('any other feature gets the plain "Cache use not recorded" tooltip', () => {
+    recent.mockReturnValue(
+      ok([query({ cost_usd: null, priced: false, cache_unknown: true, feature: 'spec_search' })]),
+    );
+    render(<AIUsagePage />);
+    expect(screen.getByTitle('Cache use not recorded').textContent).toBe(DASH);
+  });
+
+  it('the summary card says how many calls have unknown cache use, apart from not priced', () => {
+    summary.mockReturnValue(ok({ ...SUMMARY, unpriced_calls: 2, unknown_cache_calls: 3 }));
+    render(<AIUsagePage />);
+    expect(screen.getByText('3 calls with unknown cache use')).toBeInTheDocument();
+    expect(screen.getByText('2 calls not priced')).toBeInTheDocument();
+  });
+
+  it('the summary value is a dash when unpriced plus unknown calls are every call', () => {
+    summary.mockReturnValue(ok({ ...SUMMARY, cost_usd: 0, unpriced_calls: 4, unknown_cache_calls: 6 }));
+    render(<AIUsagePage />);
+    expect(summaryCard().textContent).toContain(DASH);
+    expect(summaryCard().textContent).not.toContain('$0.0000');
+  });
+
+  it('top users and top contacts show a dash when unpriced plus unknown calls are every call', () => {
+    topUsers.mockReturnValue(
+      ok([{ user_id: 'u9', name: 'Mixed Person', messages: 3, tokens: 30, cost_usd: 0, unpriced_calls: 1, unknown_cache_calls: 2 }]),
+    );
+    topContacts.mockReturnValue(
+      ok([{ contact_id: 'c9', name: 'Mixed Contact', phone_number: '+60100000009', messages: 3, tokens: 30, cost_usd: 0, unpriced_calls: 1, unknown_cache_calls: 2 }]),
+    );
+    render(<AIUsagePage />);
+    const user = screen.getByText('Mixed Person').closest('tr') as HTMLElement;
+    const contact = screen.getByText('Mixed Contact').closest('tr') as HTMLElement;
+    expect(within(user).getByText(DASH)).toBeInTheDocument();
+    expect(within(user).queryByText('$0.0000')).not.toBeInTheDocument();
+    expect(within(contact).getByText(DASH)).toBeInTheDocument();
+    expect(within(contact).queryByText('$0.0000')).not.toBeInTheDocument();
   });
 });

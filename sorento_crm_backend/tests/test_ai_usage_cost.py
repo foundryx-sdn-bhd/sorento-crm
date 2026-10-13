@@ -43,16 +43,19 @@ def _log(db, *, model, prompt, cached, completion, provider="openai", feature="c
 
 
 def _user(db, name):
+    from app.models.user import User
+
     uid = str(uuid.uuid4())
-    db.execute(text("INSERT INTO users (id, email, name, status, is_trashed) VALUES (:i, :e, :n, 'ACTIVE', false)"),
-               {"i": uid, "e": f"{uid}@zzt.test", "n": name})
+    db.add(User(id=uid, email=f"{uid}@zzt.test", name=name, status="ACTIVE"))
+    db.flush()
     return uid
 
 
 def _contact(db, name):
     cid = unique_code("rc")
+    phone = "+6010" + str(uuid.uuid4().int)[:8]
     db.execute(text("INSERT INTO respond_contacts (id, phone_number, name, respond_io_id) VALUES (:i, :p, :n, :r)"),
-               {"i": cid, "p": "+60100000009", "n": name, "r": f"rio-{uuid.uuid4().hex[:12]}"})
+               {"i": cid, "p": phone, "n": name, "r": f"rio-{uuid.uuid4().hex[:12]}"})
     return cid
 
 
@@ -83,7 +86,7 @@ def _cost_row(db, lid):
 
     c = cost_sql("u", "p")
     row = db.execute(
-        text(f"SELECT {c.cost_usd} AS cost_usd, {c.priced} AS priced, {c.cached_price_missing} AS cpm "
+        text(f"SELECT {c.cost_usd} AS cost_usd, {c.priced} AS priced, {c.cached_price_missing} AS cpm, {c.cache_unknown} AS cache_unknown "
              "FROM ai_assistant_usage_logs u LEFT JOIN llm_model_prices p ON p.model = u.model WHERE u.id = :id"),
         {"id": lid},
     ).one()
@@ -129,13 +132,25 @@ def test_uc1_cost_sql_anthropic_uncached_is_full_prompt(provider):
         assert Decimal(_cost_row(db, lid).cost_usd) == Decimal("0.00123")
 
 
-def test_uc1_cost_sql_null_cached_tokens_counts_as_zero():
+def test_cu1_null_cached_tokens_on_a_priced_model_is_cache_unknown():
     with pg_session() as db:
         model = f"zzt-nullc-{unique_code('x', alpha=True)}"
         _price(db, model, cached=None)
-        lid = _log(db, model=model, prompt=1000, cached=None, completion=10)
-        row = _cost_row(db, lid)
-        assert row.priced is True and Decimal(row.cost_usd) == Decimal("0.000795")
+        unknown = _cost_row(db, _log(db, model=model, prompt=1000, cached=None, completion=10))
+        assert unknown.cost_usd is None and unknown.priced is False
+        assert unknown.cpm is False and unknown.cache_unknown is True
+        # A recorded 0 still prices normally.
+        known = _cost_row(db, _log(db, model=model, prompt=1000, cached=0, completion=10))
+        assert known.priced is True and known.cache_unknown is False
+        assert Decimal(known.cost_usd) == Decimal("0.000795")
+
+
+def test_cu1_unpriced_model_with_null_cached_tokens_is_unpriced_not_cache_unknown():
+    with pg_session() as db:
+        model = f"zzt-noprice-{unique_code('x', alpha=True)}"
+        row = _cost_row(db, _log(db, model=model, prompt=1000, cached=None, completion=10))
+        assert row.cost_usd is None and row.priced is False
+        assert row.cache_unknown is False and row.cpm is False
 
 
 def test_uc1_connector_view_cost_equals_recent_queries_cost():
@@ -260,3 +275,63 @@ def test_top_users_and_top_contacts_carry_cost():
         by_contact = {i["contact_id"]: i for i in contacts.json()}
         assert by_contact[c1]["cost_usd"] == pytest.approx(0.00159) and by_contact[c1]["unpriced_calls"] == 1
         assert by_contact[c2]["unpriced_calls"] == 1
+
+
+# ---- CU-5 / CU-4: unknown cache use on the endpoints -------------------------------------------
+
+def _cu_world(db, feature):
+    tag = unique_code("cu", alpha=True)
+    priced, nocache = f"zzt-p-{tag}", f"zzt-nc-{tag}"
+    _price(db, priced)
+    _price(db, nocache, cached=None)
+    kw = dict(feature=feature)
+    return priced, nocache, kw
+
+
+def test_cu5_summary_counts_unknown_cache_calls_apart_from_unpriced():
+    with pg_session() as db:
+        priced, nocache, kw = _cu_world(db, "zzt_cu_sum")
+        _log(db, model=priced, prompt=1000, cached=0, completion=10, **kw)            # priced
+        _log(db, model=priced, prompt=1000, cached=None, completion=10, **kw)         # cache unknown
+        _log(db, model=priced, prompt=1000, cached=None, completion=10, **kw)         # cache unknown
+        _log(db, model=f"{priced}-none", prompt=1000, cached=None, completion=10, **kw)  # no price
+        _log(db, model=nocache, prompt=1000, cached=500, completion=10, **kw)         # cached price missing
+        with api_client(db, [VIEW]) as client:
+            body = client.get(f"{BASE}/summary", params={**WIN, "feature": "zzt_cu_sum"}).json()
+        assert body["total_messages"] == 5
+        assert body["unknown_cache_calls"] == 2
+        assert body["unpriced_calls"] == 2
+        assert body["cost_usd"] == pytest.approx((1000 * 0.75 + 10 * 4.5) / 1e6)
+
+
+def test_cu5_by_day_top_users_top_contacts_carry_unknown_cache_calls():
+    with pg_session() as db:
+        priced, _, kw = _cu_world(db, "zzt_cu_top")
+        uid, cid = _user(db, "ZZT CU User"), _contact(db, "ZZT CU Contact")
+        for cached in (0, None, None):
+            _log(db, model=priced, prompt=1000, cached=cached, completion=10, user_id=uid, contact_id=cid, **kw)
+        with api_client(db, [VIEW]) as client:
+            days = client.get(f"{BASE}/by-day", params={**WIN, "feature": "zzt_cu_top"}).json()
+            users = client.get(f"{BASE}/top-users", params={**WIN, "feature": "zzt_cu_top"}).json()
+            contacts = client.get(f"{BASE}/top-contacts", params={**WIN, "feature": "zzt_cu_top"}).json()
+        assert [d["unknown_cache_calls"] for d in days] == [2]
+        assert days[0]["unpriced_calls"] == 0 and days[0]["cost_usd"] == pytest.approx(0.000795)
+        u = next(i for i in users if i["user_id"] == uid)
+        assert u["unknown_cache_calls"] == 2 and u["unpriced_calls"] == 0
+        assert u["cost_usd"] == pytest.approx(0.000795)
+        c = next(i for i in contacts if i["contact_id"] == cid)
+        assert c["unknown_cache_calls"] == 2 and c["unpriced_calls"] == 0
+
+
+def test_cu4_recent_queries_flag_cache_unknown_calls():
+    with pg_session() as db:
+        priced, _, kw = _cu_world(db, "zzt_cu_rec")
+        _log(db, model=priced, prompt=1000, cached=None, completion=10, **kw)
+        _log(db, model=priced, prompt=1001, cached=0, completion=10, **kw)
+        with api_client(db, [VIEW]) as client:
+            items = _recent(client, feature="zzt_cu_rec")
+        by_prompt = {i["tokens"]: i for i in items}
+        unknown, known = by_prompt[1010], by_prompt[1011]
+        assert unknown["cache_unknown"] is True and unknown["cost_usd"] is None
+        assert unknown["priced"] is False and unknown["cached_price_missing"] is False
+        assert known["cache_unknown"] is False and known["priced"] is True

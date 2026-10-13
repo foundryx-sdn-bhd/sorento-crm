@@ -208,12 +208,12 @@ def test_mp6_a_saved_price_removes_the_model_from_unpriced(db):
 
 def test_mp8_create_update_delete_each_write_an_audit_row(db):
     row = _create(db, model="zzt-audit")
-    assert _audits(db, row["id"]) == ["INSERT"]
+    assert _audits(db, row["id"]) == ["CREATE"]
     with api_client(db, [VIEW, EDIT]) as client:
         assert client.put(f"{BASE}/{row['id']}", json={"input_usd_per_1m": 2, "output_usd_per_1m": 3}).status_code == 200
-        assert _audits(db, row["id"]) == ["INSERT", "UPDATE"]
+        assert _audits(db, row["id"]) == ["CREATE", "UPDATE"]
         assert client.delete(f"{BASE}/{row['id']}").status_code == 204
-    assert _audits(db, row["id"]) == ["INSERT", "UPDATE", "DELETE"]
+    assert _audits(db, row["id"]) == ["CREATE", "UPDATE", "DELETE"]
 
 
 # ---- MP-5 pending action ----------------------------------------------------------------------
