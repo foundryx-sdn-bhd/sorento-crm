@@ -967,6 +967,21 @@ def _chatbot_semantic_parser_fallback() -> str:
     return SEMANTIC_PARSER_PROMPT
 
 
+def _chatbot_semantic_parser_v2_fallback() -> str:
+    """Head of the parser v2 prompt (`chatbot_semantic_parser_v2`, CONTRACT-PV2-13oct.md
+    section 6). Read from the file beside the pv2 package rather than imported, so this
+    core module does not import the chatbot package (AC-002). The published version is
+    this head + the INDEX (`pv2/index.publish_v2`); this bare head is only what an
+    unpublished copy falls back to, and `pv2/call.py` appends a live index to it then."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "chatbot" / "pv2" / "prompt_v2.txt"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def _chatbot_clarifier_fallback() -> str:
     """System prompt for the WhatsApp chatbot's clarifier (`chatbot_clarifier`).
 
@@ -1080,6 +1095,17 @@ PROMPT_KEYS: dict[str, PromptKeySpec] = {
         variables=["current_date"],
         fallback=_chatbot_semantic_parser_fallback,
         registry_variables=chatbot_prompt_vars.VARIABLE_NAMES,
+    ),
+    # --- Parser v2 (CONTRACT-PV2-13oct.md section 6): behind the `chatbot_parser_mode`
+    #     flag, default OFF. Inactive on purpose: no production label is seeded or moved
+    #     for it; `pv2/index.publish_v2` writes head + index and points `staging`. ---
+    "chatbot_semantic_parser_v2": PromptKeySpec(
+        name="chatbot_semantic_parser_v2",
+        role="Chatbot parser v2 - one turn to asks over the pinned index (strict JSON)",
+        active=False,
+        activates_in="chatbot_parser_mode = v2",
+        variables=[],
+        fallback=_chatbot_semantic_parser_v2_fallback,
     ),
     # --- The `low_signal` lane's own model call (S4). One per turn, only on a turn the
     #     parser could not route: small talk, or a request too vague to answer. ---
