@@ -1,8 +1,32 @@
 # PLAN: PV2-FIX - close the PV2 dev-eval gap (14 Oct 2026)
 
-Status: Review (size M, LEAD pattern; base `crew/pv2` @ 923c3709b, branch `crew/pv2-fix`, PR #1646). Dev split:
-run 1 79/107, run 2 88/107 (mt 29/40), run 3 88/107 (mt 28/40, must_not 0), run 4 on the review-fix head 87/107
-(mt 27/40; its two new losses are parser non-determinism on identical prompt + MEMORY, PR #1646).
+Status: Build, round 2 (size M, LEAD; round 1 merged into crew/pv2 as 72d112d21 via PR #1646; round 2 on branch
+`crew/pv2-fix-r2`, base `crew/pv2`). Round 1 dev: 89/107 (mt 29/40); hidden 167/214 vs v52 178 (mt 42/57 vs 47),
+crew/state/reports/PV2-HIDDEN-FINAL.md.
+
+## Round 2 (crew brief 14 Oct 02:45, deadline 07:00 MYT)
+
+1. WRONG DATA: a document number reaches the lookup verbatim (letter prefix kept) and is matched exactly. No cross-type
+   document retry and no stripped retry: the verbatim phrase is looked up first; the bare `doc_number` is used only when
+   the phrase is null or equals it. An unnamed number ("order") still probes the visible reference kinds in ONE exact
+   lookup (v1's "order" hint), then products (not a document).
+2. "Delivery 202609-2012": the parser keeps the number (`doc_number`) and never asks a period for a document lookup.
+3. Numbered picks: candidate options are keyed by position ("1".."n", payload keeps the code), like `v1_open_question`;
+   the pick keeps the held domain (the ETA question).
+4. `turn._pinned` carries spec_attribute / spec_value (as `DbResolver.from_index_keys`), so attribute specs resolve.
+5. Portal: every v1 portal form key is reachable; a form entity in the same ask never blocks a portal_form.
+6. Customer accounts of one group resolve as v1 groups them; catalogue requests reach v1's catalogue path.
+7. Variant suffix kept; kind menu shows display names; a hand-over always returns its text as the reply.
+8. Audience: a non-staff contact is never routed to procurement tools (rule from crew; red test first).
+9. Reports: the sales_report grant is checked before the period question.
+Dev split only, max 3 runs; eval stack from a separate worktree (crew's test copy runs from sorento_crm-pv2-fix).
+
+Round 2 commits (red -> fix): caad439d7 -> d29d48524, da77fa4c6 (items 1-5; 2f73ceb67 aligns two older tests);
+537eea844 -> 7ba1dfd67, 84362179f, eb57f400c (items 6-9; a97a01397 aligns the granted sales test); 15bfe6f72 ->
+ac3ae40a7, ec34ab9c6 (product fallback for an empty document kind, not-found names the number); 21cc08470 -> 5cb455d50
+(customer families per crew ruling (b): a partial name always asks, one option per family; an exact family name
+resolves). Open: 7a variant suffix (hidden case only), 7b kind-menu labels (v1 `turn/reconcile.py:127-144 kind_word`;
+`chatbot_entity_kinds.label` holds display names nothing reads).
 
 ## Rounds (red test commit -> fix commits)
 

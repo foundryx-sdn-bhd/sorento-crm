@@ -9143,13 +9143,23 @@ def _run_escalation_arm(
                 "dry_run": dry_run,
             }
         )
-    if final_actions != (completed.actions or []):
+    reply_out = completed.reply
+    if _pv2_hand_over_turn(turn_trace):
+        # v1's escalation tail sets include_response=False, so a PV2 hand-over would reach
+        # the customer with a blank reply; the sentence lives in the send_message action.
+        said = _hand_over_reply_text((reply_out or {}).get("text"), final_actions)
+        if said and said != (reply_out or {}).get("text"):
+            reply_out = {**(reply_out or {}), "text": said}
+    if final_actions != (completed.actions or []) or reply_out is not completed.reply:
         # The row has to carry what the caller was handed, or a duplicate delivery replays
         # a different action list than the first turn produced (D15).
         with _session(session_factory) as db:
             row = db.query(ChatbotTurn).filter(ChatbotTurn.id == turn_id).first()
             if row is not None and isinstance(row.response, dict):
-                row.response = {**row.response, "actions": final_actions}
+                update = {"actions": final_actions}
+                if reply_out is not completed.reply:
+                    update["reply"] = reply_out
+                row.response = {**row.response, **update}
                 db.commit()
 
     return TurnResult(
@@ -9158,13 +9168,38 @@ def _run_escalation_arm(
         item=item,
         branch_kind="out_of_scope",
         delegate=None,
-        reply=completed.reply,
+        reply=reply_out,
         actions=final_actions,
         # D14: on a dry run the tail wrote nothing and hands back what it WOULD have
         # written; on a live turn it is already saved.
         session_patch=completed.session_patch,
         status=completed.status,
         stage=completed.stage,
+    )
+
+
+def _hand_over_reply_text(text: str | None, actions: list[dict[str, Any]]) -> str | None:
+    """The sentence a hand-over tells the customer: the reply text, else the first
+    send_message action's text (v1's escalation tail leaves reply.text empty)."""
+    if isinstance(text, str) and text.strip():
+        return text
+    for action in actions or []:
+        said = action.get("text") if isinstance(action, dict) and action.get("kind") == "send_message" else None
+        if isinstance(said, str) and said.strip():
+            return said
+    return None
+
+
+def _pv2_hand_over_turn(turn_trace: Any) -> bool:
+    """True when this turn's parser-v2 route was a hand-over (read off its trace event)."""
+    try:
+        events = turn_trace.persisted()
+    except Exception:  # noqa: BLE001 - a trace read must never fail a turn
+        return False
+    return any(
+        isinstance(e, dict) and e.get("kind") == "pv2_turn"
+        and (e.get("pv2_turn") or {}).get("route") == "hand_over"
+        for e in events
     )
 
 

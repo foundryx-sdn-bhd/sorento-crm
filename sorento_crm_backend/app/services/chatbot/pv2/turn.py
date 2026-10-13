@@ -35,6 +35,7 @@ from app.services.chatbot.pv2.history import (
 )
 from app.services.chatbot.pv2.schema import ParserV2Output
 from app.services.chatbot.pv2.state import (
+    Lookup,
     LAST_ROWS_CAP,
     ConversationState,
     Option,
@@ -69,6 +70,8 @@ class TurnV2Context:
     report_answer: answer_mod.ReportAnswer | None = None
     idea_answer: answer_mod.IdeaAnswer | None = None
     trace: dict[str, Any] = field(default_factory=dict)
+    # The contact's granted field-reveal keys; the closed default grants nothing.
+    granted_reveals: frozenset[str] = frozenset()
 
 
 def local_today(now: datetime) -> date:
@@ -112,6 +115,11 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
+    refusal = _grant_refusal(ctx, actions, out, state_in.held.report)
+    if refusal is not None:
+        language = clarify_copy.lang(out.language)
+        trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
+        return answer_mod.TurnV2Result(None, None, refusal[0], state_out, actions, refusal[1], language, trace)
     result = answer_mod.build_result(
         state_out,
         actions,
@@ -121,6 +129,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         report_answer=ctx.report_answer,
         idea_answer=ctx.idea_answer,
         base_focus=ctx.base_focus,
+        message=ctx.text,
     )
     result.trace.update(
         {
@@ -139,6 +148,65 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     )
     result.usage = usage
     return result
+
+
+#: Whole-domain grants (v1 `turn_runtime.domain_denial_text`, `engine` sales-report seam).
+PO_GRANT = "purchase_orders.placed"
+SALES_REPORT_GRANT = "sales_orders.sales_report"
+PO_DOMAIN_SUBJECT = {"purchase_order": "purchase orders", "spo_allocation": "purchase order allocation"}
+
+
+def _is_sales_dataset(spec: Any) -> bool:
+    """The dataset as the report lane reads it: a null one takes the policy default."""
+    from app.services.chatbot.pv2 import reports
+
+    try:
+        ds = reports._dataset_for(spec)
+    except Exception:  # noqa: BLE001 - unreadable spec: the closed side
+        return True
+    return ds is None or ds.key == "sales"
+
+
+def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any, held_report: Any = None) -> tuple[str, str] | None:
+    """(reply, route) when this turn asks for a domain the contact holds no grant for, else
+    None. Refused before any lookup or report question, so nothing of the data is read."""
+    granted = ctx.granted_reveals or frozenset()
+    lookups = [a for a in actions if isinstance(a, Lookup)]
+    last = lookups[-1] if lookups else None
+    if PO_GRANT not in granted:
+        # Any part of the turn in a PO domain refuses the whole turn (closed side).
+        domains = [a.domain for a in lookups] + [getattr(a, "domain", None) for a in getattr(out, "asks", None) or []]
+        hit = next((d for d in domains if d in PO_DOMAIN_SUBJECT), None)
+        if hit is not None:
+            from app.services.chatbot import copy as copy_mod
+            from app.services.chatbot.lanes import canned as canned_lanes
+
+            text = canned_lanes.field_grant_denied_text(copy_mod.fallback_copy(), PO_DOMAIN_SUBJECT[hit])
+            return text, "clarify"
+    if SALES_REPORT_GRANT in granted:
+        return None
+    from app.services.chatbot.pv2 import reports
+
+    running = held_report
+    for ask in getattr(out, "asks", None) or []:
+        report = getattr(ask, "report", None)
+        # Mirror apply: only a refine merges onto the held report, a new topic starts bare.
+        base = running if getattr(ask, "act", None) in ("refines_held", "switch_back") else None
+        if report is None:
+            running = base
+            continue
+        # Judge the spec this ask will run (held + this refine), never a partial refine.
+        merged = reports.edit_report(base, report, cleared=getattr(ask, "cleared", None) or ())
+        running = merged
+        if ask.domain in answer_mod.REPORT_DOMAINS and merged is not None and _is_sales_dataset(merged):
+            from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+            return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+    if last is not None and answer_mod._is_report(last) and _is_sales_dataset(last.held.report):
+        from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+        return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
+    return None
 
 
 def wire(result: answer_mod.TurnV2Result) -> dict[str, Any]:
@@ -252,8 +320,15 @@ def memory_profile(profile: Any, memory_intake: dict[str, Any] | None) -> Memory
 
 
 def _pinned(keys: Any) -> dict[str, Any]:
+    """The pinned index keys exactly as `DbResolver.from_index_keys` reads them."""
     pinned: dict[str, Any] = {k: set(v) for k, v in (getattr(keys, "entity_keys", None) or {}).items()}
     pinned["attachment_type"] = set(getattr(keys, "attachment_types", None) or [])
+    pinned["spec_attribute"] = set(getattr(keys, "spec_attributes", None) or [])
+    pinned["spec_value"] = {
+        f"{attr}.{value}"
+        for attr, values in (getattr(keys, "spec_values", None) or {}).items()
+        for value in values
+    }
     return pinned
 
 
@@ -284,16 +359,23 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     try:
         scope = business_services.customer_scope(db, contact, space_id)
     except Exception:  # noqa: BLE001 - unknown scope: held to links, no customer names at all
-        scope = {"enforced": True, "ids": []}
+        scope = {"enforced": True, "ids": [], "linked": []}
     held = (not staff) or bool((scope or {}).get("enforced"))
     try:
         regions = rules_for_contact(db, resolve_request_contact(db, contact, space_id)).regions
     except Exception:  # noqa: BLE001 - v1's closed value for an unknown contact
         regions = UNRESOLVED.regions
+    # v1 `engine._reference_scope`: enforced -> the linked ids; staff -> no restriction;
+    # any other contact -> its linked ids (none when unlinked).
+    links: list[str] | None = None
+    if (scope or {}).get("enforced") or not staff:
+        links = [str(row[0]) for row in ((scope or {}).get("linked") or [])]
     return {
+        "reference_links": links,
         "reference_kinds": resolver_reference_kinds(attrs, staff, held),
         "regions": regions,
         "customer_scope": scope,
+        "granted_reveals": frozenset(attrs),
     }
 
 
@@ -319,6 +401,10 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     session_vars = session_block.get("session_vars") if isinstance(session_block.get("session_vars"), dict) else session_block
     raw_state = session_vars.get("pv2")
     profile = hctx.profile
+    # The contact's scope, read once before the parse (closed on any failure inside).
+    with _session(factory) as sdb:
+        scope = scope_for_resolver(sdb, contact, space_id, profile)
+    granted = scope.pop("granted_reveals")
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -339,9 +425,10 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope_for_resolver(db, contact, space_id, profile))),
+            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope)),
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile),
+            granted_reveals=granted,
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,

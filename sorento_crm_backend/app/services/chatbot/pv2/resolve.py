@@ -139,6 +139,7 @@ _BOOLEAN_KEYS = {"true": True, "false": False}
 INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_class", "product_type", "attachment_type"})
 
 #: Owner 13 Oct 23:50: at most this many customer-name candidates.
+CUSTOMER_FAMILY_ROW_LIMIT = 200
 CUSTOMER_CANDIDATE_CAP = 8
 #: Real candidates offered when an index key is null.
 INDEX_CANDIDATE_CAP = 8
@@ -176,8 +177,12 @@ class DbResolver:
         customer_scope: Mapping[str, Any] | None = None,
         reference_kinds: Collection[str] | None = None,
         regions: Any = None,
+        reference_links: list[str] | None = None,
     ) -> None:
         self.db = db
+        # None = no restriction (staff); a list, possibly empty = a contact held to those
+        # customers: customer-owned document matches outside it are dropped.
+        self.reference_links = None if reference_links is None else [str(i) for i in reference_links]
         self.regions = regions
         # The reference kinds this asker may see (`visible_reference_kinds`); closed default.
         self.reference_kinds = list(reference_kinds) if reference_kinds else ["customer_order"]
@@ -218,7 +223,9 @@ class DbResolver:
             return self._warehouse(ent.phrase)
         v1_types = self._document_types(ent.kind)
         if v1_types is not None:
-            number = getattr(ent, "doc_number", None) or ent.phrase
+            # The verbatim phrase, exactly; the parser's stripped number only when there is
+            # no phrase. Never a stripped retry that could land on another document.
+            number = ent.phrase or getattr(ent, "doc_number", None)
             return self._document(ent.kind, v1_types, number, ent.phrase)
         # A kind this resolver does not hold: say so, never guess.
         return Resolution(status="none", phrase=ent.phrase, unrecognised=bool(ent.phrase))
@@ -241,13 +248,12 @@ class DbResolver:
     def _document(self, kind: str, v1_types: list[str], number: str | None, phrase: str | None) -> Resolution:
         if not number or not _strip_ws(number):
             return Resolution(status="none", phrase=phrase)
-        found = self._document_found(kind, self._v1_matches(number, v1_types))
+        unnamed = kind in ("order", "order_number")
+        found = self._document_found(None if unnamed else kind, self._v1_matches(number, v1_types))
         if not found and kind != "form":
-            # v1 re-runs an unresolved token across every type it may see, products last.
-            wide = list(dict.fromkeys([*self.reference_kinds, "inbound_shipment"]))
-            found = self._document_found(None, self._v1_matches(number, wide))
-            if not found:
-                return self._product(number or phrase)
+            # A number that is no document of its kind may be a product code (products are
+            # not documents, so this is never another document kind).
+            return self._product(number)
         if not found:
             return Resolution(status="none", phrase=phrase)
         if len(found) == 1:
@@ -288,7 +294,24 @@ class DbResolver:
             enable_prefix_fallback="form" in v1_types,
         )
         res = result.resolutions[0] if result.resolutions else None
-        return list(res.matches) if res else []
+        return self._within_links(list(res.matches) if res else [])
+
+    def _within_links(self, matches: list[Any]) -> list[Any]:
+        if self.reference_links is None:
+            return matches
+        from app.models.order import Order, SalesOrder
+
+        owned = {"customer_order": Order, "sales_order": SalesOrder, "customer_po_ref": SalesOrder}
+        out: list[Any] = []
+        for m in matches:
+            model = owned.get(m.entity_type)
+            if model is None:
+                out.append(m)
+                continue
+            cid = self.db.query(model.customer_id).filter(model.id == m.uuid).scalar() if m.uuid else None
+            if cid is not None and str(cid) in self.reference_links:
+                out.append(m)
+        return out
 
     @staticmethod
     def _from_held(kind: str, held: Held) -> Resolution:
@@ -620,11 +643,8 @@ class DbResolver:
             .order_by(Customer.customer_name, Customer.id)
             .all()
         )
-        if len(exact) == 1:
-            cid, code, name = exact[0]
-            return Resolution(status="exact", refs=[self._customer_ref(cid, code, name, phrase)])
         if exact:
-            return Resolution(status="ambiguous", options=self._customer_options(exact, phrase), phrase=phrase)
+            return self._customer_families(exact, phrase)
 
         # Owner-approved (13 Oct 23:50): the ONE containing-name search. Options only.
         pattern = f"%{_like_escape(norm(phrase))}%"
@@ -632,19 +652,43 @@ class DbResolver:
             self._customer_query()
             .filter(func.lower(func.regexp_replace(Customer.customer_name, r"\s+", " ", "g")).like(pattern, escape="\\"))
             .order_by(Customer.customer_name, Customer.id)
-            .limit(CUSTOMER_CANDIDATE_CAP)
+            .limit(CUSTOMER_FAMILY_ROW_LIMIT)
             .all()
         )
         if not candidates:
             return Resolution(status="none", phrase=phrase)
-        return Resolution(status="ambiguous", options=self._customer_options(candidates, phrase), phrase=phrase)
+        return self._customer_families(candidates, phrase, candidates_only=True)
 
-    def _customer_options(self, rows: list, phrase: str | None) -> list[Option]:
-        out = []
-        for cid, code, name in rows:
-            ref = self._customer_ref(cid, code, name, phrase)
-            out.append(Option(key=ref.key, label=ref.label, payload={"kind": "customer", "key": ref.key, "label": ref.label}))
-        return out
+    def _customer_families(self, rows: list, phrase: str | None, *, candidates_only: bool = False) -> Resolution:
+        """Accounts of one trading family are one customer (v1 `gate._cust_base`): one family
+        is exact with a ref per account; several families are asked once per family. The cap
+        counts families, never accounts, so a family is not cut in half."""
+        from app.services.ledger_family import group_names, ledger_family_key
+
+        buckets: dict[str, list] = {}
+        for row in rows:
+            buckets.setdefault(ledger_family_key(row[2]) or str(row[2]), []).append(row)
+        # One entry per DISPLAYED label: buckets that show the same label (a grouped and an
+        # ungrouped ledger of one name) merge, so one tap resolves every account under it.
+        families: dict[str, list] = {}
+        for members in buckets.values():
+            names = [str(n) for _c, _k, n in members]
+            label = (group_names(names) or [names[0]])[0].strip()
+            families.setdefault(label, []).extend(members)
+        # Exact rows resolve directly. From the containing-name search only an exact family
+        # NAME does; a partial name always asks (candidates never resolve on their own).
+        if len(families) == 1:
+            shown, members = next(iter(families.items()))
+            if not candidates_only or norm(shown) == norm(phrase or ""):
+                return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
+        options = []
+        for label, members in list(families.items())[:CUSTOMER_CANDIDATE_CAP]:
+            keys = [self._customer_ref(c, k, n, phrase).key for c, k, n in members]
+            payload: dict[str, Any] = {"kind": "customer", "key": keys[0], "label": label}
+            if len(keys) > 1:
+                payload["keys"] = keys
+            options.append(Option(key=keys[0], label=label, payload=payload))
+        return Resolution(status="ambiguous", options=options, phrase=phrase)
 
     # ------------------------------------------------------------------ warehouses
     def _warehouse(self, phrase: str | None) -> Resolution:
