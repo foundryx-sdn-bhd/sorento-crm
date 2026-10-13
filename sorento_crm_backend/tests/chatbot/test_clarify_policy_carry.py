@@ -542,7 +542,7 @@ def test_the_label_follows_the_parser_delivery_attribute(dealer):  # noqa: F811
     assert dealer.say("delivery for zzt dealer", _customer_ask()) == Q_COMBINE
     dealer.say("start over", verdict(topic_reset=True, entities=[]))
     _carried_product(dealer)
-    asked = dealer.say("orders for zzt dealer", _customer_ask(requested_attributes=[]))
+    asked = dealer.say("orders for zzt dealer", _customer_ask(requested_attributes=[], domain_in_message=True))
     assert asked.startswith(f"Orders for {CUSTOMER}: only {CODE} (from earlier)"), asked
 
 
@@ -631,8 +631,10 @@ def test_a_refine_after_a_delivery_ask_keeps_the_word_delivery(office):  # noqa:
 
 
 def test_the_held_delivery_reading_survives_the_session_wire():
+    from app.services.chatbot import contracts as contracts_mod
     from app.services.chatbot.turn.state import Focus, focus_from_wire, focus_to_wire
 
+    contracts_mod.Focus(**focus_to_wire(Focus(delivery_ask=True)))  # `extra="forbid"` declares it
     assert focus_from_wire(focus_to_wire(Focus(delivery_ask=True))).delivery_ask is True
     assert focus_from_wire(focus_to_wire(Focus(delivery_ask=False))).delivery_ask is False
     assert focus_from_wire({}).delivery_ask is None  # a focus stored before this slot

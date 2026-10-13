@@ -3605,6 +3605,8 @@ def _apply(
         domain_override=domain_override,
         trace=trace,
     )
+    # CLARIFY-POLICY (reviewer S1): the held order ask's own delivery reading (parser fields).
+    focus.delivery_ask = clarify_policy.delivery_reading(verdict, focus.delivery_ask)
     if carry is not None:
         trace.rules_fired.append(f"carry_{carry.action}")
         if carry.action == "drop":

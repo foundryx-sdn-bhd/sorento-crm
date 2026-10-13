@@ -146,6 +146,11 @@ class Focus:
     domains: list[str] = field(default_factory=list)
     document: list[str] = field(default_factory=list)
     status: str | None = None
+    # CLARIFY-POLICY (reviewer S1): the parser's own reading of the held order ask as a
+    # DELIVERY ask (its `requested_attributes` / `document` / `order_status`), so a refine that
+    # names only a new subject ("how about <code>") words the carried-subject question the
+    # same way. None = never read (a focus stored before this slot, or no order ask yet).
+    delivery_ask: bool | None = None
     # PLAN-chatbot-sales-report.md S4 wiring point 2: the sales report's own channel
     # filter ("dealer" / "project" / None), an axis of the same kind as `status` and
     # carried the same way. A sales report ask that stopped at the customer picker, or
@@ -308,6 +313,7 @@ FOCUS_LIST_FIELDS = (
 def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire: dict[str, Any] = {name: list(getattr(focus, name)) for name in FOCUS_LIST_FIELDS}
     wire["status"] = focus.status
+    wire["delivery_ask"] = focus.delivery_ask
     wire["sales_channel"] = focus.sales_channel
     wire["date_window"] = focus.date_window
     wire["sort"] = dict(focus.sort) if focus.sort else None
@@ -364,6 +370,8 @@ def focus_from_wire(raw: Any) -> Focus:
     if not isinstance(status, str):
         status = raw.get("order_status")
     focus.status = status if isinstance(status, str) else None
+    delivery_ask = raw.get("delivery_ask")
+    focus.delivery_ask = delivery_ask if isinstance(delivery_ask, bool) else None
     channel = raw.get("sales_channel")
     focus.sales_channel = channel if isinstance(channel, str) else None
     window = raw.get("date_window")

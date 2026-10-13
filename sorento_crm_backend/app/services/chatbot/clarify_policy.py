@@ -532,9 +532,27 @@ def _ask_label(domain: str, default: str, verdict: dict[str, Any], focus: Any = 
         return label
     if any(verdict.get(k) for k in ("requested_attributes", "document", "order_status")):
         return label if _reads_delivery(verdict.get("requested_attributes"), verdict.get("document"), verdict.get("order_status")) else _ORDER_LABEL
-    # The message says nothing of its own ("how about <code>"): the held ask's resolved
-    # document / status decide (reviewer S1), never the message text.
+    # The message says nothing of its own ("how about <code>"): the held ask's own parser
+    # reading decides (`Focus.delivery_ask`, reviewer S1), else its resolved document /
+    # status; never the message text.
+    if verdict.get("domain_in_message") is True:
+        # A message that names its own ask with no delivery field ("orders for X") says Orders
+        # (crew item 7); only a message with no domain word continues the held ask's wording.
+        return _ORDER_LABEL
+    held = getattr(focus, "delivery_ask", None)
+    if held is not None:
+        return label if held else _ORDER_LABEL
     return label if _reads_delivery((), getattr(focus, "document", None), getattr(focus, "status", None)) else _ORDER_LABEL
+
+
+def delivery_reading(verdict: dict[str, Any], held: bool | None) -> bool | None:
+    """`Focus.delivery_ask` after this turn: an ORDER verdict carrying any of the three parser
+    fields sets it; any other turn keeps the held reading."""
+    if verdict.get("domain_hint") != "order":
+        return held
+    if not any(verdict.get(k) for k in ("requested_attributes", "document", "order_status")):
+        return held
+    return _reads_delivery(verdict.get("requested_attributes"), verdict.get("document"), verdict.get("order_status"))
 
 
 @dataclass(frozen=True)
