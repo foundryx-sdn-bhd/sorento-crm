@@ -1,6 +1,6 @@
 # PLAN: vitest shard 2 "hang" (CI-VITEST-HANG)
 
-Status: in progress (small fix track: CI config only, no migration, no product code)
+Status: PR open, awaiting review (small fix track: CI config only, no migration, no product code)
 
 ## Symptom
 
@@ -44,6 +44,7 @@ Measured in the sandbox, `CI=true taskset -c 0,1` (two CPUs, as on the runner):
 | --- | --- | --- | --- |
 | `--shard=2/16` | default (1) | 227.1s | 95 files / 925 tests green |
 | `--shard=2/16` | 2 | 149.5s | 95 files / 925 tests green |
+| `--shard=2/4` (the CI shard) | 2 | 692.6s | 376 passed, 1 skipped (377 files, as in CI); exited 2s after the summary |
 
 `timeout-minutes: 20` stays; its comment in `deploy.yml` now records the measured
 shard time. No product or test code changes.
