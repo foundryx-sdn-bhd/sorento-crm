@@ -88,20 +88,17 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
         "fields": {
             "type": "array",
             "description": (
-                "Field updates the user supplied this turn, as {key,value} pairs. "
-                "key is the intake answer key, value is the user's answer as plain "
-                "text. problem = the Business problem: what is wrong or missing "
-                "today, including the cost the user names. desired_outcome = what "
-                "the user wants to be true afterwards or wants built; a solution the "
-                "user states counts here, in their words (the problem keeps the need "
-                "behind it, the outcome keeps the stated solution), but leave it empty "
-                "when the user said no such thing and never fill it with a situation "
-                "that went into use_cases. current_workaround = how they cope "
-                "today, only when the user described it; never infer one. "
-                "Decide which key a message updates by its MEANING, never by "
-                "which field was just asked (next_field is only a hint). A field "
-                "the user did not state stays out. Empty when the turn adds "
-                "nothing."
+                "Field updates the user supplied this turn, as {key,value} pairs; "
+                "value is the user's answer as plain text. problem = the Business "
+                "problem: what is wrong or missing today. Any cost or benefit the "
+                "user names stays in problem. problem never holds a solution or a "
+                "wish. A solution or wish the user states goes to desired_outcome "
+                "(what they want to be true afterwards or built), in their own "
+                "words. current_workaround = how they cope today, only when the "
+                "user said so. A team name is not a field. Decide the key by "
+                "MEANING, never by which field was just asked (next_field is only "
+                "a hint). A field the user did not state stays out. Empty when the "
+                "turn adds nothing."
             ),
             "items": {
                 "type": "object",
@@ -112,9 +109,12 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
                         "enum": list(_FIELD_KEYS),
                         "description": (
                             "problem = the Business problem (what is wrong or missing "
-                            "today, with any cost named); desired_outcome = what the "
-                            "user wants to be true afterwards; current_workaround = "
-                            "how they cope today."
+                            "today); any cost or benefit the user names stays in "
+                            "problem, and problem never holds a solution or a wish. "
+                            "desired_outcome = what the user wants to be true "
+                            "afterwards or built: a solution or wish they state goes "
+                            "here, in their own words. current_workaround = how they "
+                            "cope today. A team name is not a field."
                         ),
                     },
                     "value": {"type": "string"},
@@ -303,6 +303,17 @@ def normalise_field_value(key: str, value: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def clean_use_cases(items: Any) -> list[str]:
+    """Each use case cleaned like any field value, non-empty, deduped in order, at most 5.
+    Also applied to a list read back from a held pointer (session data, not trusted)."""
+    cleaned_all: list[str] = []
+    for item in items if isinstance(items, list) else []:
+        cleaned = normalise_field_value("use_cases", str(item or ""))
+        if cleaned and cleaned not in cleaned_all:
+            cleaned_all.append(cleaned)
+    return cleaned_all[:_MAX_USE_CASES]
+
+
 def normalise_title(title: str) -> str:
     """W2: the title is a label - no quotes, no trailing punctuation, first
     letter capitalised, at most 8 words (AC-1202)."""
@@ -418,13 +429,7 @@ def extract_ideate_turn(
         if isinstance(pair, dict) and pair.get("key"):
             if str(pair["key"]) in _FIELD_KEYS:
                 fields[str(pair["key"])] = str(pair.get("value", ""))
-    use_cases: list[str] = []
-    raw_cases = data.get("use_cases")
-    for item in raw_cases if isinstance(raw_cases, list) else []:
-        cleaned = normalise_field_value("use_cases", str(item or ""))
-        if cleaned and cleaned not in use_cases:
-            use_cases.append(cleaned)
-    use_cases = use_cases[:_MAX_USE_CASES]
+    use_cases = clean_use_cases(data.get("use_cases"))
     remove = [str(k) for k in (data.get("remove") or []) if k]
 
     # AC-1205: only optional keys can ever be skipped - `problem` is dropped from

@@ -35,6 +35,7 @@ from app.services.conversation_variables_service import overwrite_for_contact
 from app.services.ideation_capture_replies import render_reply
 from app.services.ideation_extractor import (
     IdeateExtraction,
+    clean_use_cases,
     extract_ideate_turn,
     normalise_field_value,
     normalise_title,
@@ -308,7 +309,7 @@ def handle_capture_turn(
         # Create from the HELD message: its fields, title and intake_ref ride on the pointer.
         fields = dict(held.get("fields") or {})
         title = str(held.get("title") or "")
-        use_cases = [str(u) for u in (held.get("use_cases") or []) if str(u).strip()]
+        use_cases = clean_use_cases(held.get("use_cases"))
         source_text = held["message_text"]
         intake_ref = _valid_uuid(held.get("intake_ref")) or str(uuid.uuid4())
     else:

@@ -302,7 +302,7 @@ def _ideate_extractor_fallback() -> str:
         "- Write each value in the user's own language (a Malay message gets a Malay "
         "value); only the spelling and the wording are cleaned.\n"
         "- Never copy the user's punctuation into a value. A question mark (or '!') typed "
-        "at the end of an answer ('manufacturing?') is hesitation, not part of the value. "
+        "at the end of an answer ('faster checkout?') is hesitation, not part of the value. "
         "The same applies to the title: a plain label, no quotes, no question mark.\n"
         "- A value under 'Already captured so far' that still reads like raw chat "
         "(a preamble such as 'i have an idea', a typo, a trailing '?') was never cleaned: "
