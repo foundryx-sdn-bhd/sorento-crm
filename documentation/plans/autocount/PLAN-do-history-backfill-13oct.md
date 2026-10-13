@@ -1,7 +1,8 @@
 # PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan v2 after OWNER DIRECTION 13 Oct. Waiting for crew's finding on whether AutoCount
-API DO lines carry the SO line key (`FromDocDtlKey`) before any more code.** Track: full
+Status: **plan v3 (crew answer to v2, 13 Oct): cutover = 2023-09-01; unique-match links stay;
+building C1 (location narrowing) and C3 (backfill flag). C2 held on one ask (section 8). The
+line-key source for the ambiguous case is pending with crew.** Track: full
 (migration column, ingest behaviour change). Slice 1 (the `tracking_assumed_at` column) is built
 and pushed at `cb05abdf`; nothing else is built. PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
@@ -25,6 +26,19 @@ OWNER DIRECTION, 13 Oct (overrides crew's Q1 and Q5 answers):
    says 2023-01-01.
 3. **No flagging, no guessing**: every DO line links to its **exact** SO line. No fallback link is
    planned.
+
+Crew answer to v2, 13 Oct:
+
+- **Cutover = 2023-09-01** (the backfill start): `do_assume_delivered_before = 2023-09-01`;
+  "everything from 2023-09-01 is tracked from real backfilled DOs".
+- **"Exact" = one provable SO line.** The key link wins when present. Otherwise, when `FromDocNo`
+  names the SO and that SO has exactly ONE line of the DO's product (after location narrowing, when
+  the location is exact on both), the link is exact by construction and **stays**: that is how all
+  29,040 of today's links were made. Several candidate lines (about 13,259 today) stay
+  **unlinked**: no lowest-Seq, no qty-fit guess. API `FromDocDtlKey` is 0 on every DO line (verified
+  live 8 Oct, and on 51,418 stored lines).
+- A line-key source for the ambiguous case (AutoCount SQL DODTL via FXView, or a change to the API
+  wrapper) is being checked by crew. It is pending, because the MacBook Air tunnel is down.
 
 Crew answers that still stand:
 - Q2 (a): an assumed row gets `actual_delivery_date` = DocDate plus the `tracking_assumed_at` marker.
@@ -97,11 +111,11 @@ Q3 (the SO side) is with the owner.
 
 | # | Repo / lane | Work | Depends on |
 | --- | --- | --- | --- |
-| K | crew (in progress) | Finding: does the AutoCount API send a real `FromDocDtlKey` on DO lines (any endpoint, any date range)? | none |
+| K | crew (answered: no) | The API sends `FromDocDtlKey` 0 on every DO line. A key source for the ambiguous lines (DODTL via FXView, or an API wrapper change) is pending. | none |
 | S1 | SS (its own lane) | Change the DO start floor in `doc_feed/constants.py:48` from 2023-01-01 to **2023-09-01**. | none |
 | S2 | SS | Make sure db1 (Sorento) and db2 (Mocha) each have a DO feed config row. A missing row fails loudly for that book. | none |
 | S3 | SS | Run the existing DocDate backfill for DO from 2023-09-01 to today (rules below the table). | S1, S2, K, C1-C3 deployed |
-| C1 | CRM (this lane) | Exact links only (section 3). | K = yes |
+| C1 | CRM (this lane) | Provable links only: key, else a unique product match narrowed by location (section 3). | none |
 | C2 | CRM | Assumed delivery when a pre-cutover DO is created or adopted (section 4). | the ask |
 | C3 | CRM | Quiet backfill: no per-DO embedding events or audit rows on backfill pushes (section 5). | contract 2.9 agreed with the SS lane |
 
@@ -114,38 +128,26 @@ S3 run rules:
 
 The CRM never calls AutoCount. It only ingests what the SS pushes.
 
-## 3. C1: exact SO-line links only (owner rule 3)
+## 3. C1: provable SO-line links only (owner rule 3, crew definition)
 
-### 3.1 If K = yes (the API sends the key)
+The resolver for a DO line with `FromDocType` absent or `SO` (`_do_so_line`,
+`autocount_doc_ingest_service.py:859-878`; the waiting fill uses the same resolver):
 
-- **Key only.** `_do_so_line` links **only** by `FromDocDtlKey`, through the existing exact path
-  (1.3). The `FromDocNo` + product fallback is removed for DO lines, in the ingest and in the
-  waiting fill.
-- **Key with no SO line yet.** The line stays unlinked, and the waiting fill retries it by exact
-  key when the SO arrives. The `so_line_unresolved` warning for ambiguity goes away, because a key
-  names exactly one line.
-- **Existing fallback links (the 29,040 in 1.1)** are replaced on the next push of each DO:
-  - a pushed key overwrites the link;
-  - a pushed line with no key is cleared, so no link the CRM holds is a guess.
-  S3 runs through today, so every live DO is re-linked by key in the same pass. The prod-clone
-  dry run counts links before and after.
-- **SS mapping.** The SS sends the key it finds. If the key comes from a different endpoint or
-  field name, S3 maps it onto `FromDocDtlKey` in the 2.7 record shape, so the CRM contract does
-  not change.
-- **Readers.** Sales achievement by DO date (`be/app/services/sales/achievement_service.py:25-31,347-356`)
-  and #1623's tie-break get exact links only. A DO line with no link counts on the SO's order
-  date, as it did before any DO was linked.
+1. **Key.** `FromDocDtlKey` > 0 links to the SO line whose `source_ref` ends in that key, inside SO
+   `FromDocNo` (`_so_line`, `:847-857`). If present, the key wins and nothing else is tried.
+   Already built (test `test_exact_so_line_link`).
+2. **Unique product.** Otherwise, the lines of the DO line's product inside SO `FromDocNo` in the
+   anchor company. Exactly one: link. Already built (test
+   `test_from_dtl_key_zero_links_by_doc_no_and_item`).
+3. **Location narrowing (new).** Several candidates, the DO line has a warehouse, and **every**
+   candidate has a warehouse: keep the candidates whose warehouse equals the DO line's. Exactly
+   one: link. A candidate with no warehouse could be the real line, so it blocks narrowing.
+4. **Otherwise unlinked**, with the existing `so_line_unresolved` warning. No position, Seq or
+   quantity tie-break (test `test_from_dtl_key_zero_with_two_candidate_so_lines_warns`, plus a new
+   one where the location matches several lines).
 
-### 3.2 If K = no
-
-The AutoCount API then has no exact source for the line link, and this lane cannot meet rule 3.
-
-- The backfill can still land the DOs with **header** links (`RefDocNo` / `FromDocNo` to the SO,
-  exact by number) and **no** line links.
-- The fallback is still removed, so nothing is guessed.
-- A line key would need another source, such as the AutoCount DB. The SQL login has no SELECT on
-  DO / DODTL today (per #1623).
-- That is a new owner decision, not planned here.
+The prod-clone dry run counts how many of today's 13,259 ambiguous lines rule 3 resolves. The
+rest wait for crew's key source (K).
 
 ## 4. C2: assumed delivery, inside the ingest
 
@@ -216,18 +218,28 @@ Without the flag nothing changes.
 
 ## 8. The one ask
 
-Cutover for "assume delivered" (`do_assume_delivered_before`):
-- (a) **2026-07-01**, your "prior to July". Apr-Jul 2026 rows that are tracked keep their tracking.
-- (b) **2026-08-01**, where the AutoCount feed starts, so every backfilled DO without tracking is
-  assumed delivered.
+A cutover of 2023-09-01 for `do_assume_delivered_before` assumes **nothing**, because no
+backfilled DO is dated before its own start. Every DO from 2023-09-01 to July 2026 would therefore
+land as `new` with no delivery date. At the 1.1 rates that is about 270,000 DOs, and they would show
+as **outstanding** in the DO list, on the DO side of the outstanding report, and in the chatbot
+(`order_service.py:62-94`, `outstanding_report_service.py:444-504`). Order Tracking for these DOs
+does not exist (the owner's "I don't have the order tracking for them prior to July").
 
-Recommend (a): it is your own boundary, and an untracked July DO stays visible to CS as outstanding.
+- (a) Keep the owner's "fully delivered" ask: `do_assume_delivered_before` = the first tracked
+  month (2026-07-01, or 2026-08-01 for the feed start). The backfill still starts 2023-09-01, and
+  every untracked DO before the date reads delivered with the "assumed" marker.
+- (b) Cutover 2023-09-01 as stated: no DO is assumed delivered, and the owner accepts about
+  270,000 outstanding DOs, or CS uploads tracking for them.
+
+Recommend (a) with 2026-07-01, because it is the owner's "fully delivered" requirement from the
+original ask. C2 is not built until this is answered.
 
 ## 9. Build slices (after K and the ask)
 
 1. Built: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
    cleared by a tracking row.
-2. C1: exact-only links (if K = yes); tests.
+2. C1: location narrowing for several unique-product candidates; tests (key, unique match,
+   ambiguous unlinked, location-narrowed link, location still ambiguous).
 3. C2: assumed delivery in the ingest, behind the setting; tests.
 4. C3: the contract 2.9 `backfill` flag; tests; section 13 of the contract doc updated for the SS lane.
 5. The #1623 gate (Q4 a), after #1623 merges.
