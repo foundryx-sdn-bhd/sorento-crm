@@ -161,7 +161,9 @@ def apply_scope_block(
             return answer
         # WA-CONCISE AC-18: one named order whose number prints in the reply needs no header.
         named = [
-            line[len("Delivery order: "):] for line in scope.split("\n") if line.startswith("Delivery order: ")
+            line.split(": ", 1)[1]
+            for line in scope.split("\n")
+            if line.startswith(("Delivery order: ", "Order: "))
         ]
         if (
             len(named) == 1

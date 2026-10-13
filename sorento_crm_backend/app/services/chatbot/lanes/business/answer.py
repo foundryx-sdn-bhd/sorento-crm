@@ -1349,7 +1349,7 @@ def _crossdomain_rung_row(it: Any, field_by_key: Any) -> dict[str, Any]:
         "po_date": field_by_key(it, "po_date"),
         "location": field_by_key(it, "location"),
         # Never rendered: PO numbers are unique per company only, so the document key
-        # in `_consolidate_rung_rows` needs it beside the number.
+        # in `_crossdomain_rung_text` needs it beside the number.
         "company": field_by_key(it, "company_name"),
     }
 
