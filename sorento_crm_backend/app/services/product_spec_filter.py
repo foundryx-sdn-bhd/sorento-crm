@@ -66,6 +66,9 @@ def parse_spec_constraints(
         raise _bad(f"`spec_constraints` takes at most {MAX_CONSTRAINTS} constraints.")
     types: dict[str, str] = {str(row.spec_key): str(row.data_type or "") for row in active_registry(db)}
     types.setdefault(SIZE_KEY, "numeric")
+    # The product's own brand (`membership_clause` reads it off `products.brand_id`), named by
+    # its brand name: a brand follow-up narrows a spec-filtered list (crew rule, 13 Oct).
+    types.setdefault(BRAND_KEY, "enum")
     # `class` is what the product IS, its vocabulary the categories' `class_label` (the
     # registry row carries no choices of its own), so it is known even on an install whose
     # registry has no row for it (legacy / category-sourced). A class row that exists and

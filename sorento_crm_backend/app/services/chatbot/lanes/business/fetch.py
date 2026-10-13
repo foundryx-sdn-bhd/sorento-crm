@@ -196,6 +196,18 @@ def _subject_constraint(db: Any, raw: str) -> dict[str, Any] | None:
         return {"key": "class", "op": "eq", "value": classes[0] if len(classes) == 1 else list(classes)}
     return None
 
+def _brand_on_file(db: Any, name: str) -> str | None:
+    """The brand's name as it is on file (case-insensitive, whole name), or None."""
+    from sqlalchemy import func
+
+    from app.models.product import Brand
+
+    if not name:
+        return None
+    row = db.query(Brand.brand_name).filter(func.lower(Brand.brand_name) == name.lower()).first()
+    return str(row[0]) if row else None
+
+
 def constraints_for_terms(db: Any, terms: Any) -> list[dict[str, Any]] | None:
     """`promo_filter`'s `scope_terms` as `spec_constraints`, for a turn whose own parse names
     no subject (a digit picked off "Which cabinet do you mean?"): each term is the whole
@@ -271,6 +283,20 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
             subjects.append(subject)
     if len(subjects) > 1:
         return None
+    # A brand the parser named, this turn or carried ("only sorento" after a size list, crew
+    # rule 13 Oct): the product's own brand narrows the list, by the brand's name on file. A
+    # name no brand carries keeps the ask on the resolver path, as an unmapped subject does.
+    brands: list[dict[str, Any]] = []
+    for e in entities:
+        if jsc.nullish_str(e.get("hint")).strip().lower() != "brand":
+            continue
+        name = _brand_on_file(db, jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip())
+        if name is None:
+            return None
+        brand = {"key": "brand", "op": "eq", "value": name}
+        if brand not in brands:
+            brands.append(brand)
+    subjects = [*subjects, *brands]
     specs = [
         {"key": jsc.js_string(e["spec_key"]), "op": "eq", "value": e["spec_value"]}
         for e in specification_entities(entities)
