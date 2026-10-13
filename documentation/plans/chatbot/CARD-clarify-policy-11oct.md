@@ -173,6 +173,13 @@ today (#4, #7, #8, #26, #27; `do_ask.py:14-17`).
 ## Edge cases
 
 - Seed changes nothing visible except P3, P4, R2.
+- Owner rulings 13 Oct 2026 (live check on #1570): "always ask when we are unclear". A carried CUSTOMER
+  meeting a newly named PRODUCT ("orders for X last month", then "how about SRT391-GM") is asked too
+  ("Orders for SRT391-GM: only X (from earlier) or all customers?"), including a product switch under a
+  carried customer (option (a), owner-recorded replays signed in `replay_turns/DIVERGENCES.md`). The
+  question's word follows the parser: "Delivery" for a delivery ask (`requested_attributes` delivery, a DO
+  `document`, or `order_status` delivered), else "Orders". A customer is printed by its company / group
+  name, never its account code. The staff CS routing list (`engine.py` CS roster arm) is a separate lane.
 - A row set to a mode not in `allowed_modes` is refused (DB CHECK and the service); a missing or
   unreadable table falls back to the seed constant, never to "no ask".
 - Clear cases, no question: an explicit reference ("delivery for this"), a REFINE of the held
