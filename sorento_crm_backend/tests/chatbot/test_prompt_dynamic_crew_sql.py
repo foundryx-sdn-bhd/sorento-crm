@@ -275,3 +275,7 @@ def test_the_crew_sql_also_swaps_the_order_domain_status_values():
         assert "The full set is now: {{order_status_values}}|null" in row.template
         assert ("order_status_values", "replaced") in _sql_actions(row)
         assert _render(db, row) == _expected()
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

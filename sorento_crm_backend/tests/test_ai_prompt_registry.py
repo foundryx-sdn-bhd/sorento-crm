@@ -567,3 +567,7 @@ def test_ac_s2_1_price_tag_fallback_carries_rule_9_omit_quantity():
 
     assert "(9)" in text
     assert "Omit `quantity`" in text
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

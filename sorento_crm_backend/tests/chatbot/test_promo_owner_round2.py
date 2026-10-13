@@ -288,3 +288,7 @@ def test_the_migration_publishes_one_unlabelled_version_built_from_the_code_cons
         if line:
             assert line in template, line
     assert "PROMOTION KIND" in template and "seat cover" in template.lower()
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

@@ -265,3 +265,7 @@ def test_the_cli_prints_the_leftover_placeholders_and_exits_1(monkeypatch, capsy
         monkeypatch.setattr(sys, "argv", ["x", "--verify", str(leaky.version), "--against", str(reference.version)])
         assert script.main() == 1
     assert f"# leftover placeholders in v{leaky.version}: ['{LEAK}']" in capsys.readouterr().out
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

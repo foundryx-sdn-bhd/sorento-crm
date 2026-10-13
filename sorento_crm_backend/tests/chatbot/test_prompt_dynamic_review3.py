@@ -127,3 +127,7 @@ def test_the_domain_words_source_is_the_curated_list_with_no_page_yet():
     assert var.href == ""
     assert "chatbot_domain_words" in var.tables
     assert "Domain words" in var.source
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows
