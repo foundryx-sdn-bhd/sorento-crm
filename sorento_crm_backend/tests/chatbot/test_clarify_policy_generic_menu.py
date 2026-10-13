@@ -59,3 +59,15 @@ def test_ac130_a_bare_code_the_parser_types_unknown_still_gets_the_subject_answe
     reply = console.say(CODE, verdict(message_type="unknown", domain_hint=None, entities=[entity(CODE, hint="product", canonical_code=CODE)]))
     assert CODE in reply, reply
     assert reply.endswith(f"Something else? Tell me what you need about {CODE}."), reply
+
+
+@pytest.mark.parametrize("message_type", ["history_question", "casual", "confirmation"])
+def test_only_an_unknown_typed_message_gets_the_subject_answer_on_the_casual_lane(console, message_type):
+    """Reviewer B1: the parser's `message_type` decides, not the lane; a memory question or a
+    casual / confirmation message naming a resolved product keeps today's casual handling."""
+    reply = console.say(
+        f"what did I ask about {CODE}",
+        verdict(message_type=message_type, domain_hint=None, entities=[entity(CODE, hint="product", canonical_code=CODE)]),
+    )
+    assert "Something else? Tell me what you need about" not in reply, reply
+    assert "Here are the matching products" not in reply, reply

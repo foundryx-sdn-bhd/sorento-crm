@@ -616,3 +616,14 @@ def test_a_staff_miss_after_the_customer_pick_offers_no_routing_list(office, ses
     assert "choose who to route to" not in reply.lower(), reply
     assert "assign automatically" not in reply, reply
     assert "Dates: all dates" not in reply, reply
+
+
+def test_a_refine_after_a_delivery_ask_keeps_the_word_delivery(office):  # noqa: F811
+    """Reviewer S1: "how about <code>" carries no delivery attribute of its own; the held ask
+    was a delivery ask (its resolved document / status), so the question says Delivery."""
+    office.say(
+        "delivery for zzt dealer last month",
+        _orders_for_customer_last_month() | {"requested_attributes": ["delivery"], "document": ["DO"]},
+    )
+    reply = office.say(f"how about {CODE}", _how_about_the_product())
+    assert reply.startswith(f"Delivery for {CODE}: only {CUSTOMER} (from earlier)"), reply
