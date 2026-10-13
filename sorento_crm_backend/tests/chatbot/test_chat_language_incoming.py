@@ -116,7 +116,7 @@ def test_incoming_rows_under_a_stock_miss_read_in_the_reply_language(
 @pytest.mark.parametrize(
     "lang,expected",
     [
-        ("ms", "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Masuk:* tiada\n\n*Kod Produk:* SRTWC287\n*Stok:* tiada\n*Masuk:* tiada"),
+        ("ms", "*Kod Produk:* SRTWC286\n*Stok:* tiada\n*Barang masuk:* tiada\n\n*Kod Produk:* SRTWC287\n*Stok:* tiada\n*Barang masuk:* tiada"),
         ("zh", "*产品代码:* SRTWC286\n*库存:* 无\n*到货:* 无\n\n*产品代码:* SRTWC287\n*库存:* 无\n*到货:* 无"),
     ],
 )

@@ -55,7 +55,7 @@ _PO = {
 
 
 def test_d_catalog_has_the_card_block_labels():
-    assert LABELS["Incoming"] == {"ms": "Masuk", "zh": "到货"}
+    assert LABELS["Incoming"] == {"ms": "Barang masuk", "zh": "到货"}
     assert LABELS["Stock"] == {"ms": "Stok", "zh": "库存"}
     assert LABELS["PO"] == {"ms": "PO", "zh": "PO"}
     assert LABELS["SPO"] == {"ms": "SPO", "zh": "SPO"}
@@ -74,7 +74,7 @@ def test_e_guard_english_reply_is_unchanged(
 @pytest.mark.parametrize(
     ("lang", "code", "incoming", "stock", "po"),
     [
-        ("ms", "*Kod Produk:* SRTX2", "*Masuk:* tiada", "*Stok:* 0", "*PO:* tiada"),
+        ("ms", "*Kod Produk:* SRTX2", "*Barang masuk:* tiada", "*Stok:* 0", "*PO:* tiada"),
         ("zh", "*产品代码:* SRTX2", "*到货:* 无", "*库存:* 0", "*PO:* 无"),
     ],
 )
