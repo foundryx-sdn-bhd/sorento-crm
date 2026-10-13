@@ -1,6 +1,8 @@
 # PLAN: OI links follow the exact PO line to its SPO allocation (OI-SPO-EXACT)
 
-Status: Built, in review (small fix track: backend only, no migration, no auth/RBAC change).
+Status: Built, reviewer READY, awaiting crew hand test on a prod copy (small fix track: backend
+only, no migration, no auth/RBAC change; production diff under 100 lines, tests and the repair
+script make up the rest of the ~1,000).
 Lane OI-SPO-EXACT. UAC: `oi-spo-exact-acceptance-criteria.md` alongside.
 
 ## Problem (owner, 13 Oct)
@@ -55,7 +57,9 @@ copy reports any, crew asks the owner before anything is added.
   `(po_number, po line source_ref, product)`; `_append_derived_spo_entries` matches on
   `from_po_number`, `btrim(from_po_line_ref)`, `product_id`.
 - `app/services/order_inquiry_worklist_service.py`: `_derived_spo_query` adds the line key.
-- `scripts/repair_oi_spo_exact.py`: dry run by default, `--apply` commits per company. Touches
+- `scripts/repair_oi_spo_exact.py`: dry run by default, `--apply` commits per company. Read the dry run before `--apply` (an older cascade auto link
+on a sibling's SPO has the same signature and is moved too; a row left partly linked prints
+`SHORT BY <qty>`). Touches
   only AUTO links on an SPO allocation with the fallback's signature (an allocation of the
   line's item, from a PO the line's book names a line on, naming none of the line's book
   documents). Removes them through `_remove_links`, re-pairs the freed need through
