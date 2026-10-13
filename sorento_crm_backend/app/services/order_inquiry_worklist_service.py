@@ -976,9 +976,14 @@ class OrderInquiryWorklistService:
     # -------------------------------------------------------------- derived SPO
 
     def _derived_spo_query(self, *columns: Any, extra_where: tuple = ()) -> Any:
-        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO links reach -
-        `from_po_number = po_number AND product_id = po_line.product_id`, open per
-        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries).
+        """S5 (R-D/R-E/R-F): every OPEN SPO allocation this row's own PO LINKS' LINES
+        became - `from_po_number = po_number AND trim(from_po_line_ref) =
+        trim(po_line.source_ref) AND product_id = po_line.product_id`, open per
+        `derived_spo_open_clauses()` (shared with `links_for_rows`'s display entries,
+        which apply the same line key). OI-SPO-EXACT (owner 13 Oct): an allocation of the
+        same PO and product that quotes ANOTHER line was bought for another sales order
+        line and is not this row's incoming stock; a PO line with no `source_ref` reaches
+        nothing.
 
         ONE ROW PER ALLOCATION. The links are reached through an EXISTS rather than a
         join, which is the whole of AC-D12: a row holding two PO links on the SAME
@@ -1008,6 +1013,9 @@ class OrderInquiryWorklistService:
             .where(
                 OrderInquiryLink.row_id == OrderInquiryRow.id,
                 SPOAllocation.from_po_number == PurchaseOrder.po_number,
+                func.btrim(SPOAllocation.from_po_line_ref)
+                == func.btrim(PurchaseOrderLine.source_ref),
+                func.coalesce(func.btrim(PurchaseOrderLine.source_ref), "") != "",
                 SPOAllocation.product_id == PurchaseOrderLine.product_id,
             )
             .correlate(OrderInquiryRow, SPOAllocation)
