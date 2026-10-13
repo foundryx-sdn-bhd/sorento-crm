@@ -399,11 +399,12 @@ describe('TasksPanel', () => {
     expect(screen.getByLabelText('History of Get spec in')).toBeInTheDocument();
   });
 
-  it('tells a template-less project why it has no checklist', async () => {
+  it('offers one Add task, in the header, with no second button in the empty state (owner, 13 Oct)', async () => {
     renderPanel({ template_id: null });
 
-    expect(
-      await screen.findByText(/Set a project type and template so the checklist copies in/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/^No .*tasks on this project$/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /add/i })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeInTheDocument();
+    expect(screen.queryByText(/checklist copies in/i)).toBeNull();
   });
 });

@@ -44,8 +44,9 @@ import type {
   ProjectUpdateBody,
 } from '../types/project.types';
 import { ClashWarningPanel } from '../../pipeline/components/ClashWarningPanel';
+import { LeadWizardDialog } from '../../leads/components/LeadWizardDialog';
 
-type LeadOption = { value: string; label: string };
+type LeadOption = { value: string; label: string; description?: string };
 
 type ProjectFormProps = { mode: 'create' } | { mode: 'edit'; project: Project };
 
@@ -108,6 +109,9 @@ export function ProjectForm(props: ProjectFormProps) {
   const [leadOption, setLeadOption] = React.useState<LeadOption | null>(
     project?.lead_id ? { value: project.lead_id, label: project.lead_code ?? 'Linked lead' } : null,
   );
+
+  // The text typed into the Lead picker when nothing matched; non-null opens the lead wizard.
+  const [creatingLeadTitle, setCreatingLeadTitle] = React.useState<string | null>(null);
 
   const [joinTarget, setJoinTarget] = React.useState<{
     candidate: ClashCandidate;
@@ -191,7 +195,10 @@ export function ProjectForm(props: ProjectFormProps) {
   const wouldBlock =
     identityChanged && hasChecked && candidates.some((candidate) => candidate.blocks);
   const pending = register.isPending || update.isPending;
-  const canSubmit = title.trim().length > 0 && !wouldBlock && !pending;
+  // A new project comes from a lead (owner, 13 Oct): the picker offers to create one when
+  // none matches. Edit leaves it optional, so a project registered before the rule saves.
+  const leadMissing = mode === 'create' && !leadId;
+  const canSubmit = title.trim().length > 0 && !leadMissing && !wouldBlock && !pending;
 
   async function handleCheck() {
     const trimmed = title.trim();
@@ -426,7 +433,7 @@ export function ProjectForm(props: ProjectFormProps) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="project-admin-ref">Filing reference</Label>
+              <Label htmlFor="project-admin-ref">Reference</Label>
               <Input
                 id="project-admin-ref"
                 value={adminRef}
@@ -554,7 +561,9 @@ export function ProjectForm(props: ProjectFormProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="project-lead">Lead</Label>
+              <Label htmlFor="project-lead">
+                Lead{mode === 'create' && <span className="text-destructive"> *</span>}
+              </Label>
               <SearchableSelect
                 id="project-lead"
                 value={leadId}
@@ -565,6 +574,12 @@ export function ProjectForm(props: ProjectFormProps) {
                 clearable
                 placeholder="Search leads by title or code"
                 emptyMessage="No open leads match"
+                // Ungated, like the Leads page's own Create lead: the server decides who may
+                // create one (projects.projects.edit, the grant that registers a project).
+                createOption={{
+                  label: (query) => <span>Create lead &ldquo;{query}&rdquo;</span>,
+                  onCreate: setCreatingLeadTitle,
+                }}
               />
             </div>
           </div>
@@ -584,6 +599,22 @@ export function ProjectForm(props: ProjectFormProps) {
           </Button>
         </div>
       </form>
+
+      {creatingLeadTitle !== null && (
+        <LeadWizardDialog
+          initialTitle={creatingLeadTitle}
+          onDone={(created) => {
+            setCreatingLeadTitle(null);
+            if (!created) return;
+            setLeadId(created.id);
+            setLeadOption({
+              value: created.id,
+              label: created.title,
+              description: created.lead_code,
+            });
+          }}
+        />
+      )}
 
       {joinTarget && (
         <TakeoverRequestDialog

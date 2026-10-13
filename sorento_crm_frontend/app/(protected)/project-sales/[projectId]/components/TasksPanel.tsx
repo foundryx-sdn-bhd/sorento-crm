@@ -188,16 +188,11 @@ export function TasksPanel({ project }: { project: Project }) {
                   ? 'No tasks on this project'
                   : `No ${phase} tasks on this project`}
               </h3>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                {project.template_id
-                  ? 'The template checklist copies in when a project is registered against it. Add a task by hand for anything the checklist does not cover.'
-                  : 'Set a project type and template so the checklist copies in, or add tasks by hand.'}
-              </p>
+              {/* No button here: the header's Add task is the one CTA (owner, 13 Oct). */}
               {project.can_edit && (
-                <Button type="button" className="mt-4" onClick={() => setCreating(true)}>
-                  <Plus className="size-4" aria-hidden />
-                  Add the first task
-                </Button>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  Use Add task to create one.
+                </p>
               )}
             </div>
           ) : view === 'timeline' ? (

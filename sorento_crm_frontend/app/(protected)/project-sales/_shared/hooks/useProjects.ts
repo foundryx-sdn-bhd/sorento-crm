@@ -727,9 +727,11 @@ export function useLeads(params: LeadListParams) {
 export function useFetchLeadOptions() {
   return React.useCallback(async (query: string) => {
     const result = await listLeads({ query: query || undefined, outcome: ['open'], limit: 20 });
+    // Title first, code as the second line: no " · " joins (owner rule, 13 Oct).
     return result.data.map((lead) => ({
       value: lead.id,
-      label: `${lead.lead_code} · ${lead.title}`,
+      label: lead.title,
+      description: lead.lead_code,
     }));
   }, []);
 }

@@ -26,7 +26,7 @@ export default async function ProjectDetailPage({
           title="Project"
           crumbs={projectCrumbs(projectId)}
           actions={
-            <BackToList listPath="/project-sales/pipeline" label="Back to pipeline" />
+            <BackToList listPath="/project-sales/pipeline" label="Back to projects" />
           }
         />
         <ProjectDetailClient projectId={projectId} />
