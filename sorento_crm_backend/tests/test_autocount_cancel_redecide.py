@@ -228,3 +228,88 @@ def test_a_guess_on_the_wrong_line_counts_as_a_change(env):
     summary = _run(env, dry_run=False)
     assert (summary["changed"], summary["moves"]) == (1, {"matched:item -> matched:item": 1})
     assert _cancel_lines(env, 950001)[951001].sales_order_line_id == lines[5001]
+
+
+def test_keyed_lines_settle_before_a_key_less_batch_decides_their_group(env, monkeypatch):
+    """Re-review should-fix 1. 5001 (ordered 10, T 10) holds a keyed 6, 5002 (10, 4); a
+    key-less 14, stored first. Exact answer: T' = 4 + 4 = 8, not 14, so undetermined and
+    nothing is fully cancelled. Were the key-less batch decided before the keyed line settled,
+    it would see T' = 14 = C, call the group whole, fully cancel 5001 and retire its OI rows
+    (which stay retired) before the next batch corrected it."""
+    calls = _record_hooks(monkeypatch)
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=14, from_dtl=0)])])
+    _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=6, from_dtl=5001)])])
+    # Stale: neither line decided yet, nothing on the order lines. The key-less line is the
+    # older one, so created_at order alone would decide it first.
+    from datetime import datetime
+
+    for (doc_key, dtl), created in (((950001, 951001), datetime(2026, 10, 1, 9)),
+                                    ((950002, 952001), datetime(2026, 10, 1, 10))):
+        stored = _cancel_lines(env, doc_key)[dtl]
+        stored.match_status, stored.match_reason = "waiting", "order_not_found"
+        stored.sales_order_line_id, stored.candidate_line_ids = None, None
+        stored.created_at = created
+        env.db.commit()
+    for line_id in lines.values():
+        row = _so_line(env, line_id)
+        row.qty_cancelled, row.cancelled_by_cancel_doc = 0, False
+        row.line_status = "closed" if row.qty_delivered >= row.qty_ordered else "open"
+        env.db.commit()
+    summary = _run(env, dry_run=False, batch=1)
+    assert summary["newly_cancelled"] == 0
+    assert all(not d.newly_cancelled for d in calls)
+    assert _cancel_lines(env, 950001)[951001].match_reason == "undetermined"
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("6")
+    assert _so_line(env, lines[5001]).line_status == "closed"
+
+
+class _KeepOpen:
+    """`main()` closes its session; the fixture's must stay open."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+    def close(self):
+        pass
+
+
+def _main(env, monkeypatch, summary, *argv):
+    import app.services.audit_service as audit_service
+    import app.services.project_order_inquiry_service as oi_service
+    import scripts.autocount_cancel_redecide as script
+
+    registered = []
+    monkeypatch.setattr(audit_service, "register_audit_listeners",
+                        lambda: registered.append("audit"))
+    monkeypatch.setattr(oi_service, "register_order_inquiry_post_commit_dispatch",
+                        lambda: registered.append("oi_dispatch"))
+    monkeypatch.setattr(script, "SessionLocal", lambda: _KeepOpen(env.db))
+    monkeypatch.setattr(script, "run", lambda db, company_id, dry_run: summary)
+    monkeypatch.setattr("sys.argv", ["autocount_cancel_redecide.py", "--company",
+                                     env.company_code, *argv])
+    assert script.main() == 0
+    return registered
+
+
+_QUIET = {"lines": 3, "changed": 0, "moves": {}, "newly_cancelled": 0, "plan_moves": 0}
+
+
+def test_main_registers_the_audit_and_oi_dispatch_listeners(env, monkeypatch, capsys):
+    """Re-review should-fix 2: the listeners the API registers at startup."""
+    assert _main(env, monkeypatch, dict(_QUIET), "--apply") == ["audit", "oi_dispatch"]
+    assert "mode: APPLIED" in capsys.readouterr().out
+
+
+def test_the_dry_run_hints_apply_whenever_any_count_would_move(env, monkeypatch, capsys):
+    """Re-review should-fix 2: changed 0 but a line would be newly cancelled, or a planned qty
+    would move, still says to re-run with --apply; all zero says nothing."""
+    for key in ("changed", "newly_cancelled", "plan_moves"):
+        _main(env, monkeypatch, dict(_QUIET, **{key: 1}))
+        assert "Re-run with --apply" in capsys.readouterr().out, key
+    _main(env, monkeypatch, dict(_QUIET))
+    assert "Re-run with --apply" not in capsys.readouterr().out
