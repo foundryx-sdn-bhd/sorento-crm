@@ -46,10 +46,13 @@ export function InformantFieldset({
   value,
   onChange,
   idPrefix = 'informant',
+  showTitle = true,
 }: {
   value: InformantDraft;
   onChange: (next: InformantDraft) => void;
   idPrefix?: string;
+  /** Off where a stepper already names the step, so the title is not printed twice. */
+  showTitle?: boolean;
 }) {
   const parties = useProjectParties({ limit: 200 });
   const partyOptions = (parties.data?.data ?? []).map((party) => ({
@@ -62,7 +65,7 @@ export function InformantFieldset({
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
-      <p className="text-sm font-medium">Who told us</p>
+      {showTitle && <p className="text-sm font-medium">Who told us</p>}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">

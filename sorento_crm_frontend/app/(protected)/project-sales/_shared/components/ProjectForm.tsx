@@ -71,8 +71,6 @@ export function ProjectForm(props: ProjectFormProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const canManageOwner = useHasPermission(OWNER_MANAGE_PERMISSION);
-  // Creating a lead is its own grant; without it the picker offers only existing leads.
-  const canCreateLead = useHasPermission('projects.projects.create');
 
   const register = useRegisterProject();
   const update = useUpdateProject(project?.id ?? '');
@@ -576,14 +574,12 @@ export function ProjectForm(props: ProjectFormProps) {
                 clearable
                 placeholder="Search leads by title or code"
                 emptyMessage="No open leads match"
-                createOption={
-                  canCreateLead
-                    ? {
-                        label: (query) => <span>Create lead &ldquo;{query}&rdquo;</span>,
-                        onCreate: setCreatingLeadTitle,
-                      }
-                    : undefined
-                }
+                // Ungated, like the Leads page's own Create lead: the server decides who may
+                // create one (projects.projects.create, or an admin role).
+                createOption={{
+                  label: (query) => <span>Create lead &ldquo;{query}&rdquo;</span>,
+                  onCreate: setCreatingLeadTitle,
+                }}
               />
             </div>
           </div>

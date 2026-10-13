@@ -204,7 +204,7 @@ export function LeadWizardDialog({
             )}
 
             {step === 'informant' && (
-              <InformantFieldset value={informant} onChange={setInformant} />
+              <InformantFieldset value={informant} onChange={setInformant} showTitle={false} />
             )}
 
             {step === 'detail' && (

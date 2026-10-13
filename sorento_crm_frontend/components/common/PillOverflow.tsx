@@ -93,6 +93,7 @@ export function PillOverflow({
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const pillRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
+  const overflowRef = React.useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = React.useState(false);
   const [visibleCount, setVisibleCount] = React.useState(items.length);
 
@@ -116,6 +117,15 @@ export function PillOverflow({
         count += 1;
       } else {
         break;
+      }
+    }
+    // Something folds, so "+N" needs room on the same line: drop pills from the end until it
+    // fits, but never pill 0 (its own width is never given up, per the rule above).
+    if (count < pillWidths.length) {
+      const overflowWidth = overflowRef.current?.offsetWidth ?? 0;
+      while (count > 1 && used + GAP_PX + overflowWidth > width) {
+        count -= 1;
+        used -= GAP_PX + pillWidths[count];
       }
     }
     setVisibleCount(count);
@@ -181,6 +191,14 @@ export function PillOverflow({
             }}
           />
         ))}
+        {/* The widest "+N" this row can show, so the fit above can leave room for it. */}
+        <Pill
+          label={`+${items.length}`}
+          tone="neutral"
+          measureRef={(el) => {
+            overflowRef.current = el;
+          }}
+        />
       </div>
 
       <Popover open={open} onOpenChange={setOpen}>

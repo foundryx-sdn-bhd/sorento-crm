@@ -164,6 +164,9 @@ describe('LeadWizardDialog', () => {
     next();
 
     expect(await screen.findByLabelText('Their reference')).toBeInTheDocument();
+    // The stepper names the step; the fieldset does not print it a second time.
+    expect(screen.getAllByText('Who told us')).toHaveLength(2); // sr-only circle + label
+
     expect(screen.getByLabelText('Contact name')).toBeInTheDocument();
     expect(screen.getByLabelText('Search firms')).toBeInTheDocument();
     // The buyer is nowhere near this step.
