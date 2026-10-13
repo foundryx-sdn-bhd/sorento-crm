@@ -350,11 +350,11 @@ export default function AIUsagePage() {
                 <p className="text-sm text-muted-foreground">No user activity yet.</p>
               ) : (
                 <ScrollArea>
-                  <table className="w-auto min-w-full text-sm">
+                  <table className="w-auto min-w-[480px] text-sm sm:min-w-full">
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
-                        <th className="py-2 text-left font-medium">#</th>
-                        <th className="py-2 text-left font-medium">Name</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">#</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Name</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Messages</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
@@ -363,8 +363,8 @@ export default function AIUsagePage() {
                     <tbody>
                       {(topUsersQuery.data || []).map((u, i) => (
                         <tr key={u.user_id} className="border-b last:border-0">
-                          <td className="py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="py-2">{u.name || u.user_id}</td>
+                          <td className="py-2 pe-3 text-muted-foreground">{i + 1}</td>
+                          <td className="whitespace-nowrap py-2 pe-3">{u.name || u.user_id}</td>
                           <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.messages)}</td>
                           <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.tokens)}</td>
                           <td
@@ -399,12 +399,12 @@ export default function AIUsagePage() {
                 </p>
               ) : (
                 <ScrollArea>
-                  <table className="w-auto min-w-full text-sm" data-testid="ai-usage-top-contacts">
+                  <table className="w-auto min-w-[560px] text-sm sm:min-w-full" data-testid="ai-usage-top-contacts">
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
-                        <th className="py-2 text-left font-medium">#</th>
-                        <th className="py-2 text-left font-medium">Phone</th>
-                        <th className="py-2 text-left font-medium">Name</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">#</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Phone</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Name</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Calls</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
                         <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
@@ -413,9 +413,9 @@ export default function AIUsagePage() {
                     <tbody>
                       {(topContactsQuery.data || []).map((c, i) => (
                         <tr key={c.contact_id} className="border-b last:border-0">
-                          <td className="py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="py-2 font-mono text-xs">{c.phone_number || '-'}</td>
-                          <td className="py-2">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
+                          <td className="py-2 pe-3 text-muted-foreground">{i + 1}</td>
+                          <td className="whitespace-nowrap py-2 pe-3 font-mono text-xs">{c.phone_number || '-'}</td>
+                          <td className="whitespace-nowrap py-2 pe-3">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
                           <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.messages)}</td>
                           <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.tokens)}</td>
                           <td

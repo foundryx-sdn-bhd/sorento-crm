@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateModelPrice, useUpdateModelPrice } from '../../hooks/useModelPrices';
+import { formatPrice } from '../../lib/formatUsd';
 import type { ModelPrice, ModelPriceInput } from '../../services/modelPriceService';
 
 interface Draft {
@@ -33,9 +34,9 @@ function toDraft(price: ModelPrice | null, lockedModel?: string | null): Draft {
   if (price) {
     return {
       model: price.model,
-      input: String(price.input_usd_per_1m),
-      cached: price.cached_input_usd_per_1m == null ? '' : String(price.cached_input_usd_per_1m),
-      output: String(price.output_usd_per_1m),
+      input: formatPrice(price.input_usd_per_1m),
+      cached: price.cached_input_usd_per_1m == null ? '' : formatPrice(price.cached_input_usd_per_1m),
+      output: formatPrice(price.output_usd_per_1m),
       note: price.note ?? '',
     };
   }

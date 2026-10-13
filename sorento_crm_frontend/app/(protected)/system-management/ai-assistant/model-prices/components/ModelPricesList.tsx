@@ -188,7 +188,7 @@ export default function ModelPricesList() {
               }
             />
           </CardHeader>
-          <CardTable>
+          <CardTable className="relative">
             <DataGridTable />
           </CardTable>
         </Card>

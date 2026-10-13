@@ -50,7 +50,7 @@ export default function UnpricedModelsList() {
               </p>
             </div>
           ) : (
-            <div className="max-w-full overflow-x-auto">
+            <div className="relative max-w-full overflow-x-auto">
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
                   <tr className="border-b text-xs text-muted-foreground">
