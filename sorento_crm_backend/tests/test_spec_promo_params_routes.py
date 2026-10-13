@@ -1041,10 +1041,9 @@ def test_a_ranged_size_miss_states_no_single_size(api, db):
 
 @pytest.mark.parametrize("path", ["/api/v1/inventory/stock/balance"])
 def test_every_spec_route_states_the_size_asked(api, db, path, monkeypatch):
-    """Reviewer S2: the stock and promotion routes carry `spec_size_asked` too."""
+    """Reviewer S2: the stock route carries `spec_size_asked` too."""
     monkeypatch.setattr(
-        UserPermissionService, "get_user_permission_slugs",
-        lambda self, uid: {"marketing.promotion_products.view", "inventory.stock.view"},
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"inventory.stock.view"}
     )
     prod = _g(db, "SR", dim_length=150)
     wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
@@ -1074,6 +1073,27 @@ def test_the_promotions_list_keeps_promotions_holding_the_size_on_any_axis(api, 
     )
     assert resp.status_code == 200, resp.text
     assert {row["id"] for row in resp.json()["data"]} == keep, resp.json()
+
+
+def test_the_promotions_list_never_matches_a_size_on_a_hidden_axis(api, db, monkeypatch):
+    """Reviewer B1 (4b3e493d): the contact's hidden spec keys never decide which promotions a size
+    keeps, as on the product and stock routes. dim_width is hidden; the only 600 is a width."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotions.view"}
+    )
+    contact = _hide_dim_width_contact(db)
+    on_width = _g(db, "PHW", dim_width=600)
+    _promo(db, on_width, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    db.commit()
+    resp = api.get(
+        "/api/v1/marketing/promotions/",
+        params={
+            "serving_policy": "true", "limit": 50, "contact_id": contact.id, "space_id": "364817",
+            **_constraints(GRATING, {"key": "size", "op": "eq", "value": 600}),
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"] == [], resp.json()
 
 
 def test_the_promotions_list_rejects_an_unknown_spec_key(api, db, monkeypatch):
