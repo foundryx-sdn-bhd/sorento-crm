@@ -1,9 +1,13 @@
 """Which brands a WhatsApp contact may see: the one reader of `respond_contacts.brand_ids`.
 
 NULL or an empty array means every brand (unscoped, the answer is `None`). A non-empty list
-is a strict allow-list: a product whose brand is not in it, or has no brand at all, is out
-of scope (CONTACT-BRAND-SCOPE Q1). Core code: it never imports the chatbot package
-(tests/chatbot/test_import_boundary.py).
+is a strict allow-list APPLIED PER COMPANY (BRAND-SCOPE-PER-COMPANY, owner ruling 6 Oct 2026):
+it restricts only the products of a company that owns at least one brand in the list; a
+product of any other company passes untouched (Mocha has no brand rows, so a dual Sorento +
+Mocha contact scoped to the Sorento brands sees every Mocha product). Within a restricted
+company a product whose brand is not in the list, or has no brand at all, is out of scope
+(CONTACT-BRAND-SCOPE Q1). `brand_predicate` is the one place the rule is spelled. Core code:
+it never imports the chatbot package (tests/chatbot/test_import_boundary.py).
 
 `contact_id` is the INTERNAL `respond_contacts.id`; a Respond.io id resolves through
 `field_access.resolve_contact_with_null_workspace_fallback` first (as
@@ -47,9 +51,52 @@ def contact_brand_scope(db: Session, contact_id: str, space_id: Optional[str] = 
     return frozenset(str(i) for i in ids)
 
 
-def brand_predicate(scope: frozenset[str], brand_col):
-    """`brand_col IN scope`; a NULL brand never matches (Q1)."""
-    return brand_col.in_(sorted(scope))
+def scoped_brand_companies_select(scope: frozenset[str]):
+    """Core `SELECT company_id FROM brands WHERE id IN scope`: the companies the scope restricts.
+
+    The Core table, not the ORM entity, so the session's company criterion never applies (the
+    stored list is the truth whatever the viewer may see) and `correlate(None)` so a statement
+    that joins `brands` itself cannot capture it."""
+    from sqlalchemy import select
+
+    from app.models.product import Brand
+
+    brands = Brand.__table__
+    return select(brands.c.company_id).where(brands.c.id.in_(sorted(scope))).correlate(None)
+
+
+def brand_predicate(scope: frozenset[str], brand_col, company_col):
+    """The per-company rule for a product row given its brand and company columns (ORM
+    attributes or Core columns alike).
+
+    `brand IN scope OR (EXISTS restricted AND company NOT IN restricted)`, with `restricted` =
+    `scoped_brand_companies_select(scope)`. A NULL brand never matches the IN (Q1), so inside a
+    restricted company it is out. The EXISTS keeps a scope nothing carries (`NO_BRAND_ID`, or a
+    list of only deleted brand ids) fail-closed: it restricts no company, so nothing passes."""
+    from sqlalchemy import and_, exists, or_
+
+    restricted = scoped_brand_companies_select(scope)
+    return or_(
+        brand_col.in_(sorted(scope)),
+        and_(exists(restricted), company_col.notin_(restricted)),
+    )
+
+
+def scoped_brand_companies(db: Session, scope: frozenset[str]) -> frozenset[str]:
+    """The Python twin of `scoped_brand_companies_select` for the output guard, read with the
+    company scope OFF (a Mocha-only contact cannot see the Sorento brand row it is scoped to)."""
+    from app.models.base import company_scope
+
+    with company_scope(db, None):
+        rows = db.execute(scoped_brand_companies_select(scope)).all()
+    return frozenset(str(cid) for (cid,) in rows if cid)
+
+
+def _product_out_of_scope(scope: frozenset[str], restricted: frozenset[str], brand_id, company_id) -> bool:
+    """`brand_predicate` evaluated in Python for one product row (the guard helpers)."""
+    if brand_id is not None and str(brand_id) in scope:
+        return False
+    return not restricted or str(company_id) in restricted
 
 
 #: Tools that return money with no product dimension (project and quotation figures), so a
@@ -79,7 +126,13 @@ def _brand_scope_off(db: Session):
 
 
 def out_of_scope_product_codes(db: Session, scope: frozenset[str], codes: Iterable[str]) -> set[str]:
-    """The codes whose product brand is NULL or outside `scope`; unknown codes are left alone."""
+    """The codes whose product fails `brand_predicate` (a NULL or other brand inside a restricted
+    company); unknown codes and products of an unrestricted company are left alone.
+
+    A code is unique per company, not across companies (migration 305), so a dual contact can
+    see two rows for one code; the code is out only when EVERY row it can see fails (a Mocha
+    product sharing its code with an unbranded Sorento product stays in, as the session
+    criterion already shows it)."""
     from app.models.product import Product
 
     wanted = {str(c) for c in codes if c}
@@ -89,13 +142,19 @@ def out_of_scope_product_codes(db: Session, scope: frozenset[str], codes: Iterab
     from sqlalchemy import func
 
     lowered = {c.lower() for c in wanted}
+    restricted = scoped_brand_companies(db, scope)
     with _brand_scope_off(db):
         rows = (
-            db.query(Product.product_code, Product.brand_id)
+            db.query(Product.product_code, Product.brand_id, Product.company_id)
             .filter(func.lower(Product.product_code).in_(lowered))
             .all()
         )
-    bad = {code.lower() for code, brand_id in rows if brand_id is None or str(brand_id) not in scope}
+    verdicts: dict[str, bool] = {}
+    for code, brand_id, company_id in rows:
+        key = code.lower()
+        out = _product_out_of_scope(scope, restricted, brand_id, company_id)
+        verdicts[key] = verdicts.get(key, True) and out
+    bad = {key for key, out in verdicts.items() if out}
     return {c for c in wanted if c.lower() in bad}
 
 
@@ -111,9 +170,14 @@ def out_of_scope_product_ids(db: Session, scope: frozenset[str], ids: Iterable[s
             continue  # not a product id at all: nothing to look up
     if not wanted:
         return set()
+    restricted = scoped_brand_companies(db, scope)
     with _brand_scope_off(db):
-        rows = db.query(Product.id, Product.brand_id).filter(Product.id.in_(wanted)).all()
-    return {str(pid) for pid, brand_id in rows if brand_id is None or str(brand_id) not in scope}
+        rows = db.query(Product.id, Product.brand_id, Product.company_id).filter(Product.id.in_(wanted)).all()
+    return {
+        str(pid)
+        for pid, brand_id, company_id in rows
+        if _product_out_of_scope(scope, restricted, brand_id, company_id)
+    }
 
 
 def product_in_scope_clauses(db: Session, product_id_col) -> list:
@@ -122,7 +186,7 @@ def product_in_scope_clauses(db: Session, product_id_col) -> list:
     For SQL that sums or lists LINES without selecting `Product`, where the session criterion
     cannot see (Q3: totals come from in-scope lines). Empty list when the session is unscoped,
     so an unscoped query is unchanged. The subquery reads the Core table: no recursion into
-    the ORM criterion, and a NULL brand fails the IN (Q1)."""
+    the ORM criterion; the rule is `brand_predicate` (per company, NULL brand out, Q1)."""
     from sqlalchemy import select
 
     from app.models.base import get_brand_scope
@@ -132,7 +196,8 @@ def product_in_scope_clauses(db: Session, product_id_col) -> list:
     if not scope:
         return []
     products = Product.__table__
-    return [product_id_col.in_(select(products.c.id).where(products.c.brand_id.in_(sorted(scope))))]
+    in_scope = select(products.c.id).where(brand_predicate(scope, products.c.brand_id, products.c.company_id))
+    return [product_id_col.in_(in_scope)]
 
 
 # ---------------------------------------------------------------------------
@@ -225,26 +290,46 @@ def set_contact_brands(db: Session, contact_id: str, brand_ids: Iterable[str]) -
 def in_scope_product_codes(db: Session, codes: Iterable[str]) -> Optional[set[str]]:
     """The subset of `codes` whose product the session's brand scope allows; None when the
     session is unscoped. Codes that name no product are NOT in scope (a scoped contact is
-    shown only what it may see)."""
+    shown only what it may see).
+
+    A code here carries no company (complaint lines), and a code is unique per company only,
+    so it is in scope when at least one product the session can see under it passes
+    `brand_predicate` AND none fails: a code shared by a passing Mocha row and an out-of-scope
+    Sorento row stays out (fail closed; the complaint cannot say which product it meant)."""
     from app.models.base import get_brand_scope
     from app.models.product import Product
 
-    if not get_brand_scope(db):
+    scope = get_brand_scope(db)
+    if not scope:
         return None
     wanted = {str(c).strip() for c in codes if c and str(c).strip()}
     if not wanted:
         return set()
-    # The session criterion (brand IN scope) is active, so this ORM read returns only
-    # in-scope products.
-    return {str(c) for (c,) in db.query(Product.product_code).filter(Product.product_code.in_(wanted)).all()}
+    restricted = scoped_brand_companies(db, scope)
+    # Brand scope OFF so the failing twin of a shared code is seen; company scope stays ON,
+    # so only the products this contact can see take part.
+    with _brand_scope_off(db):
+        rows = (
+            db.query(Product.product_code, Product.brand_id, Product.company_id)
+            .filter(Product.product_code.in_(wanted))
+            .all()
+        )
+    verdicts: dict[str, bool] = {}
+    for code, brand_id, company_id in rows:
+        passes = not _product_out_of_scope(scope, restricted, brand_id, company_id)
+        verdicts[str(code)] = verdicts.get(str(code), True) and passes
+    return {code for code, passes in verdicts.items() if passes}
 
 
 def complaint_in_scope_clauses(db: Session) -> list:
     """Filters keeping complaints with at least one product line in the session's brand scope
-    (none when unscoped). Lines carry the product CODE, so the match is on the code."""
-    from sqlalchemy import exists, select
+    (none when unscoped). Lines carry the product CODE and complaints carry no company, so the
+    match is on the code, bounded the way `in_scope_product_codes` bounds it: a code is in
+    scope when a product the session's company scope can see under it passes
+    `brand_predicate` and none fails (a Core read, so the company bound is spelled here)."""
+    from sqlalchemy import exists, false, select
 
-    from app.models.base import get_brand_scope
+    from app.models.base import get_brand_scope, get_company_scope
     from app.models.complaints import Complaint, ComplaintProductLine
     from app.models.product import Product
 
@@ -252,7 +337,17 @@ def complaint_in_scope_clauses(db: Session) -> list:
     if not scope:
         return []
     products = Product.__table__
-    in_scope_codes = select(products.c.product_code).where(products.c.brand_id.in_(sorted(scope)))
+    companies = get_company_scope(db)
+    if companies is None:
+        visible = []
+    elif isinstance(companies, frozenset) and companies:
+        visible = [products.c.company_id.in_(sorted(companies))]
+    else:
+        visible = [false()]  # UNSET / empty: fail closed, as the company hook does
+    passing_ids = select(products.c.id).where(brand_predicate(scope, products.c.brand_id, products.c.company_id))
+    passing_codes = select(products.c.product_code).where(products.c.id.in_(passing_ids), *visible)
+    failing_codes = select(products.c.product_code).where(products.c.id.notin_(passing_ids), *visible)
+    in_scope_codes = passing_codes.where(products.c.product_code.notin_(failing_codes))
     return [
         exists().where(
             ComplaintProductLine.complaint_id == Complaint.id,

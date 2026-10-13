@@ -7,10 +7,13 @@ human codes/names. PO is read-only at M1 (create/confirm/receive land in M4).
 """
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.planning_change import PlanningChangeFromTo
 
 
 # --- sales orders -----------------------------------------------------------
@@ -31,6 +34,12 @@ class SalesOrderLineInquiry(BaseModel):
     # `/project-sales/order-inquiries/<inquiry_id>?row=<row_id>`.
     inquiry_id: Optional[str] = None
     row_id: Optional[str] = None
+    #: PR 1622 (mock v3): set only while purchasing's refusal of this line is open (CS has
+    #: not decided the line again); the Lines tab shows "Rejected" + who/when/why.
+    ack_state: Optional[str] = None
+    rejected_reason: Optional[str] = None
+    rejected_by_name: Optional[str] = None
+    rejected_at: Optional[datetime] = None
 
 
 class SalesOrderLineSupplyComponent(BaseModel):
@@ -115,13 +124,19 @@ class SalesOrderLinePlanningChange(BaseModel):
     this is the SO detail screen's own seam onto the same fact. `applied_state` is
     whatever the row's own is (pending, applied, failed, superseded), never filtered to
     one value: a superseded row is still worth reading if it is the newest one the batch
-    carries for this line. `result` is `None` until Apply has run.
+    carries for this line. `result` is `None` until Apply has run. The row also carries its
+    own `from`/`to` sides, the same shape as the board feed, so What changed can show the
+    Was and the Now.
     """
+
+    model_config = {"populate_by_name": True}
 
     id: str
     kind: str
     applied_state: str
     result: Optional[SalesOrderLinePlanningChangeResult] = None
+    from_: Optional[PlanningChangeFromTo] = Field(default=None, alias="from")
+    to: Optional[PlanningChangeFromTo] = None
 
 
 class SalesOrderLine(BaseModel):
@@ -296,6 +311,8 @@ class SalesOrder(BaseModel):
     #: count; `None` means the source never said (counted). Read-only - AutoCount owns it and
     #: `SalesOrderUpdate` has no such input.
     is_transferable: Optional[bool] = None
+    #: The customer's own PO number as AutoCount printed it (SO-PO-REF). Read-only.
+    po_ref: Optional[str] = None
     #: The purchase orders its lines wait on, each with whether the pairing is resolved.
     #: Present on the LIST (attached in one query per page); absent on a single read.
     linked_purchase_orders: List[LinkedPurchaseOrder] = Field(default_factory=list)

@@ -183,6 +183,29 @@ _STUBBABLE_SYMBOLS: tuple[tuple[str, str], ...] = (
 
 
 @pytest.fixture(autouse=True)
+def _no_background_thread_sync():
+    """A thread page read with a Respond client queues a delta sync on a real thread pool
+    (chat_thread_sync_service), which opens `SessionLocal` against the non-scratch database
+    and calls Respond. No test wants that: the seam runs nothing unless the test installs
+    its own runner. Reads `sys.modules` and never imports (same rule as the fixture below)."""
+    import sys
+
+    module = sys.modules.get("app.services.chat_thread_sync_service")
+    if module is not None and getattr(module, "_runner", None) is None:
+        module.set_runner(lambda _contact: None)
+        try:
+            yield
+        finally:
+            module.set_runner(None)
+        return
+    yield
+    # Imported during the test: cover the next test too by installing now.
+    module = sys.modules.get("app.services.chat_thread_sync_service")
+    if module is not None and getattr(module, "_runner", None) is None:
+        module.set_runner(lambda _contact: None)
+
+
+@pytest.fixture(autouse=True)
 def _restore_stubbed_module_symbols():
     """Restore module-level symbols a test rebound without undoing it.
 
@@ -208,6 +231,15 @@ def _restore_stubbed_module_symbols():
     for module, attr, original in originals:
         if getattr(module, attr, None) is not original:
             setattr(module, attr, original)
+
+
+# runtime_settings binds `SessionLocal` by name when it is first imported, and its readers
+# (the connector's `verify_token`, among others) import it lazily. A test that stubs
+# `app.database.SessionLocal` before that first import handed the stub to it: the read failed,
+# secrets failed closed, and the connector answered 503 "not configured" in place of 401 - only
+# on an xdist worker that had not imported it yet (release run 38287204810). The stub also
+# outlived the test's monkeypatch. Importing it here binds the real session once, for every test.
+import app.services.runtime_settings  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
 # Company-scope test default (multi-company isolation).
@@ -329,6 +361,13 @@ def _reset_global_state():
         _cache_clear()
     except Exception:
         pass
+    # The runtime settings snapshot (SETTINGS-IN-DB-SORENTO, 5s TTL): a value one test saved
+    # in its scratch schema must not answer the next test's sessionless read.
+    import sys
+
+    _runtime_settings = sys.modules.get("app.services.runtime_settings")
+    if _runtime_settings is not None:
+        _runtime_settings.clear_cache()
     try:
         # The 24h-window lookup keeps a short per-identifier TTL cache. Tests
         # reuse identifiers ("id:123", "900000008") across files with different
@@ -517,3 +556,18 @@ def no_live_llm(monkeypatch, request):
         if module is not None and getattr(module, "get_provider", None) is original:
             monkeypatch.setattr(module, "get_provider", _raise, raising=True)
     yield
+
+
+@pytest.fixture()
+def ladder_steps_on(monkeypatch):
+    """Turn the three planner steps the owner disabled on 12 Oct 2026 back on
+    (`app.services.scm.ladder_steps`, `PLAN-plan-four-options-12oct.md`).
+
+    For the tests that pin those steps' own behaviour: the code is kept behind the flags so
+    it can be switched back on, and these keep it honest. The four-option planner itself is
+    pinned in `test_plan_four_options.py`."""
+    from app.services.scm import ladder_steps
+
+    monkeypatch.setattr(ladder_steps, "USE_INCOMING", True)
+    monkeypatch.setattr(ladder_steps, "SUPPLY_BORROW", True)
+    monkeypatch.setattr(ladder_steps, "ORDER_BORROW_NAMES_DONOR", True)

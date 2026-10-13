@@ -13,9 +13,12 @@ Postgres via `tests/_pg_fixture.py::blank_session`, the fixture chain reused fro
 """
 from __future__ import annotations
 
+import pytest
+
 from .test_so_supply_confirmation import BASE, _core_line, _core_so, _project_line, _project_so, _stock, api
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_supply_sheet_s_options_carry_gives_qty_and_reason(api):
     """GET /sales-orders/{pso_id}/supply -> lines[].options[] carries both fields, the same
     shape the board's own `BoardLadderOption` already sends."""

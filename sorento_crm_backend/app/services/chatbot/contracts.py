@@ -65,11 +65,18 @@ class ParserOutputError(ValueError):
 UNDOMAINED_CHATBOT_TOOLS: tuple[str, ...] = (
     "crm_complaint_analytics",
     "crm_complaints_list",
+    # CHAT-FIND: the generic product find. No domain row lists it: `run_fetch` reaches it
+    # by override when the parse carries `find.filters` (PLAN-chat-generic-find-12oct 2.5).
+    "crm_find",
     "crm_lookup_resolve",
+    # MULTI-ASK-PLAN S3: read by the per-ask runner (`turn/sub_asks.py`) for the
+    # received / last receipt sub-asks, never a domain's answer tool.
+    "crm_procurement_grn_summary",
     "crm_project_detail",
     "crm_project_forecast",
     "crm_project_quotations_list",
     "crm_projects_list",
+    "crm_purchase_request_by_number",
     "crm_sla_conversation_event_logs_list",
     "crm_sla_conversation_tracking_dashboard",
     "crm_sla_conversation_tracking_list",
@@ -95,6 +102,7 @@ BrandScopeTreatment = Literal["filtered", "no_products"]
 # A key not named here is not looked up as a product.
 BRAND_SCOPE_PRODUCT_KEYS: dict[str, tuple[str, ...]] = {
     "crm_top_selling_report": ("code",),
+    "crm_report_ask": ("name",),
     "crm_order_analytics": ("group_key",),
     "crm_complaint_analytics": ("group_key",),
 }
@@ -104,6 +112,7 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_complaint_analytics": "filtered",
     "crm_complaint_close": "no_products",
     "crm_complaints_list": "filtered",
+    "crm_find": "filtered",
     "crm_forms_management_forms_list": "filtered",
     "crm_ideation_turn": "no_products",
     "crm_incoming_stock_by_product": "filtered",
@@ -132,14 +141,19 @@ BRAND_SCOPE_TREATMENT: dict[str, BrandScopeTreatment] = {
     "crm_procurement_po_last_cost_list": "filtered",
     "crm_procurement_po_placed_list": "filtered",
     "crm_procurement_spo_allocations_last_receipt_list": "filtered",
+    # MULTI-ASK-PLAN S3: per-product rows of the products the runner asked for.
+    "crm_procurement_grn_summary": "filtered",
     "crm_project_detail": "filtered",
     "crm_project_forecast": "filtered",
     "crm_project_quotations_list": "filtered",
     "crm_projects_list": "filtered",
     "crm_purchase_request_approve": "no_products",
+    # REF-PROBES: a PR's lines name products, so a brand-scoped contact's are guarded.
+    "crm_purchase_request_by_number": "filtered",
     "crm_purchase_request_reject": "no_products",
     "crm_resource_attachments_catalogue": "filtered",
     "crm_resource_attachments_current_stock_list": "filtered",
+    "crm_report_ask": "filtered",
     "crm_resource_attachments_list": "filtered",
     "crm_sales_analysis": "filtered",
     "crm_sales_report": "filtered",
@@ -271,6 +285,12 @@ ENTITY_HINTS = (
     "attachment",
     "form",
     "order",
+    # REF-PROBES: a reference number the asker NAMED the kind of ("PO 123", "SO 456").
+    "delivery_order",
+    "sales_order",
+    "customer_po_ref",
+    "purchase_order",
+    "purchase_request",
     "category",
     "brand",
     "attachment_type",
@@ -279,6 +299,34 @@ ENTITY_HINTS = (
     "specification",
 )
 EntityHint = Literal[ENTITY_HINTS]  # type: ignore[valid-type]
+
+# REF-PROBES: the resolver kinds a typed reference number may be. `order` is the unnamed
+# hint; the rest name a kind. Value = the kinds the word narrows to (None = any visible).
+REFERENCE_NARROW: dict[str, frozenset[str] | None] = {
+    "order": None,
+    "order_number": None,
+    "delivery_order": frozenset({"customer_order"}),
+    "customer_order": frozenset({"customer_order"}),
+    "sales_order": frozenset({"sales_order"}),
+    "customer_po_ref": frozenset({"customer_po_ref"}),
+    "purchase_order": frozenset({"purchase_order", "customer_po_ref"}),
+    "purchase_request": frozenset({"purchase_request"}),
+}
+
+_SO_GRANT = "sales_orders.outstanding"
+_PO_PLACED_GRANT = "purchase_orders.placed"
+
+
+def visible_reference_kinds(attributes: list[str] | None, is_staff: bool) -> list[str]:
+    """Reference kinds this asker may have probed: delivery orders always; sales orders and
+    customer PO refs with the SO grant; our PO / PR only for staff holding `placed`."""
+    granted = set(attributes or [])
+    kinds = ["customer_order"]
+    if _SO_GRANT in granted:
+        kinds += ["sales_order", "customer_po_ref"]
+    if is_staff and _PO_PLACED_GRANT in granted:
+        kinds += ["purchase_order", "purchase_request"]
+    return kinds
 
 # `selection_context` is written by compile-current-state and read by the head to decide
 # what an otherwise meaningless reply ("1", "dealer", "yes") refers to.
@@ -315,6 +363,8 @@ BRANCH_KINDS = (
     "demand_qty",
     "business_query",
     "media_denied",
+    # AI-ALLOWED-GATE: the CRM declined to answer this contact (blocked, or not in the CRM).
+    "ai_not_allowed",
 )
 BranchKind = Literal[BRANCH_KINDS]  # type: ignore[valid-type]
 
@@ -463,8 +513,18 @@ SALES_REPORT_GROUP_BYS: tuple[str, ...] = ("customer", "product", "delivery_orde
 # values that read sales figures under the `sales_orders.sales_report` reveal key (the
 # owner's access ruling, 26 Sep 2026: no new key). The engine's grant-before-roster
 # check reads this one tuple, so the asks cannot be gated differently. `sales_analysis`
-# (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key.
-SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis")
+# (PLAN-retail-sales-reports-26sep S1, #1269) is gated by the same key, and so is
+# `sales_ranking` (REPORT-ENGINE slice 1b, `crm_report_ask`).
+SALES_FIGURE_STATUSES: tuple[str, ...] = ("sales_report", "top_selling", "sales_analysis", "sales_ranking")
+
+# PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
+# jumble up with order"): a SALES_FIGURE_STATUSES ask is the `sales` domain
+# (`turn_runtime._report_status_means_order_domain` maps it). Every sales ask ran under
+# `order` until then, so the seams that treated a sales ask the order way (the customer
+# scope, the brand strip, the ranking's own reading) read this pair instead of `order`
+# alone. The order-only reports (outstanding, delivered, the DO list) stay `order`-only.
+SALES_DOMAIN = "sales"
+ORDER_OR_SALES_DOMAINS: frozenset[str] = frozenset({"order", SALES_DOMAIN})
 
 # --------------------------------------------------------------------------- #
 # Session state (R2: every key compile-current-state writes, nothing dropped)
@@ -663,6 +723,10 @@ class Focus(BaseModel):
     # LOWSTOCK-FILTER-ASK: the question `required_fields` left open, one turn long
     # (`turn/state.py::Focus.required_ask`).
     required_ask: dict[str, Any] | None = None
+    # REPORT-ENGINE: the last sales ranking's route args (`turn/state.py::Focus.sales_ranking_frame`).
+    sales_ranking_frame: dict[str, Any] | None = None
+    # LOWSTOCK-SEMANTIC: the last low stock report's filters (`turn/state.py::Focus.low_stock`).
+    low_stock: dict[str, Any] | None = None
     # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner ruling
     # 24 Sep 2026) for chatbot-stock-ask-v2 S3: the open tasks, carried INSIDE the
     # focus rather than on a session key of their own. Declared here because this

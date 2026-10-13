@@ -97,12 +97,14 @@ def test_the_presenter_stamps_each_answered_entry_from_the_tail_it_printed():
         assert stamped[entry["product_code"]] is line.endswith(REFER_TO_SALESMAN), line
 
 
-def test_pin_only_b3_incoming_answers_without_the_refer_line():
+def test_pin_only_the_lines_that_cannot_confirm_stock_refer():
     """Fails the day a tail changes: the set of refer branches is derived, so a reworded
-    tail moves a branch in or out of Customer asks, and that has to be a decision."""
+    tail moves a branch in or out of Customer asks, and that has to be a decision.
+    AVAIL-RENDER (owner, 5 Oct 2026, card Q3 = a): an in-stock line says got stock and
+    does not refer, so it joins B3 `incoming` outside Customer asks."""
     envelope = _present(_ANSWERED)
     refers = {e["branch"] for e in envelope["stock_availability"] if e["refers_to_salesman"]}
-    assert refers == {"too_big", "in_stock", "no_incoming"}
+    assert refers == {"too_big", "no_incoming"}
 
 
 def test_an_entry_still_owing_a_quantity_is_not_stamped():
@@ -302,14 +304,16 @@ def test_guard_the_sentence_is_spelled_only_in_the_constant():
 # --------------------------------------------------------------------------- #
 
 
-def test_a_live_stock_ask_logs_the_three_refer_lines_and_not_b3_incoming(session_factory, monkeypatch, stub_access):
+def test_a_live_stock_ask_logs_the_two_refer_lines_and_not_in_stock_or_b3_incoming(
+    session_factory, monkeypatch, stub_access
+):
     dealer = LiveDealer(session_factory, monkeypatch, stub_access, notify=False)
     out = dealer.ask_all_four()
     assert out.error is None, out.error
-    assert "ZZTSA4-INC x 150: \u274c ETA 19/10/2026." in out.reply["text"]
+    assert "ZZTSA4-INC x 150: \u274c No stock, ETA 19/10/2026." in out.reply["text"]
+    assert "ZZTSA4-INS x 50: \u2705 Got stock." in out.reply["text"]
     assert [(r.product_code, r.branch) for r in _rows(session_factory)] == [
         ("ZZTSA4-BIG", "too_big"),
-        ("ZZTSA4-INS", "in_stock"),
         ("ZZTSA4-NOI", "no_incoming"),
     ]
 

@@ -12,6 +12,15 @@
  * active impersonation takes precedence in its tab.
  */
 import { extractApiError } from '@/lib/api-client';
+import {
+  formCommentFormData,
+  toFormComment,
+  toFormCommentPostResult,
+} from '@/services/formCommentsService';
+import type {
+  FormComment,
+  FormCommentPostResult,
+} from '@/types/formComments';
 import type {
   PortalLandingKind,
   PortalSubmissionKind,
@@ -719,6 +728,81 @@ export async function uploadAttachment(
   return unwrap<PortalAttachment>(res, 'Upload failed.');
 }
 
+/** The submission's comment thread, oldest first (FORM-COMMENTS). */
+export async function fetchSubmissionComments(
+  kind: PortalLandingKind,
+  submissionId: string,
+): Promise<FormComment[]> {
+  const res = await portalFetch(
+    `/api/v1/public/portal/submissions/${kind}/${encodeURIComponent(submissionId)}/comments`,
+  );
+  const data = await unwrap<{ items?: Record<string, unknown>[] }>(
+    res,
+    'Failed to load comments.',
+  );
+  return (data.items ?? []).map(toFormComment);
+}
+
+/** Post the contact's comment (multipart: body + 0..5 files). */
+export async function postSubmissionComment(
+  kind: PortalLandingKind,
+  submissionId: string,
+  body: string,
+  files: File[] = [],
+  parentId?: string | null,
+): Promise<FormCommentPostResult> {
+  const res = await portalMultipartFetch(
+    `/api/v1/public/portal/submissions/${kind}/${encodeURIComponent(submissionId)}/comments`,
+    formCommentFormData(body, files, parentId),
+  );
+  return toFormCommentPostResult(
+    await unwrap<Record<string, unknown>>(res, 'Failed to post the comment.'),
+  );
+}
+
+function submissionCommentUrl(
+  kind: PortalLandingKind,
+  submissionId: string,
+  commentId: string,
+): string {
+  return `/api/v1/public/portal/submissions/${kind}/${encodeURIComponent(submissionId)}/comments/${encodeURIComponent(commentId)}`;
+}
+
+/** Edit the contact's own comment. No notification goes out for an edit. */
+export async function editSubmissionComment(
+  kind: PortalLandingKind,
+  submissionId: string,
+  commentId: string,
+  body: string,
+): Promise<void> {
+  const res = await portalFetch(
+    submissionCommentUrl(kind, submissionId, commentId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(await extractApiError(res, 'Failed to save the comment.'));
+}
+
+/** Delete the contact's own comment (a placeholder stays if it has replies). */
+export async function deleteSubmissionComment(
+  kind: PortalLandingKind,
+  submissionId: string,
+  commentId: string,
+): Promise<void> {
+  const res = await portalFetch(
+    submissionCommentUrl(kind, submissionId, commentId),
+    { method: 'DELETE' },
+  );
+  if (!res.ok && res.status !== 204)
+    throw new Error(
+      await extractApiError(res, 'Failed to delete the comment.'),
+    );
+}
+
 /**
  * Same-origin bytes route for a portal attachment, keyed on `attachment_id`
  * (NOT `link_id`): an attachment removed during a revision is unlinked but
@@ -1091,6 +1175,15 @@ export interface AIExtractedProductLine {
   match?: 'product' | 'product_set' | null;
   product_id?: string | null;
   product_set_id?: string | null;
+  // AI-EXTRACT-DYM: on a row with no match only - the resolver's "did you
+  // mean" candidates, best first. Never applied until the user picks one.
+  suggestions?: AIExtractedProductSuggestion[];
+}
+
+export interface AIExtractedProductSuggestion {
+  product_id: string;
+  product_code: string;
+  product_name?: string | null;
 }
 
 export interface AIExtractTokenUsage {

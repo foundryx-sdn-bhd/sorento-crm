@@ -381,6 +381,9 @@ export interface BorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. `false` on a
    * same-agent donor ranked above this line: offered, never auto-composed. */
   lower_ranked?: boolean;
@@ -512,7 +515,19 @@ export interface SupplyFailingLine {
   so_line_no?: number | null;
   item_code?: string | null;
   reason: string;
+  /**
+   * PLANNING-WHY: why a planning change row stopped a Confirm, and what the book did to it.
+   * Sent to an admin only; absent on every other refusal.
+   */
+  reason_code?: PlanningRefusalReason | null;
+  change?: string | null;
 }
+
+export type PlanningRefusalReason =
+  | 'not_decided'
+  | 'changed_again'
+  | 'already_confirmed'
+  | 'line_cancelled';
 
 /** `GET /project-sales/sales-orders/{pso_id}/supply`. */
 export interface SupplyProposal {
@@ -600,6 +615,8 @@ export interface ConfirmLine {
   buy_qty: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string | null;
+  /** PR 1622: what the planner typed, carried to purchasing's new order inquiry row. */
+  cs_note?: string | null;
   /**
    * Why this composition is not the engine's, in the planner's own words. Frozen with the
    * line: every other component carries the sentence of the RULE that produced it, and those
@@ -636,6 +653,20 @@ export interface ConfirmSupplyBody {
    * on every ordinary Confirm; may not travel alongside `batch_id`.
    */
   rejected_line_ids?: string[];
+  /** Whole lines CS transferred to Cancel SO (SO-CANCEL-LINE). May not travel with `batch_id`. */
+  cancelled_lines?: CancelledLineBody[];
+}
+
+/** One whole line transferred to Cancel SO, with the mandatory reason. */
+export interface CancelledLineBody {
+  project_line_id: string;
+  reason: string;
+}
+
+/** A line a press transferred to Cancel SO, as the server echoes it. */
+export interface CancelledLineEcho {
+  line_no?: number | null;
+  item_code?: string | null;
 }
 
 export interface ConfirmException {
@@ -679,6 +710,8 @@ export interface ConfirmResult {
   lines_confirmed?: ConfirmedLine[] | null;
   lines_carried?: number | null;
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
+  lines_cancelled?: CancelledLineEcho[] | null;
   /** How many of the confirmed lines were flagged as a suspected system problem (R10). */
   suspected_issues?: number | null;
   /**
@@ -691,6 +724,13 @@ export interface ConfirmResult {
   lines_fulfilled_skipped?: number | null;
   /** Buys confirmed as decided over goods that landed for their line (#1362). */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed as decided while short
+   * of free stock on its undelivered part. Only what exists is held; purchasing is told.
+   */
+  stock_short_notices?: SupplyFailingLine[] | null;
+  /** Lines this press could not write, left out so the rest of the order confirmed. */
+  lines_held_back?: SupplyFailingLine[] | null;
 }
 
 export interface FulfilmentPlanningListEnvelope {
@@ -1285,6 +1325,10 @@ export interface BoardContribution {
    * path, which is why it counts toward Confirm (N) while carrying no decision of its own.
    */
   cancelled?: boolean;
+  /** SO-CANCEL-LINE: set when CS transferred the line to Cancel SO. `cancelled_by` is a name. */
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancel_reason?: string | null;
   /** `sales_order_lines.priority`, when anybody stated one. Almost nobody does. */
   priority?: 'high' | 'medium' | 'low' | null;
   /**
@@ -1463,6 +1507,8 @@ export interface BoardLineOrderInquiry {
    */
   rejected_reason?: string | null;
   rejected_by_name?: string | null;
+  /** When purchasing refused it: naive UTC ISO, like every stamp on the wire. */
+  rejected_at?: string | null;
   /**
    * AC-RL-07 (`PLAN-oi-replan-received-links.md`): what backs the instruction - the
    * winning row's own documents, the SAME reader (`links_for_rows`) the OI worklist
@@ -1618,6 +1664,9 @@ export interface BoardBorrowCandidate {
   donor_agent_code?: string | null;
   /** Addressing only, never rendered: re-identifies the donor's own line at confirm. */
   donor_core_line_id?: string | null;
+  /** The donor's own date, posted back so an order borrow (switch ON) raises its order-back
+   * at it. Never rendered. */
+  donor_required_date?: string | null;
   /** Ranked below this line, so the ladder proposes it automatically. */
   lower_ranked?: boolean;
   /** The donor shares this line's own sales agent (section 8) - offered at any rank. */
@@ -1965,6 +2014,9 @@ export interface PlanningBoard {
    * no row.
    */
   pool_share_pct?: number;
+  /** "Borrow from another order" (BORROW-LOCATION-ONLY BR1): the Decide menu offers it
+   *  exactly when this is true. */
+  borrow_from_order_enabled?: boolean;
   dateBuckets: BoardDateBucket[];
   productRows: BoardProductRow[];
   cells: BoardCell[];
@@ -1984,7 +2036,7 @@ export interface PlanningBoard {
 }
 
 /** What CS did to one contributing row. The board's working draft, persisted nowhere yet. */
-export type BoardVerdict = 'approved' | 'amended' | 'rejected';
+export type BoardVerdict = 'approved' | 'amended' | 'rejected' | 'cancelled';
 
 /** One warehouse's share of an amended Reserve. Addressed by id, labelled by code. */
 export interface BoardReserveComponent {
@@ -2055,6 +2107,8 @@ export interface BoardDecision {
   buy_qty?: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string;
+  /** PR 1622: the planner's OWN words on this line (never a seeded engine sentence). */
+  cs_note?: string;
   /** The server's incoming cover, carried through unedited: it is dated supply, not a choice. */
   timely_spo_qty?: string;
   /**
@@ -2520,8 +2574,24 @@ export interface ConfirmManyOrderBody {
   /** This order's own half of `ConfirmSupplyBody.rejected_line_ids` (owner ruling 23 Sep
    * 2026). Same rule, same refusal alongside a batch. */
   rejected_line_ids?: string[];
+  /** This order's own half of `ConfirmSupplyBody.cancelled_lines` (SO-CANCEL-LINE). */
+  cancelled_lines?: CancelledLineBody[];
   /** Scope this order's press to exactly these mirror line ids (what a Preview showed). */
   only_line_ids?: string[];
+}
+
+/**
+ * One order of a Simulate confirm: a never-planned order is named by its CORE
+ * `sales_order_id` (no `pso_id`) and its lines carry `pending-adoption:<core line id>`; the
+ * server adopts it inside the simulation and swaps each placeholder for the new mirror line.
+ */
+export type SimulateOrderBody = Omit<ConfirmManyOrderBody, 'pso_id'> & {
+  pso_id?: string;
+  sales_order_id?: string;
+};
+
+export interface SimulateConfirmBody extends Omit<ConfirmManyBody, 'orders'> {
+  orders: SimulateOrderBody[];
 }
 
 export interface ConfirmManyBody {
@@ -2560,13 +2630,27 @@ export interface PreviewTransfer {
   to_location?: string | null;
 }
 
+/** One line the admin Simulate probe found failing on its own, with the server's raw reason. */
+export interface SimulatedLineError {
+  line_no?: number | null;
+  item_code?: string | null;
+  project_line_id: string;
+  error: string;
+}
+
 /** One order's outcome. `ok` decides which half is populated. */
 export interface ConfirmManyOrderResult {
+  /** Simulate confirm only: the simulation adopted this never-planned order first. */
+  adopted?: boolean | null;
+  /** Simulate confirm only: lines that fail when run alone. */
+  simulated_errors?: SimulatedLineError[] | null;
   /** True on a preview: nothing below was committed. */
   preview?: boolean | null;
   inquiry_rows?: PreviewInquiryRow[] | null;
   /** The covered lines this press took out of the confirmation. */
   lines_withdrawn?: ConfirmedLine[] | null;
+  /** The lines this press transferred to Cancel SO. */
+  lines_cancelled?: CancelledLineEcho[] | null;
   transfers?: PreviewTransfer[] | null;
   pso_id: string;
   ok: boolean;
@@ -2603,6 +2687,8 @@ export interface ConfirmManyOrderResult {
    * purchasing adjusts it off the Buy's order inquiry row.
    */
   landed_buy_notices?: SupplyFailingLine[] | null;
+  /** The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE). */
+  stock_short_notices?: SupplyFailingLine[] | null;
   error?: string | null;
   failing_lines?: SupplyFailingLine[] | null;
 }
@@ -2610,4 +2696,52 @@ export interface ConfirmManyOrderResult {
 /** `POST /project-sales/fulfilment-planning/confirm-all`. */
 export interface ConfirmManyResult {
   results: ConfirmManyOrderResult[];
+}
+
+
+/** One line of a History event. Which keys are set depends on the event kind. */
+export interface PlanningHistoryLine {
+  so_line_no?: number | null;
+  item_code?: string | null;
+  action?: 'ordered' | 'cancelled' | 'reduced' | 'order_back' | null;
+  qty?: number | null;
+  previous_qty?: number | null;
+  cause?: string | null;
+  change?: string | null;
+  reason_code?: string | null;
+  reason?: string | null;
+  kind?: string | null;
+  state?: string | null;
+  remark?: string | null;
+}
+
+export type PlanningHistoryKind =
+  | 'confirm_refused'
+  | 'revision_confirmed'
+  | 'oi_cancelled'
+  | 'autocount_update'
+  | 'email_sent';
+
+/** `GET /project-sales/fulfilment-planning/history` (admin only). Newest first. */
+export interface PlanningHistoryEvent {
+  id: string;
+  kind: PlanningHistoryKind;
+  at: string | null;
+  actor: string | null;
+  pso_id: string;
+  so_no: string;
+  lines: PlanningHistoryLine[];
+  preview?: boolean;
+  revision_no?: number;
+  reissued_unchanged?: number;
+  counts?: Record<string, number>;
+  subject?: string;
+  status?: string;
+  sent_at?: string | null;
+  recipients?: string[];
+  body_text?: string | null;
+}
+
+export interface PlanningHistory {
+  events: PlanningHistoryEvent[];
 }

@@ -13,7 +13,8 @@ gone (AC-SA316, `app/services/stock_verdict.py` deleted) - `_apply_stock_visibil
 (`app.services.stock_ask_branch.branch`, `too_big` / `in_stock` / `incoming` /
 `no_incoming`) per `StockAvailabilityEntry` (`branch`, `cap_unset`, `category_name`, `eta`,
 `packing_list`). What survives from the old suite: the location-scope guarantee (AC-SA302),
-the open-SO subtraction (AC-SA303), the per-code multi-company merge structure, the asked-
+the open-SO rule (AC-SA303, re-ruled by AVAIL-ONHAND-BASIS on 6 Oct 2026: the outstanding
+is IGNORED, the figure is on hand), the per-code multi-company merge structure, the asked-
 order guarantee, the `needs_product` flag, and the `detailed`/`compact` byte-identity check
 (AC-SA315) - all re-asserted against the new entry shape. AC-SA301 (the `branch()` truth
 table) lives in `tests/test_stock_ask_branch.py` and AC-SA304 to AC-SA309 (the R5 read
@@ -53,6 +54,15 @@ WRITE_PERM = "inventory.stock.edit"
 
 
 # --------------------------------------------------------------------- fixtures
+
+
+@pytest.fixture(autouse=True)
+def _fixed_today(monkeypatch):
+    """The dealer read only takes shipments due today or later (CHAT-FIND round 3); these tests
+    date their shipments in 2026, so today is pinned before every one of them."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 1, 1))
 
 
 @pytest.fixture
@@ -183,14 +193,14 @@ def _incoming_shipment(
     status="in_transit",
     company_id=DEFAULT_COMPANY_ID,
 ) -> InboundShipment:
-    """A qualifying-or-not R5 candidate. `eta_delay_date` is seeded as a poison value
-    (R5: never read) the same way `test_earliest_packing_list_shipment.py` does it."""
+    """A qualifying-or-not R5 candidate, with no revised date (R5 as amended 13 Oct 2026
+    reads `eta_delay_date` first; `test_earliest_packing_list_shipment.py` covers it)."""
     row = InboundShipment(
         id=str(uuid.uuid4()),
         shipment_number=unique_code("SHP")[:50],
         shipment_date=date(2026, 1, 1),
         estimated_arrival_date=eta,
-        eta_delay_date=date(2099, 1, 1),
+        eta_delay_date=None,
         attachment_id=attachment_id,
         shipment_status=status,
         company_id=company_id,
@@ -296,10 +306,11 @@ def test_available_counts_only_the_contacts_policy_locations(db):
     _assert_no_quantity_anywhere(result, {500, 100, 10})
 
 
-def test_open_so_in_policy_scope_is_subtracted(db):
-    """AC-SA303. On hand 100, open SO 60 (net 40): Q = 50 exceeds the net, so it is
-    answered short with the NET count (AVAIL-MODE-REPLIES rule 2, was "not in_stock");
-    Q = 40 exactly covers it and carries no count."""
+def test_open_so_in_policy_scope_is_not_subtracted(db):
+    """AC-SA303 as re-ruled (AVAIL-ONHAND-BASIS, owner 6 Oct 2026): on hand 100, open SO 60.
+    The figure is the 100 on hand, the 60 is ignored: Q = 50 is covered and carries no
+    count (was: net 40, "40 available"); Q = 150 is answered short with the ON HAND count,
+    100 (was: net 40). The open SO figure itself never appears."""
     brw = _wh(db, "ZZTBRW")
     p = product(db, company_id=DEFAULT_COMPANY_ID)
     _category_of(db, p).chatbot_max_qty = 200
@@ -309,17 +320,19 @@ def test_open_so_in_policy_scope_is_subtracted(db):
     _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
     db.flush()
 
-    not_covered = StockService(db).list_stock(
+    covered = StockService(db).list_stock(
         product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 50}
     )
-    assert _entry(not_covered, p.id)["branch"] == "in_stock"
-    assert _entry(not_covered, p.id)["available_qty"] == 40
-
-    covered = StockService(db).list_stock(
-        product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 40}
-    )
     assert _entry(covered, p.id)["branch"] == "in_stock"
+    assert _entry(covered, p.id)["available_qty"] is None
     _assert_no_quantity_anywhere(covered, {100, 60, 40})
+
+    short = StockService(db).list_stock(
+        product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 150}
+    )
+    assert _entry(short, p.id)["branch"] == "in_stock"
+    assert _entry(short, p.id)["available_qty"] == 100
+    _assert_no_quantity_anywhere(short, {60, 40})
 
 
 # =================================================================== AC-SA310, AC-SA317
@@ -355,8 +368,13 @@ def test_entry_shape_is_the_v2_shape_not_1118s(db):
         "eta",
         "packing_list",
         "available_qty",
+        "is_discontinued",
+        # PRODUCT-ALTERNATIVES (card Q4): the judged stored alternatives, empty here.
+        "alternatives",
     }
+    assert entry["alternatives"] == []
     assert entry["available_qty"] is None
+    assert entry["is_discontinued"] is False
     assert entry["needs_quantity"] is False
     assert entry["requested_qty"] == 10
     assert entry["branch"] == "in_stock"
@@ -423,6 +441,8 @@ def test_per_product_map_wins_scalar_fills(db):
         "eta": None,
         "packing_list": None,
         "available_qty": None,
+        "is_discontinued": False,
+        "alternatives": [],
     }
 
     with_scalar = StockService(db).list_stock(
@@ -642,7 +662,7 @@ def test_route_rejects_bad_requested_quantities_and_declares_the_new_keys(client
     from app.schemas.inventory import StockAvailabilityEntry
 
     declared = set(StockAvailabilityEntry.model_fields)
-    assert {"branch", "cap_unset", "category_name", "eta", "packing_list"} <= declared
+    assert {"branch", "cap_unset", "category_name", "eta", "packing_list", "is_discontinued"} <= declared
     assert not declared & {"verdict", "running_low", "disclaimer", "available"}
 
     brw = _wh(db, "ZZTBRW")
@@ -715,12 +735,13 @@ def test_route_answers_a_bad_product_or_warehouse_uuid_with_400_not_500(client, 
 
 
 def test_same_product_code_in_two_companies_is_one_entry_judged_on_the_sum(db):
-    """The ruling's own scenario, re-judged through `branch()`. Sorento holds 10 with 4
-    on open SO (net 6), Mocha holds 9 with 3 on open SO (net 6). Ask 10.
+    """The ruling's own scenario, re-judged through `branch()`. Sorento holds 10, Mocha
+    holds 9 (each with some open SO, which AVAIL-ONHAND-BASIS ignores). Ask 15.
 
-    Merged, the dealer is judged on 12 and the branch is `in_stock`. Unmerged, each
-    company's own 6 is short of 10 and BOTH entries would answer `no_incoming` - which
-    is the defect, twice over: two lines for one code, and both of them wrong."""
+    Merged, the dealer is judged on 19 on hand and the branch is `in_stock` with no
+    count. Unmerged, each company's own 10 or 9 is short of 15 and BOTH entries would
+    answer short - which is the defect, twice over: two lines for one code, and both
+    of them wrong."""
     seed_mocha(db)
     set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
     sorento_wh = _wh(db, unique_code("ZZTSRW")[:50])
@@ -762,18 +783,19 @@ def test_same_product_code_in_two_companies_is_one_entry_judged_on_the_sum(db):
     result = StockService(db).list_stock(
         product_ids=[sorento_p.id, mocha_p.id],
         contact_id=contact.id,
-        requested_quantities={sorento_p.id: 10},
+        requested_quantities={sorento_p.id: 15},
     )
 
     assert len(result["stock_availability"]) == 1, result["stock_availability"]
     entry = result["stock_availability"][0]
     assert entry["product_id"] == sorento_p.id
     assert entry["product_code"] == code
-    assert entry["requested_qty"] == 10
+    assert entry["requested_qty"] == 15
     assert entry["branch"] == "in_stock"
+    assert entry["available_qty"] is None
     # `pagination.total` still counts PRODUCTS (2 here) - the merge is about what the
     # dealer is told, not about how the page was walked - so 2 is not a forbidden number.
-    _assert_no_quantity_anywhere(result, {10, 9, 4, 3, 12, 6})
+    _assert_no_quantity_anywhere(result, {10, 9, 4, 3, 19, 12, 6})
 
 
 def test_a_named_id_answers_for_every_company_row_of_that_code(db):
@@ -1067,3 +1089,143 @@ def test_compact_with_no_product_named_still_pages_the_catalogue(db):
 
     assert [row["product_id"] for row in result["stock_summary"]] == [p.id]
     assert "needs_product" not in result["stock_visibility"]
+
+
+# ============================================================ AVAIL-RENDER (owner, 5 Oct 2026)
+# AC-AR01: the availability entry carries the product's `is_discontinued`, the flag the
+# compact/detailed marker already reads, so the dealer's line can print it too.
+
+
+def test_entry_carries_is_discontinued_answered_or_still_owed(db):
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    p.is_discontinued = True
+    _category_of(db, p).chatbot_max_qty = 100
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=100)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    answered = _entry(
+        StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 10}),
+        p.id,
+    )
+    assert answered["branch"] == "in_stock"
+    assert answered["is_discontinued"] is True
+
+    owed = _entry(StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id), p.id)
+    assert owed["needs_quantity"] is True
+    assert owed["is_discontinued"] is True
+
+
+def test_a_merged_code_is_discontinued_only_when_every_company_row_is(db):
+    """One code in two companies (the round 5 merge): a sister company still selling it
+    means the dealer can still be supplied, so the merged entry is not discontinued until
+    both rows are."""
+    seed_mocha(db)
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID, MOCHA_ID}))
+    sorento_wh = _wh(db, unique_code("ZZTDSS")[:50])
+    mocha_wh = warehouse(db, company_id=MOCHA_ID, code=unique_code("ZZTDSM")[:50])
+    code = unique_code("ZZTDSC")[:50]
+    sorento_p = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
+    mocha_p = product(db, company_id=MOCHA_ID, code=code)
+    _category_of(db, sorento_p).chatbot_max_qty = 50
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=sorento_p.id, warehouse_id=sorento_wh.id, on_hand=10)
+    stock(db, company_id=MOCHA_ID, product_id=mocha_p.id, warehouse_id=mocha_wh.id, on_hand=10)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[sorento_wh.id, mocha_wh.id], contact=contact)
+    sorento_p.is_discontinued = True
+    db.flush()
+
+    def told():
+        result = StockService(db).list_stock(
+            product_ids=[sorento_p.id, mocha_p.id],
+            contact_id=contact.id,
+            requested_quantities={sorento_p.id: 5},
+        )
+        assert len(result["stock_availability"]) == 1
+        return result["stock_availability"][0]["is_discontinued"]
+
+    assert told() is False
+    mocha_p.is_discontinued = True
+    db.flush()
+    assert told() is True
+
+
+def test_route_returns_is_discontinued_on_the_wire(client, db):
+    """`response_model` drops an undeclared field (LESSONS-LEARNT), so the flag is asserted
+    on the route's own body, not only on the service's dict."""
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    p.is_discontinued = True
+    _category_of(db, p).chatbot_max_qty = 100
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=10)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    res = client.get(
+        "/api/v1/inventory/stock/balance",
+        params={
+            "product_ids": p.id,
+            "contact_id": contact.id,
+            "space_id": "364817",
+            "requested_quantities": json.dumps({p.id: 5}),
+        },
+    )
+    assert res.status_code == 200, res.text
+    (entry,) = res.json()["stock_availability"]
+    assert entry["branch"] == "in_stock"
+    assert entry["is_discontinued"] is True
+
+
+def test_a_dealer_is_told_the_revised_date_of_a_delayed_shipment(db, monkeypatch):
+    """Crew answer (b) then (a), 13 Oct 2026: a shipment delayed but still coming is told with
+    its revised date, never as "no incoming" and never with its past original date."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    _category_of(db, p).chatbot_max_qty = 200
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=0)
+    shipment = _incoming_shipment(db, eta=date(2026, 9, 13), attachment_id=_attachment(db).id)
+    shipment.eta_delay_date = date(2026, 11, 5)
+    _incoming_line(db, shipment_id=shipment.id, product_id=p.id)
+    contact = _contact(db, packing_list_allowed=False)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    entry = _entry(StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 1}), p.id)
+    assert entry["branch"] == "incoming"
+    assert entry["eta"] == "05/11/2026"
+
+
+def test_a_dealer_is_never_told_a_past_eta(db, monkeypatch):
+    """Reviewer round 3 (K7 hardening), end to end: a shipment whose only date is past is no
+    incoming for the dealer; the next dated one answers."""
+    import app.services.incoming_stock_service as incoming
+
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    brw = _wh(db, "ZZTBRW")
+    p = product(db, company_id=DEFAULT_COMPANY_ID)
+    _category_of(db, p).chatbot_max_qty = 200
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=brw.id, on_hand=0)
+    past = _incoming_shipment(db, eta=date(2026, 9, 13), attachment_id=_attachment(db).id)
+    _incoming_line(db, shipment_id=past.id, product_id=p.id)
+    contact = _contact(db, packing_list_allowed=False)
+    _policy_row(db, mode="availability", warehouse_ids=[brw.id], contact=contact)
+    db.flush()
+
+    def _ask():
+        return _entry(
+            StockService(db).list_stock(product_ids=[p.id], contact_id=contact.id, requested_quantities={p.id: 1}),
+            p.id,
+        )
+
+    assert _ask()["branch"] == "no_incoming"
+    nxt = _incoming_shipment(db, eta=date(2026, 11, 20), attachment_id=_attachment(db).id)
+    _incoming_line(db, shipment_id=nxt.id, product_id=p.id)
+    db.flush()
+    entry = _ask()
+    assert (entry["branch"], entry["eta"]) == ("incoming", "20/11/2026")

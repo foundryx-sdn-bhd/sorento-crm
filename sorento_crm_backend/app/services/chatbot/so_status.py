@@ -19,13 +19,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.order import Customer, SalesOrder, SalesOrderLine
+from app.services.chatbot.contracts import SALES_DOMAIN, SALES_FIGURE_STATUSES
 from app.services.contact_brand_scope import product_in_scope_clauses
+from app.services.scm.po_ref import po_ref_key
 
 #: AutoCount's SO numbering ("SO422056"). A word of this shape that nothing placed is an SO ask.
 SO_NUMBER_RE = re.compile(r"^SO\d{4,}$")
@@ -104,6 +106,52 @@ def _in_scope_so_ids(db: Session, so_ids: list[str]) -> set[str] | None:
     }
 
 
+def _lines_by_so(db: Session, so_ids: list[Any]) -> dict[str, list[tuple[Any, Any]]]:
+    """`(qty_ordered, qty_delivered)` over each SO's live, in-brand-scope lines."""
+    out: dict[str, list[tuple[Any, Any]]] = {}
+    if not so_ids:
+        return out
+    for so_id, ordered, delivered in (
+        db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
+        .filter(
+            SalesOrderLine.sales_order_id.in_(so_ids),
+            func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
+            *product_in_scope_clauses(db, SalesOrderLine.product_id),
+        )
+        .all()
+    ):
+        out.setdefault(str(so_id), []).append((ordered, delivered))
+    return out
+
+
+def _scope_check(
+    db: Session, sos: list[SalesOrder], linked: Iterable[tuple[str, str, str]] | None
+) -> Callable[[SalesOrder], bool]:
+    """Is an SO inside the contact's links? `linked` None means no scope is enforced. In
+    scope: the SO's customer is a link, or it has no customer and its debtor code is the
+    code of a link IN THE SAME COMPANY."""
+    links = list(linked) if linked is not None else None
+    link_ids = {str(i) for i, _n, _c in links} if links is not None else set()
+    link_codes: set[tuple[str, str]] = set()
+    if link_ids and any(so.customer_id is None for so in sos):
+        link_codes = {
+            (str(company_id), code.strip().upper())
+            for company_id, code in db.query(Customer.company_id, Customer.customer_code)
+            .filter(Customer.id.in_(link_ids))
+            .all()
+            if code
+        }
+
+    def _in_scope(so: SalesOrder) -> bool:
+        if links is None:
+            return True
+        if so.customer_id:
+            return str(so.customer_id) in link_ids
+        return (str(so.company_id), (so.debtor_code or "").strip().upper()) in link_codes
+
+    return _in_scope
+
+
 def lookup(
     db: Session,
     words: Iterable[str],
@@ -124,7 +172,7 @@ def lookup(
     rows = (
         db.query(SalesOrder, Customer.customer_name)
         .outerjoin(Customer, Customer.id == SalesOrder.customer_id)
-        .filter(SalesOrder.so_number.in_(keys))
+        .filter(func.upper(func.regexp_replace(SalesOrder.so_number, r"[\s-]+", "", "g")).in_(keys))
         .all()
     )
     allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
@@ -132,38 +180,9 @@ def lookup(
         rows = [(so, name) for so, name in rows if str(so.id) in allowed]
     by_number: dict[str, list[tuple[SalesOrder, str | None]]] = {}
     for so, master_name in rows:
-        by_number.setdefault(so.so_number.upper(), []).append((so, master_name))
-    lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
-    if rows:
-        for so_id, ordered, delivered in (
-            db.query(SalesOrderLine.sales_order_id, SalesOrderLine.qty_ordered, SalesOrderLine.qty_delivered)
-            .filter(
-                SalesOrderLine.sales_order_id.in_([so.id for so, _ in rows]),
-                func.coalesce(SalesOrderLine.line_status, "") != "cancelled",
-                *product_in_scope_clauses(db, SalesOrderLine.product_id),
-            )
-            .all()
-        ):
-            lines_by_so.setdefault(str(so_id), []).append((ordered, delivered))
-
-    links = list(linked) if linked is not None else None
-    link_ids = {str(i) for i, _n, _c in links} if links is not None else set()
-    link_codes: set[tuple[str, str]] = set()
-    if link_ids and any(so.customer_id is None for so, _ in rows):
-        link_codes = {
-            (str(company_id), code.strip().upper())
-            for company_id, code in db.query(Customer.company_id, Customer.customer_code)
-            .filter(Customer.id.in_(link_ids))
-            .all()
-            if code
-        }
-
-    def _in_scope(so: SalesOrder) -> bool:
-        if links is None:
-            return True
-        if so.customer_id:
-            return str(so.customer_id) in link_ids
-        return (str(so.company_id), (so.debtor_code or "").strip().upper()) in link_codes
+        by_number.setdefault(so_key(so.so_number), []).append((so, master_name))
+    lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
+    _in_scope = _scope_check(db, [so for so, _ in rows], linked)
 
     seen: set[str] = set()
     for word in typed:
@@ -184,9 +203,80 @@ def lookup(
     return out
 
 
-def reply_text(result: SoLookup, *, refusal: str) -> str:
-    """Cards, then the scope refusal, then one miss line - each its own paragraph."""
-    parts = list(result.cards)
+@dataclass
+class PoRefLookup:
+    """SO-PO-REF: `cards` flat in the order asked; `groups` the cards per folded key, newest
+    order date first; `missing` the typed refs nothing in scope carries. Never `refused`:
+    an SO outside the contact's links is a silent miss."""
+
+    cards: list[str] = field(default_factory=list)
+    groups: dict[str, list[str]] = field(default_factory=dict)
+    missing: list[str] = field(default_factory=list)
+    refused: bool = False
+
+
+def lookup_po_refs(
+    db: Session,
+    refs: Iterable[str],
+    *,
+    linked: Iterable[tuple[str, str, str]] | None,
+) -> PoRefLookup:
+    """Answer a dealer/customer's PO number from `sales_orders.po_ref_key` (the same fold at
+    write and here, `scm.po_ref.po_ref_key`; exact, never partial), inside their own links.
+    `linked` is the contact's customer scope: none linked sees nothing. `linked=None` is no
+    scope enforced (staff), as in `lookup`."""
+    typed = [r.strip() for r in refs if isinstance(r, str) and po_ref_key(r)]
+    out = PoRefLookup()
+    if not typed:
+        return out
+    keys = {po_ref_key(r) for r in typed}
+    rows = (
+        db.query(SalesOrder, Customer.customer_name)
+        .outerjoin(Customer, Customer.id == SalesOrder.customer_id)
+        .filter(SalesOrder.po_ref_key.in_(keys))
+        .order_by(SalesOrder.order_date.desc().nullslast(), SalesOrder.so_number.desc())
+        .all()
+    )
+    allowed = _in_scope_so_ids(db, [so.id for so, _ in rows])
+    if allowed is not None:
+        rows = [(so, name) for so, name in rows if str(so.id) in allowed]
+    in_scope = _scope_check(db, [so for so, _ in rows], None if linked is None else list(linked))
+    rows = [(so, name) for so, name in rows if in_scope(so)]
+    lines_by_so = _lines_by_so(db, [so.id for so, _ in rows])
+    for so, master_name in rows:
+        out.groups.setdefault(so.po_ref_key, []).append(
+            _card(so, so.debtor_name or master_name, lines_by_so.get(str(so.id), []))
+        )
+    seen: set[str] = set()
+    for ref in typed:
+        key = po_ref_key(ref)
+        if key in seen:
+            continue
+        seen.add(key)
+        cards = out.groups.get(key) or []
+        if cards:
+            out.cards.extend(cards)
+        else:
+            out.missing.append(ref)
+    return out
+
+
+def po_ref_reply_text(result: PoRefLookup, ref: str) -> str:
+    """One SO: `PO ref: X` then its card. Several: `PO ref: X` / `Sales orders: N`, then a
+    card each. None: `I could not find PO ref X.` One fact per line, no separators."""
+    ref = ref.strip()
+    cards = result.groups.get(po_ref_key(ref) or "") or []
+    if not cards:
+        return f"I could not find PO ref {ref}."
+    head = f"PO ref: {ref}" + (f"\nSales orders: {len(cards)}" if len(cards) > 1 else "")
+    return "\n\n".join([head, *cards])
+
+
+def reply_text(result: SoLookup, *, refusal: str, kind_word: str | None = None) -> str:
+    """Cards, then the scope refusal, then one miss line - each its own paragraph.
+    `kind_word` ("Sales order") names the kind in each card's head when the resolver placed
+    the number (REF-PROBES): `*Sales order SO421624* - NAME`."""
+    parts = [c.replace("*", f"*{kind_word} ", 1) if kind_word and c.startswith("*") else c for c in result.cards]
     if result.refused and refusal:
         parts.append(refusal)
     if result.missing:
@@ -260,28 +350,43 @@ def customer_names(db: Session, customer_ids: Iterable[str]) -> dict[str, str]:
     return {cid: found[cid] for cid in ids if cid in found}
 
 
-def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any) -> str:
+SKIP_LIMIT = 20
+
+
+def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any, limit: int | None = None) -> str:
     """Q2 (a) newest first, every status; Q3 (a) the group named once, or on every row when
     the customers span groups. Only SOs whose customer is one of `names_by_id` (the turn's
     customers in scope), on the engine's company-scoped session."""
     from app.services.ledger_family import family_words, group_names
 
     header_names = family_words(list(names_by_id.values())) or "your account"
-    window = f"{_day(start)} to {_day(end)}"
-    rows = (
-        db.query(SalesOrder)
-        .filter(
-            SalesOrder.customer_id.in_(list(names_by_id)),
-            SalesOrder.order_date >= start,
-            SalesOrder.order_date <= end,
-        )
-        .order_by(SalesOrder.order_date.desc(), SalesOrder.so_number.desc())
-        .all()
-    )
+    if start is None and end is None:
+        window = "latest" if limit else ""
+    elif start is None:
+        window = f"up to {_day(end)}"
+    elif end is None:
+        window = f"from {_day(start)}"
+    else:
+        window = f"{_day(start)} to {_day(end)}"
+    query = db.query(SalesOrder).filter(SalesOrder.customer_id.in_(list(names_by_id)))
+    if start is not None:
+        query = query.filter(SalesOrder.order_date >= start)
+    if end is not None:
+        query = query.filter(SalesOrder.order_date <= end)
+    query = query.order_by(SalesOrder.order_date.desc(), SalesOrder.so_number.desc())
+    rows = query.all()
     allowed = _in_scope_so_ids(db, [so.id for so in rows])
     if allowed is not None:
         rows = [so for so in rows if str(so.id) in allowed]
+    if limit is not None:
+        rows = rows[:limit]  # after the scope filter, so hidden rows never eat the cap
     if not rows:
+        if start is None and end is None:
+            return f"No sales orders for {header_names}."
+        if start is None:
+            return f"No sales orders for {header_names} up to {_day(end)}."
+        if end is None:
+            return f"No sales orders for {header_names} from {_day(start)}."
         return f"No sales orders for {header_names} from {_day(start)} to {_day(end)}."
     lines_by_so: dict[str, list[tuple[Any, Any]]] = {}
     for so_id, ordered, delivered in (
@@ -295,7 +400,9 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any) ->
     ):
         lines_by_so.setdefault(str(so_id), []).append((ordered, delivered))
     several_groups = len(group_names(list(names_by_id.values()))) > 1
-    out = [f"Sales orders for {header_names}, {window}:"]
+    if window == "latest":
+        window = f"latest {len(rows)}"
+    out = [f"Sales orders for {header_names}, {window}:" if window else f"Sales orders for {header_names}:"]
     for so in rows:
         parts = [so.so_number, _day(so.order_date)]
         if several_groups:
@@ -319,7 +426,8 @@ def list_text(db: Session, names_by_id: dict[str, str], start: Any, end: Any) ->
 
 _WORDS_RE = re.compile(r"[0-9a-z]+")
 _UPPER_SO_RE = re.compile(r"(?<![0-9A-Za-z])SOs?(?![0-9A-Za-z])")
-_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}", re.IGNORECASE)
+# The trailing `(?:-\d+)?` is AutoCount's dashed number ("SO2610-0127").
+_TYPED_SO_NUMBER_RE = re.compile(r"(?<![0-9A-Za-z])SO[\s-]*\d{4,}(?:-\d+)?", re.IGNORECASE)
 
 
 def says_outstanding(text: str) -> bool:
@@ -429,6 +537,12 @@ def carried_status_verdict(
         "status": None if status in _CARRIED_REPORT_STATUSES else status,
         "order_status": None if order_status in _CARRIED_REPORT_STATUSES else order_status,
     }
+    # PROMPT-DYNAMIC R7: a carried `sales_report` was what made the verdict `sales`
+    # (`turn_runtime._report_status_means_order_domain`); with it gone the ask is `order`.
+    if verdict.get("domain_hint") == SALES_DOMAIN and not {cleared["status"], cleared["order_status"]} & set(
+        SALES_FIGURE_STATUSES
+    ):
+        cleared["domain_hint"] = "order"
     if pending_kind == "outstanding_detail":
         raw_positions = verdict.get("reference_positions")
         oqa = verdict.get("open_question_answer") if isinstance(verdict.get("open_question_answer"), dict) else {}
@@ -530,7 +644,9 @@ def so_list_verdict(verdict: dict[str, Any], text: str) -> tuple[dict[str, Any],
     the order domain, no status, whatever the parser read. Leaves a verdict the parser put
     in another domain (a product or a promotion question) alone."""
     domain = str(verdict.get("domain_hint") or "").strip()
-    if domain not in ("", "order") or not names_sales_orders(text):
+    # PROMPT-DYNAMIC R7: a `sales_report` the parser read off "all my sales orders" is
+    # remapped to `sales` before this runs; the words still make it the SO list.
+    if domain not in ("", "order", SALES_DOMAIN) or not names_sales_orders(text):
         return verdict, None
     fixed = {
         **verdict,

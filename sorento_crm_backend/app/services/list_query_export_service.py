@@ -179,6 +179,7 @@ class ListQueryExportService:
                     Order.order_number.ilike(f"%{req.quick_search}%"),
                     Order.customer.has(Customer.customer_name.ilike(f"%{req.quick_search}%")),
                     Order.customer.has(Customer.customer_code.ilike(f"%{req.quick_search}%")),
+                    Order.debtor_name.ilike(f"%{req.quick_search}%"),
                 )
             )
         if clause is not None:

@@ -251,9 +251,13 @@ def test_a_second_confirmation_covering_more_lines_supersedes_the_first(api):
     assert active.supersedes_id == superseded.id
 
 
-def test_an_unbalanced_line_inside_the_confirmation_still_rolls_the_whole_thing_back(api):
-    """AC-C02, as amended: atomic over the lines in THIS confirmation. The line nobody
-    chose is not what fails it, and the line that was chosen still takes the lot down."""
+def test_an_unbalanced_line_inside_the_confirmation_is_held_back_and_the_rest_confirms(api):
+    """AC-C02, as amended by the owner rule of 12 Oct 2026 (OI-CLOSED-LINE, #1580): one line
+    that cannot be written never refuses the whole order. The unbalanced line is held back by
+    name, the balanced line confirms, and the decision covers only that line.
+
+    #1580 restated this rule's siblings in `test_so_supply_confirmation.py` and missed this
+    one, which then read 200 against its old 422 on main."""
     client, world = api
     db = world.db
     order, line_1, line_2 = _two_line_order(world)
@@ -267,11 +271,31 @@ def test_an_unbalanced_line_inside_the_confirmation_still_rolls_the_whole_thing_
             ]
         },
     )
+    assert response.status_code == 200, response.text
+    assert [row["line_no"] for row in response.json()["lines_held_back"]] == [20]
+
+    db.expire_all()
+    decision = _decision(db, order)
+    assert decision is not None
+    assert {s["project_line_id"] for s in decision.line_snapshots} == {str(line_1.id)}
+
+
+def test_a_confirmation_whose_only_line_is_unbalanced_is_refused_and_writes_nothing(api):
+    """The half of AC-C02 the owner rule keeps: a press with nothing left to confirm is
+    refused with `failing_lines`, and nothing is written."""
+    client, world = api
+    db = world.db
+    order, _line_1, line_2 = _two_line_order(world)
+
+    response = client.post(
+        f"{BASE}/sales-orders/{order.id}/confirm",
+        json={"lines": [_line_payload(line_2.id, buy_qty="20")]},  # open for 30
+    )
     assert response.status_code == 422, response.text
     failing = response.json()["failing_lines"]
     assert [row["line_no"] for row in failing] == [20]
 
-    assert _decision(db, order) is None, "nothing may be written when a chosen line fails"
+    assert _decision(db, order) is None, "nothing may be written when every chosen line fails"
 
 
 def test_a_partial_decision_is_not_challenged_for_covering_fewer_lines(api):

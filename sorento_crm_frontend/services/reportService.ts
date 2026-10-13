@@ -91,6 +91,8 @@ export interface ReportColumn {
 
 export interface ReportCatalogColumn extends ReportColumn {
   tag: ReportColumnTag;
+  /** Values of the report's dataset param whose dataset lacks this column. */
+  unavailable_for?: string[];
 }
 
 /**
@@ -156,8 +158,8 @@ export interface ReportPivotLayout {
   variance_label?: string | null;
   /** Display label per ROW value when the row axis names its values ('01' -> 'JAN'). */
   row_value_labels?: Record<string, string> | null;
-  /** 'line': the screen draws this pivot as a line chart under the table. */
-  chart?: 'line' | null;
+  /** 'line' or 'bar': the screen draws this pivot as a chart under the table. */
+  chart?: 'line' | 'bar' | null;
   /** The screen prints whole ringgit (the workbook keeps the sen). */
   whole_units?: boolean;
   /** False when the column-totals row means nothing (years added to years). */
@@ -262,6 +264,11 @@ export interface ReportMeta {
   can_publish: boolean;
   /** The tab the screen opens on. */
   opens_on?: 'detail' | 'summary';
+  /** The select param that picks the row set; null/absent when the report reads one. */
+  dataset_param?: string | null;
+  /** Per value of `dataset_param`, the pivot rows column the screen switches to; null when
+   *  a switch leaves the rows alone. */
+  pivot_rows_by?: Record<string, string> | null;
 }
 
 export interface ReportExportResult {

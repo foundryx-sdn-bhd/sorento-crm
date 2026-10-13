@@ -1,6 +1,7 @@
 """The ONE seam every model call in a chatbot turn goes through: the semantic parser
-(`head/parser.parse`, and so its recall re-parse) and the clarifier
-(`lanes/casual.call_clarifier`). Nothing else in `app/services/chatbot` calls a provider.
+(`head/parser.parse`, and so its recall re-parse), the clarifier
+(`lanes/casual.call_clarifier`) and the nightly topic labeller (`analytics/labeller`).
+Nothing else in `app/services/chatbot` calls a provider.
 
 Owner console test of round 4 (26 Sep 2026, PR #1247, ruling 3): two turns failed with
 "Error code: 429 - Rate limit reached for gpt-5.4-mini ... tokens per min (TPM): Limit
@@ -24,10 +25,14 @@ backoff as a 429, and ends the same way.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import time
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
+
+from app.services.llm_provider import is_timeout  # noqa: F401 - re-exported, callers import it from here
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +55,39 @@ MIN_ATTEMPT_SECONDS = 1.0
 
 _RETRY_IN_RE = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.IGNORECASE)
 
+# CHAT-TURN-COST: the usage of each answered call inside a `capture_usage()` block. A
+# caller whose call returns only the content (the clarifier) bills the turn from here.
+_captured: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar("chatbot_llm_usage", default=None)
+
+
+@contextmanager
+def capture_usage() -> Iterator[list[dict]]:
+    """Collect `{provider, model, prompt_tokens, completion_tokens, total_tokens,
+    cached_tokens}` for every call `chat` answers inside the block."""
+    calls: list[dict] = []
+    token = _captured.set(calls)
+    try:
+        yield calls
+    finally:
+        _captured.reset(token)
+
+
+def _capture(provider: str, model: str, result: Any) -> None:
+    calls = _captured.get()
+    if calls is None:
+        return
+    calls.append(
+        {
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
+            "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
+            "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+            "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
+        }
+    )
+
+
 # The seams a test replaces, so no test sleeps or waits on a real clock.
 _sleep = time.sleep
 _monotonic = time.monotonic
@@ -62,22 +100,6 @@ class RateLimited(RuntimeError):
 class TimedOut(RateLimited):
     """The provider did not answer inside the call's time budget. A `RateLimited` on
     purpose: the dealer's reply is the same "busy, send that again" (see module doc)."""
-
-
-def is_timeout(exc: BaseException) -> bool:
-    """A request timeout, however the SDK spells it (`openai.APITimeoutError`,
-    `anthropic.APITimeoutError`, `httpx.TimeoutException`, or Gemini's RuntimeError
-    wrapping one). Walks the `from` chain because Gemini re-raises."""
-    seen = 0
-    current: BaseException | None = exc
-    while current is not None and seen < 5:
-        if isinstance(current, TimeoutError) or "Timeout" in type(current).__name__:
-            return True
-        # `__cause__` only (an explicit `raise ... from`): an unrelated error raised while
-        # a timeout was being handled is not a timeout.
-        current = current.__cause__
-        seen += 1
-    return False
 
 
 def is_rate_limited(exc: BaseException) -> bool:
@@ -115,15 +137,24 @@ def _server_wait(exc: BaseException) -> float | None:
     return value / 1000.0 if match.group(2).lower() == "ms" else value
 
 
-def chat(provider: str, api_key: str, model: str, messages: list[dict], **kwargs: Any):
+def chat(
+    provider: str,
+    api_key: str,
+    model: str,
+    messages: list[dict],
+    *,
+    deadline_seconds: float = CALL_DEADLINE_SECONDS,
+    **kwargs: Any,
+):
     """`get_provider(provider, api_key, model).chat(messages, model=model, **kwargs)`,
     with a rate limit waited out and a hard time budget. Raises `RateLimited` when a rate
     limit never clears, `TimedOut` when the budget runs out; any other error is raised as
-    it came, on the first attempt."""
+    it came, on the first attempt. `deadline_seconds` widens the budget only for a caller
+    no dealer is waiting on (the nightly topic labeller)."""
     from app.services.llm_provider import get_provider
 
     client = get_provider(provider, api_key, model)
-    deadline = _monotonic() + CALL_DEADLINE_SECONDS
+    deadline = _monotonic() + deadline_seconds
     waited = 0.0
     for attempt, backoff in enumerate((*BACKOFF_SECONDS, None), 1):
         remaining = deadline - _monotonic()
@@ -131,10 +162,12 @@ def chat(provider: str, api_key: str, model: str, messages: list[dict], **kwargs
             logger.error(
                 "chatbot llm: %s/%s out of time before attempt %s", provider, model, attempt
             )
-            raise TimedOut(f"no answer from {provider} within {CALL_DEADLINE_SECONDS:.0f}s")
+            raise TimedOut(f"no answer from {provider} within {deadline_seconds:.0f}s")
         timeout = min(float(kwargs.get("timeout") or ATTEMPT_TIMEOUT_SECONDS), remaining)
         try:
-            return client.chat(messages, model=model, **{**kwargs, "timeout": timeout})
+            result = client.chat(messages, model=model, **{**kwargs, "timeout": timeout})
+            _capture(provider, model, result)
+            return result
         except Exception as exc:  # noqa: BLE001 - inspected, then re-raised
             if is_timeout(exc):
                 # Not retried: a provider that hung for 20 s is not answering this turn,

@@ -1,0 +1,268 @@
+# Parser eval cases for RESOLVE-SEMANTIC-FALLBACK (PR #1511): a type / colour / brand word
+# beside a product code is ONE product entity whose `canonical_code` is the bare code
+# exactly as typed and whose `raw` is the whole typed phrase (owner ruling, card Q1 = a).
+#
+# Production turn, 6 Oct 2026 20:02 MYT: a 15-line stock check carried the line
+# "TAP SRTWT5608 x 5". The parser emitted raw "TAP SRTWT5608", canonical_code null, and
+# every resolver tier (exact / prefix / substring on product_code) missed, so the reply
+# said "I could not find TAP SRTWT5608" while SRTWT5608 exists. The chatbot already sends
+# `canonical_code` first (`resolve_gate._token_of`); this file grades that the parser
+# FILLS it. The rule is `CANONICAL_CODE_ADDENDUM` in `app/services/chatbot_parser_prompt.py`,
+# published unlabelled by `alembic/versions/chatbot_canonical_code.py`.
+#
+# `live_only: true` on every case: these grade the REAL parser LLM and run by hand, once
+# per prompt change, never in CI. Two ways to run them:
+#
+#   # against a backend, pinning the unpromoted version the migration published
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-06-canonical-code-type-word.yaml \
+#       --base-url http://127.0.0.1:8000 \
+#       --prompt-version <id of the chatbot_canonical_code row>
+#
+#   # directly against the provider, base text (expected red) and patched text (green)
+#   CHATBOT_LIVE_LLM=1 OPENAI_API_KEY=... venv/bin/python -m pytest \
+#       tests/chatbot/test_canonical_code_live_parser.py -q -s
+#
+# `expect.parser` objects grade only the keys they name (`_grade_parser`): every entity
+# below is pinned by raw, hint and canonical_code (and quantity where the line has one);
+# the entity LIST is graded whole (same length, same order), which is what pins "one line,
+# ONE entity, never a product plus a category".
+#
+# Codes: SRTWT5608 (the prod line), SRTWB8004 (the head-code retry's own example in
+# `entity_resolver.py`), SRTWC8066 (the #1506 family), SRTWC286-SH, M210-GM
+# (QUANTITY_ADDENDUM's own example), the spaced "Srt 364-hp" (prod #f763).
+
+contact: '900000008'
+cases:
+# ---- targets: a word beside the code (red on the current text) -----------------------
+- name: 'prod 20:02 - TAP SRTWT5608 x 5 is one product entity with the bare code'
+  live_only: true
+  cold: true
+  text: TAP SRTWT5608 x 5
+  expect:
+    parser:
+      entities:
+      - raw: TAP SRTWT5608
+        hint: product
+        canonical_code: SRTWT5608
+        quantity: 5
+
+- name: 'the whole stock check - every line carries its own canonical code and quantity'
+  live_only: true
+  cold: true
+  text: |-
+    stock check
+    TAP SRTWT5608 x 5
+    WC SRTWC8066-SS x 2
+    SRTWC286-SH x 1
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: TAP SRTWT5608
+        hint: product
+        canonical_code: SRTWT5608
+        quantity: 5
+      - raw: WC SRTWC8066-SS
+        hint: product
+        canonical_code: SRTWC8066-SS
+        quantity: 2
+      - raw: SRTWC286-SH
+        hint: product
+        canonical_code: SRTWC286-SH
+        quantity: 1
+
+- name: 'code first, type words after - SRTWB8004 BASIN TAP'
+  live_only: true
+  cold: true
+  text: SRTWB8004 BASIN TAP stock
+  expect:
+    parser:
+      entities:
+      - raw: SRTWB8004 BASIN TAP
+        hint: product
+        canonical_code: SRTWB8004
+
+- name: 'Malay type word - paip SRTWT5608 ada stok'
+  live_only: true
+  cold: true
+  text: paip SRTWT5608 ada stok?
+  expect:
+    parser:
+      entities:
+      - raw: paip SRTWT5608
+        hint: product
+        canonical_code: SRTWT5608
+
+- name: 'colour and type word, lower case kept - chrome tap srtwt5608'
+  live_only: true
+  cold: true
+  text: chrome tap srtwt5608 got stock?
+  expect:
+    parser:
+      entities:
+      - raw: chrome tap srtwt5608
+        hint: product
+        canonical_code: srtwt5608
+
+# ---- targets too: a bare code also carries canonical_code (the current text leaves it
+# null for a bare code; measured 0/3 on base, 3/3 on the addendum) -----------------------
+- name: 'a bare code is both raw and canonical_code'
+  live_only: true
+  cold: true
+  text: SRTWC286-SH stock
+  expect:
+    parser:
+      entities:
+      - raw: SRTWC286-SH
+        hint: product
+        canonical_code: SRTWC286-SH
+
+- name: 'QUANTITY rule kept - M210-GM x5 is raw M210-GM, canonical_code M210-GM, quantity 5'
+  live_only: true
+  cold: true
+  text: M210-GM x5
+  expect:
+    parser:
+      entities:
+      - raw: M210-GM
+        hint: product
+        canonical_code: M210-GM
+        quantity: 5
+
+- name: 'a spaced code is copied as typed, never joined (prod #f763)'
+  live_only: true
+  cold: true
+  text: Srt 364-hp x 1 stock available?
+  expect:
+    parser:
+      entities:
+      - raw: Srt 364-hp
+        hint: product
+        canonical_code: Srt 364-hp
+        quantity: 1
+
+- name: 'prod 20:02 - the owner''s whole 15-line stock check, one product entity per line, TAP line carries SRTWT5608'
+  live_only: true
+  cold: true
+  text: |-
+    SRTWT7408 x 5
+    SRTWT6808 x 5
+    SRTWT162 x 5
+    SRTWT8258-GM x 5
+    SRTWT8258-GM x 5
+    SRTWT8212 x 5
+    SRTWT6832-RG x 5
+    TAP SRTWT5608 x 5
+    SRTWT5608-FRG x 5
+    SRTWT5608-GM x 10
+    SRTWT6201 x 5
+    SRTWT8301-RG x 5
+    SRTWT8301-GMB x 5
+    SRTWT8303-RG x 5
+    SRTWT8303-GMB x 5
+
+    check stock
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - {raw: SRTWT7408, hint: product, canonical_code: SRTWT7408, quantity: 5}
+      - {raw: SRTWT6808, hint: product, canonical_code: SRTWT6808, quantity: 5}
+      - {raw: SRTWT162, hint: product, canonical_code: SRTWT162, quantity: 5}
+      - {raw: SRTWT8258-GM, hint: product, canonical_code: SRTWT8258-GM, quantity: 5}
+      - {raw: SRTWT8258-GM, hint: product, canonical_code: SRTWT8258-GM, quantity: 5}
+      - {raw: SRTWT8212, hint: product, canonical_code: SRTWT8212, quantity: 5}
+      - {raw: SRTWT6832-RG, hint: product, canonical_code: SRTWT6832-RG, quantity: 5}
+      - {raw: TAP SRTWT5608, hint: product, canonical_code: SRTWT5608, quantity: 5}
+      - {raw: SRTWT5608-FRG, hint: product, canonical_code: SRTWT5608-FRG, quantity: 5}
+      - {raw: SRTWT5608-GM, hint: product, canonical_code: SRTWT5608-GM, quantity: 10}
+      - {raw: SRTWT6201, hint: product, canonical_code: SRTWT6201, quantity: 5}
+      - {raw: SRTWT8301-RG, hint: product, canonical_code: SRTWT8301-RG, quantity: 5}
+      - {raw: SRTWT8301-GMB, hint: product, canonical_code: SRTWT8301-GMB, quantity: 5}
+      - {raw: SRTWT8303-RG, hint: product, canonical_code: SRTWT8303-RG, quantity: 5}
+      - {raw: SRTWT8303-GMB, hint: product, canonical_code: SRTWT8303-GMB, quantity: 5}
+
+- name: 'crew audit - basin SRTWB1086 x 2 is one product entity, canonical SRTWB1086, quantity 2'
+  live_only: true
+  cold: true
+  text: basin SRTWB1086 x 2
+  expect:
+    parser:
+      entities:
+      - raw: basin SRTWB1086
+        hint: product
+        canonical_code: SRTWB1086
+        quantity: 2
+
+- name: 'crew audit - a bare number typed as a product carries itself as canonical_code (8066)'
+  live_only: true
+  cold: true
+  text: 8066 stock ?
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: '8066'
+        hint: product
+        canonical_code: '8066'
+
+- name: 'crew audit - a nonsense code-shaped token is copied, never corrected or dropped'
+  live_only: true
+  cold: true
+  text: stock check XQZ9917V
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: XQZ9917V
+        hint: product
+        canonical_code: XQZ9917V
+
+- name: 'prod 21:14 - hi WC200-S got stock ? is one product entity, the family fragment copied as typed'
+  live_only: true
+  cold: true
+  text: hi WC200-S got stock ?
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: WC200-S
+        hint: product
+        canonical_code: WC200-S
+
+# ---- controls: unchanged behaviour, graded WITHOUT canonical_code (green on both) -------
+- name: 'control - bare SRTWT5608 x 5 is raw SRTWT5608, quantity 5, one entity'
+  live_only: true
+  cold: true
+  text: SRTWT5608 x 5
+  expect:
+    parser:
+      entities:
+      - raw: SRTWT5608
+        hint: product
+        quantity: 5
+
+- name: 'control - QUANTITY rule, the count is never in raw and the entity is one product'
+  live_only: true
+  cold: true
+  text: M210-GM x5
+  expect:
+    parser:
+      entities:
+      - raw: M210-GM
+        hint: product
+        quantity: 5
+
+- name: 'control - two bare codes in one line are two product entities, raw as typed'
+  live_only: true
+  cold: true
+  text: SRTWC286-SH and SRTWT5608 stock
+  expect:
+    parser:
+      domain_hint: inventory
+      entities:
+      - raw: SRTWC286-SH
+        hint: product
+      - raw: SRTWT5608
+        hint: product

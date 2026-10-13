@@ -1,0 +1,47 @@
+  - TRAP SPECS, the most common dealer ask (owner, 6 Oct 2026). A trap LETTER said of a
+    toilet is the trap_type choice, never null: "s trap", "s-trap", "S trap", "strap",
+    "s type", "floor outlet" -> {raw "s trap", spec_key trap_type, spec_value s_trap};
+    "p trap", "p-trap", "P type", "wall outlet" -> {raw "p trap", spec_key trap_type,
+    spec_value p_trap}. Null stays only for a letter that is neither choice ("f trap").
+    A NUMBER in mm said beside a trap word, BEFORE or AFTER it, with or without "mm" or a
+    hyphen ("s trap 300mm", "300mm s trap", "S trap 300", "250mm P-trap", "s-trap 250 mm",
+    "p trap 180") is the trap outlet length: a SECOND specification entity {raw "300mm",
+    spec_key trap_length, spec_value 300}. It is NEVER dim_width, dim_length, dim_height
+    or any other size key: a toilet's "300mm" beside its trap is the trap distance, not
+    a width. The same sentence gives the same two keys every time, whatever the letter
+    case, the spelling of the separator or the word order. A size WORD ("wide", "width",
+    "long", "height") names its own size key, as before; only the number beside a TRAP
+    word is trap_length.
+    "WC", "water closet", "toilet", "close couple", "close coupled", "one piece", "tandas",
+    "jamban", "马桶", "坐厕" is the category entity (never a specification); a brand word
+    on the Known brands line stays the brand entity; "available", "got stock", "have
+    stock", "ada stok", "有货" is the stock ask (intent_hint check_stock, domain_hint
+    inventory). A product code beside the trap words keeps its own product entity (with
+    its quantity), and the trap words are still specification entities beside it: they
+    say which variant of that code is meant.
+    - "Any WC with s trap 300mm available?" -> category "WC", specification trap_type
+      s_trap, specification trap_length 300, intent_hint check_stock
+    - "Any WC with S trap 300mm available" -> exactly the same three entities (never
+      dim_width 300)
+    - "Srtwc8066-sh s trap 250mm 50pc" -> product SRTWC8066-SH quantity 50, specification
+      trap_type s_trap, specification trap_length 250
+    - "FIND S TRAP 200MM SORENTO WC" -> brand Sorento (as listed), category "WC",
+      specification trap_type s_trap, specification trap_length 200
+    - "close couple wc available stock in p trap" -> category "close couple wc",
+      specification trap_type p_trap, intent_hint check_stock
+    - "tandas s trap 300mm ada stok?" -> the same as the first, in Malay
+    - "any water closet 600mm wide" -> category "water closet", specification dim_width
+      600 (a size word, not a trap word)
+  - A SPEC SAID RIGHT AFTER A PRODUCT ANSWER is that product's variant (owner, 6 Oct 2026).
+    When the Current subject or the Last answered line names ONE product and the message
+    is only a property ("how about p trap", "p trap?", "in black?", "the 300 one", "s
+    trap pula", "P弯呢"), the dealer means that product's sibling with that property:
+    entity_op "reuse" (the product is carried; never "replace_combine", never entities
+    []), the specification entity added, domain_hint and intent_hint the ones in play
+    (a stock check stays a stock check: never master_products), reference_positions [].
+    A message that names a product CODE of its own, or a class word ("any p trap wc"),
+    is a new ask as usual.
+    - after "SRTWC286-SH x 10: ..." the message "How about p trap" -> entity_op "reuse",
+      specification trap_type p_trap, domain_hint "inventory", intent_hint "check_stock"
+    - after the same answer, "any p trap water closet?" -> category "water closet",
+      specification trap_type p_trap, entity_op "replace_combine" (a new, class-wide ask)

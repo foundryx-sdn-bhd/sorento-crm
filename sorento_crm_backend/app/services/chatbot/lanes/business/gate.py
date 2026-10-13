@@ -37,6 +37,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from app.services.chatbot import jsc
+from app.services.chatbot.turn_runtime import SPEC_TIER
 from app.services.ledger_family import apart_from_group, customer_group_of, group_key, ledger_family_key
 
 # PLAN-chatbot-answer-half-reattach.md "Roster cap" (owner ruling 20 Sep 2026):
@@ -88,7 +89,17 @@ ALLOWED: dict[str, list[str]] = {
     # against the live `brands` table (`turn_runtime.active_brands`,
     # `resolve_gate.py`'s own pre-resolver intercept), never sent through the
     # shared resolver's order-domain fan-out to customer/transporter.
-    "order": ["order", "customer_order", "transporter", "customer", "product", "warehouse", "brand"],
+    "order": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        # REF-PROBES: a typed reference number the resolver placed as another kind.
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
+    # R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain gates exactly as its asks did
+    # under `order`.
+    "sales": [
+        "order", "customer_order", "transporter", "customer", "product", "warehouse", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
     "incoming": ["product", "inbound_shipment", "category", "brand"],
     "forms": ["form"],
     "portal_link": [],
@@ -123,7 +134,10 @@ ALLOWED: dict[str, list[str]] = {
     # the PO tool takes `warehouse_ids`; a customer or transporter token no longer rides into
     # it. Supersedes PLAN-chatbot-warehouse-entity-and-last-in line 47 ("purchase_order
     # stays as is"). `ALLOWS_EMPTY` below keeps a bare "PO" listing the open book.
-    "purchase_order": ["product", "warehouse", "category", "brand"],
+    "purchase_order": [
+        "product", "warehouse", "category", "brand",
+        "sales_order", "customer_po_ref", "purchase_order", "purchase_request",
+    ],
 }
 
 #: PLAN-low-stock-report S6 (owner ruling, console round 2, 14 Sep 2026): INTENTS that
@@ -146,6 +160,7 @@ ALLOWS_EMPTY: dict[str, bool] = {
     "product_attachment": False,
     "inventory": False,
     "order": False,
+    "sales": False,
     # PLAN-po-spo-warehouse-29sep W1: a bare "PO" lists the open book, as the old pass-through did.
     "purchase_order": True,
 }
@@ -223,6 +238,16 @@ def _is_a_described_word(token: Any) -> bool:
 def _norm(value: Any) -> str:
     """`s => String(s || '').toLowerCase().trim()`."""
     return jsc.lower_or_empty(value).strip()
+
+
+def _code_key(value: Any) -> str:
+    """A typed token or a candidate code folded the way the resolver matched them: casefold,
+    dashes and whitespace removed (`turn.state.token_key`, the ONE fold every join against
+    the resolver's own tokens uses). `_norm` keeps dashes, and a folded token ("wc200s")
+    never sits inside a dashed code ("srtwc200-s-uf-rl") under it."""
+    from app.services.chatbot.turn.state import token_key
+
+    return token_key(jsc.lower_or_empty(value))
 
 
 def _lower_trim_nullish(value: Any) -> str:
@@ -554,7 +579,15 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
     if domain in REQUIRE_SPECIFIC_DOMAINS:
         allowed_types = ALLOWED.get(domain)
         tokens = jsc.array(resolver.get("tokens"))
-        typed_tokens = {_norm(t) for t in tokens}
+        # RESOLVE-SEMANTIC-FALLBACK (prod 6 Oct 2026 21:14, "hi WC200-S got stock ?"):
+        # the resolver's token is FOLDED (`resolve_gate._PRODUCT_FOLD` strips dashes and
+        # spaces: "wc200s") while a candidate's code keeps its dashes ("SRTWC200-S-UF-RL"),
+        # so a lower-only compare never found the one inside the other and the family the
+        # resolver had placed was dropped from the picker; the AND-mode exactness test
+        # below missed a dashed exact code for the same reason. Both sides fold the way the
+        # resolver matched them (`turn.state.token_key`, the fold `engine._exact_codes_only`
+        # and `turn_runtime` already use). This filter still matches nothing of its own.
+        typed_tokens = {_code_key(t) for t in tokens if _code_key(t)}
 
         def is_compatible(m: Any) -> bool:
             return allowed_types is None or jsc.get(m, "entity_type") in allowed_types
@@ -673,7 +706,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                             }
                         )
                     elif predicate_bypass and all(
-                        jsc.get(m, "match_tier") == "spec_search" for m in products
+                        jsc.get(m, "match_tier") == SPEC_TIER for m in products
                     ):
                         # C4 (AC-1326): a `spec_search`-tier group is the described set
                         # HAS already qualified, not a customer's ambiguous typing - the
@@ -752,7 +785,7 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 )
             products = [m for m in compat_matches if is_prod(m)]
             prod_exacts = [
-                m for m in products if _norm(jsc.get(m, "canonical_code")) in typed_tokens
+                m for m in products if _code_key(jsc.get(m, "canonical_code")) in typed_tokens
             ]
             same_code_exacts = (
                 len(prod_exacts) >= 1
@@ -824,8 +857,18 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
 
         # ── shared: if we built options, require the user to pick ──
         if len(specific_options) > 0:
-            typed = [t for t in (_norm(t) for t in jsc.array(resolver.get("tokens"))) if t]
-            # keep only candidates whose CODE relates to a typed token
+            typed = [t for t in (_code_key(t) for t in jsc.array(resolver.get("tokens"))) if t]
+            # RESOLVE-SEMANTIC-FALLBACK: a code or family fragment the resolver's code
+            # reader read out of a token is a typed token here: the resolver's own verdict,
+            # confirmed by the catalogue's probe. The folded token ("toiletwc200s") sits
+            # inside no code, so without this every candidate the reader's family answer
+            # had placed was dropped and the picker came out empty.
+            for res in (resolver.get("resolutions") if isinstance(resolver.get("resolutions"), list) else []):
+                fb = jsc.get(res, "fallback")
+                if isinstance(fb, dict) and fb.get("kind") in ("code", "family") and _code_key(fb.get("value")):
+                    typed.append(_code_key(fb.get("value")))
+            # keep only candidates whose CODE relates to a typed token - both sides folded
+            # the way the resolver matched them (see `typed_tokens` above)
             if len(typed) > 0:
                 filtered: list[dict[str, Any]] = []
                 for o in specific_options:
@@ -833,8 +876,8 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                         c
                         for c in o["candidates"]
                         if any(
-                            t in _norm(c.get("code") or c.get("canonical_code") or c.get("label"))
-                            or _norm(c.get("code") or c.get("canonical_code") or c.get("label"))
+                            t in _code_key(c.get("code") or c.get("canonical_code") or c.get("label"))
+                            or _code_key(c.get("code") or c.get("canonical_code") or c.get("label"))
                             in t
                             for t in typed
                         )

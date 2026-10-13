@@ -301,6 +301,10 @@ export function commitPreviewFor(
  */
 export interface ConfirmScopeOptions {
   excludeKeys?: ReadonlySet<string>;
+  /** The order's sales order is on a pending planning change (`cancelledLinesFor`). */
+  batchBlocked?: boolean;
+  /** Keys of the lines a pending planning change names: only those cannot also be cancelled. */
+  batchNamedKeys?: ReadonlySet<string>;
   /**
    * Orders with no planning record yet. Given, a `no_mirror` line counts (and is listed) only
    * on one of these: the press adopts them first and mints the mirror ids, whereas on an
@@ -319,6 +323,8 @@ type PressRole =
   | { kind: 'skip' }
   | { kind: 'cancelled' }
   | { kind: 'withdraw' }
+  | { kind: 'cancel_so'; reason: string }
+  | { kind: 'blocked_cancel' }
   | { kind: 'blocked_reject' }
   | { kind: 'stale' }
   | { kind: 'post'; line: ConfirmLine }
@@ -328,8 +334,25 @@ function pressRoleFor(
   contribution: BoardContribution,
   decision: BoardDecision | undefined,
   batchBlocked: boolean,
+  batchNamedKeys?: ReadonlySet<string>,
 ): PressRole {
   if (contribution.unplannable) return { kind: 'skip' };
+  // SO-CANCEL-LINE: a saved Transfer to Cancel SO rides its own body channel
+  // (`cancelled_lines`), never `lines`, so the composition recheck never sees it.
+  if (decision?.verdict === 'cancelled') {
+    if (!contribution.cancelled) {
+      if ((contribution.covered && contribution.decision) || !contribution.project_line_id) {
+        return { kind: 'skip' };
+      }
+      // `cancelled_lines` is refused beside a batch, like a staged rejection.
+      if (batchBlocked && (batchNamedKeys ? batchNamedKeys.has(contribution.key) : true)) {
+        return { kind: 'blocked_cancel' };
+      }
+      return { kind: 'cancel_so', reason: (decision.reason ?? '').trim() };
+    }
+  }
+  // A line CS already transferred to Cancel SO is committed: the press has nothing left to do.
+  if (contribution.cancelled && contribution.cancelled_at) return { kind: 'skip' };
   // A CANCELLED line is retired by the press (R3); it needs no composition. One that also
   // carries a saved decision still posts it, as the body always did.
   if (contribution.cancelled) {
@@ -363,10 +386,15 @@ function pressRoleFor(
 export function pressPostsContribution(
   contribution: BoardContribution,
   decision: BoardDecision | undefined,
-  options?: { batchBlocked?: boolean; unadopted?: boolean },
+  options?: { batchBlocked?: boolean; unadopted?: boolean; batchNamedKeys?: ReadonlySet<string> },
 ): boolean {
-  const role = pressRoleFor(contribution, decision, options?.batchBlocked ?? false);
-  if (role.kind === 'post' || role.kind === 'withdraw') return true;
+  const role = pressRoleFor(
+    contribution,
+    decision,
+    options?.batchBlocked ?? false,
+    options?.batchNamedKeys,
+  );
+  if (role.kind === 'post' || role.kind === 'withdraw' || role.kind === 'cancel_so') return true;
   return role.kind === 'unpostable' && role.reason === 'no_mirror' && Boolean(options?.unadopted);
 }
 
@@ -416,6 +444,33 @@ export function rejectedCoveredLineIdsFor(
     if (contribution.project_line_id) ids.push(contribution.project_line_id);
   }
   return ids;
+}
+
+/**
+ * `ConfirmSupplyBody.cancelled_lines` for one order (SO-CANCEL-LINE): the mirror ids and
+ * reasons of the lines a `cancelled` draft is staged on. Twin of `rejectedCoveredLineIdsFor`.
+ */
+export function cancelledLinesFor(
+  contributions: BoardContribution[],
+  salesOrderId: string,
+  draft: BoardDraft,
+  options?: ConfirmScopeOptions,
+): { project_line_id: string; reason: string }[] {
+  const lines: { project_line_id: string; reason: string }[] = [];
+  for (const contribution of contributions) {
+    if (contribution.sales_order_id !== salesOrderId) continue;
+    if (options?.excludeKeys?.has(contribution.key)) continue;
+    const role = pressRoleFor(
+      contribution,
+      draft[contribution.key],
+      options?.batchBlocked ?? false,
+      options?.batchNamedKeys,
+    );
+    if (role.kind === 'cancel_so' && contribution.project_line_id) {
+      lines.push({ project_line_id: contribution.project_line_id, reason: role.reason });
+    }
+  }
+  return lines;
 }
 
 /**
@@ -476,7 +531,7 @@ function lineFor(
   if (contribution.covered && !isAmendment(decision) && decision?.verdict !== 'approved') {
     return null;
   }
-  if (decision?.verdict === 'rejected') return null;
+  if (decision?.verdict === 'rejected' || decision?.verdict === 'cancelled') return null;
 
   const buyReason = decision?.buy_reason?.trim() || undefined;
 
@@ -572,6 +627,7 @@ function lineFor(
     borrow: borrowComponents(contribution, decision?.borrow ?? []),
     buy_qty: fromMinor(buy),
     buy_reason: buyReason,
+    cs_note: decision?.cs_note?.trim() || undefined,
     // Present only on the legacy single-number amendment, which is still an override.
     amend_reason: decision?.verdict === 'amended' ? decision.reason : undefined,
     // An approved or untouched line can still carry the flag (R10).
@@ -761,8 +817,20 @@ export function plannedLineCount(
   return contributions.filter((contribution) => {
     if (contribution.sales_order_id !== salesOrderId) return false;
     if (options?.excludeKeys?.has(contribution.key)) return false;
-    const role = pressRoleFor(contribution, draft[contribution.key], batchBlocked);
-    if (role.kind === 'cancelled' || role.kind === 'withdraw' || role.kind === 'post') return true;
+    const role = pressRoleFor(
+      contribution,
+      draft[contribution.key],
+      batchBlocked,
+      options?.batchNamedKeys,
+    );
+    if (
+      role.kind === 'cancelled' ||
+      role.kind === 'withdraw' ||
+      role.kind === 'post' ||
+      role.kind === 'cancel_so'
+    ) {
+      return true;
+    }
     // Only an order that is about to be adopted can mint the missing mirror.
     if (role.kind === 'unpostable' && role.reason === 'no_mirror') {
       return unadopted === undefined || unadopted.has(salesOrderId);
@@ -816,6 +884,7 @@ export function confirmSummaryFor(
     // it, and Confirm retires it. Nobody saves a decision for it, so the untouched-line skip
     // below would drop it from the count and the press would silently do one thing more than
     // it said - which is the one thing the counter exists to stop.
+    if (contribution.cancelled && contribution.cancelled_at) continue;
     if (contribution.cancelled) {
       orderIds.add(contribution.sales_order_id);
       continue;
@@ -835,6 +904,21 @@ export function confirmSummaryFor(
       // what actually adds the +1 for this line). An UNCOVERED reject, or an inquiry-only
       // one with no active decision to withdraw, stays excluded, as it always was.
       if (contribution.decision) orderIds.add(contribution.sales_order_id);
+      continue;
+    }
+    // A saved Cancel SO on an inquiry-decided line (covered, no active decision) is posted in
+    // `cancelled_lines`, so it admits its order; `pressRoleFor` decides, batch rule included.
+    if (
+      contribution.covered &&
+      decision?.verdict === 'cancelled' &&
+      pressRoleFor(
+        contribution,
+        decision,
+        batchBlockedSalesOrderIds.has(contribution.sales_order_id),
+        options?.batchNamedKeys,
+      ).kind === 'cancel_so'
+    ) {
+      orderIds.add(contribution.sales_order_id);
       continue;
     }
     // An Approved draft on a covered line IS posted (`lineFor`), so it admits its order too.
@@ -877,7 +961,7 @@ export interface ConfirmDialogRow {
   so_number: string;
   line_no: number;
   item_code: string;
-  verdict: 'approved' | 'amended' | 'rejected';
+  verdict: 'approved' | 'amended' | 'rejected' | 'cancelled';
   composition: string;
   saved_by: string | null;
   saved_at: string | null;
@@ -947,6 +1031,7 @@ export interface ConfirmDialogCancelled {
   item_code: string;
 }
 
+const BLOCKED_CANCEL_REASON = 'Transfer to Cancel SO is held until the pending change is applied';
 const BLOCKED_REJECT_REASON = 'staged rejection is held until the pending change is applied';
 
 /**
@@ -964,6 +1049,8 @@ export function confirmDialogRowsFor(
     unadoptedSalesOrderIds?: ReadonlySet<string>;
     /** Orders a pending planning change covers: a staged rejection there is held, not posted. */
     batchBlockedSalesOrderIds?: ReadonlySet<string>;
+    /** Keys of the lines a pending planning change names. */
+    batchNamedKeys?: ReadonlySet<string>;
   },
 ): {
   rows: ConfirmDialogRow[];
@@ -1003,6 +1090,7 @@ export function confirmDialogRowsFor(
       adoptedLater ? { ...contribution, project_line_id: 'pending-adoption' } : contribution,
       decision,
       context.batchBlockedSalesOrderIds?.has(contribution.sales_order_id) ?? false,
+      context.batchNamedKeys,
     );
     switch (role.kind) {
       case 'cancelled':
@@ -1010,6 +1098,12 @@ export function confirmDialogRowsFor(
         break;
       case 'withdraw':
         rows.push(rowFor('rejected', WITHDRAWN_COMPOSITION));
+        break;
+      case 'cancel_so':
+        rows.push(rowFor('cancelled', 'Cancel SO'));
+        break;
+      case 'blocked_cancel':
+        notPosted.push({ ...identity, reason: BLOCKED_CANCEL_REASON });
         break;
       case 'blocked_reject':
         notPosted.push({ ...identity, reason: BLOCKED_REJECT_REASON });
@@ -1532,10 +1626,18 @@ export function confirmNoticeLines(result: {
     item_code?: string | null;
     reason: string;
   }> | null;
+  /** OI-CLOSED-LINE (owner, 12 Oct 2026): a Reserve or Borrow confirmed short of stock. */
+  stock_short_notices?: Array<{
+    so_line_no?: number | null;
+    line_no?: number | null;
+    item_code?: string | null;
+    reason: string;
+  }> | null;
 }): string[] {
   const held = (result.lines_held_back ?? []).map((line) =>
     failingLineText({ ...line, reason: `held back, decision kept: ${line.reason}` }),
   );
   const landed = (result.landed_buy_notices ?? []).map((line) => failingLineText(line));
-  return [...held, ...landed];
+  const short = (result.stock_short_notices ?? []).map((line) => failingLineText(line));
+  return [...held, ...landed, ...short];
 }

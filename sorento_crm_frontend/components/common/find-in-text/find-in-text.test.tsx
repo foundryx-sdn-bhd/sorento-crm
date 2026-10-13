@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
 import {
   act,
   cleanup,
@@ -218,6 +220,84 @@ describe('SearchableTextarea', () => {
 
     fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'tool' } });
     expect(screen.getByTestId('find-count')).toHaveTextContent('1/3');
+  });
+});
+
+// "current" at 0, 10, 20 (owner's example: edit near the 3rd "current").
+const CURRENT = 'current a current b current c';
+
+function Controlled({ initial }: { initial: string }) {
+  const [v, setV] = useState(initial);
+  return <SearchableTextarea value={v} onChange={(e) => setV(e.target.value)} data-testid="ta" />;
+}
+
+describe('SearchableTextarea navigation and in-place editing (R5c)', () => {
+  it('next/prev put the textarea selection on the active match', () => {
+    render(<Controlled initial={CURRENT} />);
+    const ta = screen.getByTestId('ta') as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: 'f', ctrlKey: true });
+    fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'current' } });
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([0, 7]);
+    fireEvent.keyDown(screen.getByTestId('find-input'), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByTestId('find-input'), { key: 'Enter' });
+    expect(screen.getByTestId('find-count')).toHaveTextContent('3/3');
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([20, 27]);
+    fireEvent.keyDown(screen.getByTestId('find-input'), { key: 'Enter', shiftKey: true });
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([10, 17]);
+  });
+
+  it('typing at a caret between matches edits only there while the find bar is open', async () => {
+    const user = userEvent.setup();
+    render(<Controlled initial={CURRENT} />);
+    const ta = screen.getByTestId('ta') as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: 'f', ctrlKey: true });
+    fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'current' } });
+    fireEvent.click(screen.getByTestId('find-next'));
+    fireEvent.click(screen.getByTestId('find-next'));
+    expect(screen.getByTestId('find-count')).toHaveTextContent('3/3');
+
+    // Owner moves the pointer to just before the 3rd "current" (index 20) and types.
+    await user.click(ta);
+    ta.setSelectionRange(20, 20);
+    await user.keyboard('new ');
+
+    expect(ta.value).toBe('current a current b new current c');
+    expect(screen.getByTestId('find-bar')).toBeInTheDocument();
+    expect(ta.selectionStart).toBe(24);
+    expect(document.activeElement).toBe(ta);
+  });
+
+  it('Escape closes the bar and hands the caret back to the textarea on the match', () => {
+    render(<Controlled initial={CURRENT} />);
+    const ta = screen.getByTestId('ta') as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: 'f', ctrlKey: true });
+    fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'current' } });
+    fireEvent.click(screen.getByTestId('find-next'));
+    fireEvent.keyDown(screen.getByTestId('find-input'), { key: 'Escape' });
+    expect(screen.queryByTestId('find-bar')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(ta);
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([10, 17]);
+  });
+
+  it('scrolls to the measured position of the active mark (wrapped lines included)', () => {
+    const offset = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.active === 'true' ? 900 : 0;
+      });
+    const client = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200);
+    try {
+      render(<Controlled initial={CURRENT} />);
+      const ta = screen.getByTestId('ta') as HTMLTextAreaElement;
+      fireEvent.keyDown(ta, { key: 'f', ctrlKey: true });
+      fireEvent.change(screen.getByTestId('find-input'), { target: { value: 'current' } });
+      fireEvent.click(screen.getByTestId('find-next'));
+      // One line of text, so the old '\n'-count scroll would have been 0.
+      expect(ta.scrollTop).toBe(800);
+    } finally {
+      offset.mockRestore();
+      client.mockRestore();
+    }
   });
 });
 

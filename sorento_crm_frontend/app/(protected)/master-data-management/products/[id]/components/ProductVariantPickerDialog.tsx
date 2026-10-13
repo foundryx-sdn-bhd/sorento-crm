@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LoaderCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +28,8 @@ export interface ProductVariantPickerDialogProps {
   submitting?: boolean;
   /** Called with the chosen product's id. */
   onConfirm: (productId: string) => void;
+  /** Extra fields shown above the product picker (the Compatible section's role choice). */
+  children?: ReactNode;
 }
 
 function displayProduct(p: ProductVariantRef): string {
@@ -47,6 +49,7 @@ export default function ProductVariantPickerDialog({
   excludeIds = [],
   submitting = false,
   onConfirm,
+  children,
 }: ProductVariantPickerDialogProps) {
   const [selected, setSelected] = useState<ProductVariantRef | null>(null);
 
@@ -77,6 +80,7 @@ export default function ProductVariantPickerDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {children}
         <div className="space-y-2 py-1">
           <Label>Product</Label>
           <SearchableSelect

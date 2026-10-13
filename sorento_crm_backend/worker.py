@@ -134,6 +134,9 @@ QUEUES = (
     ('chat', 'fast'),
     ('project_docs', 'batch'),
     ('flyer_read', 'batch'),
+    # `analytics` (chat analytics CA-2): the nightly topic labeller, queued by the
+    # scheduler at 02:15 Malaysia. Minutes of model calls nobody waits on: batch.
+    ('analytics', 'batch'),
     ('notifications', 'fast'),
 )
 ROLES = ('batch', 'fast')
@@ -246,6 +249,16 @@ def register_worker_listeners():
 
 
 if __name__ == '__main__':
+    # The worker decrypts stored secrets too and never imports app.main.
+    from app.config import settings as _settings
+    from app.utils.field_encryption import assert_field_encryption_ready
+    from app.services.dev_login import running_in_container
+    assert_field_encryption_ready(
+        _settings.environment,
+        environment_explicit="environment" in _settings.model_fields_set,
+        production_entrypoint=running_in_container(),
+    )
+
     register_worker_listeners()
     _maybe_start_scheduler()
     _warn_if_vapid_missing()

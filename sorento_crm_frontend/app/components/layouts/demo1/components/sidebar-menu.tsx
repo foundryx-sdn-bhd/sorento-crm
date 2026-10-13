@@ -3,12 +3,11 @@
 import { JSX, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import { isSuperadminUser } from '@/lib/is-superadmin';
+import { useEffectiveIsSuperadmin } from '@/hooks/useEffectiveIsSuperadmin';
 import { MENU_SIDEBAR } from '@/config/menu.config';
 import { injectPublishedWorkflowForms } from '@/config/workflow-forms-dynamic-menu';
 import { MenuConfig, MenuItem } from '@/config/types';
-import { filterMenuByModule } from '@/lib/menu-module-filter';
+import { applyMenuAccess } from '@/lib/menu-access-filter';
 import { usePublishedWorkflowDefinitionsForSubmissionQuery } from '@/app/(protected)/workflow-forms-management/hooks/useWorkflowForms';
 import { cn } from '@/lib/utils';
 import { collectMenuPaths, matchesMenuPath } from '@/lib/menu-path-match';
@@ -31,63 +30,12 @@ import { PRESSED_CLASS } from '@/components/ui/primitive-classes';
 import { QuickAccessBlock } from './quick-access-block';
 import { MenuItemPinButton } from './menu-item-pin-button';
 
-/** Filter menu items by permission: hide items that require a permission the user doesn't have; recurse into children. */
-function filterMenuByPermission(items: MenuConfig, permissionSet: Set<string>): MenuConfig {
-  return items.filter((item: MenuItem) => {
-    if (item.heading) return true;
-    if (item.permissionsAny?.length) {
-      if (!item.permissionsAny.some((p) => permissionSet.has(p))) return false;
-    } else if (item.permission && !permissionSet.has(item.permission)) {
-      return false;
-    }
-    if (item.children?.length) {
-      const filtered = filterMenuByPermission(item.children, permissionSet);
-      return filtered.length > 0;
-    }
-    return true;
-  }).map((item: MenuItem) => {
-    if (item.children?.length) {
-      return { ...item, children: filterMenuByPermission(item.children, permissionSet) };
-    }
-    return item;
-  });
-}
-
-/** Hide superadmin-only entries from non-superadmins. `isSuperadmin` null = still loading - show all (avoids flicker for real superadmins). */
-function filterMenuBySuperadmin(items: MenuConfig, isSuperadmin: boolean | null): MenuConfig {
-  if (isSuperadmin === null || isSuperadmin) return items;
-  return items
-    .filter((item: MenuItem) => {
-      if (item.heading) return true;
-      if (item.superadminOnly) return false;
-      if (item.children?.length) {
-        return filterMenuBySuperadmin(item.children, isSuperadmin).length > 0;
-      }
-      return true;
-    })
-    .map((item: MenuItem) =>
-      item.children?.length
-        ? { ...item, children: filterMenuBySuperadmin(item.children, isSuperadmin) }
-        : item,
-    );
-}
-
-/** Drop heading items that have no non-heading items following them before the next heading or end of list. */
-export function filterOrphanHeadings(items: MenuConfig): MenuConfig {
-  return items.filter((item, index) => {
-    if (!item.heading) return true;
-    for (let i = index + 1; i < items.length; i++) {
-      if (items[i].heading) return false;
-      return true;
-    }
-    return false;
-  });
-}
-
 export function SidebarMenu() {
   const pathname = usePathname();
-  const { data: session, status } = useSession();
-  const isSuperadmin = status === 'loading' ? null : isSuperadminUser(session?.user);
+  // The EFFECTIVE user's flag: the impersonation target's while viewing as, else the
+  // session's (MENU-PERM-GATE). The permission set below is already the target's, the
+  // backend answers /users/me/permissions for the impersonated user.
+  const isSuperadmin = useEffectiveIsSuperadmin();
   const { permissionSet, isLoading } = usePermissions();
   const { enabledModuleKeys, isLoading: modulesLoading } = useTenantModules();
   // A viewport prefetch of ~100 sidebar links is why every menu item carried
@@ -108,11 +56,13 @@ export function SidebarMenu() {
   );
 
   const effectiveMenu = useMemo(() => {
-    const bySuper = filterMenuBySuperadmin(menuWithPublishedForms, isSuperadmin);
-    if (isLoading) return filterOrphanHeadings(bySuper);
-    const byPerm = filterMenuByPermission(bySuper, permissionSet);
-    if (modulesLoading) return filterOrphanHeadings(byPerm);
-    return filterOrphanHeadings(filterMenuByModule(byPerm, enabledModuleKeys));
+    return applyMenuAccess(menuWithPublishedForms, {
+      isSuperadmin,
+      permissionSet,
+      isLoading,
+      enabledModuleKeys,
+      modulesLoading,
+    });
   }, [
     permissionSet,
     isLoading,

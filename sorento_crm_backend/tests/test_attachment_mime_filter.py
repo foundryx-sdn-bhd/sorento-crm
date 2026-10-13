@@ -162,9 +162,13 @@ def test_the_unfiltered_call_is_unchanged(db: Session) -> None:
 # Endpoint-level
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def authed_client():
+def authed_client(monkeypatch):
     from app.dependencies import get_current_user_or_api_key
+    from app.services.user_service import UserPermissionService
 
+    # LIST-API-PERMS: the list carries a permission gate now; this principal has no users
+    # row, so answer the role lookup as admin (the gate has tests/test_list_api_perms.py).
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     app.dependency_overrides[get_current_user_or_api_key] = lambda: {
         "id": "zzt-mime-filter-user",
         "email": "zzt-mime-filter@test.com",

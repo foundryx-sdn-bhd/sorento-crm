@@ -34,6 +34,7 @@ export function useStockDebtQuery(params: StockDebtListParams) {
       params.supplierIds,
       params.dateFrom,
       params.dateTo,
+      Boolean(params.projected),
     ],
     queryFn: () => getStockDebtList(params),
     staleTime: 60_000,
@@ -80,14 +81,19 @@ export function useStockDebtCellQuery(
   dateFrom?: string,
   dateTo?: string,
   book?: StockDebtBook,
+  projected?: boolean,
 ) {
   return useQuery({
     queryKey: [
       'project-sales', 'stock-debt', 'cell', productId, month, dateFrom ?? '', dateTo ?? '',
-      book ?? 'all',
+      book ?? 'all', Boolean(projected),
     ],
+    // The projection rides only when the switch is on, so the month view's request is
+    // exactly what it was before the switch existed.
     queryFn: () =>
-      getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book),
+      projected
+        ? getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book, true)
+        : getStockDebtCell(productId as string, month as string, dateFrom, dateTo, book),
     enabled: Boolean(productId && month),
     staleTime: 60_000,
     retry: 1,

@@ -203,6 +203,24 @@ class TestTraceLegibilityAcrossBranchKinds:
         assert media_record["facts"]["decision"] == "no_url"
         _assert_trace_is_legible(trace)
 
+    def test_ai_not_allowed(self, session_factory, seeded, stub_parser, stub_access):
+        """AI-ALLOWED-GATE: a contact the AI may not answer closes silently at `received`.
+        The one trace record reads as a sentence and says no reply was sent."""
+        session_factory().execute(
+            text("UPDATE respond_contacts SET chatbot_allowed = false WHERE respond_io_id = :c"),
+            {"c": str(CONTACT_ID)},
+        )
+        session_factory().commit()
+        stub_parser()
+        stub_access()
+        result, trace = _run(session_factory, _envelope())
+        assert result.branch_kind == "ai_not_allowed"
+        records = [entry for entry in trace if entry.get("kind") is None]
+        assert [entry["stage"] for entry in records] == ["received"]
+        assert records[0]["status"] == "skipped"
+        assert records[0]["summary"] == "AI not allowed for this contact; sent no reply"
+        _assert_trace_is_legible(trace)
+
     def test_every_declared_branch_kind_has_a_test_above(self) -> None:
         """A new BRANCH_KINDS entry must add a scenario here, not silently go untested.
 
@@ -222,6 +240,7 @@ class TestTraceLegibilityAcrossBranchKinds:
             "not_supported",
             "business_query",
             "media_denied",
+            "ai_not_allowed",
         }
         retired_elsewhere_or_flagged = {
             "escalate_offer",

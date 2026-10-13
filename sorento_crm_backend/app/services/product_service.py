@@ -64,6 +64,7 @@ def _populate_field_attachments(db: Session, products: Iterable[Product]) -> Non
 # module and `tests/test_product_is_discontinued.py` - as thin delegates; the
 # one real body lives in product_rules.
 from app.services.rules import product_rules
+from app.services.product_family import family_code_for
 from app.services.rules.master_rules import resolve_master_by_code
 from app.services.rules.product_rules import (
     is_discontinued as _rules_is_discontinued,
@@ -862,6 +863,20 @@ class ProductService:
         )
         product._variant_children = children
         product._variant_child_count = len(children)
+        # CODE-VARIANTS AC-5: the other active products of the same family (detail only).
+        product._family_members = (
+            self.db.query(Product)
+            .filter(
+                Product.family_code == product.family_code,
+                Product.company_id == product.company_id,
+                Product.id != product.id,
+                Product.is_active.is_(True),
+            )
+            .order_by(Product.product_code.asc())
+            .all()
+            if product.family_code
+            else []
+        )
 
     def set_variant_parent(self, product_id: str, parent_id: str, updated_by: str):
         """Manually set/change a product's variant parent (D1 - sticky override).
@@ -958,6 +973,32 @@ class ProductService:
         product.updated_at = datetime.utcnow()
         self.db.commit()
         self._reconcile_variant_links(product.id)
+        self.db.refresh(product)
+        _populate_field_attachments(self.db, [product])
+        self._populate_variant_graph(product)
+        self._populate_product_sets(product)
+        return product
+
+    def set_family_code(self, product_id: str, family_code: Optional[str]):
+        """CODE-VARIANTS AC-4: store a hand-set family (trimmed, uppercased, empty = NULL)."""
+        product = self.get_product(product_id)  # 404 if the product is unknown
+        product.family_code = "".join((family_code or "").split()).upper() or None
+        product.family_code_manual = True
+        product.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(product)
+        _populate_field_attachments(self.db, [product])
+        self._populate_variant_graph(product)
+        self._populate_product_sets(product)
+        return product
+
+    def reset_family_code(self, product_id: str):
+        """CODE-VARIANTS AC-4: back to auto; the write hook re-derives it from the code."""
+        product = self.get_product(product_id)  # 404 if the product is unknown
+        product.family_code_manual = False
+        product.family_code = family_code_for(product.product_code)
+        product.updated_at = datetime.utcnow()
+        self.db.commit()
         self.db.refresh(product)
         _populate_field_attachments(self.db, [product])
         self._populate_variant_graph(product)
@@ -1110,6 +1151,7 @@ class ProductService:
             triggered_by=created_by,
         )
         self._reconcile_variant_links(product.id)
+        self._reconcile_alternatives([product.id])
         return product
     
     def update_product(self, product_id: str, product_data: ProductUpdate, updated_by: str):
@@ -1246,6 +1288,24 @@ class ProductService:
                 f"This product is named as a host in a \"supplied with\" rule "
                 f"for {companion_code}. Delete the rule first."
             )
+
+    def _reconcile_alternatives(self, product_ids) -> None:
+        """PRODUCT-ALTERNATIVES: the -NEW rule for each written product, after its row
+        committed. Best-effort per product (`reconcile_new_alternatives_safely` never
+        raises), one commit at the end."""
+        from app.services.product_alternative_service import (
+            reconcile_new_alternatives_safely,
+        )
+
+        for product_id in product_ids:
+            reconcile_new_alternatives_safely(self.db, product_id)
+        try:
+            self.db.commit()
+        except Exception:
+            import logging
+
+            self.db.rollback()
+            logging.getLogger(__name__).warning("product alternatives commit failed", exc_info=True)
 
     def _reconcile_variant_links(self, code_or_id: str) -> None:
         """Best-effort post-commit variant-graph reconcile. Never raises - a
@@ -1972,6 +2032,7 @@ class ProductService:
                 .all()
             )
             self._bulk_publish_product_embedding_events(touched, user_id)
+            self._reconcile_alternatives([row.id for row in touched])
         return {
             "created": created,
             "updated": updated,

@@ -1,0 +1,5 @@
+FAILED tests/test_oi_email_print.py::test_planning_note_never_reaches_remark
+FAILED tests/test_oi_email_print.py::test_no_internal_note_reaches_remark - A...
+FAILED tests/test_oi_email_print.py::test_change_so_names_the_order_it_moves_to
+FAILED tests/test_order_inquiry_handover_automation.py::test_handover_remark_never_appends_the_row_note
+4 failed, 9 passed, 21 warnings in 8.20s

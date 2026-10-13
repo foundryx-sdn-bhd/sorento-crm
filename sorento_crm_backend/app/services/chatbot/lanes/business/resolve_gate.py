@@ -39,7 +39,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.services.chatbot import jsc
-from app.services.chatbot.contracts import EXIT_CONTRACT_FIELDS
+from app.services.chatbot.contracts import EXIT_CONTRACT_FIELDS, REFERENCE_NARROW
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business import pickers
 from app.services.chatbot.lanes.business.gate import run_gate
@@ -83,9 +83,12 @@ PURCHASE_ORDER_PROBE_TOOL = "crm_procurement_po_placed_list"
 #: it), and `sales_report` for the SAME reason as the outstanding asks: the probe
 #: measures DELIVERED DOs, a population this report does not read at all.
 #: `top_selling` joins for the same reason (PLAN-chatbot-top-x-hot-selling-24sep.md S4
-#: point 10): the ranking reads sales order lines, never delivered DOs.
+#: point 10): the ranking reads sales order lines, never delivered DOs. `sales_ranking`
+#: (REPORT-ENGINE slice 1b) joins too: its basis is DO or SO lines over a period the ask
+#: names, never the probe's 90-day window, and like every status here its ask is only
+#: reachable under domain `order` (`turn_runtime._report_status_means_order_domain`).
 OUTSTANDING_ORDER_STATUS: frozenset[str] = frozenset(
-    {"outstanding", "sales_report", "top_selling", *fetch_mod.ORDER_STATUS_TO_SCOPE}
+    {"outstanding", "sales_report", "top_selling", "sales_ranking", *fetch_mod.ORDER_STATUS_TO_SCOPE}
 )
 
 # The probe's injected default window, from `probe-customer-orders`' semantic_input
@@ -523,6 +526,72 @@ def _token_of(entity: Any) -> Any:
     return value
 
 
+#: CLASS-HINT-KIND-PICK (owner, 6 Oct 2026): the parser hints whose confident reading the
+#: resolver may not re-type by a name match. The two CLASS hints (`turn_runtime.CLASS_HINTS`,
+#: the same pair `scope_terms` below forwards) plus the two RECORD hints the owner named:
+#: "a confident parser hint of category / product_type / product / brand keeps its kind".
+#: An `order` hint is not here on purpose: "7445" hinted order and found as a product code
+#: is the re-type AC-1527 exists for.
+HINT_LOCKED_KINDS = frozenset({"product_type", "category", "product", "brand"})
+
+
+def hint_locked_tokens(
+    entities: list[Any], *, brand_entities: Mapping[int, str] | None = None
+) -> list[str]:
+    """The resolver tokens of the entities whose kind is final this turn: a CONFIDENT
+    entity hinted with one of `HINT_LOCKED_KINDS` (the parser's own `hint` and
+    `confident`, never the message text), plus every entity the caller already decided is
+    a brand (`brand_entities`, `{id(entity): brand name}`, `turn_runtime.resolve_kinds`'s
+    exact live-brand read, whatever the hint). `confident` missing counts as confident
+    (`turn/apply.py::_focus_rules` reads it the same way); only an explicit `False` leaves
+    the token re-typable."""
+    out: list[str] = []
+    for x in entities:
+        if not isinstance(x, dict):
+            continue
+        hint = jsc.nullish_str(jsc.get(x, "hint")).strip().lower()
+        decided = bool(brand_entities) and id(x) in brand_entities
+        if not decided and (hint not in HINT_LOCKED_KINDS or x.get("confident") is False):
+            continue
+        token = _token_of(x)
+        if jsc.truthy(token) and token not in out:
+            out.append(token)
+    return out
+
+
+def brand_tokens(entities: list[Any], brand_entities: Mapping[int, str] | None) -> dict[str, str]:
+    """`{resolver token: brand name}` for the entities the engine decided are brands
+    (owner ruling 6 Oct 2026): the resolver resolves each as that brand with no probe, so
+    the word is never an unanswered search term."""
+    out: dict[str, str] = {}
+    if not brand_entities:
+        return out
+    for x in entities:
+        if isinstance(x, dict) and id(x) in brand_entities:
+            token = _token_of(x)
+            if jsc.truthy(token) and token not in out:
+                out[token] = brand_entities[id(x)]
+    return out
+
+
+def _visible_reference_kinds(ctx: dict[str, Any]) -> list[str]:
+    """The reference kinds the engine put on `ctx["reference_kinds"]`; delivery orders only
+    when it put none (the closed default, never a kind the asker may not see)."""
+    kinds = ctx.get("reference_kinds")
+    return list(kinds) if isinstance(kinds, list) and kinds else ["customer_order"]
+
+
+def _allowed_entity_types(ctx: dict[str, Any], entities: list[Any]) -> list[Any]:
+    """The entities' hints, with every reference hint (a typed number whose kind may be any
+    visible one) replaced by the kinds this asker may probe."""
+    hints = [jsc.get(x, "hint") for x in entities]
+    if not any(h in REFERENCE_NARROW for h in hints):
+        return hints
+    out = [h for h in hints if h not in REFERENCE_NARROW]
+    out += [k for k in _visible_reference_kinds(ctx) if k not in out]
+    return out
+
+
 def resolve_entity_body(
     ctx: dict[str, Any],
     *,
@@ -530,6 +599,7 @@ def resolve_entity_body(
     dry_run: bool = False,
     tier_gate: dict[str, Any] | None = None,
     excluded_entity_ids: frozenset | None = None,
+    brand_entities: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """The `resolve-entity` httpRequest jsonBody, key for key.
 
@@ -598,15 +668,32 @@ def resolve_entity_body(
     ]
     if len(product_tokens) >= 2 and len(product_tokens) == len(entities):
         match_mode = "or"
+    # REF-PROBES: a message that only names reference numbers is resolved per token (OR). AND
+    # mode probes the old kinds alone and answers the empty intersection with an OR rerun, so
+    # a delivery order hit would hide the sales order / PO / PR sharing its number.
+    if entities and all(jsc.get(x, "hint") in REFERENCE_NARROW for x in entities):
+        match_mode = "or"
     tier_gate_dict = tier_gate if isinstance(tier_gate, dict) else None
     recomposed_access_levels = (
         tier_gate_dict.get("access_levels_recomposed") if tier_gate_dict is not None else None
     )
     body: dict[str, Any] = {
-        "query": _query_text(ctx),
+        # A bare answer to an open numbered question ("3") is a position, not words to search:
+        # its text never reaches the resolver as a query (owner hand test, 8 Oct 2026). A pick
+        # turn whose message itself names entities or grounded specs is resolved as usual.
+        "query": (
+            ""
+            if jsc.array(parse_output.get("reference_positions"))
+            and not any(jsc.get(e, "current_message") is not False for e in [*entities, *grounded])
+            else _query_text(ctx)
+        ),
         "match_mode": match_mode,
         "tokens": [_token_of(x) for x in entities],
-        "allowed_entity_types": [jsc.get(x, "hint") for x in entities],
+        # RESOLVE-SEMANTIC-FALLBACK: the pre-fold text behind each token, positionally
+        # parallel (the route's own `raw_tokens` contract), so the shared resolver's code
+        # reader is asked about "TAP SRTWT5608" and not only the folded "TAPSRTWT5608".
+        "raw_tokens": [jsc.nullish_str(jsc.get(x, "raw")) for x in entities],
+        "allowed_entity_types": _allowed_entity_types(ctx, entities),
         "access_levels": (
             recomposed_access_levels
             if isinstance(recomposed_access_levels, list) and recomposed_access_levels
@@ -634,6 +721,28 @@ def resolve_entity_body(
     }
     if dry_run:
         body["dry_run"] = True
+    # CHAT-FIND: on a find the words beside a code name what fits it, never which variant of
+    # it ("seat cover for SRTWC8088"), so the route keeps the typed codes as typed.
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    if find_lane.filter_keys(parse_output):
+        body["keep_typed_codes"] = True
+    if any(jsc.get(x, "hint") in REFERENCE_NARROW for x in entities):
+        body["reference_kinds"] = _visible_reference_kinds(ctx)
+    # CLASS-HINT-KIND-PICK (owner, 6 Oct 2026, dev turn 4d18caff "any basin with thickness
+    # 1.0mm" -> "Which one do you mean? 1. basin (promotion) 2. basin (customer)"): the
+    # tokens whose kind the resolver must keep. Without it the resolver's cross-type rerun
+    # answered a confident category word with every promotion whose PDF filename and every
+    # customer whose name contains it, the engine asked a kind pick over them, and because
+    # the word then counted as resolved the spec/class search that knows "basin" as Wash
+    # Basin never ran. Present only when non-empty, so every body with nothing to lock is
+    # byte-identical to today and every other caller of the route is untouched.
+    locked = hint_locked_tokens(entities, brand_entities=brand_entities)
+    if locked:
+        body["hint_locked_tokens"] = locked
+    brands = brand_tokens(entities, brand_entities)
+    if brands:
+        body["brand_tokens"] = brands
     grounded_specs = [
         {"key": g.get("spec_key"), "value": g.get("spec_value"), "evidence": g.get("raw"), "grounded": True}
         for g in grounded
@@ -713,7 +822,23 @@ def resolve_entity_body(
     # READ at all rather than only refusing to page it. A described ask ("which taps have
     # a cert") names a `product_type` / `category` word and is untouched; a turn naming
     # both a code and a class word keeps its scope term and is untouched too.
-    if require is not None and not scope_terms and not grounded_specs and _names_a_typed_code(parse_output):
+    #
+    # ATTACH-SET-BRAND-FOLLOWUP round 2 (owner hand test on the local copy, 7 Oct 2026):
+    # a document word alone whose subject is the SETTLED products the plan carries
+    # (`turn_runtime.with_carried_entities` says so on the verdict, `subject_settled`;
+    # the rows themselves stay out of the token list, there is nothing to look up) is the
+    # same case one turn later: "photo?" after "sorento" listed a page is "photo for
+    # <the listed codes>", a product-scoped fetch, never a set. With the page having
+    # retired the class word, the leg had no scope term left and counted every product
+    # with a photo.
+    from app.services.chatbot.turn_runtime import SUBJECT_SETTLED_KEY
+
+    if (
+        require is not None
+        and not scope_terms
+        and not grounded_specs
+        and (_names_a_typed_code(parse_output) or parse_output.get(SUBJECT_SETTLED_KEY) is True)
+    ):
         require = None
     if require is not None:
         body["require"] = require
@@ -787,8 +912,67 @@ def _report_ask_has_product_subject(parser: dict[str, Any], compatible: Any) -> 
     )
 
 
+def _carried_and_unusable(token: Any, entities: Any, allowed_lookup: Any) -> bool:
+    """CARRIED-MISS (prod, 13 Oct 2026): is this unresolved token one the current
+    message never typed, of a kind this domain never looks up?
+
+    `turn_runtime.with_carried_entities` hands the focus to the resolver on a turn that
+    names nothing, every kind included; "I want to make complaint report" after an order
+    question reached it with the order number (`current_message: false`), which no
+    portal link can use. That token's miss is not this turn's. A token the message typed,
+    or a carried one of a kind the domain's `ALLOWED` row takes (a product under
+    `incoming`: the ask is about it), is still a miss. Tokens are matched trimmed and
+    lower-cased, against the entity's words and against the token the resolver was sent
+    (`_token_of`: a product code reaches it with its dashes folded away).
+
+    Only a domain with an `ALLOWED` row says which kinds it uses. With no row
+    (`allowed_lookup` absent: no domain at all, as on a quick-reply pick, or an unmapped
+    one) the gate passes every entity through, so nothing is excused here; the chat report
+    keeps its own excuse in `engine.py`."""
+    if not isinstance(allowed_lookup, list):
+        return False
+    key = jsc.js_string(token if jsc.truthy(token) else "").strip().lower()
+    if not key:
+        return False
+    hits = [
+        e
+        for e in jsc.array(entities)
+        if jsc.truthy(e)
+        and key
+        in {
+            jsc.js_string(jsc.get(e, "raw") or "").strip().lower(),
+            jsc.js_string(jsc.get(e, "canonical_code") or "").strip().lower(),
+            jsc.js_string(_token_of(e)).strip().lower(),
+        }
+    ]
+    if not hits or any(jsc.get(e, "current_message") is not False for e in hits):
+        return False
+    allowed = {jsc.lower_or_empty(k) for k in jsc.array(allowed_lookup)}
+    return not any(_kind_is_used(jsc.lower_or_empty(jsc.get(e, "hint")), allowed) for e in hits)
+
+
+#: Every resolver kind a typed reference number may become (`REFERENCE_NARROW`'s values).
+_REFERENCE_KINDS = frozenset(k for kinds in REFERENCE_NARROW.values() if kinds for k in kinds)
+
+
+def _kind_is_used(hint: str, allowed: set[str]) -> bool:
+    """Does a domain whose `ALLOWED` row is `allowed` look up an entity hinted `hint`? A
+    reference hint counts by the kinds it narrows to (`order`: any reference kind), the
+    way `_allowed_entity_types` widens it for the resolver."""
+    if hint in allowed:
+        return True
+    if hint not in REFERENCE_NARROW:
+        return False
+    narrow = REFERENCE_NARROW[hint]
+    return bool(allowed & (narrow if narrow is not None else _REFERENCE_KINDS))
+
+
 def if3_miss(ctx_resolved_ctx: dict[str, Any], *, parser: dict[str, Any]) -> bool:
     """`If3` - the miss gate, three OR'd clauses, verbatim.
+
+    Clause 2 skips an unresolved token the current message never typed whose kind the
+    domain never looks up (`_carried_and_unusable`, CARRIED-MISS 13 Oct 2026): a gate
+    that passed the ask without it answers the ask.
 
     Clause 3 is the "customer resolved to nothing" case the first two cannot see: the
     domain accepts a customer, the parser named one, and nothing customer-shaped survived
@@ -805,15 +989,20 @@ def if3_miss(ctx_resolved_ctx: dict[str, Any], *, parser: dict[str, Any]) -> boo
     unresolved = unresolved if jsc.truthy(unresolved) else []
     compatible = jsc.get(gate, "compatible_entities")
     compatible = compatible if jsc.truthy(compatible) else []
-    if len(jsc.array(unresolved)) > 0 and len(jsc.array(compatible)) == 0:
-        return True
-
     gate_debug = jsc.get(gate, "gate_debug")
     gate_debug = gate_debug if jsc.truthy(gate_debug) else {}
-    allowed_lookup = jsc.get(gate_debug, "allowed_lookup")
-    allowed_lookup = allowed_lookup if jsc.truthy(allowed_lookup) else []
+    allowed_row = jsc.get(gate_debug, "allowed_lookup")
+    allowed_lookup = allowed_row if jsc.truthy(allowed_row) else []
     parser_entities = parser.get("entities")
     parser_entities = parser_entities if jsc.truthy(parser_entities) else []
+    missed = [
+        t
+        for t in jsc.array(unresolved)
+        if not _carried_and_unusable(t, parser_entities, allowed_row)
+    ]
+    if len(missed) > 0 and len(jsc.array(compatible)) == 0:
+        return True
+
     return (
         "customer" in jsc.array(allowed_lookup)
         and any(
@@ -1142,10 +1331,17 @@ def run(
     dry_run: bool = False,
     roster_caps: Mapping[str, int] | None = None,
     resolver_excluded_entity_ids: frozenset | None = None,
+    brand_entities: Mapping[int, str] | None = None,
     account_levels: Callable[[list[str]], dict[str, int | None]] | None = None,
     account_exact_names: bool = True,
 ) -> dict[str, Any]:
     """One pass through `sub-resolve-and-gate`. Returns the exit arm's item.
+
+    `brand_entities` (CLASS-HINT-KIND-PICK) is `turn_runtime.resolve_kinds`'s own
+    `{id(entity): brand name}` for the entities that name a live brand; `resolve_entity_body`
+    sends their tokens as `brand_tokens` (resolved as the brand, no probe) and locks them
+    beside the confident class / product / brand hints it locks itself. Nothing is removed
+    from the token list.
 
     `account_levels` (ACCOUNT-LEDGER) reads `customers.account_level` by uuid; given, a
     customer word typed with an `account` keeps only the matches at that level, and a word
@@ -1223,6 +1419,7 @@ def run(
             dry_run=dry_run,
             tier_gate=tier_gate_out,
             excluded_entity_ids=resolver_excluded_entity_ids,
+            brand_entities=brand_entities,
         )
     )
 

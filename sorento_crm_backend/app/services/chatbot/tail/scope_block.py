@@ -4,8 +4,8 @@
 #
 # A direct port of origin/main's own `tail/compile_state.py::_search_scope_header`
 # (deleted on this branch by the S3 turn re-architecture, `129c403c7`): main's whole
-# `_AXES` table, the two "always" axes (Customer, Product) plus the four ask-scoped
-# ones (Order/Transporter/Container/Warehouse), and the Dates line. The media-confirm
+# `_AXES` table, the two "always" axes (Customer, Product) plus the ask-scoped
+# ones (Delivery order or Order/Transporter/Container/Warehouse), and the Dates line. The media-confirm
 # / escalate-branch / empty-result-set guards main's version carries do not apply here
 # - the bridge's own callers already know this is a genuine, single-domain hit before
 # they ever reach this module. `tail/` (not `turn/`) because it is free to use `re`
@@ -20,14 +20,14 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-from app.services.chatbot.turn.state import focus_row_label
+from app.services.chatbot.turn.state import focus_row_label, token_key
 from app.services.ledger_family import customer_group_of, customer_header_words
 
 # NARROWED (main, captain ruling 2026-08-24, ported verbatim): this header describes
 # a DELIVERY ORDER search specifically - it used to gate on "domains the CRM
 # date-filters", which let it render "Customer: all customers" on an inbound
 # shipment answer, meaningless (a container has no customer).
-_DATE_SCOPE_DOMAINS = frozenset({"order"})
+_DATE_SCOPE_DOMAINS = frozenset({"order", "sales"})  # R7: a sales ask was an order ask
 
 # Main's own `_AXES`, verbatim (`origin/main:tail/compile_state.py`), including its
 # note that the list is a DELIBERATE DUPLICATE kept in lockstep with
@@ -49,10 +49,20 @@ _AXES: tuple[dict[str, Any], ...] = (
         "always": True,
         "all_text": "all products",
     },
+    # REF-PROBES names the kind only when the resolver placed the number as a delivery
+    # order (`customer_order`). A generic `order` / `order_number` row is a number of no
+    # known kind (an SO number among them), so it keeps main's own "Order" line, the same
+    # label the miss path prints (`lanes/business/answer.py` `axis_words`).
+    {
+        "label": "Delivery order",
+        "types": ("customer_order",),
+        "hints": ("order", "customer_order", "order_number", "delivery_order"),
+        "always": False,
+    },
     {
         "label": "Order",
-        "types": ("customer_order", "order", "order_number"),
-        "hints": ("order", "customer_order", "order_number"),
+        "types": ("order", "order_number"),
+        "hints": ("order", "order_number"),
         "always": False,
     },
     {
@@ -95,10 +105,10 @@ def _format_date(value: Any) -> str:
 
 
 def _fold(value: Any) -> str:
-    """The same `[-\\s]+`-stripped, lower-cased key `turn.state.fold_token` computes -
-    duplicated as a plain string op (not imported) because this module answers to no
-    purity guard, but the fold rule itself is one rule, not two."""
-    return re.sub(r"[-\s]+", "", str(value or "")).strip().lower()
+    """The ONE token fold, `turn.state.token_key` (ROGUE-CONVO-REVIEW-R2: this was a
+    `[-\\s]+` copy of it with no unicode dashes, the same drift `answer._type_norm`
+    carried). Empty for a nullish value, as before."""
+    return token_key(value or "")
 
 
 def _raw_of_token(qf: Mapping[str, Any], token: str) -> str:

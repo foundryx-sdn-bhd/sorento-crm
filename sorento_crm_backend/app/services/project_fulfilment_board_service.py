@@ -87,6 +87,7 @@ from app.services.project_supply_service import (
     _open_of,
     plan_qty_of,
 )
+from app.services.scm import ladder_steps
 from app.services.scm import priority
 from app.services.scm import sales_agent_service
 from app.services.scm import supply_assignment
@@ -415,6 +416,9 @@ class _Row:
         #: it back onto the board instead, read-only and at zero (`_cancelled_pending_
         #: change_rows`). `False`/`None` for every ordinary row.
         "cancelled", "pending_change_batch_id",
+        #: SO-CANCEL-LINE: CS transferred the line to Cancel SO. `cancelled_by_name` is a
+        #: display name, never the user id.
+        "cancelled_at", "cancelled_by_name", "cancel_reason",
         #: R7 (query-count): the core line's own `source_ref` / `company_id`, off the SAME
         #: `SalesOrderLine` this row's own demand read already fetched - threaded onto
         #: `_LineFacts` (`ProjectSupplyService.demand_facts`) so the own-arrival credit's
@@ -740,6 +744,14 @@ class FulfilmentBoardService:
             if pending_by_so
             else []
         )
+        # SO-CANCEL-LINE: lines CS transferred to Cancel SO stay on the board read-only at
+        # zero (no ladder, no bucketing), whether or not a change row is pending.
+        shown = {row.line_id for row in rows} | {row.line_id for row in cancelled_rows}
+        # A CRM-cancelled line always has a project mirror line, so only an adopted order can
+        # have one; a never-adopted board build costs no extra statement
+        # (`test_a_board_of_76_lines_does_not_scale_its_query_count_with_the_line_count`).
+        if adopted_by_so:
+            cancelled_rows = cancelled_rows + self._crm_cancelled_rows(numbers, shown=shown)
         # S3 (`PLAN-local-supplier-oi-routing.md`): ONE call for the whole board, never per
         # line - `test_buy_origin_computed_once_per_board_build` pins this.
         self._buy_origin = buy_origin_by_product(
@@ -887,6 +899,9 @@ class FulfilmentBoardService:
             # Every pool ROW already arrives with its own `available_for_project` computed
             # here; this is the one number the client still has to apply the rule with.
             "pool_share_pct": self._pool_share_pct(),
+            # "Borrow from another order" (PLAN-borrow-location-only-8oct.md, BR1): the Decide
+            # menu offers it exactly when this is on, read once with the walk's own switch.
+            "borrow_from_order_enabled": self.supply.borrow_from_order,
         }
 
     # ----------------------------------------------------- the stock drill-down
@@ -1786,6 +1801,74 @@ class FulfilmentBoardService:
             )
         return rows
 
+    def _crm_cancelled_rows(
+        self, so_numbers: Sequence[str], *, shown: AbstractSet[str]
+    ) -> List[_Row]:
+        """SO-CANCEL-LINE: the lines CS transferred to Cancel SO (`cancelled_at` set). The
+        board's own predicate drops a `cancelled` line, so without this the line CS just
+        cancelled would vanish from the board it was cancelled on. Read-only at zero."""
+        if not so_numbers:
+            return []
+        records = (
+            self.db.query(SalesOrderLine, SalesOrder, ProjectSalesOrderLine, Product, User)
+            .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+            .join(
+                ProjectSalesOrderLine,
+                ProjectSalesOrderLine.core_sales_order_line_id == SalesOrderLine.id,
+            )
+            .join(Product, Product.id == SalesOrderLine.product_id)
+            .outerjoin(User, User.id == SalesOrderLine.cancelled_by_id)
+            .filter(
+                SalesOrder.so_number.in_(list(so_numbers)),
+                SalesOrder.status.in_(["open", "closed"]),
+                SalesOrder.demand_class == "project",
+                SalesOrderLine.line_status == "cancelled",
+                SalesOrderLine.cancelled_at.isnot(None),
+            )
+            .all()
+        )
+        records = [r for r in records if str(r[0].id) not in shown]
+        if not records:
+            return []
+        customers = self._customers(
+            {str(order.customer_id) for _cl, order, *_r in records if order.customer_id}
+        )
+        rows: List[_Row] = []
+        for core_line, order, project_line, product, user in records:
+            customer_id = str(order.customer_id) if order.customer_id else None
+            rows.append(
+                _Row(
+                    line_id=str(core_line.id),
+                    sales_order_id=str(order.id),
+                    so_number=order.so_number,
+                    customer_id=customer_id,
+                    customer_name=customers.get(customer_id or ""),
+                    line_no=project_line.line_no,
+                    so_line_no=core_line.line_no,
+                    item_code=product.product_code,
+                    product_id=str(core_line.product_id) if core_line.product_id else None,
+                    project_sales_order_id=str(project_line.project_sales_order_id),
+                    project_line_id=str(project_line.id),
+                    qty=_ZERO,
+                    qty_ordered=core_line.qty_ordered,
+                    qty_delivered=core_line.qty_delivered,
+                    required_date=core_line.required_date,
+                    warehouse_id=str(core_line.warehouse_id) if core_line.warehouse_id else None,
+                    bucket_key=NO_DATE_BUCKET,
+                    cancelled=True,
+                    cancelled_at=core_line.cancelled_at,
+                    cancelled_by_name=(
+                        (getattr(user, "name", None) or "Unknown user")
+                        if user is not None
+                        else None
+                    ),
+                    cancel_reason=core_line.cancel_reason,
+                    source_ref=core_line.source_ref,
+                    company_id=str(core_line.company_id) if core_line.company_id else None,
+                )
+            )
+        return rows
+
     def _lent_from(self, core_line_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         """What another sales order borrowed OFF each of these lines (AC-L6).
 
@@ -1978,6 +2061,7 @@ class FulfilmentBoardService:
                     "ack_state": ack_state,
                     "rejected_reason": None,
                     "rejected_by_name": None,
+                    "rejected_at": None,
                     "_row_id": str(row_id),
                     "redirected": bool(redirected_to_pool),
                 }
@@ -2009,6 +2093,7 @@ class FulfilmentBoardService:
                 "ack_state": None if answered_refusal else ack_state,
                 "rejected_reason": None,
                 "rejected_by_name": None,
+                "rejected_at": None,
                 # AC-RL-07: this ROW's own id (to address `links_for_rows`) and whether
                 # IT was redirected - popped/resolved below, never sent as `_row_id`.
                 "_row_id": str(row_id),
@@ -2041,6 +2126,7 @@ class FulfilmentBoardService:
             entry["ack_state"] = ACK_REJECTED
             entry["rejected_reason"] = reason
             entry["rejected_by_name"] = name
+            entry["rejected_at"] = rejected_at
         # A LINE WITH A LIVE INSTRUCTION IS ABOUT THAT INSTRUCTION. It replaces whatever
         # last-wins left standing, so the number the cell prints is the row that decides the
         # line and not a cancelled or refused one that happened to be written after it. A
@@ -2076,6 +2162,29 @@ class FulfilmentBoardService:
                 for link in links_by_row.get(row_id, [])
             ]
         return out
+
+    def open_refusals(self, core_line_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        """The board's own order-inquiry entry for each line purchasing has refused and CS
+        has not decided again, keyed by core line id - for the Sales Order page's Lines tab
+        (PR 1622 mock v3), so both screens read a refusal by the SAME rules
+        (`_order_inquiries`, answered once an active revision is confirmed after it)."""
+        ids = [str(x) for x in core_line_ids if x]
+        if not ids:
+            return {}
+        self._addressing = self._mirror_addressing(ids)
+        frozen, _proposals, _names = self._frozen_decisions()
+        entries = self._order_inquiries(
+            ids,
+            decided_at={
+                core_id: (decision or {}).get("confirmed_at")
+                for core_id, decision in frozen.items()
+            },
+        )
+        return {
+            core_id: entry
+            for core_id, entry in entries.items()
+            if entry.get("ack_state") == ACK_REJECTED
+        }
 
     def _frozen_decisions(
         self,
@@ -2813,7 +2922,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:
@@ -3218,8 +3328,13 @@ class FulfilmentBoardService:
             if outside_window
             else [c for c in row.borrow_candidates if c.get("rung") == "group_borrow"]
         )
+        # Less any row with nothing free: the line's own location is always offered as a
+        # plain Borrow (BORROW-OWN-LOC) at 0 free, and "borrowing is possible from" a place
+        # with nothing to give would break AC-V4.
         ungrouped_donors = (
-            [] if outside_window or fact.group_code else list(row.borrow_candidates)
+            []
+            if outside_window or fact.group_code
+            else [c for c in row.borrow_candidates if _dec(c.get("free_qty")) > _ZERO]
         )
 
         # ------------------------------------------- 0. Can the site pool spare us a share?
@@ -3253,7 +3368,8 @@ class FulfilmentBoardService:
             []
             if outside_window
             else self.supply.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_open, pool=True
+                fact, as_of=as_of, borrow_left=borrow_open, pool=True,
+                location_only=not ladder_steps.ORDER_BORROW_NAMES_DONOR,
             )
         )
         # LADDER V8 (R-B, R-L, R-N): what the CHAIN can offer this line is each pool's own
@@ -3339,11 +3455,18 @@ class FulfilmentBoardService:
                 own_left=own_group_open,
             )
         )
+        # Use incoming is disabled (`ladder_steps`): the question offers what the walk read.
+        group_take_candidates = ladder_steps.without_water(group_take_candidates)
+        other_group_candidates = ladder_steps.without_water(other_group_candidates)
         # What the group has ON THE WATER, both halves. The timely half is already inside
         # `group_take_candidates`; the late half is named in the sentence and drawn by
         # nobody (captain, 27 August 2026), because a promise landing after the required
         # date covers nothing and silence about it reads as "there is none".
-        group_water = [] if outside_window else self.supply.group_water_for(fact)
+        group_water = (
+            []
+            if outside_window or not ladder_steps.USE_INCOMING
+            else self.supply.group_water_for(fact)
+        )
         group_taken = took_at("group_take")
         # WHAT WAS ACTUALLY DRAWN, per component: the quantity, the location, and whether it
         # came off a floor or off the water. Read from `components` and not from the
@@ -3433,7 +3556,8 @@ class FulfilmentBoardService:
             # to the pool question: the proof has to be the answer the engine actually got,
             # not a fresh read of a donor an earlier unit has already spent.
             else self.supply.order_borrow_candidates_for(
-                fact, as_of=as_of, borrow_left=borrow_open
+                fact, as_of=as_of, borrow_left=borrow_open,
+                location_only=not ladder_steps.ORDER_BORROW_NAMES_DONOR,
             )
         )
         order_borrow_taken = took_at(RUNG_ORDER_BORROW)
@@ -3466,27 +3590,29 @@ class FulfilmentBoardService:
         # own smaller quantity, the proof offered a document the walk had refused.
         supply_borrow_candidates = (
             []
-            if outside_window
+            if outside_window or not ladder_steps.SUPPLY_BORROW
             else self.supply.supply_borrow_candidates_for(
                 fact, as_of=as_of, supply_left=supply_open, need=row.unit_qty
             )
         )
-        add(
-            RUNG_SUPPLY_BORROW,
-            "Can we borrow incoming from a later order?",
-            taken=took_at(RUNG_SUPPLY_BORROW),
-            offered=sum((_dec(c.get("qty")) for c in supply_borrow_candidates), _ZERO),
-            sources=drawn_at(RUNG_SUPPLY_BORROW),
-            eligible=not outside_window,
-            note=self._supply_borrow_note(supply_borrow_candidates),
-            why=lambda outcome: (
-                _RESERVE_WINDOW_RUNG_WHY
-                if outside_window
-                else self._supply_borrow_why(
-                    outcome, supply_borrow_candidates, components, window=window
-                )
-            ),
-        )
+        # Borrow incoming is disabled (`ladder_steps`): its question is hidden, not asked.
+        if ladder_steps.SUPPLY_BORROW:
+            add(
+                RUNG_SUPPLY_BORROW,
+                "Can we borrow incoming from a later order?",
+                taken=took_at(RUNG_SUPPLY_BORROW),
+                offered=sum((_dec(c.get("qty")) for c in supply_borrow_candidates), _ZERO),
+                sources=drawn_at(RUNG_SUPPLY_BORROW),
+                eligible=not outside_window,
+                note=self._supply_borrow_note(supply_borrow_candidates),
+                why=lambda outcome: (
+                    _RESERVE_WINDOW_RUNG_WHY
+                    if outside_window
+                    else self._supply_borrow_why(
+                        outcome, supply_borrow_candidates, components, window=window
+                    )
+                ),
+            )
 
         # ------------------------------------------- 4. Buy
         #
@@ -3528,7 +3654,10 @@ class FulfilmentBoardService:
         if not donors:
             return None
         shown = " · ".join(
-            f"{c.get('donor_so_number') or 'an unnamed order'}"
+            # "Borrow from another order" OFF: the location is the whole story (D2).
+            f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+            if c.get("location_only")
+            else f"{c.get('donor_so_number') or 'an unnamed order'}"
             + (f" line {c['donor_line_no']}" if c.get("donor_line_no") is not None else "")
             + f" {qty_text(_dec(c.get('qty')))} at {c.get('location')}"
             for c in donors[:3]
@@ -3611,7 +3740,9 @@ class FulfilmentBoardService:
             return "This unit was already covered before a borrow was needed."
         if donors:
             named = ", ".join(
-                f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
+                f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                if c.get("location_only")
+                else f"{c.get('donor_so_number') or 'an unnamed order'} {qty_text(_dec(c.get('qty')))}"
                 for c in donors[:3]
             )
             return (
@@ -3787,7 +3918,9 @@ class FulfilmentBoardService:
             component
             for component in components
             if getattr(component, "rung", None) == RUNG_POOL
-            and getattr(component, "donor_so_number", None)
+            # The borrow half, not the free share. Read off `kind` rather than the donor's
+            # name: "Borrow from another order" OFF borrows the same stock nameless (D2).
+            and getattr(component, "kind", None) == BORROW
         ]
         if drawn:
             return " ".join(component.reason for component in drawn)
@@ -3808,7 +3941,9 @@ class FulfilmentBoardService:
         if not pool_chain:
             if borrow_donors:
                 named = ", ".join(
-                    f"{c.get('donor_so_number') or 'an unnamed pool order'} "
+                    f"{qty_text(_dec(c.get('qty')))} on hand at {c.get('location')}"
+                    if c.get("location_only")
+                    else f"{c.get('donor_so_number') or 'an unnamed pool order'} "
                     f"{qty_text(_dec(c.get('qty')))}"
                     for c in borrow_donors[:3]
                 )
@@ -5133,6 +5268,19 @@ class FulfilmentBoardService:
                     # facts for this donor, so the manual Borrow modal renders `CellStockTable`
                     # instead of a second, narrower table of its own.
                     "location": candidate.get("location"),
+                    # The rung and the donor line (BORROW-LOCATION-ONLY defect A): a Decide or
+                    # Amend borrow posts `donor_core_line_id` back, which is what keeps the
+                    # re-borrow guard (K6) and gives each line at one bin its own running
+                    # claim. The donor's name fields are whatever the service left on them -
+                    # blank with "Borrow from another order" off.
+                    "rung": candidate.get("rung"),
+                    "donor_core_line_id": candidate.get("donor_core_line_id"),
+                    "donor_so_number": candidate.get("donor_so_number"),
+                    "donor_line_no": candidate.get("donor_line_no"),
+                    "donor_agent_code": candidate.get("donor_agent_code"),
+                    "donor_required_date": candidate.get("donor_required_date"),
+                    "same_agent": bool(candidate.get("same_agent")),
+                    "lower_ranked": bool(candidate.get("lower_ranked")),
                 }
                 for candidate in row.borrow_candidates
             ],
@@ -5216,6 +5364,9 @@ class FulfilmentBoardService:
             # the only writer of a truthy pair, and it never runs the ladder for one).
             "cancelled": bool(row.cancelled),
             "pending_change_batch_id": row.pending_change_batch_id,
+            "cancelled_at": row.cancelled_at,
+            "cancelled_by": row.cancelled_by_name,
+            "cancel_reason": row.cancel_reason,
         }
 
     def _buckets(

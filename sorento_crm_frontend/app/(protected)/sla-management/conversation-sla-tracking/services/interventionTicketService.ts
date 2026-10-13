@@ -74,7 +74,8 @@
  *
  * D. THREAD (shared contact conversation) - UAC AC-C2
  *    GET /{tracking_id}/conversation?limit=&cursor=   (EXISTING route)
- *      -> { items: RespondMessageItem[], pagination?: {...}, error?: string }
+ *      -> ConversationThreadPage (local-first: items oldest to newest, `source`,
+ *         cursor = message id of the oldest row, pages older)
  *    Siblings for the same contact return the SAME thread; only the header and
  *    clocks differ.
  *    NOT implemented here: this is the same route the SLA detail page's

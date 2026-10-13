@@ -38,6 +38,8 @@ services:
       # JWT Authentication
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # Stored-secret encryption keys, current first (app/utils/field_encryption.py).
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
       
       # API Server
       API_HOST: 0.0.0.0
@@ -52,6 +54,10 @@ services:
       
       # Gunicorn workers (optional, defaults to 4 in gunicorn.conf.py)
       WORKERS: ${WORKERS:-4}
+
+      # Proxies whose X-Forwarded-For is believed (empty = none, use the socket peer).
+      # Set only when the nginx in front appends: see sorento_crm_backend/app/config.py.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       
       # AWS S3 (if used for attachments)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -133,6 +139,7 @@ volumes:
 #
 #    # Backend
 #    JWT_SECRET=<set me>
+#    FIELD_ENCRYPTION_KEY=<set me>   # Fernet key; never JWT_SECRET
 #    JWT_ALGORITHM=HS256
 #    CORS_ORIGINS=http://localhost,http://localhost:80
 #    ENVIRONMENT=production

@@ -1893,7 +1893,9 @@ def _target_facts(db: Session, target_ids: set) -> Dict[str, dict]:
         }
     for allocation, supplier in (
         db.query(SPOAllocation, Supplier.supplier_name)
-        .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+        # OI-SUPPLIER-FROM-PO: the source PO's supplier, never the SPO's own when a PO
+        # can be found - this name lands in the row's "Linked to" note.
+        .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
         .filter(
             SPOAllocation.id.in_(wanted),
             # The same visibility test `_purchase_side` and `_chain_allocations` apply
@@ -2017,9 +2019,9 @@ def _ref_targets(
 
 def _chain_allocations(
     db: Session, po_numbers: set, product_ids: set
-) -> Tuple[Dict[tuple, List[str]], Dict[tuple, List[str]]]:
-    """The SPO allocations a purchase order BECAME: per `(PO number, PO LINE ref, product)`
-    and, for whatever cannot be read that way, per `(PO number, product)` (D10).
+) -> Dict[tuple, List[str]]:
+    """The SPO allocations a purchase order LINE became, per `(PO number, PO LINE ref,
+    product)` (D10), and nothing coarser.
 
     The shipping order feed states the purchase order it came from
     (`spo_allocations.from_po_number`), which is the second of the two ways the
@@ -2041,9 +2043,17 @@ def _chain_allocations(
     ordinals, and `'1'`, `'2'` and `'3'` each sit on 190 to 240 purchase order lines. Keyed on
     the ref alone, an ordinal would chain one document's line to another document's
     containers.
+
+    There is no `(PO number, product)` map any more (OI-SPO-EXACT, owner 13 Oct: "AutoCount
+    linkage is the truth, explicit links only, no matching guesses"). It used to answer when
+    no allocation named the line, and it answered with ANY allocation of the document: on
+    the 12 Oct prod backup OI-2601-9001 (SO900001, SRTTEST01) landed on SPO-2026/01-9001
+    line 25, which quotes ANOTHER line of 202601-S9001 bought for another sales order line,
+    while the row's own line had shipped nothing. An allocation that does not
+    name the line is not this line's container; the line itself answers instead.
     """
     if not po_numbers or not product_ids:
-        return {}, {}
+        return {}
     rows = (
         db.query(SPOAllocation)
         .filter(
@@ -2058,19 +2068,14 @@ def _chain_allocations(
         )
         .all()
     )
-    held: Dict[tuple, List[str]] = {}
     by_line: Dict[tuple, List[str]] = {}
     for allocation in rows:
-        product = str(allocation.product_id or "")
-        held.setdefault((str(allocation.from_po_number), product), []).append(
-            str(allocation.id)
-        )
         ref = (allocation.from_po_line_ref or "").strip()
         if ref:
             by_line.setdefault(
-                (str(allocation.from_po_number), ref, product), []
+                (str(allocation.from_po_number), ref, str(allocation.product_id or "")), []
             ).append(str(allocation.id))
-    return held, by_line
+    return by_line
 
 
 def _less_own_shipments(
@@ -2093,11 +2098,9 @@ def _less_own_shipments(
     `from_po_number` without a `from_po_line_ref`, and 0 purchase order lines have a blank
     `source_ref`, so an allocation that really came from this line always names it.
 
-    `_through_po` still walks the document's allocations when the feed named no line, which
-    is D10 as it has always been (AC-R-2, AC-R-9). The two are not in conflict: an allocation
-    that does not name this line is not evidence that this line's units have sailed, so it
-    must not reduce the line, while taking it first is still the right walk when it is all
-    the feed states. Floored at zero, and read off the facts already built for those
+    `_through_po` walks exactly the same allocations (OI-SPO-EXACT, 13 Oct): what may
+    reduce a line and what a row may land on through that line are one set, so the two can
+    never disagree. Floored at zero, and read off the facts already built for those
     allocations, so nothing is queried again.
 
     The owner still sees both documents: "we definitely cannot double count, but by this
@@ -2228,7 +2231,7 @@ def pair_needs(
     target_ids |= {i for ids in ref_po_lines.values() for i in ids}
     facts = _target_facts(db, target_ids)
 
-    chain, chain_by_line = _chain_allocations(
+    chain_by_line = _chain_allocations(
         db,
         # Every purchase order this run may land on, whichever source named it: the
         # reference reaches the shipping order through exactly the same D10 walk a claim
@@ -2247,7 +2250,9 @@ def pair_needs(
         {str(n.core_line.product_id or "") for n in needs},
     )
     chained = {
-        allocation_id for allocations in chain.values() for allocation_id in allocations
+        allocation_id
+        for allocations in chain_by_line.values()
+        for allocation_id in allocations
     }
     facts.update(
         {key: value for key, value in _target_facts(db, chained).items() if key not in facts}
@@ -2300,10 +2305,12 @@ def pair_needs(
             """A purchase order line the book named: its shipping orders first (D10), the
             purchase order line itself only for what they cannot cover.
 
-            The shipping orders THIS LINE became, where the feed says so, and only otherwise
-            the ones the whole document became: one purchase order can carry five lines of
-            the same item for five different sales order lines, and the quantity is owed
-            against the container that holds this one.
+            ONLY the shipping orders THIS LINE became - allocations whose `from_po_number`
+            AND `from_po_line_ref` name it - never the ones the rest of the document became
+            (OI-SPO-EXACT, owner 13 Oct): one purchase order can carry five lines of the
+            same item for five different sales order lines, and the quantity is owed
+            against the container that holds this one. No allocation names the line: the
+            row links to the purchase order line itself.
 
             `record` is `book_targets_out`'s own ask (source-1 only): true only when THIS
             call came from the ref walk below, never from a claim - `_through_po` is the
@@ -2314,8 +2321,8 @@ def pair_needs(
                 return
             exact = chain_by_line.get(
                 (str(fact["document"]), str(fact.get("source_ref") or ""), product)
-            )
-            for allocation_id in (exact or chain.get((str(fact["document"]), product), [])):
+            ) or []
+            for allocation_id in exact:
                 if record:
                     _record_book_target(allocation_id)
                 if held.need_left <= _ZERO:
@@ -2899,7 +2906,8 @@ def _document_facts_for_link(db: Session, link: Any) -> Dict[str, Any]:
         row = (
             db.query(Supplier.supplier_name, SPOAllocation.expected_date)
             .select_from(SPOAllocation)
-            .outerjoin(Supplier, Supplier.id == SPOAllocation.supplier_id)
+            # OI-SUPPLIER-FROM-PO: the source PO's supplier, as `_target_facts`.
+            .outerjoin(Supplier, Supplier.id == spo_supply.supplier_id_for())
             .filter(SPOAllocation.id == link.spo_allocation_id)
             .first()
         )

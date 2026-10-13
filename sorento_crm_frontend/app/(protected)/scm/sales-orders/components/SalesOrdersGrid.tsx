@@ -549,6 +549,21 @@ export default function SalesOrdersGrid({ salesAgentId, listingKey }: SalesOrder
         size: 220,
         meta: { headerTitle: 'Project' },
       },
+      {
+        accessorKey: 'po_ref',
+        header: ({ column }) => <DataGridColumnHeader title="PO ref" column={column} />,
+        cell: ({ row }) => {
+          const poRef = row.original.po_ref;
+          if (!poRef) return <span className="text-muted-foreground">-</span>;
+          return (
+            <span className="block truncate" title={poRef}>
+              {poRef}
+            </span>
+          );
+        },
+        size: 140,
+        meta: { headerTitle: 'PO ref' },
+      },
       // Off inside an agent's own record: a column whose every cell repeats the name at the
       // top of the page is a column that answers nothing.
       ...(pinnedToAgent

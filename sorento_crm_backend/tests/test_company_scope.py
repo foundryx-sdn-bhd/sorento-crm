@@ -281,6 +281,11 @@ _COMPANY_ID_ALLOWLIST = {
     # written by the global audit listener for whichever company's write lost its trail,
     # counted company-wide on the system health page, like audit_logs.
     "audit_trail_gaps",
+    # Chat analytics facts (CA-1): `company_id` is a SNAPSHOT of the contact's primary
+    # customer link when the turn closed, NULL for an unlinked contact. One bot serves
+    # every company, so the row is not owned by one; the Chat overview report is gated by
+    # its own staff permission (`chatbot.analytics.view`) and declares scope "none".
+    "chat_ask_facts",
     # Conversation / form SLA trackers carry the company that decides WHICH escalation
     # ladder the tracker climbs, not who may read the row. Scoping it would break the
     # two readers that have no company: the overdue scan (a scheduler tick with no
@@ -594,7 +599,15 @@ def test_every_company_id_table_is_registered():
     # CUSTOMER-GROUP adds 1: `customer_groups` is one company's own grouping of its ledgers,
     # unique per (company, name) = 154.
     # + 1 (ITEM-TYPE-CRM): `item_types`, AutoCount ItemType reference data = 155.
-    expected_owned = 155
+    # + 2 (DEBTOR-CODE-UNIQUE): `customer_aliases` (another name of ONE company's customer,
+    #   read by the chatbot's name join) and `customer_merge_map` (that company's merge
+    #   record, written and reverted per company) = 157.
+    # + 1 (PRODUCT-ALTERNATIVES, #1533): `product_alternatives`, one company's own "use this
+    #   instead" link between two of its products; the product page and the chatbot read it
+    #   by product, so the mixin's filter is what hides another company's links = 158.
+    # + 1 (WC-SEAT-COMPAT): `product_compatibility`, one company's own "seat cover fits WC"
+    #   link between two of its products, read by product like the alternatives = 159.
+    expected_owned = 159
     assert len(owned) == expected_owned, (
         f"expected {expected_owned} owned tables, found {len(owned)}: {sorted(owned)}"
     )

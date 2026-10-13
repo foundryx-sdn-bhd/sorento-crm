@@ -234,6 +234,11 @@ def _build_json_schema() -> dict[str, Any]:
                     # PLAN-retail-sales-reports-26sep S1: the sales analysis's axes.
                     "month",
                     "year",
+                    # REPORT-ENGINE slice 1b: the `sales_ranking` ask's other dimensions.
+                    "sales_agent",
+                    "brand",
+                    "category",
+                    "channel",
                     None,
                 ],
             },
@@ -258,7 +263,7 @@ def _build_json_schema() -> dict[str, Any]:
             # (owner rulings 26 Sep 2026: never assume the basis or the grain). A null
             # `rank_by` is asked too (no default metric).
             "rank_by": {"type": ["string", "null"], "enum": ["quantity", "amount", None]},
-            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "unclear", None]},
+            "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", "outstanding", "unclear", None]},
             "rank_group": {"type": ["string", "null"], "enum": ["item", "category", "unclear", None]},
             # Fix lane round 4 (owner retest, 27 Sep 2026): "cold selling", "least sold"
             # rank ascending. Same shape and same exemption as the three above.
@@ -280,11 +285,28 @@ def _build_json_schema() -> dict[str, Any]:
                 ],
             },
             "sort_dir": {"type": ["string", "null"], "enum": ["asc", "desc", None]},
+            # REPORT-ENGINE (owner rule 4 Oct 2026, semantic only): the parser's own reading
+            # that this message only refines the sales ranking on screen, and the ranking's
+            # measure. Same shape and exemption as `rank_direction`.
+            "ranking_refine": {"type": ["boolean", "null"]},
+            # REPORT-DRILLDOWN (owner 8 Oct 2026, semantic only): a follow-up ranking on a new
+            # axis read as about the rows the last ranking printed ("scoped"), its own ask
+            # ("global"), or either ("unsure", asked). Same exemption as `ranking_refine`.
+            "ranking_drill": {"type": ["string", "null"], "enum": ["scoped", "global", "unsure", None]},
+            "measure": {"type": ["string", "null"], "enum": ["qty", "amount", None]},
             # PLAN-retail-sales-reports-26sep S1: the sales analysis's basis and the
             # company named. Required for strict mode and tolerated absent, exactly as
             # `sales_channel` above (no recorded emission carries them).
             "sales_basis": {"type": ["string", "null"], "enum": ["ordered", "delivered", "invoiced", None]},
             "sales_company": string_or_null,
+            # PROMO-SUBJECT-FILTER R5: the promotion KIND the message names (a
+            # `promotion_types.type_code` the prompt lists at runtime), null for none or
+            # for a word that fits no listed kind. Required for strict mode, tolerated
+            # absent (no recorded emission carries it).
+            "promotion_kind": string_or_null,
+            # DEV-FAILURES RC-B: the portal form a portal_link ask names (a
+            # `portal_service.SUPPORTED_TYPES` code), null for none. Tolerated absent.
+            "portal_form": string_or_null,
             "correction": {"type": ["boolean", "null"]},
             # PLAN-chatbot-customer-scope-29sep D2: "my" / "me" / "our" as the asker's own
             # account. Required for strict mode, tolerated absent (older prompt versions).
@@ -376,6 +398,39 @@ def _build_json_schema() -> dict[str, Any]:
             # `engine.run_turn` closes the conversation episode on it. Both readers shipped
             # with no way for the model to set it, so no live turn has ever reset a topic
             # or written an episode.
+            # MULTI-ASK-PLAN S2: every thing the message asks, in order, when it asks two
+            # or more (`turn/sub_asks.py` runs one query per entry), and whether a typed
+            # code means the exact code or its family. Tolerated absent: no prompt version
+            # before `maskp_0001_parser_sub_asks` emits them.
+            "sub_asks": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "measure": {
+                            "type": "string",
+                            "enum": [
+                                "stock", "incoming", "received_qty", "last_receipt", "supplier",
+                                "last_cost", "sold_total", "sold_by", "other",
+                            ],
+                        },
+                        "group_by": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "sales_agent", "customer", "product", "brand", "category",
+                                "location", "channel", "month", None,
+                            ],
+                        },
+                        "date_from": string_or_null,
+                        "date_to": string_or_null,
+                        "basis": {"type": ["string", "null"], "enum": ["delivered", "ordered", None]},
+                        "label": string_or_null,
+                    },
+                    "required": ["measure", "group_by", "date_from", "date_to", "basis", "label"],
+                },
+            },
+            "family": {"type": ["boolean", "null"]},
             "topic_reset": {"type": ["boolean", "null"]},
             # Ported from PR #1118 (not merged), D13/D15: "go ahead without answering
             # the open question" - said in any wording, in any language ("just
@@ -431,6 +486,81 @@ def _build_json_schema() -> dict[str, Any]:
                     "qty_for_all": {"type": ["number", "null"]},
                 },
                 "required": ["mode", "picked", "items", "qty_for_all"],
+            },
+            # LOWSTOCK-SEMANTIC (owner, 4 Oct 2026): everything the low stock report's
+            # filters need, read by the parser and nowhere else - the lane only resolves
+            # these words against the master data (`lanes/business/low_stock_ask.py`).
+            # Always an object (strict mode), empty unless intent_hint is
+            # `low_stock_report`. `group_by` is an ENUM: brand / warehouse are named so
+            # the lane can ASK (the workbook splits only by supplier and category),
+            # never so a value it cannot run is guessed into one it can.
+            "low_stock": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "group_by": {
+                        "type": ["string", "null"],
+                        "enum": ["supplier", "category", "supplier_category", "brand", "warehouse", "none", None],
+                    },
+                    "categories": {"type": "array", "items": {"type": "string"}},
+                    "all_categories": {"type": ["boolean", "null"]},
+                    "brands": {"type": "array", "items": {"type": "string"}},
+                    "suppliers": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["group_by", "categories", "all_categories", "brands", "suppliers"],
+            },
+            # CA-3 (chat analytics): the chat report's own words, read by the parser and
+            # nowhere else. ONE nullable object (the `low_stock` pattern) so the shared
+            # `group_by` / `measure` enums gain nothing. The period is `date_filter_*`, the
+            # count `top_n`, the direction `rank_direction`; null on every other message.
+            # `subject` is a chatbot domain name, a free string: the domain list is data.
+            "chat_report": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "group_by": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "topic", "subject", "product", "customer", "outcome", "failure_reason",
+                            "week", "month", "day", "language", None,
+                        ],
+                    },
+                    "measure": {
+                        "type": ["string", "null"],
+                        "enum": ["asks", "failed", "failure_rate", "contacts", None],
+                    },
+                    "subject": {"type": ["string", "null"]},
+                },
+                "required": ["group_by", "measure", "subject"],
+            },
+            # SO-PO-REF (owner, 7 Oct 2026): the PO number(s) the message gives, as typed
+            # without the word PO. Read by the business lane for a non-staff profile only
+            # (`so_status.lookup_po_refs`); no code detects a PO number in the text.
+            "po_refs": {"type": ["array", "null"], "items": {"type": "string"}},
+            # CHAT-FIND: which products stand in a registered relation to the named product
+            # (`product_find.FILTERS`, vocabulary in the `{{find_filters}}` prompt variable).
+            # Keys are the registry's; the named product stays an ordinary entity.
+            "find": {
+                "type": ["object", "null"],
+                "additionalProperties": False,
+                "properties": {
+                    "filters": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "key": {"type": "string"},
+                                # The filter's typed value (a code, a number, a listed word)
+                                # and the number's unit, when its line says it takes one.
+                                "value": {"type": ["string", "number", "null"]},
+                                "unit": {"type": ["string", "null"]},
+                            },
+                            "required": ["key", "value", "unit"],
+                        },
+                    },
+                },
+                "required": ["filters"],
             },
             "anaphora": {
                 "type": "object",
@@ -506,8 +636,13 @@ def _build_json_schema() -> dict[str, Any]:
             "rank_direction",
             "sort_by",
             "sort_dir",
+            "ranking_refine",
+            "ranking_drill",
+            "measure",
             "sales_basis",
             "sales_company",
+            "promotion_kind",
+            "portal_form",
             "correction",
             "self_reference",
             "routing",
@@ -520,6 +655,12 @@ def _build_json_schema() -> dict[str, Any]:
             "open_question_answer",
             "anaphora",
             "profile_statements",
+            "low_stock",
+            "chat_report",
+            "po_refs",
+            "sub_asks",
+            "family",
+            "find",
         ],
     }
 
@@ -565,12 +706,33 @@ TOLERATED_ABSENT: frozenset[str] = frozenset(
         "rank_direction",
         "sort_by",
         "sort_dir",
+        "ranking_refine",
+        "ranking_drill",
+        "measure",
         "sales_basis",
         "sales_company",
+        "promotion_kind",
+        "portal_form",
         "proceed_anyway",
         "open_question_answer",
         "self_reference",
         "profile_statements",
+        # LOWSTOCK-SEMANTIC: no recorded emission and no prompt version before
+        # `lss_0001_parser_vocab` carries it; absent reads as "nothing placed".
+        "low_stock",
+        # CA-3: no prompt version before `ca3_0001_chat_report_prompt` carries it; absent
+        # reads as "not a chat report".
+        "chat_report",
+        # SO-PO-REF: no prompt version before `sopr_0002_parser_po_refs` carries it;
+        # absent reads as "no PO number given".
+        "po_refs",
+        # MULTI-ASK-PLAN S2: no prompt version before `maskp_0001_parser_sub_asks`
+        # emits either; absent reads as one ask, scope not said.
+        "sub_asks",
+        "family",
+        # CHAT-FIND: no prompt version before the `{{find_filters}}` publish carries it;
+        # absent reads as "not a find".
+        "find",
     }
 )
 
@@ -635,6 +797,10 @@ def _subject_names(rows: Any) -> list[str]:
     return names
 
 
+#: How many names one axis of the "Current subject" line prints before "(and N more)".
+SUBJECT_NAMES_CAP = 5
+
+
 def current_subject_line(focus: Any) -> str | None:
     """"Current subject: ..." - what the conversation is about, on one line, or None.
 
@@ -656,6 +822,12 @@ def current_subject_line(focus: Any) -> str | None:
         ("document", getattr(focus, "document", None)),
     ):
         names = _subject_names(rows)
+        if len(names) > SUBJECT_NAMES_CAP:
+            # ATTACH-SET-BRAND-FOLLOWUP round 2 (live console pass, 7 Oct 2026): a set page
+            # settles every listed row on the focus, fifty of them, and the model echoed all
+            # fifty back as entities, past `PARSER_MAX_TOKENS` (the turn then failed on
+            # truncated JSON). The subject line names the subject, never every row.
+            names = names[:SUBJECT_NAMES_CAP] + [f"(and {len(names) - SUBJECT_NAMES_CAP} more)"]
         if names:
             parts.append(f"{label} {', '.join(names)}")
     status = getattr(focus, "status", None)

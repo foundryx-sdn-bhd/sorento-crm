@@ -247,6 +247,22 @@ def test_theme_defaults_logo_falls_back_to_company_logo():
     assert t.logo_url == "https://cdn.example.com/company.png"
 
 
+def test_stored_company_name_reaches_the_default_footer_note():
+    """PR 1622 owner hand test: the live install's System Settings name is still the
+    template's "Metronic"; the company named on the Email Theme screen must be the one the
+    footer's default sentence names, not only the header."""
+    t = _theme(company_name="Sorento")
+    assert t.footer_note == (
+        "You received this email because you have an account on Sorento. "
+        "It is a service message about your work in the system."
+    )
+
+
+def test_stored_footer_note_still_wins_over_the_default():
+    t = _theme(company_name="Sorento", footer_note="Custom note.")
+    assert t.footer_note == "Custom note."
+
+
 def test_stored_invalid_value_ignored_field_by_field(caplog):
     with caplog.at_level(logging.WARNING):
         t = _theme(primary_color="red", button_radius=99, company_name="Kept")

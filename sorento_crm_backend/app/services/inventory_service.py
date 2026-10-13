@@ -637,6 +637,16 @@ class StockService:
         # `warehouse_id`), None when it named none. Read beside `resolved_policy`.
         self.requested_warehouse_ids: Optional[set[str]] = None
     
+    @staticmethod
+    def _shipments_from_today(db: Session, product_ids: list[str], regions) -> dict:
+        """The dealer's incoming read: shipments with a packing list whose ETA is today or
+        later (CHAT-FIND round 3: a past ETA was printed as the day stock comes)."""
+        from app.services import incoming_stock_service as incoming
+
+        return incoming.earliest_packing_list_shipment(
+            db, product_ids, regions=regions, not_before=incoming.today_myt()
+        )
+
     def list_stock(
         self,
         page: int = 1,
@@ -895,6 +905,13 @@ class StockService:
                 return payload
             q = q.filter(Stock.warehouse_id.in_(resolved_wh_ids))
 
+        # PRODUCT-ALTERNATIVES: every LOCATION narrowing (active warehouses, the caller's
+        # warehouses, the visibility policy) and none of the product/search ones. A stored
+        # alternative is not one of the products asked for, so `policy_q` (which carries the
+        # product filter) would read it as holding nothing; it is judged on exactly the
+        # locations the asked product was.
+        location_q = q
+
         # Both narrowings filter the rows (ANDed), so the Total's O/S answers the same set.
         if warehouse_ids:
             self.requested_warehouse_ids = {str(w) for w in warehouse_ids}
@@ -1100,6 +1117,7 @@ class StockService:
                 payload,
                 policy=policy,
                 policy_q=policy_q,
+                location_q=location_q,
                 last_import_at=last_import_at,
                 requested_qty=requested_qty,
                 requested_quantities=requested_quantities,
@@ -1110,16 +1128,10 @@ class StockService:
                 product_id_order=[str(pid) for pid in (product_ids or []) if pid],
                 page=page,
                 limit=limit,
-                # Ported from PR #1118 (not merged), SEC-S1: the SAME location
-                # narrowing the on-hand query above ran with ("stock at BRW"), so the
-                # supply reads cannot answer from a warehouse the question itself
-                # excluded. Merged with `resolved_wh_ids` (review round 2): the
-                # singular `warehouse_id` param narrows the on-hand read above but,
-                # unmerged, left the three supply reads unscoped - a question asking
-                # about ONE warehouse by its singular param still counted supply
-                # parked at every other one.
-                warehouse_ids=list({*(warehouse_ids or []), *(resolved_wh_ids or [])})
-                or None,
+                # AVAIL-ONHAND-BASIS: no `warehouse_ids=` any more. It scoped the
+                # availability mode's open-SO read (SEC-S1, #1118) to the same
+                # locations as the on-hand query; that read is gone, and the on-hand
+                # query above already carries the caller's narrowing in `policy_q`.
                 resolved_contact_id=resolved_contact_id,
             )
 
@@ -1134,12 +1146,15 @@ class StockService:
         # built first, a probe that trips can lose only its own suggestions instead
         # of taking the contact's whole stock answer down with it.
         #
-        # A contact on `compact` or `availability` gets NO probe at all (AC-B14).
-        # Its answer names OTHER products that do have stock, which is the one
-        # thing those two modes exist to withhold: a dealer told "we have none,
-        # but try these three" has been handed the product list and the fact
-        # that stock exists in a location the policy hides.
-        suppress_alternatives = policy is not None and policy.mode != "detailed"
+        # A contact on `availability` gets NO probe at all (AC-B14). Its answer
+        # names OTHER products that do have stock, which is the one thing the
+        # dealer mode exists to withhold: a dealer told "we have none, but try
+        # these three" has been handed the product list and the fact that stock
+        # exists in a location the policy hides. `compact` gets the probe like
+        # `detailed` (WA-MSG-TRIM, owner 3 Oct 2026: every contact moved to
+        # compact and keeps the suggestions); the has-data gate still counts only
+        # the policy's locations.
+        suppress_alternatives = policy is not None and policy.mode == "availability"
         if total == 0 and not suppress_alternatives:
             # Best-effort: a suggestion probe must never turn a legitimately-empty
             # listing into a 500 (AC-R1). The pre-lookup + neighbour query run after
@@ -1362,12 +1377,12 @@ class StockService:
         policy,
         policy_q,
         last_import_at,
+        location_q=None,
         requested_qty: Optional[int],
         requested_product_ids: set[str],
         page: int,
         limit: int,
         requested_quantities: Optional[dict] = None,
-        warehouse_ids: Optional[list[str]] = None,
         product_id_order: Optional[list[str]] = None,
         resolved_contact_id: Optional[str] = None,
     ) -> None:
@@ -1455,27 +1470,47 @@ class StockService:
             .all()
         ]
 
-        rows = (
-            policy_q.with_entities(
-                Stock.product_id.label("product_id"),
-                Warehouse.warehouse_code.label("warehouse_code"),
-                func.sum(Stock.quantity_on_hand).label("on_hand"),
+        # PRODUCT-ALTERNATIVES (card Q2/Q4): the stored alternatives of this page's
+        # products, read ONCE for both modes below. Their figures are read through the
+        # same `policy_q` (the caller's allowed locations) as the page's own, so an
+        # alternative is judged exactly like any other product; they are never a page
+        # row of their own (`ordered_ids` stays the page).
+        from app.services.product_alternative_service import alternatives_for
+
+        alternatives_by_pid = alternatives_for(self.db, page_ids)
+        alternative_ids: list[str] = []
+        for alternatives in alternatives_by_pid.values():
+            for alternative in alternatives:
+                if alternative.id not in page_ids and alternative.id not in alternative_ids:
+                    alternative_ids.append(alternative.id)
+        query_ids = page_ids + alternative_ids
+
+        def _on_hand_rows(base_q, ids: list[str]) -> list:
+            if not ids:
+                return []
+            return (
+                base_q.with_entities(
+                    Stock.product_id.label("product_id"),
+                    Warehouse.warehouse_code.label("warehouse_code"),
+                    func.sum(Stock.quantity_on_hand).label("on_hand"),
+                )
+                .join(Warehouse, Warehouse.id == Stock.warehouse_id)
+                .filter(Stock.product_id.in_(ids))
+                .group_by(Stock.product_id, Warehouse.warehouse_code)
+                .all()
             )
-            .join(Warehouse, Warehouse.id == Stock.warehouse_id)
-            .filter(Stock.product_id.in_(page_ids))
-            .group_by(Stock.product_id, Warehouse.warehouse_code)
-            .all()
-            if page_ids
-            else []
+
+        rows = _on_hand_rows(policy_q, page_ids) + _on_hand_rows(
+            location_q if location_q is not None else policy_q, alternative_ids
         )
         products = (
-            self.db.query(Product).filter(Product.id.in_(page_ids)).all()
-            if page_ids
+            self.db.query(Product).filter(Product.id.in_(query_ids)).all()
+            if query_ids
             else []
         )
         products_by_id = {str(p.id): p for p in products}
 
-        per_product: dict[str, list] = {pid: [] for pid in page_ids}
+        per_product: dict[str, list] = {pid: [] for pid in query_ids}
         for row in rows:
             per_product.setdefault(str(row.product_id), []).append(row)
 
@@ -1491,8 +1526,9 @@ class StockService:
         payload["empty"] = total_products == 0
 
         if policy.mode == "compact":
-            payload["stock_summary"] = [
-                {
+
+            def _summary_block(pid: str) -> dict:
+                return {
                     "product_id": pid,
                     "product_code": getattr(products_by_id.get(pid), "product_code", None),
                     "product_name": getattr(products_by_id.get(pid), "product_name", None),
@@ -1524,8 +1560,36 @@ class StockService:
                         )
                     },
                 }
-                for pid in ordered_ids
-            ]
+
+            # PRODUCT-ALTERNATIVES (card Q2/Q4, staff): a block that is discontinued or
+            # holds nothing names its alternatives under the marker, and an alternative
+            # the ask did not list gets its own block after the page, once.
+            summary = []
+            listed = set(ordered_ids)
+            appended: list[str] = []
+            for pid in ordered_ids:
+                summary_block = _summary_block(pid)
+                alternatives = alternatives_by_pid.get(pid) or []
+                if alternatives and (
+                    summary_block["flags"]["discontinued"]
+                    or summary_block["total_on_hand"] <= 0
+                ):
+                    summary_block["flags"]["alternatives"] = [
+                        a.product_code for a in alternatives
+                    ]
+                    # Its own block only when the caller NAMED products: a catalogue
+                    # page ("what stock do you have?") already pages every product, and
+                    # appending would grow each page past its limit.
+                    for alternative in alternatives:
+                        if (
+                            named_ids
+                            and alternative.id not in listed
+                            and alternative.id not in appended
+                        ):
+                            appended.append(alternative.id)
+                summary.append(summary_block)
+            summary.extend(_summary_block(pid) for pid in appended)
+            payload["stock_summary"] = summary
             return
 
         # Ported from PR #1118 (not merged), review round 6, finding B: when the
@@ -1580,62 +1644,23 @@ class StockService:
         # date ever appear. Replaces #1118's verdict()/spo_allocations/purchase-order/
         # threshold read (ported as-is in an earlier step of this slice to reach
         # #1118 parity; superseded here, `app/services/stock_verdict.py` deleted).
-        from app.models.order import SalesOrderLine
+        #
+        # AVAIL-ONHAND-BASIS (owner ruling, 6 Oct 2026): the figure judged is ON HAND
+        # in the allowed locations, nothing subtracted. The open sales order read that
+        # used to net it (D2 / AC-SA303, "on hand minus open SO", with its own
+        # `_supply_scope` mirroring the on-hand filter) is gone from THIS path only:
+        # 6 on hand with 13 outstanding answered "no stock" to a dealer asking for 10,
+        # while the staff summary read Total 6 (O/S 13) at the same timestamp. The
+        # staff summary's O/S and sellable (`stock.py::_with_sellable`, through
+        # `open_so_qty_by_product*` above) keep subtracting: that reply is meant to
+        # show the outstanding. Wording unchanged (MCP presenter).
         from app.models.product import ProductCategory
         from app.models.resources import Attachment
-        from app.services.incoming_stock_service import (
-            _attachment_payload,
-            earliest_packing_list_shipment,
-        )
+        from app.services.incoming_stock_service import _attachment_payload
         from app.services.eta_policy import rules_for_contact, visible_eta
         from app.services.stock_ask_branch import branch as compute_branch
         from app.services.stock_ask_branch import short_of
         from app.services.stock_ask_limits import effective as effective_limits
-
-        # SEC-S1 (security review, round 1, kept from #1118): `warehouse_criterion` is only HALF of what
-        # the on-hand read filters by. That query also carries `Warehouse.is_active`
-        # (a retired location is not somewhere this contact can be supplied from) and
-        # the caller's own `warehouse_ids=` narrowing ("stock at BRW"), and a supply
-        # read that skipped both counted an allocation bound for a retired warehouse,
-        # or bound for MWH under a question that asked only about BRW, towards a
-        # verdict the dealer then read as a promise. Nit, review round 1: the
-        # incoming and purchase-order reads this scope also applied to under #1118
-        # are gone by R5 (this slice reads incoming stock a different way, ANY
-        # location, never scoped here) - only the open SO read below still uses it.
-        def _supply_scope(column):
-            scoped = [
-                column.isnot(None),
-                warehouse_criterion(policy, column),
-                column.in_(
-                    self.db.query(Warehouse.id).filter(Warehouse.is_active.is_(True))
-                ),
-            ]
-            if warehouse_ids:
-                scoped.append(column.in_(warehouse_ids))
-            return scoped
-
-        # D2: open SO subtracted from on-hand, per the SAME warehouse_criterion as
-        # `on hand` itself. A line with no destination is never subtracted - it
-        # cannot be placed at any warehouse the policy names, allowed or not.
-        so_rows = (
-            self.db.query(
-                SalesOrderLine.product_id,
-                func.sum(SalesOrderLine.qty_ordered - SalesOrderLine.qty_delivered).label(
-                    "open_qty"
-                ),
-            )
-            .filter(
-                SalesOrderLine.product_id.in_(page_ids),
-                *_supply_scope(SalesOrderLine.warehouse_id),
-                SalesOrderLine.line_status == "open",
-                SalesOrderLine.qty_ordered > SalesOrderLine.qty_delivered,
-            )
-            .group_by(SalesOrderLine.product_id)
-            .all()
-            if page_ids
-            else []
-        )
-        open_so_by_product = {str(r.product_id): float(r.open_qty or 0) for r in so_rows}
 
         def _resolve_ask(pid: str) -> Optional[int]:
             # D20 (kept from #1118): the per-product map wins; the scalar fills
@@ -1653,7 +1678,7 @@ class StockService:
         # R2: X and Y resolved per product against its OWN category - one query for
         # every category referenced on this page, no parent walk (R12).
         category_ids = {
-            getattr(products_by_id.get(pid), "category_id", None) for pid in page_ids
+            getattr(products_by_id.get(pid), "category_id", None) for pid in query_ids
         }
         category_ids.discard(None)
         categories_by_id = (
@@ -1670,9 +1695,7 @@ class StockService:
         # R5: the earliest still-incoming shipment with a packing list, any
         # location, per product on this page.
         contact_rules = rules_for_contact(self.db, resolved_contact_id)
-        eta_by_product = earliest_packing_list_shipment(
-            self.db, page_ids, regions=contact_rules.regions
-        )
+        eta_by_product = self._shipments_from_today(self.db, query_ids, contact_rules.regions)
 
         # R7: the asking contact's own "Packing list allowed" toggle, resolved once
         # off `resolved_contact_id` - the SAME internal id this whole call's policy
@@ -1703,20 +1726,12 @@ class StockService:
             key = code.strip().lower() if code else "\x00" + pid
             merged_ids.setdefault(key, []).append(pid)
 
-        entries = []
-        for group_ids in merged_ids.values():
+        def _judge(group_ids: list[str], ask: Optional[int], *, nested: bool = False) -> dict:
             # `ordered_ids` is already in page order, so the first id of a group is the
             # first row of it on this page. That id is what the entry, the task's slot
             # and the next fetch's `requested_quantities` key all carry - and, below,
             # what X/Y/category are resolved against.
             pid = group_ids[0]
-            # D20, across the merge: a quantity given for ANY of the merged ids is a
-            # quantity for the merged product. The scalar `requested_qty` fallback
-            # resolves the same for every id, so the first answer found is the answer.
-            ask = next(
-                (a for a in (_resolve_ask(gid) for gid in group_ids) if a is not None),
-                None,
-            )
             product = products_by_id.get(pid)
             category = categories_by_id.get(str(getattr(product, "category_id", None)))
             entry = {
@@ -1733,6 +1748,14 @@ class StockService:
                 # AVAIL-MODE-REPLIES rule 2: set only on an `in_stock` answer short of
                 # the ask (within X); the one figure of ours this mode ever returns.
                 "available_qty": None,
+                # AVAIL-RENDER (owner, 5 Oct 2026): the flag the compact/detailed marker
+                # reads, so the dealer's line prints it too. A merged code (one code in
+                # two companies) is discontinued only when every company row of it is: a
+                # sister company still selling it can still supply the dealer.
+                "is_discontinued": all(
+                    getattr(products_by_id.get(gid), "is_discontinued", False) is True
+                    for gid in group_ids
+                ),
             }
             if ask is not None and product is not None and category is not None:
                 x, y = effective_limits(product, category)
@@ -1743,11 +1766,11 @@ class StockService:
                     product.chatbot_max_qty is None
                     and category.chatbot_max_qty is None
                 )
+                # AVAIL-ONHAND-BASIS: on hand over the allowed locations IS the figure;
+                # the outstanding is not netted off it (see the note at the top of this
+                # mode).
                 on_hand_total = sum(
                     int(r.on_hand or 0) for gid in group_ids for r in per_product[gid]
-                )
-                net_available = on_hand_total - int(
-                    sum(open_so_by_product.get(gid, 0) for gid in group_ids)
                 )
                 shipment_candidates = [
                     eta_by_product[gid] for gid in group_ids if gid in eta_by_product
@@ -1761,21 +1784,62 @@ class StockService:
                     else None
                 )
                 shipment_date = shipment[1] if shipment else None
-                entry["branch"] = compute_branch(ask, x, net_available, shipment_date)
-                entry["available_qty"] = short_of(ask, x, net_available)
+                entry["branch"] = compute_branch(ask, x, on_hand_total, shipment_date)
+                entry["available_qty"] = short_of(ask, x, on_hand_total)
                 entry["cap_unset"] = cap_unset
                 entry["category_name"] = category.category_name
                 if entry["branch"] == "incoming" and shipment is not None:
                     _shipment_id, eta_date, attachment_id = shipment
                     # Issue #1328: `+ y` only when this contact's ETA offset switch is on.
                     entry["eta"] = visible_eta(eta_date, y, contact_rules).strftime("%d/%m/%Y")
-                    if contact_rules.packing_list_allowed:
+                    # PRODUCT-ALTERNATIVES: a nested alternative names its ETA only; the
+                    # packing list file goes out for the product asked about, never for
+                    # an `Alternative:` line (the engine sends top-level entries' files).
+                    if contact_rules.packing_list_allowed and not nested:
                         attachment = (
                             self.db.query(Attachment)
                             .filter(Attachment.id == attachment_id)
                             .first()
                         )
                         entry["packing_list"] = _attachment_payload(attachment)
+            return entry
+
+        page_entry_ids = {pid for group in merged_ids.values() for pid in group}
+        entries = []
+        for group_ids in merged_ids.values():
+            # D20, across the merge: a quantity given for ANY of the merged ids is a
+            # quantity for the merged product. The scalar `requested_qty` fallback
+            # resolves the same for every id, so the first answer found is the answer.
+            ask = next(
+                (a for a in (_resolve_ask(gid) for gid in group_ids) if a is not None),
+                None,
+            )
+            entry = _judge(group_ids, ask)
+            # PRODUCT-ALTERNATIVES (card Q2 (b), Q4 (a), owner 8 Oct 2026): an ANSWERED
+            # entry that is discontinued, or whose verdict is not a full "Got stock"
+            # (no stock, incoming, partial, over the cap), carries its stored
+            # alternatives, each judged by `_judge` with the SAME asked quantity: the
+            # alternative can only ever say one of the four sentences, with no figure
+            # beyond what this mode already allows (the partial "Only N got stock"). One entry per alternative CODE, merged across companies the way the
+            # page's own codes are. An entry still owed its quantity carries none yet.
+            entry["alternatives"] = []
+            full_stock = entry["branch"] == "in_stock" and entry["available_qty"] is None
+            if ask is not None and entry["branch"] and (entry["is_discontinued"] or not full_stock):
+                alternative_groups: dict[str, list[str]] = {}
+                for gid in group_ids:
+                    for alternative in alternatives_by_pid.get(gid) or []:
+                        # Asked for in its own right on this page: it already has its own
+                        # line, a second one under the old code would say it twice.
+                        if alternative.id in page_entry_ids:
+                            continue
+                        key = (alternative.product_code or "").strip().lower() or "\x00" + alternative.id
+                        group = alternative_groups.setdefault(key, [])
+                        if alternative.id not in group:
+                            group.append(alternative.id)
+                entry["alternatives"] = [
+                    _judge(alternative_group, ask, nested=True)
+                    for alternative_group in alternative_groups.values()
+                ]
             entries.append(entry)
 
         payload["stock_availability"] = entries

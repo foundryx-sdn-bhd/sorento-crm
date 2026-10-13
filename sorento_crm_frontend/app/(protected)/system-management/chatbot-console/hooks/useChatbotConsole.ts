@@ -206,7 +206,7 @@ export function useChatbotConsole() {
   );
 
   const sendText = useCallback(
-    async (text: string) => {
+    async (text: string, quote?: { id: string; text: string; source: 'n8n' | 'contact' } | null) => {
       const trimmed = text.trim();
       if (!trimmed || sending) return;
       if (!contactId) {
@@ -217,6 +217,7 @@ export function useChatbotConsole() {
         id: `user-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         role: 'user',
         text: trimmed,
+        ...(quote ? { quotedText: quote.text } : {}),
       };
       setMessages((prev) => [...prev, userMessage]);
       setSending(true);
@@ -227,8 +228,12 @@ export function useChatbotConsole() {
           session_vars: sessionVars,
           prompt_version_id: promptVersionId,
           run_id: runId,
+          ...(quote ? { reply_to: { id: quote.id, text: quote.text, source: quote.source } } : {}),
         });
-        setMessages((prev) => [...prev, ...turnBubbles(result, runId)]);
+        setMessages((prev) => [
+          ...prev.map((m) => (m.id === userMessage.id ? { ...m, messageId: result.message_id ?? null } : m)),
+          ...turnBubbles(result, runId),
+        ]);
         // Membership matters (see the service doc-comment): only overwrite when this
         // turn actually produced a patch. A turn that produced none (a failed lane)
         // must not be read as "the contact now remembers nothing".

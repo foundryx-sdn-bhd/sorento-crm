@@ -10,7 +10,7 @@ import {
   PackageSearch,
 } from 'lucide-react';
 import { ColumnDef, RowSelectionState } from '@tanstack/react-table';
-import { formatDateInMalaysia } from '@/lib/helpers';
+import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
@@ -24,9 +24,11 @@ import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButto
 import { SoLineAttachmentsButton } from '../../_shared/components/SoLineAttachmentsButton';
 import type { SoLineAttachmentsByLine } from '../../_shared/services/soLineAttachmentService';
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
+import { OrderInquiryRejectedBadge } from '../../_shared/components/OrderInquiryRejectedBadge';
 import { BoardDecidedMarker, decidedRevisions } from './BoardDecidedMarker';
 import {
   BoardDecisionPill,
+  matchesStatusFilter,
   VERDICT_FILTER_OPTIONS,
   VERDICT_SORT_RANK,
   verdictOf,
@@ -147,6 +149,8 @@ export interface FulfilmentBoardListViewProps {
    * can carry a site-pool row as readily as a cell's can.
    */
   poolSharePct?: number;
+  /** The board's "Borrow from another order" switch, for the Decide menu (BR1). */
+  borrowFromOrderEnabled?: boolean;
   /**
    * #1312: whether the signed-in reader may upload/remove a line's own attachments
    * (`projects.projects.edit`) - resolved by the caller (`FulfilmentBoardPanel`, which
@@ -201,6 +205,7 @@ export function FulfilmentBoardListView({
   focusKey,
   onFocusHandled,
   poolSharePct,
+  borrowFromOrderEnabled = false,
   canEditAttachments = false,
   attachmentsByLine = {},
   search,
@@ -245,8 +250,7 @@ export function FulfilmentBoardListView({
           (!scope ||
             scope.value === 'all' ||
             scope.isSaved(contribution) === (scope.value === 'saved')) &&
-          (statusFilter.length === 0 ||
-            statusFilter.includes(verdictOf(contribution, draft[contribution.key] ?? null))),
+          matchesStatusFilter(contribution, draft[contribution.key] ?? null, statusFilter),
       ),
     [contributions, externalSearch, statusFilter, draft, scope],
   );
@@ -542,7 +546,15 @@ export function FulfilmentBoardListView({
             // A cancelled line has no decision to take (R3): the book removed it, and
             // Confirm retires it. The row still opens, and says that rather than offering
             // controls that would compose supply for a quantity nobody is owed.
-            contribution.cancelled ? (
+            contribution.cancelled_at ? (
+              <p className="px-4 py-3 text-sm text-muted-foreground">
+                {`Transferred to Cancel SO${
+                  contribution.cancelled_by ? ` by ${contribution.cancelled_by}` : ''
+                }, ${formatDateTimeInMalaysia(contribution.cancelled_at)}${
+                  contribution.cancel_reason ? ` · ${contribution.cancel_reason}` : ''
+                }`}
+              </p>
+            ) : contribution.cancelled ? (
               <p className="px-4 py-3 text-sm text-muted-foreground">
                 This line was removed from the sales order. Confirm retires it; there is
                 nothing left to decide for it.
@@ -654,25 +666,34 @@ export function FulfilmentBoardListView({
             inquiry.inquiry_id && inquiry.row_id
               ? `/project-sales/order-inquiries/${inquiry.inquiry_id}?row=${inquiry.row_id}`
               : null;
-          if (!href) {
-            return (
-              <span className="block truncate tabular-nums" title={inquiry.inquiry_no}>
-                {inquiry.inquiry_no}
-              </span>
-            );
-          }
-          return (
+          const number = href ? (
             <Link
               href={href}
               onClick={(event) => event.stopPropagation()}
-              className="block truncate tabular-nums text-primary hover:underline"
+              className="block min-w-0 truncate tabular-nums text-primary hover:underline"
               title={inquiry.inquiry_no}
             >
               {inquiry.inquiry_no}
             </Link>
+          ) : (
+            <span className="block min-w-0 truncate tabular-nums" title={inquiry.inquiry_no}>
+              {inquiry.inquiry_no}
+            </span>
+          );
+          // PR 1622 (owner, mock v3): an open purchasing refusal is the INQUIRY's status,
+          // so it reads here - never in the Verdict or Decided columns.
+          if (inquiry.ack_state !== 'rejected') return number;
+          return (
+            <span className="flex min-w-0 items-center gap-1.5">
+              {number}
+              <OrderInquiryRejectedBadge
+                refusal={inquiry}
+                testId={`oi-rejected-${row.original.key}`}
+              />
+            </span>
           );
         },
-        size: 120,
+        size: 220,
         minSize: 100,
         enableSorting: true,
       },
@@ -810,6 +831,9 @@ export function FulfilmentBoardListView({
         cell: ({ row }) => {
           const contribution = row.original;
           const drafted = draft[contribution.key] ?? null;
+          if (isCancelSo(contribution, drafted)) {
+            return <span className="block truncate">Cancel SO</span>;
+          }
           const parts = contributionDecision(contribution, drafted);
           if (!parts) {
             // DECIDED BY THE BOOK, not by a board (14 Sep 2026 ruling): a line carrying a
@@ -1071,6 +1095,7 @@ export function FulfilmentBoardListView({
               onSaved={untickSaved}
               onClear={() => setRowSelection({})}
               embedded
+              borrowFromOrderEnabled={borrowFromOrderEnabled}
             />
           }
         />
@@ -1126,8 +1151,14 @@ function suggestedSortText(contribution: BoardContribution): string {
   return describeSupply(parts, contribution.fulfilment_location) || 'Nothing proposed';
 }
 
+/** SO-CANCEL-LINE: the line is saved for, or already confirmed as, Transfer to Cancel SO. */
+function isCancelSo(contribution: BoardContribution, drafted: BoardDecision | null): boolean {
+  return Boolean(contribution.cancelled_at) || drafted?.verdict === 'cancelled';
+}
+
 /** The Decided column's own equivalent of `suggestedSortText` above. */
 function decidedSortText(contribution: BoardContribution, drafted: BoardDecision | null): string {
+  if (isCancelSo(contribution, drafted)) return 'Cancel SO';
   const parts = contributionDecision(contribution, drafted);
   if (!parts) {
     const inquiry = contributionInquiryDecision(contribution);

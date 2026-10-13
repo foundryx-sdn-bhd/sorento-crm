@@ -28,15 +28,18 @@ from __future__ import annotations
 
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from functools import cmp_to_key
 from typing import Any, Literal
 
-from app.services.chatbot import jsc, label_catalog
+from app.services.chatbot import jsc, label_catalog, quick_reply_guard
 from app.services.chatbot.lanes.business.fetch import DATE_PARAMS, space_id_or_default
 from app.services.ledger_family import customer_group_of, customer_header_words
 from app.services.product_spec_registry import SPEC_ACRONYMS
 from app.services.chatbot.tail.scope_block import live_brand_words
 from app.services.chatbot.turn import refer
+from app.services.chatbot.turn.state import token_key
+from app.services.chatbot.turn_runtime import SPEC_TIER
 
 # The did-you-mean helpers the JS carries in BOTH bodies with a "keep in lockstep" note.
 # `miss_suggest` owns them because that is where their node lives; this file imports them
@@ -240,6 +243,7 @@ DOMAIN_LABELS = {
     "product_attachment": "product attachments",
     "inventory": "stock",
     "order": "orders",
+    "sales": "sales",
     "incoming": "incoming stock",
     "forms": "forms",
     "portal_link": "this request",
@@ -299,20 +303,45 @@ def access_level_choice_message(
             out.get("tier_availability") if tier_availability is _UNSET else tier_availability
         )
         avail = resolved_avail if jsc.truthy(resolved_avail) else None
+        probe_failed = out.get("tier_probe_failed") is True
+        every_level_empty = (
+            isinstance(avail, dict)
+            and len(avail) > 0
+            and not any(jsc.get(avail, t) for t in held)
+        )
         # D16: name the thing being asked about, so the question cannot read as being
         # about nothing. Echo what the customer TYPED, never a canonical code - one raw
         # token can resolve to two products, and naming one would claim we searched
         # something they did not ask for. Past 60 chars the echo is DROPPED rather than
         # truncated, because half a promotion name reads like a different promotion.
+        # AC-16: a brand entity that names a live brand (the parser's canonical name, exact) is
+        # echoed by that row's real brand_name, bound to ITS entity; any other word stays as typed.
+        from app.services.chatbot.turn_runtime import brand_entity_rows
+
+        named = {
+            id(e): row["brand_name"]
+            for e, row in brand_entity_rows(q.get("entities"), jsc.array(out.get("live_brands")))
+        }
         raws: list[str] = []
         for e in jsc.array(q.get("entities")):
-            v = jsc.js_string(jsc.get(e, "raw") or "").strip()
+            v = named.get(id(e)) or jsc.js_string(jsc.get(e, "raw") or "").strip()
             if v and not any(x.lower() == v.lower() for x in raws):
                 raws.append(v)
         scope_label = ", ".join(raws[:3])
         if len(scope_label) > 60:
             scope_label = ""
         scope_suffix = f" for {scope_label}" if scope_label else ""
+        if probe_failed or every_level_empty:
+            # PROMO-SUBJECT-FILTER AC-10/AC-11: never a menu over a probe that failed or
+            # found nothing at any level; no pick is armed.
+            out["escalate_message"] = (
+                "I could not check promotions right now.\nPlease try again in a moment."
+                if probe_failed
+                else f"No current promotion for {scope_label}." if scope_label else "No current promotion."
+            )
+            out["is_clarification"] = False
+            out["quick_reply"] = ""
+            return out
         lines = "\n".join(
             f"{i + 1}. {TIER_DISPLAY[t]}"
             + ("" if avail is None else (" - has promotion" if jsc.get(avail, t) else " - no promotion"))
@@ -1165,7 +1194,15 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 #: its cost is a different answer from the one asked, so a per-field drop is not enough
 #: (that drop still runs too, belt and braces: AC-18). A domain with no row here is
 #: ungated, same convention as `_CROSSDOMAIN_RUNG_GRANT` above.
-DOMAIN_GRANT_REQUIRED: dict[str, str] = {"purchase_cost": "purchase_orders.cost"}
+#: R7 (PLAN-prompt-dynamic-30sep D9): the `sales` domain is the sales figures, read under
+#: the key every sales figure ask was already gated on (`contracts.SALES_FIGURE_STATUSES`);
+#: `run_fetch` refuses it in that ask's own words.
+DOMAIN_GRANT_REQUIRED: dict[str, str] = {
+    "purchase_cost": "purchase_orders.cost",
+    "sales": "sales_orders.sales_report",
+    # CA-3: what customers ask the bot, read under the Chat analytics reveal (Q4 a: nobody holds it).
+    "chat_analytics": "chatbot.analytics",
+}
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE
 #: name, not the domain's own label ("last purchase cost") and not the parser's agent
@@ -1299,7 +1336,67 @@ def _crossdomain_rung_row(it: Any, field_by_key: Any) -> dict[str, Any]:
         "qty": field_by_key(it, "outstanding_qty"),
         "po_date": field_by_key(it, "po_date"),
         "location": field_by_key(it, "location"),
+        # Never rendered: PO numbers are unique per company only, so the document key
+        # in `_consolidate_rung_rows` needs it beside the number.
+        "company": field_by_key(it, "company_name"),
     }
+
+
+def _rung_qty(value: Any) -> Decimal | None:
+    """A rung quantity as a number to sum, or None when it is not one (blank, a word)."""
+    if value is None or isinstance(value, bool) or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        number = Decimal(str(value).strip())
+    except InvalidOperation:
+        return None
+    return number if number.is_finite() else None
+
+
+def _consolidate_rung_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Owner ruling 13 Oct 2026 (STAFF-STOCK-ETA): open lines of the same product on the
+    same document (`kind` + company + PO/SPO number), at the same location and with the same PO
+    date, are ONE row with `ordered_qty` and `qty` summed. The block never prints the
+    document number (D3), so two such lines read as the same row printed twice (live:
+    one PO with two open lines of 36, each from a different SO line).
+
+    A row merges only when both quantities on it and on the row it joins are numbers,
+    and only when it has a document number - without one, "same document" is not known.
+    The merged row keeps the first line's position; rows that differ stay as they were.
+    """
+    out: list[dict[str, Any]] = []
+    index_by_key: dict[tuple[Any, ...], int] = {}
+    for row in rows:
+        ordered, outstanding = _rung_qty(row.get("ordered_qty")), _rung_qty(row.get("qty"))
+        number = jsc.js_string(row.get("number") or "").strip()
+        if ordered is None or outstanding is None or not number:
+            out.append(row)
+            continue
+        key = (
+            row.get("kind"),
+            row.get("company"),
+            number,
+            _norm_code(row.get("product_code")),
+            row.get("location"),
+            row.get("po_date"),
+        )
+        if key not in index_by_key:
+            index_by_key[key] = len(out)
+            out.append({**row, "ordered_qty": ordered, "qty": outstanding})
+            continue
+        merged = out[index_by_key[key]]
+        merged["ordered_qty"] += ordered
+        merged["qty"] += outstanding
+    for row in out:
+        for field in ("ordered_qty", "qty"):
+            if isinstance(row.get(field), Decimal):
+                row[field] = _fmt_rung_qty(row[field])
+    return out
+
+
+def _fmt_rung_qty(number: Decimal) -> str:
+    """`72`, never `72.0` or `7.2E+1`; a fraction keeps its digits (`13.5`)."""
+    return format(number.normalize(), "f")
 
 
 def _crossdomain_rung_text(rows: list[dict[str, Any]]) -> str:
@@ -1416,7 +1513,9 @@ def _apply_crossdomain_rung(
         still_nothing = [c for c in codes if c not in lines_by_code]
         parts: list[str] = []
         if found:
-            found_rows = [row for c in found for row in lines_by_code[c]]
+            found_rows = _consolidate_rung_rows(
+                [row for c in found for row in lines_by_code[c]]
+            )
             po_lines = _crossdomain_rung_text(found_rows)
             # The header names what the rows ARE: "PO is placed" (D2: no article, the
             # owner's wording) when any row is a PO line, "stock is on order from the
@@ -2250,7 +2349,6 @@ def promo_picker(
 # not-found-error-message (667 lines, the LIVE SPINE's copy)
 # --------------------------------------------------------------------------- #
 
-_TYPE_NORM_RE = re.compile(r"[-\s]+")
 _SNAKE_OR_KEBAB_RE = re.compile(r"[_-]")
 _SNAKE_OR_KEBAB_RUN_RE = re.compile(r"[_-]+")
 _TRAILING_PAREN_RE = re.compile(r"\s+\([^)]*\)\Z")
@@ -2260,8 +2358,9 @@ _VOWEL_HEAD_RE = re.compile(r"^[aeiou]", re.IGNORECASE)
 
 # The header describes a DELIVERY ORDER search specifically. It used to gate on "domains the
 # CRM date-filters", which let it fire where it is actively wrong (a container has no
-# customer and nobody date-filters incoming in practice).
-_DATE_SCOPE_DOMAINS = frozenset({"order"})
+# customer and nobody date-filters incoming in practice). R7 (PLAN-prompt-dynamic-30sep
+# D9): `sales` too, whose asks were `order` asks and missed with this header until then.
+_DATE_SCOPE_DOMAINS = frozenset({"order", "sales"})
 
 _ORDER_TYPES = frozenset({"order", "customer_order", "order_number"})
 
@@ -2296,6 +2395,7 @@ NO_TOOL_ID = _NO_TOOL_ID
 
 _SCOPE_WORD = {
     "order": "delivery order",
+    "sales": "sales order",
     "incoming": "incoming shipment",
     # PLAN-po-spo-warehouse-29sep W1: `purchase_order` now has a gate row, so it can miss.
     "purchase_order": "purchase order",
@@ -2409,13 +2509,17 @@ def _nf_norm_raw(value: Any) -> str:
 
 
 def _type_norm(value: Any) -> str:
-    """`String(s ?? '').replace(/[-\\s]+/g, '').toLowerCase()`.
+    """`String(s ?? '')`, then the ONE token fold (`turn.state.token_key`).
 
     The resolver strips dashes and spaces off product-hint tokens before it resolves them,
     so the customer's "SRT 2405-CR" reaches us as "srt2405cr" while the code reads
-    "SRT2405-CR". This is the key both sides are compared through.
+    "SRT2405-CR". This is the key both sides are compared through. ROGUE-CONVO-REVIEW-R2
+    (crew review on PR #1506): this used to be its own `[-\\s]+` regex, which kept the
+    unicode dashes the resolver folds (`resolve_gate._UNICODE_DASH_FOLD`), so an en-dash
+    code was listed by the resolver as "srthp" and joined here as "srt\u2013hp" - rule C
+    never fired on it. One fold now, the same one the engine keys `unplaced_tokens` by.
     """
-    return _TYPE_NORM_RE.sub("", jsc.nullish_str(value)).lower()
+    return token_key(jsc.nullish_str(value))
 
 
 # A token shorter than this never PREFIX-matches (D4/AC-7): "SRT" would otherwise request
@@ -2674,6 +2778,9 @@ def not_understood_line(words: Any) -> str:
 #: shape followed the COUNT and the leg word, not the ask. The leg now chooses only what the
 #: rows under it show (stock figures, incoming lines, files); the opener is the same.
 SET_OPENER = "Here's what you want:"
+
+#: The empty reply of a lone "last in" (the last SPO line's delivery date); a `label_catalog` key.
+LAST_IN_NONE = "Last in: none on record"
 
 #: What "But no ... matched these" names per leg: the product-code miss's own words
 #: ("But no incoming matched these.").
@@ -3018,8 +3125,19 @@ def not_found_error_message(
     entitlement_levels: Any = None,
     profile: Any = None,
     granted_keys: Any = None,
+    product_token_missed: bool = False,
 ) -> dict[str, Any]:
     """`not-found-error-message`: the miss reply, its search-scope header and its bullets.
+
+    `product_token_missed` (ROGUE-CONVO-REVIEW-R2): did THIS message name a product
+    token the resolver could not place? Computed ONCE per turn by the engine
+    (`turn_runtime.typed_product_unplaced` over its own `unplaced_tokens` map, the
+    same read that decides the `set_page` carry) and handed down through
+    `answer_bridge.answer_for` / `complete_answer`; this function no longer folds the
+    question a second way. It drives rule C below (a spec-tier set member read off the
+    words around the missed token is not "what you want", and the miss line quotes the
+    token as typed). `False` (the default every caller that predates it gets) is the
+    rule standing down, never a guess.
 
     `granted_keys` (DO-ASK-SIMPLIFY security B1): the contact's `contact_field_reveals`
     grants (`ctx["access"]["attributes"]`). The "hasn't been delivered yet" line names the
@@ -3343,12 +3461,35 @@ def not_found_error_message(
             if jsc.truthy(uuid) and jsc.truthy(name) and uuid not in disp_by_uuid:
                 disp_by_uuid[uuid] = name
 
+        # ROGUE-CONVO-REVIEW (owner ruling Q4, 6 Oct 2026): "Here's what you want" lists
+        # only what the customer named and the resolver placed. When THIS message's own
+        # product token is unplaced, a product every match of which is the SPEC tier (a set
+        # member the resolver read off the words AROUND that token) is not something the
+        # customer named: 35 water closets printed as "product: SRTWC200-S-UF-RL (+34
+        # more)" over an unplaced description line (prod turn 4). Code-tier rows stay: a
+        # code the customer typed or carried beside a second token that missed is still
+        # what they want. A described-set ask names no product token, so its members stay.
+        # Whether the token missed is the caller's `product_token_missed` (one computation
+        # per turn, the engine's). `unresolved_keys` is the resolver's own listing through
+        # the ONE fold: it lists a token the way it was SENT, separators and unicode dashes
+        # folded (`resolve_gate._token_of`: "Srt-hp" is "srthp"), so a raw-to-raw
+        # comparison never met a hyphenated or spaced line (prod turns 4 and 11).
+        unresolved_keys = {_type_norm(t) for t in unresolved}
+        set_member_uuids: set = set()
+        if product_token_missed:
+            tiers_by_uuid: dict[Any, set] = {}
+            for m in all_matches:
+                if jsc.truthy(m) and jsc.get(m, "entity_type") == "product" and jsc.truthy(jsc.get(m, "uuid")):
+                    tiers_by_uuid.setdefault(jsc.get(m, "uuid"), set()).add(jsc.get(m, "match_tier"))
+            set_member_uuids = {u for u, tiers in tiers_by_uuid.items() if tiers == {SPEC_TIER}}
+
         # tokens that ACTUALLY produced a compatible entity must NOT be listed as "not found"
         # even if the resolver kept them in `unresolved_tokens` (a fallback-tier match stays
-        # there yet resolves).
+        # there yet resolves). A set member read off the words around an unplaced product
+        # token (`set_member_uuids`) places nothing: the token stays "not found".
         resolved_toks: set[str] = set()
         for match in all_matches:
-            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids:
+            if jsc.truthy(match) and jsc.get(match, "uuid") in compat_uuids and jsc.get(match, "uuid") not in set_member_uuids:
                 via_token = jsc.get(jsc.get(match, "display"), "via_token")
                 if jsc.truthy(via_token):
                     resolved_toks.add(_nf_norm_raw(via_token))
@@ -3358,7 +3499,7 @@ def not_found_error_message(
         for res in jsc.array(jsc.get(r, "resolutions")):
             matches = jsc.get(res, "matches")
             matches = matches if isinstance(matches, list) else []
-            if any(jsc.get(m, "uuid") in compat_uuids for m in matches):
+            if any(jsc.get(m, "uuid") in compat_uuids and jsc.get(m, "uuid") not in set_member_uuids for m in matches):
                 resolved_toks.add(_nf_norm_raw(jsc.get(res, "token")))
 
         # multi-company: which company each resolved entity belongs to. One typed code can
@@ -3382,6 +3523,8 @@ def not_found_error_message(
 
         by_type: dict[Any, list] = {}
         for c in compat:
+            if jsc.get(c, "uuid") in set_member_uuids:
+                continue
             entity_type = jsc.get(c, "entity_type")
             entity_type = entity_type if jsc.truthy(entity_type) else "item"
             base = disp_by_uuid.get(jsc.get(c, "uuid"))
@@ -3885,6 +4028,29 @@ def not_found_error_message(
                 # as lines either; a word said as the product type is named with its kind
                 # ("Couldn't find: water tap basin (product type)").
                 terms = [jsc.js_string(t) for t in jsc.array(jsc.get(predicate, "unrecognized_terms")) if jsc.truthy(t)]
+                # ROGUE-CONVO-REVIEW (owner ruling, 6 Oct 2026: the miss line prints the
+                # TYPED text, never a folded token or a word derived from it): when THIS
+                # message's own product token is what missed, the reader's unrecognised
+                # words are fragments of that token ("Srt-hp" has no digit, so it was read
+                # as a description, split into content words, and came back as "Here's
+                # what you want: srt / Couldn't find: "srt"", prod turn 11; a pasted
+                # catalogue line the same way over its class words). The structure stays
+                # (fix round 9/10 on PR #833: "I want that structure to stay", and a typed
+                # phrase such as "water tap" IS its own term); only the words are the
+                # dealer's own. RESOLVE-SEMANTIC-FALLBACK: the resolver's token is
+                # canonical_code first, raw second (`resolve_gate._token_of`), so the
+                # join folds that value; the raw is still what the line quotes.
+                if product_token_missed:
+                    typed_misses = [
+                        jsc.js_string(jsc.get(e, "raw")).strip()
+                        for e in entities_list
+                        if jsc.get(e, "hint") in (None, "product")
+                        and jsc.truthy(jsc.get(e, "raw"))
+                        and _type_norm(jsc.nullish_str(jsc.get(e, "canonical_code")).strip() or jsc.get(e, "raw"))
+                        in unresolved_keys
+                    ]
+                    if typed_misses:
+                        terms = list(dict.fromkeys(typed_misses))
                 type_raws = [
                     jsc.js_string(jsc.get(e, "raw")).strip()
                     for e in entities_list
@@ -4074,6 +4240,16 @@ def not_found_error_message(
                         [t for t in not_found_raw if _nf_norm_raw(t) not in attach_set],
                     )
                 else:
+                    # The resolver folds dashes off the typed code, so a resolved product
+                    # is named by its STORED code ("SRT207-DIY"), not the typed "SRT207DIY".
+                    stored_by_key = {
+                        _type_norm(jsc.get(c, "code")): jsc.get(c, "code")
+                        for c in jsc.array(jsc.get(g, "compatible_entities"))
+                        if jsc.get(c, "entity_type") == "product"
+                        and jsc.truthy(jsc.get(c, "uuid"))
+                        and jsc.truthy(jsc.get(c, "code"))
+                    }
+                    product_raws = [stored_by_key.get(_type_norm(x), x) for x in product_raws]
                     prod_text = (
                         f"product {' and '.join(jsc.js_string(x) for x in product_raws)}"
                         if product_raws
@@ -4173,6 +4349,38 @@ def not_found_error_message(
                     if esc:
                         order_lines[-1] = f"{order_lines[-1]} {esc}"
                     escalate_message = "\n".join(order_lines)
+                elif use_breakdown and jsc.js_string(domain_hint) == "spo_allocation":
+                    # Owner ruling R-LASTIN (9 Oct 2026): a lone "last in" with no SPO line
+                    # says so in the multi-ask's own words, never "no spo allocation matched
+                    # these". The scope the generic breakdown names stays, one whole line each
+                    # so the reply pass localizes every one: a warehouse (or other non-product
+                    # entity) as typed, the unresolved codes, the companies checked. The
+                    # escalate offer is its own last line, as the localizer only matches it at
+                    # a line start.
+                    unresolved_keys = {_nf_norm_raw(t) for t in not_found_raw}
+                    lines_out = [LAST_IN_NONE]
+                    for line in found_lines:
+                        kind = line[2:].split(":", 1)[0]
+                        if kind == "product":
+                            continue
+                        typed_raws = [
+                            jsc.js_string(jsc.get(e, "raw"))
+                            for e in all_ents
+                            if _prettify_type(jsc.get(e, "hint")) == kind
+                            and jsc.truthy(jsc.get(e, "raw"))
+                            and _nf_norm_raw(jsc.get(e, "raw")) not in unresolved_keys
+                        ]
+                        lines_out.append(f"{kind.capitalize()}: {', '.join(typed_raws)}" if typed_raws else line)
+                    if not_found_raw:
+                        lines_out.append(
+                            f"Couldn't find: {', '.join(jsc.js_string(raw_of_token(t)) for t in not_found_raw)}."
+                        )
+                    if multi_co:
+                        lines_out.append(f"Checked in: {_and_list(searched_cos)}")
+                    esc = _esc_offer()
+                    if esc:
+                        lines_out.append(esc)
+                    escalate_message = "\n".join(lines_out)
                 elif use_breakdown:
                     escalate_message = build_breakdown_msg(
                         f"{status_label}{jsc.js_string(domain_hint)}"
@@ -4401,6 +4609,20 @@ def _is_code_shaped(value: Any) -> bool:
 def _quick_reply(values: list) -> str:
     """Comma-stripped so a label cannot split into extra respond.io buttons."""
     return ",".join(jsc.js_string(v).replace(",", "") for v in values)
+
+
+def _numbered_quick_reply(count: int) -> str:
+    """The buttons under a numbered did-you-mean list: "1", "2", "3" (QUICK-REPLY-NAMES).
+
+    WhatsApp shows three buttons, so a list of two or more picks fills them with its
+    numbers alone - the Yes / No pair rides only beside a single pick, where all three
+    fit. Never "1, 2, Yes": a Yes without its No is not an option pair, and the text
+    already offers the escalation in a sentence a typed yes answers.
+    """
+    numbers = [str(i + 1) for i in range(min(count, quick_reply_guard.MAX_BUTTONS))]
+    if len(numbers) + 2 <= quick_reply_guard.MAX_BUTTONS:
+        numbers.extend([_YES, _NO])
+    return _quick_reply(numbers)
 
 
 def miss_token_candidates(res: Any, allowed_types: list | None) -> list:
@@ -4826,6 +5048,12 @@ def build_suggest_offer(
     dym_ann = dym_annotate if isinstance(dym_annotate, dict) else None
     dym_meta = jsc.get(dym_ann, "dym_probe_meta") if dym_ann is not None else None
     dym_ok = bool(jsc.truthy(dym_ann) and jsc.truthy(dym_meta) and jsc.get(dym_meta, "ok") is True)
+    # PHOTO-PICKER (owner, 5 Oct 2026, crew answer (a)): the incoming picker's own rule
+    # (`pickers.annotate_incoming`) - a dealer (an "Availability only" contact) is told
+    # nothing about a variant before picking it. Every code is still listed; no stamp and
+    # no has-first sort, on every surface below and for every attachment type.
+    if getattr(profile, "stock_availability_only", False):
+        dym_ok = False
     # #750: `product_attachment` is stamped PER UUID (`probe_uuid_keyed`, Fix 4 / Fix 5), and
     # every surface below keys by the CODE it printed, so the two sets are projected into code
     # space ONCE, here, and the three renders are untouched. A code that cannot be attributed
@@ -5061,9 +5289,7 @@ def build_suggest_offer(
                         f", or would you like me to escalate to {team} team?",
                     )
                 )
-                out["suggest_quick_reply"] = _quick_reply(
-                    [str(i + 1) for i in range(len(picks))] + [_YES, _NO]
-                )
+                out["suggest_quick_reply"] = _numbered_quick_reply(len(picks))
                 out["suggest_last_result_set"] = [
                     {
                         "idx": i + 1,
@@ -5098,9 +5324,9 @@ def build_suggest_offer(
             else:
                 # Code mode. When the probe succeeded AND at least one offered code was
                 # actually probed, SORT has-first and render one labelled line per code. The
-                # sort runs BEFORE codes / roster / candidates are derived, so buttons, lines
-                # and the pick round trip stay index-consistent. `suggest_quick_reply` stays
-                # BARE CODES: the pick round-trips on that exact button string.
+                # sort runs BEFORE codes / roster / candidates are derived, so lines and the
+                # pick round trip stay index-consistent. `suggest_quick_reply` is None here
+                # (QUICK-REPLY-NAMES): codes are free text, so the typed code is the pick.
                 dym_annotate_on = dym_ok and any(
                     _dym_lookup(jsc.get(p["m"], "canonical_code"), dym_probed) is not None
                     for p in picks
@@ -5140,7 +5366,11 @@ def build_suggest_offer(
                             f", or would you like me to escalate to {team} team?",
                         )
                     )
-                out["suggest_quick_reply"] = _quick_reply([*codes, _YES, _NO])
+                # QUICK-REPLY-NAMES (owner, 6 Oct 2026): product codes are free text,
+                # never buttons. The sentence names them and "Reply with a code" is the
+                # picker; a typed code resolves through `suggest_last_result_set`. The
+                # escalation question the sentence ends on keeps its fixed Yes / No pair.
+                out["suggest_quick_reply"] = _quick_reply([_YES, _NO])
                 out["suggest_last_result_set"] = [
                     {
                         "idx": i + 1,
@@ -5297,9 +5527,12 @@ def build_suggest_offer(
             jsc.get(routing, "suggested_team") == "customer_service"
             and jsc.get(routing, "suggested_agent") == "order_enquiries"
         )
-        out["suggest_quick_reply"] = _quick_reply(
-            list(values) if (axis == "date" and is_cs_order) else [*values, _YES, _NO]
-        )
+        # QUICK-REPLY-NAMES (owner, 6 Oct 2026): the alternatives are free-text values
+        # (dates, codes, names), never buttons. "Reply with a date / code" is the
+        # picker; a typed value resolves through `suggest_last_result_set`. The
+        # escalation question keeps its fixed Yes / No pair, except on the customer
+        # service date miss, which never carried one (its sentence offers dates only).
+        out["suggest_quick_reply"] = None if (axis == "date" and is_cs_order) else _quick_reply([_YES, _NO])
         out["suggest_last_result_set"] = [
             {
                 "idx": i + 1,
@@ -5341,9 +5574,7 @@ def build_suggest_offer(
             f", or would you like me to escalate to {team} team?",
         )
     )
-    out["suggest_quick_reply"] = _quick_reply(
-        [str(i + 1) for i in range(len(alt_picks))] + [_YES, _NO]
-    )
+    out["suggest_quick_reply"] = _numbered_quick_reply(len(alt_picks))
     out["suggest_last_result_set"] = [
         {
             "idx": i + 1,

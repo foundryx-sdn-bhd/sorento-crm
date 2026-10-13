@@ -674,3 +674,28 @@ def test_a_fixed_tick_groups_column_ids_survive_a_change_of_period(db):
     assert group.keys == keys_2026
     labels = [c.label for c in later.layouts.detail.columns if c.key in group.keys]
     assert labels == ["2027", "2028", "2029", "2030"]
+
+
+# --------------------------------------------------------------------------- integer measures
+
+
+@pytest.mark.parametrize(
+    "raw, shown",
+    [("2.5", "3"), ("2.4", "2"), ("-2.5", "-3"), ("-2.4", "-2"), ("0", "0"), ("11", "11"), (Decimal("3.5000"), "4")],
+)
+def test_an_integer_measure_rounds_half_up_and_never_truncates(raw, shown):
+    from app.services.reports import engine
+    from app.services.reports import registry as reg
+
+    t = fixture.table_clause()
+    column = reg.Column("qty", "Qty", "integer", "measure", lambda c: t.c.amount)
+    assert engine._measure_value(column, raw) == shown
+
+
+def test_a_money_measure_keeps_its_sen():
+    from app.services.reports import engine
+    from app.services.reports import registry as reg
+
+    t = fixture.table_clause()
+    column = reg.Column("amt", "Amount", "money", "measure", lambda c: t.c.amount)
+    assert engine._measure_value(column, "2.5") == "2.50"

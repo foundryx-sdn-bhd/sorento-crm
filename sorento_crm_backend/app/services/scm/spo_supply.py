@@ -36,10 +36,16 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, func, or_, select, text
 
 from app.models.inventory import Warehouse
-from app.models.procurement import InboundShipment, SPOAllocation, Supplier
+from app.models.procurement import (
+    InboundShipment,
+    PurchaseOrder,
+    PurchaseOrderLine,
+    SPOAllocation,
+    Supplier,
+)
 from app.services.scm.pool_predicate import active_site_pool_sql
 
 #: Receipt statuses that mean the goods are in. `fully_received` is the value the column's
@@ -93,7 +99,9 @@ def visible_line_clauses() -> tuple:
     Readers: `procurement_service.SPOAllocationService.list_allocations`,
     `list_allocations_grouped_by_shipment`, `list_allocations_grouped_by_spo_number`,
     `list_documents` (and its `total_allocated` / `total_received` rollups),
-    `get_document` (its lines list and the same two rollups), and
+    `get_document` (its lines list and the same two rollups),
+    `InboundShipmentService.compute_shipment_line_figures` (the stored shipment line
+    STATUS, PL-STATUS-ROLLUP; its stored allocated figure stays unfiltered), and
     `spo_last_receipt_service.last_receipt_rows` (the chatbot's "last in" - a line the
     document no longer shows must not be able to answer as the newest one).
     """
@@ -115,6 +123,38 @@ def is_visible_allocation(allocation: "SPOAllocation") -> bool:
     warned about above.
     """
     return allocation.retired_at is None or float(allocation.quantity_received or 0) > 0
+
+
+def supplier_id_for(allocation=SPOAllocation):
+    """The supplier an order inquiry names for an SPO line (OI-SUPPLIER-FROM-PO, owner, 9 Oct
+    2026: "the supplier always take from PO, not the SPO"): the purchase order's own
+    supplier, the allocation's own `supplier_id` only when no purchase order can be found.
+
+    The PO is the one the line draws down (`po_line_id`, a Sorento-raised SPO) or, for a
+    book-fed line that carries only the AutoCount text, the one `from_po_number` names in
+    the same company (PO numbers are unique per company). A correlated SQL expression, so
+    a list query keeps one round trip; pass an alias when the query aliases the table.
+    """
+    via_line = (
+        select(PurchaseOrder.supplier_id)
+        .select_from(PurchaseOrderLine)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+        .where(PurchaseOrderLine.id == allocation.po_line_id)
+        .limit(1)
+        .correlate(allocation)
+        .scalar_subquery()
+    )
+    via_number = (
+        select(PurchaseOrder.supplier_id)
+        .where(
+            PurchaseOrder.po_number == allocation.from_po_number,
+            PurchaseOrder.company_id == allocation.company_id,
+        )
+        .limit(1)
+        .correlate(allocation)
+        .scalar_subquery()
+    )
+    return func.coalesce(via_line, via_number, allocation.supplier_id)
 
 
 def overdue_days(arrival_date: Optional[date], as_of: Optional[date] = None) -> int:

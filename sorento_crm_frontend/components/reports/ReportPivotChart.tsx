@@ -1,6 +1,14 @@
 'use client';
 
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import {
   ChartContainer,
   ChartLegend,
@@ -32,6 +40,7 @@ export function ReportPivotChart({ layout }: { layout: ReportPivotLayout }) {
   const measure = layout.measures[0];
   const rows = layout.row_values.filter((value) => value !== '(blank)');
   if (!measure || rows.length === 0) return null;
+  if (layout.chart === 'bar') return <ReportPivotBars layout={layout} />;
 
   const labels = layout.col_dim.value_labels ?? {};
   const data = layout.col_dim.values.map((colValue) => {
@@ -96,7 +105,7 @@ export function ReportPivotChart({ layout }: { layout: ReportPivotLayout }) {
             />
           }
         />
-        <ChartLegend content={<ChartLegendContent />} />
+        <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
         {rows.map((_row, index) => (
           <Line
             key={`r${index}`}
@@ -110,6 +119,80 @@ export function ReportPivotChart({ layout }: { layout: ReportPivotLayout }) {
           />
         ))}
       </LineChart>
+    </ChartContainer>
+  );
+}
+
+/** Bar tones for the column values (months), cycled. */
+const BAR_TONES = [
+  'var(--primary)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
+
+/**
+ * The pivot as grouped bars: one group per row value (a topic), one bar per column value
+ * (a month), the first measure on y as a plain count. A cell with no value draws no bar.
+ */
+function ReportPivotBars({ layout }: { layout: ReportPivotLayout }) {
+  const measure = layout.measures[0];
+  const labels = layout.col_dim.value_labels ?? {};
+  const rowLabels = layout.row_value_labels ?? {};
+  const rows = layout.row_values.filter((value) => value !== '(blank)');
+  if (!measure || rows.length === 0) return null;
+
+  const data = rows.map((row) => {
+    const point: Record<string, string | number | null> = {
+      x: rowLabels[row] ?? row,
+    };
+    layout.col_dim.values.forEach((colValue, index) => {
+      const value = layout.cells[row]?.[colValue]?.[measure.key];
+      point[`c${index}`] = value == null ? null : Number(value);
+    });
+    return point;
+  });
+
+  const config: ChartConfig = {};
+  layout.col_dim.values.forEach((colValue, index) => {
+    config[`c${index}`] = {
+      label: labels[colValue] ?? colValue,
+      color: BAR_TONES[index % BAR_TONES.length],
+    };
+  });
+
+  return (
+    <ChartContainer
+      config={config}
+      className="aspect-auto h-72 w-full min-w-0"
+      data-testid="report-pivot-chart"
+      aria-label={`${layout.title} chart`}
+    >
+      <BarChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="x"
+          tickLine={false}
+          axisLine={false}
+          interval={0}
+          angle={-30}
+          textAnchor="end"
+          height={72}
+        />
+        <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent className="flex-wrap" />} />
+        {layout.col_dim.values.map((_col, index) => (
+          <Bar
+            key={`c${index}`}
+            dataKey={`c${index}`}
+            fill={`var(--color-c${index})`}
+            radius={2}
+            isAnimationActive={false}
+          />
+        ))}
+      </BarChart>
     </ChartContainer>
   );
 }

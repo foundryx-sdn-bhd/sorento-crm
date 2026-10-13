@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.chatbot.contracts import DETAIL_OFFER_KINDS, SALES_REPORT_GROUP_BYS
+from app.services.chatbot.contracts import DETAIL_OFFER_KINDS, ORDER_OR_SALES_DOMAINS, SALES_REPORT_GROUP_BYS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS, Pending
 from app.services.chatbot.turn.state import KIND_FIELD_MAP, Focus
 
@@ -406,6 +406,22 @@ def _keeps_subject(
     return True
 
 
+#: The verdict key `turn_runtime.without_restated_rows` sets: the kinds whose settled rows
+#: the parser echoed back as the carried subject (`current_message: false`), echoes the
+#: verdict no longer holds. CARRY-ATTACH (prod, 13 Oct 2026): "Drawing", answering "which
+#: attachment type for Srt8313?", came back as the echoed Srt8313 beside the document word
+#: with `domain_in_message: true`; with the echo dropped the turn named only the document
+#: word, read as a NEW ASK, and the eviction below dropped SRT8313 from the focus.
+RESTATED_KINDS_KEY = "restated_kinds"
+
+
+def restated_kinds(verdict: dict[str, Any]) -> set[str]:
+    """The kinds this verdict's parser restated as the carried subject (`RESTATED_KINDS_KEY`).
+    A NEW ASK keeps them: the parser said the subject is still that row."""
+    value = verdict.get(RESTATED_KINDS_KEY)
+    return {str(k) for k in value if k} if isinstance(value, list) else set()
+
+
 def domain_in_message(verdict: dict[str, Any]) -> bool | None:
     """Does THIS message carry a domain or status word of its own?
 
@@ -472,6 +488,11 @@ def _outstanding_domain_mismatch(pending: Pending | None, verdict: dict[str, Any
     if not isinstance(domain_hint, str) or not domain_hint:
         return False
     offer_domain = pending.payload.get("domain")
+    if {domain_hint, offer_domain} <= ORDER_OR_SALES_DOMAINS:
+        # R7 (PLAN-prompt-dynamic-30sep D9): a sales report's detail offer is asked under
+        # `sales`, and its own list is a sales ORDER list the parser may still call
+        # `order`. Both were one domain until then; neither is a switch away from it.
+        return False
     return isinstance(offer_domain, str) and bool(offer_domain) and domain_hint != offer_domain
 
 
@@ -522,6 +543,17 @@ def _subject_reading(
     # `None` is a verdict recorded before the key existed - those fall through to the
     # rules below, unchanged, so the replay corpus still measures what it measured.
     in_message = domain_in_message(verdict)
+    order_status = verdict.get("order_status")
+    if (
+        in_message is not None
+        and entities
+        and isinstance(order_status, str)
+        and order_status.strip() == "sales_ranking"
+    ):
+        # AC-HT8-1: a verdict that names its own sales ranking is a new ask under an open
+        # report offer, ahead of both entity rows (the anaphora row included), never a
+        # refine of the standing subject (parser key only).
+        return Decision(NEW_ASK, "names_its_own_ranking", entities=named, window=window, **facts)
     if in_message is True and entities:
         if backward_reference(verdict):
             # R-b (owner hand pass 6, 17 Sep 2026): a pronoun this message carries
@@ -618,6 +650,24 @@ def decide(
             # ENTITY (the label-match arm of `picked_positions`); that entity IS the pick,
             # not a new subject. The outstanding report's kinds keep their order.
             entities = []
+        if positions and entities and verdict.get("entity_op") == "reuse":
+            # DO-LIST-REPLY-LABEL, live-parser replay run 3 of 3 (6 Oct 2026): the quick
+            # reply "Delivery order list" came back as the declared pick (`open_question_
+            # answer.picked [1]`, the positions above) AND the open report's own product,
+            # re-stated as an entity with `current_message: true` - under `entity_op:
+            # "reuse"`, which the prompt defines as the op for a message that names no
+            # new entity (`chatbot_parser_prompt.py`, ENTITY_OP: "reuse" when the message
+            # names no new value, `replace_combine` when it names one). D17 point 3 below
+            # read that entity as a new ask and the summary re-ran. A reused entity beside
+            # a declared pick names nothing new: the pick is read below. An entity the
+            # parser declares as a new value (`replace_combine`, `replace`) is still the
+            # new ask it was. Read off the parser's own op rather than matched against the
+            # pending's stored filters on purpose: the prod offer (contact 551644114) stores
+            # `customer_ids` (uuids) and the parser's entity carries a raw name, so a
+            # stored-subject match could never hold there and the summary would re-run
+            # again. `_keeps_subject` is not reused here: its axis test calls a reused
+            # entity on the subject's own axis a new ask, which is the measured case.
+            entities = []
         if entities:
             # D17 point 3: a stray position riding along with an entity is still a new
             # ask, because the parser is told never to emit both.
@@ -656,6 +706,35 @@ def decide(
                     scope="delivery_order", **facts,
                 )
             return Decision(ANSWER, "named_document_not_offered", positions=(NOT_OFFERED,), window=window, **facts)
+        picked_scope = _picked_scope(pending, positions)
+        if (
+            named_scope is not None
+            and positions
+            and pending.kind != "sales_report_detail"
+            and picked_scope == named_scope
+        ):
+            # DO-LIST-REPLY-LABEL (owner, 6 Oct 2026, prod): the quick reply labelled
+            # "Delivery order list" arrives as the TEXT of its label, and the parser
+            # reads it two ways at once, both correctly - a pick of the option it names
+            # (`reference_positions`, the open question's own label in front of it) and
+            # `document: ["DO"]` (the prompt fills the document for the words "delivery
+            # order" even when they are the whole message). The named-document arm
+            # below read the second and dropped the first, and the REPORT re-ran for
+            # the scope already on screen - the same summary again, where "1" gave the
+            # list. A document that IS the picked option's own scope names nothing new:
+            # the message is the pick. Both halves are the parser's own fields read
+            # against the pending's own stored payload, never a word of the text. A
+            # document that differs from the pick ("Sales order" after the DO list,
+            # below) is still the new scope it always was; the sales report's drill
+            # options are group-bys, never a document, so they keep their own arms.
+            return Decision(
+                ANSWER,
+                "picked_scope",
+                positions=tuple(positions),
+                window=window,
+                scope=picked_scope,
+                **facts,
+            )
         if named_scope is not None:
             # "Sales order", typed straight after the DO detail list, emitted
             # `document: ["SO"]` AND `reference_positions: [1]`, and the position won:
@@ -670,7 +749,6 @@ def decide(
                 scope=named_scope,
                 **facts,
             )
-        picked_scope = _picked_scope(pending, positions)
         if picked_scope is not None:
             return Decision(
                 ANSWER,

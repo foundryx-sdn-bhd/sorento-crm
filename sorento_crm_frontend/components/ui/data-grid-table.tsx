@@ -562,6 +562,12 @@ function rowOpenProps({
   opensUrl: boolean;
   open: (newTab: boolean) => void;
 }): React.ComponentProps<'tr'> {
+  // A dialog or popover opened from a cell is portalled out of the row in the DOM but not
+  // in React, so its clicks (its body, its overlay, its Close) still bubble to this row.
+  // Only a click whose target is really inside the row is the row's (owner finding,
+  // 12 Oct 2026: closing the fulfilment board's change lightbox expanded the line).
+  const outsideRow = (event: React.SyntheticEvent<HTMLTableRowElement>) =>
+    !event.currentTarget.contains(event.target as Node);
   const fromOwnControl = (target: EventTarget | null) =>
     Boolean((target as Element | null)?.closest?.(ROW_INTERACTIVE_SELECTOR));
 
@@ -576,6 +582,7 @@ function rowOpenProps({
       // so the user lost the list they were reading. Opening on both would be
       // no better: two tabs. auxclick owns the new tab, click owns this one.
       if (event.button !== 0) return;
+      if (outsideRow(event)) return;
       // A control in a cell keeps its own click.
       if (fromOwnControl(event.target)) return;
       // Same modifiers an anchor honours, so the row behaves like the link it claims to be.
@@ -584,6 +591,7 @@ function rowOpenProps({
     onAuxClick: (event) => {
       if (!opensUrl) return;
       if (event.button !== 1) return;
+      if (outsideRow(event)) return;
       if (fromOwnControl(event.target)) return;
       event.preventDefault();
       open(true);

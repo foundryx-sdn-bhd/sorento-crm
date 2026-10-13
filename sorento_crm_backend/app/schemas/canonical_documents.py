@@ -263,6 +263,10 @@ class CanonicalSalesOrder(_CanonicalDocument):
     # record rather than guessing whether an order is demand. Absent or null leaves the
     # stored value alone, so an ESB build that does not send it blanks nothing.
     transferable: Optional[bool] = None
+    # The customer's own PO number (SO-PO-REF), AutoCount `UDFNote` via the shared-service
+    # mapping. Its own field: `ref` keeps feeding the Project label. Written whenever the
+    # key is SENT (blank clears), left alone when it is absent.
+    po_ref: Optional[str] = Field(None, max_length=255)
     lines: list[CanonicalSalesOrderLine] = Field(default_factory=list, max_length=2000)
 
     @field_validator("internal_note", mode="before")

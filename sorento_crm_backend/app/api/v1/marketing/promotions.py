@@ -6,7 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    require_any_permission_with_api_key,
+    require_permission_with_api_key,
+)
+
 from app.services.marketing_service import PromotionService, PromotionProductService
 from app.services.query_normalizer import strip_domain_stopwords
 from app.services.uuid_list_param import parse_uuid_list
@@ -26,6 +31,13 @@ from app.schemas.marketing import (
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+
+# Who reads the promotions list (LIST-API-PERMS): the Promotions page, and the Dealer Kit
+# brochure / flyer / page pickers (`brochureImageService.ts`), which choose a promotion as their
+# own feature. The attachment detail modal's "link to promotion" picker is not listed: it is a
+# marketing action and an empty picker is its degraded state.
+PROMOTION_LIST_READERS = ["marketing.promotions.view", "dealer_kit.page.view"]
 
 
 class BulkDeletePromotionsRequest(BaseModel):
@@ -62,6 +74,25 @@ async def get_promotions(
             "Filter to promotions whose products include any of these UUIDs. "
             "Combines with `promotion_ids` via OR - a promotion is returned if it "
             "is in `promotion_ids` OR contains any product in `product_ids`."
+        ),
+    ),
+    scope_terms: Optional[list[str]] = Query(
+        None,
+        description=(
+            "Subject filter: class phrases (the resolver's scope terms). Returns only "
+            "promotions with a linked product in that class; never falls back to "
+            "inactive rows. csv / JSON list / repeated."
+        ),
+    ),
+    promotion_types: Optional[list[str]] = Query(
+        None,
+        description="Filter by promotion type codes (`promotion_types.type_code`). csv / JSON list / repeated.",
+    ),
+    brand_ids: Optional[list[str]] = Query(
+        None,
+        description=(
+            "Filter to promotions with a linked product (promotion_products) of these brand "
+            "UUIDs. Never falls back to inactive rows. csv / JSON list / repeated."
         ),
     ),
     user_type: Optional[str] = Query(None, description="Filter by a single access level code (FE listing)."),
@@ -132,7 +163,7 @@ async def get_promotions(
             "Rows carry `promotion_type_code` / `promotion_type_name`."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_LIST_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get promotions with pagination. Search by query/period; optional access_levels filter (by name).
@@ -145,6 +176,9 @@ async def get_promotions(
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
         access_levels = normalize_list_query_param(access_levels)
+        scope_terms = normalize_list_query_param(scope_terms)
+        promotion_types = normalize_list_query_param(promotion_types)
+        brand_ids = parse_uuid_list(brand_ids, param_name="brand_ids")
         contact_codes = ContactAccessTypeService(db).translate_names_to_codes(access_levels)
         service = PromotionService(db)
         # Strip domain-noise tokens ("promotion", "promo", ...) from caller-supplied
@@ -196,6 +230,9 @@ async def get_promotions(
             attachment_state=attachment_state,
             expiry_notify_batch_id=(expiry_notify_batch_id or None),
             serving_policy=serving_policy,
+            scope_terms=scope_terms,
+            promotion_types=promotion_types,
+            brand_ids=brand_ids,
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (empty result only), bypass the strict `ListResponse`
@@ -228,7 +265,7 @@ async def get_promotion(
         False,
         description="When true, include promotion product lines and nested Product details. When false, groups only (no lines).",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single promotion by ID. Optional access_levels (names) intersection filter."""
@@ -508,7 +545,7 @@ async def get_promotion_products_nested(
             "contact_access_types.name; intersection with promotion.access_levels)."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotions.view")),
     db: Session = Depends(get_db)
 ):
     """Get products for a specific promotion (nested route). Optional access_levels (names) intersection filter."""

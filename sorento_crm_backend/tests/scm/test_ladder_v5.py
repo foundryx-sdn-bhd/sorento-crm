@@ -21,6 +21,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import timedelta
 from decimal import Decimal
 
@@ -63,6 +65,7 @@ def _policy(db, name: str):
 # --------------------------------------------------------------------------- AC-V2
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_covers_its_line_through_the_group_net_not_through_a_rung_of_its_own():
     """AC-V2. The SPO of 40 at the line's own group location makes the IB group net 0 with
     this line's own 40 netted out, so the group offers the whole 40 - and the answer is
@@ -97,6 +100,7 @@ def test_an_spo_covers_its_line_through_the_group_net_not_through_a_rung_of_its_
     assert "on the water" in components[0]["reason"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_no_composition_the_engine_writes_carries_the_retired_incoming_rung():
     """AC-V2, the general form: whatever the facts, `incoming` is a RUNG the v5 engine never
     walks. It survives only on frozen snapshots taken under an older ladder.

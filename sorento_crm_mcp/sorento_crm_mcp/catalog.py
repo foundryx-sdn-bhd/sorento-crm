@@ -108,6 +108,34 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_master_product_attachments_list", "crm_inventory_stock_balance_list"),
         escalation_team="sales",
     ),
+    # CHAT-FIND (architecture option D, "reads generic"): ONE find tool whose filters are
+    # registry rows in the backend (`app/services/product_find.py`); a new question type is a
+    # new filter key there, never a new tool here.
+    ToolSpec(
+        "crm_find",
+        (
+            "Find products by filters from the find registry. `filters` = JSON list of "
+            "{key, product_ids?, value?, unit?}: a filter takes the products the message names "
+            "(`product_ids`, canonical UUIDs), a typed `value` (a code, a number with a `unit` "
+            "from the filter's list, or one of its listed words), or both, as its registry row "
+            "says. Keys: `fits` = the products linked as fitting each named product (its seat "
+            "covers when it is a WC, the WCs it fits when it is a seat cover; links on record "
+            "only, nothing inferred); takes product_ids, no value. Each group carries a `head` "
+            "line, `rows` (product_code, product_name, is_discontinued, stock) and `more` (rows "
+            "not printed). Stock follows the contact's stock visibility: on hand for staff, a "
+            "1-unit availability verdict for a dealer (never a number). 422 codes: "
+            "`unknown_filter`, `filters_required`, `product_ids_required`, `value_required`, "
+            "`bad_value`, `too_many`.\n\n"
+            "COMPANY SCOPE: pass `contact_id` + `space_id` (both or neither) to answer as that "
+            "contact; omit both for all-company results."
+        ),
+        "/api/v1/master-data/products/find",
+        (),
+        ("filters", "contact_id", "space_id"),
+        domain="products",
+        related_tools=("crm_master_products_list", "crm_inventory_stock_balance_list"),
+        escalation_team="sales",
+    ),
     ToolSpec(
         "crm_master_brands_list",
         (
@@ -274,6 +302,10 @@ CATALOG: tuple[ToolSpec, ...] = (
             "  When BOTH `promotion_ids` and `product_ids` are supplied, they combine\n"
             "  via OR: a promotion is returned if it is in `promotion_ids` OR contains\n"
             "  any product in `product_ids` (no AND option).\n\n"
+            "  • `scope_terms` (class phrases, e.g. \"bathroom furniture\") - only promotions with a linked "
+            "product of that class; an empty match returns no promotions.\n"
+            "  • `promotion_types` (promotion type codes, e.g. a3_flyer) and `brand_ids` (brand UUIDs of a linked "
+            "product); both AND with every other filter.\n\n"
             "Unfiltered MCP calls are auto-capped to limit=10 newest-first so open questions like "
             "\"what is sorento's latest promo\" return a bounded page instead of the full catalog.\n\n"
             "ACCESS LEVELS: `access_levels` filters promotions whose `access_levels` JSONB overlaps the "
@@ -284,7 +316,7 @@ CATALOG: tuple[ToolSpec, ...] = (
         ),
         "/api/v1/marketing/promotions",
         (),
-        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "contact_id", "space_id"),
+        ("page", "limit", "promotion_ids", "product_ids", "active", "period_from", "period_to", "date_mode", "sort", "dir", "access_levels", "scope_terms", "promotion_types", "brand_ids", "contact_id", "space_id"),
         domain="promotions",
         related_tools=("crm_marketing_promotion_products_list", "crm_marketing_promotion_attachments_list"),
         escalation_team="sales",
@@ -807,6 +839,78 @@ CATALOG: tuple[ToolSpec, ...] = (
         restricted_fields=(("sales_orders.sales_report", "Sales report"),),
     ),
     ToolSpec(
+        "crm_report_ask",
+        (
+            "ONE flexible sales report: rank or total sales by any one dimension, for a REQUIRED "
+            "period, with the common filters. Use it for 'top 3 sales agents for brand X last "
+            "month', 'which location sold most of product Y in September', 'sales by month for "
+            "agent Z', 'bottom 10 products by quantity this year', 'total sales of brand X in "
+            "August'. Returns `rows[]` (rank, name, qty, amount), `more` (ranked rows not "
+            "printed), `total_count` (every ranked row) and `total` {qty, amount} over the WHOLE "
+            "set, the resolved period, `basis` and the applied `filters` by name "
+            "(`view=render` prints it).\n\n"
+            "REQUIRED: `date_from` and `date_to` (ISO dates; 422 `period_required` otherwise - "
+            "ask the person which period, never guess one) and `contact_id` + `space_id`. "
+            "`group_by` = customer | product | brand | category | sales_agent | location | "
+            "channel | month; absent = ONE total. With `group_by`, `top_n` (1 to 1,000) is REQUIRED "
+            "(422 `top_n_required`): the number the person named, or ask. `sort` desc (top, "
+            "default) | asc (bottom). `measure` amount (RM) | qty (what the ranking "
+            "sorts by); ask the person which measure when they did not say, as for top_n. `basis` "
+            "delivered | ordered | outstanding; ask the person which basis when they did not say. "
+            "Every basis is sales "
+            "order lines, each dated by its required date, else its SO date: delivered = the "
+            "quantity transferred to a DO, capped at ordered; ordered = the whole line; "
+            "outstanding = open and not yet delivered. The reply names the basis.\n\n"
+            "FILTERS (all optional, ANDed, RESOLVED ids, never names): `product_code` (PREFIX, "
+            "case-insensitive, at least 3 characters; no match is 404), `product_ids` (ANDed "
+            "with `product_code` when both are given), `brand_ids`, "
+            "`category_ids`, `sales_agent_ids`, `customer_ids` (repeated or csv UUIDs), "
+            "`customer_agent_ids` (customers whose assigned agent on the customer card is one "
+            "of these; `none` in either agent list = no agent), "
+            "`warehouse_codes` (exact codes; a location outside the contact's visibility "
+            "answers `status: refused`), `channel` dealer | project. OMIT a filter you do not "
+            "use: an empty value is 422 `empty_filter` (it never reads as 'no filter'), and an "
+            "id naming nothing is 404.\n\n"
+            "ACCESS: the contact needs the Sales report reveal (403 `sales_report_not_enabled`). "
+            "A customer-linked dealer sees only its own customers' sales and may group or "
+            "filter by product, brand, category and month ONLY; anything else is 403 "
+            "`report_dimension_not_allowed` - say 'That breakdown is not available for your "
+            "account.' Ten asks per contact per 10 minutes (`status: busy`).\n\n"
+            "CHAT DATASET: `dataset=chat` (default `sales`) ranks or totals what customers ASK "
+            "THE BOT, not sales: 'top 5 questions this week', 'which products do dealers ask "
+            "about most in September', 'failure rate by week', 'how many dealers asked about "
+            "stock'. `basis` asks (every ask) | turns (each message once; use it for failed and "
+            "failure_rate). `measure` asks | failed | failure_rate | contacts (distinct "
+            "contacts). `group_by` topic | subject | product | customer | outcome | "
+            "failure_reason | week | month | day | language | asker (dealer / salesperson / staff / "
+            "unclassified) | salesperson (the asking salesperson by name) | category | brand; a "
+            "week, month or day trend lists every bucket and needs no `top_n`. Filters: `subjects` "
+            "(domain codes such as inventory), `product_ids`, `customer_ids`, `askers` (any of "
+            "dealer, salesperson, staff, unclassified; default is dealer, salesperson and "
+            "unclassified), `category_ids`, `brand_ids` (through the products the question "
+            "named). A customer ranking prints each customer's agent. Chat bases and sales params do not mix "
+            "(422 `unknown_param`). Needs the Chat analytics reveal (403 "
+            "`chat_analytics_not_enabled`, say it is not enabled for the account). A dealer sees "
+            "its own customers' asks and may group by topic, subject, product and month only. "
+            "The reply carries the topic coverage line; data starts 5 Sep 2026."
+        ),
+        "/api/v1/order-management/report-ask",
+        (),
+        (
+            "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
+            "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
+            "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
+            "customer_agent_ids", "dataset", "subjects", "askers",
+        ),
+        domain="orders",
+        related_tools=("crm_sales_report", "crm_top_selling_report"),
+        escalation_team="sales",
+        restricted_fields=(
+            ("sales_orders.sales_report", "Sales report"),
+            ("chatbot.analytics", "Chat analytics"),
+        ),
+    ),
+    ToolSpec(
         "crm_top_selling_report",
         (
             "Top selling ITEMS (or CATEGORIES) over a date window, ranked by quantity or by "
@@ -1309,6 +1413,20 @@ CATALOG: tuple[ToolSpec, ...] = (
         external=True,
         domain="procurement",
     ),
+    # --- procurement: one purchase request by its number (REF-PROBES) ---
+    ToolSpec(
+        "crm_purchase_request_by_number",
+        (
+            "Get ONE PURCHASE REQUEST by its request number (e.g. 'PR2610-0012'): customer, "
+            "status, approval status, dates and every line (item code x quantity). Read-only. "
+            "A number no request carries is a 404."
+        ),
+        "/api/v1/procurement/purchase-requests/by-number/{number}",
+        ("number",),
+        (),
+        module="procurement",
+        domain="procurement",
+    ),
     # --- procurement: purchase orders placed (A5, chatbot-growth-r1) ---
     ToolSpec(
         "crm_procurement_po_placed_list",
@@ -1401,6 +1519,32 @@ CATALOG: tuple[ToolSpec, ...] = (
         ("product_ids", "warehouse_ids", "top_n", "sort", "dir", "contact_id", "space_id"),
         domain="spo_allocation",
         related_tools=("crm_procurement_po_placed_list", "crm_incoming_stock_by_product"),
+        escalation_team="procurement",
+    ),
+    # --- procurement: received quantity in a window, per product (MULTI-ASK-PLAN S3,
+    # 9 Oct 2026). "Last in" is the last SPO line's delivery date, not this tool (R-LASTIN). ---
+    ToolSpec(
+        "crm_procurement_grn_summary",
+        (
+            "Per product: how much was RECEIVED (approved goods-received notes) in a date "
+            "window - 'how many received in 2026', '2026 入库了多少'. NOT for 'last in' / "
+            "'when was it last received' / '最后一次进库': that is the last SPO delivery date "
+            "(crm_procurement_spo_allocations_last_receipt_list). Each row: product_id, "
+            "product_code, received_qty (sum of picked quantity over approved, not cancelled "
+            "GRNs dated in the window; no window = all time), grn_count, last_receipt_date "
+            "and last_receipt_qty (the newest approved GRN date of ALL time and the quantity "
+            "received that day; null when never received; data only). A receipt booked with no GRN "
+            "(ESB-stated) is not counted.\n\n"
+            "REQUIRED: `product_ids` (canonical UUIDs, csv / JSON / repeated). Optional "
+            "`date_from` / `date_to` (ISO dates, inclusive) bound received_qty only.\n\n"
+            "COMPANY SCOPE: optionally pass `contact_id` (Respond.io contact id) + `space_id` to scope "
+            "results to that contact's company/companies; omit both for all-company results."
+        ),
+        "/api/v1/procurement/grn/summary",
+        (),
+        ("product_ids", "date_from", "date_to", "contact_id", "space_id"),
+        domain="procurement",
+        related_tools=("crm_procurement_spo_allocations_last_receipt_list",),
         escalation_team="procurement",
     ),
     # --- procurement: last purchase cost per product per location

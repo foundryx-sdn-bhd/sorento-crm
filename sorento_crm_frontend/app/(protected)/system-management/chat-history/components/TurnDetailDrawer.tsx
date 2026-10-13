@@ -22,6 +22,26 @@ import type {
   TurnDetailOrderNeighbor,
 } from '../types/chatbotTurn.types';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A nested fact value: a UUID (and any `turn_id`) reads shortened, never in full. */
+function nestedText(key: string, value: unknown): string {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  const text = String(value);
+  return key === 'turn_id' || UUID_RE.test(text) ? shortTurnId(text) : text;
+}
+
+/** A stage fact as readable text: a plain object reads as "key: value" pairs (never
+ * "[object Object]"); everything else keeps its `String` form. */
+function factText(value: unknown): string {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${nestedText(k, v)}`)
+      .join(', ');
+  }
+  return String(value);
+}
+
 /**
  * Turn detail trace view (chatbot growth r1, Slice D2, AC-972, AC-973).
  *
@@ -33,6 +53,7 @@ import type {
  * whatever the backend composed and collapses to nothing wasted when a kind
  * has not shipped yet - never an error, never a placeholder explaining why.
  */
+
 export function TurnDetailDrawer({
   turnId,
   onOpenChange,
@@ -206,7 +227,9 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
         <li key={`${stage.name}-${i}`} className="text-xs">
           <div className="flex items-center gap-2">
             <Badge
-              variant={stage.status === 'failed' ? 'destructive' : 'success'}
+              variant={
+                stage.status === 'failed' ? 'destructive' : stage.status === 'skipped' ? 'secondary' : 'success'
+              }
               appearance="light"
               size="sm"
             >
@@ -215,6 +238,7 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
             {stage.ms != null && (
               <span className="text-muted-foreground tabular-nums">{stage.ms}ms</span>
             )}
+            {stage.status === 'skipped' && <span className="text-muted-foreground">skipped</span>}
           </div>
           {stage.status === 'failed' && stage.error ? (
             <p className="mt-1 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-destructive">
@@ -231,8 +255,8 @@ function StagesSection({ stages }: { stages: TurnDetail['stages'] }) {
               {Object.entries(stage.facts ?? {}).map(([key, value]) => (
                 <div key={key} className="contents">
                   <dt className="text-muted-foreground">{key.replace(/_/g, ' ')}</dt>
-                  <dd className="min-w-0 truncate" title={String(value)}>
-                    {String(value)}
+                  <dd className="min-w-0 truncate" title={factText(value)}>
+                    {factText(value)}
                   </dd>
                 </div>
               ))}

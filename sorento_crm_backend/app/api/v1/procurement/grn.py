@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, status, File, UploadFile, Body
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from datetime import date
 from typing import Optional
 from pydantic import BaseModel
 
@@ -12,7 +13,9 @@ from app.services.job_service import JobService
 from app.services.queue_service import enqueue_job
 from app.schemas.procurement import PickingHeaderCreate, PickingHeaderUpdate, PickingHeaderResponse
 from app.schemas.common import ListResponse
-from app.services.error_handler import handle_internal_error
+from app.services.error_handler import AppException, handle_internal_error
+from app.services.grn_summary_service import grn_summary_rows
+from app.services.uuid_list_param import parse_uuid_list
 
 router = APIRouter()
 
@@ -202,6 +205,36 @@ async def import_grn_lines(
     )
     job_service.update_job_with_rq_id(job, rq_job.id)
     return {"message": "GRN lines import queued.", "job_id": job.job_id, "id": str(job.id)}
+
+
+#: MULTI-ASK-PLAN S3: registered ahead of `/{grn_id}`, which accepts any one segment.
+@router.get("/summary")
+def get_grn_summary(
+    product_ids: Optional[list[str]] = Query(
+        None, description="Canonical product UUIDs (csv / JSON / repeated). Required."
+    ),
+    date_from: Optional[date] = Query(None, description="First GRN date counted (ISO), inclusive."),
+    date_to: Optional[date] = Query(None, description="Last GRN date counted (ISO), inclusive."),
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db: Session = Depends(get_db),
+):
+    """Per asked product: `received_qty` (sum of picked quantity over approved, not
+    cancelled `goods_received` headers dated in the window; no window = all time),
+    `grn_count`, and the newest such receipt of ALL time (`last_receipt_date`,
+    `last_receipt_qty`, summed over that date). One row per product that exists, in the
+    asked order. See `grn_summary_service`."""
+    ids = parse_uuid_list(product_ids, param_name="product_ids")
+    if not ids:
+        raise AppException(422, "product_ids is required", detail="product_ids", code="product_ids_required")
+    if date_from and date_to and date_from > date_to:
+        raise AppException(422, "date_from is after date_to", detail="date_from, date_to", code="date_range_inverted")
+    try:
+        rows = grn_summary_rows(db, product_ids=ids, date_from=date_from, date_to=date_to)
+        return JSONResponse(content={"data": rows, "empty": not rows})
+    except AppException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise handle_internal_error(str(e))
 
 
 @router.get("/{grn_id}", response_model=PickingHeaderResponse)

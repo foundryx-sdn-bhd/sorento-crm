@@ -288,11 +288,17 @@ def tier_probe_collect(
             rows = jsc.get(j, "answers") if isinstance(jsc.get(j, "answers"), list) else []
             availability[tier] = jsc.get(j, "has_result") is True or len(rows) > 0
 
+    # PROMO-SUBJECT-FILTER AC-11: a probe call that raised is `None`, not an empty answer.
+    # The ask names it instead of stamping "no promotion" over a tier nobody checked.
+    probe_failed = any(r is None for r in results)
+
     # `None` availability means "we could not determine this", NOT "nothing is available".
     # The renderer and the router both read it that way.
     any_available = any(availability.values()) if availability is not None else True
     return {
         **base,
+        # present only when a probe raised, so a recorded n8n capture stays byte-equal
+        **({"tier_probe_failed": True} if probe_failed else {}),
         "tier_availability": availability,
         "tier_available_list": (
             [t for t in default_policy().tier_order if availability.get(t)]
@@ -726,6 +732,34 @@ def entity_ids_transformer(
         if jsc.has(semantic_input, key):
             out[key] = semantic_input[key]
 
+    # DEV-FAILURES RC-B: the form the parser named opens that tab of the portal.
+    if tool_name == "crm_portal_link_get" and jsc.has(semantic_input, "submission_type"):
+        out["submission_type"] = semantic_input["submission_type"]
+
+    # PROMO-SUBJECT-FILTER AC-4: the class the parser named narrows a promotion ask to
+    # promotions LINKED to products of that class. `scope_terms` is set only when the parser
+    # named no product (`turn_runtime.promo_filter`), so any product ids here are the set the
+    # resolver described from the brand / class words, never the subject: they are dropped.
+    # A typed product code carries no `scope_terms` and keeps the product_ids path alone.
+    if tool_name == TIER_PROBE_TOOL and jsc.array(jsc.get(semantic_input, "scope_terms")):
+        out.pop("product_ids", None)
+    if tool_name == TIER_PROBE_TOOL and (
+        jsc.array(jsc.get(semantic_input, "scope_terms")) or jsc.array(jsc.get(semantic_input, "promotion_types"))
+    ):
+        # Promotions the resolver matched by NAME off other words are never the subject: a
+        # subject or kind ask is answered by explicit links and the kind (AC-22, owner rule).
+        # A promotion the customer named and the resolver placed (`promo_filter`) stays.
+        named = [p for p in jsc.array(jsc.get(semantic_input, "promotion_ids")) if is_uuid(p)]
+        if named:
+            out["promotion_ids"] = named
+        else:
+            out.pop("promotion_ids", None)
+    if tool_name == TIER_PROBE_TOOL and not out.get("product_ids"):
+        for key in ("scope_terms", "promotion_types", "brand_ids"):
+            narrowed = jsc.get(semantic_input, key)
+            if isinstance(narrowed, list) and narrowed:
+                out[key] = list(narrowed)
+
     # S4 points 2/7/9 (PLAN-chatbot-outstanding-report.md): crm_outstanding_report's
     # OWN contract (`product_code` a string, `scope`, `customer_ids`, `warehouse_codes`
     # csv, `order_date_from/to` above) is not the generic UUID-list shape every other
@@ -871,8 +905,13 @@ def entity_ids_transformer(
         slot = jsc.get(semantic_input, "top_selling")
         slot = slot if isinstance(slot, dict) else {}
         out["rank_by"] = jsc.js_string(slot.get("rank_by"))
+        # Always explicit: the lane asks the basis (`_top_selling_question`) and never fetches
+        # without one. Only a picked row's older slot can reach here with none, and the
+        # ranking it came from ran delivered.
         if slot.get("basis") in ("delivered", "ordered"):
             out["basis"] = slot["basis"]
+        elif slot.get("detail_code"):
+            out["basis"] = "delivered"
         category_grain = slot.get("rank_group") == "category"
         if category_grain:
             out["group"] = "category"
@@ -993,7 +1032,9 @@ def entity_ids_transformer(
         if channel in ("dealer", "project"):
             out["channel"] = channel
         basis = jsc.get(semantic_input, "sales_basis")
-        out["basis"] = basis if basis in SALES_ANALYSIS_BASES else "delivered"
+        out["basis"] = "delivered"  # the sales analysis route's own default basis
+        if basis in SALES_ANALYSIS_BASES:
+            out["basis"] = basis
         company = jsc.get(semantic_input, "sales_company")
         if jsc.truthy(company):
             out["company"] = jsc.js_string(company).strip()
@@ -1013,6 +1054,20 @@ def entity_ids_transformer(
         out["space_id"] = space_id_or_default(
             space_id if space_id is not None else jsc.get(semantic_input, "space_id")
         )
+
+    # REPORT-ENGINE slice 1b: `crm_report_ask`'s params are settled whole by the lane
+    # (`report_ask.route_args`, put on `semantic_input` by `run_fetch`, which hands no
+    # entities of its own); nothing else the generic steps above built travels with them
+    # but the entity ids. The customer scope tail below and `contact_id` / `space_id`
+    # still apply.
+    if tool_name == "crm_report_ask":
+        args = jsc.get(semantic_input, "report_ask_args")
+        out = {
+            "_diagnostics": out["_diagnostics"],
+            "view": "render",
+            **{k: out[k] for k in ("product_ids", "customer_ids") if out.get(k)},
+            **{k: v for k, v in (args.items() if isinstance(args, dict) else []) if v not in (None, [], "")},
+        }
 
     # S2 (review round, 13 Sep 2026): a warehouse entity on a PLAIN order ask.
     # `TYPE_TO_PARAM` maps it to `warehouse_ids`, which NEITHER order-list tool declares
@@ -1136,7 +1191,14 @@ def entity_ids_transformer(
     # reads `top_n` directly (see `TOP_N_DIRECT_TOOLS`).
     group_by = jsc.get(semantic_input, "group_by")
     if tool_name in GROUP_BY_TOOLS and jsc.truthy(group_by):
-        out["group_by"] = jsc.js_string(group_by)
+        # Only an axis the tool's own route accepts: the parser's `group_by` also carries the
+        # ranking-only axes (sales_agent, brand, ...), which the route answers with a 422.
+        from app.services.order_service import ORDER_GROUP_BY_AXES
+        from app.services.purchase_order_service import PO_GROUP_BY_AXES
+
+        allowed = ORDER_GROUP_BY_AXES if tool_name == "crm_order_management_orders_list" else PO_GROUP_BY_AXES
+        if jsc.js_string(group_by) in allowed:
+            out["group_by"] = jsc.js_string(group_by)
     top_n = jsc.get(semantic_input, "top_n")
     if jsc.truthy(top_n):
         if tool_name in TOP_N_DIRECT_TOOLS:
@@ -1204,7 +1266,11 @@ def entity_ids_transformer(
             raise ScopeViolation(
                 f"{tool_name} asked for a customer outside the contact's scope", dropped=outside
             )
-        out["customer_ids"] = requested or list(scope_ids)
+        # REPORT-ENGINE 1b code review N3: `crm_report_ask`'s route forces the dealer's own
+        # links itself (`enforce_customer_scope`), so the lane sends only what was named
+        # (no 50-id cap hit, no header listing every account); the check above stays.
+        if requested or tool_name != "crm_report_ask":
+            out["customer_ids"] = requested or list(scope_ids)
         out.pop("customer_query", None)
 
     # COERCE, THEN TRIM, and the ORDER is the whole point. `contact_id` arrives as BOTH an
@@ -1289,6 +1355,7 @@ CUSTOMER_SCOPED_TOOLS: frozenset[str] = frozenset(
         "crm_outstanding_report",
         "crm_sales_report",
         "crm_top_selling_report",
+        "crm_report_ask",
         "crm_order_analytics",
         "crm_master_customers_list",
     }
@@ -1494,6 +1561,27 @@ def group_axis(ctx: Any) -> str:
 #: call a tool (`turn_runtime.make_tool_runner`'s unfiltered-fetch guard) says it in the
 #: same words, rather than printing a header with nothing under it.
 NO_RESULT_INTRO = "No matching results found."
+
+
+#: DEV-FAILURES RC-B: the reply copy that names the form a portal link opens
+#: (`chatbot_reply_copy.FALLBACK_REPLY_COPY`, editable in Settings > AI Prompts).
+PORTAL_LINK_COPY = {
+    "complaint": "portal_link_complaint",
+    "stock_inquiry": "portal_link_stock_inquiry",
+    "purchase_request": "portal_link_purchase_request",
+    "sponsorship_form": "portal_link_sponsorship_form",
+}
+
+
+def portal_submission_type(parse_output: dict[str, Any]) -> str | None:
+    """The portal tab a portal_link ask names, or None. A code the portal cannot deep-link
+    (`portal_service.SUPPORTED_TYPES`) is the parser guessing and names no form."""
+    from app.services.portal_service import SUPPORTED_TYPES
+
+    if parse_output.get("domain_hint") != "portal_link":
+        return None
+    form = parse_output.get("portal_form")
+    return form if isinstance(form, str) and form in SUPPORTED_TYPES else None
 
 
 def _extract_envelope(j: Any) -> dict[str, Any]:
@@ -1786,6 +1874,68 @@ def _names_a_base_property(norm: str) -> bool:
         if norm == w or (" " in w and w in norm):
             return True
     return False
+
+
+def _asks_discontinued(req_attrs: list[Any]) -> bool:
+    """DISCONTINUED-ASK: the parser's closed `requested_attributes` vocabulary carries
+    "discontinued" for a status question (`chatbot_parser_prompt.py`, REQUESTED ATTRIBUTES).
+    A parsed field, compared as emitted; nothing here reads the user's message."""
+    return any(_normalize_spec_word(a) == "discontinued" for a in req_attrs)
+
+
+def _item_code(it: Any) -> str:
+    """A product item's code: its Product Code field, else its title (the presenter sets
+    both to the code, `presenters._products`)."""
+    for f in jsc.get(it, "fields") or []:
+        if jsc.js_string(jsc.get(f, "key") or "") == "product_code" or jsc.get(f, "label") == "Product Code":
+            code = jsc.nullish_str(jsc.get(f, "value")).strip()
+            if code:
+                return code
+    return jsc.nullish_str(jsc.get(it, "title")).strip()
+
+
+def _item_company(it: Any) -> str:
+    """A product item's Company field (`presenters._products` stamps it), else ""."""
+    for f in jsc.get(it, "fields") or []:
+        if jsc.js_string(jsc.get(f, "key") or "") == "company_name" or jsc.get(f, "label") == "Company":
+            return jsc.nullish_str(jsc.get(f, "value")).strip()
+    return ""
+
+
+def _discontinued_status_lines(
+    loc: Any, it: Any, *, card: str | None = None, label: str | None = None
+) -> str | None:
+    """The item's status from its own `flags.discontinued` (`products.is_discontinued`,
+    the field the marker always read). With no `card`: `<label>: ⚠️ Discontinued.` or
+    `<label>: ✅ Not discontinued.` (owner Q4 a; `label` defaults to the code). With the
+    item's `card` text: that card plus `*Discontinued:* ⚠️ Yes` / `✅ No` (owner Q1 a). A
+    discontinued item then names each stored alternative the presenter put on it
+    (`alternatives`, PRODUCT-ALTERNATIVES #1533's link): one `Alternative: <code>` line
+    each, none when the key is absent.
+
+    None when the flag is not a boolean: the status is unknown, and an unknown status is
+    never said either way (the caller prints the card)."""
+    gone = jsc.get(jsc.get(it, "flags"), "discontinued")
+    if not isinstance(gone, bool):
+        return None
+    code = _item_code(it)
+    if card is None:
+        name = label or code
+        # Owner hand test (8 Oct): the warning sign for discontinued, the tick for not.
+        line = loc.text(f"{name}: ⚠️ Discontinued." if gone else f"{name}: ✅ Not discontinued.")
+    else:
+        # One whole catalogued line, so its translation cannot reach any other Yes / No.
+        line = f"{card}\n{loc.text('*Discontinued:* ⚠️ Yes' if gone else '*Discontinued:* ✅ No')}"
+    if gone:
+        seen = {code}
+        for alt in jsc.array(jsc.get(it, "alternatives")):
+            alt_code = (
+                jsc.nullish_str(jsc.get(alt, "product_code")) if isinstance(alt, dict) else jsc.nullish_str(alt)
+            ).strip()
+            if alt_code and alt_code not in seen:
+                seen.add(alt_code)
+                line += f"\n{loc.text('Alternative')}: {alt_code}"
+    return line
 
 
 _MISS_CODES_CAP = 5
@@ -2615,6 +2765,87 @@ def _top_selling_output(result: Any, ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+#: The line for a `crm_report_ask` body the presenter never rendered.
+_REPORT_ASK_ERROR_TEXT = "Could not run the sales report right now."
+
+
+def _report_ask_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """REPORT-ENGINE slice 1b: the presenter's text (`presenters._report_ask`) is the reply,
+    verbatim. It names its own scope (basis, filters, period), so the generic search-scope
+    header is skipped (`outstanding_report`), and a ranking with no sales ("No sales found
+    for ...") is an answer, never the miss lane (the top selling ruling, 27 Sep 2026)."""
+    envelope = result if isinstance(result, dict) else {}
+    text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
+    # The args a ranking that ran was asked with, held for a refine (`Focus.sales_ranking_frame`).
+    semantic_input = (ctx or {}).get("semantic_input")
+    args = semantic_input.get("report_ask_args") if isinstance(semantic_input, dict) else None
+    note = semantic_input.get("report_ask_note") if isinstance(semantic_input, dict) else None
+    if note and text:
+        text = f"{note}\n\n{text}"
+    # REPORT-DRILLDOWN: the rows the ranking printed, with their keys, ride on the frame
+    # (`shown`), so "these agents" next turn means exactly them. Never a route param.
+    drill = envelope.get("drill_rows")
+    frame = dict(args) if text and isinstance(args, dict) else None
+    if frame is not None:
+        frame.pop("shown", None)
+        if isinstance(drill, dict) and drill.get("group_by") == frame.get("group_by") and drill.get("rows"):
+            frame["shown"] = drill
+    return {
+        "sales_ranking_frame": frame,
+        "response": text or _REPORT_ASK_ERROR_TEXT,
+        "response_intro": None,
+        "answers": [],
+        "attachments": [],
+        "action_links": [],
+        "last_updated_at": None,
+        "has_result": True,
+        "alternatives": [],
+        "relaxed_axis": None,
+        "field_access": None,
+        "requested_attributes": [],
+        "keys_served": False,
+        "outstanding_report": True,
+    }
+
+
+def _find_output(result: Any, ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """CHAT-FIND: the presenter's text (`presenters._find_envelope`) is the reply, verbatim,
+    localized line by line; a dealer's `Stock:` verdict is translated after its status mark the
+    way the stock reply's own verdicts are (`Localizer.tail`). It states its own subject in each
+    head line, so the generic search-scope header is skipped, and "nothing on record" is an
+    answer, never the miss lane (card Q3 a: no escalate offer)."""
+    envelope = result if isinstance(result, dict) else {}
+    text = jsc.js_string(envelope.get("response") or "").strip() if "response" in envelope else ""
+    loc = (ctx or {}).get("localizer") or IDENTITY
+    if text:
+        stock_lead = f"{loc.text('Stock')}: "
+        text = "\n".join(
+            loc.tail(line) if line.startswith(stock_lead) else line for line in loc.lines(text).split("\n")
+        )
+    if not text:
+        # No group: no named product is visible to this contact, or the contact resolved to
+        # nobody (the route fails closed). Said once; asking again changes neither.
+        from app.services.product_find import NOTHING_LINE
+
+        text = loc.text(NOTHING_LINE)
+    return {
+        "response": text,
+        "response_intro": None,
+        "answers": [],
+        "attachments": [],
+        "action_links": [],
+        "last_updated_at": None,
+        "has_result": True,
+        "alternatives": [],
+        "relaxed_axis": None,
+        "field_access": None,
+        "requested_attributes": [],
+        "keys_served": False,
+        "outstanding_report": True,
+        "own_header": True,
+    }
+
+
 def _dmy(value: Any) -> str:
     text = jsc.js_string(value or "")[:10]
     parts = text.split("-")
@@ -2642,6 +2873,101 @@ def _field_label(loc: Localizer, f: Any) -> str:
     return loc.label(f) if isinstance(f, dict) and "label" in f else label
 
 
+#: PHOTO-SEND-CAP (round 1 rule 1, kept by the owner in round 2): a product file row's
+#: fields that describe the PRODUCT. The rest describe the file, so rows of one product
+#: merge into one numbered block with each file's lines under it.
+_PRODUCT_LEVEL_LABELS = frozenset({"Company", "Product Code", "Product Name", "Description", "Dimensions"})
+_FILE_LEVEL_LABELS = frozenset({"Attachment Type", "File Name", "File Link"})
+
+
+def _field_value(fields: list[Any], label: str) -> str:
+    for f in fields:
+        if isinstance(f, dict) and f.get("label") == label:
+            return jsc.nullish_str(f.get("value")).strip()
+    return ""
+
+
+def _link_fields(it: Any, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """`*Link:* <url>` under a file, link mode only. Unkeyed on purpose: the key-based
+    projections below never drop it. The url is still the stored one here; the engine
+    swaps it for the short link (`chatbot/file_links.links_for`) or, if it cannot, drops
+    the line and sends the file as before.
+
+    A row with no File Name field of its own (a promotion: owner hand test, Vixx Loo, 9 Oct
+    2026) gets `*File:* <name>` above each link, so two links under one row can be told
+    apart. `names` is the envelope's own url -> filename (`attachments`)."""
+    fields = jsc.get(it, "fields") or []
+    named_row = any(isinstance(f, dict) and f.get("label") == "File Name" for f in fields)
+    out: list[dict[str, Any]] = []
+    for u in jsc.array(jsc.get(it, "file_urls")):
+        if not isinstance(u, str) or not u:
+            continue
+        name = (names or {}).get(u)
+        if not named_row and name:
+            out.append({"label": "File", "value": name})
+        out.append({"label": "Link", "value": u})
+    return out
+
+
+def _file_rows(e: dict[str, Any], *, links: bool) -> dict[str, Any]:
+    """Product file rows grouped by product (both modes), and each file's link under it
+    (link mode). Every other envelope passes through as it is.
+
+    A row groups only when every field is a product or a plain file field and no flag is
+    about the FILE (an expired or expiring certificate): a certificate row keeps its own
+    number, its validity and its own marker. `items` is replaced by the grouped rows, so
+    the header count, the numbered list and a positional pick all read products.
+    """
+    items = e.get("items")
+    if not isinstance(items, list) or not items:
+        return e
+    product_rows = jsc.js_string(e.get("result_type") or "") == "product_attachments" and not e.get("groups")
+    if not product_rows and not links:
+        return e
+    out: list[Any] = []
+    by_product: dict[tuple[str, str], dict[str, Any]] = {}
+    names = {
+        jsc.nullish_str(a.get("url")): jsc.nullish_str(a.get("filename")).strip()
+        for a in jsc.array(e.get("attachments"))
+        if isinstance(a, dict) and a.get("url") and a.get("filename")
+    }
+    for it in items:
+        if not isinstance(it, dict):
+            out.append(it)
+            continue
+        fields = [f for f in (it.get("fields") or []) if isinstance(f, dict)]
+        flags = it.get("flags") if isinstance(it.get("flags"), dict) else {}
+        code = _field_value(fields, "Product Code")
+        groupable = (
+            product_rows
+            and bool(code)
+            and all(f.get("label") in _PRODUCT_LEVEL_LABELS | _FILE_LEVEL_LABELS for f in fields)
+            and not flags.get("expired")
+            and not flags.get("expiring_soon")
+        )
+        if not groupable:
+            out.append({**it, "fields": [*fields, *(_link_fields(it, names) if links else [])]})
+            continue
+        key = (_field_value(fields, "Company"), code)
+        group = by_product.get(key)
+        if group is None:
+            group = {
+                **it,
+                "fields": [f for f in fields if f.get("label") in _PRODUCT_LEVEL_LABELS],
+                "flags": dict(flags),
+                "file_urls": [],
+            }
+            by_product[key] = group
+            out.append(group)
+        group["fields"].extend(f for f in fields if f.get("label") in _FILE_LEVEL_LABELS)
+        if links:
+            group["fields"].extend(_link_fields(it, names))
+        group["file_urls"].extend(jsc.array(it.get("file_urls")))
+        if flags.get("discontinued"):
+            group["flags"]["discontinued"] = True
+    return {**e, "items": out}
+
+
 def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]:
     """The MCP render envelope becomes a WhatsApp message. Deterministic, no LLM (H7).
 
@@ -2658,6 +2984,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         return _low_stock_report_output(result)
     if jsc.js_string(ctx.get("tool") or "") == "crm_top_selling_report":
         return _top_selling_output(result, ctx)
+    if jsc.js_string(ctx.get("tool") or "") == "crm_report_ask":
+        return _report_ask_output(result, ctx)
+    if jsc.js_string(ctx.get("tool") or "") == "crm_find":
+        return _find_output(result, ctx)
     if jsc.js_string(ctx.get("tool") or "") == "crm_sales_analysis":
         # The same envelope: the presenter's text and, when there is one, the Excel. It
         # states its own scope (company, channel, basis, period), so the order domain's
@@ -2666,7 +2996,10 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
             **_low_stock_report_output(result, fallback=_SALES_ANALYSIS_ERROR_TEXT),
             "own_header": True,
         }
-    e = _extract_envelope(result)
+    e = _file_rows(_extract_envelope(result), links=bool(ctx.get("files_as_links")))
+    if ctx.get("portal_intro") and any(isinstance(a, dict) and a.get("type") == "portal_link" for a in e.get("action_links") or []):
+        # DEV-FAILURES RC-B: the copy line naming the form, already in the reply language.
+        e["intro"] = ctx["portal_intro"]
     # CHAT-LANGUAGE: render-only. The envelope, the items and `answers` stay English; the
     # localizer only rewrites the strings printed below (absent = identity, byte-identical).
     # The stock, incoming and PO / SO / SPO / orders tools; the rest keep English.
@@ -3001,7 +3334,36 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         and isinstance(e.get("items"), list)
         and len(e["items"])
     )
-    plain_lines = stock_availability_answered or dealer_incoming
+    # DISCONTINUED-ASK (owner, 8 Oct 2026, "9613-bl is discon or?"): the parser reads a
+    # discontinued question as `requested_attributes` "discontinued"; the card alone answered
+    # it only for a discontinued product (the marker), so a live one got silence. Every
+    # product now says its status both ways, and an ask for the status ALONE is answered by
+    # those lines only, with no card. Keyed on the parsed field, never on the user's words.
+    status_ask = jsc.js_string(e.get("result_type") or "") == "products" and _asks_discontinued(req_attrs)
+    status_only = status_ask and all(_asks_discontinued([a]) for a in req_attrs)
+    plain_lines = stock_availability_answered or dealer_incoming or status_only
+    # Products are unique per company, so one code can be live in one company and
+    # discontinued in another: when a code's rows disagree (status or alternatives), each
+    # line names its company rather than print two bare lines that contradict each other.
+    status_labels: dict[int, str] = {}
+    if status_only:
+        by_code: dict[str, list[Any]] = {}
+        for it in jsc.array(e.get("items")):
+            by_code.setdefault(_item_code(it), []).append(it)
+        for code, rows in by_code.items():
+            facts = {
+                json.dumps(
+                    [jsc.get(jsc.get(r, "flags"), "discontinued"), jsc.array(jsc.get(r, "alternatives"))],
+                    sort_keys=True,
+                    default=str,
+                )
+                for r in rows
+            }
+            if len(facts) > 1:
+                companies = [_item_company(r) for r in rows]
+                for r, company in zip(rows, companies):
+                    # No company to tell them apart: each row says it on its own card.
+                    status_labels[id(r)] = f"{code} ({company})" if all(companies) else ""
 
     msg = (
         ""
@@ -3075,8 +3437,29 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         # numbered (plan sample (g) shows plain lines, not a numbered list).
         line = field_lines if not numbered else f"{position}. {field_lines}"
         flags = jsc.get(it, "flags")
+        if status_ask:
+            # Q1 (a): the status alone is the status line; beside another property it is a
+            # field of the card, in place of the marker it supersedes.
+            label = status_labels.get(id(it))
+            as_card = not status_only or label == ""
+            status = _discontinued_status_lines(
+                loc, it, card=(line if not status_only else field_lines) if as_card else None, label=label
+            )
+            if status is not None:
+                return status
+            if status_only:
+                return field_lines
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "discontinued")):
             line += f"\n⚠️  *({loc.text('PRODUCT DISCONTINUED')})*"
+        # PRODUCT-ALTERNATIVES (card Q4 (a), owner 8 Oct 2026): the stored alternatives,
+        # under the marker. A dealer line carries each alternative's own judged verdict
+        # (`alternative_lines`, the presenter's "<code> x <Q>: <verdict>"); a staff block
+        # names the code (`alternatives`), its own block following in the list.
+        if jsc.truthy(flags):
+            for alternative_line in jsc.array(jsc.get(flags, "alternative_lines")):
+                line += f"\n{loc.text('Alternative')}: {loc.tail(jsc.nullish_str(alternative_line))}"
+            for alternative_code in jsc.array(jsc.get(flags, "alternatives")):
+                line += f"\n*{loc.text('Alternative')}:* {jsc.nullish_str(alternative_code)}"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "expired")):
             line += f"\n⚠️  *({loc.text('EXPIRED')})*"
         if jsc.truthy(flags) and jsc.truthy(jsc.get(flags, "unallocated")):
@@ -3140,10 +3523,17 @@ def output_structurer(result: Any, ctx: dict[str, Any] | None) -> dict[str, Any]
         question = jsc.js_string(e.get("intro") or "").strip()
         if question:
             msg += question + "\n\n"
+    printed_status: set[str] = set()
     for i, it in enumerate(
         [] if (qs_render or groups_render or stock_ask_render) else (e.get("items") or [])
     ):
-        msg += _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines) + "\n\n"
+        item_text = _item_line(i + 1 + set_row_offset, it, numbered=not plain_lines)
+        if status_only:
+            # The same code in two companies that agree is one answer, said once.
+            if item_text in printed_status:
+                continue
+            printed_status.add(item_text)
+        msg += item_text + "\n\n"
     if dealer_incoming and jsc.truthy(e.get("closing")):
         # The presenter's dealer closing is the refer line (`presenters.py`, `closing`);
         # printed through `turn/refer.py` so the turn is marked for Customer asks

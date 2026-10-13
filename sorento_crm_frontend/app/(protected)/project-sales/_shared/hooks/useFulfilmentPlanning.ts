@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import {
   adoptSalesOrder,
   confirmMany,
   previewConfirmMany,
+  simulateConfirm,
   deleteLineDraft,
   getClassificationEvidence,
   getPileQueue,
   getPlanningBoard,
+  getPlanningHistory,
   confirmSupply,
   getReconciliation,
   getStockDetail,
@@ -30,12 +32,17 @@ import type {
   BoardLineDraft,
   BoardSource,
   ConfirmManyBody,
+  SimulateConfirmBody,
   ConfirmSupplyBody,
   FulfilmentPlanningListParams,
   PlanListParams,
   PlanningBoard,
 } from '../types/fulfilmentPlanning.types';
 import {
+  ORDER_INQUIRY_HEADERS_KEY,
+  ORDER_INQUIRY_HEADER_KEY,
+  ORDER_INQUIRY_HEADER_LINES_KEY,
+  ORDER_INQUIRY_HEADER_RELATED_DOCUMENTS_KEY,
   ORDER_INQUIRY_ROWS_KEY,
   ORDER_INQUIRY_SUMMARY_KEY,
   ORDER_INQUIRY_WORKLIST_KEY,
@@ -56,6 +63,40 @@ import { LIST_QUERY_OPTIONS } from '@/lib/list-query/options';
 
 export const FULFILMENT_PLANNING_KEY = 'project-fulfilment-planning';
 export const PLANNING_BOARD_KEY = 'project-fulfilment-board';
+
+/**
+ * What a Confirm waits for before it hands back (owner hand test, 9 Oct 2026,
+ * BORROW-LOCATION-ONLY). The server has committed every Order Inquiry row by the time the
+ * confirm returns; what lagged was this tab. An OI page visited before the press was served
+ * from cache (fresh for the app's 30s default, and nothing here invalidated it), so it showed
+ * the row this Confirm had just cancelled; and the board's refetch was fired without being
+ * waited for, so its OI link still named that row and the OI page answered "not here".
+ *
+ * So the OI page's own header, Lines and related documents are DROPPED when nobody is looking
+ * at them (the next visit loads, it never paints the old row) and refetched when somebody is,
+ * and the board and the planning list are awaited: the press settles once the screen it
+ * leaves the planner on already carries the new rows. A failed refetch still settles (the
+ * promise never rejects), so the button never sticks.
+ */
+async function refreshAfterConfirm(queryClient: QueryClient): Promise<void> {
+  for (const key of [
+    ORDER_INQUIRY_HEADER_KEY,
+    ORDER_INQUIRY_HEADER_LINES_KEY,
+    ORDER_INQUIRY_HEADER_RELATED_DOCUMENTS_KEY,
+  ]) {
+    queryClient.removeQueries({ queryKey: [key], type: 'inactive' });
+    void queryClient.invalidateQueries({ queryKey: [key] });
+  }
+  void queryClient.invalidateQueries({ queryKey: [ORDER_INQUIRY_HEADERS_KEY] });
+  // Confirmed from the per-order sheet, the board is not on screen: an invalidation would only
+  // mark it stale and the next visit would paint its old OI links while it refetched.
+  queryClient.removeQueries({ queryKey: [PLANNING_BOARD_KEY], type: 'inactive' });
+  queryClient.removeQueries({ queryKey: [FULFILMENT_PLANNING_KEY], type: 'inactive' });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: [FULFILMENT_PLANNING_KEY] }),
+    queryClient.invalidateQueries({ queryKey: [PLANNING_BOARD_KEY] }),
+  ]);
+}
 export const PILE_QUEUE_KEY = 'project-pile-queue';
 export const CLASSIFICATION_EVIDENCE_KEY = 'project-classification-evidence';
 export const STOCK_DETAIL_KEY = 'project-stock-detail';
@@ -206,12 +247,11 @@ export function useReconciliationMutations() {
   const confirm = useMutation({
     mutationFn: ({ psoId, body }: { psoId: string; body: ConfirmSupplyBody }) =>
       confirmSupply(psoId, body),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: [FULFILMENT_PLANNING_KEY] });
+    onSuccess: async (result) => {
       // The board reads live stock and live holds, so a confirmation changes what every OTHER
       // order on the same board can still be promised. Leaving it stale would show a planner a
-      // Reserve that their own previous press had just consumed.
-      queryClient.invalidateQueries({ queryKey: [PLANNING_BOARD_KEY] });
+      // Reserve that their own previous press had just consumed. It and the planning list are
+      // refreshed, and WAITED for, by `refreshAfterConfirm` below.
       queryClient.invalidateQueries({ queryKey: [RECONCILIATION_KEY] });
       queryClient.invalidateQueries({ queryKey: [SUPPLY_KEY] });
       queryClient.invalidateQueries({ queryKey: [SALES_ORDERS_KEY] });
@@ -244,10 +284,19 @@ export function useReconciliationMutations() {
       for (const notice of result.landed_buy_notices ?? []) {
         toast.warning(failingLineText(notice));
       }
+      // OI-CLOSED-LINE (owner, 12 Oct 2026): confirmed short of stock, or held back so the
+      // rest of the order confirmed. Never silent.
+      for (const notice of result.stock_short_notices ?? []) {
+        toast.warning(failingLineText(notice));
+      }
+      for (const notice of result.lines_held_back ?? []) {
+        toast.warning(failingLineText({ ...notice, reason: `held back, decision kept: ${notice.reason}` }));
+      }
       // Only when something went wrong. The successful count is on the Transfers page and
       // does not need saying twice; an unwritten movement has no other way to be noticed.
       const failed = result.transfers_failed ?? 0;
       if (failed > 0) toast.warning(`Transfers not written: ${failed}`);
+      await refreshAfterConfirm(queryClient);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -405,9 +454,7 @@ export function useConfirmManyMutation() {
 
   return useMutation({
     mutationFn: (body: ConfirmManyBody) => confirmMany(body),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: [FULFILMENT_PLANNING_KEY] });
-      queryClient.invalidateQueries({ queryKey: [PLANNING_BOARD_KEY] });
+    onSuccess: async (result) => {
       queryClient.invalidateQueries({ queryKey: [PLANS_KEY] });
       queryClient.invalidateQueries({ queryKey: [RECONCILIATION_KEY] });
       queryClient.invalidateQueries({ queryKey: [SUPPLY_KEY] });
@@ -434,6 +481,8 @@ export function useConfirmManyMutation() {
           `Confirmed ${succeeded} order${succeeded === 1 ? '' : 's'}; ${failed} refused - see the results below.`,
         );
       }
+      // The board and the planning list, waited for (see `refreshAfterConfirm`).
+      await refreshAfterConfirm(queryClient);
     },
     onError: (error: Error) => {
       // R3 (SO314595): a Confirm whose response never reached this tab has still committed
@@ -453,6 +502,28 @@ export function useConfirmManyMutation() {
 export function usePreviewConfirmManyMutation() {
   return useMutation({
     mutationFn: (body: ConfirmManyBody) => previewConfirmMany(body),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+export const PLANNING_HISTORY_KEY = 'planning-history';
+
+/** The admin History of the named orders; read only while the sheet is open. */
+export function usePlanningHistory(psoIds: string[], enabled = true) {
+  return useQuery({
+    queryKey: [PLANNING_HISTORY_KEY, [...psoIds].sort().join(',')],
+    queryFn: () => getPlanningHistory(psoIds),
+    enabled: enabled && psoIds.length > 0,
+    retry: 1,
+  });
+}
+
+/** Admin Simulate confirm: writes nothing, so like the preview it invalidates nothing. */
+export function useSimulateConfirmMutation() {
+  return useMutation({
+    mutationFn: (body: SimulateConfirmBody) => simulateConfirm(body),
     onError: (error: Error) => {
       toast.error(error.message);
     },

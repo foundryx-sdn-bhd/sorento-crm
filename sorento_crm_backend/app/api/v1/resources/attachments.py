@@ -13,9 +13,16 @@ import uuid
 import zipfile
 import io
 import mimetypes
+from zoneinfo import ZoneInfo
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key, require_permission
+from app.dependencies import (
+    get_current_user,
+    get_current_user_or_api_key,
+    require_any_permission_with_api_key,
+    require_permission,
+)
+
 from app.services.resources_service import AttachmentService, AttachmentTypeService, AttachmentDirectoryService
 from app.services.attachment_company_service import AttachmentCompanyService
 from app.services.storage_router import (
@@ -59,45 +66,50 @@ from app.schemas.resources import (
     DriveListResponse,
 )
 from app.schemas.common import ListResponse
-from app.services.error_handler import handle_internal_error
+from app.services.error_handler import AppException, handle_internal_error, handle_not_found
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-import re as _re
+# Who browses the attachment catalogue (LIST-API-PERMS). The catalogue is the shared Drive AND
+# every module's "link existing file" picker (`components/common/LinkAttachmentBrowserDialog`,
+# the products one, `projectDocumentService.ts`, `PromotionAttachmentsTab.tsx`, `FormForm.tsx`,
+# `UploadFlyerDialog.tsx`), so each screen that opens that picker admits with its own view slug.
+# A session holding none of these - a role outside every module - is what the gate refuses.
+ATTACHMENT_CATALOGUE_READERS = [
+    "resource.attachments.view",
+    "complaint_management.complaints.view",
+    "procurement.stock_inquiries.view",
+    "procurement.purchase_requests.view",
+    "procurement.sponsorship_forms.view",
+    "procurement.packing_lists.view",
+    "master_data.products.view",
+    "projects.projects.view",
+    "marketing.promotions.view",
+    "forms.forms.view",
+    "dealer_kit.page.view",
+]
+# The upload dialog's name check runs wherever the dialog is mounted: Resources and the Packing
+# Lists page, whose upload button is itself gated on `resource.attachments.upload`.
+ATTACHMENT_UPLOAD_READERS = ["resource.attachments.view", "resource.attachments.upload"]
+# The latest stock list is read by the Inventory Stock page (`StockBalanceGrid.tsx`) and the MCP.
+STOCK_LIST_READERS = ["resource.attachments.view", "inventory.stock.view"]
+# The Files page (`/resource-management/attachment-directories`) lists folders and files in one
+# call; its menu entry admits either slug (lane MENU-PERM-GATE), so the drive listing does too.
+DRIVE_READERS = ["resource.attachments.view", "resource.attachment_directories.view"]
 
-_COPY_NUMBERED_RE = _re.compile(r"^(?P<stem>.*) - copy \((?P<n>\d+)\)$")
-_COPY_PLAIN_SUFFIX = " - copy"
+
+from app.services.attachment_bulk_download_service import (
+    suffix_copy_name as _suffix_copy_name,  # one copy of the "- copy" rules, shared with the bulk download
+)
 
 
-def _suffix_copy_name(filename: str) -> str:
-    """Google-Drive style "- copy" suffix bump for the upload collision flow.
-
-    Splits at the rightmost dot so multi-dot basenames like `archive.tar.gz`
-    are treated as base=`archive.tar`, ext=`.gz`. Files without an extension
-    (e.g. `README`) get the suffix appended directly. The marker is matched
-    on the base only:
-
-      * `"x"` → `"x - copy"`
-      * `"x - copy"` → `"x - copy (2)"`
-      * `"x - copy (N)"` → `"x - copy (N+1)"`
-    """
-    if "." in filename:
-        base, ext = filename.rsplit(".", 1)
-        ext = f".{ext}"
-    else:
-        base, ext = filename, ""
-    m = _COPY_NUMBERED_RE.match(base)
-    if m:
-        n = int(m.group("n")) + 1
-        new_base = f"{m.group('stem')} - copy ({n})"
-    elif base.endswith(_COPY_PLAIN_SUFFIX):
-        new_base = f"{base} (2)"
-    else:
-        new_base = f"{base}{_COPY_PLAIN_SUFFIX}"
-    return f"{new_base}{ext}"
+class BulkDownloadRequest(BaseModel):
+    directory_id: Optional[str] = None
+    folder_ids: List[str] = []
+    attachment_ids: List[str] = []
 
 
 class LinkPackingListRequest(BaseModel):
@@ -291,7 +303,7 @@ async def get_attachments(
         None,
         description="'shared' for company_id IS NULL only; a company UUID for that company only; omitted keeps the default (shared + the caller's own companies).",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(ATTACHMENT_CATALOGUE_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get attachments with pagination and filtering (optional directory_id, query by filename, is_deleted for trash)."""
@@ -379,7 +391,7 @@ async def get_attachments(
 async def collision_check(
     filename: str = Query(..., description="Candidate display name (stored_filename) to test."),
     directory_id: Optional[str] = Query(None, description="Folder to check within; no folder → never collides."),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(ATTACHMENT_UPLOAD_READERS)),
     db: Session = Depends(get_db),
 ):
     """Pre-upload check: does a live attachment with this name already exist in this folder?
@@ -433,7 +445,7 @@ async def get_drive_contents(
         None,
         description="'shared' for company_id IS NULL only (folders and files); a company UUID for that company only; omitted keeps the default.",
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(DRIVE_READERS)),
     db: Session = Depends(get_db),
 ):
     """Unified Drive listing - folders + files as ONE server-sorted, server-paginated
@@ -549,7 +561,7 @@ STOCK_LIST_TYPE_NAMES = ("Stock List", "Stock_List")
 
 @router.get("/current-stock-list", response_model=AttachmentResponse)
 async def get_current_stock_list(
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(STOCK_LIST_READERS)),
     db: Session = Depends(get_db),
 ):
     """Get the current (non-archived) Stock_List attachment, if any. For quick access from Stock page and n8n."""
@@ -1338,6 +1350,113 @@ async def bulk_import_attachments(
         "message": "Import started. Processing in the background. You can close this dialog.",
         "job_id": job.job_id,
         "id": str(job.id),
+    }
+
+
+@router.post("/bulk-download")
+async def bulk_download_attachments(
+    body: BulkDownloadRequest,
+    current_user: dict = Depends(require_any_permission_with_api_key(DRIVE_READERS)),
+    db: Session = Depends(get_db),
+):
+    """Queue a ZIP of the selected folders and files. Poll GET /api/v1/system/jobs/{job_id}/status;
+    the archive also lands in My downloads."""
+    from app.models.base import UNSET, get_company_scope
+    from app.models.resources import Attachment, AttachmentDirectory
+    from app.services.attachment_bulk_download_service import archive_filename
+    from app.services.download_service import DownloadService
+    from app.services.job_service import JobService
+    from app.services.queue_service import enqueue_job
+    from app.tasks.attachment_bulk_download_task import process_attachment_bulk_download
+
+    folder_ids = parse_uuid_list(body.folder_ids, param_name="folder_ids") or []
+    attachment_ids = parse_uuid_list(body.attachment_ids, param_name="attachment_ids") or []
+    directory_id = (
+        parse_uuid_list([body.directory_id], param_name="directory_id") or [None]
+    )[0]
+    if not folder_ids and not attachment_ids:
+        raise AppException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="Select at least one folder or file.",
+            code="EMPTY_SELECTION",
+        )
+    if DownloadService(db).has_in_flight(
+        user_id=current_user["id"], kind="attachment_bulk_zip", any_source=True
+    ):
+        raise AppException(
+            status_code=status.HTTP_409_CONFLICT,
+            message="A files archive is already being prepared. Wait for it to finish or cancel it.",
+            code="ARCHIVE_IN_FLIGHT",
+        )
+
+    # Visible, non-deleted rows only: the session's company scope filters these queries.
+    visible_folders = (
+        db.query(AttachmentDirectory.id)
+        .filter(AttachmentDirectory.id.in_(folder_ids), AttachmentDirectory.is_deleted == False)  # noqa: E712
+        .count()
+        if folder_ids
+        else 0
+    )
+    visible_files = (
+        db.query(Attachment.id)
+        .filter(Attachment.id.in_(attachment_ids), Attachment.is_deleted == False)  # noqa: E712
+        .count()
+        if attachment_ids
+        else 0
+    )
+    if not visible_folders and not visible_files:
+        raise handle_not_found("Selection", "")
+
+    viewed_name = None
+    if directory_id:
+        viewed = db.query(AttachmentDirectory.name).filter(AttachmentDirectory.id == directory_id).first()
+        viewed_name = viewed[0] if viewed else None
+    name = archive_filename(viewed_name, datetime.now(ZoneInfo("Asia/Kuala_Lumpur")))
+
+    scope = get_company_scope(db)
+    if scope is None:
+        snapshot = None
+    elif scope is UNSET:
+        snapshot = []  # fail closed: an unresolved scope sees nothing
+    else:
+        snapshot = sorted(str(c) for c in scope)
+
+    job_service = JobService(db)
+    job = job_service.create_job(
+        job_type="attachment_bulk_download",
+        user_id=current_user["id"],
+        filename=name,
+        metadata={
+            "directory_id": directory_id,
+            "folder_ids": folder_ids,
+            "attachment_ids": attachment_ids,
+            "company_scope": snapshot,
+        },
+    )
+    download = DownloadService(db).create(
+        user_id=current_user["id"],
+        kind="attachment_bulk_zip",
+        filename=name,
+        source_entity_type="import_job",
+        source_entity_id=str(job.id),
+    )
+    job.job_metadata = {**(job.job_metadata or {}), "download_id": str(download.id)}
+    db.commit()
+
+    rq_job = enqueue_job(
+        process_attachment_bulk_download,
+        str(job.id),
+        queue_name="imports",
+        job_timeout=7200,
+        job_id=str(job.job_id),  # pre-assign RQ id = DB job_id; see update_job_with_rq_id
+    )
+    job_service.update_job_with_rq_id(job, rq_job.id)
+
+    return {
+        "message": "Archive started. It is also listed in My downloads.",
+        "job_id": job.job_id,
+        "id": str(job.id),
+        "download_id": str(download.id),
     }
 
 

@@ -14,7 +14,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import exists, func, or_, select, text
+from sqlalchemy import exists, false, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -39,6 +39,7 @@ from app.models.project_so import (
 from app.models.sales_agent import SalesAgent
 from app.models.scm import OrderLinkClaim
 from app.services.document_ingest_service import CANCELLED
+from app.services.scm.po_ref import po_ref_key
 from app.services.error_handler import AppException
 from app.services.numbering_service import NumberingService
 from app.services.scm import sales_agent_service
@@ -408,9 +409,10 @@ class SalesOrderService:
 
         ``line_planning`` attaches, per LINE, what has already been planned about it: the
         order inquiry covering it, the revision that decided it, and the documents its Buy
-        is linked to. Three reads for the WHOLE order, and off by default - the list
-        renders none of them, and paying for them across a page of 50 orders would be 150
-        reads for facts nothing there prints.
+        is linked to, plus any open purchasing refusal (PR 1622, the board's own rule). A
+        fixed handful of reads for the WHOLE order, and off by default - the list renders
+        none of them, and paying for them across a page of 50 orders would multiply them by
+        50 for facts nothing there prints.
         """
         customer = so.customer
         inquiries = self._line_inquiries(so) if line_planning else {}
@@ -623,6 +625,7 @@ class SalesOrderService:
             "demand_class": so.demand_class,
             # AutoCount's Transferable flag; None when the source never stated it.
             "is_transferable": so.is_transferable,
+            "po_ref": so.po_ref or None,
             "created_at": so.created_at.isoformat() if so.created_at else "",
         }
 
@@ -668,7 +671,7 @@ class SalesOrderService:
             .order_by(OrderInquiryRow.created_at.asc(), OrderInquiryRow.id.asc())
             .all()
         )
-        return {
+        out = {
             str(core_id): {
                 "inquiry_no": inquiry_no,
                 "state": state,
@@ -677,6 +680,25 @@ class SalesOrderService:
             }
             for core_id, inquiry_no, state, inquiry_id, row_id in rows
         }
+        # PR 1622 (owner, mock v3): a refusal purchasing made and CS has not answered is the
+        # inquiry's status on this line - read by the planning board's own rules, so the two
+        # screens never disagree about whether it is still open.
+        from app.services.project_fulfilment_board_service import FulfilmentBoardService
+
+        for core_id, entry in FulfilmentBoardService(self.db).open_refusals(
+            list(out.keys())
+        ).items():
+            out[core_id] = {
+                "inquiry_no": entry.get("inquiry_no"),
+                "state": entry.get("state"),
+                "inquiry_id": entry.get("inquiry_id"),
+                "row_id": entry.get("row_id"),
+                "ack_state": entry.get("ack_state"),
+                "rejected_reason": entry.get("rejected_reason"),
+                "rejected_by_name": entry.get("rejected_by_name"),
+                "rejected_at": entry.get("rejected_at"),
+            }
+        return out
 
     def _line_planning_changes(self, so: SalesOrder) -> dict[str, dict]:
         """The latest planning-change row for each of this order's lines, WITHIN the
@@ -731,6 +753,8 @@ class SalesOrderService:
                 "kind": row.kind,
                 "applied_state": row.applied_state,
                 "result": row.result_json or None,
+                "from": row.from_json or None,
+                "to": row.to_json or None,
             }
         return out
 
@@ -1320,6 +1344,7 @@ class SalesOrderService:
             )
         if query:
             like = f"%{query.strip()}%"
+            typed_key = po_ref_key(query)
             # The four things a person holds when they come looking for an order: the
             # document number, who it is for, WHAT IS ON IT, and WHO SOLD IT. The last two
             # were not matched, so "which orders have that sink on them" and "show me
@@ -1365,6 +1390,10 @@ class SalesOrderService:
                 # ranked highest - so "BAMBOO" finds an order the Order Inquiry sheet
                 # named, whether or not the customer half of that cell ever matched.
                 | (SalesOrder.project_label.ilike(like))
+                # The customer's PO number: the raw value like the other fields, and the
+                # folded key of what was typed ("po 4500-123" finds "PO-4500 123").
+                | (SalesOrder.po_ref.ilike(like))
+                | (SalesOrder.po_ref_key.like(f"%{typed_key}%") if typed_key else false())
             )
         sort_cols = {
             "so_number": SalesOrder.so_number,
@@ -1373,6 +1402,7 @@ class SalesOrderService:
             "priority": SalesOrder.priority,
             "created_at": SalesOrder.created_at,
             "project_label": SalesOrder.project_label,
+            "po_ref": SalesOrder.po_ref,
             # The START of the delivery span the list prints - "what is due first", which is
             # the question that column is scanned with. In SQL over the SAME
             # `min(required_date)` the serializer prints, so the header's order and the cell
@@ -1437,6 +1467,9 @@ class SalesOrderService:
         so = SalesOrder(
             so_number=so_number,
             customer_id=customer.id,
+            # The name the order is issued under (sdn_0001, DEBTOR-CODE-LINK), so a later
+            # rename of the customer never rewrites it.
+            debtor_name=(customer.customer_name or "").strip() or None,
             sales_agent_id=agent_id,
             order_date=date.today(),
             requested_delivery_date=(
@@ -1470,7 +1503,11 @@ class SalesOrderService:
     def update(self, so_id: str, data, user_id: Optional[str]) -> dict:
         so = self._get_or_404(so_id)
         if data.customer_code is not None:
-            so.customer_id = self._customer(data.customer_code).id
+            customer = self._customer(data.customer_code)
+            if str(customer.id) != str(so.customer_id):
+                # A different customer is a different issue name (sdn_0001, DEBTOR-CODE-LINK).
+                so.debtor_name = (customer.customer_name or "").strip() or None
+            so.customer_id = customer.id
         if data.order_type is not None:
             so.order_type = data.order_type
             # A hand-set type follows the same vocabulary the importer classifies demand

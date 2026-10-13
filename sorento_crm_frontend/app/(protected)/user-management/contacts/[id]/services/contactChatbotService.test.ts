@@ -86,3 +86,61 @@ describe('contactChatbotService - escalation switch (ESCALATION-CONTROL)', () =>
     expect(saved.escalation_allowed).toBe(false);
   });
 });
+
+describe('contactChatbotService - skip date-range questions switch (DO-PERIOD-SKIP)', () => {
+  it('reads the switch off the contact, and a contact without the field defaults off', async () => {
+    getContact.mockResolvedValueOnce({ chatbot_skip_period_questions: true });
+    expect((await getContactChatbotProfile('c1')).skip_period_questions).toBe(true);
+
+    getContact.mockResolvedValueOnce({});
+    expect((await getContactChatbotProfile('c1')).skip_period_questions).toBe(false);
+  });
+
+  it('sends the switch as chatbot_skip_period_questions on save, true and false', async () => {
+    getContact.mockResolvedValueOnce({});
+    const profile = await getContactChatbotProfile('c1');
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_skip_period_questions: true }), { status: 200 }),
+    );
+
+    const saved = await saveContactChatbotProfile('c1', { ...profile, skip_period_questions: true });
+
+    expect(JSON.parse(apiFetch.mock.calls[0][1].body).chatbot_skip_period_questions).toBe(true);
+    expect(saved.skip_period_questions).toBe(true);
+
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_skip_period_questions: false }), { status: 200 }),
+    );
+    await saveContactChatbotProfile('c1', { ...profile, skip_period_questions: false });
+    expect(JSON.parse(apiFetch.mock.calls[1][1].body).chatbot_skip_period_questions).toBe(false);
+  });
+});
+
+describe('contactChatbotService - send files as links switch (PHOTO-SEND-CAP)', () => {
+  it('reads the switch off the contact, and a contact without the field defaults off', async () => {
+    getContact.mockResolvedValueOnce({ chatbot_files_as_links: true });
+    expect((await getContactChatbotProfile('c1')).files_as_links).toBe(true);
+
+    getContact.mockResolvedValueOnce({});
+    expect((await getContactChatbotProfile('c1')).files_as_links).toBe(false);
+  });
+
+  it('sends the switch as chatbot_files_as_links on save, true and false', async () => {
+    getContact.mockResolvedValueOnce({});
+    const profile = await getContactChatbotProfile('c1');
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_files_as_links: true }), { status: 200 }),
+    );
+
+    const saved = await saveContactChatbotProfile('c1', { ...profile, files_as_links: true });
+
+    expect(JSON.parse(apiFetch.mock.calls[0][1].body).chatbot_files_as_links).toBe(true);
+    expect(saved.files_as_links).toBe(true);
+
+    apiFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ chatbot_files_as_links: false }), { status: 200 }),
+    );
+    await saveContactChatbotProfile('c1', { ...profile, files_as_links: false });
+    expect(JSON.parse(apiFetch.mock.calls[1][1].body).chatbot_files_as_links).toBe(false);
+  });
+});

@@ -39,6 +39,7 @@ from app.models.user import User
 from app.services.scm import priority
 
 from ._pg_fixture import blank_session
+from ._borrow_mode import borrow_from_order_on
 
 MARKER = "zzt-board"
 BASE = "/api/v1/project-sales"
@@ -124,6 +125,16 @@ def _warehouse(db, code: str) -> Warehouse:
         segment="project", fulfilment_planning=True,
     )
     db.add(row)
+    db.flush()
+    return row
+
+
+def _pool(db, code: str) -> Warehouse:
+    """A SITE POOL, in the live book's shape: some location's `pool_warehouse_id`, and NOT
+    `segment = project` - a pool that is would be a project reserve (HQ), which Fulfilment
+    Planning never draws (`pool_predicate.is_project_reserve`)."""
+    row = _warehouse(db, code)
+    row.segment = None
     db.flush()
     return row
 
@@ -1572,7 +1583,7 @@ def test_the_sign_of_every_factor_is_verified_against_its_raw_fact():
 
 def _pooled_warehouses(db):
     """A project location whose shortfall may draw on a shared pool, as BRW-BB draws on BRW."""
-    pool = _warehouse(db, f"ZZTP{_uid()[:6]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:6]}"[:20])
     own = _warehouse(db, f"ZZTO{_uid()[:6]}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -1732,9 +1743,15 @@ def test_a_buy_the_board_cannot_avoid_still_says_borrowing_is_possible():
         assert contribution["qty_proposed_buy"] == "10"
         assert contribution["qty_borrow_available"] == "25"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
         assert "borrow" in contribution["sources"][-1]["reason"].lower()
+        # BORROW-OWN-LOC review S4: the own location's 0-free row is never named as a place
+        # borrowing is possible from.
+        offered = contribution["sources"][-1]["reason"].split("Borrowing is possible from")[1]
+        assert own.warehouse_code not in offered, offered
         # AC-V4: the note and step 1 are ONE statement. This line's location carries no
         # ownership group, so step 1 has no "our locations" to draw from - and the donor is
         # still on the row's own candidate list, which is what the Buy's sentence names.
@@ -1801,6 +1818,7 @@ def _lead_time(db, product, days: int) -> None:
     db.flush()
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_beyond_the_reserve_window_says_so_and_offers_no_donor():
     """The captain, on SO414341: two lines due 15 February and 15 March 2027, roughly 174
     days out on a product whose lead time is well inside that, read "Nothing free at BRW-BB
@@ -2334,7 +2352,7 @@ def test_the_locations_include_the_site_pool_the_suggestion_cites():
     with blank_session() as db:
         group = f"Z{_uid()[:3]}".upper()
         product = _product(db, f"ZZT-{_uid()[:6]}")
-        pool = _warehouse(db, f"ZZTPOOL{_uid()[:5]}"[:20])
+        pool = _pool(db, f"ZZTPOOL{_uid()[:5]}"[:20])
         own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
         sibling = _warehouse(db, f"ZZTB{_uid()[:4]}-{group}"[:20])
         own.pool_warehouse_id = pool.id
@@ -2544,7 +2562,7 @@ def test_every_reserve_the_board_proposes_is_accepted_by_the_confirmation():
         assert decision.revision_no == 1
 
 
-def test_a_refused_reserve_says_which_warehouse_and_what_to_do_about_it():
+def test_a_reserve_at_a_stranger_warehouse_is_refused_naming_the_pool_and_an_empty_pool_reserve_is_recorded_short():
     """The message the captain read was "Reserve may only come from this line's own location or
     the shared pool. Move that quantity to Borrow." - printed about their own location, naming
     no warehouse, and pointing at a control the board does not have.
@@ -2552,7 +2570,11 @@ def test_a_refused_reserve_says_which_warehouse_and_what_to_do_about_it():
     Ladder v2 (section E rule 7): the line's own location is NEVER an allowed Reserve location
     any more, so "what IS allowed" is the shared pool - the two refusals below are "wrong
     place entirely" (a stranger warehouse) versus "the right place, but nothing free there"
-    (the pool itself).
+    (the pool itself). The first stays a structural refusal (the location is not allowed);
+    the second is no longer refused: the order confirms as decided and the notice names the
+    warehouse, what was asked and how much is short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
     """
     from app.models.base import company_scope
 
@@ -2620,10 +2642,13 @@ def test_a_refused_reserve_says_which_warehouse_and_what_to_do_about_it():
         assert "Borrow" not in wrong_place, "the board has no Borrow control"
         assert "borrow it from that location on the order's own sheet" in wrong_place
 
-        nothing_free = empty.json()["failing_lines"][0]["reason"]
-        assert nothing_free.startswith(f"{pool.warehouse_code} has nothing free for this line")
-        assert "10" in nothing_free, "it must say how much was asked for"
-        assert "Buy that quantity instead" in nothing_free
+        assert empty.status_code == 200, empty.text
+        [notice] = empty.json()["stock_short_notices"]
+        assert notice["reason"] == (
+            f"Reserve 10 at {pool.warehouse_code} confirmed as decided; only 0 free at "
+            f"{pool.warehouse_code} when confirmed, 10 short"
+        ), notice
+        assert _holds_at(db, pso_id, pool) == {}, "nothing is held where nothing is free"
 
 
 # --------------------------------------------------------------------------- #
@@ -2663,7 +2688,7 @@ def _group_world(
     """
     group = f"Z{_uid()[:3]}".upper()
     product = _product(db, f"ZZT-{_uid()[:6]}")
-    pool = _warehouse(db, f"ZZTP{_uid()[:5]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:5]}"[:20])
     own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -3940,6 +3965,7 @@ def _step(contribution, kind: str) -> dict:
     return next(step for step in contribution["trail"] if step["kind"] == kind)
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_trail_asks_the_four_questions_in_order_and_then_buy():
     """AC-V1 / AC-V7 (ladder v5, section 1e): FIVE rows, one per question plus Buy, in the
     captain's own order - our own location, the pool, another location, the same agent's
@@ -4031,6 +4057,7 @@ def test_the_trail_adds_up_to_the_proposal_it_explains():
 # `test_demand_a_confirmed_decision_already_holds_is_not_subtracted_twice`.
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_covered_before_the_buy_step_says_the_buy_was_not_needed():
     """Ladder v3: the group holds nothing here, so full cover comes from the POOL, and every
     rung after it - group/cross-group borrow, buy - is walked and reported unnecessary, never
@@ -4200,6 +4227,7 @@ def test_a_cell_whose_pool_step_answered_from_two_pools_shows_both_taken_figures
     assert own_code in step["why"] and far_code in step["why"], step["why"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_dealer_hot_selling_line_still_reads_the_pools_own_later_order_in_the_proof():
     """Review round 2 (S4): the proof gated `pool_borrow` on dealer hot-selling while
     `ProjectSupplyService.walk` built it for every item (LADDER V8, R-A retired the gate).
@@ -4209,6 +4237,7 @@ def test_a_dealer_hot_selling_line_still_reads_the_pools_own_later_order_in_the_
     the step has to be made from the same donor list rather than from an empty one.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool = _dealer_pool(db, product, abc_class_retail="A")
         _stock(db, product, own, on_hand=0)
@@ -4257,7 +4286,9 @@ def test_the_borrow_step_offers_what_it_found_and_takes_none_of_it():
         # The donor is still OFFERED, on the contribution's own list.
         assert contribution["qty_borrow_available"] == "25"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
 
 
@@ -4490,6 +4521,7 @@ def test_a_hot_selling_rung_still_names_the_classification_in_the_pool_sentence(
         assert _step(contribution, "buy")["took"] == "10"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_supply_on_the_water_is_inside_question_ones_own_offer():
     """AC-V2 on the board. `_quantity_world` has 7 open on ZZT-SPO-0001 against the 28 the
     line plans for (AC-S2-4, not the 20 still owed).
@@ -4782,7 +4814,7 @@ def test_an_unplannable_line_has_no_fulfilment_warehouse_id():
 # --------------------------------------------------------------------------- #
 
 
-def _confirm(db, pso_id: str, actor_user_id: str, lines: list) -> None:
+def _confirm(db, pso_id: str, actor_user_id: str, lines: list) -> dict:
     """Confirm through the real service, so the snapshot is a real snapshot.
 
     Hand-writing `line_snapshots` would make this suite agree with itself about a shape only
@@ -4793,10 +4825,37 @@ def _confirm(db, pso_id: str, actor_user_id: str, lines: list) -> None:
 
     service = ProjectSupplyService(db)
     order = service.get_order(pso_id)
-    service.confirm(
+    body = service.confirm(
         order, ConfirmSupplyBody(lines=lines), actor_user_id=actor_user_id
     )
     db.flush()
+    return body
+
+
+def _holds_at(db, pso_id, warehouse) -> dict:
+    """{project line id: qty held at `warehouse`} by the order's ACTIVE decision, fresh (a
+    superseded revision's rows stay for audit and would double-count a carried hold)."""
+    from app.models.project_so import ProjectSalesOrderLine, SOLineAllocation, SOSupplyDecision
+
+    db.expire_all()
+    ids = [
+        row.id
+        for row in db.query(ProjectSalesOrderLine.id).filter(
+            ProjectSalesOrderLine.project_sales_order_id == pso_id
+        )
+    ]
+    out: dict = {}
+    for row in (
+        db.query(SOLineAllocation)
+        .join(SOSupplyDecision, SOSupplyDecision.id == SOLineAllocation.decision_id)
+        .filter(
+            SOLineAllocation.so_line_id.in_(ids),
+            SOLineAllocation.warehouse_id == warehouse.id,
+            SOSupplyDecision.state == "active",
+        )
+    ):
+        out[row.so_line_id] = out.get(row.so_line_id, Decimal("0")) + row.qty
+    return out
 
 
 def _covered_world(db):
@@ -4969,6 +5028,7 @@ def test_a_confirmed_group_borrow_round_trips_through_the_board_decision_dict():
     dropped.
     """
     with blank_session() as db:
+        borrow_from_order_on(db)
         actor = _user(db, f"{MARKER} planner")
         product = _product(db, f"ZZT-{_uid()[:6]}")
         # A hyphenated code, so it carries an ownership group (`group_of_warehouse_code`):
@@ -5135,6 +5195,7 @@ def test_covering_a_line_does_not_move_what_is_left_for_the_lines_behind_it():
         assert after["available_to_this_line"] == "5"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_uncovered_line_of_a_partly_confirmed_order_is_still_proposed():
     """Ladder v3: the own location holds 5 against the sibling's 21, so the whole-line rule
     buys the lot - the seven-rung trail (the read-only own-location strip first) is still
@@ -5249,7 +5310,7 @@ def _dealer_pool(
     """
     from app.models.scm import ItemClassification, ReorderLevel
 
-    pool = _warehouse(db, f"ZZTP{_uid()[:6]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:6]}"[:20])
     own = _warehouse(db, f"ZZTO{_uid()[:6]}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()
@@ -5456,7 +5517,7 @@ def test_the_pool_rung_never_overstates_another_pools_offer_past_its_own_availab
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool1 = _pooled_warehouses(db)
-        pool2 = _warehouse(db, f"ZZTP2{_uid()[:6]}"[:20])
+        pool2 = _pool(db, f"ZZTP2{_uid()[:6]}"[:20])
         other_own = _warehouse(db, f"ZZTX{_uid()[:6]}"[:20])
         other_own.pool_warehouse_id = pool2.id
         db.flush()
@@ -5852,7 +5913,9 @@ def test_a_reserve_met_line_still_carries_its_donors():
         assert contribution["qty_proposed_reserve"] == "0"
         assert contribution["qty_proposed_buy"] == "10"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
         candidate = contribution["borrow_candidates"][0]
         assert candidate["warehouse_id"] == str(elsewhere.id)
@@ -5886,9 +5949,11 @@ def test_a_covered_line_still_carries_the_donors_it_could_be_amended_to():
         assert contribution["so_qty_ahead"] is None
         candidates = contribution["borrow_candidates"]
         # The frozen donor's 43 is now a confirmed hold and out of its free stock, so it is
-        # not offered again; the spare location is. The line's own location is inside its
-        # Reserve reach and is never a donor.
-        assert [c["warehouse_code"] for c in candidates] == [spare.warehouse_code]
+        # not offered again; the spare location is. The line's own location is offered last
+        # as a plain location borrow (BORROW-OWN-LOC, owner 13 Oct 2026).
+        assert [c["warehouse_code"] for c in candidates] == [
+            spare.warehouse_code, world["own"].warehouse_code,
+        ]
         assert candidates[0]["warehouse_id"] == str(spare.id)
         assert candidates[0]["free_qty"] == "7"
         # Nothing is still being bought on a wholly borrowed line, so the ranking has no
@@ -6032,15 +6097,16 @@ def test_the_confirm_accepts_the_pool_reserve_the_board_proposed():
         assert [(c["kind"], c["qty"]) for c in components] == [("reserve", "4")]
 
 
-def test_the_confirm_never_accepts_more_at_the_pool_than_the_board_proposed():
-    """The reverse: asking the pool for one more than it has left is refused, and by
-    quantity, not by location - the pool IS this line's pool, it simply has 4 left for it.
+def test_the_confirm_never_holds_more_at_the_pool_than_the_board_proposed():
+    """The reverse: asking the pool for one more than it has left holds only what is left and
+    records the one unit short - by quantity, not by location: the pool IS this line's pool,
+    it simply has 11 left for it.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
 
     The line owes 5 here (more than the pool's 4), so ladder v3's whole-line rule proposes a
     plain Buy for the whole of it - the wholly-from-stock composition below is hand-composed
     (an Amend), which is exactly the case `_check_line`'s recheck exists to police."""
-    from app.services.project_supply_service import SupplyLinesRefused
-
     with blank_session() as db:
         world = _pool_with_its_own_queue(db, ask_qty="12")
         pool = world["pool"]
@@ -6052,12 +6118,12 @@ def test_the_confirm_never_accepts_more_at_the_pool_than_the_board_proposed():
         lines[0]["reserve"] = [{"warehouse_id": str(pool.id), "qty": "12"}]
         lines[0]["buy_qty"] = "0"
 
-        with pytest.raises(SupplyLinesRefused) as refused:
-            _confirm(db, pso_id, world["actor"], lines)
+        body = _confirm(db, pso_id, world["actor"], lines)
 
-        assert refused.value.status_code == 409
-        [failing] = refused.value.detail["failing_lines"]
-        assert f"{pool.warehouse_code} now has 11 free for this line" in failing["reason"]
+        [notice] = body["stock_short_notices"]
+        assert f"only 11 free at {pool.warehouse_code}" in notice["reason"], notice
+        assert ", 1 short" in notice["reason"], notice
+        assert list(_holds_at(db, pso_id, pool).values()) == [Decimal("11")]
 
 
 def _order_already_holding_at_the_pool(db):
@@ -6113,7 +6179,10 @@ def _order_already_holding_at_the_pool(db):
 
 
 def test_a_hold_the_same_order_carries_forward_is_netted_by_the_confirm_as_the_board_nets_it():
-    from app.services.project_supply_service import SupplyLinesRefused
+    """Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a
+    refusal. The sibling asks 5 of a pool whose other 3 its own order still holds: it is
+    held 4 and recorded 1 short, so the order together never holds more than the 7 on hand.
+    """
 
     with blank_session() as db:
         world = _order_already_holding_at_the_pool(db)
@@ -6135,24 +6204,18 @@ def test_a_hold_the_same_order_carries_forward_is_netted_by_the_confirm_as_the_b
         assert len(lines) == 1, "the covered line is carried, not re-posted"
 
         # And the write side agrees: a hand-composed Amend taking the whole 5 from the pool
-        # is refused BY QUANTITY, and the R14 guard names WHO has the other 3 - line 1 of
-        # this same order, whose hold the confirmation is carrying.
+        # holds only the 4 that are left, and the notice says the 3 are line 1's own hold,
+        # carried by this same confirmation (7 on hand, 3 held, so only 4 free).
         lines[0]["reserve"] = [{"warehouse_id": str(pool.id), "qty": "5"}]
         lines[0]["buy_qty"] = "0"
-        with pytest.raises(SupplyLinesRefused) as refused:
-            _confirm(db, pso_id, world["actor"], lines)
-        assert refused.value.status_code == 409
-        [failing] = refused.value.detail["failing_lines"]
-        # Named as a LINE, not as this order's own document number: handing a planner their
-        # own SO number back sends them looking for another copy of the order they are on.
-        assert failing["reason"] == (
-            f"{pool.warehouse_code}: 7 on hand, 3 already reserved by line 1 of this "
-            "order, you asked 5"
-        ), failing["reason"]
-        conflict = refused.value.detail["reserve_conflict"]
-        assert conflict["held_by"] == [
-            {"so_number": "ZZT-SO-HOLDS", "line_no": 1, "qty": "3"}
-        ]
+        body = _confirm(db, pso_id, world["actor"], lines)
+        [notice] = body["stock_short_notices"]
+        assert notice["line_no"] == 2, notice
+        assert f"only 4 free at {pool.warehouse_code}" in notice["reason"], notice
+        assert ", 1 short" in notice["reason"], notice
+        held = _holds_at(db, pso_id, pool)
+        assert sorted(held.values()) == [Decimal("3"), Decimal("4")], held
+        assert sum(held.values()) <= Decimal("7")
 
 
 # --------------------------------------------------------------------------- #
@@ -6275,6 +6338,7 @@ def test_a_donor_line_says_what_was_lent_off_it_and_to_which_order():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_line_beyond_its_window_is_bought_whole_even_with_an_spo_landing_in_time():
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
@@ -6791,6 +6855,7 @@ def test_the_group_rung_names_the_group_net_when_the_group_has_nothing_for_this_
         assert sibling.warehouse_code not in step["why"]
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_question_one_offers_the_groups_spo_and_names_both_of_its_numbers():
     """AC-V2 through the board. The group's SPO is INSIDE its net and there is no rung
     above this question for it to be spent on, so the water is part of what question 1
@@ -6835,7 +6900,7 @@ def test_the_pool_rung_names_the_pools_net_and_the_classification_in_front_of_it
     with blank_session() as db:
         product = _product(db, f"ZZT-{_uid()[:6]}")
         own, pool = _pooled_warehouses(db)
-        other_pool = _warehouse(db, f"ZZTQ{_uid()[:6]}"[:20])
+        other_pool = _pool(db, f"ZZTQ{_uid()[:6]}"[:20])
         second = _warehouse(db, f"ZZTR{_uid()[:6]}"[:20])
         second.pool_warehouse_id = other_pool.id
         db.flush()
@@ -7093,7 +7158,7 @@ def _unit_world(db, *, on_hand: int, first_qty: str, second_qty: str):
     """
     group = f"Z{_uid()[:3]}".upper()
     product = _product(db, f"ZZT-{_uid()[:6]}")
-    pool = _warehouse(db, f"ZZTP{_uid()[:5]}"[:20])
+    pool = _pool(db, f"ZZTP{_uid()[:5]}"[:20])
     own = _warehouse(db, f"ZZTA{_uid()[:4]}-{group}"[:20])
     own.pool_warehouse_id = pool.id
     db.flush()

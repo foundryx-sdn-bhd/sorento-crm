@@ -15,18 +15,21 @@ that runs after every parse, whatever kind the parser picked:
   * a `category` / `product_type` token keeps only what the thing IS (class and type
     words, "basin"); every other registry word in it becomes a `specification` entity
     ("gunmetal" -> Finish or colour: Gunmetal);
-  * an `attachment_type` token stays one only when its words are on the attachment-type
-    list (a type name, an alias the owner entered, a certificate word or scheme); anything
-    else is grounded like any other descriptor, never read as a document;
+  * an `attachment_type` token is the parser's (ATTACH-GROUNDING-TYPO option (c), owner,
+    6 Oct 2026): kept as filed when the parser was confident and its code, whole, is a
+    listed document type (`DOCUMENT_TYPE_CODES` or an attachment-type name or code), and
+    dropped otherwise. The customer's words are never read for it;
   * a `specification` token the parser emitted is checked against the registry: its key
     must exist and its value must be one of that key's choices (or a number, for a
     numeric key);
   * a word next to a key's own word that is none of its choices ("pink colour", "f trap")
     is an UNKNOWN value of that key, said back with the ones the registry knows.
 
-No word list lives here. The registry's keys, labels, choices, synonyms and units, the
-class vocabulary and the attachment-type table decide; staff editing any of them on
-Product Specifications changes what grounds, with no prompt or code change.
+No descriptor word list lives here (`DOCUMENT_TYPE_CODES` is the parser prompt's own
+taxonomy of document codes, not a list of customer words). The registry's keys, labels,
+choices, synonyms and units, the class vocabulary and the attachment-type table decide;
+staff editing any of them on Product Specifications changes what grounds, with no prompt
+or code change.
 """
 from __future__ import annotations
 
@@ -410,6 +413,35 @@ def _on_attachment_list(db: "Session", raw: str, vocab: Vocabulary) -> bool:
     return bool(_lookup_resolve(db, "attachment_type_alias", raw))
 
 
+#: The document types the parser prompt's taxonomy names (ATTACHMENT TYPE EXTRACTION:
+#: "canonical_code is always the taxonomy value"), as the owner listed them on 6 Oct 2026.
+DOCUMENT_TYPE_CODES = frozenset(
+    {"photo", "video", "technical drawing", "3d model", "certificate", "installation guide"}
+)
+
+
+def _listed_document_type(db: "Session", entity: dict[str, Any]) -> bool:
+    """The parser was confident and its code, whole, is a listed document type: a taxonomy
+    value or an `attachment_types` name or code. An exact comparison (case aside); no word
+    of it and no alias is ever read."""
+    from app.models.resources import AttachmentType
+    from sqlalchemy import func, or_
+
+    if entity.get("confident") is False:
+        return False
+    code = _fold(str(entity.get("canonical_code") or entity.get("raw") or ""))
+    if not code:
+        return False
+    if code in DOCUMENT_TYPE_CODES:
+        return True
+    return (
+        db.query(AttachmentType.id)
+        .filter(or_(func.lower(AttachmentType.type_name) == code, func.lower(AttachmentType.code) == code))
+        .first()
+        is not None
+    )
+
+
 def _corrected_class(db: "Session", text: str, vocab: Vocabulary) -> str:
     """A class phrase said in the plural put in the singular against the class vocabulary
     ("kitchen sinks" -> "kitchen sink"), only when the singular phrase names a class and
@@ -439,6 +471,69 @@ def _names_a_class_not_a_code(raw: str, vocab: Vocabulary) -> bool:
     if not tokens or any(any(ch.isdigit() for ch in t) for t in tokens):
         return False
     return bool(_covered_by_class(tokens, vocab))
+
+
+def _whole_spec_value(raw: str, vocab: Vocabulary) -> Grounded | None:
+    """The one registry value whose phrase IS `raw`, word for word, else None (no key, or
+    several keys, say it)."""
+    phrase = " ".join(_words(raw))
+    hits = [(entry, entry.phrases[phrase]) for entry in vocab.keys if phrase in entry.phrases]
+    if len(hits) != 1:
+        return None
+    entry, value = hits[0]
+    return Grounded(entry.key, entry.label, raw, value, entry.unit if entry.data_type == "numeric" else None, words=phrase)
+
+
+def several_values(raw: str, vocab: Vocabulary) -> list[str]:
+    """PROMO-SUBJECT-FILTER AC-25: the values a registry key's phrases END with `raw`, when
+    `raw` is one word that heads two or more of them ("cabinet": basin cabinet, side
+    cabinet, ...), shown the way the registry shows them. Empty otherwise."""
+    words = _words(raw)
+    if len(words) != 1 or _whole_spec_value(raw, vocab) is not None:
+        return []
+    head = words[0]
+    for entry in vocab.keys:
+        if head not in entry.heads:
+            continue
+        shown: list[str] = []
+        for phrase, value in entry.phrases.items():
+            if phrase.split()[-1] == head and len(phrase.split()) >= 2:
+                label = _display(entry, value)
+                if label not in shown:
+                    shown.append(label)
+        if len(shown) >= 2:
+            return shown
+    return []
+
+
+def _names_a_type(db: "Session", text: str, vocab: Vocabulary) -> bool:
+    """Does `text`, word for word, name a class, a product type or one registry value?"""
+    from app.services.product_class_signal import resolve_classes_for_term
+
+    said = " ".join(_words(text))
+    return bool(said) and (
+        said in vocab.class_phrases
+        or said in vocab.type_phrases
+        or _whole_spec_value(text, vocab) is not None
+        or bool(resolve_classes_for_term(db, text))
+    )
+
+
+def names_a_class_label(db: "Session", raw: str) -> bool:
+    """Is `raw`, word for word, the name of a class (a class label staff or products carry, or
+    a class of the built-in vocabulary), never one of its synonyms?"""
+    said = " ".join(_words(raw))
+    return any(" ".join(_words(label)) == said for label in class_label_names(db))
+
+
+def class_label_names(db: "Session") -> list[str]:
+    """Every class name: the built-in vocabulary's, the ones products carry, and staff's."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import CLASS_SYNONYMS, stored_class_labels
+
+    labels = [*CLASS_SYNONYMS, *stored_class_labels(db)]
+    labels += [r[0] for r in db.query(ProductCategory.class_label).filter(ProductCategory.class_label.isnot(None))]
+    return labels
 
 
 def _names_two_types(db: "Session", raw: str, vocab: Vocabulary) -> bool:
@@ -618,6 +713,20 @@ def ground(
             continue
         hint = str(entity.get("hint") or "").strip().lower()
         raw = str(entity.get("raw") or "").strip()
+        canonical = str(entity.get("canonical_code") or "").strip()
+        if (
+            hint in _CLASS_HINTS
+            and canonical
+            and _words(canonical) != _words(raw)
+            and not _names_a_type(db, raw, vocab)
+            and _names_a_type(db, canonical, vocab)
+        ):
+            # The parser hinted a class and named the catalogue's own name for what the
+            # customer typed ("seat cover" -> "toilet seat"): when the typed words name no type
+            # themselves, that name grounds, read like any typed one. Otherwise the raw grounds.
+            notes.append({"from": hint, "raw": raw, "to": canonical})
+            entity = {**entity, "raw": canonical, "canonical_code": None}
+            raw = canonical
         if hint == _PRODUCT_HINT and _names_a_class_not_a_code(raw, vocab):
             # Fix round 10 on PR #833 (owner, 28 Sep 2026: "i tried to search like gunmetal
             # basin, there is no such thing and it gives me flexible trap"): words with no
@@ -633,10 +742,22 @@ def ground(
                 if isinstance(e, dict) and e is not entity and str(e.get("hint") or "").strip().lower() not in _SPEC_HINTS
             ]
             grounded = _as_typed(_validate(entity, vocab), entity, message, vocab, others)
+            if not grounded and raw and str(verdict.get("domain_hint") or "").strip().lower() == "promotion":
+                # PROMO-SUBJECT-FILTER AC-38: on a promotion ask a qualifier no listed key
+                # holds is an unknown descriptor, asked back as typed, never dropped.
+                grounded = [Grounded("", "", raw)]
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
             continue
         if hint in _CLASS_HINTS and raw and _names_two_types(db, raw, vocab):
+            whole = _whole_spec_value(raw, vocab)
+            if whole is not None:
+                # PROMO-SUBJECT-FILTER AC-24: the words name two types, but the whole phrase
+                # is one value of a registry key, said word for word ("basin cabinet",
+                # furniture_type basin_cabinet): that value is what was asked for.
+                add([whole], entity)
+                notes.append({"from": hint, "raw": raw, "to": [whole.__dict__]})
+                continue
             # Fix round 10 on PR #833: "water tap basin" holds two product types word for
             # word ("water tap", a tap, and "basin", a wash basin). No one product is
             # both, and reading it as either or as both would be a guess at what was
@@ -664,43 +785,20 @@ def ground(
             add(grounded, entity)
             notes.append({"from": hint, "raw": raw, "to": [rest, *[g.__dict__ for g in grounded]]})
             continue
-        if hint == _ATTACHMENT_HINT and raw and not _on_attachment_list(db, raw, vocab):
-            tokens = _words(raw)
-            grounded, used = ground_words(raw, vocab, keep=_covered_by_class(tokens, vocab))
-            rest = _remainder(raw, used)
-            if rest and _covered_by_class(_words(rest), vocab):
-                out.append({**entity, "raw": _corrected_class(db, rest, vocab), "hint": "category", "canonical_code": None})
-                rest = ""
-            if not grounded and rest:
-                # Named by nothing the system holds: not a document type, not a value of
-                # any key. Said back as a descriptor it does not know, never a document.
-                grounded = [Grounded("", "", rest)]
-            add(grounded, entity)
-            notes.append({"from": hint, "raw": raw, "to": [g.__dict__ for g in grounded]})
-            continue
+        if hint == _ATTACHMENT_HINT:
+            # ATTACH-GROUNDING-TYPO, option (c) (owner, 6 Oct 2026): only the parser
+            # understands words. A confident document type whose code is listed stays that
+            # type, whatever the customer typed ("techincal drawings", "TD DRAW", "phtos");
+            # any other is dropped. The customer's words are never read here.
+            if not _listed_document_type(db, entity):
+                notes.append({"from": hint, "raw": raw, "to": "dropped: not a listed document type"})
+                continue
         out.append(entity)
     if moved:
         notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     if not notes:
         return verdict, []
     grounded_verdict = {**verdict, "entities": out}
-    # The document domain was chosen for the misfiled descriptor alone ("any pink colour
-    # water closet?" read as a photo ask): with no document type left and no document
-    # word among the requested attributes, the ask is about the products themselves.
-    had_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in entities
-    )
-    has_document = any(
-        isinstance(e, dict) and str(e.get("hint") or "").strip().lower() == _ATTACHMENT_HINT for e in out
-    )
-    asked_document = any(
-        isinstance(a, str) and a.strip() and _on_attachment_list(db, a, vocab)
-        for a in verdict.get("requested_attributes") or []
-    )
-    if had_document and not has_document and not asked_document and verdict.get("domain_hint") == "product_attachment":
-        grounded_verdict["domain_hint"] = "master_products"
-        grounded_verdict["intent_hint"] = "check_product"
-        notes.append({"from": "domain", "raw": "product_attachment", "to": "master_products"})
     return grounded_verdict, notes
 
 

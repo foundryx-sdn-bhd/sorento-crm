@@ -48,23 +48,24 @@ def test_customer_upsert_is_idempotent(db):
     assert db.query(Customer).count() == 1
 
 
-def test_same_code_distinct_names_get_separate_rows(db):
-    """One Sage code can carry multiple debtor names - each pair is its own row."""
+def test_same_code_distinct_names_share_one_row(db):
+    """DEBTOR-CODE-UNIQUE (owner, 4 Oct 2026): one customer per debtor code. A second name
+    under the same code links to the existing row and never renames it; the order keeps
+    its own `debtor_name`."""
     svc = _svc(db)
     a = svc._upsert_customer_from_debtor("Deluxe Home Center (KTN)", "300-D093")
     b = svc._upsert_customer_from_debtor("Deluxe Home Center AC (I)", "300-D093")
-    assert a != b
-    assert db.query(Customer).count() == 2
-
-
-def test_blank_code_falls_back_to_deterministic_slug(db):
-    svc = _svc(db)
-    a = svc._upsert_customer_from_debtor("No Code Debtor", None)
-    b = svc._upsert_customer_from_debtor("No Code Debtor", "")
     assert a == b
-    row = db.query(Customer).filter(Customer.id == a).one()
-    assert row.customer_code.startswith("DBR-")
     assert db.query(Customer).count() == 1
+    assert db.query(Customer).one().customer_name == "Deluxe Home Center (KTN)"
+
+
+def test_blank_code_makes_no_customer(db):
+    """DBR-DEBTOR-CLEANUP: no `DBR-<hash>` slug any more; a blank code has no customer."""
+    svc = _svc(db)
+    assert svc._upsert_customer_from_debtor("No Code Debtor", None) is None
+    assert svc._upsert_customer_from_debtor("No Code Debtor", "") is None
+    assert db.query(Customer).count() == 0
 
 
 def test_transporter_created_and_idempotent(db):

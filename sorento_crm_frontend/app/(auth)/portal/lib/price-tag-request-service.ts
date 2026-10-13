@@ -173,6 +173,8 @@ export interface PriceTagRequestLine {
   // the form falls back to `lookupLinePricing` while these are absent.
   promotion_id?: string | null;
   promotion_name?: string | null;
+  /** `YYYY-MM-DD` once the line's promotion has ended, else null (PRICE-TAG-A3-EXPIRED). */
+  promotion_expired_on?: string | null;
   manual_sell_price?: number | null;
   list_price?: number | null;
   sell_price?: number | null;

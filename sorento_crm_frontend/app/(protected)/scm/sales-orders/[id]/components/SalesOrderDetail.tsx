@@ -52,6 +52,7 @@ import { DEMAND_CLASS_OPTIONS } from '@/app/(protected)/master-data-management/s
 // The SAME pill the order-inquiry worklist reads, not a second one worded differently:
 // "Placed" has to mean the same thing on both screens or the two disagree in a glance.
 import { OrderInquiryStatePill } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryVerbPill';
+import { OrderInquiryRejectedBadge } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryRejectedBadge';
 import {
   formatMyrExact,
   multiplyMoney,
@@ -1161,11 +1162,21 @@ export function SalesOrderDetail({ id }: { id: string }) {
                   {reference}
                 </span>
               )}
-              <OrderInquiryStatePill state={inquiry.state} />
+              {/* PR 1622 (owner, mock v3): an open purchasing refusal IS this inquiry's
+                  status on the line, with who/when/why behind the info icon. */}
+              {inquiry.ack_state === 'rejected' ? (
+                <OrderInquiryRejectedBadge
+                  refusal={inquiry}
+                  testId={`so-line-oi-rejected-${row.original.id}`}
+                />
+              ) : (
+                <OrderInquiryStatePill state={inquiry.state} />
+              )}
             </div>
           );
         },
-        size: 200,
+        // Wide enough for a full OI number beside the Rejected badge and its info icon.
+        size: 240,
         meta: { headerTitle: 'Order inquiry' },
       },
       {
@@ -1784,6 +1795,10 @@ export function SalesOrderDetail({ id }: { id: string }) {
                 ) : (
                   '-'
                 )}
+              </Field>
+              {/* The customer's own PO number. Read-only in both views: AutoCount owns it. */}
+              <Field label="PO ref">
+                {so.po_ref ? <span title={so.po_ref}>{so.po_ref}</span> : '-'}
               </Field>
               {/* What purchasing has been told to do about this order. Read-only in both
                   views, so nothing moves between them: it is a record of what happened,

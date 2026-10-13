@@ -26,6 +26,15 @@ def publish(session: Session) -> int | None:
     from app.services.ai_prompt_registry import PROMPT_KEYS
     from app.services.chatbot_parser_prompt import SEMANTIC_PARSER_PROMPT
 
+    from app.services.chatbot_prompt_vars import wording_layer_exists
+
+    if wording_layer_exists(session):
+        # PLAN-prompt-dynamic-30sep R1: the owner's wording layer is the source now; a
+        # version built from the code constant would drop his edits and his variables.
+        raise SystemExit(
+            "refused: the parser wording layer exists. Publish a wording change with "
+            "chatbot_prompt_vars.publish_wording_edit instead of the code constant."
+        )
     template = SEMANTIC_PARSER_PROMPT
     existing = (
         session.query(AIPromptVersion)

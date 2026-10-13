@@ -1321,14 +1321,33 @@ def _attachment_is_on_own_submission(
         .all()
     )
     for link in links:
-        for kind in _kinds_for_entity_type(link.entity_type):
+        entity_type, entity_id = link.entity_type, link.entity_id
+        kinds: tuple[str, ...]
+        if entity_type == "form_comment":
+            # A comment file is linked to its comment only; the comment names the form.
+            from app.models.entity_conversation import EntityConversationMessage
+
+            msg = (
+                db.query(EntityConversationMessage)
+                .filter(
+                    EntityConversationMessage.id == entity_id,
+                    EntityConversationMessage.scope == "form_comment",
+                )
+                .first()
+            )
+            if msg is None:
+                continue
+            kinds, entity_id = (msg.entity_type,), msg.entity_id
+        else:
+            kinds = _kinds_for_entity_type(entity_type)
+        for kind in kinds:
             try:
                 if kind == "price_tag_request":
                     _require_own_price_tag_request(
-                        db, token, link.entity_id, check_visibility=False
+                        db, token, entity_id, check_visibility=False
                     )
                 else:
-                    portal.get_submission(token, kind, link.entity_id)
+                    portal.get_submission(token, kind, entity_id)
             except HTTPException:
                 # Not this contact's (404 / OWNER_MISMATCH) - try the next link.
                 continue
@@ -1547,6 +1566,115 @@ async def portal_upload_attachment(
     }
 
 
+_COMMENT_RATE_WINDOW_SECONDS = 900
+_COMMENT_TOKEN_LIMIT = 10
+_COMMENT_GLOBAL_LIMIT = 300
+
+
+@router.get("/submissions/{kind}/{submission_id}/comments")
+def portal_list_comments(
+    kind: str,
+    submission_id: str,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService
+
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    svc = FormCommentService(db)
+    # 404 unless the contact owns the row (list_comments below has no contact filter)
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    return {"items": svc.list_comments(k, sid, {"contact_id": token.contact_id}, row=row)}
+
+
+@router.post("/submissions/{kind}/{submission_id}/comments", status_code=status.HTTP_201_CREATED)
+async def portal_add_comment(
+    kind: str,
+    submission_id: str,
+    body: Annotated[str, Form()] = "",
+    files: Annotated[Optional[list[UploadFile]], File()] = None,
+    parent_id: Annotated[Optional[str], Form()] = None,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    import hashlib
+
+    from app.api.v1.form_comments import read_uploads
+    from app.services import rate_limit
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
+
+    acting_user_id = (
+        resolve_impersonating_admin(db, token) if getattr(token, "is_impersonation", False) else None
+    )
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    # Per token plus one ceiling across tokens: checked first, charged only on a saved comment.
+    buckets = (
+        ("form_comment_token", hashlib.sha256(str(token.id).encode()).hexdigest(), _COMMENT_TOKEN_LIMIT),
+        ("form_comment_global", "all", _COMMENT_GLOBAL_LIMIT),
+    )
+    for bucket, ident, limit in buckets:
+        result = rate_limit.peek(bucket, ident, limit=limit, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)
+        if not result.allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many comments. Try again later.",
+                headers={"Retry-After": str(result.retry_after_seconds or _COMMENT_RATE_WINDOW_SECONDS)},
+            )
+    uploads = await read_uploads(files)
+    out = FormCommentService(db).add_contact_comment(
+        k, sid, token.contact_id, token.space_id, body, uploads, acting_user_id, parent_id or None
+    )
+    for bucket, ident, _limit in buckets:
+        rate_limit.record(bucket, ident, window_seconds=_COMMENT_RATE_WINDOW_SECONDS)
+    return out
+
+
+class _EditCommentBody(BaseModel):
+    body: str = ""
+
+
+@router.patch("/submissions/{kind}/{submission_id}/comments/{comment_id}")
+def portal_edit_comment(
+    kind: str,
+    submission_id: str,
+    comment_id: str,
+    payload: _EditCommentBody,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
+
+    if getattr(token, "is_impersonation", False):
+        resolve_impersonating_admin(db, token)
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    svc = FormCommentService(db)
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    return {"comment": svc.edit_comment(k, sid, comment_id, {"contact_id": token.contact_id}, payload.body, row=row)}
+
+
+@router.delete("/submissions/{kind}/{submission_id}/comments/{comment_id}")
+def portal_delete_comment(
+    kind: str,
+    submission_id: str,
+    comment_id: str,
+    token: PortalToken = Depends(get_portal_token),
+    db: Session = Depends(get_db),
+):
+    from app.services.form_comment_service import FormCommentService, resolve_impersonating_admin
+
+    if getattr(token, "is_impersonation", False):
+        resolve_impersonating_admin(db, token)
+    k = _check_kind(kind, db, token)
+    sid = validate_uuid_path(submission_id, resource="Submission")
+    svc = FormCommentService(db)
+    row = svc._load_row(k, sid, contact_id=token.contact_id, space_id=token.space_id)
+    svc.delete_comment(k, sid, comment_id, {"contact_id": token.contact_id}, row=row)
+    return {"deleted": True}
+
+
 @router.delete("/attachments/{link_id}")
 def portal_delete_attachment(
     link_id: str = Path(...),
@@ -1563,6 +1691,9 @@ def portal_delete_attachment(
 
     portal = PortalService(db)
     raw_kind = link.entity_type
+    if raw_kind == "form_comment":
+        # Comment files belong to the thread; a contact cannot remove them.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found.")
     # sponsorship_form attachments live under entity_type=purchase_request; verify ownership against either type.
     if raw_kind == "purchase_request":
         owns = False
