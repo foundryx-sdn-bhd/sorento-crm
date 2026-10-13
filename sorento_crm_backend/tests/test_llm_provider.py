@@ -1591,3 +1591,17 @@ def test_a_model_that_takes_no_effort_is_remembered_and_not_asked_again(monkeypa
     provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
     assert len(refusals) == 1
     assert "reasoning_effort" not in stub.last_kwargs
+
+
+def test_a_gemini_3_pro_effort_is_clamped_to_the_levels_pro_takes(monkeypatch):
+    """Gemini 3 Pro takes only `low` and `high` (Flash takes minimal / low / medium /
+    high). A level Pro refuses is a 400, and a 400 is not retried, so every turn on the
+    label would fail: anything at or under `low` is `low`, anything above is `high`."""
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    provider = GeminiProvider("k")
+    for effort, level in (("none", "low"), ("minimal", "low"), ("low", "low"), ("medium", "high"), ("high", "high")):
+        provider.chat([{"role": "user", "content": "hi"}], model="gemini-3.5-pro", reasoning_effort=effort)
+        assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingLevel": level}, effort
+    # Flash keeps every level, "none" included.
+    provider.chat([{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", reasoning_effort="none")
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "minimal"}
