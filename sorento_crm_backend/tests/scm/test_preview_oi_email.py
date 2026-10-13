@@ -37,6 +37,7 @@ def test_preview_renders_the_srtwb246_date_move_and_saves_nothing(api):
 
     # The template row the automation renders (an empty test DB has none).
     _run(_load("oihr_0006_no_remark_column"), db)
+    _run(_load("oihr_0007_excel_remark"), db)
     batches_before = db.query(PlanningChangeBatch).count()
     rows_before = db.query(OrderInquiryRow).filter(
         OrderInquiryRow.so_line_id == fixture["line"].id
@@ -54,7 +55,8 @@ def test_preview_renders_the_srtwb246_date_move_and_saves_nothing(api):
     assert len(mine) == 1, result["lines"]
     assert mine[0]["delivery_date"] == NOW_FMT
     assert (mine[0]["was"] or {}).get("delivery_date") == WAS_FMT, mine[0]
-    assert "NEW DATE" in result["body_html"] and "REMARK" not in result["body_html"]
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the Excel ORDER INQUIRY columns, REMARK back.
+    assert "DELIVERY DATE CHANGE TO" in result["body_html"] and "REMARK" in result["body_html"]
     assert WAS_FMT in result["body_html"] and NOW_FMT in result["body_html"]
 
     db.expire_all()

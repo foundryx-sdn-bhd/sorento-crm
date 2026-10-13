@@ -447,7 +447,8 @@ def test_settle_to_zero_prints_cancel_balance(api, monkeypatch):
     line = matches[-1]["context"]["handover"]["lines"][0]
     assert line["qty"] == "0"
     assert line["was"]["qty"] == "10"
-    assert line["remark"] == "CANCEL ALL"
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the qty-change form, QTY 10 / QTY CHANGE TO 0.
+    assert line["remark"].endswith("CANCEL 10"), line["remark"]
 
 
 # --------------------------------------------------------------------------- #
@@ -1185,8 +1186,9 @@ def test_named_verb_switch_supersedes(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    assert any(l["remark"] == "CANCEL ALL" for l in lines), lines
-    assert any(l["remark"].startswith("ORDER BACK") for l in lines), lines
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): one line - order back instead, the order
+    # purchasing held taken back.
+    assert [l["remark"] for l in lines] == ["ORDER BACK, CANCEL ORDER 10"], lines
 
 
 def test_named_two_live_rows_supersede(api, monkeypatch):
@@ -1237,8 +1239,10 @@ def test_named_two_live_rows_supersede(api, monkeypatch):
     matches = _handover_calls(calls)
     assert matches, "the reconfirm must dispatch the handover"
     lines = matches[-1]["context"]["handover"]["lines"]
-    cancelled = [l for l in lines if l["remark"] == "CANCEL ALL"]
-    assert len(cancelled) == 2, f"AC-R2-12: both still-owed rows must print cancelled, got {lines}"
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): one line for the saved line, naming the fresh
+    # order and both still-owed rows taken back.
+    assert len(lines) == 1, lines
+    assert "CANCEL ORDER 13" in lines[0]["remark"], f"AC-R2-12: both rows taken back, got {lines}"
 
 
 # --------------------------------------------------------------------------- #

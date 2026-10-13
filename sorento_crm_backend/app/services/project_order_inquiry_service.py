@@ -426,7 +426,7 @@ def saved_line_remark(snapshot: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
     the board's own words (`supplyVocabulary.ts`, decided by the rung, never by a code
     prefix) spelled as the owner's Excel "ORDER INQUIRY" sheet spells them:
 
-    * Buy: ``ORDER`` (an Order back Buy: ``ORDER BACK`` and the document CS cited);
+    * Buy: ``ORDER`` (an Order back Buy: ``ORDER BACK``, a local one ``LOCAL BUY``);
     * Use BRW (a reserve on the ``pool`` rung): ``USE <pool code>``, i.e. ``USE BRW``;
     * Use own location (any other reserve): ``USE <location>``, e.g. ``USE BRW-BB``;
     * Borrow (any borrow but a document one): ``ORDER BACK``;
@@ -475,9 +475,9 @@ def _saved_line_parts(
             if snapshot.get("buy_origin") == "local":
                 parts.append(("LOCAL BUY", own, qty, "LOCAL_BUY"))
             elif snapshot.get("order_back"):
-                cited = (snapshot.get("cited_document") or "").strip()
-                words = f"ORDER BACK {cited}" if cited else "ORDER BACK"
-                parts.append((words, own, qty, IV_ORDER_BACK))
+                # The cited document is never printed (owner, 9 Oct, Q-A; 13 Oct: "just
+                # ORDER BACK").
+                parts.append(("ORDER BACK", own, qty, IV_ORDER_BACK))
             else:
                 parts.append(("ORDER", own, qty, IV_ORDER))
         elif kind == "reserve":
@@ -4195,7 +4195,12 @@ class ProjectOrderInquiryService:
             row_lines = [i for i in rows_told if not str(i.get("row_id", "")).startswith("stock-short")]
             unchanged = before is not None and _saved_decision_key(before) == _saved_decision_key(now)
             same_kind = before is not None and _decision_words(before) == _decision_words(now)
-            if (unchanged and row_lines) or (same_kind and len(row_lines) == 1):
+            # No frozen "before", or an empty one (a revision rebuilt without this line's
+            # composition, e.g. a reconstructed undo): for a plain Buy line its rows are the
+            # only record of what purchasing held, so their one line stands.
+            no_record = before is None or not _decision_words(before)
+            buy_only = no_record and _decision_words(now) in (("ORDER",), ("ORDER BACK",))
+            if (unchanged and row_lines) or ((same_kind or buy_only) and len(row_lines) == 1):
                 # The rows already told this line in the one-line form purchasing works
                 # from (QTY = what they held, QTY CHANGE TO = the new need, EMAIL-HANDOVER-
                 # QTY), or a decision that did not change still asked them something (a

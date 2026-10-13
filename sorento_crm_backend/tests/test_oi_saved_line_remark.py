@@ -33,9 +33,10 @@ def test_buy_reads_order_at_the_lines_own_location():
     assert saved_line_remark(_snap(_buy())) == ("ORDER", "BRW-IB")
 
 
-def test_an_order_back_buy_names_its_cited_document():
+def test_an_order_back_buy_reads_order_back_without_its_document():
+    """Owner, 9 Oct (Q-A) and 13 Oct: just ORDER BACK."""
     assert saved_line_remark(_snap(_buy(), order_back=True, cited_document="SPO-2026/10-0032")) == (
-        "ORDER BACK SPO-2026/10-0032", "BRW-IB",
+        "ORDER BACK", "BRW-IB",
     )
     assert saved_line_remark(_snap(_buy(), order_back=True)) == ("ORDER BACK", "BRW-IB")
 
