@@ -7,7 +7,8 @@ usage row. This script builds LIVE envelopes for fresh ZZT contacts and runs eac
 queue worker's own job, `app.tasks.chat_turns.run_turn_job`, in process (that task module is
 the chatbot doorway a script may use; `tests/chatbot/test_import_boundary.py`). Nothing is sent
 to WhatsApp: the turn only RETURNS its reply actions, and sending them is the injector's job,
-which is not called here. The parser and clarifier call the copy's configured model for real, so the tokens are real.
+which is not called here. The parser and clarifier call the copy's configured model for real,
+so the tokens are real.
 
 Local / test copies only: it writes ZZT-marked contacts and live turns into the copy's database.
 
