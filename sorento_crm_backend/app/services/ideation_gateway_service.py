@@ -317,24 +317,25 @@ STAFF_NAME = "Sorento staff"
 
 
 def relay_masked(resp: httpx.Response, keys: tuple[str, ...]) -> Response:
-    """A JSON answer (an object or a list of objects) with any email-shaped value under `keys`
-    replaced by "Sorento staff": ss stores the assertion's `name`, and until it stores the display
-    name an address must not reach the browser."""
+    """A JSON answer with any email-shaped value under `keys` replaced by "Sorento staff", at any
+    depth (an activity row nests its comment and replies): ss stores the assertion's `name`, and
+    until it stores the display name an address must not reach the browser."""
     try:
         data = resp.json()
     except ValueError:
         raise _unreachable()
 
-    def mask(row: Any) -> Any:
-        if not isinstance(row, dict):
-            return row
+    def mask(node: Any) -> Any:
+        if isinstance(node, list):
+            return [mask(item) for item in node]
+        if not isinstance(node, dict):
+            return node
         return {
-            k: (STAFF_NAME if k in keys and isinstance(v, str) and "@" in v else v)
-            for k, v in row.items()
+            k: (STAFF_NAME if k in keys and isinstance(v, str) and "@" in v else mask(v))
+            for k, v in node.items()
         }
 
-    data = [mask(r) for r in data] if isinstance(data, list) else mask(data)
-    return JSONResponse(data, status_code=resp.status_code)
+    return JSONResponse(mask(data), status_code=resp.status_code)
 
 
 def user_for_requester(db: Session, user_id: str) -> dict[str, Any]:

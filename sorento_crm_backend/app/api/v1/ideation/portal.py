@@ -79,7 +79,8 @@ def voters(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
 @router.get("/ideas/{idea_id}/activity")
 def activity(idea_id: UUID, request: Request, user: dict = _read, db: Session = Depends(get_db)):
     resp = call_portal(db, user, "GET", _idea_path(idea_id, "activity"), params=_query(request, ("order",)))
-    return relay_masked(resp, ("actorName",))
+    # ss `PortalActivityOut`: the actor is `by`; a comment row nests `comment` and `replies`.
+    return relay_masked(resp, ("by", "authorName"))
 
 
 @router.get("/ideas/{idea_id}/comments")

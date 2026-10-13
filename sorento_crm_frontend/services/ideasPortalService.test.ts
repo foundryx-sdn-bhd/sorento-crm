@@ -105,6 +105,11 @@ describe('reads', () => {
     expect([call().path, call().method]).toEqual([`${BASE}/ideas/idea-1`, 'GET']);
   });
 
+  it('getVoters falls back to the role when ss sends no name (dealer voters)', async () => {
+    apiFetch.mockResolvedValue(ok([{ name: null, role: 'Dealer', isMe: false }]));
+    expect(await service.getVoters('idea-1')).toEqual([{ name: 'Dealer', role: null, isMe: false }]);
+  });
+
   it('getVoters: GET /ideas/{id}/voters', async () => {
     apiFetch.mockResolvedValue(ok([{ name: 'Jane', role: 'Sales', isMe: true }]));
     expect(await service.getVoters('idea-1')).toEqual([{ name: 'Jane', role: 'Sales', isMe: true }]);
@@ -112,10 +117,36 @@ describe('reads', () => {
   });
 
   it('getActivity: GET /ideas/{id}/activity', async () => {
-    apiFetch.mockResolvedValue(ok([{ id: 'a-1', kind: 'status', label: 'Moved', at: '2026-10-01T00:00:00Z', actorName: 'Pat' }]));
-    const rows = await service.getActivity('idea-1');
-    expect(rows).toHaveLength(1);
+    apiFetch.mockResolvedValue(ok([]));
+    expect(await service.getActivity('idea-1')).toEqual([]);
     expect([call().path, call().method]).toEqual([`${BASE}/ideas/idea-1/activity`, 'GET']);
+  });
+
+  it('getActivity maps ss main PortalActivityOut (kind, at, by, fromLabel, toLabel, comment) to rows with unique ids', async () => {
+    // ss main 812dac2b `PortalActivityOut` (crew real-SS check, 13 Oct): no id, no label, actor is `by`.
+    const at = '2026-10-01T00:00:00Z';
+    apiFetch.mockResolvedValue(
+      ok([
+        { kind: 'status', at, by: 'Sam Wong', source: 'staff', fromLabel: 'Captured', toLabel: 'Triaged', toColor: 'blue', comment: null, replies: [], commentId: null },
+        { kind: 'status', at, by: null, source: 'system', fromLabel: null, toLabel: 'Planned', toColor: 'amber', comment: null, replies: [], commentId: null },
+        { kind: 'comment', at, by: 'Ana', source: 'portal', fromLabel: null, toLabel: null, toColor: null, comment: { id: 'c-1', authorName: 'Ana', body: 'hello' }, replies: [], commentId: 'c-1' },
+        { kind: 'vote', at, by: 'Bo', source: 'portal', fromLabel: null, toLabel: null, toColor: null, comment: null, replies: [], commentId: null },
+        { kind: 'vote', at, by: 'Bo', source: 'portal', fromLabel: null, toLabel: null, toColor: null, comment: null, replies: [], commentId: null },
+        { kind: 'portal_hidden', at, by: null, source: 'staff', fromLabel: null, toLabel: null, toColor: null, comment: null, replies: [], commentId: null },
+      ]),
+    );
+    const rows = await service.getActivity('idea-1');
+    expect(rows.map((r) => r.label)).toEqual([
+      'Moved from Captured to Triaged',
+      'Moved to Planned',
+      'Commented: hello',
+      'Upvoted',
+      'Upvoted',
+      'Portal hidden',
+    ]);
+    expect(rows.map((r) => r.actorName)).toEqual(['Sam Wong', null, 'Ana', 'Bo', 'Bo', null]);
+    expect(rows.every((r) => r.at === at)).toBe(true);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
   });
 
   it('listPortalComments: GET /ideas/{id}/comments and maps isDeleted to deleted, keeping role and likes', async () => {

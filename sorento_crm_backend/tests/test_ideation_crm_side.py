@@ -649,13 +649,42 @@ def test_fr_portal_comments_mask_every_row(env):
     assert [c["body"] for c in resp.json()] == ["a", "b", "c"]
 
 
-def test_fr_portal_activity_masks_the_actor(env):
-    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/activity", json_body=[
-        {"id": "a1", "kind": "status", "label": "Moved", "at": "2026-10-01T00:00:00Z", "actorName": _EMAIL}])
+def _ss_main_activity() -> list[dict]:
+    """ss main 812dac2b `PortalActivityOut` (ss `modules/ideation/schemas.py:902`), crew real-SS check 13 Oct."""
+    return [
+        {"kind": "status", "at": "2026-10-01T00:00:00Z", "by": _EMAIL, "source": "staff",
+         "fromLabel": "Captured", "toLabel": "Triaged", "toColor": "blue",
+         "comment": None, "replies": [], "commentId": None},
+        {"kind": "comment", "at": "2026-10-02T00:00:00Z", "by": "bob@example.test", "source": "staff",
+         "fromLabel": None, "toLabel": None, "toColor": None,
+         "comment": {"id": COMMENT, "authorName": "carol@example.test", "body": "hello"},
+         "replies": [{"id": IDEA_B, "authorName": "dan@example.test", "body": "re"},
+                     {"id": IDEA_C, "authorName": "Plain Name", "body": "re2"}],
+         "commentId": COMMENT},
+        {"kind": "vote", "at": "2026-10-03T00:00:00Z", "by": "Jane Lim", "source": "portal",
+         "fromLabel": None, "toLabel": None, "toColor": None, "comment": None, "replies": [], "commentId": None},
+    ]
+
+
+def test_crew_portal_activity_masks_by_and_nested_comment_authors(env):
+    """Crew real-SS check: ss sends `by` and nested `comment.authorName` / `replies[].authorName`,
+    never `actorName`; every one of them is masked, everything else relays unchanged."""
+    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/activity", json_body=_ss_main_activity())
     resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/activity")
+    assert resp.status_code == 200
     assert "@" not in resp.text
-    assert resp.json()[0]["actorName"] == "Sorento staff"
-    assert resp.json()[0]["label"] == "Moved"
+    rows = resp.json()
+    assert [r["by"] for r in rows] == ["Sorento staff", "Sorento staff", "Jane Lim"]
+    assert rows[1]["comment"]["authorName"] == "Sorento staff"
+    assert [r["authorName"] for r in rows[1]["replies"]] == ["Sorento staff", "Plain Name"]
+    assert rows[0]["fromLabel"] == "Captured" and rows[0]["toLabel"] == "Triaged"
+    assert rows[1]["comment"]["body"] == "hello" and rows[1]["commentId"] == COMMENT
+
+
+def test_crew_portal_voters_keep_a_null_dealer_name(env):
+    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/voters", json_body=[{"name": None, "role": "Dealer", "isMe": False}])
+    resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/voters")
+    assert resp.json() == [{"name": None, "role": "Dealer", "isMe": False}]
 
 
 def test_fr_embed_comments_list_masks_every_row(env):

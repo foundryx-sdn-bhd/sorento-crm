@@ -102,12 +102,50 @@ export async function getPortalIdea(id: string): Promise<PortalIdeaDetail> {
   };
 }
 
+const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
+
+/** ss sends `name: null` for a dealer voter; like ss's own page, the role stands in for the name. */
+function toVoter(raw: Raw): PortalVoter {
+  const name = text(raw.name);
+  const role = text(raw.role);
+  return { name: name ?? role ?? 'Someone', role: name ? role : null, isMe: raw.isMe === true };
+}
+
+function activityLabel(raw: Raw): string {
+  const from = text(raw.fromLabel);
+  const to = text(raw.toLabel);
+  if (to) return from ? `Moved from ${from} to ${to}` : `Moved to ${to}`;
+  const comment = raw.comment as Raw | null | undefined;
+  if (raw.kind === 'comment' || comment) {
+    const body = text(comment?.body);
+    return body ? `Commented: ${body}` : 'Commented';
+  }
+  if (raw.kind === 'vote') return 'Upvoted';
+  const kind = String(raw.kind ?? '').replace(/_/g, ' ').trim();
+  return kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : 'Updated';
+}
+
+/** ss `PortalActivityOut` {kind, at, by, fromLabel, toLabel, comment, commentId} carries no id or
+ * label: the row gets a key unique within the list and a sentence built from its kind. */
+function toActivityRow(raw: Raw, index: number): PortalActivityRow {
+  const kind = String(raw.kind ?? '');
+  return {
+    id: `${text(raw.commentId) ?? kind}-${String(raw.at ?? '')}-${index}`,
+    kind,
+    label: activityLabel(raw),
+    at: String(raw.at ?? ''),
+    actorName: text(raw.by),
+  };
+}
+
 export async function getVoters(id: string): Promise<PortalVoter[]> {
-  return read(await apiFetch(`${BASE}/ideas/${id}/voters`), 'Failed to load voters');
+  const rows = await read<Raw[]>(await apiFetch(`${BASE}/ideas/${id}/voters`), 'Failed to load voters');
+  return rows.map(toVoter);
 }
 
 export async function getActivity(id: string): Promise<PortalActivityRow[]> {
-  return read(await apiFetch(`${BASE}/ideas/${id}/activity`), 'Failed to load activity');
+  const rows = await read<Raw[]>(await apiFetch(`${BASE}/ideas/${id}/activity`), 'Failed to load activity');
+  return rows.map(toActivityRow);
 }
 
 export async function listPortalComments(id: string): Promise<PortalComment[]> {
