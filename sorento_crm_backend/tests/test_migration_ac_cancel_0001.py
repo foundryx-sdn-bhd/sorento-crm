@@ -92,7 +92,7 @@ def test_revision_fits_and_chains_onto_one_head():
     module = _load()
     assert module.revision == REVISION
     assert len(module.revision) <= 32
-    assert module.down_revision == "ctc_0001_turn_costs"
+    assert module.down_revision == "maskp_0002_measure_words"
 
 
 def test_up_down_up_and_the_grants():
