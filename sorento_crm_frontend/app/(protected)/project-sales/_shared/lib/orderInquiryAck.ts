@@ -5,7 +5,7 @@
  * the column, the filter and the bulk bar cannot come to disagree about what "Changed"
  * means. Nothing here explains the feature - the words are the answer, not a lesson.
  */
-import { formatDateInMalaysia } from '@/lib/helpers';
+import { formatDateInMalaysia, formatDateTimeInMalaysia } from '@/lib/helpers';
 import type {
   OrderInquiryAckFields,
   OrderInquiryAckState,
@@ -150,4 +150,20 @@ function bundledHostChangeLine(entry: OrderInquiryBundledHostChange): string {
     return `with ${entry.item_code}: Was ${was}, now ${now}`;
   }
   return `with ${entry.item_code}: ${now}, no change`;
+}
+
+/** Who refused an order inquiry row, when and why - what both the Sales Order's Lines tab
+ * and the planning board carry for an open refusal (PR 1622). */
+export interface PurchasingRefusal {
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
+  rejected_reason?: string | null;
+}
+
+/** "Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish" (Malaysia time). */
+export function purchasingRefusalTitle(refusal: PurchasingRefusal): string {
+  const who = refusal.rejected_by_name ? ` by ${refusal.rejected_by_name}` : '';
+  const stamp = refusal.rejected_at ? formatDateTimeInMalaysia(refusal.rejected_at) : '';
+  const when = stamp ? ` on ${stamp}` : '';
+  return `Rejected${who}${when}: ${refusal.rejected_reason || 'no reason given'}`;
 }

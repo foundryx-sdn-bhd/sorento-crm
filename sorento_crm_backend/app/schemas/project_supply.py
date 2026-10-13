@@ -389,6 +389,10 @@ class ConfirmLine(BaseModel):
     borrow: List[ConfirmBorrowComponent] = Field(default_factory=list)
     buy_qty: Decimal = Decimal("0")
     buy_reason: Optional[str] = None
+    #: PR 1622 (owner Q1): the planner's OWN words on this Buy, carried to purchasing's new
+    #: order inquiry row as "CS: ...". Its own field because `amend_reason`/`buy_reason` can
+    #: hold a sentence the board's Reason box was only seeded with.
+    cs_note: Optional[str] = Field(None, max_length=1000)
     #: This Buy is an ORDER BACK (part 2 section 4b, captain 25 Aug): the quantity is owed
     #: against something already ordered or already shipped rather than being a new
     #: purchase, so the row purchasing gets carries verb `ORDER_BACK` and is the one row
