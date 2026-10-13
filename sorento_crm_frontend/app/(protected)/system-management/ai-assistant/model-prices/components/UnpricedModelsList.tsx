@@ -22,7 +22,7 @@ export default function UnpricedModelsList() {
 
   if (isError) {
     return (
-      <Card>
+      <Card className="min-w-0 max-w-full">
         <CardHeader>
           <CardTitle>Models without a price</CardTitle>
         </CardHeader>
@@ -35,7 +35,7 @@ export default function UnpricedModelsList() {
 
   return (
     <>
-      <Card>
+      <Card className="min-w-0 max-w-full">
         <CardHeader>
           <CardTitle>Models without a price</CardTitle>
         </CardHeader>
@@ -50,7 +50,7 @@ export default function UnpricedModelsList() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-w-full overflow-x-auto">
               <table className="w-full min-w-[420px] text-sm">
                 <thead>
                   <tr className="border-b text-xs text-muted-foreground">
@@ -68,7 +68,7 @@ export default function UnpricedModelsList() {
                       <td className="max-w-[240px] truncate py-2 font-medium" title={r.model}>
                         {r.model}
                       </td>
-                      <td className="py-2 text-right tabular-nums">{r.calls}</td>
+                      <td className="whitespace-nowrap ps-4 py-2 text-right tabular-nums">{r.calls}</td>
                       <td className="py-2 ps-6 whitespace-nowrap text-muted-foreground">
                         {formatDateTimeInMalaysia(r.last_seen_at)}
                       </td>

@@ -16,7 +16,7 @@ export default function ModelPricesPage() {
         <PageHeader title="Model prices" />
       </Container>
 
-      <Container className="space-y-4">
+      <Container className="min-w-0 space-y-4">
         <ModelPricesList />
         <UnpricedModelsList />
       </Container>

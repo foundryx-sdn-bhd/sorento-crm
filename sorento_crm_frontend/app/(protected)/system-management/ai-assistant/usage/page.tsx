@@ -220,7 +220,7 @@ export default function AIUsagePage() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <SummaryCard
             label="Messages"
             value={formatNumber(summary?.total_messages)}
@@ -263,7 +263,7 @@ export default function AIUsagePage() {
           />
         </div>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>Tokens per day</CardTitle>
             <CardDescription>Total tokens consumed by date</CardDescription>
@@ -337,8 +337,8 @@ export default function AIUsagePage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <Card>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Top users</CardTitle>
               <CardDescription>Internal staff - highest message volume in range</CardDescription>
@@ -355,9 +355,9 @@ export default function AIUsagePage() {
                       <tr className="border-b text-xs text-muted-foreground">
                         <th className="py-2 text-left font-medium">#</th>
                         <th className="py-2 text-left font-medium">Name</th>
-                        <th className="py-2 text-right font-medium">Messages</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
-                        <th className="py-2 text-right font-medium">Cost (USD)</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Messages</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -365,10 +365,10 @@ export default function AIUsagePage() {
                         <tr key={u.user_id} className="border-b last:border-0">
                           <td className="py-2 text-muted-foreground">{i + 1}</td>
                           <td className="py-2">{u.name || u.user_id}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(u.messages)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(u.tokens)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.messages)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.tokens)}</td>
                           <td
-                            className="py-2 text-right tabular-nums"
+                            className="py-2 whitespace-nowrap ps-4 text-right tabular-nums"
                             title={excludedLabel(u.unpriced_calls, u.unknown_cache_calls)}
                           >
                             {totalCost(u.cost_usd, u.unpriced_calls, u.messages, u.unknown_cache_calls)}
@@ -383,7 +383,7 @@ export default function AIUsagePage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Top contacts</CardTitle>
               <CardDescription>
@@ -405,9 +405,9 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">#</th>
                         <th className="py-2 text-left font-medium">Phone</th>
                         <th className="py-2 text-left font-medium">Name</th>
-                        <th className="py-2 text-right font-medium">Calls</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
-                        <th className="py-2 text-right font-medium">Cost (USD)</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Calls</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -416,10 +416,10 @@ export default function AIUsagePage() {
                           <td className="py-2 text-muted-foreground">{i + 1}</td>
                           <td className="py-2 font-mono text-xs">{c.phone_number || '-'}</td>
                           <td className="py-2">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(c.messages)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(c.tokens)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.messages)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.tokens)}</td>
                           <td
-                            className="py-2 text-right tabular-nums"
+                            className="py-2 whitespace-nowrap ps-4 text-right tabular-nums"
                             title={excludedLabel(c.unpriced_calls, c.unknown_cache_calls)}
                           >
                             {totalCost(c.cost_usd, c.unpriced_calls, c.messages, c.unknown_cache_calls)}
@@ -435,9 +435,9 @@ export default function AIUsagePage() {
           </Card>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-1">
+        <div className="grid grid-cols-1 gap-3">
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Recent queries</CardTitle>
               <CardDescription>Most recent assistant turns</CardDescription>
@@ -450,7 +450,7 @@ export default function AIUsagePage() {
               ) : (
                 <div className="max-h-[420px] overflow-auto">
                   {/* One scroller, both axes: a nested one broke the sticky head. */}
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="sticky top-0 bg-background">
                       <tr className="border-b text-xs text-muted-foreground">
                         <th className="w-6 py-2"></th>
@@ -458,9 +458,9 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">Feature</th>
                         <th className="py-2 text-left font-medium">Principal</th>
                         <th className="py-2 text-left font-medium">Query</th>
-                        <th className="py-2 text-right font-medium">ms</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
-                        <th className="py-2 text-right font-medium">Cost (USD)</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">ms</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -507,14 +507,14 @@ export default function AIUsagePage() {
                               >
                                 {q.query_preview}
                               </td>
-                              <td className="py-2 text-right align-top tabular-nums">
+                              <td className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums">
                                 {formatNumber(q.response_time_ms)}
                               </td>
-                              <td className="py-2 text-right align-top tabular-nums">
+                              <td className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums">
                                 {formatNumber(q.tokens)}
                               </td>
                               <td
-                                className="py-2 text-right align-top tabular-nums"
+                                className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums"
                                 title={costTitle(q)}
                               >
                                 {formatUsd(q.cost_usd)}
@@ -615,7 +615,7 @@ function SummaryCard({
   loading: boolean;
 }) {
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-2xl">

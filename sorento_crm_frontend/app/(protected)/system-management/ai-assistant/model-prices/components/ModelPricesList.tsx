@@ -139,7 +139,7 @@ export default function ModelPricesList() {
 
   if (isError) {
     return (
-      <Card>
+      <Card className="min-w-0 max-w-full">
         <CardHeader>
           <CardTitle>Priced models</CardTitle>
         </CardHeader>
@@ -164,7 +164,7 @@ export default function ModelPricesList() {
           </div>
         }
       >
-        <Card>
+        <Card className="min-w-0 max-w-full">
           <CardHeader className="block">
             <DataGridListToolbar
               table={table}
@@ -175,7 +175,7 @@ export default function ModelPricesList() {
                   value={searchInput}
                   onChange={setSearchInput}
                   placeholder="Search models"
-                  className="w-72"
+                  className="w-full sm:w-72"
                 />
               }
               primaryAction={
