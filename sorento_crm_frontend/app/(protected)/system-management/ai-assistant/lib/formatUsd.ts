@@ -1,4 +1,4 @@
-const DASH = '—';
+const DASH = '-';
 
 /** A call or total cost: 4 decimals with a dollar sign. A missing cost is a dash, never $0. */
 export function formatUsd(value: number | null | undefined): string {
