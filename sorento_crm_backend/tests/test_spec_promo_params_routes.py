@@ -1157,3 +1157,45 @@ def test_a_dealer_on_availability_gets_the_spec_filtered_products(db):
     ids = {e.get("product_id") for e in result.get("stock_availability") or []}
     assert ids == {hit.id}, result.get("stock_availability")
     assert not (result.get("stock_visibility") or {}).get("needs_product"), result.get("stock_visibility")
+
+
+def test_spec_filtered_promotion_pages_neither_repeat_nor_drop_a_line(api, db, monkeypatch):
+    """Reviewer should-fix (045a0fea, kill test K3): two promotions whose lines were added
+    interleaved and share one `created_at`, paged at limit 2. Every line appears on exactly one
+    page, and each promotion's lines come together (its heading is not split line by line)."""
+    from datetime import datetime
+
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
+    )
+    same = datetime(2026, 10, 1, 9, 0, 0)
+    # A class of its own, so promotions other tests in this worker left live never join the list.
+    klass = f"ZZT Paging {uuid.uuid4().hex[:8]}"
+    first = {tag: _p(db, f"PG{tag}0", {"class": _enum(klass)}) for tag in ("A", "B")}
+    promos = {tag: _promo(db, prod, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1)) for tag, prod in first.items()}
+    owner = {first[t].product_code: promos[t].id for t in promos}
+    for i in (1, 2):
+        for tag, promo in promos.items():
+            prod = _p(db, f"PG{tag}{i}", {"class": _enum(klass)})
+            group = db.query(PromotionGroup).filter(PromotionGroup.promotion_id == promo.id).first()
+            db.add(PromotionProduct(id=str(uuid.uuid4()), promotion_id=promo.id, promotion_group_id=group.id,
+                                    product_id=prod.id, company_id=DEFAULT_COMPANY_ID))
+            db.flush()
+            owner[prod.product_code] = promo.id
+    db.query(PromotionProduct).update({PromotionProduct.created_at: same})
+    db.commit()
+
+    seen = []
+    for page in (1, 2, 3):
+        resp = api.get(
+            "/api/v1/marketing/promotion-products/",
+            params={"serving_policy": "true", "limit": 2, "page": page,
+                    **_constraints({"key": "class", "op": "eq", "value": klass})},
+        )
+        assert resp.status_code == 200, resp.text
+        seen += [row["product"]["product_code"] for row in resp.json()["data"]]
+    assert sorted(seen) == sorted(owner), seen
+    order = [owner[c] for c in seen]
+    assert order == sorted(order, key=order.index) and len({*order}) == 2, seen
+    switches = sum(1 for a, b in zip(order, order[1:]) if a != b)
+    assert switches == 1, f"a promotion's lines are split across the list: {seen}"

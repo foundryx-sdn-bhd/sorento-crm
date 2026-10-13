@@ -429,29 +429,22 @@ def test_r_lat_a_size_the_route_filters_skips_the_resolvers_model_phrase_read():
 
 
 # --------------------------------------------------------------------------- a measure in the words, no pair
-# SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser left the size INSIDE the
-# category's words and emitted no spec pair (or emitted it as a bare "250mm" product). Grounding
-# kept "250mm floor grating" whole (it names no type, so nothing narrowed) or swapped "600mm
-# basin" to its canonical "basin" and the size was lost. A number with the registry's mm unit
-# in the entity's own words is read like the pair the parser puts there.
+# SPEC-PROMO-HELP (crew, "250mm floor grating got stock?") read a "<n> mm" left in the subject's
+# words as a size pair. Reviewer blocker on 045a0fea: that is code deciding a spec the parser did
+# not emit (owner rule: the parser decides). The published "A SIZE AND A CLASS WORD" rule tells
+# the parser to emit the size as its own entity; code never adds one.
 
 
-@pytest.mark.parametrize(
-    "raw,canonical,left,size",
-    [("250mm floor grating", None, "floor grating", 250), ("600mm basin", "basin", "basin", 600), ("600 mm basin", None, "basin", 600)],
-)
-def test_r_hm_a_measure_in_the_category_words_is_the_size(vdb, raw, canonical, left, size):
-    """RED: no specification entity came out; the size was dropped or left in the words."""
-    verdict = _ground(vdb, _category(raw, canonical), message=f"{raw} got stock?")
-    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", size)], verdict["entities"]
-    assert [c["raw"] for c in verdict["entities"] if c.get("hint") == "category"] == [left], verdict["entities"]
-
-
-def test_r_hm_a_bare_measure_product_beside_a_type_is_the_size(vdb):
-    """RED: "250mm" went to the resolver as a product code."""
-    verdict = _ground(vdb, _product("250mm"), _category("floor grating"), message="250mm floor grating got stock?")
-    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", 250)], verdict["entities"]
-    assert not [e for e in verdict["entities"] if e.get("hint") == "product"], verdict["entities"]
+@pytest.mark.parametrize("ents", [
+    lambda: [_category("250mm floor grating")],
+    lambda: [_category("600mm basin", "basin")],
+    lambda: [_product("250mm"), _category("floor grating")],
+])
+def test_r_hm_code_never_adds_a_size_the_parser_did_not_emit(vdb, ents):
+    """Reviewer blocker (045a0fea): a measure left in an entity's words with no spec pair is not
+    read into a size by code; the parser's rule puts the size on its own entity."""
+    verdict = _ground(vdb, *ents(), message="250mm floor grating got stock?")
+    assert not [s for s in _specs(verdict["entities"]) if s.get("spec_key") == "size"], verdict["entities"]
 
 
 @pytest.mark.parametrize("ents", [
@@ -477,13 +470,6 @@ def test_r_hm_b1_a_number_the_parser_already_keyed_is_not_also_a_size(vdb, ents)
     keys = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
     assert ("size", 1.2) not in keys, verdict["entities"]
     assert ("thickness", 1.2) in keys, verdict["entities"]
-
-
-def test_r_hm_s1_an_axis_said_in_the_message_names_the_key(vdb):
-    """Reviewer S1: "600mm length basin got stock?" with the parser's category "600mm basin" and
-    no pair: the customer named the axis, so it is Length, never any axis."""
-    verdict = _ground(vdb, _category("600mm basin", "basin"), message="600mm length basin got stock?")
-    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("dim_length", 600)], verdict["entities"]
 
 
 def test_r_hm_b1_a_carried_keyed_number_is_not_also_a_size(vdb):
