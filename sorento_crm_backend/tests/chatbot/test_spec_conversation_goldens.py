@@ -119,6 +119,20 @@ def test_g1_a_brand_narrows_the_size_list(session_factory, monkeypatch, _clear_o
     assert _listed(reply, w["codes"], w["codes"]) == {"A-L1", "A-L2", "A-L3", "A-W1"}, reply
 
 
+def test_g1b_a_brand_not_on_file_never_loses_the_size(session_factory, monkeypatch, _clear_overrides):
+    """Reviewer N2 (018fe813): "only sorrento" (no such brand) dropped every constraint with it and
+    listed the 500 mm basin. A brand name no brand carries narrows nothing; the class and the
+    size still filter."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    reply = chat.say("only zztnosuchbrand", entities=[*map(_carried, SIZE_ASK), _brand_entity("Zztnosuchbrand")])
+    shown = _listed(reply, w["codes"], w["codes"])
+    assert "A-L5" not in shown and shown and shown <= SIX_600, reply
+    calls = chat.stock_calls()
+    assert calls and {"key": "size", "op": "eq", "value": 600} in (calls[-1].get("spec_constraints") or []), calls
+
+
 def test_g2_an_axis_narrows_the_size_list(session_factory, monkeypatch, _clear_overrides):
     """"600mm basin got stock?" then "length only": the basins holding 600 on length only."""
     w = _seed(session_factory)
