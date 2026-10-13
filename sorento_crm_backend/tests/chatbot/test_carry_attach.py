@@ -152,8 +152,7 @@ def test_answering_the_attachment_type_ask_keeps_the_asked_product(chat, world):
     assert calls[-1].get("attachment_type_ids") == [world["drawing"].id], calls[-1]
     assert "SRT8308-td.pdf" in first, first
 
-    second = chat.say("Srt8313", _t2())
-    assert "attachment type" in second.lower(), second
+    chat.say("Srt8313", _t2())
 
     third = chat.say("Drawing", _t3())
     last = chat.attachment_calls()[-1]
@@ -167,31 +166,57 @@ def test_answering_the_attachment_type_ask_keeps_the_asked_product(chat, world):
 
 
 # --------------------------------------------------------------------------- #
-# T2: the owner's ruling is pending; both positions of the one switch          #
+# T2 (owner ruling, 13 Oct 2026: "the parser should be able to understand")    #
 # --------------------------------------------------------------------------- #
 
 
-def test_t2_asks_for_the_type_while_the_switch_is_off(chat, world):
-    """Option (b), today's behaviour and the switch's default."""
-    from app.services.chatbot import turn_runtime
-
-    assert turn_runtime.CARRY_SETTLED_DOCUMENT_TYPE is False
-    chat.say("Srt8308 drawing", _t1())
-    second = chat.say("Srt8313", _t2())
-    assert second.startswith("Please provide the attachment type for product Srt8313"), second
-
-
-def test_t2_answers_under_the_carried_type_when_the_switch_is_on(chat, world, monkeypatch):
-    """Option (a): the settled carried type answers the next product."""
-    from app.services.chatbot import turn_runtime
-
-    monkeypatch.setattr(turn_runtime, "CARRY_SETTLED_DOCUMENT_TYPE", True)
-    chat.say("Srt8308 drawing", _t1())
-    second = chat.say("Srt8313", _t2())
+def _assert_sent_drawing_of(chat, world, reply: str, code: str) -> None:
     last = chat.attachment_calls()[-1]
-    assert last.get("product_ids") == [world["products"]["SRT8313"].id], chat.calls
+    assert last.get("product_ids") == [world["products"][code].id], chat.calls
     assert last.get("attachment_type_ids") == [world["drawing"].id], last
-    assert "SRT8313-td.pdf" in second and "attachment type for" not in second, second
+    # The same format as T1: the files, no ask, no extra wording.
+    assert reply.startswith("I have attached the file(s) below."), reply
+    assert f"{code}-td.pdf" in reply and "attachment type for" not in reply, reply
+
+
+def _assert_asks_the_type_for_srt8313(reply: str) -> None:
+    """The type ask, in whichever of its shapes ("Please provide the attachment type for
+    product Srt8313 ..." or "Product: Srt8313 / Which kind of file do you need?")."""
+    assert "Srt8313" in reply and reply.rstrip().endswith(("?", ".")), reply
+    assert "attached" not in reply and "escalate" not in reply.lower(), reply
+
+
+def test_t2_a_bare_code_after_a_drawing_sends_that_codes_drawing(chat, world):
+    """"Srt8313" after "Srt8308 drawing": the parser keeps the domain with no domain word of
+    its own (the same question about a new product), so the carried type answers it."""
+    chat.say("Srt8308 drawing", _t1())
+    second = chat.say("Srt8313", _t2())
+    _assert_sent_drawing_of(chat, world, second, "SRT8313")
+
+
+def test_t2_a_new_attachment_ask_naming_no_type_still_asks(chat, world):
+    """"attachments for Srt8313" names its own ask (`domain_in_message: true`): a new ask,
+    the carried type goes with the old one, and the gate asks which type."""
+    chat.say("Srt8308 drawing", _t1())
+    second = chat.say(
+        "attachments for Srt8313",
+        _verdict("attachments for Srt8313", [_entity("Srt8313", "product")], domain_in_message=True),
+    )
+    _assert_asks_the_type_for_srt8313(second)
+
+
+def test_answering_the_open_kind_question_sends_the_asked_products_drawing(chat, world):
+    """A guard beside the prod case: "Srt8313 attachment" leaves an OPEN kind question, and
+    "Drawing" (the echo plus `domain_in_message: true`) answers it through that question. The
+    prod T3 had no open question; `test_answering_the_attachment_type_ask_keeps_the_asked_product`
+    is that case."""
+    first = chat.say(
+        "Srt8313 attachment",
+        _verdict("attachment for Srt8313", [_entity("Srt8313", "product")], domain_in_message=True),
+    )
+    _assert_asks_the_type_for_srt8313(first)
+    second = chat.say("Drawing", _t3())
+    _assert_sent_drawing_of(chat, world, second, "SRT8313")
 
 
 # --------------------------------------------------------------------------- #

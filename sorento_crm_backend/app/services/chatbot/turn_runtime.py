@@ -4432,16 +4432,6 @@ def _tier_gate(
     }
 
 
-#: CARRY-ATTACH T2 (prod, 13 Oct 2026; owner ruling pending): "Srt8313" after "Srt8308 drawing"
-#: asked "Please provide the attachment type for product Srt8313" although the fetch had found
-#: SRT8313's file under the carried Technical Specifications. False (today, ruling option b):
-#: a SETTLED carried document type (one with a uuid) is not handed to the resolver, so the
-#: gate asks again. True (option a): it is handed over with its uuid, the gate counts it and
-#: the turn answers under the same type. Once CLARIFY-POLICY (#1570) lands, this is the
-#: `attachment_type` row's mode (ask / default) rather than a constant.
-CARRY_SETTLED_DOCUMENT_TYPE = False
-
-
 def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> dict[str, Any]:
     """The carried document types a product-attachment FETCH turn still needs resolving.
 
@@ -4453,10 +4443,18 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
     every file of every type, and the "has no Certification" line had no types to name.
 
-    Only the document types, only those with no uuid (every carried
-    one when `CARRY_SETTLED_DOCUMENT_TYPE` is on), only when this turn named none of its
-    own, and only when the one domain in play is `product_attachment` - any other domain's
-    gate would read a document type as an incompatible entity.
+    CARRY-ATTACH (prod, 13 Oct 2026; owner ruling: "the parser should be able to
+    understand"): a SETTLED type too, with its uuid. "Srt8313" after "Srt8308 drawing" is the
+    same question about a new product in the parser's own reading (the domain carried,
+    `domain_in_message: false`, so `decide` refines and the type stays on the focus), and the
+    fetch already ran under it; left out here, the gate's required-type check asked "Please
+    provide the attachment type for product Srt8313" over the file it had found. A message
+    that starts a new ask ("attachments for Srt8313") has already dropped the carried type in
+    `apply._focus_rules`, so nothing is handed over and the gate still asks.
+
+    Only the document types, only when this turn named none of its own, and only when the
+    one domain in play is `product_attachment` - any other domain's gate would read a
+    document type as an incompatible entity.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     if any(str(e.get("hint") or "").strip().lower() == "attachment_type" for e in own):
@@ -4468,7 +4466,7 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
     carried: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or (row.get("uuid") and not CARRY_SETTLED_DOCUMENT_TYPE):
+        if not isinstance(row, dict):
             continue
         code = row.get("canonical_code") or row.get("raw")
         if not jsc.truthy(code):
