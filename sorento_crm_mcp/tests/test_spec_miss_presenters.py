@@ -67,3 +67,13 @@ def test_d4_a_size_miss_echoes_the_size_and_merges_every_axis(tool):
     assert "no 250 mm. sizes on file: 130 mm, 150 mm." in out, out  # `text()` lowercases
     assert "values on file" not in out and "no exact match" not in out, out
     assert "28 have no size recorded." in out, out
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_d5_the_sizes_on_file_sort_as_numbers(tool):
+    """Reviewer B2 (b6da364a): the list sorted as text ("1000 mm, 130 mm, 130.5 mm, 90 mm")."""
+    out = text(tool, {
+        "spec_size_asked": {"value": 250, "unit": "mm"},
+        "spec_alternatives": [{"key": "dim_length", "label": "Length", "unit": "mm", "values": [1000, 130.5, 90, 130]}],
+    })
+    assert "sizes on file: 90 mm, 130 mm, 130.5 mm, 1000 mm." in out, out

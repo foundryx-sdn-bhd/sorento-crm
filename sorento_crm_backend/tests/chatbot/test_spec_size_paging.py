@@ -409,3 +409,14 @@ def test_p18_the_size_miss_sentences_are_in_the_catalog():
         done = Localizer(lang, defaults(lang)).reply(text)
         assert "No 250 mm." not in done and "Sizes on file:" not in done, (lang, done)
         assert "250 mm" in done and "130 mm, 150 mm" in done, (lang, done)
+
+
+@pytest.mark.parametrize("line", ["No exact match. Length values on file: 90 mm.", "No worries.", "No promotion is running now."])
+def test_p19_the_size_miss_template_reads_only_a_measure(line):
+    """Reviewer B1 (b6da364a): "No {size}." took any text, so "No exact match." came back half in
+    Malay. The size token is a measure only."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+
+    for lang in ("ms", "zh"):
+        done = Localizer(lang, defaults(lang)).reply(line)
+        assert done.startswith("No "), (lang, done)

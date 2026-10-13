@@ -1252,3 +1252,30 @@ def test_a_size_no_axis_holds_states_the_size_asked(api, db):
     resp = _list(api, db, rows, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
     assert resp.status_code == 200, resp.text
     assert resp.json().get("spec_size_asked") == {"value": 250, "unit": "mm"}, resp.json()
+
+
+def test_a_ranged_size_miss_states_no_single_size(api, db):
+    """Reviewer S1 (b6da364a): "No 250 mm." is the wording for ONE size asked. A range or a bound
+    has no single size to echo, so the field is absent and the older wording stands."""
+    rows = [_g(db, "RL", dim_length=150)]
+    db.commit()
+    resp = _list(api, db, rows, **_constraints(GRATING, {"key": "size", "op": "between", "value": [200, 300]}))
+    assert resp.status_code == 200, resp.text
+    assert "spec_size_asked" not in resp.json(), resp.json()
+
+
+@pytest.mark.parametrize("path", ["/api/v1/inventory/stock/balance", "/api/v1/marketing/promotion-products/"])
+def test_every_spec_route_states_the_size_asked(api, db, path, monkeypatch):
+    """Reviewer S2: the stock and promotion routes carry `spec_size_asked` too."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs",
+        lambda self, uid: {"marketing.promotion_products.view", "inventory.stock.view"},
+    )
+    prod = _g(db, "SR", dim_length=150)
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    stock(db, company_id=DEFAULT_COMPANY_ID, product_id=prod.id, warehouse_id=wh.id, on_hand=3)
+    _promo(db, prod, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    db.commit()
+    resp = api.get(path, params={"limit": 10, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250})})
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get("spec_size_asked") == {"value": 250, "unit": "mm"}, resp.json()
