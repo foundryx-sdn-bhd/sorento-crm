@@ -134,6 +134,26 @@ function resolvedLine(row: GridRow): QuotationLine | null {
   return (line.product_id ?? '') === (draft.product_id ?? '') ? line : null;
 }
 
+const PICK_FIELD: Record<
+  LineFileKind,
+  'image_attachment_id' | 'drawing_attachment_id'
+> = {
+  photo: 'image_attachment_id',
+  drawing: 'drawing_attachment_id',
+};
+
+/**
+ * The stored line a photo or drawing cell may draw from. Not once the draft has cleared a pick the
+ * line had stored (a product change clears both, and changing back does not restore them): the
+ * server's cell answered for that pick, so showing it would claim a picture the save will not send.
+ */
+function fileLine(row: GridRow, kind: LineFileKind): QuotationLine | null {
+  const line = resolvedLine(row);
+  const field = PICK_FIELD[kind];
+  if (!line) return null;
+  return line[field] && !(row.staged.draft[field] ?? '') ? null : line;
+}
+
 // ------------------------------------------------------------------------------ cells
 
 function ItemCell({ row }: CellContext<GridRow, unknown>) {
@@ -146,13 +166,12 @@ function ItemCell({ row }: CellContext<GridRow, unknown>) {
 
 function FileCell({ row, kind }: { row: GridRow; kind: LineFileKind }) {
   const grid = useGrid();
-  const field =
-    kind === 'photo' ? 'image_attachment_id' : 'drawing_attachment_id';
+  const field = PICK_FIELD[kind];
   const { staged } = row;
   return (
     <QuotationLineFileCell
       kind={kind}
-      line={resolvedLine(row)}
+      line={fileLine(row, kind)}
       label={describeLine(staged.line, row.index)}
       pickedId={staged.draft[field] ?? ''}
       editable={grid.editing && !staged.removed}
@@ -1036,9 +1055,8 @@ export function QuotationLinesGrid({
       kind: LineFileKind,
     ): (AttachmentPreviewItem & { attachmentId: string })[] =>
       allRows.flatMap((row) => {
-        const line = resolvedLine(row);
-        const field =
-          kind === 'photo' ? 'image_attachment_id' : 'drawing_attachment_id';
+        const line = fileLine(row, kind);
+        const field = PICK_FIELD[kind];
         const shown = resolveLineFile(
           kind,
           line,

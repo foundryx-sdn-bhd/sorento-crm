@@ -18,12 +18,13 @@ Two alerts, computed on save and STORED on the line:
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Set
 
-from sqlalchemy import Integer, func
-from sqlalchemy.orm import Session
+from sqlalchemy import Integer, func, or_
+from sqlalchemy.orm import Session, aliased
 
 from app.models.lookup import LookupOption, LookupSet
 from app.models.product import Product
@@ -157,6 +158,36 @@ def is_frozen(db: Session, version: ProjectQuotationVersion) -> bool:
     if highest is not None and version.version_no < highest:
         return True
     return is_issued(db, version)
+
+
+def frozen_version_ids(db: Session, version_ids: Sequence[Any]) -> Set[str]:
+    """``is_frozen`` for several versions in ONE query: superseded by a later version, or issued.
+
+    For a line table, which asks it once per render rather than once per line.
+    """
+    wanted = list(dict.fromkeys(str(v) for v in version_ids if v))
+    if not wanted:
+        return set()
+    later = aliased(ProjectQuotationVersion)
+    superseded = (
+        db.query(later.id)
+        .filter(
+            later.quotation_id == ProjectQuotationVersion.quotation_id,
+            later.version_no > ProjectQuotationVersion.version_no,
+        )
+        .exists()
+    )
+    issued = (
+        db.query(ProjectQuotationIssueScope.id)
+        .filter(ProjectQuotationIssueScope.version_id == ProjectQuotationVersion.id)
+        .exists()
+    )
+    rows = (
+        db.query(ProjectQuotationVersion.id)
+        .filter(ProjectQuotationVersion.id.in_(wanted), or_(superseded, issued))
+        .all()
+    )
+    return {str(row[0]) for row in rows}
 
 
 def is_issued(db: Session, version: ProjectQuotationVersion) -> bool:
@@ -346,6 +377,14 @@ def revise(
                 list_price_snapshot=line.list_price_snapshot,
                 image_attachment_id=line.image_attachment_id,
                 drawing_attachment_id=line.drawing_attachment_id,
+                # The printed columns: a revision is the same quotation with some prices moved,
+                # and dropping these silently re-typed the bill-of-quantities layout to nothing.
+                item_label=line.item_label,
+                brand_snapshot=line.brand_snapshot,
+                technical_spec=line.technical_spec,
+                complete_set=line.complete_set,
+                band_label=line.band_label,
+                is_rate_only=line.is_rate_only,
                 unit_price=line.unit_price,
                 quantity=line.quantity,
                 uom=line.uom,
@@ -607,26 +646,35 @@ def assert_line_picks(
     The ids arrive from the browser, so they are checked against `product_attachments` for the
     product the line WILL have (the payload's, else the stored one): an image, not deleted, this
     company's (or shared), and for a drawing also typed "Technical Specifications"; a photo is
-    never a drawing. Only a value that differs from the stored one is checked, so a stamp on a
-    line whose file was deleted later does not block the next save of that line. Clearing (null)
-    is always allowed. The product's own attachments are never written from here.
+    never a drawing. Only a value that is unchanged together with an unchanged product is skipped,
+    so a stamp on a line whose file was deleted later does not block the next save of that line,
+    while the old product's file can never ride along onto a new product. A malformed id is the
+    same refusal, checked before any query. Clearing (null) is always allowed. The product's own
+    attachments are never written from here.
     """
     from app.services import product_image_service as images
 
     product_id = payload["product_id"] if "product_id" in payload else (
         line.product_id if line is not None else None
     )
+    product_unchanged = line is not None and str(product_id or "") == str(line.product_id or "")
     for field, is_drawing, code, word in _PICKS:
         if field not in payload or not payload[field]:
             continue
         value = str(payload[field])
-        if line is not None and str(getattr(line, field) or "") == value:
+        if product_unchanged and str(getattr(line, field) or "") == value:
             continue
         refusal = AppException(
             status_code=422,
             message=f"That {word} is not one of this product's files.",
             code=code,
         )
+        try:
+            uuid.UUID(value)
+            if product_id:
+                uuid.UUID(str(product_id))
+        except ValueError:
+            raise refusal from None
         if not product_id or not images.is_product_file(
             db,
             product_id=str(product_id),
@@ -1246,7 +1294,11 @@ def serialize_lines(
     # runs to 52 lines and a query per row would be 52 round trips to draw one column.
     from app.services import project_quotation_image_service
 
-    pictures = project_quotation_image_service.line_images(db, lines)
+    # A frozen version is what the customer holds: nothing on it can be picked any more, so its
+    # lines carry no candidates (and nothing is signed for a picker that cannot open).
+    pictures = project_quotation_image_service.line_images(
+        db, lines, frozen_versions=frozen_version_ids(db, [line.version_id for line in lines])
+    )
     no_cells: Dict[str, Any] = {}
     return [
         {

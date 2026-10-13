@@ -25,7 +25,7 @@ overwrite.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -91,7 +91,11 @@ def _cell(state: str, row: Optional[Any], candidates: List[Dict[str, Any]]) -> D
     }
 
 
-def line_images(db: Session, lines: Sequence[Any]) -> Dict[str, Dict[str, Any]]:
+def line_images(
+    db: Session,
+    lines: Sequence[Any],
+    frozen_versions: Optional[Set[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Per line id, ``{"product_image": cell, "technical_drawing": cell}`` as the frontend reads them.
 
     One pass for the whole table: a scope runs to 52 lines and this is computed on every read of
@@ -102,8 +106,11 @@ def line_images(db: Session, lines: Sequence[Any]) -> Dict[str, Dict[str, Any]]:
     A line with a stored id (picked in the editor, or stamped at issue) reports `chosen` off that
     id rather than off the product's state - the product may have no chosen photo at all today,
     and the issued line still carries the photograph that went out. Its candidates are still the
-    product's live files, so a draft can change its pick.
+    product's live files, so a draft can change its pick - except on a version in
+    ``frozen_versions`` (superseded or issued), where nothing can be picked any more: no
+    candidates, a count of zero, and nothing signed for a picker that cannot open.
     """
+    frozen = frozen_versions or set()
     if not lines:
         return {}
 
@@ -137,9 +144,10 @@ def line_images(db: Session, lines: Sequence[Any]) -> Dict[str, Dict[str, Any]]:
         product_files = files.get(str(line.product_id), []) if line.product_id else []
         photo = photos.get(str(line.product_id)) if line.product_id else None
         visible = photo is not None and photo.state != images.OFF_CATALOG
-        photo_candidates = [_candidate(f) for f in photo.candidates] if visible else []
+        pickable = visible and str(line.version_id) not in frozen
+        photo_candidates = [_candidate(f) for f in photo.candidates] if pickable else []
         drawing_files = [f for f in product_files if f.is_drawing] if visible else []
-        drawing_candidates = [_candidate(f) for f in drawing_files]
+        drawing_candidates = [_candidate(f) for f in drawing_files] if pickable else []
 
         # --- the photo
         stamped = str(line.image_attachment_id) if line.image_attachment_id else None
@@ -171,6 +179,10 @@ def line_images(db: Session, lines: Sequence[Any]) -> Dict[str, Dict[str, Any]]:
         else:
             drawing_cell = _cell(NO_DRAWINGS, None, [])
 
+        if not pickable:
+            for cell in (photo_cell, drawing_cell):
+                cell["candidates"] = []
+                cell["candidate_count"] = 0
         cells[key] = {"product_image": photo_cell, "technical_drawing": drawing_cell}
     return cells
 

@@ -73,10 +73,10 @@ OFF_CATALOG = "off_catalog"
 PRINT_BOX = 240
 #: Re-encode quality. Product photographs are flat studio shots and hold up well here.
 JPEG_QUALITY = 72
-#: A file Pillow cannot decode is passed through untouched rather than dropped - WeasyPrint
-#: handles formats Pillow does not - but only while it is small enough that doing so cannot blow
-#: up a document. Above this, no picture beats an unusable file.
-RAW_FALLBACK_LIMIT = 256 * 1024
+#: The only formats ever decoded for a document, and what comes out is always Pillow's own JPEG
+#: re-encode. Nothing else is embedded, not even small: an SVG (whatever its stored mime) is
+#: markup a renderer would follow links out of, and an unknown format is no picture.
+EMBEDDABLE_FORMATS = ("PNG", "JPEG", "WEBP")
 
 
 #: The attachment type of a technical drawing. Matched on the name, as the Dealer Kit image
@@ -401,17 +401,14 @@ def render(db: Session, attachment_id: Optional[str]) -> Optional[RenderedImage]
         logger.warning("product image: cannot fetch %s", attachment_id, exc_info=True)
         return None
 
-    mime = (row.mime_type or "").lower()
-    if not mime.startswith("image/"):
-        mime = "image/jpeg"
-    return _downscale(raw, mime, attachment_id)
+    return _downscale(raw, attachment_id)
 
 
-def _downscale(raw: bytes, mime: str, attachment_id: Any) -> Optional[RenderedImage]:
+def _downscale(raw: bytes, attachment_id: Any) -> Optional[RenderedImage]:
     try:
         from PIL import Image
 
-        with Image.open(io.BytesIO(raw)) as opened:
+        with Image.open(io.BytesIO(raw), formats=EMBEDDABLE_FORMATS) as opened:
             opened.load()
             # Flattened onto white rather than converted straight to RGB: a PNG with alpha comes
             # out of a naive convert with black behind it, and a product cut out on transparency
@@ -433,19 +430,10 @@ def _downscale(raw: bytes, mime: str, attachment_id: Any) -> Optional[RenderedIm
                 width=image.width,
                 height=image.height,
             )
-    except Exception:  # noqa: BLE001
-        # Pillow handles fewer formats than WeasyPrint does, so a decode failure is not proof the
-        # file is unusable - it is passed through while it is small enough that doing so cannot
-        # blow the document up.
-        if len(raw) <= RAW_FALLBACK_LIMIT:
-            logger.info(
-                "product image: %s not decodable, embedding %d raw bytes",
-                attachment_id,
-                len(raw),
-            )
-            return RenderedImage(data=raw, mime_type=mime, width=0, height=0)
+    except Exception:  # noqa: BLE001 - cosmetic, never fatal to the document
+        # Never the raw bytes: what reaches a document is only ever Pillow's own re-encode.
         logger.warning(
-            "product image: %s not decodable and too large (%d bytes) to embed raw",
+            "product image: %s is not a PNG, JPEG or WebP (%d bytes), left out",
             attachment_id,
             len(raw),
         )
@@ -557,7 +545,7 @@ __all__: List[str] = [
     "NO_PHOTOS",
     "OFF_CATALOG",
     "PRINT_BOX",
-    "RAW_FALLBACK_LIMIT",
+    "EMBEDDABLE_FORMATS",
     "ProductFile",
     "ProductImage",
     "RenderedImage",

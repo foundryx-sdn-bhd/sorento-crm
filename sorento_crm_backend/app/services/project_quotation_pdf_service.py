@@ -642,12 +642,18 @@ def render_issue_pdf(db: Session, issue: ProjectQuotationIssue) -> Tuple[bytes, 
     html = build_issue_html(db, issue)
     try:
         from weasyprint import HTML  # noqa: WPS433 (guarded optional dep)
+        from weasyprint.urls import URLFetcher  # noqa: WPS433
     except Exception as e:  # ImportError or native-lib load error
         raise PDFRenderingUnavailable(
             f"PDF rendering is unavailable on this host (WeasyPrint import failed: {e})."
         ) from e
     try:
-        pdf_bytes = HTML(string=html).write_pdf()
+        # Every picture is inlined as a data: URI before it gets here, so the renderer has no
+        # reason to fetch anything else, and must not: a file:// or an internal http:// address
+        # reached from a customer document would read the server's own disk or network.
+        pdf_bytes = HTML(
+            string=html, url_fetcher=URLFetcher(allowed_protocols=("data",))
+        ).write_pdf()
     except Exception as e:
         raise PDFRenderingUnavailable(
             f"PDF rendering failed (WeasyPrint native libraries missing or broken: {e})."

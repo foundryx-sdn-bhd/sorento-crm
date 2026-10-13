@@ -136,12 +136,9 @@ export function QuotationLineFileCell({
       return <QuotationLinePhoto line={line} />;
     }
     if (thumbnail) {
-      return (
-        <span className="relative inline-block">
-          {thumbnail}
-          {candidates.length > 1 && <CountBadge count={candidates.length} />}
-        </span>
-      );
+      // No count where nothing can be picked: a number on a read-only thumbnail is a control
+      // that does nothing.
+      return <span className="relative inline-block">{thumbnail}</span>;
     }
     const state = line.technical_drawing?.state;
     return (
@@ -226,13 +223,5 @@ export function QuotationLineFileCell({
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function CountBadge({ count }: { count: number }) {
-  return (
-    <span className="absolute -end-1.5 -bottom-1.5 min-w-4 rounded-full bg-foreground px-1 text-center text-2xs leading-4 font-medium text-background tabular-nums">
-      {count}
-    </span>
   );
 }
