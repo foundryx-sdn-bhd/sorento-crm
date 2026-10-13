@@ -6,7 +6,7 @@ have delivered date, but status is delivered"). The delivered rule accepts the m
 the date.
 
 Plan: documentation/plans/autocount/PLAN-do-history-backfill-13oct.md section 4.
-UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH30..36).
+UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH30..35).
 """
 from __future__ import annotations
 
@@ -178,3 +178,16 @@ def test_delivered_rule_accepts_the_marker_in_place_of_a_date(env, delivered):
     # Unchanged: a delivered status alone, or a marker under a non-delivered status, is not delivered.
     assert ids["bare"] in pending and ids["bare"] not in done
     assert ids["marked_new"] in pending and ids["marked_new"] not in done
+
+
+def test_no_delivered_status_configured_assumes_nothing(env, cutover, caplog, monkeypatch):
+    """AC-DH31 edge: with no `delivered` order status the DO lands new and a warning says why."""
+    from app.services.autocount_doc_ingest_service import AutocountDocIngestService
+
+    monkeypatch.setattr(AutocountDocIngestService, "_delivered_status_id", lambda self: None)
+    with caplog.at_level("WARNING"):
+        env.push_do([_dated(do_records()[0], "2024-03-05")])
+    o = env.order(900001)
+    assert str(o.order_status_id) == env.new_status
+    assert o.tracking_assumed_at is None
+    assert "assume_delivered_skipped" in caplog.text

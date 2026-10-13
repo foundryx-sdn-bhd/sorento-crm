@@ -1,12 +1,13 @@
 """DO-HISTORY C3: a quiet backfill push (envelope `"backfill": true` on delivery_orders).
 
 Plan: documentation/plans/autocount/PLAN-do-history-backfill-13oct.md section 5.
-UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH40..42).
+UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteria.md (AC-DH40..43).
 
 The shared service replays about 270,000 DOs from 2023-09-01. Through the push route each would
 write an audit row for its header and an embedding event for itself and every line. With the
-flag the route suppresses both for that request and writes one summary IMPORT audit row per
-batch instead. Without the flag nothing changes.
+flag the route suppresses both for that request; instead it writes one IMPORT audit row per
+batch that names every order it wrote, and queues those orders for embedding in one insert.
+Without the flag nothing changes.
 """
 from __future__ import annotations
 
@@ -67,19 +68,61 @@ def test_plain_push_still_audits_and_enqueues_embeddings(env):
     assert _summary_rows(env) == []
 
 
-def test_backfill_push_writes_no_row_audit_and_no_embedding_event(env):
-    """AC-DH40."""
+def test_backfill_push_writes_no_row_audit_and_no_per_row_embedding_event(env):
+    """AC-DH40: no audit row per DO, no listener event per DO or line; one queue event per DO
+    from the batch's single insert, so the history still reaches semantic search."""
     res = _post(env, DO_INGEST, [copy.deepcopy(r) for r in do_records()], backfill=True)
     recs = _records(res)
     assert recs["db1:DO:900001"]["outcome"] == "created"
     for doc_key in (900001, 900002):
-        ids = _landed_ids(env, doc_key)
-        assert _queue_rows(env, ids) == 0
-        assert _audit_rows(env, ids[0]) == 0
+        order_id, *line_ids = _landed_ids(env, doc_key)
+        assert _queue_rows(env, line_ids) == 0
+        events = env.db.execute(
+            select(EmbeddingQueue.event_type).where(EmbeddingQueue.source_id == order_id)
+        ).scalars().all()
+        assert events == ["order.updated"]
+        assert _audit_rows(env, order_id) == 0
+
+
+def test_backfill_summary_row_names_every_order_it_wrote(env):
+    """AC-DH43 (security review B1): the one row leads back to each order, with the company
+    and the batch's DocDate range."""
+    res = _post(env, DO_INGEST, [copy.deepcopy(r) for r in do_records()], backfill=True)
+    recs = _records(res)
     (summary,) = _summary_rows(env)
-    assert summary.new_values["book"] == "db1"
-    assert summary.new_values["created"] == 2
-    assert summary.new_values["records"] == 2
+    values = summary.new_values
+    assert values["book"] == "db1" and values["records"] == 2 and values["created"] == 2
+    assert (values["doc_date_from"], values["doc_date_to"]) == ("2026-09-27", "2026-09-27")
+    assert str(summary.company_id) == str(env.company)
+    items = {i["source_ref"]: i for i in values["items"]}
+    assert set(items) == {"db1:DO:900001", "db1:DO:900002"}
+    for ref, rec in recs.items():
+        assert items[ref]["order_id"] == rec["entity_id"]
+        assert items[ref]["outcome"] == "created"
+
+
+def test_backfill_push_writes_nothing_on_the_so_side(env):
+    """AC-DH42: SO line quantities and status, and the SO header, are untouched."""
+    from app.models.order import SalesOrder, SalesOrderLine
+
+    so = SalesOrder(so_number="ZZSO-DH42", company_id=env.company, source_system="autocount")
+    env.db.add(so)
+    env.db.flush()
+    line = SalesOrderLine(sales_order_id=so.id, product_id=env.p1, qty_ordered=10,
+                          qty_delivered=0, source_ref="SRT_DB:4201:5201",
+                          company_id=env.company)
+    env.db.add(line)
+    env.db.commit()
+    before = (line.qty_ordered, line.qty_delivered, line.line_status, so.status)
+    rec = copy.deepcopy(do_records()[0])
+    rec["RefDocNo"] = "ZZSO-DH42"
+    rec["Details"][0].update({"FromDocType": "SO", "FromDocNo": "ZZSO-DH42", "FromDocDtlKey": 5201})
+    _records(_post(env, DO_INGEST, [rec], backfill=True))
+    env.db.expire_all()
+    line = env.db.get(SalesOrderLine, line.id)
+    so = env.db.get(SalesOrder, so.id)
+    assert (line.qty_ordered, line.qty_delivered, line.line_status, so.status) == before
+    assert env.order_lines(env.order(900001).id)[0].sales_order_line_id == str(line.id)
 
 
 def test_suppression_ends_with_the_backfill_request(env):

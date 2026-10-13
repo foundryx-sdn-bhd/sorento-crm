@@ -73,6 +73,7 @@ from app.services.document_ingest_service import (
 )
 from app.services.master_ingest_service import (
     ENTITY_SPECS,
+    IngestOutcome,
     MasterIngestService,
     UnsupportedIngestEntity,
 )
@@ -787,30 +788,48 @@ def _quiet_backfill(db: Session, on: bool):
             skip.discard(_ORDER_AUDIT_ENTITY)
 
 
-def _log_backfill_batch(db: Session, current_user: dict, book: Optional[str], records: list,
-                        result) -> None:
-    """The one audit row a backfill batch leaves instead of one per DO. Best-effort: the batch
-    has already committed, so a failure here costs a warning, never the batch."""
-    from app.services.audit_service import log_import_audit
+def _log_backfill_batch(db: Session, current_user: dict, company_id: Optional[str],
+                        book: Optional[str], records: list, result) -> None:
+    """The audit a backfill batch leaves instead of one row per DO (security review B1): ONE
+    `IMPORT` row that still leads to every order it stands for. `items` names each created or
+    updated DO (source ref, order id, outcome), so nothing the batch wrote is missing from the
+    trail. Written in the batch's own transaction, before its commit: a batch never lands
+    without it.
 
-    try:
-        log_import_audit(
-            db,
-            entity_type=_ORDER_AUDIT_ENTITY,
-            label=f"AutoCount DO backfill ({book})",
-            row_count=len(records),
-            user_id=current_user.get("id"),
-            details={
-                "backfill": True, "book": book, "records": len(records),
-                "created": result.created, "updated": result.updated,
-                "unchanged": result.unchanged, "failed": result.failed,
-                "retryable": result.retryable,
-            },
-        )
-        db.commit()
-    except Exception:  # noqa: BLE001 - best-effort audit after the batch committed
-        db.rollback()
-        logger.warning("ingest.backfill_audit_failed book=%s", book, exc_info=True)
+    The orders are queued for embedding in one insert, as the Order Tracking import does,
+    so the history reaches semantic search without one queue event per DO and line."""
+    from app.services.audit_service import log_audit
+    from app.services.embedding_change_listener import bulk_enqueue_embedding_events
+
+    written = [r for r in result.records
+               if r.outcome in (IngestOutcome.CREATED, IngestOutcome.UPDATED) and r.entity_id]
+    days = sorted(
+        str(raw.get("DocDate"))[:10] for raw in records
+        if isinstance(raw, dict) and raw.get("DocDate")
+    )
+    log_audit(
+        db,
+        _ORDER_AUDIT_ENTITY,
+        "",
+        "IMPORT",
+        new_values={
+            "backfill": True, "book": book, "records": len(records),
+            "doc_date_from": days[0] if days else None,
+            "doc_date_to": days[-1] if days else None,
+            "created": result.created, "updated": result.updated,
+            "unchanged": result.unchanged, "failed": result.failed,
+            "retryable": result.retryable,
+            "items": [
+                {"source_ref": r.source_ref, "order_id": r.entity_id, "outcome": r.outcome.value}
+                for r in written
+            ],
+        },
+        user_id=current_user.get("id"),
+        company_id=company_id,
+        description=f"AutoCount DO backfill ({book}), {len(records)} rows",
+    )
+    bulk_enqueue_embedding_events(db, "order", [r.entity_id for r in written],
+                                  event_type="order.updated")
 
 
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
@@ -986,7 +1005,9 @@ def ingest_masters(
         except UnsupportedIngestEntity as exc:
             raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
         if not dry_run and backfill:
-            # Inside the quiet block: the commit flushes what the ingest left pending.
+            # Inside the quiet block: the summary row joins the batch's own transaction, and
+            # the commit flushes what the ingest left pending.
+            _log_backfill_batch(db, current_user, company_id, book, records, result)
             db.commit()
     if unknown_fields:
         logger.info(
@@ -1022,8 +1043,6 @@ def ingest_masters(
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
         elif entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
-        if backfill:
-            _log_backfill_batch(db, current_user, book, records, result)
 
     logger.info(
         "ingest.batch entity=%s integration=%s company=%s dry_run=%s "

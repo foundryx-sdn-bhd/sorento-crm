@@ -1,8 +1,8 @@
 """orders.tracking_assumed_at: a DO the history backfill assumed delivered (DO-HISTORY).
 
-Set by `scripts/do_history_assume_delivered.py` on a pre-cutover AutoCount DO that has no Order
-Tracking, together with the delivered status and `actual_delivery_date` = DocDate (owner Q2 a,
-13 Oct 2026); cleared by a later Order Tracking row for that DO. It is also the revert key.
+Set by the DO ingest when an AutoCount DO dated before `DO_ASSUME_DELIVERED_BEFORE` lands with no
+Order Tracking, together with the delivered status; `actual_delivery_date` stays empty (owner,
+13 Oct 2026). Cleared by a later Overall Tracking row for that DO. It is also the revert key.
 
 Additive and nullable, no default, nothing backfilled.
 

@@ -476,9 +476,10 @@ class Order(Base, CompanyScopedMixin):
     currency_code = Column(String(10), nullable=True)
     currency_rate = Column(Numeric(18, 8), nullable=True)
     local_net_total = Column(Numeric(15, 2), nullable=True)
-    # DO-HISTORY: set when the history backfill assumed this pre-cutover DO delivered because
-    # it had no Order Tracking (delivered status + actual_delivery_date = DocDate, owner Q2 a,
-    # 13 Oct 2026). Cleared by a later Overall Tracking row for it. Migration do_hist_0001.
+    # DO-HISTORY: set when the DO ingest assumed this pre-cutover DO delivered because it had
+    # no Order Tracking (delivered status, NO delivery date, owner 13 Oct 2026); the delivered
+    # rule accepts it in place of the date. Cleared by a later Overall Tracking row for it.
+    # Migration do_hist_0001.
     tracking_assumed_at = Column(DateTime(timezone=True), nullable=True)
 
     customer = relationship("Customer", back_populates="orders")

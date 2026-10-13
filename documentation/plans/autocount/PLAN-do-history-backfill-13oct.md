@@ -2,9 +2,8 @@
 
 Status: **plan v4. Slice 1, C1, C2 and C3 are built. Line-key work is on HOLD (crew 13 Oct
 21:20): FXView cannot read DO/DODTL, the API sends no key, and the owner is deciding how to get
-line keys.** Track: full
-(migration column, ingest behaviour change). Slice 1 (the `tracking_assumed_at` column) is built
-and pushed at `cb05abdf`; nothing else is built. PR #1633, branch
+line keys. Review round 1 (reviewer + security-reviewer) folded in.** Track: full
+(migration column, ingest behaviour change, external ingest surface flag). PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
 Owner card: `DO-HISTORY-card.md`.
 
@@ -41,7 +40,8 @@ Crew answer to v2, 13 Oct:
   wrapper) is being checked by crew. It is pending, because the MacBook Air tunnel is down.
 
 Crew answers that still stand:
-- Q2 (a): an assumed row gets `actual_delivery_date` = DocDate plus the `tracking_assumed_at` marker.
+- (Q2 (a), DocDate as the delivery date, is superseded by the owner's answer in section 4: the
+  date stays empty.)
 - Q4 (a): a #1623 cancel relink on a pre-cutover SO raises no planning change and no OI flag.
 
 Q3 (the SO side) is with the owner.
@@ -179,8 +179,9 @@ Owner: backfill from 2023-09-01; an untracked DO dated before **2026-07-01** get
 answer (DocDate as the delivery date).
 
 - **Setting.** `do_assume_delivered_before` (`app/config.py`, env `DO_ASSUME_DELIVERED_BEFORE`).
-  It ships unset (off). For the backfill it is set to `2026-07-01`. It is read on every call,
-  so it can be switched without a restart.
+  It ships unset (off). For the backfill it is set to `2026-07-01`. `settings` is built once per
+  process, so setting or unsetting it means restarting every process that ingests DOs (both
+  backends, and the worker for the pull apply).
 - **On create** of a DO with DocDate before the setting: status `delivered`, `tracking_assumed_at`
   = now. No delivery date, no `delivery_days`, no `kpi_warning`, no transporter.
 - **On adoption** of an Order Tracking row with DocDate before the setting and **no tracking**
@@ -199,7 +200,11 @@ answer (DocDate as the delivery date).
   - Complaint fulfilment still needs a date (`complaint_fulfilment_service.py:86-89`). Backfilled
     DOs carry no Remarks CS, so no complaint links to them.
 - **Later tracking.** An Overall Tracking row replaces the assumption and clears the marker
-  (slice 1).
+  (slice 1). A Master-sheet row without a Tracking row keeps the assumed delivery: the Master
+  pass's "already delivered" check counts the marker like a date (`order_service.py`, review
+  round 1 blocker).
+- **Tool text.** The chatbot / MCP order-tool description and the orders route's `order_status`
+  description say "delivered" includes an assumed delivery with no date.
 - **Revert** (held for the owner):
   `UPDATE orders SET order_status_id = <new>, tracking_assumed_at = NULL WHERE tracking_assumed_at IS NOT NULL`.
 - **Ownership.** The status and the marker are written outside `assert_autocount_writes`, on
@@ -215,9 +220,15 @@ events.
 **Contract (additive, no version bump).** An optional envelope flag `"backfill": true` on
 `POST /external/ingest/delivery_orders`. With the flag, the route:
 - runs the ingest under `suppress_embedding_events("order", "order_line")`
-  (`embedding_change_listener.py:34`, as the tracking import does at `order_service.py:3328`);
-- sets `session.info["skip_audit_entity_types"]` for `order` (`audit_service.py:869-876`);
-- writes one summary audit event per batch (counts, book, day).
+  (`embedding_change_listener.py:34`) and sets `session.info["skip_audit_entity_types"]` for
+  `orders` (`audit_service.py:869-876`);
+- in the batch's own transaction (so a batch never lands without it) writes ONE `IMPORT` audit
+  row with the company, book, DocDate range, verdict counts and `items`: every created or
+  updated DO's source ref, order id and outcome (security review B1: the one row still leads to
+  every order it stands for);
+- queues the written orders for embedding in one insert, as the Order Tracking import does
+  (`order_service.py:3333-3348`), so the history reaches semantic search without one listener
+  event per DO and line. Lines are not queued, the same as that import.
 
 Without the flag nothing changes.
 
@@ -231,7 +242,8 @@ Without the flag nothing changes.
 | --- | --- |
 | SO-side outstanding, Stock Debt, Coverage, committed, reorder, fulfilment board | None. They read SO lines, and the DO ingest writes no SO state. |
 | DO outstanding (DO list bucket, outstanding report DO side, chatbot) | Backfilled DOs before the cutover read as delivered, so they do not appear. |
-| Delivered DO list, chatbot "delivered between" | Backfilled DOs appear on their DocDate. |
+| Delivered DO list (bucket), chatbot delivered bucket | Assumed DOs count as delivered. |
+| "Delivered between" date lists, "has a delivery date" filters | Assumed DOs do not appear: they have no delivery date (owner). |
 | Sales report delivered (`reports/datasets/delivery_order_lines.py`) | Gains AutoCount DOs from 2023-09-01, by `order_date`. |
 | Sales achievement, delivered basis | Exact-linked DO qty counts by DO date; unlinked lines count on the SO date. Removing the fallback links (3.1) moves their qty back to the SO date until a key arrives. |
 | #1623 cancel matching | The tie-break gains exact DO qty per SO line. Q4 (a) keeps pre-cutover SOs quiet. |
@@ -239,14 +251,14 @@ Without the flag nothing changes.
 
 ## 7. Prod run
 
-1. Crew finding K. If K = no, the owner decides on 3.2 before anything else.
+1. Done: crew finding K = no key from the API (1.3b); exact links stay as section 3.
 2. Merge and deploy CRM C1-C3 with `do_assume_delivered_before` unset. Merge SS S1 and S2.
-3. On the prod clone: set the CRM date and run S3 with `?dry_run=true` for both books. Post the
+3. On the prod clone: set the CRM date (restart the backends and worker) and run S3 with `?dry_run=true` for both books. Post the
    per-month counts (created / adopted / unchanged / failed / retryable; lines linked by key /
    unlinked) and re-run the section 1.1 queries.
 4. The owner approves the numbers.
-5. On prod: set the date and run S3 for real, off-hours MYT, Sorento then Mocha. Re-run the
-   queries, then unset the date so no later push assumes anything.
+5. On prod: set the date (restart) and run S3 for real, off-hours MYT, Sorento then Mocha. Re-run
+   the queries, then unset the date (restart) so no later push assumes anything.
 
 ## 8. Asks
 

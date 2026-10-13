@@ -842,8 +842,9 @@ class AutocountDocIngestService(MasterRefResolver):
 
     def _assumed_delivered_status(self, doc_date) -> Optional[str]:
         """DO-HISTORY: the delivered status when a DO dated `doc_date` has no tracking to come
-        (`settings.do_assume_delivered_before`, owner 13 Oct 2026), else None. Read per call so
-        the setting can be switched for a backfill window without a restart."""
+        (`settings.do_assume_delivered_before`, owner 13 Oct 2026), else None. `settings` is
+        built once per process, so changing the env value needs a restart of every process
+        that ingests DOs (both backends, and the worker for the pull apply)."""
         from app.config import settings
 
         cutover = getattr(settings, "do_assume_delivered_before", None)

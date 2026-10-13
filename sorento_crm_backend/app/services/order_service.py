@@ -3061,8 +3061,10 @@ class OrderService:
                     # already recorded by an earlier run just because this run's Tracking tab
                     # doesn't happen to include the order again. Only reset when the order
                     # doesn't already carry a real delivery.
+                    # DO-HISTORY: an assumed delivery (marker, no date) is a delivery too.
                     already_delivered = (
-                        existing_order.actual_delivery_date is not None
+                        (existing_order.actual_delivery_date is not None
+                         or existing_order.tracking_assumed_at is not None)
                         and str(existing_order.order_status_id or "") in delivered_status_ids
                     )
                     if new_status_id and not already_delivered:

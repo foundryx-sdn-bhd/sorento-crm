@@ -5,14 +5,15 @@ UAC:  documentation/plans/autocount/do-history-backfill-13oct-acceptance-criteri
 (AC-DH15, AC-DH16).
 
 The marker says "delivered by assumption, not by a tracking upload". It is bookkeeping no
-business writer owns, the DO ingest never writes it, and a real Order Tracking row for the DO
-clears it so it never claims an assumption the sheet has since replaced.
+business writer owns: only the DO ingest's assumed-delivery path writes it (never through the
+AutoCount header write), and a real Order Tracking row for the DO clears it so it never claims
+an assumption the sheet has since replaced.
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.services.order_field_ownership import (
     AUTOCOUNT_OWNED_ORDER_COLUMNS,
     ORDER_TRACKING_OWNED_ORDER_COLUMNS,
@@ -79,3 +80,40 @@ def test_tracking_upload_leaves_other_rows_marker_alone(db):
     db.refresh(other)
     assert other.tracking_assumed_at == stamp
     assert named.id != other.id
+
+
+def test_master_reupload_keeps_an_assumed_delivery(db):
+    """AC-DH36 (review blocker 1): a Master row with no Tracking row for an assumed DO must not
+    reset it to new; the marker counts as a delivery there, like a date."""
+    delivered = db.query(OrderStatus).filter(OrderStatus.status_code == "DELIVERED").one()
+    order = _autocount_order(db)
+    order.order_status_id = delivered.id
+    order.tracking_assumed_at = datetime(2026, 10, 13, tzinfo=timezone.utc)
+    db.commit()
+    data = _master_only_workbook(["ZZDO-OG-1", date(2026, 9, 1), "01/09/2026 10:00", "999",
+                                  "Sheet", "S-AG", "N", "cs", "RMA"])
+    result = OrderService(db).import_excel_tracking(data, _USER)
+    assert not result.get("errors"), result.get("errors")
+    db.refresh(order)
+    assert str(order.order_status_id) == str(delivered.id)
+    assert order.tracking_assumed_at is not None
+    assert order.actual_delivery_date is None
+
+
+def _master_only_workbook(row: list) -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    master = wb.create_sheet("Master")
+    master.append(MASTER_HEADER)
+    master.append(row)
+    tracking = wb.create_sheet("Overall Tracking")
+    tracking.append(["Doc Number", "Date", "Time", "Checker", "Transporter", "Driver Name",
+                     "Lorry Plate", "Customer", "Remarks CS", "Remarks", "Salesman", "Trips",
+                     "W/H"])
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

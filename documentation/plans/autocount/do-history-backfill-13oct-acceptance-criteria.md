@@ -34,11 +34,16 @@ itself runs in the shared service. These are the CRM-side criteria.
 - **AC-DH34** A dry run writes nothing.
 - **AC-DH35** Delivered = delivered status AND (a date OR the marker). Outstanding is its
   null-safe negation. A delivered status alone, or the marker under `new`, is outstanding.
+- **AC-DH36** A Master-sheet re-upload with no Tracking row for an assumed DO keeps it delivered
+  with its marker (review round 1).
 
 ## C3 quiet backfill
 
-- **AC-DH40** A push with `"backfill": true` enqueues no embedding event and writes no per-DO audit
-  row. It writes one summary audit event per batch.
+- **AC-DH40** A push with `"backfill": true` writes no per-DO audit row and no listener embedding
+  event for any DO or line; the batch queues one embedding event per written DO in one insert.
+- **AC-DH43** The batch's one `IMPORT` audit row carries the company, book, DocDate range,
+  verdict counts and every created or updated DO (source ref, order id, outcome), and is written
+  in the batch's transaction.
 - **AC-DH41** A push without the flag behaves exactly as today.
 - **AC-DH42** The DO push writes no SO line or SO header field, and raises no OI row, planning
   change, email or WhatsApp, with or without the flag.
