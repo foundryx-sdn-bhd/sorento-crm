@@ -64,7 +64,9 @@ def test_converted_case(case: str) -> None:
 
         expect = row["expect"]
         if "actions" in expect:
-            got = [a.type for a in actions]
+            # A converted "clarify" is any question back: a re-ask that reached the second
+            # MISS is the hand-over offer (contract s.3), still a question, never a lookup.
+            got = ["clarify" if a.type == "offer_handover" else a.type for a in actions]
             assert got == [e["type"] for e in expect["actions"]], (where, got, expect["actions"])
             for want, act in zip(expect["actions"], actions):
                 if "domain" in want and isinstance(act, Lookup):

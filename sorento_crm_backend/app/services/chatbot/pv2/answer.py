@@ -29,6 +29,7 @@ from app.services.chatbot.pv2.state import (
     OfferHandover,
     Option,
     PendingQuestion,
+    ResolvedRef,
     SmallTalk,
 )
 from app.services.chatbot.turn.state import Focus
@@ -184,6 +185,7 @@ def build_result(
     pending_in: PendingQuestion | None = None,
     report_answer: ReportAnswer | None = None,
     idea_answer: IdeaAnswer | None = None,
+    base_focus: Focus | None = None,
 ) -> TurnV2Result:
     """One turn's actions as the engine's next step (see the module docstring)."""
     language = clarify_copy.lang(out.language)
@@ -204,7 +206,7 @@ def build_result(
     handover = next((a for a in actions if isinstance(a, HandOver)), None)
     if handover is not None:
         verdict = _verdict_for("hand_over", team_key=handover.team_key)
-        return TurnV2Result(verdict, bridge.focus_from_v2(state.held), None, state, actions, "hand_over", language, trace)
+        return TurnV2Result(verdict, bridge.focus_from_v2(state.held, base_focus), None, state, actions, "hand_over", language, trace)
 
     if lookups:
         last = lookups[-1]
@@ -216,6 +218,8 @@ def build_result(
                 draft = _attr(idea, "idea_draft_id")
                 if draft:
                     st.held.idea_draft_id = str(draft)
+                # The capture service's own pointer (`ideation`), for the hook to keep.
+                trace["ideation_session_vars"] = _attr(idea, "session_vars")
                 trace["route_detail"] = _attr(idea, "status")
                 return TurnV2Result(None, None, str(_attr(idea, "reply_text") or ""), st, actions, "idea", language, trace)
         if report_answer is not None and _is_report(last):
@@ -227,6 +231,12 @@ def build_result(
             if spec is not None:
                 st.held.report = spec
             st.pending = _pending_from(_attr(rep, "pending"), st.turn_no)
+            for dim, refs in (_attr(rep, "drill_refs") or {}).items():
+                # The drilled row's filter refs stay held, so "by qty" next turn runs on it.
+                st.held.refs[dim] = [
+                    ResolvedRef(kind=str(_attr(r, "kind") or dim), key=str(_attr(r, "key")), label=str(_attr(r, "label")))
+                    for r in refs
+                ]
             rows = _rows_from(_attr(rep, "rows"))
             if rows:
                 st.last_rows = rows[:20]
@@ -239,10 +249,10 @@ def build_result(
                 for a in lookups
                 if a.domain
             ]
-        return TurnV2Result(verdict, bridge.focus_from_v2(last.held), None, state, actions, "lookup", language, trace)
+        return TurnV2Result(verdict, bridge.focus_from_v2(last.held, base_focus), None, state, actions, "lookup", language, trace)
 
     verdict = _verdict_for("small_talk")
-    return TurnV2Result(verdict, bridge.focus_from_v2(state.held), None, state, actions, "small_talk", language, trace)
+    return TurnV2Result(verdict, bridge.focus_from_v2(state.held, base_focus), None, state, actions, "small_talk", language, trace)
 
 
 # --------------------------------------------------------------------------- #
@@ -257,10 +267,15 @@ def default_report_answer(*, mcp_call: Callable, contact_id: str | None, space_i
     def run(spec: Any, refs: dict[str, list[dict[str, str]]], today: date, row: Option | None, incoming: Any) -> Any:
         from app.services.chatbot.pv2 import reports
 
+        extra: dict[str, Any] = {}
         if row is not None and reports.ROW_PAYLOAD in row.payload:
-            spec, extra = reports.drill_row(spec, row, incoming=incoming)
+            try:
+                spec, extra = reports.drill_row(spec, row, incoming=incoming)
+            except reports.DrillRefused as exc:
+                # v1's own line for a row the report cannot narrow by.
+                return _Said(text=exc.line)
             refs = {**refs, **(extra or {})}
-        return reports.answer_report(
+        rep = reports.answer_report(
             spec,
             refs=refs,
             today=today,
@@ -269,8 +284,20 @@ def default_report_answer(*, mcp_call: Callable, contact_id: str | None, space_i
             space_id=space_id,
             dealer=dealer,
         )
+        rep.drill_refs = extra or {}
+        return rep
 
     return run
+
+
+@dataclass
+class _Said:
+    """A report turn that only says a line (a refused drill)."""
+
+    text: str
+    plan: Any = None
+    pending: Any = None
+    rows: list[Any] = field(default_factory=list)
 
 
 def default_idea_answer(

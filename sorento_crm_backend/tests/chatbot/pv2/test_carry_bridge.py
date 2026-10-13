@@ -99,9 +99,11 @@ def test_period_presets_become_verdict_dates(preset, n, expected):
     assert (v["date_filter_start"], v["date_filter_end"]) == (expected[0].isoformat(), expected[1].isoformat())
 
 
-def test_last_n_months_ends_today_and_starts_n_months_back():
+def test_last_n_months_reads_as_the_report_engine_reads_it():
+    # One reading for lookups and reports (`reports.period_dates`): the n full months
+    # before this one.
     start, end = bridge.period_dates(P(preset="last_n_months", n=3), TODAY)
-    assert end == TODAY and date(2026, 7, 1) <= start <= date(2026, 7, 14)
+    assert (start, end) == (date(2026, 7, 1), date(2026, 9, 30))
 
 
 def test_explicit_dates_beat_the_preset_and_no_period_is_null():

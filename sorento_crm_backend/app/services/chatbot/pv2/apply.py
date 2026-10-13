@@ -127,22 +127,32 @@ def apply_turn(
 
     if out.clarify.needed or not out.asks:
         about = out.clarify.about or "other"
-        act = _clarify(st, 0, about, out.clarify.phrase, language, options=_options_for(st, about))
+        if st.pending is not None:
+            # A garbled answer to the open question re-asks it with its real options and
+            # counts a MISS (two -> the hand-over offer), never an option-less new question.
+            act = _miss(st, 0, st.pending, _Miss(about), language, can_offer_handover)
+        else:
+            act = _clarify(st, 0, about, out.clarify.phrase, language, options=_options_for(st, about))
         st.pending = act.pending
         return st, [act]
 
     first_question: PendingQuestion | None = None
     pending_in = st.pending
     answered_pending = False
+    # T-keys name the topics MEMORY printed, not ones an earlier ask of this message pushed.
+    printed_topics = [t.model_copy(deep=True) for t in st.topics]
     for i, ask in enumerate(out.asks):
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
-            action, answered = _one_ask(st, i, ask, pending_in, out, resolver, policy, language, today)
+            action, answered = _one_ask(
+                st, i, ask, pending_in, out, resolver, policy, language, today, printed_topics
+            )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
             action = _miss(st, i, pending_in, miss, language, can_offer_handover)
         else:
             answered_pending = answered_pending or answered
+            action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
         actions.append(action)
         question = getattr(action, "pending", None)
         if question is not None and first_question is None:
@@ -172,10 +182,13 @@ def _one_ask(
     policy: ClarifyPolicy,
     language: str,
     today: date | None,
+    printed_topics: list[Held],
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
     if ask.act == "unclear":
         about = out.clarify.about or "other"
+        if pending is not None:
+            raise _Miss(about)
         return _clarify(st, i, about, out.clarify.phrase, language, options=_options_for(st, about)), False
 
     if ask.act == "small_talk":
@@ -185,10 +198,11 @@ def _one_ask(
         return _answer(st, i, ask, pending, resolver, policy, language, today)
 
     if ask.act == "switch_back":
-        idx = topic_index(ask.switch_back_to, st.topics)
-        if idx is None:
+        printed = topic_index(ask.switch_back_to, printed_topics)
+        if printed is None:
             raise _Miss("which_held")
-        back = st.topics[idx]
+        back = printed_topics[printed]
+        idx = next((j for j, t in enumerate(st.topics) if t == back), None)
         rest = [t for j, t in enumerate(st.topics) if j != idx]
         st.topics = push_topic(rest, st.held)
         st.held = back.model_copy(deep=True)
@@ -333,10 +347,12 @@ def _apply_fields(
         if status == "exact" and refs:
             held.attachment_type = refs[0].key
         else:
+            options = list(getattr(res, "options", None) or [])
+            # No candidates: the held product carries no files to pick from, said truly.
             qs.append(
                 _clarify(
-                    st, i, "attachment_type", ask.attachment_type, language,
-                    options=list(getattr(res, "options", None) or []),
+                    st, i, "attachment_type", None, language,
+                    options=options, kind="attachment_type", not_found=not options,
                 )
             )
     if ask.period is not None:
@@ -367,7 +383,12 @@ def _plan_report(
     from app.services.chatbot.pv2 import reports
 
     resolve = getattr(resolver, "resolve_report_spec", None)
-    res = resolve(held.report, held=held, profile=None) if resolve is not None else None
+    try:
+        res = resolve(held.report, held=held, profile=None) if resolve is not None else None
+    except (AttributeError, NotImplementedError):
+        # No report resolver on this build yet (RESOLVE forwards to REPORTS): the filters
+        # stay unresolved and are asked below, never answered empty.
+        res = None
     if res is not None:
         options = [_option(o) for o in (getattr(res, "options", None) or [])]
         if getattr(res, "status", None) == "ambiguous" and options:
@@ -381,6 +402,13 @@ def _plan_report(
     if today is None:
         return
     plan = reports.plan_report(held.report, refs=report_refs(held), today=today)
+    if plan.status == "unresolved":
+        # A filter whose names did not settle to live rows: asked, never run unfiltered
+        # and never an empty reply.
+        names = [f for f in held.report.filters if f.dimension in plan.unresolved]
+        phrase = ", ".join(k for f in names for k in f.keys) or None
+        qs.append(_clarify(st, i, "entity", phrase, language, options=[], not_found=bool(phrase), kind="report_filter"))
+        return
     if plan.status == "ask":
         held.report = plan.spec
         qs.append(
@@ -395,9 +423,15 @@ def _plan_report(
 def report_refs(held: Held) -> dict[str, list[dict[str, str]]]:
     """`held.refs` in the shape `reports.plan_report` / `answer_report` read: dimension ->
     [{kind, key, label}]."""
-    return {
-        kind: [{"kind": r.kind, "key": r.key, "label": r.label} for r in refs] for kind, refs in held.refs.items()
-    }
+    out: dict[str, list[dict[str, str]]] = {}
+    for kind, refs in held.refs.items():
+        dim = REPORT_DIMENSION_OF_KIND.get(kind, kind)
+        out.setdefault(dim, []).extend({"kind": r.kind, "key": r.key, "label": r.label} for r in refs)
+    return out
+
+
+#: Entity kinds whose report filter dimension has another name (`report_measures`).
+REPORT_DIMENSION_OF_KIND = {"warehouse": "location", "product_type": "category"}
 
 
 def _get(obj: Any, name: str) -> Any:
@@ -426,6 +460,15 @@ def _apply_entities(
     to_resolve: list[Entity] = []
     for ent in ask.entities:
         has_held = bool(base.refs.get(ent.kind)) if refine else False
+        if ent.refers_to_held and not refine:
+            # A new ask about "this one": the subject held before this message.
+            carried_refs = st.held.refs.get(ent.kind) or []
+            if not carried_refs:
+                raise _Miss("which_held", nothing_held=True)
+            held.refs = set_refs(held.refs, ent.kind, carried_refs, "set")
+            if ent.key is None and ent.phrase is None:
+                continue
+            has_held = True
         if ent.refers_to_held and not has_held:
             raise _Miss("which_held", nothing_held=True)
         if ent.op == "clear":
@@ -448,12 +491,12 @@ def _apply_entities(
             held = apply_payload(held, {**options[0].payload, "op": ent.op})
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
-            qs.append(_clarify(st, i, "entity", ent.phrase or ent.key, language, options=options, kind=ent.kind))
+            qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
             continue
         if status != "exact" or not refs:
             qs.append(
                 _clarify(
-                    st, i, "entity", ent.phrase or ent.key, language,
+                    st, i, "entity", ent.phrase, language,
                     options=options, kind=ent.kind, not_found=not options,
                 )
             )
@@ -518,13 +561,15 @@ def _apply_specs(
         if status == "none" and not options:
             closest = list(getattr(res, "closest", None) or [])
             if closest:
-                qs.append(_clarify(st, i, "spec_attribute", spec.phrase, language, options=closest, not_found=True))
+                qs.append(
+                    _clarify(st, i, "spec_attribute", spec.phrase, language, options=closest, kind="spec", not_found=True)
+                )
                 continue
         if status != "exact" or not resolved:
             qs.append(
                 _clarify(
                     st, i, "spec_attribute", spec.phrase, language,
-                    options=options, not_found=status == "none" and not options,
+                    options=options, kind="spec", not_found=status == "none" and not options,
                 )
             )
             continue
@@ -575,6 +620,9 @@ def _clarify(
     asked: str | None = None,
 ) -> ClarifyAct:
     asked = asked or clarify_copy.question_for(about, phrase, language, kind=kind, not_found=not_found)
+    if not_found and not phrase and kind != "attachment_type":
+        # Nothing the user typed to name: ask openly rather than print an internal key.
+        asked = clarify_copy.question_for(about, None, language, kind=kind)
     pending = PendingQuestion(
         kind=f"clarify_{about}",
         asked=asked,
@@ -623,6 +671,24 @@ def _miss(
         pending=again,
         reask=True,
     )
+
+
+def _repeat_is_a_miss(
+    st: ConversationState,
+    action: Action,
+    pending_in: PendingQuestion | None,
+    language: str,
+    can_offer_handover: bool,
+) -> Action:
+    """The same question asked again (same kind, same option keys) counts as a MISS on
+    it, so a repeated which_held (the 11 Oct single-subject rule) reaches the hand-over
+    offer like every other short-reply check (section 3)."""
+    if not isinstance(action, ClarifyAct) or pending_in is None or action.reask:
+        return action
+    q = action.pending
+    if q.kind != pending_in.kind or [o.key for o in q.options] != [o.key for o in pending_in.options]:
+        return action
+    return _miss(st, action.ask_index, pending_in, _Miss(action.about), language, can_offer_handover)
 
 
 def record_rows(state: ConversationState, rows: list[Option]) -> ConversationState:

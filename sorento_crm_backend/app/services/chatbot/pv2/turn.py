@@ -64,6 +64,7 @@ class TurnV2Context:
     parse_parts: ParsePartsFn | None = None
     can_offer_handover: bool = True
     policy: ClarifyPolicy = DEFAULT_POLICY
+    base_focus: Any = None
     report_answer: answer_mod.ReportAnswer | None = None
     idea_answer: answer_mod.IdeaAnswer | None = None
     trace: dict[str, Any] = field(default_factory=dict)
@@ -116,6 +117,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         pending_in=state_in.pending,
         report_answer=ctx.report_answer,
         idea_answer=ctx.idea_answer,
+        base_focus=ctx.base_focus,
     )
     result.trace.update(
         {
@@ -150,6 +152,7 @@ def after_v1(
     asked: str | None = None,
     language: str | None = None,
     rows: list[Option] | None = None,
+    option_keys: list[str] | None = None,
 ) -> ConversationState:
     """After the v1 stages answered a PV2 lookup: a question the v1 lane asked (its pending
     kind and option labels, `contracts.PENDING_KINDS`) becomes the PV2 pending question
@@ -159,14 +162,19 @@ def after_v1(
     printed rows for the next `row_pick`."""
     st = state.model_copy(deep=True)
     if question_kind:
+        keys = option_keys or [str(n) for n in range(1, len(option_labels) + 1)]
         options = [
-            Option(key=str(n), label=label, payload={"kind": "choice", "key": str(n)})
-            for n, label in enumerate(option_labels, start=1)
+            Option(key=key, label=label, payload={"kind": "choice", "key": key, "v1_kind": question_kind})
+            for key, label in zip(keys, option_labels)
         ]
         if offer:
             options += [
-                Option(key="yes", label=clarify_copy.text("yes", language), payload={"kind": "choice", "key": "yes"}),
-                Option(key="no", label=clarify_copy.text("no", language), payload={"kind": "choice", "key": "no"}),
+                Option(
+                    key=key,
+                    label=clarify_copy.text(key, language),
+                    payload={"kind": "choice", "key": key, "v1_kind": question_kind},
+                )
+                for key in ("yes", "no")
             ]
         st.pending = PendingQuestion(
             kind="v1_open_question",
@@ -198,15 +206,15 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
     kind = getattr(v1_pending, "kind", None)
     if not kind:
         return state
-    labels = [
-        str(o.get("label"))
-        for o in (getattr(v1_pending, "options", None) or [])
-        if isinstance(o, dict) and o.get("label")
-    ]
+    # Keyed by v1's own `position` (what v1 `_answer_pending` accepts), legacy `idx` else.
+    opts = [o for o in (getattr(v1_pending, "options", None) or []) if isinstance(o, dict) and o.get("label")]
+    labels = [str(o["label"]) for o in opts]
+    keys = [str(o.get("position") or o.get("idx") or n) for n, o in enumerate(opts, start=1)]
     return after_v1(
         state,
         question_kind=str(kind),
         option_labels=labels,
+        option_keys=keys,
         offer=kind in OFFER_KINDS,
         asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or ""),
     )
@@ -259,8 +267,11 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         space_id = default_space_id(db)
 
     contact = str(hctx.contact_respond_id)
-    ingress = (getattr(hctx, "envelope", None) or {}).get("ingress") if isinstance(hctx.envelope, dict) else None
-    is_test = bool(getattr(hctx, "dry_run", False))
+    envelope = getattr(hctx, "envelope", None)
+    # The engine's Envelope is a pydantic model (`contracts.Envelope`): read by attribute,
+    # so a console turn reads console history in its own world.
+    ingress = getattr(envelope, "ingress", None)
+    is_test = bool(getattr(envelope, "is_test", False) or getattr(hctx, "dry_run", False))
     session_block = hctx.session_block if isinstance(hctx.session_block, dict) else {}
     session_vars = session_block.get("session_vars") if isinstance(session_block.get("session_vars"), dict) else session_block
     raw_state = session_vars.get("pv2")
@@ -273,8 +284,10 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     def parse_parts(history: list[tuple[str, str]], memory_block: str, text: str) -> Any:
         return pv2_call.parse_v2(config, history=history, memory_block=memory_block, text=text)
 
-    # The resolver and the lanes read the DB after the parser call: one session for the
-    # rest of the turn, never held across the model call.
+    # One session for the resolver and the lanes. It is OPEN across the parser call, but
+    # idle: nothing touches `db` until the parse returned (`_LazyResolver` builds the
+    # resolver on first use, the idea handler runs after apply), and a lazily-connecting
+    # SQLAlchemy session checks out no connection before its first query.
     with _session(factory) as db:
         ctx = TurnV2Context(
             text=hctx.text,
@@ -307,8 +320,9 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
                 "cache_key": config.cache_key,
             },
         )
-        v1_pending = getattr(getattr(hctx, "state_in", None), "pending", None)
-        return _run(ctx, v1_pending=v1_pending)
+        state_in = getattr(hctx, "state_in", None)
+        ctx.base_focus = getattr(state_in, "focus", None)
+        return _run(ctx, v1_pending=getattr(state_in, "pending", None))
 
 
 class _LazyResolver:

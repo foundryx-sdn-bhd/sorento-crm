@@ -22,6 +22,8 @@ _KIND_WORD: dict[str, dict[str, str]] = {
     "product_type": {"en": "product type", "zh": "产品类型", "ms": "jenis produk"},
     "warehouse": {"en": "warehouse", "zh": "仓库", "ms": "gudang"},
     "order": {"en": "order", "zh": "订单", "ms": "pesanan"},
+    "spec": {"en": "value", "zh": "规格", "ms": "nilai"},
+    "report_filter": {"en": "match", "zh": "匹配项", "ms": "padanan"},
 }
 
 _COPY: dict[str, dict[str, str]] = {
@@ -64,6 +66,11 @@ _COPY: dict[str, dict[str, str]] = {
         "en": "What would you like me to check?",
         "zh": "您想让我查什么？",
         "ms": "Apa yang anda mahu saya semak?",
+    },
+    "no_files": {
+        "en": "I couldn't find files of that kind for this product.",
+        "zh": "这个产品没有这类文件。",
+        "ms": "Saya tidak jumpa fail jenis itu untuk produk ini.",
     },
     "reask": {
         "en": "Sorry, I didn't catch your choice.",
@@ -118,8 +125,10 @@ def question_for(
     nothing_held: bool = False,
 ) -> str:
     """The question text recorded on a PendingQuestion (`asked`)."""
-    if not_found:
-        return text("not_found", language, kind=kind_word(kind, language), phrase=phrase or "")
+    if not_found and kind == "attachment_type":
+        return text("no_files", language)
+    if not_found and phrase:
+        return text("not_found", language, kind=kind_word(kind, language), phrase=phrase)
     if nothing_held:
         return text("nothing_held", language)
     if about in ("entity", "which_held"):
