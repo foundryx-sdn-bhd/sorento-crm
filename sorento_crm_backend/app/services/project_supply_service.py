@@ -6086,6 +6086,17 @@ class ProjectSupplyService:
             # own Reserve, never excluded) still refuses it exactly as it always has
             # (`test_a_hold_the_same_order_carries_forward_is_netted_by_the_confirm_as_
             # the_board_nets_it`). `carried` is read above the location gate.
+            if warehouse == fact.own_code and fact.warehouse is not None:
+                # BORROW-OWN-LOC: a Borrow at the own location is judged against the free
+                # stock THIS Reserve leaves there, or one confirmation would hold the same
+                # units once as Reserve and again as Borrow. Drawn BEFORE the carried
+                # exemption below: on a re-confirm the line's own hold is un-netted, so an
+                # unchanged Reserve still has to come off what the Borrow can take.
+                own_id = str(fact.warehouse.id)
+                borrow_left.free(fact.product_id, own_id, self._free_at)
+                borrow_left.take_free(
+                    fact.product_id, own_id, max(qty - reserve_credit[index], _ZERO)
+                )
             ask = qty - carried if qty > carried else _ZERO
             if ask <= _ZERO:
                 continue
@@ -6144,13 +6155,6 @@ class ProjectSupplyService:
             warehouse_id = location_ids.get(warehouse)
             if warehouse_id:
                 capacity_left.take(fact.product_id, warehouse_id, qty)
-            if warehouse == fact.own_code and fact.warehouse is not None:
-                # BORROW-OWN-LOC: a Borrow at the own location is judged against the free
-                # stock THIS Reserve leaves there, or one confirmation would hold the same
-                # units once as Reserve and again as Borrow.
-                own_id = str(fact.warehouse.id)
-                borrow_left.free(fact.product_id, own_id, self._free_at)
-                borrow_left.take_free(fact.product_id, own_id, qty)
             lender = sales_agent_service.group_of_warehouse_code(warehouse)
             if lender and lender != fact.group_code:
                 # R-M: and off the LENDING GROUP's budget, so the next line of this
@@ -6572,9 +6576,16 @@ class ProjectSupplyService:
                 return
             # What this order's own active revision already holds here, resubmitted:
             # not a new ask - same "zero baseline" reasoning as the Reserve check above
-            # (PLAN-so-book-diff-replanning.md section 10, defect A).
-            carried = self._carried_component_qty(
-                carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
+            # (PLAN-so-book-diff-replanning.md section 10, defect A). Not at the own
+            # location (review B1): the snapshot states what was DECIDED, which may have
+            # been recorded short, and the line's own hold there is already un-netted, so
+            # the borrow is judged afresh against what this line's Reserve leaves.
+            carried = (
+                _ZERO
+                if own
+                else self._carried_component_qty(
+                    carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
+                )
             )
             ask = qty - carried if qty > carried else _ZERO
             if ask <= _ZERO:

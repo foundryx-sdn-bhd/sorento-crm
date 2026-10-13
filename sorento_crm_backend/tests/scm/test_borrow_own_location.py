@@ -178,6 +178,19 @@ def test_confirm_reserve_plus_an_over_asked_own_location_borrow_passes_short(ena
         assert _held_at(db, world, world["own"]) == Decimal("8"), "never more than on hand"
 
 
+def test_re_confirming_the_same_reserve_and_own_borrow_never_holds_more_than_on_hand():
+    """Review B1: on a re-confirm the line's own hold is un-netted, so an unchanged
+    (carried) Reserve must still come off what the own-location Borrow can take."""
+    with blank_session() as db:
+        world = _own_world(db, on_hand=8)
+        body = dict(reserve=[(world["own"], "8")], borrow=[_own_borrow(world, "2")])
+        _confirm(db, world, **body)
+        again = _confirm(db, world, **body)
+        assert _held_at(db, world, world["own"]) == Decimal("8"), "never more than on hand"
+        notices = again["stock_short_notices"]
+        assert len(notices) == 1 and "2 short" in notices[0]["reason"], notices
+
+
 def test_confirm_an_own_location_borrow_with_free_stock_holds_it():
     with blank_session() as db:
         world = _own_world(db, on_hand=10)
