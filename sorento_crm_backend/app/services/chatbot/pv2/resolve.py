@@ -647,10 +647,14 @@ class DbResolver:
         families: dict[str, list] = {}
         for row in rows:
             families.setdefault(ledger_family_key(row[2]) or str(row[2]), []).append(row)
-        # A lone candidate account is still only an option; a whole family is one customer.
-        if len(families) == 1 and not (candidates_only and len(rows) == 1):
+        # Exact rows resolve directly. From the containing-name search only an exact family
+        # NAME does; a partial name always asks (candidates never resolve on their own).
+        if len(families) == 1:
             members = next(iter(families.values()))
-            return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
+            names = [str(n) for _c, _k, n in members]
+            shown = (group_names(names) or [names[0]])[0]
+            if not candidates_only or norm(shown) == norm(phrase or ""):
+                return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
         options = []
         for members in list(families.values())[:CUSTOMER_CANDIDATE_CAP]:
             refs = [self._customer_ref(c, k, n, phrase) for c, k, n in members]
