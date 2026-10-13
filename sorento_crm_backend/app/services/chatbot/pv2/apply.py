@@ -418,6 +418,22 @@ def _apply_specs(
         if status == "ambiguous" and len(options) == 1 and policy.decide("spec_attribute", held.domain) == "default":
             held = apply_payload(held, options[0].payload)
             continue
+        if (
+            status == "exact"
+            and options
+            and getattr(res, "inferred", False)
+            and policy.decide("spec_attribute", held.domain) == "ask"
+        ):
+            # Code placed the number on the one attribute whose real range holds it: the
+            # policy decides, and tonight's policy asks with the resolver's labelled option
+            # (section 4). Without an option there is nothing truthful to print: taken.
+            raise _Ask(_clarify(st, i, "spec_attribute", spec.phrase, language, options=options))
+        if status == "none" and not options:
+            options = list(getattr(res, "closest", None) or [])
+            if options:
+                raise _Ask(
+                    _clarify(st, i, "spec_attribute", spec.phrase, language, options=options, not_found=True)
+                )
         if status != "exact" or not resolved:
             raise _Ask(
                 _clarify(

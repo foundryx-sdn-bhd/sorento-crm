@@ -1,18 +1,30 @@
-"""PLACEHOLDER owned by PV2-CORE (CONTRACT-PV2-13oct.md section 1 and the ReportSpec of
-section 5), transcribed verbatim so PV2-CARRY can code and test against the contract types
-before CORE's commit 1 lands. On integration CORE's `schema.py` wins outright: this file
-declares nothing CORE's does not.
+"""Parser v2 OUTPUT: the single declaration (CONTRACT-PV2-13oct.md section 1).
+
+One turn-act enum everywhere (asks, fixtures, traces, eval). The model returns INDEX keys;
+code exact-matches keys and never reads the user's words (owner rule 13 Oct). A key the
+pinned index does not list becomes null here, and its phrase is logged by the caller.
+
+`PV2_JSON_SCHEMA` is the strict json_schema sent on the parser call (same path as
+`head/parser.py`'s `PARSE_OUTPUT_JSON_SCHEMA`): every property required, nullable groups
+emit null, no extra keys.
 """
 from __future__ import annotations
 
+import copy
+from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-TurnAct = Literal["answers_bot_question", "refines_held", "new_topic", "switch_back", "small_talk", "unclear"]
+TurnAct = Literal[
+    "answers_bot_question", "refines_held", "new_topic", "switch_back", "small_talk", "unclear"
+]
 Op = Literal["set", "add", "remove", "clear"]
 Comparator = Literal["eq", "lt", "gt", "between", "about"]
+ClearableField = Literal["attachment_type", "period", "report", "specs"]
+
+TURN_ACTS: tuple[str, ...] = TurnAct.__args__  # type: ignore[attr-defined]
 
 
 class _Strict(BaseModel):
@@ -39,10 +51,14 @@ class Spec(_Strict):
 
 
 class Period(_Strict):
-    preset: Literal[
-        "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "this_quarter",
-        "last_quarter", "this_year", "last_year", "ytd", "last_n_days", "last_n_months",
-    ] | None
+    preset: (
+        Literal[
+            "today", "yesterday", "this_week", "last_week", "this_month", "last_month",
+            "this_quarter", "last_quarter", "this_year", "last_year", "ytd",
+            "last_n_days", "last_n_months",
+        ]
+        | None
+    )
     n: int | None
     date_from: date | None
     date_to: date | None
@@ -96,7 +112,7 @@ class Ask(_Strict):
     period: Period | None
     row_pick: int | None
     answer: Answer | None
-    cleared: list[str]
+    cleared: list[ClearableField]
     report: ReportSpec | None
     low_stock: LowStock | None
     ideation: IdeationSignal | None
@@ -110,10 +126,13 @@ class Escalation(_Strict):
 class Clarify(_Strict):
     needed: bool
     phrase: str | None
-    about: Literal[
-        "domain", "entity", "spec_attribute", "attachment_type", "report_measure", "report_period",
-        "which_held", "other",
-    ] | None
+    about: (
+        Literal[
+            "domain", "entity", "spec_attribute", "attachment_type", "report_measure",
+            "report_period", "which_held", "other",
+        ]
+        | None
+    )
 
 
 class ParserV2Output(_Strict):
@@ -121,3 +140,163 @@ class ParserV2Output(_Strict):
     clarify: Clarify
     language: Literal["en", "zh", "ms", "mixed"]
     escalation: Escalation | None
+
+
+# --------------------------------------------------------------------------- strict schema
+
+
+def _inline_refs(node: Any, defs: dict[str, Any]) -> Any:
+    if isinstance(node, dict):
+        if "$ref" in node:
+            name = node["$ref"].rsplit("/", 1)[-1]
+            return _inline_refs(copy.deepcopy(defs[name]), defs)
+        return {k: _inline_refs(v, defs) for k, v in node.items() if k != "$defs"}
+    if isinstance(node, list):
+        return [_inline_refs(v, defs) for v in node]
+    return node
+
+
+_DROP = ("title", "default", "description")
+
+
+def _strictify(node: Any) -> Any:
+    """Every object: all properties required, no extra keys. Titles/defaults dropped
+    (strict structured output rejects `default`), `format: date` kept as a plain string
+    with a pattern (providers differ on `format`)."""
+    if isinstance(node, list):
+        return [_strictify(v) for v in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: _strictify(v) for k, v in node.items() if k not in _DROP}
+    if out.get("type") == "object" and "properties" in out:
+        out["required"] = list(out["properties"].keys())
+        out["additionalProperties"] = False
+    if out.get("format") == "date":
+        out.pop("format")
+        out["pattern"] = r"^\d{4}-\d{2}-\d{2}$"
+    return out
+
+
+def build_strict_schema(model: type[BaseModel]) -> dict:
+    raw = model.model_json_schema()
+    defs = raw.get("$defs", {})
+    return _strictify(_inline_refs(raw, defs))
+
+
+PV2_JSON_SCHEMA: dict = build_strict_schema(ParserV2Output)
+PV2_SCHEMA_NAME = "chatbot_parser_v2"
+
+
+# --------------------------------------------------------------------------- pinned-key check
+
+
+@dataclass(frozen=True)
+class IndexKeys:
+    """The keys one PINNED index lists (parsed back from the published text by
+    `index.parse_index_keys`). Empty set for a section = nothing accepted there."""
+
+    domains: frozenset[str] = frozenset()
+    entity_kinds: frozenset[str] = frozenset()
+    # kind -> keys for index-listed entity kinds (brand, product_type, ...).
+    entity_keys: dict[str, frozenset[str]] = field(default_factory=dict)
+    attachment_types: frozenset[str] = frozenset()
+    spec_attributes: frozenset[str] = frozenset()
+    # attribute -> enum value keys.
+    spec_values: dict[str, frozenset[str]] = field(default_factory=dict)
+    report_datasets: frozenset[str] = frozenset()
+    report_measures: frozenset[str] = frozenset()
+    report_dimensions: frozenset[str] = frozenset()
+    report_bases: frozenset[str] = frozenset()
+    teams: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class DroppedKey:
+    """One model-emitted key the pinned index does not list: nulled, logged."""
+
+    where: str  # e.g. "asks[0].entities[1].key"
+    kind: str  # brand | attachment_type | spec_attribute | domain | ...
+    value: str
+    phrase: str | None
+
+
+class SchemaError(ValueError):
+    """The emission is not a ParserV2Output (shape, enum or extra keys)."""
+
+
+def validate(raw: dict, keys: IndexKeys) -> tuple[ParserV2Output, list[DroppedKey]]:
+    """Shape-check `raw`, then null every index key the pinned index does not list.
+
+    Never maps a dropped key to a near one: the dropped key is returned for the
+    unknown-words log and the downstream resolver clarifies on the null.
+    """
+    try:
+        out = ParserV2Output.model_validate(raw)
+    except ValidationError as exc:
+        raise SchemaError(str(exc)) from exc
+    if not out.asks:
+        raise SchemaError("asks must hold at least one ask")
+    dropped: list[DroppedKey] = []
+
+    def keep(value: str | None, allowed: frozenset[str], where: str, kind: str, phrase=None):
+        if value is None or value in allowed:
+            return value
+        dropped.append(DroppedKey(where, kind, value, phrase))
+        return None
+
+    for i, ask in enumerate(out.asks):
+        at = f"asks[{i}]"
+        ask.domain = keep(ask.domain, keys.domains, f"{at}.domain", "domain")
+        ask.attachment_type = keep(
+            ask.attachment_type, keys.attachment_types, f"{at}.attachment_type", "attachment_type"
+        )
+        for j, ent in enumerate(ask.entities):
+            if ent.key is not None and ent.kind in keys.entity_keys:
+                ent.key = keep(
+                    ent.key, keys.entity_keys[ent.kind], f"{at}.entities[{j}].key", ent.kind,
+                    ent.phrase,
+                )
+        for j, spec in enumerate(ask.specs):
+            spec.attribute = keep(
+                spec.attribute, keys.spec_attributes, f"{at}.specs[{j}].attribute",
+                "spec_attribute", spec.phrase,
+            )
+            if spec.value_key is not None:
+                allowed = keys.spec_values.get(spec.attribute or "", frozenset())
+                spec.value_key = keep(
+                    spec.value_key, allowed, f"{at}.specs[{j}].value_key", "spec_value",
+                    spec.phrase,
+                )
+        if ask.report is not None:
+            r = ask.report
+            r.dataset = keep(r.dataset, keys.report_datasets, f"{at}.report.dataset", "report_dataset")
+            r.basis = keep(r.basis, keys.report_bases, f"{at}.report.basis", "report_basis")
+            kept_measures = []
+            for m in r.measures:
+                parts = m.split("/")
+                if len(parts) <= 2 and all(p in keys.report_measures for p in parts):
+                    kept_measures.append(m)
+                else:
+                    dropped.append(DroppedKey(f"{at}.report.measures", "report_measure", m, None))
+            r.measures = kept_measures
+            kept_dims = []
+            for d in r.group_by:
+                if d in keys.report_dimensions:
+                    kept_dims.append(d)
+                else:
+                    dropped.append(DroppedKey(f"{at}.report.group_by", "report_dimension", d, None))
+            r.group_by = kept_dims
+            kept_filters = []
+            for f in r.filters:
+                if f.dimension in keys.report_dimensions:
+                    kept_filters.append(f)
+                else:
+                    dropped.append(
+                        DroppedKey(f"{at}.report.filters", "report_dimension", f.dimension, None)
+                    )
+            r.filters = kept_filters
+    if out.escalation is not None:
+        out.escalation.team_key = keep(
+            out.escalation.team_key, keys.teams, "escalation.team_key", "team"
+        )
+    return out, dropped
