@@ -18,8 +18,10 @@ probe run and deleted before this file was written - not guessed:**
    access_level_choice_message`, reached through `resolve_gate.run`'s real
    `access_check` entry R2 now wires up) would ask about ONLY the one entitled tier -
    in fact would not ask at all (see point 3).
-2. An ambiguous customer order ask ("orders for hanlim", two same-named-family
-   customer matches) answers TODAY with `turn/compose.py`'s own customer ask:
+2. (Superseded by PICKER-ONE, 13 Oct 2026: every customer picker now prints through
+   `turn/compose.py::compose_question`.) An ambiguous customer order ask ("orders for
+   hanlim", two same-named-family customer matches) answered with `turn/compose.py`'s own
+   customer ask:
    `'Which customer do you mean?\\n1. 300-H070 - no DO\\n2. 300-H071 - no DO'` - the
    resolved CODE as the label, no "Please choose:", no company-code suffix. Production
    (`gate.run_gate` + `pickers.annotate_customer`) prints the CUSTOMER NAME with its
@@ -339,43 +341,18 @@ class TestOneEntitledTierNeverAsks:
 # --------------------------------------------------------------------------- #
 
 
-def _expected_customer_picker_text(*, probe_rows: list[dict[str, Any]]) -> str:
-    """The SAME production chain `test_rearch_r3_answer_bridge.py` computes from,
-    fed the `_ambiguous_hanlim_resolve_services` fixture's own two rows so the two
-    files cannot silently disagree about what "production text" means."""
-    from app.services.chatbot.lanes.business import pickers
+class TestCustomerAskUsesTheOneCustomerPicker:
+    """PICKER-ONE (owner, 13 Oct 2026): the gate's ambiguous-customer picker, reached
+    through a real turn, prints the ONE customer picker every roster prints - the
+    `compose_question` header, `N. <name> - <stamp>`, no company tag when both families
+    sit in one company - stamped from the gate's own probe (here: no rows, so measured
+    and none has a DO)."""
 
-    gate = {
-        "gate_clarification": (
-            "Which customer do you mean? Please choose:\n"
-            "1. HANLIM TRADING SDN BHD (SRT)\n"
-            "2. HANLIM HARDWARE SDN BHD (SRT)"
-        ),
-        "compatible_entities": [
-            {"uuid": HANLIM_UUID_1, "entity_type": "customer", "code": HANLIM_CODE_1,
-             "title": "HANLIM TRADING SDN BHD (SRT)"},
-            {"uuid": HANLIM_UUID_2, "entity_type": "customer", "code": HANLIM_CODE_2,
-             "title": "HANLIM HARDWARE SDN BHD (SRT)"},
-        ],
-        "require_specific": False,
-        "gate_debug": {"domain": "order"},
-    }
-    parser = _parser_output(
-        domain_hint="order", intent_hint="check_order",
-        entities=[{"raw": "hanlim", "hint": "customer", "current_message": True}],
-    )
-    annotated = pickers.annotate_customer(gate, probe={"answers": probe_rows}, parser=parser)
-    lane_item = {**annotated, "branch_kind": "not_found"}
-    ctx = {"parse": {"output": parser}}
-    canned = copy_mod.fallback_copy()
-    catalog = outcome_mod.escalate_catalog(lane_item, ctx, canned, incoming_picker=lane_item)
-    built = outcome_mod.build_outcome([{"json": catalog}], {"escalate-catalog": catalog})
-    return reply_ladder.compose_reply(built[0]["json"]["outcome"])["text"]
+    def test_reply_is_the_one_customer_picker(self, session_factory, monkeypatch) -> None:
+        probe_calls: list[Any] = []
 
-
-class TestCustomerAskUsesProductionCopy:
-    def test_reply_matches_the_production_chain(self, session_factory, monkeypatch) -> None:
         def spy_probe(*, tool, contact_id, entities, semantic_input, user_prompt):
+            probe_calls.append(tool)
             return {"items": [], "has_result": False}
 
         _seed_contact(session_factory, variables={})
@@ -395,9 +372,13 @@ class TestCustomerAskUsesProductionCopy:
             resolve_services=_ambiguous_hanlim_resolve_services(spy_probe),
         )
         reply = (result.reply or {}).get("text") or ""
-        expected = _expected_customer_picker_text(probe_rows=[])
-        assert reply == expected, (reply, expected)
-        assert reply.startswith("Which customer do you mean? Please choose:"), reply
+        assert reply == (
+            "Which one do you mean?\n"
+            "1. HANLIM TRADING SDN BHD - no DO\n"
+            "2. HANLIM HARDWARE SDN BHD - no DO"
+        ), reply
+        # One probe for the turn: the gate measured, the roster reused it.
+        assert len(probe_calls) == 1, probe_calls
         assert captured == []
 
 

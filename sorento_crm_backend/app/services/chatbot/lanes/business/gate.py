@@ -1591,8 +1591,12 @@ def run_gate(  # noqa: PLR0912, PLR0915 - one JS node, one function; splitting i
                 for t in df_lost:
                     h = _df_hint_of(t)
                     df_lines.append(f'"{jsc.js_string(_df_raw_of(t))}"' + (f" ({h.replace('_', ' ')})" if h else ""))
-                gate_clarification = f"Couldn't find: {', '.join(df_lines)}.\n\n{gate_clarification}"
+                dropped_line = f"Couldn't find: {', '.join(df_lines)}."
+                gate_clarification = f"{dropped_line}\n\n{gate_clarification}"
                 out["gate_clarification"] = gate_clarification
+                # PICKER-ONE: the same line as data, for the customer picker the bridge
+                # composes through `compose_question` instead of printing this text.
+                out["dropped_filter_line"] = dropped_line
 
     if cust_pin_kept:
         out["customer_pin_kept"] = True

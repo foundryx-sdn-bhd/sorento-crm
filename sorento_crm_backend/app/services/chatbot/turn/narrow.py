@@ -133,6 +133,7 @@ def _options(
 
     built: list[dict[str, Any]] = []
     by_label: dict[Any, dict[str, Any]] = {}
+    companies_of: dict[int, list[str]] = {}
     for c in candidates:
         code = c.get("canonical_code") or c.get("raw")
         identity = c.get("uuid") or code
@@ -168,6 +169,7 @@ def _options(
             key = (label_key, company) if multi_company else label_key
             if multi_company:
                 label = f"{label} ({company})"
+        codes = [str(x) for x in (c.get("company_codes") or []) if x]
         merged = by_label.get(key)
         if merged is not None:
             for u in uuids:
@@ -175,6 +177,9 @@ def _options(
                     merged["uuids"].append(u)
             if stamp and not merged.get("stamp"):
                 merged["stamp"] = stamp
+            for code_ in codes:
+                if code_ not in companies_of[id(merged)]:
+                    companies_of[id(merged)].append(code_)
             continue
         option: dict[str, Any] = {
             "position": len(built) + 1,
@@ -190,6 +195,7 @@ def _options(
         if stamp:
             option["stamp"] = stamp
         by_label[key] = option
+        companies_of[id(option)] = list(codes)
         built.append(option)
     # B1: a hard cap, in the resolver's own order (already the relevance order the
     # candidates arrived in) - a roster nobody could realistically read through is not
@@ -198,7 +204,27 @@ def _options(
     # Policy; `_ROSTER_CAP` is the fallback for a caller with no policy of its own
     # (every direct `decide()` call in the tests), the same role `gate.py`'s named
     # legacy default plays on its side.
-    return built[: cap if isinstance(cap, int) and cap > 0 else _ROSTER_CAP]
+    built = built[: cap if isinstance(cap, int) and cap > 0 else _ROSTER_CAP]
+    # PICKER-ONE (owner, 13 Oct 2026): a customer line names the companies it sits in
+    # ("HANLIM (MCH, SRT)") ONLY when the options' companies differ - the tag is there to
+    # tell two lines apart, and one company set across every line tells nothing apart.
+    # Printed in the label itself, so a reply that types the whole line back still matches
+    # the option it read.
+    company_sets = {tuple(companies_of[id(o)]) for o in built}
+    if len(company_sets) > 1:
+        for option in built:
+            codes = companies_of[id(option)]
+            if codes:
+                option["label"] = f"{option['label']} ({', '.join(codes)})"
+    return built
+
+
+def customer_options(candidates: list[dict[str, Any]], cap: int | None = None) -> list[dict[str, Any]]:
+    """`_options` for a customer roster built OUTSIDE `decide` - the gate's own ambiguous
+    customer picker (`answer_bridge._offer_answer`, PICKER-ONE). Same builder, same
+    `ledger_family` grouping the `customer` kind row seeds (`policy_rows.py`), so the two
+    rosters cannot name one customer two ways."""
+    return _options(candidates, "customer", "ledger_family", cap)
 
 
 @dataclass

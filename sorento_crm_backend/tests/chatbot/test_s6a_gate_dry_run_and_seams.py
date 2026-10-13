@@ -660,25 +660,24 @@ class TestOwnerRulingACustomerPickerDOStamp:
             ],
         }
 
-        out = pickers.annotate_customer(dict(gate), probe=probe, parser={})
-        lines = out["escalate_message"].splitlines()
-        line_a = next(l for l in lines if l.startswith("1."))
-        line_b = next(l for l in lines if l.startswith("2."))
+        # PICKER-ONE (owner, 13 Oct 2026): the gate's customer arm records the
+        # measurement as data and every line is stamped by `pickers.customer_stamp`.
+        out = resolve_gate.measure_customer_picker(dict(gate), probe=probe, parser={})
+        bases = set(out["customer_bases_with_do"])
+        stamp_a = pickers.customer_stamp(cust_a.customer_name, bases)
+        stamp_b = pickers.customer_stamp(cust_b.customer_name, bases)
 
-        assert line_a.endswith(" - has DO"), (
-            f"RED (the actual gap): a customer WITH a DO (actual_delivery_date set) "
-            f"must read '- has DO': {line_a!r}"
+        assert stamp_a == "has DO", (
+            f"a customer WITH a DO (actual_delivery_date set) must read 'has DO': {stamp_a!r}"
         )
-        assert line_b.endswith(" - no DO"), (
-            f"RED (the actual gap): a customer with NO DO must read '- no DO', not the "
-            f"current 'has delivery' wording that ignores actual_delivery_date "
-            f"entirely: {line_b!r}"
+        assert stamp_b == "no DO", (
+            f"a customer with NO DO (an order, but no delivery date) must read 'no DO': "
+            f"{stamp_b!r}"
         )
 
-        # Guard: picking "1" must still resolve to the FIRST customer - the annotator
-        # only appends a suffix, it must never reorder or renumber the roster.
-        assert gate["compatible_entities"][0]["uuid"] == cust_a.id
-        assert gate["compatible_entities"][0]["title"] == cust_a.customer_name
+        # Guard: the measurement only adds data; the roster's rows and order are untouched.
+        assert out["compatible_entities"][0]["uuid"] == cust_a.id
+        assert out["compatible_entities"][0]["title"] == cust_a.customer_name
 
 
 # --------------------------------------------------------------------------- #
@@ -877,14 +876,26 @@ class TestOwnerRulingATheCustomerPickerReachesTheProductionProbeSeam:
         assert args.get("view") == "render", args
         assert args.get("actual_delivery_date_from") == "2026-06-09", args
 
-        message = out["escalate_message"]
-        lines = [line for line in message.splitlines() if line[:1].isdigit()]
-        assert len(lines) == 2, message
-        assert lines[0].endswith(" - has DO"), message
-        assert lines[1].endswith(" - no DO"), message
-        assert f"({company_code})" in lines[0], (
-            f"the picker line must still name the owning company: {message!r}"
+        # PICKER-ONE: what the customer reads is the bridge's one customer picker,
+        # stamped from what this probe measured. Both customers sit in ONE company, so
+        # no line carries the company tag (it is printed only when companies differ).
+        from app.services.chatbot import answer_bridge, copy as copy_mod
+
+        answer = answer_bridge.question_for(
+            out,
+            parser=ctx["parse"]["output"],
+            ctx=ctx,
+            canned=copy_mod.fallback_copy(),
+            db=db,
+            asked_at_turn=1,
         )
+        assert answer is not None, out.get("_exit_kind")
+        assert answer.text == (
+            "Which one do you mean?\n"
+            f"1. {cust_a.customer_name} - has DO\n"
+            f"2. {cust_b.customer_name} - no DO"
+        ), answer.text
+        assert f"({company_code})" not in answer.text, answer.text
 
 
 # --------------------------------------------------------------------------- #

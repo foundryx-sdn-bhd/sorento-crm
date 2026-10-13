@@ -25,7 +25,7 @@ import copy
 import logging
 import re
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from typing import Any, Callable
 
 from sqlalchemy import func, text
@@ -2273,6 +2273,50 @@ def companies_by_uuid(resolved: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _resolved_matches(resolved: Any) -> list[Any]:
+    """Every match the resolver returned, flattened the three ways `gate.py::run_gate`
+    flattens its own `flat` list (resolutions, intersection, by_entity_type)."""
+    from app.services.chatbot.lanes.business.gate import _flatten_by_entity_type
+
+    matches = [
+        m
+        for resolution in jsc.array(jsc.get(resolved, "resolutions"))
+        for m in jsc.array(jsc.get(resolution, "matches"))
+    ]
+    matches += jsc.array(jsc.get(resolved, "intersection"))
+    matches += jsc.array(_flatten_by_entity_type(jsc.get(resolved, "by_entity_type")))
+    return matches
+
+
+def company_codes_by_uuid(resolved: Any) -> dict[str, str]:
+    """The resolver's own COMPANY CODE per match ("MCH", "SRT"), keyed by uuid - the tag a
+    customer picker line carries when its options' companies differ (PICKER-ONE). Read off
+    the RAW resolver payload for `companies_by_uuid`'s reason (never off `gate.py`'s
+    frozen `compatible_entities`)."""
+    out: dict[str, str] = {}
+    for m in _resolved_matches(resolved):
+        uuid = jsc.nullish_str(jsc.get(m, "uuid")).strip()
+        code = jsc.nullish_str(jsc.get(m, "company_code")).strip()
+        if uuid and code:
+            out.setdefault(uuid, code)
+    return out
+
+
+def display_names_by_uuid(resolved: Any) -> dict[str, str]:
+    """The resolver's own human label per match (`gate._display_name`'s rule), keyed by
+    uuid - for the gate's picker rows, which carry their printed line as `title` and no
+    `display_name` of their own (`compatible_entities` is frozen by the node replay)."""
+    from app.services.chatbot.lanes.business.gate import _display_name
+
+    out: dict[str, str] = {}
+    for m in _resolved_matches(resolved):
+        uuid = jsc.nullish_str(jsc.get(m, "uuid")).strip()
+        name = _display_name(m)
+        if uuid and name:
+            out.setdefault(uuid, name)
+    return out
+
+
 def company_names_by_uuid(resolved: Any) -> dict[str, str]:
     """`companies_by_uuid`, names only - the shape `candidates_by_kind` has always read.
 
@@ -2779,7 +2823,13 @@ def resolve_kinds(
     stamps_from = annotated if isinstance(annotated, dict) else gate
 
     customer_bases: set[str] | None = None
-    if stamp_customer and any(
+    if "customer_bases_with_do" in payload:
+        # PICKER-ONE: the gate's own customer picker already probed this turn
+        # (`resolve_gate.measure_customer_picker`, R20 included) - one probe, one answer,
+        # never a second measurement that could disagree with the first.
+        measured = payload.get("customer_bases_with_do")
+        customer_bases = set(measured) if isinstance(measured, list) else None
+    elif stamp_customer and any(
         jsc.nullish_str(e.get("entity_type")).strip().lower() == "customer" for e in compatible
     ):
         # The roster this turn is about to print IS the customer picker's roster, reached
@@ -2866,7 +2916,12 @@ def resolve_kinds(
         predicate,
         mark_described_set(
             candidates_by_kind(
-                stamps_from, compatible, customer_bases, product_stamp, company_names_by_uuid(resolved)
+                stamps_from,
+                compatible,
+                customer_bases,
+                product_stamp,
+                company_names_by_uuid(resolved),
+                company_codes_by_uuid(resolved),
             ),
             predicate,
         ),
@@ -2939,6 +2994,7 @@ def candidates_by_kind(
     customer_bases_with_do: set[str] | None = None,
     product_stamp: tuple[set[str], str, str] | None = None,
     company_names_by_uuid: dict[str, str] | None = None,
+    company_codes_by_uuid: dict[str, str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """The resolver's own rows, grouped by entity kind, for the narrower's roster.
 
@@ -3006,10 +3062,109 @@ def candidates_by_kind(
             # Item 2: a customer line says what a product line says - whether the thing
             # it names has anything to show. `None` is "not measured" (the probe failed,
             # or its page saturated) and reads as no stamp at all, never as "no DO".
-            base = pickers_module().customer_base(built.get("name") or code)
-            built["stamp"] = "has DO" if base in customer_bases_with_do else "no DO"
+            built["stamp"] = pickers_module().customer_stamp(
+                built.get("name") or code, customer_bases_with_do
+            )
+        if kind == "customer" and company_codes_by_uuid:
+            # PICKER-ONE: every company the line's rows sit in, first-seen order - the
+            # tag `narrow._options` prints when the options' companies differ.
+            codes = [
+                company_codes_by_uuid[u]
+                for u in (built.get("uuids") or [built.get("uuid")])
+                if u and u in company_codes_by_uuid
+            ]
+            if codes:
+                built["company_codes"] = list(dict.fromkeys(codes))
         grouped.setdefault(kind, []).append(built)
     return grouped
+
+
+def stamp_customer_options(
+    options: list[dict[str, Any]], bases_with_do: set[str] | None
+) -> list[dict[str, Any]]:
+    """A customer roster's options, each stamped by `pickers.customer_stamp` (PICKER-ONE).
+
+    For a roster that reached the ask unstamped - built off the focus (a carried subject)
+    or off the contact's own typed words, where no resolver answer carried a stamp. An
+    option that already carries one keeps it: it was measured by the same helper on the
+    way in. Returns new option dicts; the input is not touched.
+    """
+    stamp = pickers_module().customer_stamp
+    out: list[dict[str, Any]] = []
+    for option in options:
+        option = dict(option)
+        if not option.get("stamp"):
+            value = stamp(option.get("name") or option.get("label") or option.get("code"), bases_with_do)
+            if value:
+                option["stamp"] = value
+        out.append(option)
+    return out
+
+
+def stamp_customer_ask(
+    db: Session,
+    ask: Any,
+    *,
+    ctx: dict[str, Any],
+    payload: dict[str, Any] | None,
+    space_id: str | None,
+) -> Any:
+    """`ask`, its customer options stamped when no option carries a stamp yet.
+
+    The ask point's half of PICKER-ONE: a `customer_pick` the narrower raised off the
+    focus or off typed words never reached `candidates_by_kind`'s stamp, so the owner read
+    "1. HANLIM 2. HANLIM TRADING" in one picker and "1. HANLIM - no DO ..." in the next.
+    The gate's own measurement is reused when this turn has one (one probe per turn);
+    otherwise the customer probe runs once, over the options themselves plus whatever the
+    gate would have probed beside them. The caller withholds this for an outstanding ask
+    (R20). Any failure leaves the roster unstamped, which is the NOT MEASURED reading.
+    """
+    if getattr(ask, "kind", None) != "customer_pick":
+        return ask
+    options = [o for o in (ask.options or []) if isinstance(o, dict)]
+    if not options or any(o.get("stamp") for o in options):
+        return ask
+    payload = payload if isinstance(payload, dict) else {}
+    if "customer_bases_with_do" in payload:
+        measured = payload.get("customer_bases_with_do")
+        bases = set(measured) if isinstance(measured, list) else None
+    else:
+        from app.services.chatbot.lanes.business import resolve_gate
+        from app.services.chatbot.lanes.business import services as business_services
+
+        gate = payload.get("gate") if isinstance(payload.get("gate"), dict) else {}
+        entities: list[dict[str, Any]] = []
+        for option in options:
+            for uuid in option.get("uuids") or [option.get("uuid")]:
+                entities.append(
+                    {
+                        "uuid": uuid if uuid else None,
+                        "entity_type": "customer",
+                        "code": option.get("code"),
+                        "raw": option.get("name") or option.get("label"),
+                    }
+                )
+        entities += [
+            e
+            for e in jsc.array(gate.get("customer_probe_entities"))
+            if isinstance(e, dict) and jsc.nullish_str(e.get("entity_type")).strip().lower() != "customer"
+        ]
+        try:
+            probe = resolve_gate.probe_customer(
+                business_services.production_services(db),
+                ctx=ctx,
+                entities=entities,
+                aggregate=payload.get("aggregate"),
+                default_start=resolve_gate.default_probe_start(),
+                space_id=space_id,
+            )
+        except Exception:  # noqa: BLE001 - an unprobed roster is the NOT MEASURED arm
+            logger.warning("chatbot: the customer roster probe did not run", exc_info=True)
+            probe = None
+        bases = pickers_module().customer_bases_with_do(probe)
+    if bases is None:
+        return ask
+    return dataclass_replace(ask, options=stamp_customer_options(options, bases))
 
 
 def _norm_code(value: Any) -> str:
