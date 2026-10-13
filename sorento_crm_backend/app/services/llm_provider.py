@@ -1332,6 +1332,20 @@ def _gemini_operator_hint(status_code: int, provider_message: str) -> str:
     return ""
 
 
+class GeminiHTTPError(RuntimeError):
+    """A Gemini call the provider refused, with its HTTP status as `status_code`.
+
+    The OpenAI and Anthropic SDKs put the status on their errors, and the chatbot's retry
+    seam (`chatbot/llm_call.is_rate_limited` / `is_transient`) reads it there. A plain
+    RuntimeError carried it only in its text, so a Gemini 429 or 503 on the parser failed
+    the dealer's turn at once instead of being waited out (PARSER-GEMINI-LITE).
+    """
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class GeminiProvider:
     """Google Gemini over the Generative Language REST API."""
 
@@ -1372,9 +1386,10 @@ class GeminiProvider:
 
         if response.status_code >= 400:
             provider_message = _gemini_error_message(response)
-            raise RuntimeError(
+            raise GeminiHTTPError(
                 f"Gemini call failed ({response.status_code}): {provider_message}"
-                f"{_gemini_operator_hint(response.status_code, provider_message)}"
+                f"{_gemini_operator_hint(response.status_code, provider_message)}",
+                response.status_code,
             )
         try:
             body = response.json()
