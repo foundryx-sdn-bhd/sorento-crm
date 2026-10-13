@@ -34,6 +34,11 @@ Where cases come from:
   behind the ids in the recorded tool args) and `grade` (the case's `expect`) by hand. Unset: only the
   in-repo cases run.
 
+A turn may carry `"extractor": {...}` (or `null`): the recorded reading of the focused chat report extractor
+(`analytics/chat_report_extractor.extract_chat_report`, a second LLM call the chat analytics lane makes beside the
+parser). It is stubbed to return that dict, so a chat report turn replays offline; a turn without the key leaves the
+extractor alone, and its call (blocked by the network guard) reads as "no reading".
+
 A case may carry `"xfail": "<reason>"` while its fix is open: strict, so the fix turns it into a failure that
 says to drop the marker.
 """
@@ -188,6 +193,15 @@ def _grade(grade_spec: dict[str, Any], result: Any, trace: list | None, previous
 # --------------------------------------------------------------------------- #
 
 
+def _install_extractor(monkeypatch, reading: Any) -> None:
+    """The chat report extractor answers the turn's recorded reading (`None` is its "could not read")."""
+    from app.services.chatbot.analytics import chat_report_extractor
+
+    monkeypatch.setattr(
+        chat_report_extractor, "extract_chat_report", lambda db, message_text, *, today, open_ask=None: copy.deepcopy(reading)
+    )
+
+
 def run_case(payload: dict[str, Any], case_id: str, session_factory, stub_parser, monkeypatch) -> dict[str, Any]:
     """Replays one case; returns `{failures, replies, verdict}` so a caller can assert more than the gate does."""
     from app.services.chatbot import engine as engine_mod
@@ -206,6 +220,8 @@ def run_case(payload: dict[str, Any], case_id: str, session_factory, stub_parser
     for step_no, turn in enumerate(turns, start=1):
         _apply_switches(session_factory, turn.get("switches"))
         tool_calls = _install_stubs(monkeypatch, stub_parser, turn=turn)
+        if "extractor" in turn:
+            _install_extractor(monkeypatch, turn["extractor"])
         envelope = _envelope(turn, message_id=f"ZZT-rpt-replay-{step_no}-{abs(hash(case_id))}", state=state)
         result = engine_mod.run_turn(envelope, session_factory=session_factory)
         _compare(case_id, step_no, turn.get("expected") or {}, result, failures, turn=turn, tool_calls=tool_calls)

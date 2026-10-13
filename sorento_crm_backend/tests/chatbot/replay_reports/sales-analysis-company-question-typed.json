@@ -1,0 +1,478 @@
+{
+ "note": "Company-wide sales analysis: the company question answered by the company name typed, then a basis narrowing that keeps the company and period.",
+ "seed": {
+  "brands": [
+   {
+    "id": "00000000-0000-0000-0000-00000000b801",
+    "brand_code": "ZZTZRX",
+    "brand_name": "Zorvex",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000b802",
+    "brand_code": "ZZTMCH",
+    "brand_name": "Mochi",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ],
+  "sales_agents": [
+   {
+    "id": "00000000-0000-0000-0000-00000000a801",
+    "sales_agent": "AGENT ALPHA",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   },
+   {
+    "id": "00000000-0000-0000-0000-00000000a802",
+    "sales_agent": "AGENT BRAVO",
+    "company_id": "00000000-0000-0000-0000-000000000001"
+   }
+  ]
+ },
+ "turns": [
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000810,
+     "firstName": "ZZT-900000810",
+     "lastName": "",
+     "phone": "+60900000810",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000810
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000810,
+      "messageId": "zzt-rpt-900000810-1",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "company sales by channel this year"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "sales",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "replace_combine",
+    "domain_in_message": true,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_analysis",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": "delivered",
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_analysis",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "rows": "channel",
+      "cols": "year",
+      "basis": "delivered",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31"
+     },
+     "envelope": {
+      "result_type": "sales_analysis",
+      "attachments": [],
+      "has_result": true,
+      "response": "Zorvex Trading or Mochi Trading?",
+      "company_options": [
+       "Zorvex Trading",
+       "Mochi Trading"
+      ]
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Zorvex Trading or Mochi Trading?"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000810,
+     "firstName": "ZZT-900000810",
+     "lastName": "",
+     "phone": "+60900000810",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000810
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000810,
+      "messageId": "zzt-rpt-900000810-2",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "zorvex"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "sales",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": "2026-01-01",
+    "date_filter_end": "2026-12-31",
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_analysis",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": "delivered",
+    "sales_company": "Zorvex Trading",
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_analysis",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "rows": "channel",
+      "cols": "year",
+      "basis": "delivered",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "company": "Zorvex Trading"
+     },
+     "envelope": {
+      "result_type": "sales_analysis",
+      "attachments": [],
+      "has_result": true,
+      "response": "Sales by channel, Zorvex Trading\nBasis: Delivered\nPeriod: 2026-01-01 to 2026-12-31\nDealer 2026: RM 5,000.00\nProject 2026: RM 2,000.00"
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Sales by channel, Zorvex Trading",
+     "Period: 2026-01-01 to 2026-12-31"
+    ]
+   }
+  },
+  {
+   "envelope": {
+    "contact": {
+     "id": 900000810,
+     "firstName": "ZZT-900000810",
+     "lastName": "",
+     "phone": "+60900000810",
+     "custom_fields": []
+    },
+    "ingress": "console",
+    "is_test": true,
+    "mode": "chat-stateful",
+    "scope": "chat-ui",
+    "message": {
+     "contact": {
+      "id": 900000810
+     },
+     "event_type": "message.received",
+     "message": {
+      "contactId": 900000810,
+      "messageId": "zzt-rpt-900000810-3",
+      "traffic": "incoming",
+      "message": {
+       "type": "text",
+       "text": "ordered not delivered"
+      }
+     }
+    }
+   },
+   "verdict": {
+    "message_type": "business_query",
+    "intent_hint": "check_order",
+    "domain_hint": "sales",
+    "scope_intent": null,
+    "is_affirmative": null,
+    "user_goal": "checking a report",
+    "continuation": false,
+    "access_levels": [],
+    "broaden_axis": null,
+    "broaden_to": null,
+    "date_mode": null,
+    "date_filter_start": null,
+    "date_filter_end": null,
+    "match_mode": "and",
+    "demand_qty": null,
+    "entities": [],
+    "entity_op": "reuse",
+    "domain_in_message": false,
+    "requested_attributes": [],
+    "contains_flyer": false,
+    "reference_positions": [],
+    "reference_target": null,
+    "person_mention": null,
+    "is_active": null,
+    "order_status": "sales_analysis",
+    "group_by": null,
+    "top_n": null,
+    "sales_channel": null,
+    "rank_by": null,
+    "basis": null,
+    "rank_group": null,
+    "rank_direction": null,
+    "sort_by": null,
+    "sort_dir": null,
+    "ranking_refine": null,
+    "ranking_drill": null,
+    "measure": null,
+    "sales_basis": "ordered",
+    "sales_company": null,
+    "promotion_kind": null,
+    "correction": false,
+    "self_reference": false,
+    "routing": {
+     "suggested_team": null,
+     "suggested_agent": null
+    },
+    "escalation": {
+     "is_escalation_confirmation": false,
+     "company_pick": null
+    },
+    "document": [],
+    "status": null,
+    "asks": null,
+    "topic_reset": false,
+    "proceed_anyway": null,
+    "open_question_answer": {
+     "mode": null,
+     "picked": [],
+     "items": [],
+     "qty_for_all": null
+    },
+    "low_stock": {
+     "group_by": null,
+     "categories": [],
+     "all_categories": null,
+     "brands": [],
+     "suppliers": []
+    },
+    "chat_report": null,
+    "po_refs": null,
+    "anaphora": {
+     "backward_reference": false
+    },
+    "profile_statements": null
+   },
+   "access": {
+    "allowed": true,
+    "decision": "allow",
+    "agent_name": "General Enquiries",
+    "attributes": [
+     "sales_orders.sales_report"
+    ],
+    "all_attributes_allowed": null
+   },
+   "tool_results": [
+    {
+     "tool": "crm_sales_analysis",
+     "args": {
+      "contact_id": "x",
+      "space_id": "x",
+      "view": null,
+      "_diagnostics": null,
+      "access_levels": [],
+      "date_mode": null,
+      "is_active": null,
+      "rows": "channel",
+      "cols": "year",
+      "basis": "ordered",
+      "date_from": "2026-01-01",
+      "date_to": "2026-12-31",
+      "company": "Zorvex Trading"
+     },
+     "envelope": {
+      "result_type": "sales_analysis",
+      "attachments": [],
+      "has_result": true,
+      "response": "Sales by channel, Zorvex Trading\nBasis: Delivered\nPeriod: 2026-01-01 to 2026-12-31\nDealer 2026: RM 5,000.00\nProject 2026: RM 2,000.00"
+     }
+    }
+   ],
+   "expected": {
+    "branch_kind": "business_query",
+    "canned": [
+     "Sales by channel, Zorvex Trading"
+    ]
+   }
+  }
+ ]
+}
