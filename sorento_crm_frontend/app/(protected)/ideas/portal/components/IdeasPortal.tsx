@@ -211,7 +211,7 @@ function ChangelogTab({ enabled }: { enabled: boolean }) {
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{item.ideaNumber}</span>
             <Link
               href={`/ideas/portal/${item.id}`}
-              className="line-clamp-2 min-w-0 flex-1 break-words text-sm font-medium text-primary hover:underline"
+              className="min-w-0 flex-1 break-words text-sm font-medium text-primary hover:underline"
               title={item.title ?? item.ideaNumber ?? undefined}
             >
               {item.title ?? item.ideaNumber}

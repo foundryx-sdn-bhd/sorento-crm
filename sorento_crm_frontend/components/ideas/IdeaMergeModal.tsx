@@ -127,10 +127,16 @@ export function IdeaMergeModal({
     .map((id) => known.get(id))
     .filter((i): i is Idea => !!i);
   useEffect(() => {
+    if (!open) return;
+    // The dialog body mounts in a portal after `open` flips, so measure on the next frame too.
     measure();
+    const frame = requestAnimationFrame(measure);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [measure, selectedIds.length]);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measure);
+    };
+  }, [measure, open, selectedIds.length]);
 
   const effectiveSurvivor = columns.some((c) => c.id === survivorId)
     ? survivorId
