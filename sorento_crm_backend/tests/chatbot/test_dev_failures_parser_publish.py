@@ -143,3 +143,7 @@ def test_stock_plus_last_in_keeps_the_message_order() -> None:
     line = next(l for l in ADDENDUM_FILE.read_text(encoding="utf-8").splitlines() if "last receipt" in l)
     assert "ordered as ASKS says" in line
     assert "then spo_allocation" not in line
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

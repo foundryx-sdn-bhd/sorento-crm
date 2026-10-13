@@ -105,3 +105,9 @@ def test_migration_publishes_a_new_version_label_unmoved() -> None:
         assert label_after is not None and label_after.version_id == version_before, (
             "publish() must never move the production label"
         )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

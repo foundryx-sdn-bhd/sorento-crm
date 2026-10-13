@@ -107,7 +107,10 @@ def test_a_second_donor_read_against_another_need_issues_no_sql(api):
     )
     fact = facts["line"]
     first = supply.borrow_candidates_for(fact, need=Decimal("40"))
-    assert [row["warehouse_code"] for row in first] == [donor_wh.warehouse_code]
+    # BORROW-OWN-LOC: the line's own location is always the last row.
+    assert [row["warehouse_code"] for row in first] == [
+        donor_wh.warehouse_code, world.own_wh.warehouse_code,
+    ]
     assert first[0]["available_after_need"] == "60"
 
     statements = []
@@ -122,6 +125,8 @@ def test_a_second_donor_read_against_another_need_issues_no_sql(api):
     finally:
         event.remove(connection, "before_cursor_execute", count)
 
-    assert [row["warehouse_code"] for row in second] == [donor_wh.warehouse_code]
+    assert [row["warehouse_code"] for row in second] == [
+        donor_wh.warehouse_code, world.own_wh.warehouse_code,
+    ]
     assert second[0]["available_after_need"] == "55"
     assert statements == [], "the donors are read from the request's own caches"

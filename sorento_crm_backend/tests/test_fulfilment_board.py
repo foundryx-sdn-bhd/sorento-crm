@@ -1743,9 +1743,15 @@ def test_a_buy_the_board_cannot_avoid_still_says_borrowing_is_possible():
         assert contribution["qty_proposed_buy"] == "10"
         assert contribution["qty_borrow_available"] == "25"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
         assert "borrow" in contribution["sources"][-1]["reason"].lower()
+        # BORROW-OWN-LOC review S4: the own location's 0-free row is never named as a place
+        # borrowing is possible from.
+        offered = contribution["sources"][-1]["reason"].split("Borrowing is possible from")[1]
+        assert own.warehouse_code not in offered, offered
         # AC-V4: the note and step 1 are ONE statement. This line's location carries no
         # ownership group, so step 1 has no "our locations" to draw from - and the donor is
         # still on the row's own candidate list, which is what the Buy's sentence names.
@@ -4280,7 +4286,9 @@ def test_the_borrow_step_offers_what_it_found_and_takes_none_of_it():
         # The donor is still OFFERED, on the contribution's own list.
         assert contribution["qty_borrow_available"] == "25"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
 
 
@@ -5905,7 +5913,9 @@ def test_a_reserve_met_line_still_carries_its_donors():
         assert contribution["qty_proposed_reserve"] == "0"
         assert contribution["qty_proposed_buy"] == "10"
         assert [c["warehouse_code"] for c in contribution["borrow_candidates"]] == [
-            elsewhere.warehouse_code
+            elsewhere.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
         candidate = contribution["borrow_candidates"][0]
         assert candidate["warehouse_id"] == str(elsewhere.id)
@@ -5939,9 +5949,11 @@ def test_a_covered_line_still_carries_the_donors_it_could_be_amended_to():
         assert contribution["so_qty_ahead"] is None
         candidates = contribution["borrow_candidates"]
         # The frozen donor's 43 is now a confirmed hold and out of its free stock, so it is
-        # not offered again; the spare location is. The line's own location is inside its
-        # Reserve reach and is never a donor.
-        assert [c["warehouse_code"] for c in candidates] == [spare.warehouse_code]
+        # not offered again; the spare location is. The line's own location is offered last
+        # as a plain location borrow (BORROW-OWN-LOC, owner 13 Oct 2026).
+        assert [c["warehouse_code"] for c in candidates] == [
+            spare.warehouse_code, world["own"].warehouse_code,
+        ]
         assert candidates[0]["warehouse_id"] == str(spare.id)
         assert candidates[0]["free_qty"] == "7"
         # Nothing is still being bought on a wholly borrowed line, so the ranking has no

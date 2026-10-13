@@ -85,3 +85,9 @@ def test_the_chatbot_keys_the_owner_reported_are_among_them() -> None:
         reply_keys = {name for name in PROMPT_KEYS if name.startswith("chatbot_reply_")}
         assert reply_keys, "the canned-reply keys are registered from the copy table"
         assert reply_keys <= seeded
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

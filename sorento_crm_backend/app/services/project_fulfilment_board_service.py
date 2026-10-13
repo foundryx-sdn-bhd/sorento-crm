@@ -2922,7 +2922,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:
@@ -3327,8 +3328,13 @@ class FulfilmentBoardService:
             if outside_window
             else [c for c in row.borrow_candidates if c.get("rung") == "group_borrow"]
         )
+        # Less any row with nothing free: the line's own location is always offered as a
+        # plain Borrow (BORROW-OWN-LOC) at 0 free, and "borrowing is possible from" a place
+        # with nothing to give would break AC-V4.
         ungrouped_donors = (
-            [] if outside_window or fact.group_code else list(row.borrow_candidates)
+            []
+            if outside_window or fact.group_code
+            else [c for c in row.borrow_candidates if _dec(c.get("free_qty")) > _ZERO]
         )
 
         # ------------------------------------------- 0. Can the site pool spare us a share?
