@@ -284,3 +284,59 @@ def test_po_detail_shows_received_without_the_cancel(env):
         PurchaseOrder.po_number == "ZZ-CX-PO1")).scalar()
     line = PurchaseOrderService(env.db).get_one(str(po_id))["lines"][0]
     assert (line["qty_received"], line["qty_cancelled"]) == (4.0, 6.0)
+
+
+# ======================================================================= owner hand test (13 Oct)
+def test_so_detail_names_the_cancel_documents_and_how_they_matched(env):
+    """Owner: "where do I see the cancelled quantity?" Each SO line carries the cancel docs
+    matched to it, with the qty and the match reason, through the response schema."""
+    from app.schemas.scm_orders import SalesOrderLine as LineSchema
+    from app.services.scm.sales_order_service import SalesOrderService
+
+    _push_so(env, "ZZ-CX-SQ1", ordered=10, delivered=10)
+    _push_xs(env, "ZZ-CX-SQ1", 6)
+    so_id = str(_line(env, "ZZ-CX-SQ1").sales_order_id)
+    line = SalesOrderService(env.db).get(so_id)["lines"][0]
+    dumped = LineSchema.model_validate(line).model_dump()
+    assert dumped["qty_cancelled"] == 6.0
+    assert dumped["cancels"] == [{"doc_no": "ZZXS-950001", "qty": 6.0, "match_reason": "line_key"}]
+
+
+def test_so_detail_leaves_out_a_voided_cancel_document(env):
+    from app.services.scm.sales_order_service import SalesOrderService
+
+    _push_so(env, "ZZ-CX-SQ2", ordered=10, delivered=10)
+    _push_xs(env, "ZZ-CX-SQ2", 6)
+    record = {"DocKey": 950001, "DocNo": "ZZXS-950001", "DocDate": "2026-10-01",
+              "Cancelled": "T", "LastModified": "2026-10-02T10:00:00", "Details": [
+                  {"DtlKey": 951001, "Seq": 1, "ItemCode": _code_of_ref(env, env.product_ref),
+                   "Qty": 6, "FromDocType": "SO", "FromDocNo": "ZZ-CX-SQ2", "FromDocDtlKey": 5001}]}
+    env.client.post(XS_INGEST, json={"companyCode": env.company_a_code, "book": "db1",
+                                     "records": [record]})
+    so_id = str(_line(env, "ZZ-CX-SQ2").sales_order_id)
+    line = SalesOrderService(env.db).get(so_id)["lines"][0]
+    assert line["cancels"] == [] and line["qty_cancelled"] == 0.0
+
+
+def test_po_detail_names_the_cancel_documents(env):
+    from app.models.procurement import PurchaseOrder
+    from app.schemas.scm_orders import PurchaseOrderLine as LineSchema
+    from app.services.scm.purchase_order_service import PurchaseOrderService
+    from tests.test_ingest_documents import _po_line, _po_record
+
+    record = _po_record(env, number="ZZ-CX-PQ1", ref="ZZTDOC:PO:ZZ-CX-PQ1", lines=[
+        _po_line(env, ref="SRT_DB:7001:7101", qty_ordered=10, qty_received=10)])
+    env.post("/api/v1/external/ingest/purchase_orders", [record])
+    xp = {"DocKey": 960001, "DocNo": "ZZXP-960001", "DocDate": "2026-10-01", "Cancelled": "F",
+          "LastModified": "2026-10-01T10:00:00",
+          "Details": [{"DtlKey": 961001, "Seq": 1, "ItemCode": _code_of_ref(env, env.product_ref),
+                       "Qty": 3, "FromDocType": "PO", "FromDocNo": "ZZ-CX-PQ1",
+                       "FromDocDtlKey": 0}]}
+    env.client.post("/api/v1/external/ingest/cancel_purchase_orders", json={
+        "companyCode": env.company_a_code, "book": "db1", "records": [xp]})
+    env.db.expire_all()
+    po_id = env.db.execute(select(PurchaseOrder.id).where(
+        PurchaseOrder.po_number == "ZZ-CX-PQ1")).scalar()
+    line = PurchaseOrderService(env.db).get_one(str(po_id))["lines"][0]
+    assert LineSchema.model_validate(line).model_dump()["cancels"] == [
+        {"doc_no": "ZZXP-960001", "qty": 3.0, "match_reason": "item"}]
