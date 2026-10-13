@@ -457,8 +457,11 @@ def test_seeded_prices_are_only_the_sourced_ones():
 
     assert set(prices.SEED_PRICES) == {"gpt-5.4-mini"}
     with pg_session() as db:
+        # From an empty table (rolled back), so the row read is the one THIS seed wrote.
+        db.execute(text("DELETE FROM llm_model_prices"))
         prices.seed_prices(db)
         prices.seed_prices(db)  # idempotent
+        assert db.execute(text("SELECT count(*) FROM llm_model_prices")).scalar() == 1
         got = db.execute(text(
             "SELECT input_usd_per_1m, cached_input_usd_per_1m, output_usd_per_1m FROM llm_model_prices WHERE model = 'gpt-5.4-mini'"
         )).one()
