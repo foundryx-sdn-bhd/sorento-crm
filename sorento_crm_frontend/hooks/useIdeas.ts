@@ -7,6 +7,7 @@ import {
   getBoard,
   getIdea,
   getMergedChildren,
+  getSimilarIdeas,
   listComments,
   listIdeas,
   mergeIdeas,
@@ -50,6 +51,15 @@ export function useIdeaMergedQuery(id: string | null) {
     queryKey: [...IDEAS_KEY, 'merged', id],
     queryFn: () => getMergedChildren(id as string),
     enabled: !!id,
+  });
+}
+
+export function useSimilarIdeasQuery(id: string | null) {
+  return useQuery({
+    queryKey: [...IDEAS_KEY, 'similar', id],
+    queryFn: () => getSimilarIdeas(id as string),
+    enabled: !!id,
+    retry: 0,
   });
 }
 
