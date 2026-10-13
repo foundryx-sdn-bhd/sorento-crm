@@ -856,3 +856,21 @@ def test_xp_without_a_key_over_two_spo_lines_is_exact_when_it_is_every_receipt(e
     env.db.expire_all()
     assert [env.db.get(SPOAllocation, i).qty_cancelled for i in ids] == [Decimal("5"),
                                                                         Decimal("3")]
+
+
+def test_the_old_group_is_found_when_its_first_line_is_gone(env):
+    """Re-review should-fix 1: the group's first stored line was removed from the SO, so the old
+    group is found through the next one. XS-B moves to P2; XS-A alone now faces one line."""
+    lines = _whole_pair(env)
+    first = _cancel_lines(env, 950002)[952001].candidate_line_ids[0]
+    env.db.execute(AutocountCancelLine.__table__.update()
+                   .where(AutocountCancelLine.sales_order_line_id == first)
+                   .values(sales_order_line_id=None))
+    env.db.delete(env.db.get(SalesOrderLine, first))
+    env.db.commit()
+    _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, item="ZZAC-P2", qty=6, from_dtl=0)],
+                       modified="2026-10-02T10:00:00.000")])
+    remaining = next(v for v in lines.values() if v != first)
+    stored = _cancel_lines(env, 950001)[951001]
+    assert (stored.match_reason, stored.sales_order_line_id) == ("item", remaining)

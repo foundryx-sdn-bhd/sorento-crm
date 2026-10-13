@@ -380,6 +380,7 @@ class CancelLineMatcher:
             dos = (self.db.query(OrderLine.quantity, OrderLine.sales_order_line_id,
                                  OrderLine.location_code)
                    .join(Order, Order.id == OrderLine.order_id)
+                   # company_id: defence in depth over the ORM company scope, not instead of it
                    .filter(Order.company_id == self.company_id, Order.is_cancelled.is_(False),
                            or_(OrderLine.sales_order_line_id.in_(ids), named) if ids else named)
                    .all())
@@ -513,14 +514,23 @@ class CancelLineMatcher:
                 group = self._target_group(kind, target, str(getattr(line, column)))
                 if group:
                     out.add(group)
-        if line.candidate_line_ids:
-            first = str(line.candidate_line_ids[0])
-            for target in (("so",) if kind == KIND_CANCEL_SO else ("po", "spo")):
-                group = self._target_group(kind, target, first)
-                if group:
-                    out.add(group)
-                    break
+        # Every stored line is in the one group; the first that still exists names it (a line
+        # the order push removed resolves to nothing).
+        targets = ("so",) if kind == KIND_CANCEL_SO else ("po", "spo")
+        for candidate in line.candidate_line_ids or []:
+            group = next((g for g in (self._target_group(kind, t, str(candidate)) for t in targets)
+                          if g), None)
+            if group:
+                out.add(group)
+                break
         return out
+
+    def groups_of(self, kind: str, line: AutocountCancelLine) -> set[_Group]:
+        """Every group a line counts in, before it is removed: the one it was decided in and
+        the one it names now."""
+        out = self._old_groups(kind, line) if kind not in _STORED_ONLY else set()
+        current = self._key_less_group(kind, line) if kind not in _STORED_ONLY else None
+        return out | ({current} if current else set())
 
     def _key_less_group(self, kind: str, line: AutocountCancelLine) -> Optional[_Group]:
         """The group a key-less line names now, live or not, or None."""
@@ -534,8 +544,8 @@ class CancelLineMatcher:
 
     # ------------------------------------------------------------- the pass
     def match_all(self, lines: Iterable[AutocountCancelLine], kinds: dict[str, str],
-                  live: dict[str, bool], assign: Callable[[AutocountCancelLine, _Match, str], None]
-                  ) -> None:
+                  live: dict[str, bool], assign: Callable[[AutocountCancelLine, _Match, str], None],
+                  extra_groups: Iterable[_Group] = ()) -> None:
         """Decide every line asked about, plus every other key-less line sharing a group with
         them (a group is decided whole), handing each answer to `assign`.
 
@@ -543,7 +553,7 @@ class CancelLineMatcher:
         group's unexplained transfer subtracts them; deciding a group before they land would
         make the answer depend on which document arrived first."""
         answers: dict[str, tuple[AutocountCancelLine, _Match, str]] = {}
-        groups: set[_Group] = set()
+        groups: set[_Group] = set(extra_groups)
         for line in lines:
             kind = kinds[str(line.cancel_doc_id)]
             if kind in _STORED_ONLY:
@@ -763,11 +773,12 @@ def _latest_doc_no(db: Session, so_line_id: str) -> str:
 
 def rematch_lines(db: Session, company_id: str, lines: Iterable[AutocountCancelLine],
                   kinds: dict[str, str], touched: Touched,
-                  counts: Optional[dict[str, int]] = None) -> None:
-    """Match the lines (and everything sharing a group with them) again from the current
-    state; old and new targets (and groups) are both touched. `counts` tallies status:reason."""
-    lines = list(lines)
-    if not lines:
+                  counts: Optional[dict[str, int]] = None, groups: Iterable[Any] = ()) -> None:
+    """Match the lines (and everything sharing a group with them, plus `groups`: those of lines
+    already removed) again from the current state; old and new targets (and groups) are both
+    touched. `counts` tallies status:reason."""
+    lines, groups = list(lines), list(groups)
+    if not lines and not groups:
         return
     doc_ids = {str(l.cancel_doc_id) for l in lines}
     live = {
@@ -790,7 +801,7 @@ def rematch_lines(db: Session, company_id: str, lines: Iterable[AutocountCancelL
             key = f"{answer.status}:{answer.reason}"
             counts[key] = counts.get(key, 0) + 1
 
-    CancelLineMatcher(db, company_id).match_all(lines, kinds, live, assign)
+    CancelLineMatcher(db, company_id).match_all(lines, kinds, live, assign, groups)
 
 
 # ============================================================================ the service
@@ -815,6 +826,7 @@ class AutocountCancelIngestService:
         result = IngestResult(dry_run=dry_run)
         touched = Touched()
         to_match: list[AutocountCancelLine] = []
+        self._removed_groups: set = set()
         try:
             for raw in records:
                 result.records.append(self._ingest_one(entity_type, raw, touched, to_match))
@@ -852,7 +864,8 @@ class AutocountCancelIngestService:
                 lines = {id(l): l for l in [*to_match, *waiting]}.values()
                 kinds = self._kinds(lines)
                 counts: dict[str, int] = {}
-                rematch_lines(self.db, self.company_id, lines, kinds, touched, counts)
+                rematch_lines(self.db, self.company_id, lines, kinds, touched, counts,
+                              self._removed_groups)
                 derived = recompute_cancelled(self.db, touched)
                 self._warn_unmatched(entity, result)
             savepoint.commit()
@@ -1007,9 +1020,10 @@ class AutocountCancelIngestService:
         for dtl_key, line in existing.items():
             if dtl_key not in seen:
                 touched.add_from(line)
-                # Review B1: what the rest of its group adds up to changes, so the group's other
-                # lines are decided again (the removed line itself is gone).
-                to_match.extend(l for l in self._group_siblings(line) if l not in to_match)
+                # Review B1: what the rest of its group adds up to changes, so the group is
+                # decided again at the end of the batch (the removed line itself is gone).
+                self._removed_groups |= CancelLineMatcher(self.db, self.company_id).groups_of(
+                    kind, line)
                 self.db.delete(line)
                 changed = True
         if changed:
@@ -1019,20 +1033,6 @@ class AutocountCancelIngestService:
         if created:
             return IngestOutcome.CREATED, str(row.id), to_match
         return (IngestOutcome.UPDATED if changed else IngestOutcome.UNCHANGED), str(row.id), to_match
-
-    def _group_siblings(self, line: AutocountCancelLine) -> list[AutocountCancelLine]:
-        """The key-less lines naming the same document and item (any doc, live or not), so the
-        group a removed line counted in is re-decided. Bounded like the waiting retry."""
-        if not line.from_doc_no or not line.item_code:
-            return []
-        return (self.db.query(AutocountCancelLine)
-                .filter(AutocountCancelLine.company_id == self.company_id,
-                        AutocountCancelLine.from_doc_no == line.from_doc_no,
-                        AutocountCancelLine.item_code == line.item_code,
-                        AutocountCancelLine.from_dtl_key.is_(None),
-                        AutocountCancelLine.id != line.id)
-                .order_by(AutocountCancelLine.created_at.desc(), AutocountCancelLine.id)
-                .limit(MAX_WAITING_LINES).all())
 
     # ================================================================== deletions
     def delete(self, entity: str, doc_keys: list[Any], date_from: date, date_to: date, *,
