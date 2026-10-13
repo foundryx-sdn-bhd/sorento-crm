@@ -756,6 +756,31 @@ describe('amendSummary: what the decided row reads', () => {
     ).toBe('Own 20 BRW-BB · Borrow 10 BRW-IB · Buy 13');
   });
 
+  it('reads a borrow at the line own location as a Borrow beside the Reserve there', () => {
+    // BORROW-OWN-LOC (owner, 13 Oct 2026): "take 98 own, borrow 2 from my own location". The
+    // borrow is never folded into the Own segment, so the two quantities are counted once each.
+    expect(
+      amendSummary(
+        {
+          verdict: 'amended',
+          reserve: [{ warehouse_id: 'wh-own', location: 'BRW-BB', qty: '98' }],
+          borrow: [
+            {
+              source: 'other_location',
+              warehouse_id: 'wh-own',
+              warehouse_code: 'BRW-BB',
+              qty: '2',
+              reason: 'Another order holds these.',
+            },
+          ],
+          buy_qty: '0',
+          timely_spo_qty: '0',
+        },
+        'BRW-BB',
+      ),
+    ).toBe('Own 98 BRW-BB · Borrow 2 BRW-BB');
+  });
+
   it('splits a reserve that draws on two different kinds of stock', () => {
     // The pool and the agent's own group are two different answers, and the bar already
     // draws them as two segments. One "Reserve" word over both said neither.

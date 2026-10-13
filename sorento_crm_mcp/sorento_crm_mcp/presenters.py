@@ -444,6 +444,7 @@ def _orders_list(rows: list[dict], b: _Builder) -> None:
                 ("company_name", "Company", o.get("company_name")),
                 ("order_number", "Order Number", o.get("order_number")),
                 ("debtor_name", "Customer", o.get("debtor_name")),
+                ("branch_name", "Branch", o.get("branch_name")),
                 ("order_date", "Order Date", o.get("order_date")),
                 ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
                 ("order_status", "Status", o.get("order_status")),
@@ -461,6 +462,7 @@ def _orders_list(rows: list[dict], b: _Builder) -> None:
     # line (multi-company installs only) is not a DO field and is never gated.
     b.restrict("order_number", "delivery_orders.order_number")
     b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("branch_name", "delivery_orders.branch")
     b.restrict("order_date", "delivery_orders.order_date")
     b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
     b.restrict("order_status", "delivery_orders.status")
@@ -660,6 +662,7 @@ def _orders_by_product(rows: list[dict], b: _Builder) -> None:
                 ("company_name", "Company", o.get("company_name")),
                 ("order_number", "Order Number", o.get("order_number")),
                 ("debtor_name", "Customer", o.get("debtor_name")),
+                ("branch_name", "Branch", o.get("branch_name")),
                 ("order_date", "Order Date", o.get("order_date")),
                 ("actual_delivery_date", "Actual Delivery Date", o.get("actual_delivery_date")),
                 ("warehouse", "Warehouse", whs),
@@ -668,6 +671,7 @@ def _orders_by_product(rows: list[dict], b: _Builder) -> None:
         )
     b.restrict("order_number", "delivery_orders.order_number")
     b.restrict("debtor_name", "delivery_orders.customer")
+    b.restrict("branch_name", "delivery_orders.branch")
     b.restrict("order_date", "delivery_orders.order_date")
     b.restrict("actual_delivery_date", "delivery_orders.delivery_date")
     b.restrict("warehouse", "delivery_orders.warehouse")
@@ -693,7 +697,7 @@ def _orders_by_product(rows: list[dict], b: _Builder) -> None:
 # Delivery Date) reach every include_summary caller, n8n included - owner ruling 8 Sep.
 _SUMMARY_FIELDS = (
     ("customer", "Customer"),
-    ("customers", "Customers"),
+    ("customers", "Customer count"),
     ("product_code", "Product Code"),
     ("so_count", "SO"),
     ("so_date", "SO Date"),

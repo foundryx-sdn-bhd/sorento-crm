@@ -2061,6 +2061,7 @@ class FulfilmentBoardService:
                     "ack_state": ack_state,
                     "rejected_reason": None,
                     "rejected_by_name": None,
+                    "rejected_at": None,
                     "_row_id": str(row_id),
                     "redirected": bool(redirected_to_pool),
                 }
@@ -2092,6 +2093,7 @@ class FulfilmentBoardService:
                 "ack_state": None if answered_refusal else ack_state,
                 "rejected_reason": None,
                 "rejected_by_name": None,
+                "rejected_at": None,
                 # AC-RL-07: this ROW's own id (to address `links_for_rows`) and whether
                 # IT was redirected - popped/resolved below, never sent as `_row_id`.
                 "_row_id": str(row_id),
@@ -2124,6 +2126,7 @@ class FulfilmentBoardService:
             entry["ack_state"] = ACK_REJECTED
             entry["rejected_reason"] = reason
             entry["rejected_by_name"] = name
+            entry["rejected_at"] = rejected_at
         # A LINE WITH A LIVE INSTRUCTION IS ABOUT THAT INSTRUCTION. It replaces whatever
         # last-wins left standing, so the number the cell prints is the row that decides the
         # line and not a cancelled or refused one that happened to be written after it. A
@@ -2159,6 +2162,29 @@ class FulfilmentBoardService:
                 for link in links_by_row.get(row_id, [])
             ]
         return out
+
+    def open_refusals(self, core_line_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        """The board's own order-inquiry entry for each line purchasing has refused and CS
+        has not decided again, keyed by core line id - for the Sales Order page's Lines tab
+        (PR 1622 mock v3), so both screens read a refusal by the SAME rules
+        (`_order_inquiries`, answered once an active revision is confirmed after it)."""
+        ids = [str(x) for x in core_line_ids if x]
+        if not ids:
+            return {}
+        self._addressing = self._mirror_addressing(ids)
+        frozen, _proposals, _names = self._frozen_decisions()
+        entries = self._order_inquiries(
+            ids,
+            decided_at={
+                core_id: (decision or {}).get("confirmed_at")
+                for core_id, decision in frozen.items()
+            },
+        )
+        return {
+            core_id: entry
+            for core_id, entry in entries.items()
+            if entry.get("ack_state") == ACK_REJECTED
+        }
 
     def _frozen_decisions(
         self,
@@ -2896,7 +2922,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:
@@ -3301,8 +3328,13 @@ class FulfilmentBoardService:
             if outside_window
             else [c for c in row.borrow_candidates if c.get("rung") == "group_borrow"]
         )
+        # Less any row with nothing free: the line's own location is always offered as a
+        # plain Borrow (BORROW-OWN-LOC) at 0 free, and "borrowing is possible from" a place
+        # with nothing to give would break AC-V4.
         ungrouped_donors = (
-            [] if outside_window or fact.group_code else list(row.borrow_candidates)
+            []
+            if outside_window or fact.group_code
+            else [c for c in row.borrow_candidates if _dec(c.get("free_qty")) > _ZERO]
         )
 
         # ------------------------------------------- 0. Can the site pool spare us a share?

@@ -52,3 +52,9 @@ def test_report_records_run_metadata(tmp_path):
     assert rep["variants"] == "none"
     assert rep["cases"] == 2
     assert rep["started_at"]
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

@@ -321,7 +321,9 @@ class TestPrompt:
             LOW_STOCK_FILTERS_ADDENDUM,
             CHAT_REPORT_ADDENDUM,
             PO_REFS_ADDENDUM,
+            SUB_ASKS_ADDENDUM,
             REF_KINDS_ADDENDUM,
+            FIND_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
@@ -338,6 +340,7 @@ class TestPrompt:
         # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
         # PROMO-SUBJECT-FILTER: PROMOTION_KIND_ADDENDUM follows CANONICAL_CODE_ADDENDUM.
         # DEV-FAILURES RC-B: PORTAL_FORM_ADDENDUM sits between TRAP_SPECS_FALLBACK_BLOCK and MEMORY.
+        # CHAT-FIND (#1601): FIND_ADDENDUM follows REF_KINDS_ADDENDUM.
         from app.services.chatbot_parser_prompt import PORTAL_FORM_ADDENDUM, TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
@@ -346,8 +349,10 @@ class TestPrompt:
             + LOW_STOCK_FILTERS_ADDENDUM
             + REPORT_ASK_ADDENDUM
             + PO_REFS_ADDENDUM
+            + SUB_ASKS_ADDENDUM
             + CHAT_REPORT_ADDENDUM
             + REF_KINDS_ADDENDUM
+            + FIND_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
@@ -439,3 +444,7 @@ def test_the_migration_publishes_the_next_version_unlabelled_and_is_idempotent()
         module.publish(bind)
         again = db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").count()
         assert again == len(rows)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

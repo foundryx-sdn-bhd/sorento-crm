@@ -267,34 +267,35 @@ class TestPickerProbeArms:
 
     GATE = {"gate_clarification": "Which customer do you mean? Please choose:\n1. ACME SDN BHD"}
 
-    def test_an_unavailable_probe_renders_the_bare_picker(self) -> None:
-        out = pickers.annotate_customer(dict(self.GATE), probe=None, parser={})
-        assert out["escalate_message"] == self.GATE["gate_clarification"]
+    # PICKER-ONE (owner, 13 Oct 2026): the customer arm records what its probe measured
+    # as DATA (`customer_bases_with_do`); the line stamps come from `pickers.
+    # customer_stamp` over it and the roster prints through `compose_question`.
+
+    def test_an_unavailable_probe_is_not_measured(self) -> None:
+        out = resolve_gate.measure_customer_picker(dict(self.GATE), probe=None, parser={})
+        assert out["customer_bases_with_do"] is None
         assert out["customer_probe_hits"] is None
         assert out["customer_probe_skip_reason"] == "probe_unavailable"
+        assert pickers.customer_stamp("ACME SDN BHD", None) is None
 
-    def test_a_saturated_page_renders_the_bare_picker(self) -> None:
+    def test_a_saturated_page_is_not_measured(self) -> None:
         rows = [{"customer_name": "ACME SDN BHD"}] * pickers.PAGE_SATURATION
-        out = pickers.annotate_customer(dict(self.GATE), probe={"answers": rows}, parser={})
-        assert out["escalate_message"] == self.GATE["gate_clarification"]
+        out = resolve_gate.measure_customer_picker(dict(self.GATE), probe={"answers": rows}, parser={})
+        assert out["customer_bases_with_do"] is None
         assert out["customer_probe_skip_reason"] == "page_saturated"
 
-    def test_a_defaulted_window_bounds_the_miss_claim(self) -> None:
-        """The WINDOW is still reported and still shapes the trailing sentence; the
-        per-line suffix is not hedged with it any more (owner ruling A, console pass 3,
-        6 Sep 2026 - "N. <name> (<company code>) - has DO" / "- no DO"). Which window was
-        measured stays on `customer_probe_window_days`, where a reader can act on it."""
-        out = pickers.annotate_customer(dict(self.GATE), probe={"answers": []}, parser={})
+    def test_a_defaulted_window_is_reported(self) -> None:
+        """Which window was measured stays on `customer_probe_window_days`; the line
+        itself is never hedged with it (owner ruling A, console pass 3, 6 Sep 2026)."""
+        out = resolve_gate.measure_customer_picker(dict(self.GATE), probe={"answers": []}, parser={})
         assert out["customer_probe_window_days"] == 90
-        assert out["escalate_message"].endswith("None of these have a recent DO.")
-        assert " - no DO" in out["escalate_message"]
+        assert out["customer_bases_with_do"] == []
 
-    def test_a_customer_dated_window_makes_the_plain_claim(self) -> None:
-        out = pickers.annotate_customer(
+    def test_a_customer_dated_window_reports_no_default(self) -> None:
+        out = resolve_gate.measure_customer_picker(
             dict(self.GATE), probe={"answers": []}, parser={"date_filter_start": "2026-01-01"}
         )
         assert out["customer_probe_window_days"] is None
-        assert out["escalate_message"].endswith("None of these have a matching DO.")
 
     def test_an_order_with_no_delivery_order_is_not_counted_as_one(self) -> None:
         """The substantive half of the ruling: `crm_order_management_orders_list` returns
@@ -309,13 +310,15 @@ class TestPickerProbeArms:
                 ],
             }
         ]
-        out = pickers.annotate_customer(dict(self.GATE), probe={"answers": rows}, parser={})
-        assert " - no DO" in out["escalate_message"], out["escalate_message"]
+        out = resolve_gate.measure_customer_picker(dict(self.GATE), probe={"answers": rows}, parser={})
+        bases = set(out["customer_bases_with_do"])
+        assert pickers.customer_stamp("ACME SDN BHD", bases) == "no DO"
         assert out["customer_probe_hits"] == 0
 
         rows[0]["fields"][1]["value"] = "2026-09-01"
-        out = pickers.annotate_customer(dict(self.GATE), probe={"answers": rows}, parser={})
-        assert " - has DO" in out["escalate_message"], out["escalate_message"]
+        out = resolve_gate.measure_customer_picker(dict(self.GATE), probe={"answers": rows}, parser={})
+        bases = set(out["customer_bases_with_do"])
+        assert pickers.customer_stamp("ACME SDN BHD", bases) == "has DO"
         assert out["customer_probe_hits"] == 1
 
     def test_the_incoming_picker_keeps_the_numbering_and_the_order(self) -> None:

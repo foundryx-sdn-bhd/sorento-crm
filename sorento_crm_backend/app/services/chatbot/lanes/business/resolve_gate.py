@@ -27,7 +27,7 @@ Nodes reproduced, in edge order::
     If-incoming-picker    require_specific && domain === 'incoming'
     If-customer-picker    customer_probe_entities.length > 0
     probe-*               services.probe
-    annotate-*-picker     pickers.annotate_incoming / annotate_customer
+    annotate-*-picker     pickers.annotate_incoming / measure_customer_picker (data only)
     resolve-exit-*        the four arms
 """
 from __future__ import annotations
@@ -92,9 +92,7 @@ OUTSTANDING_ORDER_STATUS: frozenset[str] = frozenset(
 )
 
 # The probe's injected default window, from `probe-customer-orders`' semantic_input
-# expression (`$now.minus({days: 90})`). `annotate-customer-picker` mirrors this rule to
-# decide whether its miss claim says "no recent delivery" or "no delivery"; the two are
-# two halves of one sentence.
+# expression (`$now.minus({days: 90})`), reported on the measured picker item.
 CUSTOMER_PROBE_DEFAULT_WINDOW_DAYS = pickers.CUSTOMER_PROBE_WINDOW_DAYS
 
 
@@ -1086,6 +1084,40 @@ def if_customer_picker(gate: dict[str, Any]) -> bool:
     return len(jsc.array(probe_entities)) > 0
 
 
+def measure_customer_picker(
+    gate: dict[str, Any] | None, *, probe: Any, parser: dict[str, Any] | None
+) -> dict[str, Any]:
+    """The customer picker's probe answer, kept as DATA on the gate item (PICKER-ONE,
+    owner 13 Oct 2026). `customer_bases_with_do` is `pickers.customer_bases_with_do`'s
+    answer (a sorted list, or `None` for NOT MEASURED); the bridge stamps the roster's
+    options from it through `pickers.customer_stamp` and prints them with
+    `compose_question`, the one renderer every customer picker uses. It used to rewrite
+    the gate's own picker text instead (`annotate_customer`), which is how one customer
+    read three different ways in three pickers.
+
+    Mutates and returns `gate`, as the incoming annotator does, so the `offer` exit
+    carries the gate's own keys plus these.
+    """
+    out = gate if isinstance(gate, dict) else {}
+    parser = parser if isinstance(parser, dict) else {}
+    # WHICH WINDOW WAS PROBED: the parser's own bounds when the customer named one, else
+    # the injected 90-day default - a fact about the measurement, for the trace.
+    probe_windowed = (
+        jsc.get(parser, "date_filter_start") is None and jsc.get(parser, "date_filter_end") is None
+    )
+    out["customer_probe_window_days"] = CUSTOMER_PROBE_DEFAULT_WINDOW_DAYS if probe_windowed else None
+    bases = pickers.customer_bases_with_do(probe)
+    out["customer_bases_with_do"] = sorted(bases) if bases is not None else None
+    out["customer_probe_hits"] = len(bases) if bases is not None else None
+    if bases is not None:
+        out["customer_probe_skip_reason"] = None
+    elif pickers.probe_rows(probe) is None:
+        out["customer_probe_skip_reason"] = "probe_unavailable"
+    else:
+        out["customer_probe_skip_reason"] = "page_saturated"
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # The probes' inputs (the executeWorkflow parameter expressions)
 # --------------------------------------------------------------------------- #
@@ -1584,13 +1616,10 @@ def run(
                 space_id=space_id,
             )
         )
-        annotated = pickers.annotate_customer(
-            _snapshot(picker_gate), probe=probe, parser=parser
-        )
+        annotated = measure_customer_picker(_snapshot(picker_gate), probe=probe, parser=parser)
         if outstanding_ask:
-            # The annotator's UNPROBED arm renders exactly what R20 wants - the bare
-            # picker, no suffixes, no closing claim - so its wording is untouched. Only
-            # its reason is, because "probe_unavailable" would tell the operator a probe
+            # NOT MEASURED is exactly what R20 wants - no stamp on any line. Only the
+            # reason differs, because "probe_unavailable" would tell the operator a probe
             # failed when one was deliberately not run.
             annotated["customer_probe_skip_reason"] = "outstanding_ask"
         # `annotate_incoming` stays NULL on this arm: the customer annotator is not the

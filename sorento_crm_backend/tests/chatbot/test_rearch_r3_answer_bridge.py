@@ -54,7 +54,7 @@
 is the canned-copy object node replay itself grades against, and every payload below is
 either hand-built in the shape the plan's own citations document, or produced by calling
 the REAL production functions the plan names (`answer.access_level_choice_message`,
-`pickers.annotate_customer`, `pickers.annotate_incoming`, `tail.outcome.escalate_catalog`,
+`resolve_gate.measure_customer_picker`, `pickers.annotate_incoming`, `tail.outcome.escalate_catalog`,
 `tail.outcome.build_outcome`, `tail.reply_ladder.compose_reply`) so the "expected" text in
 every assertion is computed, never retyped by hand.
 """
@@ -361,26 +361,50 @@ class TestAccessAskArmViaTierAskFetch:
 # --------------------------------------------------------------------------- #
 
 
+_CUST_UUIDS = ["c0000000-0000-4000-8000-000000000001", "c0000000-0000-4000-8000-000000000002"]
+
+
 def _customer_gate_payload() -> dict[str, Any]:
-    """Hand-built in the shape `gate.run_gate`'s customer-picker arm documents
-    (`gate.py:1024-1061`): `gate_clarification` is the bare numbered header (no stamps
-    yet - `annotate_customer` adds those), `compatible_entities` carries one row per
-    numbered line with the SAME rendered label as `title` (positional resolution), and
-    `customer_probe_entities` is what made `if_customer_picker` take this exit in the
-    first place. Company suffix "(MCH, SRT)" is baked into the label the same way
-    `_rep_label(m) + _company_suffix(m)` builds it live."""
+    """Hand-built in the shape `gate.run_gate`'s customer-picker arm documents:
+    `compatible_entities` carries one row per representative with the gate's printed line
+    as `title` (company suffix baked in, `_rep_label(m) + _company_suffix(m)`),
+    `customer_probe_entities` is what made `if_customer_picker` take this exit, and
+    `resolved` is the resolver payload the names and company codes come from.
+
+    PICKER-ONE (owner, 13 Oct 2026): the bridge no longer prints the gate's own picker
+    text; it builds the roster through `candidates_by_kind` + `narrow.customer_options`
+    and prints it with `compose_question`. Real uuids, as the gate always carries
+    (`candidates_by_kind` keeps a uuid only when it is one, #1262 F1c)."""
     labels = ["CHIN CHUN HARDWARE SDN BHD (MCH, SRT)", "CHIN CHUN HOMEMART (MCH)"]
+    names = ["CHIN CHUN HARDWARE SDN BHD", "CHIN CHUN HOMEMART"]
     return {
         "gate_clarification": "Which customer do you mean? Please choose:\n"
         + "\n".join(f"{i + 1}. {label}" for i, label in enumerate(labels)),
         "compatible_entities": [
-            {"uuid": f"cust-uuid-{i + 1}", "entity_type": "customer", "code": f"CUST{i + 1}", "title": label}
+            {"uuid": _CUST_UUIDS[i], "entity_type": "customer", "code": f"CUST{i + 1}", "title": label}
             for i, label in enumerate(labels)
         ],
         "customer_probe_entities": [
-            {"uuid": f"cust-uuid-{i + 1}", "entity_type": "customer", "code": f"CUST{i + 1}"}
+            {"uuid": _CUST_UUIDS[i], "entity_type": "customer", "code": f"CUST{i + 1}"}
             for i in range(len(labels))
         ],
+        "resolved": {
+            "resolutions": [
+                {
+                    "token": "chin chun",
+                    "matches": [
+                        {
+                            "entity_type": "customer",
+                            "uuid": _CUST_UUIDS[i],
+                            "canonical_code": f"CUST{i + 1}",
+                            "company_code": company,
+                            "display": {"customer_name": names[i]},
+                        }
+                        for i, company in enumerate(["SRT", "MCH"])
+                    ],
+                }
+            ]
+        },
         "require_specific": False,
         "gate_debug": {"domain": "order"},
     }
@@ -390,7 +414,7 @@ def _expected_offer_text_from_annotated(annotated: dict[str, Any], parser: dict[
     """Composes the production reply from an ALREADY-annotated gate payload - no
     annotate call in here. Captain ruling 20 Sep 2026: production's `offer` exit is
     ALWAYS post-annotation (`resolve_gate.py:~1096`/`~1133` call
-    `pickers.annotate_incoming`/`annotate_customer` with the real probe before
+    `pickers.annotate_incoming`/`measure_customer_picker` with the real probe before
     returning), so the bridge must never probe or annotate - it only ever sees the
     already-annotated payload, and so must this helper."""
     lane_item = {**annotated, "branch_kind": "not_found"}
@@ -415,13 +439,19 @@ def _order_parser(raw: str = "srtwc286") -> dict[str, Any]:
 class TestOfferArmCustomer:
     """AC-1694's pytest half: the customer picker, company suffix, has/no-DO stamp."""
 
-    def test_text_matches_the_production_chain_no_do_for_one_of_two(self) -> None:
+    def test_text_is_the_one_customer_picker_no_do_for_one_of_two(self) -> None:
+        """PICKER-ONE: the gate's customer picker prints through `compose_question` -
+        the one header, `N. <label> - <stamp>`, the company tag because the two lines'
+        companies differ - stamped from what the gate's probe measured
+        (`resolve_gate.measure_customer_picker`)."""
+        from app.services.chatbot.lanes.business import resolve_gate
+
         bridge = _require_bridge()
         gate = _customer_gate_payload()
         parser = _order_parser()
         # `_row_has_do` reads the "Actual Delivery Date" field; one hit for the first
-        # customer, none for the second - matches AC-1694's own worked example ("CHIN
-        # CHUN HOMEMART reads 'no DO'").
+        # customer, none for the second - AC-1694's own worked example ("CHIN CHUN
+        # HOMEMART reads 'no DO'").
         probe = {
             "answers": [
                 {
@@ -430,19 +460,18 @@ class TestOfferArmCustomer:
                 }
             ]
         }
-        # Annotate the SAME dict the bridge receives - production hands the bridge
-        # an already-annotated payload, so the test must too, not a separately
-        # annotated copy compared against an unannotated original.
-        annotated = pickers.annotate_customer(gate, probe=probe, parser=parser)
-        expected_text, _lane_item = _expected_offer_text_from_annotated(annotated, parser)
-        assert "has DO" in expected_text and "no DO" in expected_text, expected_text
-
-        payload = {**annotated, "_exit_kind": "offer"}
+        measured = resolve_gate.measure_customer_picker(gate, probe=probe, parser=parser)
+        payload = {**measured, "_exit_kind": "offer"}
         answer = bridge.question_for(
             payload, parser=parser, ctx=_ctx_for(parser), canned=_canned(), asked_at_turn=3
         )
         assert answer is not None, "question_for returned None for a customer offer payload"
-        assert answer.text == expected_text
+        assert answer.text == (
+            "Which one do you mean?\n"
+            "1. CHIN CHUN HARDWARE SDN BHD (SRT) - has DO\n"
+            "2. CHIN CHUN HOMEMART (MCH) - no DO"
+        )
+        assert [o.get("stamp") for o in answer.question.options] == ["has DO", "no DO"]
 
     def test_pending_kind_customer_pick_options_in_printed_order(self) -> None:
         bridge = _require_bridge()
@@ -456,7 +485,7 @@ class TestOfferArmCustomer:
         assert answer.question.kind == "customer_pick"
         options = answer.question.options
         assert len(options) == 2, options
-        assert [o.get("uuid") for o in options] == ["cust-uuid-1", "cust-uuid-2"]
+        assert [o.get("uuid") for o in options] == _CUST_UUIDS
 
 
 def _incoming_gate_payload() -> dict[str, Any]:

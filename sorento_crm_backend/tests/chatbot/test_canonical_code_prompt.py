@@ -73,3 +73,9 @@ def test_the_migration_publishes_once_and_downgrades_only_its_own_row(session_fa
     assert second["full"] is None, "idempotent on template equality"
     rows = db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").all()
     assert sorted(r.version for r in rows) == [901, 902]
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows
