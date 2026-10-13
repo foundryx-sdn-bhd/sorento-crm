@@ -28,6 +28,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from sqlalchemy import text  # noqa: E402
+
 from app.database import SessionLocal  # noqa: E402
 from app.models.base import set_company_scope  # noqa: E402
 from app.models.embeddings import EmbeddingDocument  # noqa: E402
@@ -40,25 +42,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expect", type=int, help="with --apply: the total the dry run reported")
     parser.add_argument("--batch-size", type=int, default=1000, help="documents per committed batch")
     args = parser.parse_args(argv)
+    if args.expect is not None and not args.apply:
+        print("refused: --expect only goes with --apply", file=sys.stderr)
+        return 2
 
     db = SessionLocal()
     set_company_scope(db, None)
     try:
-        result = purge_orphan_embeddings(db, apply=False)
+        print(f"database: {db.execute(text('SELECT current_database()')).scalar()}")
+        result = purge_orphan_embeddings(db)
         db.rollback()
         total = sum(result["counts"].values())
+        if args.apply and args.expect != total:
+            # The current total is deliberately not printed here: only a dry run shows it.
+            print(
+                "refused: --expect does not match the orphan count found now; "
+                "run the dry run and pass its total",
+                file=sys.stderr,
+            )
+            return 2
         for source_type, count in sorted(result["counts"].items()):
             print(f"{source_type}: {count}")
         if not args.apply:
             print(f"would delete: {total} document(s)")
             return 0
-        if args.expect != total:
-            print(
-                f"refused: --expect {args.expect} does not match the {total} orphan document(s) "
-                "found now; run the dry run again and pass its total",
-                file=sys.stderr,
-            )
-            return 2
         doc_ids = result["doc_ids"]
         deleted = 0
         for start in range(0, len(doc_ids), max(1, args.batch_size)):

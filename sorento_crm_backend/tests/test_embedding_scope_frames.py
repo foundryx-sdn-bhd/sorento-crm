@@ -501,7 +501,8 @@ def _purge_script(db, monkeypatch):
     spec = importlib.util.spec_from_file_location("purge_orphan_embeddings_script", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "SessionLocal", lambda: _SessionProxy(db))
+    proxy = _SessionProxy(db)
+    monkeypatch.setattr(module, "SessionLocal", lambda: proxy)
     return module
 
 
@@ -510,8 +511,9 @@ def test_purge_script_apply_needs_the_dry_run_total(db, world, monkeypatch, caps
     reported, so an operator cannot apply without having read one. A mismatch deletes
     nothing and exits 2."""
     _require_test_database(db)
-    orphan = str(uuid.uuid4())
+    orphan, orphan_2 = str(uuid.uuid4()), str(uuid.uuid4())
     _seed_chunk(db, "certificate", orphan, None, world["vec"])
+    _seed_chunk(db, "certificate", orphan_2, None, world["vec"])  # two, so batches are visible
     script = _purge_script(db, monkeypatch)
     dbname = db.execute(text("SELECT current_database()")).scalar()
 
@@ -519,7 +521,7 @@ def test_purge_script_apply_needs_the_dry_run_total(db, world, monkeypatch, caps
     out = capsys.readouterr().out.strip().splitlines()
     assert out[0] == f"database: {dbname}"  # the operator sees which database first
     total = int(out[-1].split()[2])
-    assert total >= 1
+    assert total >= 2
 
     assert script.main(["--apply"]) == 2  # no --expect
     assert script.main(["--expect", str(total)]) == 2  # --expect without --apply
@@ -535,6 +537,7 @@ def test_purge_script_apply_needs_the_dry_run_total(db, world, monkeypatch, caps
     assert proxy.commits >= total
     db.expire_all()
     assert _doc(db, "certificate", orphan) is None
+    assert _doc(db, "certificate", orphan_2) is None
     assert f"deleted: {total} document(s)" in capsys.readouterr().out
 
 

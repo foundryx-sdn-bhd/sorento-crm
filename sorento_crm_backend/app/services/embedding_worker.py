@@ -782,14 +782,17 @@ def _delete_documents(db: Session, doc_ids_query) -> int:
     return len(ids)
 
 
-def purge_orphan_embeddings(db: Session, *, apply: bool = False) -> dict[str, Any]:
-    """Embedding documents whose source row no longer exists, per source_type.
+def purge_orphan_embeddings(db: Session) -> dict[str, Any]:
+    """Embedding documents whose source row no longer exists, per source_type: counts,
+    source ids and document ids. Counts only, never deletes: deleting is
+    ``scripts/purge_orphan_embeddings.py --apply --expect N``, which commits in batches
+    (a one-transaction global delete is what a test ran against the shared dev DB on
+    13 Oct).
 
-    Covers rows deleted before the worker handled `.deleted` events, and deletes
-    that bypass the ORM listeners (bulk ``query.delete()``, frame trims, FK
-    cascades). Dry run by default: counts and ids only. ``apply=True`` deletes
-    them (chunks first); the caller commits. Runs unscoped on purpose: under a
-    company scope another company's live rows would read as missing.
+    Covers rows deleted before the worker handled `.deleted` events, and deletes that
+    bypass the ORM listeners (bulk ``query.delete()``, frame trims, FK cascades, order
+    rows replaced by imports). Runs unscoped on purpose: under a company scope another
+    company's live rows would read as missing.
     """
     counts: dict[str, int] = {}
     source_ids: list[str] = []
@@ -807,9 +810,7 @@ def purge_orphan_embeddings(db: Session, *, apply: bool = False) -> dict[str, An
             counts[source_type] = len(rows)
             source_ids.extend(r.source_id for r in rows)
             doc_ids.extend(str(r.id) for r in rows)
-            if apply:
-                _delete_documents(db, orphans.with_entities(EmbeddingDocument.id))
-    return {"applied": apply, "counts": counts, "source_ids": source_ids, "doc_ids": doc_ids}
+    return {"counts": counts, "source_ids": source_ids, "doc_ids": doc_ids}
 
 
 def backfill_frame_embedding_companies(db: Session) -> int:
