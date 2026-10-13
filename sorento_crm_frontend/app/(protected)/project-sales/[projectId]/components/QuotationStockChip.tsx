@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Popover,
   PopoverContent,
+  PopoverPortal,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -176,19 +177,23 @@ export function QuotationStockChip({
           </button>
         </Badge>
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[min(36rem,calc(100vw-2rem))] space-y-2 p-3"
-      >
-        <StockPopoverBody
-          productId={productId}
-          label={label}
-          quantity={quantity}
-          uom={uom}
-          groupLocations={detail.data.locations ?? []}
-          groupIncoming={detail.data.incoming ?? []}
-        />
-      </PopoverContent>
+      {/* Portalled: a row being a drag target is its own stacking context, so a popover left
+          inside it paints under the next row and a click lands on that row instead. */}
+      <PopoverPortal>
+        <PopoverContent
+          align="end"
+          className="w-[min(36rem,calc(100vw-2rem))] space-y-2 p-3"
+        >
+          <StockPopoverBody
+            productId={productId}
+            label={label}
+            quantity={quantity}
+            uom={uom}
+            groupLocations={detail.data.locations ?? []}
+            groupIncoming={detail.data.incoming ?? []}
+          />
+        </PopoverContent>
+      </PopoverPortal>
     </Popover>
   );
 }

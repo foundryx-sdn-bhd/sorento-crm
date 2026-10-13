@@ -302,7 +302,9 @@ export function QuotationVersionEditor({
       seedScope('', []);
       return;
     }
-    if (!selected || lines.isLoading) return;
+    // Not while the rows are being fetched: cached rows from before a Save would be seeded once
+    // and the fresh ones that land a moment later ignored, so a reopened edit would lose them.
+    if (!selected || lines.isLoading || lines.isFetching) return;
     seedScope(
       selected.id,
       sortedLines.map((line) => ({
@@ -313,7 +315,16 @@ export function QuotationVersionEditor({
         removed: false,
       })),
     );
-  }, [isEditing, isUnsaved, lines.isLoading, seedScope, selected, sortedLines, staged]);
+  }, [
+    isEditing,
+    isUnsaved,
+    lines.isFetching,
+    lines.isLoading,
+    seedScope,
+    selected,
+    sortedLines,
+    staged,
+  ]);
 
   /**
    * What the grid draws, in display order: the staged set while editing, the server's rows

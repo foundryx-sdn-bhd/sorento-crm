@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   Popover,
   PopoverContent,
+  PopoverPortal,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -176,52 +177,56 @@ export function QuotationLineFileCell({
           </button>
         </PopoverTrigger>
       )}
-      <PopoverContent
-        align="start"
-        className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
-      >
-        <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-          <span className="truncate font-medium">{`${kind === 'photo' ? 'Photo' : 'Drawing'} for ${label}`}</span>
-          <span className="shrink-0 text-muted-foreground">{`${candidates.length} on file`}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-2">
-          {candidates.map((candidate) => {
-            const selected = shown?.attachmentId === candidate.attachment_id;
-            const name = candidate.filename ?? NOUN[kind];
-            return (
-              <button
-                key={candidate.attachment_id}
-                type="button"
-                aria-label={`Use ${name}`}
-                aria-pressed={selected}
-                title={name}
-                onClick={() => {
-                  onPick(candidate.attachment_id);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'rounded-md border border-border p-0.5 text-center hover:border-primary',
-                  selected && 'border-2 border-primary p-0',
-                )}
-              >
-                {candidate.url ? (
-                  <img
-                    src={candidate.url}
-                    alt=""
-                    className="mx-auto size-16 object-contain"
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className="mx-auto block size-16" />
-                )}
-                <span className="mt-0.5 block truncate text-2xs text-muted-foreground">
-                  {name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </PopoverContent>
+      {/* Portalled: a row being a drag target is its own stacking context, so a popover left
+          inside it paints under the next row and a click lands on that row instead. */}
+      <PopoverPortal>
+        <PopoverContent
+          align="start"
+          className="w-[min(21rem,calc(100vw-2rem))] p-2.5"
+        >
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+            <span className="truncate font-medium">{`${kind === 'photo' ? 'Photo' : 'Drawing'} for ${label}`}</span>
+            <span className="shrink-0 text-muted-foreground">{`${candidates.length} on file`}</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {candidates.map((candidate) => {
+              const selected = shown?.attachmentId === candidate.attachment_id;
+              const name = candidate.filename ?? NOUN[kind];
+              return (
+                <button
+                  key={candidate.attachment_id}
+                  type="button"
+                  aria-label={`Use ${name}`}
+                  aria-pressed={selected}
+                  title={name}
+                  onClick={() => {
+                    onPick(candidate.attachment_id);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    'rounded-md border border-border p-0.5 text-center hover:border-primary',
+                    selected && 'border-2 border-primary p-0',
+                  )}
+                >
+                  {candidate.url ? (
+                    <img
+                      src={candidate.url}
+                      alt=""
+                      className="mx-auto size-16 object-contain"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="mx-auto block size-16" />
+                  )}
+                  <span className="mt-0.5 block truncate text-2xs text-muted-foreground">
+                    {name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </PopoverPortal>
     </Popover>
   );
 }

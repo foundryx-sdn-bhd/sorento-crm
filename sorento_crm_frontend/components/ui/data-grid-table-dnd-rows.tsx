@@ -291,6 +291,12 @@ function DataGridTableDndRows<TData>({
               // column order, a row drag is vertical and drops through the caller.
               <DndContext
                 id={columnDndId}
+                // dnd-kit's screen-reader nodes are divs; inline they would sit inside <thead>.
+                // Its own Accessibility renders nothing until mounted, so this is only read in
+                // the browser (the server render is the same null either way).
+                accessibility={{
+                  container: typeof document === 'undefined' ? undefined : document.body,
+                }}
                 collisionDetection={closestCenter}
                 modifiers={[restrictToHorizontalAxis]}
                 onDragEnd={(event) => reorderColumnsOnDragEnd(table, event)}
