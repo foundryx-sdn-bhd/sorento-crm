@@ -14,10 +14,17 @@ Local / test copies only: it writes ZZT-marked contacts and live turns into the 
     venv/bin/python -m scripts.chatbot_live_usage_probe --turns 10
 
 Exit code 0 when every turn that reached the parser has its usage row, 1 otherwise.
+
+Quiet by default: the app's own log output is switched off for the run, because two messages
+are expected and say nothing about usage rows. An embedding traceback about `OPENAI_API_KEY`
+comes from the embedding worker on a copy with no embedding key. A `RespondContact not found`
+404 comes from a business-lane tool looking up a CRM link that a fresh probe contact does not
+have. `--verbose` shows the full log.
 """
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import uuid
 from typing import Any, Callable
@@ -105,7 +112,11 @@ def run_probe(session_factory: Callable[[], Any], turns: int = 6) -> list[dict]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--turns", type=int, default=6)
+    ap.add_argument("--verbose", action="store_true", help="show the app's log output too")
     args = ap.parse_args(argv)
+    if not args.verbose:
+        # See the module docstring: the expected noise is log output, not a failure.
+        logging.disable(logging.CRITICAL)
 
     from app.database import SessionLocal
 
@@ -127,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         cost = costs.get(r["turn_id"], ("(no row)", ""))
         print(f"| {r['turn_id']} | {r['text']} | {r['status']}/{r['stage']} | {r['reached_parser']} | "
               f"{r['calls'] or 'NONE'}{' MISSING' if missing else ''} | {cost[0]} / {cost[1]} |")
+    if not args.verbose:
+        print("\n(app log output hidden; --verbose shows it, including the expected OPENAI_API_KEY embedding "
+              "traceback and RespondContact-not-found 404)")
     print("\nPASS: every live turn that reached the parser wrote its usage row" if ok
           else "\nFAIL: a live turn that reached the parser has no usage row")
     return 0 if ok else 1
