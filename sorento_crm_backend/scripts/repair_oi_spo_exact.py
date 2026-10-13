@@ -6,8 +6,8 @@ OI-SPO-EXACT (`documentation/plans/scm/PLAN-oi-spo-exact-13oct.md`, owner 13 Oct
 
 Until this lane, `pair_needs._through_po` reached a purchase order line's shipping orders
 by the exact line when an allocation named it, and OTHERWISE by any allocation of the same
-PO number and product. That fallback linked OI-2609-0717 (SO385467, SRTWB1515) to
-SPO-2026/04-0053 line 25, a container of ANOTHER line of 202512-S0014 bought for another
+PO number and product. That fallback linked OI-2601-9001 (SO900001, SRTTEST01) to
+SPO-2026/01-9001 line 25, a container of ANOTHER line of 202601-S9001 bought for another
 sales order line. The pairing no longer falls back; this script repairs the links it wrote.
 
 WHAT IT CHANGES

@@ -2047,9 +2047,9 @@ def _chain_allocations(
     There is no `(PO number, product)` map any more (OI-SPO-EXACT, owner 13 Oct: "AutoCount
     linkage is the truth, explicit links only, no matching guesses"). It used to answer when
     no allocation named the line, and it answered with ANY allocation of the document: on
-    the 12 Oct prod backup OI-2609-0717 (SO385467, SRTWB1515) landed on SPO-2026/04-0053
-    line 25, which quotes ANOTHER line of 202512-S0014 bought for another sales order line,
-    while the row's own line (d8619e62) had shipped nothing. An allocation that does not
+    the 12 Oct prod backup OI-2601-9001 (SO900001, SRTTEST01) landed on SPO-2026/01-9001
+    line 25, which quotes ANOTHER line of 202601-S9001 bought for another sales order line,
+    while the row's own line had shipped nothing. An allocation that does not
     name the line is not this line's container; the line itself answers instead.
     """
     if not po_numbers or not product_ids:

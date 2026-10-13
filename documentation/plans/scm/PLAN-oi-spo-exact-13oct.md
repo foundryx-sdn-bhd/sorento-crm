@@ -9,15 +9,15 @@ Lane OI-SPO-EXACT. UAC: `oi-spo-exact-acceptance-criteria.md` alongside.
 
 OI links show an SPO that the SO line's PO line is not on.
 
-Case 1 (crew-verified on the 12 Oct prod backup): OI-2609-0717, SO385467, SRTWB1515 32 BRW-BB.
-The SO line's PO line on 202512-S0014 (32, received 0) names the SO line's ref, and no SPO
+Case 1 (crew-verified on the 12 Oct prod backup): OI-2601-9001, SO900001, SRTTEST01 32 BRW-BB.
+The SO line's PO line on 202601-S9001 (32, received 0) names the SO line's ref, and no SPO
 allocation names that PO line. `pair_needs._through_po` then fell back to ANY SPO allocation of
-the same PO number and product, and picked SPO-2026/04-0053 line 25 (36, BRW-IB, received),
+the same PO number and product, and picked SPO-2026/01-9001 line 25 (36, BRW-IB, received),
 which belongs to another PO line bought for another SO line. The worklist's derived SPO entries
 (`_append_derived_spo_entries`) and its filters/cards (`_derived_spo_query`) matched the same
 way, by PO number and product.
 
-Case 2 (OI-2610-0037 SRTWT162) is not reproducible on the 12 Oct backup; likely the same
+Case 2 (OI-2601-9002 SRTTEST02) is not reproducible on the 12 Oct backup; likely the same
 fallback. The repair script's dry run on a later prod copy will say.
 
 ## Rule (owner: AutoCount linkage is the truth, explicit links only, no matching guesses)

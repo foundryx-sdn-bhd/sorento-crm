@@ -8,9 +8,9 @@ The rule: SO line -> the PO line whose `from_so_line_ref` is the SO line's `sour
 an AutoCount claim that pairs them) -> ONLY the SPO allocations whose `from_po_number` AND
 `from_po_line_ref` name that PO line. None -> the row links to the PO line itself.
 
-The owner's case (12 Oct prod backup): OI-2609-0717, SO385467, SRTWB1515 32 BRW-BB. Its PO
-line on 202512-S0014 (32, received 0) has shipped nothing; a SIBLING line of the same PO and
-product (36, bought for another sales order line) is on SPO-2026/04-0053 line 25, received.
+The owner's case (12 Oct prod backup): OI-2601-9001, SO900001, SRTTEST01 32 BRW-BB. Its PO
+line on 202601-S9001 (32, received 0) has shipped nothing; a SIBLING line of the same PO and
+product (36, bought for another sales order line) is on SPO-2026/01-9001 line 25, received.
 `_through_po` used to fall back to "any allocation of this PO number + product" and linked
 the row to the sibling's container. Every test below is that shape or one of its edges.
 
