@@ -140,6 +140,22 @@ def test_a_carried_token_the_domain_cannot_use_is_no_miss(domain, allowed):
     assert resolve_gate.if3_miss(_ctx(unresolved=[ORDER_TOKEN], domain=domain, allowed=allowed), parser=parser) is False
 
 
+def test_a_carried_product_code_is_matched_as_the_resolver_was_sent_it():
+    """The resolver echoes a product token with its dashes folded away (`_token_of`)."""
+    parser = {"domain_hint": "portal_link", "entities": [_entity("SRTWT165-FT", "product", current=False)]}
+
+    assert resolve_gate.if3_miss(_ctx(unresolved=["SRTWT165FT"], domain="portal_link", allowed=[]), parser=parser) is False
+
+
+def test_a_carried_order_number_under_a_domain_that_looks_up_references_is_still_a_miss():
+    """`order` is the unnamed reference hint: a domain whose row takes any reference kind
+    (purchase_order takes `customer_po_ref`, `purchase_order`, ...) uses it."""
+    parser = {"domain_hint": "purchase_order", "entities": [_entity(ORDER_TOKEN, "order", current=False)]}
+    ctx = _ctx(unresolved=[ORDER_TOKEN], domain="purchase_order", allowed=["purchase_order", "customer_po_ref", "product"])
+
+    assert resolve_gate.if3_miss(ctx, parser=parser) is True
+
+
 def test_a_typed_token_that_resolves_to_nothing_is_still_a_miss():
     """U2: the same order number, typed in THIS message, under the same domain."""
     parser = {"domain_hint": "portal_link", "entities": [_entity(ORDER_TOKEN, "order", current=True)]}

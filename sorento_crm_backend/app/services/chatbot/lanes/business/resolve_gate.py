@@ -921,8 +921,12 @@ def _carried_and_unusable(token: Any, entities: Any, allowed_lookup: Any) -> boo
     question reached it with the order number (`current_message: false`), which no
     portal link can use. That token's miss is not this turn's. A token the message typed,
     or a carried one of a kind the domain's `ALLOWED` row takes (a product under
-    `incoming`: the ask is about it), is still a miss. Tokens are matched the resolver's
-    way, trimmed and lower-cased."""
+    `incoming`: the ask is about it), is still a miss. Tokens are matched trimmed and
+    lower-cased, against the entity's words and against the token the resolver was sent
+    (`_token_of`: a product code reaches it with its dashes folded away).
+
+    A domain with no `ALLOWED` row has no `allowed_lookup` and so uses no kind here (today
+    `chat_analytics`, whose report reads its own customer words, and two tool-less ones)."""
     key = jsc.js_string(token if jsc.truthy(token) else "").strip().lower()
     if not key:
         return False
@@ -932,14 +936,31 @@ def _carried_and_unusable(token: Any, entities: Any, allowed_lookup: Any) -> boo
         if jsc.truthy(e)
         and key
         in {
-            jsc.js_string(jsc.get(e, name) or "").strip().lower()
-            for name in ("raw", "canonical_code")
+            jsc.js_string(jsc.get(e, "raw") or "").strip().lower(),
+            jsc.js_string(jsc.get(e, "canonical_code") or "").strip().lower(),
+            jsc.js_string(_token_of(e)).strip().lower(),
         }
     ]
     if not hits or any(jsc.get(e, "current_message") is not False for e in hits):
         return False
     allowed = {jsc.lower_or_empty(k) for k in jsc.array(allowed_lookup)}
-    return all(jsc.lower_or_empty(jsc.get(e, "hint")) not in allowed for e in hits)
+    return not any(_kind_is_used(jsc.lower_or_empty(jsc.get(e, "hint")), allowed) for e in hits)
+
+
+#: Every resolver kind a typed reference number may become (`REFERENCE_NARROW`'s values).
+_REFERENCE_KINDS = frozenset(k for kinds in REFERENCE_NARROW.values() if kinds for k in kinds)
+
+
+def _kind_is_used(hint: str, allowed: set[str]) -> bool:
+    """Does a domain whose `ALLOWED` row is `allowed` look up an entity hinted `hint`? A
+    reference hint counts by the kinds it narrows to (`order`: any reference kind), the
+    way `_allowed_entity_types` widens it for the resolver."""
+    if hint in allowed:
+        return True
+    if hint not in REFERENCE_NARROW:
+        return False
+    narrow = REFERENCE_NARROW[hint]
+    return bool(allowed & (narrow if narrow is not None else _REFERENCE_KINDS))
 
 
 def if3_miss(ctx_resolved_ctx: dict[str, Any], *, parser: dict[str, Any]) -> bool:
