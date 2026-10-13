@@ -288,3 +288,7 @@ def test_the_agents_seed_never_overrides_an_owner_edit():
         mod.apply(db.connection())
         flagged = set(db.execute(text("SELECT code FROM access_agents WHERE in_parser_prompt")).scalars())
         assert flagged == {"order_enquiries"}
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

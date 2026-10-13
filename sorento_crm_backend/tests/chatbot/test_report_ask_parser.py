@@ -243,3 +243,9 @@ def test_the_addendum_pins_the_singular_no_count_and_the_noun_never_an_entity_of
     assert "A singular" in a and "NO count: top_n null" in a and "(not 1)" in a
     assert "also after a ranking" in a
     assert "never an entity of ANY hint" in a and "account(s)" in a
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows
