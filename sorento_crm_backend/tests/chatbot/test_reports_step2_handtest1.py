@@ -11,7 +11,7 @@ from typing import Any
 
 from tests.chatbot import test_report_ask_lane as lane
 from tests.chatbot.test_report_ask_lane import PERIOD_Q, SEP, _e, _parser_output, _rank, console  # noqa: F401
-from tests.chatbot.test_reports_step2_gate_run7 import LIVE_NO_ANSWER, _live
+from tests.chatbot.test_reports_step2_gate_run7 import _live
 from tests.chatbot.test_reports_step2_lane import _s2_harness, _t1  # noqa: F401  (autouse fixture by name)
 from tests.chatbot.test_top_selling_round5 import _ask, _answer
 
@@ -123,7 +123,7 @@ def test_h13_a_project_brand_item_ranking_with_the_brand_as_group_is_the_top_sel
     (args,) = _ts_calls(log)
     assert args["n"] == 20 and args.get("channel") == "project", args
     assert console.ids["brand"] in (args.get("brand_ids") or []), args
-    assert args.get("group") != "brand", args  # top selling ranks items; a brand axis is never sent
+    assert args.get("group") is None, args  # top selling ranks items; a brand axis is never sent
 
 
 def test_h14_guard_a_real_brand_ranking_stays_on_the_ranking_lane(console, monkeypatch) -> None:
@@ -165,3 +165,165 @@ def test_h17_guard_an_outstanding_verdict_with_an_axis_but_no_count_or_direction
     qf = _v92_outstanding(top_n=None, rank_direction=None)
     _text, log = lane._say_all(console, monkeypatch, qf, "outstanding by customer for Sorento at BRW")
     assert "crm_report" not in _names(log) and "crm_outstanding_report" in _names(log), log
+
+
+# ================================================================================ live check #3 (made-up values)
+
+from tests.chatbot.test_reports_step2_gate_run4 import EXACT, _present, _route_calls  # noqa: E402
+from tests.chatbot.test_reports_step2_gate_run5 import _sales, _sent  # noqa: E402
+from tests.chatbot.test_reports_step2_gate_run7 import FAMILY  # noqa: E402
+
+FAMILY_NO_OFFER = {**FAMILY, "options": []}
+
+
+def _hold_plain(console, monkeypatch, **kw):
+    """A plain sales report held (no drill offer open), then the seen-calls list."""
+    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
+    console.say(_sales(**kw), "sales report for the customer")
+    assert (console.session_vars.get("open_question") or {}).get("kind") != "sales_report_detail", console.session_vars
+    return seen
+
+
+# ------------------------------------------------------------------ A. step 3, "bottom 5" with the parser's extras
+
+
+def _bottom_5(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        order_status="top_selling", ranking_refine=True, rank_group="unclear", group_by="sales_agent",
+        rank_direction="bottom", top_n=5, domain_in_message=False, entities=[],
+    )
+    base.update(kw)
+    return _live(_answer(**base))
+
+
+def test_h18_bottom_5_with_the_held_axis_echoed_still_refines_the_held_ranking(console) -> None:
+    _text, first = _t1(console)
+    (before,) = first
+    text, calls = console.say(_bottom_5(), "bottom 5")
+    (after,) = calls
+    assert after["group_by"] == "sales_agent" and after["top_n"] == 5 and after["sort"] == "asc", after
+    assert after["date_from"] == before["date_from"], after
+    assert "category" not in text.lower() and "items" not in text.lower(), text
+
+
+def test_h19_guard_another_axis_than_the_held_one_is_not_a_refine_of_it(console, monkeypatch) -> None:
+    _t1(console)
+    text, log = lane._say_all(console, monkeypatch, _bottom_5(group_by="customer"), "bottom 5 customers")
+    kept = [a for n, a in log if n == "crm_report" and a.get("group_by") == "sales_agent" and a.get("sort") == "asc"]
+    assert not kept, log
+    assert "top items inside one category" in text, text  # it stays the top selling ask, not a ranking refine or drill
+
+
+# ------------------------------------------------------------------ B. step 7, "only <code>" with no status
+
+
+def _only_code(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "order_status": None, "status": None, "domain_hint": "order", "domain_in_message": False,
+        "topic_reset": False, "entities": [{"raw": "ZZT100", "hint": "product", "current_message": True}],
+    }
+    base.update(kw)
+    return base
+
+
+def test_h20_unit_a_status_less_only_code_narrows() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code()) is True
+
+
+def test_h21_a_status_less_only_code_narrows_the_held_report(console, monkeypatch) -> None:
+    seen = _hold_plain(console, monkeypatch)
+    qf = _live(_parser_output(
+        domain_hint="order", intent_hint="check_order", order_status=None, status=None, domain_in_message=False,
+        topic_reset=False, entities=[lane._hit(EXACT, "product")], group_by=None,
+        date_filter_start=None, date_filter_end=None,
+    ))
+    text, _calls = console.say(qf, "only this model")
+    assert "Which period?" not in text, text
+    sent = [a for a in _sent(seen) if a.get("product_code_exact")]
+    assert sent and sent[0].get("product_code") == EXACT, [a.get("product_code") for a in _sent(seen)]
+
+
+def test_h22a_guard_a_domain_that_is_not_a_sales_one_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(domain_hint="dealer_locator")) is False
+
+
+def test_h22b_guard_a_message_naming_its_domain_does_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    assert _narrows_held_sales_report(_only_code(domain_in_message=True)) is False
+
+
+def test_h22c_guard_two_products_do_not_narrow() -> None:
+    from app.services.chatbot.turn_runtime import _narrows_held_sales_report
+
+    two = [{"raw": "ZZT100", "hint": "product", "current_message": True},
+           {"raw": "ZZT200", "hint": "product", "current_message": True}]
+    assert _narrows_held_sales_report(_only_code(entities=two)) is False
+    other = [*two[:1], {"raw": "Zorvex", "hint": "brand", "current_message": True}]
+    assert _narrows_held_sales_report(_only_code(entities=other)) is False
+
+
+# ------------------------------------------------------------------ C. step 8, "only model <code>" with no held report
+
+
+def _only_model(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status="sales_report", group_by="product",
+        scope_intent="specific", entity_op="replace", domain_in_message=True, entities=[lane._hit(EXACT, "product")],
+        date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def test_h23_a_fresh_only_that_one_report_asks_for_the_exact_code(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
+    console.say(_only_model(), "only model")
+    assert any(a.get("product_code_exact") and a.get("product_code") == EXACT for a in _sent(seen)), seen
+
+
+def test_h24_guard_a_family_total_still_runs_the_family(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
+    console.say(_only_model(scope_intent="broad"), "total sales of the model")
+    sent = _sent(seen)
+    assert sent and not any(a.get("product_code_exact") for a in sent), sent
+
+
+# ------------------------------------------------------------------ D. step 15, status "outstanding" beside sales_ranking
+
+
+def _outstanding_ranking_with_status(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = dict(
+        order_status="sales_ranking", status="outstanding", domain_hint="order", intent_hint="check_order",
+        domain_in_message=True, group_by="customer", top_n=5, basis="outstanding", rank_by="amount", measure=None,
+        entities=[_e("BRW", "warehouse")], **SEP,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def _assert_outstanding_ranking(log) -> None:
+    names = _names(log)
+    assert "crm_outstanding_report" not in names, log
+    (args,) = [a for n, a in log if n == "crm_report"]
+    assert args["measure"] == "outstanding_amount" and args["group_by"] == "customer", args
+    assert args["warehouse_codes"] == ["BRW"] and not args.get("product_code"), args
+
+
+def test_h25_a_sales_ranking_with_an_outstanding_status_key_stays_a_ranking(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
+    console.say(_sales(entities=[lane._hit(EXACT, "product")]), f"sales of {EXACT}")  # a product in focus
+    text, log = lane._say_all(console, monkeypatch, _outstanding_ranking_with_status(), "top 5 customers outstanding at BRW")
+    _assert_outstanding_ranking(log)
+
+
+def test_h26_the_outstanding_order_status_backstop_with_a_status_key_too(console, monkeypatch) -> None:
+    seen = _route_calls(console, monkeypatch, lambda args: _present(FAMILY_NO_OFFER))
+    console.say(_sales(entities=[lane._hit(EXACT, "product")]), f"sales of {EXACT}")
+    qf = _outstanding_ranking_with_status(order_status="outstanding")
+    text, log = lane._say_all(console, monkeypatch, qf, "top 5 customers outstanding at BRW")
+    _assert_outstanding_ranking(log)
