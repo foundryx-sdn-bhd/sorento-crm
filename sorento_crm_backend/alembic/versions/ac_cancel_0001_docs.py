@@ -20,7 +20,7 @@ Additive only: new tables, and NOT NULL columns with a server default of 0, so n
 changes meaning. Downgrade drops everything this adds.
 
 Revision ID: ac_cancel_0001_docs
-Revises: oirj_0002_theme_sorento
+Revises: spec_in_0001_stage_label
 Create Date: 2026-10-13
 """
 import sqlalchemy as sa
@@ -28,7 +28,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "ac_cancel_0001_docs"
-down_revision = "oirj_0002_theme_sorento"
+down_revision = "spec_in_0001_stage_label"
 branch_labels = None
 depends_on = None
 

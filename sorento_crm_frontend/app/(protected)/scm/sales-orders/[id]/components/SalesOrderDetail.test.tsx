@@ -2500,7 +2500,7 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
           qty_ordered: 10, qty_delivered: 4, qty_cancelled: 6, outstanding_qty: 0, uom: 'PCS',
           warehouse_code: 'BRW-BB', line_status: 'closed', required_date: '2026-10-01',
           cancels: [
-            { doc_no: 'XS-016502', qty: 4, match_reason: 'group_whole' },
+            { doc_no: 'XS-016502', qty: null, match_reason: 'group_whole' },
             { doc_no: 'XS-016503', qty: 2, match_reason: 'item' },
           ],
         },
@@ -2535,7 +2535,7 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
       'title', 'XS-016501: 36 (line key)',
     );
     expect(screen.getByTestId('qty-cancelled-l-2')).toHaveAttribute(
-      'title', 'XS-016502: 4 (every line of the item)\nXS-016503: 2 (item)',
+      'title', 'XS-016502 (every line of the item)\nXS-016503: 2 (item)',
     );
   });
 

@@ -92,7 +92,7 @@ def test_revision_fits_and_chains_onto_one_head():
     module = _load()
     assert module.revision == REVISION
     assert len(module.revision) <= 32
-    assert module.down_revision == "oirj_0002_theme_sorento"
+    assert module.down_revision == "spec_in_0001_stage_label"
 
 
 def test_up_down_up_and_the_grants():

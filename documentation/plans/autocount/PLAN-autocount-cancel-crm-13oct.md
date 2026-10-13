@@ -1,6 +1,6 @@
 # PLAN: AutoCount Cancel SO / Cancel PO in the CRM (AC-CANCEL-CRM)
 
-Status: In progress (exact-attribution rework built; waiting on the crew bucket counts and the owner's answer on how undetermined groups display). Track: full (migration, RBAC slugs).
+Status: In review (exact-attribution rework built and reviewed; owner answered (b): undetermined cancels show nothing on screen). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
 
 ## Goal
@@ -102,7 +102,12 @@ R2. Matching, per cancel line, from stored state only (never arrival order):
        - D = 0 and C = sum(T_i): matched (`group_whole`); the cancel lines name the group (no line id,
          `candidate_line_ids` = its lines), and each line's cancelled qty is its own TransferedQty.
        - Anything else: unmatched (`undetermined`), kept at document + item level, named on no line,
-         never counted as cancelled, counted in the sync log.
+         never counted as cancelled, counted in the sync log. Owner (b), 13 Oct: nothing on screen,
+         no extra list and no line change; it lives only in the sync log and the stored documents.
+       Every decision re-decides the groups its lines are in now AND the groups they were last decided
+       in (through the target or `candidate_line_ids`); a removed line queues its group's other lines.
+       Locations are compared in Python only (`_loc`), never against a SQL upper / trim.
+       The SO / PO Lines tooltip lists a `group_whole` document once per line with no qty.
 R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), or the line's own
     TransferedQty when a live `group_whole` cancel holds its group; capped at ordered (SPO: allocated),
     recomputed for every touched line (a group's lines included) at the end of every batch, deletion sweep
@@ -154,9 +159,23 @@ Caveats:
 2. No 2026 XS line carries `FromDocDtlKey` (0 of 5,423), while 46,828 XS lines from earlier years do.
    Line-key matching will not help 2026 at all.
 
-Under the exact rule, the 2,075 lines that were tie-break, fallback or no fit (38.3%) sit in groups of 2+
-lines: each goes to `group_whole` or `undetermined`. The split comes from
-`scripts/autocount_cancel_bucket_report.py` (crew runs its read-only SQL; counts only, no rows).
+## 2026 Sorento XS buckets under the exact rule (crew, 13 Oct, `scripts/autocount_cancel_bucket_report.py`
+at d52cbfb1, `--do-from 2026-08-20`)
+
+5,446 XS lines in 4,230 (SO, item, location) groups. The clone's DO data covers 2026-08-20 to 2026-10-14.
+
+| Bucket | Lines | Groups |
+| --- | ---: | ---: |
+| exact: single line | 3,361 | 3,286 |
+| exact: D = 0 and C = sum(T) | 23 | 11 |
+| undetermined (D > 0) | 43 | 21 |
+| D = 0, C != sum(T) | 1 | 1 |
+| no SO line at that item and location | 56 | 18 |
+| SO older than the DO data (D unknown) | 1,962 | 893 |
+
+Exact today: 3,384 lines (62.1%), 3,297 groups (77.9%). The 893 "D unknown" groups are still decided
+safely: TransferedQty counts every DO, so C = sum(T) alone proves nothing was delivered, and the matcher
+only calls such a group whole on that exact equality; every other one is undetermined.
 
 ## Deferred (named triggers, not built)
 
@@ -168,8 +187,9 @@ lines: each goes to `group_whole` or `undetermined`. The split comes from
   stored only; move them to their own tables in the lane that gives consignment behaviour.
 - The DO / GRN `/deletions` sweep does not re-decide key-less cancels (a vanished DO stays counted as
   explaining a transfer until the next order or cancel sync re-decides).
-- A visible "Cancelled" column on the SO / PO lines tab: the API returns `qty_cancelled`; the screen
-  change needs a mock first.
+- A GIN index on `autocount_cancel_lines.candidate_line_ids` (the `?|` lookups in the SO / PO detail
+  read and the recompute scan the company's cancel lines): build when that table passes about 100k rows
+  or an SO detail read shows it in a slow-query log.
 
 ## Test list (red first)
 

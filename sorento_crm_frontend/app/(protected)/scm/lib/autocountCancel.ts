@@ -10,7 +10,8 @@ import type { StatusBadgeVariant } from '@/lib/status-badge';
 
 export interface CancelSource {
   doc_no: string;
-  qty: number;
+  /** Null for a `group_whole` document: only the line's own total is known. */
+  qty: number | null;
   match_reason?: string | null;
 }
 
@@ -23,13 +24,15 @@ const MATCH_LABEL: Record<string, string> = {
   group_whole: 'every line of the item',
 };
 
-/** "XS-016501: 36 (line key)", one document per line; undefined when nothing cancelled. */
+/** "XS-016501: 36 (line key)", one document per line ("XS-016502 (every line of the item)" when
+ *  the document's share of this line is not known); undefined when nothing cancelled. */
 export function cancelSourcesTitle(cancels: CancelSource[] | null | undefined): string | undefined {
   if (!cancels || cancels.length === 0) return undefined;
   return cancels
     .map((c) => {
       const how = MATCH_LABEL[c.match_reason ?? ''] ?? c.match_reason ?? '';
-      return how ? `${c.doc_no}: ${Number(c.qty)} (${how})` : `${c.doc_no}: ${Number(c.qty)}`;
+      const head = c.qty == null ? c.doc_no : `${c.doc_no}: ${Number(c.qty)}`;
+      return how ? `${head} (${how})` : head;
     })
     .join('\n');
 }

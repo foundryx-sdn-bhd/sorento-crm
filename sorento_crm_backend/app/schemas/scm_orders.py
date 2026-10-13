@@ -142,9 +142,9 @@ class SalesOrderLinePlanningChange(BaseModel):
 class CancelSource(BaseModel):
     """One AutoCount Cancel SO / Cancel PO document behind a line's `qty_cancelled`
     (AC-CANCEL-CRM): its number, the qty it cancels on this line and how it was matched
-    (`line_key`, `item`, `tie_break` or `fallback`)."""
+    (`line_key`, `item`, or `group_whole`, whose qty is None: only the line's total is known)."""
     doc_no: str
-    qty: float
+    qty: Optional[float] = None
     match_reason: Optional[str] = None
 
 

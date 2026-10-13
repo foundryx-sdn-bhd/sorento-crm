@@ -259,21 +259,14 @@ def _ref_matches(column, dtl_key: int):
     return or_(column == str(dtl_key), column.like(f"%:{dtl_key}"))
 
 
-def _dtl_of(source_ref: Optional[str]) -> int:
-    tail = str(source_ref or "").rsplit(":", 1)[-1]
-    return int(tail) if tail.isdigit() else 2**63 - 1
-
-
 def _live_doc():
     return and_(AutocountCancelDoc.is_void.is_(False), AutocountCancelDoc.source_vanished_at.is_(None))
 
 
 def _loc(value: Optional[str]) -> str:
+    """The location a group is keyed on. Compared in Python only, never against a SQL upper /
+    trim, which normalise some characters differently (security review should-fix 1)."""
     return (value or "").strip().upper()
-
-
-def _loc_sql(column):
-    return func.upper(func.trim(func.coalesce(column, "")))
 
 
 def _names_any(ids: list[str]):
@@ -383,14 +376,16 @@ class CancelLineMatcher:
             rows = [r for r in rows if _loc(r[1]) == group.location]
             ids = [str(r[0]) for r in rows]
             named = and_(OrderLine.from_doc_no == group.number,
-                         OrderLine.item_code == group.item_code,
-                         _loc_sql(OrderLine.location_code) == group.location)
-            moved = as_decimal(
-                self.db.query(func.sum(OrderLine.quantity))
-                .join(Order, Order.id == OrderLine.order_id)
-                .filter(Order.company_id == self.company_id, Order.is_cancelled.is_(False),
-                        or_(OrderLine.sales_order_line_id.in_(ids), named) if ids else named)
-                .scalar())
+                         OrderLine.item_code == group.item_code)
+            dos = (self.db.query(OrderLine.quantity, OrderLine.sales_order_line_id,
+                                 OrderLine.location_code)
+                   .join(Order, Order.id == OrderLine.order_id)
+                   .filter(Order.company_id == self.company_id, Order.is_cancelled.is_(False),
+                           or_(OrderLine.sales_order_line_id.in_(ids), named) if ids else named)
+                   .all())
+            moved = sum((as_decimal(q) for q, linked, loc in dos
+                         if (linked and str(linked) in ids) or _loc(loc) == group.location),
+                        _ZERO)
             keyed = self._keyed(AutocountCancelLine.sales_order_line_id, ids)
             return [CandidateIn(str(r[0]), as_decimal(r[2]) - keyed.get(str(r[0]), _ZERO))
                     for r in rows], moved
@@ -456,7 +451,6 @@ class CancelLineMatcher:
                          AutocountCancelDoc.kind == group.kind,
                          AutocountCancelLine.from_dtl_key.is_(None),
                          AutocountCancelLine.item_code == group.item_code,
-                         _loc_sql(AutocountCancelLine.location_code) == group.location,
                          _live_doc()))
         if group.target == "spo":
             from app.services.grn_spo_matching import _spo_match_key_sql
@@ -464,7 +458,7 @@ class CancelLineMatcher:
             query = query.filter(_spo_match_key_sql(AutocountCancelLine.from_doc_no) == group.doc)
         else:
             query = query.filter(AutocountCancelLine.from_doc_no == group.number)
-        return query.all()
+        return [(l, d) for l, d in query.all() if _loc(l.location_code) == group.location]
 
     def _resolve(self, group: _Group) -> dict[str, tuple[AutocountCancelLine, _Match, str]]:
         members = self._group_lines(group)
@@ -509,6 +503,35 @@ class CancelLineMatcher:
             return None
         return _Group(kind, "spo", _spo_match_key(row[0]), row[0], row[1], _loc(row[2]))
 
+    def _old_groups(self, kind: str, line: AutocountCancelLine) -> set[_Group]:
+        """The group the line was last decided in: through its target, or through the group's
+        lines (`candidate_line_ids`) when it named no single line."""
+        out: set[_Group] = set()
+        for target, column in (("so", "sales_order_line_id"), ("po", "purchase_order_line_id"),
+                               ("spo", "spo_allocation_id")):
+            if getattr(line, column):
+                group = self._target_group(kind, target, str(getattr(line, column)))
+                if group:
+                    out.add(group)
+        if line.candidate_line_ids:
+            first = str(line.candidate_line_ids[0])
+            for target in (("so",) if kind == KIND_CANCEL_SO else ("po", "spo")):
+                group = self._target_group(kind, target, first)
+                if group:
+                    out.add(group)
+                    break
+        return out
+
+    def _key_less_group(self, kind: str, line: AutocountCancelLine) -> Optional[_Group]:
+        """The group a key-less line names now, live or not, or None."""
+        if line.from_dtl_key is not None or not line.from_doc_no or not line.item_code:
+            return None
+        target, doc = self._document(kind, line.from_doc_no)
+        if target is None:
+            return None
+        return _Group(kind, target, doc, line.from_doc_no, line.item_code,
+                      _loc(line.location_code))
+
     # ------------------------------------------------------------- the pass
     def match_all(self, lines: Iterable[AutocountCancelLine], kinds: dict[str, str],
                   live: dict[str, bool], assign: Callable[[AutocountCancelLine, _Match, str], None]
@@ -523,17 +546,15 @@ class CancelLineMatcher:
         groups: set[_Group] = set()
         for line in lines:
             kind = kinds[str(line.cancel_doc_id)]
-            # The group the line USED to count in is decided again too: leaving it frees what
-            # the line had taken there.
-            for target, column in (("so", "sales_order_line_id"), ("po", "purchase_order_line_id"),
-                                   ("spo", "spo_allocation_id")):
-                if getattr(line, column):
-                    group = self._target_group(kind, target, str(getattr(line, column)))
-                    if group:
-                        groups.add(group)
             if kind in _STORED_ONLY:
                 answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_STORED_ONLY), "")
                 continue
+            # The group the line USED to count in is decided again too (review B1): leaving it,
+            # by a void, a sweep or an edit, changes what the rest of that group adds up to.
+            groups.update(self._old_groups(kind, line))
+            key_less = self._key_less_group(kind, line)
+            if key_less:
+                groups.add(key_less)
             if not live.get(str(line.cancel_doc_id), True):
                 answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_DOC_NOT_LIVE), "")
                 continue
@@ -558,8 +579,6 @@ class CancelLineMatcher:
                 answers[str(line.id)] = (
                     line, _Match(MATCH_UNMATCHED, REASON_LINE_WITHOUT_ITEM), "")
                 continue
-            groups.add(_Group(kind, target, doc, line.from_doc_no, line.item_code,
-                              _loc(line.location_code)))
         for line, match, doc_no in answers.values():
             assign(line, match, doc_no)
         self.db.flush()
@@ -988,6 +1007,9 @@ class AutocountCancelIngestService:
         for dtl_key, line in existing.items():
             if dtl_key not in seen:
                 touched.add_from(line)
+                # Review B1: what the rest of its group adds up to changes, so the group's other
+                # lines are decided again (the removed line itself is gone).
+                to_match.extend(l for l in self._group_siblings(line) if l not in to_match)
                 self.db.delete(line)
                 changed = True
         if changed:
@@ -997,6 +1019,20 @@ class AutocountCancelIngestService:
         if created:
             return IngestOutcome.CREATED, str(row.id), to_match
         return (IngestOutcome.UPDATED if changed else IngestOutcome.UNCHANGED), str(row.id), to_match
+
+    def _group_siblings(self, line: AutocountCancelLine) -> list[AutocountCancelLine]:
+        """The key-less lines naming the same document and item (any doc, live or not), so the
+        group a removed line counted in is re-decided. Bounded like the waiting retry."""
+        if not line.from_doc_no or not line.item_code:
+            return []
+        return (self.db.query(AutocountCancelLine)
+                .filter(AutocountCancelLine.company_id == self.company_id,
+                        AutocountCancelLine.from_doc_no == line.from_doc_no,
+                        AutocountCancelLine.item_code == line.item_code,
+                        AutocountCancelLine.from_dtl_key.is_(None),
+                        AutocountCancelLine.id != line.id)
+                .order_by(AutocountCancelLine.created_at.desc(), AutocountCancelLine.id)
+                .limit(MAX_WAITING_LINES).all())
 
     # ================================================================== deletions
     def delete(self, entity: str, doc_keys: list[Any], date_from: date, date_to: date, *,
@@ -1087,8 +1123,9 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Der
 def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, list[dict]]:
     """Owner hand test (13 Oct): per SO / PO line, the cancel documents that make up its
     `qty_cancelled` (live docs only, the same set `recompute_cancelled` reads), oldest first,
-    each with its qty and how it was matched. A `group_whole` document is listed on every line
-    of its group. One read for all the lines asked about."""
+    each with its qty and how it was matched. A `group_whole` document is listed once on every
+    line of its group with no qty: only each line's total is known, not a document's share
+    (review S1). One read for all the lines asked about."""
     ids = [str(i) for i in line_ids if i]
     if not ids:
         return {}
@@ -1105,10 +1142,14 @@ def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, li
     wanted = set(ids)
     out: dict[str, list[dict]] = {}
     for line_id, members, doc_no, qty, reason in rows:
-        on = [str(line_id)] if line_id else [str(i) for i in members or [] if str(i) in wanted]
-        for target in on:
-            out.setdefault(target, []).append(
+        if line_id:
+            out.setdefault(str(line_id), []).append(
                 {"doc_no": doc_no, "qty": float(qty or 0), "match_reason": reason})
+            continue
+        for target in (str(i) for i in members or [] if str(i) in wanted):
+            entry = {"doc_no": doc_no, "qty": None, "match_reason": reason}
+            if entry not in out.setdefault(target, []):
+                out[target].append(entry)
     return out
 
 

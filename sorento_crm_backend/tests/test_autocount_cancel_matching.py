@@ -64,7 +64,8 @@ def test_a_zero_cancel_over_several_lines_cancels_nothing():
 
 
 def test_a_do_on_the_group_leaves_a_multi_line_cancel_undetermined():
-    """D > 0 and C > 0 over 2+ lines: which line was cancelled cannot be known."""
+    """D > 0 and C > 0 over 2+ lines: which line was cancelled cannot be known (the old
+    tie-break case: a repeated item's DO line is never linked to a line)."""
     out = resolve_group([_c("x1", 12)], [_l("a", 12), _l("b", 12)], D(12))
     assert _picture(out) == {"x1": ("unmatched", REASON_UNDETERMINED, None)}
     assert out["x1"].candidates == ("a", "b")
@@ -74,13 +75,6 @@ def test_two_lines_that_could_each_hold_the_cancel_are_undetermined_never_the_fi
     """The old lowest-Seq fallback case: no line is picked."""
     out = resolve_group([_c("x1", 12)], [_l("a", 12), _l("b", 12)], D(0))
     assert _picture(out) == {"x1": ("unmatched", REASON_UNDETERMINED, None)}
-
-
-def test_the_old_tie_break_case_is_undetermined():
-    """One line's transfer is explained by a DO, the other's is not. With repeated items the DO is
-    not linked to a line, so the CRM cannot know which line it explains."""
-    out = resolve_group([_c("x1", 12)], [_l("a", 12), _l("b", 12)], D(12))
-    assert out["x1"].status == "unmatched" and out["x1"].target_id is None
 
 
 def test_a_cancel_that_is_not_every_transfer_is_undetermined_even_without_a_do():

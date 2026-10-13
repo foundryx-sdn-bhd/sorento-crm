@@ -324,9 +324,9 @@ def test_nothing_delivered_and_the_cancel_is_every_transfer_is_exact_per_line(en
 
     sources = cancel_sources(env.db, AutocountCancelLine.sales_order_line_id,
                              list(lines.values()))
+    # Review S1: only per-line totals are known, so the document is named once, with no qty.
     assert sources[lines[5001]] == sources[lines[5002]] == [
-        {"doc_no": "ZZXS-0001", "qty": 8.0, "match_reason": "group_whole"},
-        {"doc_no": "ZZXS-0001", "qty": 6.0, "match_reason": "group_whole"}]
+        {"doc_no": "ZZXS-0001", "qty": None, "match_reason": "group_whole"}]
 
 
 def test_a_whole_group_cancel_that_lowers_reopens_and_clears(env):
@@ -665,3 +665,194 @@ def test_xp_without_a_key_over_two_po_lines_is_exact_when_it_is_every_receipt(en
     env.db.expire_all()
     assert [env.db.get(PurchaseOrderLine, i).qty_cancelled for i in ids] == [Decimal("5"),
                                                                             Decimal("3")]
+
+
+# ======================================================================= review round (exact rework)
+def _whole_pair(env, a=8, b=6):
+    """5001 (ordered 10, T 10) and 5002 (ordered 10, T 4); key-less XS-A and XS-B."""
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=a, from_dtl=0)]),
+                   _xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=b, from_dtl=0)])])
+    return lines
+
+
+def _totals(env, lines):
+    return {k: _so_line(env, v).qty_cancelled for k, v in lines.items()}
+
+
+def _undone(env, lines, survivor):
+    stored = _cancel_lines(env, survivor[0])[survivor[1]]
+    assert (stored.match_status, stored.match_reason) == ("unmatched", "undetermined")
+    assert _totals(env, lines) == {5001: Decimal("0"), 5002: Decimal("0")}
+    assert _so_line(env, lines[5001]).line_status == "closed"
+
+
+def test_voiding_one_cancel_of_a_whole_group_re_decides_the_rest(env):
+    """Review B1 (1): C drops to 6, sum(T) is 14: undetermined, both lines back to 0."""
+    lines = _whole_pair(env)
+    assert _cancel_lines(env, 950002)[952001].match_reason == "group_whole"
+    _push_xs(env, [_xs(details=[_detail(951001, qty=8, from_dtl=0)], cancelled="T",
+                       modified="2026-10-02T10:00:00.000")])
+    _undone(env, lines, (950002, 952001))
+
+
+def test_sweeping_one_cancel_of_a_whole_group_re_decides_the_rest(env):
+    """Review B1 (2)."""
+    lines = _whole_pair(env)
+    assert env.delete(XS_DELETE, [950001]).status_code == 200
+    _undone(env, lines, (950002, 952001))
+
+
+def test_removing_a_cancel_line_from_a_whole_group_re_decides_the_rest(env):
+    """Review B1 (3): XS-A is re-pushed without its P1 line (a P2 line stays)."""
+    lines = _whole_pair(env)
+    _push_xs(env, [_xs(details=[_detail(951009, item="ZZAC-P2", qty=1, from_dtl=0)],
+                       modified="2026-10-02T10:00:00.000")])
+    _undone(env, lines, (950002, 952001))
+
+
+def test_moving_a_cancel_line_to_another_item_re_decides_its_old_group(env):
+    """Review B1 (4): XS-B's line turns from P1 to P2; XS-A alone (8) is not every transfer."""
+    lines = _whole_pair(env)
+    _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, item="ZZAC-P2", qty=6, from_dtl=0)],
+                       modified="2026-10-02T10:00:00.000")])
+    _undone(env, lines, (950001, 951001))
+
+
+def test_voiding_the_extra_cancel_makes_the_group_whole(env):
+    """Review B1 (5): 14 + 5 is not every transfer; voiding the 5 leaves exactly 14."""
+    lines = _whole_pair(env, a=14, b=5)
+    assert _cancel_lines(env, 950001)[951001].match_reason == "undetermined"
+    _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=5, from_dtl=0)], cancelled="T",
+                       modified="2026-10-02T10:00:00.000")])
+    assert _cancel_lines(env, 950001)[951001].match_reason == "group_whole"
+    assert _totals(env, lines) == {5001: Decimal("10"), 5002: Decimal("4")}
+
+
+def test_two_locations_in_one_batch_are_two_groups(env):
+    """Review M7: each cancel lands on the line at its own location, in one batch."""
+    _wh2(env)
+    lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"), (5002, "p1", 10, 3, "wh2")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=4, from_dtl=0),
+                                _detail(951002, qty=3, location="ZZAC-WH2", from_dtl=0)])])
+    assert _totals(env, lines) == {5001: Decimal("4"), 5002: Decimal("3")}
+
+
+def test_a_whole_group_cancel_names_its_document_to_the_oi_retire(env):
+    """Review M9: the R5 retire reads "Transferred to Cancel SO <XS no>" for a whole group."""
+    from app.services.autocount_cancel_ingest_service import _latest_doc_no
+
+    lines = _whole_pair(env)
+    assert _so_line(env, lines[5001]).line_status == "cancelled"
+    # the latest of the group's documents (same date: the higher number), never blank
+    assert _latest_doc_no(env.db, lines[5001]) == "ZZXS-0002"
+
+
+def test_another_companys_do_and_a_cancelled_do_do_not_count_as_delivered(env):
+    """Review M12 / M14: D reads this company's live DOs only."""
+    from app.models.order import Order, OrderLine
+
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
+    for company, cancelled, number in ((env.company_b, False, "ZZDO-CB01"),
+                                       (env.company, True, "ZZDO-CX01")):
+        order = Order(order_number=number, company_id=company, order_status_id=env.new_status,
+                      is_cancelled=cancelled)
+        env.db.add(order)
+        env.db.flush()
+        env.db.add(OrderLine(order_id=order.id, product_id=env.p1, warehouse_id=env.wh1,
+                             quantity=5, line_sequence=1,
+                             company_id=company,
+                             item_code="ZZAC-P1", location_code="ZZAC-WH1",
+                             from_doc_type="SO", from_doc_no="ZZSO-C001"))
+    env.db.commit()
+    _push_xs(env, [_xs(details=[_detail(951001, qty=14, from_dtl=0)])])
+    assert _cancel_lines(env, 950001)[951001].match_reason == "group_whole"
+    assert _totals(env, lines) == {5001: Decimal("10"), 5002: Decimal("4")}
+
+
+def test_a_keyed_cancel_and_a_whole_group_on_one_line_read_its_transfer(env):
+    """Review M17: ordered above the transfer, so the cap hides nothing. 5001 T 6 with a keyed
+    2; key-less 8 = (6 - 2) + 4: 5001 reads 6, not 6 + 2."""
+    lines = _so(env, lines=((5001, "p1", 10, 6, "wh1"), (5002, "p1", 10, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=2, from_dtl=5001)]),
+                   _xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=8, from_dtl=0)])])
+    assert _cancel_lines(env, 950002)[952001].match_reason == "group_whole"
+    assert _totals(env, lines) == {5001: Decimal("6"), 5002: Decimal("4")}
+
+
+def _po_pair(env, number="ZZPO-C003"):
+    po = PurchaseOrder(po_number=number, company_id=env.company)
+    env.db.add(po)
+    env.db.flush()
+    ids = []
+    for dtl, received in ((7101, 5), (7102, 3)):
+        pol = PurchaseOrderLine(purchase_order_id=po.id, product_id=env.p1, qty_ordered=10,
+                                qty_received=received, warehouse_id=env.wh1,
+                                source_ref=f"SRT_DB:7001:{dtl}", company_id=env.company)
+        env.db.add(pol)
+        env.db.flush()
+        ids.append(str(pol.id))
+    env.db.commit()
+    return ids
+
+
+def _po_totals(env, ids):
+    env.db.expire_all()
+    return [env.db.get(PurchaseOrderLine, i).qty_cancelled for i in ids]
+
+
+def test_a_grn_on_the_po_group_leaves_the_cancel_undetermined(env):
+    """Review M16."""
+    import uuid
+
+    from app.models.procurement import PickingHeader, PickingLine
+
+    ids = _po_pair(env)
+    header = PickingHeader(id=str(uuid.uuid4()), company_id=env.company,
+                           picking_number="ZZGRN-C001", picking_type="goods_received",
+                           picking_status="approved", inspection_status="pending")
+    env.db.add(header)
+    env.db.flush()
+    env.db.add(PickingLine(id=str(uuid.uuid4()), company_id=env.company,
+                           picking_header_id=header.id, po_line_id=ids[1], product_id=env.p1,
+                           quantity_expected=3, quantity_picked=3))
+    env.db.commit()
+    env.post(XP_INGEST, [_xp(details=[_detail(961001, qty=8, from_no="ZZPO-C003", from_dtl=0,
+                                              from_type="PO")])])
+    assert _cancel_lines(env, 960001)[961001].match_reason == "undetermined"
+    assert _po_totals(env, ids) == [Decimal("0"), Decimal("0")]
+
+
+def test_a_keyed_xp_counts_against_its_po_line_in_the_group(env):
+    """Review M15: keyed 3 on 7102 leaves T' 5 and 0, so a key-less 5 is every transfer."""
+    ids = _po_pair(env)
+    env.post(XP_INGEST, [_xp(details=[
+        _detail(961001, qty=3, from_no="ZZPO-C003", from_dtl=7102, from_type="PO"),
+        _detail(961002, qty=5, from_no="ZZPO-C003", from_dtl=0, from_type="PO")])])
+    assert _cancel_lines(env, 960001)[961002].match_reason == "group_whole"
+    assert _po_totals(env, ids) == [Decimal("5"), Decimal("3")]
+
+
+def test_xp_without_a_key_over_two_spo_lines_is_exact_when_it_is_every_receipt(env):
+    """Review M18."""
+    ids = []
+    for dtl, received in ((7201, 5), (7202, 3)):
+        spo = SPOAllocation(spo_number="SPO-ZZ-C002", product_id=env.p2, allocated_quantity=20,
+                            stated_received=received, warehouse_id=env.wh1,
+                            spo_line_number=dtl % 100, source_ref=f"SRT_DB:7002:{dtl}",
+                            company_id=env.company)
+        env.db.add(spo)
+        env.db.flush()
+        ids.append(str(spo.id))
+    env.db.commit()
+    env.post(XP_INGEST, [_xp(details=[_detail(961001, item="ZZAC-P2", qty=8,
+                                              from_no="SPO-ZZ-C002", from_dtl=0,
+                                              from_type="PO")])])
+    assert _cancel_lines(env, 960001)[961001].match_reason == "group_whole"
+    env.db.expire_all()
+    assert [env.db.get(SPOAllocation, i).qty_cancelled for i in ids] == [Decimal("5"),
+                                                                        Decimal("3")]
