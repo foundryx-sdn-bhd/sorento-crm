@@ -500,6 +500,24 @@ def _saved_line_parts(
     return parts
 
 
+def _buy_qty(snapshot: Mapping[str, Any]) -> Decimal:
+    """The Buy quantity of a saved line's snapshot."""
+    return sum(
+        (
+            _dec(component.get("qty"))
+            for component in snapshot.get("components") or []
+            if component.get("kind") == "buy"
+        ),
+        _ZERO,
+    )
+
+
+def _decision_words(snapshot: Mapping[str, Any]) -> Tuple[str, ...]:
+    """Which decisions a line carries, without their quantities: ("ORDER",) or
+    ("USE BRW", "ORDER")."""
+    return tuple(words for words, _location, _qty, _key in _saved_line_parts(snapshot))
+
+
 def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
     """What makes two snapshots of one line the SAME decision for purchasing: the line's
     quantity, date and product, and each part's kind, quantity, location and document."""
@@ -4162,28 +4180,51 @@ class ProjectOrderInquiryService:
         nothing (Q3), so a Confirm that changed nothing sends no email at all.
         """
         saved_ids = {str(line.id) for line, _now, _before in saved}
-        queue = self.db.info.get(_HANDOVER_PENDING_KEY)
-        taken_back: Dict[str, Decimal] = {}
-        if queue:
-            kept = []
-            for item in queue:
-                line_id = item.get("so_line_id")
-                if item.get("pso_id") == pso_id and line_id in saved_ids:
-                    if IV_CANCEL_BALANCE in (item.get("verb_keys") or ()):
-                        entry = item.get("line") or {}
-                        was_qty = _dec(((entry.get("was") or {}).get("qty")))
-                        drop = was_qty - _dec(entry.get("qty")) if was_qty else _ZERO
-                        if drop > _ZERO:
-                            taken_back[line_id] = taken_back.get(line_id, _ZERO) + drop
-                    continue
+        queue = self.db.info.setdefault(_HANDOVER_PENDING_KEY, [])
+        told: Dict[str, List[Dict[str, Any]]] = {}
+        kept = []
+        for item in queue:
+            line_id = item.get("so_line_id")
+            if item.get("pso_id") == pso_id and line_id in saved_ids:
+                told.setdefault(line_id, []).append(item)
+            else:
                 kept.append(item)
-            queue[:] = kept
+        queue[:] = kept
         for line, now, before in saved:
-            if before is not None and _saved_decision_key(before) == _saved_decision_key(now):
+            rows_told = told.get(str(line.id), [])
+            row_lines = [i for i in rows_told if not str(i.get("row_id", "")).startswith("stock-short")]
+            unchanged = before is not None and _saved_decision_key(before) == _saved_decision_key(now)
+            same_kind = before is not None and _decision_words(before) == _decision_words(now)
+            if (unchanged and row_lines) or (same_kind and len(row_lines) == 1):
+                # The rows already told this line in the one-line form purchasing works
+                # from (QTY = what they held, QTY CHANGE TO = the new need, EMAIL-HANDOVER-
+                # QTY), or a decision that did not change still asked them something (a
+                # refused row restated, AC-H6): that line stands as the line.
+                queue.extend(row_lines)
                 continue
+            if unchanged:
+                continue
+            taken_back = _ZERO
+            raised = _ZERO
+            for item in row_lines:
+                entry = item.get("line") or {}
+                was_qty = _dec((entry.get("was") or {}).get("qty"))
+                keys_told = item.get("verb_keys") or ()
+                remark_told = (entry.get("remark") or "").strip()
+                if IV_CANCEL_BALANCE in keys_told and was_qty > _dec(entry.get("qty")):
+                    taken_back += was_qty - _dec(entry.get("qty"))
+                elif remark_told in ("ORDER", "ORDER BACK"):
+                    # A fresh raise: its whole quantity is to be bought.
+                    raised += _dec(entry.get("qty"))
+                elif remark_told.startswith("ORDER "):
+                    # A settle that adds ("ORDER 3", or "DELAY, ORDER 3" read from its end).
+                    raised += _dec(remark_told.rsplit(" ", 1)[-1])
             self._queue_saved_line(
                 pso_id, line, now, before, actor_user_id=actor_user_id,
-                taken_back=taken_back.get(str(line.id), _ZERO),
+                taken_back=taken_back,
+                # Several row lines for one line of the same kind (a redirect, two rows):
+                # what purchasing must order is what the rows raised, never need - held.
+                raised=raised if same_kind and len(row_lines) > 1 else None,
             )
 
     def record_cancelled_lines(
@@ -4247,6 +4288,7 @@ class ProjectOrderInquiryService:
         remark: Optional[str] = None,
         keys: Optional[List[str]] = None,
         taken_back: Decimal = _ZERO,
+        raised: Optional[Decimal] = None,
     ) -> None:
         explicit = remark is not None
         if not explicit:
@@ -4259,37 +4301,48 @@ class ProjectOrderInquiryService:
         qty_now = _dec(now.get("open_qty"))
         if before is not None:
             qty_before = _dec(before.get("open_qty"))
-            if qty_before != qty_now:
-                was["qty"] = qty_before
-                if qty_now < qty_before and not explicit:
-                    # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
-                    remark = f"CANCEL {_qty_str(qty_before - qty_now)}"
-                    keys = [IV_CANCEL_BALANCE]
-            if not explicit and "qty" not in was and taken_back > _ZERO:
-                # The rows of this line told purchasing to cancel something they hold (a
-                # raised order withdrawn, settled down, or a CANCEL BALANCE exception): the
-                # line says so, on a line whose own quantity stands. Read off what the rows
-                # actually did, never off the Buy's size: a Buy whose goods already arrived
-                # and now cover the line from stock is not an order to take back.
-                dropped = f"CANCEL ORDER {_qty_str(taken_back)}"
-                remark = f"{remark}, {dropped}" if remark else dropped
-                keys.append(IV_CANCEL_BALANCE)
             date_before, date_now = before.get("required_date"), now.get("required_date")
-            if date_before and date_now and date_before != date_now:
+            pieces: List[str] = []
+            same_kinds = _decision_words(before) == _decision_words(now)
+            # Purchasing held something for this line before (a Buy, an Order back): its
+            # date and quantity moves are theirs to read. A line that only ever drew on
+            # stock and now turns to a Buy is a fresh instruction, with no "was".
+            held_before = same_kinds or _buy_qty(before) > _ZERO
+            if held_before and date_before and date_now and date_before != date_now:
                 was["delivery_date"] = date.fromisoformat(date_before)
                 date_word = IV_DELAY if date_now > date_before else IV_ADVANCE
                 keys.append(date_word)
-                if not explicit:
-                    same_parts = _saved_decision_key(
-                        {**before, "required_date": None}
-                    ) == _saved_decision_key({**now, "required_date": None})
-                    # Only the date moved: today's DELAY / ADVANCE. Anything else moved
-                    # too: the decision, then the date word.
-                    remark = (
-                        REMARK_SPELLING[date_word]
-                        if same_parts
-                        else f"{remark}, {REMARK_SPELLING[date_word]}"
-                    )
+                pieces.append(REMARK_SPELLING[date_word])
+            if held_before and qty_before != qty_now:
+                was["qty"] = qty_before
+                if raised is not None:
+                    if raised > _ZERO:
+                        pieces.append(f"ORDER {_qty_str(raised)}")
+                        keys.append(IV_ORDER)
+                elif qty_now < qty_before:
+                    # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
+                    pieces.append(f"CANCEL {_qty_str(qty_before - qty_now)}")
+                    keys.append(IV_CANCEL_BALANCE)
+                else:
+                    grown = _buy_qty(now) - _buy_qty(before)
+                    if grown > _ZERO:
+                        pieces.append(f"ORDER {_qty_str(grown)}")
+                        keys.append(IV_ORDER)
+            if not explicit:
+                # The decision's words when the KIND of decision moved (Buy to Use BRW, a
+                # new part) or nothing above says anything; a pure date or quantity move of
+                # the same decision reads as today's settle line did ("DELAY, ORDER 3").
+                if not same_kinds or not pieces:
+                    pieces.append(remark)
+                if ("qty" not in was or raised is not None) and taken_back > _ZERO:
+                    # The rows of this line told purchasing to cancel something they hold
+                    # (a raised order withdrawn, settled down, a CANCEL BALANCE exception).
+                    # Read off what the rows actually did, never off the Buy's size: a Buy
+                    # whose goods arrived and now cover the line from stock is not an order
+                    # to take back (crew audit, SO400236).
+                    pieces.append(f"CANCEL ORDER {_qty_str(taken_back)}")
+                    keys.append(IV_CANCEL_BALANCE)
+                remark = ", ".join(piece for piece in pieces if piece)
             if before.get("item_code") and before.get("item_code") != now.get("item_code"):
                 was["item_code"] = before.get("item_code")
                 keys.append("CHANGE_ITEM_CODE")
