@@ -268,6 +268,35 @@ def resolver_reference_kinds(attributes: list[str] | None, is_staff: bool, held_
     return kinds
 
 
+def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> dict[str, Any]:
+    """Reference kinds, packing-list regions and customer scope for this contact, as v1 computes them."""
+    from app.services.chatbot.head.access import _granted_field_reveal_keys
+    from app.services.chatbot.lanes.business import services as business_services
+    from app.services.chatbot.turn.state import is_staff_profile
+    from app.services.eta_policy import UNRESOLVED, resolve_request_contact, rules_for_contact
+
+    contact = str(contact_respond_id)
+    staff = is_staff_profile(profile)
+    try:
+        attrs = _granted_field_reveal_keys(db, contact_id=contact, space_id=space_id)
+    except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
+        attrs = []
+    try:
+        scope = business_services.customer_scope(db, contact, space_id)
+    except Exception:  # noqa: BLE001 - unknown scope: held to links, no customer names at all
+        scope = {"enforced": True, "ids": []}
+    held = (not staff) or bool((scope or {}).get("enforced"))
+    try:
+        regions = rules_for_contact(db, resolve_request_contact(db, contact, space_id)).regions
+    except Exception:  # noqa: BLE001 - v1's closed value for an unknown contact
+        regions = UNRESOLVED.regions
+    return {
+        "reference_kinds": resolver_reference_kinds(attrs, staff, held),
+        "regions": regions,
+        "customer_scope": scope,
+    }
+
+
 def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     from app.services.chatbot.head.access import default_space_id
     from app.services.chatbot.lanes.business.services import _mcp_call
@@ -291,29 +320,6 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     raw_state = session_vars.get("pv2")
     profile = hctx.profile
 
-    def _scope_for_resolver(rdb: Any) -> dict[str, Any]:
-        """Reference kinds and packing-list regions for this contact, as v1 computes them."""
-        from app.services.chatbot.head.access import _granted_field_reveal_keys
-        from app.services.chatbot.lanes.business import services as business_services
-        from app.services.chatbot.turn.state import is_staff_profile
-        from app.services.eta_policy import UNRESOLVED, resolve_request_contact, rules_for_contact
-
-        staff = is_staff_profile(profile)
-        try:
-            attrs = _granted_field_reveal_keys(rdb, contact_id=contact, space_id=space_id)
-        except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
-            attrs = []
-        try:
-            scope = business_services.customer_scope(rdb, contact, space_id)
-        except Exception:  # noqa: BLE001 - unknown scope is treated as held to links
-            scope = {"enforced": True}
-        held = (not staff) or bool((scope or {}).get("enforced"))
-        try:
-            regions = rules_for_contact(rdb, resolve_request_contact(rdb, contact, space_id)).regions
-        except Exception:  # noqa: BLE001 - v1's closed value for an unknown contact
-            regions = UNRESOLVED.regions
-        return {"reference_kinds": resolver_reference_kinds(attrs, staff, held), "regions": regions}
-
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
             return load_exchanges(edb, contact_respond_id=contact, ingress=ingress, is_test=is_test, since=since)
@@ -333,7 +339,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **_scope_for_resolver(db))),
+            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope_for_resolver(db, contact, space_id, profile))),
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile),
             report_answer=answer_mod.default_report_answer(
