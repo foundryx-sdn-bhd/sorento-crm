@@ -21,8 +21,6 @@ import pytest
 # MUST be the first app import - resolves a circular import in app.modules.runtime.guards
 from app.main import app  # noqa: E402, F401
 
-from app.services.chatbot.pv2 import ideas  # noqa: E402
-
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 MSG = "the price tag should show promo price in red"
@@ -147,6 +145,8 @@ class FakeCapture:
 
 @pytest.fixture
 def cap(monkeypatch) -> FakeCapture:
+    from app.services.chatbot.pv2 import ideas
+
     fake = FakeCapture()
     monkeypatch.setattr(ideas, "handle_capture_turn", fake)
     return fake
@@ -154,6 +154,8 @@ def cap(monkeypatch) -> FakeCapture:
 
 def run(ask, *, pending=None, language="en", message_text=MSG, session_vars=None, turn_no=4,
         is_test=False):
+    from app.services.chatbot.pv2 import ideas
+
     return ideas.run_idea_turn(
         None,
         ask=ask,
@@ -182,6 +184,8 @@ def assert_no_leaks(res) -> None:
 # module surface                                                              #
 # --------------------------------------------------------------------------- #
 def test_pending_kinds_constant():
+    from app.services.chatbot.pv2 import ideas
+
     assert ideas.IDEA_PENDING_KINDS == frozenset({"idea_similar", "idea_missing_field", "idea_multi"})
 
 
