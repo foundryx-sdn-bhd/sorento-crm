@@ -6032,9 +6032,10 @@ class ProjectOrderInquiryService:
             self.db, [link.linked_by for link, *_rest in rows if link.linked_by]
         )
         out: Dict[str, List[Dict[str, Any]]] = {}
-        # S5, R-D: every PO-kind link's own (po_number, product_id) - what a derived SPO
-        # allocation has to match. Collected while the loop is on the real links anyway,
-        # so the second query below runs once for the whole page rather than once per row.
+        # S5, R-D: every PO-kind link's own (po_number, PO line source_ref, product_id) -
+        # what a derived SPO allocation has to match (OI-SPO-EXACT: the LINE, not only the
+        # document). Collected while the loop is on the real links anyway, so the second
+        # query below runs once for the whole page rather than once per row.
         #
         # A SET PER ROW (AC-D13), never one pair: a row linked to two purchase orders
         # has two pairs, and a dict of one pair per row silently kept the LAST link's
@@ -6071,9 +6072,10 @@ class ProjectOrderInquiryService:
             spo_actual_arrival_date,
         ) in rows:
             is_spo = link.spo_allocation_id is not None
-            if not is_spo and po_number and po_product_id:
+            po_line_ref = (po_source_ref or "").strip()
+            if not is_spo and po_number and po_line_ref and po_product_id:
                 po_pairs_by_row.setdefault(link.row_id, set()).add(
-                    (po_number, str(po_product_id))
+                    (po_number, po_line_ref, str(po_product_id))
                 )
             location = warehouse_code or (spo_location_code if is_spo else None)
             tier, _sub = link_location_tier(stock_location, location, pools)
@@ -6227,8 +6229,12 @@ class ProjectOrderInquiryService:
         self, out: Dict[str, List[Dict[str, Any]]], po_pairs_by_row: Dict[str, set]
     ) -> None:
         """S5 (R-D, R-E; coordinator's 16 Sep addendum): a SYNTHETIC `spo`-kind entry per
-        row, for every OPEN SPO allocation the row's own PO links' POs have for the same
-        product - `from_po_number = po_number AND product_id = po_line.product_id`. OPEN
+        row, for every OPEN SPO allocation the row's own PO LINES became -
+        `from_po_number = po_number AND trim(from_po_line_ref) = po_line.source_ref AND
+        product_id = po_line.product_id` (OI-SPO-EXACT, owner 13 Oct: an allocation of the
+        same PO and product that quotes ANOTHER line was bought for another sales order
+        line and is not this row's incoming stock; a PO line with no `source_ref` has no
+        derived entry). OPEN
         is `spo_supply.open_incoming_clauses()` (line open, not received, shipment not
         landed) AND `retired_at IS NULL` AND `allocated_quantity > coalesce(quantity_
         received, 0)` - a landed shipment has already measured out, not incoming any
@@ -6258,6 +6264,7 @@ class ProjectOrderInquiryService:
             self.db.query(
                 SPOAllocation.spo_number,
                 SPOAllocation.from_po_number,
+                func.btrim(SPOAllocation.from_po_line_ref),
                 SPOAllocation.product_id,
                 SPOAllocation.allocated_quantity,
                 SPOAllocation.quantity_received,
@@ -6271,7 +6278,11 @@ class ProjectOrderInquiryService:
             )
             .outerjoin(Warehouse, Warehouse.id == SPOAllocation.warehouse_id)
             .filter(
-                tuple_(SPOAllocation.from_po_number, SPOAllocation.product_id).in_(pairs),
+                tuple_(
+                    SPOAllocation.from_po_number,
+                    func.btrim(SPOAllocation.from_po_line_ref),
+                    SPOAllocation.product_id,
+                ).in_(pairs),
                 *derived_spo_open_clauses(),
                 *((company_predicate,) if company_predicate is not None else ()),
             )
@@ -6283,6 +6294,7 @@ class ProjectOrderInquiryService:
         for (
             spo_number,
             from_po_number,
+            from_po_line_ref,
             product_id,
             allocated,
             received,
@@ -6292,7 +6304,9 @@ class ProjectOrderInquiryService:
             warehouse_code,
         ) in allocations:
             open_qty = _dec(allocated) - _dec(received)
-            by_pair.setdefault((from_po_number, str(product_id)), []).append(
+            by_pair.setdefault(
+                (from_po_number, from_po_line_ref, str(product_id)), []
+            ).append(
                 {
                     "id": f"derived-{allocation_id}",
                     "kind": "spo",
@@ -6301,7 +6315,7 @@ class ProjectOrderInquiryService:
                     # This ONE entry is one specific `spo_allocations` row (the loop is
                     # over allocations, not products), so its own id is unambiguous even
                     # though WHICH allocations qualify as a candidate for this row is a
-                    # product/PO-number match (R-D/R-E, unchanged) - never used to pick
+                    # product/PO-line match (R-D/R-E, OI-SPO-EXACT) - never used to pick
                     # the entry, only to name the one it already is.
                     "spo_allocation_id": str(allocation_id),
                     # 17 Sep prod 500: `sales_order_service._line_links` hard-indexes
