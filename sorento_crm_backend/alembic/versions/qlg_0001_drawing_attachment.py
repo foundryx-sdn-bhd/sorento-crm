@@ -13,7 +13,7 @@ existing row starts NULL and reads the product's first drawing live, which is wh
 showed before.
 
 Revision ID: qlg_0001_drawing_attachment
-Revises: spec_in_0001_stage_label
+Revises: mpr_0001_cache_unknown_views
 """
 from alembic import op
 import sqlalchemy as sa
@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 
 revision = "qlg_0001_drawing_attachment"
-down_revision = "spec_in_0001_stage_label"
+down_revision = "mpr_0001_cache_unknown_views"
 branch_labels = None
 depends_on = None
 
