@@ -1,6 +1,6 @@
 # PLAN: notify the OI raiser when purchasing rejects rows (OI-REJECT-NOTIFY)
 
-Status: Review, owner hand-test rounds 2 and 3 built (track: standard, additive seed + data migrations; cloud lane, backend and frontend)
+Status: Review, owner hand-test rounds 2, 3 and mock v3 built (track: standard, additive seed + data migrations; cloud lane, backend and frontend)
 
 UAC: `oi-reject-notify-13oct-acceptance-criteria.md` (alongside).
 
@@ -135,3 +135,23 @@ the SO and can directly see which lines are rejected to take next action".
 - Q2 = no reminders. Q3 = no extra notification: a re-Buy produces the normal order inquiry.
 - Known, not changed here: a refused row stays RAISED when CS later covers the line from stock
   or borrow (the single-line path always did); netting already ignores refused rows.
+
+## Owner mock v3 (13 Oct), supersedes the board placement and link of rounds 2 and 3
+
+- A purchasing refusal is the ORDER INQUIRY's status, not a planning value: a red "Rejected"
+  badge plus an info icon ("Rejected by <name> on <MYT time>: <reason>", hover on desktop, tap
+  at 375px) in the Order inquiry column of the Sales Order's Lines tab and of the planning
+  board's List view (`OrderInquiryRejectedBadge`). It replaces the inquiry's state word only
+  while the refusal is open.
+- Verdict and Decided are plain planning values again: the "Rejected by purchasing" verdict
+  pill and the red Decided text of round 3 are gone.
+- The decision strip's "N rejected" chip is removed (owner: "i don't need this indicator").
+  The header's " · N rejected by purchasing" and the Status filter "Rejected by purchasing"
+  stay.
+- Email CTA and bell: `/scm/sales-orders/<SO id>?tab=lines&line=<first refused core line>`
+  (the lowest `line_no`), which opens the Lines tab and highlights that line; every refused
+  line carries the badge. The board's `?lines=` reader of round 2 is removed (no producer).
+- The badge clears once CS decides the line again: the SO page reuses the board's own rule
+  (`FulfilmentBoardService.open_refusals`, `decided_at` from the frozen decisions).
+- History: the refusal is a `rejected` entry in the line's decision trail ("Rejected by
+  purchasing: <OI no>: <reason>", who, when), kept after the badge clears.

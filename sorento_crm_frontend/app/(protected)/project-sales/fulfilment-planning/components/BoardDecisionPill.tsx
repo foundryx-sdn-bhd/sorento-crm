@@ -105,7 +105,7 @@ export const VERDICT_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'change_proposed', label: VERDICT_LABEL.change_proposed },
   { value: 'rejected', label: VERDICT_LABEL.rejected },
   // PR 1622 (mock v3): not a verdict - the order inquiry's own status - but filterable from
-  // the same control (`matchesStatusFilter`), and what the rejection email/bell link sets.
+  // the same control (`matchesStatusFilter`).
   { value: PURCHASING_REJECTED_FILTER, label: 'Rejected by purchasing' },
   { value: 'stale', label: VERDICT_LABEL.stale },
   { value: 'cancelled', label: VERDICT_LABEL.cancelled },

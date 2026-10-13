@@ -693,7 +693,7 @@ export function FulfilmentBoardListView({
             </span>
           );
         },
-        size: 190,
+        size: 220,
         minSize: 100,
         enableSorting: true,
       },

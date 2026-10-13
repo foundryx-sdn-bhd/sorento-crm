@@ -39,7 +39,7 @@ _SUBJECT = (
 
 # Inline, like the handover mail's own body (`oihr_0003_location_column`) - a mail client
 # carries no stylesheet. ONE call to action (owner, 13 Oct): "Open sales order", to the SO's
-# planning board on the refused lines; the order inquiry only when there is no SO to open.
+# Lines tab on the first refused line (mock v3); the order inquiry only when there is no SO.
 _TH_STYLE = "border:1px solid #d0d0d5;padding:4px 8px;background:#f2f2f5;text-align:left;"
 _TD_STYLE = "border:1px solid #d0d0d5;padding:4px 8px;"
 _TABLE_STYLE = "border-collapse:collapse;font-family:Arial, sans-serif;font-size:13px;"

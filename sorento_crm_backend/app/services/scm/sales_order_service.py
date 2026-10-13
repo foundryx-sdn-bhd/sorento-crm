@@ -409,9 +409,10 @@ class SalesOrderService:
 
         ``line_planning`` attaches, per LINE, what has already been planned about it: the
         order inquiry covering it, the revision that decided it, and the documents its Buy
-        is linked to. Three reads for the WHOLE order, and off by default - the list
-        renders none of them, and paying for them across a page of 50 orders would be 150
-        reads for facts nothing there prints.
+        is linked to, plus any open purchasing refusal (PR 1622, the board's own rule). A
+        fixed handful of reads for the WHOLE order, and off by default - the list renders
+        none of them, and paying for them across a page of 50 orders would multiply them by
+        50 for facts nothing there prints.
         """
         customer = so.customer
         inquiries = self._line_inquiries(so) if line_planning else {}

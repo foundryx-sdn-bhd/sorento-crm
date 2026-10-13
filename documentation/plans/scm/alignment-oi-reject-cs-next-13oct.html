@@ -66,7 +66,7 @@
       <strong>Planning 1 sales order: SO421432</strong>
       <span class="muted">0 to confirm · 0 rejected · <b>1 rejected by purchasing</b></span>
     </div>
-    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip (stays)</span> &nbsp; <span class="chip" style="border:1px solid var(--line)">Status: Rejected by purchasing</span> <span class="muted">filter (stays)</span></p>
+    <p style="margin:8px 0"><span class="chip" style="border:1px solid var(--line)">Status: Rejected by purchasing</span> <span class="muted">filter (stays). No decision strip chip (owner note 1).</span></p>
     <div class="scroll">
       <table>
         <tr><th>Line</th><th>Product</th><th>Outstanding</th><th>OI</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
@@ -86,6 +86,8 @@
       <li><span class="decided">Decided</span> No reminders; no extra notice to purchasing.</li>
       <li><span class="decided">Built</span> Footer reads Sorento.</li>
       <li><span class="new">v3</span> The board's "Rejected by purchasing" verdict pill and red Decided text are removed; the badge moves to the OI column on both screens.</li>
+      <li><span class="new">v3</span> The decision strip's "N rejected" chip is removed (owner note 1).</li>
+      <li><span class="new">v3</span> The line's decision trail keeps "Rejected by purchasing: &lt;OI&gt;: &lt;reason&gt;", who and when, after the badge clears (owner note 4).</li>
     </ul>
   </div>
 

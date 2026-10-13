@@ -5413,8 +5413,7 @@ describe('FulfilmentBoardPanel: SO-CANCEL-LINE round 12 inquiry-decided cancels 
 });
 
 /**
- * PR 1622 (owner hand test 13 Oct): a line purchasing refused is counted in the header, and
- * the rejection email/bell link (`?lines=`) opens the List on it, filtered to the refusals.
+ * PR 1622 (owner hand test 13 Oct, mock v3): a line purchasing refused is counted in the header.
  */
 describe('Purchasing refusals on the board (PR 1622)', () => {
   const refused = (entry: BoardContribution): BoardContribution => ({
@@ -5446,71 +5445,5 @@ describe('Purchasing refusals on the board (PR 1622)', () => {
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
     expect(screen.getByTestId('board-confirm-summary')).not.toHaveTextContent('by purchasing');
-  });
-
-  it('?lines= opens the List filtered to "Rejected by purchasing" on the linked line', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-1');
-    getPlanningBoard.mockResolvedValue(
-      withContribution(boardOf([demand()]), () => true, refused),
-    );
-    renderPanel(['SO403340']);
-    expect(await screen.findByText('Status: Rejected by purchasing')).toBeInTheDocument();
-    expect(screen.queryByTestId('fulfilment-board-matrix')).not.toBeInTheDocument();
-  });
-
-  function mountedPanel(soNumbers: string[]) {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-    });
-    const tree = (orders: string[]) => (
-      <QueryClientProvider client={client}>
-        <FulfilmentBoardPanel soNumbers={orders} onBack={vi.fn()} batchId={null} />
-      </QueryClientProvider>
-    );
-    const utils = render(tree(soNumbers));
-    return { rerenderWith: (orders: string[]) => utils.rerender(tree(orders)) };
-  }
-
-  const twoRefused = () =>
-    withContribution(
-      boardOf([demand(), demand({ line_no: 2, item_code: 'WESERP10C' })]),
-      () => true,
-      (entry) => ({ ...refused(entry), project_line_id: `pl-${entry.line_no}` }),
-    );
-
-  it('a second link while the board stays open applies again (review S2)', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-1');
-    getPlanningBoard.mockResolvedValue(twoRefused());
-    const { rerenderWith } = mountedPanel(['SO403340']);
-    await screen.findByText('Status: Rejected by purchasing');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filter: Status: Rejected by purchasing' }));
-    await waitFor(() =>
-      expect(screen.queryByText('Status: Rejected by purchasing')).not.toBeInTheDocument(),
-    );
-    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-2');
-    rerenderWith(['SO403340']);
-    expect(await screen.findByText('Status: Rejected by purchasing')).toBeInTheDocument();
-  });
-
-  it('a first board without the linked line does not use the link up (review S2)', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-1');
-    getPlanningBoard
-      .mockResolvedValueOnce(boardOf([demand()]))
-      .mockResolvedValue(withContribution(boardOf([demand()]), () => true, refused));
-    const { rerenderWith } = mountedPanel(['SO403340']);
-    await screen.findByTestId('fulfilment-board-matrix');
-    expect(screen.queryByText('Status: Rejected by purchasing')).not.toBeInTheDocument();
-    rerenderWith(['SO403340', 'SO398322']);
-    expect(await screen.findByText('Status: Rejected by purchasing')).toBeInTheDocument();
-  });
-
-  it('?lines= naming no line on this board changes nothing', async () => {
-    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-other');
-    getPlanningBoard.mockResolvedValue(
-      withContribution(boardOf([demand()]), () => true, refused),
-    );
-    renderPanel(['SO403340']);
-    await screen.findByTestId('fulfilment-board-matrix');
-    expect(screen.queryByText('Status: Rejected by purchasing')).not.toBeInTheDocument();
   });
 });

@@ -1175,7 +1175,8 @@ export function SalesOrderDetail({ id }: { id: string }) {
             </div>
           );
         },
-        size: 200,
+        // Wide enough for a full OI number beside the Rejected badge and its info icon.
+        size: 240,
         meta: { headerTitle: 'Order inquiry' },
       },
       {

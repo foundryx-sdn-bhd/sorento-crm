@@ -505,7 +505,7 @@ _CTX = {
         "reason": "Supplier discontinued this finish",
         "rejected_at": "13/10/2026 14:05",
         "link": "https://crm.example/project-sales/order-inquiries/abc",
-        "board_link": "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&lines=l1,l2",
+        "board_link": "https://crm.example/scm/sales-orders/so-9?tab=lines&line=l1",
         "line_count": 2,
         "lines": [
             {"item_code": "WC-1234-WH", "qty": "10", "delivery_date": "25/10/2026"},
@@ -533,9 +533,9 @@ def test_template_renders_every_fact():
             "Supplier discontinued this finish",
             "Joey",
             "13/10/2026 14:05",
-            "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&amp;lines=l1,l2"
+            "https://crm.example/scm/sales-orders/so-9?tab=lines&amp;line=l1"
             if body is out["body_html"]
-            else "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&lines=l1,l2",
+            else "https://crm.example/scm/sales-orders/so-9?tab=lines&line=l1",
         ):
             assert needle in body, (needle, body)
         assert "None" not in body
@@ -543,15 +543,20 @@ def test_template_renders_every_fact():
     assert "border:1px solid #d0d0d5" in out["body_html"]
 
 
-def test_email_has_one_cta_open_sales_order_to_the_board():
-    """Owner note on the mock: "just have a CTA to open the sales order"."""
+def test_email_has_one_cta_open_sales_order_on_its_lines_tab():
+    """Owner note on the mock: "just have a CTA to open the sales order"; mock v3 sends it to
+    the Sales Order's Lines tab on the first refused line."""
     out = _render(_CTX)
     html = out["body_html"]
     assert html.count(">Open sales order</a>") == 1
-    assert "fulfilment-planning?orders=SO-422517&amp;lines=l1,l2" in html
+    assert 'href="https://crm.example/scm/sales-orders/so-9?tab=lines&amp;line=l1"' in html
+    assert "fulfilment-planning" not in html
     assert "Open in Order Inquiries" not in html
     assert "project-sales/order-inquiries/abc" not in html
-    assert "Open sales order: https://crm.example/project-sales/fulfilment-planning" in out["body_text"]
+    assert (
+        "Open sales order: https://crm.example/scm/sales-orders/so-9?tab=lines&line=l1"
+        in out["body_text"]
+    )
 
 
 def test_email_cta_falls_back_to_the_order_inquiry_without_an_so():
