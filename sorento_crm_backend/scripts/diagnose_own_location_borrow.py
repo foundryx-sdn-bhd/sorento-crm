@@ -75,6 +75,38 @@ def _diagnose(db, so_number: str, line_no: int) -> None:
         print("no fact / no own location resolved for this line")
         return
     own_id = str(fact.warehouse.id)
+    print(f"group code        : {fact.group_code}")
+    if fact.core is None:
+        print("asker core line   : NONE (no core sales-order line -> no group pile, no donors)")
+    else:
+        core_order = db.query(SalesOrder).filter(SalesOrder.id == fact.core.sales_order_id).first()
+        print(
+            "asker core line   :",
+            "line_status", fact.core.line_status,
+            "| purchasing_status", fact.core.purchasing_status,
+            "| qty_ordered", fact.core.qty_ordered,
+            "| qty_required", fact.core.qty_required,
+            "| qty_delivered", fact.core.qty_delivered,
+            "| order status", getattr(core_order, "status", None),
+            "| is_transferable", getattr(core_order, "is_transferable", None),
+        )
+    members = supply._group_pile_members(fact)
+    member_ids = {m["line_id"] for m in members}
+    asker_in_pile = fact.core is not None and str(fact.core.id) in member_ids
+    print(f"asker in pile     : {asker_in_pile} (pile has {len(members)} open lines)")
+    if not asker_in_pile:
+        print("   -> _group_borrow_donors returns NO donors for this line at all (:4436)")
+    assignment = supply.planning_assignments([fact.product_id]).get(str(fact.product_id))
+    status_of = {}
+    if assignment is not None:
+        for result in assignment.lines:
+            on_hand_at = {}
+            for item in result.assigned:
+                if item.event.kind == "on_hand" and item.event.warehouse:
+                    on_hand_at[item.event.warehouse] = on_hand_at.get(
+                        item.event.warehouse, 0
+                    ) + float(item.qty)
+            status_of[str(result.line.key)] = (result.status, on_hand_at)
     decided = supply._decided_elsewhere_cached()
     donors = {d["donor_core_line_id"]: d for d in supply._group_borrow_donors(fact)}
     step_two = {
@@ -114,9 +146,17 @@ def _diagnose(db, so_number: str, line_no: int) -> None:
             else:
                 why = "other agent ranked AHEAD of this line -> not offered"
         else:
-            why = "not open/transferable demand in the group pile"
+            why = (
+            "not open/transferable demand in the group pile"
+            if key not in member_ids
+            else "in the pile, but no donor list (asker not in pile)"
+        )
+        status, on_hand_at = status_of.get(key, (None, {}))
         print(
             "   ", order.so_number, "req", line.required_date, "open", open_qty,
+            "| transferable", order.is_transferable, "| line", line.line_status,
+            "| purch", line.purchasing_status, "| in pile", key in member_ids,
+            "| assignment", status, "on hand", on_hand_at or "-",
             "->", why,
         )
 
