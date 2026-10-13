@@ -11,8 +11,9 @@ Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md.
    documents cancelled all of it, so only such a line ever reopens when the cancel lowers.
 3. The ingest slugs `scm.{cancel_sales_orders,cancel_purchase_orders,consignments,
    consignment_returns}.{view,edit,delete}`, granted to admin / superadmin and to every role
-   holding the matching order slug (`scm.sales_orders.edit`, or `scm.purchase_orders.edit` for
-   Cancel PO), the feed's role (the `fin_0001_billing_documents` shape). Consignment documents
+   holding the matching order slug (`scm.sales_orders.*`, or `scm.purchase_orders.*` for
+   Cancel PO), the feed's role: view / edit follow the order's `.edit`, the sweep (`.delete`)
+   follows the order's `.delete` (D30: removing is its own permission). Consignment documents
    are stored only (crew, 13 Oct).
 
 Additive only: new tables, and NOT NULL columns with a server default of 0, so no existing row
@@ -73,21 +74,24 @@ def seed_permissions(bind) -> None:
             ),
             {"slugs": slugs},
         )
-        bind.execute(
-            sa.text(
-                """
-                INSERT INTO user_role_permissions (id, role_id, permission_id, assigned_at)
-                SELECT gen_random_uuid()::text, held.role_id, p.id, now()
-                FROM user_role_permissions held
-                JOIN user_permissions feed
-                  ON feed.id = held.permission_id AND feed.slug = :feed
-                CROSS JOIN user_permissions p
-                WHERE p.slug = ANY(:slugs)
-                ON CONFLICT (role_id, permission_id) DO NOTHING
-                """
-            ),
-            {"slugs": slugs, "feed": feed_slug},
-        )
+        # D30 holds: `.view` / `.edit` follow the order's `.edit`, the sweep (`.delete`) follows
+        # the order's own `.delete`, never its edit.
+        for door, feed in ((slugs[:2], feed_slug), (slugs[2:], feed_slug[: -len("edit")] + "delete")):
+            bind.execute(
+                sa.text(
+                    """
+                    INSERT INTO user_role_permissions (id, role_id, permission_id, assigned_at)
+                    SELECT gen_random_uuid()::text, held.role_id, p.id, now()
+                    FROM user_role_permissions held
+                    JOIN user_permissions feed
+                      ON feed.id = held.permission_id AND feed.slug = :feed
+                    CROSS JOIN user_permissions p
+                    WHERE p.slug = ANY(:slugs)
+                    ON CONFLICT (role_id, permission_id) DO NOTHING
+                    """
+                ),
+                {"slugs": door, "feed": feed},
+            )
 
 
 def upgrade() -> None:

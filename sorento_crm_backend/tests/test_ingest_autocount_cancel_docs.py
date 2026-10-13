@@ -597,3 +597,24 @@ def test_other_company_spo_never_matches(env):
     assert _cancel_lines(env, 960001)[961001].match_status == "waiting"
     env.db.expire_all()
     assert env.db.get(SPOAllocation, str(spo.id)).qty_cancelled == Decimal("0")
+
+
+def test_a_do_push_re_decides_the_cancels_naming_its_orders(env, monkeypatch):
+    """Review should-fix 3: a DO moves an SO line's unexplained transfer, so the route hands
+    the order numbers a landed DO names to the cancel relink, inside the DO's company."""
+    import app.api.v1.external.ingest as ingest_route
+    from app.services.autocount_cancel_ingest_service import Derived
+    from tests.test_ingest_autocount_do_grn import do_records
+
+    seen = []
+    monkeypatch.setattr(ingest_route, "relink_cancels_for_orders",
+                        lambda db, company_id, numbers: seen.append((company_id, set(numbers)))
+                        or Derived())
+    rec = copy.deepcopy(do_records()[0])
+    rec["RefDocNo"] = "ZZSO-C001"
+    rec["Details"][0].update({"FromDocType": "SO", "FromDocNo": "ZZSO-C002", "FromDocDtlKey": 0})
+    env.push_do([rec])
+    assert seen == [(env.company, {"ZZSO-C001", "ZZSO-C002"})]
+    seen.clear()
+    env.push_do([rec])  # unchanged: nothing to re-decide
+    assert seen == []

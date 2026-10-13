@@ -27,9 +27,11 @@ NEW_COLUMNS = {
     "spo_allocations": {"qty_cancelled"},
 }
 TABLES = ("autocount_cancel_docs", "autocount_cancel_lines")
-SO_SLUGS = {f"scm.{e}.{a}" for e in ("cancel_sales_orders", "consignments", "consignment_returns")
-            for a in ("view", "edit", "delete")}
-PO_SLUGS = {f"scm.cancel_purchase_orders.{a}" for a in ("view", "edit", "delete")}
+_SO_SIDE = ("cancel_sales_orders", "consignments", "consignment_returns")
+# The order's `.edit` brings view / edit; only the order's `.delete` brings the sweep (D30).
+SO_SLUGS = {f"scm.{e}.{a}" for e in _SO_SIDE for a in ("view", "edit")}
+SO_SWEEP = {f"scm.{e}.delete" for e in _SO_SIDE}
+PO_SLUGS = {f"scm.cancel_purchase_orders.{a}" for a in ("view", "edit")}
 
 
 def _load():
@@ -104,11 +106,13 @@ def test_up_down_up_and_the_grants():
             feed_so = _role(conn, f"zzt-feed-so-{uuid.uuid4().hex[:6]}", "scm.sales_orders.edit")
             feed_po = _role(conn, f"zzt-feed-po-{uuid.uuid4().hex[:6]}",
                             "scm.purchase_orders.edit")
+            sweeper = _role(conn, f"zzt-del-so-{uuid.uuid4().hex[:6]}", "scm.sales_orders.delete")
             bystander = _role(conn, f"zzt-none-{uuid.uuid4().hex[:6]}", None)
             _run(conn, module.upgrade)
             assert _state(conn) is True
             assert _granted(conn, feed_so) == SO_SLUGS
             assert _granted(conn, feed_po) == PO_SLUGS
+            assert _granted(conn, sweeper) == SO_SWEEP
             assert _granted(conn, bystander) == set()
             # idempotent: the seed again adds nothing
             before = conn.execute(sa.text("SELECT count(*) FROM user_role_permissions")).scalar()
