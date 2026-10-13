@@ -642,11 +642,11 @@ def test_fr_portal_comments_mask_every_row(env):
     env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/comments", json_body=[
         {"id": COMMENT, "authorName": _EMAIL, "body": "a"},
         {"id": IDEA_B, "authorName": "bob@example.test", "body": "b"},
-        {"id": IDEA_C, "authorName": "Plain Name", "body": "c"}])
+        {"id": IDEA_C, "authorName": "Plain Name", "body": "mail me at x@y.test"}])
     resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/comments")
-    assert "@" not in resp.text
     assert [c["authorName"] for c in resp.json()] == ["Sorento staff", "Sorento staff", "Plain Name"]
-    assert [c["body"] for c in resp.json()] == ["a", "b", "c"]
+    # Only the name keys are masked: an address inside a comment's text is the comment.
+    assert [c["body"] for c in resp.json()] == ["a", "b", "mail me at x@y.test"]
 
 
 def _ss_main_activity() -> list[dict]:
@@ -657,7 +657,7 @@ def _ss_main_activity() -> list[dict]:
          "comment": None, "replies": [], "commentId": None},
         {"kind": "comment", "at": "2026-10-02T00:00:00Z", "by": "bob@example.test", "source": "staff",
          "fromLabel": None, "toLabel": None, "toColor": None,
-         "comment": {"id": COMMENT, "authorName": "carol@example.test", "body": "hello"},
+         "comment": {"id": COMMENT, "authorName": "carol@example.test", "body": "hello x@y.test"},
          "replies": [{"id": IDEA_B, "authorName": "dan@example.test", "body": "re"},
                      {"id": IDEA_C, "authorName": "Plain Name", "body": "re2"}],
          "commentId": COMMENT},
@@ -672,13 +672,12 @@ def test_crew_portal_activity_masks_by_and_nested_comment_authors(env):
     env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/activity", json_body=_ss_main_activity())
     resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/activity")
     assert resp.status_code == 200
-    assert "@" not in resp.text
     rows = resp.json()
     assert [r["by"] for r in rows] == ["Sorento staff", "Sorento staff", "Jane Lim"]
     assert rows[1]["comment"]["authorName"] == "Sorento staff"
     assert [r["authorName"] for r in rows[1]["replies"]] == ["Sorento staff", "Plain Name"]
     assert rows[0]["fromLabel"] == "Captured" and rows[0]["toLabel"] == "Triaged"
-    assert rows[1]["comment"]["body"] == "hello" and rows[1]["commentId"] == COMMENT
+    assert rows[1]["comment"]["body"] == "hello x@y.test" and rows[1]["commentId"] == COMMENT
 
 
 def test_crew_portal_voters_keep_a_null_dealer_name(env):
