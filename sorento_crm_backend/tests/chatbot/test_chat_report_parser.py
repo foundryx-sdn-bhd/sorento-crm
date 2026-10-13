@@ -183,3 +183,9 @@ def test_a_migration_seeds_the_chat_analytics_domain_with_its_reveal_key() -> No
     text = seeds[0].read_text()
     assert "crm_report_ask" in text, "the domain's tool"
     assert "ON CONFLICT" in text.upper() or "NOT EXISTS" in text.upper(), "idempotent: insert if absent"
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

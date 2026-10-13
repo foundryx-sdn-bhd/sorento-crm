@@ -209,3 +209,9 @@ def test_the_parser_prompt_with_the_sales_analysis_words_is_production_after_upg
         version = db.query(AIPromptVersion).filter_by(id=label.version_id).one()
         assert 'order_status "sales_analysis"' in version.template
         assert '"sales_basis"' in version.template
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

@@ -159,3 +159,7 @@ def test_pk_0001_logs_and_publishes_nothing_when_the_constant_lacks_a_marker(mon
                 module.upgrade()  # must not raise
         assert count() == before
     assert any("pk_0001" in r.getMessage() for r in caplog.records), [r.getMessage() for r in caplog.records]
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

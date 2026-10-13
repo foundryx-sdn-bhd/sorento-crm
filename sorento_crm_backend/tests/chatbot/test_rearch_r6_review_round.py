@@ -1174,14 +1174,13 @@ class TestMultiDomainAmbiguousCustomerUsesGatesOwnHeader:
             resolve_services=_ambiguous_hanlim_resolve_services(spy_probe),
         )
         reply = (result.reply or {}).get("text") or ""
-        assert "Which one do you mean?" not in reply, (
-            f"reviewer S7: a multi-domain ambiguous-customer ask must never fall "
-            f"through to turn/compose.py's generic header (turn/compose.py:487, "
-            f"`customer_pick` absent from `_ASK_HEADERS`): {reply!r}"
-        )
-        assert reply.startswith("Which customer do you mean? Please choose:"), (
-            f"reviewer S7: gate.py's own customer-picker header must win even for "
-            f"a multi-domain ask - engine.py's own bridge (engine.py:1668-1692) "
-            f"must not skip the offer exit just because len(plan.domains) > 1: "
-            f"{reply!r}"
-        )
+        # PICKER-ONE (owner, 13 Oct 2026) supersedes S7's "the gate's header wins": every
+        # customer picker prints the ONE format, so the two-domain ask reads exactly what
+        # the one-domain ask reads (`test_rearch_r3_bridge_engine.py::
+        # TestCustomerAskUsesTheOneCustomerPicker`) - the precedence half of S7 (the
+        # bridge's offer exit still answers a multi-domain ask) is what this still pins.
+        assert reply == (
+            "Which one do you mean?\n"
+            "1. HANLIM TRADING SDN BHD - no DO\n"
+            "2. HANLIM HARDWARE SDN BHD - no DO"
+        ), reply

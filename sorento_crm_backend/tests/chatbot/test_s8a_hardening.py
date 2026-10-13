@@ -658,3 +658,7 @@ class TestATestEnvelopeIsNeverADuplicateOfALiveTurn:
         assert second.duplicate is True
         assert second.turn_id == first.turn_id
         assert second.is_test is True
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

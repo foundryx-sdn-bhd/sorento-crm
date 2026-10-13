@@ -57,6 +57,9 @@ FIELD_REVEAL_KEYS: tuple[tuple[str, str], ...] = (
     ("delivery_orders.delivery_date", "DO delivery date"),
     ("delivery_orders.warehouse", "DO warehouse"),
     ("delivery_orders.products", "DO products"),
+    # DO-BRANCH-NAME (owner, 13 Oct 2026): the synced AutoCount branch name, ON by default
+    # like every DO field above.
+    ("delivery_orders.branch", "DO branch"),
     ("inventory.sellable", "Outstanding SO on stock answers"),
     ("purchase_orders.placed", "Purchase orders (PO asks, and PO on stock answers)"),
     ("purchase_orders.supplier", "PO supplier"),

@@ -153,6 +153,10 @@ export function BoardLineDecisionPanel({
   const [reason, setReason] = React.useState(
     () => seedReason(decision) || seedReason(contribution.decision) || '',
   );
+  // What the box was SEEDED with (PR 1622 review B1). The seed can be the engine's own borrow
+  // sentence, so only text the planner actually changed - or this line's own earlier Buy
+  // reason - is a reason CS gave for the Buy, the one purchasing reads on its new row.
+  const reasonSeed = React.useRef(reason);
   // The draft's own answer, false included: an untick is a decision, and reading past it to
   // the frozen `true` on a covered line put the tick straight back on screen.
   const [suspected, setSuspected] = React.useState(() =>
@@ -531,7 +535,9 @@ export function BoardLineDecisionPanel({
     const next = draftFor(contribution, decision);
     const stock = lineBalance({ ...next, buy_qty: '0' });
     setDraft(next);
-    setReason(seedReason(decision) || seedReason(contribution.decision) || '');
+    const reseeded = seedReason(decision) || seedReason(contribution.decision) || '';
+    reasonSeed.current = reseeded;
+    setReason(reseeded);
     setSuspected(
       decision
         ? Boolean(decision.suspected_system_issue)
@@ -583,6 +589,17 @@ export function BoardLineDecisionPanel({
     try {
       let ok: boolean | void;
       const approvingNow = approving && !covered;
+      // PR 1622 (owner Q1, review B1 x2): the planner's OWN words on a line that buys, sent as
+      // their own field (`cs_note`) and carried to purchasing's new order inquiry row. Never
+      // what the box was merely seeded with (it can be the engine's borrow sentence), so
+      // neither `amend_reason` nor `buy_reason` - both may hold that seed - is what travels.
+      const typed = reason.trim();
+      const csNote =
+        toMinor(draft.buy_qty) > 0 &&
+        typed !== '' &&
+        (typed !== reasonSeed.current.trim() || typed === (decision?.cs_note ?? '').trim())
+          ? typed
+          : undefined;
       if (approvingNow) {
         ok = await onDecide({
           ...suggestionWithReasons(contribution, {
@@ -599,11 +616,13 @@ export function BoardLineDecisionPanel({
             order_back: draft.order_back,
             cited_document: draft.cited_document,
           }),
+          cs_note: csNote,
           suspected_system_issue: suspected,
         });
       } else {
         ok = await onDecide({
           ...decisionFromAmendDraft(foldedDraft, reason),
+          cs_note: csNote,
           // THE BOOLEAN, never `|| undefined`: `false` is the planner's answer that the numbers
           // are fine, and dropping the key let the frozen `true` behind it read as current.
           suspected_system_issue: suspected,

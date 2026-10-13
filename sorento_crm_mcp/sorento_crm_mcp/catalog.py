@@ -679,6 +679,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             ("delivery_orders.delivery_date", "DO delivery date"),
             ("delivery_orders.warehouse", "DO warehouse"),
             ("delivery_orders.products", "DO products"),
+            ("delivery_orders.branch", "DO branch"),
         ),
     ),
     ToolSpec(
@@ -731,6 +732,7 @@ CATALOG: tuple[ToolSpec, ...] = (
             ("delivery_orders.delivery_date", "DO delivery date"),
             ("delivery_orders.warehouse", "DO warehouse"),
             ("delivery_orders.products", "DO products"),
+            ("delivery_orders.branch", "DO branch"),
         ),
     ),
     ToolSpec(

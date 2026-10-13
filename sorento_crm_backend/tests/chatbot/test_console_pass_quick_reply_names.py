@@ -184,8 +184,8 @@ def test_console_pass(console: _Console, capsys) -> None:
     lines = [line for line in text1.splitlines() if line[:2] in ("1.", "2.", "3.")]
     check(
         "1 'DO for ong brothers' -> picker text",
-        "Which customer do you mean? + 3 numbered lines",
-        "Which customer do you mean? Please choose:" in text1 and len(lines) == 3,
+        "Which one do you mean? + 3 numbered lines",
+        "Which one do you mean?" in text1 and len(lines) == 3,
         text1,
     )
     check("1 picker quick replies", "[] (no buttons)", r1.quick_replies == [], repr(r1.quick_replies))
@@ -209,8 +209,8 @@ def test_console_pass(console: _Console, capsys) -> None:
     )
     check(
         "2 no re-ask",
-        "reply does not ask 'Which customer do you mean?'",
-        "Which customer do you mean?" not in (r2.reply_text or ""),
+        "reply does not ask 'Which one do you mean?'",
+        "Which one do you mean?" not in (r2.reply_text or ""),
         r2.reply_text or "",
     )
 

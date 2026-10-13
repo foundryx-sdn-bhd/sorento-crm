@@ -194,3 +194,7 @@ def test_the_parser_prompt_that_says_invoiced_is_production_after_upgrade_and_no
         module.restore_parser_label(db.connection())
         db.expire_all()
         assert _production_template(db)[1] == old.id
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

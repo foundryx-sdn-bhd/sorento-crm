@@ -167,3 +167,9 @@ def test_po_refs_section_says_an_order_entity_number_is_never_a_po_ref() -> None
     section = text[start : text.index("== CHAT REPORT", start)]
     assert PO_REFS_RULE in section
     assert text.count(PO_REFS_RULE) == 1
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

@@ -523,7 +523,7 @@ class TestScopeBlockAfterPick:
             msg_id="zzt-r5-pick-1", mcp_response=_order_envelope_json([row]),
         )
         reply1 = (result1.reply or {}).get("text") or ""
-        assert "Please choose" in reply1 or "choose" in reply1.lower(), (
+        assert reply1.startswith("Which one do you mean?"), (
             f"test setup sanity: two same-family-token, different-base customers must "
             f"raise the ambiguous-customer picker: {reply1!r}"
         )

@@ -209,3 +209,9 @@ def test_round9_migration_publishes_the_new_words_unlabelled_once():
         module.publish(bind)
         _load_migration().publish(bind)
         assert db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").count() == len(rows)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows
