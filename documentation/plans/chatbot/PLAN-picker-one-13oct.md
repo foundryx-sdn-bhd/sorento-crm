@@ -1,6 +1,6 @@
 # PLAN: PICKER-ONE, one customer picker for every entry path
 
-Status: in progress (small fix track: chatbot only, no migration, no auth/RBAC change)
+Status: ready for review, PR #1619 (small fix track: chatbot only, no migration, no auth/RBAC change); reviewer READY at aebbb948
 
 ## Owner ask (13 Oct)
 
