@@ -170,6 +170,46 @@ def render_user_message(state: ConversationState, profile: MemoryProfile, now: d
     return f"{render_memory(state, profile, now)}\n<message>{text}</message>"
 
 
+#: A history reply's budget (crew eval 14 Oct: one report follow-up reached 24,356 prompt
+#: tokens against a 12k bar, every token of it the last 3 replies' report tables). The
+#: model needs what the bot SAID, not its rows: what was asked is in MEMORY's HELD block
+#: (the report spec, the subject) and the rows it printed are LAST ANSWER ROWS.
+REPLY_CHAR_CAP = 400
+#: A user message in history is capped too (a pasted list); the current message never is.
+USER_CHAR_CAP = 400
+
+
+def compact_reply(text: str, cap: int = REPLY_CHAR_CAP) -> str:
+    """`text` whole when it fits `cap`, else its opening lines up to `cap` characters and
+    one marker naming how many lines were left out. Cut at a line, never inside one,
+    unless the first line alone is longer than `cap`."""
+    text = text or ""
+    if len(text) <= cap:
+        return text
+    lines = text.split("\n")
+    kept: list[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) + 1 > cap:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    if not kept:
+        kept = [lines[0][:cap]]
+    rest = sum(1 for line in lines[len(kept):] if line.strip())
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return "\n".join(kept) + f"\n[... {rest} more lines not shown]"
+
+
+def compact_exchanges(exchanges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The last 3 exchanges with every message capped (`compact_reply`)."""
+    return [
+        (compact_reply(u, USER_CHAR_CAP), compact_reply(b, REPLY_CHAR_CAP))
+        for u, b in exchanges[-PV2_HISTORY_EXCHANGES:]
+    ]
+
+
 def history_messages(exchanges: list[tuple[str, str]]) -> list[dict[str, str]]:
     """The last 3 exchanges, oldest first, as chat messages (user text, bot reply)."""
     out: list[dict[str, str]] = []

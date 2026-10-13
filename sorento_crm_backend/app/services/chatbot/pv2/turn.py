@@ -27,6 +27,7 @@ from app.services.chatbot.pv2.apply import DEFAULT_POLICY, ClarifyPolicy, Resolv
 from app.services.chatbot.pv2.history import (
     TIMEZONE,
     MemoryProfile,
+    compact_exchanges,
     history_messages,
     load_exchanges,
     render_memory,
@@ -87,7 +88,9 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
     state_in = roll_session(load_state(ctx.raw_state, ctx.now), ctx.now)
     if state_in.pending is None and v1_pending is not None:
         state_in = mirror_v1_pending(state_in, v1_pending)
-    exchanges = ctx.load_exchanges(state_in.session_started_at)
+    # Capped here, so CORE's `call.build_messages` and the injected `parse` both send the
+    # compact form (a report table in a past reply is what blew the prompt budget).
+    exchanges = compact_exchanges(ctx.load_exchanges(state_in.session_started_at))
     messages = history_messages(exchanges)
     user_message = render_user_message(state_in, ctx.profile, ctx.now, ctx.text)
     usage: dict[str, Any] = {}
