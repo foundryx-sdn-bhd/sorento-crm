@@ -162,9 +162,9 @@ _PURCHASING_NOTIFY_PENDING_KEY = "oi_purchasing_notify_pending"
 #: `Session.info` key for the `order_inquiry_handover` parallel-run email
 #: (`PLAN-scm-oi-handover-email.md`) queued mid-transaction and fired once the session
 #: actually commits - see `_record_handover` / `register_order_inquiry_post_commit_dispatch`.
+_HANDOVER_PENDING_KEY = "oi_handover_pending"
 #: Per sales order, the lines the last `record_saved_lines` told (review B1).
 _SAVED_TOLD_KEY = "oi_saved_lines_told"
-_HANDOVER_PENDING_KEY = "oi_handover_pending"
 
 #: `Session.info` key holding the transactions THIS session has actually committed
 #: (never rolled back), so `_fire_pending_handover` - which listens on
@@ -387,9 +387,14 @@ def _handover_settle_diff(
 def _handover_adds_order(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> Decimal:
-    """What one handover line asks purchasing to BUY: a fresh ORDER / ORDER BACK row's own
-    quantity, or the rise a settle adds ("ORDER 3"); nothing for any other line."""
-    if kind == "raised" and row.verb in (IV_ORDER, IV_ORDER_BACK):
+    """What one handover line asks purchasing to BUY: a fresh ORDER / Buy ORDER BACK row's
+    own quantity, or the rise a settle adds ("ORDER 3"); nothing for any other line (a
+    borrow's donor hole is the Borrow's ORDER BACK, not a Buy)."""
+    if (
+        kind == "raised"
+        and row.verb in (IV_ORDER, IV_ORDER_BACK)
+        and not _is_borrow_order_back(row)
+    ):
         return _dec(row.qty if qty is None else qty)
     if kind == "settled":
         _date_key, qty_key, diff = _handover_settle_diff(row, was, qty)
@@ -4217,8 +4222,7 @@ class ProjectOrderInquiryService:
                 kept.append(item)
         queue[:] = kept
         for line, now, before in saved:
-            rows_told = told.get(str(line.id), [])
-            row_lines = rows_told
+            row_lines = told.get(str(line.id), [])
             unchanged = before is not None and _saved_decision_key(before) == _saved_decision_key(now)
             same_kind = before is not None and _decision_words(before) == _decision_words(now)
             buy_words = _decision_words(now) in (("ORDER",), ("ORDER BACK",)) and _buy_qty(now) > _ZERO
