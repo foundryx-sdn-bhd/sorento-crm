@@ -316,9 +316,14 @@ def test_describe_dataset(chat):
 
 
 def test_no_dataset_exposes_a_phone_column(chat):
-    """Q3 (a): phone numbers are excluded from every dataset."""
+    """Q3 (a): phone numbers are excluded from every dataset, except `turn_costs.contact_phone`
+    (owner ruling 13 Oct, CHAT-TURN-COST)."""
+    from app.services.analytics_connector.datasets import CATALOG
+
     _db, c, _seed_, _u = chat
-    for key in ("messages", "contacts", "bot_turns", "episodes"):
+    phone_keys = {col.key: ds for ds in CATALOG for col in CATALOG[ds].columns if "phone" in col.key}
+    assert phone_keys == {"contact_phone": "turn_costs"}
+    for key in ("messages", "contacts", "bot_turns", "episodes", "llm_calls"):
         body = c.get(f"{BASE}/datasets/{key}").json()
         names = {col["key"] for col in body["columns"]}
         assert not {"phone_number", "phone", "session_vars", "portal_slug", "envelope", "trace"} & names, key

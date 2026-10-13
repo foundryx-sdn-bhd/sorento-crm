@@ -1,6 +1,6 @@
 # PLAN: per-turn token + cost dataset in the Claude analytics connector (CHAT-TURN-COST)
 
-Status: Ready (reviewer READY, security review clean), awaiting CI and the owner hand-test; phone (Q1) open. Track: standard (additive migration: two columns, one index, one price table, two views).
+Status: Review (round 2: owner rulings on phone and prices), then CI and the owner hand-test; Track: standard (additive migration: two columns, one index, one price table, two views).
 
 Owner request 13 Oct: make per-chatbot-turn token consumption and cost queryable through the
 analytics connector (`chat_list_datasets` / `chat_describe_dataset` / `chat_query`), so the owner can
@@ -21,12 +21,32 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 
 ## Decisions (crew relay, 13 Oct)
 
-- Q1 phone: pending the owner. Card Q3 (9 Oct) excludes phone numbers from every dataset and a test
-  enforces it; this lane keeps that. Only an explicit owner ruling reverses Q3.
+- Q1 phone (owner, 13 Oct): `turn_costs.contact_phone` (raw `respond_contacts.phone_number`). Card Q3
+  still holds for every other dataset; `test_no_dataset_exposes_a_phone_column` pins that
+  `contact_phone` on `turn_costs` is the only phone column in the catalog.
 - Q2 (a): the casual lane's clarifier call is logged as `feature = chatbot_clarifier` with the turn id.
-- Q3 (a): `llm_model_prices` table, seeded ONLY with the three prices the repo already cites with a
-  source and date (`scripts/chatbot_eval/budget.py`): gpt-5.4-mini, gpt-4.1-mini, claude-sonnet-5-5.
-  Every other model is unpriced (`cost_usd` NULL, `priced` false) until the owner adds its row.
+- Q3 (owner, 13 Oct): `llm_model_prices` is seeded with the one owner-confirmed price,
+  `gpt-5.4-mini` 0.75 input / 0.075 cached / 4.50 output per 1M. Every other model is unpriced
+  (`cost_usd` NULL, `priced` false) until the owner adds its row. The "gpt 6 luna" model has no id
+  on dev (crew checked prompt labels, prompt versions and usage logs), so it has no row.
+  `gpt-4o-transcribe` (ai_extract, billed per audio minute) is not a per-token price and is not
+  seeded. A model with a price but no cached-input price is unpriced on any call that cached tokens
+  (`cached_price_missing` true), never estimated.
+- Costs are not rounded (numeric / 1e6 is exact), so a hand calculation matches to the last digit.
+- `chat_describe_dataset` on `turn_costs` / `llm_calls` adds `pricing_note` and `unpriced_models`
+  (model + call count with `priced` false), so the owner can see the gaps.
+- Review find: a bool filter (`priced eq false`) crashed the existing builder (eager `>` on a bool);
+  fixed in `datasets._filter_clause`.
+
+### Adding or changing a price
+
+```sql
+INSERT INTO llm_model_prices (model, input_usd_per_1m, cached_input_usd_per_1m, output_usd_per_1m, note)
+VALUES ('<exact model id from the usage log>', <input>, <cached input or NULL>, <output>, 'owner, <date>')
+ON CONFLICT (model) DO UPDATE SET input_usd_per_1m = EXCLUDED.input_usd_per_1m,
+    cached_input_usd_per_1m = EXCLUDED.cached_input_usd_per_1m,
+    output_usd_per_1m = EXCLUDED.output_usd_per_1m, note = EXCLUDED.note, updated_at = now();
+```
 - Q4 (a): no embedding column; `llm_calls` (count) instead.
 
 ## Build (as shipped)
@@ -44,22 +64,23 @@ analyse cost per turn / conversation / contact / category and latency in claude.
    prompt version come from the CA-1 fact row (`chatbot.chat_ask_facts`), never from the trace.
 4. `cost_usd = (uncached * input + cached * cached_input + completion * output) / 1e6`, where
    uncached is `prompt - cached` for OpenAI/Gemini and `prompt` for Anthropic (Anthropic reports
-   cache reads outside `prompt_tokens`, `llm_provider.py`). Missing cached price = input price.
+   cache reads outside `prompt_tokens`, `llm_provider.py`). Missing cached price with cached tokens
+   = NULL (unpriced).
 5. Catalog entries document every column (`chat_describe_dataset`); new column type `number`.
 
 ### `turn_costs` columns
 
-`id`, `created_at` (MYT), `contact_id`, `contact_respond_id`, `contact_name`, `customer_name`,
-`episode_id`, `inbound_text` and `reply_text` (OTP-masked), `status`, `stage`, `branch_kind` (lane),
+`id`, `created_at` (MYT), `contact_id`, `contact_respond_id`, `contact_name`, `contact_phone`,
+`customer_name`, `episode_id`, `inbound_text` and `reply_text` (OTP-masked), `status`, `stage`, `branch_kind` (lane),
 `domain`, `intent`, `topic_code`, `topic_label`, `outcome`, `prompt_version`, `model`, `llm_calls`,
 `prompt_tokens`, `cached_tokens`, `completion_tokens`, `total_tokens`, `llm_ms`, `latency_ms`,
-`cost_usd`, `priced`.
+`cost_usd`, `priced`, `cached_price_missing`.
 
 ### `llm_calls` columns
 
 `id`, `created_at` (MYT), `feature`, `chatbot_turn_id`, `contact_id`, `contact_name`, `provider`,
 `model`, `prompt_tokens`, `cached_tokens`, `completion_tokens`, `total_tokens`, `response_time_ms`,
-`was_answered`, `cost_usd`, `priced`.
+`was_answered`, `cost_usd`, `priced`, `cached_price_missing`.
 
 ## Performance (sandbox Postgres 16, 100k synthetic live turns, 500 contacts)
 
@@ -74,6 +95,11 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 
 A first version read the parser facts from `chatbot.turns.trace` per row: 3.4 s on 50k turns with
 small traces, so it was replaced by the fact-row join. The connector's statement timeout is 10 s.
+
+## Worked example (owner, 13 Oct; pinned by `test_owner_worked_example_matches_exactly`)
+
+gpt-5.4-mini, prompt 38 040 / cached 37 022 / output 435:
+(1 018 x 0.75 + 37 022 x 0.075 + 435 x 4.50) / 1e6 = (763.5 + 2 776.65 + 1 957.5) / 1e6 = 0.00549765 USD.
 
 ## Example rows (synthetic: this lane runs in a cloud sandbox with no access to dev data)
 

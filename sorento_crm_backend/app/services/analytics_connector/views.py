@@ -6,7 +6,7 @@ A later change to a view means a new migration that calls `ensure_views` again.
 
 Times are Malaysia wall clock. OTP sign-in codes are masked here with the same pattern as
 `app.services.otp_redaction.OTP_TEXT_RE`; a test feeds both the same fixtures. No view carries
-a phone number, `session_vars`, `portal_slug`, a turn `envelope`/`trace`/`response` blob, or
+a phone number (except `turn_costs.contact_phone`, owner ruling 13 Oct), `session_vars`, `portal_slug`, a turn `envelope`/`trace`/`response` blob, or
 `chat_histories.result`/`state_trace`.
 
 The two cost views (`llm_calls`, `turn_costs`) are created by ``ensure_cost_views``.
@@ -168,7 +168,10 @@ VIEWS = (MESSAGES_V, CONTACTS_V, BOT_TURNS_V, EPISODES_V)
 # drafts) only to `system.ai_assistant_settings.view`, which the connector's chat gate is not.
 # Anthropic reports cache reads OUTSIDE `prompt_tokens` (`llm_provider.py`), OpenAI and Gemini
 # inside it, so the uncached part is computed per provider. A model with no price row is NULL
-# (unpriced), never 0. A missing cached price bills cached tokens at the input price. Anthropic
+# (unpriced), never 0. A model priced with no cached-input price prices a call only
+# when nothing was cached; a call with cached tokens is NULL and flagged `cached_price_missing`
+# (owner 13 Oct: no invented cached price, no estimate). Not rounded: numeric division by 1e6 is
+# exact, so a hand calculation matches the dataset to the last digit. Anthropic
 # cache WRITES (`cache_creation_input_tokens`, 1.25x input) are not captured: nothing in `app/`
 # sets `cache_control` today, so they are zero; capture them when prompt caching is turned on.
 _CACHED = "COALESCE(u.cached_tokens, 0)"
@@ -188,13 +191,15 @@ SELECT u.id::text AS id,
        u.total_tokens,
        u.response_time_ms,
        u.was_answered,
-       CASE WHEN p.model IS NULL THEN NULL ELSE round((
+       CASE WHEN p.model IS NULL OR ({_CACHED} > 0 AND p.cached_input_usd_per_1m IS NULL) THEN NULL
+            ELSE ((
               (CASE WHEN lower(btrim(u.provider)) = 'anthropic' THEN u.prompt_tokens
                     ELSE GREATEST(u.prompt_tokens - {_CACHED}, 0) END) * p.input_usd_per_1m
-            + {_CACHED} * COALESCE(p.cached_input_usd_per_1m, p.input_usd_per_1m)
+            + {_CACHED} * COALESCE(p.cached_input_usd_per_1m, 0)
             + u.completion_tokens * p.output_usd_per_1m
-       ) / 1000000, 6) END AS cost_usd,
-       (p.model IS NOT NULL) AS priced
+       ) / 1000000) END AS cost_usd,
+       (p.model IS NOT NULL AND ({_CACHED} = 0 OR p.cached_input_usd_per_1m IS NOT NULL)) AS priced,
+       (p.model IS NOT NULL AND p.cached_input_usd_per_1m IS NULL AND {_CACHED} > 0) AS cached_price_missing
   FROM ai_assistant_usage_logs u
   LEFT JOIN respond_contacts rc ON rc.id = u.contact_id
   LEFT JOIN llm_model_prices p ON p.model = u.model
@@ -216,6 +221,7 @@ SELECT t.id::text AS id,
        rc.id AS contact_id,
        t.contact_respond_id,
        rc.name AS contact_name,
+       rc.phone_number AS contact_phone,
        cu.customer_name,
        f.episode_id::text AS episode_id,
        {_mask("COALESCE(t.envelope #>> '{message,message,message,text}', t.envelope #>> '{message,message,message,attachment,description}')")} AS inbound_text,
@@ -239,10 +245,11 @@ SELECT t.id::text AS id,
        (extract(epoch FROM (t.finished_at - COALESCE(t.started_at, t.created_at))) * 1000)::bigint AS latency_ms,
        CASE WHEN calls.chatbot_turn_id IS NULL THEN 0::numeric
             WHEN calls.priced THEN calls.cost_usd END AS cost_usd,
-       COALESCE(calls.priced, true) AS priced
+       COALESCE(calls.priced, true) AS priced,
+       COALESCE(calls.cached_price_missing, false) AS cached_price_missing
   FROM chatbot.turns t
   LEFT JOIN LATERAL (
-        SELECT r.id, r.name FROM respond_contacts r
+        SELECT r.id, r.name, r.phone_number FROM respond_contacts r
          WHERE r.respond_io_id = t.contact_respond_id ORDER BY r.created_at ASC LIMIT 1
   ) rc ON true
   LEFT JOIN chatbot.chat_ask_facts f ON f.turn_id = t.id AND f.ask_seq = 1
@@ -258,7 +265,8 @@ SELECT t.id::text AS id,
                sum(lc.total_tokens) AS total_tokens,
                sum(lc.response_time_ms) AS llm_ms,
                sum(lc.cost_usd) AS cost_usd,
-               bool_and(lc.priced) AS priced
+               bool_and(lc.priced) AS priced,
+               bool_or(lc.cached_price_missing) AS cached_price_missing
           FROM {SCHEMA}.llm_calls lc
          WHERE lc.chatbot_turn_id = t.id::text
          GROUP BY lc.chatbot_turn_id

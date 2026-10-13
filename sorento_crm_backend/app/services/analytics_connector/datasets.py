@@ -167,6 +167,8 @@ CATALOG: dict[str, Dataset] = {
             Col("id", "text", "Turn id (the same id as bot_turns.id and llm_calls.chatbot_turn_id)"),
             Col("created_at", "datetime", "Turn start (Malaysia time)"),
             *_CONTACT_COLS,
+            Col("contact_phone", "text", "Contact's WhatsApp phone number (raw; this is the only dataset that"
+                " carries it)", groupable=True),
             Col("contact_respond_id", "text", "Respond.io contact id", groupable=True),
             Col("customer_name", "text", "Customer the turn's ask was recorded against; empty while the turn has"
                 " no fact row (still open)", groupable=True),
@@ -197,8 +199,11 @@ CATALOG: dict[str, Dataset] = {
             Col("latency_ms", "int", "Milliseconds from turn start to finish", measurable=True),
             Col("cost_usd", "number", "USD cost of the turn's LLM calls; 0 for a turn with no call, NULL when a"
                 " call's model has no price", measurable=True),
-            Col("priced", "bool", "false when some call's model has no price row (cost_usd is then NULL)",
+            Col("priced", "bool", "false when some call's model has no price row or its cached tokens have no"
+                " cached price (cost_usd is then NULL)",
                 groupable=True),
+            Col("cached_price_missing", "bool", "true when a call cached tokens on a model with no cached-input"
+                " price; the turn is then unpriced (cost_usd NULL, priced false)", groupable=True),
         ),
     ),
     "llm_calls": Dataset(
@@ -223,7 +228,10 @@ CATALOG: dict[str, Dataset] = {
             Col("was_answered", "bool", "The model returned a usable answer", groupable=True),
             Col("cost_usd", "number", "USD cost from the model price table; NULL when the model has no price",
                 measurable=True),
-            Col("priced", "bool", "false when the model has no price row", groupable=True),
+            Col("priced", "bool", "false when the model has no price row, or cached tokens have no cached price",
+                groupable=True),
+            Col("cached_price_missing", "bool", "true when the call cached tokens and the model has no"
+                " cached-input price; cost_usd is then NULL and priced false", groupable=True),
         ),
     ),
 }
@@ -390,10 +398,13 @@ def _filter_clause(ds: Dataset, v, f: Filter):
     value = _coerce(col, f.value)
     if op in ("gt", "gte", "lt", "lte") and col.type not in ("int", "number", "datetime"):
         raise QueryError(f"{op} works on numbers and dates only")
+    # Only the requested operator is built: SQLAlchemy refuses `>` against True/False, so an eager
+    # table of every operator made any bool filter raise.
     return {
-        "eq": expr == value, "ne": expr != value,
-        "gt": expr > value, "gte": expr >= value, "lt": expr < value, "lte": expr <= value,
-    }[op]
+        "eq": lambda: expr == value, "ne": lambda: expr != value,
+        "gt": lambda: expr > value, "gte": lambda: expr >= value,
+        "lt": lambda: expr < value, "lte": lambda: expr <= value,
+    }[op]()
 
 
 def _group_expr(ds: Dataset, v, key: str):
@@ -555,12 +566,34 @@ def list_datasets(db: Any) -> dict:
     return {"datasets": out}
 
 
+COST_DATASETS = ("turn_costs", "llm_calls")
+PRICING_NOTE = (
+    "cost_usd comes from the llm_model_prices table (USD per 1M input, cached input and output tokens),"
+    " joined on the exact model name. A model listed in unpriced_models has no price row, or no cached-input"
+    " price while its calls cached tokens; its calls show cost_usd NULL and priced false until the owner"
+    " adds the price. Per-minute audio models (gpt-4o-transcribe) are not priced per token."
+)
+
+
+def _unpriced_models(db: Any) -> list[dict]:
+    res = run_query(db, QuerySpec(
+        dataset="llm_calls", group_by=["model"], measures=[Measure(fn="count")],
+        filters=[Filter(column="priced", op="eq", value=False)],
+        order_by=[OrderBy(column="count", dir="desc")], limit=100,
+    ))
+    return [{"model": r[0], "calls": r[1]} for r in res["rows"]]
+
+
 def describe_dataset(db: Any, key: str) -> Optional[dict]:
     ds = CATALOG.get(key)
     if ds is None:
         return None
     sample = run_query(db, QuerySpec(dataset=key, limit=3), default_order=False)
+    pricing = (
+        {"pricing_note": PRICING_NOTE, "unpriced_models": _unpriced_models(db)} if key in COST_DATASETS else {}
+    )
     return {
+        **pricing,
         "key": ds.key,
         "description": ds.description,
         "date_column": ds.date_column,

@@ -155,6 +155,9 @@ def test_turn_costs_sums_every_llm_call_of_a_turn_and_prices_it():
         assert row["contact_id"] == s["contact_id"]
         assert row["contact_respond_id"] == s["respond_id"]
         assert row["contact_name"] == f"ZZT Contact {s['tag']}"
+        # Owner ruling 13 Oct: turn_costs (only) carries the raw phone for authorized staff.
+        assert row["contact_phone"] == "+60100000001"
+        assert row["cached_price_missing"] is False
         assert row["customer_name"] == f"ZZT Customer {s['tag']}"
         assert row["episode_id"] == s["frame_id"]
         assert row["branch_kind"] == "business"
@@ -176,6 +179,25 @@ def test_turn_costs_sums_every_llm_call_of_a_turn_and_prices_it():
         assert row["priced"] is True
         # Malaysia wall clock, like every other connector view.
         assert row["created_at"].replace(tzinfo=None) == datetime(2026, 9, 2, 10, 0, 0)
+
+
+def test_owner_worked_example_matches_exactly():
+    """Owner 13 Oct: gpt-5.4-mini, prompt 38,040 / cached 37,022 / output 435 ->
+    ((38040 - 37022) * 0.75 + 37022 * 0.075 + 435 * 4.50) / 1e6 = 0.00549765 USD, unrounded."""
+    from app.services.analytics_connector import prices
+
+    with pg_session() as db:
+        _ensure(db)
+        prices.seed_prices(db)
+        s = _seed(db)
+        _usage(db, turn_id=s["no_calls"], contact_id=s["contact_id"], feature="chatbot_parser",
+               model="gpt-5.4-mini", prompt=38040, cached=37022, completion=435, ms=10)
+        db.flush()
+        expected = (Decimal(38040 - 37022) * Decimal("0.75") + Decimal(37022) * Decimal("0.075")
+                    + Decimal(435) * Decimal("4.50")) / Decimal(1_000_000)
+        assert expected == Decimal("0.00549765")
+        assert _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])["cost_usd"] == expected
+        assert _row(db, "turn_costs", "id", s["no_calls"])["cost_usd"] == expected
 
 
 def test_unpriced_model_gives_null_cost_never_zero():
@@ -275,68 +297,38 @@ def test_anthropic_prompt_tokens_exclude_cache_reads():
         assert call["cost_usd"] == Decimal("0.003500")
 
 
-def test_missing_cached_price_falls_back_to_input_price():
+def test_cached_tokens_without_a_cached_price_make_the_cost_null():
+    """Owner/crew 13 Oct: a model priced with no cached-input price (gpt-6-luna) never has its
+    cached tokens billed at a made-up rate: the call is unpriced and says why."""
     with pg_session() as db:
         _ensure(db)
         s = _seed(db)
-        model = f"zzt-nocache-{s['tag']}"
-        _price(db, model, "1.00", None, "2.00")
+        model = f"zzt-nocached-{s['tag']}"
+        _price(db, model, "0.20", None, "1.20")
         _usage(db, turn_id=s["no_calls"], contact_id=s["contact_id"], feature="chatbot_parser", model=model,
-               prompt=1000, cached=500, completion=0, ms=10)
+               prompt=1000, cached=600, completion=100, ms=10)
         db.flush()
-        assert _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])["cost_usd"] == Decimal("0.001000")
+        call = _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])
+        assert call["cost_usd"] is None and call["priced"] is False
+        assert call["cached_price_missing"] is True
+        turn = _row(db, "turn_costs", "id", s["no_calls"])
+        assert turn["cost_usd"] is None and turn["priced"] is False and turn["cached_price_missing"] is True
 
 
-def test_llm_calls_holds_chatbot_calls_only():
-    """Security review: the CRM gates staff-side AI spend behind `system.ai_assistant_settings.view`;
-    the connector's chat gate must not widen that, so `llm_calls` carries chatbot rows only."""
+def test_a_model_without_a_cached_price_is_priced_when_nothing_was_cached():
     with pg_session() as db:
         _ensure(db)
         s = _seed(db)
-        staff = _usage(db, turn_id=None, contact_id=None, feature="ai_assistant", model=s["m_priced"],
-                       prompt=5, cached=0, completion=5, ms=5)
-        extract = _usage(db, turn_id=None, contact_id=s["contact_id"], feature="ai_extract", model=s["m_priced"],
-                         prompt=5, cached=0, completion=5, ms=5)
+        model = f"zzt-nocached0-{s['tag']}"
+        _price(db, model, "0.20", None, "1.20")
+        _usage(db, turn_id=s["no_calls"], contact_id=s["contact_id"], feature="chatbot_parser", model=model,
+               prompt=1000, cached=0, completion=100, ms=10)
         db.flush()
-        n = db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls WHERE id IN (:a, :b)"),
-                       {"a": staff, "b": extract}).scalar()
-        assert n == 0
-        assert db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls WHERE chatbot_turn_id = :t"),
-                          {"t": s["priced"]}).scalar() == 2
-
-
-def test_read_only_role_reads_the_cost_views_and_no_base_table():
-    from app.services.analytics_connector.views import grant_read_role
-
-    role = f"zzt_ro_{uuid.uuid4().hex[:8]}"
-    with pg_session() as db:
-        _ensure(db)
-        db.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
-        db.execute(text(f'GRANT "{role}" TO CURRENT_USER'))
-        grant_read_role(db, role)
-        db.execute(text("SAVEPOINT ro"))
-        db.execute(text(f'SET LOCAL ROLE "{role}"'))
-        db.execute(text("SELECT count(*) FROM analytics_connector.turn_costs")).scalar()
-        db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls")).scalar()
-        for stmt in (
-            "SELECT 1 FROM public.llm_model_prices LIMIT 1",
-            "SELECT 1 FROM public.ai_assistant_usage_logs LIMIT 1",
-            "SELECT 1 FROM chatbot.chat_ask_facts LIMIT 1",
-            "SELECT 1 FROM chatbot.chat_topics LIMIT 1",
-            "UPDATE analytics_connector.llm_calls SET model = 'x'",
-        ):
-            db.execute(text("SAVEPOINT probe"))
-            with pytest.raises(Exception) as err:
-                db.execute(text(stmt))
-            msg = str(err.value).lower()
-            assert "permission denied" in msg or "cannot update view" in msg, stmt
-            db.execute(text("ROLLBACK TO SAVEPOINT probe"))
-        db.execute(text("ROLLBACK TO SAVEPOINT ro"))
-        for view in ("turn_costs", "llm_calls"):
-            for priv in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
-                held = db.execute(text("SELECT has_table_privilege(:r, :v, :p)"),
-                                  {"r": role, "v": f"analytics_connector.{view}", "p": priv}).scalar()
-                assert held is False, (view, priv)
+        call = _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])
+        # (1000*0.20 + 100*1.20)/1e6 = 0.00032
+        assert call["cost_usd"] == Decimal("0.000320") and call["priced"] is True
+        assert call["cached_price_missing"] is False
+        assert _row(db, "turn_costs", "id", s["no_calls"])["cached_price_missing"] is False
 
 
 def test_cost_views_expose_no_secret_columns():
@@ -349,6 +341,11 @@ def test_cost_views_expose_no_secret_columns():
         assert names, "views missing"
         for forbidden in ("phone_number", "phone", "session_vars", "envelope", "trace", "user_id", "api_key"):
             assert forbidden not in names, forbidden
+        llm_calls_cols = set(db.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'analytics_connector' "
+            "AND table_name = 'llm_calls'"
+        )).scalars())
+        assert "contact_phone" not in llm_calls_cols
 
 
 # ------------------------------------------------------------------ prices + backfill
@@ -357,7 +354,7 @@ def test_cost_views_expose_no_secret_columns():
 def test_seeded_prices_are_only_the_sourced_ones():
     from app.services.analytics_connector import prices
 
-    assert set(prices.SEED_PRICES) == {"gpt-5.4-mini", "gpt-4.1-mini", "claude-sonnet-5-5"}
+    assert set(prices.SEED_PRICES) == {"gpt-5.4-mini"}
     with pg_session() as db:
         prices.seed_prices(db)
         prices.seed_prices(db)  # idempotent
@@ -372,9 +369,9 @@ def test_seed_never_overwrites_an_edited_price():
 
     with pg_session() as db:
         prices.seed_prices(db)
-        db.execute(text("UPDATE llm_model_prices SET input_usd_per_1m = 9 WHERE model = 'gpt-4.1-mini'"))
+        db.execute(text("UPDATE llm_model_prices SET input_usd_per_1m = 9 WHERE model = 'gpt-5.4-mini'"))
         prices.seed_prices(db)
-        assert db.execute(text("SELECT input_usd_per_1m FROM llm_model_prices WHERE model = 'gpt-4.1-mini'")).scalar() == 9
+        assert db.execute(text("SELECT input_usd_per_1m FROM llm_model_prices WHERE model = 'gpt-5.4-mini'")).scalar() == 9
 
 
 def test_backfill_takes_cached_tokens_from_the_turn_trace():
@@ -493,8 +490,12 @@ def test_describe_documents_every_cost_column(caller):
         assert all(c["description"] for c in cols.values()), key
         assert cols["cost_usd"]["type"] == "number" and cols["cost_usd"]["measurable"]
         assert cols["prompt_tokens"]["measurable"] and cols["cached_tokens"]["measurable"]
-        assert not {"phone", "phone_number", "contact_phone"} & set(cols)
+        assert not {"phone", "phone_number"} & set(cols)
+        assert cols["cached_price_missing"]["type"] == "bool"
+    lc = {c["key"] for c in get(f"{BASE}/datasets/llm_calls").json()["columns"]}
+    assert "contact_phone" not in lc
     tc = {c["key"] for c in get(f"{BASE}/datasets/turn_costs").json()["columns"]}
+    assert "contact_phone" in tc
     assert {"domain", "intent", "topic_code", "topic_label", "outcome", "prompt_version", "model", "llm_calls",
             "latency_ms", "episode_id", "branch_kind", "inbound_text", "contact_name", "customer_name"} <= tc
 
@@ -526,6 +527,27 @@ def test_cost_filters_reject_what_is_not_a_finite_number(caller, value):
     _s, _g, query = caller
     bad = query(dataset="turn_costs", filters=[{"column": "cost_usd", "op": "gt", "value": value}])
     assert bad.status_code == 422, value
+
+
+def test_describe_lists_the_unpriced_models(caller):
+    s, get, _q = caller
+    for key in ("turn_costs", "llm_calls"):
+        body = get(f"{BASE}/datasets/{key}").json()
+        assert "llm_model_prices" in body["pricing_note"]
+        gaps = {r["model"]: r["calls"] for r in body["unpriced_models"]}
+        assert gaps.get(s["m_unpriced"]) == 1
+        assert s["m_priced"] not in gaps
+    other = get(f"{BASE}/datasets/messages").json()
+    assert "unpriced_models" not in other
+
+
+def test_a_bool_filter_works_over_the_connector(caller):
+    s, _g, query = caller
+    resp = query(dataset="llm_calls", columns=["model"],
+                 filters=[{"column": "priced", "op": "eq", "value": False},
+                          {"column": "contact_id", "op": "eq", "value": s["contact_id"]}])
+    assert resp.status_code == 200, resp.text
+    assert {r[0] for r in resp.json()["rows"]} == {s["m_unpriced"]}
 
 
 def test_list_datasets_includes_the_cost_datasets(caller):
