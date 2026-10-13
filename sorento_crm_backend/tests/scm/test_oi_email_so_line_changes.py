@@ -276,6 +276,10 @@ def test_redirected_and_met_from_stock_delay_notice_carries_its_was(api, monkeyp
     entries = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
     dated = [e for e in entries if (e["was"] or {}).get("delivery_date")]
     assert dated, f"the date move must reach the email: {entries}"
+    # ORDERBACK-DELTA review B1: the apply's own DELAY notice does not tell the saved line
+    # a second time - ONE line in the whole email.
+    every_line = _handover_calls(calls)[-1]["context"]["handover"]["lines"]
+    assert len(every_line) == 1, every_line
     assert dated[0]["was"]["delivery_date"] == WAS_FMT, dated[0]
     assert dated[0]["delivery_date"] == later.strftime("%d/%m/%Y"), dated[0]
     assert not any(e["qty"] == "0" for e in entries), entries

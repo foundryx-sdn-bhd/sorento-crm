@@ -14,6 +14,8 @@ def _snap(*components, own="BRW-IB", **extra):
     return {"location": own, "open_qty": "10", "components": list(components), **extra}
 
 
+
+
 def _buy(qty="10"):
     return {"kind": "buy", "qty": qty}
 
@@ -103,3 +105,86 @@ def test_a_bare_spo_number_ref_is_read_too():
         timely_spo_refs=["SPO-2026/10-0032"],
     )
     assert saved_line_remark(snapshot) == ("SPO-2026/10-0032", "BRW-IB")
+
+
+def test_several_row_lines_fold_by_their_numbers_not_their_words():
+    """Review S1: the fold reads what each row line adds to the order as data. A fresh
+    ORDER 50 whose REMARK also names a product change, a settle adding 3 after a date word,
+    and a withdrawn row of 5 read ORDER 53, CANCEL ORDER 5."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.services.project_order_inquiry_service import (
+        _HANDOVER_PENDING_KEY,
+        ProjectOrderInquiryService,
+    )
+
+    from ._pg_fixture import blank_session
+
+    with blank_session() as db:
+        pso_id = str(uuid4())
+        line = SimpleNamespace(
+            id=str(uuid4()), line_no=10, core_sales_order_line_id=None, delivery_date=None,
+        )
+
+        def item(remark, qty, was=None, keys=("ORDER",), adds="0"):
+            return {
+                "row_id": str(uuid4()), "so_line_id": line.id, "pso_id": pso_id,
+                "verb_keys": list(keys), "adds_order": adds,
+                "line": {"remark": remark, "qty": qty, "was": was},
+            }
+
+        db.info[_HANDOVER_PENDING_KEY] = [
+            item("ORDER, NEW ITEM CODE", "50", adds="50"),
+            item("DELAY, ORDER 3", "8", was={"qty": "5"}, adds="3"),
+            item("CANCEL ALL", "0", was={"qty": "5"}, keys=("CANCEL_BALANCE",)),
+        ]
+        before = _snap(_buy("40"), open_qty="40", required_date="2026-11-01")
+        now = _snap(_buy("53"), open_qty="53", required_date="2026-11-01")
+        ProjectOrderInquiryService(db).record_saved_lines(
+            pso_id=pso_id, saved=[(line, now, before)],
+        )
+        (told,) = db.info[_HANDOVER_PENDING_KEY]
+        assert told["line"]["remark"] == "ORDER 53, CANCEL ORDER 5", told["line"]
+
+
+def test_a_newly_short_reserve_is_a_change_to_tell():
+    """Review S3: re-approved unchanged but now short of free stock - still news."""
+    from app.services.project_order_inquiry_service import _saved_decision_key
+
+    before = _snap(_reserve("10", "BRW", rung="pool"))
+    now = _snap(_reserve("10", "BRW", rung="pool"), stock_short=[{"short": "3"}])
+    assert _saved_decision_key(before) != _saved_decision_key(now)
+
+
+def test_a_first_borrow_reads_its_decision_not_its_donor_hole_row():
+    """Review S2: a first Confirm's Borrow whose donor hole row told one line prints the
+    decision line (ORDER BACK, the line's qty, the line's own location), not the hole."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.services.project_order_inquiry_service import (
+        _HANDOVER_PENDING_KEY,
+        ProjectOrderInquiryService,
+    )
+
+    from ._pg_fixture import blank_session
+
+    with blank_session() as db:
+        pso_id = str(uuid4())
+        line = SimpleNamespace(
+            id=str(uuid4()), line_no=10, core_sales_order_line_id=None, delivery_date=None,
+        )
+        db.info[_HANDOVER_PENDING_KEY] = [{
+            "row_id": str(uuid4()), "so_line_id": line.id, "pso_id": pso_id,
+            "verb_keys": ["ORDER_BACK"], "adds_order": "4",
+            "line": {"remark": "ORDER BACK", "qty": "4", "was": None, "location": "MWH-BB"},
+        }]
+        now = _snap(_borrow("10", "MWH-BB"))
+        ProjectOrderInquiryService(db).record_saved_lines(
+            pso_id=pso_id, saved=[(line, now, None)],
+        )
+        (told,) = db.info[_HANDOVER_PENDING_KEY]
+        assert (told["line"]["remark"], told["line"]["qty"], told["line"]["location"]) == (
+            "ORDER BACK", "10", "BRW-IB",
+        ), told["line"]

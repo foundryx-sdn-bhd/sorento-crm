@@ -5613,30 +5613,6 @@ class ProjectSupplyService:
                 )
         return notices
 
-    def _hand_stock_short_to_purchasing(
-        self,
-        order: ProjectSalesOrder,
-        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, _LineFacts]],
-        *,
-        actor_user_id: str,
-    ) -> None:
-        """Each shortfall as its own line of the purchasing email this Confirm already sends
-        (owner rule 12 Oct 2026). No purchasing row is raised for it."""
-        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
-
-        service = ProjectOrderInquiryService(self.db)
-        for line, _entry, fact in checked:
-            for entry in self._stock_short.get(str(line.id), ()):
-                service.record_stock_short(
-                    pso_id=str(order.id),
-                    line=line,
-                    item_code=fact.item_code,
-                    qty_short=entry["short"],
-                    location=entry["location"],
-                    remark=self._short_sentence(entry),
-                    actor_user_id=actor_user_id,
-                )
-
     def _carried_lines(
         self,
         previous: Optional[SOSupplyDecision],

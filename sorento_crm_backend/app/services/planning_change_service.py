@@ -4824,6 +4824,8 @@ def _apply_one_order(
         ProjectOrderInquiryService(db).derive_for_book_change(
             order, demand_rows, batch_id=str(batch.id), actor_user_id=actor
         )
+    # ORDERBACK-DELTA review B1: the confirm above already told each saved line once.
+    ProjectOrderInquiryService(db).forget_rows_told_for_saved_lines(str(order.id))
 
     for r in live:
         r.applied_state = PLANNING_CHANGE_STATE_APPLIED

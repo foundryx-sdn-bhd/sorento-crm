@@ -162,6 +162,8 @@ _PURCHASING_NOTIFY_PENDING_KEY = "oi_purchasing_notify_pending"
 #: `Session.info` key for the `order_inquiry_handover` parallel-run email
 #: (`PLAN-scm-oi-handover-email.md`) queued mid-transaction and fired once the session
 #: actually commits - see `_record_handover` / `register_order_inquiry_post_commit_dispatch`.
+#: Per sales order, the lines the last `record_saved_lines` told (review B1).
+_SAVED_TOLD_KEY = "oi_saved_lines_told"
 _HANDOVER_PENDING_KEY = "oi_handover_pending"
 
 #: `Session.info` key holding the transactions THIS session has actually committed
@@ -382,6 +384,20 @@ def _handover_settle_diff(
     return date_key, qty_key, qty_diff
 
 
+def _handover_adds_order(
+    kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
+) -> Decimal:
+    """What one handover line asks purchasing to BUY: a fresh ORDER / ORDER BACK row's own
+    quantity, or the rise a settle adds ("ORDER 3"); nothing for any other line."""
+    if kind == "raised" and row.verb in (IV_ORDER, IV_ORDER_BACK):
+        return _dec(row.qty if qty is None else qty)
+    if kind == "settled":
+        _date_key, qty_key, diff = _handover_settle_diff(row, was, qty)
+        if qty_key == IV_ORDER and diff:
+            return _dec(diff)
+    return _ZERO
+
+
 def _handover_verb_keys(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> List[str]:
@@ -531,6 +547,9 @@ def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
             (words, location, qty)
             for words, location, qty, _key in _saved_line_parts(snapshot)
         ),
+        # A Reserve or Borrow that has since run short of free stock is news (owner rule,
+        # 12 Oct): re-approving it unchanged still tells purchasing the shortfall.
+        sum((_dec(entry.get("short")) for entry in snapshot.get("stock_short") or []), _ZERO),
     )
 
 
@@ -4143,6 +4162,9 @@ class ProjectOrderInquiryService:
                 "core_line_id": core_line_id,
                 "item_code": row.item_code,
                 #: Never empty for a line that moved (crew, 12 Oct): QTY CHANGE.
+                #: What this line adds to purchasing's order, as a number rather than read
+                #: back off REMARK's words (`record_saved_lines` folds it).
+                "adds_order": str(_handover_adds_order(kind, row, was, qty)),
                 "verb_keys": _handover_verb_keys(kind, row, was, qty)
                 or (
                     ["QTY_CHANGE"]
@@ -4180,6 +4202,10 @@ class ProjectOrderInquiryService:
         nothing (Q3), so a Confirm that changed nothing sends no email at all.
         """
         saved_ids = {str(line.id) for line, _now, _before in saved}
+        # Remembered for a caller that queues more row lines for the SAME lines after this
+        # (a planning-change apply's own DELAY / CANCEL BALANCE notices,
+        # `forget_rows_told_for_saved_lines`).
+        self.db.info.setdefault(_SAVED_TOLD_KEY, {})[pso_id] = set(saved_ids)
         queue = self.db.info.setdefault(_HANDOVER_PENDING_KEY, [])
         told: Dict[str, List[Dict[str, Any]]] = {}
         kept = []
@@ -4192,19 +4218,25 @@ class ProjectOrderInquiryService:
         queue[:] = kept
         for line, now, before in saved:
             rows_told = told.get(str(line.id), [])
-            row_lines = [i for i in rows_told if not str(i.get("row_id", "")).startswith("stock-short")]
+            row_lines = rows_told
             unchanged = before is not None and _saved_decision_key(before) == _saved_decision_key(now)
             same_kind = before is not None and _decision_words(before) == _decision_words(now)
+            buy_words = _decision_words(now) in (("ORDER",), ("ORDER BACK",)) and _buy_qty(now) > _ZERO
             # No frozen "before", or an empty one (a revision rebuilt without this line's
             # composition, e.g. a reconstructed undo): for a plain Buy line its rows are the
             # only record of what purchasing held, so their one line stands.
             no_record = before is None or not _decision_words(before)
-            buy_only = no_record and _decision_words(now) in (("ORDER",), ("ORDER BACK",))
-            if (unchanged and row_lines) or ((same_kind or buy_only) and len(row_lines) == 1):
+            # Only a Buy line: a mixed decision (Use BRW and Buy) reads in full, and a
+            # Borrow's own hole row is not the line's decision.
+            if (unchanged and row_lines) or (
+                buy_words and (same_kind or no_record) and len(row_lines) == 1
+            ):
                 # The rows already told this line in the one-line form purchasing works
                 # from (QTY = what they held, QTY CHANGE TO = the new need, EMAIL-HANDOVER-
                 # QTY), or a decision that did not change still asked them something (a
                 # refused row restated, AC-H6): that line stands as the line.
+                for item in row_lines:
+                    item["told_for_saved_line"] = True
                 queue.extend(row_lines)
                 continue
             if unchanged:
@@ -4215,15 +4247,10 @@ class ProjectOrderInquiryService:
                 entry = item.get("line") or {}
                 was_qty = _dec((entry.get("was") or {}).get("qty"))
                 keys_told = item.get("verb_keys") or ()
-                remark_told = (entry.get("remark") or "").strip()
                 if IV_CANCEL_BALANCE in keys_told and was_qty > _dec(entry.get("qty")):
                     taken_back += was_qty - _dec(entry.get("qty"))
-                elif remark_told in ("ORDER", "ORDER BACK"):
-                    # A fresh raise: its whole quantity is to be bought.
-                    raised += _dec(entry.get("qty"))
-                elif remark_told.startswith("ORDER "):
-                    # A settle that adds ("ORDER 3", or "DELAY, ORDER 3" read from its end).
-                    raised += _dec(remark_told.rsplit(" ", 1)[-1])
+                else:
+                    raised += _dec(item.get("adds_order"))
             self._queue_saved_line(
                 pso_id, line, now, before, actor_user_id=actor_user_id,
                 taken_back=taken_back,
@@ -4231,6 +4258,27 @@ class ProjectOrderInquiryService:
                 # what purchasing must order is what the rows raised, never need - held.
                 raised=raised if same_kind and len(row_lines) > 1 else None,
             )
+
+    def forget_rows_told_for_saved_lines(self, pso_id: str) -> None:
+        """A planning-change apply confirms its lines first (one decision line each, which
+        already carries the date and quantity move) and THEN raises its own DELAY /
+        ADVANCE / CANCEL BALANCE notice rows for the lines the confirm could not settle in
+        place. Those rows stay on the worklist; their email lines would tell the same
+        saved line twice (review B1), so they are dropped here."""
+        saved_ids = (self.db.info.get(_SAVED_TOLD_KEY) or {}).pop(pso_id, set())
+        queue = self.db.info.get(_HANDOVER_PENDING_KEY)
+        if not saved_ids or not queue:
+            return
+        queue[:] = [
+            item
+            for item in queue
+            if not (
+                item.get("pso_id") == pso_id
+                and item.get("so_line_id") in saved_ids
+                and not str(item.get("row_id", "")).startswith("saved:")
+                and not item.get("told_for_saved_line")
+            )
+        ]
 
     def record_cancelled_lines(
         self,
@@ -4362,7 +4410,10 @@ class ProjectOrderInquiryService:
         facts = self._handover_order_facts(pso_id)
         inquiry_id = (
             self.db.query(OrderInquiry.id)
-            .filter(OrderInquiry.project_sales_order_id == pso_id)
+            .filter(
+                OrderInquiry.project_sales_order_id == pso_id,
+                OrderInquiry.amendment_id.is_(None),
+            )
             .order_by(OrderInquiry.inquiry_no)
             .limit(1)
             .scalar()
@@ -4397,62 +4448,6 @@ class ProjectOrderInquiryService:
                 "core_line_id": line.core_sales_order_line_id,
                 "item_code": now.get("item_code"),
                 "verb_keys": keys or ["QTY_CHANGE"],
-                "line": line_entry,
-                "actor": self._handover_actor(actor_user_id),
-                "tx_chain": tx_chain,
-                "tx": tx_chain[-1] if tx_chain else None,
-            }
-        )
-
-    def record_stock_short(
-        self,
-        *,
-        pso_id: str,
-        line: ProjectSalesOrderLine,
-        item_code: Optional[str],
-        qty_short: Decimal,
-        location: Optional[str],
-        remark: str,
-        actor_user_id: Optional[str] = None,
-    ) -> None:
-        """Queue one STOCK SHORT line of this commit's handover email (OI-CLOSED-LINE, owner
-        rule 12 Oct 2026): a Reserve or Borrow confirmed as decided while short of free
-        stock. Built like `_record_handover`'s entry, with no row behind it."""
-        facts = self._handover_order_facts(pso_id)
-        inquiry_id = (
-            self.db.query(OrderInquiry.id)
-            .filter(OrderInquiry.project_sales_order_id == pso_id)
-            .order_by(OrderInquiry.inquiry_no)
-            .limit(1)
-            .scalar()
-        )
-        line_entry = {
-            "so_date": _handover_fmt_date(facts.get("so_date")),
-            "so_number": facts.get("so_number"),
-            "customer": facts.get("customer"),
-            "project": facts.get("project"),
-            "item_code": item_code,
-            "qty": _qty_str(_dec(qty_short)),
-            "delivery_date": _handover_fmt_date(line.delivery_date),
-            "location": location or "",
-            "remark": remark,
-            "was": _format_handover_was(None),
-        }
-        tx_chain = _transaction_chain(self.db)
-        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
-            {
-                "row_id": f"stock-short:{line.id}:{location or ''}",
-                "so_line_id": str(line.id),
-                "order_inquiry_id": str(inquiry_id) if inquiry_id else None,
-                "pso_id": pso_id,
-                "so_number": facts.get("so_number"),
-                "customer": facts.get("customer"),
-                "project": facts.get("project"),
-                "stock_location": location,
-                "line_no": line.line_no,
-                "core_line_id": line.core_sales_order_line_id,
-                "item_code": item_code,
-                "verb_keys": ["STOCK_SHORT"],
                 "line": line_entry,
                 "actor": self._handover_actor(actor_user_id),
                 "tx_chain": tx_chain,

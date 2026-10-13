@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Build (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
+Status: Review (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -105,3 +105,15 @@ Code: `saved_line_remark` / `_saved_line_parts` / `_saved_decision_key` and
 A saved line's row lines (ORDER, ORDER BACK, settled, cancelled, STOCK SHORT) queued in the
 same commit are replaced by its one line. Donor holes on other lines, planning-change
 reactions on unsaved lines and amendment emails keep their own row lines.
+
+## Review of the extension (reviewer, Opus)
+
+- B1 fixed: a planning-change apply's own DELAY / ADVANCE / CANCEL BALANCE notice rows no
+  longer add email lines for a line its confirm already told
+  (`forget_rows_told_for_saved_lines`, called after `derive_for_book_change`).
+- S1 fixed: each row line carries `adds_order` (what it asks purchasing to buy) as data;
+  the fold no longer parses REMARK text.
+- S2/S4 fixed: a single row line is kept only for a Buy-only decision.
+- S3 fixed: a stock shortfall is part of the "unchanged" key.
+- S5/S6 fixed: the separate STOCK SHORT writer is removed; the header lookup excludes
+  amendment headers.
