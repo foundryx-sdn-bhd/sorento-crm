@@ -489,6 +489,24 @@ class TestFixtureObservesADeliberateWriteMidTurn:
 # --------------------------------------------------------------------------- #
 
 
+def _bridged_text(gate_out: dict, parser: dict, resolver: dict) -> str:
+    """What the customer reads for this gate's customer arm: its `offer` exit, answered
+    by `answer_bridge.question_for` (the one customer picker, PICKER-ONE)."""
+    from app.services.chatbot import answer_bridge, copy as copy_mod
+
+    payload = {**gate_out, "resolved": resolver, "_exit_kind": "offer"}
+    answer = answer_bridge.question_for(
+        payload,
+        parser=parser,
+        ctx={"parse": {"output": parser}, "contact": {"id": "zzt"}, "session": {}},
+        canned=copy_mod.fallback_copy(),
+        asked_at_turn=1,
+    )
+    assert answer is not None and answer.question is not None
+    assert answer.question.kind == "customer_pick"
+    return answer.text
+
+
 class TestOwnerRulingACustomerPickerLabelCarriesCompanyCode:
     def test_which_customer_lines_carry_the_company_code(self) -> None:
         """`gate.py`'s ambiguous-customer block renders "N. <name>" only today - no
@@ -560,14 +578,14 @@ class TestOwnerRulingACustomerPickerLabelCarriesCompanyCode:
             "fixture must reach the ambiguous-customer branch: "
             f"gate_reason={out.get('gate_reason')!r}"
         )
-        clarification = out["gate_clarification"]
-        assert "ZZT Ambigco Alpha Sdn Bhd (SRT)" in clarification, (
-            f"the picker line must carry the owning company's code next to the customer "
-            f"name: {clarification!r}"
-        )
-        assert "ZZT Ambigco Beta Sdn Bhd (MOCHA)" in clarification, (
-            f"the picker line must carry the owning company's code next to the customer "
-            f"name: {clarification!r}"
+        # PICKER-ONE (owner, 13 Oct 2026): the gate renders no picker text of its own any
+        # more; the bridge prints these rows through the one customer picker, and the
+        # company codes still reach the line (here they differ, so the tag stays).
+        assert "Which customer do you mean" not in out["gate_clarification"], out["gate_clarification"]
+        assert _bridged_text(out, parser, resolver) == (
+            "Which one do you mean?\n"
+            "1. ZZT Ambigco Alpha Sdn Bhd (SRT)\n"
+            "2. ZZT Ambigco Beta Sdn Bhd (MOCHA)"
         )
         # The roster the pick resolves against carries the SAME label, so a customer who
         # types the whole line back resolves to the row they read.
@@ -660,25 +678,24 @@ class TestOwnerRulingACustomerPickerDOStamp:
             ],
         }
 
-        out = pickers.annotate_customer(dict(gate), probe=probe, parser={})
-        lines = out["escalate_message"].splitlines()
-        line_a = next(l for l in lines if l.startswith("1."))
-        line_b = next(l for l in lines if l.startswith("2."))
+        # PICKER-ONE (owner, 13 Oct 2026): the gate's customer arm records the
+        # measurement as data and every line is stamped by `pickers.customer_stamp`.
+        out = resolve_gate.measure_customer_picker(dict(gate), probe=probe, parser={})
+        bases = set(out["customer_bases_with_do"])
+        stamp_a = pickers.customer_stamp(cust_a.customer_name, bases)
+        stamp_b = pickers.customer_stamp(cust_b.customer_name, bases)
 
-        assert line_a.endswith(" - has DO"), (
-            f"RED (the actual gap): a customer WITH a DO (actual_delivery_date set) "
-            f"must read '- has DO': {line_a!r}"
+        assert stamp_a == "has DO", (
+            f"a customer WITH a DO (actual_delivery_date set) must read 'has DO': {stamp_a!r}"
         )
-        assert line_b.endswith(" - no DO"), (
-            f"RED (the actual gap): a customer with NO DO must read '- no DO', not the "
-            f"current 'has delivery' wording that ignores actual_delivery_date "
-            f"entirely: {line_b!r}"
+        assert stamp_b == "no DO", (
+            f"a customer with NO DO (an order, but no delivery date) must read 'no DO': "
+            f"{stamp_b!r}"
         )
 
-        # Guard: picking "1" must still resolve to the FIRST customer - the annotator
-        # only appends a suffix, it must never reorder or renumber the roster.
-        assert gate["compatible_entities"][0]["uuid"] == cust_a.id
-        assert gate["compatible_entities"][0]["title"] == cust_a.customer_name
+        # Guard: the measurement only adds data; the roster's rows and order are untouched.
+        assert out["compatible_entities"][0]["uuid"] == cust_a.id
+        assert out["compatible_entities"][0]["title"] == cust_a.customer_name
 
 
 # --------------------------------------------------------------------------- #
@@ -877,14 +894,26 @@ class TestOwnerRulingATheCustomerPickerReachesTheProductionProbeSeam:
         assert args.get("view") == "render", args
         assert args.get("actual_delivery_date_from") == "2026-06-09", args
 
-        message = out["escalate_message"]
-        lines = [line for line in message.splitlines() if line[:1].isdigit()]
-        assert len(lines) == 2, message
-        assert lines[0].endswith(" - has DO"), message
-        assert lines[1].endswith(" - no DO"), message
-        assert f"({company_code})" in lines[0], (
-            f"the picker line must still name the owning company: {message!r}"
+        # PICKER-ONE: what the customer reads is the bridge's one customer picker,
+        # stamped from what this probe measured. Both customers sit in ONE company, so
+        # no line carries the company tag (it is printed only when companies differ).
+        from app.services.chatbot import answer_bridge, copy as copy_mod
+
+        answer = answer_bridge.question_for(
+            out,
+            parser=ctx["parse"]["output"],
+            ctx=ctx,
+            canned=copy_mod.fallback_copy(),
+            db=db,
+            asked_at_turn=1,
         )
+        assert answer is not None, out.get("_exit_kind")
+        assert answer.text == (
+            "Which one do you mean?\n"
+            f"1. {cust_a.customer_name} - has DO\n"
+            f"2. {cust_b.customer_name} - no DO"
+        ), answer.text
+        assert f"({company_code})" not in answer.text, answer.text
 
 
 # --------------------------------------------------------------------------- #
@@ -940,13 +969,12 @@ class TestAPickerLineNamesEveryLedgerItsFamilySpans:
         """S1. Two families: "A CRAFT IDEA" spanning SRT and MOCHA, and "A CRAFT IDEA
         TRADING" in SRT only. The first line must say both ledgers, because its pick
         carries both ledgers' rows; the second says its one."""
-        out = self._gate(
-            [
-                _cust_row("u-srt-1", "A CRAFT IDEA SDN BHD", company=SRT, code="300-A001"),
-                _cust_row("u-mocha", "A CRAFT IDEA SDN BHD", company=MOCHA, code="300-A001"),
-                _cust_row("u-srt-2", "A CRAFT IDEA TRADING SDN BHD", company=SRT, code="300-A002"),
-            ]
-        )
+        out_matches = [
+            _cust_row("u-srt-1", "A CRAFT IDEA SDN BHD", company=SRT, code="300-A001"),
+            _cust_row("u-mocha", "A CRAFT IDEA SDN BHD", company=MOCHA, code="300-A001"),
+            _cust_row("u-srt-2", "A CRAFT IDEA TRADING SDN BHD", company=SRT, code="300-A002"),
+        ]
+        out = self._gate(out_matches)
         assert out["require_specific"] is True, out.get("gate_reason")
         titles = [e["title"] for e in out["compatible_entities"]]
         assert titles == ["A CRAFT IDEA SDN BHD (SRT, MOCHA)", "A CRAFT IDEA TRADING SDN BHD (SRT)"], (
@@ -954,7 +982,14 @@ class TestAPickerLineNamesEveryLedgerItsFamilySpans:
         )
         families = out["picker_families"]
         assert set(families["A CRAFT IDEA"]) == {"u-srt-1", "u-mocha"}, families
-        assert "1. A CRAFT IDEA SDN BHD (SRT, MOCHA)" in out["gate_clarification"]
+        # PICKER-ONE: the line the customer reads comes from the one builder, off these rows.
+        assert "Which customer do you mean" not in out["gate_clarification"], out["gate_clarification"]
+        resolver = {"resolutions": [{"token": "a craft idea", "matches": out_matches}]}
+        assert _bridged_text(out, self.PARSER, resolver) == (
+            "Which one do you mean?\n"
+            "1. A CRAFT IDEA SDN BHD (SRT, MOCHA)\n"
+            "2. A CRAFT IDEA TRADING SDN BHD (SRT)"
+        )
 
     def test_a_ledger_with_no_code_on_the_row_contributes_nothing(self) -> None:
         """An older payload: the MOCHA row has no `company_code`. The line names what it

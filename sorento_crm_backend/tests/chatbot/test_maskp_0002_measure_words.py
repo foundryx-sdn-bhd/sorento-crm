@@ -190,3 +190,7 @@ def test_each_measure_the_message_names_is_one_thing_asked():
     text = " ".join(SUB_ASKS_ADDENDUM.split())
     assert "count the measures below that the CURRENT message asks about, however short the message" in text
     assert '"stock and purchase price" is stock then last_cost' in text
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

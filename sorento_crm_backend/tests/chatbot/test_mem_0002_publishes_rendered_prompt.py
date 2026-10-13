@@ -106,3 +106,9 @@ class TestMem0002PublishesTheRenderedBody:
                 for r in db.query(AIPromptLabel).filter(AIPromptLabel.name == PROMPT_NAME)
             }
             assert row.id not in labelled
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

@@ -121,7 +121,7 @@ def test_account_1_lists_only_the_level_one_ledgers(session_factory, monkeypatch
         "soon heng account 1 outstanding",
     )
     assert captured == [], captured
-    assert "Which customer do you mean?" in reply, reply
+    assert "Which one do you mean?" in reply, reply
     lines = _picker_lines(reply)
     assert len(lines) == 2, lines
     assert any(H_1 in line for line in lines), lines

@@ -28,6 +28,8 @@ export interface Order {
    * read-only and leaves them out of the update. Empty for every other order.
    */
   autocount_owned_fields?: string[] | null;
+  /** The AutoCount branch name (read-only, AutoCount-owned); null when the DO has none. */
+  branch_name?: string | null;
   order_type?: string | null;
   pickup_time?: string | null;
   checker?: string | null;

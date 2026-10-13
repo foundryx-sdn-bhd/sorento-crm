@@ -474,6 +474,18 @@ describe('BoardDecideControl: Borrow from another order follows the switch (BR1)
     expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
     expect(within(select).queryByText('MWH-IB')).not.toBeInTheDocument();
   });
+
+  it('keeps the own location 0-free row out of the bulk Borrow picker (BORROW-OWN-LOC S5)', async () => {
+    const own = { ...nameless, warehouse_code: 'BRW-BB', warehouse_id: 'wh-own', free_qty: '0' };
+    renderControl({ contributions: [row({ borrow_candidates: [nameless, own] })] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const select = within(dialog).getByLabelText('donor-or-location');
+    expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
+    expect(within(select).queryByText('BRW-BB')).not.toBeInTheDocument();
+  });
 });
 
 describe('BoardDecideControl: Use BRW on a delivered or short line (OI-CLOSED-LINE hand test)', () => {

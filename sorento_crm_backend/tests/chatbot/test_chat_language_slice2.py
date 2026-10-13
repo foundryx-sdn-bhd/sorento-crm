@@ -262,6 +262,7 @@ def _orders_envelope(*, flags: dict | None = None) -> dict:
                     {"key": "company_name", "label": "Company", "value": "SORENTO"},
                     {"label": "Order Number", "value": "SO-26-00981"},
                     {"label": "Customer", "value": "TAN BROTHERS HARDWARE"},
+                    {"label": "Branch", "value": "KLCC SITE OFFICE"},  # DO-BRANCH-NAME
                     {"label": "Order Date", "value": "2026-09-28"},
                     {"label": "Actual Delivery Date", "value": "2026-10-01"},
                     {"label": "Status", "value": "Partially Delivered"},
@@ -634,6 +635,7 @@ def test_ac_cl23_orders_list_ms_labels_and_value_untouched_status():
     assert "Berikut ialah pesanan yang saya temui." in text
     assert "*No. Pesanan:* SO-26-00981" in text
     assert "*Pelanggan:* TAN BROTHERS HARDWARE" in text
+    assert "*Cawangan:* KLCC SITE OFFICE" in text
     assert "*Status:* Partially Delivered" in text
     assert "*Tarikh Pesanan:*" in text
     assert "*Tarikh Penghantaran Sebenar:*" in text
@@ -643,8 +645,14 @@ def test_ac_cl23_orders_list_ms_labels_and_value_untouched_status():
     assert "*No. Plat Lori:* PLATE-1" in text
     assert "*Gudang:* BRW" in text
     assert "*Produk:* BRBC22102W (12), SRTSWT3001 (4)" in text
-    for english in ("Order Number", "Customer", "Transporter", "Lorry Plate", "Products"):
+    for english in ("Order Number", "Customer", "Branch", "Transporter", "Lorry Plate", "Products"):
         assert english not in text, english
+
+
+def test_do_branch_name_label_zh():
+    """DO-BRANCH-NAME: the Branch line is translated; its value never is."""
+    text = _assert_values_identical(_orders_envelope(), TOOL_ORDERS, "zh")
+    assert "*分店:* KLCC SITE OFFICE" in text
 
 
 def test_ac_cl23_outstanding_intro_when_order_status_is_outstanding():

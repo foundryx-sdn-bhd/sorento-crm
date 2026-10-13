@@ -454,7 +454,7 @@ class TestOwnerTranscripts:
             _ask(top_n=100, rank_by="quantity", entities=[_e("bathtub", "category"), _e("staff", "customer")]),
             "top 100 hot selling bathtub by quantity for staff",
         )
-        assert text.startswith("Which customer do you mean?")
+        assert text.startswith("Which one do you mean?")
 
         def neither(text, captured):
             (args,) = _calls(captured)
@@ -651,7 +651,7 @@ class TestR3Corrections:
             _ask(top_n=100, rank_by="quantity", entities=[_e("bathtub", "category"), _e("staff", "customer")]),
             "top 100 hot selling bathtub by quantity for staff", services=services,
         )
-        assert text.startswith("Which customer do you mean?")
+        assert text.startswith("Which one do you mean?")
         return services
 
     @pytest.mark.parametrize(

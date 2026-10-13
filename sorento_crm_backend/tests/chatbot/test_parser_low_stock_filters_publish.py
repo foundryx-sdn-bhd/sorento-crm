@@ -69,3 +69,9 @@ def test_publish_moves_no_label() -> None:
         label = db.query(AIPromptLabel).filter(AIPromptLabel.name == PROMPT_NAME,
                                                AIPromptLabel.label == "production").one()
         assert label.version_id == previous.id, "promoting is the owner's step, never the migration's"
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

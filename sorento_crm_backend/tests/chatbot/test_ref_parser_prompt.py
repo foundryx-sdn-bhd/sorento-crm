@@ -75,3 +75,7 @@ def test_ref_kinds_addendum_scopes_as_typed_to_kind_worded_document_numbers():
 
 def test_ref_kinds_addendum_has_no_unscoped_as_typed():
     assert "number as typed" not in _addendum().lower()
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

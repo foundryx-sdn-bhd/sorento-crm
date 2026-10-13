@@ -557,8 +557,10 @@ def test_the_incident_picker_prints_its_list_and_sends_no_buttons_then_2_picks(
     reply, calls, _ = chat.turn("DO for ong brothers", _ong_brothers_ask())
 
     assert chat.kind() == "business_query", reply
-    assert "Which customer do you mean? Please choose:" in reply, reply
-    for n, label in enumerate(INCIDENT_LABELS, 1):
+    assert "Which one do you mean?" in reply, reply
+    # PICKER-ONE (owner, 13 Oct 2026): all three sit in one company, so no line carries
+    # the "(SRT)" tag (it is printed only when the options' companies differ).
+    for n, label in enumerate(INCIDENT_NAMES, 1):
         assert f"{n}. {label}" in reply, reply
     assert _open_question(chat).get("kind") == "customer_pick", _open_question(chat)
 
@@ -568,11 +570,11 @@ def test_the_incident_picker_prints_its_list_and_sends_no_buttons_then_2_picks(
     sends = [a for a in row.response["actions"] if a.get("kind") == "send_message"]
     assert sends and all(a.get("quick_replies") is None for a in sends), sends
     # The roster itself still travels with the message: that is what a typed "2" resolves against.
-    assert [o["label"] for o in persisted["result_set"]] == list(INCIDENT_LABELS), persisted["result_set"]
+    assert [o["label"] for o in persisted["result_set"]] == list(INCIDENT_NAMES), persisted["result_set"]
 
     reply2, calls2, _ = chat.turn("2", _pick(2))
 
     order_calls = [a for name, a in calls2 if name == ORDERS_LIST]
     assert order_calls, (reply2, calls2)
     assert order_calls[-1].get("customer_ids") == [ids[INCIDENT_NAMES[1]]], order_calls[-1]
-    assert "Which customer do you mean?" not in reply2, reply2
+    assert "Which one do you mean?" not in reply2, reply2

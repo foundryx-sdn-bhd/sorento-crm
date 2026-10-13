@@ -627,6 +627,7 @@ export function confirmLineFrom(
     borrow,
     buy_qty: fromMinor(toMinor(decision.buy_qty ?? '0')),
     buy_reason: decision.buy_reason?.trim() || undefined,
+    cs_note: decision.cs_note?.trim() || undefined,
     // Frozen with the line. Every other component carries the sentence of the RULE that
     // produced it, and those explain a decision nobody took once a person overrode them.
     amend_reason: decision.reason,

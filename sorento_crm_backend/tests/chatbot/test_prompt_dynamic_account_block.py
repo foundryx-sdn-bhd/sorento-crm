@@ -185,3 +185,7 @@ def test_a_rebuild_keeps_an_owner_edited_block_and_adds_no_second_one():
         ).one()
         assert saved.template.count(HEADER) == 1
         assert "Never guess a number (owner edit)." in saved.template
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

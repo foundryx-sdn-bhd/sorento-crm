@@ -95,3 +95,9 @@ def test_u15_downgrade_deletes_only_unlabelled_message_rows(monkeypatch) -> None
         db.commit()
         db.expire_all()
         assert sorted(r.version for r in _versions(db)) == [2, 3]
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows
