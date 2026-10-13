@@ -184,6 +184,54 @@ def test_a_po_linked_row_gains_a_derived_spo_entry_when_its_po_has_an_open_alloc
     assert Decimal(real_links[0].qty) == Decimal("8")
 
 
+def test_oi_spo_exact_an_allocation_of_a_sibling_po_line_is_not_derived(world):
+    """OI-SPO-EXACT (owner 13 Oct, case 1 on the 12 Oct prod backup): an open allocation of
+    the SAME purchase order and product that quotes ANOTHER line of it was bought for another
+    sales order line. It is not this row's incoming stock - no derived entry, no `spo` card
+    share, no `spo_number` filter hit - while the allocation naming the row's own line is."""
+    db, company_id, raiser, project, supplier = world
+    product, po, row = _po_linked_row(
+        db, company_id, project, supplier, po_number_suffix="X"
+    )
+    sibling = PurchaseOrderLine(
+        id=_uid(), company_id=company_id, purchase_order_id=po.id, product_id=product.id,
+        qty_ordered=Decimal("36"), source_ref=_line_ref(po.po_number, 2),
+    )
+    db.add(sibling)
+    db.flush()
+    siblings_allocation = _spo(
+        db, company_id, spo_number=f"ZZT-SPO-SIB-{_uid()[:6]}", product_id=product.id,
+        from_po_number=po.po_number, from_po_line_ref=sibling.source_ref,
+        allocated_quantity=36,
+    )
+    db.commit()
+
+    links = ProjectOrderInquiryService(db).links_for_rows([row.id])[row.id]
+    assert not any(link.get("derived") for link in links), links
+
+    kinds = _kinds_for(db)
+    assert kinds["spo"] == "0", kinds
+    assert kinds["po"] == "8", kinds
+
+    client, originals = _client(db, raiser, READ_ONLY)
+    try:
+        response = client.get(LIST, params={"spo_number": siblings_allocation.spo_number})
+        assert row.id not in {r["id"] for r in response.json()["data"]}
+    finally:
+        _restore(originals)
+
+    own_allocation = _spo(
+        db, company_id, spo_number=f"ZZT-SPO-OWN-{_uid()[:6]}", product_id=product.id,
+        from_po_number=po.po_number, allocated_quantity=5,
+    )
+    db.commit()
+
+    links = ProjectOrderInquiryService(db).links_for_rows([row.id])[row.id]
+    assert {link["document"] for link in links if link.get("derived")} == {
+        own_allocation.spo_number
+    }, links
+
+
 # ------------------------------------------------------------------------------ AC-D2
 
 
