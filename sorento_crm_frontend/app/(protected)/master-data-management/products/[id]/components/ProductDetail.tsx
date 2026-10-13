@@ -612,6 +612,9 @@ export default function ProductDetail({ productId }: ProductDetailProps) {
                 variantOf={product.variant_of}
                 variants={product.variants}
                 variantLinkManual={product.variant_link_manual}
+                familyCode={product.family_code}
+                familyCodeManual={product.family_code_manual}
+                familyMembers={product.family_members ?? []}
               />
             </TabsContent>
 

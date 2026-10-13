@@ -12,7 +12,7 @@ import { BoardDecideControl } from './BoardDecideControl';
 import type { BoardContribution, BoardDraft } from '../../_shared/types/fulfilmentPlanning.types';
 
 vi.mock('@/lib/toast', () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), warning: vi.fn(), error: vi.fn() }),
 }));
 
 // The real SearchableSelect drives a cmdk popover - out of scope here (AC-36 pins it as
@@ -85,6 +85,8 @@ function renderControl(overrides: {
   onSave?: (
     entries: { key: string; decision: unknown }[],
   ) => Promise<{ savedKeys: string[]; failed: { key: string; why: string }[] }>;
+  /** The board's "Borrow from another order" switch; on unless a test says otherwise. */
+  borrowFromOrderEnabled?: boolean;
 } = {}) {
   const contributions = overrides.contributions ?? [row()];
   const onSave =
@@ -103,6 +105,7 @@ function renderControl(overrides: {
       onSave={onSave as never}
       onSaved={onSaved}
       onClear={onClear}
+      borrowFromOrderEnabled={overrides.borrowFromOrderEnabled ?? true}
     />,
   );
   return { ...utils, onSave, onSaved, onClear };
@@ -136,9 +139,10 @@ describe('BoardDecideControl: the menu (AC-4)', () => {
       'As suggested',
       'Use own location',
       'Borrow from another order',
-      'Borrow other location',
+      'Borrow',
       'Use BRW',
       'Buy',
+      'Transfer to Cancel SO',
     ]);
     expect(screen.queryByRole('menuitem', { name: 'Reserve' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Use incoming' })).not.toBeInTheDocument();
@@ -258,7 +262,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -295,7 +299,7 @@ describe('BoardDecideControl: the Borrow dialog (AC-11, AC-38)', () => {
       ],
     });
     openMenu();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow other location' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
 
     const dialog = await screen.findByRole('dialog');
     const save = within(dialog).getByRole('button', { name: /^Save/ });
@@ -342,9 +346,11 @@ describe('BoardDecideControl: the lenient toast (AC-16, R10)', () => {
     });
     fireEvent.click(within(dialog).getByRole('button', { name: /^Save/ }));
 
+    // OI-CLOSED-LINE (owner, 12 Oct 2026): a short line is saved as decided and named as
+    // short, never skipped.
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        '1 saved as Use own location · 1 skipped: CB6633 line 20 (only 10 free at own location)',
+      expect(toast.warning).toHaveBeenCalledWith(
+        '2 saved as Use own location · 1 short: CB6633 line 20 (only 10 free at own location)',
       ),
     );
     expect(alertSpy).not.toHaveBeenCalled();
@@ -407,5 +413,138 @@ describe('BoardDecideControl: a covered row already decided exactly this way is 
     expect(toast.success).toHaveBeenCalledWith(
       expect.stringContaining('already decided that way'),
     );
+  });
+});
+
+/**
+ * BORROW-LOCATION-ONLY (BR1, K8). The menu offers "Borrow from another order" exactly when
+ * the board says the switch is on, as it always did before the switch existed. The "Borrow
+ * other location" picker never lists a location reachable only through a donor-NAMED
+ * candidate.
+ */
+describe('BoardDecideControl: Borrow from another order follows the switch (BR1)', () => {
+  const impact = { free_before: '100', free_after_full_borrow: '60', committed_qty: '0' };
+  const named = {
+    source: 'other_location' as const,
+    warehouse_code: 'MWH-IB',
+    warehouse_id: 'wh-mwh',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: 'SO397450',
+    donor_line_no: 446,
+    donor_core_line_id: 'core-1',
+  };
+  const nameless = {
+    source: 'other_location' as const,
+    warehouse_code: 'DC1-IR',
+    warehouse_id: 'wh-dc1',
+    free_qty: '100',
+    donor_impact: impact,
+    rung: 'order_borrow',
+    donor_so_number: null,
+    donor_core_line_id: 'core-2',
+  };
+
+  it('offers it when the switch is on, whatever the candidates name', () => {
+    renderControl({ contributions: [row({ borrow_candidates: [nameless] })] });
+    openMenu();
+
+    expect(screen.getByRole('menuitem', { name: 'Borrow from another order' })).toBeInTheDocument();
+  });
+
+  it('does not offer it when the switch is off, even beside a donor-named candidate', () => {
+    renderControl({
+      contributions: [row({ borrow_candidates: [named] })],
+      borrowFromOrderEnabled: false,
+    });
+    openMenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Borrow from another order' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Borrow' })).toBeInTheDocument();
+  });
+
+  it('keeps a donor-named location out of the Borrow picker (K8)', async () => {
+    renderControl({ contributions: [row({ borrow_candidates: [named, nameless] })] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Borrow' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const select = within(dialog).getByLabelText('donor-or-location');
+    expect(within(select).getByText('DC1-IR')).toBeInTheDocument();
+    expect(within(select).queryByText('MWH-IB')).not.toBeInTheDocument();
+  });
+});
+
+describe('BoardDecideControl: Use BRW on a delivered or short line (OI-CLOSED-LINE hand test)', () => {
+  const pool = (free: string) => ({
+    location: 'BRW',
+    where: 'site_pool' as const,
+    warehouse_id: 'wh-pool',
+    qty_free_remaining: free,
+    available_for_project: free,
+  });
+
+  it('a fully delivered line with 0 free at BRW is not skipped and saves as Use BRW', async () => {
+    const delivered = row({
+      item_code: 'ZZT-DIY',
+      qty: '2',
+      qty_delivered: '2',
+      sources: [{ kind: 'buy', qty: '2', reason: 'Nothing free.' }],
+      locations: [pool('0')],
+    });
+    const { onSave } = renderControl({ contributions: [delivered] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use BRW' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText(/will be skipped/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/short/)).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), {
+      target: { value: 'Delivered using BRW stock.' },
+    });
+    const save = within(dialog).getByRole('button', { name: 'Save 1 line' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [entries] = (onSave as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
+      { key: string; decision: { reserve: unknown[]; buy_qty: string } }[],
+    ];
+    expect(entries[0].decision.reserve).toEqual([
+      { warehouse_id: 'wh-pool', location: 'BRW', qty: '2' },
+    ]);
+    expect(entries[0].decision.buy_qty).toBe('0');
+  });
+
+  it('a line short on its undelivered part warns with what is free and still saves', async () => {
+    const short = row({
+      item_code: 'ZZT-DIY',
+      qty: '10',
+      qty_delivered: '4',
+      sources: [{ kind: 'buy', qty: '10', reason: 'Nothing free.' }],
+      locations: [pool('2')],
+    });
+    const { onSave } = renderControl({ contributions: [short] });
+    openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Use BRW' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('1 line short: only 2 free at BRW')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/will be skipped/)).not.toBeInTheDocument();
+    const save = within(dialog).getByRole('button', { name: 'Save 1 line' });
+    expect(save).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/^Reason/), {
+      target: { value: 'Taking what BRW has.' },
+    });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        '1 saved as Use BRW · 1 short: ZZT-DIY line 10 (only 2 free at BRW)',
+      ),
+    );
+    expect(onSave).toHaveBeenCalled();
   });
 });

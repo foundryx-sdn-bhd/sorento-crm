@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -29,17 +30,21 @@ import {
   usePromptKeys,
   usePromptVersion,
   usePromptVersions,
+  useRegistryVariables,
   useSaveVersion,
   useSetLabel,
 } from '../../hooks/useAIAssistantPrompts';
 import { validateVars } from '../../lib/promptVars';
+import { splitTemplate } from '../../lib/promptSegments';
 import { CHATBOT_TURN_PROMPT_KEYS } from '../../services/aiPromptsService';
 import type { SaveVersionError } from '../../services/aiPromptsService';
 import { AgentModelCard } from './AgentModelCard';
 import { DiffView } from './DiffView';
 import { DryRunBox } from './DryRunBox';
+import { PromptChipEditor, type PromptChipEditorHandle } from './PromptChipEditor';
 import { PublishDialog } from './PublishDialog';
 import { VarChips } from './VarChips';
+import { WiredPanel } from './WiredPanel';
 
 const EDIT_PERMISSION = 'system.ai_assistant_settings.edit';
 
@@ -109,8 +114,19 @@ export function PromptDetail({ name }: { name: string }) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [dirty]);
 
-  const declared = meta?.variables ?? [];
-  const validation = useMemo(() => validateVars(draft, declared), [draft, declared]);
+  const declared = useMemo(() => meta?.variables ?? [], [meta]);
+  // PLAN-prompt-dynamic-30sep R5a: tokens the backend fills from registry tables. They are
+  // chips in the editor, always known to validation and never "missing".
+  const registryNames = useMemo(() => meta?.registry_variables ?? [], [meta]);
+  const hasRegistry = registryNames.length > 0;
+  const registryQuery = useRegistryVariables(name, hasRegistry);
+  const registryRows = useMemo(() => registryQuery.data ?? [], [registryQuery.data]);
+  const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit');
+  const chipEditorRef = useRef<PromptChipEditorHandle>(null);
+  const validation = useMemo(
+    () => validateVars(draft, declared, registryNames),
+    [draft, declared, registryNames],
+  );
   const hasUnknownTokens = validation.unknown.length > 0;
 
   const saveMut = useSaveVersion(name);
@@ -248,8 +264,13 @@ export function PromptDetail({ name }: { name: string }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-        <div className="flex flex-col gap-4">
+      <div
+        className={cn(
+          'grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]',
+          hasRegistry && '2xl:grid-cols-[260px_minmax(0,1fr)_300px]',
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-4">
         <AgentModelCard name={name} canEdit={canEdit} />
 
         {/* Version history */}
@@ -339,7 +360,7 @@ export function PromptDetail({ name }: { name: string }) {
         </div>
 
         {/* Editor + tools */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">
@@ -370,14 +391,44 @@ export function PromptDetail({ name }: { name: string }) {
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
-              <SearchableTextarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="min-h-[320px] font-mono text-xs"
-                spellCheck={false}
-                disabled={!canEdit}
-                data-testid="prompt-editor"
-              />
+              {hasRegistry ? (
+                <Tabs value={editorMode} onValueChange={(v) => setEditorMode(v as 'edit' | 'preview')}>
+                  <TabsList shape="pill" size="sm" aria-label="Editor mode">
+                    <TabsTrigger value="edit" data-testid="editor-mode-edit">
+                      Edit
+                    </TabsTrigger>
+                    <TabsTrigger value="preview" data-testid="editor-mode-preview">
+                      Preview rendered prompt
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              ) : null}
+              {hasRegistry && editorMode === 'preview' ? (
+                <RenderedPreview template={draft} registryNames={registryNames} rows={registryRows} />
+              ) : null}
+              {hasRegistry ? (
+                // Stays mounted (hidden) under Preview, so the owner's last caret survives a
+                // look at the preview and the wired panel's Insert still lands there.
+                <div hidden={editorMode === 'preview'} data-testid="chip-editor-pane">
+                  <PromptChipEditor
+                    ref={chipEditorRef}
+                    value={draft}
+                    onChange={setDraft}
+                    variables={registryRows}
+                    registryNames={registryNames}
+                    disabled={!canEdit}
+                  />
+                </div>
+              ) : (
+                <SearchableTextarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="min-h-[320px] font-mono text-xs"
+                  spellCheck={false}
+                  disabled={!canEdit}
+                  data-testid="prompt-editor"
+                />
+              )}
               <VarChips validation={validation} declared={declared} />
 
               {diffOpen ? (
@@ -458,6 +509,23 @@ export function PromptDetail({ name }: { name: string }) {
             }
           />
         </div>
+
+        {hasRegistry ? (
+          <div className="min-w-0 lg:col-span-2 2xl:col-span-1">
+            <WiredPanel
+              variables={registryRows}
+              draft={draft}
+              isLoading={registryQuery.isLoading}
+              canEdit={canEdit}
+              onInsert={(varName) => {
+                // At the owner's last caret in the editor, never appended at the bottom
+                // (owner hand test #1405, item 2).
+                setEditorMode('edit');
+                chipEditorRef.current?.insertVariable(varName);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
 
       <PublishDialog
@@ -494,5 +562,55 @@ export function PromptDetail({ name }: { name: string }) {
         </AlertDialogContent>
       </AlertDialog>
     </Container>
+  );
+}
+
+/** Malaysia time, in the form the chatbot's `{{current_date}}` directive uses ("Wednesday, 30 September 2026"). */
+function todayInMalaysia(): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kuala_Lumpur',
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    })
+      .formatToParts(new Date())
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.weekday}, ${parts.day} ${parts.month} ${parts.year}`;
+}
+
+/**
+ * "Preview rendered prompt" (R5a): the draft with every registry variable replaced by the
+ * text the model receives right now, each lightly tinted so its source stays visible.
+ * Read-only; `{{current_date}}` shows today.
+ */
+function RenderedPreview({
+  template,
+  registryNames,
+  rows,
+}: {
+  template: string;
+  registryNames: string[];
+  rows: { name: string; label: string; rendered: string }[];
+}) {
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  return (
+    <pre
+      data-testid="prompt-preview"
+      aria-readonly="true"
+      className="max-h-[70dvh] min-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed"
+    >
+      {splitTemplate(template, registryNames).map((seg, i) =>
+        seg.kind === 'text' ? (
+          <span key={i}>{seg.text.replace(/\{\{\s*current_date\s*\}\}/g, todayInMalaysia())}</span>
+        ) : (
+          <span key={i} className="rounded-sm bg-primary/10" title={byName.get(seg.name)?.label ?? seg.name}>
+            {byName.get(seg.name)?.rendered ?? ''}
+          </span>
+        ),
+      )}
+    </pre>
   );
 }

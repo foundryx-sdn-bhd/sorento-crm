@@ -60,6 +60,7 @@ from app.models.projects import ProjectCollaborator
 from app.services import project_line_draft_service
 from app.services.error_handler import AppException
 
+from ._borrow_mode import borrow_from_order_on
 from .test_so_supply_confirmation import (  # noqa: F401  (api is a fixture)
     BASE,
     _core_line,
@@ -323,6 +324,7 @@ def test_a_borrow_from_a_donor_journals_the_donor_re_issue(api):
 
     client, world = api
     db = world.db
+    borrow_from_order_on(db)
     donor_wh = _warehouse(db, f"ZZT-DNR2-{_suffix()}")
     _stock(db, world.product, donor_wh, on_hand=100)
     # Owned by the SAME actor as `world.project` (`world.eling`, the confirming client), not

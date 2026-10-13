@@ -205,13 +205,15 @@ LINE_READINGS = {
 
 @pytest.mark.parametrize("reading", sorted(LINE_READINGS))
 def test_numbered_lines_from_the_parser_fill_those_lines(reading):
+    """Every reading maps onto lines 1 and 2. STOCK-QTY-PARTIAL-FILL (owner ruling R1,
+    6 Oct 2026): those two lines are answered now and the other eight stay open on the
+    task, never re-listed (before: the list again with the two lines filled in)."""
     console = _after_all()
     text = console.say("1. 10, 2. 5", LINE_READINGS[reading])
-    lines = text.splitlines()
-    assert lines[0] == "How many units for each?"
-    assert lines[1] == "1. SRTWC286-SH - 10"
-    assert lines[2] == "2. SRTWC286-SH-150 - 5"
-    assert lines[3:] == [f"{i}. {code} - " for i, code in enumerate(OWNER_FAMILY[2:], 3)]
+    assert text == _answered({"SRTWC286-SH": 10, "SRTWC286-SH-150": 5})
+    (task,) = [t for t in console.state.focus.tasks if t.kind == "stock_qty"]
+    assert task.status == task_mod.OPEN
+    assert [s.value for s in task.slots] == [10, 5] + [None] * 8
 
 
 def test_every_line_at_once_from_the_parser_answers_the_check():
@@ -257,11 +259,12 @@ def test_the_open_question_hint_prints_its_lines_for_the_parser():
 
 def test_the_owner_session_replayed_with_every_turn_parsed():
     console = _after_all()
-    console.say("1. 10, 2. 5", LINE_READINGS["line_numbers"])
-    # "tia" (tiga): three for every line still owed.
-    text = console.say("tia", verdict(demand_qty=3, entities=[]))
-    assert text == _answered(
-        {code: (10 if i == 0 else 5 if i == 1 else 3) for i, code in enumerate(OWNER_FAMILY)}
+    # R1 (6 Oct 2026): lines 1 and 2 answered now, the rest kept open.
+    assert console.say("1. 10, 2. 5", LINE_READINGS["line_numbers"]) == _answered(
+        {"SRTWC286-SH": 10, "SRTWC286-SH-150": 5}
     )
+    # "tia" (tiga): three for every line still owed, and only those are answered.
+    text = console.say("tia", verdict(demand_qty=3, entities=[]))
+    assert text == _answered({code: 3 for code in OWNER_FAMILY[2:]})
     assert console.transcript[:4] == ["check stock srtwc286", f"-> {LIST}", "all", f"-> {POINT_FORM}"]
     assert WELCOME not in "\n".join(console.transcript)

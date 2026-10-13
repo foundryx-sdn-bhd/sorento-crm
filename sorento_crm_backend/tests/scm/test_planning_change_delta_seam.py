@@ -27,6 +27,8 @@ Postgres only (`tests/_pg_fixture.py`), every FK seeded here, never a borrowed r
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -48,6 +50,7 @@ from app.services import planning_change_service
 from app.services.project_supply_service import ProjectSupplyService
 from app.services.scm.outstanding_diff import DATE_MOVED, QTY_CHANGED, Change, Diff
 
+from tests._borrow_mode import borrow_from_order_on
 from tests._pg_fixture import blank_session
 from tests.test_so_supply_confirmation import (  # noqa: F401  (helpers, not fixtures)
     _core_line,
@@ -422,8 +425,10 @@ def test_qty_up_with_own_stock_for_the_whole_unit_reserves_it_and_cancels_the_bu
 # AC-B2: a later donor holding the WHOLE unit on hand borrows whole, order-back
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_qty_up_with_a_later_donor_holding_the_whole_unit_borrows_whole_and_raises_order_back():
     with blank_session() as db:
+        borrow_from_order_on(db)
         world = _held_buy_world(db, qty="134")
         donor_bin = _warehouse(db, f"ZZT-DONOR-{_uid()[:4]}")
         _stock(db, world["product"], donor_bin, on_hand=234)
@@ -652,6 +657,7 @@ def test_qty_up_on_a_held_use_own_moves_the_whole_unit_to_the_next_step_when_sto
 # placed for nobody, arriving before the date) composes and confirms.
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_qty_up_covered_by_a_step_3_supply_borrow_composes_and_confirms():
     """A whole-unit cover from ladder v7.1 step 3 (`test_ladder_v7_supply_borrow.py`'s own
     `test_a_free_document_is_taken_rather_than_borrowed_and_owes_nobody` shape): an SPO

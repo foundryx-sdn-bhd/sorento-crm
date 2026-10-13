@@ -87,10 +87,12 @@ live caller on this branch before R4).
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any, Mapping
 
+from app.services.chatbot import turn_runtime as _turn_runtime
 from app.services.chatbot.lanes.business import answer as answer_mod
 from app.services.chatbot.lanes.business import miss_suggest as miss_mod
 from app.services.chatbot.lanes.business import services as business_services
@@ -101,6 +103,7 @@ from app.services.chatbot.tail import scope_block
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import fetch as run_fetch
 from app.services.chatbot.turn import pending
+from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 from app.services.chatbot.turn.state import escalation_barred, is_staff_profile, offers_escalation
 
 # AC-1691's umbrella: no roster is ever asked with fewer than two options, in any
@@ -609,7 +612,9 @@ def _roster_option(row: dict[str, Any], *, kind: str, position: int) -> dict[str
     return option
 
 
-def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> pending.Pending | None:
+def _tier_options(
+    rows: list[dict[str, Any]], *, asked_at_turn: int | None, promo_filter: dict[str, Any] | None = None
+) -> pending.Pending | None:
     """`tier_last_result_set` rows -> a `tier_pick` `Pending`, or `None` when fewer than
     two tiers are on offer (AC-1691) - the caller then has a text-only `Answer`, settling
     the single tier outright rather than asking about it."""
@@ -630,7 +635,55 @@ def _tier_options(rows: list[dict[str, Any]], *, asked_at_turn: int | None) -> p
     # own "promotion" against, so a pick whose verdict kept `domain_hint: promotion`
     # read as a pick in ANOTHER domain. The tier ask is the promotion lane's alone
     # (`tier_gate.needs_tier_ask`).
-    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload={"domain": "promotion"})
+    # PROMO-SUBJECT-FILTER AC-6: the subject the menu was probed with rides the open pick,
+    # so the answering turn (which names none) fetches with the same filter.
+    payload: dict[str, Any] = {"domain": "promotion"}
+    if promo_filter:
+        payload["promo_filter"] = dict(promo_filter)
+    return pending.ask("tier_pick", options, asked_at_turn=asked_at_turn, payload=payload)
+
+
+def no_live_kind_reply(
+    db: Any, narrow: dict[str, Any], tier_source: dict[str, Any] | None, mcp_call: Any
+) -> str | None:
+    """PROMO-SUBJECT-FILTER AC-21: the asked kind + brand has no live promotion at any held
+    level. What counts is the serving rule every promotion read uses (AC-22: a type that serves
+    its ended rows counts them). The first line says so; when other brands do have that kind
+    served at the contact's levels, `Other <kind>s:` and their distinct names follow.
+    None when this is not a kind + brand ask."""
+    kinds, brand_ids = narrow.get("promotion_types"), narrow.get("brand_ids")
+    if not kinds or not brand_ids:
+        return None
+    from app.models.marketing import PromotionType
+    from app.services.chatbot import turn_runtime
+
+    row = db.query(PromotionType).filter(PromotionType.type_code == kinds[0]).first()
+    brand = next((b for b in turn_runtime.active_brands(db) if b["id"] in brand_ids), None)
+    if row is None or brand is None:
+        return None
+    first, *rest = str(row.type_name).split()
+    kind = " ".join([first, *[w.lower() for w in rest]])
+    lines = [f"There is no {brand['brand_name']} {kind} right now."]
+    names: list[str] = []
+    try:
+        raw = mcp_call(
+            "crm_marketing_promotions_list",
+            {
+                "promotion_types": list(kinds),
+                "access_levels": list((tier_source or {}).get("name") or []),
+            },
+        )
+        body = json.loads(raw) if isinstance(raw, str) else raw
+        for item in (body.get("data") or body.get("items") or []) if isinstance(body, dict) else []:
+            name = str((item or {}).get("description") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    except Exception:  # noqa: BLE001 - the other-brand list is a courtesy; the first line stands
+        logger.warning("chatbot: other-brand kind list did not run", exc_info=True)
+    if names:
+        lines.append(f"Other {kind}s:")
+        lines.extend(names)
+    return "\n".join(lines)
 
 
 def _access_ask_answer(
@@ -665,13 +718,22 @@ def _access_ask_answer(
         # this composer.
         tier_source = payload.get("tier_gate") if isinstance(payload, dict) else None
     lane_item = {
-        **answer_mod.access_level_choice_message(tier_source, parser=parser),
+        **answer_mod.access_level_choice_message(
+            tier_source,
+            parser=parser,
+        ),
         "branch_kind": "access_choice",
     }
     text = _compose_text(lane_item, ctx=ctx, canned=canned, db=db, access_choice=lane_item)
     rows = lane_item.get("tier_last_result_set")
     rows = rows if isinstance(rows, list) else []
-    question = _tier_options(rows, asked_at_turn=asked_at_turn)
+    from app.services.chatbot import turn_runtime
+
+    question = _tier_options(
+        rows, asked_at_turn=asked_at_turn, promo_filter=turn_runtime.promo_filter(
+            parser or {}, db, (fetch or {}).get("gate") or (payload or {}).get("gate")
+        )
+    )
     return turn_compose.Answer(text=text, question=question)
 
 
@@ -1605,7 +1667,12 @@ def _miss_triggers(
     # report ran and said its own line; a word the resolver missed on the same turn
     # never turns that reply into "Could not find inventory".
     low_stock_answered = isinstance(fetch_item, Mapping) and fetch_item.get("low_stock_report") is True
-    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (so_status_answered or low_stock_answered)
+    # PROMO-SUBJECT-FILTER: a subject word the fetch applied as a filter and answered rows for
+    # is satisfied; the resolver having no entity for it is no miss.
+    subject_filtered = isinstance(fetch_item, Mapping) and fetch_item.get("subject_filtered") is True
+    via_resolver_exit = payload.get("_exit_kind") == "not_found" and not (
+        so_status_answered or low_stock_answered or subject_filtered
+    )
     via_error_fragment = fragment_outcome == "not_found"
     # R5 (AC-1699, AC-1702): a THIRD trigger - the resolver settled a real subject,
     # the fetch genuinely ran for it, and the tool came back with zero rows. This
@@ -1659,6 +1726,7 @@ def answer_for(
     profile: Any = None,
     dealer_stock_ask: bool = False,
     dealer_incoming_ask: bool = False,
+    product_token_missed: bool = False,
 ) -> turn_compose.Answer | None:
     """The MISS seam (R4): `None` outside its own two triggers (see module docstring),
     so a hit, an `access_denied` refusal, an infrastructure error and a multi-domain plan
@@ -1760,36 +1828,62 @@ def answer_for(
     # `not_found_error_message` composes the miss reply so it can be folded in. The
     # render itself is folded onto `text` at the very end, from this SAME
     # `crossdomain_result` - never a second `run_crossdomain` call.
-    crossdomain_result = _run_crossdomain_ladder(
-        parser=parser,
-        resolved=_ladder_resolved(resolved, raw_fragment),
-        entities_names=entities_names,
-        crossdomain_ladder=crossdomain_ladder,
-        ctx=ctx,
-        services=services,
-        contact_id=contact_id,
-        space_id=space_id,
-        trace=trace,
-        dry_run=dry_run,
-        # Ported from PR #1118 (not merged), D17, review round 10: the dealer's
-        # availability block turns the whole ladder off (`crossdomain_zeroset`'s own
-        # gate). The MISS arm hands the ladder an empty item, so the block has to
-        # travel here too - measured unreachable on this shape today (an availability
-        # reply carries an entry per named product, so it is a HIT), carried anyway
-        # because "no rung on a dealer reply" is a rule about the REPLY, not about
-        # which arm composed it.
-        item=(
-            {"stock_availability": envelope["stock_availability"]}
-            if isinstance(envelope, Mapping)
-            and isinstance(envelope.get("stock_availability"), list)
-            and envelope.get("stock_availability")
-            # PR #1329 fix round 2: a dealer's incoming miss is the same rule. The
-            # fetch envelope keeps no `result_type`, so the presenter's own marker for a
-            # dealer's incoming reply is named here from the contact's profile.
-            else {"result_type": "incoming_dealer"}
-            if dealer_incoming_ask
-            else None
-        ),
+    #
+    # STOCK-MISS-RENDER (owner report, 6 Oct 2026, prod turn #f763): the ladder's own
+    # text is a claim about the PRIMARY domain ("No stock and no incoming for X"), and
+    # `crossdomain_zeroset` counts every resolver code absent from the primary result as
+    # missing - which is every code when no primary result exists. A turn the runner
+    # refused BEFORE its tool ran (`turn_runtime.make_tool_runner`'s own `scope_gate` /
+    # unfiltered / entitlement refusals, `business._error_fragment(outcome="not_found")`
+    # - none of them carries a `tool`) therefore rendered the stock claim over a
+    # product the resolver had placed but nothing had looked up. Only a real empty tool
+    # result may say so: `via_fetched_empty` IS that result (kind "result", zero rows),
+    # and a fragment naming the tool it called is the same evidence on the other
+    # outcome shapes. The miss text itself ("Couldn't find", refer to salesman) is
+    # composed below exactly as before.
+    primary_tool_ran = via_fetched_empty or (
+        isinstance(fetch_item, Mapping) and bool(fetch_item.get("tool"))
+    )
+    if not primary_tool_ran and trace is not None:
+        # Turn #f763 was diagnosed from the trace screen, so the skipped rung says why.
+        trace.add("crossdomain", {"skipped": "primary_tool_not_run"})
+    crossdomain_result = (
+        _run_crossdomain_ladder(
+            parser=parser,
+            resolved=_ladder_resolved(resolved, raw_fragment),
+            entities_names=entities_names,
+            crossdomain_ladder=crossdomain_ladder,
+            ctx=ctx,
+            services=services,
+            contact_id=contact_id,
+            space_id=space_id,
+            trace=trace,
+            dry_run=dry_run,
+            # Ported from PR #1118 (not merged), D17, review round 10: the dealer's
+            # availability block turns the whole ladder off (`crossdomain_zeroset`'s own
+            # gate). The MISS arm hands the ladder an empty item, so the block has to
+            # travel here too - measured unreachable on this shape today (an availability
+            # reply carries an entry per named product, so it is a HIT), carried anyway
+            # because "no rung on a dealer reply" is a rule about the REPLY, not about
+            # which arm composed it.
+            item=(
+                {"stock_availability": envelope["stock_availability"]}
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("stock_availability"), list)
+                and envelope.get("stock_availability")
+                # PR #1329 fix round 2: a dealer's incoming miss is the same rule. The
+                # fetch envelope keeps no `result_type`, so the presenter's own marker for a
+                # dealer's incoming reply is named here from the contact's profile.
+                else {"result_type": "incoming_dealer"}
+                if dealer_incoming_ask
+                else None
+            ),
+        )
+        if primary_tool_ran
+        # The shape `answer.run_crossdomain` itself returns for an inactive ladder, so
+        # `_apply_crossdomain_render` below folds nothing, exactly as on any other turn
+        # the ladder had no claim to make.
+        else {"zeroset": None, "render": None}
     )
 
     miss_gate = _scope_gate(raw_fragment)
@@ -1801,6 +1895,9 @@ def answer_for(
         resolved=resolved,
         gate=miss_gate,
         profile=profile,
+        # ROGUE-CONVO-REVIEW-R2: the engine's one answer to "did this message's own
+        # product token miss?", never re-derived here.
+        product_token_missed=product_token_missed,
         granted_keys=((ctx.get("access") or {}).get("attributes") if isinstance(ctx, Mapping) else None),
     )
     offer = miss_mod.run_miss_lane(
@@ -1990,7 +2087,46 @@ def answer_for(
         dealer = _dealer_did_you_mean(offer, parser, asked_at_turn)
         if dealer is not None:
             return turn_compose.Answer(text=dealer[0], question=dealer[1])
+    alternative_lines = fetch_item.get("alternative_lines") if isinstance(fetch_item, Mapping) else None
+    if alternative_lines:
+        text = with_alternative_lines(text, alternative_lines)
     return turn_compose.Answer(text=text, question=question)
+
+
+def with_alternative_lines(text: str, lines: Any) -> str:
+    """PRODUCT-ALTERNATIVES (owner, 9 Oct 2026): a miss on a discontinued code still names
+    its alternative and what the search for it found, BEFORE any escalate offer. The lines
+    come from the fetch (`lanes/business/__init__.py::run_fetch`, `alternative_lines`).
+
+    Where they go, first match wins: before a "Related products:" picker (its last line is
+    the offer, and it lists the alternative itself); else before the sentence carrying the
+    offer ("would you like me to escalate", or a picker's "reply 'yes' to escalate to"), or
+    the dealer's "Please refer to your salesman."; else at the end."""
+    block = "\n".join(str(line) for line in (lines or []) if line)
+    if not block:
+        return text
+    picker = text.find("Related products:")
+    if picker >= 0:
+        return f"{text[:picker].rstrip()}\n{block}\n\n{text[picker:]}"
+    lowered = text.lower()
+    found = [
+        i
+        for i in (
+            lowered.find("would you like me to escalate"),
+            lowered.find("to escalate to"),
+            lowered.find(REFER_TO_SALESMAN.rstrip(".").lower()),
+        )
+        if i >= 0
+    ]
+    if not found:
+        return f"{text.rstrip()}\n{block}"
+    at = min(found)
+    # The sentence carrying it starts after the last sentence end (or line break) before it.
+    start = max(text.rfind(". ", 0, at), text.rfind("? ", 0, at), text.rfind("\n", 0, at))
+    if start < 0:
+        return f"{block}\n{text}"
+    cut = start + (1 if text[start] == "\n" else 2)
+    return f"{text[:cut].rstrip()}\n{block}\n{text[cut:].lstrip()}"
 
 
 def _dealer_did_you_mean(

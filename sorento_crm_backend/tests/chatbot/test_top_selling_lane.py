@@ -158,7 +158,9 @@ def _ts(**overrides: Any) -> dict[str, Any]:
         order_status="top_selling",
         entities=[],
         rank_by="quantity",
-        basis=None,
+        # Owner ruling 4 Oct 2026: a top selling ask with no basis is ASKED, never run delivered.
+        # The parser names the basis here unless a test overrides it.
+        basis="delivered",
         rank_group=None,
         top_n=5,
     )
@@ -203,7 +205,7 @@ class TestToolPick:
                 "parse": {
                     "output": _parser_output(
                         domain_hint="order", intent_hint="check_order", order_status=order_status,
-                        entities=[], top_selling={"rank_by": "quantity", "top_n": 5},
+                        entities=[], top_selling={"rank_by": "quantity", "basis": "delivered", "top_n": 5},
                     )
                 },
                 "contact": {"id": 900000008},
@@ -346,7 +348,7 @@ class TestArgs:
         (args,) = _calls(captured)
         assert "date_from" not in args and "date_to" not in args
         assert "\nDelivery date: 01/01/2026 to 31/12/2026\n" in reply
-        assert "basis" not in args, "no basis word = the route's default (delivered)"
+        assert args["basis"] == "delivered", "the basis is always sent explicitly (owner ruling 4 Oct 2026)"
 
 
 def _seed_contact_again(session_factory) -> None:
@@ -1057,7 +1059,7 @@ class TestParser:
 
         props = parser_mod.PARSE_OUTPUT_JSON_SCHEMA["properties"]
         assert props["rank_by"]["enum"] == ["quantity", "amount", None]
-        assert props["basis"]["enum"] == ["delivered", "ordered", "unclear", None]
+        assert props["basis"]["enum"] == ["delivered", "ordered", "outstanding", "unclear", None]  # shared with the sales ranking (d4660f763)
         assert props["rank_group"]["enum"] == ["item", "category", "unclear", None]
 
     def test_parser_prompt_teaches_top_selling(self) -> None:
@@ -1068,6 +1070,26 @@ class TestParser:
             assert needle in text, needle
         assert prompt_mod.SEMANTIC_PARSER_PROMPT.removesuffix(
             prompt_mod.MEMORY_ADDENDUM
+        ).removesuffix(
+            prompt_mod.PORTAL_FORM_ADDENDUM
+        ).removesuffix(
+            prompt_mod.TRAP_SPECS_FALLBACK_BLOCK
+        ).removesuffix(
+            prompt_mod.PROMOTION_KIND_ADDENDUM
+        ).removesuffix(
+            prompt_mod.CANONICAL_CODE_ADDENDUM
+        ).removesuffix(
+            prompt_mod.FIND_ADDENDUM
+        ).removesuffix(
+            prompt_mod.REF_KINDS_ADDENDUM
+        ).removesuffix(
+            prompt_mod.CHAT_REPORT_ADDENDUM
+        ).removesuffix(
+            prompt_mod.SUB_ASKS_ADDENDUM
+        ).removesuffix(
+            prompt_mod.PO_REFS_ADDENDUM
+        ).removesuffix(
+            prompt_mod.REPORT_ASK_ADDENDUM
         ).removesuffix(
             prompt_mod.LOW_STOCK_FILTERS_ADDENDUM
         ).removesuffix(

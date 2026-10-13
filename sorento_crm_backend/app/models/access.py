@@ -279,6 +279,9 @@ class RespondContact(Base):
     # packing_list_allowed - the shipment's packing list is attached on a B3 answer.
     notify_salesman = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     packing_list_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # CONTACT-REGION: the packing list regions this contact may be told about, held
+    # literally ('west' and/or 'east'). Default West only.
+    regions = Column(ARRAY(Text), nullable=False, server_default=text("'{west}'"))
     # Issue #1328: whether the ETA this contact is told carries the product-or-category
     # `chatbot_eta_offset_days`. One switch for every chat route that prints an ETA (the
     # stock ask and the incoming routes, `app/services/eta_policy.py`). Default ON: the
@@ -289,6 +292,17 @@ class RespondContact(Base):
     # decide it); default ON, every existing contact backfilled ON, unticked on the
     # contact page's Chatbot card to block.
     escalation_allowed = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    # AI-ALLOWED-GATE (owner, 5 Oct 2026): may the chatbot answer this contact at all.
+    # Off, or no row, and the engine ends the turn silently. Default OFF, unlike the other
+    # switches: every row that existed when the column arrived was backfilled ON by the
+    # migration, every new contact (sync or hand-added) waits for a human to tick it.
+    chatbot_allowed = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # DO-PERIOD-SKIP (owner, 4 Oct 2026): never ask this contact for a date range on a list ask.
+    chatbot_skip_period_questions = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): the A/B switch. Off = attachment mode, one
+    # WhatsApp message per file (today); on = link mode, one text with a short link per file
+    # (`chatbot_file_links`). Default OFF: every contact starts in attachment mode (Q4 (a)).
+    chatbot_files_as_links = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     created_by = Column(Text, nullable=True)
@@ -327,6 +341,10 @@ class RespondContact(Base):
             "chatbot_memory_level IS NULL OR chatbot_memory_level IN "
             "('off', 'conversation', 'episodes', 'full')",
             name="ck_respond_contacts_chatbot_memory_level",
+        ),
+        CheckConstraint(
+            "cardinality(regions) >= 1 AND regions <@ ARRAY['west','east']::text[]",
+            name="ck_respond_contacts_regions",
         ),
     )
 
@@ -394,6 +412,9 @@ class AccessAgent(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     assign_to_new_internal_contacts = Column(Boolean, default=False, nullable=False)
+    # The parser prompt names this agent (`{{agents}}`; owner Q-B, 2 Oct 2026, migration
+    # `pdyn_0006_agents_in_prompt`).
+    in_parser_prompt = Column(Boolean, default=False, server_default="false", nullable=False)
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
     synced_to_excel = Column(Boolean, default=False, nullable=False)

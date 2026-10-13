@@ -2137,6 +2137,144 @@ describe('BoardLineDecisionPanel: the Save button says it saved (S4, AC-4.1)', (
 });
 
 /**
+ * BOARD-DECIDE-RESEED (owner, 7 Oct 2026, SO424856 lines 16 / 32): the draft and the Reason
+ * box used to seed ONCE at mount (`useState(() => draftFor(contribution, decision))`), so a
+ * panel left open while the planner picked a way from the Decide dropdown (`BoardDecideControl`,
+ * e.g. "Use BRW") kept the OLD Reserve rows under a pill already reading the new decision, and
+ * Save then posted the stale rows - which the server refused with "The components add up to X
+ * and the line is open for Y".
+ */
+describe('BoardLineDecisionPanel: re-seeds from the decision when it changes under an untouched panel', () => {
+  const useBrw: BoardDecision = {
+    verdict: 'amended',
+    reserve: [{ warehouse_id: 'wh-BRW', location: 'BRW', qty: '24' }],
+    borrow: [],
+    buy_qty: '0',
+    timely_spo_qty: '0',
+    reason: 'Use BRW',
+  };
+
+  it('follows a Decide-dropdown amendment: the Reserve inputs, the reason, and what Save posts', async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={null}
+        locations={LOCATIONS}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+
+    // The Decide dropdown wrote "Use BRW" for this line; the board's draft map moves first.
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={useBrw}
+        locations={LOCATIONS}
+        onDecide={onDecide}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(0);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(24);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('Use BRW');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    });
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    const posted = onDecide.mock.calls[0][0] as BoardDecision;
+    expect(posted.verdict).toBe('amended');
+    // A zero row is not posted (`decisionFromAmendDraft` drops it); what matters is that the
+    // old 9 at BRW-AM never reaches the server.
+    expect(posted.reserve).toEqual([
+      expect.objectContaining({ warehouse_id: 'wh-BRW', qty: '24' }),
+    ]);
+  });
+
+  it('follows a Decide-dropdown approval back to the engine suggestion', () => {
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={{
+          verdict: 'amended',
+          reserve: [
+            { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '5' },
+            { warehouse_id: 'wh-BRW', location: 'BRW', qty: '19' },
+          ],
+          borrow: [],
+          buy_qty: '0',
+          timely_spo_qty: '0',
+          reason: 'Less from BRW-AM.',
+        }}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(19);
+
+    // "As suggested" from the Decide dropdown: an approval (it carries the suggested rows,
+    // D11, but `draftFor` reads an approval as the CURRENT suggestion, the same reading
+    // `confirmLinesFor` commits).
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={{
+          verdict: 'approved',
+          reserve: [
+            { warehouse_id: 'wh-BRW-AM', location: 'BRW-AM', qty: '9' },
+            { warehouse_id: 'wh-BRW', location: 'BRW', qty: '15' },
+          ],
+          borrow: [],
+          buy_qty: '0',
+          timely_spo_qty: '0',
+        }}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(9);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('');
+  });
+
+  it('does not clobber a panel the planner has already typed into', () => {
+    const onDirtyChange = vi.fn();
+    const { rerender } = render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={null}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Reserve at BRW-AM'), {
+      target: { value: '5' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'The site asked for less.' },
+    });
+
+    rerender(
+      <BoardLineDecisionPanel
+        contribution={contributionOf()}
+        decision={useBrw}
+        locations={LOCATIONS}
+        onDecide={vi.fn()}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+    expect(screen.getByLabelText('Reserve at BRW-AM')).toHaveValue(5);
+    expect(screen.getByLabelText('Reserve at BRW')).toHaveValue(15);
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue('The site asked for less.');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+});
+
+/**
  * Save answers its own click (S4, AC-4.1); Reject used to answer nothing at all - no pill, no
  * toast, no change to the button itself. It mirrors Save now: the button becomes a landed
  * "Rejected" state once the write actually resolves, and only edits since it landed put the
@@ -2825,5 +2963,122 @@ describe('BoardLineDecisionPanel: Add-location seeds the remainder, not the whol
     fireEvent.click(screen.getByRole('button', { name: 'Add location' }));
 
     expect(screen.getByLabelText('Quantity')).toHaveValue(73);
+  });
+});
+
+/**
+ * OI-CLOSED-LINE, owner rule 12 Oct 2026 ("the user will come in to plan AFTER they issue the
+ * DO"): SO424764 line 144's shape, fake codes. Plan 100, all 100 delivered, 77 free at the
+ * line's own bin. CS decides Reserve 98 there + order back 2. The delivered part is never
+ * capped by free stock; only the undelivered part may warn, and a warning never blocks Save.
+ */
+describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-LINE)', () => {
+  const BB: BoardCellLocation[] = [
+    {
+      location: 'ZZT-BB',
+      warehouse_id: 'wh-ZZT-BB',
+      where: 'own',
+      qty: '0',
+      available_qty: '77',
+      qty_free: '77',
+      qty_free_remaining: '77',
+    },
+  ];
+
+  function renderDelivered(delivered: string, locations: BoardCellLocation[] = BB) {
+    const onDecide = vi.fn();
+    render(
+      <BoardLineDecisionPanel
+        contribution={contributionOf({
+          qty: '100',
+          qty_ordered: '100',
+          qty_delivered: delivered,
+          qty_outstanding: String(100 - Number(delivered)),
+          fulfilment_location: 'ZZT-BB',
+          fulfilment_warehouse_id: 'wh-ZZT-BB',
+          sources: [
+            {
+              kind: 'reserve',
+              qty: '77',
+              location: 'ZZT-BB',
+              warehouse_id: 'wh-ZZT-BB',
+              reason: 'Free stock at ZZT-BB covers this much.',
+            },
+            { kind: 'buy', qty: '23', reason: 'Nothing else is free.' },
+          ],
+          qty_proposed_reserve: '77',
+          qty_proposed_buy: '23',
+        })}
+        decision={null}
+        locations={locations}
+        onDecide={onDecide}
+      />,
+    );
+    return { onDecide };
+  }
+
+  it('Reserve 98 over 77 free on a fully delivered line: no shortfall said, order back offered beside it, saves', () => {
+    const { onDecide } = renderDelivered('100');
+
+    fireEvent.change(screen.getByLabelText('Reserve at ZZT-BB'), { target: { value: '98' } });
+
+    expect(screen.queryByText(/Only .* available here/)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`line-buy-derived-${KEY}`)).toHaveTextContent('Buy 2');
+    fireEvent.click(screen.getByRole('switch', { name: 'Order back' }));
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: '98 used from BB, 2 order back.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+
+    expect(onDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: 'amended',
+        reserve: [expect.objectContaining({ warehouse_id: 'wh-ZZT-BB', qty: '98' })],
+        buy_qty: '2',
+        order_back: true,
+      }),
+    );
+  });
+
+  it('short on the undelivered part: warns with what is free, and Save still saves', () => {
+    const { onDecide } = renderDelivered('10');
+
+    fireEvent.change(screen.getByLabelText('Reserve at ZZT-BB'), { target: { value: '98' } });
+
+    // 10 delivered, 2 bought: 8 of the 98 are delivered, 90 need stock, 77 free.
+    const said = screen.getByText('Only 77 available here');
+    expect(said.className).not.toContain('text-destructive');
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Take what BB has; purchasing is told.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+
+    expect(onDecide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reserve: [expect.objectContaining({ qty: '98' })],
+        buy_qty: '2',
+      }),
+    );
+  });
+
+  it('a delivered line can still add a location that shows 0 free (the goods already went out)', () => {
+    renderDelivered('100', [
+      { ...BB[0], qty_free: '0', qty_free_remaining: '0', available_qty: '0' },
+      {
+        location: 'ZZT-POOL',
+        warehouse_id: 'wh-ZZT-POOL',
+        where: 'site_pool',
+        qty: '0',
+        available_qty: '0',
+        qty_free: '0',
+        qty_free_remaining: '0',
+      },
+    ]);
+
+    expect(
+      screen.queryByText('No other location holds free stock of this item.'),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add location' }));
+    expect(screen.getByTestId('reserve-location-ZZT-POOL')).toBeInTheDocument();
   });
 });

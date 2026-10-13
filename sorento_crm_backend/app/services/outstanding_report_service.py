@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -478,7 +478,10 @@ def _fill_do(
             Order.id.label("do_id"),
             Order.order_number,
             Order.order_date,
-            Customer.customer_name,
+            # A DO with no customer link still shows its own debtor name (display only).
+            func.coalesce(
+                Customer.customer_name, func.nullif(func.btrim(Order.debtor_name), "")
+            ).label("customer_name"),
             Warehouse.warehouse_code,
             Product.product_code,
             OrderLine.quantity,
@@ -500,9 +503,11 @@ def _fill_do(
     if outstanding_clause is not None:
         q = q.filter(outstanding_clause)
     if customer_query:
+        like = f"%{_escape_like(customer_query)}%"
         q = q.filter(
-            Customer.customer_name.ilike(
-                f"%{_escape_like(customer_query)}%", escape=_LIKE_ESCAPE
+            or_(
+                Customer.customer_name.ilike(like, escape=_LIKE_ESCAPE),
+                Order.debtor_name.ilike(like, escape=_LIKE_ESCAPE),
             )
         )
     if customer_ids is not None:

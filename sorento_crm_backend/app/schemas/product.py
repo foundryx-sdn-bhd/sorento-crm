@@ -348,6 +348,22 @@ class ProductSetRef(BaseModel):
     name: str
 
 
+class ProductFamilyMemberRef(BaseModel):
+    """A same-family product as the Variants tab lists it: code, name and description."""
+    id: str
+    product_code: str
+    product_name: str
+    description: Optional[str] = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _uuid_to_str(cls, v):
+        return None if v is None else str(v)
+
+    class Config:
+        from_attributes = True
+
+
 class ProductVariantRef(BaseModel):
     """Lightweight product reference for the variant graph (parent / children).
 
@@ -390,6 +406,12 @@ class ProductResponse(ProductBase):
     # Manual-curation flag (plain column; cheap on list rows). Detail page reads it
     # for the "Manual" badge + Reset-to-auto button.
     variant_link_manual: bool = False
+    # CODE-VARIANTS: model family (plain columns) and, on detail only, its other members.
+    family_code: Optional[str] = None
+    family_code_manual: bool = False
+    family_members: Optional[List["ProductFamilyMemberRef"]] = Field(
+        default=None, validation_alias="_family_members"
+    )
     # Direct-child count. On list rows populated by two bounded IN-queries (no N+1);
     # on detail rows set from the loaded children by `_populate_variant_graph`.
     variant_child_count: int = Field(default=0, validation_alias="_variant_child_count")
@@ -450,6 +472,9 @@ class AttachmentSimple(BaseModel):
     file_path: str
     file_size_bytes: Optional[int] = None
     mime_type: Optional[str] = None
+    # sha256 of the bytes: the chatbot sends one file per image, not per url, and a
+    # picture uploaded twice has two urls and one hash (PHOTO-SEND-CAP R2).
+    file_hash: Optional[str] = None
     uploaded_at: datetime
     created_at: datetime
     attachment_type: Optional[AttachmentTypeSimple] = None

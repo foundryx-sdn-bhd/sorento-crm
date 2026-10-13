@@ -192,7 +192,12 @@ def test_service_level_company_garbage_is_rejected(db):
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
+    from app.services.user_service import UserPermissionService
+
+    # LIST-API-PERMS: the list and drive routes carry permission gates now; this principal
+    # has no users row, so answer the role lookup as admin (the gates have their own tests).
+    monkeypatch.setattr(UserPermissionService, "get_user_role_slugs", lambda self, uid: {"admin"})
     with blank_session() as session:
         session.add(Company(id=MOCHA_ID, name="Mocha", code=unique_code("MCH")[:20]))
         session.flush()

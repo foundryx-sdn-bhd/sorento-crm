@@ -758,6 +758,10 @@ class BoardContribution(BaseModel):
     #: The pending change row's own batch, so the cell can deep-link to it (`Changed` pill).
     #: Null on every ordinary row, same rule as `cancelled`.
     pending_change_batch_id: Optional[str] = None
+    #: SO-CANCEL-LINE: CS transferred this line to Cancel SO. `cancelled_by` is a name.
+    cancelled_at: Optional[datetime] = None
+    cancelled_by: Optional[str] = None
+    cancel_reason: Optional[str] = None
 
 
 class BorrowDonorImpact(BaseModel):
@@ -811,6 +815,10 @@ class BorrowCandidate(BaseModel):
     donor_line_no: Optional[int] = None
     donor_agent_code: Optional[str] = None
     donor_core_line_id: Optional[str] = None
+    #: BORROW-LOCATION-ONLY: the donor's own date, posted back by a Decide-made borrow so an
+    #: order borrow (switch ON) raises its order-back at it; undeclared, the response model
+    #: dropped it and the row fell back to the borrowing line's date.
+    donor_required_date: Optional[date] = None
     lower_ranked: bool = False
     same_agent: bool = False
     #: S4 (`PLAN-local-supplier-oi-routing.md`): the SAME location facts the Grid Location
@@ -1300,3 +1308,6 @@ class PlanningBoard(BaseModel):
     #: pool SUBTOTAL applies the same rule with, over the pool's own net - a figure that
     #: belongs to the SET and so appears on no row.
     pool_share_pct: int = 50
+    #: "Borrow from another order" (`PLAN-borrow-location-only-8oct.md`, BR1). The Decide
+    #: menu offers that item exactly when this is true.
+    borrow_from_order_enabled: bool = False

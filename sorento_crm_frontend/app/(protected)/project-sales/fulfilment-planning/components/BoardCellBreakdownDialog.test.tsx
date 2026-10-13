@@ -23,7 +23,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({
@@ -48,7 +48,7 @@ vi.mock('../../_shared/services/fulfilmentPlanningService', () => ({
 
 import { BoardCellBreakdownDialog, sourceAt } from './BoardCellBreakdownDialog';
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
-import { LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
+import { borrowKinds, LADDER_VERSION } from '../../_shared/lib/supplyVocabulary';
 import {
   buildBoard,
   PREVIEW_POLICY,
@@ -2894,7 +2894,7 @@ describe('BoardCellBreakdownDialog: a line a decision already covers', () => {
     const testId = 'sources-pills-so-a|1|WESERP10B|2026-08-31';
     const sourcePills = within(screen.getByTestId(testId));
     expect(
-      sourcePills.getByText('Borrow (other) 10 from MWH-IB'),
+      sourcePills.getByText('Borrow 10 from MWH-IB'),
     ).toBeInTheDocument();
     // At this width (jsdom's own zero) only the first pill shows; the rest folds behind
     // "+1", which opens the SAME popover every pill does and states the whole composition.
@@ -3252,13 +3252,17 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
   });
 
   it('tells the two borrows apart by rung (AC-A3)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     renderWithSources([
+      // Names its donor SO: a donor-less one reads as a location borrow
+      // (BORROW-LOCATION-ONLY D3).
       {
         kind: 'borrow',
         rung: 'group_borrow',
         qty: '3',
         location: 'BRW-BB',
         reason: 'a',
+        donor_so_number: 'SO415472',
       },
       {
         kind: 'borrow',
@@ -3271,7 +3275,7 @@ describe('BoardCellBreakdownDialog: how the Suggestion card names its sources', 
 
     const card = screen.getByTestId('cell-suggestion');
     expect(card).toHaveTextContent('Borrow from another order');
-    expect(card).toHaveTextContent('Borrow other location');
+    expect(card).toHaveTextContent('Borrow');
   });
 });
 
@@ -4116,4 +4120,8 @@ describe('AC-B1/AC-B11: the Decision column carries the same Verdict trio as the
       screen.queryByRole('button', { name: /decision trail/i }),
     ).not.toBeInTheDocument();
   });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });

@@ -654,6 +654,8 @@ export function confirmLineFrom(
  * allows, never as the agent's own.
  */
 export function amendSummary(decision: BoardDecision, ownLocation?: string | null): string {
+  // SO-CANCEL-LINE: the whole line goes to Cancel SO; there is no composition to describe.
+  if (decision.verdict === 'cancelled') return 'Cancel SO';
   if (!decision.reserve && !decision.borrow && decision.buy_qty === undefined) {
     return `Amended to reserve ${decision.reserve_qty ?? '0'}`;
   }
@@ -727,7 +729,8 @@ export type DecideWay =
   | 'shared'
   | 'borrow_order'
   | 'borrow_other'
-  | 'buy';
+  | 'buy'
+  | 'cancel_so';
 
 /**
  * One ticked row's composition for a Decide pick, or why it is skipped (D1, R2, R6 to R10).
@@ -741,11 +744,43 @@ export type DecideWay =
  */
 export interface DecideComposition {
   skip?: string;
+  /**
+   * OI-CLOSED-LINE (owner, 12 Oct 2026): composed as decided, but short of free stock on the
+   * part not yet delivered ("only 2 free at BRW"). Saved anyway; never a skip.
+   */
+  warning?: string;
   reserve?: BoardReserveComponent[];
   borrow?: BoardBorrowComponent[];
   timely_spo_qty?: string;
   buy_qty?: string;
   order_back?: boolean;
+}
+
+/**
+ * `needMinor` drawn across `items` in the order given, each within its own `freeOf` less what
+ * this same draw already took under its `keyOf` (BORROW-LOCATION-ONLY S6, R2). Short when the
+ * items hold less than the need; the caller decides what that means.
+ */
+export function drawAcross<T>(
+  items: readonly T[],
+  needMinor: number,
+  keyOf: (item: T) => string,
+  freeOf: (item: T) => number,
+): { item: T; minor: number }[] {
+  const taken = new Map<string, number>();
+  const parts: { item: T; minor: number }[] = [];
+  let remaining = needMinor;
+  for (const item of items) {
+    if (remaining <= 0) break;
+    const key = keyOf(item);
+    const left = Math.max(freeOf(item) - (taken.get(key) ?? 0), 0);
+    const take = Math.min(left, remaining);
+    if (take <= 0) continue;
+    taken.set(key, (taken.get(key) ?? 0) + take);
+    parts.push({ item, minor: take });
+    remaining -= take;
+  }
+  return parts;
 }
 
 /**
@@ -765,11 +800,35 @@ export function decideComposition(
   claimed?: Map<string, number>,
 ): DecideComposition {
   const openMinor = toMinor(contribution.qty);
+  // OI-CLOSED-LINE (owner Q1 (a)): what the customer already received needs no free stock,
+  // the same credit Confirm gives. Only the rest is drawn from what is free.
+  const deliveredMinor = Math.min(
+    Math.max(toMinor(contribution.qty_delivered ?? '0'), 0),
+    openMinor,
+  );
+  const needMinor = openMinor - deliveredMinor;
 
   // Nit (review round 1): no 'suggested' branch here - As suggested never reaches this
   // function. `BoardDecideControl` short-circuits it through `suggestedDecisionFor` (behind
   // `canQuickSave`) before `decideComposition` is ever called, the identical path Save as
   // suggested always took.
+
+  if (way === 'cancel_so') {
+    // SO-CANCEL-LINE: a whole-line cancel carries no composition. A confirmed line must be
+    // rejected first, and an already cancelled one has nothing left to cancel.
+    if (contribution.cancelled) return { skip: 'already cancelled' };
+    // `covered` with no `decision` is a live inquiry row only: the server allows that cancel.
+    if (contribution.covered && contribution.decision) {
+      return { skip: 'confirmed, reject it first' };
+    }
+    return {
+      reserve: [],
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      order_back: false,
+    };
+  }
 
   if (way === 'buy') {
     // #1362 (owner, 29 Sep 2026): a Buy over stock that already landed for this line is the
@@ -795,7 +854,7 @@ export function decideComposition(
     const rows: BoardReserveComponent[] = [];
     let takenMinor = 0;
     for (const location of locations) {
-      if (!location.warehouse_id || takenMinor >= openMinor) continue;
+      if (!location.warehouse_id || takenMinor >= needMinor) continue;
       const freeMinor = toMinor(location.qty_free_remaining ?? location.qty_free ?? '0');
       // R6/D1: the same pool-share limit `poolShareLimitsOf` bounds a manual composition by,
       // never re-implemented - `availableForProjectOf` is the identical per-row reading
@@ -807,7 +866,7 @@ export function decideComposition(
       const claimKey = `${way}|${contribution.item_code ?? ''}|${location.warehouse_id}`;
       const left = Math.max(bounded - (claimed?.get(claimKey) ?? 0), 0);
       if (left <= 0) continue;
-      const take = Math.min(left, openMinor - takenMinor);
+      const take = Math.min(left, needMinor - takenMinor);
       if (take <= 0) continue;
       rows.push({
         warehouse_id: location.warehouse_id,
@@ -817,19 +876,41 @@ export function decideComposition(
       claimed?.set(claimKey, (claimed.get(claimKey) ?? 0) + take);
       takenMinor += take;
     }
-    if (takenMinor < openMinor) {
-      return {
-        skip: `only ${fromMinor(takenMinor)} free at ${way === 'shared' ? 'BRW' : 'own location'}`,
-      };
+    const where = way === 'shared' ? 'BRW' : 'own location';
+    // The delivered part, and any shortfall, sit on the first location the rung offers: the
+    // line is composed as decided. With no location at all there is nothing to name.
+    const first = locations.find((location) => location.warehouse_id);
+    if (!first) return { skip: `only 0 free at ${where}` };
+    const restMinor = openMinor - takenMinor;
+    if (restMinor > 0) {
+      const at = rows.find((row) => row.warehouse_id === first.warehouse_id);
+      if (at) at.qty = fromMinor(toMinor(at.qty) + restMinor);
+      else
+        rows.unshift({
+          warehouse_id: first.warehouse_id as string,
+          location: first.location ?? null,
+          qty: fromMinor(restMinor),
+        });
     }
-    return { reserve: rows, borrow: [], timely_spo_qty: '0', buy_qty: '0' };
+    return {
+      reserve: rows,
+      borrow: [],
+      timely_spo_qty: '0',
+      buy_qty: '0',
+      ...(takenMinor < needMinor
+        ? { warning: `only ${fromMinor(takenMinor)} free at ${where}` }
+        : {}),
+    };
   }
 
   // way === 'borrow_order' | 'borrow_other' (R8): one donor, picked, for the whole line.
   const candidates = borrowCandidatesOf(contribution).filter((candidate) =>
     way === 'borrow_order'
       ? candidate.donor_so_number === pick
-      : candidate.source === 'other_location' && candidate.warehouse_code === pick,
+      : candidate.source === 'other_location' &&
+        candidate.warehouse_code === pick &&
+        // K8: a location borrow never resolves to a candidate that names a donor SO.
+        !candidate.donor_so_number,
   );
   const donorLabel = pick ?? (way === 'borrow_order' ? 'the donor' : 'the location');
   if (candidates.length === 0) {
@@ -838,13 +919,56 @@ export function decideComposition(
         way === 'borrow_order' ? `${donorLabel} holds none` : `only 0 free at ${donorLabel}`,
     };
   }
-  // Should fix 2 (review round 1): ONE candidate LINE has to cover the whole open quantity
-  // by itself - the server posts one component per `donor_core_line_id`, so summing several
-  // donor lines' free stock together and posting the total against only the first of them is
-  // a claim `_check_borrow` refuses at Confirm, far from this press. Each candidate line keeps
-  // its OWN running claim (never the pick's aggregate), so two ticked rows drawing on the same
-  // donor line still cannot over-claim it between them.
+  // Should fix 2 (review round 1), Borrow from another order: ONE candidate LINE has to
+  // cover the whole open quantity by itself - the server posts one component per
+  // `donor_core_line_id`, so summing several donor lines' free stock together and posting
+  // the total against only the first of them is a claim `_check_borrow` refuses at
+  // Confirm, far from this press. Each candidate line keeps its OWN running claim (never the
+  // pick's aggregate), so two ticked rows drawing on the same donor line still cannot
+  // over-claim it between them.
   const pickKey = `${way}|${contribution.item_code ?? ''}|${pick ?? ''}`;
+  const claimKeyOf = (candidate: BorrowCandidate) =>
+    `${pickKey}|${candidate.donor_core_line_id ?? candidate.warehouse_id}`;
+  if (way === 'borrow_other') {
+    // BORROW-LOCATION-ONLY S6: a location borrow names no donor, so the location's lines
+    // are summed in the server's order - one row per line, each within what that line has
+    // left. The server still checks each line on its own, so no row over-claims one.
+    const rows = drawAcross(
+      candidates,
+      needMinor,
+      claimKeyOf,
+      (candidate) => toMinor(candidate.free_qty) - (claimed?.get(claimKeyOf(candidate)) ?? 0),
+    );
+    const drawn = rows.reduce((sum, row) => sum + row.minor, 0);
+    if (drawn < needMinor) {
+      return { skip: `only ${fromMinor(drawn)} free at ${donorLabel}` };
+    }
+    for (const { item, minor } of rows) {
+      const key = claimKeyOf(item);
+      claimed?.set(key, (claimed.get(key) ?? 0) + minor);
+    }
+    // The delivered part rides on the first line drawn (or the first candidate when the
+    // whole line is delivered): it needs no free stock, Confirm credits it the same way.
+    if (deliveredMinor > 0) {
+      if (rows.length > 0) rows[0] = { ...rows[0], minor: rows[0].minor + deliveredMinor };
+      else rows.push({ item: candidates[0], minor: deliveredMinor });
+    }
+    return {
+      reserve: [],
+      borrow: rows.map(({ item: candidate, minor }) => ({
+        source: candidate.source,
+        warehouse_id: candidate.warehouse_id,
+        warehouse_code: candidate.warehouse_code,
+        donor_project_ref: candidate.donor_project_ref ?? null,
+        donor_project_id: candidate.donor_project_id ?? null,
+        qty: fromMinor(minor),
+        reason: '',
+        ...borrowPassThrough(candidate),
+      })),
+      timely_spo_qty: '0',
+      buy_qty: '0',
+    };
+  }
   let donor: BorrowCandidate | undefined;
   let bestLeft = 0;
   for (const candidate of candidates) {
@@ -854,7 +978,7 @@ export function decideComposition(
       0,
     );
     if (left > bestLeft) bestLeft = left;
-    if (left >= openMinor) {
+    if (left >= needMinor) {
       donor = candidate;
       break;
     }
@@ -868,7 +992,7 @@ export function decideComposition(
     };
   }
   const donorKey = `${pickKey}|${donor.donor_core_line_id ?? donor.warehouse_id}`;
-  claimed?.set(donorKey, (claimed.get(donorKey) ?? 0) + openMinor);
+  claimed?.set(donorKey, (claimed.get(donorKey) ?? 0) + needMinor);
   return {
     reserve: [],
     borrow: [

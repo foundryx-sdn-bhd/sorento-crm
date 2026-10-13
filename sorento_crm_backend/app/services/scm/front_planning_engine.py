@@ -75,6 +75,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 #: `YYYY-MM` - the Stock Debt cell a debt lands in. IMPORTED, never restated: the option's
 #: `debt_month` and the view's own column key are the same string, and two spellings of one
 #: key is how a lightbox comes to open on a month the cell did not mean.
+from app.services.scm import ladder_steps
 from app.services.scm.supply_assignment import month_key
 
 ZERO = Decimal("0")
@@ -1041,6 +1042,16 @@ def pool_borrow_reason(
     return f"Borrow {qty_text(qty)} on hand at pool {location} from {who}{when}{debt}"
 
 
+def location_borrow_reason(qty: Decimal, location: str) -> str:
+    """Steps 2 and 4b with "Borrow from another order" OFF (`PLAN-borrow-location-only-8oct.md`
+    B2): the same later-order stock, told as a LOCATION's. No donor and no debt month, because
+    the order-back is this line's own, at this line's date.
+    """
+    return (
+        f"Borrow {qty_text(qty)} on hand at {location}; ordered back to {location} on this line"
+    )
+
+
 def month_text(value: date) -> str:
     """"Nov 2026" - the Stock Debt column a debt lands in, spelled once."""
     return f"{_MONTHS[value.month - 1]} {value.year}"
@@ -1212,6 +1223,13 @@ def walk_line(
                 pool_share_label=_pool_share_label(_pool_names((), pools)),
             ),
         )
+
+    # The steps the owner disabled on 12 Oct 2026 (`ladder_steps`): their candidates are
+    # never drawn, so the walk falls to the next step exactly as if none were offered.
+    group_take_candidates = ladder_steps.without_water(group_take_candidates)
+    other_group_candidates = ladder_steps.without_water(other_group_candidates)
+    if not ladder_steps.SUPPLY_BORROW:
+        supply_borrow_candidates = None
 
     offers: Dict[str, "_Offer"] = {}
 
@@ -1737,7 +1755,9 @@ def _draw_order_borrow(
                 kind=BORROW,
                 qty=take,
                 reason=(
-                    pool_borrow_reason(
+                    location_borrow_reason(take, str(location))
+                    if candidate.get("location_only")
+                    else pool_borrow_reason(
                         take, str(location), candidate.get("donor_so_number"), donor_date
                     )
                     if rung == RUNG_POOL
@@ -1923,6 +1943,9 @@ def _options(
     whole_line = open_qty if open_qty is not None else need
     out: List[Option] = []
     for step in OPTION_STEPS:
+        # A disabled step is hidden, not printed as a step that gave nothing.
+        if step == STEP_SUPPLY_BORROW and not ladder_steps.SUPPLY_BORROW:
+            continue
         if step == STEP_BUY:
             out.append(
                 Option(

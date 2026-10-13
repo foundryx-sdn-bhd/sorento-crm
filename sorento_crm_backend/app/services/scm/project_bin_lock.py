@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Optional
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.inventory import Warehouse
 from app.models.order import SalesOrderLine
@@ -33,6 +33,16 @@ from app.models.procurement import InboundShipment, PurchaseOrderLine, SPOAlloca
 from app.models.scm import OrderLinkClaim
 from app.services.scm import spo_supply
 from app.services.scm.pool_predicate import PROJECT_SEGMENT
+
+
+def _is_project_bin():
+    """`segment = project` AND nobody's pool. A pool with `segment = project` is a PROJECT
+    RESERVE (HQ, `pool_predicate.is_project_reserve`): general project stock, not one named
+    project's bin, so its lines carry no G12 lock (`PLAN-hq-project-reserve-12oct.md`)."""
+    member = aliased(Warehouse)
+    return (Warehouse.segment == PROJECT_SEGMENT) & ~(
+        select(member.id).where(member.pool_warehouse_id == Warehouse.id).exists()
+    )
 
 
 def _unlocking_claim_exists(target_clause):
@@ -70,7 +80,7 @@ def count_unclaimed_project_bin_lines(
         .join(Warehouse, Warehouse.id == PurchaseOrderLine.warehouse_id)
         .filter(
             PurchaseOrderLine.line_status == "open",
-            Warehouse.segment == PROJECT_SEGMENT,
+            _is_project_bin(),
             ~_unlocking_claim_exists(OrderLinkClaim.po_line_id == PurchaseOrderLine.id),
         )
     )
@@ -82,7 +92,7 @@ def count_unclaimed_project_bin_lines(
         )
         .filter(
             *spo_supply.open_incoming_clauses(),
-            Warehouse.segment == PROJECT_SEGMENT,
+            _is_project_bin(),
             ~_unlocking_claim_exists(
                 OrderLinkClaim.spo_allocation_id == SPOAllocation.id
             ),
@@ -109,7 +119,7 @@ def has_unclaimed_project_bin_line(db: Session):
         .filter(
             PurchaseOrderLine.purchase_order_id == PurchaseOrder.id,
             PurchaseOrderLine.line_status == "open",
-            Warehouse.segment == PROJECT_SEGMENT,
+            _is_project_bin(),
             ~_unlocking_claim_exists(OrderLinkClaim.po_line_id == PurchaseOrderLine.id),
         )
         .exists()

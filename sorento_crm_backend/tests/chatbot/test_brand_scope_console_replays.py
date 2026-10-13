@@ -15,6 +15,7 @@ Example 4 (top selling for a CABANA + SORENTO contact) is covered per path in
 from __future__ import annotations
 
 import re
+import uuid
 from typing import Any
 
 import pytest
@@ -36,25 +37,40 @@ from tests.chatbot.test_engine_company_scope import (
 
 
 class Seed:
-    def __init__(self, session_factory, *, scoped: bool = True) -> None:
+    """`dual=True` (BRAND-SCOPE-PER-COMPANY): a second company with NO brand row and one
+    NULL-brand product, and the contact is a member of both companies, scoped to SORENTO."""
+
+    def __init__(self, session_factory, *, scoped: bool = True, dual: bool = False) -> None:
         db = session_factory()
         self.mocha = brand(db, "MOCHA")
         self.sorento = brand(db, "SORENTO")
         self.p_mocha = branded_product(db, unique_code("MCH", alpha=True).replace("-", ""), self.mocha)
         self.p_sorento = branded_product(db, unique_code("SRT", alpha=True).replace("-", ""), self.sorento)
         self.p_null = branded_product(db, unique_code("NUL", alpha=True).replace("-", ""), None)
+        companies = [DEFAULT_COMPANY_ID]
+        if dual:
+            from app.models.company import Company
+            from tests._mc_lookup_seed import product
+
+            self.mch_company_id = str(uuid.uuid4())
+            db.add(Company(id=self.mch_company_id, name="ZZT Mocha", code=unique_code("MCH")[:20]))
+            db.flush()
+            self.p_mch = product(db, company_id=self.mch_company_id, code=unique_code("MCO", alpha=True).replace("-", ""))
+            companies.append(self.mch_company_id)
         db.commit()
         workspace_id = _seed_workspace(session_factory)
         self.contact_id = unique_code("rid")
         db = session_factory()
-        kwargs = {"brand_ids": [self.mocha.id]} if scoped else {}
+        kwargs = {"brand_ids": [self.sorento.id if dual else self.mocha.id]} if scoped else {}
         row = RespondContact(
-            respond_io_id=self.contact_id, phone_number=f"+6{unique_code('PH')[:10]}",
+            respond_io_id=self.contact_id, phone_number=f"+6{unique_code('PH')}",
             workspace_id=workspace_id, session_vars={"variables": {}}, **kwargs,
+            chatbot_allowed=True,  # AI-ALLOWED-GATE: a new contact is blocked by default
         )
         db.add(row)
         db.flush()
-        db.add(RespondContactCompany(respond_contact_id=row.id, company_id=DEFAULT_COMPANY_ID))
+        for company_id in companies:
+            db.add(RespondContactCompany(respond_contact_id=row.id, company_id=company_id))
         db.commit()
 
 
@@ -87,6 +103,47 @@ def test_example_2_and_3_reply_equals_the_reply_for_a_nonexistent_code(
     session_factory, stub_parser, stub_access, system_settings_row, monkeypatch, which
 ) -> None:
     seed = Seed(session_factory)
+    product = getattr(seed, which)
+    code, ghost = product.product_code, "ZZTGHOST" + unique_code("g", alpha=True).replace("-", "")[-8:]
+    text, matched = _ask(session_factory, system_settings_row, monkeypatch, stub_parser, stub_access, seed, code)
+    miss, _ = _ask(session_factory, system_settings_row, monkeypatch, stub_parser, stub_access, seed, ghost)
+    assert product.id not in matched, "the resolver matched an out-of-scope product"
+    assert "Couldn't find" in text, text
+    assert re.sub(re.escape(code), "<X>", text, flags=re.I) == re.sub(re.escape(ghost), "<X>", miss, flags=re.I)
+
+
+# --------------------------------------------------------------------- BRAND-SCOPE-PER-COMPANY (AC-11)
+
+
+def test_dual_contact_mocha_code_is_answered(
+    session_factory, stub_parser, stub_access, system_settings_row, monkeypatch
+) -> None:
+    """A SRT + MCH contact scoped to SORENTO asks a Mocha code (NULL brand, company with no
+    brand row): answered as today for an in-scope code."""
+    seed = Seed(session_factory, dual=True)
+    text, matched = _ask(session_factory, system_settings_row, monkeypatch, stub_parser, stub_access,
+                         seed, seed.p_mch.product_code)
+    assert seed.p_mch.id in matched
+    assert not text.startswith("Couldn't find"), text
+
+
+def test_dual_contact_sorento_brand_code_is_answered(
+    session_factory, stub_parser, stub_access, system_settings_row, monkeypatch
+) -> None:
+    seed = Seed(session_factory, dual=True)
+    text, matched = _ask(session_factory, system_settings_row, monkeypatch, stub_parser, stub_access,
+                         seed, seed.p_sorento.product_code)
+    assert seed.p_sorento.id in matched
+    assert not text.startswith("Couldn't find"), text
+
+
+@pytest.mark.parametrize("which", ["p_mocha", "p_null"], ids=["dual_other_srt_brand", "dual_srt_no_brand"])
+def test_dual_contact_other_srt_brand_and_unbranded_srt_code_read_as_nonexistent(
+    session_factory, stub_parser, stub_access, system_settings_row, monkeypatch, which
+) -> None:
+    """The restricted company's rule is unchanged for the dual contact: the MOCHA-brand SRT
+    code and the unbranded SRT code answer like a code that does not exist (Q1, Q4)."""
+    seed = Seed(session_factory, dual=True)
     product = getattr(seed, which)
     code, ghost = product.product_code, "ZZTGHOST" + unique_code("g", alpha=True).replace("-", "")[-8:]
     text, matched = _ask(session_factory, system_settings_row, monkeypatch, stub_parser, stub_access, seed, code)

@@ -1,6 +1,5 @@
 import { apiFetch } from '@/lib/api';
 import { buildDataGridParams, extractApiError } from '@/lib/api-client';
-import type { RespondConversationResponse } from '@/app/(protected)/procurement-management/stock-inquiries/services/stockInquiryService';
 import type {
   ConversationSearchMatch,
   ConversationThreadPage,
@@ -330,7 +329,7 @@ export async function postConversationSLATestOverrides(
 export async function getSlaTrackingConversation(
   trackingId: string,
   params?: { limit?: number; cursor?: string },
-): Promise<RespondConversationResponse> {
+): Promise<ConversationThreadPage> {
   const sp = new URLSearchParams();
   if (params?.limit != null) sp.set('limit', String(params.limit));
   if (params?.cursor) sp.set('cursor', params.cursor);

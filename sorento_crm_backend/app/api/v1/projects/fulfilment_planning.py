@@ -18,8 +18,9 @@ plain `/sales-orders/{pso_id}` one removes any question of shadowing.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
@@ -28,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.projects._common import permission_slugs
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
+from app.models.product import Product
 from app.schemas.common import ListResponse, MAX_PAGE_LIMIT
 from app.schemas.project_board import (
     BoardLineDraft,
@@ -46,14 +48,17 @@ from app.schemas.project_supply import (
     ClassificationEvidence,
     ConfirmManyBody,
     ConfirmManyResult,
+    SimulateConfirmBody,
     ConfirmResult,
     ConfirmSupplyBody,
     PlanRow,
     SupplyProposal,
 )
 from app.services import project_service as projects
+from app.services.audit_service import log_audit
 from app.services.error_handler import AppException, handle_internal_error
 from app.services.project_classification_evidence import classification_evidence
+from app.services import confirm_simulation  # noqa: F401 - registers the engine commit guard
 from app.services import project_line_draft_service
 from app.services.project_fulfilment_board_service import FulfilmentBoardService
 from app.services.project_so_adoption_service import ProjectSOAdoptionService
@@ -471,52 +476,444 @@ def confirm_all(
     neither confirms as an ordinary revision beside it.
     """
     try:
-        if not payload.orders:
-            return {"results": []}
-        actor_id = current_user["id"]
-        supply = ProjectSupplyService(db)
-        any_per_order = any(entry.batch_id for entry in payload.orders)
-
-        def write_one(order, entry):
-            resolved_batch_id = entry.batch_id or (None if any_per_order else payload.batch_id)
-            # `_confirm_with_possible_rejects` opens its OWN `UndoJournal` per branch (S1,
-            # #978: `confirm_many` commits or rolls back each entry on its own, so a journal
-            # opened HERE - inside that per-order try - never survives past this order's own
-            # write). `entry.rejected_line_ids` is this order's own half of the board's
-            # withdrawal, `entry` itself the composition `confirm()` already reads.
-            return _confirm_with_possible_rejects(
-                db,
-                supply,
-                order,
-                entry,
-                actor_user_id=actor_id,
-                batch_id=resolved_batch_id,
-                confirm_batch=lambda: _confirm_a_planning_change(
-                    db,
-                    order,
-                    _BatchedEntry(list(entry.lines), resolved_batch_id),
-                    actor_id,
-                    preview=payload.preview,
-                ),
-            )
-
-        results = supply.confirm_many(
-            payload.orders,
-            actor_user_id=actor_id,
-            assert_can_act=lambda session, order: _assert_can_act_on(
-                session, order, current_user
-            ),
-            write=write_one,
-            # #1362 hold-back: an order answering a planning-change batch is applied whole.
-            can_hold_back=lambda entry: not (
-                entry.batch_id or (None if any_per_order else payload.batch_id)
-            ),
-            preview=payload.preview,
-        )
-        return {"results": results}
+        return {
+            "results": _run_confirm_many(db, payload, current_user, preview=payload.preview)
+        }
     except Exception as exc:
         db.rollback()
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
+
+
+def _run_confirm_many(
+    db: Session,
+    payload: ConfirmManyBody,
+    current_user: dict,
+    *,
+    preview: bool,
+    raw_errors: bool = False,
+    describe_writes: bool = False,
+) -> list:
+    """The per-order machinery behind `confirm_all`, shared with `simulate_confirm` so a
+    dry run can never drift from the real press (see `confirm_all` for the rules)."""
+    if not payload.orders:
+        return []
+    actor_id = current_user["id"]
+    supply = ProjectSupplyService(db)
+    any_per_order = any(entry.batch_id for entry in payload.orders)
+
+    def write_one(order, entry):
+        resolved_batch_id = entry.batch_id or (None if any_per_order else payload.batch_id)
+        # `_confirm_with_possible_rejects` opens its OWN `UndoJournal` per branch (S1,
+        # #978: `confirm_many` commits or rolls back each entry on its own, so a journal
+        # opened HERE - inside that per-order try - never survives past this order's own
+        # write). `entry.rejected_line_ids` is this order's own half of the board's
+        # withdrawal, `entry` itself the composition `confirm()` already reads.
+        return _confirm_with_possible_rejects(
+            db,
+            supply,
+            order,
+            entry,
+            actor_user_id=actor_id,
+            batch_id=resolved_batch_id,
+            confirm_batch=lambda: _confirm_a_planning_change(
+                db,
+                order,
+                _BatchedEntry(
+                    list(entry.lines),
+                    resolved_batch_id,
+                    list(getattr(entry, "cancelled_lines", None) or []),
+                ),
+                actor_id,
+                preview=preview,
+            ),
+        )
+
+    results = supply.confirm_many(
+        payload.orders,
+        actor_user_id=actor_id,
+        assert_can_act=lambda session, order: _assert_can_act_on(session, order, current_user),
+        write=write_one,
+        # #1362 hold-back: an order answering a planning-change batch is applied whole.
+        can_hold_back=lambda entry: not (
+            entry.batch_id or (None if any_per_order else payload.batch_id)
+        ),
+        preview=preview,
+        raw_errors=raw_errors,
+        describe_writes=describe_writes,
+    )
+    stash = db.info.pop(_REFUSAL_STASH, {})
+    if not describe_writes:  # the admin Simulate records nothing (AC-W7)
+        batch_of = {
+            str(entry.pso_id): entry.batch_id or (None if any_per_order else payload.batch_id)
+            for entry in payload.orders
+        }
+        refused_ids = [str(r["pso_id"]) for r in results if not r.get("ok")]
+        companies = _order_companies(db, refused_ids) if refused_ids else {}
+        _record_refusals(
+            [
+                {
+                    "pso_id": result["pso_id"],
+                    "company_id": companies.get(str(result["pso_id"])),
+                    "error": result.get("error"),
+                    "batch_id": batch_of.get(str(result["pso_id"])),
+                    "lines": stash.get(str(result["pso_id"])) or result.get("failing_lines"),
+                }
+                for result in results
+                if not result.get("ok")
+            ],
+            actor_id,
+            preview,
+        )
+    return results
+
+
+#: `Session.info` key `_confirm_a_planning_change` leaves each refused order's line detail
+#: under, for the refusal record: the response only carries it for an admin.
+_REFUSAL_STASH = "planning_refusal_lines"
+
+
+def _is_planning_admin(db: Session, user_id: str) -> bool:
+    """Admin (PLANNING-WHY AC-W0): the check Simulate confirm uses."""
+    from app.services.user_service import UserPermissionService
+
+    return bool(
+        UserPermissionService(db).get_user_role_slugs(user_id) & {"superadmin", "admin"}
+    )
+
+
+def _order_companies(db: Session, pso_ids: list) -> Dict[str, str]:
+    """The company of each refused order, read on the request's own session. Never raises."""
+    from app.models.project_so import ProjectSalesOrder
+
+    try:
+        return {
+            str(i): str(c)
+            for i, c in db.query(ProjectSalesOrder.id, ProjectSalesOrder.company_id)
+            .filter(ProjectSalesOrder.id.in_([i for i in pso_ids if _is_uuid(i)]))
+            .all()
+            if c
+        }
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not read the refused orders' company")
+        return {}
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _record_refusals(refused: list, user_id: Optional[str], preview: bool) -> None:
+    """One `CONFIRM_REFUSED` audit row per refused order (PLANNING-WHY AC-W6), written AFTER
+    the order's rollback on its own session. A failure here is logged and never changes the
+    Confirm's answer (AC-W7)."""
+    if not refused:
+        return
+    from app.database import SessionLocal
+
+    try:
+        with SessionLocal() as session:
+            for item in refused:
+                log_audit(
+                    session,
+                    "project_sales_orders",
+                    str(item["pso_id"]),
+                    "EVENT",
+                    event="CONFIRM_REFUSED",
+                    company_id=item.get("company_id"),
+                    new_values={
+                        "preview": preview,
+                        "batch_id": item["batch_id"] if _is_uuid(item.get("batch_id")) else None,
+                        "lines": [
+                            {
+                                "so_line_no": line.get("so_line_no", line.get("line_no")),
+                                "item_code": line.get("item_code"),
+                                "reason_code": line.get("reason_code"),
+                                "reason": line.get("reason"),
+                                "change": line.get("change"),
+                            }
+                            for line in (item.get("lines") or [])
+                        ],
+                    },
+                    user_id=user_id,
+                    reason=item.get("error"),
+                    root_entity_type="project_sales_orders",
+                    root_entity_id=str(item["pso_id"]),
+                )
+            session.commit()
+    except Exception:  # noqa: BLE001 - the record is a courtesy, never the answer
+        logger.exception("Could not record the refused Confirm")
+
+
+_HISTORY_MAX_ORDERS = 50
+
+
+@router.get("/fulfilment-planning/history")
+def planning_history(
+    pso_ids: str = Query(..., description="Comma separated planning order ids, at most 50."),
+    current_user: dict = Depends(require_permission(VIEW)),
+    db: Session = Depends(get_db),
+):
+    """Admin-only History of the named orders (PLANNING-WHY AC-W10): what happened to each
+    plan, newest first. Read-only."""
+    from app.services import planning_history_service
+
+    if not _is_planning_admin(db, current_user["id"]):
+        raise AppException(
+            status_code=403,
+            message="History is for admins only.",
+            code="history_admin_only",
+        )
+    wanted = parse_uuid_list([pso_ids], param_name="pso_ids") or []
+    if len(wanted) > _HISTORY_MAX_ORDERS:
+        raise AppException(
+            status_code=422,
+            message=f"Read the history of at most {_HISTORY_MAX_ORDERS} orders at a time.",
+            code="history_too_many_orders",
+        )
+    return {"events": planning_history_service.history(db, wanted)}
+
+
+_SIMULATE_PROBE_LINE_CAP = 60
+#: Probe runs one simulate request may spend across ALL its orders; each is a full rolled-back
+#: confirm, so an unbounded probe would let one admin press pin a worker.
+_SIMULATE_PROBE_BUDGET = 200
+_SIMULATE_MAX_ORDERS = 50
+_PENDING_ADOPTION = "pending-adoption:"
+_NOT_PROBED = " (not probed: the simulation's per-line budget was spent)"
+
+
+@router.post("/fulfilment-planning/simulate-confirm", response_model=ConfirmManyResult)
+def simulate_confirm(
+    payload: SimulateConfirmBody,
+    current_user: dict = Depends(require_permission(EDIT)),
+    db: Session = Depends(get_db),
+):
+    """Admin dry run of "Confirm all": the REAL Confirm path, adoption included, rolled back.
+
+    Owner ruling 12 Oct 2026: Simulate uses the same function as Confirm and rolls back at the
+    end, so the admin learns whether the click will succeed. It runs on `simulation_session`:
+    every commit the real code makes is a savepoint release (so a later order sees an earlier
+    one's holds, as in the real press) and the outer savepoint is always rolled back. A real
+    root commit on any connection, or a queued job, raises `SimulationWouldCommit` and
+    surfaces as that order's error. A never-planned order is named by `sales_order_id`, adopted
+    inside the simulation, and its `pending-adoption:<core line id>` lines are swapped for the
+    new mirror lines. A failing order that names no line is probed line by line (R1..R6).
+    """
+    from app.services.confirm_simulation import error_text, simulating, simulation_session
+    from app.services.user_service import UserPermissionService
+
+    if not (
+        UserPermissionService(db).get_user_role_slugs(current_user["id"])
+        & {"superadmin", "admin"}
+    ):
+        raise AppException(
+            status_code=403,
+            message="Simulate confirm is for admins only.",
+            code="simulate_admin_only",
+        )
+    if len(payload.orders) > _SIMULATE_MAX_ORDERS:
+        raise AppException(
+            status_code=422,
+            message=f"Simulate at most {_SIMULATE_MAX_ORDERS} orders at a time.",
+            code="simulate_too_many_orders",
+        )
+    try:
+        with simulating(), simulation_session(db) as sim:
+            return {"results": _simulate_on(sim, payload, current_user)}
+    except Exception as exc:
+        db.rollback()
+        raise exc if hasattr(exc, "status_code") else handle_internal_error(error_text(exc))
+    finally:
+        db.rollback()
+
+
+def _simulate_on(sim: Session, payload: SimulateConfirmBody, current_user: dict) -> list:
+    """The body of `simulate_confirm`, on the simulation session."""
+    from app.models.project_so import ProjectSalesOrderLine
+    from app.services.confirm_simulation import LOCK_BUSY_MESSAGE, MAX_ERROR_CHARS, error_text
+
+    actor_id = current_user["id"]
+    results: list = [None] * len(payload.orders)
+    resolved: list = []  # (index, entry with a real pso_id and real line ids)
+    adopted_at: set = set()
+    for index, entry in enumerate(payload.orders):
+        if not entry.sales_order_id:
+            resolved.append((index, entry))
+            continue
+        # The adopt route's own two calls.
+        try:
+            adopted = ProjectSOAdoptionService(sim).adopt(
+                entry.sales_order_id, actor_user_id=actor_id
+            )
+            sim.commit()
+        except Exception as exc:  # noqa: BLE001 - every order must get an answer
+            sim.rollback()
+            results[index] = {
+                "pso_id": entry.sales_order_id,
+                "ok": False,
+                "preview": True,
+                "error": error_text(exc),
+                "failing_lines": None,
+            }
+            continue
+        pso_id = adopted["project_sales_order_id"]
+        mirror_by_core = {
+            str(m.core_sales_order_line_id): str(m.id)
+            for m in sim.query(ProjectSalesOrderLine).filter(
+                ProjectSalesOrderLine.project_sales_order_id == pso_id
+            )
+            if m.core_sales_order_line_id
+        }
+
+        def swap(line_id, _map=mirror_by_core):
+            text = str(line_id)
+            if text.startswith(_PENDING_ADOPTION):
+                return _map.get(text[len(_PENDING_ADOPTION):], text)
+            return text
+
+        entry = entry.model_copy(
+            update={
+                "pso_id": pso_id,
+                "lines": [
+                    line.model_copy(update={"project_line_id": swap(line.project_line_id)})
+                    for line in entry.lines
+                ],
+                "rejected_line_ids": [swap(x) for x in entry.rejected_line_ids],
+                "cancelled_lines": [
+                    x.model_copy(update={"project_line_id": swap(x.project_line_id)})
+                    for x in entry.cancelled_lines
+                ],
+                "only_line_ids": (
+                    [swap(x) for x in entry.only_line_ids]
+                    if entry.only_line_ids is not None
+                    else None
+                ),
+            }
+        )
+        adopted_at.add(index)
+        resolved.append((index, entry))
+
+    # A placeholder that adoption did not swap (a core line of ANOTHER order, or one that no
+    # longer exists) fails its own order with a plain sentence, before any write runs.
+    runnable: list = []
+    for index, entry in resolved:
+        stray = next(
+            (
+                str(x)
+                for x in [
+                    *(line.project_line_id for line in entry.lines),
+                    *entry.rejected_line_ids,
+                    *(c.project_line_id for c in entry.cancelled_lines),
+                    *(entry.only_line_ids or []),
+                ]
+                if str(x).startswith(_PENDING_ADOPTION)
+            ),
+            None,
+        )
+        if stray is None:
+            runnable.append((index, entry))
+            continue
+        message = f"Line {stray} is not on this sales order."
+        results[index] = {
+            "pso_id": str(entry.pso_id),
+            "ok": False,
+            "preview": True,
+            "error": message,
+            "failing_lines": [{"reason": message}],
+            "adopted": True if index in adopted_at else None,
+        }
+    resolved = runnable
+    body = ConfirmManyBody(
+        orders=[entry for _i, entry in resolved], batch_id=payload.batch_id
+    )
+    ran = _run_confirm_many(
+        sim, body, current_user, preview=False, raw_errors=True, describe_writes=True
+    )
+    for (index, _entry), result in zip(resolved, ran):
+        results[index] = result
+    for index in adopted_at:
+        results[index]["adopted"] = True
+
+    supply = ProjectSupplyService(sim)
+    conn = sim.connection()
+    budget = _SIMULATE_PROBE_BUDGET
+
+    def line_error(entry, line_id, error):
+        mirror = next(
+            (m for m in supply.lines_of(str(entry.pso_id)) if str(m.id) == line_id),
+            None,
+        )
+        code = (
+            sim.query(Product.product_code).filter(Product.id == mirror.product_id).scalar()
+            if mirror is not None and mirror.product_id
+            else None
+        )
+        return {
+            "line_no": mirror.line_no if mirror is not None else None,
+            "item_code": code,
+            "project_line_id": line_id,
+            "error": error,
+        }
+
+    for index, entry in resolved:
+        result = results[index]
+        result["simulated_errors"] = None
+        if result.get("ok") or result.get("failing_lines"):
+            continue
+        if result.get("error") == LOCK_BUSY_MESSAGE:
+            continue  # nothing ran for this order; probing line by line would only wait again
+        # Only the lines the run actually posted: `only_line_ids` narrows them.
+        keep = {str(x) for x in entry.only_line_ids} if entry.only_line_ids is not None else None
+        posted = [
+            str(line.project_line_id)
+            for line in entry.lines
+            if keep is None or str(line.project_line_id) in keep
+        ]
+        if len(posted) == 1:
+            result["simulated_errors"] = [line_error(entry, posted[0], result.get("error") or "")]
+            continue
+        to_probe = posted[:_SIMULATE_PROBE_LINE_CAP]
+        if len(to_probe) < 2:
+            continue
+        if len(to_probe) > budget:
+            result["error"] = (
+                (result.get("error") or "")[: MAX_ERROR_CHARS - len(_NOT_PROBED)] + _NOT_PROBED
+            )
+            continue
+        budget -= len(to_probe)
+        failed = []
+        for line_id in to_probe:
+            alone = ConfirmManyBody(
+                orders=[entry.model_copy(update={"only_line_ids": [line_id]})],
+                batch_id=payload.batch_id,
+            )
+            # A probe that succeeds COMMITS on the simulation session, so it runs inside a
+            # connection-level savepoint that is rolled back: probes never change state.
+            sim.rollback()
+            probe = conn.begin_nested()
+            try:
+                outcome = _run_confirm_many(
+                    sim, alone, current_user, preview=False, raw_errors=True, describe_writes=True
+                )[0]
+            finally:
+                sim.rollback()
+                if probe.is_active:
+                    probe.rollback()
+                sim.expire_all()
+            if not outcome.get("ok"):
+                failed.append((line_id, outcome.get("error") or ""))
+        # Every probed line failing the same way is the ORDER's failure, not a line's.
+        if len(failed) == len(to_probe) and len({text for _id, text in failed}) == 1:
+            continue
+        result["simulated_errors"] = [
+            line_error(entry, line_id, text) for line_id, text in failed
+        ] or None
+    return results
+
 
 
 @router.get("/fulfilment-planning/stock-detail", response_model=StockDetail)
@@ -934,14 +1331,58 @@ def _confirm_with_possible_rejects(
             ),
             code="board_reject_not_supported_in_batch",
         )
+    # SO-CANCEL-LINE: whole lines transferred to Cancel SO. Refused beside a batch BEFORE
+    # anything is looked up, for the same reason as the withdrawal above.
+    cancelled_lines = list(getattr(payload, "cancelled_lines", None) or [])
+    if batch_id and cancelled_lines:
+        # A cancel rides along with a pending change unless the batch NAMES that line.
+        from app.models.planning_change import PlanningChangeRow
+
+        named_by_batch = (
+            db.query(PlanningChangeRow.project_line_id)
+            .filter(
+                PlanningChangeRow.batch_id == batch_id,
+                # A superseded row is retired (the board's `isRetiredChangeRow`): it names nothing.
+                PlanningChangeRow.applied_state != "superseded",
+                PlanningChangeRow.project_line_id.in_(
+                    [str(x.project_line_id) for x in cancelled_lines]
+                ),
+            )
+            .first()
+        )
+        if named_by_batch is not None:
+            raise AppException(
+                status_code=422,
+                message=(
+                    "A pending planning change names this line, so it cannot also be "
+                    "transferred to Cancel SO. Apply the change first, then transfer the "
+                    "line and confirm again."
+                ),
+                code="board_cancel_not_supported_in_batch",
+            )
+    both = named & {str(x.project_line_id) for x in cancelled_lines}
+    if both:
+        raise AppException(
+            status_code=422,
+            message="A line cannot be composed and transferred to Cancel SO in the same press.",
+            code="supply_cancel_line_also_composed",
+        )
     reasons, joined_reason = _reasons_for_rejected_lines(
         db, order, rejected_line_ids, named_lines=named
     )
     before_id = _active_decision_id(db, order)
+    lines_cancelled = (
+        service.cancel_lines(order, cancelled_lines, actor_user_id=actor_user_id)
+        if cancelled_lines
+        else []
+    )
     if batch_id:
         with UndoJournal(db) as journal:
             body = confirm_batch()
-        _attach_undo_journal(db, order, journal, before_id)
+        if body is None:
+            body = _withdrawal_only_result(db, service, order, [])
+        else:
+            _attach_undo_journal(db, order, journal, before_id)
     elif getattr(payload, "lines", None):
         with UndoJournal(db) as journal:
             body = service.confirm(
@@ -991,10 +1432,15 @@ def _confirm_with_possible_rejects(
             )
         body = _withdrawal_only_result(db, service, order, rejected_line_ids)
         body["lines_withdrawn"] = _withdrawn_entries(db, service, order, rejected_line_ids)
+    elif cancelled_lines:
+        # Only Cancel SO lines: nothing to confirm, so no revision is written.
+        body = _withdrawal_only_result(db, service, order, [])
     else:
         with UndoJournal(db) as journal:
             body = service.confirm(order, payload, actor_user_id=actor_user_id)
         _attach_undo_journal(db, order, journal, before_id)
+    if lines_cancelled:
+        body["lines_cancelled"] = lines_cancelled
     return body
 
 
@@ -1007,9 +1453,11 @@ def confirm_supply(
 ):
     """Confirm the lines the planner has decided, in one action (AC-C01 as amended).
 
-    Every line IN THIS CONFIRMATION commits together or none of them does: the service
-    rechecks each against authoritative facts, and one stale, unbalanced or unmapped line
-    refuses the lot with `failing_lines` naming each by line number and item code. A line
+    The service rechecks each line against authoritative facts. A stock shortfall on a
+    line's undelivered part is confirmed as decided and named in `stock_short_notices`;
+    a line that still cannot be written (unbalanced, unmapped, stale) is held back and
+    named in `lines_held_back` while the rest confirm, and only a press with nothing left
+    to confirm is refused with `failing_lines` (OI-CLOSED-LINE, owner rule 12 Oct 2026). A line
     the body does not name is left undecided on purpose (13.4) and keeps counting as
     demand; a body naming no line at all AND withdrawing none is refused. The Order Inquiry
     handoff runs inside this same transaction, so purchasing can never be told to buy
@@ -1022,26 +1470,55 @@ def confirm_supply(
     ever writes the draft. See `_confirm_with_possible_rejects`'s own docstring for the
     shared seam both Confirm routes run this through.
     """
+    acted = False
     try:
         validate_uuid_path(pso_id, resource="Sales order")
         service = ProjectSupplyService(db)
         order = service.get_order(pso_id)
         _assert_can_act_on(db, order, current_user)
-        body = _confirm_with_possible_rejects(
-            db,
-            service,
+        acted = True
+        # OI-CLOSED-LINE (owner rule, 12 Oct 2026): one line that cannot be written never
+        # refuses the whole order. The lines the recheck refuses are held back and named, and
+        # the rest confirm - the same seam Confirm all uses (#1362). A planning-change press
+        # names its lines on purpose, so it is never applied in part.
+        body, _entry, held = service._write_holding_back(
             order,
             payload,
-            actor_user_id=current_user["id"],
-            batch_id=payload.batch_id,
-            confirm_batch=lambda: _confirm_a_planning_change(
-                db, order, payload, current_user["id"]
+            lambda target, entry: _confirm_with_possible_rejects(
+                db,
+                service,
+                target,
+                entry,
+                actor_user_id=current_user["id"],
+                batch_id=entry.batch_id,
+                confirm_batch=lambda: _confirm_a_planning_change(
+                    db, target, entry, current_user["id"]
+                ),
             ),
+            hold_back=not payload.batch_id,
         )
+        if held:
+            body["lines_held_back"] = held
         db.commit()
         return body
     except Exception as exc:
         db.rollback()
+        if acted and 400 <= (getattr(exc, "status_code", 0) or 0) < 500:
+            detail = exc.detail if isinstance(getattr(exc, "detail", None), dict) else {}
+            _record_refusals(
+                [
+                    {
+                        "pso_id": str(order.id),
+                        "error": detail.get("message"),
+                        "batch_id": payload.batch_id,
+                        "company_id": _order_companies(db, [str(order.id)]).get(str(order.id)),
+                        "lines": db.info.pop(_REFUSAL_STASH, {}).get(str(order.id))
+                        or detail.get("failing_lines"),
+                    }
+                ],
+                current_user["id"],
+                False,
+            )
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
 
 
@@ -1057,6 +1534,7 @@ class _BatchedEntry:
 
     lines: list
     batch_id: str
+    cancelled_lines: list = field(default_factory=list)
 
 
 def _confirm_a_planning_change(
@@ -1105,11 +1583,25 @@ def _confirm_a_planning_change(
             message="This planning change was already applied to this sales order.",
             code="planning_change_batch_applied",
         )
-    by_line = {str(row.project_line_id): row for row in rows if row.project_line_id}
+    # ONLY A ROW THE APPLY CAN STILL ACT ON (BOARD-FROZEN-DISPLAY, SO422492). A batch stays
+    # open while any of its rows is pending (S5b, #1245), so a board opened on it names
+    # lines whose rows an earlier press already applied (or that failed, or that a newer
+    # revision overtook). A decision routed through such a row was stored and then ignored
+    # - `_apply_one_order` takes pending rows only - so the press read "Nothing on this
+    # planning change could be confirmed", or confirmed the rest of the order WITHOUT the
+    # line. Those lines are ordinary decisions now: they ride in `extra`, the same as a
+    # line the batch never named.
+    current_revision = planning_change_service.current_revision_no(db, str(order.id))
+    by_line = {
+        str(row.project_line_id): row
+        for row in rows
+        if row.project_line_id and planning_change_service.row_is_live(row, current_revision)
+    }
 
     extra: list[dict] = []
+    named: list[str] = []
     for line in payload.lines:
-        composition = line.model_dump()
+        composition = line.model_dump(mode="json")
         row = by_line.get(str(line.project_line_id))
         if row is None:
             extra.append(composition)
@@ -1125,12 +1617,14 @@ def _confirm_a_planning_change(
         planning_change_service.set_row_decision(
             db, batch_id, str(row.id), "amend", composition
         )
+        named.append(str(line.project_line_id))
 
     result = planning_change_service.apply(
         db,
         batch_id,
         actor_user_id,
         extra_confirm_lines={str(order.id): extra},
+        named_line_ids={str(order.id): named},
         refuse_if_applied=True,
         only_pso_ids={str(order.id)},
         notify=not preview,
@@ -1141,6 +1635,10 @@ def _confirm_a_planning_change(
     ]
     outcome = (result.get("outcomes") or {}).get(str(order.id))
     confirmed = (outcome or {}).get("confirm_result")
+    if confirmed is None and not failed and getattr(payload, "cancelled_lines", None):
+        # The batch press simply had nothing to confirm and the press carried Cancel SO
+        # lines: the caller answers with the cancel-only result (no revision).
+        return None
     if confirmed is None:
         message = (
             failed[0]["reason"]
@@ -1151,6 +1649,24 @@ def _confirm_a_planning_change(
         # sentence and the sheet marks the row; the batch path dropped them, so the same
         # refusal read as "1 line cannot be confirmed" with nothing to act on.
         failing_lines = failed[0].get("failing_lines") if failed else None
+        if not failing_lines:
+            # PLANNING-WHY: name the rows that stopped it. The detail is stashed for the
+            # refusal record whoever pressed; only an admin's answer carries it (AC-W2..W4).
+            try:
+                explained = planning_change_service.explain_refusal(db, str(order.id), batch_id)
+                db.info.setdefault(_REFUSAL_STASH, {})[str(order.id)] = explained
+                explain_admin = _is_planning_admin(db, actor_user_id)
+            except Exception:  # noqa: BLE001 - the explanation is a courtesy (AC-W4)
+                logger.exception("Could not explain the refused Confirm")
+                explained, explain_admin = [], False
+            if explain_admin:
+                if explained:
+                    failing_lines = explained
+                elif not failed:
+                    message = (
+                        "Every change on this order is already confirmed (revision "
+                        f"{current_revision})."
+                    )
         if failing_lines:
             raise SupplyLinesRefused(
                 status_code=422,

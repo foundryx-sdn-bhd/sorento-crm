@@ -49,7 +49,7 @@ import {
   type ReportView,
   type ReportViewConfig,
 } from '@/services/reportService';
-import { ConfigureSummaryDialog } from './ConfigureSummaryDialog';
+import { ConfigureSummaryDialog, unavailableKeys } from './ConfigureSummaryDialog';
 import { ReportPivotChart } from './ReportPivotChart';
 import { ReportFilterBar } from './ReportFilterBar';
 import { ReportPivotTable } from './ReportPivotTable';
@@ -342,7 +342,7 @@ function SummaryBlock({
         <p className="text-sm text-muted-foreground">No sales in this period</p>
       )}
       <ReportPivotTable layout={layout} />
-      {layout.chart === 'line' && !empty && (
+      {(layout.chart === 'line' || layout.chart === 'bar') && !empty && (
         <Card>
           <CardContent className="py-4">
             <ReportPivotChart layout={layout} />
@@ -446,6 +446,47 @@ export function ReportPage({
     return lastRunnable.current ?? state.params;
   }, [state]);
 
+  // A slot the chosen dataset lacks (Count by switched under a held pivot) is replaced by
+  // the default view's value, else the first valid option, before anything is sent.
+  const datasetValue = meta?.dataset_param
+    ? (runParams[meta.dataset_param] as string[] | undefined)?.[0]
+    : undefined;
+  const { pivot, pivotNote } = useMemo(() => {
+    if (!state || !meta) return { pivot: state?.pivot, pivotNote: null as string | null };
+    const bad = unavailableKeys(meta.catalog, datasetValue);
+    if (bad.size === 0) return { pivot: state.pivot, pivotNote: null };
+    const label = (key: string) => meta.catalog.find((c) => c.key === key)?.label ?? key;
+    const cleared: string[] = [];
+    const firstOf = (tag: string) =>
+      meta.catalog.find((c) => c.tag === tag && !bad.has(c.key))?.key ?? '';
+    const dim = (held: string, fallback: string, other: string) => {
+      if (!bad.has(held)) return held;
+      cleared.push(label(held));
+      return !bad.has(fallback) && fallback !== other
+        ? fallback
+        : (meta.catalog.find((c) => c.tag === 'dimension' && !bad.has(c.key) && c.key !== other)
+            ?.key ?? '');
+    };
+    const def = meta.default_view.pivot;
+    const rows = dim(state.pivot.rows, def.rows, state.pivot.cols);
+    const cols = dim(state.pivot.cols, def.cols, rows);
+    let measures = state.pivot.measures;
+    const badMeasures = measures.filter((m) => bad.has(m));
+    if (badMeasures.length > 0) {
+      badMeasures.forEach((m) => cleared.push(label(m)));
+      measures = def.measures.filter((m) => !bad.has(m));
+      if (measures.length === 0) measures = [firstOf('measure')];
+    }
+    return {
+      pivot: { rows, cols, measures },
+      pivotNote: cleared.length
+        ? `${cleared.join(', ')} does not apply to this ${
+            meta.params.find((p) => p.key === meta.dataset_param)?.label ?? 'choice'
+          }; using the default.`
+        : null,
+    };
+  }, [state, meta, datasetValue]);
+
   const runView: ReportViewConfig | null = useMemo(
     () =>
       state
@@ -454,10 +495,10 @@ export function ReportPage({
           {
             params: runParams,
             detail: { columns: [], order: [] },
-            pivot: state.pivot,
+            pivot: pivot ?? state.pivot,
           }
         : null,
-    [state, runParams],
+    [state, runParams, pivot],
   );
 
   const {
@@ -560,12 +601,25 @@ export function ReportPage({
   };
 
   const currentConfig: ReportViewConfig | null = state
-    ? { params: runParams, detail: visibleDetail(), pivot: state.pivot }
+    ? { params: runParams, detail: visibleDetail(), pivot: pivot ?? state.pivot }
     : null;
 
   const setParam = (key: string, value: ReportParamValue) => {
+    // A report that names its pivot rows per dataset value (Top asks: topic or product)
+    // moves the rows with the dataset param, so no saved view is needed to see them.
+    const picked = Array.isArray(value) ? value[0] : undefined;
+    const rows =
+      key === meta?.dataset_param && picked !== undefined
+        ? meta?.pivot_rows_by?.[picked]
+        : undefined;
     setState((prev) =>
-      prev ? { ...prev, params: { ...prev.params, [key]: value } } : prev,
+      prev
+        ? {
+            ...prev,
+            params: { ...prev.params, [key]: value },
+            ...(rows ? { pivot: { ...prev.pivot, rows } } : {}),
+          }
+        : prev,
     );
   };
 
@@ -680,6 +734,16 @@ export function ReportPage({
               )}
             </CardContent>
           </Card>
+
+          {pivotNote && (
+            <p
+              role="status"
+              className="text-xs text-muted-foreground"
+              data-testid="summary-choice-note"
+            >
+              {pivotNote}
+            </p>
+          )}
 
           {capped && (
             <Alert variant="warning" appearance="light">
@@ -852,7 +916,9 @@ export function ReportPage({
         open={configureOpen}
         onOpenChange={setConfigureOpen}
         catalog={meta.catalog}
-        value={state.pivot}
+        value={pivot ?? state.pivot}
+        datasetValue={datasetValue}
+        datasetLabel={meta.params.find((p) => p.key === meta.dataset_param)?.label}
         onApply={(pivot) =>
           setState((prev) => (prev ? { ...prev, pivot } : prev))
         }

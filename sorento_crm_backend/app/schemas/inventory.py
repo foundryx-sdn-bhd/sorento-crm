@@ -20,8 +20,9 @@ class WarehouseBase(BaseModel):
     # plan buy too little, and excluding a good location makes it buy too much.
     #
     # pool_warehouse_id - the shared pool this location draws on. A shortage in a customer
-    # bin is covered from its site's pool before it is ever a purchase (ADR-0011). Empty
-    # means the location is its own pool, which is the no-pooling default.
+    # bin is covered from its site's pool before it is ever a purchase (ADR-0011). A site
+    # pool (BRW, HQ) points at itself, which is what puts it in the Stock Debt span; empty
+    # means the location stands alone (the planner still nets it as its own pool).
     #
     # segment - who this location sells to, `dealer` or `project`. The bare site code is
     # the dealer bin and its suffixed bins are project stock, which is why "last purchase
@@ -259,6 +260,18 @@ class StockAvailabilityEntry(BaseModel):
     # AVAIL-MODE-REPLIES rule 2 (owner, 2 Oct 2026): how many are available, set ONLY on
     # an `in_stock` answer short of `requested_qty` within the category max.
     available_qty: Optional[int] = None
+    # AVAIL-RENDER (owner, 5 Oct 2026): the product's `is_discontinued`, so the dealer's
+    # line carries the marker compact/detailed already print. Not a quantity.
+    is_discontinued: bool = False
+    # PRODUCT-ALTERNATIVES (card Q2/Q4): the stored alternatives, each judged with the same
+    # asked quantity on the same locations (same shape, no figure beyond `available_qty`).
+    # Declared here or `response_model` drops them off the wire (owner hand test, 9 Oct
+    # 2026: the dealer read the marker and no Alternative line).
+    alternatives: List["StockAvailabilityEntry"] = []
+
+
+# `alternatives` names this model inside itself.
+StockAvailabilityEntry.model_rebuild()
 
 
 class StockBalanceListResponse(ListResponse[StockResponse]):

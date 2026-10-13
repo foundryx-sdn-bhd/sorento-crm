@@ -153,7 +153,14 @@ def _resolve_entity(db: Session) -> ResolveEntityFn:
         """
         from app.api.v1.system.references import ResolveReferenceRequest, resolve_reference_post
         from app.config import settings
+        from app.services.chatbot.contracts import SALES_DOMAIN
 
+        if body.get("domain") == SALES_DOMAIN:
+            # R7 (PLAN-prompt-dynamic-30sep D9): the resolver has no `sales` domain of its
+            # own (it is the chatbot's), and a word it does not know as an entity type is
+            # tried as a document type. Every sales ask resolved as `order` until it had
+            # its own domain, so it still does.
+            body = {**body, "domain": "order"}
         principal = {"id": getattr(settings, "external_api_key_act_as_user_id", None)}
         return resolve_reference_post(
             ResolveReferenceRequest(**body), current_user=principal, db=db
@@ -769,6 +776,31 @@ def resolve_brand_token(db: Session, token: str, *, exact_only: bool = False) ->
     if exact or exact_only:
         return exact
     return [(str(r[0]), r[1]) for r in rows if _whole_word_run(r[1] or "", word)]
+
+
+def resolve_category_class_exact(db: Session, token: str) -> list[str]:
+    """The category ids whose class label or synonym IS the word (`resolve_classes_for_term`:
+    exact, case-insensitive; a plural folded). No containment fallback, so a longer phrase that
+    merely holds a class word ("toilet seat") never widens to that class. Used by the chat report."""
+    from app.models.product import ProductCategory
+    from app.services.product_class_signal import resolve_classes_for_term
+
+    word = _norm(token)
+    if not word:
+        return []
+    labels = set(resolve_classes_for_term(db, word))
+    singular = " ".join(_category_words(word))
+    if not labels and singular != word:
+        labels = set(resolve_classes_for_term(db, singular))
+    if not labels:
+        return []
+    return [
+        str(r[0])
+        for r in db.query(ProductCategory.id)
+        .filter(ProductCategory.class_label.in_(sorted(labels)))
+        .order_by(ProductCategory.category_code)
+        .all()
+    ]
 
 
 def resolve_category_class(db: Session, token: str) -> tuple[list[str], list[str]]:

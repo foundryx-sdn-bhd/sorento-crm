@@ -95,6 +95,131 @@ def _all_scoped_classes():
     return _SCOPED_CLASSES
 
 
+#: Per mapper: the keys of every table reachable from it, itself included. Built lazily,
+#: once per mapper; cleared on `after_configured` so a model imported later is seen.
+_REACHABLE_TABLES: dict[Any, frozenset] = {}
+
+
+class _Unreadable(Exception):
+    """A statement part this walk cannot see into: scope every class, as before."""
+
+
+def _table_key(table) -> tuple:
+    return (getattr(table, "schema", None), table.name)
+
+
+def _walk(clause, keys: set, *, follow_mappers: bool) -> None:
+    """Add the key of every table `clause` names, anywhere inside it. With
+    `follow_mappers`, also every table reachable from an ORM entity it mentions."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.sql import visitors
+    from sqlalchemy.sql.elements import ColumnClause
+    from sqlalchemy.sql.lambdas import LambdaElement
+    from sqlalchemy.sql.selectable import TableClause
+
+    for element in visitors.iterate(clause):
+        if isinstance(element, LambdaElement):
+            raise _Unreadable("lambda element")
+        if isinstance(element, TableClause):
+            keys.add(_table_key(element))
+        elif isinstance(element, ColumnClause) and isinstance(
+            getattr(element, "table", None), TableClause
+        ):
+            keys.add(_table_key(element.table))
+        if follow_mappers:
+            annotations = getattr(element, "_annotations", None) or {}
+            for name in ("parententity", "parentmapper"):
+                entity = annotations.get(name)
+                if entity is not None:
+                    keys.update(_reachable_tables(sa_inspect(entity).mapper))
+
+
+def _reachable_tables(mapper) -> frozenset:
+    """Tables a statement on `mapper` can pull in without naming them: the mapper's own;
+    the tables a `column_property` expression selects from; and, transitively, the same
+    for every relationship target (a `lazy="joined"` default, a `joinedload` option or a
+    `.join(Model.rel)` all go through one)."""
+    from sqlalchemy.schema import Column
+
+    cached = _REACHABLE_TABLES.get(mapper)
+    if cached is not None:
+        return cached
+    keys: set = set()
+    seen: set = set()
+    stack = [mapper]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        keys.update(_table_key(t) for t in current.tables)
+        for prop in current.column_attrs:
+            for column in prop.columns:
+                if not isinstance(column, Column):
+                    _walk(column, keys, follow_mappers=False)
+        stack.extend(rel.mapper for rel in current.relationships)
+    result = frozenset(keys)
+    _REACHABLE_TABLES[mapper] = result
+    return result
+
+
+def _walk_options(statement, keys: set) -> None:
+    """The criteria a statement carries in its OPTIONS, which `visitors.iterate` does not
+    enter: a `with_loader_criteria` clause and a relationship `.and_()` inside a loader
+    option can each hold a subquery over a scoped table. Any other option type is not
+    read, so it makes the whole statement unreadable."""
+    from sqlalchemy.orm.strategy_options import Load
+    from sqlalchemy.orm.util import LoaderCriteriaOption
+
+    for option in getattr(statement, "_with_options", ()) or ():
+        if isinstance(option, LoaderCriteriaOption):
+            if option.deferred_where_criteria:
+                raise _Unreadable("deferred loader criteria")
+            _walk(option.where_criteria, keys, follow_mappers=True)
+        elif isinstance(option, Load):
+            for element in option.context:
+                for criterion in getattr(element, "_extra_criteria", ()) or ():
+                    _walk(criterion, keys, follow_mappers=True)
+        else:
+            raise _Unreadable(type(option).__name__)
+
+
+def _scoped_classes_in(statement) -> list:
+    """The scoped classes a statement can touch, in `_all_scoped_classes` order.
+
+    CHAT-SPEED (12 Oct 2026): the fallback used to hand EVERY scoped class (158) to
+    `with_loader_criteria`, on every SELECT whose top-level entity is not scoped - the
+    prompt registry, the spec registry, settings, turn rows. Each one costs about 14 ms of
+    CPU (15.3 vs 1.1 ms per query, measured), about 40 per chatbot turn. A criterion for
+    an entity the statement does not contain renders nothing, so keeping only the classes
+    whose table is in the statement, its options or a `column_property`, or reachable from
+    an entity in it through a relationship, emits the same SQL
+    (`tests/test_company_scope_fallback.py` compares them). Anything this walk cannot read
+    keeps the old answer: every class.
+    """
+    everything = _all_scoped_classes()
+    try:
+        keys: set = set()
+        _walk(statement, keys, follow_mappers=True)
+        _walk_options(statement, keys)
+    except _Unreadable:
+        return everything
+    except Exception:  # noqa: BLE001 - never narrow on a walk that did not finish
+        logger.warning("company scope: statement walk failed, scoping every class", exc_info=True)
+        return everything
+    return [
+        cls for cls in everything if any(_table_key(t) in keys for t in cls.__mapper__.tables)
+    ]
+
+
+def _forget_mapper_caches(*_args: Any) -> None:
+    """A mapper configured after the first query (a model imported late, a new backref)
+    must be seen by the scope walk, so both registry caches start over."""
+    global _SCOPED_CLASSES
+    _SCOPED_CLASSES = None
+    _REACHABLE_TABLES.clear()
+
+
 def _is_shared(cls) -> bool:
     """Whether ``cls`` keeps a permanently-nullable/shared company_id (attachments)."""
     return bool(getattr(cls, "__company_shared__", False))
@@ -263,6 +388,8 @@ def register_company_scope_listeners() -> None:
     if not _ENFORCE:
         return
 
+    event.listen(Mapper, "after_configured", _forget_mapper_caches)
+
     @event.listens_for(Session, "do_orm_execute")
     def _apply_company_scope(state: ORMExecuteState) -> None:  # noqa: ANN001
         # Only top-level ORM SELECTs. Skip column/relationship sub-loads: the
@@ -271,15 +398,23 @@ def register_company_scope_listeners() -> None:
         if not state.is_select or state.is_column_load or state.is_relationship_load:
             return
 
-        # CONTACT-BRAND-SCOPE: a brand-scoped contact sees only products of its brands
-        # (a NULL brand fails the IN, Q1). Concrete clause for the same cache reason as
-        # the company predicate below; absent scope adds nothing (unscoped is unchanged).
+        # CONTACT-BRAND-SCOPE: a brand-scoped contact sees only products of its brands, per
+        # company (BRAND-SCOPE-PER-COMPANY): the list restricts only the companies that own a
+        # scoped brand, products of other companies pass, and a NULL brand inside a restricted
+        # company fails (Q1). `brand_predicate` is the one place the rule is spelled. Concrete
+        # clause for the same cache reason as the company predicate below; absent scope adds
+        # nothing (unscoped is unchanged).
         brand_scope = state.session.info.get("brand_scope")
         if brand_scope:
             from app.models.product import Product
+            from app.services.contact_brand_scope import brand_predicate
 
             state.statement = state.statement.options(
-                with_loader_criteria(Product, Product.brand_id.in_(sorted(brand_scope)), include_aliases=True)
+                with_loader_criteria(
+                    Product,
+                    brand_predicate(brand_scope, Product.brand_id, Product.company_id),
+                    include_aliases=True,
+                )
             )
 
         scope = state.session.info.get("company_scope", UNSET)
@@ -292,11 +427,11 @@ def register_company_scope_listeners() -> None:
             if isinstance(m.class_, type) and issubclass(m.class_, CompanyScopedMixin)
         ]
         if not targets:
-            # ``.count()`` and other subquery-wrapped statements report no
-            # top-level mappers. Fall back to every scoped entity - with_loader_criteria
-            # is a no-op for entities not present in the statement, so this stays
-            # correct (just adds unused options to the less-frequent count path).
-            targets = _all_scoped_classes()
+            # ``.count()`` and other subquery-wrapped statements report no scoped
+            # top-level mappers. Fall back to every scoped entity the statement can
+            # contain - with_loader_criteria is a no-op for entities not present, so
+            # the rest are left off rather than paid for (see `_scoped_classes_in`).
+            targets = _scoped_classes_in(state.statement)
 
         for cls in targets:
             predicate = build_company_predicate(cls, scope)

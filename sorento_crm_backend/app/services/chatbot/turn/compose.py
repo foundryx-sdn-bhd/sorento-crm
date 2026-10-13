@@ -146,7 +146,20 @@ def _render_row(n: int, fig: dict[str, Any]) -> str:
 
 
 def _file_key(f: dict[str, Any]) -> Any:
-    return f.get("url") or f.get("id") or f.get("filename")
+    # PHOTO-SEND-CAP: one picture under two urls (two domains' envelopes) is one file.
+    return f.get("fileHash") or f.get("url") or f.get("id") or f.get("filename")
+
+
+def _dealer_view(figures: list[dict[str, Any]]) -> bool:
+    """True when the block is the dealer incoming view: any row the presenter flagged
+    `dealer_view` (`lanes/business/answer.py::crossdomain_zeroset` reads the same flag
+    to keep the ladder off such a reply)."""
+    return any(
+        isinstance(fig, dict)
+        and isinstance(fig.get("flags"), dict)
+        and fig["flags"].get("dealer_view") is True
+        for fig in figures
+    )
 
 
 def _team_pick_question(
@@ -495,6 +508,13 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     missed_domains: list[str] = []
     files: list[dict[str, Any]] = []
     seen_file_keys: set[Any] = set()
+    # RESOLVER-TOKEN-CAP: a code the resolver cut at its ceiling rides every envelope
+    # (`envelope_of.not_checked`) but is a fact about the message, so it is named once
+    # per turn, under the first section that carries it.
+    named_not_checked: set[str] = set()
+    # A section left out because every subject is a token nobody could place: the
+    # did-you-mean below still runs when it was the reply's only section.
+    spared_unplaced = False
 
     for env in envelopes:
         domain = env.get("domain")
@@ -598,6 +618,40 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             # the customer read `*orders* for HANLIM TRADING SDN BHD:` and nothing else,
             # which reads as "there are none" rather than "ask me again".
             block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif (
+            codes
+            and not header_override
+            and env.get("tool_ran") is not True
+            and subjects
+            and {str(t).casefold() for t in env.get("unresolved") or []} >= {str(c).casefold() for c in subjects}
+        ):
+            # MULTI-ASK-PLAN2 crew live check (13 Oct 2026, "SRTWT7445-ZZ stock and supplier"):
+            # every subject is a token nobody could place, so no tool ran because there is
+            # nothing to look up. "Please try again" would be false; the turn's did-you-mean
+            # (below) names the token, and this section says nothing of its own.
+            block = ""
+            spared_unplaced = True
+        elif codes and not header_override and (
+            env.get("tool_has_result") is True or env.get("tool_ran") is not True
+        ):
+            # Never-stuck (owner ruling, STOCK-FILL-PREDICATE, prod turn 121 of 6 Oct
+            # 2026): a lane header is never sent with an empty body. And no claim
+            # without a lookup (owner, 6 Oct 17:50, the #1501 principle): the lane
+            # rendered nothing, and EITHER the tool did answer (a withheld set whose
+            # only line was the header `envelope_of` strips) OR no tool ran for these
+            # codes at all (a set predicate's refusal, a gate refusal, `tool_ran` off
+            # `turn_runtime.envelope_of`), so "No stock found" would be a stock claim
+            # nothing looked up: this is the `error` arm's own sentence, a reply that
+            # did not reach the dealer, never a verdict about the stock.
+            block = header + "\n" + f"I could not fetch {shown_label} just now, please try again."
+        elif codes and not header_override:
+            # Never-stuck, the miss half: the tool RAN for these codes and found nothing
+            # (`tool_ran`, no rows), so the section says the same miss the
+            # `NO_RESULT_INTRO` arm above says for the same subjects, rather than
+            # `*stock* for SRTWC8383-RL-GY:` over nothing - which the dealer read as
+            # "there are none" and which `envelope_missed` still files as a miss.
+            subject_label = label.lower() if isinstance(label, str) else str(domain)
+            block = localizer.sentence(f"No {subject_label} found for {codes}.")
         else:
             block = header
         # Prod turn f0a2 (1 Oct 2026, "Srtswt3001 / Srtswt3001-gm stock"): both codes
@@ -661,12 +715,18 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # report and the refusal both do, and the report's own four-line block already
         # carries this exact line (`own_header`), so printing it here too would say the
         # same dates twice in one answer.
+        # Never on a dealer-view block either (ORDER-BROADEN, owner 5 Oct 2026): the
+        # dealer incoming view is one "<code>: ETA <dates>" line per product with no
+        # header of its own (`sorento_crm_mcp/presenters.py::_incoming_dealer`, each
+        # line flagged `dealer_view`), so "the line under the header" landed BETWEEN two
+        # ETA answers, stating a delivery window the ETA question never asked for.
         date_line = env.get("date_line")
         if (
             isinstance(date_line, str)
             and date_line.strip()
             and not env.get("own_header")
             and not env.get("denied")
+            and not _dealer_view(figures)
         ):
             head, sep, rest = block.partition("\n")
             block = head + "\n" + date_line.strip() + (sep + rest if sep else "")
@@ -687,14 +747,27 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
         # out which of the products they asked about are missing from the answer.
         # LAST, under the rungs line: it is the closing note on this section, and it
         # read as part of the ladder sentence when it sat above one.
-        not_checked = [n for n in (env.get("not_checked") or []) if isinstance(n, str)]
+        not_checked = [
+            n
+            for n in (env.get("not_checked") or [])
+            if isinstance(n, str) and n not in named_not_checked
+        ]
         if not_checked:
+            named_not_checked.update(not_checked)
             block = block + "\n" + f"Not checked: {', '.join(not_checked)}."
-        text_parts.append(block)
+        if block:
+            text_parts.append(block)
 
         for f in env_files:
             key = _file_key(f)
             if key in seen_file_keys:
+                # PHOTO-SEND-CAP (security review M1): the same image under another url is
+                # not sent twice, but this section's text may name that url under its row;
+                # the kept entry carries it so link mode rewrites it too.
+                kept = next((k for k in files if _file_key(k) == key), None)
+                url = f.get("url") if isinstance(f, dict) else None
+                if kept is not None and url and url != kept.get("url"):
+                    files[files.index(kept)] = {**kept, "aliasUrls": [*(kept.get("aliasUrls") or []), url]}
                 continue
             seen_file_keys.add(key)
             files.append(f)
@@ -719,7 +792,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
     lane_question = _lane_question(envelopes, getattr(state, "turn_no", None))
     dym_question = None
     dym_listed = False
-    if unplaced and text.strip():
+    if unplaced and (text.strip() or spared_unplaced):
         # MULTI-CODE-DYM (owner, 4 Oct 2026, "treat each product code individually"): a
         # token with a did-you-mean gets the one it gets when asked alone; the rest keep
         # this sentence.
@@ -734,6 +807,7 @@ def compose(envelopes: list[dict[str, Any]], state: State, policy: Policy, ctx: 
             ctx,
             lane_asked=lane_question is not None or asked_this_turn,
         )
+        text = text.lstrip("\n")
 
     offer = None
     # ONE open question per turn, and when a lane asked one it is the lane's: a domain
@@ -1075,10 +1149,12 @@ def compose_question(pending: Any, state: State | None = None, localizer: Any = 
     action: dict[str, Any] = {
         "kind": "send_message",
         "text": body,
-        # AC-1866: a `member_offer` re-print keeps its numbered text list but not the
-        # names as quick-reply buttons (owner ruling 23 Sep 2026) - `result_set` below
-        # still carries the roster, so a numbered reply still resolves.
-        "quick_replies": pending_quick_replies(pending.kind, labels),
+        # QUICK-REPLY-NAMES (owner rule, 6 Oct 2026, generalising AC-1866): a re-print
+        # keeps its numbered text list; only a fixed-option kind (`team_pick`, the
+        # outstanding and sales report offers) also sends its labels as buttons. A roster
+        # kind's names never do - `result_set` below still carries the roster, so a
+        # numbered reply still resolves.
+        "quick_replies": pending_quick_replies(pending.kind, labels, options=list(pending.options)),
         "result_set": list(pending.options),
     }
     return Answer(sections=[], question=pending, offer=None, canned=[], files=[], actions=[action], text=body)

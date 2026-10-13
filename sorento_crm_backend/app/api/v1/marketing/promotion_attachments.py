@@ -5,7 +5,12 @@ from typing import Any, Optional
 
 from app.database import get_db
 from app.services.uuid_path_param import validate_uuid_path
-from app.dependencies import get_current_user, get_current_user_or_api_key
+from app.dependencies import (
+    get_current_user,
+    require_any_permission_with_api_key,
+    require_permission_with_api_key,
+)
+
 from app.services.marketing_service import PromotionAttachmentService
 from app.services.uuid_list_param import parse_uuid_list
 from app.schemas.marketing import (
@@ -18,6 +23,11 @@ from app.schemas.common import MAX_PAGE_LIMIT
 from app.services.error_handler import handle_internal_error
 
 router = APIRouter()
+
+
+# Who reads one promotion's attachments (LIST-API-PERMS): the Promotion Attachments page and
+# the promotion detail / edit page's attachments tab (`PromotionAttachmentsTab.tsx`).
+PROMOTION_ATTACHMENT_READERS = ["marketing.promotion_attachments.view", "marketing.promotions.view"]
 
 
 def _promotion_attachment_to_response(pa: Any) -> dict:
@@ -80,7 +90,7 @@ async def get_promotion_attachments(
             "contact_access_types.name; intersection with parent promotion.access_levels)."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotion_attachments.view")),
     db: Session = Depends(get_db)
 ):
     """Get promotion attachments with pagination and filtering. Optional access_levels (names) intersection filter.
@@ -150,7 +160,7 @@ async def get_promotion_attachments(
 @router.get("/{promotion_attachment_id}", response_model=PromotionAttachmentResponse)
 async def get_promotion_attachment(
     promotion_attachment_id: str,
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_permission_with_api_key("marketing.promotion_attachments.view")),
     db: Session = Depends(get_db)
 ):
     """Get a single promotion attachment by ID."""
@@ -233,7 +243,7 @@ async def get_promotion_attachments_by_promotion(
             "contact_access_types.name; intersection with parent promotion.access_levels)."
         ),
     ),
-    current_user: dict = Depends(get_current_user_or_api_key),
+    current_user: dict = Depends(require_any_permission_with_api_key(PROMOTION_ATTACHMENT_READERS)),
     db: Session = Depends(get_db)
 ):
     """Get all attachments for a specific promotion. Optional access_levels (names) intersection filter."""

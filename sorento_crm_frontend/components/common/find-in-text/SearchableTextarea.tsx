@@ -45,7 +45,9 @@ export function SearchableTextarea({
   const backdropRef = useRef<HTMLDivElement>(null);
   const textValue = typeof value === 'string' ? value : String(value ?? '');
   const find = useFindController(textValue);
-  const { open, matches, activeIndex, openFind, close, next, prev } = find;
+  const { open, matches, activeIndex, jumpSeq, openFind, close, next, prev } = find;
+  const textValueRef = useRef(textValue);
+  textValueRef.current = textValue;
 
   // Overlay the backdrop exactly on the textarea's padding box (excludes border
   // + scrollbar, so wrapping matches even once a vertical scrollbar appears).
@@ -86,23 +88,33 @@ export function SearchableTextarea({
     return () => ro.disconnect();
   }, [syncMetrics]);
 
-  // Select + scroll to the active match as it changes.
+  // Select + scroll to the active match on an explicit find navigation only
+  // (jumpSeq). Keying this on the text or the match list re-selected the active
+  // match on every keystroke, so typing while the bar was open replaced that
+  // match instead of editing at the caret (owner bug, 30 Sep 2026).
+  const latest = useRef({ matches, activeIndex, open });
+  latest.current = { matches, activeIndex, open };
   useEffect(() => {
+    const { matches: ms, activeIndex: idx, open: isOpen } = latest.current;
     const el = ref.current;
-    if (!el || !open || activeIndex < 0 || !matches[activeIndex]) return;
-    const { start, end } = matches[activeIndex];
+    if (!el || !isOpen || idx < 0 || !ms[idx]) return;
+    const { start, end } = ms[idx];
     try {
       el.setSelectionRange(start, end);
     } catch {
       /* selection can throw on detached nodes - ignore */
     }
-    const before = textValue.slice(0, start);
-    const line = before.split('\n').length - 1;
-    const cs = window.getComputedStyle(el);
-    const lineHeight = parseFloat(cs.lineHeight) || 16;
-    el.scrollTop = Math.max(0, line * lineHeight - el.clientHeight / 2);
+    // Measure the active <mark> in the backdrop: it lays out exactly like the
+    // textarea, so its offsetTop accounts for wrapped lines (counting '\n' did
+    // not, and long wrapped prompt lines scrolled to the wrong place).
+    const mark = backdropRef.current?.querySelector<HTMLElement>('mark[data-active="true"]');
+    const target = mark
+      ? mark.offsetTop
+      : (textValueRef.current.slice(0, start).split('\n').length - 1) *
+        (parseFloat(window.getComputedStyle(el).lineHeight) || 16);
+    el.scrollTop = Math.max(0, target - el.clientHeight / 2);
     syncScroll();
-  }, [open, activeIndex, matches, textValue, syncScroll]);
+  }, [jumpSeq, syncScroll]);
 
   // Highlighted segments (only computed while the find bar is open with a query).
   const segments = useMemo(() => {
@@ -128,6 +140,7 @@ export function SearchableTextarea({
         } else if (e.key === 'Escape' && open) {
           e.preventDefault();
           close();
+          ref.current?.focus();
         } else if (open && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           if (e.shiftKey) prev();
@@ -135,7 +148,7 @@ export function SearchableTextarea({
         }
       }}
     >
-      <FindBar controller={find} />
+      <FindBar controller={find} onDismiss={() => ref.current?.focus()} />
       {/* Highlight backdrop - same text metrics as the textarea, text hidden,
           only the <mark> rectangles are visible under the transparent textarea. */}
       <div
@@ -149,6 +162,7 @@ export function SearchableTextarea({
           ) : (
             <mark
               key={i}
+              data-active={seg.match === activeIndex ? 'true' : undefined}
               className={cn(
                 'rounded-sm text-transparent',
                 seg.match === activeIndex ? 'bg-primary/40' : 'bg-warning/40',

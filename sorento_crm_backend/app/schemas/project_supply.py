@@ -22,7 +22,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # S4 (`PLAN-local-supplier-oi-routing.md`): the Grid Location table's own row shape,
 # reused rather than duplicated for `BorrowCandidate.location`.
@@ -288,6 +288,10 @@ class SupplyFailingLine(BaseModel):
     so_line_no: Optional[int] = None
     item_code: Optional[str] = None
     reason: str
+    #: PLANNING-WHY AC-W1: why the planning change row stopped a Confirm (admin only) and the
+    #: phrase for what the book did to it. Both stay null for every other refusal.
+    reason_code: Optional[str] = None
+    change: Optional[str] = None
 
 
 class SupplyProposal(BaseModel):
@@ -414,6 +418,14 @@ class ConfirmLine(BaseModel):
     suspected_system_issue: bool = False
 
 
+class CancelledLine(BaseModel):
+    """A whole line CS transfers to Cancel SO (SO-CANCEL-LINE): the mirror line id and the
+    reason, which is mandatory (a blank one is refused 422 by the service)."""
+
+    project_line_id: str
+    reason: str = Field(default="", max_length=500)
+
+
 class ConfirmSupplyBody(BaseModel):
     lines: List[ConfirmLine] = Field(default_factory=list)
     #: The date the planner is deciding AS OF, which the board already has as a dial. It is
@@ -447,6 +459,9 @@ class ConfirmSupplyBody(BaseModel):
     #: nothing about a duplicate is a stale-client signal worth refusing over the way a
     #: line named in BOTH `lines` and here is.
     rejected_line_ids: List[str] = Field(default_factory=list)
+    #: Whole lines CS transferred to Cancel SO (SO-CANCEL-LINE). Never beside `lines` for the
+    #: same line, refused beside a `batch_id` like `rejected_line_ids`.
+    cancelled_lines: List[CancelledLine] = Field(default_factory=list)
 
 
 class ConfirmException(BaseModel):
@@ -459,6 +474,11 @@ class ConfirmException(BaseModel):
 
 class ConfirmedLine(BaseModel):
     project_line_id: str
+    line_no: Optional[int] = None
+    item_code: Optional[str] = None
+
+
+class CancelledLineEcho(BaseModel):
     line_no: Optional[int] = None
     item_code: Optional[str] = None
 
@@ -481,6 +501,8 @@ class ConfirmResult(BaseModel):
     lines_carried: int = 0
     #: The covered lines this press took OUT of the confirmation (staged rejections).
     lines_withdrawn: List[ConfirmedLine] = []
+    #: The lines this press transferred to Cancel SO (`ConfirmSupplyBody.cancelled_lines`).
+    lines_cancelled: List[CancelledLineEcho] = []
     #: The physical movements this confirmation raised, and how many it could NOT write
     #: (`PLAN-scm-cs-planning-uat.md` section E). The transfer write is best-effort so a
     #: failure cannot fail a promise already made, but a movement nobody was told about is
@@ -509,6 +531,12 @@ class ConfirmResult(BaseModel):
     #: #1362 (owner, 29 Sep 2026): Buys confirmed as decided over goods that landed for
     #: their line. The link stays; purchasing adjusts it off the Buy's inquiry row.
     landed_buy_notices: Optional[List[SupplyFailingLine]] = None
+    #: OI-CLOSED-LINE (owner rule, 12 Oct 2026): a Reserve or Borrow confirmed as decided
+    #: while short of free stock on its undelivered part, one entry per short component.
+    stock_short_notices: Optional[List[SupplyFailingLine]] = None
+    #: Lines this press could not write, left out so the rest of the order confirmed
+    #: (owner rule, 12 Oct 2026: one bad line never refuses the whole order).
+    lines_held_back: Optional[List[SupplyFailingLine]] = None
 
 
 # ------------------------------------------------------------------- the Plans page (D1)
@@ -563,6 +591,8 @@ class ConfirmManyOrderBody(BaseModel):
     #: refusal alongside a batch (owner ruling 23 Sep 2026,
     #: `PLAN-board-reject-on-confirmed-line.md`).
     rejected_line_ids: List[str] = Field(default_factory=list)
+    #: This order's own half of `ConfirmSupplyBody.cancelled_lines` (SO-CANCEL-LINE).
+    cancelled_lines: List[CancelledLine] = Field(default_factory=list)
     #: Scope this order's press to exactly these mirror line ids: a line outside the list is
     #: neither confirmed, held back nor echoed, and a staged rejection outside it is left
     #: alone. What a Preview showed is what Confirm sends.
@@ -607,6 +637,35 @@ class PreviewTransfer(BaseModel):
     to_location: Optional[str] = None
 
 
+class SimulatedLineError(BaseModel):
+    """One line the Simulate confirm probe found failing on its own, with the raw reason."""
+
+    line_no: Optional[int] = None
+    item_code: Optional[str] = None
+    project_line_id: str
+    error: str
+
+
+class SimulateOrderBody(ConfirmManyOrderBody):
+    """One order of a Simulate confirm: the Confirm entry, except a never-planned order is
+    named by its CORE `sales_order_id` instead of `pso_id`, its lines carrying
+    `project_line_id: "pending-adoption:<core line id>"`. The server adopts it inside the
+    simulation and swaps each placeholder for the new mirror line's id."""
+
+    pso_id: Optional[str] = None
+    sales_order_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _exactly_one_address(self):
+        if bool(self.pso_id) == bool(self.sales_order_id):
+            raise ValueError("Name exactly one of pso_id and sales_order_id.")
+        return self
+
+
+class SimulateConfirmBody(ConfirmManyBody):
+    orders: List[SimulateOrderBody] = Field(default_factory=list)
+
+
 class ConfirmManyOrderResult(BaseModel):
     """One order's outcome. `ok` decides which of the two halves is populated - never both,
     and never neither: a result the caller cannot read as success-or-failure is worse than
@@ -625,6 +684,8 @@ class ConfirmManyOrderResult(BaseModel):
     lines_confirmed: Optional[List[ConfirmedLine]] = None
     lines_carried: Optional[int] = None
     lines_withdrawn: Optional[List[ConfirmedLine]] = None
+    #: The per-order twin of `ConfirmResult.lines_cancelled` (SO-CANCEL-LINE).
+    lines_cancelled: Optional[List[CancelledLineEcho]] = None
     #: The movements this order's confirmation raised, and how many could NOT be written -
     #: the same pair the single-order `ConfirmResult` carries. The board's toast reads "N
     #: lines confirmed, T transfers proposed", and T comes from here.
@@ -644,10 +705,17 @@ class ConfirmManyOrderResult(BaseModel):
     lines_held_back: Optional[List[SupplyFailingLine]] = None
     #: The per-order twin of `ConfirmResult.landed_buy_notices` (#1362).
     landed_buy_notices: Optional[List[SupplyFailingLine]] = None
+    #: The per-order twin of `ConfirmResult.stock_short_notices` (OI-CLOSED-LINE).
+    stock_short_notices: Optional[List[SupplyFailingLine]] = None
     error: Optional[str] = None
     #: The lines the server refused, named the way `SupplyFailingLine` always is (AC-C02),
     #: when the refusal named any.
     failing_lines: Optional[List[SupplyFailingLine]] = None
+    #: Simulate confirm only: True when the simulation adopted this never-planned order first.
+    adopted: Optional[bool] = None
+    #: Simulate confirm only: the lines that fail when run alone, found by the per-line probe
+    #: when the order's own failure named none. Null on every other result.
+    simulated_errors: Optional[List[SimulatedLineError]] = None
 
 
 class ConfirmManyResult(BaseModel):

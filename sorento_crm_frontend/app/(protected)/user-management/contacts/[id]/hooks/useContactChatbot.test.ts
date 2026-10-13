@@ -44,6 +44,9 @@ const SAVED_PROFILE = {
   packing_list_allowed: false,
   eta_offset_applied: true,
   escalation_allowed: true,
+  chatbot_allowed: true,
+  skip_period_questions: false,
+  files_as_links: false,
 };
 
 beforeEach(() => {

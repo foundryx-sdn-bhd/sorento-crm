@@ -148,6 +148,74 @@ class TestContactFieldReveals:
         assert resp.status_code == 403
 
 
+def _seed_grant(db, contact_id: str, key: str, granted: bool = True) -> None:
+    from app.models.access import ContactFieldReveal
+
+    db.add(
+        ContactFieldReveal(
+            respond_contact_id=contact_id, field_key=key, granted=granted, created_by=None
+        )
+    )
+    db.commit()
+
+
+class TestStoredUnknownKeyIsPreserved:
+    """A stored key this release does not know (e.g. written by another lane's
+    unmerged migration on a shared DB) must not block or be wiped by a save."""
+
+    STORED = "zzt_future.key"
+    KNOWN = "sales_orders.sales_report"
+
+    def test_put_echoing_stored_unknown_key_succeeds(self, client, db):
+        contact_id = _contact(db)
+        _seed_grant(db, contact_id, self.STORED)
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals",
+            json={"granted": [self.STORED, self.KNOWN]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert set(resp.json()["granted"]) == {self.STORED, self.KNOWN}
+
+    def test_put_omitting_stored_unknown_key_does_not_revoke_it(self, client, db):
+        contact_id = _contact(db)
+        _seed_grant(db, contact_id, self.STORED)
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals",
+            json={"granted": [self.KNOWN]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert set(resp.json()["granted"]) == {self.STORED, self.KNOWN}
+
+        get_resp = client.get(f"{BASE}/contacts/{contact_id}/field-reveals")
+        assert set(get_resp.json()["granted"]) == {self.STORED, self.KNOWN}
+
+    def test_put_adding_a_new_unknown_key_is_422_naming_only_it(self, client, db):
+        contact_id = _contact(db)
+        _seed_grant(db, contact_id, self.STORED)
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals",
+            json={"granted": [self.STORED, "zzt_other.key"]},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "Unknown field reveal key(s): zzt_other.key." in resp.text
+        assert self.STORED not in resp.text
+
+    def test_known_keys_still_revoke_by_omission(self, client, db):
+        contact_id = _contact(db)
+        _seed_grant(db, contact_id, self.KNOWN)
+        _seed_grant(db, contact_id, "purchase_orders.cost")
+
+        resp = client.put(
+            f"{BASE}/contacts/{contact_id}/field-reveals",
+            json={"granted": [self.KNOWN]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["granted"] == [self.KNOWN]
+
+
 class TestUnknownHeldKeysAreKept:
     """Tester pass of #1431: the dev DB holds `delivery_orders.*` reveal rows seeded by
     another lane (#1433) that this build does not know. The contact screen sends the

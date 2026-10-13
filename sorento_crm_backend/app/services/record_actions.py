@@ -71,6 +71,24 @@ def _delete_product_companion_rule(db: Session, payload: dict):
     return ProductCompanionService(db).delete(_entity_id(payload))
 
 
+def _unlink_product_alternative(db: Session, payload: dict):
+    from app.services.product_alternative_service import unlink
+
+    return unlink(db, _entity_id(payload))
+
+
+def _reset_product_alternatives(db: Session, payload: dict):
+    from app.services.product_alternative_service import reset_auto
+
+    return reset_auto(db, _entity_id(payload))
+
+
+def _unlink_product_compatibility(db: Session, payload: dict):
+    from app.services.product_compatibility_service import unlink
+
+    return unlink(db, _entity_id(payload))
+
+
 def _delete_product_combo(db: Session, payload: dict):
     from app.services.product_combo_service import ProductComboService
 
@@ -244,6 +262,28 @@ register(
     )
 )
 
+def _delete_chatbot_status_word(db: Session, payload: dict):
+    """The same delete `DELETE /system/chatbot/status-words/{id}` runs, by id."""
+    from app.models.chatbot_policy import ChatbotStatusWord
+
+    row = db.query(ChatbotStatusWord).filter(ChatbotStatusWord.id == _entity_id(payload)).first()
+    if row is None:
+        return None
+    db.delete(row)
+    return None
+
+
+register(
+    FormAction(
+        key="chatbot_status_word.delete",
+        entity_types=("chatbot_status_word",),
+        execute=_delete_chatbot_status_word,
+        window=WINDOW_DESTRUCTIVE,
+        permission="system.chatbot_config.manage",
+        label="Delete chatbot status word",
+    )
+)
+
 register(
     FormAction(
         key="order.delete",
@@ -274,6 +314,50 @@ register(
         window=WINDOW_DESTRUCTIVE,
         permission="master_data.products.edit",
         label="Delete rule",
+    )
+)
+
+# PRODUCT-ALTERNATIVES (card Q5 (a)): unlink one alternative from the product page's
+# Alternatives section. Parked on the LINK row; reversible, both products survive and the
+# link is one pick away (or Reset to auto). Unlinking marks the product manual, so the -NEW
+# rule never puts the link back.
+register(
+    FormAction(
+        key="product_alternative.unlink",
+        entity_types=("product_alternative",),
+        execute=_unlink_product_alternative,
+        window=WINDOW_REVERSIBLE,
+        permission="master_data.products.edit",
+        label="Unlink alternative",
+    )
+)
+
+# Reset to auto (reviewer round 1): every link of the product goes - hand-added ones
+# included, which nothing can bring back - and the -NEW rule derives it again. Parked on
+# the PRODUCT (entity type `product_alternatives`, so it never collides with a pending
+# product delete), destructive window.
+register(
+    FormAction(
+        key="product_alternatives.reset_auto",
+        entity_types=("product_alternatives",),
+        execute=_reset_product_alternatives,
+        window=WINDOW_DESTRUCTIVE,
+        permission="master_data.products.edit",
+        label="Reset alternatives",
+    )
+)
+
+# WC-SEAT-COMPAT: unlink one seat cover <-> WC link from the product page's Compatible
+# section. Parked on the LINK row; reversible, both products survive and the link is one
+# pick away.
+register(
+    FormAction(
+        key="product_compatibility.unlink",
+        entity_types=("product_compatibility",),
+        execute=_unlink_product_compatibility,
+        window=WINDOW_REVERSIBLE,
+        permission="master_data.products.edit",
+        label="Unlink",
     )
 )
 
@@ -2280,6 +2364,33 @@ register(
         window=WINDOW_DESTRUCTIVE,
         # Any viewer may park the delete of a comment; ss decides whether it is theirs to delete.
         permission="ideation.board.view",
+        label="Delete comment",
+    )
+)
+
+
+# ----- Form comments --------------------------------------------------------------------
+#
+# Staff delete of a comment on a submitted form (PLAN-form-comments-09oct.md round 2). The
+# comment row names its form, so the payload is just the comment id. The service re-checks
+# author-or-admin at commit; the park-time gate is any of the four kinds' view grants
+# (`_ANY_OF_PERMISSIONS` in `pending_actions.py`), because the kind is not known until the
+# comment is read.
+
+
+def _delete_form_comment(db: Session, payload: dict):
+    from app.services.form_comment_service import FormCommentService
+
+    return FormCommentService(db).delete_by_id(_entity_id(payload), payload.get("requested_by_id"))
+
+
+register(
+    FormAction(
+        key="form_comment.delete",
+        entity_types=("form_comment",),
+        execute=_delete_form_comment,
+        window=WINDOW_DESTRUCTIVE,
+        permission="procurement.stock_inquiries.view",
         label="Delete comment",
     )
 )

@@ -161,6 +161,37 @@ def create_views() -> None:
     _fix_committed_v()
 
 
+def create_analytics_connector() -> None:
+    """Lay down migration `acc_0001_connector`'s non-table work (it has no ORM model).
+
+    `users.connector_revoked_at` comes from `create_all` (added here too for an older database); the
+    `analytics_connector` schema + views exist only in the migration body, so a bootstrapped
+    database needs them replayed (same gap as the scm views above). Idempotent.
+    """
+    from sqlalchemy import text
+
+    from app.database import engine
+    from app.services.analytics_connector import views
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
+        views.ensure_views(conn)
+        # CHAT-TURN-COST (`ctc_0001_turn_costs`): the price table and the column come from
+        # `create_all`; the seeds and the two cost views exist only in the migration body.
+        # `create_all` adds neither column to a table that already exists (an older database).
+        from app.services.analytics_connector import prices
+
+        conn.execute(text("ALTER TABLE ai_assistant_usage_logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER"))
+        conn.execute(text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ai_assistant_usage_logs_chatbot_turn_id "
+            "ON ai_assistant_usage_logs (chatbot_turn_id)"
+        ))
+        prices.seed_prices(conn)
+        views.ensure_cost_views(conn)
+    log.info("analytics_connector views created")
+
+
 def _fix_committed_v() -> None:
     """Bring ``scm.committed_v`` current past migration 337.
 
@@ -732,13 +763,26 @@ def seed_chatbot_policy() -> None:
     # Fix round 8 on PR #833: the `specification` entity kind, BEFORE the republish so
     # the published blocks carry its entity-kind line.
     spk = _load("_spk_0001_specification_kind", "spk_0001_specification_kind.py")
+    # REF-PROBES: the five reference kinds' rows, also before the republish.
+    rkind3 = _load("_rkind_0003_reference_kind_rows", "rkind_0003_reference_kind_rows.py")
     top_selling = _load("_chatbot_top_selling_tool", "chatbot_top_selling_tool.py")
     sales_s1 = _load("_sales_s1_reports_module", "sales_s1_reports_module.py")
+    pdyn1 = _load("_pdyn_0001_status_words_sales", "pdyn_0001_status_words_sales.py")
+    pdyn2 = _load("_pdyn_0002_wording_layer", "pdyn_0002_wording_layer.py")
+    pdyn3 = _load("_pdyn_0003_prod_identical", "pdyn_0003_prod_identical.py")
+    pdyn4 = _load("_pdyn_0004_prompt_lists", "pdyn_0004_prompt_lists.py")
+    pdyn5 = _load("_pdyn_0005_access_level_order", "pdyn_0005_access_level_order.py")
+    pdyn6 = _load("_pdyn_0006_agents_in_prompt", "pdyn_0006_agents_in_prompt.py")
+    report_engine = _load("_report_engine_0001_prompt", "report_engine_0001_prompt.py")
+    ca3_domain = _load("_ca3_0002_chat_analytics_domain", "ca3_0002_chat_analytics_domain.py")
+    measure_words = _load("_maskp_0002_measure_words", "maskp_0002_measure_words.py")
 
     with engine.begin() as conn:
         domains_inserted, kinds_inserted = s0.seed_domains_and_kinds(conn)
     with engine.begin() as conn:
         kinds_inserted += int(spk.insert_kind(conn))
+    with engine.begin() as conn:
+        kinds_inserted += rkind3.insert_kinds(conn)
     with engine.begin() as conn:
         s4.publish_policy_blocks(conn)
     with engine.begin() as conn:
@@ -754,14 +798,37 @@ def seed_chatbot_policy() -> None:
     with engine.begin() as conn:
         top_selling.apply_tools(conn)
         sales_s1.apply_tools(conn)
+        report_engine.apply_tools(conn)
     with engine.begin() as conn:
         s11.apply_narrowing(conn)
     with engine.begin() as conn:
         s12.apply_narrowing(conn)
+    # After every narrowing step: the `sales` row copies the `order` row's narrowing.
+    with engine.begin() as conn:
+        pdyn1.apply(conn)
+    # The owner's prompt-list tags and his curated domain words (answers 2 and 4).
+    with engine.begin() as conn:
+        pdyn4.apply(conn)
+        pdyn5.apply(conn)
+        pdyn6.apply(conn)
+    # CA-3: the chat_analytics routing domain, before the republish renders the domain list.
+    with engine.begin() as conn:
+        ca3_domain.apply(conn)
+    # MULTI-ASK-PLAN2: the sub-ask measure glossary rows `{{sub_ask_measures}}` renders.
+    with engine.begin() as conn:
+        measure_words.apply(conn)
     # LAST, and after every narrowing step: it renders the blocks from the tables as
     # they now stand and leaves `production` on that version.
     with engine.begin() as conn:
         s12.republish_and_promote(conn)
+    # After the republish: the wording layer is built from the version it promoted, and
+    # published unlabelled (the owner promotes).
+    with engine.begin() as conn:
+        pdyn2.apply(conn)
+    # The owner's production text of 1 Oct 2026, unlabelled, variables only where the
+    # tables reproduce it exactly.
+    with engine.begin() as conn:
+        pdyn3.apply(conn)
     log.info(
         "chatbot policy seeded -> domains=%d kinds=%d (narrowing + first prompt "
         "version applied)",
@@ -935,6 +1002,7 @@ def main() -> int:
     create_schema()
     apply_migration_only_ddl()
     create_views()
+    create_analytics_connector()
     if not args.skip_seed:
         seed_reference_data()
         seed_n8n_sales_reports_grant()

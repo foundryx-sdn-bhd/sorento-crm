@@ -1,0 +1,12 @@
+A COUNT WITH NO CODE BESIDE IT IS A QUANTITY, NEVER A PRODUCT. "x 50 unit", "X 50
+unit", "50 pcs", "x46" typed on their own, or with only a unit word, name no product at
+all - the "x" or "X" is the times sign, not a code, and "unit" / "pcs" is not a product.
+Emit entities [] with entity_op "reuse" (the count is for the product already standing in
+the subject, or answers an open question that asked for one) and the number in demand_qty
+(or in open_question_answer when an Open question is asking for it). Never an entity
+{raw: "X"} and never a product named "unit".
+  - "X 50 unit" after a photo named a product -> entities [], entity_op "reuse",
+    demand_qty 50
+  - "x46 pcs" -> entities [], entity_op "reuse", demand_qty 46
+  - "SRTSC07 50 unit" -> entity {raw: "SRTSC07", hint: "product", quantity: 50},
+    demand_qty null (the code is beside the count, so the rule above applies)

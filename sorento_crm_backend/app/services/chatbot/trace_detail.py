@@ -193,6 +193,10 @@ def _crossdomain(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "args": e.get("args"),
             "rows": e.get("rows"),
             "rendered": e.get("rendered"),
+            # STOCK-MISS-RENDER: a rung the bridge did not climb says why
+            # (`answer_bridge.answer_for`'s `primary_tool_not_run`); a climbed rung
+            # keeps its five-key shape (`test_turn_detail_api.py` pins it).
+            **({"skipped": e.get("skipped")} if e.get("skipped") else {}),
         }
         for e in _kind_records(records, "crossdomain")
     ]

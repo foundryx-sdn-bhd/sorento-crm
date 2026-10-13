@@ -171,6 +171,9 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
             # the `sales_analysis` override in `run_fetch`, never `tools[0]`. Migration
             # `sales_s1_reports_module` adds it to a seeded database.
             "crm_sales_analysis",
+            # REPORT-ENGINE slice 1b: an allow-list member only, picked by the
+            # `sales_ranking` override in `run_fetch`, never `tools[0]`.
+            "crm_report_ask",
         ],
         escalation_team_code="customer_service",
         switch_words=[
@@ -324,6 +327,45 @@ DEFAULT_DOMAIN_ROWS: list[dict[str, Any]] = [
         supported=True,
         ladder=[],
     ),
+    # PLAN-prompt-dynamic-30sep D9 (owner, 30 Sep 2026: "better own sales domain otherwise
+    # jumble up with order"). Paired with migration `pdyn_0001_status_words_sales`, which
+    # appends the same row last (so here too) with the `order` row's narrowing copied.
+    # `tools[0]` is never the pick for a sales status: `run_fetch`'s three overrides are.
+    # The `order` row keeps the three tools as well; dropping them there is out of scope.
+    dict(
+        name="sales",
+        label="sales",
+        intents=["check_sales"],
+        tools=["crm_sales_report", "crm_sales_analysis", "crm_top_selling_report"],
+        escalation_team_code="customer_service",
+        switch_words=["sales", "sales report", "top selling", "sales analysis", "best selling"],
+        narrowing={
+            "customer": "must_narrow_one",
+            "product": "list_all",
+            "order": "narrow_to_code",
+        },
+        # answer.DOMAIN_GRANT_REQUIRED["sales"]: the grant every sales figure is read under.
+        reveal_key="sales_orders.sales_report",
+        supported=True,
+        ladder=[],
+    ),
+    # CA-3 (chat analytics in the bot): what customers ask the bot, over `crm_report_ask`
+    # `dataset=chat`. No switch words (the parser's `chat_report` intent names it). Seeded
+    # onto a live database by migration `ca3_0002_chat_analytics_domain`; this copy is the
+    # blank-schema fallback, as the `sales` row's is.
+    dict(
+        name="chat_analytics",
+        label="chat analytics",
+        intents=["chat_report"],
+        tools=["crm_report_ask"],
+        escalation_team_code="customer_service",
+        switch_words=[],
+        narrowing={},
+        # answer.DOMAIN_GRANT_REQUIRED["chat_analytics"]: the grant the whole domain is read under.
+        reveal_key="chatbot.analytics",
+        supported=True,
+        ladder=[],
+    ),
 ]
 
 # lanes/business/fetch.DATE_PARAMS's own keys - which tools take a date window. A
@@ -378,6 +420,29 @@ SPECIFICATION_KIND_ROW: dict[str, Any] = dict(
     base_property_words={},
     roster_cap=50,
 )
+
+# REF-PROBES (#1569): the five reference kinds a typed number may be NAMED as ("SO 456",
+# "PO 123"). Exact-match resolver probes, no did-you-mean, same narrowing as `order`
+# (migration `rkind_0003_reference_kind_rows`).
+REFERENCE_KIND_ROWS: list[dict[str, Any]] = [
+    dict(
+        kind=kind,
+        label=label,
+        resolver_source=source,
+        did_you_mean=False,
+        default_narrowing="not_applicable",
+        family_grouping=None,
+        base_property_words={},
+        roster_cap=50,
+    )
+    for kind, label, source in (
+        ("delivery_order", "Delivery order", "orders"),
+        ("sales_order", "Sales order", "sales_orders"),
+        ("customer_po_ref", "Customer PO ref", "sales_orders"),
+        ("purchase_order", "Purchase order", "purchase_orders"),
+        ("purchase_request", "Purchase request", "purchase_requests"),
+    )
+]
 
 DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
     dict(
@@ -502,6 +567,7 @@ DEFAULT_KIND_ROWS: list[dict[str, Any]] = [
     ),    # Fix round 8 on PR #833 (migration `spk_0001_specification_kind`): a product
     # property, grounded against the specification registry after the parse.
     SPECIFICATION_KIND_ROW,
+    *REFERENCE_KIND_ROWS,
 ]
 
 # `DEFAULT_TIER_ORDER` used to live here (AC-1502). Gone (AC-1594, S6): the one literal is

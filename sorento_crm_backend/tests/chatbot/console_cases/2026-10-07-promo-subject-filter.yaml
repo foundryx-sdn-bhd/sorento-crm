@@ -1,0 +1,177 @@
+# Console replay for PROMO-SUBJECT-FILTER (PR #1527; owner console 7 Oct 2026): a promotion ask
+# filters by its subject (linked products), an unknown subject asks back, the tier menu is always
+# checked and stamped, the menu names the real brand, and a named promotion kind with nothing live
+# for that brand says so. Graded LIVE (real parser, resolver, compose); every turn a dry run. The
+# pytest twins, parser stubbed: tests/chatbot/test_promo_subject_filter.py,
+# test_promo_kind_subject.py, test_promo_kind_paths.py.
+#
+# NOT collected by pytest. `live_only: true` on every case: the run needs `--live`, and the parser
+# version that knows `promotion_kind` (alembic pk_0001_parser_promo_kind publishes it UNLABELLED):
+#
+#   cd sorento_crm_backend
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-07-promo-subject-filter.yaml \
+#       --base-url http://localhost:<backend port> --contact <dealer contact> --live \
+#       --prompt-version <id of the pk_0001 version>
+#
+# What the database must hold (the shared dev copy does, measured 7 Oct 2026): live promotions
+# linked to Kitchen Sink class products; product SRTKS106CB linked to a live Sorento kitchen sink
+# promotion; no live Sorento A3 Flyer (they ended 30 Sep 2026) and at least one live A3 Flyer of
+# another brand. The `contact:` below is a placeholder, not a real contact.
+
+contact: "900000039"
+
+cases:
+  - name: "1. owner turn 1 (AC-24, round 2): basin cabinet grounds to the furniture_type value, stamped menu"
+    live_only: true
+    cold: true
+    turns:
+      - text: "any basin cabinet promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "basin cabinet"
+          reply_not_contains:
+            - "I could not match"
+            - "KITCHEN SINK"
+
+  - name: "1b. unknown subject asks back, never No current promotion (AC-23)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "kitchen cabinet promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "I could not match"
+            - "kitchen cabinet"
+          reply_not_contains:
+            - "Which access level"
+            - "No current promotion"
+
+  - name: "2. owner turn 2 (AC-22, round 2): Sorento A3 flyers served by the type rule, real brand named"
+    live_only: true
+    cold: true
+    turns:
+      - text: "sroento a3 flyer"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "SORENTO"
+          reply_not_contains:
+            - "sroento"
+            - "There is no"
+      - text: "2"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SORENTO A3 FLYER"
+          reply_not_contains:
+            - "MOCHA"
+            - "WALL HUNG"
+
+  - name: "3. owner check: promo for a product code still works (AC-17)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "any promo for SRTKS106CB"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SRTKS106CB"
+      - text: "2"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "KITCHEN SINK"
+
+  - name: "4. owner check: kitchen sink promo returns kitchen sink promotions only (AC-18, AC-9)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "kitchen sink promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "has promotion"
+      - text: "2"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "KITCHEN SINK"
+          reply_not_contains:
+            - "Couldn't pin down"
+            - "closest matches"
+            - "WALL HUNG"
+            - "BATHROOM FURNITURE"
+            - "SELF-CLOSING TAP"
+
+  - name: "5. plain promo ask still works, menu stamped (AC-12, AC-9)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "any promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "has promotion"
+      - text: "1"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Promotion"
+          reply_not_contains:
+            - "Couldn't pin down"
+
+  - name: "6. owner hand test 8 Oct: brand + category narrows by both, never a product list"
+    live_only: true
+    cold: true
+    turns:
+      - text: "only sorento kitchen sink promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+            - "kitchen sink"
+      - text: "1"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "SORENTO"
+            - "KITCHEN SINK"
+          reply_not_contains:
+            - "Here's what you want"
+            - "no promotion matched"
+            - "A611"
+            - "CABANA"
+            - "MOCHA"
+
+  - name: "7. owner round 2: seat cover grounds to toilet seat through the parser prompt (AC-26)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "seat cover promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which access level"
+          reply_not_contains:
+            - "I could not match"
+
+  - name: "8. owner round 2: cabinet alone asks which (AC-25)"
+    live_only: true
+    cold: true
+    turns:
+      - text: "sorento cabinet promo"
+        expect:
+          no_uuid: true
+          reply_contains:
+            - "Which cabinet do you mean?"
+            - "Basin cabinet"
+          reply_not_contains:
+            - "Which access level"
+

@@ -16,11 +16,11 @@ import type { SalesOrderLine } from '@/app/(protected)/scm/types/scm.types';
  * React Fast Refresh, and every edit to it then full-reloads the page and wipes the edit
  * session (13 September 2026).
  *
- * WHAT IT DOES NOT CLAIM: the line carries the batch row's IDENTITY and its RESULT, not its
- * `from`/`to` sides, so nothing here invents a Was or a Now. A cancelled row says the one
- * word the book actually said - `changedFieldsOf` prints "Cancelled" off `closed` alone - and
- * any other kind shows its result and the dialog's own "nothing moved" sentence rather than a
- * quantity this screen would have had to guess. `lineNo` is 0 because this grid has no line
+ * THE SIDES: the line carries the batch row's IDENTITY, its RESULT and its own `from`/`to`
+ * sides, mapped here exactly as the board's `annotationOf` does (the Now is null once the
+ * line is closed, and the decision stays null: this screen has no held or proposed parts).
+ * A cancelled row says the one word the book actually said - `changedFieldsOf` prints
+ * "Cancelled" off `closed` alone. `lineNo` is 0 because this grid has no line
  * numbers of its own; the dialog titles itself with the item code instead.
  */
 export function lineChangeAnnotation(
@@ -29,15 +29,24 @@ export function lineChangeAnnotation(
 ): BoardChangeAnnotation | null {
   const change = line.planning_change;
   if (!change) return null;
+  const closed = change.kind === 'cancelled';
   return {
     rowId: change.id,
     soNumber,
     lineNo: 0,
     itemCode: line.sku,
     kind: change.kind as PlanningChangeKind,
-    closed: change.kind === 'cancelled',
-    was: { qty: null, date: null, decision: null },
-    now: { qty: null, date: null, decision: null },
+    closed,
+    was: {
+      qty: change.from?.qty ?? null,
+      date: change.from?.required_date ?? null,
+      decision: null,
+    },
+    now: {
+      qty: closed ? null : (change.to?.qty ?? null),
+      date: closed ? null : (change.to?.required_date ?? null),
+      decision: null,
+    },
     suggestionLines: [],
     lateDays: null,
     shortfallQty: null,

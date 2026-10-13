@@ -45,24 +45,37 @@ def focus_row_label(row: Mapping[str, Any]) -> Any:
     return label
 
 
+#: The separators the resolver drops from a product token before it looks it up: the
+#: ASCII hyphen (`resolve_gate._PRODUCT_FOLD`, `[-\\s]+`) and the two unicode dashes it
+#: folds to a hyphen one step ahead of that regex (`resolve_gate._UNICODE_DASH_FOLD`:
+#: U+2212 MINUS SIGN from an Excel paste, U+2013 EN DASH from Word autocorrect).
+_DROPPED_DASHES = "-\u2212\u2013"
+
+
 def fold_token(value: str) -> str:
-    """Strip the resolver's own separator fold (hyphens and whitespace) from `value` -
-    case is untouched, the caller casefolds around this the way it already does. ONE
-    copy, in the lowest module both `narrow.py` and `turn_runtime.py` already import
-    from, so the two sides of any join against the resolver's own `unresolved_tokens`
-    keys can never fold differently again (R1, PLAN-chatbot-answer-half-reattach.md:
-    `narrow._token_of` folding one way and `turn_runtime._token_key` folding another
-    let a hyphenated or spaced code the resolver could not place come back as a
-    one-option roster echoing the customer's own typed token).
+    """Strip the resolver's own separator fold (hyphens, unicode dashes and whitespace)
+    from `value` - case is untouched, the caller casefolds around this the way it
+    already does. ONE copy, in the lowest module `narrow.py`, `turn_runtime.py`,
+    `tail/scope_block.py` and `lanes/business/answer.py` all import from, so the two
+    sides of any join against the resolver's own `unresolved_tokens` keys can never
+    fold differently again (R1, PLAN-chatbot-answer-half-reattach.md: `narrow._token_of`
+    folding one way and `turn_runtime._token_key` folding another let a hyphenated or
+    spaced code the resolver could not place come back as a one-option roster echoing
+    the customer's own typed token; ROGUE-CONVO-REVIEW-R2, crew review on PR #1506:
+    `answer._type_norm` folded a third way, `[-\\s]+` with no unicode dashes, so a code
+    pasted with an en dash was listed by the resolver as "srthp" while the composer
+    kept the dash, and rule C silently never fired).
 
     Plain string iteration, not the `re` module (`resolve_gate._PRODUCT_FOLD`'s own
     `[-\\s]+`, reproduced without a regex call - this package may not use one,
     `narrow.py::_without_brackets`'s own rule, AC-1520's no-regex-in-the-pure-core
     guard, pinned by a source scan in the S2 apply-is-pure suite). Character
     deletion, not substitution, so a RUN of separators folds identically to one
-    deleted individually.
+    deleted individually. The equivalence with the resolver's own fold is pinned by
+    `tests/chatbot/test_miss_says_what_it_could_not_find.py::
+    TestATypedTokenFoldsTheSameOnEverySide`.
     """
-    return "".join(ch for ch in value if ch != "-" and not ch.isspace())
+    return "".join(ch for ch in value if ch not in _DROPPED_DASHES and not ch.isspace())
 
 
 def token_key(value: Any) -> str:
@@ -101,7 +114,18 @@ KIND_FIELD_MAP: dict[str, str] = {
 # and the missed raw sat on `focus.extra["order"]` forever, unreachable and unreplaced.
 # Canonicalised HERE, once, so `apply._set_kind_field`'s write and `narrow._candidates`'s
 # read can never disagree about which bucket either kind is in.
-EXTRA_KIND_ALIASES: dict[str, str] = {"customer_order": "order", "order_number": "order"}
+#
+# REF-PROBES: a reference number the resolver typed as another kind (or the asker named
+# one) is still an order-axis reference, so it settles, carries and is dropped as one.
+EXTRA_KIND_ALIASES: dict[str, str] = {
+    "customer_order": "order",
+    "order_number": "order",
+    "delivery_order": "order",
+    "sales_order": "order",
+    "customer_po_ref": "order",
+    "purchase_order": "order",
+    "purchase_request": "order",
+}
 
 
 @dataclass
@@ -155,6 +179,12 @@ class Focus:
     # read and consumed by `required_fields.reply_verdict` on the NEXT message only. One
     # turn long: a lane that asks again hands back a fresh one.
     required_ask: dict[str, Any] | None = None
+    # REPORT-ENGINE (owner rule 4 Oct 2026): the route args of the last sales ranking that RAN,
+    # held so a parser verdict `ranking_refine: true` ("5", "this year") re-runs it with only
+    # the changed keys. Written by `engine.py` from the lane's envelope, read through
+    # `turn_runtime` into `semantic_input["sales_ranking_frame"]`, applied by
+    # `lanes/business/report_ask.settle` and only when the verdict says it refines.
+    sales_ranking_frame: dict[str, Any] | None = None
     # LOWSTOCK-SEMANTIC: the filters the last low stock report was built with
     # (`low_stock_ask.route_filters` "frame"), so a refinement narrows it.
     low_stock: dict[str, Any] | None = None
@@ -201,6 +231,9 @@ class Profile:
     # switch (`turn_runtime._escalation_allowed`). Default ON: an unresolved contact keeps
     # today's behaviour.
     escalation_allowed: bool = True
+    # PHOTO-SEND-CAP round 2 (owner, 9 Oct 2026): `respond_contacts.chatbot_files_as_links`,
+    # the A/B switch. Default OFF: an unresolved contact gets files as attachments (today).
+    files_as_links: bool = False
 
 
 def offers_escalation(profile: "Profile | None") -> bool:
@@ -215,6 +248,9 @@ def escalation_barred(profile: "Profile | None") -> bool:
     return getattr(profile, "escalation_allowed", True) is False
 
 
+STAFF_TIER = "office"
+
+
 def is_staff_profile(profile: "Profile | None") -> bool:
     """#1262 slice 11 (F8), owner ruling 2: staff (a Mocha CS sales rep) is
     `respond_contacts.chatbot_profile.tier == "office"`. The ONE check every
@@ -222,7 +258,14 @@ def is_staff_profile(profile: "Profile | None") -> bool:
     offer, `answer_bridge.py`'s cross-domain ladder offer) - staff get no offer,
     dealer/end_user keep R6 (22 Sep) unchanged.
     """
-    return getattr(profile, "tier", None) == "office"
+    return getattr(profile, "tier", None) == STAFF_TIER
+
+
+def reads_customer_po_refs(profile: "Profile | None") -> bool:
+    """SO-PO-REF owner ruling Q4: the audience decides what "PO" means. A contact whose tier
+    is not `STAFF_TIER` reads the parser's `po_refs` as their own PO number. Not an escalation
+    gate (it deliberately ignores `escalation_barred`)."""
+    return getattr(profile, "tier", None) != STAFF_TIER
 
 
 @dataclass
@@ -238,6 +281,10 @@ class State:
     # and not to the domain menu or the casual lane. Never written here: the intake tool
     # owns the pointer and the tail persists whatever it answered.
     ideation: Any = None
+    # QUOTED-REPLY R4 (7 Oct 2026): when this turn ran on a quoted turn's state, the LIVE
+    # `{pending, focus}` set aside. Rides on the state so every lane's tail (answer, canned,
+    # clarify, out_of_scope) writes the live question back; never serialised.
+    quoted_live: Any = None
 
 
 # --------------------------------------------------------------------------- #
@@ -263,6 +310,7 @@ def focus_to_wire(focus: Focus) -> dict[str, Any]:
     wire["set_clarify"] = focus.set_clarify
     wire["top_selling"] = dict(focus.top_selling) if focus.top_selling else None
     wire["required_ask"] = dict(focus.required_ask) if focus.required_ask else None
+    wire["sales_ranking_frame"] = dict(focus.sales_ranking_frame) if focus.sales_ranking_frame else None
     wire["low_stock"] = dict(focus.low_stock) if focus.low_stock else None
     # Ported from PR #1118 (not merged): the open tasks travel INSIDE the focus, not
     # on a session key of their own - the focus is the context, and a second key
@@ -325,6 +373,8 @@ def focus_from_wire(raw: Any) -> Focus:
     focus.top_selling = dict(top_selling) if isinstance(top_selling, dict) else None
     required_ask = raw.get("required_ask")
     focus.required_ask = dict(required_ask) if isinstance(required_ask, dict) else None
+    frame = raw.get("sales_ranking_frame")
+    focus.sales_ranking_frame = dict(frame) if isinstance(frame, dict) else None
     low_stock = raw.get("low_stock")
     focus.low_stock = dict(low_stock) if isinstance(low_stock, dict) else None
     tasks = raw.get("tasks")

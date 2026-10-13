@@ -104,7 +104,7 @@ def test_every_summary_label_is_translated_and_every_value_is_identical(lang):
     assert [v for _l, v in tr] == [v for _l, v in en]
     english_labels = {l for l, _v in en}
     assert {"SO Date", "Ordered", "Transferred to DO", "SO Outstanding", "DO Date", "Delivered",
-            "Delivery Date", "DO Outstanding", "Customers", "Product Code"} <= english_labels
+            "Delivery Date", "DO Outstanding", "Customer count", "Product Code"} <= english_labels
     for (el, _ev), (tl, _tv) in zip(en, tr):
         if el in ("SO", "DO"):
             assert tl == el  # SO and DO stay as printed

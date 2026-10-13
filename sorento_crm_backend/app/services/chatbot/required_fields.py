@@ -55,7 +55,7 @@ asks again hands a fresh one back (`required_ask` on its envelope).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from app.services.chatbot import jsc
@@ -68,7 +68,12 @@ ALL_WORDS = frozenset({"all", "any", "everything", "every", "semua", "全部", "
 #: Verdict keys only the engine sets (`reply_verdict`, and an ask's own pre-lane reading
 #: such as `low_stock_ask.take_entities`). The engine strips them off the parser's output
 #: before it reads anything, so a slot can never be forged through the parser.
-ENGINE_KEYS = frozenset({"required_ask", "required_ask_reply", "required_ask_answer", "low_stock_frame"})
+ENGINE_KEYS = frozenset(
+    {
+        "required_ask", "required_ask_reply", "required_ask_answer", "low_stock_frame",
+        "report_ask_words", "sales_ranking_frame",
+    }
+)
 #: An OPTIONAL field also takes these as "no filter" (it was never required).
 NONE_WORDS = frozenset({"none", "no", "no filter", "skip"})
 CANCEL_WORDS = frozenset({"cancel", "stop", "never mind", "nevermind", "forget it", "batal"})
@@ -87,6 +92,8 @@ class Resolved:
     value: Any = None
     label: str = ""
     options: tuple[tuple[Any, str], ...] = ()
+    #: A miss that says why in its own words (a number past the ceiling); empty = the generic line.
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,9 @@ class FieldSpec:
     resolve: Callable[[Any, str, dict[str, Any]], Resolved]
     allow_all: bool = True
     required: bool = True
+    #: A question another module owns (the rankings' metric and basis lines,
+    #: `lanes/business/ranking_ask`), read when it is asked and laid over `question`.
+    question_fn: Callable[[], str] | None = None
     #: An OPTIONAL field whose word the message named but nothing matched is said and
     #: asked once (LOWSTOCK-SEMANTIC Q3); a second miss settles it as "no filter" and the
     #: miss is kept on the value (`missed`) so the reply can say so. False: dropped quietly.
@@ -120,6 +130,13 @@ class AskType:
     #: the original capture (a short reply is the answer, a longer other ask or a "?" drops
     #: it), which IDEATION-CAPTURE (#1444) is written and tested against.
     answered_by_parser: bool = False
+    #: Verdict keys an ANSWER to this ask never carries on: the answer fills the asked slot
+    #: only, so a filter the parser put on it is not a new filter (AC-HT8-16).
+    answer_drops: tuple[str, ...] = ()
+    #: Verdict keys that make a LONG reply read as another ask still an answer: the parser
+    #: put the answer's own words in them (CA-3: a period or a count named in "top 5 for
+    #: September"). Empty keeps the original capture.
+    answer_keys: tuple[str, ...] = ()
 
 
 #: Every registered ask type, by name (`register`). The engine seam reads the open slot's
@@ -158,7 +175,13 @@ def _is_all(text: str, spec: FieldSpec) -> bool:
     return word in ALL_WORDS or word in {f"all {spec.noun}", f"all {_plural(spec.noun)}"}
 
 
-def _miss_line(word: str, spec: FieldSpec) -> str:
+def _live(spec: FieldSpec) -> FieldSpec:
+    return replace(spec, question=spec.question_fn()) if spec.question_fn else spec
+
+
+def _miss_line(word: str, spec: FieldSpec, note: str = "") -> str:
+    if note:
+        return f"{note}\n\n{spec.question}"
     return f"I don't know '{word}' as a {spec.noun}.\n\n{spec.question}"
 
 
@@ -223,6 +246,7 @@ def collect(
             return Outcome(values=values, reply=ask.cancelled, slot=None, extras=carried, cancelled=True)
         spec = specs.get(jsc.js_string(slot.get("asking")))
         if spec is not None:
+            spec = _live(spec)
             options = list(slot.get("options") or [])
             if isinstance(reply, Resolved):
                 # The caller already read the answer (the parser's own words, resolved).
@@ -257,13 +281,14 @@ def collect(
                 # A reply the caller could read nothing from is asked again, plainly (a
                 # numbered pick shows its list again).
                 again = _pick_line(spec, options) if options else spec.question
-                return Outcome(values=values, reply=_miss_line(word, spec) if word else again,
+                return Outcome(values=values, reply=_miss_line(word, spec, got.note) if word else again,
                                slot=_slot(ask, values, carried, asking=spec.name, options=options, misses=misses),
                                extras=carried)
 
     for spec in ask.fields:
         if spec.name in values:
             continue
+        spec = _live(spec)
         word = (given or {}).get(spec.name)
         if word == ALL and spec.allow_all:
             values[spec.name] = {"value": ALL, "label": ALL}
@@ -283,9 +308,9 @@ def collect(
             if not spec.required and not spec.ask_unknown:
                 continue
             if not spec.required:
-                return Outcome(values=values, reply=_miss_line(said, spec),
+                return Outcome(values=values, reply=_miss_line(said, spec, got.note),
                                slot=_slot(ask, values, carried, asking=spec.name, misses=1), extras=carried)
-            return Outcome(values=values, reply=_miss_line(said, spec),
+            return Outcome(values=values, reply=_miss_line(said, spec, got.note),
                            slot=_slot(ask, values, carried, asking=spec.name), extras=carried)
         if not spec.required:
             continue
@@ -320,7 +345,8 @@ def reply_verdict(
     if not (text or "").strip() or not answers:
         return verdict, "required_ask_dropped"
     rerouted = {
-        **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
+        **{k: v for k, v in verdict.items() if k not in ask.answer_drops},
+        **ask.reroute, "entities": [], "open_question_answer": None,
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
         "required_ask_answer": dict(answer) if answers else None,
@@ -341,10 +367,22 @@ def _reply_verdict_by_shape(
     other_ask = (bool(verdict.get("intent_hint")) and not same_ask) or verdict.get("message_type") not in (
         "business_query", "clarification", None,
     )
-    if other_ask and len(words) > SHORT_REPLY_WORDS:
+    if other_ask and len(words) > SHORT_REPLY_WORDS and not (
+        any(verdict.get(k) for k in ask.answer_keys)
+        and (
+            verdict.get("intent_hint") in (None, "", ask.reroute.get("intent_hint"))
+            # Another intent's verdict is a reply only when it names no axis, status or
+            # entity of its own (a plain period or count), else it is another ask.
+            or (
+                not (verdict.get("group_by") or verdict.get("order_status"))
+                and not verdict.get("entities")
+            )
+        )
+    ):
         return verdict, "required_ask_dropped"
     rerouted = {
-        **verdict, **ask.reroute, "entities": [], "open_question_answer": None,
+        **{k: v for k, v in verdict.items() if k not in ask.answer_drops},
+        **ask.reroute, "entities": [], "open_question_answer": None,
         "is_affirmative": None, "topic_reset": False,
         "required_ask": slot, "required_ask_reply": text,
     }

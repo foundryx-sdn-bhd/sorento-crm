@@ -275,7 +275,7 @@ def test_the_route_carries_the_spo_link(scm_app):
     }]
 
 
-def _open_spo_covering(db, *, product_id, from_po_number, allocated_quantity):
+def _open_spo_covering(db, *, po_line, from_po_number, allocated_quantity):
     """A SYNTHETIC-triggering `SPOAllocation`: open per `derived_spo_open_clauses()`
     (`line_status` defaults `"open"`, `receipt_status` defaults `"pending"`, no shipment
     so never "landed", `retired_at` unset) and naming the SAME `from_po_number` +
@@ -284,10 +284,17 @@ def _open_spo_covering(db, *, product_id, from_po_number, allocated_quantity):
     not imported from there because this file's own `World`/company-scope pattern
     (CompanyScopedMixin stamps `company_id` from session scope) differs from that
     file's explicit `company_id` arguments.
+
+    OI-SPO-EXACT: it names the PO LINE (`from_po_line_ref` = the line's own
+    `source_ref`, stated here when the seeded line carries none), as AutoCount's do.
     """
+    if not po_line.source_ref:
+        po_line.source_ref = f"{from_po_number}:1"
+        db.flush()
     allocation = SPOAllocation(
-        id=_u(), spo_number=f"ZZT-SPO-{_u()[:8]}", product_id=product_id,
-        from_po_number=from_po_number, allocated_quantity=allocated_quantity,
+        id=_u(), spo_number=f"ZZT-SPO-{_u()[:8]}", product_id=po_line.product_id,
+        from_po_number=from_po_number, from_po_line_ref=po_line.source_ref,
+        allocated_quantity=allocated_quantity,
         quantity_received=0, receipt_status="pending",
     )
     db.add(allocation)
@@ -316,7 +323,7 @@ def test_ac_hf1_so_detail_survives_a_derived_spo_entry_on_a_po_linked_line():
             db, so, retail, po_line=po_line, qty=8, document=po.po_number,
         )
         _open_spo_covering(
-            db, product_id=po_line.product_id, from_po_number=po.po_number,
+            db, po_line=po_line, from_po_number=po.po_number,
             allocated_quantity=5,
         )
         db.commit()
@@ -366,7 +373,7 @@ def test_ac_hf2_so_detail_route_returns_200_with_a_derived_spo_entry(scm_app):
         db, so, retail, po_line=po_line, qty=8, document=po.po_number,
     )
     _open_spo_covering(
-        db, product_id=po_line.product_id, from_po_number=po.po_number,
+        db, po_line=po_line, from_po_number=po.po_number,
         allocated_quantity=5,
     )
     db.commit()

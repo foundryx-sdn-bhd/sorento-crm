@@ -30,6 +30,8 @@ class RespondContactOutboundRow(BaseModel):
     phone_number: Optional[str] = None
     respond_io_id: Optional[str] = None
     outbound_enabled: bool
+    # AI-ALLOWED-GATE: may the chatbot answer this contact at all.
+    chatbot_allowed: bool
 
 
 class RespondOutboundCounts(BaseModel):

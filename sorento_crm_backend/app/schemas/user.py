@@ -72,10 +72,18 @@ class RespondContactResponse(RespondContactBase):
     # Chatbot stock ask v2 S2 (PLAN-chatbot-stock-ask-v2-24sep.md, R7): both default off.
     notify_salesman: bool = False
     packing_list_allowed: bool = False
+    # CONTACT-REGION: the packing list regions this contact holds, default West only.
+    regions: list[str] = ["west"]
     # Issue #1328: the ETA this contact is told carries the +x days offset. Default on.
     chatbot_eta_offset_applied: bool = True
     # ESCALATION-CONTROL: may the chatbot hand this contact to a person. Default on.
     escalation_allowed: bool = True
+    # AI-ALLOWED-GATE: may the chatbot answer this contact at all. New contacts start off.
+    chatbot_allowed: bool = False
+    # DO-PERIOD-SKIP: never ask this contact for a date range. Default off.
+    chatbot_skip_period_questions: bool = False
+    # PHOTO-SEND-CAP: send files as short links instead of attachments (default off).
+    chatbot_files_as_links: bool = False
     # CONTACT-BULK-ACCESS (UAC A2.1): `chatbot_profile.tier` flattened, and whether the
     # contact holds the `purchase_orders.cost` reveal (filled by the list only; null on detail).
     chatbot_tier: Optional[str] = None

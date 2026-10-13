@@ -60,6 +60,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Warehouse
@@ -84,6 +85,7 @@ from app.models.project_so import (
     INQUIRY_CANCELLED,
     INQUIRY_PARTLY_LINKED,
     INQUIRY_PLACED,
+    IV_CANCEL_BALANCE,
     IV_ORDER,
     IV_ORDER_BACK,
     IV_RESERVE_AND_ORDER,
@@ -1102,6 +1104,29 @@ def build_batch(
             else False
         )
         for e in group:
+            entry_line = e.get("project_line")
+            entry_line_id = str(entry_line.id) if entry_line is not None else None
+            # S4 (review round 1): the `core_line_id` fallback is what an `added` row's own
+            # NULL `project_line_id` needs - `entry["core_line_id"]` is resolved for every
+            # entry regardless of kind, so it finds an older `added` row this project-line
+            # lookup alone never can.
+            older = (
+                (pending_lines.get(entry_line_id) if entry_line_id else None)
+                or pending_by_core.get(e["core_line_id"])
+            )
+            # SO422492 BUG B: a NEW line AutoCount changes again while its `added` row is
+            # still undecided is still a new line nobody has planned. Retiring that row with
+            # no replacement left the line silent and its quantity was never ordered
+            # (SRTUB6503-NEW 4 on line 1440), so the replacement is another `added` row
+            # describing the line as it stands now.
+            replaces_added = (
+                older is not None
+                # A line the book closed is gone, not re-changed: its row just retires.
+                and e["change"].kind != CLOSED
+                and older.kind == "added"
+                and older.decision is None
+                and _entry_differs_from_older_row(e["change"], older)
+            )
             # Built against the FRESH batch first - `_build_row` only needs a `batch.id`
             # to stamp; which batch this row actually lands in is decided below, once its
             # own `project_line_id` is known.
@@ -1121,16 +1146,7 @@ def build_batch(
                 moved_transfers,
                 order_has_held_or_inquiry,
                 batch_line_ids,
-            )
-            entry_line = e.get("project_line")
-            entry_line_id = str(entry_line.id) if entry_line is not None else None
-            # S4 (review round 1): the `core_line_id` fallback is what an `added` row's own
-            # NULL `project_line_id` needs - `entry["core_line_id"]` is resolved for every
-            # entry regardless of kind, so it finds an older `added` row this project-line
-            # lookup alone never can.
-            older = (
-                (pending_lines.get(entry_line_id) if entry_line_id else None)
-                or pending_by_core.get(e["core_line_id"])
+                replaces_added=replaces_added,
             )
             if row is None:
                 # AC-G1/AC-G4: the line is neither held nor inquired, so it stays off the
@@ -2170,6 +2186,7 @@ def _build_row(
     moved_transfers: Optional[Dict[str, str]] = None,
     order_has_held_or_inquiry: bool = False,
     batch_line_ids: Sequence[str] = (),
+    replaces_added: bool = False,
 ) -> Optional[PlanningChangeRow]:
     c = entry["change"]
     project_line: Optional[ProjectSalesOrderLine] = entry["project_line"]
@@ -2197,7 +2214,16 @@ def _build_row(
         # rule 5): a new line has no mirror line to hold or inquire about YET, so the gate
         # is asked of the ORDER instead - an order with a held or inquired line already
         # carries a commitment the new line changes the shape of.
-        if not (c.kind == ADDED and order_has_held_or_inquiry):
+        if replaces_added:
+            # SO422492 BUG B: the line is still the undecided NEW line its older `added`
+            # row described, so its replacement is an `added` row for the line as it
+            # stands now (current product, qty and date), not a row about the move.
+            kind = "added"
+            from_json = {"required_date": None, "qty": None, "status": None, "item_code": None}
+            to_json = {**to_json, "item_code": None}
+            days_moved = None
+            old_date = None
+        elif not (c.kind == ADDED and order_has_held_or_inquiry):
             return None
 
     dealer_hot_selling = bool(product_id and product_id in dealer_where)
@@ -2329,20 +2355,110 @@ def _source_out(batch: PlanningChangeBatch) -> dict:
     }
 
 
-def _row_is_superseded(db: Session, row: PlanningChangeRow) -> bool:
+def current_revision_no(db: Session, pso_id: str) -> int:
+    """The revision a batch row is measured against: the active one, else the latest."""
     from app.services.project_supply_service import ProjectSupplyService
 
-    if not row.held_json:
-        return False
-    snapshot_rev = row.held_json.get("revision_no")
-    if snapshot_rev is None:
-        return False
     supply = ProjectSupplyService(db)
-    pso_id = str(row.project_sales_order_id)
     active = supply.active_decision(pso_id)
     latest = supply.latest_decision(pso_id)
-    current = active.revision_no if active else (latest.revision_no if latest else 0)
-    return current != snapshot_rev
+    return active.revision_no if active else (latest.revision_no if latest else 0)
+
+
+def row_is_overtaken(row: PlanningChangeRow, current_revision: int) -> bool:
+    """A row held against a revision the order has since moved past - one that can never
+    be applied any more (`set_row_decision` refuses it, `_apply_one_order` supersedes it)."""
+    snapshot_rev = (row.held_json or {}).get("revision_no")
+    return snapshot_rev is not None and snapshot_rev != current_revision
+
+
+def row_is_live(row: PlanningChangeRow, current_revision: int) -> bool:
+    """A row the next apply can still act on: pending, and not overtaken by a newer revision.
+    An applied, failed or superseded row - or a pending one a newer revision overtook - is
+    history: a decision stored on it is never applied (BOARD-FROZEN-DISPLAY, SO422492)."""
+    return row.applied_state == PLANNING_CHANGE_STATE_PENDING and not row_is_overtaken(
+        row, current_revision
+    )
+
+
+def _ddmmyyyy(value) -> str:
+    parsed = _as_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else str(value or "")
+
+
+def change_text(row: PlanningChangeRow) -> Optional[str]:
+    """What the book did to a row's line, in one phrase: qty, then product, then date; the
+    first that differs. An `added` row reads `New, qty N`. PLANNING-WHY AC-W2."""
+    before = row.from_json or {}
+    after = row.to_json or {}
+    if row.kind == "added":
+        return f"New, qty {after.get('qty')}" if after.get("qty") is not None else "New"
+    if before.get("qty") != after.get("qty") and after.get("qty") is not None:
+        return f"Qty {before.get('qty')} -> {after.get('qty')}"
+    if after.get("item_code") and before.get("item_code") != after.get("item_code"):
+        return f"Product {before.get('item_code')} -> {after.get('item_code')}"
+    if before.get("required_date") != after.get("required_date") and after.get("required_date"):
+        return (
+            f"Date {_ddmmyyyy(before.get('required_date'))} -> "
+            f"{_ddmmyyyy(after.get('required_date'))}"
+        )
+    return None
+
+
+def explain_refusal(db: Session, pso_id: str, batch_id: str) -> List[dict]:
+    """One entry per pending or superseded row of this order's batch: why a Confirm that
+    reached the apply confirmed nothing (PLANNING-WHY AC-W2). Read at the throw, BEFORE the
+    order's rollback, so a row the apply just superseded still says why."""
+    rows = (
+        db.query(PlanningChangeRow)
+        .filter(
+            PlanningChangeRow.batch_id == batch_id,
+            PlanningChangeRow.project_sales_order_id == str(pso_id),
+            PlanningChangeRow.applied_state.in_(
+                [PLANNING_CHANGE_STATE_PENDING, PLANNING_CHANGE_STATE_SUPERSEDED]
+            ),
+        )
+        .order_by(PlanningChangeRow.line_no.asc(), PlanningChangeRow.created_at.asc())
+        .all()
+    )
+    revision = current_revision_no(db, str(pso_id))
+    out: List[dict] = []
+    for row in rows:
+        reason_applied = row.applied_reason or ""
+        overtaken = row_is_overtaken(row, revision)
+        if row.applied_state == PLANNING_CHANGE_STATE_SUPERSEDED:
+            if reason_applied.startswith("The board confirmed a newer revision"):
+                code = "already_confirmed"
+            elif reason_applied == "the sales-order line is cancelled":
+                code = "line_cancelled"
+            else:
+                code = "changed_again"
+        elif overtaken:
+            code = "already_confirmed"
+        else:
+            code = "not_decided"
+        reason, change = {
+            "not_decided": ("Not decided", change_text(row)),
+            "changed_again": ("Changed again", change_text(row)),
+            "already_confirmed": (f"Already confirmed in revision {revision}", None),
+            "line_cancelled": ("Line cancelled", None),
+        }[code]
+        out.append(
+            {
+                "so_line_no": row.line_no,
+                "item_code": row.item_code,
+                "reason_code": code,
+                "reason": reason,
+                "change": change,
+            }
+        )
+    return out
+
+
+def _row_is_superseded(db: Session, row: PlanningChangeRow) -> bool:
+    if (row.held_json or {}).get("revision_no") is None:
+        return False
+    return row_is_overtaken(row, current_revision_no(db, str(row.project_sales_order_id)))
 
 
 def row_out(db: Session, row: PlanningChangeRow) -> dict:
@@ -2793,7 +2909,11 @@ def _validate_composition_shape(
             .all()
         )
 
-    return {
+    # Stored in a JSONB column, so every value goes in JSON-shaped: a caller that hands over a
+    # `model_dump()` without `mode="json"` passes `date` objects (a borrow's
+    # `donor_required_date` / `arrival_date`), and the UPDATE died on them (prod,
+    # HOTFIX-CONFIRM-DATE). `_to_confirm_line` parses the ISO strings back.
+    return jsonable_encoder({
         "project_line_id": str(composition.get("project_line_id")),
         "timely_spo_qty": qty_text(timely),
         "reserve": [
@@ -2832,7 +2952,13 @@ def _validate_composition_shape(
         "buy_qty": qty_text(buy),
         "buy_reason": composition.get("buy_reason"),
         "amend_reason": composition.get("amend_reason"),
-    }
+        # The planner's own answers beside the components (`ConfirmLine`): the order-back
+        # and the document it cites, and "flag for investigation". Dropped here, Apply
+        # froze them as false on the revision whatever was ticked (CONFIRM-FOLLOWUPS).
+        "order_back": bool(composition.get("order_back", False)),
+        "cited_document": composition.get("cited_document"),
+        "suspected_system_issue": bool(composition.get("suspected_system_issue", False)),
+    })
 
 
 def set_row_decision(
@@ -2979,6 +3105,9 @@ def _to_confirm_line(payload: dict):
         buy_qty=payload["buy_qty"],
         buy_reason=payload.get("buy_reason"),
         amend_reason=payload.get("amend_reason"),
+        order_back=bool(payload.get("order_back", False)),
+        cited_document=payload.get("cited_document"),
+        suspected_system_issue=bool(payload.get("suspected_system_issue", False)),
     )
 
 
@@ -3395,6 +3524,9 @@ def _move_reserve(
     receiving.note = f"{receiving.note}\n{found}" if receiving.note else found
     if take >= _dec(receiving.qty):
         receiving.state = INQUIRY_CANCELLED
+        from app.services.project_order_inquiry_service import _record_cancel
+
+        _record_cancel(db, receiving, "reserve_moved", actor_user_id=actor)
     else:
         receiving.qty = _dec(receiving.qty) - take
     db.flush()
@@ -3543,6 +3675,26 @@ def _execute_reallocations(
     }
 
 
+def _line_changes(
+    rows: Sequence[PlanningChangeRow], line_ids: Sequence[str]
+) -> Dict[str, Dict[str, Any]]:
+    """Per project line id this apply restates: the SO line's own qty and date before and
+    after, off the batch rows' `from_json` / `to_json`."""
+    wanted = {str(line_id) for line_id in line_ids}
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if not r.project_line_id or str(r.project_line_id) not in wanted:
+            continue
+        before, after = r.from_json or {}, r.to_json or {}
+        out[str(r.project_line_id)] = {
+            "from_qty": _dec(before.get("qty")) if before.get("qty") is not None else None,
+            "to_qty": _dec(after.get("qty")) if after.get("qty") is not None else None,
+            "from_date": _as_date(before.get("required_date")),
+            "to_date": _as_date(after.get("required_date")),
+        }
+    return out
+
+
 def _oi_demand_rows(
     db: Session,
     live_rows: Sequence[PlanningChangeRow],
@@ -3594,6 +3746,21 @@ def _oi_demand_rows(
         ):
             product_by_core[str(cid)] = str(pid) if pid else None
 
+    # SO422492 D: the line's OWN location first (AC-H5, the one location an inquiry row
+    # names). Reading only the held reserve's location left every Buy-only line's CANCEL
+    # BALANCE with a blank location (SRTWT2200 118, SRTWB7099 7, ...).
+    line_ids = [str(r.project_line_id) for r in live_rows if r.project_line_id]
+    location_by_line: Dict[str, Optional[str]] = {}
+    if line_ids:
+        location_by_line = {
+            str(line_id): location
+            for line_id, location in db.query(
+                ProjectSalesOrderLine.id, ProjectSalesOrderLine.stock_location
+            )
+            .filter(ProjectSalesOrderLine.id.in_(line_ids))
+            .all()
+        }
+
     pool_cache: Dict[str, Optional[str]] = {}
     settled = {str(line_id) for line_id in (settled_line_ids or [])}
     date_move_line_ids = [
@@ -3617,15 +3784,47 @@ def _oi_demand_rows(
         for buy_row in buy_row_query.all():
             buy_rows_by_line.setdefault(str(buy_row.so_line_id), []).append(buy_row)
 
+    # Crew audit of SO422492 (A, later "Save all suggested"): what purchasing still holds
+    # on each qty-down line and has NOT already been asked to cancel, read AFTER this
+    # confirm's own netting. The netting had cancelled line 592's whole 25 (CANCEL BALANCE
+    # 25) and this reaction added CANCEL BALANCE 3 for AutoCount's cut on top: 28 for a 25
+    # row. A reaction never cancels more than is still held.
+    qty_down_line_ids = [
+        str(r.project_line_id)
+        for r in live_rows
+        if r.kind == "qty_down"
+        and r.project_line_id
+        and str(r.project_line_id) not in settled
+    ]
+    cancellable_by_line: Dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    if qty_down_line_ids:
+        held_query = db.query(OrderInquiryRow).filter(
+            OrderInquiryRow.so_line_id.in_(qty_down_line_ids),
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+            OrderInquiryRow.verb.in_(
+                (IV_ORDER, IV_ORDER_BACK, IV_RESERVE_AND_ORDER, IV_CANCEL_BALANCE)
+            ),
+        )
+        if order_inquiry_id:
+            held_query = held_query.filter(
+                OrderInquiryRow.order_inquiry_id == order_inquiry_id
+            )
+        for held_row in held_query.all():
+            line_key = str(held_row.so_line_id)
+            if held_row.verb == IV_CANCEL_BALANCE:
+                cancellable_by_line[line_key] -= _dec(held_row.qty)
+            elif not held_row.redirected_to_pool:
+                cancellable_by_line[line_key] += _dec(held_row.qty)
+
     out: List[dict] = []
     counts: Dict[str, int] = {}
     for r in live_rows:
         if not r.project_line_id:
             continue
         held = r.held_json or {}
-        location = None
+        location = location_by_line.get(str(r.project_line_id)) or None
         reserve = held.get("reserve") or []
-        if reserve:
+        if reserve and not location:
             location = reserve[0].get("location")
         product_id = product_by_core.get(r.core_line_id or "")
 
@@ -3668,6 +3867,9 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_DATE_LATER if r.kind == "delayed" else CHANGE_DATE_EARLIER,
                     "note": f"Was {from_date}" if from_date else "No previous delivery date",
+                    # EMAIL-SO-CHANGES: the same date, structured, for the email's
+                    # DELIVERY / NEW DATE.
+                    "from_date": _as_date(from_date),
                 }
             )
             counts["DELAY" if r.kind == "delayed" else "ADVANCE"] = (
@@ -3676,7 +3878,7 @@ def _oi_demand_rows(
         elif r.kind == "qty_down":
             from_qty = _dec((r.from_json or {}).get("qty"))
             to_qty = _dec((r.to_json or {}).get("qty"))
-            drop = from_qty - to_qty
+            drop = min(from_qty - to_qty, cancellable_by_line[str(r.project_line_id)])
             if drop <= _ZERO:
                 continue
             out.append(
@@ -3689,6 +3891,10 @@ def _oi_demand_rows(
                     "stock_location": location,
                     "change": CHANGE_QTY_DECREASE,
                     "note": f"Was {qty_text(from_qty)}, now {qty_text(to_qty)}",
+                    # EMAIL-SO-CHANGES: the same two figures, structured, for the email's
+                    # QTY / NEW QTY.
+                    "from_qty": from_qty,
+                    "to_qty": to_qty,
                 }
             )
             counts["CANCEL_BALANCE"] = counts.get("CANCEL_BALANCE", 0) + 1
@@ -3696,7 +3902,7 @@ def _oi_demand_rows(
 
 
 def _retire_inquiry_rows(
-    db: Session, project_line_id: Optional[str], reason: str
+    db: Session, project_line_id: Optional[str], reason: str, actor: Optional[str] = None
 ) -> List[str]:
     """`closed` (AC-R06, amended by AC-P3-6): the line is gone from the book, so what it
     asked purchasing for is cancelled - never deleted, because a cancelled row is still
@@ -3715,6 +3921,8 @@ def _retire_inquiry_rows(
 
     Returns THE ROWS IT CANCELLED, by id, and the shift below takes exactly those: a row
     somebody cancelled last month is not this apply's to move documents off."""
+    from app.services.project_order_inquiry_service import _record_cancel
+
     if not project_line_id:
         return []
     rows = (
@@ -3732,6 +3940,7 @@ def _retire_inquiry_rows(
             row.note = note
         else:
             row.state = INQUIRY_CANCELLED
+            _record_cancel(db, row, "planning_change_retired", actor_user_id=actor)
             row.note = note
             cancelled.append(str(row.id))
     return cancelled
@@ -3953,6 +4162,13 @@ def _notify_purchasing(
 ) -> bool:
     """AC-R09: purchasing told once per order, by a batch link. Best-effort - Apply has
     already written the plan and Order Inquiry changes by the time this runs."""
+    from app.services.confirm_simulation import is_simulating
+
+    if is_simulating():
+        # A simulated confirm tells nobody. The simulation guards would refuse the send too,
+        # but this call is made BEFORE them and a spy on it (and a real notification row
+        # inside the simulation) is still a notification attempted.
+        return False
     try:
         from app.services.notification_service import NotificationService
         from app.services.project_order_inquiry_service import ProjectOrderInquiryService
@@ -4089,6 +4305,62 @@ def _record_lateness(
     db.flush()
 
 
+def _refuse_dropped_named_lines(
+    order_rows: Sequence[PlanningChangeRow],
+    named_line_ids: Sequence[str],
+    composed_line_ids: set,
+    retired_line_ids: Sequence[str],
+) -> None:
+    """NEVER A SILENT DROP (BOARD-FROZEN-DISPLAY, SO422492 line 688).
+
+    A line the press NAMED through one of this batch's rows is either in the revision the
+    apply writes or the whole order fails, naming it. Left out quietly, the confirm carries
+    the line's OLD snapshot - or, once the book has moved it, drops it from the revision
+    entirely, and the order-inquiry diff then reads Buy 0 and tells purchasing CANCEL ALL
+    for a line the planner had just confirmed as Buy 24. Raising inside the order's
+    savepoint rolls it back, so nothing is written and the caller names the line.
+    """
+    if not named_line_ids:
+        return
+    retired = {str(x) for x in retired_line_ids}
+    dropped = [
+        line_id
+        for line_id in dict.fromkeys(str(x) for x in named_line_ids)
+        if line_id not in composed_line_ids and line_id not in retired
+    ]
+    if not dropped:
+        return
+    from app.services.project_supply_service import SupplyLinesRefused
+
+    rows_by_line = {str(r.project_line_id): r for r in order_rows if r.project_line_id}
+    failing = []
+    for line_id in dropped:
+        r = rows_by_line.get(line_id)
+        failing.append(
+            {
+                "line_no": r.line_no if r is not None else None,
+                "item_code": r.item_code if r is not None else None,
+                "reason": (
+                    (r.applied_reason if r is not None else None)
+                    or "This planning change could not apply the decision saved on this line."
+                ),
+            }
+        )
+    named = ", ".join(
+        f"line {f['line_no']}" + (f" ({f['item_code']})" if f["item_code"] else "")
+        for f in failing
+    )
+    raise SupplyLinesRefused(
+        status_code=422,
+        message=(
+            f"Nothing was confirmed: {named} could not be confirmed with the rest of this "
+            f"order. {failing[0]['reason'][:1].upper()}{failing[0]['reason'][1:]}"
+        ),
+        failing_lines=failing,
+        code="planning_change_line_dropped",
+    )
+
+
 def _apply_one_order(
     db: Session,
     supply,
@@ -4097,6 +4369,7 @@ def _apply_one_order(
     actor: Optional[str],
     batch: PlanningChangeBatch,
     extra_lines: Sequence[dict] = (),
+    named_line_ids: Sequence[str] = (),
 ) -> dict:
     from app.schemas.project_supply import ConfirmSupplyBody
     from app.services.project_order_inquiry_service import ProjectOrderInquiryService
@@ -4144,6 +4417,7 @@ def _apply_one_order(
         "confirm_result": None,
     }
     if not accepted and not extra_lines:
+        _refuse_dropped_named_lines(order_rows, named_line_ids, set(), ())
         return empty_result
 
     live: List[PlanningChangeRow] = []
@@ -4158,41 +4432,52 @@ def _apply_one_order(
         else:
             live.append(r)
     if not live and not extra_lines:
+        _refuse_dropped_named_lines(order_rows, named_line_ids, set(), ())
         return empty_result
 
-    # AC-S1-3 / R3 minimum: the book closed a line this batch was built against, between
+    # AC-S1-3 / R3 minimum: the book cancelled a line this batch was built against, between
     # compose and apply - a stale row's SO line is now gone, so the batch records nothing
     # was carried out for it rather than failing (or silently applying) a composition about
-    # a line that no longer accepts one. `cancelled` rows are excluded: a closed core line
+    # a line that no longer accepts one. `cancelled` rows are excluded: a cancelled core line
     # is exactly what a `cancelled` row already expects and handles on its own path below.
+    # A `closed` line is NOT dropped here (owner ruling 11 Oct 2026): the line status must
+    # not decide whether a CS decision applies, because delivered qty and planned qty are
+    # decoupled. A closed line flows on to confirm like an open one.
     core_line_ids_live = {
         r.core_line_id for r in live if r.core_line_id and r.kind != "cancelled"
     }
-    closed_core_line_ids: set = set()
+    cancelled_core_line_ids: set = set()
     if core_line_ids_live:
-        closed_core_line_ids = {
+        cancelled_core_line_ids = {
             str(line_id)
             for (line_id,) in db.query(SalesOrderLine.id)
             .filter(
                 SalesOrderLine.id.in_(list(core_line_ids_live)),
-                SalesOrderLine.line_status.in_(("closed", "cancelled")),
+                SalesOrderLine.line_status == "cancelled",
             )
             .all()
         }
-    if closed_core_line_ids:
+    # The lines the book cancelled under a named row are not a silent drop: their rows say
+    # why, and the rest of the order still applies (OI-CLOSED-LINE AC-5), so the guard below
+    # leaves them out.
+    book_cancelled_line_ids: List[str] = []
+    if cancelled_core_line_ids:
         still_live: List[PlanningChangeRow] = []
         for r in live:
             if (
                 r.kind != "cancelled"
                 and r.core_line_id
-                and str(r.core_line_id) in closed_core_line_ids
+                and str(r.core_line_id) in cancelled_core_line_ids
             ):
                 r.applied_state = PLANNING_CHANGE_STATE_SUPERSEDED
-                r.applied_reason = "the sales-order line is closed"
+                r.applied_reason = "the sales-order line is cancelled"
+                if r.project_line_id:
+                    book_cancelled_line_ids.append(str(r.project_line_id))
             else:
                 still_live.append(r)
         live = still_live
     if not live and not extra_lines:
+        _refuse_dropped_named_lines(order_rows, named_line_ids, set(), book_cancelled_line_ids)
         return empty_result
 
     by_line_id = {r.project_line_id: r for r in live if r.project_line_id}
@@ -4337,6 +4622,15 @@ def _apply_one_order(
         confirm_lines.append(payload)
         confirmed += 1
 
+    # NEVER A SILENT DROP (BOARD-FROZEN-DISPLAY, SO422492 line 688): see
+    # `_refuse_dropped_named_lines`.
+    _refuse_dropped_named_lines(
+        order_rows,
+        named_line_ids,
+        {str(p.get("project_line_id")) for p in confirm_lines if p.get("project_line_id")},
+        [*retired_line_ids, *book_cancelled_line_ids],
+    )
+
     # The book closed these lines. Their rows are CANCELLED, never deleted - they are what
     # purchasing was told - and this apply owns that cancellation, so it happens BEFORE the
     # confirm rather than after (CI round, 28 Aug). The confirm has a retirement of its own
@@ -4352,7 +4646,7 @@ def _apply_one_order(
     for line_id in retired_line_ids:
         cancelled_row_ids.extend(
             _retire_inquiry_rows(
-                db, line_id, "The line was closed by a planning change batch."
+                db, line_id, "The line was closed by a planning change batch.", actor
             )
         )
     if cancelled_row_ids:
@@ -4380,6 +4674,9 @@ def _apply_one_order(
         result = supply.confirm(
             order, body, actor_user_id=actor, uncover_line_ids=uncover_line_ids,
             settle_in_place_line_ids=settle_line_ids,
+            # EMAIL-SO-CHANGES: what the book did to each line this apply restates (the
+            # "What changed" source), for the handover email's Was -> Now.
+            line_changes=_line_changes(live, settle_line_ids),
             # The cascade waits for the shift below. Run inside `confirm`, it filled the
             # survivor's headroom from ANY free purchase-order line first, so the closed
             # lines' own documents arrived a moment later to a row with nothing left to
@@ -4625,6 +4922,7 @@ def apply(
     refuse_if_applied: bool = False,
     only_pso_ids: Optional[Sequence[str]] = None,
     notify: bool = True,
+    named_line_ids: Optional[Dict[str, Sequence[str]]] = None,
 ) -> dict:
     """AC-R05: one new revision per affected order, atomic per order. Applying twice is a
     no-op (`already_applied`).
@@ -4642,6 +4940,10 @@ def apply(
     those orders would have had, and locked every remaining order's rows behind
     `applied_at` - so the planner could neither decide nor confirm them afterwards. An
     apply with no `only_pso_ids` is the whole batch, exactly as before.
+
+    `named_line_ids` (per project sales order) are the lines the press decided THROUGH this
+    batch's rows; each one is confirmed or its order fails naming it, never dropped
+    (`_refuse_dropped_named_lines`).
     """
     from app.services.project_supply_service import ProjectSupplyService
 
@@ -4740,11 +5042,16 @@ def apply(
             outcome = _apply_one_order(
                 db, supply, order, order_rows, actor, batch,
                 extra_lines=extra_by_order.get(pso_id, ()),
+                named_line_ids=(named_line_ids or {}).get(pso_id, ()),
             )
             savepoint.commit()
         except Exception as exc:  # noqa: BLE001 - one order's failure must not sink the rest
             savepoint.rollback()
-            reason = _exc_message(exc)
+            # A simulated confirm (admin dry run) wants the raw class name too; a real one
+            # keeps the bare text its readers have always had.
+            from app.services.confirm_simulation import error_text, is_simulating
+
+            reason = error_text(exc) if is_simulating() else _exc_message(exc)
             logger.exception("planning change apply failed for order %s", so_number)
             for r in order_rows:
                 if (
@@ -4816,7 +5123,24 @@ def apply(
     # POST-press state, not the pre-press snapshot. An apply that visited every order and
     # every row was decided is unchanged: there is nothing left pending, so the stamp lands
     # exactly as it did before.
-    left_out_pending = any(r.applied_state == PLANNING_CHANGE_STATE_PENDING for r in rows)
+    #
+    # A pending row a newer revision has OVERTAKEN (BOARD-FROZEN-DISPLAY, SO422492) does not
+    # count: it can never be applied (`set_row_decision` refuses it with 409, `row_out` reads
+    # it as superseded, `_apply_one_order` supersedes it the moment it is decided), so it is
+    # not a row a planner can still reach. Counting it held the batch open forever, and an
+    # open batch keeps the board pre-marking every line it names. The row itself is left as
+    # it is - nothing here marks it applied on the strength of a confirm it never had.
+    revision_by_pso: Dict[str, int] = {}
+
+    def _still_reachable(r: PlanningChangeRow) -> bool:
+        if r.applied_state != PLANNING_CHANGE_STATE_PENDING:
+            return False
+        pso_id = str(r.project_sales_order_id)
+        if pso_id not in revision_by_pso:
+            revision_by_pso[pso_id] = current_revision_no(db, pso_id)
+        return not row_is_overtaken(r, revision_by_pso[pso_id])
+
+    left_out_pending = any(_still_reachable(r) for r in rows)
     if orders_revised and not left_out_pending:
         batch.applied_at = datetime.utcnow()
         batch.applied_by = actor

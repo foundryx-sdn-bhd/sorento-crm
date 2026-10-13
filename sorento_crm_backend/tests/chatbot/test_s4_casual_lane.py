@@ -630,3 +630,91 @@ def test_no_raw_text_regex_in_lane():
         "lanes/casual.py regex-matches over raw text (D11) - move that logic into "
         "the parser prompt or a deterministic lookup over structured state"
     )
+
+
+# --------------------------------------------------------------------------- #
+# CHAT-TURN-COST (Q2 a): the clarifier's tokens bill the turn, live turns only.
+# The provider is faked BELOW `call_clarifier`, so the engine's real capture path runs.
+# --------------------------------------------------------------------------- #
+
+
+def _install_fake_provider(monkeypatch, casual, content='{"response": "Hi! How can I help?"}'):
+    from types import SimpleNamespace
+
+    from app.services.llm_provider import ChatResult
+
+    class FakeProvider:
+        def chat(self, messages, model=None, **kw):
+            return ChatResult(content=content, prompt_tokens=900, completion_tokens=40, total_tokens=940,
+                              tool_calls=[], raw=None, cached_tokens=512)
+
+    monkeypatch.setattr(casual, "resolve_for_prompt", lambda db, *, ctx: {"resolutions": []})
+    monkeypatch.setattr(
+        casual, "resolve_clarifier_config",
+        lambda db, **_: SimpleNamespace(system_prompt="sys", prompt_version=1, provider="openai",
+                                        model="gpt-5.4-mini", api_key="k"),
+    )
+    monkeypatch.setattr("app.services.llm_provider.get_provider", lambda *a, **k: FakeProvider())
+
+
+def _clarifier_rows(session_factory, turn_id):
+    db = session_factory()
+    try:
+        return db.execute(
+            text("SELECT feature, model, prompt_tokens, cached_tokens, completion_tokens FROM ai_assistant_usage_logs "
+                 "WHERE chatbot_turn_id = :t AND feature = 'chatbot_clarifier'"),
+            {"t": str(turn_id)},
+        ).all()
+    finally:
+        db.close()
+
+
+@pytest.mark.real_casual_llm
+def test_a_live_low_signal_turn_logs_the_clarifier_call(
+    session_factory, seeded, stub_parser, stub_access, monkeypatch, low_signal_enabled
+):
+    casual = _casual()
+    stub_parser(_parser_output(message_type="casual", domain_hint=None, intent_hint=None))
+    stub_access()
+    _install_fake_provider(monkeypatch, casual)
+
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+
+    assert result.reply["text"] == "Hi! How can I help?"
+    rows = _clarifier_rows(session_factory, result.turn_id)
+    assert [tuple(r) for r in rows] == [("chatbot_clarifier", "gpt-5.4-mini", 900, 512, 40)]
+
+
+@pytest.mark.real_casual_llm
+def test_a_dry_run_low_signal_turn_logs_no_clarifier_call(
+    session_factory, seeded, stub_parser, stub_access, monkeypatch, low_signal_enabled
+):
+    casual = _casual()
+    stub_parser(_parser_output(message_type="casual", domain_hint=None, intent_hint=None))
+    stub_access()
+    _install_fake_provider(monkeypatch, casual)
+
+    result = engine_mod.run_turn(_envelope(test_run_id="ZZT-ctc-dry"), session_factory=session_factory)
+
+    assert result.actions and all(a["dry_run"] is True for a in result.actions)
+    assert _clarifier_rows(session_factory, result.turn_id) == []
+
+
+@pytest.mark.real_casual_llm
+def test_a_failing_usage_write_never_fails_the_turn(
+    session_factory, seeded, stub_parser, stub_access, monkeypatch, low_signal_enabled
+):
+    casual = _casual()
+    stub_parser(_parser_output(message_type="casual", domain_hint=None, intent_hint=None))
+    stub_access()
+    _install_fake_provider(monkeypatch, casual)
+
+    def boom(*a, **k):
+        raise RuntimeError("usage table unavailable")
+
+    monkeypatch.setattr(engine_mod, "record_turn_llm_usage", boom)
+
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+
+    assert result.reply["text"] == "Hi! How can I help?"
+    assert _turn_row(session_factory, result.turn_id).status == "done"

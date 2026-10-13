@@ -1,0 +1,90 @@
+# Parser eval cases for DISCONTINUED-ASK (PR #1535): a question about whether a product is
+# discontinued, in any phrasing or language, is a `master_products` ask whose
+# `requested_attributes` is exactly ["discontinued"], about the named (or quoted) product.
+#
+# Owner screenshot, 8 Oct 2026 (WhatsApp): "9613-bl is discon or?" was answered with the
+# plain product card, and "mean discontinued model?" quoting the bot's own stock line
+# "SRTWT9613-BL x 5: ❌ No stock and no incoming. ..." got the same card again. The reply
+# layer keys its yes/no line on `requested_attributes` (card
+# `documentation/plans/chatbot/CARD-discontinued-ask-08oct.md`), so these cases grade that
+# the parser FILLS it.
+#
+# `live_only: true` on every case: these grade the REAL parser LLM and run by hand, never
+# in CI:
+#
+#   CHATBOT_LIVE_LLM=1 OPENAI_API_KEY=... venv/bin/python -m pytest \
+#       tests/chatbot/test_discontinued_ask_live_parser.py -q -s
+#
+# The quoted case's `reply to:` line and Current subject are built by the pytest file (the
+# engine's own `build_latest_user_message` shape); the console runner has no quoted envelope.
+#
+# Codes: SRTWT9613-BL (the screenshot), SRTBF11821 and BMC6067 (discontinued, measured on
+# the PRODUCT-ALTERNATIVES card #1533).
+
+contact: '900000008'
+cases:
+- name: 'screenshot turn 1 - 9613-bl is discon or?'
+  live_only: true
+  cold: true
+  text: 9613-bl is discon or?
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [discontinued]
+
+- name: 'screenshot turn 2 - mean discontinued model? quoting the stock line'
+  live_only: true
+  cold: true
+  quoted: 'SRTWT9613-BL x 5: ❌ No stock and no incoming. Please refer to your salesman.'
+  subject: SRTWT9613-BL
+  text: mean discontinued model?
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [discontinued]
+
+- name: 'English - is SRTBF11821 discontinued'
+  live_only: true
+  cold: true
+  text: is SRTBF11821 discontinued?
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [discontinued]
+
+- name: 'Malay - dah discontinue ke BMC6067'
+  live_only: true
+  cold: true
+  text: BMC6067 dah discontinue ke?
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [discontinued]
+
+- name: 'Chinese - SRTBF11821 停产了吗'
+  live_only: true
+  cold: true
+  text: SRTBF11821 停产了吗
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [discontinued]
+
+# ---- controls: no discontinued question, the attribute must stay out ------------------
+- name: 'control - a plain stock ask'
+  live_only: true
+  cold: true
+  text: SRTWT9613-BL x 5
+  expect:
+    parser:
+      domain_hint: inventory
+      requested_attributes: []
+
+- name: 'control - a price ask'
+  live_only: true
+  cold: true
+  text: price for SRTWT9613-BL
+  expect:
+    parser:
+      domain_hint: master_products
+      requested_attributes: [price]
