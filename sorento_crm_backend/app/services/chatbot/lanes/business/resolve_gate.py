@@ -596,7 +596,9 @@ def _size_reaches_the_tool(parse_output: dict[str, Any]) -> bool:
     """Will this ask's `size` reach a tool as `spec_constraints` (`fetch.spec_constraints_for`)?
     Only then may the resolver's `require` leg go (reviewer B1, step-1 round): a size ask in a
     domain that never sends the constraints ("600mm basin cert?") keeps its cert condition, and
-    so does an ask that names a typed code or no subject word. Read off the parse alone."""
+    so does an ask that names no subject word. A typed code keeps its resolver call whole (the
+    code's ids are the set the route narrows, `spec_keeps_ids`), so this is False for it too.
+    Read off the parse alone."""
     from app.services.chatbot.lanes.business.fetch import SPEC_CONSTRAINT_DOMAINS, _SUBJECT_HINTS
 
     if jsc.js_string(parse_output.get("domain_hint") or "") not in SPEC_CONSTRAINT_DOMAINS:
