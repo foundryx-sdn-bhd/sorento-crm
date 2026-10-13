@@ -741,3 +741,56 @@ def test_ac07_fallback_prompt_names_the_four_fields_and_none_of_the_dropped():
     assert "use cases" in lowered or "use_cases" in lowered
     assert "never suggest" in lowered or "never invent" in lowered or "do not suggest" in lowered
     assert "suggest" in lowered
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 2 (reviewer B1): the routing rule lives IN THE       #
+# SCHEMA, so an owner-edited production prompt that still describes the old   #
+# fields cannot push a solution into `problem`.                               #
+# --------------------------------------------------------------------------- #
+import re  # noqa: E402
+
+
+def _schema_texts() -> dict[str, str]:
+    props = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]
+    return {
+        "fields.description": props["description"].lower(),
+        "key.description": props["items"]["properties"]["key"].get("description", "").lower(),
+    }
+
+
+@pytest.fixture(params=["fields.description", "key.description"])
+def schema_text(request) -> str:
+    return _schema_texts()[request.param]
+
+
+def test_b1_problem_never_holds_a_solution_or_wish(schema_text):
+    assert re.search(
+        r"problem[^.;]{0,100}?\b(never|not|no)\b[^.;]{0,60}?(solution|wish|want)", schema_text
+    ) or re.search(
+        r"\b(never|not|no)\b[^.;]{0,60}?(solution|wish|want)[^.;]{0,60}?problem", schema_text
+    ), schema_text
+
+
+def test_b1_stated_solution_goes_to_desired_outcome_in_their_words(schema_text):
+    assert re.search(r"solution.{0,160}desired_outcome|desired_outcome.{0,160}solution", schema_text), schema_text
+    assert any(w in schema_text for w in ("their words", "own words", "their own", "verbatim")), schema_text
+
+
+def test_b1_a_named_cost_stays_in_problem(schema_text):
+    assert re.search(r"cost[^.;]{0,80}problem|problem[^.;]{0,80}cost", schema_text), schema_text
+
+
+def test_b1_dropped_fields_do_not_exist(schema_text):
+    # a stated benefit belongs in problem; a stated team name is not a field
+    assert "benefit" in schema_text, schema_text
+    assert re.search(
+        r"(team|department)[^.;]{0,80}\b(not|no|never)\b|\b(not|no|never)\b[^.;]{0,80}(team|department)",
+        schema_text,
+    ), schema_text
+
+
+def test_b1_fallback_prompt_has_no_leftover_department_example():
+    from app.services import ai_prompt_registry
+
+    assert "manufactur" not in ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback().lower()

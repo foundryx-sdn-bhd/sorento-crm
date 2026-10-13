@@ -684,6 +684,33 @@ def test_f_new_recreates_the_held_new_fields(env):
     assert facts["missing"] == ["Photos or files"]
 
 
+def test_f_new_recaps_and_cleans_use_cases_restored_from_the_pointer(env):
+    """A pointer is session data: use_cases read back from it are cleaned, deduped and capped at 5."""
+    env.ready()
+    held_msg = "customers keep asking where their delivery is"
+    similar = [{"idea_id": _uid(), "idea_number": "IDEA-0151", "title": "Held similar"}]
+    raw = [
+        "  a dealer checks whether his PO shipped?",
+        "",
+        "a project customer checks the site delivery date",
+        "A dealer checks whether his PO shipped",
+        "finance checks the invoice date",
+        "sales checks stock before quoting",
+        "logistics checks the truck slot",
+        "support checks a return status",
+        "a seventh case that must be cut",
+    ]
+    env.created()
+    env.turn("NEW", session_vars_in=env.pointer(similar, message=held_msg, use_cases=raw))
+    assert env.create_calls[0]["use_cases"] == [
+        "A dealer checks whether his PO shipped",
+        "A project customer checks the site delivery date",
+        "Finance checks the invoice date",
+        "Sales checks stock before quoting",
+        "Logistics checks the truck slot",
+    ]
+
+
 def test_f_new_with_a_pointer_without_use_cases_sends_none(env):
     env.ready()
     held_msg = "customers keep asking where their delivery is"
