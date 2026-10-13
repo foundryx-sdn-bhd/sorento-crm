@@ -39,7 +39,8 @@ def test_three_lines_sum_and_a_decimal_quantity_keeps_its_fraction() -> None:
 
 def test_a_different_po_document_stays_a_separate_line() -> None:
     block = _block([_po_row("36", None), _po_row("36", None, po_number="PO-2002")])
-    assert block.count(_row_block(qty="36")) == 2
+    assert _row_block(qty="36") in block
+    assert _row_block(qty="36", number="PO-2002") in block
     assert "72" not in block
 
 
@@ -59,13 +60,14 @@ def test_a_different_po_date_stays_a_separate_line() -> None:
 
 def test_a_po_line_and_an_spo_allocation_with_one_number_stay_apart() -> None:
     block = _block([_po_row("36", None), _po_row("36", None, kind="spo")])
-    assert block.count(_row_block(qty="36")) == 2
+    assert _row_block(qty="36") in block
+    assert _row_block(qty="36", label="SPO") in block
 
 
 def test_lines_with_no_po_number_are_never_merged() -> None:
     # No document number means "same document" cannot be established.
     block = _block([_po_row("36", None, po_number=None), _po_row("36", None, po_number=None)])
-    assert block.count(_row_block(qty="36")) == 2
+    assert block.count(_row_block(qty="36", number=None)) == 2
 
 
 def test_a_non_numeric_quantity_is_never_summed() -> None:
@@ -85,7 +87,8 @@ def test_the_merged_line_keeps_the_first_line_position() -> None:
     merged = _row_block(qty="72")
     other = _row_block(qty="5", location="BRW-BB")
     assert block.index(merged) < block.index(other)
-    assert block.count("*Product Code:* SRTWC8517") == 2
+    # Card v4: the code heads the block once.
+    assert block.count("*Product Code:* SRTWC8517") == 1
 
 
 def _item(ordered, outstanding, *, company=None, po_number="PO-1001") -> dict:
