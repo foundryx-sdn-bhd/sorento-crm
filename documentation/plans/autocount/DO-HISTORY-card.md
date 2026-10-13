@@ -1,39 +1,40 @@
-# DO-HISTORY owner card (13 Oct 2026)
+# DO-HISTORY owner card (13 Oct 2026, v2 after your direction)
 
-Plan: `PLAN-do-history-backfill-13oct.md`. Source: `main` 64dfd86c. Counts on the prod clone are
-NOT in yet: section 6 of the plan has the read-only queries for the crew to run.
+Plan: `PLAN-do-history-backfill-13oct.md`. Counts: prod clone `sorento_prod_20261012` (crew, read-only).
 
-## What changes for you
+## Your direction, applied
+
+1. **The backfill runs from the shared service's existing DocDate DO job.** The CRM script is dropped.
+2. **The start is 2023-09-01**, set in the shared service. MCH's first SO in the CRM is also
+   2023-09-01, so both books start inside the CRM's SO history.
+3. **Exact SO-line links only.** The current "same product on that SO" fallback is removed. Today all
+   29,040 linked DO lines are fallback links: 0 of 45,157 lines carry AutoCount's SO line key.
+
+## Who does what
+
+| Where | What |
+| --- | --- |
+| Crew (now) | Find out whether the AutoCount API sends the SO line key on DO lines. **Waiting on this.** |
+| Shared service | Start floor 2023-01-01 -> 2023-09-01 (`doc_feed/constants.py:48`). DO feed rows for Sorento and Mocha. Run the existing DocDate backfill 2023-09-01 -> today, dry run on the prod clone first. |
+| CRM (this PR) | Link DO lines by key only. Mark pre-cutover DOs delivered as they land. Keep a backfill run out of the audit log and the embedding queue. |
+
+## If the key does NOT exist
+
+No exact line link is possible from the API. DOs can land linked to their SO header only, with no
+line links and no guessing. Getting the key from somewhere else is a separate decision.
+
+## What you will see
 
 | Before | After |
 | --- | --- |
-| AutoCount DOs in the CRM only from July 2026 | Every AutoCount DO from 1 Jan 2023, Sorento then Mocha |
-| A pre-July DO would land as `New Order`, so 3.5 years of DOs would sit in "outstanding" (DO list, outstanding report DO side, chatbot) | Pre-July DOs with no tracking read **Delivered**, delivery date = DO date, marked "assumed" so it can be undone |
-| DO lines show `from_dtl_key` 0 | Still 0 (that is what AutoCount sends). The real link is the SO line, matched by SO number + product; the dry run shows the link rate |
+| AutoCount DOs only from Aug 2026 | AutoCount DOs from 1 Sep 2023 |
+| A backfilled DO would read "New Order" (outstanding) | DOs before the cutover with no tracking read Delivered, dated on the DO date, marked "assumed" (one SQL statement undoes it) |
+| DO lines linked by "same product on that SO" | Linked only by AutoCount's key; otherwise unlinked |
 
-## What does NOT change
+Not changed: SO demand, OI, the planning board, and emails (the DO import writes none of them).
 
-- No old SO becomes open demand: the DO import never writes SO quantities or status. SO delivered
-  comes from AutoCount's TransferedQty, as today.
-- No OI rows, planning changes, emails or WhatsApp during the run.
-- Pre-July DOs that DO have tracking from the Excel upload keep it.
+## One question
 
-## Watch-outs
-
-- If the CRM has no SOs from 2023, those DO lines land unlinked (query Q-E tells us).
-- Sales achievement (delivered basis) moves linked quantities from the SO date to the DO date:
-  month figures can shift, totals do not.
-- #1623 cancel matching: Q4 keeps it from raising CS planning changes on 2023 orders.
-
-## Run
-
-Prod clone dry run -> counts to you -> your OK -> off-hours apply, Sorento first -> counts again.
-Every step has a revert.
-
-## Your 5 answers (recommended first)
-
-1. Cutover: DocDate before **1 Jul 2026**?
-2. Assumed delivery date = **DO date** (vs leave blank)?
-3. Old SOs still open: **close them in AutoCount** from our report (vs force-close in CRM, which the next SO sync undoes)?
-4. #1623: **no** planning changes / OI flags for pre-July SOs?
-5. Path: **CRM monthly pull script** (vs shared-service push backfill)?
+Cutover for "assume delivered":
+- **(a) before 1 Jul 2026** (recommended: your "prior to July")
+- (b) before 1 Aug 2026 (where the AutoCount feed starts)

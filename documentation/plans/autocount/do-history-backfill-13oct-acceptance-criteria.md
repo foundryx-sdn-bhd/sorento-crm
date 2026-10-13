@@ -1,50 +1,39 @@
-# UAC: DO history backfill (DO-HISTORY)
+# UAC: DO history backfill (DO-HISTORY), v2
 
-Plan: `PLAN-do-history-backfill-13oct.md`. Status: draft; Q2/Q4/Q5 answered (a) by crew 13 Oct, Q1/Q3 with the owner. Assumes the
-recommended answers to Q1-Q5; an answer the other way rewrites the matching criteria.
+Plan: `PLAN-do-history-backfill-13oct.md` (v2, owner direction 13 Oct). Status: draft, waiting on
+crew finding K (does the API send the SO line key) and the one ask (cutover). The backfill
+itself runs in the shared service. These are the CRM-side criteria.
 
-## Landing (step 1)
+## Slice 1 (built)
 
-- **AC-DH01** The backfill dry run for a (book, month) writes nothing (row counts of `orders`,
-  `order_lines` unchanged) and prints created / updated / unchanged / adopted / failed / retryable
-  documents and linked-by-key / linked-by-product / unresolved lines.
-- **AC-DH02** Applying the same month twice leaves the second run all `unchanged` (no duplicate DO,
-  same ids).
-- **AC-DH03** A run stopped after month N resumes at month N+1 without re-applying months 1..N.
-- **AC-DH04** A month over 10,000 documents is split and both halves land.
-- **AC-DH05** A pre-cutover DO whose DocNo matches an Order Tracking row is adopted: same id,
-  tracking columns unchanged.
-- **AC-DH06** After the relink pass, a backfilled DO line whose SO (FromDocNo) has exactly one line
-  of its product is linked, whatever the month order of landing.
-- **AC-DH06b** A DO line whose product appears on several lines of the named SO stays unlinked
-  (no guess) and is counted as `ambiguous`; a line whose SO is not in the CRM is counted as
-  `so_missing` and the document still lands (not `failed`).
-- **AC-DH06c** A snapshot build refused by the shared service (for example a book with no DO feed
-  row) is reported as an error naming the book and month; that book's run stops, nothing is
-  written for that month, and a later run resumes at it.
-- **AC-DH07** The backfill writes no SO line `qty_delivered`, `line_status` or SO `status`, raises
-  no OI row, planning change, plan exception, email or WhatsApp.
+- **AC-DH15** An Overall Tracking row for an assumed DO clears `tracking_assumed_at`. Other DOs keep theirs.
+- **AC-DH16** `tracking_assumed_at` is a system column. The DO ingest's header write guard refuses it.
 
-## Assume delivered (step 2)
+## C1 exact links (if K = yes)
 
-- **AC-DH10** A pre-cutover AutoCount DO with no tracking becomes `delivered`, `actual_delivery_date`
-  = its DocDate, `tracking_assumed_at` set; it leaves the DO outstanding bucket and the DO side of
-  the outstanding report.
-- **AC-DH11** A pre-cutover DO with any tracking (a date, or a status other than `new`), a cancelled
-  DO, a deleted DO, an Excel-only DO (`doc_key` NULL) and any DO dated on or after the cutover are
-  untouched.
-- **AC-DH12** Step 2's dry run prints the count it would mark and writes nothing.
-- **AC-DH13** Step 2 writes no row audit, no embedding event and no delivery notification; it
-  writes one summary audit event per run.
-- **AC-DH14** Revert of a run restores `new`, NULL date and NULL marker on exactly the rows it marked
-  that have no later tracking.
-- **AC-DH15** An Order Tracking upload that sets real delivery fields on an assumed row clears
-  `tracking_assumed_at`.
-- **AC-DH16** `tracking_assumed_at` is in `SYSTEM_ORDER_COLUMNS`; the ingest never writes it.
+- **AC-DH20** A DO line with a `FromDocDtlKey` links to the SO line whose `source_ref` ends in that
+  key, inside SO `FromDocNo`.
+- **AC-DH21** A DO line with no key stays unlinked, even when its SO has exactly one line of that
+  product. The waiting fill does not link it either.
+- **AC-DH22** A re-push of a DO whose lines held fallback links: a keyed line takes the exact link,
+  and a keyless line is cleared.
+- **AC-DH23** A key whose SO line is not in the CRM yet links when that SO arrives (waiting fill,
+  exact key only).
 
-## Readers
+## C2 assumed delivery
 
-- **AC-DH20** SO-side outstanding, Stock Debt, Coverage and committed totals are identical before
-  and after both steps on the same data.
-- **AC-DH21** (Q4 a, after #1623 merges) A DO-triggered cancel relink on an SO ordered before the
-  cutover raises no planning change and flags no OI row; `qty_cancelled` still updates.
+- **AC-DH30** With `do_assume_delivered_before` unset, nothing changes (status `new`, no date, no marker).
+- **AC-DH31** With it set, a newly created DO with a DocDate before it is `delivered`, with
+  `actual_delivery_date` = DocDate 00:00 and the marker set. A DO on or after the date is `new`.
+- **AC-DH32** An adopted Excel row with no tracking and a DocDate before the date gets the same
+  three writes. An adopted row with any tracking keeps it.
+- **AC-DH33** An update of an existing DO never assumes.
+- **AC-DH34** A dry run writes nothing.
+
+## C3 quiet backfill
+
+- **AC-DH40** A push with `"backfill": true` enqueues no embedding event and writes no per-DO audit
+  row. It writes one summary audit event per batch.
+- **AC-DH41** A push without the flag behaves exactly as today.
+- **AC-DH42** The DO push writes no SO line or SO header field, and raises no OI row, planning
+  change, email or WhatsApp, with or without the flag.

@@ -1,380 +1,235 @@
-# PLAN: DO history backfill 2023-01 to July 2026, with "assumed delivered" tracking (DO-HISTORY)
+# PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan revised 13 Oct with crew answers Q2/Q4/Q5 (a) and prod-clone counts; Q1 (cutover) and Q3 (SO side) with the owner; slices 1-2 (marker column, landing script) unblocked, slice 3 waits on Q1, the Q3 report waits on Q3**. Track: full (one migration column, a backfill
-script that writes prod data; no RBAC change, no new external ingest surface). PR #1633, branch
-`claude/do-history-backfill-7e7enk` (the sandbox's designated branch; the brief named
-`crew/do-history`). UAC: `do-history-backfill-13oct-acceptance-criteria.md`. Owner card:
-`DO-HISTORY-card.md`.
+Status: **plan v2 after OWNER DIRECTION 13 Oct. Waiting for crew's finding on whether AutoCount
+API DO lines carry the SO line key (`FromDocDtlKey`) before any more code.** Track: full
+(migration column, ingest behaviour change). Slice 1 (the `tracking_assumed_at` column) is built
+and pushed at `cb05abdf`; nothing else is built. PR #1633, branch
+`claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
+Owner card: `DO-HISTORY-card.md`.
 
-Paths: `be/` = `sorento_crm_backend/`. Cited on `main` `64dfd86c`.
+Paths: `be/` = `sorento_crm_backend/`. CRM citations are on `main` `64dfd86c`. Shared service (SS)
+citations come from crew's read of SS `main` `812dac2b`.
 
-## 0. The ask
+## 0. The ask and the owner's direction
 
 Owner, 13 Oct: "for DO we are reading from hapi from AutoCount; we should have DO data in Sorento
 CRM that links to SO. I think now we only import DO since July; after this I need to import all
 from AutoCount since 2023, but that will require all of them to be like fully delivered, because
 I don't have the order tracking for them prior to July, so we need a plan to migrate all these."
 
+OWNER DIRECTION, 13 Oct (overrides crew's Q1 and Q5 answers):
+
+1. The backfill runs from the shared service's **existing** AutoCount integration job (doc feed,
+   DocDate push), **not** from a CRM script. The CRM-script design from plan v1 is dropped.
+2. The backfill starts on **2023-09-01**, configured in the SS. Today `doc_feed/constants.py:48`
+   says 2023-01-01.
+3. **No flagging, no guessing**: every DO line links to its **exact** SO line. No fallback link is
+   planned.
+
+Crew answers that still stand:
+- Q2 (a): an assumed row gets `actual_delivery_date` = DocDate plus the `tracking_assumed_at` marker.
+- Q4 (a): a #1623 cancel relink on a pre-cutover SO raises no planning change and no OI flag.
+
+Q3 (the SO side) is with the owner.
+
 ## 1. Facts
 
-### 1.1 Measured counts (crew, prod clone `sorento_prod_20261012`, read-only, 13 Oct)
+### 1.1 Prod-clone counts (crew, `sorento_prod_20261012`, read-only, 13 Oct)
 
-This sandbox has no DB access; the crew ran the section 6 queries and relayed the results.
+- **DOs by month.**
+  - AutoCount DOs start in Aug 2026: SRT 1,569 / 6,094 / 2,731 (Aug / Sep / Oct), MCH 227 / 1,796 / 1,022.
+  - Before that there are only Order Tracking Excel rows: SRT Apr-Jul 2026 2,209 / 5,127 / 5,847 /
+    6,947, MCH Jul 1,848, plus scattered late-2025 Excel rows.
+- **Line links today.**
+  - 45,157 AutoCount DO lines: 29,040 linked, 16,117 unlinked.
+  - The unlinked split as 13,259 ambiguous, 1,642 product not on the SO, 1,213 with no `FromDocNo`,
+    1 SO missing and 2 single-match lines left unlinked.
+  - **0 of 45,157 carry a `FromDocDtlKey`.** Every one of the 29,040 links came from the
+    `FromDocNo` + product fallback, not from a key.
+- **Pre-July tracking.** 0 AutoCount DOs. Excel: 10,890 delivered with a date, 2,378 `new` without one.
+- **Pre-July open SO lines.** 9,615 lines, about 991,615 qty, mostly project, the bulk dated 2025-08 to 2026-06.
+- **Earliest SO.** SRT 2020-01-03, MCH **2023-09-01**. A 2023-09-01 start therefore falls inside
+  the CRM's SO history for both books.
 
-- **Q-A, DOs by month.** AutoCount DOs start **Aug 2026**: SRT 1,569 / 6,094 / 2,731 (Aug / Sep /
-  Oct), MCH 227 / 1,796 / 1,022. Before that, Excel (Order Tracking) only: SRT Apr-Jul 2026
-  2,209 / 5,127 / 5,847 / 6,947, MCH Jul 1,848; scattered late-2025 Excel rows, 11 with a NULL
-  `order_date`, 1 SRT row dated 1907-02.
-- **Q-B, AutoCount DO line links.** 45,157 lines: 29,040 linked, 16,117 unlinked = 0 stored-zero
-  key, 1,213 no `FromDocNo`, 1 SO missing, **13,259 ambiguous** (same product on several lines of
-  the SO), 1,642 product not on the referenced SO, 2 single-match yet unlinked. **0 of 45,157 lines
-  carry a `FromDocDtlKey`.**
-- **Q-C, pre-July DOs by tracking.** 0 AutoCount; Excel 10,890 `delivered` with a date, 2,378
-  `new` without a date.
-- **Q-D, pre-July SO lines still open demand.** 9,615 lines, about 991,615 qty (project 8,723 /
-  about 971k, retail 698 / about 12.7k, no class 194 / about 7.5k); bulk 2025-08 to 2026-06; 20
-  lines before 2023.
-- **Q-E, earliest SO.** SRT 2020-01-03 (156,461 SOs), MCH 2023-09-01 (48,990). Inside 2023-01 to
-  2026-06: SRT 138,840, MCH 44,043. So **MCH DOs before Sep 2023 cannot find their SO**: they land
-  unlinked, are reported, and do not fail.
+### 1.2 How a DO lands today (CRM)
 
-### 1.2 How a DO lands today
+- **Route.** The SS pushes to `POST /api/v1/external/ingest/delivery_orders` (contract 2.7), at
+  most 1,000 records per call, `?dry_run=true` supported. The route runs
+  `AutocountDocIngestService.ingest` (`be/app/services/autocount_doc_ingest_service.py`).
+- **Idempotency.** Rows are keyed on `(company_id, source_book, doc_key)`
+  (`be/app/models/order.py:500-505`, `_find` `:721-745`). A record with an older `LastModified` is
+  `unchanged` (`_is_stale`, `:747-754`). Re-pushing a day the feed already sent is harmless.
+- **Adoption.** An Order Tracking row with the same DocNo and no `doc_key` is adopted: it keeps
+  its id and its tracking (`:740-745`, `:1122-1135`).
+- **Status of a new DO.** It gets status `new` and no delivery date (`:831-840`, `:1111`), so it
+  reads as **outstanding**. Delivered needs status `delivered`/`completed` AND an
+  `actual_delivery_date` (`be/app/services/order_service.py:62-94`).
+- **What does not run.** The push route has no post-write hook (`be/app/api/v1/external/ingest.py:933-947`),
+  so no OI, planning, email or WhatsApp code runs on a DO write. The DO ingest writes no SO
+  state (`:1050-1145`).
+- **What does run.** The route runs in the API process, so every push writes:
+  - one audit row per DO header (`orders` is `__audit_track__`, `order.py:402`);
+  - embedding events for every DO and every line (`embedding_change_listener.py:163-203`,
+    registered at `main.py:347-348`).
 
-- Two doors, one ingest. The shared service pushes `POST /api/v1/external/ingest/delivery_orders`
-  (contract 2.7, `PLAN-autocount-cross-repo-contract.md` section 13). The CRM "Pull from AutoCount"
-  button builds a FoundryX snapshot and applies it (`be/app/services/autocount_pull_service.py`,
-  `be/app/tasks/autocount_pull_tasks.py:868-889`). Both call
-  `AutocountDocIngestService.ingest("delivery_orders", ...)`.
-- Idempotent per `(company_id, source_book, doc_key)` (partial unique index, `be/app/models/order.py:500-505`;
-  `_find`, `be/app/services/autocount_doc_ingest_service.py:721-745`). Lines match by `dtl_key`.
-  An older `LastModified` is `unchanged` + `stale_ignored` (`_is_stale`, `:747-754`).
-- A row with the same DocNo and `doc_key` NULL (an Order Tracking Excel row) is **adopted**: it keeps
-  its id and every tracking column; old lines are matched by (product, warehouse, qty) and the
-  unmatched ones are deleted (`:740-745`, `:1122-1135`, `:1310-1342`).
-- A new DO gets `order_status_id` = the `new` status (`:831-840`, `:1111`). The ingest never writes
-  `actual_delivery_date` or any tracking column (`order_field_ownership.py:43-54`, assert at `:1072`).
-- The CRM has **no date floor**: the contract says the shared service backfills by DocDate from
-  1 Jan 2023 (contract :549-553, :751-756; ruling Q6 in `PLAN-autocount-grn-do-ingest-29sep.md:46`).
-  So "only since July" is where the shared service's DO job started, not a CRM limit.
-- Books: `db1` = Sorento (ruling V9); Mocha is AutoCount `db2`, company code `MOCHA`
-  (`PLAN-retail-sales-reports-26sep.md:567,1224`, contract :25).
+### 1.3 Line links today, measured against the owner's rule
 
-### 1.3 How a DO line links to an SO line, and why the crew saw "0"
+- **Exact path (built).** A `FromDocDtlKey` > 0 matches the `sales_order_lines` row whose
+  `source_ref` ends in `:{FromDocDtlKey}` (the SO feed writes `{database}:{DocKey}:{DtlKey}`),
+  inside the SO numbered `FromDocNo` (`_so_line`, `autocount_doc_ingest_service.py:847-857`;
+  contract :696).
+- **Fallback path (built by #1409).** With no key, the DO line takes the one line of the same
+  product in SO `FromDocNo` (`_do_so_line`, `:859-878`). The waiting fill retries it (`:1391-1416`).
+- **What AutoCount sends.** `FromDocDtlKey = 0` on every line (1.1: 0 of 45,157), and `_link_key`
+  stores that as NULL (`:190-193`). So **every link in the CRM today is a fallback link**, and
+  owner rule 3 does not accept any of them.
 
-- `order_lines.from_dtl_key` is AutoCount's `FromDocDtlKey` **as sent**; the resolved link is
-  `order_lines.sales_order_line_id` (`be/app/models/order.py:540-569`).
-- AutoCount sends `FromDocDtlKey = 0` on every DO line (3,841 of 3,841 in the 01-03 Sep snapshot,
-  3,718 with `FromDocType "SO"`; `PLAN-do-so-line-link-1oct.md:10-11`). Since #1409, `_link_key`
-  stores 0 as NULL (`autocount_doc_ingest_service.py:190-193`, applied at `:507`).
-- So "from_dtl_key = 0" is expected and is not the link. The link is made by the fallback
-  `_do_so_line` (`:859-878`): exact DtlKey if one is ever sent, else **the one line of this product in
-  the SO numbered `FromDocNo`**. Several lines of that product in that SO resolve to none, with
-  `so_line_unresolved` (no position tie-break: SO `line_no` was NULL then, #1400).
-- A line whose SO is not in the CRM yet is retried by the waiting-link fill at the end of each batch,
-  bounded to the newest 500 lines (`MAX_WAITING_LINKS`, `:95`, `:1391-1416`).
-- Why a line is unlinked, measured on the prod clone (1.1 Q-B, 16,117 of 45,157): **ambiguous
-  13,259** (82%), product not on the referenced SO 1,642, no `FromDocNo` 1,213, SO missing 1,
-  single-match yet unlinked 2 (a link the bounded waiting fill has not reached; the relink pass in
-  3.3 picks these up), stored zero key 0 (#1409 healed them). So the dev "from_dtl_key = 0" was
-  AutoCount's sent value, not the link.
-- **Ambiguous lines stay unlinked: no guessing.** The REST DO lines carry no line key (0 of
-  45,157), so the backfill will grow this bucket in the same proportion; the dry run counts it per
-  month (3.4). A position tie-break (DO line Seq against SO `line_no`) is not built here. Trigger:
-  the owner wants per-SO-line delivered history for multi-line products, and a dry-run sample shows
-  DO Seq order follows SO `line_no` order.
-- Measured before: a prod dry run had `sales_order_unresolved` on 435 of 948 DOs and
-  `so_line_unresolved` on 946 lines (`PLAN-autocount-do-pull-crm-30sep.md:87-88`). No link-rate count
-  after the fallback exists in the docs.
-- Older Cancel SO lines carry real DtlKeys (#1623: 46,828 before 2026, 0 in 2026), but the REST DO
-  source sends none on any line measured (0 of 45,157). The dry run still splits linked-by-key from
-  linked-by-product (3.4), so an old DO that does carry a key is visible, but the plan assumes none.
+### 1.4 What the SS does (crew read of SS main 812dac2b)
 
-### 1.4 What "delivered" means for a DO today
+- The DO doc feed reads AutoCount by DocDate (`doc_feed/snapshot.py:143-165` ->
+  `vendor.day_by_doc_date`, `/deliveryorderbydocdate`, `vendor.py:58-60`).
+- The start floor is `doc_feed/constants.py:48` (2023-01-01). The pull gateway enforces it as an
+  error (`pull_gateway_service.py:189-190`).
+- Each book needs its own DO feed config row (`pull_gateway_service.py:65-68`). Mocha's row is
+  not confirmed.
 
-- A DO is delivered only when `order_status` is `delivered` / `completed` **and**
-  `actual_delivery_date` is set (`be/app/services/order_service.py:62-94`,
-  `complaint_fulfilment_service.py:43-47`). Everything else is outstanding (`_outstanding_clause`).
-- Both are Order Tracking columns: only the Excel tracking upload writes them, along with
-  `delivery_days` / `kpi_warning` (`order_service.py:3190,3224`) and the per-DO delivery
-  notifications (`:3356-3368`).
-- So a backfilled DO with no tracking lands as `new`, no date: **outstanding**. That is the owner's
-  "require all of them to be fully delivered".
+## 2. Who does what
 
-### 1.5 Who would see 3.5 years of "outstanding" DOs
+| # | Repo / lane | Work | Depends on |
+| --- | --- | --- | --- |
+| K | crew (in progress) | Finding: does the AutoCount API send a real `FromDocDtlKey` on DO lines (any endpoint, any date range)? | none |
+| S1 | SS (its own lane) | Change the DO start floor in `doc_feed/constants.py:48` from 2023-01-01 to **2023-09-01**. | none |
+| S2 | SS | Make sure db1 (Sorento) and db2 (Mocha) each have a DO feed config row. A missing row fails loudly for that book. | none |
+| S3 | SS | Run the existing DocDate backfill for DO from 2023-09-01 to today (rules below the table). | S1, S2, K, C1-C3 deployed |
+| C1 | CRM (this lane) | Exact links only (section 3). | K = yes |
+| C2 | CRM | Assumed delivery when a pre-cutover DO is created or adopted (section 4). | the ask |
+| C3 | CRM | Quiet backfill: no per-DO embedding events or audit rows on backfill pushes (section 5). | contract 2.9 agreed with the SS lane |
 
-| Reader | Effect if backfilled DOs stay `new` | Cite |
-| --- | --- | --- |
-| Outstanding report, DO side | every pre-July DO line counted as pending qty | `be/app/services/outstanding_report_service.py:444-504` |
-| DO list "outstanding" bucket, chatbot order tools | listed as outstanding | `order_service.py:108-122`; `chatbot/lanes/business/fetch.py:1099-1106` |
-| Delivered DO list / chatbot "delivered between" | absent (filters `actual_delivery_date`) | `fetch.py:443-447` |
-| Complaint fulfilment | not affected: links come from Remarks CS, which AutoCount never sends | `complaint_fulfilment_service.py` |
+S3 run rules:
+- One day per call, at most 1,000 records per batch, oldest first.
+- Uses the SS's own cursor, so a stopped run resumes.
+- Throttled: one call in flight per book, with a pause between days.
+- Sorento first, then Mocha.
+- First pass is on the prod clone with `?dry_run=true`, with counts aggregated by month.
 
-### 1.6 SO side: what the DO ingest does and does not touch
+The CRM never calls AutoCount. It only ingests what the SS pushes.
 
-- The DO ingest writes **no** SO state: no `qty_delivered`, `line_status` or `status`. It only sets
-  `orders.sales_order_id` and `order_lines.sales_order_line_id` (`autocount_doc_ingest_service.py:1050-1145`).
-  SO delivered qty is AutoCount's `TransferedQty` from the SO feed (ruling Q11;
-  `document_ingest_service.py:242-251`), and `line_status` is re-derived on every SO push:
-  `closed` when delivered >= ordered (`:1828-1852`).
-- The DO push route runs no post-write hook (`be/app/api/v1/external/ingest.py:933-947`; the pull apply
-  says the same, `autocount_pull_tasks.py:871`). No OI, planning-change, plan-exception, email or
-  WhatsApp code runs on a DO write.
-- Open demand everywhere reads the SO line, never the DO: `is_open_demand` = `line_status='open'`,
-  not `covered`, `COALESCE(qty_required, qty_ordered) - qty_delivered > 0` (`be/app/services/scm/demand.py:171-182`),
-  used by committed_v, Stock Debt, Coverage, reorder, outstanding SO side.
-- **Conclusion: a DO backfill alone cannot make an old SO open demand, raise an OI row, a planning
-  change or an email.** Old SOs that read open today do so because AutoCount's `TransferedQty` says
-  so, and that is unchanged by this lane. The one exception is section 4.3 (#1623).
-- Pre-existing, not caused by this lane: the fulfilment board admits closed project lines through
-  `is_undecided_demand`, which has no delivery test (`demand.py:216-240`,
-  `project_fulfilment_board_service.py:1544-1547`).
+## 3. C1: exact SO-line links only (owner rule 3)
 
-### 1.7 Side effects of the ingest itself
+### 3.1 If K = yes (the API sends the key)
 
-- Audit: `orders` is audited (`__audit_track__`, `order.py:402`); `order_lines` is skipped (`:513`).
-  One audit row per backfilled DO header. Suppressible per session via
-  `session.info["skip_audit_entity_types"]` (`audit_service.py:869-876`).
-- Embeddings: the `Order` / `OrderLine` listener is registered in the **API process only**
-  (`main.py:347-348`), not in the worker (`worker.py:223-248`). A push enqueues one event per DO and
-  line; a pull apply (worker) enqueues none.
+- **Key only.** `_do_so_line` links **only** by `FromDocDtlKey`, through the existing exact path
+  (1.3). The `FromDocNo` + product fallback is removed for DO lines, in the ingest and in the
+  waiting fill.
+- **Key with no SO line yet.** The line stays unlinked, and the waiting fill retries it by exact
+  key when the SO arrives. The `so_line_unresolved` warning for ambiguity goes away, because a key
+  names exactly one line.
+- **Existing fallback links (the 29,040 in 1.1)** are replaced on the next push of each DO:
+  - a pushed key overwrites the link;
+  - a pushed line with no key is cleared, so no link the CRM holds is a guess.
+  S3 runs through today, so every live DO is re-linked by key in the same pass. The prod-clone
+  dry run counts links before and after.
+- **SS mapping.** The SS sends the key it finds. If the key comes from a different endpoint or
+  field name, S3 maps it onto `FromDocDtlKey` in the 2.7 record shape, so the CRM contract does
+  not change.
+- **Readers.** Sales achievement by DO date (`be/app/services/sales/achievement_service.py:25-31,347-356`)
+  and #1623's tie-break get exact links only. A DO line with no link counts on the SO's order
+  date, as it did before any DO was linked.
 
-## 2. Design summary
+### 3.2 If K = no
 
-Three steps, each with its own dry run and counts, run per book (Sorento `db1` first, then Mocha `db2`):
+The AutoCount API then has no exact source for the line link, and this lane cannot meet rule 3.
 
-1. **Land the DOs** 2023-01-01 to 2026-07-31 through the existing ingest, month by month. The range
-   ends where the AutoCount feed's own rows start (Aug 2026, 1.1 Q-A), independent of Q1; an overlap
-   with the feed is harmless (idempotent key + stale guard). Apr-Jul 2026 Excel rows (about 20,000
-   SRT, 1,848 MCH) are **adopted** by DocNo: their tracking stays.
-2. **Assume delivered** for pre-cutover DOs that have no tracking, marked so it is reversible.
-3. **Report the link rate** and the SO-side numbers (no SO write).
+- The backfill can still land the DOs with **header** links (`RefDocNo` / `FromDocNo` to the SO,
+  exact by number) and **no** line links.
+- The fallback is still removed, so nothing is guessed.
+- A line key would need another source, such as the AutoCount DB. The SQL login has no SELECT on
+  DO / DODTL today (per #1623).
+- That is a new owner decision, not planned here.
 
-## 3. Step 1: landing the DOs
+## 4. C2: assumed delivery, inside the ingest
 
-### 3.1 Path (Q5 answered (a))
+The ingest marks DOs as it lands them. A separate script is not needed, and the ingest is the
+only CRM code a DocDate push passes through.
 
-**A CRM script over the existing pull snapshot**, `be/scripts/do_history_backfill.py`:
+- **Setting.** A new CRM setting `do_assume_delivered_before` (a date). It ships unset, which means off.
+- **On create** of a DO with a DocDate before that date, write three columns and nothing else:
+  - status `delivered`;
+  - `actual_delivery_date` = DocDate at 00:00 (the column is a DateTime; the tracking upload stores
+    a date-only row the same way, `order_service.py:3163-3166`);
+  - `tracking_assumed_at` = now.
+  No `delivery_days`, no `kpi_warning`, no transporter.
+- **On adoption** of an Excel row with a DocDate before that date and **no tracking** (no
+  `actual_delivery_date`, status NULL or `new`): the same three writes. An adopted row that has
+  any tracking keeps it.
+- **On update** of an existing DO: never. Only the first landing assumes.
+- **Later tracking.** An Overall Tracking row for the DO replaces the assumption and clears the
+  marker (slice 1, built in the tracking upsert in `order_service.py`).
+- **Revert.** One SQL statement on the marker: status back to `new`, date and marker set to NULL,
+  only on rows where the marker is set. The card shows it; running it is the owner's call.
+- **Ownership.** All three columns sit outside the AutoCount-owned set (`tracking_assumed_at` is
+  system-owned; the other two are Order Tracking's), so this path writes them outside
+  `assert_autocount_writes`. A test pins that no other ingest path writes them.
 
-- One FoundryX snapshot per calendar month (`fromDay` / `toDay`, `foundryx_autocount_client.py:166-179`),
-  preview (= ingest dry run), then apply, through the same functions the pull button uses
-  (`preview_autocount_pull` / `apply_autocount_pull`). Runs as a worker-context script, so no embedding
-  storm (1.7) and every created / updated / adopted record lands as an `import_job_rows` outcome row,
-  which is the revert list (section 5.2).
-- A month over the 10,000-document cap (`autocount_pull_service.py:701`) splits into halves.
-- **Resumable**: a checkpoint per `(book, month)` in the import job table (`import_jobs` row, job type
-  `autocount_delivery_orders_apply` with the month in its scope). A re-run skips months whose apply
-  job finished; a re-applied month is harmless (idempotent key + stale guard, 1.2).
-- **Throttled**: one snapshot in flight at a time (SS answers 409 `BUILD_IN_FLIGHT` to a second scope
-  anyway), a configurable pause between months (default 60 s), stop on the first failed build.
-- Flags: `--book db1|db2 --from 2023-01 --to 2026-06 --dry-run|--apply --pause 60`.
-- Needs no shared-service change. Confirmed by crew on SS `main` 812dac2b: the DO snapshot is per
-  DocDate (`doc_feed/snapshot.py:143-165` -> `vendor.day_by_doc_date`, `/deliveryorderbydocdate`,
-  `vendor.py:58-60`); `fromDay >= 2023-01-01` is enforced with an error, not a clamp
-  (`pull_gateway_service.py:189-190`, `constants.py:48`); at most 31 days per snapshot
-  (`:126,183-185`), so one calendar month fits; `toDay <= today` (`:187`); at most 10,000 documents
-  per snapshot (`snapshot.py:45`).
-- It needs the book's DO feed config row on the SS side (`pull_gateway_service.py:65-68`). Whether
-  **Mocha's** row exists is unknown: a missing row (any SS build refusal) is reported as a clear
-  per-month error naming the book and month, and the run stops for that book without touching the
-  other.
+## 5. C3: a quiet backfill
 
-(b) Rejected alternative: the shared service's own backfill (contract: one DocDate day per call from 1 Jan
-2023, pushed in batches of 1,000). No CRM code, but it runs in the API process (one embedding event
-per DO and line), its dry run is `?dry_run=true` per batch with no aggregate, and the revert list has
-to be rebuilt from `source_modified_at`. Pick (b) only if the snapshot cannot serve old dates.
+**Size.** The run covers about 35 months of DOs. At the rates in 1.1 (about 6,000 SRT and 1,800
+MCH DOs a month, about 3.4 lines each) that is on the order of 270,000 DOs and 900,000 lines.
+Through the push route that means 270,000 header audit rows and more than a million embedding
+events.
 
-### 3.2 What the ingest does with an old DO (unchanged code)
+**Contract 2.9 (additive).** An optional envelope flag `"backfill": true` on
+`POST /external/ingest/delivery_orders`. With the flag, the route:
+- runs the ingest under `suppress_embedding_events("order", "order_line")`
+  (`embedding_change_listener.py:34`, as the tracking import does at `order_service.py:3328`);
+- sets `session.info["skip_audit_entity_types"]` for `order` (`audit_service.py:869-876`);
+- writes one summary audit event per batch (counts, book, day).
 
-- New DocKey: created with status `new`, lines linked per 1.3.
-- DocNo already held by an Order Tracking row (`doc_key` NULL): adopted, tracking kept (1.2).
-  Dry-run count `adopted_by_doc_no` per month.
-- DocNo held by another DocKey: `failed` `errors.DocNo`, listed, nothing written.
-- Unknown product / warehouse: `retryable`, listed. The dry run gives the item codes; the owner
-  decides whether to bring retired products in first (`PLAN-hide-retired-everywhere.md`).
+Without the flag nothing changes.
 
-### 3.3 Waiting links after landing
+**SS side.** The SS sets the flag only on S3's backfill calls, never on its hourly poll.
 
-The fill handles only the newest 500 lines per batch (1.3), so after the last month the script runs
-one bounded relink pass over the backfilled lines (same `_do_so_line` resolver, 500 per commit) so
-links do not depend on batch order. No new resolver.
+**Nothing else to silence.** The DO push has no email or notification path today (1.2).
 
-### 3.4 Counts the dry run prints per (book, month)
-
-documents: created / updated / unchanged / adopted / failed / retryable; lines: created / linked by
-key / linked by product / unresolved split as **ambiguous** / product not on SO / **SO missing** / no
-FromDocNo; distinct missing item codes; distinct missing SO numbers. SO missing (expected for MCH
-before Sep 2023, 1.1 Q-E) is a count, never a failure.
-
-## 4. Step 2: "assume delivered" for pre-cutover DOs
-
-### 4.1 Rule
-
-A DO is marked assumed-delivered when **all** hold:
-
-- `doc_key IS NOT NULL` (AutoCount's), `is_cancelled = false`, `deleted_at IS NULL`;
-- `order_date < cutover` (Q1, recommended `2026-07-01`);
-- it has **no tracking**: `actual_delivery_date IS NULL` and status is NULL or `new`.
-
-Writes: `order_status_id` = `delivered`, `actual_delivery_date` = `order_date` (Q2),
-`tracking_assumed_at` = now(). Nothing else: no `delivery_days`, no `kpi_warning`, no transporter.
-
-A pre-cutover DO that already has any tracking (an adopted Excel row) is left alone and counted.
-
-Target size: today 0 rows qualify (no pre-July AutoCount DO exists, 1.1 Q-C). After step 1 the
-targets are the newly created pre-cutover DOs plus the adopted Excel rows that were `new` with no
-date (up to 2,378). Excel rows that are never adopted (no AutoCount DocNo match) keep `doc_key`
-NULL and are untouched; the step 2 dry run counts them separately so the owner can see them. The 11
-NULL-`order_date` rows and the 1907 row never qualify unless adoption gives them a DocDate.
-
-### 4.2 Schema
-
-One nullable column, `orders.tracking_assumed_at timestamptz` (migration `do_hist_0001`), registered
-in `SYSTEM_ORDER_COLUMNS` (`order_field_ownership.py`; the registry test forces every column to have
-an owner). It says "delivered by assumption, not by a tracking upload", and it is the revert key.
-No table: one fact, one column. A later Order Tracking upload that sets real delivery fields on the
-row clears it (one line in the tracking upsert), so the marker never lies.
-
-### 4.3 Silence during the run
-
-- Writes go through one bulk `UPDATE ... WHERE id IN (...)` per 1,000 ids, not the ORM, so no
-  embedding, audit, complaint-fulfilment or delivery-notification code runs. One summary audit
-  EVENT per run (counts, cutover, run id) instead of 100k row audits.
-- Step 1's ingest already sends nothing (1.6, 1.7).
-- **#1623 (AC-CANCEL-CRM, open draft) is the one path that reacts to DO links**: it relinks cancel
-  docs when a DO naming the SO is pushed, and a changed match can cancel a line, retire its OI rows
-  and raise a planning change for CS. Question Q4: recommended, after #1623 merges, its relink skips
-  the planning-change raise and OI flag for SOs ordered before the cutover (the derived
-  `qty_cancelled` number still updates). If #1623 is still unmerged when the backfill runs, nothing
-  reacts (it is not on main).
-
-### 4.4 SO side (Q3)
-
-Recommended: **no SO write.** AutoCount's `TransferedQty` already decides `closed` on every SO push
-(1.6), so a CRM force-close would be reopened by the next push of that SO. Instead the dry run
-reports pre-cutover SO lines still open (query Q-D) by month and customer, so the owner can close
-them in AutoCount (Cancel SO / transfer), which then flows through the SO feed with no CRM-side
-special case.
-
-## 5. Dry run, apply, revert
-
-### 5.1 Order
-
-1. Prod clone: `do_history_backfill.py --dry-run` for each book; post the per-month table (3.4)
-   and section 6 counts as a `crew-note`. No real data committed, counts only.
-2. Prod clone: `--apply`, then `do_history_assume_delivered.py --dry-run` then `--apply`; rerun
-   section 6; check the outstanding report total and Stock Debt totals are unchanged on the SO side
-   and that the DO side lost exactly the assumed-delivered pending qty.
-3. Owner approves the numbers.
-4. Prod apply window: off-hours MYT, worker running, the SS hourly DO poll left on (idempotent key +
-   stale guard make overlap safe). Sorento first, Mocha after Sorento's numbers check.
-
-### 5.2 Revert
-
-- Step 2: `do_history_assume_delivered.py --revert --run <id>` sets status back to `new`,
-  `actual_delivery_date` NULL and the marker NULL for rows with that marker and no later tracking.
-  Exact, because the rule only touched rows that had no tracking.
-- Step 1: delete the DOs the apply jobs **created** (outcome rows `created`); adopted rows keep their
-  id and tracking and are not deleted (their lines were rewritten by AutoCount, which is the intended
-  state either way). The script prints the count before deleting. DO deletion is a hard delete
-  (D7), and a later SS push would recreate a deleted DO, so revert step 1 only with the SS DO job
-  floored back to July.
-
-## 6. Read-only count queries (prod clone, before sign-off)
-
-```sql
--- Q-A: DOs in CRM by month and source (AutoCount vs Order Tracking Excel)
-SELECT date_trunc('month', order_date)::date AS month, c.code,
-       COUNT(*) FILTER (WHERE o.doc_key IS NOT NULL) AS autocount,
-       COUNT(*) FILTER (WHERE o.doc_key IS NULL)     AS excel_only
-FROM orders o JOIN companies c ON c.id = o.company_id
-WHERE o.deleted_at IS NULL
-GROUP BY 1, 2 ORDER BY 2, 1;
-
--- Q-B: AutoCount DO lines by link state, split by reason
-SELECT date_trunc('month', o.order_date)::date AS month,
-       COUNT(*) FILTER (WHERE ol.sales_order_line_id IS NOT NULL)                AS linked,
-       COUNT(*) FILTER (WHERE ol.sales_order_line_id IS NULL AND ol.from_dtl_key = 0) AS stored_zero_pre_1409,
-       COUNT(*) FILTER (WHERE ol.sales_order_line_id IS NULL AND ol.from_doc_no IS NULL) AS no_from_doc_no,
-       COUNT(*) FILTER (WHERE ol.sales_order_line_id IS NULL AND ol.from_doc_no IS NOT NULL
-                          AND NOT EXISTS (SELECT 1 FROM sales_orders so
-                                          WHERE so.company_id = o.company_id
-                                            AND so.so_number = ol.from_doc_no)) AS so_missing,
-       COUNT(*) FILTER (WHERE ol.sales_order_line_id IS NULL AND ol.from_doc_no IS NOT NULL
-                          AND (SELECT COUNT(*) FROM sales_order_lines sol
-                               JOIN sales_orders so ON so.id = sol.sales_order_id
-                               WHERE so.company_id = o.company_id AND so.so_number = ol.from_doc_no
-                                 AND sol.product_id = ol.product_id) > 1) AS ambiguous
-FROM order_lines ol JOIN orders o ON o.id = ol.order_id
-WHERE o.doc_key IS NOT NULL AND o.deleted_at IS NULL
-GROUP BY 1 ORDER BY 1;
-
--- Q-C: pre-cutover DOs by tracking state (what step 2 would touch)
-SELECT (o.doc_key IS NOT NULL) AS autocount, s.status_code,
-       (o.actual_delivery_date IS NOT NULL) AS has_date, COUNT(*)
-FROM orders o LEFT JOIN order_statuses s ON s.id = o.order_status_id
-WHERE o.order_date < DATE '2026-07-01' AND o.deleted_at IS NULL
-GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
-
--- Q-D: pre-cutover SO lines still open demand (owner closes these in AutoCount, section 4.4)
-SELECT date_trunc('month', so.order_date)::date AS month, so.demand_class, COUNT(*) AS lines,
-       SUM(GREATEST(COALESCE(sol.qty_required, sol.qty_ordered) - sol.qty_delivered, 0)) AS open_qty
-FROM sales_order_lines sol JOIN sales_orders so ON so.id = sol.sales_order_id
-WHERE so.order_date < DATE '2026-07-01' AND so.status = 'open' AND sol.line_status = 'open'
-  AND sol.purchasing_status <> 'covered'
-  AND COALESCE(sol.qty_required, sol.qty_ordered) - sol.qty_delivered > 0
-GROUP BY 1, 2 ORDER BY 1, 2;
-
--- Q-E: earliest SO in CRM per company (can a 2023 DO find its SO at all?)
-SELECT c.code, MIN(so.order_date), COUNT(*) FROM sales_orders so
-JOIN companies c ON c.id = so.company_id GROUP BY 1;
-```
-
-Q-E decides how many backfilled lines can link at all. Measured (1.1): SRT holds SOs from 2020, MCH
-only from 2023-09-01, so MCH DOs from Jan to Aug 2023 land unlinked (`so_missing`). An MCH SO history
-load would link them (out of scope; trigger: the owner wants per-SO-line delivered history for MCH
-before Sep 2023).
-
-## 7. Effect on readers after both steps
+## 6. Effects
 
 | Reader | Effect |
 | --- | --- |
-| Outstanding report (SO side), Stock Debt, Coverage, committed, reorder, fulfilment board | None: they read SO lines (1.6). |
-| Outstanding report (DO side) | Pre-cutover AutoCount DOs leave the pending total (assumed delivered). |
-| Delivered DO list, chatbot "DOs delivered between X and Y" | Pre-cutover DOs appear on their DocDate. |
-| Sales report delivered (`delivery_order_lines.py`, `sales_report_delivered.py`) | Gains 2023 to June 2026 AutoCount DOs by `order_date`; an adopted Excel DO switches to the per-line amount basis (`delivery_order_lines.py:145-159`). |
-| Chatbot "delivered" sales basis | None: reads SO `qty_delivered` (`sales_report_service.py:204,540-550`). |
-| Sales achievement, delivered basis | Linked DO qty moves from the SO's order date to the DO date (`sales/achievement_service.py:25-31,347-356`); per-line totals stay capped at `qty_ordered`, so a period's delivered achievement can shift between months, the all-time total does not. |
-| #1623 cancel matching | Gains DO qty per SO line for the tie-break once lines link; Q4 gates the side effects. |
+| SO-side outstanding, Stock Debt, Coverage, committed, reorder, fulfilment board | None. They read SO lines, and the DO ingest writes no SO state. |
+| DO outstanding (DO list bucket, outstanding report DO side, chatbot) | Backfilled DOs before the cutover read as delivered, so they do not appear. |
+| Delivered DO list, chatbot "delivered between" | Backfilled DOs appear on their DocDate. |
+| Sales report delivered (`reports/datasets/delivery_order_lines.py`) | Gains AutoCount DOs from 2023-09-01, by `order_date`. |
+| Sales achievement, delivered basis | Exact-linked DO qty counts by DO date; unlinked lines count on the SO date. Removing the fallback links (3.1) moves their qty back to the SO date until a key arrives. |
+| #1623 cancel matching | The tie-break gains exact DO qty per SO line. Q4 (a) keeps pre-cutover SOs quiet. |
+| Chatbot "delivered" sales basis | None. It reads SO `qty_delivered`. |
 
-## 8. Questions (answers 13 Oct: Q2, Q4, Q5 = (a) from crew; Q1, Q3 with the owner)
+## 7. Prod run
 
-1. **Q1 cutover**: (a) DocDate before 2026-07-01, (b) another date. Rec (a): "since July".
-   Data note for the owner (1.1): Excel tracking exists from Apr 2026 (SRT) and Jul 2026 (MCH), and
-   the AutoCount feed from Aug 2026. Because step 2 only touches rows with **no** tracking, the
-   cutover mainly decides whether Apr-Jul 2026 DOs still `new` with no date (part of the 2,378) are
-   assumed delivered or stay outstanding for CS to track.
-2. **Q2 delivery date on assumed rows**: (a) `actual_delivery_date = DocDate` with the marker,
-   (b) leave NULL and widen the delivered predicate to the marker. Rec (a): one write, every
-   existing delivered reader works unchanged; the marker tells it apart.
-3. **Q3 SO side**: (a) no CRM SO write, report open pre-cutover SO lines for closing in AutoCount,
-   (b) force-close them in the CRM. Rec (a): the next SO push re-derives `line_status` from
-   `TransferedQty`, so (b) would not stick.
-4. **Q4 #1623 side effects on old SOs**: (a) after #1623 merges, its DO-triggered relink skips the
-   planning change and OI flag for SOs ordered before the cutover, (b) let them fire. Rec (a): no
-   CS work raised for 2023 orders.
-5. **Q5 path**: (a) CRM script over monthly pull snapshots, (b) shared-service DocDate backfill push.
-   Rec (a): aggregate dry run, resumable per month, revert list, no embedding storm; needs the SS
-   snapshot to scope by DocDate for old dates (to verify).
+1. Crew finding K. If K = no, the owner decides on 3.2 before anything else.
+2. Merge and deploy CRM C1-C3 with `do_assume_delivered_before` unset. Merge SS S1 and S2.
+3. On the prod clone: set the CRM date and run S3 with `?dry_run=true` for both books. Post the
+   per-month counts (created / adopted / unchanged / failed / retryable; lines linked by key /
+   unlinked) and re-run the section 1.1 queries.
+4. The owner approves the numbers.
+5. On prod: set the date and run S3 for real, off-hours MYT, Sorento then Mocha. Re-run the
+   queries, then unset the date so no later push assumes anything.
 
-## 9. Build slices
+## 8. The one ask
 
-1. (Unblocked: Q2.) Migration `do_hist_0001` + ownership registry + tracking-upload clears the marker; tests.
-2. (Unblocked: Q5.) `do_history_backfill.py` (dry run, apply, resume, split on cap, relink pass, per-month table); tests
-   on a scratch Postgres with a fake FoundryX client.
-3. (Waits on Q1: the cutover is a required `--cutover` argument, so the code does not hard-code an
-   answer, but it is not run or finalised before Q1.) `do_history_assume_delivered.py` (dry run, apply, revert, run audit event); tests.
-3b. (Waits on Q3.) The open pre-cutover SO line report (Q-D as a script output), only if Q3 = (a).
-4. (After #1623 merges, if Q4 a) the cutover gate in its relink; tests.
+Cutover for "assume delivered" (`do_assume_delivered_before`):
+- (a) **2026-07-01**, your "prior to July". Apr-Jul 2026 rows that are tracked keep their tracking.
+- (b) **2026-08-01**, where the AutoCount feed starts, so every backfilled DO without tracking is
+  assumed delivered.
 
-Not built: SO history load (trigger in section 6), a UI badge for assumed-delivered DOs (trigger: the
-owner asks to tell them apart on screen).
+Recommend (a): it is your own boundary, and an untracked July DO stays visible to CS as outstanding.
+
+## 9. Build slices (after K and the ask)
+
+1. Built: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
+   cleared by a tracking row.
+2. C1: exact-only links (if K = yes); tests.
+3. C2: assumed delivery in the ingest, behind the setting; tests.
+4. C3: the contract 2.9 `backfill` flag; tests; section 13 of the contract doc updated for the SS lane.
+5. The #1623 gate (Q4 a), after #1623 merges.
+
+Not built: SO history, and a UI badge for assumed rows (trigger: the owner asks to tell them apart).
