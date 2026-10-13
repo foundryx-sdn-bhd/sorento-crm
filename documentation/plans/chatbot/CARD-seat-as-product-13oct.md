@@ -79,6 +79,8 @@ directly; this sandbox has no dev data, so the live values come from the hand te
 - Q1 lines are said by the engine before any lane, whatever the parsed domain (a bare code's
   null domain included). A code beside them that is no product's exact code (a typo, a family
   prefix) sends the turn on as typed, so the resolver names or places it (Q3 a).
+  The WC with no link is then answered as itself too ("stock seat cover for SRTWC8999 and
+  SRTWC8383" gives both WCs' stock, no "No seat cover is on record" line). Same trigger as Q3 (b).
 - A carried anchor is every product on the focus, with no topic check: after a list answer,
   "which seat cover fits it?" reads all of them. Trigger: a real turn of that shape.
 
