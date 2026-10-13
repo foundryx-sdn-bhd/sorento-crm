@@ -218,7 +218,9 @@ class DbResolver:
             return self._warehouse(ent.phrase)
         v1_types = self._document_types(ent.kind)
         if v1_types is not None:
-            number = getattr(ent, "doc_number", None) or ent.phrase
+            # The verbatim phrase, exactly; the parser's stripped number only when there is
+            # no phrase. Never a stripped retry that could land on another document.
+            number = ent.phrase or getattr(ent, "doc_number", None)
             return self._document(ent.kind, v1_types, number, ent.phrase)
         # A kind this resolver does not hold: say so, never guess.
         return Resolution(status="none", phrase=ent.phrase, unrecognised=bool(ent.phrase))
@@ -241,13 +243,11 @@ class DbResolver:
     def _document(self, kind: str, v1_types: list[str], number: str | None, phrase: str | None) -> Resolution:
         if not number or not _strip_ws(number):
             return Resolution(status="none", phrase=phrase)
-        found = self._document_found(kind, self._v1_matches(number, v1_types))
-        if not found and kind != "form":
-            # v1 re-runs an unresolved token across every type it may see, products last.
-            wide = list(dict.fromkeys([*self.reference_kinds, "inbound_shipment"]))
-            found = self._document_found(None, self._v1_matches(number, wide))
-            if not found:
-                return self._product(number or phrase)
+        unnamed = kind in ("order", "order_number")
+        found = self._document_found(None if unnamed else kind, self._v1_matches(number, v1_types))
+        if not found and unnamed:
+            # An unnamed number that is no document may be a product (products are not documents).
+            return self._product(number)
         if not found:
             return Resolution(status="none", phrase=phrase)
         if len(found) == 1:

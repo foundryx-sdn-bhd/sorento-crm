@@ -252,8 +252,15 @@ def memory_profile(profile: Any, memory_intake: dict[str, Any] | None) -> Memory
 
 
 def _pinned(keys: Any) -> dict[str, Any]:
+    """The pinned index keys exactly as `DbResolver.from_index_keys` reads them."""
     pinned: dict[str, Any] = {k: set(v) for k, v in (getattr(keys, "entity_keys", None) or {}).items()}
     pinned["attachment_type"] = set(getattr(keys, "attachment_types", None) or [])
+    pinned["spec_attribute"] = set(getattr(keys, "spec_attributes", None) or [])
+    pinned["spec_value"] = {
+        f"{attr}.{value}"
+        for attr, values in (getattr(keys, "spec_values", None) or {}).items()
+        for value in values
+    }
     return pinned
 
 
