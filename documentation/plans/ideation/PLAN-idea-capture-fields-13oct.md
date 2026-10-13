@@ -1,6 +1,6 @@
 # PLAN: idea capture collects the canny-style fields (IDEA-CAPTURE, 13 Oct)
 
-Status: Review (all five card questions answered 13 Oct; built red-first; reviewer running).
+Status: Hand test (reviewer READY at 018a5aa0 after fix round 2; awaiting crew live check `--from-db` on the production prompt line and the owner hand test).
 
 Decisions (13 Oct): Q1 (owner) a solution-only message gets the underlying need as Business
 problem and the user's own words as Desired outcome. Q3 (owner) field names stay English in
