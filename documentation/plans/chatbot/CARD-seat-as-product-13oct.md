@@ -97,3 +97,20 @@ Crew 13 Oct: Q2 (b), Q3 (a), Q4 yes, Q5 yes. Owner 13 Oct: Q1 (a), wording
   Trigger: a real turn of this shape; then the parser names the anchor code in `find.filters`.
 - A typed quantity rides on every linked code ("5 seat cover for SRTWC8122" asks 5 of each of
   the two covers). Owner to confirm.
+
+## Across turns (crew v94 check and carry ruling, 13 Oct)
+
+- The parse's `fits` value is the other-side word as typed in THIS message ("seat cover",
+  "马桶盖", "WC"), null when the message names none.
+- `focus.relation` ("covers" / "wcs") records that the focus products answer a fit ask, and
+  which side they are. A message naming a code of its own that links nothing clears it; a
+  topic reset drops it.
+- Carry (crew ruling, the #1626 pattern): after a fit answer, a bare new code the parser reads
+  as a continuation (`domain_in_message` false, only codes) repeats the fit ask in the same
+  direction, even when the parse dropped `find`. A bare cover code after "seat cover for <WC>"
+  is that cover.
+- A code of the fit answer is never re-anchored ("only the 333A one" narrows the answer).
+- A relation nothing in THIS message names never reaches a message with its own domain word
+  ("SRTWC8383-RL-MBL technical drawing" after a seat-cover exchange is that WC's drawing).
+- Limit: a legit reverse ask about a just-answered code ("WC for SRTSCBD333A-UF" right after
+  "seat cover for SRTWC8122") answers the cover itself. Trigger: a real turn of that shape.
