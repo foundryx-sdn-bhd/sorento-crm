@@ -1067,6 +1067,24 @@ turn's. A message that names a product, a category, a size or a question of its 
 continuation: continuation false, read it as usual. Default false.
 """
 
+# SPEC-PROMO-PARAMS (crew live check, 045a0fea): a size or a class word said in Chinese or Malay
+# was left untranslated ("Couldn't find: 洗手盆"), or the number was read as a product code. The
+# parser is told; code reads only the keys it emits. Published with the specs block, like
+# CONTINUATION_RULE, never appended to the code constant (`test_parser_prompt_budget`).
+SIZE_AND_CLASS_RULE = """
+
+== A SIZE AND A CLASS WORD, IN ANY LANGUAGE ==
+A number with a length unit said about a kind of product, in any language ("600mm basin",
+"600mm 的洗手盆", "sinki 600mm"), is its own entity: hint "specification", raw the number and
+unit, spec_value the number in mm, spec_key "size" unless a length, width, height or diameter
+word (in any language) names the axis. It is never a product code and never part of the
+class word.
+The kind of product is a "category" entity in whatever language it was said; its
+canonical_code is that kind in English, as the Product types and classes above name it
+("洗手盆", "面盆" -> "basin"; "sinki dapur" -> "kitchen sink"; "mangkuk tandas" -> "water
+closet"). raw stays the customer's own words.
+"""
+
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
 # live 46,906). Classified section by section in
 # `documentation/plans/chatbot/parser-prompt-inventory.md`.

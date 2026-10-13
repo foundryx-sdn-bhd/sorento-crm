@@ -1139,6 +1139,7 @@ class StockService:
         if policy is not None:
             self._apply_stock_visibility(
                 payload,
+                spec_narrowed=bool(spec_constraints),
                 policy=policy,
                 policy_q=policy_q,
                 location_q=location_q,
@@ -1413,6 +1414,7 @@ class StockService:
         requested_quantities: Optional[dict] = None,
         product_id_order: Optional[list[str]] = None,
         resolved_contact_id: Optional[str] = None,
+        spec_narrowed: bool = False,
     ) -> None:
         """Attach the visibility block(s) and, for the two summary modes, empty `data`.
 
@@ -1659,7 +1661,10 @@ class StockService:
         #
         # `compact` and `detailed` return above and are untouched: they answer with
         # rows and locations, and a caller asking either of them for a page means it.
-        if not named_ids:
+        # SPEC-PROMO-PARAMS (crew live check, 045a0fea): a `spec_constraints` ask ("600mm basin
+        # got stock?") names no product but its candidate set is already the described one
+        # (`policy_q` carries the spec filter), so it is answered like a named list.
+        if not named_ids and not spec_narrowed:
             payload["stock_visibility"]["needs_product"] = True
             payload["stock_availability"] = []
             return

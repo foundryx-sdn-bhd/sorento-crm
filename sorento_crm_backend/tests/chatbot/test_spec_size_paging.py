@@ -348,11 +348,18 @@ def test_p14_a_promotion_list_shows_a_few_one_line_each_then_pages(session_facto
     assert f"1. {codes[0]}: MYR 100.00\n2. {codes[1]}: MYR 101.00" in first, "one line each, no blank line between"
     assert len(_shown(first, codes)) == 5, first
 
-    more = _parser_output(domain_hint="promotion", intent_hint="check_promotion", entities=[], continuation=True)
+    # The live parser read the "more" turn with date_mode "overlap" (crew, 045a0fea).
+    more = _parser_output(
+        domain_hint="promotion", intent_hint="check_promotion", entities=[], continuation=True, date_mode="overlap"
+    )
     second, calls2 = _promo_say(session_factory, monkeypatch, use, more, "more")
     assert calls2 and calls2[-1].get("page") == 2, calls2
     assert calls2[-1].get("spec_constraints") == calls[-1].get("spec_constraints"), (calls, calls2)
     assert calls2[-1].get("access_levels") == calls[-1].get("access_levels") == ["Sorento Office"], (calls, calls2)
+    # Crew live check on 045a0fea: page 2 switched date_mode null -> overlap. The next page is
+    # asked with exactly the first page's arguments, only the page moves.
+    scoped = lambda a: {k: v for k, v in a.items() if k not in ("page", "_diagnostics")}  # noqa: E731
+    assert scoped(calls2[-1]) == scoped(calls[-1]), (calls[-1], calls2[-1])
     assert set(_shown(second, codes)) == set(codes[5:]), second
     assert SEE_MORE not in second, second
 
@@ -402,3 +409,21 @@ def test_p16_a_size_with_no_pair_still_reaches_the_tool(session_factory, monkeyp
     assert not [c for c in codes if c in reply], reply
     assert "Couldn't find" not in reply, reply
     assert "150" in reply and "130" in reply, reply
+
+
+def test_p16_a_class_said_in_chinese_with_its_english_canonical_is_filtered(session_factory, monkeypatch, _clear_overrides):
+    """The shape the published "A SIZE AND A CLASS WORD" rule asks of the parser for
+    "600mm 的洗手盆有货吗？": the size its own entity, the class raw in Chinese with its English
+    canonical_code. Code reads the canonical (grounding's own swap), never a word list."""
+    codes, captured = _world(session_factory, monkeypatch)
+    qf = _parser_output(
+        domain_hint="inventory", intent_hint="check_stock",
+        entities=[_spec_entity("600mm", "size", 600), _category("洗手盆", "basin")],
+    )
+    reply = _say(session_factory, monkeypatch, qf, "600mm 的洗手盆有货吗？")
+    calls = _stock_calls(captured)
+    assert calls and calls[-1].get("spec_constraints"), (captured, reply)
+    assert {"key": "size", "op": "eq", "value": 600} in calls[-1]["spec_constraints"], calls
+    assert any(c.get("key") == "class" for c in calls[-1]["spec_constraints"]), calls
+    assert "洗手盆" not in reply.split("\n")[0] or len(_shown(reply, codes)) == 5, reply
+    assert len(_shown(reply, codes)) == 5, reply

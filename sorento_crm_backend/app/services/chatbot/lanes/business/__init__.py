@@ -2333,10 +2333,12 @@ def run_fetch(
             # A few matches first (owner ruling, 12 Oct 2026); a continuation asks the next page.
             args["limit"] = fetch_mod.SPEC_PAGE_SIZE
             args["page"] = int((spec_page_carry or {}).get("page") or 0) + 1
-            if spec_page_carry and isinstance(spec_page_carry.get("access_levels"), list):
-                # The next page is asked under the tier the first page was answered under;
-                # a continuation names no tier, and an empty list reads as "no tier filter".
-                args["access_levels"] = list(spec_page_carry["access_levels"])
+            if spec_page_carry and isinstance(spec_page_carry.get("args"), dict):
+                # The next page is asked with exactly the first page's arguments (its tier,
+                # date mode, brand and kind); only the page moves. A continuation names none of
+                # them, and its own read drifted (crew, 045a0fea: date_mode null -> overlap; an
+                # empty access_levels reads as "no tier filter").
+                args = {**args, **spec_page_carry["args"], "limit": args["limit"], "page": args["page"]}
         if tool_name == find_lane.TOOL:
             find_args, ask = find_lane.route_args(args, find_items)
             if find_args is None:
@@ -2645,7 +2647,7 @@ def run_fetch(
                 "spec_constraints": list(spec_constraints or []),
                 "page": page,
                 "total": total,
-                "access_levels": list(args.get("access_levels") or []),
+                "args": {k: v for k, v in args.items() if k not in ("page", "limit", "_diagnostics")},
             }
     if spec_filtered and isinstance(structured, dict) and isinstance(envelope, dict):
         if structured.get("has_result"):

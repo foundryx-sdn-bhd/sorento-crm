@@ -828,6 +828,13 @@ def resolve_entity_body(
         # fell into the spec fallback's MODEL phrase read (2-3 s, `references.py`). The route
         # filters this ask, so that read is wasted; the deterministic word read still runs.
         body["understand_phrase"] = False
+        # Crew live check on 045a0fea ("600mm 的洗手盆有货吗？"): the resolver places a class word
+        # by reading the QUERY, and a Chinese or Malay message holds no word it knows, so the
+        # subject went unplaced even with the parser's English canonical_code as its token.
+        # The route filters this ask; the resolver is asked only to place the subject, in the
+        # words grounding settled on (the parser's own, its canonical where it gave one).
+        if body.get("tokens"):
+            body["query"] = " ".join(str(t) for t in body["tokens"] if t)
     # The class word the PARSER named, forwarded as a value (turn re-architecture,
     # D11): a `product_type` / `category` entity IS "which taps", and reading it off
     # the verdict is what lets a HAS turn be described by something other than this

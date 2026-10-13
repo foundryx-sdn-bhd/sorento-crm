@@ -788,17 +788,20 @@ def _with_specs_block(text: str) -> str:
 
 
 def _with_continuation_rule(text: str) -> str:
-    """`text` with the "MORE OF THE SAME LIST" rule, once, before the policy markers when
-    the text has them (they close the prompt), else at the end."""
-    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, CONTINUATION_RULE
+    """`text` with the "MORE OF THE SAME LIST" and "A SIZE AND A CLASS WORD" rules, each once,
+    before the policy markers when the text has them (they close the prompt), else at the end."""
+    from app.services.chatbot_parser_prompt import BLOCKS_BEGIN, CONTINUATION_RULE, SIZE_AND_CLASS_RULE
 
-    rule = CONTINUATION_RULE.strip("\n")
-    if rule in text:
-        return text
-    if BLOCKS_BEGIN in text:
-        head, rest = text.split(BLOCKS_BEGIN, 1)
-        return f"{head.rstrip(chr(10))}\n\n{rule}\n\n{BLOCKS_BEGIN}{rest}"
-    return f"{text.rstrip(chr(10))}\n\n{rule}\n"
+    for constant in (CONTINUATION_RULE, SIZE_AND_CLASS_RULE):
+        rule = constant.strip("\n")
+        if rule in text:
+            continue
+        if BLOCKS_BEGIN in text:
+            head, rest = text.split(BLOCKS_BEGIN, 1)
+            text = f"{head.rstrip(chr(10))}\n\n{rule}\n\n{BLOCKS_BEGIN}{rest}"
+        else:
+            text = f"{text.rstrip(chr(10))}\n\n{rule}\n"
+    return text
 
 
 def publish_specs_block(session: Session, *, from_version: int | None = None) -> int | None:

@@ -185,3 +185,20 @@ def test_p8_the_rule_rides_the_published_version_not_the_code_constant():
     assert '"continuation"' in CONTINUATION_RULE
     assert CONTINUATION_RULE.strip() not in SEMANTIC_PARSER_PROMPT
     assert pv._with_continuation_rule(SEMANTIC_PARSER_PROMPT).count(CONTINUATION_RULE.strip()) == 1
+
+
+def test_p9_the_size_and_class_rule_rides_every_published_version(db):
+    """Crew live check on 045a0fea: "600mm 的洗手盆有货吗？" left the class word untranslated
+    ("Couldn't find: 洗手盆"), "600mm 的面盆有现货吗？" read 600 as a product code, and
+    "ada sinki dapur ...?" missed "sinki dapur". The parser is told, in the published text, that
+    a size said in any language is its own specification and that a class word in any language
+    carries its English class word as canonical_code. Wording only; no code keyword rule."""
+    from app.services import chatbot_prompt_vars as pv
+    from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
+
+    assert "canonical_code" in SIZE_AND_CLASS_RULE and '"size"' in SIZE_AND_CLASS_RULE
+    _production(db, OWNER_TEXT, version=52)
+    version = pv.publish_specs_block(db)
+    new = _row(db, version).template
+    assert new.count(SIZE_AND_CLASS_RULE.strip()) == 1
+    assert pv.publish_specs_block(db, from_version=version) is None

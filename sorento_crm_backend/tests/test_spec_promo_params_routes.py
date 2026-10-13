@@ -1129,3 +1129,31 @@ def test_a_spec_filtered_promotion_call_lists_live_promotions_only(api, db, monk
     assert resp.status_code == 200, resp.text
     codes = {row["product"]["product_code"] for row in resp.json()["data"]}
     assert codes == _codes_of([live]), codes
+
+
+def test_a_dealer_on_availability_gets_the_spec_filtered_products(db):
+    """Crew live check on 045a0fea: a dealer (stock visibility `availability`) asking
+    "600mm basin got stock?" got "no inventory matched these" while an office contact got the
+    basins. The availability block's no-product guard (D35: a bare "what stock?" must not
+    quantify the catalogue) also dropped a spec-filtered ask, whose set is already narrowed."""
+    from app.services.inventory_service import StockService
+    from tests.test_stock_availability_block import _contact, _policy_row
+
+    wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
+    hit = _p(db, "DAV1", {"class": _enum("Basin"), "dim_length": _num(600)})
+    miss = _p(db, "DAV2", {"class": _enum("Basin"), "dim_length": _num(500)})
+    for p in (hit, miss):
+        stock(db, company_id=DEFAULT_COMPANY_ID, product_id=p.id, warehouse_id=wh.id, on_hand=5)
+    contact = _contact(db)
+    _policy_row(db, mode="availability", warehouse_ids=[wh.id], contact=contact)
+    db.flush()
+
+    result = StockService(db).list_stock(
+        contact_id=contact.id,
+        spec_constraints=[{"key": "class", "op": "eq", "value": "Basin"}, {"key": "size", "op": "eq", "value": 600}],
+        page=1,
+        limit=5,
+    )
+    ids = {e.get("product_id") for e in result.get("stock_availability") or []}
+    assert ids == {hit.id}, result.get("stock_availability")
+    assert not (result.get("stock_visibility") or {}).get("needs_product"), result.get("stock_visibility")
