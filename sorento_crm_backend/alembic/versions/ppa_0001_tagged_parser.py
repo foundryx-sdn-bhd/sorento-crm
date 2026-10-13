@@ -32,7 +32,7 @@ nothing when a version built from the same production template exists. Downgrade
 only this migration's own rows, and only while unlabelled.
 
 Revision ID: ppa_0001_tagged_parser
-Revises: ctc_0001_turn_costs
+Revises: maskp_0002_measure_words
 Create Date: 2026-10-05
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ from sqlalchemy import text as sql
 from sqlalchemy.orm import Session
 
 revision = "ppa_0001_tagged_parser"
-down_revision = "ctc_0001_turn_costs"
+down_revision = "maskp_0002_measure_words"
 branch_labels = None
 depends_on = None
 
