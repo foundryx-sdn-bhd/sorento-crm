@@ -1130,7 +1130,11 @@ def _pv2_text(envelope: Envelope, text: str) -> str:
     typed = jsc.get(_inner_message(envelope), "text")
     if jsc.truthy(typed):
         return jsc.js_string(typed).strip()
-    return (text or "").split("\n")[0].strip()
+    body = (text or "").rstrip("\n")
+    if jsc.truthy(jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")) and "\n" in body:
+        # The builder appends the `reply to: ...` line last; drop that line only.
+        body = body.rsplit("\n", 1)[0]
+    return body.strip()
 
 
 def _message_id(envelope: Envelope) -> str | None:
