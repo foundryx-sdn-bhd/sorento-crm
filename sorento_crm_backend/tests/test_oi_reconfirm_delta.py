@@ -120,9 +120,22 @@ def _hole(line, item_code, qty, location, required_date, ref="SO424764"):
 
 
 def _raise(world, order, inquiry_id, revision_no, entries):
-    """One Confirm's borrow-hole pass, under a fresh revision id."""
+    """One Confirm's borrow-hole pass, under a NEW revision: a real `SOSupplyDecision`
+    per call, so a row left on the previous revision's id is caught."""
+    from datetime import datetime
+    from uuid import uuid4
+
     service = ProjectOrderInquiryService(world.db)
-    decision = SimpleNamespace(id=_decision_id(world, order), revision_no=revision_no)
+    # Only one revision may be active (`uq_so_supply_decisions_active`), and the
+    # board's own Confirm already holds that state, so these are written superseded.
+    revision = SOSupplyDecision(
+        id=str(uuid4()), company_id=order.company_id, project_sales_order_id=order.id,
+        revision_no=100 + revision_no, state="superseded", line_snapshots=[],
+        confirmed_by=world.actor, confirmed_at=datetime.utcnow(),
+    )
+    world.db.add(revision)
+    world.db.flush()
+    decision = SimpleNamespace(id=revision.id, revision_no=revision_no)
     created = service._raise_borrow_shortfalls(
         order, SimpleNamespace(id=inquiry_id), decision, entries,
         covered_line_ids={str(entry["line"].id) for entry in entries},
@@ -471,3 +484,50 @@ def test_a_confirm_with_nothing_for_purchasing_to_do_sends_no_email(api, monkeyp
     for row in (row_a, row_b):
         kept = world.db.get(OrderInquiryRow, row.id)
         assert kept.state == INQUIRY_RAISED, kept.note
+
+
+def test_two_holes_on_one_key_each_keep_their_own_row(api):
+    """Review S2: two borrows on one (line, item, location), 3 and 5, both unchanged.
+    Each entry keeps the row with its own quantity - none is restated as the other's."""
+    _client, world = api
+    order, (_l144, _l336, line_diy) = _three_lines(api)
+    inquiry_id = _order_row(world, line_diy).order_inquiry_id
+    holes = [_hole(line_diy, "CB2519SS-DIY", 5, "BRW-AA", D_DIY),
+             _hole(line_diy, "CB2519SS-DIY", 3, "BRW-AA", D_DIY)]
+    _raise(world, order, inquiry_id, 2, holes)
+    # The 5 is the OLDEST row (both share the transaction's `now()` otherwise), and
+    # the 3 is restated first below: a match that took the oldest row would restate it.
+    from datetime import datetime, timedelta
+
+    for row in _holes(world, inquiry_id):
+        row.created_at = datetime(2026, 10, 1) + timedelta(days=10 - int(row.qty))
+    world.db.flush()
+    before = {r.id: r.qty for r in _holes(world, inquiry_id)}
+    _TOLD.clear()
+
+    _raise(world, order, inquiry_id, 3, list(reversed(holes)))  # 3 first, then 5
+
+    world.db.expire_all()
+    after = {r.id: r.qty for r in _holes(world, inquiry_id)}
+    assert after == before, (before, after)
+    assert _TOLD == [], _remarks(_TOLD)
+
+
+def test_a_date_move_restates_the_same_row_with_its_was_date(api):
+    _client, world = api
+    order, (_l144, _l336, line_diy) = _three_lines(api)
+    inquiry_id = _order_row(world, line_diy).order_inquiry_id
+    _raise(world, order, inquiry_id, 2, [_hole(line_diy, "CB2519SS-DIY", 5, "BRW-AA", D_DIY)])
+    (diy,) = _holes(world, inquiry_id)
+    _TOLD.clear()
+
+    later = date(2026, 12, 1)
+    _raise(world, order, inquiry_id, 3, [_hole(line_diy, "CB2519SS-DIY", 5, "BRW-AA", later)])
+
+    world.db.expire_all()
+    (row,) = _holes(world, inquiry_id)
+    assert row.id == diy.id
+    assert row.delivery_date == later and row.previous_delivery_date == D_DIY
+    (told,) = _told_about(row)
+    assert told["line"]["remark"] == "DELAY", told["line"]
+    assert told["line"]["was"] == {"delivery_date": "16/11/2026"}

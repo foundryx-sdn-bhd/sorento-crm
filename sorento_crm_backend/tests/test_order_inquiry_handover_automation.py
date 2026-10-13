@@ -3104,10 +3104,9 @@ def test_silent_reconfirm_queues_no_amendment_rows_and_no_email(api, monkeypatch
     """S4 (captain ruling, review round 1): a re-confirm that settles every named
     line silently (AC-R2-10 shape - no line of its OWN reaches the handover queue)
     must not append the order's still-raised amendment rows either, and must
-    dispatch NO handover email at all. Today `_append_still_raised_amendment_rows`
-    runs unconditionally at the end of `refresh_for_decision`, so a still-raised
-    amendment row rides along on a confirm that otherwise said nothing of its own -
-    purchasing gets an email whose only line is one they already saw on the
+    dispatch NO handover email at all. Before the fix a still-raised amendment row
+    rode along on a confirm that otherwise said nothing of its own -
+    purchasing got an email whose only line was one they already saw on the
     amendment's own publish email.
 
     ORDERBACK-DELTA (13 Oct 2026) later dropped the ride-along altogether

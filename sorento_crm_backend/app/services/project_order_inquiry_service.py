@@ -4281,9 +4281,10 @@ class ProjectOrderInquiryService:
         `ORDER` it would reach `confirmed_unplaced_buy_rows` attributed to the borrowing
         line's warehouse and be cancelled by the Buy-residual rules on the next re-confirm.
 
-        The lifecycle is the same as every other row here: a still-raised one from an
-        earlier revision is CANCELLED and kept, never edited in place, and one purchasing
-        has already actioned stays - AND is netted, exactly as an actioned ORDER row is
+        The lifecycle (ORDERBACK-DELTA, owner 13 Oct 2026): a still-raised hole this
+        revision restates is KEPT - unchanged it is only re-filed, moved it is restated in
+        place (`_restate_borrow_hole`) - and one it no longer restates is CANCELLED and
+        kept. One purchasing has already actioned stays - AND is netted, exactly as an actioned ORDER row is
         netted off the line's next Buy. A hole of 10 that purchasing placed is not
         raised again by the next revision; a hole that has widened to 15 raises the 5
         still outstanding. Netted per (item, donor location), which is the pile the hole
@@ -4312,6 +4313,8 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.order_inquiry_id == inquiry.id,
                 OrderInquiryRow.verb == IV_ORDER_BACK,
             )
+            # Oldest first, so two holes on one key are matched the same way every time.
+            .order_by(OrderInquiryRow.created_at, OrderInquiryRow.id)
             .all()
             if not (
                 buy_line_ids
@@ -4412,7 +4415,11 @@ class ProjectOrderInquiryService:
             hole_key = (str(line.id) if line is not None else None,) + key
             match = open_holes.get(hole_key)
             if match:
-                row = match.pop(0)
+                # Two holes can share a key (two borrows off one donor line, review S2):
+                # the one already holding this quantity is this entry's, before the
+                # oldest, so neither is restated as the other's.
+                row = next((r for r in match if _dec(r.qty) == qty), match[0])
+                match.remove(row)
                 kept.add(row.id)
                 self._restate_borrow_hole(row, entry, qty, decision, actor_user_id=actor_user_id)
                 continue
@@ -4493,6 +4500,11 @@ class ProjectOrderInquiryService:
         qty_moved = qty != previous_qty
         date_moved = required_date is not None and required_date != previous_date
         if not (qty_moved or date_moved):
+            # Nothing for purchasing to act on. The note follows the entry's own wording
+            # (a provisional ref becomes the AutoCount number) without a word to them.
+            note = entry.get("note")
+            if note and not (row.note or "").startswith(note):
+                row.note = note
             return
         row.qty = qty
         if date_moved:

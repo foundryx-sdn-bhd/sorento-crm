@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Build (small fix track: backend only, no migration, no auth/RBAC change). PR #1631.
+Status: Review (small fix track: backend only, no migration, no auth/RBAC change). PR #1631.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -47,7 +47,27 @@ crew's proposal is to keep such lines out of Saved (N). Nothing in this lane dep
   `tests/test_order_inquiry_handover_automation.py` and `tests/test_oi_email_qty_moves.py`
   inverted or removed.
 
-## Not changed
+## Undo
 
-Undo replays the generic journal (`project_supply_undo_service.py`), which records in-place
-updates, so a kept or restated row is restored like any settle-in-place row.
+Journalled undo (every board Confirm) replays the generic journal
+(`project_supply_undo_service.py`), which records in-place updates, so a kept or restated row
+is restored like any settle-in-place row.
+
+Known limit (review S1, follow-up, not fixed here): reconstructed undo
+(`project_supply_undo_reconstruct_service.py` step b, run for a journal-less revision such as a
+planning-change apply or `uncover_lines`) "restores" any row filed under the undone revision
+that carries `previous_qty` / `previous_delivery_date`. A row this lane only re-files keeps the
+`previous_*` of an OLDER settle, so reconstruct would roll it back to that older figure. The
+same gap already existed for a silent settle-in-place and for the carried placed-row restamp
+(B1, `refresh_for_decision`). The fix needs a marker telling "re-filed by D" from "settled by
+D" (or step b reading `changed_at` only); trigger: the first reconstruct undo of a planning
+change on an order with a previously settled row.
+
+## Review round 1 (reviewer, Opus)
+
+- B1 fixed: `tests/test_oi_reconfirm_delta.py` `_raise` mints a real revision per pass, so the
+  re-filing is guarded (kill test K4 now red).
+- S2 fixed: holes read oldest first, and an entry takes the hole already holding its quantity
+  before the oldest one (`test_two_holes_on_one_key_each_keep_their_own_row`, kill-tested).
+- Nits: unchanged hole's note follows the entry silently; date-only restate test added; stale
+  docstrings and test prose updated.
