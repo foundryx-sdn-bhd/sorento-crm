@@ -269,3 +269,107 @@ def test_g9_a_family_size_miss_then_a_size_on_file(session_factory, monkeypatch,
     reply = chat.say("200 then", entities=[_carried(_code(f)), _spec_entity("200", "size", 200)])
     listed = {c for c in w["codes"] if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", reply)}
     assert listed == {f"{f}-SH-200", f"{f}-SH-NEW-200"}, reply
+
+
+# ---------------------------------------------------------------- the LIVE parser's follow-up shapes
+#
+# Crew live check on 1e3250479 (v103): 8 of 12 follow-ups lost the size or the family. The goldens
+# above handed the engine the earlier class and size as carried entities; the live parser does not
+# (probe on the published line, 13 Oct): a follow-up names only what is NEW and says how it relates
+# through `entity_op` ("reuse": the same thing as before; "replace_combine": a new value replaces
+# the axis it names and keeps every other carried axis) and `continuation`. These are those shapes.
+
+
+def _live(chat: _Chat, text: str, entities, entity_op: str, **more: Any) -> str:
+    return chat.say(text, entities=entities, entity_op=entity_op, **more)
+
+
+def test_f1_yes_with_reuse_and_nothing_new_pages_the_list(session_factory, monkeypatch, _clear_overrides):
+    """4a on dev: "yes" to "Reply to see more." parsed `entity_op: reuse`, no entities and no
+    `continuation`; it must page the same filtered list, never list other products."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    first = chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    second = _live(chat, "yes", [], "reuse")
+    page1, page2 = _listed(first, w["codes"], SIX_600), _listed(second, w["codes"], w["codes"])
+    assert page2 and page2 <= SIX_600 and not page1 & page2, (first, second)
+
+
+@pytest.mark.parametrize("op", ["replace_combine", "replace"])
+def test_f2_a_brand_alone_narrows_the_size_list(session_factory, monkeypatch, _clear_overrides, op):
+    """4b: "only <brand>" parsed as the brand alone (`replace_combine`, or `replace` for "only X");
+    it narrows the last list, the class and the size kept. Never "I need at least one filter"."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    reply = _live(chat, f"only {w['brand_a'].lower()}", [_brand_entity(w["brand_a"])], op)
+    assert "at least one filter" not in reply, reply
+    assert _listed(reply, w["codes"], w["codes"]) == {"A-L1", "A-L2", "A-L3", "A-W1"}, reply
+
+
+def test_f3_an_axis_alone_narrows_the_size_list(session_factory, monkeypatch, _clear_overrides):
+    """4c: "length only" as the published rule asks the parser to emit it: the axis with the size
+    the last ask stated, nothing else. Only the basins holding 600 on length."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    reply = _live(chat, "length only", [_spec_entity("length", "dim_length", 600)], "replace_combine")
+    shown = _listed(reply, w["codes"], w["codes"])
+    assert shown and shown <= {"A-L1", "A-L2", "A-L3", "B-L1", "B-L2"}, reply
+
+
+def test_f4_the_dealers_quantity_reply_answers_the_size_list(session_factory, monkeypatch, _clear_overrides):
+    """6a: "5" parsed `entity_op: reuse`, `demand_qty: 5`, no entities. It answers the quantity ask
+    for the size list (works on main for codes); never only one product, never the ask again."""
+    w = _seed(session_factory)
+    _make_dealer(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    ask = chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    assert "How many units" in ask, ask
+    answer = _live(chat, "5", [], "reuse", demand_qty=5)
+    shown = _listed(answer, w["codes"], w["codes"])
+    assert "How many units" not in answer, answer
+    assert len(shown) >= 2 and shown <= SIX_600, answer
+    assert answer.count("x 5") >= 2, answer
+
+
+def test_f5_a_size_alone_narrows_the_family_answer(session_factory, monkeypatch, _clear_overrides):
+    """7a: "200mm only" after "<family> got stock?" parsed `reuse` with the size alone; the family
+    is kept and only its 200 variants list."""
+    from tests.chatbot.test_spec_size_on_a_code import _code, _seed_wcs
+
+    w = _seed_wcs(session_factory, more_200=1)
+    f = w["family"]
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say(f"{f.lower()} got stock?", entities=[_code(f)])
+    reply = _live(chat, "200mm only", [_spec_entity("200mm", "size", 200)], "reuse")
+    listed = {c for c in w["codes"] if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", reply)}
+    assert listed == {f"{f}-SH-200", f"{f}-SH-NEW-200", f"{f}-SH-200-0"}, reply
+
+
+def test_f6_a_size_alone_after_a_family_miss_keeps_the_family_and_the_trap(session_factory, monkeypatch, _clear_overrides):
+    """1a: "180 then" after "p trap 250mm <family>" parsed `replace_combine`, `continuation`, the
+    size alone and the product domain; the family and the trap are kept, the size replaced."""
+    from tests.chatbot.test_spec_size_on_a_code import _code, _seed_wcs
+
+    w = _seed_wcs(session_factory, other_180=True)
+    f = w["family"]
+    chat = _Chat(session_factory, monkeypatch)
+    chat.say(f"p trap 250mm {f.lower()} got stock?",
+             entities=[_spec_entity("p trap", "trap_type", "p_trap"), _spec_entity("250mm", "size", 250), _code(f)])
+    reply = _live(chat, "180 then", [_spec_entity("180", "size", 180)], "replace_combine",
+                  continuation=True, domain_hint="master_products", intent_hint="check_product")
+    listed = {c for c in w["codes"] if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", reply)}
+    assert listed == {f"{f}-P", f"{f}-NEW-P"}, reply
+
+
+def test_f7_back_after_a_topic_switch_with_reuse(session_factory, monkeypatch, _clear_overrides):
+    """5b: "and their stock again?" after "any promo?" parsed `reuse`, no entities: the 600 mm
+    basin list again, never other products."""
+    w = _seed(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    first = chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    chat.say("any promo?", entities=[], domain_hint="promotion", intent_hint="check_promotion")
+    back = _live(chat, "and their stock again?", [], "reuse")
+    shown = _listed(back, w["codes"], w["codes"])
+    assert shown and shown <= SIX_600, (first, back)

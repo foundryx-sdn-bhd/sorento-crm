@@ -31,7 +31,7 @@ from tests.chatbot.test_spec_on_category_entity import (  # noqa: F401
 from tests.chatbot import test_outstanding_lane as harness
 
 
-def _seed_wcs(session_factory, more_200: int = 0, wc_category: bool = True) -> dict[str, Any]:
+def _seed_wcs(session_factory, more_200: int = 0, wc_category: bool = True, other_180: bool = False) -> dict[str, Any]:
     """One WC family (`family_code`) with S-trap 150 / 200 variants, two P-trap variants (180) and
     one with no trap on file, plus a WC of another family holding 250. One stock row each.
     `more_200`: that many more 200 variants in the family, and one 200 in the other family.
@@ -66,6 +66,8 @@ def _seed_wcs(session_factory, more_200: int = 0, wc_category: bool = True) -> d
         rows[f"{family}-SH-200-{i}"] = (family, {"trap_type": "s_trap", "trap_length": 200})
     if more_200:
         rows[f"{other}-SH-200"] = (other, {"trap_type": "s_trap", "trap_length": 200})
+    if other_180:
+        rows[f"{other}-P-180"] = (other, {"trap_type": "p_trap", "trap_length": 180})
     for code, (fam, specs) in rows.items():
         p = product(db, company_id=DEFAULT_COMPANY_ID, code=code)
         db.query(Product).filter(Product.id == p.id).update({"family_code": fam})

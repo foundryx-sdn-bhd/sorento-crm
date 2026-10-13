@@ -243,3 +243,15 @@ def test_p12_the_size_rule_quotes_no_customer_message():
     quoted = re.findall(r'"([^"]*)"', SIZE_AND_CLASS_RULE)
     assert set(quoted) <= allowed, quoted
     assert "promotion" in SIZE_AND_CLASS_RULE.lower()
+
+
+def test_p13_the_size_rule_says_how_a_narrowing_follow_up_is_parsed():
+    """Crew live check on 1e3250479: "length only" after a size list parsed to no entity at all and
+    switched domain, so nothing could narrow. The rule states, as a business rule, that a follow-up
+    narrowing the last answer by a measure axis, a brand or another specification names only that
+    narrowing (an axis with the size the last ask stated), keeps the previous turn's domain, and is
+    `replace_combine`."""
+    from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
+
+    rule = SIZE_AND_CLASS_RULE.lower()
+    assert "narrow" in rule and "previous turn" in rule and "replace_combine" in rule, SIZE_AND_CLASS_RULE
