@@ -16,7 +16,7 @@
  */
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   Project,
@@ -152,6 +152,37 @@ vi.mock('@/components/common/AttachmentPreviewModal', () => ({
     </div>
   ),
 }));
+
+// Round-1 fix tests: the real rows component, with the table's own drop handler captured so a
+// drag can be fired without dnd-kit's layout measuring (same idea as SalesOrderLinesTable.reorder).
+const dnd: { dragEnd: ((event: unknown) => void) | null } = { dragEnd: null };
+vi.mock('@/components/ui/data-grid-table-dnd-rows', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/data-grid-table-dnd-rows')>();
+  const Actual = actual.DataGridTableDndRows;
+  return {
+    ...actual,
+    DataGridTableDndRows: (props: React.ComponentProps<typeof Actual>) => {
+      dnd.dragEnd = props.handleDragEnd as unknown as (event: unknown) => void;
+      return <Actual {...props} />;
+    },
+  };
+});
+
+// The real hook, watched: AC-QLG02 asks which listing key the grid remembers its columns under.
+const listingKeysSeen: string[] = [];
+vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/lib/listing-column-preferences/useListingColumnPreferences')
+  >();
+  return {
+    ...actual,
+    useListingColumnPreferences: (args: { listingKey?: string }) => {
+      if (args?.listingKey) listingKeysSeen.push(args.listingKey);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (actual.useListingColumnPreferences as any)(args);
+    },
+  };
+});
 
 import {
   QuotationVersionEditor,
@@ -1601,5 +1632,107 @@ describe('QuotationVersionEditor stock chip (QUOTATION-UX)', () => {
     listQuotationLines.mockResolvedValue([line({ product_code: null, product_id: null, description: 'Bespoke top' })]);
     await renderEditing();
     expect(screen.queryByRole('button', { name: /^Stock on / })).toBeNull();
+  });
+});
+
+describe('QuotationVersionEditor lines grid, fix round 1 (QUOTATION-UX)', () => {
+  const THREE = [
+    line({ id: 'l1', product_code: 'A-1', description: 'First', sort_order: 0 }),
+    line({ id: 'l2', product_code: 'A-2', description: 'Second', sort_order: 10 }),
+    line({ id: 'l3', product_code: 'A-3', description: 'Third', sort_order: 20, band_label: 'BILL NO 3' }),
+  ];
+
+  it('AC-QLG01: a row drag moves line 3 above line 2, renumbers, and carries its section bar', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    await renderEditing();
+    expect(dnd.dragEnd).not.toBeNull();
+
+    act(() => {
+      dnd.dragEnd!({ active: { id: 'l3' }, over: { id: 'l2' } });
+    });
+
+    await waitFor(() => expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l3', 'l2']));
+    expect(itemNumbers()).toEqual(['1', '2', '3']);
+    // The heading that opened on line 3 travels with line 3: still directly above its row.
+    const heading = screen.getByRole('textbox', { name: 'Section heading on A-3' });
+    const lineRow = screen.getByRole('textbox', { name: 'Qty on A-3' }).closest('tr');
+    expect(heading.closest('tr')?.nextElementSibling).toBe(lineRow);
+    expectNothingWritten();
+  });
+
+  it('AC-QLG01: a drop on itself or outside the table changes nothing', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    await renderEditing();
+    act(() => {
+      dnd.dragEnd!({ active: { id: 'l3' }, over: { id: 'l3' } });
+      dnd.dragEnd!({ active: { id: 'l3' }, over: null });
+    });
+    expect(stagedBody().map((l) => l.id)).toEqual(['l1', 'l2', 'l3']);
+  });
+
+  it('shows no stale pick after the product goes A -> B -> A, and saves both picks null', async () => {
+    getProductsForLineSelect.mockResolvedValue([
+      ...PRODUCTS,
+      {
+        id: 'p1',
+        product_code: 'SRT-WC-01',
+        product_name: 'Wall-hung WC',
+        description: 'Wall-hung WC',
+        brand_id: 'b1',
+        base_uom_id: 'u1',
+        list_price: '900.00',
+      },
+    ]);
+    listQuotationLines.mockResolvedValue([
+      ext({
+        product_id: 'p1',
+        image_attachment_id: 'a2',
+        drawing_attachment_id: 'd2',
+        product_image: PHOTO(),
+        technical_drawing: DRAWING(),
+      }),
+    ]);
+    await renderEditing();
+    expect(screen.getByRole('img', { name: 'SRT-WC-01 product photo' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Product on SRT-WC-01' }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-BASIN-02/ }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p9' }));
+
+    fireEvent.click(screen.getByRole('combobox', { name: /^Product on / }));
+    fireEvent.click(await screen.findByRole('option', { name: /SRT-WC-01/ }));
+    await waitFor(() => expect(stagedBody()[0]).toMatchObject({ product_id: 'p1' }));
+
+    expect(stagedBody()[0].image_attachment_id ?? null).toBeNull();
+    expect(stagedBody()[0].drawing_attachment_id ?? null).toBeNull();
+    // The cells claim nothing the save will not carry.
+    expect(screen.queryByRole('img', { name: /product photo$/ })).toBeNull();
+    expect(screen.queryByRole('img', { name: /technical drawing$/ })).toBeNull();
+  });
+
+  it('AC-QLG02: the grid remembers its columns under projects.projects.view::quotation-lines', async () => {
+    listQuotationLines.mockResolvedValue(THREE);
+    renderEditor();
+    await screen.findByText('First');
+    expect(listingKeysSeen).toContain('projects.projects.view::quotation-lines');
+  });
+
+  it('a frozen line with several candidates shows no count badge and no Choose or Change', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({
+        version_id: 'v1',
+        product_id: 'p1',
+        product_image: PHOTO({ candidate_count: 3 }),
+        technical_drawing: DRAWING({ candidate_count: 3 }),
+      }),
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'v1 (frozen)' }));
+    const photo = await screen.findByRole('img', { name: 'SRT-WC-01 product photo' });
+    const drawing = screen.getByRole('img', { name: 'SRT-WC-01 technical drawing' });
+
+    expect(photo.closest('span')?.textContent?.trim()).toBe('');
+    expect(drawing.closest('span')?.textContent?.trim()).toBe('');
+    expect(screen.queryByRole('button', { name: /^(Choose|Change) (photo|drawing) on / })).toBeNull();
   });
 });

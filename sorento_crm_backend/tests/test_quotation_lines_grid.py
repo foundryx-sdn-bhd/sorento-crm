@@ -574,7 +574,7 @@ def test_the_pdf_keeps_description_line_breaks(monkeypatch):
         html = qpdf.build_issue_html(db, issue)
         desc = re.search(r'<td class="desc">(.*?)</td>', html, re.S).group(1)
         assert "row one" in desc and "row two" in desc
-        assert "<br" in desc or "pre-line" in html or "pre-wrap" in html
+        assert "row one<br/>row two" in desc
         assert "row one row two" not in desc
 
 
@@ -620,3 +620,279 @@ def test_a_custom_line_without_a_description_says_custom_item(api):
     assert refused.json()["code"] == "quotation_line_description_required"
     assert "A custom item needs a description" in body
     assert "off-catalog" not in body.lower()
+
+
+# ------------------------------------------------------------------ fix round 1
+
+
+def _two_products(api):
+    client, db, env, make_product, version_id = _fixture_for_write(api)
+    a, b = make_product(), make_product()
+    return client, db, env, a, b, version_id
+
+
+def test_changing_the_product_with_the_old_products_stored_photo_is_refused(api):
+    client, db, env, a, b, version_id = _two_products(api)
+    photo = _photo(db, env, a, "a.jpg")
+    drawing = _drawing(db, env, a, "a-d.jpg")
+    db.commit()
+    saved = _bulk(
+        client,
+        version_id,
+        [_line_body(a, image_attachment_id=photo.id, drawing_attachment_id=drawing.id)],
+    )
+    assert saved.status_code == 200, saved.text
+    line_id = saved.json()["data"][0]["id"]
+
+    swapped = _bulk(
+        client,
+        version_id,
+        [{"id": line_id, "product_id": b.id, "image_attachment_id": photo.id}],
+    )
+    assert swapped.status_code == 422, swapped.text
+    assert swapped.json()["code"] == "quotation_line_image_invalid"
+
+    swapped = _bulk(
+        client,
+        version_id,
+        [{"id": line_id, "product_id": b.id, "drawing_attachment_id": drawing.id}],
+    )
+    assert swapped.status_code == 422, swapped.text
+    assert swapped.json()["code"] == "quotation_line_drawing_invalid"
+
+
+def test_an_existing_line_cannot_be_pointed_at_another_products_photo_or_drawing(api):
+    client, db, env, a, b, version_id = _two_products(api)
+    mine = _photo(db, env, a, "mine.jpg")
+    theirs = _photo(db, env, b, "theirs.jpg")
+    their_drawing = _drawing(db, env, b, "theirs-d.jpg")
+    db.commit()
+    saved = _bulk(client, version_id, [_line_body(a, image_attachment_id=mine.id)])
+    line_id = saved.json()["data"][0]["id"]
+
+    refused = _bulk(client, version_id, [{"id": line_id, "image_attachment_id": theirs.id}])
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "quotation_line_image_invalid"
+    refused = _bulk(
+        client, version_id, [{"id": line_id, "drawing_attachment_id": their_drawing.id}]
+    )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "quotation_line_drawing_invalid"
+
+
+def test_the_single_line_routes_refuse_an_invalid_photo_and_drawing(api):
+    client, db, env, a, b, version_id = _two_products(api)
+    mine = _photo(db, env, a, "mine.jpg")
+    theirs = _photo(db, env, b, "theirs.jpg")
+    their_drawing = _drawing(db, env, b, "theirs-d.jpg")
+    db.commit()
+    url = f"{BASE}/quotation-versions/{version_id}/lines"
+
+    created = client.post(url, json=_line_body(a, image_attachment_id=theirs.id))
+    assert created.status_code == 422, created.text
+    assert created.json()["code"] == "quotation_line_image_invalid"
+    created = client.post(url, json=_line_body(a, drawing_attachment_id=their_drawing.id))
+    assert created.status_code == 422, created.text
+    assert created.json()["code"] == "quotation_line_drawing_invalid"
+
+    ok = client.post(url, json=_line_body(a, image_attachment_id=mine.id))
+    assert ok.status_code == 201, ok.text
+    line_id = ok.json()["id"]
+    updated = client.put(f"{url}/{line_id}", json={"image_attachment_id": theirs.id})
+    assert updated.status_code == 422, updated.text
+    assert updated.json()["code"] == "quotation_line_image_invalid"
+    updated = client.put(f"{url}/{line_id}", json={"drawing_attachment_id": their_drawing.id})
+    assert updated.status_code == 422, updated.text
+    assert updated.json()["code"] == "quotation_line_drawing_invalid"
+
+
+def test_a_malformed_attachment_id_is_a_pick_refusal_not_a_500(api):
+    client, db, env, a, _b, version_id = _two_products(api)
+    db.commit()
+    url = f"{BASE}/quotation-versions/{version_id}/lines"
+    for field, code in (
+        ("image_attachment_id", "quotation_line_image_invalid"),
+        ("drawing_attachment_id", "quotation_line_drawing_invalid"),
+    ):
+        bad = {field: "not-a-uuid"}
+        for response in (
+            _bulk(client, version_id, [_line_body(a, **bad)]),
+            client.post(url, json=_line_body(a, **bad)),
+        ):
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == code
+            lowered = response.text.lower()
+            assert "select " not in lowered and "invalid input syntax" not in lowered
+
+
+def test_issue_fills_the_drawing_even_when_the_photo_is_already_picked():
+    with blank_session() as db:
+        env = _setup(db)
+        product = _product(db, env)
+        photo = _photo(db, env, product, "p.jpg")
+        _photo(db, env, product, "p2.jpg")
+        drawing = _drawing(db, env, product, "d.jpg")
+        document, scope = _scope(db, env)
+        line = _priced_line(db, env, scope, product, image_attachment_id=photo.id)
+        assert line.drawing_attachment_id is None
+
+        _issue(db, document, env["owner"])
+        db.refresh(line)
+        assert line.image_attachment_id == photo.id
+        assert line.drawing_attachment_id == drawing.id
+
+
+def test_a_file_linked_only_through_another_company_is_neither_candidate_nor_pick(api):
+    from app.models.company import Company
+
+    client, db, env, make_product, version_id = _fixture_for_write(api)
+    other = Company(
+        id=_uid(), name=f"{MARKER} Other Co", code=f"ZQ{_uid()[:8]}".upper(), is_active=True
+    )
+    db.add(other)
+    db.flush()
+    product = make_product()
+    mine = _photo(db, env, product, "mine.jpg")
+    foreign_photo = _file(db, other.id, PHOTOS, "foreign.jpg")
+    foreign_drawing = _file(db, other.id, DRAWINGS, "foreign-d.jpg")
+    for file in (foreign_photo, foreign_drawing):
+        link = ProductAttachment(
+            id=_uid(), product_id=product.id, attachment_id=file.id, company_id=other.id
+        )
+        db.add(link)
+    db.flush()
+    db.commit()
+
+    saved = _bulk(client, version_id, [_line_body(product)])
+    assert saved.status_code == 200, saved.text
+    row = saved.json()["data"][0]
+    photo_ids = {c["attachment_id"] for c in row["product_image"]["candidates"]}
+    drawing_ids = {c["attachment_id"] for c in row["technical_drawing"]["candidates"]}
+    assert foreign_photo.id not in photo_ids
+    assert foreign_drawing.id not in drawing_ids
+    assert mine.id in photo_ids
+
+    for field, foreign, code in (
+        ("image_attachment_id", foreign_photo, "quotation_line_image_invalid"),
+        ("drawing_attachment_id", foreign_drawing, "quotation_line_drawing_invalid"),
+    ):
+        refused = _bulk(client, version_id, [_line_body(product, **{field: foreign.id})])
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["code"] == code
+
+
+def test_a_frozen_versions_lines_offer_no_candidates(api):
+    from app.models.projects import ProjectQuotation, ProjectQuotationVersion
+    from app.services import project_quotation_service as quotes
+
+    client, db, env, make_product, version_id = _fixture_for_write(api)
+    product = make_product()
+    _photo(db, env, product, "p1.jpg")
+    _photo(db, env, product, "p2.jpg")
+    _drawing(db, env, product, "d1.jpg")
+    _drawing(db, env, product, "d2.jpg")
+    db.commit()
+    saved = _bulk(client, version_id, [_line_body(product)])
+    assert saved.status_code == 200, saved.text
+    live = saved.json()["data"][0]
+    assert live["product_image"]["candidate_count"] == 2
+    assert len(live["technical_drawing"]["candidates"]) == 2
+
+    version = db.get(ProjectQuotationVersion, version_id)
+    quotation = db.get(ProjectQuotation, version.quotation_id)
+    quotes.revise(db, quotation=quotation, actor_user_id=_user_of(db))
+    db.commit()
+
+    frozen = _stored(client, version_id)[0]
+    for cell in (frozen["product_image"], frozen["technical_drawing"]):
+        assert cell["candidates"] == []
+        assert cell["candidate_count"] == 0
+
+
+def _user_of(db) -> str:
+    from app.models.user import User
+
+    return str(db.query(User).filter(User.email.like("%@zzt.test")).first().id)
+
+
+class _Bytes:
+    def __init__(self, payload: bytes):
+        self.payload = payload
+
+    def download_file(self, key):
+        return self.payload
+
+
+def test_an_svg_is_never_embedded_even_when_it_claims_to_be_a_jpeg(monkeypatch):
+    from app.services import product_image_service as images
+
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><image href="file:///etc/passwd"/></svg>'
+    with blank_session() as db:
+        env = _setup(db)
+        for mime in ("image/svg+xml", "image/jpeg"):
+            row = _file(db, env["company_id"], PHOTOS, "x.svg", mime=mime)
+            monkeypatch.setattr(images, "get_backend", lambda provider: _Bytes(svg))
+            assert images.render(db, row.id) is None
+            assert images.data_uri(db, row.id) is None
+
+
+def test_the_issue_pdf_refuses_every_fetch_that_is_not_a_data_uri(monkeypatch):
+    import weasyprint
+
+    from app.services import project_quotation_pdf_service as qpdf
+
+    seen = {}
+
+    class _FakeHTML:
+        def __init__(self, *args, **kwargs):
+            seen["kwargs"] = kwargs
+
+        def write_pdf(self, *args, **kwargs):
+            return b"%PDF-fake"
+
+    monkeypatch.setattr(weasyprint, "HTML", _FakeHTML)
+    with blank_session() as db:
+        env = _setup(db)
+        document, scope = _scope(db, env)
+        _priced_line(db, env, scope, None)
+        issue = _issue(db, document, env["owner"])
+        qpdf.render_issue_pdf(db, issue)
+
+    fetcher = seen["kwargs"].get("url_fetcher")
+    assert callable(fetcher), "write must pass a url_fetcher"
+    for url in ("http://169.254.169.254/latest/meta-data", "file:///etc/passwd", "https://x.test/a.png"):
+        try:
+            fetcher(url)
+        except Exception:  # noqa: BLE001 - any refusal is fine
+            continue
+        raise AssertionError(f"the fetcher allowed {url}")
+    assert fetcher("data:image/png;base64,iVBORw0KGgo=") is not None
+
+
+def test_a_revision_carries_every_printed_line_column():
+    from app.services import project_quotation_service as quotes
+
+    with blank_session() as db:
+        env = _setup(db)
+        _document, scope = _scope(db, env)
+        _priced_line(
+            db,
+            env,
+            scope,
+            None,
+            brand_snapshot=f"{MARKER} Brand",
+            technical_spec=f"{MARKER} spec",
+            complete_set=f"{MARKER} set",
+            band_label=f"{MARKER} band",
+            item_label="A",
+            is_rate_only=True,
+        )
+        nxt = quotes.revise(db, quotation=scope, actor_user_id=env["owner"])
+        copy = quotes.list_lines(db, nxt.id)[0]
+        assert copy.brand_snapshot == f"{MARKER} Brand"
+        assert copy.technical_spec == f"{MARKER} spec"
+        assert copy.complete_set == f"{MARKER} set"
+        assert copy.band_label == f"{MARKER} band"
+        assert copy.item_label == "A"
+        assert copy.is_rate_only is True
+        assert Decimal(nxt.total_amount or 0) == Decimal("0")
