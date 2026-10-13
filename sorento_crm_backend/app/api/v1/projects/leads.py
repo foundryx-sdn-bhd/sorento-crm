@@ -54,7 +54,10 @@ from app.services.uuid_path_param import validate_uuid_path
 router = APIRouter()
 
 VIEW = "projects.projects.view"
-CREATE = "projects.projects.create"
+# Creating and qualifying a lead take EDIT, the grant that registers a project (owner, 13 Oct):
+# a new project needs its lead, so whoever may register one must be able to create the lead.
+# They used to take "projects.projects.create", which no permission registry defines, so only
+# admins passed.
 EDIT = "projects.projects.edit"
 DELETE = "projects.projects.delete"
 
@@ -233,7 +236,7 @@ async def get_lead(
 @router.post("", response_model=ProjectLeadResponse, status_code=status.HTTP_201_CREATED)
 async def create_lead(
     payload: ProjectLeadCreate,
-    current_user: dict = Depends(require_permission(CREATE)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Record a sighting. No clash check, deliberately (AC-O3).
@@ -451,7 +454,7 @@ async def preview_qualify(
 async def qualify_lead(
     lead_id: str,
     payload: ProjectLeadQualifyRequest,
-    current_user: dict = Depends(require_permission(CREATE)),
+    current_user: dict = Depends(require_permission(EDIT)),
     db: Session = Depends(get_db),
 ):
     """Convert to a project. 409 when somebody already holds the development.

@@ -575,7 +575,7 @@ export function ProjectForm(props: ProjectFormProps) {
                 placeholder="Search leads by title or code"
                 emptyMessage="No open leads match"
                 // Ungated, like the Leads page's own Create lead: the server decides who may
-                // create one (projects.projects.create, or an admin role).
+                // create one (projects.projects.edit, the grant that registers a project).
                 createOption={{
                   label: (query) => <span>Create lead &ldquo;{query}&rdquo;</span>,
                   onCreate: setCreatingLeadTitle,
