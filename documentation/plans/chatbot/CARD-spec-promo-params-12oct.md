@@ -1,6 +1,6 @@
 # CARD: spec + active-promotion params in the area lanes (SPEC-PROMO-PARAMS)
 
-Status: Review. Step-1 hand test round fixed (section 10b); owner size ruling built (section 10c); owner promotion hand test ruling built (section 10d, supersedes the promotion parts of sections 9 and 10). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10c are what shipped).
+Status: Review. Step-1 hand test round fixed (section 10b); owner size ruling built (section 10c); owner promotion hand test ruling built (section 10d, supersedes the promotion parts of sections 9 and 10). Track: full (sections 2-5 are the pre-answer proposal; sections 8-10d are what shipped).
 (parser schema + prompt version change, backend route params, MCP catalog), size M.
 
 Chatbot architecture option D (owner yes, 11 Oct, question 4 on
@@ -217,7 +217,8 @@ axis never reaches the resolver or the tool. Slices:
    (a number in mm when no axis word is said); grounding keeps `spec_key=size` with a numeric value;
    the route resolves the axis from data: the active numeric mm keys whose stored value equals the
    number among products matching the other constraints. One key: use it (`spec_resolved`). Several:
-   no rows plus `spec_ambiguous` (the bot asks which). None: `spec_alternatives` per mm key plus
+   SUPERSEDED (owner ruling 12 Oct, see the "never ask Length or Width" ruling below): any of them
+   matches (`any_of`), there is no `spec_ambiguous` and no axis question. None: `spec_alternatives` per mm key plus
    `spec_unrecorded` (products with no mm value at all).
 2. Product and stock lanes: grounded specs (plus the class / product type, resolved through registry
    data, never text matching) become `spec_constraints` on the MCP call for every described ask (no
