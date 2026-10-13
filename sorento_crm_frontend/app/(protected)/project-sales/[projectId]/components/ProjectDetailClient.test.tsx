@@ -57,7 +57,50 @@ vi.mock('@/components/common/ActivitiesNotesPanel/EntityActivitiesLayout', () =>
 
 const changeStatus = vi.fn();
 const deleteProject = vi.fn();
+const updateProject = vi.fn();
 let projectFixture: Project;
+let canManage = true;
+
+vi.mock('@/hooks/usePermissions', () => ({
+  useHasPermission: (slug: string) => (slug === 'projects.projects.manage' ? canManage : true),
+}));
+
+vi.mock('@/services/userSelectService', () => ({
+  getUserLookup: vi.fn(async () => [
+    { id: 'u-ali', name: 'Ali' },
+    { id: 'u-mei', name: 'Mei Ling' },
+  ]),
+}));
+
+vi.mock('@/components/common/SearchableSelect', () => ({
+  SearchableSelect: ({
+    value,
+    onChange,
+    options,
+    placeholder,
+    id,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+    options?: { value: string; label: string }[];
+    placeholder?: string;
+    id?: string;
+  }) => (
+    <select
+      id={id}
+      aria-label={placeholder ?? 'select'}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">{placeholder ?? ''}</option>
+      {(options ?? []).map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
+}));
 
 vi.mock('../../_shared/hooks/useProjects', () => ({
   // The pager reads the pipeline page through the entity's shared key + fetch (S3-03).
@@ -68,7 +111,7 @@ vi.mock('../../_shared/hooks/useProjects', () => ({
   useProject: () => ({ data: projectFixture, isLoading: false, isError: false }),
   useChangeProjectStatus: () => ({ mutate: changeStatus, isPending: false }),
   useDeleteProject: () => ({ mutateAsync: deleteProject }),
-  useUpdateProject: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateProject: () => ({ mutate: vi.fn(), mutateAsync: updateProject, isPending: false }),
   useCollaborators: () => ({ data: [], isLoading: false }),
   useTakeoverRequests: () => ({ data: [] }),
   useTakeoverMutations: () => ({
@@ -197,6 +240,8 @@ function openOverflow() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canManage = true;
+  updateProject.mockResolvedValue({});
   projectFixture = project();
   graphFixture = graph();
 });
@@ -251,10 +296,10 @@ describe('the project header', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'PO received' }));
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-po',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-po' },
+      expect.anything(),
+    );
   });
 
   it('fires the forward move directly, with no menu to choose from', () => {
@@ -264,10 +309,10 @@ describe('the project header', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Tendering' }));
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-tendering',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-tendering' },
+      expect.anything(),
+    );
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -298,10 +343,10 @@ describe('the project header', () => {
     const lost = await screen.findByRole('menuitem', { name: 'Mark lost' });
     fireEvent.click(lost);
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-lost',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-lost' },
+      expect.anything(),
+    );
   });
 
   it('offers no move at all from a final rung, rather than a button the server rejects', () => {
@@ -433,5 +478,131 @@ describe('the overview, read as sections', () => {
     expect(screen.queryByText(/Everyone can read this project/)).toBeNull();
     expect(screen.queryByText('No open requests.')).toBeNull();
     expect(screen.getAllByText('-').length).toBeGreaterThan(2);
+  });
+});
+
+describe('owner hand-test, 13 Oct', () => {
+  it('puts nothing under the title: no developer/location line and no placeholder sentence', () => {
+    projectFixture = project({ developer_name: 'Setia Land', location: 'Setia Alam' });
+    const { container } = renderDetail();
+    const header = container.querySelector('header')!;
+    expect(within(header).queryByText(/Setia Alam/)).toBeNull();
+    expect(within(header).queryByText(/ · /)).toBeNull();
+
+    projectFixture = project();
+    renderDetail();
+    expect(screen.queryByText('No developer or location recorded yet')).toBeNull();
+  });
+
+  it('labels the admin reference "Reference", not "Filing reference"', () => {
+    projectFixture = project({ admin_ref: 'PS26-0143' });
+    renderDetail();
+    expect(screen.getByText('Reference')).toBeInTheDocument();
+    expect(screen.getByText('PS26-0143')).toBeInTheDocument();
+    expect(screen.queryByText('Filing reference')).toBeNull();
+  });
+
+  it('offers a manager Reassign in the gear, which sends the new owner', async () => {
+    projectFixture = project({ owner_user_id: 'u-ali', owner_name: 'Ali' });
+    renderDetail();
+    openOverflow();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Reassign/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    const picker = within(dialog).getByLabelText('Select a salesperson');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('option', { name: 'Mei Ling' })).toBeInTheDocument(),
+    );
+    fireEvent.change(picker, { target: { value: 'u-mei' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reassign' }));
+
+    await waitFor(() =>
+      expect(updateProject).toHaveBeenCalledWith({ owner_user_id: 'u-mei' }),
+    );
+  });
+
+  it('keeps Reassign away from someone who is not a sales manager', async () => {
+    canManage = false;
+    renderDetail();
+    openOverflow();
+    await screen.findByRole('menuitem', { name: /Edit project/ });
+    expect(screen.queryByRole('menuitem', { name: /Reassign/ })).toBeNull();
+  });
+
+  it('opens the new quotation page once Spec In has been made (owner, 13 Oct)', () => {
+    projectFixture = project({
+      status_id: 's-registered',
+      status_key: 'registered',
+      status_label: 'Registered',
+    });
+    graphFixture = graph({
+      statuses: [
+        status('s-registered', 'registered', 'Registered', 1),
+        status('s-specified', 'specified', 'Spec In', 2),
+        status('s-lost', 'lost', 'Lost', 6, { is_terminal: true }),
+      ],
+      transitions: [
+        transition('t-a', 's-registered', 's-specified', 'Spec In', 0),
+        transition('t-b', 's-registered', 's-lost', 'Mark lost', 0),
+      ],
+    });
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+
+    fireEvent.click(
+      within(screen.getByTestId('project-header-actions')).getByRole('button', {
+        name: 'Spec In',
+      }),
+    );
+
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-specified' },
+      expect.anything(),
+    );
+    expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/new');
+  });
+
+  it('stays on the page for any other move', () => {
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+    fireEvent.click(
+      within(screen.getByTestId('project-header-actions')).getByRole('button', {
+        name: 'Tendering',
+      }),
+    );
+    expect(changeStatus).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('shows the customer on the Overview, read through the lead', () => {
+    projectFixture = project({
+      lead_id: 'lead-1',
+      lead_code: 'LEAD-000042',
+      customer_id: 'cust-1',
+      customer_name: 'Gamuda Builders Sdn Bhd',
+      customer_phone: '012-345 6789',
+      customer_attn: 'Lim Wei Ming',
+    });
+    renderDetail();
+
+    const card = screen.getByText('Customer').closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Gamuda Builders Sdn Bhd')).toBeInTheDocument();
+    expect(within(card).getByText('012-345 6789')).toBeInTheDocument();
+    expect(within(card).getByText('Lim Wei Ming')).toBeInTheDocument();
+  });
+
+  it('does not open a new quotation for the backward Re-specify move', async () => {
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+    openOverflow();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Re-specify' }));
+    expect(changeStatus).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 });
