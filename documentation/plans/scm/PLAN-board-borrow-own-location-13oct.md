@@ -1,6 +1,6 @@
 # PLAN: Fulfilment Planning board, borrow from the line's own location
 
-Status: Built, in review; awaiting owner hand test. Track: small fix (no migration, no auth/RBAC
+Status: Built, reviewer READY (13 Oct); awaiting owner hand test. Track: small fix (no migration, no auth/RBAC
 change, backend diff under 300 lines; Size M by the board's sizing).
 Lane: BORROW-OWN-LOC, PR #1629.
 UAC: `board-borrow-own-location-13oct-acceptance-criteria.md`.
