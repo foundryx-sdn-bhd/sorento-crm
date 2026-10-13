@@ -176,6 +176,12 @@ def create_analytics_connector() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
         views.ensure_views(conn)
+        # CHAT-TURN-COST (`ctc_0001_turn_costs`): the price table and the column come from
+        # `create_all`; the seeds and the two cost views exist only in the migration body.
+        from app.services.analytics_connector import prices
+
+        prices.seed_prices(conn)
+        views.ensure_cost_views(conn)
     log.info("analytics_connector views created")
 
 

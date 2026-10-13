@@ -8,6 +8,7 @@ Anything outside the catalog raises `QueryError`, which the route answers with 4
 from __future__ import annotations
 
 import json
+import math
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ class QueryError(ValueError):
 @dataclass(frozen=True)
 class Col:
     key: str
-    type: str  # text | int | datetime | bool
+    type: str  # text | int | number | datetime | bool | json
     description: str
     filterable: bool = True
     groupable: bool = False
@@ -152,6 +153,75 @@ CATALOG: dict[str, Dataset] = {
             Col("summary", "text", "Episode summary"),
             Col("last_user_message", "text", "Last thing the customer wrote"),
             Col("last_assistant_summary", "text", "Summary of the bot's last answer"),
+        ),
+    ),
+    # CHAT-TURN-COST (plan documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md).
+    "turn_costs": Dataset(
+        "turn_costs",
+        "One row per chatbot turn with what it cost: every LLM call of the turn summed, priced in USD"
+        " from the model price table, plus the parser's category (domain_hint, intent_hint) and latency."
+        " Group by contact, episode_id, domain_hint or created_at buckets for cost per contact, conversation,"
+        " category or day. cost_usd is NULL when a call used a model with no price (priced = false).",
+        "created_at",
+        (
+            Col("id", "text", "Turn id (the same id as bot_turns.id and llm_calls.chatbot_turn_id)"),
+            Col("created_at", "datetime", "Turn start (Malaysia time)"),
+            *_CONTACT_COLS,
+            Col("contact_respond_id", "text", "Respond.io contact id", groupable=True),
+            Col("customer_name", "text", "Primary customer name of the contact", groupable=True),
+            Col("episode_id", "text", "Conversation episode the turn belongs to (episodes.id); empty while the"
+                " episode is still open", groupable=True),
+            Col("inbound_text", "text", "What the customer wrote (sign-in codes masked)"),
+            Col("reply_text", "text", "What the bot answered (sign-in codes masked)"),
+            Col("status", "text", "queued, processing, delegated, done, failed", groupable=True),
+            Col("stage", "text", "Where the turn stopped", groupable=True),
+            Col("branch_kind", "text", "Reply branch (lane) the engine took, e.g. business, low_signal", groupable=True),
+            Col("message_type", "text", "Parser's message type", groupable=True),
+            Col("domain_hint", "text", "Parser's domain (the conversation category: stock, order, ...)", groupable=True),
+            Col("intent_hint", "text", "Parser's intent within the domain", groupable=True),
+            Col("prompt_version", "int", "Parser prompt version the turn ran on", groupable=True),
+            Col("model", "text", "Model(s) the turn's LLM calls used, comma-separated", groupable=True),
+            Col("llm_calls", "int", "LLM calls the turn made (parser, plus the clarifier on small-talk turns)",
+                measurable=True),
+            Col("prompt_tokens", "int", "Input tokens over the turn's calls. Includes cached tokens for OpenAI and"
+                " Gemini, excludes them for Anthropic", measurable=True),
+            Col("cached_tokens", "int", "Input tokens served from the provider's prompt cache (billed at the"
+                " cached rate)", measurable=True),
+            Col("completion_tokens", "int", "Output tokens over the turn's calls", measurable=True),
+            Col("total_tokens", "int", "prompt_tokens + completion_tokens over the turn's calls", measurable=True),
+            Col("llm_ms", "int", "Milliseconds spent waiting on LLM calls", measurable=True),
+            Col("latency_ms", "int", "Milliseconds from turn start to finish", measurable=True),
+            Col("cost_usd", "number", "USD cost of the turn's LLM calls; 0 for a turn with no call, NULL when a"
+                " call's model has no price", measurable=True),
+            Col("priced", "bool", "false when some call's model has no price row (cost_usd is then NULL)",
+                groupable=True),
+        ),
+    ),
+    "llm_calls": Dataset(
+        "llm_calls",
+        "One row per LLM call the CRM made (chatbot parser and clarifier, the staff AI assistant, document"
+        " extraction, ...), with tokens, latency and USD cost. chatbot_turn_id links a chatbot call to turn_costs.",
+        "created_at",
+        (
+            Col("id", "text", "Usage log row id"),
+            Col("created_at", "datetime", "When the call was logged (Malaysia time)"),
+            Col("feature", "text", "What made the call: chatbot_parser, chatbot_clarifier, ai_assistant,"
+                " ai_extract, ...", groupable=True),
+            Col("chatbot_turn_id", "text", "Chatbot turn the call belongs to (turn_costs.id); empty for other"
+                " features", groupable=True),
+            *_CONTACT_COLS,
+            Col("provider", "text", "openai, anthropic or gemini", groupable=True),
+            Col("model", "text", "Model name", groupable=True),
+            Col("prompt_tokens", "int", "Input tokens. Includes cached tokens for OpenAI and Gemini, excludes them"
+                " for Anthropic", measurable=True),
+            Col("cached_tokens", "int", "Input tokens served from the prompt cache", measurable=True),
+            Col("completion_tokens", "int", "Output tokens", measurable=True),
+            Col("total_tokens", "int", "Total tokens as the provider reported them", measurable=True),
+            Col("response_time_ms", "int", "Milliseconds the call took", measurable=True),
+            Col("was_answered", "bool", "The model returned a usable answer", groupable=True),
+            Col("cost_usd", "number", "USD cost from the model price table; NULL when the model has no price",
+                measurable=True),
+            Col("priced", "bool", "false when the model has no price row", groupable=True),
         ),
     ),
 }
@@ -270,6 +340,13 @@ def _coerce(col: Col, value: Any) -> Any:
             if isinstance(value, bool):
                 raise ValueError
             return int(value)
+        if col.type == "number":
+            if isinstance(value, bool):
+                raise ValueError
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError
+            return number
         if col.type == "bool":
             if isinstance(value, bool):
                 return value
@@ -309,7 +386,7 @@ def _filter_clause(ds: Dataset, v, f: Filter):
             raise QueryError("contains works on text columns only")
         return expr.ilike(f"%{_escape_like(str(f.value))}%", escape="\\")
     value = _coerce(col, f.value)
-    if op in ("gt", "gte", "lt", "lte") and col.type not in ("int", "datetime"):
+    if op in ("gt", "gte", "lt", "lte") and col.type not in ("int", "number", "datetime"):
         raise QueryError(f"{op} works on numbers and dates only")
     return {
         "eq": expr == value, "ne": expr != value,

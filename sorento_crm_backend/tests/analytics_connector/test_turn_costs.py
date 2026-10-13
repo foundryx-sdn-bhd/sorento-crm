@@ -296,7 +296,7 @@ def test_backfill_takes_cached_tokens_from_the_turn_trace():
         db.execute(text("UPDATE ai_assistant_usage_logs SET cached_tokens = NULL WHERE id IN (:a, :b)"),
                    {"a": legacy, "b": no_fact})
         prices.backfill_cached_tokens(db)
-        got = dict(db.execute(text("SELECT id, cached_tokens FROM ai_assistant_usage_logs WHERE id IN (:a, :b)"),
+        got = dict(db.execute(text("SELECT id::text, cached_tokens FROM ai_assistant_usage_logs WHERE id IN (:a, :b)"),
                               {"a": legacy, "b": no_fact}).all())
         assert got[legacy] == 36000
         assert got[no_fact] == 0

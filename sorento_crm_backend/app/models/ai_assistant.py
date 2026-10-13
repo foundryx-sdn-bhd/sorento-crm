@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -141,6 +142,9 @@ class AIAssistantUsageLog(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # CHAT-TURN-COST: the part of `prompt_tokens` served from the provider's prompt cache
+    # (Anthropic reports it OUTSIDE `prompt_tokens`). NULL on rows written before the column.
+    cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tool_calls_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     response_time_ms: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     was_answered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
@@ -164,7 +168,29 @@ class AIAssistantUsageLog(Base):
         Index("ix_ai_assistant_usage_logs_message_id", "message_id"),
         Index("ix_ai_assistant_usage_logs_contact_id", "contact_id"),
         Index("ix_ai_assistant_usage_logs_feature_created_at", "feature", "created_at"),
+        # CHAT-TURN-COST: the analytics connector's `turn_costs` view sums a turn's calls.
+        Index("ix_ai_assistant_usage_logs_chatbot_turn_id", "chatbot_turn_id"),
     )
+
+
+class LLMModelPrice(Base):
+    """USD list price per 1M tokens for one model name (CHAT-TURN-COST).
+
+    Read by the analytics connector's `llm_calls` / `turn_costs` views. `model` matches
+    `ai_assistant_usage_logs.model` exactly; a model with no row is reported unpriced
+    (cost NULL), never as free. `cached_input_usd_per_1m` NULL means no cache discount.
+    """
+
+    __tablename__ = "llm_model_prices"
+    __company_shared__ = True
+
+    model: Mapped[str] = mapped_column(String(128), primary_key=True)
+    input_usd_per_1m: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    cached_input_usd_per_1m: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    output_usd_per_1m: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    # Where the price came from and when it was read.
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
 
 class AIAssistantWishlistCluster(Base):
