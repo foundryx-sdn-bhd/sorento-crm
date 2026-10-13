@@ -802,3 +802,100 @@ def test_amend_or_buy_reason_alone_never_becomes_a_cs_note(api, monkeypatch):
         .all()
     )
     assert "CS:" not in (live.note or "")
+
+
+# --------------------------------------------------------------------------- #
+# Mock v3 (owner, 13 Oct): a rejection is an ORDER INQUIRY status              #
+# --------------------------------------------------------------------------- #
+
+
+def _so_lines(world, core_so_id: str) -> dict:
+    from app.services.scm.sales_order_service import SalesOrderService
+
+    so = SalesOrderService(world.db).get(str(core_so_id))
+    return {str(line["id"]): line for line in so["lines"]}
+
+
+def test_so_lines_tab_carries_the_open_refusal(api, monkeypatch):
+    client, world = api
+    _register()
+    fixture = _raise_two_rows(api)
+    _capture(monkeypatch)
+    _activate(world, world.buyer)
+    world.db.query(User).filter(User.id == world.buyer).one().name = "Joey Buyer"
+    world.db.commit()
+    first, second = fixture["first"], fixture["second"]
+    assert _reject_one(world, first["row"], reason="DISCON").status_code == 200
+
+    lines = _so_lines(world, fixture["order"].so_id)
+    refused = lines[str(first["core_line"].id)]["order_inquiry"]
+    assert refused["ack_state"] == "rejected"
+    assert refused["rejected_reason"] == "DISCON"
+    assert refused["rejected_by_name"] == "Joey Buyer"
+    assert refused["rejected_at"] is not None
+    other = lines[str(second["core_line"].id)]["order_inquiry"]
+    assert (other or {}).get("ack_state") != "rejected"
+
+
+def test_so_lines_tab_refusal_clears_once_cs_decides_again(api, monkeypatch):
+    from .test_order_inquiry_handshake import _confirm, _line_payload
+
+    client, world = api
+    _register()
+    fixture = _raise_one_row(api, qty="10")
+    _capture(monkeypatch)
+    assert _reject_one(world, fixture["row"], reason="DISCON").status_code == 200
+    resp = _confirm(client, fixture["order"].id, [_line_payload(fixture["line"].id, buy_qty="10")])
+    assert resp.status_code == 200, resp.text
+    world.db.commit()
+
+    line = _so_lines(world, fixture["core_so"].id)[str(fixture["core_line"].id)]
+    assert (line["order_inquiry"] or {}).get("ack_state") != "rejected"
+
+
+def test_decision_trail_keeps_the_rejection_after_cs_decides_again(api, monkeypatch):
+    """Owner note 4: the purchasing rejection stays in the line's fulfilment planning
+    history, so it can be traced back after the badge clears."""
+    from app.services.decision_trail_service import DecisionTrailService
+
+    from .test_order_inquiry_handshake import _confirm, _line_payload
+
+    client, world = api
+    _register()
+    fixture = _raise_one_row(api, qty="10")
+    _capture(monkeypatch)
+    _activate(world, world.buyer)
+    world.db.query(User).filter(User.id == world.buyer).one().name = "Joey Buyer"
+    world.db.commit()
+    assert _reject_one(world, fixture["row"], reason="DISCON").status_code == 200
+    resp = _confirm(client, fixture["order"].id, [_line_payload(fixture["line"].id, buy_qty="10")])
+    assert resp.status_code == 200, resp.text
+    world.db.commit()
+
+    entries = DecisionTrailService(world.db).for_core_line(str(fixture["core_line"].id))
+    rejected = [e for e in entries if e["kind"] == "rejected"]
+    assert len(rejected) == 1
+    inquiry = _inquiry_of(world, fixture["row"])
+    assert rejected[0]["actor_name"] == "Joey Buyer"
+    assert rejected[0]["at"] is not None
+    assert inquiry.inquiry_no in rejected[0]["detail"]
+    assert "DISCON" in rejected[0]["detail"]
+
+
+def test_email_and_bell_open_the_sales_order_lines_tab(api, monkeypatch):
+    client, world = api
+    _register()
+    _activate(world, world.cs_user)
+    fixture = _raise_two_rows(api)
+    captured = _capture(monkeypatch)
+    first, second = fixture["first"], fixture["second"]
+    assert _reject_batch(world, [first["row"], second["row"]]).status_code == 200
+
+    path = (
+        f"/scm/sales-orders/{fixture['order'].so_id}?tab=lines"
+        f"&line={first['core_line'].id}"
+    )
+    [call] = _rejected(captured)
+    assert call["context"]["reject"]["board_link"].endswith(path)
+    [notice] = captured["in_app"]
+    assert notice["data"]["link"] == path
