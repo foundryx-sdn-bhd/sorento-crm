@@ -1,14 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, ArrowRight, Check, Plus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -17,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { WizardSteps } from '@/components/common/WizardSteps';
 import { useCustomerSelectQuery } from '@/app/(protected)/order-management/shared/hooks/use-customer-select-query';
 import {
   useLeadMutations,
@@ -26,7 +25,11 @@ import {
   useAssignableUsers,
   useLeadAcceptanceMutations,
 } from '../../_shared/hooks/useLeadAcceptance';
-import type { LeadNewCustomer, ProjectLeadBody } from '../../_shared/types/project.types';
+import type {
+  LeadNewCustomer,
+  ProjectLead,
+  ProjectLeadBody,
+} from '../../_shared/types/project.types';
 import type { LeadInformantBody } from '../../_shared/types/leadAcceptance.types';
 import {
   EMPTY_INFORMANT,
@@ -46,7 +49,7 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]['id'];
 
 /**
- * Record a lead: the development, who told us, the little we know, and who it goes to.
+ * Create a lead: the development, who told us, the little we know, and who it goes to.
  *
  * The development comes FIRST because it is the only required decision (AC-A3). A lead
  * anchors on the job, not on a counterparty: on day one nobody knows who will place the
@@ -55,12 +58,20 @@ type StepId = (typeof STEPS)[number]['id'];
  * A lead is never clash-checked (AC-O3), so there is no warning panel here. That check
  * happens once, at qualify, where it means something.
  */
-export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
+export function LeadWizardDialog({
+  onDone,
+  initialTitle = '',
+}: {
+  /** Called with the created lead, or with nothing when the dialog is closed without one. */
+  onDone: (created?: ProjectLead) => void;
+  /** What the caller already knows the development as, e.g. text typed into a lead picker. */
+  initialTitle?: string;
+}) {
   const { create } = useLeadMutations();
   const { assign } = useLeadAcceptanceMutations();
   const [step, setStep] = React.useState<StepId>('development');
 
-  const [title, setTitle] = React.useState('');
+  const [title, setTitle] = React.useState(initialTitle);
   const [developerPartyId, setDeveloperPartyId] = React.useState('');
   const [location, setLocation] = React.useState('');
 
@@ -114,17 +125,21 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
         /* reported by the mutation */
       }
     }
-    onDone();
+    onDone(lead);
   }
+
+  const informantParty =
+    (parties.data?.data ?? []).find((party) => party.id === informant.informant_party_id)
+      ?.name ?? null;
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
-      <DialogContent className="max-h-[92vh] w-full max-w-lg overflow-hidden">
+      <DialogContent
+        className="max-h-[92vh] w-full max-w-lg overflow-hidden"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
-          <DialogTitle>Record a lead</DialogTitle>
-          <DialogDescription>
-            A lead claims nothing. Ownership locks when the salesperson accepts it.
-          </DialogDescription>
+          <DialogTitle>Create lead</DialogTitle>
         </DialogHeader>
 
         {/* A real form, like every other dialog in this module, so Enter advances the
@@ -140,24 +155,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
             if (canAdvance) setStep(STEPS[stepIndex + 1].id);
           }}
         >
-          <div className="mb-4 flex flex-wrap gap-1.5">
-            {STEPS.map((candidate, index) => (
-              <Badge
-                key={candidate.id}
-                variant={
-                  candidate.id === step
-                    ? 'primary'
-                    : index < stepIndex
-                      ? 'secondary'
-                      : 'outline'
-                }
-                className="text-[11px]"
-              >
-                {index < stepIndex && <Check className="size-3" aria-hidden />}
-                {candidate.label}
-              </Badge>
-            ))}
-          </div>
+          <WizardSteps steps={STEPS} currentId={step} className="mb-4" />
 
           <DialogBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             {step === 'development' && (
@@ -172,10 +170,6 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                     onChange={(event) => setTitle(event.target.value)}
                     placeholder="e.g. Tower behind the Setia showroom"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Vague is fine. Nobody is claiming anything yet, and a lead you did not
-                    record is worth less than one with a rough name.
-                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="lead-developer">Developer</Label>
@@ -190,7 +184,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                       value: party.id,
                       label: party.name,
                     }))}
-                    placeholder="Often unknown at this stage"
+                    placeholder="Search developers"
                     emptyMessage="No developers yet. Add one under Parties"
                   />
                 </div>
@@ -230,10 +224,6 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                           }
                           placeholder="Sunway Construction Sdn Bhd"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Created as a prospect. An existing customer with this name is
-                          reused rather than duplicated.
-                        </p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
@@ -270,7 +260,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                         size="sm"
                         onClick={() => setCreatingCustomer(false)}
                       >
-                        Pick an existing buyer instead
+                        Choose an existing buyer
                       </Button>
                     </div>
                   ) : (
@@ -287,22 +277,18 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                             label: row.customer_name,
                             description: row.customer_code ?? undefined,
                           }))}
-                          placeholder="Usually not known yet"
-                          emptyMessage="No match. Create the buyer instead."
+                          placeholder="Search buyers"
+                          emptyMessage="No match"
+                          createOption={{
+                            label: (query) => <span>Create &ldquo;{query}&rdquo;</span>,
+                            onCreate: (query) => {
+                              setCustomerId('');
+                              setNewCustomer({ customer_name: query });
+                              setCreatingCustomer(true);
+                            },
+                          }}
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Leave it empty until a contractor is awarded.
-                        </p>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCreatingCustomer(true)}
-                      >
-                        <Plus className="size-4" aria-hidden />
-                        The buyer is not a customer yet
-                      </Button>
                     </div>
                   )}
                 </div>
@@ -315,8 +301,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                     min={0}
                     value={estimatedValue}
                     onChange={(event) => setEstimatedValue(event.target.value)}
-                    placeholder="A guess is better than nothing"
-                  />
+                                      />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="lead-notes">Notes</Label>
@@ -325,7 +310,6 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                     value={notes}
                     onChange={(event) => setNotes(event.target.value)}
                     rows={3}
-                    placeholder="What you heard, and what would confirm it"
                   />
                 </div>
               </div>
@@ -346,12 +330,9 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                       value: user.id,
                       label: user.name || 'Unnamed user',
                     }))}
-                    placeholder="Leave with marketing for now"
+                    placeholder="Select a salesperson"
                     emptyMessage="No match"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    They accept or decline it. Until then the lead is nobody&apos;s.
-                  </p>
                 </div>
 
                 <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -366,20 +347,17 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                   />
                   <Fact label="Location" value={location.trim() || null} />
                   <Fact
-                    label="Told us"
+                    label="Source"
                     value={
-                      [
-                        informantSourceLabel(informantBody(informant).informant_source),
-                        (parties.data?.data ?? []).find(
-                          (party) => party.id === informant.informant_party_id,
-                        )?.name ?? null,
-                        informant.informant_contact_name.trim() || null,
-                        informant.informant_ref.trim() || null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ') || null
+                      informantSourceLabel(informantBody(informant).informant_source) || null
                     }
                   />
+                  <Fact label="Firm" value={informantParty} />
+                  <Fact
+                    label="Contact"
+                    value={informant.informant_contact_name.trim() || null}
+                  />
+                  <Fact label="Reference" value={informant.informant_ref.trim() || null} />
                   <Fact
                     label="Buyer"
                     value={
@@ -412,7 +390,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
               Back
             </Button>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="outline" onClick={onDone}>
+              <Button type="button" variant="outline" onClick={() => onDone()}>
                 Cancel
               </Button>
               {step === 'confirm' ? (
@@ -420,7 +398,7 @@ export function LeadWizardDialog({ onDone }: { onDone: () => void }) {
                   type="submit"
                   disabled={create.isPending || assign.isPending || !developmentReady}
                 >
-                  Record lead
+                  Create lead
                 </Button>
               ) : (
                 <Button type="submit" disabled={!canAdvance}>

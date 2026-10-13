@@ -76,7 +76,7 @@ export function InformantFieldset({
               value: option.value,
               label: option.label,
             }))}
-            placeholder="-"
+            placeholder="Select a source"
           />
         </div>
         <div className="space-y-1.5">
@@ -98,7 +98,7 @@ export function InformantFieldset({
             loadError={parties.error}
             onRetry={() => void parties.refetch()}
             options={partyOptions}
-            placeholder="Often none"
+            placeholder="Search firms"
             emptyMessage="No match. Add the firm under Parties"
           />
         </div>

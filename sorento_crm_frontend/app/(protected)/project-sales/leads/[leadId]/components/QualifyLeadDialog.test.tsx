@@ -155,6 +155,15 @@ beforeEach(() => {
 });
 
 describe('QualifyLeadDialog', () => {
+  it('carries no explanatory prose (owner, 13 Oct)', async () => {
+    renderDialog();
+    await screen.findByLabelText(/Project title/);
+    expect(screen.queryByText(/locks it to its owner/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Split a masterplan here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sharpens the duplicate/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/stakeholder roles/)).not.toBeInTheDocument();
+  });
+
   it('checks for clashes using the lead title it was opened with', async () => {
     renderDialog();
 
