@@ -318,6 +318,9 @@ def _answer(
     key = ask.answer.option_key if ask.answer is not None else None
     free = ask.answer.free_value if ask.answer is not None else None
     picked = next((o for o in pending.options if o.key == key), None) if key is not None else None
+    if picked is None and key is not None and pending.kind == "clarify_entity":
+        # A candidate question is keyed by position; its code (the payload key) still picks.
+        picked = next((o for o in pending.options if o.payload.get("key") == key), None)
     if picked is None:
         if free is not None and pending.kind in FREE_VALUE_PENDING:
             return (
@@ -535,6 +538,8 @@ def _apply_entities(
 ) -> Held:
     to_resolve: list[Entity] = []
     for ent in _fold_quantity_only(ask.entities):
+        if ask.portal_form and ent.kind == "form":
+            continue  # the portal form is the subject; a form lookup would only block it
         has_held = bool(base.refs.get(ent.kind)) if refine else False
         if ent.refers_to_held and not refine:
             # A new ask about "this one": the subject held before this message.
@@ -759,6 +764,13 @@ def _clarify(
     if not_found and not phrase and kind != "attachment_type":
         # Nothing the user typed to name: ask openly rather than print an internal key.
         asked = clarify_copy.question_for(about, None, language, kind=kind)
+    if about == "entity":
+        # Keyed by position, like a v1 question: the printed number IS the key, and the
+        # payload keeps the code it picks.
+        options = [
+            o.model_copy(update={"key": str(n), "payload": {"key": o.key, **o.payload}})
+            for n, o in enumerate(options, start=1)
+        ]
     pending = PendingQuestion(
         kind=f"clarify_{about}",
         asked=asked,
