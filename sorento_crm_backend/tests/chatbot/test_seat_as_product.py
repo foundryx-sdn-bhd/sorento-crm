@@ -191,21 +191,23 @@ def test_q1_no_link_on_record_is_one_line_and_no_fetch(session_factory, monkeypa
     assert reply.strip() == find_lane.NO_SEAT_COVER_LINE.format(code=WC_NONE), reply
 
 
-def test_q1_a_mistyped_code_beside_it_is_still_named(session_factory, monkeypatch) -> None:
+@pytest.mark.parametrize("other", ["ZZTWC83", "ZZTWC8383"])
+def test_q1_a_code_that_is_no_exact_product_sends_the_turn_on(session_factory, monkeypatch, other) -> None:
+    """Q3 (a) beside a no-link WC: a typo is named by the existing miss line, a family prefix is
+    placed by the resolver; neither is ever told "could not find" by this step (review round 2)."""
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
     _seed_contact(session_factory, variables={})
     reply, calls = _turn(
-        session_factory, monkeypatch, text=f"stock seat cover for {WC_NONE} and ZZTWC83", msg_id="ZZT-seat-typo",
-        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_NONE), _product("ZZTWC83")],
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_NONE} and {other}", msg_id="ZZT-seat-typo",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_NONE), _product(other)],
         find=FITS,
     )
-    assert calls == [], calls
-    assert reply.strip().splitlines() == [
-        find_lane.NO_SEAT_COVER_LINE.format(code=WC_NONE),
-        find_lane.NOT_FOUND_LINE.format(names="ZZTWC83"),
-    ], reply
+    assert calls, "the turn runs on to the existing stock lane"
+    assert find_lane.NO_SEAT_COVER_LINE.format(code=WC_NONE) not in reply, reply
+    if other == "ZZTWC83":
+        assert other in reply, reply  # the existing miss line names the typo
 
 
 def test_no_code_and_nothing_carried_asks_for_the_code(session_factory, monkeypatch) -> None:

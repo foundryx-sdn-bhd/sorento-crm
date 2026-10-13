@@ -77,7 +77,10 @@ directly; this sandbox has no dev data, so the live values come from the hand te
   `Which product code? For example SRTWC8383-RL-MBL.` A code carried from the previous turn
   ("which seat cover fits it?") is the anchor.
 - Q1 lines are said by the engine before any lane, whatever the parsed domain (a bare code's
-  null domain included). A mistyped code beside them is still named: `I could not find X.`
+  null domain included). A code beside them that is no product's exact code (a typo, a family
+  prefix) sends the turn on as typed, so the resolver names or places it (Q3 a).
+- A carried anchor is every product on the focus, with no topic check: after a list answer,
+  "which seat cover fits it?" reads all of them. Trigger: a real turn of that shape.
 
 ## Known limits (trigger to revisit)
 

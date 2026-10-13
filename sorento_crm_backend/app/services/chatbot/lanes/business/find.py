@@ -18,7 +18,8 @@ Card `documentation/plans/chatbot/CARD-seat-as-product-13oct.md` (crew answers 1
   to the resolver's own picker or miss.
 * Q1 (a): when no code the message names has a link, the reply is one line per code
   (`NO_SEAT_COVER_LINE`), and nothing is fetched. No code named and none carried: the ask
-  line. The engine says these lines itself, before any lane (`engine._run_turn`).
+  line. The engine says these lines itself, before any lane (`engine._run_turn`). A code
+  beside them that is no product's exact code sends the turn on as typed (Q3 a).
 
 `filter_items` / `filter_keys` stay the readers of the parse's `find` key (the resolve body's
 `keep_typed_codes`, the type-word miss filter in `turn_runtime.make_tool_runner`).
@@ -37,8 +38,6 @@ NO_SEAT_COVER_LINE = product_find.FITS_NONE_LINE
 NO_WC_LINE = product_find.FITS_NO_WC_LINE
 #: A fit ask with no code named and none carried (#1601 card rule 6).
 ASK_PRODUCT_LINE = product_find.ASK_PRODUCT_LINE
-#: A named code that is no product's, beside the lines above (`turn/compose`'s miss wording).
-NOT_FOUND_LINE = "I could not find {names}."
 
 
 def filter_items(parse_output: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -128,15 +127,16 @@ def as_linked_products(
         else:
             unknown.append(entity_code(entities[i]))
     if not replaced:
-        if not unlinked:
-            return verdict, []  # Q3 (a): no named code is a product's; the resolver decides
+        if not unlinked or unknown:
+            # Q3 (a): a named code that is no product's exact code (a family prefix, a typo)
+            # is the resolver's to place, picker or miss, so the turn runs on as typed.
+            return verdict, []
         seat_covers = product_find._seat_covers(db, unlinked)
         lines = [
             (NO_WC_LINE if str(p.id) in seat_covers else NO_SEAT_COVER_LINE).format(code=p.product_code)
             for p in unlinked
         ]
-        # A mistyped code beside them is still named (the compose miss line's own wording).
-        return verdict, lines + [NOT_FOUND_LINE.format(names=code) for code in unknown]
+        return verdict, lines
     out: list[Any] = []
     for i, entity in enumerate(entities):
         if i not in replaced:
