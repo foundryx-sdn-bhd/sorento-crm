@@ -35,6 +35,8 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 FEATURE = "chatbot_parser"
+# CHAT-TURN-COST: the casual lane's clarifier, the turn's second LLM call on small talk.
+CLARIFIER_FEATURE = "chatbot_clarifier"
 
 
 def record_parser_usage(
@@ -51,6 +53,28 @@ def record_parser_usage(
     `chatbot_turn_id` (chatbot memory lane A, contract section 7) is which
     `chatbot.turns` row this call billed - every chatbot-parser row carries one.
     """
+    record_turn_llm_usage(
+        db,
+        feature=FEATURE,
+        usage=usage,
+        response_time_ms=response_time_ms,
+        contact_respond_id=contact_respond_id,
+        answered=answered,
+        chatbot_turn_id=chatbot_turn_id,
+    )
+
+
+def record_turn_llm_usage(
+    db: Session,
+    *,
+    feature: str,
+    usage: dict[str, Any],
+    response_time_ms: int,
+    contact_respond_id: str | None,
+    answered: bool,
+    chatbot_turn_id: str | None = None,
+) -> None:
+    """One `ai_assistant_usage_logs` row for one LLM call a chatbot turn made."""
     try:
         from app.models.access import RespondContact
         from app.models.ai_assistant import AIAssistantUsageLog
@@ -67,17 +91,20 @@ def record_parser_usage(
             .order_by(RespondContact.created_at, RespondContact.id)
             .limit(1)
             .scalar()
+            if contact_respond_id
+            else None
         )
         db.add(
             AIAssistantUsageLog(
                 user_id=None,
                 contact_id=internal_id,
-                feature=FEATURE,
+                feature=feature,
                 provider=usage.get("provider"),
                 model=usage.get("model"),
                 prompt_tokens=int(usage.get("prompt_tokens") or 0),
                 completion_tokens=int(usage.get("completion_tokens") or 0),
                 total_tokens=int(usage.get("total_tokens") or 0),
+                cached_tokens=int(usage.get("cached_tokens") or 0),
                 tool_calls_count=0,
                 response_time_ms=int(response_time_ms),
                 was_answered=bool(answered),
@@ -86,7 +113,7 @@ def record_parser_usage(
         )
         db.commit()
     except Exception as exc:  # noqa: BLE001 - telemetry must never fail a customer's turn
-        logger.warning("chatbot: parser usage log failed: %s", exc, exc_info=True)
+        logger.warning("chatbot: %s usage log failed: %s", feature, exc, exc_info=True)
         try:
             db.rollback()
         except Exception:  # pragma: no cover - defensive

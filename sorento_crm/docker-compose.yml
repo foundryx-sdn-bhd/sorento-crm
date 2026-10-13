@@ -38,6 +38,8 @@ services:
       # JWT Authentication
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # Stored-secret encryption keys, current first (app/utils/field_encryption.py).
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
       
       # API Server
       API_HOST: 0.0.0.0
@@ -137,6 +139,7 @@ volumes:
 #
 #    # Backend
 #    JWT_SECRET=<set me>
+#    FIELD_ENCRYPTION_KEY=<set me>   # Fernet key; never JWT_SECRET
 #    JWT_ALGORITHM=HS256
 #    CORS_ORIGINS=http://localhost,http://localhost:80
 #    ENVIRONMENT=production
