@@ -1,6 +1,13 @@
 # PLAN: idea capture collects the canny-style fields (IDEA-CAPTURE, 13 Oct)
 
-Status: Plan (behaviour card awaiting owner answers). Track: full lane (prompt-registry migration). Lane IDEA-CAPTURE, branch `claude/idea-capture-chatbot-1ozsz5`, pair lane IDEA-CORE (shared service).
+Status: Build (Q2, Q4, Q5 answered by crew 13 Oct; Q1, Q3 with the owner).
+
+Decisions (13 Oct): Q2 one per line. Q4 use cases only as named, max 5, never suggested.
+Q5 always send. Contract fact from IDEA-CORE: ss origin/main 04b48d5c `OneShotIdeaIn`
+(schemas.py:706) has pydantic default `extra='ignore'`, so an older ss drops unknown keys.
+Names agreed with IDEA-CORE #124: `problem`, `desired_outcome` (str), `use_cases` (list[str]),
+`current_workaround` (str). The CRM FE label rename is a separate lane after ss lands; this lane
+leaves the FE alone. Track: full lane (prompt-registry migration). Lane IDEA-CAPTURE, branch `claude/idea-capture-chatbot-1ozsz5`, pair lane IDEA-CORE (shared service).
 
 ## Owner ask (13 Oct)
 
