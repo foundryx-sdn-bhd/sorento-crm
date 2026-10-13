@@ -54,7 +54,7 @@ def _system(db) -> str:
     return text.replace(TOKEN, product_find.parser_vocabulary(db)).replace("{{current_date}}", TODAY)
 
 
-def _parse(system_text: str, message: str) -> dict[str, Any]:
+def _parse(system_text: str, message: str, previous: str = "(none)") -> dict[str, Any]:
     from app.services.chatbot.head import parser
 
     config = parser.ParserConfig(
@@ -65,7 +65,7 @@ def _parse(system_text: str, message: str) -> dict[str, Any]:
         api_key=os.environ.get("OPENAI_API_KEY") or "sk-proxy-injected",
     )
     block = parser.build_user_block(
-        previous_response="(none)",
+        previous_response=previous,
         latest_user_message=message,
         pending_kind=None,
         focus=None,
@@ -162,6 +162,23 @@ def test_a_fit_ask_keeps_the_domain_its_cover_codes_would_get(db, message: str, 
     # (master_products, the existing product reply), never as a file or spec ask.
     allowed = {typed.get("domain_hint")} | ({"master_products"} if message in NOTHING_ASKED else set())
     assert out.get("domain_hint") in allowed, (out, typed)
+
+
+#: Crew live check 13 Oct, script step 7: after a file answer, a no-ask fit message continues the
+#: file ask exactly as its bare cover code does, and its type word is never a file type.
+AFTER_DRAWING = "Here are the technical drawings for SRTWC8383-RL-MBL:\n1. SRTWC8383-RL-MBL technical drawing.pdf"
+
+
+def test_after_a_file_answer_a_fit_ask_continues_like_its_bare_cover_code(db) -> None:
+    system = _system(db)
+    out = _parse(system, "seat cover for SRTWC8383-RL-MBL", AFTER_DRAWING)
+    typed = _parse(system, "SRTSCBD823-MBL", AFTER_DRAWING)
+    assert _keys(out) == ["fits"], out
+    assert out.get("domain_hint") == typed.get("domain_hint"), (out, typed)
+    hints = [e.get("hint") for e in out.get("entities") or [] if isinstance(e, dict)]
+    assert "attachment_type" not in hints or "attachment_type" in [
+        e.get("hint") for e in typed.get("entities") or [] if isinstance(e, dict)
+    ], (out, typed)
 
 
 def test_a_fit_question_with_no_code_emits_fits_and_invents_none(db) -> None:

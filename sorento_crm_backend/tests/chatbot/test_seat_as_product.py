@@ -416,3 +416,32 @@ def test_r10_no_code_in_the_parse_takes_the_carried_codes(session_factory) -> No
     assert _codes(out) == COVERS_TWO and lines == []
     out, lines = find_lane.as_linked_products(_scoped(session_factory), _verdict(), [])
     assert lines == [find_lane.ASK_PRODUCT_LINE]
+
+
+def test_step7_a_bare_seat_cover_ask_continues_a_file_ask_like_the_bare_cover_code(session_factory, monkeypatch) -> None:
+    """Crew live check 13 Oct, script step 7: after "<WC> technical drawing", "seat cover for
+    <WC>" must continue the file ask exactly as the bare cover code typed next does."""
+    drawing = {"raw": "technical drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
+               "current_message": True, "confident": True}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} technical drawing", msg_id="ZZT-seat-s7-1",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing],
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_s7")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=COVER_ONE, msg_id="ZZT-seat-s7-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment", entities=[_product(COVER_ONE)],
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_s7")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"seat cover for {WC_ONE}", msg_id="ZZT-seat-s7-2",
+        domain_hint="product_attachment", intent_hint="check_product_attachment", entities=[_product(WC_ONE)],
+        find=FITS,
+    )
+    print("CONTROL", c_calls, repr(c_reply)); print("ASKED", a_calls, repr(a_reply))
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
