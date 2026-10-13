@@ -30,7 +30,9 @@ export function cancelSourcesTitle(cancels: CancelSource[] | null | undefined): 
   if (!cancels || cancels.length === 0) return undefined;
   return cancels
     .map((c) => {
-      const how = MATCH_LABEL[c.match_reason ?? ''] ?? c.match_reason ?? '';
+      // A reason with no words here (an old row, a new backend value) shows no label, never
+      // its internal code.
+      const how = MATCH_LABEL[c.match_reason ?? ''];
       const head = c.qty == null ? c.doc_no : `${c.doc_no}: ${Number(c.qty)}`;
       return how ? `${head} (${how})` : head;
     })

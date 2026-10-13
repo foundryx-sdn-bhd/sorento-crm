@@ -32,6 +32,7 @@ def _old_tie_break(env):
     stored.match_status, stored.match_reason = "matched", "tie_break"
     stored.sales_order_line_id = lines[5002]
     stored.candidate_line_ids = sorted(lines.values())
+    env.db.commit()  # before `_so_line`, whose expire_all would drop the edits above
     row = _so_line(env, lines[5002])
     row.qty_cancelled, row.line_status, row.cancelled_by_cancel_doc = 12, "cancelled", True
     env.db.commit()
