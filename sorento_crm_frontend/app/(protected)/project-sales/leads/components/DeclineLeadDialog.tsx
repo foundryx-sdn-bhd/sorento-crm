@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -39,12 +38,12 @@ export function DeclineLeadDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
-      <DialogContent className="max-h-[92vh] w-full max-w-md overflow-hidden">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[92vh] w-full max-w-md overflow-hidden"
+      >
         <DialogHeader>
           <DialogTitle>Decline {leadCode}</DialogTitle>
-          <DialogDescription>
-            The lead goes back to marketing and stops being yours.
-          </DialogDescription>
         </DialogHeader>
 
         <form

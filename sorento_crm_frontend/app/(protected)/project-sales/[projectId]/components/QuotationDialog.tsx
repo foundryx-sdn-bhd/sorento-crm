@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -55,7 +54,10 @@ export function QuotationDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onDone()}>
-      <DialogContent className="max-h-[92vh] w-full max-w-lg overflow-hidden">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[92vh] w-full max-w-lg overflow-hidden"
+      >
         <DialogHeader>
           <DialogTitle>
             {isEdit
@@ -64,9 +66,6 @@ export function QuotationDialog({
                 : 'Edit scope'
               : 'Add a scope'}
           </DialogTitle>
-          <DialogDescription>
-            One quotation per scope, because each one is won or lost on its own.
-          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -134,10 +133,6 @@ export function QuotationDialog({
                 placeholder="No series"
                 emptyMessage="No series configured yet"
               />
-              <p className="text-xs text-muted-foreground">
-                Anything priced outside the series is flagged as non-standard. Leave it
-                empty and no line is judged against a catalogue.
-              </p>
             </div>
 
             <div className="space-y-1.5">

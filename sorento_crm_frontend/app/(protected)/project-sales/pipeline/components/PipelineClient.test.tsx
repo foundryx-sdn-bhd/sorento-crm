@@ -175,6 +175,13 @@ beforeEach(() => {
 });
 
 describe('PipelineClient', () => {
+  it('is titled Projects, not Pipeline (owner, 13 Oct)', async () => {
+    renderClient();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pipeline' })).toBeNull();
+    await waitFor(() => expect(listProjects).toHaveBeenCalled());
+  });
+
   it('keeps the view toggle and Start in the page header', async () => {
     renderClient();
 
@@ -297,6 +304,19 @@ describe('PipelineClient', () => {
 
     expect(await screen.findByText('Setia Alam Phase 3B')).toBeInTheDocument();
     expect(screen.getByText('SP Setia')).toBeInTheDocument();
+  });
+
+  it('shows brands as one line of pills that fold into +N, never a comma list (owner, 13 Oct)', async () => {
+    listProjects.mockResolvedValue({
+      data: [project({ id: 'p9', title: 'Brand row', brands: ['Hafele', 'Blum', 'Grohe'] })],
+      pagination: { total: 1, page: 1, limit: 50 },
+    });
+
+    renderClient();
+    switchToGrid();
+
+    expect(await screen.findByTestId('project-brands-p9')).toBeInTheDocument();
+    expect(screen.queryByText('Hafele, Blum, Grohe')).toBeNull();
   });
 
   it('gives board view the same search box and Filters button, in one row', async () => {

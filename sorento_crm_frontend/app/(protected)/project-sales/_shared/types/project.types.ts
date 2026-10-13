@@ -161,6 +161,12 @@ export interface Project {
   lead_source?: string | null;
   lead_created_at?: string | null;
   lead_owner_user_id?: string | null;
+  /** The lead's buyer: a project has no customer of its own (owner, 13 Oct). */
+  customer_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  /** The customer's main contact, which the quotation header's Attn defaults to. */
+  customer_attn?: string | null;
 
   last_meaningful_activity_at?: string | null;
   days_since_last_activity?: number | null;

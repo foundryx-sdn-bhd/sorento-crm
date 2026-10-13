@@ -287,7 +287,7 @@ describe('LeadDetailClient tabs', () => {
     for (const label of [
       'Overview',
       'Who told us',
-      'Handover',
+      'Assignment',
       'Buyer',
       'Projects',
       'Activity',
@@ -309,10 +309,10 @@ describe('LeadDetailClient tabs', () => {
     // The strip always names every tab, so a second match is the panel: while Overview
     // is open the other panels must contribute nothing beyond their tab button.
     expect(screen.getAllByText('Who told us')).toHaveLength(1);
-    expect(screen.getAllByText('Handover')).toHaveLength(1);
+    expect(screen.getAllByText('Assignment')).toHaveLength(1);
 
-    await openTab('Handover');
-    await waitFor(() => expect(screen.getAllByText('Handover')).toHaveLength(2));
+    await openTab('Assignment');
+    await waitFor(() => expect(screen.getAllByText('Assignment')).toHaveLength(2));
     expect(screen.queryByText('What we heard')).not.toBeInTheDocument();
   });
 
@@ -482,14 +482,22 @@ describe('LeadDetailClient Who told us tab', () => {
   });
 });
 
-describe('LeadDetailClient Handover tab', () => {
+describe('LeadDetailClient Assignment tab', () => {
   it('shows who holds it and since when', async () => {
     renderDetail();
-    await openTab('Handover');
+    await openTab('Assignment');
 
     expect(await screen.findByText('Ali')).toBeInTheDocument();
     expect(screen.getByText('Accepted')).toBeInTheDocument();
     expect(screen.queryByText('Not accepted yet')).not.toBeInTheDocument();
+  });
+
+  it('does not repeat the header acceptance chip inside the card (owner, 13 Oct)', async () => {
+    renderDetail();
+    await openTab('Assignment');
+    const panel = await screen.findByRole('tabpanel');
+    await within(panel).findByText('Ali');
+    expect(within(panel).queryByText(/^Accepted by /)).not.toBeInTheDocument();
   });
 
   it('records the decline reason on the lead once declined', async () => {
@@ -503,7 +511,7 @@ describe('LeadDetailClient Handover tab', () => {
       }),
     );
     renderDetail();
-    await openTab('Handover');
+    await openTab('Assignment');
 
     expect(await screen.findByText('Johor team covers Nusajaya')).toBeInTheDocument();
     expect(screen.getAllByText('Declined').length).toBeGreaterThan(0);
@@ -515,7 +523,7 @@ describe('LeadDetailClient Handover tab', () => {
       lead({ acceptance_state: null, owner_user_id: null, owner_name: null }),
     );
     renderDetail();
-    await openTab('Handover');
+    await openTab('Assignment');
 
     // "Assigned to -" says it. What matters is that the way OUT is still offered.
     expect(screen.queryByText(/Nobody holds this lead/)).not.toBeInTheDocument();
