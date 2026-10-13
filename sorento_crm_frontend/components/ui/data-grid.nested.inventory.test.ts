@@ -171,12 +171,12 @@ const GRID_IN_FLOATING_SURFACE_SITES = new Map<string, string>([
     'Drilldown dialog, rendered BEFORE the list grid in OrderInquiriesClient, not inside it. Already scrollerMaxHeight={false}. (Line moved 57 -> 97 when the cell drilldown gained its `axis`/`axis_key` filters; the census is keyed by line, so a site that moves is a one-line diff here rather than a silent pass)',
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:684',
-    "Demand tab, dialog rendered after the calendar grid closes. Already scrollerMaxHeight={false}. (Line moved 635 -> 588 when R31a folded the R30 SPO/OI columns back into one Covered-by column, still rendering the OI screens' own `OrderInquiryDocumentLink`; 588 -> 636 when R42 linked a covering PO in Covered by and gave the Supply tab its PO-line columns.)",
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:722',
+    "Demand tab, dialog rendered after the calendar grid closes. Already scrollerMaxHeight={false}. (Line moved 635 -> 588 when R31a folded the R30 SPO/OI columns back into one Covered-by column, still rendering the OI screens' own `OrderInquiryDocumentLink`; 588 -> 636 when R42 linked a covering PO in Covered by and gave the Supply tab its PO-line columns; 684 -> 722 when #1594 added the projected PO coverage from sales orders.)",
   ],
   [
-    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:715',
-    'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above.)',
+    'app/(protected)/project-sales/stock-debt/components/StockDebtCellDialog.tsx:753',
+    'Supply tab, same dialog. (Line moved 666 -> 619, same round; 619 -> 667 in R42, same as above; 715 -> 753 in #1594.)',
   ],
   [
     'app/(protected)/scm/proforma-invoices/components/ConvertToPackingListDialog.tsx:455',
