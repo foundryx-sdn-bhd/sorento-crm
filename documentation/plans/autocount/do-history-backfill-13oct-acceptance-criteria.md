@@ -1,6 +1,6 @@
 # UAC: DO history backfill (DO-HISTORY)
 
-Plan: `PLAN-do-history-backfill-13oct.md`. Status: draft, awaiting owner OK. Assumes the
+Plan: `PLAN-do-history-backfill-13oct.md`. Status: draft; Q2/Q4/Q5 answered (a) by crew 13 Oct, Q1/Q3 with the owner. Assumes the
 recommended answers to Q1-Q5; an answer the other way rewrites the matching criteria.
 
 ## Landing (step 1)
@@ -16,6 +16,12 @@ recommended answers to Q1-Q5; an answer the other way rewrites the matching crit
   tracking columns unchanged.
 - **AC-DH06** After the relink pass, a backfilled DO line whose SO (FromDocNo) has exactly one line
   of its product is linked, whatever the month order of landing.
+- **AC-DH06b** A DO line whose product appears on several lines of the named SO stays unlinked
+  (no guess) and is counted as `ambiguous`; a line whose SO is not in the CRM is counted as
+  `so_missing` and the document still lands (not `failed`).
+- **AC-DH06c** A snapshot build refused by the shared service (for example a book with no DO feed
+  row) is reported as an error naming the book and month; that book's run stops, nothing is
+  written for that month, and a later run resumes at it.
 - **AC-DH07** The backfill writes no SO line `qty_delivered`, `line_status` or SO `status`, raises
   no OI row, planning change, plan exception, email or WhatsApp.
 

@@ -1,6 +1,6 @@
-# PLAN: DO history backfill 2023-01 to June 2026, with "assumed delivered" tracking (DO-HISTORY)
+# PLAN: DO history backfill 2023-01 to July 2026, with "assumed delivered" tracking (DO-HISTORY)
 
-Status: **plan, awaiting owner OK (no code yet)**. Track: full (one migration column, a backfill
+Status: **plan revised 13 Oct with crew answers Q2/Q4/Q5 (a) and prod-clone counts; Q1 (cutover) and Q3 (SO side) with the owner; slices 1-2 (marker column, landing script) unblocked, slice 3 waits on Q1, the Q3 report waits on Q3**. Track: full (one migration column, a backfill
 script that writes prod data; no RBAC change, no new external ingest surface). PR #1633, branch
 `claude/do-history-backfill-7e7enk` (the sandbox's designated branch; the brief named
 `crew/do-history`). UAC: `do-history-backfill-13oct-acceptance-criteria.md`. Owner card:
@@ -17,12 +17,26 @@ I don't have the order tracking for them prior to July, so we need a plan to mig
 
 ## 1. Facts
 
-### 1.1 What could not be measured here
+### 1.1 Measured counts (crew, prod clone `sorento_prod_20261012`, read-only, 13 Oct)
 
-This lane runs in a cloud sandbox with no access to the dev DB or a prod clone (the crew contract
-forbids it). **Every count in this plan is either quoted from an earlier measured source (cited) or
-is a query in section 6 for the crew to run read-only on the prod clone before the owner signs off.**
-No count below is invented.
+This sandbox has no DB access; the crew ran the section 6 queries and relayed the results.
+
+- **Q-A, DOs by month.** AutoCount DOs start **Aug 2026**: SRT 1,569 / 6,094 / 2,731 (Aug / Sep /
+  Oct), MCH 227 / 1,796 / 1,022. Before that, Excel (Order Tracking) only: SRT Apr-Jul 2026
+  2,209 / 5,127 / 5,847 / 6,947, MCH Jul 1,848; scattered late-2025 Excel rows, 11 with a NULL
+  `order_date`, 1 SRT row dated 1907-02.
+- **Q-B, AutoCount DO line links.** 45,157 lines: 29,040 linked, 16,117 unlinked = 0 stored-zero
+  key, 1,213 no `FromDocNo`, 1 SO missing, **13,259 ambiguous** (same product on several lines of
+  the SO), 1,642 product not on the referenced SO, 2 single-match yet unlinked. **0 of 45,157 lines
+  carry a `FromDocDtlKey`.**
+- **Q-C, pre-July DOs by tracking.** 0 AutoCount; Excel 10,890 `delivered` with a date, 2,378
+  `new` without a date.
+- **Q-D, pre-July SO lines still open demand.** 9,615 lines, about 991,615 qty (project 8,723 /
+  about 971k, retail 698 / about 12.7k, no class 194 / about 7.5k); bulk 2025-08 to 2026-06; 20
+  lines before 2023.
+- **Q-E, earliest SO.** SRT 2020-01-03 (156,461 SOs), MCH 2023-09-01 (48,990). Inside 2023-01 to
+  2026-06: SRT 138,840, MCH 44,043. So **MCH DOs before Sep 2023 cannot find their SO**: they land
+  unlinked, are reported, and do not fail.
 
 ### 1.2 How a DO lands today
 
@@ -58,20 +72,22 @@ No count below is invented.
   `so_line_unresolved` (no position tie-break: SO `line_no` was NULL then, #1400).
 - A line whose SO is not in the CRM yet is retried by the waiting-link fill at the end of each batch,
   bounded to the newest 500 lines (`MAX_WAITING_LINKS`, `:95`, `:1391-1416`).
-- Why a line can be unlinked on dev, in order of likelihood (section 6 query Q-B splits them):
-  1. the dev rows predate #1409 and were never re-pushed (stored `from_dtl_key = 0`; the waiting fill
-     treats them as no key, `:1413`, but only the newest 500 per batch);
-  2. the SO named by `FromDocNo` is not in the CRM in that company;
-  3. the product appears on several lines of that SO (ambiguous, by design no guess);
-  4. the line names no `FromDocNo` (the 29 Sep live payloads had no link fields at all,
-     `PLAN-autocount-grn-do-ingest-29sep.md:52-56`, while the 1 Sep snapshot did).
+- Why a line is unlinked, measured on the prod clone (1.1 Q-B, 16,117 of 45,157): **ambiguous
+  13,259** (82%), product not on the referenced SO 1,642, no `FromDocNo` 1,213, SO missing 1,
+  single-match yet unlinked 2 (a link the bounded waiting fill has not reached; the relink pass in
+  3.3 picks these up), stored zero key 0 (#1409 healed them). So the dev "from_dtl_key = 0" was
+  AutoCount's sent value, not the link.
+- **Ambiguous lines stay unlinked: no guessing.** The REST DO lines carry no line key (0 of
+  45,157), so the backfill will grow this bucket in the same proportion; the dry run counts it per
+  month (3.4). A position tie-break (DO line Seq against SO `line_no`) is not built here. Trigger:
+  the owner wants per-SO-line delivered history for multi-line products, and a dry-run sample shows
+  DO Seq order follows SO `line_no` order.
 - Measured before: a prod dry run had `sales_order_unresolved` on 435 of 948 DOs and
   `so_line_unresolved` on 946 lines (`PLAN-autocount-do-pull-crm-30sep.md:87-88`). No link-rate count
   after the fallback exists in the docs.
-- Older AutoCount documents carry real DtlKeys: #1623 measured 46,828 Cancel SO lines from before 2026
-  with `FromDocDtlKey`, 0 in 2026 (PR #1623 body). Whether pre-2026 **DO** lines do the same is not
-  known (the AutoCount SQL login has no SELECT on DO / DODTL, same source); the backfill dry run
-  reports it (`lines.linked` by key vs by product, section 3.4).
+- Older Cancel SO lines carry real DtlKeys (#1623: 46,828 before 2026, 0 in 2026), but the REST DO
+  source sends none on any line measured (0 of 45,157). The dry run still splits linked-by-key from
+  linked-by-product (3.4), so an old DO that does carry a key is visible, but the plan assumes none.
 
 ### 1.4 What "delivered" means for a DO today
 
@@ -126,15 +142,18 @@ No count below is invented.
 
 Three steps, each with its own dry run and counts, run per book (Sorento `db1` first, then Mocha `db2`):
 
-1. **Land the DOs** 2023-01-01 to 2026-06-30 through the existing ingest, month by month.
+1. **Land the DOs** 2023-01-01 to 2026-07-31 through the existing ingest, month by month. The range
+   ends where the AutoCount feed's own rows start (Aug 2026, 1.1 Q-A), independent of Q1; an overlap
+   with the feed is harmless (idempotent key + stale guard). Apr-Jul 2026 Excel rows (about 20,000
+   SRT, 1,848 MCH) are **adopted** by DocNo: their tracking stays.
 2. **Assume delivered** for pre-cutover DOs that have no tracking, marked so it is reversible.
 3. **Report the link rate** and the SO-side numbers (no SO write).
 
 ## 3. Step 1: landing the DOs
 
-### 3.1 Path (question Q5)
+### 3.1 Path (Q5 answered (a))
 
-**(a) Recommended: a CRM script over the existing pull snapshot**, `be/scripts/do_history_backfill.py`:
+**A CRM script over the existing pull snapshot**, `be/scripts/do_history_backfill.py`:
 
 - One FoundryX snapshot per calendar month (`fromDay` / `toDay`, `foundryx_autocount_client.py:166-179`),
   preview (= ingest dry run), then apply, through the same functions the pull button uses
@@ -148,11 +167,18 @@ Three steps, each with its own dry run and counts, run per book (Sorento `db1` f
 - **Throttled**: one snapshot in flight at a time (SS answers 409 `BUILD_IN_FLIGHT` to a second scope
   anyway), a configurable pause between months (default 60 s), stop on the first failed build.
 - Flags: `--book db1|db2 --from 2023-01 --to 2026-06 --dry-run|--apply --pause 60`.
-- Needs no shared-service change **if** the DO snapshot scopes by DocDate and accepts 2023 dates.
-  To verify on the SS side before build (crew relay): the snapshot uses `bydocdate`, not
-  `byLastModified`, for `fromDay`/`toDay`, and has no floor.
+- Needs no shared-service change. Confirmed by crew on SS `main` 812dac2b: the DO snapshot is per
+  DocDate (`doc_feed/snapshot.py:143-165` -> `vendor.day_by_doc_date`, `/deliveryorderbydocdate`,
+  `vendor.py:58-60`); `fromDay >= 2023-01-01` is enforced with an error, not a clamp
+  (`pull_gateway_service.py:189-190`, `constants.py:48`); at most 31 days per snapshot
+  (`:126,183-185`), so one calendar month fits; `toDay <= today` (`:187`); at most 10,000 documents
+  per snapshot (`snapshot.py:45`).
+- It needs the book's DO feed config row on the SS side (`pull_gateway_service.py:65-68`). Whether
+  **Mocha's** row exists is unknown: a missing row (any SS build refusal) is reported as a clear
+  per-month error naming the book and month, and the run stops for that book without touching the
+  other.
 
-(b) Alternative: the shared service's own backfill (contract: one DocDate day per call from 1 Jan
+(b) Rejected alternative: the shared service's own backfill (contract: one DocDate day per call from 1 Jan
 2023, pushed in batches of 1,000). No CRM code, but it runs in the API process (one embedding event
 per DO and line), its dry run is `?dry_run=true` per batch with no aggregate, and the revert list has
 to be rebuilt from `source_modified_at`. Pick (b) only if the snapshot cannot serve old dates.
@@ -175,8 +201,9 @@ links do not depend on batch order. No new resolver.
 ### 3.4 Counts the dry run prints per (book, month)
 
 documents: created / updated / unchanged / adopted / failed / retryable; lines: created / linked by
-key / linked by product / unresolved (ambiguous vs SO missing vs no FromDocNo); distinct missing item
-codes; distinct missing SO numbers.
+key / linked by product / unresolved split as **ambiguous** / product not on SO / **SO missing** / no
+FromDocNo; distinct missing item codes; distinct missing SO numbers. SO missing (expected for MCH
+before Sep 2023, 1.1 Q-E) is a count, never a failure.
 
 ## 4. Step 2: "assume delivered" for pre-cutover DOs
 
@@ -192,6 +219,12 @@ Writes: `order_status_id` = `delivered`, `actual_delivery_date` = `order_date` (
 `tracking_assumed_at` = now(). Nothing else: no `delivery_days`, no `kpi_warning`, no transporter.
 
 A pre-cutover DO that already has any tracking (an adopted Excel row) is left alone and counted.
+
+Target size: today 0 rows qualify (no pre-July AutoCount DO exists, 1.1 Q-C). After step 1 the
+targets are the newly created pre-cutover DOs plus the adopted Excel rows that were `new` with no
+date (up to 2,378). Excel rows that are never adopted (no AutoCount DocNo match) keep `doc_key`
+NULL and are untouched; the step 2 dry run counts them separately so the owner can see them. The 11
+NULL-`order_date` rows and the 1907 row never qualify unless adoption gives them a DocDate.
 
 ### 4.2 Schema
 
@@ -296,9 +329,10 @@ SELECT c.code, MIN(so.order_date), COUNT(*) FROM sales_orders so
 JOIN companies c ON c.id = so.company_id GROUP BY 1;
 ```
 
-Q-E decides how many backfilled lines can link at all: if the CRM holds no 2023 SOs, those DO
-lines land unlinked (`so_missing`) and only a later SO history load would link them (out of scope;
-trigger: the owner wants per-SO-line delivered history before the earliest SO in the CRM).
+Q-E decides how many backfilled lines can link at all. Measured (1.1): SRT holds SOs from 2020, MCH
+only from 2023-09-01, so MCH DOs from Jan to Aug 2023 land unlinked (`so_missing`). An MCH SO history
+load would link them (out of scope; trigger: the owner wants per-SO-line delivered history for MCH
+before Sep 2023).
 
 ## 7. Effect on readers after both steps
 
@@ -312,9 +346,13 @@ trigger: the owner wants per-SO-line delivered history before the earliest SO in
 | Sales achievement, delivered basis | Linked DO qty moves from the SO's order date to the DO date (`sales/achievement_service.py:25-31,347-356`); per-line totals stay capped at `qty_ordered`, so a period's delivered achievement can shift between months, the all-time total does not. |
 | #1623 cancel matching | Gains DO qty per SO line for the tie-break once lines link; Q4 gates the side effects. |
 
-## 8. Questions (also posted as crew-ask)
+## 8. Questions (answers 13 Oct: Q2, Q4, Q5 = (a) from crew; Q1, Q3 with the owner)
 
 1. **Q1 cutover**: (a) DocDate before 2026-07-01, (b) another date. Rec (a): "since July".
+   Data note for the owner (1.1): Excel tracking exists from Apr 2026 (SRT) and Jul 2026 (MCH), and
+   the AutoCount feed from Aug 2026. Because step 2 only touches rows with **no** tracking, the
+   cutover mainly decides whether Apr-Jul 2026 DOs still `new` with no date (part of the 2,378) are
+   assumed delivered or stay outstanding for CS to track.
 2. **Q2 delivery date on assumed rows**: (a) `actual_delivery_date = DocDate` with the marker,
    (b) leave NULL and widen the delivered predicate to the marker. Rec (a): one write, every
    existing delivered reader works unchanged; the marker tells it apart.
@@ -328,12 +366,14 @@ trigger: the owner wants per-SO-line delivered history before the earliest SO in
    Rec (a): aggregate dry run, resumable per month, revert list, no embedding storm; needs the SS
    snapshot to scope by DocDate for old dates (to verify).
 
-## 9. Build slices (after OK)
+## 9. Build slices
 
-1. Migration `do_hist_0001` + ownership registry + tracking-upload clears the marker; tests.
-2. `do_history_backfill.py` (dry run, apply, resume, split on cap, relink pass, per-month table); tests
+1. (Unblocked: Q2.) Migration `do_hist_0001` + ownership registry + tracking-upload clears the marker; tests.
+2. (Unblocked: Q5.) `do_history_backfill.py` (dry run, apply, resume, split on cap, relink pass, per-month table); tests
    on a scratch Postgres with a fake FoundryX client.
-3. `do_history_assume_delivered.py` (dry run, apply, revert, run audit event); tests.
+3. (Waits on Q1: the cutover is a required `--cutover` argument, so the code does not hard-code an
+   answer, but it is not run or finalised before Q1.) `do_history_assume_delivered.py` (dry run, apply, revert, run audit event); tests.
+3b. (Waits on Q3.) The open pre-cutover SO line report (Q-D as a script output), only if Q3 = (a).
 4. (After #1623 merges, if Q4 a) the cutover gate in its relink; tests.
 
 Not built: SO history load (trigger in section 6), a UI badge for assumed-delivered DOs (trigger: the
