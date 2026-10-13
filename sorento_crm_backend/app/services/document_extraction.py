@@ -80,6 +80,7 @@ class PageResult:
     raw_text: Optional[str] = None  # kept only when parsing failed, for diagnosis
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0
     elapsed_ms: int = 0
 
 
@@ -90,6 +91,7 @@ class ExtractionResult:
     pages: list[PageResult] = field(default_factory=list)
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0
     # How long the model actually took. Reading ten scanned pages is minutes of
     # waiting, and a person who is told "2m 14s" once stops wondering whether it hung.
     elapsed_ms: int = 0
@@ -354,6 +356,7 @@ def extract_document(
             )
             page.prompt_tokens = answer.prompt_tokens
             page.completion_tokens = answer.completion_tokens
+            page.cached_tokens = int(getattr(answer, "cached_tokens", 0) or 0)
             page.data = _parse_json(answer.content)
         except json.JSONDecodeError:
             page.error = "the model's answer was not valid JSON"
@@ -377,6 +380,7 @@ def extract_document(
             pages_by_no[page.page_no] = page
             result.prompt_tokens += page.prompt_tokens
             result.completion_tokens += page.completion_tokens
+            result.cached_tokens += page.cached_tokens
             if on_page is not None:
                 try:
                     on_page(page)
@@ -409,6 +413,7 @@ def _log_usage(db: Session, result: "ExtractionResult", *, prompt_key: str, prov
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
                 total_tokens=result.prompt_tokens + result.completion_tokens,
+                cached_tokens=result.cached_tokens,
                 # One call per page, so the page count IS the number of model calls.
                 tool_calls_count=result.page_count,
                 response_time_ms=result.elapsed_ms,

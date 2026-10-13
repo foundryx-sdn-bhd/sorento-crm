@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ComponentProps } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { CalendarIcon, ChevronDown, ChevronRight, GitBranch, Loader2 } from 'lucide-react';
@@ -23,6 +23,8 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
+import { formatDateTimeInMalaysia } from '@/lib/helpers';
+import { formatUsd } from '../lib/formatUsd';
 import {
   useQueryDetail,
   useRecentQueries,
@@ -31,6 +33,7 @@ import {
   useUsageByDay,
   useUsageSummary,
 } from '../hooks/useAIUsage';
+import type { RecentQueryItem } from '../services/aiUsageService';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 const FEATURE_ALL = 'all';
@@ -64,12 +67,32 @@ function formatNumber(n: number | null | undefined): string {
   return n.toLocaleString();
 }
 
-function formatDateTime(d: string): string {
-  try {
-    return format(new Date(d), 'MMM d, HH:mm:ss');
-  } catch {
-    return d;
+/** A total over `calls` calls of which `unpriced` had no price: a dash when none could be priced. */
+function totalCost(cost: number, unpriced: number, calls: number, unknown = 0): string {
+  return formatUsd(unpriced + unknown >= calls && calls > 0 ? null : cost);
+}
+
+function costTitle(q: RecentQueryItem): string | undefined {
+  if (q.cost_usd != null) return undefined;
+  if (q.cache_unknown) {
+    return q.feature === 'chatbot_parser' ? 'Cache use not recorded before 4 Oct' : 'Cache use not recorded';
   }
+  const model = q.model ?? 'this model';
+  return q.cached_price_missing ? `No cached-input price for ${model}` : `No price for ${model}`;
+}
+
+function notPricedLabel(n: number): string {
+  return `${n} ${n === 1 ? 'call' : 'calls'} not priced`;
+}
+
+function unknownCacheLabel(n: number): string {
+  return `${n} ${n === 1 ? 'call' : 'calls'} with unknown cache use`;
+}
+
+/** Why some calls are left out of a total, or undefined when none are. */
+function excludedLabel(unpriced = 0, unknown = 0): string | undefined {
+  const parts = [unpriced > 0 ? notPricedLabel(unpriced) : '', unknown > 0 ? unknownCacheLabel(unknown) : ''];
+  return parts.filter(Boolean).join(', ') || undefined;
 }
 
 export default function AIUsagePage() {
@@ -98,6 +121,9 @@ export default function AIUsagePage() {
       date: d.date,
       messages: d.messages,
       tokens: d.tokens,
+      cost_usd: d.cost_usd,
+      unpriced_calls: d.unpriced_calls,
+      unknown_cache_calls: d.unknown_cache_calls,
     }));
   }, [byDayQuery.data]);
 
@@ -194,7 +220,7 @@ export default function AIUsagePage() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <SummaryCard
             label="Messages"
             value={formatNumber(summary?.total_messages)}
@@ -215,9 +241,29 @@ export default function AIUsagePage() {
             value={formatNumber(summary?.completion_tokens)}
             loading={summaryQuery.isLoading}
           />
+          <SummaryCard
+            label="Cost (USD)"
+            value={
+              summary
+                ? totalCost(
+                    summary.cost_usd,
+                    summary.unpriced_calls,
+                    summary.total_messages,
+                    summary.unknown_cache_calls,
+                  )
+                : formatUsd(null)
+            }
+            notes={[
+              summary && summary.unpriced_calls > 0 ? notPricedLabel(summary.unpriced_calls) : '',
+              summary && summary.unknown_cache_calls > 0
+                ? unknownCacheLabel(summary.unknown_cache_calls)
+                : '',
+            ]}
+            loading={summaryQuery.isLoading}
+          />
         </div>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>Tokens per day</CardTitle>
             <CardDescription>Total tokens consumed by date</CardDescription>
@@ -237,7 +283,40 @@ export default function AIUsagePage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip
+                    content={(props) => {
+                      const day = props.payload?.[0]?.payload as
+                        | {
+                            cost_usd: number;
+                            unpriced_calls: number;
+                            unknown_cache_calls?: number;
+                            messages: number;
+                          }
+                        | undefined;
+                      return (
+                        <div>
+                          <ChartTooltipContent {...(props as ComponentProps<typeof ChartTooltipContent>)} />
+                          {day ? (
+                            <div className="mt-1 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                              Cost{' '}
+                              {totalCost(
+                                day.cost_usd,
+                                day.unpriced_calls,
+                                day.messages,
+                                day.unknown_cache_calls,
+                              )}
+                              {excludedLabel(day.unpriced_calls, day.unknown_cache_calls) ? (
+                                <span className="text-muted-foreground">
+                                  {' '}
+                                  ({excludedLabel(day.unpriced_calls, day.unknown_cache_calls)})
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    }}
+                  />
                   <Line
                     type="monotone"
                     dataKey="tokens"
@@ -258,8 +337,8 @@ export default function AIUsagePage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <Card>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Top users</CardTitle>
               <CardDescription>Internal staff - highest message volume in range</CardDescription>
@@ -271,22 +350,29 @@ export default function AIUsagePage() {
                 <p className="text-sm text-muted-foreground">No user activity yet.</p>
               ) : (
                 <ScrollArea>
-                  <table className="w-auto min-w-full text-sm">
+                  <table className="w-auto min-w-[480px] text-sm sm:min-w-full">
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
-                        <th className="py-2 text-left font-medium">#</th>
-                        <th className="py-2 text-left font-medium">Name</th>
-                        <th className="py-2 text-right font-medium">Messages</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">#</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Name</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Messages</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(topUsersQuery.data || []).map((u, i) => (
                         <tr key={u.user_id} className="border-b last:border-0">
-                          <td className="py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="py-2">{u.name || u.user_id}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(u.messages)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(u.tokens)}</td>
+                          <td className="py-2 pe-3 text-muted-foreground">{i + 1}</td>
+                          <td className="whitespace-nowrap py-2 pe-3">{u.name || u.user_id}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.messages)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(u.tokens)}</td>
+                          <td
+                            className="py-2 whitespace-nowrap ps-4 text-right tabular-nums"
+                            title={excludedLabel(u.unpriced_calls, u.unknown_cache_calls)}
+                          >
+                            {totalCost(u.cost_usd, u.unpriced_calls, u.messages, u.unknown_cache_calls)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -297,7 +383,7 @@ export default function AIUsagePage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Top contacts</CardTitle>
               <CardDescription>
@@ -313,24 +399,31 @@ export default function AIUsagePage() {
                 </p>
               ) : (
                 <ScrollArea>
-                  <table className="w-auto min-w-full text-sm" data-testid="ai-usage-top-contacts">
+                  <table className="w-auto min-w-[560px] text-sm sm:min-w-full" data-testid="ai-usage-top-contacts">
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
-                        <th className="py-2 text-left font-medium">#</th>
-                        <th className="py-2 text-left font-medium">Phone</th>
-                        <th className="py-2 text-left font-medium">Name</th>
-                        <th className="py-2 text-right font-medium">Calls</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">#</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Phone</th>
+                        <th className="whitespace-nowrap py-2 pe-3 text-left font-medium">Name</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Calls</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(topContactsQuery.data || []).map((c, i) => (
                         <tr key={c.contact_id} className="border-b last:border-0">
-                          <td className="py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="py-2 font-mono text-xs">{c.phone_number || '-'}</td>
-                          <td className="py-2">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(c.messages)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatNumber(c.tokens)}</td>
+                          <td className="py-2 pe-3 text-muted-foreground">{i + 1}</td>
+                          <td className="whitespace-nowrap py-2 pe-3 font-mono text-xs">{c.phone_number || '-'}</td>
+                          <td className="whitespace-nowrap py-2 pe-3">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.messages)}</td>
+                          <td className="py-2 whitespace-nowrap ps-4 text-right tabular-nums">{formatNumber(c.tokens)}</td>
+                          <td
+                            className="py-2 whitespace-nowrap ps-4 text-right tabular-nums"
+                            title={excludedLabel(c.unpriced_calls, c.unknown_cache_calls)}
+                          >
+                            {totalCost(c.cost_usd, c.unpriced_calls, c.messages, c.unknown_cache_calls)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -342,9 +435,9 @@ export default function AIUsagePage() {
           </Card>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-1">
+        <div className="grid grid-cols-1 gap-3">
 
-          <Card>
+          <Card className="min-w-0">
             <CardHeader>
               <CardTitle>Recent queries</CardTitle>
               <CardDescription>Most recent assistant turns</CardDescription>
@@ -357,7 +450,7 @@ export default function AIUsagePage() {
               ) : (
                 <div className="max-h-[420px] overflow-auto">
                   {/* One scroller, both axes: a nested one broke the sticky head. */}
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="sticky top-0 bg-background">
                       <tr className="border-b text-xs text-muted-foreground">
                         <th className="w-6 py-2"></th>
@@ -365,8 +458,9 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">Feature</th>
                         <th className="py-2 text-left font-medium">Principal</th>
                         <th className="py-2 text-left font-medium">Query</th>
-                        <th className="py-2 text-right font-medium">ms</th>
-                        <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">ms</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Tokens</th>
+                        <th className="whitespace-nowrap ps-4 py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -401,7 +495,7 @@ export default function AIUsagePage() {
                                 ) : null}
                               </td>
                               <td className="py-2 align-top text-xs whitespace-nowrap text-muted-foreground">
-                                {formatDateTime(q.created_at)}
+                                {formatDateTimeInMalaysia(q.created_at)}
                               </td>
                               <td className="py-2 align-top text-xs">{featureLabel}</td>
                               <td className="py-2 align-top" title={principal}>
@@ -413,17 +507,23 @@ export default function AIUsagePage() {
                               >
                                 {q.query_preview}
                               </td>
-                              <td className="py-2 text-right align-top tabular-nums">
+                              <td className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums">
                                 {formatNumber(q.response_time_ms)}
                               </td>
-                              <td className="py-2 text-right align-top tabular-nums">
+                              <td className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums">
                                 {formatNumber(q.tokens)}
+                              </td>
+                              <td
+                                className="whitespace-nowrap ps-4 py-2 text-right align-top tabular-nums"
+                                title={costTitle(q)}
+                              >
+                                {formatUsd(q.cost_usd)}
                               </td>
                             </tr>
                             {isExpanded ? (
                               <tr className="border-b bg-muted/20">
                                 <td></td>
-                                <td colSpan={6} className="space-y-2 py-3 pe-3">
+                                <td colSpan={7} className="space-y-2 py-3 pe-3">
                                   {queryDetail.isLoading ? (
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <Loader2 className="size-3 animate-spin" /> Loading detail...
@@ -506,19 +606,30 @@ export default function AIUsagePage() {
 function SummaryCard({
   label,
   value,
+  notes = [],
   loading,
 }: {
   label: string;
   value: string;
+  notes?: string[];
   loading: boolean;
 }) {
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-2xl">
           {loading ? <Loader2 className="size-4 animate-spin" /> : value}
         </CardTitle>
+        {loading
+          ? null
+          : notes
+              .filter(Boolean)
+              .map((note) => (
+                <p key={note} className="text-xs text-muted-foreground">
+                  {note}
+                </p>
+              ))}
       </CardHeader>
     </Card>
   );

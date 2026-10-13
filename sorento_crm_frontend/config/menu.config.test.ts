@@ -184,6 +184,7 @@ const OLD_PATHS: string[] = [
   '/system-management/ai-assistant',
   '/system-management/ai-assistant/prompts',
   '/system-management/ai-assistant/usage',
+  '/system-management/ai-assistant/model-prices',
   '/system-management/ai-assistant/wishlist',
   '/system-management/mcp-tools',
 ];
@@ -509,5 +510,23 @@ describe('menu.config - old paths still resolvable (AC-A2)', () => {
     ]) {
       expect(paths.has(p)).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MODEL-PRICES (MP-1): "Model prices" sits right after "Usage" under AI Assistant
+// ---------------------------------------------------------------------------
+
+describe('menu.config - Model prices entry', () => {
+  it('is the item right after Usage in System > AI Assistant', () => {
+    const system = findGroup(MENU_SIDEBAR, 'System');
+    expect(system).toBeDefined();
+    const ai = findSubGroup(system!, 'AI Assistant');
+    expect(ai).toBeDefined();
+    const titles = ai!.children!.map((c) => c.title);
+    expect(titles[titles.indexOf('Usage') + 1]).toBe('Model prices');
+    const entry = findLeaf(ai!.children!, 'Model prices');
+    expect(entry?.path).toBe('/system-management/ai-assistant/model-prices');
+    expect(entry?.permission).toBe('system.ai_assistant_settings.view');
   });
 });
