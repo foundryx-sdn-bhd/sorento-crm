@@ -1555,10 +1555,14 @@ class DocumentIngestService(MasterRefResolver):
                     values["line_status"] = CANCELLED
                 if spec.entity_type in ("sales_orders", "purchase_orders"):
                     # AC-CANCEL-CRM (R5): AutoCount Cancel SO / Cancel PO documents cancelled the
-                    # whole line (`qty_cancelled`, derived by the cancel ingest). The push
-                    # recomputes the status from quantities and would read it closed.
+                    # whole line (`cancelled_by_cancel_doc`, set by the cancel ingest). The push
+                    # recomputes the status from quantities and would read it closed, then the
+                    # relink would cancel it again and retire its OI rows a second time. A line
+                    # only NOW fully covered (ordered lowered) is left to the relink, which
+                    # reports it as newly cancelled.
                     ordered = values.get("qty_ordered", row.qty_ordered) or 0
-                    if ordered > 0 and (row.qty_cancelled or 0) >= ordered:
+                    if (row.cancelled_by_cancel_doc and ordered > 0
+                            and (row.qty_cancelled or 0) >= ordered):
                         values["line_status"] = CANCELLED
                 for column, value in values.items():
                     setattr(row, column, value)

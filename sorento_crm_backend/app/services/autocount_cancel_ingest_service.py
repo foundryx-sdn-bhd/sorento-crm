@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -42,6 +42,8 @@ from sqlalchemy.orm import Session
 from app.models.autocount_cancel import (
     KIND_CANCEL_PO,
     KIND_CANCEL_SO,
+    KIND_CONSIGNMENT,
+    KIND_CONSIGNMENT_RETURN,
     MATCH_MATCHED,
     MATCH_UNMATCHED,
     MATCH_WAITING,
@@ -99,10 +101,19 @@ logger = logging.getLogger(__name__)
 
 CANCEL_SALES_ORDERS_ENTITY = "cancel_sales_orders"
 CANCEL_PURCHASE_ORDERS_ENTITY = "cancel_purchase_orders"
-AUTOCOUNT_CANCEL_ENTITIES = frozenset({CANCEL_SALES_ORDERS_ENTITY, CANCEL_PURCHASE_ORDERS_ENTITY})
+# Crew, 13 Oct: AutoCount Consignment / Consignment Return are accepted and stored only on the
+# same surface and shape; no consignment behaviour in this lane.
+CONSIGNMENTS_ENTITY = "consignments"
+CONSIGNMENT_RETURNS_ENTITY = "consignment_returns"
+AUTOCOUNT_CANCEL_ENTITIES = frozenset({CANCEL_SALES_ORDERS_ENTITY, CANCEL_PURCHASE_ORDERS_ENTITY,
+                                       CONSIGNMENTS_ENTITY, CONSIGNMENT_RETURNS_ENTITY})
 
-_KIND = {CANCEL_SALES_ORDERS_ENTITY: KIND_CANCEL_SO, CANCEL_PURCHASE_ORDERS_ENTITY: KIND_CANCEL_PO}
-_PREFIX = {CANCEL_SALES_ORDERS_ENTITY: "XS", CANCEL_PURCHASE_ORDERS_ENTITY: "XP"}
+_KIND = {CANCEL_SALES_ORDERS_ENTITY: KIND_CANCEL_SO, CANCEL_PURCHASE_ORDERS_ENTITY: KIND_CANCEL_PO,
+         CONSIGNMENTS_ENTITY: KIND_CONSIGNMENT,
+         CONSIGNMENT_RETURNS_ENTITY: KIND_CONSIGNMENT_RETURN}
+_PREFIX = {CANCEL_SALES_ORDERS_ENTITY: "XS", CANCEL_PURCHASE_ORDERS_ENTITY: "XP",
+           CONSIGNMENTS_ENTITY: "CSGN", CONSIGNMENT_RETURNS_ENTITY: "CSGR"}
+_STORED_ONLY = frozenset({KIND_CONSIGNMENT, KIND_CONSIGNMENT_RETURN})
 
 # Why a cancel line matched nothing (R2, R7). `waiting` lines are retried every batch.
 REASON_ORDER_NOT_FOUND = "order_not_found"
@@ -110,12 +121,16 @@ REASON_DANGLING_LINE_KEY = "dangling_line_key"
 REASON_AMBIGUOUS = "ambiguous"
 REASON_NO_SOURCE_DOC = "no_source_doc"
 REASON_LINE_WITHOUT_ITEM = "line_without_item"
+REASON_STORED_ONLY = "stored_only"
 
 # Contract 2.8 warnings on a record's verdict.
 WARN_CANCEL_LINE_WAITING = "cancel_line_waiting"
 WARN_CANCEL_LINE_UNMATCHED = "cancel_line_unmatched"
 CONTRACT_2_8_WARNINGS = (WARN_CANCEL_LINE_WAITING, WARN_CANCEL_LINE_UNMATCHED)
 
+# `qty` is Numeric(15, 4) and `seq` an Integer: anything beyond is a field error on the record.
+_MAX_QTY = Decimal("100000000000")
+_INT4_MAX = 2**31 - 1
 # Waiting lines re-tried per batch; the rest wait for the next batch.
 MAX_WAITING_LINES = 500
 CANCELLED = "cancelled"
@@ -191,10 +206,16 @@ def _parse(raw: dict) -> _CancelDoc:
             qty = _field(errors, f"{prefix}.Qty", lambda v: _dec(v, _FOUR), row.get("Qty"))
             if qty is not None and qty < 0:
                 errors[f"{prefix}.Qty"] = "must not be negative"
+            elif qty is not None and qty >= _MAX_QTY:
+                errors[f"{prefix}.Qty"] = "out of range"
+            seq = _int(row.get("Seq"))
+            if seq is not None and not -_INT4_MAX <= seq <= _INT4_MAX:
+                errors[f"{prefix}.Seq"] = "out of range"
+                seq = None
             lines.append(
                 _CancelLine(
                     dtl_key=dtl_key,
-                    seq=_int(row.get("Seq")),
+                    seq=seq,
                     item_code=_text(row.get("ItemCode"), 100),
                     location_code=_text(row.get("Location"), 50),
                     qty=qty if qty is not None else Decimal("0.0000"),
@@ -212,7 +233,7 @@ def _parse(raw: dict) -> _CancelDoc:
 _LINE_FIELDS = ("seq", "item_code", "location_code", "qty", "from_doc_type", "from_doc_no",
                 "from_dtl_key")
 # Changing any of these can change what the line matches.
-_MATCH_FIELDS = ("item_code", "location_code", "from_doc_no", "from_dtl_key")
+_MATCH_FIELDS = ("item_code", "location_code", "from_doc_no", "from_dtl_key", "qty")
 
 
 # ============================================================================ matching
@@ -469,9 +490,14 @@ class CancelLineMatcher:
 
     # ------------------------------------------------------------- the pass
     def match_all(self, lines: Iterable[AutocountCancelLine], kinds: dict[str, str],
-                  live: dict[str, bool]) -> dict[str, tuple[AutocountCancelLine, _Match, str]]:
-        """The answer for every line asked about, plus every other key-less line sharing a group
-        with them (a group is decided whole). Keyed by line id."""
+                  live: dict[str, bool], assign: Callable[[AutocountCancelLine, _Match, str], None]
+                  ) -> None:
+        """Decide every line asked about, plus every other key-less line sharing a group with
+        them (a group is decided whole), handing each answer to `assign`.
+
+        Two passes (review B1): line-key matches are assigned and flushed FIRST, because a
+        group's unexplained transfer subtracts them; deciding a group before they land would
+        make the answer depend on which document arrived first."""
         answers: dict[str, tuple[AutocountCancelLine, _Match, str]] = {}
         groups: set[_Group] = set()
         for line in lines:
@@ -484,6 +510,9 @@ class CancelLineMatcher:
                     group = self._target_group(kind, target, str(getattr(line, column)))
                     if group:
                         groups.add(group)
+            if kind in _STORED_ONLY:
+                answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_STORED_ONLY), "")
+                continue
             if not live.get(str(line.cancel_doc_id), True):
                 answers[str(line.id)] = (line, _Match(MATCH_UNMATCHED, REASON_DOC_NOT_LIVE), "")
                 continue
@@ -509,9 +538,13 @@ class CancelLineMatcher:
                     line, _Match(MATCH_UNMATCHED, REASON_LINE_WITHOUT_ITEM), "")
                 continue
             groups.add(_Group(kind, target, doc, line.from_doc_no, line.item_code))
+        for line, match, doc_no in answers.values():
+            assign(line, match, doc_no)
+        self.db.flush()
         for group in sorted(groups, key=lambda g: (g.kind, g.target, g.doc, g.item_code)):
-            answers.update(self._resolve(group))
-        return answers
+            for line, match, doc_no in self._resolve(group).values():
+                assign(line, match, doc_no)
+        self.db.flush()
 
 
 # ============================================================================ derivation
@@ -587,9 +620,10 @@ def recompute_cancelled(db: Session, touched: Touched) -> Derived:
                 newly_cancelled.append((str(row.id), _latest_doc_no(db, str(row.id))))
             elif (row.qty_cancelled != before_c and before_status != CANCELLED
                   and row.line_status != CANCELLED):
-                ordered = Decimal(row.qty_ordered or 0)
-                derived.plan_moves.append((str(row.id), max(ordered - before_c, _ZERO),
-                                           max(ordered - Decimal(row.qty_cancelled), _ZERO)))
+                # The planned basis `plan_qty_of` reads (review should-fix 5).
+                base = Decimal(row.qty_ordered if row.qty_required is None else row.qty_required)
+                derived.plan_moves.append((str(row.id), max(base - before_c, _ZERO),
+                                           max(base - Decimal(row.qty_cancelled), _ZERO)))
     if touched.po_line_ids:
         sums = _live_sums(db, AutocountCancelLine.purchase_order_line_id, touched.po_line_ids)
         rows = (
@@ -612,24 +646,29 @@ def recompute_cancelled(db: Session, touched: Touched) -> Derived:
 
 
 def _apply(row, total: Decimal, transferred: Any, header_status: Optional[str]) -> bool:
-    """One SO / PO line. True when the line has just become fully cancelled."""
+    """One SO / PO line. True when cancel documents have just cancelled ALL of it.
+
+    `cancelled_by_cancel_doc` records that it was this rule that cancelled the line (review
+    should-fix 2): only such a line reopens when the cancel lowers. A line already cancelled
+    for another reason (board Cancel SO, removed from the AutoCount order, order cancelled)
+    is never claimed, so it never reopens here."""
     ordered = Decimal(row.qty_ordered or 0)
     value = max(min(total, ordered), _ZERO)
-    was_full = ordered > 0 and Decimal(row.qty_cancelled or 0) >= ordered
     now_full = ordered > 0 and value >= ordered
     if row.qty_cancelled != value:
         row.qty_cancelled = value
     if now_full:
-        if row.line_status != CANCELLED:
+        if not row.cancelled_by_cancel_doc and row.line_status != CANCELLED:
             row.line_status = CANCELLED
+            row.cancelled_by_cancel_doc = True
             return True
         return False
-    # R6: only a line THIS module cancelled reopens. A board cancel (#1524) or a cancelled
-    # order keeps it cancelled.
-    if (was_full and row.line_status == CANCELLED
-            and getattr(row, "cancelled_at", None) is None
-            and (header_status or "").lower() != CANCELLED):
-        row.line_status = _settled_status(row.qty_ordered, transferred)
+    if row.cancelled_by_cancel_doc:
+        row.cancelled_by_cancel_doc = False
+        if (row.line_status == CANCELLED
+                and getattr(row, "cancelled_at", None) is None
+                and (header_status or "").lower() != CANCELLED):
+            row.line_status = _settled_status(row.qty_ordered, transferred)
     return False
 
 
@@ -638,7 +677,8 @@ def _latest_doc_no(db: Session, so_line_id: str) -> str:
         db.query(AutocountCancelDoc.doc_no)
         .join(AutocountCancelLine, AutocountCancelLine.cancel_doc_id == AutocountCancelDoc.id)
         .filter(AutocountCancelLine.sales_order_line_id == so_line_id,
-                AutocountCancelLine.match_status == MATCH_MATCHED)
+                AutocountCancelLine.match_status == MATCH_MATCHED,
+                _live_doc())
         .order_by(AutocountCancelDoc.doc_date.desc(), AutocountCancelDoc.doc_no.desc())
         .first()
     )
@@ -661,8 +701,8 @@ def rematch_lines(db: Session, company_id: str, lines: Iterable[AutocountCancelL
                           AutocountCancelDoc.source_vanished_at)
         .filter(AutocountCancelDoc.id.in_(list(doc_ids))).all()
     }
-    answers = CancelLineMatcher(db, company_id).match_all(lines, kinds, live)
-    for line, answer, doc_no in answers.values():
+
+    def assign(line: AutocountCancelLine, answer: _Match, doc_no: str) -> None:
         before = (line.sales_order_line_id, line.purchase_order_line_id, line.spo_allocation_id)
         touched.add_from(line)
         line.match_status = answer.status
@@ -672,13 +712,14 @@ def rematch_lines(db: Session, company_id: str, lines: Iterable[AutocountCancelL
         line.purchase_order_line_id = answer.po_line_id
         line.spo_allocation_id = answer.spo_id
         touched.add_from(line)
-        after = (line.sales_order_line_id, line.purchase_order_line_id, line.spo_allocation_id)
         if counts is not None:
             key = f"{answer.status}:{answer.reason}"
             counts[key] = counts.get(key, 0) + 1
+        after = (line.sales_order_line_id, line.purchase_order_line_id, line.spo_allocation_id)
         if answer.reason == REASON_FALLBACK and after != before:
             _record_fallback(db, line, doc_no)
-    db.flush()
+
+    CancelLineMatcher(db, company_id).match_all(lines, kinds, live, assign)
 
 
 def _record_fallback(db: Session, line: AutocountCancelLine, doc_no: str) -> None:
@@ -755,7 +796,7 @@ class AutocountCancelIngestService:
                     .filter(AutocountCancelLine.company_id == self.company_id,
                             AutocountCancelDoc.kind == kind,
                             AutocountCancelLine.match_status == MATCH_WAITING)
-                    .order_by(AutocountCancelLine.created_at)
+                    .order_by(AutocountCancelLine.created_at.desc(), AutocountCancelLine.id)
                     .limit(MAX_WAITING_LINES)
                     .all()
                 )
@@ -763,16 +804,18 @@ class AutocountCancelIngestService:
                 kinds = self._kinds(lines)
                 counts: dict[str, int] = {}
                 rematch_lines(self.db, self.company_id, lines, kinds, touched, counts)
-                self.derived = recompute_cancelled(self.db, touched)
+                derived = recompute_cancelled(self.db, touched)
                 self._warn_unmatched(entity, result)
-                self.match_counts = counts
+            savepoint.commit()
+            # Only a derivation that landed reaches the post-commit hooks (review nit).
+            self.derived = derived
+            self.match_counts = counts
             if counts:
                 # R7 / Q3: the sync log carries how every line was decided this batch
                 # (fallbacks and unmatched included), never the record content.
                 logger.info("ingest.cancel_match entity=%s company=%s %s", entity,
                             self.company_id,
                             " ".join(f"{k}={v}" for k, v in sorted(counts.items())))
-            savepoint.commit()
         except Exception as exc:  # noqa: BLE001
             savepoint.rollback()
             logger.warning("ingest.cancel_derivation_failed entity=%s error=%s",
@@ -794,7 +837,10 @@ class AutocountCancelIngestService:
         rows = (
             self.db.query(AutocountCancelLine.cancel_doc_id, AutocountCancelLine.match_status)
             .filter(AutocountCancelLine.cancel_doc_id.in_(ids),
-                    AutocountCancelLine.match_status != MATCH_MATCHED)
+                    AutocountCancelLine.match_status != MATCH_MATCHED,
+                    # a voided doc's or a stored-only doc's lines are not a matching problem
+                    func.coalesce(AutocountCancelLine.match_reason, "").notin_(
+                        (REASON_DOC_NOT_LIVE, REASON_STORED_ONLY)))
             .distinct().all()
         )
         by_doc: dict[str, set[str]] = {}
@@ -982,15 +1028,24 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Der
         return Derived()
     touched = Touched()
     with company_scope(db, frozenset({str(company_id)})):
+        cap = MAX_WAITING_LINES * 4
         lines = (
             db.query(AutocountCancelLine)
+            .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
             .filter(AutocountCancelLine.company_id == str(company_id),
-                    AutocountCancelLine.from_doc_no.in_(sorted(numbers)))
-            .limit(MAX_WAITING_LINES * 4)
+                    AutocountCancelLine.from_doc_no.in_(sorted(numbers)),
+                    _live_doc())
+            .order_by(AutocountCancelLine.created_at.desc(), AutocountCancelLine.id)
+            .limit(cap + 1)
             .all()
         )
         if not lines:
             return Derived()
+        if len(lines) > cap:
+            # Security review should-fix 2: never a silent subset. The rest are re-matched by
+            # their own next cancel sync.
+            logger.warning("ingest.cancel_relink_capped company=%s cap=%d", company_id, cap)
+            lines = lines[:cap]
         kinds = {
             str(r[0]): r[1] for r in db.query(AutocountCancelDoc.id, AutocountCancelDoc.kind)
             .filter(AutocountCancelDoc.id.in_({str(l.cancel_doc_id) for l in lines})).all()
@@ -1079,6 +1134,8 @@ __all__ = [
     "AUTOCOUNT_CANCEL_ENTITIES",
     "CANCEL_PURCHASE_ORDERS_ENTITY",
     "CANCEL_SALES_ORDERS_ENTITY",
+    "CONSIGNMENTS_ENTITY",
+    "CONSIGNMENT_RETURNS_ENTITY",
     "CONTRACT_2_8_WARNINGS",
     "AutocountCancelIngestService",
     "CancelLineMatcher",

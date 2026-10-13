@@ -467,7 +467,8 @@ class SalesOrderService:
             # it never shipped and nothing about it is still owed, so it reads the same as
             # a line that was never there rather than inflating "Total qty".
             if (ln.line_status or "open") != CANCELLED:
-                total_qty += qo
+                # AC-CANCEL-CRM: a partly cancelled line counts what is still on order.
+                total_qty += max(qo - qc, 0.0)
             committed += outstanding
             if ln.line_status == "open" and outstanding > 0:
                 open_lines += 1

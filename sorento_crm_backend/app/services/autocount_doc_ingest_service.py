@@ -205,7 +205,12 @@ def _dec(value: Any, exp: Decimal) -> Optional[Decimal]:
         raise ValueError("not a number") from None
     if not out.is_finite():
         raise ValueError("not a number")
-    return out.quantize(exp, rounding=ROUND_HALF_UP)
+    try:
+        return out.quantize(exp, rounding=ROUND_HALF_UP)
+    except ArithmeticError:
+        # A value too large to quantize (about 1e24 and up) is a field error, not a crash that
+        # fails the whole batch (AC-CANCEL-CRM security review).
+        raise ValueError("out of range") from None
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -597,6 +602,10 @@ class AutocountDocIngestService(MasterRefResolver):
         self.touched_allocation_ids: set[str] = set()
         self.released_allocation_ids: set[str] = set()
         self.live_records: list[RecordResult] = []
+        # AC-CANCEL-CRM: the SO / PO / SPO numbers this batch's lines came from. A DO or GRN
+        # moves those lines' unexplained transfer, which decides key-less cancel lines, so the
+        # route re-matches the cancel lines naming them after the commit.
+        self.order_numbers: set[str] = set()
 
     #: How often `on_progress` fires mid-batch - the same cadence `MasterIngestService`
     #: uses (B3): a pull snapshot can run to thousands of documents.
@@ -679,6 +688,8 @@ class AutocountDocIngestService(MasterRefResolver):
         except _Invalid as exc:
             return RecordResult(source_ref=source_ref, outcome=IngestOutcome.FAILED,
                                 errors=exc.errors)
+        self.order_numbers.update(
+            n for n in [doc.values.get("ref_doc_no"), *(l.from_doc_no for l in doc.lines)] if n)
 
         savepoint = self.db.begin_nested()
         try:

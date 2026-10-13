@@ -137,8 +137,18 @@ FIELDS_ADDED: dict[str, list[str]] = {
                                "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
                                "Details.Location", "Details.Qty", "Details.FromDocType",
                                "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "consignments": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                     "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                     "Details.Location", "Details.Qty", "Details.FromDocType",
+                     "Details.FromDocNo", "Details.FromDocDtlKey"],
+    "consignment_returns": ["book", "DocKey", "DocNo", "DocDate", "LastModified", "Cancelled",
+                            "Details", "Details.DtlKey", "Details.Seq", "Details.ItemCode",
+                            "Details.Location", "Details.Qty", "Details.FromDocType",
+                            "Details.FromDocNo", "Details.FromDocDtlKey"],
     "cancel_sales_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
     "cancel_purchase_orders_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    "consignments_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
+    "consignment_returns_deletions": ["book", "doc_date_from", "doc_date_to", "doc_keys"],
 }
 
 # D24 (captain 2026-09-06): per-entity notes on a field's meaning that
@@ -229,6 +239,14 @@ FIELD_NOTES: dict[str, str] = {
         "v2.8. As cancel_sales_orders, AutoCount Cancel PO (XP) against PO or SPO lines (the "
         "number's table decides; FromDocType reads PO on both). source_ref is {book}:XP:{DocKey}."
     ),
+    "consignments": (
+        "v2.8. AutoCount Consignment in the same shape, accepted and stored only: no line is "
+        "matched and no quantity moves (consignment behaviour is a later contract). source_ref "
+        "is {book}:CSGN:{DocKey}. /deletions marks the vanished doc_keys."
+    ),
+    "consignment_returns": (
+        "v2.8. As consignments, AutoCount Consignment Return. source_ref is {book}:CSGR:{DocKey}."
+    ),
 }
 
 # D15 end state (AC-P0-4): these now FAIL validation (extra=forbid), never
@@ -253,6 +271,8 @@ STATUS_OPTIONAL: dict[str, bool] = {
     "goods_receive_notes": False,
     "cancel_sales_orders": False,
     "cancel_purchase_orders": False,
+    "consignments": False,
+    "consignment_returns": False,
 }
 
 # The fixed warning vocabulary, drawn from the constants each producing

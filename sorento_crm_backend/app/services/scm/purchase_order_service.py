@@ -205,7 +205,11 @@ class PurchaseOrderService:
                 "sku": ln.product.product_code if ln.product else "",
                 "product_name": ln.product.product_name if ln.product else "",
                 "qty_ordered": float(ln.qty_ordered or 0),
-                "qty_received": float(ln.qty_received or 0),
+                # AC-CANCEL-CRM: AutoCount Cancel PO adds to TransferedQty (`qty_received`);
+                # what is shown as received leaves it out. Outstanding is unchanged.
+                "qty_received": max(float(ln.qty_received or 0)
+                                    - float(getattr(ln, "qty_cancelled", None) or 0), 0.0),
+                "qty_cancelled": float(getattr(ln, "qty_cancelled", None) or 0),
                 "outstanding_qty": line_outstanding,
                 "line_status": ln.line_status,
                 # The line's own override when the book stated one; otherwise the product's

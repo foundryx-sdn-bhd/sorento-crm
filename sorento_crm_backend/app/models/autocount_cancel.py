@@ -2,11 +2,12 @@
 
 Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md. Fed by
 `POST /external/ingest/cancel_sales_orders` and `/cancel_purchase_orders` (contract 2.8). One
-header and line table pair for both kinds; `kind` says which.
+header and line table pair for both kinds; `kind` says which. Consignment and consignment
+return documents are stored here too, accepted and stored only (crew, 13 Oct).
 
 A cancel line is matched to ONE SO line, PO line or SPO line, or to none with a reason
 (`match_status` / `match_reason`). The target line's `qty_cancelled` is derived from these rows
-on every sync (`autocount_cancel_service.recompute_cancelled`), never written by hand.
+on every sync (`autocount_cancel_ingest_service.recompute_cancelled`), never written by hand.
 """
 from __future__ import annotations
 
@@ -32,6 +33,10 @@ from app.models.base import CompanyScopedMixin
 
 KIND_CANCEL_SO = "cancel_so"
 KIND_CANCEL_PO = "cancel_po"
+# Accepted and stored only (crew, 13 Oct): consignment behaviour is a later lane, so these
+# documents keep their lines but are never matched and never move a quantity.
+KIND_CONSIGNMENT = "consignment"
+KIND_CONSIGNMENT_RETURN = "consignment_return"
 
 MATCH_MATCHED = "matched"
 MATCH_WAITING = "waiting"

@@ -144,7 +144,10 @@ class SalesOrderLine(BaseModel):
     sku: str
     product_name: str
     qty_ordered: float
+    #: What really went out: AutoCount's TransferedQty minus `qty_cancelled` (AC-CANCEL-CRM).
     qty_delivered: float
+    #: What AutoCount Cancel SO documents cancelled on this line, derived on every sync.
+    qty_cancelled: float = 0
     #: What is still to go out on this line: `ordered - delivered`, floored at 0, and **0 on a
     #: CLOSED line whatever those two say**. A book re-upload closes a line by absence without
     #: knowing what shipped, so `qty_delivered` stays 0 and the subtraction alone would report
@@ -510,7 +513,10 @@ class PurchaseOrderLine(BaseModel):
     sku: str
     product_name: str
     qty_ordered: float
+    #: What really arrived: AutoCount's TransferedQty minus `qty_cancelled` (AC-CANCEL-CRM).
     qty_received: float
+    #: What AutoCount Cancel PO documents cancelled on this line, derived on every sync.
+    qty_cancelled: float = 0
     #: What is still to ARRIVE on this line: `ordered - received`, floored at 0, and **0 on a
     #: CLOSED line whatever those two say**. A book re-upload closes a line by absence without
     #: knowing what arrived, so `qty_received` stays 0 and the subtraction alone would report

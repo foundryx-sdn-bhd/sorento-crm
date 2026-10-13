@@ -61,15 +61,67 @@ def _line(env, so_number) -> SalesOrderLine:
 
 
 # ======================================================================= the SO push
-def test_so_push_keeps_a_fully_cancelled_line_cancelled(env):
+def test_so_push_keeps_a_fully_cancelled_line_cancelled(env, monkeypatch):
+    """Review B2: and a re-push neither retires / flags the OI rows again nor raises a
+    planning change (without the push guard the line would go closed and back)."""
+    import app.services.project_order_inquiry_service as oi
+    from app.services import planning_change_service
+
+    retired, flagged, diffs = [], [], []
+    monkeypatch.setattr(oi.ProjectOrderInquiryService, "retire_rows_for_cancelled_lines",
+                        lambda self, cancelled, actor_user_id=None: retired.append(1) or 0)
+    real_flag = oi.flag_rows_for_cancelled_lines
+    monkeypatch.setattr(oi, "flag_rows_for_cancelled_lines",
+                        lambda db, ids: flagged.append(list(ids)) or real_flag(db, ids))
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: diffs.append(
+                            [c for c in diff.changes if c.kind != "unchanged"]) or None)
     _push_so(env, "ZZ-CX-SO1", ordered=10, delivered=10)
     _push_xs(env, "ZZ-CX-SO1", 10)
     assert _line(env, "ZZ-CX-SO1").line_status == "cancelled"
+    assert len(retired) == 1
+    retired.clear(), flagged.clear(), diffs.clear()
     # AutoCount pushes the SO again (TransferedQty 10 of 10): the line must not read closed.
     _push_so(env, "ZZ-CX-SO1", ordered=10, delivered=10)
     line = _line(env, "ZZ-CX-SO1")
     assert line.line_status == "cancelled"
     assert line.qty_cancelled == Decimal("10")
+    assert retired == [] and flagged == []
+    assert all(changes == [] for changes in diffs)
+
+
+def test_an_so_push_that_lowers_ordered_onto_the_cancel_retires_the_rows(env, monkeypatch):
+    """Review should-fix 1: 4 of 10 cancelled, then AutoCount lowers ordered to 4: the line
+    is now fully cancelled and its OI rows are retired like any full cancel."""
+    import app.services.project_order_inquiry_service as oi
+
+    retired = []
+    monkeypatch.setattr(oi.ProjectOrderInquiryService, "retire_rows_for_cancelled_lines",
+                        lambda self, cancelled, actor_user_id=None: retired.append(
+                            list(cancelled)) or 0)
+    _push_so(env, "ZZ-CX-SO8", ordered=10, delivered=4)
+    _push_xs(env, "ZZ-CX-SO8", 4)
+    assert retired == []
+    _push_so(env, "ZZ-CX-SO8", ordered=4, delivered=4)
+    line = _line(env, "ZZ-CX-SO8")
+    assert line.line_status == "cancelled"
+    assert retired == [[(str(line.id), "ZZXS-950001")]]
+
+
+def test_the_so_push_planning_diff_reads_the_planned_basis(env, monkeypatch):
+    """Review M14: an AutoCount qty edit on a partly cancelled line is diffed on what is
+    planned (ordered - cancelled), 6 -> 8, not 10 -> 12."""
+    from app.services import planning_change_service
+
+    seen = []
+    monkeypatch.setattr(planning_change_service, "build_batch",
+                        lambda db, diff, **kw: seen.append(diff) or None)
+    _push_so(env, "ZZ-CX-SO9", ordered=10, delivered=4)
+    _push_xs(env, "ZZ-CX-SO9", 4)
+    seen.clear()
+    _push_so(env, "ZZ-CX-SO9", ordered=12, delivered=4)
+    changes = [c for d in seen for c in d.changes if c.kind != "unchanged"]
+    assert [(c.before.qty, c.after.qty) for c in changes] == [(6.0, 8.0)]
 
 
 def test_so_push_links_a_waiting_cancel_line(env):

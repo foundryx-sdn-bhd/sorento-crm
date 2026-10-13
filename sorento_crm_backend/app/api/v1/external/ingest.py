@@ -132,10 +132,12 @@ INGEST_PERMISSIONS = {
     "delivery_orders": "order_management.orders.edit",
     "goods_receive_notes": "procurement.grn.edit",
     "branches": "order_management.branches.edit",
-    # AC-CANCEL-CRM (contract 2.8): a Cancel SO / Cancel PO changes what the SO / PO line
-    # reads, so it is the same act as pushing that order, and the same slug.
-    "cancel_sales_orders": "scm.sales_orders.edit",
-    "cancel_purchase_orders": "scm.purchase_orders.edit",
+    # AC-CANCEL-CRM (contract 2.8): its own slugs (one per entity per door), granted by the
+    # migration to the role that already pushes the orders.
+    "cancel_sales_orders": "scm.cancel_sales_orders.edit",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.edit",
+    "consignments": "scm.consignments.edit",
+    "consignment_returns": "scm.consignment_returns.edit",
 }
 READ_PERMISSIONS = {
     "product_categories": "master_data.product_categories.view",
@@ -156,8 +158,10 @@ READ_PERMISSIONS = {
     # Mapped so every map covers every entity; the route itself answers 404 (no read door).
     "branches": "order_management.branches.view",
     # Mapped for completeness; the route answers 404 (no read door, like branches).
-    "cancel_sales_orders": "scm.sales_orders.view",
-    "cancel_purchase_orders": "scm.purchase_orders.view",
+    "cancel_sales_orders": "scm.cancel_sales_orders.view",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.view",
+    "consignments": "scm.consignments.view",
+    "consignment_returns": "scm.consignment_returns.view",
 }
 # Deleting through the ESB is its own act, so it takes its own slug on top of the
 # ingest guard the router already carries (group A4 mounts the route). Declared
@@ -183,8 +187,10 @@ DELETE_PERMISSIONS = {
     "goods_receive_notes": "procurement.grn.delete",
     "branches": "order_management.branches.delete",
     # 2.8: the sweep's vanished cancel docs stop cancelling; nothing is removed.
-    "cancel_sales_orders": "scm.sales_orders.delete",
-    "cancel_purchase_orders": "scm.purchase_orders.delete",
+    "cancel_sales_orders": "scm.cancel_sales_orders.delete",
+    "cancel_purchase_orders": "scm.cancel_purchase_orders.delete",
+    "consignments": "scm.consignments.delete",
+    "consignment_returns": "scm.consignment_returns.delete",
 }
 
 # A batch cap the ESB can design against. Exceeding it errors rather than
@@ -300,7 +306,8 @@ SUPPORTED_ENTITIES = (
 # source_ref {book}:XS:{DocKey} / {book}:XP:{DocKey}). Each line is matched to the SO / PO / SPO
 # line it cancels and the line's cancelled qty is derived on every sync; `/deletions` marks the
 # vanished docs, which then cancel nothing. No read door. `cancel_line_waiting` and
-# `cancel_line_unmatched` join `warnings`. Additive.
+# `cancel_line_unmatched` join `warnings`. `consignments` / `consignment_returns` join in the
+# same shape, accepted and stored only (source_ref {book}:CSGN / CSGR:{DocKey}). Additive.
 CONTRACT_VERSION = "2.8"
 
 
@@ -1008,10 +1015,14 @@ def ingest_masters(
                 result.book_repair_moves_dropped,
                 result.book_follow_rows_dropped,
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
-        elif entity == GOODS_RECEIVE_NOTES_ENTITY:
-            _run_grn_receipt_hook(db, service)
         elif entity in AUTOCOUNT_CANCEL_ENTITIES:
             _run_cancel_hooks(db, service, actor=current_user.get("id"))
+        if entity == GOODS_RECEIVE_NOTES_ENTITY:
+            _run_grn_receipt_hook(db, service)
+        if entity in AUTOCOUNT_DOC_ENTITIES:
+            _run_cancel_relink_hook(
+                db, service, getattr(service, "order_numbers", set()), actor=current_user.get("id")
+            )
 
     logger.info(
         "ingest.batch entity=%s integration=%s company=%s dry_run=%s "

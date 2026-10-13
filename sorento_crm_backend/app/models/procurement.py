@@ -929,6 +929,8 @@ class PurchaseOrderLine(Base, CompanyScopedMixin):
     # AC-CANCEL-CRM: what AutoCount Cancel PO (XP) documents cancelled on this line, derived
     # on every sync. `qty_received` stays TransferedQty, which INCLUDES this.
     qty_cancelled = Column(Numeric(15, 4), default=0, server_default="0", nullable=False)
+    # AC-CANCEL-CRM: True while `cancelled` because cancel documents cancelled all of it.
+    cancelled_by_cancel_doc = Column(Boolean, default=False, server_default="false", nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=True)
     # The rest of the money line the AutoCount PO detail listing states, and the unit the
     # quantity was ordered IN. All three nullable, and an absent figure stays absent: a 0

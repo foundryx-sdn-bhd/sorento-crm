@@ -359,13 +359,7 @@ def test_match_does_not_depend_on_arrival_order(env):
     one_way = _match_picture(env, (950001, 950002))
     totals = {k: _so_line(env, v).qty_cancelled for k, v in lines.items()}
     # undo and replay the other way round
-    env.db.execute(AutocountCancelLine.__table__.delete())
-    env.db.execute(AutocountCancelDoc.__table__.delete())
-    for line_id in lines.values():
-        row = _so_line(env, line_id)
-        row.qty_cancelled = 0
-        row.line_status = "closed" if row.qty_delivered >= row.qty_ordered else "open"
-    env.db.commit()
+    _reset_cancels(env, lines)
     _push_xs(env, [second])
     _push_xs(env, [first])
     assert _match_picture(env, (950001, 950002)) == one_way
@@ -450,18 +444,156 @@ def test_xp_can_name_an_spo_line(env):
     stored = _cancel_lines(env, 960001)[961001]
     assert stored.match_status == "matched"
     assert stored.spo_allocation_id == str(spo.id)
+    env.db.expire_all()
+    assert env.db.get(SPOAllocation, str(spo.id)).qty_cancelled == Decimal("5")
 
 
 # ======================================================================= contract
 def test_contract_2_8_lists_the_cancel_entities(env):
     body = env.client.get("/api/v1/external/contract").json()
     assert body["version"] == "2.8"
-    assert {"cancel_sales_orders", "cancel_purchase_orders"} <= set(body["entities"])
+    assert {"cancel_sales_orders", "cancel_purchase_orders", "consignments",
+            "consignment_returns"} <= set(body["entities"])
 
 
-def test_cancel_slugs_are_the_order_slugs(env):
-    from app.api.v1.external.ingest import DELETE_PERMISSIONS, INGEST_PERMISSIONS
+def test_each_entity_has_its_own_slugs(env):
+    from app.api.v1.external.ingest import (
+        DELETE_PERMISSIONS,
+        INGEST_PERMISSIONS,
+        READ_PERMISSIONS,
+    )
 
-    assert INGEST_PERMISSIONS["cancel_sales_orders"] == "scm.sales_orders.edit"
-    assert INGEST_PERMISSIONS["cancel_purchase_orders"] == "scm.purchase_orders.edit"
-    assert DELETE_PERMISSIONS["cancel_sales_orders"] == "scm.sales_orders.delete"
+    for entity in ("cancel_sales_orders", "cancel_purchase_orders", "consignments",
+                   "consignment_returns"):
+        assert INGEST_PERMISSIONS[entity] == f"scm.{entity}.edit"
+        assert READ_PERMISSIONS[entity] == f"scm.{entity}.view"
+        assert DELETE_PERMISSIONS[entity] == f"scm.{entity}.delete"
+
+
+def test_consignments_are_stored_only(env):
+    """Crew, 13 Oct: accepted and stored in the same shape; nothing is matched or moved."""
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"),))
+    rec = _xs(doc_key=970001, doc_no="ZZCSGN-0001",
+              details=[_detail(971001, qty=10, from_dtl=5001)])
+    res = env.post("/api/v1/external/ingest/consignments", [rec])
+    assert _records(res)["db1:CSGN:970001"]["outcome"] == "created"
+    env.db.expire_all()
+    doc = env.db.execute(select(AutocountCancelDoc).where(
+        AutocountCancelDoc.doc_key == 970001)).scalars().one()
+    line = env.db.execute(select(AutocountCancelLine).where(
+        AutocountCancelLine.cancel_doc_id == doc.id)).scalars().one()
+    assert doc.kind == "consignment"
+    assert (line.match_status, line.match_reason) == ("unmatched", "stored_only")
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("0")
+    # a consignment's DocKey is not a consignment return's
+    res = env.client.post("/api/v1/external/ingest/consignment_returns/deletions", json={
+        "companyCode": env.company_code, "book": "db1", "doc_date_from": "2026-01-01",
+        "doc_date_to": "2026-12-31", "doc_keys": [970001]})
+    assert res.json()["records"][0]["outcome"] == "not_found"
+
+
+# ======================================================================= review round 1
+def _reset_cancels(env, lines):
+    env.db.execute(AutocountCancelLine.__table__.delete())
+    env.db.execute(AutocountCancelDoc.__table__.delete())
+    for line_id in lines.values():
+        row = _so_line(env, line_id)
+        row.qty_cancelled = 0
+        row.cancelled_by_cancel_doc = False
+        row.line_status = "closed" if row.qty_delivered >= row.qty_ordered else "open"
+    env.db.commit()
+
+
+def test_keyed_and_keyless_cancels_match_the_same_in_any_order(env):
+    """Review B1: a key-less cancel is decided after the keyed ones it shares a group with
+    have landed, whichever document came first and whether they share a batch."""
+    lines = _so(env, lines=((5001, "p1", 5, 5, "wh1"), (5002, "p1", 5, 5, "wh1")))
+    keyed = _xs(details=[_detail(951001, qty=5, from_dtl=5001)])
+    keyless = _xs(doc_key=950002, doc_no="ZZXS-0002", details=[_detail(952001, qty=5, from_dtl=0)])
+    pictures = []
+    for order in ([keyed], [keyless]), ([keyless], [keyed]), ([keyed, keyless],):
+        _reset_cancels(env, lines)
+        for batch in order:
+            _push_xs(env, batch)
+        pictures.append((_match_picture(env, (950001, 950002)),
+                         {k: _so_line(env, v).qty_cancelled for k, v in lines.items()}))
+    assert pictures[0] == pictures[1] == pictures[2]
+    assert pictures[0][1] == {5001: Decimal("5"), 5002: Decimal("5")}
+
+
+def test_a_cancelled_order_never_reopens_when_the_xs_vanishes(env):
+    """Review B3 / R6."""
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"),))
+    so = env.db.get(SalesOrderLine, lines[5001]).sales_order
+    so.status = "cancelled"
+    env.db.commit()
+    _push_xs(env, [_xs(details=[_detail(951001, qty=10, from_dtl=5001)])])
+    env.delete(XS_DELETE, [950001])
+    assert _so_line(env, lines[5001]).line_status == "cancelled"
+
+
+def test_a_line_cancelled_for_another_reason_is_never_reopened(env):
+    """Review should-fix 2: a line AutoCount removed (kept `cancelled`, no `cancelled_at`) is
+    not this rule's to reopen when a cancel doc on it vanishes."""
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"),))
+    row = _so_line(env, lines[5001])
+    row.line_status = "cancelled"
+    env.db.commit()
+    _push_xs(env, [_xs(details=[_detail(951001, qty=10, from_dtl=5001)])])
+    assert _so_line(env, lines[5001]).cancelled_by_cancel_doc is False
+    env.delete(XS_DELETE, [950001])
+    assert _so_line(env, lines[5001]).line_status == "cancelled"
+
+
+def test_a_voided_keyed_cancel_does_not_explain_a_transfer(env):
+    """Review M13: a voided line-key cancel takes nothing from a candidate's unexplained
+    transfer, so the key-less cancel still sees both lines and falls back to the first."""
+    lines = _so(env, lines=((5001, "p1", 5, 5, "wh1"), (5002, "p1", 5, 5, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=5, from_dtl=5001)], cancelled="T")])
+    _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
+                       details=[_detail(952001, qty=5, from_dtl=0)])])
+    stored = _cancel_lines(env, 950002)[952001]
+    assert (stored.match_reason, stored.sales_order_line_id) == ("fallback", lines[5001])
+
+
+def test_a_huge_qty_fails_its_record_not_the_batch(env):
+    """Security review should-fix 1."""
+    lines = _so(env)
+    res = _push_xs(env, [_xs(details=[_detail(951001, qty="1e30", from_dtl=5001)]),
+                         _xs(doc_key=950002, doc_no="ZZXS-0002",
+                             details=[_detail(952001, qty=4, from_dtl=5001)])])
+    recs = _records(res)
+    assert recs["db1:XS:950001"]["outcome"] == "failed"
+    assert "Details.0.Qty" in recs["db1:XS:950001"]["errors"]
+    assert recs["db1:XS:950002"]["outcome"] == "created"
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("4")
+
+
+def test_other_company_lines_never_match_without_a_key(env):
+    """Security review should-fix 3: same SO number and item in company B, key-less line."""
+    so = SalesOrder(so_number="ZZSO-C001", company_id=env.company_b, source_system="autocount")
+    env.db.add(so)
+    env.db.flush()
+    other = SalesOrderLine(sales_order_id=so.id, product_id=env.p1, qty_ordered=10,
+                           qty_delivered=10, source_ref="SRT_DB:4001:5001",
+                           company_id=env.company_b)
+    env.db.add(other)
+    env.db.commit()
+    _push_xs(env, [_xs(details=[_detail(951001, from_dtl=0)])])
+    assert _cancel_lines(env, 950001)[951001].match_status == "waiting"
+    env.db.expire_all()
+    assert env.db.get(SalesOrderLine, str(other.id)).qty_cancelled == Decimal("0")
+
+
+def test_other_company_spo_never_matches(env):
+    """Security review should-fix 3: the SPO match-key path stays inside the company."""
+    spo = SPOAllocation(spo_number="SPO-ZZ-C009", product_id=env.p2, allocated_quantity=20,
+                        source_ref="SRT_DB:7002:7209", company_id=env.company_b)
+    env.db.add(spo)
+    env.db.commit()
+    env.post(XP_INGEST, [_xp(details=[_detail(961001, item="ZZAC-P2", qty=5,
+                                              from_no="SPO-ZZ-C009", from_dtl=0,
+                                              from_type="PO")])])
+    assert _cancel_lines(env, 960001)[961001].match_status == "waiting"
+    env.db.expire_all()
+    assert env.db.get(SPOAllocation, str(spo.id)).qty_cancelled == Decimal("0")
