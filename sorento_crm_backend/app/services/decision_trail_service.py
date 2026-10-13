@@ -31,7 +31,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.order import SalesOrderLine
 from app.models.project_so import (
@@ -144,6 +144,7 @@ class DecisionTrailService:
         entries.extend(self._confirmed_entries(core_line_id))
         entries.extend(self._saved_entry(core_line_id))
         entries.extend(self._raise_entries(core_line_id))
+        entries.extend(self._rejected_entries(core_line_id))
 
         # Newest first (AC-DT-10). A `sheet` entry now carries the row's own `created_at`
         # (round 3) and sorts among the rest like any other entry; `or datetime.min`
@@ -228,6 +229,37 @@ class DecisionTrailService:
         ]
 
     # ---------------------------------------------------------------------- raised
+
+    def _rejected_entries(self, core_line_id: str) -> List[Dict[str, Any]]:
+        """Every refusal purchasing made on this line (PR 1622, owner: "make sure the
+        rejection is stored in the history ... so I can trace back"). Read off the refused
+        row's own stamps, which outlive the row being superseded or the badge clearing."""
+        rejecter = aliased(User)
+        rows = (
+            self.db.query(
+                OrderInquiry.inquiry_no,
+                OrderInquiryRow.rejected_at,
+                OrderInquiryRow.rejected_reason,
+                rejecter.name,
+            )
+            .join(ProjectSalesOrderLine, ProjectSalesOrderLine.id == OrderInquiryRow.so_line_id)
+            .join(OrderInquiry, OrderInquiry.id == OrderInquiryRow.order_inquiry_id)
+            .outerjoin(rejecter, rejecter.id == OrderInquiryRow.rejected_by)
+            .filter(
+                ProjectSalesOrderLine.core_sales_order_line_id == core_line_id,
+                OrderInquiryRow.rejected_at.isnot(None),
+            )
+            .all()
+        )
+        return [
+            {
+                "kind": "rejected",
+                "actor_name": name,
+                "at": rejected_at,
+                "detail": f"{inquiry_no or 'Order inquiry'}: {reason or 'no reason given'}",
+            }
+            for inquiry_no, rejected_at, reason, name in rows
+        ]
 
     def _raise_entries(self, core_line_id: str) -> List[Dict[str, Any]]:
         rows = (

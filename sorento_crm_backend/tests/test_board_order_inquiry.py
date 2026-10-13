@@ -208,6 +208,7 @@ def test_a_contribution_names_the_inquiry_raised_for_its_line():
             "ack_state": "awaiting",
             "rejected_reason": None,
             "rejected_by_name": None,
+            "rejected_at": None,
             "redirected": False,
             "documents": [],
         }

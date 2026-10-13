@@ -627,6 +627,7 @@ function lineFor(
     borrow: borrowComponents(contribution, decision?.borrow ?? []),
     buy_qty: fromMinor(buy),
     buy_reason: buyReason,
+    cs_note: decision?.cs_note?.trim() || undefined,
     // Present only on the legacy single-number amendment, which is still an override.
     amend_reason: decision?.verdict === 'amended' ? decision.reason : undefined,
     // An approved or untouched line can still carry the flag (R10).
