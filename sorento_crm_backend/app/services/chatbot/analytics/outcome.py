@@ -255,6 +255,12 @@ def _rows_offered(turn: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _prompt_version(turn: dict[str, Any]) -> int | None:
+    """The parser prompt version on the `understood` stage (CHAT-TURN-COST)."""
+    value = _dict((_stage(turn, "understood") or {}).get("facts")).get("prompt_version")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def flatten(turn: dict[str, Any]) -> dict[str, Any]:
     """The fact fields derivable from the trace alone. JSON-serialisable.
 
@@ -271,6 +277,7 @@ def flatten(turn: dict[str, Any]) -> dict[str, Any]:
         "tools": _tools(turn),
         "rows_offered": _rows_offered(turn),
         "phantom_dropped": bool(_events(turn, "phantom_answer")),
+        "prompt_version": _prompt_version(turn),
         "named_codes": _named_codes(turn),
         "shown_codes": _shown_codes(turn),
         "asked_product_ids": _asked_product_ids(turn),

@@ -1,5 +1,4 @@
-"""Model prices for the connector's cost datasets, and the one-time cached-token backfill
-(CHAT-TURN-COST, `documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md`).
+"""Model prices for the connector's cost datasets (CHAT-TURN-COST, `documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md`).
 
 `llm_model_prices` is the one place a price lives; the views join it, so a price edit is a row
 update and no query changes. Only prices the repo already cites with a source and a date are
@@ -32,21 +31,3 @@ def seed_prices(conn: Any) -> None:
             {"m": model, "i": inp, "c": cached, "o": out, "n": note},
         )
 
-
-def backfill_cached_tokens(conn: Any) -> None:
-    """Fill `cached_tokens` on usage rows written before the column existed.
-
-    A `chatbot_parser` row takes its turn's `understood` stage fact (the trace has carried the
-    parser's cache hit since LLM-TEST-COST), or 0 when the trace has none. Other features'
-    NULLs stay NULL: no other writer ever reported a cache hit, and the views read NULL as 0.
-    """
-    conn.execute(
-        text(
-            "UPDATE ai_assistant_usage_logs u "
-            "   SET cached_tokens = COALESCE((jsonb_path_query_first(t.trace, "
-            "         '$[*] ? (@.stage == \"understood\").facts.cached_tokens') #>> '{}')::int, 0) "
-            "  FROM chatbot.turns t "
-            " WHERE u.cached_tokens IS NULL AND u.feature = 'chatbot_parser' "
-            "   AND t.id::text = u.chatbot_turn_id"
-        )
-    )

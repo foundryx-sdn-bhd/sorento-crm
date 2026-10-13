@@ -197,10 +197,11 @@ SELECT u.id::text AS id,
 """
 
 # One row per live turn. The calls are summed in a grouped join (a hash join over the whole log
-# for an aggregate, dropped entirely when no cost column is asked for). The parser's category,
-# prompt version and message type come from the turn's `understood` stage facts; the trace
-# itself is never exposed.
-_FACTS = "jsonb_path_query_first(t.trace, '$[*] ? (@.stage == \"understood\").facts')"
+# for an aggregate, dropped entirely when no cost column is asked for). Category, outcome, topic,
+# episode and prompt version come from the turn's CA-1 fact row (`chatbot.chat_ask_facts`, one per
+# closed live turn, `ask_seq` 1), never from the trace: a trace is tens of KB per turn and reading
+# it per row would not fit the connector's 10 s statement timeout. A turn with no fact yet (still
+# open, superseded by a retry, or not swept) has those columns empty.
 TURN_COSTS_V = f"""
 CREATE OR REPLACE VIEW {SCHEMA}.turn_costs AS
 SELECT t.id::text AS id,
@@ -208,26 +209,19 @@ SELECT t.id::text AS id,
        rc.id AS contact_id,
        t.contact_respond_id,
        rc.name AS contact_name,
-       (SELECT c.customer_name
-          FROM respond_contact_customers rcc
-          JOIN customers c ON c.id = rcc.customer_id
-         WHERE rcc.contact_id = rc.id
-         ORDER BY rcc.is_primary DESC, rcc.created_at ASC
-         LIMIT 1) AS customer_name,
-       (SELECT cf.id::text
-          FROM conversation_frames cf
-         WHERE cf.contact_respond_id = rc.id AND NOT cf.is_test AND t.id::text = ANY (cf.turn_ids)
-         ORDER BY cf.started_at ASC
-         LIMIT 1) AS episode_id,
+       cu.customer_name,
+       f.episode_id::text AS episode_id,
        {_mask("COALESCE(t.envelope #>> '{message,message,message,text}', t.envelope #>> '{message,message,message,attachment,description}')")} AS inbound_text,
        {_mask("t.response #>> '{reply,text}'")} AS reply_text,
        t.status,
        t.stage,
        t.branch_kind,
-       ({_FACTS} ->> 'message_type') AS message_type,
-       ({_FACTS} ->> 'domain') AS domain_hint,
-       ({_FACTS} ->> 'intent') AS intent_hint,
-       ({_FACTS} ->> 'prompt_version')::int AS prompt_version,
+       f.domain,
+       f.intent,
+       f.topic_code,
+       tp.label AS topic_label,
+       f.outcome,
+       f.prompt_version,
        calls.model,
        COALESCE(calls.llm_calls, 0) AS llm_calls,
        COALESCE(calls.prompt_tokens, 0) AS prompt_tokens,
@@ -244,6 +238,9 @@ SELECT t.id::text AS id,
         SELECT r.id, r.name FROM respond_contacts r
          WHERE r.respond_io_id = t.contact_respond_id ORDER BY r.created_at ASC LIMIT 1
   ) rc ON true
+  LEFT JOIN chatbot.chat_ask_facts f ON f.turn_id = t.id AND f.ask_seq = 1
+  LEFT JOIN customers cu ON cu.id = f.customer_id
+  LEFT JOIN chatbot.chat_topics tp ON tp.code = f.topic_code
   LEFT JOIN (
         SELECT lc.chatbot_turn_id,
                count(*) AS llm_calls,
@@ -276,7 +273,8 @@ def ensure_views(conn: Any) -> None:
 
 def ensure_cost_views(conn: Any) -> None:
     """(Re)create the two cost views (CHAT-TURN-COST). Separate from ``ensure_views`` because
-    they need `llm_model_prices` and `ai_assistant_usage_logs.cached_tokens`, which exist only
+    they need `llm_model_prices`, `ai_assistant_usage_logs.cached_tokens` and
+    `chat_ask_facts.prompt_version`, which exist only
     from migration `ctc_0001_turn_costs` on, and `acc_0001_connector` still calls ``ensure_views``."""
     conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
     for ddl in COST_VIEWS:

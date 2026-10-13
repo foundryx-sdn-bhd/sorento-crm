@@ -111,6 +111,10 @@ def _seed(db) -> dict:
     _usage(db, turn_id=test_turn, contact_id=cid, feature="chatbot_parser", model=m_priced,
            prompt=10, cached=0, completion=1, ms=1)
 
+    topic = f"zzt.{tag}"
+    db.execute(text("INSERT INTO chatbot.chat_topics (code, label, definition, version) VALUES (:c, :l, 'zzt', 99)"),
+               {"c": topic, "l": f"ZZT topic {tag}"})
+
     frame_id = str(uuid.uuid4())
     db.execute(
         text("INSERT INTO conversation_frames (id, contact_id, space_id, channel, contact_respond_id, domain, intent, "
@@ -118,8 +122,18 @@ def _seed(db) -> dict:
              "ARRAY[:t1, :t2], false)"),
         {"id": frame_id, "c": cid, "t1": priced, "t2": unpriced},
     )
+    for tid, domain, intent, version, episode in ((priced, "stock", "availability", 52, frame_id),
+                                                    (unpriced, "order", "status", 51, None)):
+        db.execute(
+            text("INSERT INTO chatbot.chat_ask_facts (id, source, turn_id, ask_seq, contact_respond_id, contact_id, "
+                 "customer_id, audience, contact_type, asked_at, domain, intent, outcome, branch_kind, episode_id, "
+                 "topic_code, prompt_version) VALUES (:id, 'trace', :t, 1, :r, :c, :cu, 'dealer', 'dealer', :at, :d, :i, "
+                 "'answered', 'business', :e, :tp, :v)"),
+            {"id": str(uuid.uuid4()), "t": tid, "r": rid, "c": cid, "cu": customer_id, "at": T0, "d": domain,
+             "i": intent, "e": episode, "tp": topic if tid == priced else None, "v": version},
+        )
     db.flush()
-    return {"tag": tag, "contact_id": cid, "respond_id": rid, "customer_id": customer_id, "frame_id": frame_id,
+    return {"tag": tag, "topic": topic, "contact_id": cid, "respond_id": rid, "customer_id": customer_id, "frame_id": frame_id,
             "priced": priced, "unpriced": unpriced, "no_calls": no_calls, "test": test_turn,
             "m_priced": m_priced, "m_unpriced": m_unpriced}
 
@@ -145,8 +159,9 @@ def test_turn_costs_sums_every_llm_call_of_a_turn_and_prices_it():
         assert row["episode_id"] == s["frame_id"]
         assert row["branch_kind"] == "business"
         assert row["status"] == "done"
-        assert row["domain_hint"] == "stock" and row["intent_hint"] == "availability"
-        assert row["message_type"] == "request"
+        assert row["domain"] == "stock" and row["intent"] == "availability"
+        assert row["topic_code"] == s["topic"] and row["topic_label"] == f"ZZT topic {s['tag']}"
+        assert row["outcome"] == "answered"
         assert row["prompt_version"] == 52
         assert row["model"] == s["m_priced"]
         assert row["llm_calls"] == 2
@@ -169,7 +184,8 @@ def test_unpriced_model_gives_null_cost_never_zero():
         s = _seed(db)
         row = _row(db, "turn_costs", "id", s["unpriced"])
         assert row["cost_usd"] is None and row["priced"] is False
-        assert row["domain_hint"] == "order" and row["intent_hint"] == "status"
+        assert row["domain"] == "order" and row["intent"] == "status" and row["prompt_version"] == 51
+        assert row["episode_id"] is None and row["topic_code"] is None
         call = _row(db, "llm_calls", "chatbot_turn_id", s["unpriced"])
         assert call["cost_usd"] is None and call["priced"] is False
 
@@ -181,7 +197,7 @@ def test_turn_without_llm_calls_costs_zero():
         row = _row(db, "turn_costs", "id", s["no_calls"])
         assert row["llm_calls"] == 0 and row["prompt_tokens"] == 0 and row["total_tokens"] == 0
         assert row["cost_usd"] == 0 and row["priced"] is True
-        assert row["domain_hint"] is None and row["prompt_version"] is None
+        assert row["domain"] is None and row["prompt_version"] is None and row["outcome"] is None
 
 
 def test_test_turns_are_not_in_turn_costs():
@@ -284,7 +300,7 @@ def test_seed_never_overwrites_an_edited_price():
 
 
 def test_backfill_takes_cached_tokens_from_the_turn_trace():
-    from app.services.analytics_connector import prices
+    from app.services.analytics_connector import backfill
 
     with pg_session() as db:
         _ensure(db)
@@ -295,11 +311,25 @@ def test_backfill_takes_cached_tokens_from_the_turn_trace():
                          model=s["m_priced"], prompt=1, cached=0, completion=1, ms=1)
         db.execute(text("UPDATE ai_assistant_usage_logs SET cached_tokens = NULL WHERE id IN (:a, :b)"),
                    {"a": legacy, "b": no_fact})
-        prices.backfill_cached_tokens(db)
+        backfill.backfill_cached_tokens(db)
         got = dict(db.execute(text("SELECT id::text, cached_tokens FROM ai_assistant_usage_logs WHERE id IN (:a, :b)"),
                               {"a": legacy, "b": no_fact}).all())
         assert got[legacy] == 36000
         assert got[no_fact] == 0
+
+
+def test_backfill_takes_prompt_version_from_the_turn_trace():
+    from app.services.analytics_connector import backfill
+
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        db.execute(text("UPDATE chatbot.chat_ask_facts SET prompt_version = NULL WHERE turn_id IN (:a, :b)"),
+                   {"a": s["priced"], "b": s["unpriced"]})
+        backfill.backfill_prompt_version(db)
+        got = dict(db.execute(text("SELECT turn_id::text, prompt_version FROM chatbot.chat_ask_facts "
+                                   "WHERE turn_id IN (:a, :b)"), {"a": s["priced"], "b": s["unpriced"]}).all())
+        assert got == {s["priced"]: 52, s["unpriced"]: 52}
 
 
 # ------------------------------------------------------------------ writers
@@ -387,13 +417,13 @@ def test_describe_documents_every_cost_column(caller):
         assert cols["prompt_tokens"]["measurable"] and cols["cached_tokens"]["measurable"]
         assert not {"phone", "phone_number", "contact_phone"} & set(cols)
     tc = {c["key"] for c in get(f"{BASE}/datasets/turn_costs").json()["columns"]}
-    assert {"domain_hint", "intent_hint", "prompt_version", "model", "llm_calls", "latency_ms", "episode_id",
-            "branch_kind", "inbound_text", "contact_name", "customer_name"} <= tc
+    assert {"domain", "intent", "topic_code", "topic_label", "outcome", "prompt_version", "model", "llm_calls",
+            "latency_ms", "episode_id", "branch_kind", "inbound_text", "contact_name", "customer_name"} <= tc
 
 
 def test_cost_per_category_over_the_connector(caller):
     s, _g, query = caller
-    resp = query(dataset="turn_costs", group_by=["domain_hint", "intent_hint"],
+    resp = query(dataset="turn_costs", group_by=["domain", "intent"],
                  filters=[{"column": "contact_id", "op": "eq", "value": s["contact_id"]}],
                  measures=[{"fn": "count"}, {"fn": "sum", "column": "cost_usd"}, {"fn": "sum", "column": "total_tokens"},
                            {"fn": "avg", "column": "latency_ms"}])

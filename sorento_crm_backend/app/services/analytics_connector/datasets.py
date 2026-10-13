@@ -159,9 +159,9 @@ CATALOG: dict[str, Dataset] = {
     "turn_costs": Dataset(
         "turn_costs",
         "One row per chatbot turn with what it cost: every LLM call of the turn summed, priced in USD"
-        " from the model price table, plus the parser's category (domain_hint, intent_hint) and latency."
-        " Group by contact, episode_id, domain_hint or created_at buckets for cost per contact, conversation,"
-        " category or day. cost_usd is NULL when a call used a model with no price (priced = false).",
+        " from the model price table, plus the conversation category (domain, intent, topic), outcome and"
+        " latency. Group by contact_name, episode_id, domain or created_at buckets for cost per contact,"
+        " conversation, category or day. Category columns are empty for a turn still open. cost_usd is NULL when a call used a model with no price (priced = false).",
         "created_at",
         (
             Col("id", "text", "Turn id (the same id as bot_turns.id and llm_calls.chatbot_turn_id)"),
@@ -176,9 +176,12 @@ CATALOG: dict[str, Dataset] = {
             Col("status", "text", "queued, processing, delegated, done, failed", groupable=True),
             Col("stage", "text", "Where the turn stopped", groupable=True),
             Col("branch_kind", "text", "Reply branch (lane) the engine took, e.g. business, low_signal", groupable=True),
-            Col("message_type", "text", "Parser's message type", groupable=True),
-            Col("domain_hint", "text", "Parser's domain (the conversation category: stock, order, ...)", groupable=True),
-            Col("intent_hint", "text", "Parser's intent within the domain", groupable=True),
+            Col("domain", "text", "Conversation category: the domain the turn acted on (stock, order, ...),"
+                " the planner's first domain, else the parser's domain_hint", groupable=True),
+            Col("intent", "text", "Parser's intent_hint within the domain", groupable=True),
+            Col("topic_code", "text", "Topic the nightly labeller gave the ask (empty until labelled)", groupable=True),
+            Col("topic_label", "text", "Readable name of topic_code", groupable=True),
+            Col("outcome", "text", "How the ask ended: answered, answered_empty, clarified, handover, missed, cannot_do, refused_policy, off_topic, noise, technical", groupable=True),
             Col("prompt_version", "int", "Parser prompt version the turn ran on", groupable=True),
             Col("model", "text", "Model(s) the turn's LLM calls used, comma-separated", groupable=True),
             Col("llm_calls", "int", "LLM calls the turn made (parser, plus the clarifier on small-talk turns)",

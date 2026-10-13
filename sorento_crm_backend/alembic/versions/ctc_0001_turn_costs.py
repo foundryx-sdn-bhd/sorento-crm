@@ -8,17 +8,19 @@ Plan: documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md. Additive only.
 
 1. `ai_assistant_usage_logs.cached_tokens` (nullable), backfilled once for chatbot parser rows
    from their turn's `understood` trace facts.
-2. `llm_model_prices`, seeded with the prices the repo cites with a source
+2. `chatbot.chat_ask_facts.prompt_version` (nullable), backfilled the same way, so the
+   `turn_costs` view reads category, topic and prompt version off the fact row, never the trace.
+3. `llm_model_prices`, seeded with the prices the repo cites with a source
    (`app.services.analytics_connector.prices.SEED_PRICES`); other models stay unpriced.
-3. Views `analytics_connector.llm_calls` and `analytics_connector.turn_costs`
+4. Views `analytics_connector.llm_calls` and `analytics_connector.turn_costs`
    (`views.ensure_cost_views`, also run by scripts/bootstrap_env.py), granted to the read-only
    role when it exists.
-4. Index `ix_ai_assistant_usage_logs_chatbot_turn_id`, built CONCURRENTLY.
+5. Index `ix_ai_assistant_usage_logs_chatbot_turn_id`, built CONCURRENTLY.
 """
 import sqlalchemy as sa
 from alembic import op
 
-from app.services.analytics_connector import prices, views
+from app.services.analytics_connector import backfill, prices, views
 
 revision = "ctc_0001_turn_costs"
 down_revision = "mig_idx_chunks_document_id"
@@ -54,8 +56,10 @@ def upgrade() -> None:
             " updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now())"
         )
     )
+    bind.execute(sa.text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
     prices.seed_prices(bind)
-    prices.backfill_cached_tokens(bind)
+    backfill.backfill_cached_tokens(bind)
+    backfill.backfill_prompt_version(bind)
     views.ensure_cost_views(bind)
     if bind.execute(sa.text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": views.RO_ROLE}).scalar():
         views.grant_read_role(bind, views.RO_ROLE)
@@ -84,4 +88,5 @@ def downgrade() -> None:
     op.execute(f"DROP VIEW IF EXISTS {views.SCHEMA}.llm_calls")
     op.execute(f"DROP INDEX IF EXISTS {INDEX}")
     op.execute("DROP TABLE IF EXISTS llm_model_prices")
+    op.execute("ALTER TABLE chatbot.chat_ask_facts DROP COLUMN IF EXISTS prompt_version")
     op.execute("ALTER TABLE ai_assistant_usage_logs DROP COLUMN IF EXISTS cached_tokens")
