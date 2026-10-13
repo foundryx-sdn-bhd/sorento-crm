@@ -198,12 +198,15 @@ CATALOG: dict[str, Dataset] = {
             Col("llm_ms", "int", "Milliseconds spent waiting on LLM calls", measurable=True),
             Col("latency_ms", "int", "Milliseconds from turn start to finish", measurable=True),
             Col("cost_usd", "number", "USD cost of the turn's LLM calls; 0 for a turn with no call, NULL when a"
-                " call's model has no price", measurable=True),
-            Col("priced", "bool", "false when some call's model has no price row or its cached tokens have no"
-                " cached price (cost_usd is then NULL)",
-                groupable=True),
+                " call's model has no price or a call's cache use was not recorded", measurable=True),
+            Col("priced", "bool", "false when some call has no price (no price row, or cached tokens with no"
+                " cached price) or an unrecorded cache use; cost_usd is then NULL. See cache_unknown for the"
+                " latter", groupable=True),
             Col("cached_price_missing", "bool", "true when a call cached tokens on a model with no cached-input"
                 " price; the turn is then unpriced (cost_usd NULL, priced false)", groupable=True),
+            Col("cache_unknown", "bool", "true when some call on a priced model has no recorded cache use"
+                " (cached_tokens NULL, e.g. before 4 Oct 2026); cost_usd is then NULL. Not the same as"
+                " an unpriced model", groupable=True),
         ),
     ),
     "llm_calls": Dataset(
@@ -221,17 +224,20 @@ CATALOG: dict[str, Dataset] = {
             Col("model", "text", "Model name", groupable=True),
             Col("prompt_tokens", "int", "Input tokens. Includes cached tokens for OpenAI and Gemini, excludes them"
                 " for Anthropic", measurable=True),
-            Col("cached_tokens", "int", "Input tokens served from the prompt cache", measurable=True),
+            Col("cached_tokens", "int", "Input tokens served from the prompt cache (NULL when never recorded)", measurable=True),
             Col("completion_tokens", "int", "Output tokens", measurable=True),
             Col("total_tokens", "int", "Total tokens as the provider reported them", measurable=True),
             Col("response_time_ms", "int", "Milliseconds the call took", measurable=True),
             Col("was_answered", "bool", "The model returned a usable answer", groupable=True),
-            Col("cost_usd", "number", "USD cost from the model price table; NULL when the model has no price",
-                measurable=True),
-            Col("priced", "bool", "false when the model has no price row, or cached tokens have no cached price",
-                groupable=True),
+            Col("cost_usd", "number", "USD cost from the model price table; NULL when the model has no price"
+                " or the call's cache use was not recorded", measurable=True),
+            Col("priced", "bool", "false when the model has no price row, cached tokens have no cached price,"
+                " or the cache use was not recorded (see cache_unknown)", groupable=True),
             Col("cached_price_missing", "bool", "true when the call cached tokens and the model has no"
                 " cached-input price; cost_usd is then NULL and priced false", groupable=True),
+            Col("cache_unknown", "bool", "true when the model has a price but cached_tokens is NULL (cache use"
+                " never recorded); cost_usd is then NULL and priced false. Not an unpriced model",
+                groupable=True),
         ),
     ),
 }

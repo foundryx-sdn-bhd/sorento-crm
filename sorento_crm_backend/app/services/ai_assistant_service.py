@@ -1249,6 +1249,7 @@ class AIAssistantChatService:
                     prompt_tokens=int(token_usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(token_usage.get("completion_tokens", 0) or 0),
                     total_tokens=int(token_usage.get("total_tokens", 0) or 0),
+                    cached_tokens=int(token_usage.get("cached_tokens", 0) or 0),
                     tool_calls_count=len(tool_calls or []),
                     response_time_ms=int(total_ms),
                     was_answered=was_answered,
@@ -1357,6 +1358,7 @@ class AIAssistantChatService:
                     "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
                     "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
                     "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
+                    "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
                 }
                 if self._turn_trace is not None:
                     self._turn_trace.add_llm_span(
@@ -1575,6 +1577,7 @@ class AIAssistantChatService:
                     prompt_tokens=int(parse_usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(parse_usage.get("completion_tokens", 0) or 0),
                     total_tokens=int(parse_usage.get("total_tokens", 0) or 0),
+                    cached_tokens=int(parse_usage.get("cached_tokens", 0) or 0),
                     tool_calls_count=0,
                     response_time_ms=int(total_ms),
                     was_answered=True,
@@ -1651,6 +1654,7 @@ class AIAssistantChatService:
                     prompt_tokens=int(parse_usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(parse_usage.get("completion_tokens", 0) or 0),
                     total_tokens=int(parse_usage.get("total_tokens", 0) or 0),
+                    cached_tokens=int(parse_usage.get("cached_tokens", 0) or 0),
                     tool_calls_count=0,
                     response_time_ms=int(total_ms),
                     was_answered=True,
@@ -1735,6 +1739,7 @@ class AIAssistantChatService:
                     prompt_tokens=int(parse_usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(parse_usage.get("completion_tokens", 0) or 0),
                     total_tokens=int(parse_usage.get("total_tokens", 0) or 0),
+                    cached_tokens=int(parse_usage.get("cached_tokens", 0) or 0),
                     tool_calls_count=0,
                     response_time_ms=int(total_ms),
                     # A clarifying question is a valid, intentional turn - not a
@@ -1785,6 +1790,7 @@ class AIAssistantChatService:
                     prompt_tokens=int(parse_usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(parse_usage.get("completion_tokens", 0) or 0),
                     total_tokens=int(parse_usage.get("total_tokens", 0) or 0),
+                    cached_tokens=int(parse_usage.get("cached_tokens", 0) or 0),
                     tool_calls_count=tool_calls_count,
                     response_time_ms=int(total_ms),
                     was_answered=True,
@@ -2323,7 +2329,7 @@ class AIAssistantChatService:
         """
         api_key = resolve_api_key(config, config.provider)
         tool_calls_log: list[MCPToolCallResult] = []
-        token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
 
         mcp = MCPRuntimeClient(
             settings.ai_assistant_mcp_url,
@@ -2625,6 +2631,7 @@ class AIAssistantChatService:
             token_usage["prompt_tokens"] += int(result.prompt_tokens or 0)
             token_usage["completion_tokens"] += int(result.completion_tokens or 0)
             token_usage["total_tokens"] += int(result.total_tokens or 0)
+            token_usage["cached_tokens"] += int(getattr(result, "cached_tokens", 0) or 0)
 
             requested_tool_calls = result.tool_calls or []
 
@@ -2894,7 +2901,7 @@ class AIAssistantChatService:
         call to fetch the per-state procedure, grounded by the record's current
         status. Same return shape as ``_run_agent_loop``.
         """
-        token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
         tool_calls_log: list[MCPToolCallResult] = []
 
         api_key = resolve_api_key(config, config.provider)
@@ -3025,6 +3032,7 @@ class AIAssistantChatService:
         token_usage["prompt_tokens"] += int(result.prompt_tokens or 0)
         token_usage["completion_tokens"] += int(result.completion_tokens or 0)
         token_usage["total_tokens"] += int(result.total_tokens or 0)
+        token_usage["cached_tokens"] += int(getattr(result, "cached_tokens", 0) or 0)
 
         # At most ONE user_guides_read call (A6 fusion). Pure-fact answers come
         # back with no tool_calls → tool_calls_log stays empty (UAC §3.1).
@@ -3106,6 +3114,7 @@ class AIAssistantChatService:
                 token_usage["prompt_tokens"] += int(final.prompt_tokens or 0)
                 token_usage["completion_tokens"] += int(final.completion_tokens or 0)
                 token_usage["total_tokens"] += int(final.total_tokens or 0)
+                token_usage["cached_tokens"] += int(getattr(final, "cached_tokens", 0) or 0)
                 answer = (final.content or "").strip()
                 if self._turn_trace is not None:
                     self._turn_trace.add_llm_span(
