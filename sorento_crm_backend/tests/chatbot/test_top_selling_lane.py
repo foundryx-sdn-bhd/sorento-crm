@@ -1085,6 +1085,8 @@ class TestParser:
         ).removesuffix(
             prompt_mod.CHAT_REPORT_ADDENDUM
         ).removesuffix(
+            prompt_mod.SUB_ASKS_ADDENDUM
+        ).removesuffix(
             prompt_mod.PO_REFS_ADDENDUM
         ).removesuffix(
             prompt_mod.REPORT_ASK_ADDENDUM

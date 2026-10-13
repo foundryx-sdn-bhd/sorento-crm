@@ -1535,7 +1535,7 @@ def test_qs_m2_multi_customer_gets_a_leading_total_then_one_item_per_customer():
                                            "HANLIM TRADING SDN BHD · SRTWC8605"]
     total = dict((k, v) for k, _, v in _fields(items[0]))
     assert total["customers"] == 2 and "customer" not in total                       # D3: a Customers field, not a title
-    assert _fields(items[0])[0] == ("customers", "Customers", 2)
+    assert _fields(items[0])[0] == ("customers", "Customer count", 2)
     assert total["delivered_quantity"] == 55 and total["order_count"] == 6           # products[], not a sum
     assert total["delivered_between"] == "02/03/2026 – 01/08/2026"
     hanlim = dict((k, v) for k, _, v in _fields(items[2]))
@@ -1688,7 +1688,7 @@ def test_by_product_so_zero_still_prints_and_the_total_row_carries_customers():
     })
     items = out["summary_items"]
     assert items[0]["title"] == "SRTWC286"
-    assert items[0]["fields"][0] == {"key": "customers", "label": "Customers", "value": 2}
+    assert items[0]["fields"][0] == {"key": "customers", "label": "Customer count", "value": 2}
     so_values = [next(f["value"] for f in it["fields"] if f["key"] == "so_outstanding_qty") for it in items]
     assert so_values == [7, 7, 0]
     so_counts = [next(f["value"] for f in it["fields"] if f["key"] == "so_count") for it in items]

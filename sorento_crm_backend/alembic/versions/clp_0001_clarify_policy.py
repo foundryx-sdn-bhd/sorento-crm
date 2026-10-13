@@ -9,7 +9,7 @@ Idempotent and additive: `CREATE TABLE IF NOT EXISTS` and `INSERT ... ON CONFLIC
 so a database that converged through `create_all` (the shared dev copy) upgrades cleanly.
 
 Revision ID: clp_0001_clarify_policy
-Revises: ctc_0001_turn_costs
+Revises: maskp_0002_measure_words
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from alembic import op
 
 # Kept <=32 chars: alembic_version.version_num is varchar(32).
 revision = "clp_0001_clarify_policy"
-down_revision = "ctc_0001_turn_costs"
+down_revision = "maskp_0002_measure_words"
 branch_labels = None
 depends_on = None
 
