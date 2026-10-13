@@ -5452,7 +5452,7 @@ def envelope_of(
         # for it (`lanes/business.order_date_text` is the one writer). Absent when the
         # fetch had no window - the header then says nothing rather than "all", which is
         # the report's own line and belongs with the other three.
-        "date_line": _date_line(ran_with),
+        "date_line": _date_line(ran_with, (fetched.get("tool") or {}).get("name") if isinstance(fetched.get("tool"), dict) else None),
         # R3 (PLAN-chatbot-answer-half-reattach.md): `lanes.business.run_fetch`'s own
         # tier-ask arm - the REAL "entitled, must pick a tier" path, discovered only
         # once the fetch actually ran the per-tier promotion probe. `fragment` (not
@@ -5504,10 +5504,21 @@ def envelope_of(
     return envelope
 
 
-def _date_line(ran_with: dict[str, Any] | None) -> str | None:
-    """`Order date: 01/09/2026 to 30/09/2026`, or None when the fetch had no window."""
+def _date_line(ran_with: dict[str, Any] | None, tool: str | None = None) -> str | None:
+    """`Order date: 01/09/2026 to 30/09/2026`, or None when the fetch had no window.
+
+    MULTI-ASK-PLAN R5 (owner, 9 Oct 2026): also None when the tool that ran takes no
+    window at all. The lane input carries the turn's window whatever the tool, so a last
+    purchase cost asked beside "2026" printed "Order date: 2026" over a cost the window
+    never touched. A tool takes one when `fetch.DATE_PARAMS` names it (the same table the
+    arg builder reads); an unknown tool keeps the line, as before."""
     if not isinstance(ran_with, dict):
         return None
+    if tool:
+        from app.services.chatbot.lanes.business import fetch as fetch_mod
+
+        if tool not in fetch_mod.DATE_PARAMS:
+            return None
     start = ran_with.get("date_filter_start")
     end = ran_with.get("date_filter_end")
     if not (start or end):

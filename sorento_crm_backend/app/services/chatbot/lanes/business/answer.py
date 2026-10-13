@@ -2716,6 +2716,9 @@ def not_understood_line(words: Any) -> str:
 #: rows under it show (stock figures, incoming lines, files); the opener is the same.
 SET_OPENER = "Here's what you want:"
 
+#: The empty reply of a lone "last in" (the last SPO line's delivery date); a `label_catalog` key.
+LAST_IN_NONE = "Last in: none on record"
+
 #: What "But no ... matched these" names per leg: the product-code miss's own words
 #: ("But no incoming matched these.").
 _MISS_NOUN: dict[str, str] = {
@@ -4283,6 +4286,38 @@ def not_found_error_message(
                     if esc:
                         order_lines[-1] = f"{order_lines[-1]} {esc}"
                     escalate_message = "\n".join(order_lines)
+                elif use_breakdown and jsc.js_string(domain_hint) == "spo_allocation":
+                    # Owner ruling R-LASTIN (9 Oct 2026): a lone "last in" with no SPO line
+                    # says so in the multi-ask's own words, never "no spo allocation matched
+                    # these". The scope the generic breakdown names stays, one whole line each
+                    # so the reply pass localizes every one: a warehouse (or other non-product
+                    # entity) as typed, the unresolved codes, the companies checked. The
+                    # escalate offer is its own last line, as the localizer only matches it at
+                    # a line start.
+                    unresolved_keys = {_nf_norm_raw(t) for t in not_found_raw}
+                    lines_out = [LAST_IN_NONE]
+                    for line in found_lines:
+                        kind = line[2:].split(":", 1)[0]
+                        if kind == "product":
+                            continue
+                        typed_raws = [
+                            jsc.js_string(jsc.get(e, "raw"))
+                            for e in all_ents
+                            if _prettify_type(jsc.get(e, "hint")) == kind
+                            and jsc.truthy(jsc.get(e, "raw"))
+                            and _nf_norm_raw(jsc.get(e, "raw")) not in unresolved_keys
+                        ]
+                        lines_out.append(f"{kind.capitalize()}: {', '.join(typed_raws)}" if typed_raws else line)
+                    if not_found_raw:
+                        lines_out.append(
+                            f"Couldn't find: {', '.join(jsc.js_string(raw_of_token(t)) for t in not_found_raw)}."
+                        )
+                    if multi_co:
+                        lines_out.append(f"Checked in: {_and_list(searched_cos)}")
+                    esc = _esc_offer()
+                    if esc:
+                        lines_out.append(esc)
+                    escalate_message = "\n".join(lines_out)
                 elif use_breakdown:
                     escalate_message = build_breakdown_msg(
                         f"{status_label}{jsc.js_string(domain_hint)}"
