@@ -2896,7 +2896,8 @@ class FulfilmentBoardService:
         whole free-stock cache once per row - but the RANKING is against this line's residual
         (13.11), so two rows covering different quantities are two different questions.
         Hot-selling no longer changes the donor set (own location is always Reserve-eligible,
-        never a Borrow source), so it is not part of the key.
+        and always offered as a plain Borrow too since BORROW-OWN-LOC), so it is not part of
+        the key.
         """
         cache_key = (fact.product_id, row.warehouse_id, need)
         if cache_key not in borrow_cache:

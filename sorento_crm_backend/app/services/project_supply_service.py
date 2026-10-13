@@ -7846,9 +7846,9 @@ class ProjectSupplyService:
         about the hole at the POOL's location. A Reserve at the line's OWN location is never
         one: that location's demand IS this line, already inside its `SO qty`, and taking the
         reserve out again would count the same quantity twice. **A Borrow from the line's
-        own location is never one either, for the same reason** - a dealer hot-selling
-        product may only Reserve from the pool, so its own location is a legitimate Borrow
-        source, and its demand is still inside that location's SO qty.
+        own location is never one either, for the same reason** - its own location is a
+        legitimate Borrow source (BORROW-OWN-LOC), and its demand is still inside that
+        location's SO qty.
 
         The donor's availability is the AutoCount triple LESS what other confirmed
         decisions already hold there from elsewhere. A borrow, or a pool take, writes a
@@ -10345,7 +10345,8 @@ class ProjectSupplyService:
         Two shapes, and they are answered differently: free stock at a location outside
         the Reserve pool has no donor to ask, so it carries no claim; stock another
         project is holding names that project and its impact, so CS is deciding with the
-        donor's position in front of them (AC-B09).
+        donor's position in front of them (AC-B09). The line's OWN location is appended
+        last as a plain location row at 0 free (BORROW-OWN-LOC, owner 13 Oct 2026).
 
         **Every donor states AutoCount's own triple beside the engine's figures** (PLAN
         13.11). Free stock alone nets reserved and confirmed holds only, and on this book
@@ -10370,9 +10371,8 @@ class ProjectSupplyService:
         """
         if not fact.product_id:
             return []
-        # Everything Reserve cannot reach. For a hot-selling product that INCLUDES the
-        # line's own dealer location: Reserve may not touch it, and CS borrowing it with a
-        # reason is the sanctioned way to use it (PLAN 3.3).
+        # Everything Reserve cannot reach, for the free-stock rows. The own location is
+        # inside it and comes back at the end as its own plain row (BORROW-OWN-LOC).
         inside = self._reserve_location_ids(fact)
         group_siblings = self._group_sibling_warehouses(fact)
         inside_group = inside | {str(w.id) for w in group_siblings.values()}
@@ -10509,7 +10509,9 @@ class ProjectSupplyService:
                         "committed_qty": qty_text(_ZERO),
                     },
                     "rung": None,
-                    "recommended": False,
+                    # Never the head over a ranked donor; the head only when it is alone,
+                    # because `BorrowCandidate` says exactly one row carries it.
+                    "recommended": not candidates,
                 }
             )
         # S4 (`PLAN-local-supplier-oi-routing.md`, AC-2.20): the per-order sheet's own

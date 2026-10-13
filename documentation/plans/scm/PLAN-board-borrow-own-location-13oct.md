@@ -2,7 +2,8 @@
 
 Status: Built, in review; awaiting owner hand test. Track: small fix (no migration, no auth/RBAC
 change, backend diff under 300 lines; Size M by the board's sizing).
-Lane: BORROW-OWN-LOC, PR (draft, link in PR).
+Lane: BORROW-OWN-LOC, PR #1629.
+UAC: `board-borrow-own-location-13oct-acceptance-criteria.md`.
 
 ## Owner ask (13 Oct 2026, verbatim)
 
@@ -39,9 +40,9 @@ The frontend passes the server list through unchanged (`boardAmend.ts:323`,
 `BoardLineDecisionPanel.tsx:255`, `:948`). So for SO424764 line 144 the BRW-BB stock beyond the
 77 free must be held by orders that are (a) ranked ahead of line 144 under another agent, (b)
 already covered by a confirmed decision, or (c) dated inside the reserve window. Which one is a
-data question: `sorento_crm_backend/scripts/diagnose_own_location_borrow.py SO424764 144`
-(read-only, rolls back) prints every BRW-BB holder and the exact reason it was or was not
-offered. The cloud sandbox has no dev DB, so crew runs it.
+data question, answered with a throwaway read-only diagnostic (`scripts/diagnose_own_location_borrow.py`,
+commit 2ae4ec6e, removed once the owner ruled), which crew ran because the cloud sandbox has no
+dev DB.
 
 ## Why BRW-BB never showed (crew ran the diagnostic on the 12 Oct prod clone)
 
