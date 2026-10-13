@@ -156,6 +156,17 @@ SALES_REPORT_GRANT = "sales_orders.sales_report"
 PO_DOMAIN_SUBJECT = {"purchase_order": "purchase orders", "spo_allocation": "purchase order allocation"}
 
 
+def _is_sales_dataset(spec: Any) -> bool:
+    """The dataset as the report lane reads it: a null one takes the policy default."""
+    from app.services.chatbot.pv2 import reports
+
+    try:
+        ds = reports._dataset_for(spec)
+    except Exception:  # noqa: BLE001 - unreadable spec: the closed side
+        return True
+    return ds is None or ds.key == "sales"
+
+
 def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[str, str] | None:
     """(reply, route) when this turn asks for a domain the contact holds no grant for, else
     None. Refused before any lookup or report question, so nothing of the data is read."""
@@ -176,11 +187,11 @@ def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[st
         return None
     for ask in getattr(out, "asks", None) or []:
         report = getattr(ask, "report", None)
-        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and getattr(report, "dataset", None) == "sales":
+        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and _is_sales_dataset(report):
             from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
             return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
-    if last is not None and answer_mod._is_report(last) and getattr(last.held.report, "dataset", None) == "sales":
+    if last is not None and answer_mod._is_report(last) and _is_sales_dataset(last.held.report):
         from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
         return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
