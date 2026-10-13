@@ -72,6 +72,7 @@ from app.services.chatbot import label_catalog, language as language_mod, sessio
 from app.services.chatbot import quick_reply_guard
 from app.services.chatbot.turn import pending as turn_pending
 from app.services.chatbot.turn import question as turn_question
+from app.services.chatbot.turn import sub_asks as turn_sub_asks
 from app.services.chatbot.turn import state as turn_state
 from app.services.chatbot.turn import compose as turn_compose
 from app.services.chatbot.turn import context as context_mod
@@ -166,6 +167,80 @@ def split_marked_message(text: str) -> list[str]:
     if not (first.startswith(marker) or f"\n{marker}" in first):
         return [text]
     return pieces
+
+
+#: WhatsApp's per-message ceiling as the MCP presenter keeps it
+#: (`sorento_crm_mcp.presenters.WHATSAPP_MESSAGE_MAX_CHARS`, under WhatsApp's own 4096).
+WHATSAPP_MESSAGE_MAX_CHARS = 3900
+
+
+def _product_family(db: Any, code: str) -> list[dict[str, str]]:
+    """Every chat-searchable product in the typed code's model family, code order: the WHOLE
+    family a "just X, or all N?" counts, with no `PREFIX_LIMIT` (MULTI-ASK-PLAN review S4).
+    The family is `products.family_code` (CODE-VARIANTS #1573, MULTI-ASK-PLAN2): the one
+    stored on the product the code names exactly (dash, space and case folded, so a hand-set
+    family wins), else the typed code itself when it is a family head. Company-scoped by
+    the session and narrowed by the contact's brand scope, as every product read in a turn
+    is (review R2)."""
+    from app.models.product import Product, chat_searchable_products
+    from app.services.contact_brand_scope import product_in_scope_clauses
+    from app.services.entity_resolver import _strip_all_ws, _ws_insensitive_lower
+    from app.services.product_family import family_code_for
+
+    typed = _strip_all_ws(code).lower()
+    scope = (chat_searchable_products(), *product_in_scope_clauses(db, Product.id))
+    family = db.query(Product.family_code).filter(
+        _ws_insensitive_lower(Product.product_code) == typed,
+        Product.family_code.isnot(None),
+        *scope,
+    ).order_by(Product.product_code).limit(1).scalar()
+    if family is None:
+        # No product carries the typed code: only a family HEAD ("SRTWT7445") names a family.
+        # A missing variant ("SRT38-ZZ") is no family, never its siblings (review B1).
+        derived = family_code_for(code)
+        family = derived if derived is not None and derived.lower() == typed else None
+    if not family:
+        return []
+    rows = (
+        db.query(Product.id, Product.product_code)
+        .filter(Product.family_code == family, *scope)
+        .order_by(Product.product_code, Product.id)
+        .limit(turn_sub_asks.FAMILY_MAX + 1)
+        .all()
+    )
+    return [{"uuid": str(pid), "code": pcode} for pid, pcode in rows]
+
+
+def pack_parts(text: str, limit: int = WHATSAPP_MESSAGE_MAX_CHARS) -> str:
+    """`text` packed into the FEWEST WhatsApp messages, as one marked run
+    `split_marked_message` splits (MULTI-ASK-PLAN Q5, owner 9 Oct 2026: text, never a
+    file, and no tiny chunks). Unchanged when it fits in one message. Lines are packed
+    greedily and never split, each part opens with its own "(k/m)" line, and the marker's
+    width is reserved in every part's budget. The same packing as the MCP presenter's
+    `whatsapp_parts`; a copy because the deployed backend image carries no copy of that
+    package (`lanes/business/fetch.CHATBOT_READ_ONLY_TOOLS` states the same constraint)."""
+    if len(text) <= limit:
+        return text
+    budget = limit - len("(9999/9999)\n")
+    parts: list[list[str]] = [[]]
+    size = 0
+    for line in text.split("\n"):
+        if not parts[-1] and not line.strip():
+            continue  # a part never opens on a blank line
+        grown = size + len(line) + (1 if parts[-1] else 0)
+        if parts[-1] and grown > budget:
+            while parts[-1] and not parts[-1][-1].strip():
+                parts[-1].pop()  # nor closes on one
+            parts.append([])
+            size = 0
+            if not line.strip():
+                continue
+            grown = len(line)
+        parts[-1].append(line)
+        size = grown
+    chunks = ["\n".join(p) for p in parts if p]
+    total = len(chunks)
+    return "\n\n".join(f"({i}/{total})\n{chunk}" for i, chunk in enumerate(chunks, start=1))
 
 
 def split_send_actions(actions: list[Any]) -> list[Any]:
@@ -4747,6 +4822,16 @@ def _run_stages_body(  # noqa: PLR0915
             turn_trace.add("required_ask", {"verdict_rule": required_rule, "ask": (open_ask or {}).get("ask")})
         if required_rule == "required_ask_answer":
             state_in = dataclasses_replace(state_in, pending=None)
+        # MULTI-ASK-PLAN round 6 (G1): the reply to the scope question re-runs the asked
+        # multi-ask turn's own verdict from HERE, with the scope the parser read settled, so
+        # it continues exactly as if the scope had been said.
+        scope_verdict = turn_sub_asks.scope_reply(verdict, state_in.pending)
+        if scope_verdict is not None:
+            turn_trace.add("sub_asks", {"scope_answered": scope_verdict.get("family")})
+            verdict = scope_verdict
+            state_in = dataclasses_replace(state_in, pending=None)
+        # What the scope question stores to re-run, taken at the same point.
+        scope_replay = copy.deepcopy(verdict)
         # REPORT-ENGINE slice 1b: a fresh sales ranking's brand / sales agent / category
         # words, kept away from the generic resolver for the lane (`report_ask_words`).
         verdict = report_ask.take_words(verdict, _message_text)
@@ -5316,7 +5401,10 @@ def _run_stages_body(  # noqa: PLR0915
             # dealer names on an order or outstanding turn is carried into the next one, and
             # a bare "eta" after "srtw2000" asked its whole prefix family (tester re-run on
             # a5ba9dc9f, fix 4).
-            if getattr(getattr(state_out, "profile", None), "stock_availability_only", False):
+            # MULTI-ASK-PLAN R3: `family: false` is the exact code alone, for any contact.
+            if getattr(getattr(state_out, "profile", None), "stock_availability_only", False) or (
+                verdict.get("family") is False
+            ):
                 exact = _exact_codes_only(
                     resolver_parse_output, resolved_kinds, resolved_candidates, compatible_entities, unplaced_tokens,
                     read_values=_read_values((resolver_payload or {}).get("resolved")),
@@ -5859,6 +5947,146 @@ def _run_stages_body(  # noqa: PLR0915
         # The fetch's envelopes, empty on a turn that fetched nothing (REFER-SALESMAN reads
         # them below the fetch section, on every dealer refer reply).
         envelopes: list[dict[str, Any]] = []
+
+        # MULTI-ASK-PLAN round 6 (owner hand test, 9 Oct 2026), before EITHER path answers
+        # a staff turn: G4, a message naming only a product word the parser is unsure of,
+        # with nothing asked about it, asks what is wanted rather than inheriting the last
+        # turn's domain; G1, a MULTI-ASK turn (2+ sub_asks, owner ruling Q1 (b): a one-ask
+        # turn keeps today's path) whose typed code maps to two or more products with
+        # `family` left null asks which of them. Neither calls a tool.
+        if (
+            answer is None
+            and branch_kind == "business_query"
+            and completes_here
+            and not customer_scope_refused
+            and not getattr(state_out.profile, "stock_availability_only", False)
+            and turn_state.is_staff_profile(state_out.profile)
+        ):
+            vague = turn_sub_asks.vague_token(verdict, list(state_in.focus.products or []))
+            pre_question: Any = None
+            if vague or (verdict.get("family") is None and len(turn_sub_asks._sub_asks(verdict)) >= 2):
+                reply_language = _turn_language(
+                    latest_user_message,
+                    remembered_before,
+                    state_out.profile,
+                    strip=[
+                        str(e[k])
+                        for e in verdict.get("entities") or []
+                        for k in ("raw", "canonical_code")
+                        if isinstance(e, dict) and e.get(k)
+                    ],
+                )
+                localizer = label_catalog.resolve(db, reply_language, dry_run=dry_run)
+                if vague:
+                    pre_question = turn_compose.Answer(text=localizer.fill(turn_sub_asks.WHAT_ABOUT, name=vague))
+                    turn_trace.add("sub_asks", {"asked": "what_about", "token": vague})
+                else:
+                    scope = turn_sub_asks.scope_question(
+                        turn_sub_asks.Run(
+                            call=business_services._mcp_call(db),
+                            localizer=localizer,
+                            grants=frozenset(),
+                            contact_id=contact_respond_id,
+                            space_id=space_id_for_turn,
+                            family_of=lambda code: _product_family(db, code),
+                            asked_at_turn=turn_no,
+                        ),
+                        verdict=verdict,
+                        candidates=list(resolved_candidates.get("product") or []),
+                        replay=scope_replay,
+                    )
+                    if scope is not None:
+                        turn_trace.add("sub_asks", scope.trace)
+                        pre_question = turn_compose.Answer(text=scope.text, question=scope.question)
+                if pre_question is not None:
+                    stage[0] = "replied"
+                    item["reply_language"] = reply_language
+                    answer = pre_question
+                    bridge_answered = True
+                else:
+                    localizer = None
+
+        # MULTI-ASK-PLAN S4 (owner card 9 Oct 2026): a message that asks two or more things
+        # (round 6 G2: whatever they are), or the reply to one of the runner's own
+        # questions, is answered here: one query per ask, one line per ask, packed into the
+        # fewest WhatsApp messages. Staff only; every other turn falls through untouched.
+        if (
+            answer is None
+            # Security review B1: only a turn the business lane would answer. An
+            # `access_denied` (or any other canned) branch also completes here, and the
+            # runner must never answer over its refusal.
+            and branch_kind == "business_query"
+            and completes_here
+            and not customer_scope_refused
+            and not getattr(state_out.profile, "stock_availability_only", False)
+            # Review S3: staff only, as the card's Scope says.
+            and turn_state.is_staff_profile(state_out.profile)
+            and turn_sub_asks.wants(verdict, state_in.pending)
+        ):
+            reply_language = _turn_language(
+                latest_user_message,
+                remembered_before,
+                state_out.profile,
+                strip=[
+                    str(e[k])
+                    for e in verdict.get("entities") or []
+                    for k in ("raw", "canonical_code")
+                    if isinstance(e, dict) and e.get(k)
+                ],
+            )
+            localizer = label_catalog.resolve(db, reply_language, dry_run=dry_run)
+            granted = access.get("attributes") if isinstance(access, dict) else None
+            sub_result = turn_sub_asks.answer(
+                turn_sub_asks.Run(
+                    call=business_services._mcp_call(db),
+                    localizer=localizer,
+                    grants=frozenset(granted) if isinstance(granted, list) else frozenset(),
+                    contact_id=contact_respond_id,
+                    space_id=space_id_for_turn,
+                    stock_allowed=getattr(state_out.profile, "stock_allowed", True) is not False,
+                    family_of=lambda code: _product_family(db, code),
+                    asked_at_turn=turn_no,
+                ),
+                verdict=verdict,
+                pending=state_in.pending,
+                candidates=list(resolved_candidates.get("product") or []),
+                compatible=compatible_entities,
+                # The resolver still asking which customer is its picker's to answer.
+                settled=not (
+                    isinstance(resolver_payload, dict) and resolver_payload.get("_exit_kind") in ("access_ask", "offer")
+                ),
+            )
+            if sub_result is not None:
+                stage[0] = "looked_up"
+                item["reply_language"] = reply_language
+                turn_trace.add("sub_asks", sub_result.trace)
+                answer = turn_compose.Answer(text=pack_parts(sub_result.text), question=sub_result.question)
+                bridge_answered = True
+                if turn_sub_asks.resumes(verdict, state_in.pending):
+                    # The runner's own question is answered, or a new multi-ask moved on
+                    # from it (G4b): closed here, whatever form the parser's reply took
+                    # (apply clears only a `pick`; review F1). A new question the answer
+                    # asks (the basis one) rides on `answer.question`.
+                    state_out = dataclasses_replace(state_out, pending=None)
+                if sub_result.focus_products:
+                    # The answered products are the conversation's product focus, so a
+                    # follow-up reads them, not the family the resolver placed.
+                    state_out = dataclasses_replace(
+                        state_out,
+                        focus=dataclasses_replace(
+                            state_out.focus,
+                            products=[
+                                {
+                                    "uuid": r["uuid"],
+                                    "canonical_code": r["code"],
+                                    "raw": r["code"],
+                                    "entity_type": "product",
+                                    "hint": "product",
+                                }
+                                for r in sub_result.focus_products
+                            ],
+                        ),
+                    )
 
         # Ported from PR #1118 (feat/chatbot-dealer-stock-verdict, not merged, owner
         # ruling 24 Sep 2026) for chatbot-stock-ask-v2 S3. -- the OPEN TASK's own
