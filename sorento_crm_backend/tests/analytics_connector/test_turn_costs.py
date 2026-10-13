@@ -76,7 +76,7 @@ def _seed(db) -> dict:
     cid, rid = unique_code("rc"), f"rio-{uuid.uuid4().hex[:12]}"
     db.execute(
         text("INSERT INTO respond_contacts (id, phone_number, name, respond_io_id) VALUES (:id, :p, :n, :r)"),
-        {"id": cid, "p": "+60100009999", "n": f"ZZT Contact {tag}", "r": rid},
+        {"id": cid, "p": "+60100000001", "n": f"ZZT Contact {tag}", "r": rid},
     )
     db.execute(text("INSERT INTO respond_contact_customers (id, contact_id, customer_id, is_primary) "
                     "VALUES (:id, :c, :cu, true)"),
@@ -85,7 +85,7 @@ def _seed(db) -> dict:
     def turn(*, is_test=False, trace=None, branch="business", reply="here you go", at=T0, secs=4):
         tid = str(uuid.uuid4())
         envelope = {"message": {"message": {"message": {"type": "text", "text": f"stock {tag} code is 123456"}}},
-                    "contact": {"phone": "+60100009999"}}
+                    "contact": {"phone": "+60100000001"}}
         db.execute(
             text("INSERT INTO chatbot.turns (id, contact_respond_id, envelope, status, stage, branch_kind, is_test, "
                  "response, trace, created_at, started_at, finished_at) VALUES (:id, :c, CAST(:e AS jsonb), 'done', "

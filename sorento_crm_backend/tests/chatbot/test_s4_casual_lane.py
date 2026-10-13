@@ -658,11 +658,15 @@ def _install_fake_provider(monkeypatch, casual, content='{"response": "Hi! How c
 
 
 def _clarifier_rows(session_factory, turn_id):
-    return session_factory().execute(
-        text("SELECT feature, model, prompt_tokens, cached_tokens, completion_tokens FROM ai_assistant_usage_logs "
-             "WHERE chatbot_turn_id = :t AND feature = 'chatbot_clarifier'"),
-        {"t": str(turn_id)},
-    ).all()
+    db = session_factory()
+    try:
+        return db.execute(
+            text("SELECT feature, model, prompt_tokens, cached_tokens, completion_tokens FROM ai_assistant_usage_logs "
+                 "WHERE chatbot_turn_id = :t AND feature = 'chatbot_clarifier'"),
+            {"t": str(turn_id)},
+        ).all()
+    finally:
+        db.close()
 
 
 @pytest.mark.real_casual_llm
