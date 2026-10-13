@@ -145,6 +145,7 @@ class ClarifyAct(BaseModel):
 class SmallTalk(BaseModel):
     type: Literal["small_talk"] = "small_talk"
     ask_index: int
+    declined_offer: bool = False
 
 
 class HandOver(BaseModel):

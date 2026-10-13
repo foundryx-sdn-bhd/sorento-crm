@@ -251,6 +251,8 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
                     e["quantity"] = None
         if answer["mode"] in ("yes", "no"):
             verdict["is_affirmative"] = answer["mode"] == "yes"
+        if answer["mode"] == "no":
+            verdict["entities"] = []  # the declined offer is the turn; the subject rides on the focus
         if _v1_kind(state, action) in ESCALATION_OFFER_KINDS:
             # An offer is accepted only by an explicit "yes" or a real option pick, and
             # declined by "no"; any other reply sets neither flag.

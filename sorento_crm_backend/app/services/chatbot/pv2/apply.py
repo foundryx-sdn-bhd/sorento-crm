@@ -103,6 +103,10 @@ class _Miss(Exception):
         self.nothing_held = nothing_held
 
 
+#: The acts that can answer (or fail to answer) an open question.
+_ANSWER_ACTS = frozenset({"answers_bot_question", "unclear"})
+
+
 def apply_turn(
     state: ConversationState,
     out: ParserV2Output,
@@ -157,21 +161,30 @@ def apply_turn(
             )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
-            action = _miss(st, i, pending_in, miss, language, can_offer_handover)
+            # Only an answer (or an unclear reply) re-asks the open question; a new
+            # question that missed asks its own and replaces it.
+            reask = pending_in if ask.act in _ANSWER_ACTS else None
+            action = _miss(st, i, reask, miss, language, can_offer_handover)
+            if reask is None and pending_in is not None and isinstance(action, ClarifyAct):
+                action.reask = False  # its own question, not a retry of the open one
         else:
             answered_pending = answered_pending or answered
             action = _repeat_is_a_miss(st, action, pending_in, language, can_offer_handover)
             if (
                 isinstance(action, Lookup)
+                and action.picked is None
                 and pending_in is not None
                 and pending_in.kind == "v1_open_question"
                 and pending_in.v1_kind == "product_pick"
-                and ask.act != "answers_bot_question"
-                and ask.entities
-                and all(e.refers_to_held and e.key is None and e.phrase is None and e.quantity is not None
-                        for e in ask.entities)
+                and any(e.quantity is not None for e in ask.entities)
             ):
-                action.requantify = True  # v1's requantify rule reads it, not a new subject
+                products = action.held.refs.get("product", [])
+                if (
+                    products
+                    and [r.key for r in products] == [r.key for r in held_before.refs.get("product", [])]
+                    and all(r.quantity is not None for r in products)
+                ):
+                    action.requantify = True  # v1's requantify rule reads it, not a new subject
         actions.append(action)
         question = getattr(action, "pending", None)
         if question is not None and first_question is None:
@@ -358,11 +371,16 @@ def _answer(
                 picked = pending.options[n - 1]
     if picked is None:
         if free is not None and pending.kind in FREE_VALUE_PENDING:
+            held = st.held.model_copy(deep=True)
+            for ent in ask.entities:
+                if ent.key is None and ent.phrase is None:
+                    _set_quantity(held, ent)  # a count restated beside the free value
+            st.held = held
             return (
                 Lookup(
                     ask_index=i,
                     domain=st.held.domain,
-                    held=st.held.model_copy(deep=True),
+                    held=held.model_copy(deep=True),
                     ask=ask,
                     pending_kind=pending.kind,
                     free_value=free,
@@ -375,7 +393,7 @@ def _answer(
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
             return HandOver(ask_index=i, team_key=picked.payload.get("team_key")), True
-        return SmallTalk(ask_index=i), True
+        return SmallTalk(ask_index=i, declined_offer=True), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
         return (
@@ -458,6 +476,9 @@ def _apply_fields(
             )
     if ask.period is not None:
         held.period = ask.period
+        if refine and held.report is not None and ask.report is None:
+            held.report = held.report.model_copy(update={"period": ask.period})
+            filtered = True  # the held report is planned again with its new period
     if filtered and ask.report is None and held.report is not None:
         _plan_report(st, held, resolver, language, i, qs, today)
     if ask.report is not None or (held.report is not None and ({"report", "period"} & set(ask.cleared))):
@@ -640,6 +661,12 @@ def _apply_entities(
         if ent.op == "clear":
             held.refs = set_refs(held.refs, ent.kind, [], "clear")
             continue
+        if (
+            not ent.refers_to_held and ent.key is None and ent.phrase is None and ent.doc_number is None
+            and ent.quantity is not None and ent.op == "set" and held.refs.get(ent.kind)
+        ):
+            _set_quantity(held, ent)  # a count with nothing named restates the held kind's
+            continue
         if ent.refers_to_held and ent.key is None and ent.phrase is None:
             _set_quantity(held, ent)  # "this one": the held subject stays; a restated count replaces
             continue
@@ -684,6 +711,11 @@ def _apply_entities(
             if words:
                 qs.misses.append(Miss(kind=ent.kind, phrase=words))
             continue
+        if status == "ambiguous" and getattr(res, "did_you_mean", False) and ent.kind == "product" and isinstance(qs, _Qs):
+            # v1's own miss lane words it ("Couldn't find X. Did you mean ...") and its offer.
+            if ent.phrase:
+                qs.misses.append(Miss(kind=ent.kind, phrase=ent.phrase))
+                continue
         if (
             status == "ambiguous"
             and len(options) == 1

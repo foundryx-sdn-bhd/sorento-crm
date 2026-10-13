@@ -288,14 +288,18 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
         return state
     # Keyed by v1's own `position` (what v1 `_answer_pending` accepts), legacy `idx` else.
     opts = [o for o in (getattr(v1_pending, "options", None) or []) if isinstance(o, dict) and o.get("label")]
+    yes_no = getattr(v1_pending, "expects", None) == "yes_no"
+    if yes_no:
+        opts = []  # a yes / no question mirrors only yes and no
     labels = [str(o["label"]) for o in opts]
     keys = [str(o.get("position") or o.get("idx") or n) for n, o in enumerate(opts, start=1)]
+    payload = getattr(v1_pending, "payload", None) or {}
     return after_v1(
         state,
         question_kind=str(kind),
         option_labels=labels,
         option_keys=keys,
-        offer=kind in OFFER_KINDS,
+        offer=kind in OFFER_KINDS or yes_no or payload.get("escalate_offered") is True,
         asked=str(getattr(v1_pending, "question", None) or getattr(v1_pending, "asked", None) or ""),
     )
 

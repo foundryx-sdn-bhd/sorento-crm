@@ -254,6 +254,9 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
         return TurnV2Result(verdict, bridge.focus_from_v2(last.held, base_focus), None, state, actions, "lookup", language, trace)
 
     verdict = _verdict_for("small_talk")
+    if any(isinstance(a, SmallTalk) and a.declined_offer for a in actions):
+        # A "no" to PV2's own offer is v1's escalation-declined lane, not casual chat.
+        verdict["escalation"] = {**verdict["escalation"], "escalation_declined": True}
     return TurnV2Result(verdict, bridge.focus_from_v2(state.held, base_focus), None, state, actions, "small_talk", language, trace)
 
 
