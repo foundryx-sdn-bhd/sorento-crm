@@ -296,10 +296,10 @@ describe('the project header', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'PO received' }));
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-po',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-po' },
+      expect.anything(),
+    );
   });
 
   it('fires the forward move directly, with no menu to choose from', () => {
@@ -309,10 +309,10 @@ describe('the project header', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Tendering' }));
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-tendering',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-tendering' },
+      expect.anything(),
+    );
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -343,10 +343,10 @@ describe('the project header', () => {
     const lost = await screen.findByRole('menuitem', { name: 'Mark lost' });
     fireEvent.click(lost);
 
-    expect(changeStatus).toHaveBeenCalledWith({
-      projectId: 'p1',
-      toStatusId: 's-lost',
-    });
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-lost' },
+      expect.anything(),
+    );
   });
 
   it('offers no move at all from a final rung, rather than a button the server rejects', () => {
@@ -527,5 +527,54 @@ describe('owner hand-test, 13 Oct', () => {
     openOverflow();
     await screen.findByRole('menuitem', { name: /Edit project/ });
     expect(screen.queryByRole('menuitem', { name: /Reassign/ })).toBeNull();
+  });
+
+  it('opens the new quotation page once Spec In has been made (owner, 13 Oct)', () => {
+    projectFixture = project({
+      status_id: 's-registered',
+      status_key: 'registered',
+      status_label: 'Registered',
+    });
+    graphFixture = graph({
+      statuses: [
+        status('s-registered', 'registered', 'Registered', 1),
+        status('s-specified', 'specified', 'Spec In', 2),
+        status('s-lost', 'lost', 'Lost', 6, { is_terminal: true }),
+      ],
+      transitions: [
+        transition('t-a', 's-registered', 's-specified', 'Spec In', 0),
+        transition('t-b', 's-registered', 's-lost', 'Mark lost', 0),
+      ],
+    });
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+
+    fireEvent.click(
+      within(screen.getByTestId('project-header-actions')).getByRole('button', {
+        name: 'Spec In',
+      }),
+    );
+
+    expect(changeStatus).toHaveBeenCalledWith(
+      { projectId: 'p1', toStatusId: 's-specified' },
+      expect.anything(),
+    );
+    expect(push).toHaveBeenCalledWith('/project-sales/p1/quotation-documents/new');
+  });
+
+  it('stays on the page for any other move', () => {
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+    fireEvent.click(
+      within(screen.getByTestId('project-header-actions')).getByRole('button', {
+        name: 'Tendering',
+      }),
+    );
+    expect(changeStatus).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 });

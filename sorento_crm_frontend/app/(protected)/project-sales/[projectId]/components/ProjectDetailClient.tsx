@@ -147,6 +147,25 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
     : [];
   const { secondary: secondaryMoves } = splitStatusMoves(moves);
 
+  /**
+   * Spec In is where quoting starts, so making it opens the new quotation page (owner,
+   * 13 Oct). Only after the move lands: a refused move leaves the person where they were.
+   * Matched on the rung's KEY, which an admin relabel cannot break.
+   */
+  function moveTo(toStatusId: string) {
+    const target = moves.find((option) => option.toStatusId === toStatusId);
+    move.mutate(
+      { projectId: project!.id, toStatusId },
+      {
+        onSuccess: () => {
+          if (target?.toKey === 'specified') {
+            router.push(`/project-sales/${project!.id}/quotation-documents/new`);
+          }
+        },
+      },
+    );
+  }
+
   return (
     // The shared drawer (AC-H1): posting, @-mentions and internal notes come from the same
     // component tickets use, against the project adapter. Wrapping here rather than inside
@@ -230,9 +249,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                   <DropdownMenuItem
                     key={option.transitionId}
                     disabled={move.isPending}
-                    onSelect={() =>
-                      move.mutate({ projectId: project.id, toStatusId: option.toStatusId })
-                    }
+                    onSelect={() => moveTo(option.toStatusId)}
                   >
                     {option.label}
                   </DropdownMenuItem>
@@ -251,9 +268,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             <ProjectStatusAction
               moves={moves}
               isPending={move.isPending}
-              onMove={(toStatusId) =>
-                move.mutate({ projectId: project.id, toStatusId })
-              }
+              onMove={moveTo}
             />
           }
         />
