@@ -1839,12 +1839,19 @@ def test_own_and_crm_claims_ignored():
 def test_po_pairing_follows_from_po_number_to_spo():
     """AC-S1-35 (D10). AutoCount states SO line -> PO line, and the SPO carries that PO as
     `from_po_number`: the link lands on the ALLOCATION first, so the worklist shows the SPO
-    with its source PO beside it. The PO line takes only what the SPO cannot cover."""
+    with its source PO beside it. The PO line takes only what the SPO cannot cover.
+
+    The allocation names the PO LINE too (`from_po_line_ref`), as AutoCount's do:
+    OI-SPO-EXACT removed the walk by PO number alone."""
     with world() as w:
         order = w.order()
         line = w.line(order, qty_ordered="50")
         po, po_line = w.po_line(qty_ordered="30")
-        allocation = w.spo_allocation(quantity=10, from_po_number=po.po_number)
+        po_line.source_ref = f"{po.po_number}:1"
+        w.db.flush()
+        allocation = w.spo_allocation(
+            quantity=10, from_po_number=po.po_number, from_po_line_ref=po_line.source_ref
+        )
         w.claim(order=order, core_line=line, document=po.po_number, po_line=po_line)
         data = sheet([
             (order.so_number, w.product.product_code, 30, D_OCT,
