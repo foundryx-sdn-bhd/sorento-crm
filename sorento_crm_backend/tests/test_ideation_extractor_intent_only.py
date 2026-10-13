@@ -85,7 +85,7 @@ def test_fallback_stated_idea_still_gets_need_behind_it_as_problem():
 def test_no_problem_rule_sits_inside_problem_field_description():
     text = _fallback()
     start = text.index("- problem:")
-    end = text.index("- proposed_solution:")
+    end = text.index("- desired_outcome:")
     assert start < end
     for needle in ("want to submit idea", NO_IDEA_PHRASE):
         assert start < text.index(needle) < end, f"{needle!r} must be inside the problem field"

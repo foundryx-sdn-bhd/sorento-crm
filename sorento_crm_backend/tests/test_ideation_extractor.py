@@ -8,7 +8,8 @@ Keys back to
   change_text, duplicate_choice}``; ``confirm`` is derived, never read from the model.
 - **AC-1202** - ``title`` cut to 8 words.
 - **AC-1203** - a natural skip ("dunno lah, can skip this one?") produces
-  ``skip == ["impact"]``.
+  ``skip == ["desired_outcome"]`` (IDEA-CAPTURE: the optional keys are now desired_outcome,
+  use_cases, current_workaround).
 - **AC-1204** - a question ABOUT a field produces an empty ``skip`` and no field set.
 - **AC-1205** - ``problem`` can never appear in ``skip`` (deterministic guard).
 - **AC-1208** - "yes"/"ok"/"boleh"/"submit"/"confirm" in review -> ``review_action ==
@@ -93,6 +94,7 @@ def _extraction(
         "review_action": "none",
         "change_text": "",
         "duplicate_choice": "none",
+        "use_cases": [],
         **payload,
     }
     with patch(
@@ -153,12 +155,12 @@ def test_short_title_untouched(configured):
 def test_natural_skip_phrase(configured):
     out = _extraction(
         configured,
-        {"skip": ["impact"]},
+        {"skip": ["desired_outcome"]},
         message_text="dunno lah, can skip this one?",
         status="collecting",
-        next_field="impact",
+        next_field="desired_outcome",
     )
-    assert out.skip == ["impact"]
+    assert out.skip == ["desired_outcome"]
 
 
 # --------------------------------------------------------------------------- #
@@ -168,9 +170,9 @@ def test_clarifying_question_is_not_a_skip(configured):
     out = _extraction(
         configured,
         {"fields": [], "skip": []},
-        message_text="what do you mean impact?",
+        message_text="what do you mean desired outcome?",
         status="collecting",
-        next_field="impact",
+        next_field="desired_outcome",
     )
     assert out.skip == []
     assert out.fields == {}
@@ -180,14 +182,23 @@ def test_clarifying_question_is_not_a_skip(configured):
 # AC-1205 - problem can never be skipped (deterministic guard)                #
 # --------------------------------------------------------------------------- #
 def test_problem_dropped_from_skip(configured):
-    out = _extraction(configured, {"skip": ["problem", "impact"]})
-    assert out.skip == ["impact"]
+    out = _extraction(configured, {"skip": ["problem", "desired_outcome"]})
+    assert out.skip == ["desired_outcome"]
     assert "problem" not in out.skip
 
 
 def test_unknown_skip_key_dropped(configured):
-    out = _extraction(configured, {"skip": ["impact", "not_a_real_key"]})
-    assert out.skip == ["impact"]
+    out = _extraction(configured, {"skip": ["desired_outcome", "not_a_real_key"]})
+    assert out.skip == ["desired_outcome"]
+
+
+def test_ac05_skip_keeps_only_the_three_optional_keys(configured):
+    out = _extraction(
+        configured,
+        {"skip": ["problem", "desired_outcome", "use_cases", "current_workaround",
+                  "proposed_solution", "impact", "department"]},
+    )
+    assert out.skip == ["desired_outcome", "use_cases", "current_workaround"]
 
 
 # --------------------------------------------------------------------------- #
@@ -210,16 +221,16 @@ def test_change_request_in_review(configured):
     out = _extraction(
         configured,
         {
-            "fields": [{"key": "impact", "value": "faster checkout"}],
+            "fields": [{"key": "desired_outcome", "value": "faster checkout"}],
             "review_action": "change",
-            "change_text": "change the impact to faster checkout",
+            "change_text": "change the desired outcome to faster checkout",
         },
-        message_text="change the impact to faster checkout",
+        message_text="change the desired outcome to faster checkout",
         status="review",
     )
     assert out.review_action == "change"
-    assert out.change_text == "change the impact to faster checkout"
-    assert out.fields == {"impact": "faster checkout"}
+    assert out.change_text == "change the desired outcome to faster checkout"
+    assert out.fields == {"desired_outcome": "faster checkout"}
     assert out.confirm is False
 
 
@@ -264,7 +275,7 @@ def test_semantic_capture_ignores_next_field_hint(configured):
         next_field="proposed_solution",
     )
     assert "problem" in out.fields
-    assert "proposed_solution" not in out.fields
+    assert "desired_outcome" not in out.fields
 
 
 def test_context_block_carries_next_field_and_candidate_hint(configured):
@@ -451,14 +462,14 @@ def test_context_block_lists_captured_fields_one_per_line_no_semicolon_join(conf
             configured,
             message_text="more detail on the same idea",
             status="collecting",
-            captured={"problem": "a", "impact": "b"},
+            captured={"problem": "a", "desired_outcome": "b"},
         )
 
     user_content = captured_messages["messages"][1]["content"]
-    assert "a; impact" not in user_content
+    assert "a; desired_outcome" not in user_content
     lines = [line.strip() for line in user_content.splitlines()]
     assert any(line == "- problem: a" for line in lines)
-    assert any(line == "- impact: b" for line in lines)
+    assert any(line == "- desired_outcome: b" for line in lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -492,21 +503,14 @@ def test_ideation_reply_fmt_migration_exists_and_bumps_both_prompts():
 from app.services.ideation_extractor import derive_confirm, normalise_field_value, normalise_title  # noqa: E402
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("the manufacturing?", "Manufacturing"),
-        ("manufacturing?", "Manufacturing"),
-        ("  sales manager  ", "Sales Manager"),
-        ("IT", "IT"),
-        ("our operations team!", "Operations Team"),
-        ("Manufacturing", "Manufacturing"),
-    ],
-)
-def test_normaliser_department(raw, expected):
-    assert normalise_field_value("department", raw) == expected
+def test_ac08_department_normaliser_is_gone():
+    """AC-08: no Title Case / article stripping for a department any more."""
+    assert normalise_field_value("department", "sales manager") == "Sales manager"
+    assert normalise_field_value("department", "the manufacturing?") == "The manufacturing"
+    assert normalise_field_value("department", "our operations team!") == "Our operations team"
 
 
+@pytest.mark.parametrize("key", ["desired_outcome", "current_workaround", "problem"])
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -515,10 +519,11 @@ def test_normaliser_department(raw, expected):
         ("faster delivery ??", "Faster delivery"),
         ("  more sales！", "More sales"),
         ("提高销量？", "提高销量"),
+        ('"copy into excel first"', "Copy into excel first"),
     ],
 )
-def test_normaliser_impact(raw, expected):
-    assert normalise_field_value("impact", raw) == expected
+def test_normaliser_remaining_keys(key, raw, expected):
+    assert normalise_field_value(key, raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -621,3 +626,119 @@ def test_has_idea_parser_gives_none_for_missing_or_non_bool(configured, payload)
 
 def test_has_idea_defaults_to_none_on_a_failed_parse():
     assert IdeateExtraction().has_idea is None
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE (13 Oct): the canny-style fields                               #
+# UAC: idea-capture-fields-13oct-acceptance-criteria.md                       #
+# --------------------------------------------------------------------------- #
+from app.services.ideation_extractor import IDEATE_EXTRACTION_JSON_SCHEMA  # noqa: E402
+
+_KEYS = {"problem", "desired_outcome", "current_workaround"}
+
+
+def _key_schema() -> dict:
+    return IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["items"]["properties"]["key"]
+
+
+def test_ac01_schema_field_keys_are_exactly_the_three():
+    key = _key_schema()
+    assert set(key["enum"]) == _KEYS
+    assert len(key["enum"]) == 3
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in key["enum"]
+
+
+def test_ac02_schema_has_required_use_cases_array_of_strings():
+    schema = IDEATE_EXTRACTION_JSON_SCHEMA
+    assert "use_cases" in schema["required"]
+    prop = schema["properties"]["use_cases"]
+    assert prop["type"] == "array"
+    assert prop["items"] == {"type": "string"}
+    desc = prop["description"].lower()
+    assert "5" in desc
+    assert "never" in desc and "suggest" in desc
+    assert set(schema["required"]) == set(schema["properties"])
+
+
+def test_ac06_schema_descriptions_carry_each_field_meaning():
+    fields_desc = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"]
+    key_desc = _key_schema().get("description", "")
+    text = (fields_desc + " " + key_desc).lower()
+    assert "business problem" in text
+    for key in _KEYS:
+        assert key in text
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in text
+    assert "desired outcome" in text or "afterwards" in text
+    assert "workaround" in text
+
+
+def test_ac03_use_cases_are_cleaned_deduped_and_capped(configured):
+    out = _extraction(
+        configured,
+        {
+            "use_cases": [
+                "a dealer checks whether his PO shipped?",
+                "  ",
+                "",
+                '"A project customer checks the site delivery date"',
+                "A dealer checks whether his PO shipped",
+                "finance checks the invoice date",
+                "sales checks stock before quoting",
+                "logistics checks the truck slot",
+                "a sixth one that must be cut",
+            ]
+        },
+    )
+    assert out.use_cases == [
+        "A dealer checks whether his PO shipped",
+        "A project customer checks the site delivery date",
+        "Finance checks the invoice date",
+        "Sales checks stock before quoting",
+        "Logistics checks the truck slot",
+    ]
+
+
+def test_ac03_use_cases_default_empty_and_tolerate_absent_or_bad_values(configured):
+    assert IdeateExtraction().use_cases == []
+    assert _extraction(configured, {}).use_cases == []
+    assert _extraction(configured, {"use_cases": None}).use_cases == []
+    assert _extraction(configured, {"use_cases": ["", "   "]}).use_cases == []
+
+
+def test_ac04_unknown_field_keys_are_dropped(configured):
+    out = _extraction(
+        configured,
+        {
+            "fields": [
+                {"key": "problem", "value": "Quotes are priced by hand"},
+                {"key": "impact", "value": "Saves an hour a day"},
+                {"key": "proposed_solution", "value": "Build a pricing tool"},
+                {"key": "department", "value": "Sales"},
+                {"key": "current_workaround", "value": "Copy from Excel"},
+                {"key": "desired_outcome", "value": "Prices fill in by themselves"},
+            ]
+        },
+    )
+    assert out.fields == {
+        "problem": "Quotes are priced by hand",
+        "current_workaround": "Copy from Excel",
+        "desired_outcome": "Prices fill in by themselves",
+    }
+
+
+def test_ac07_fallback_prompt_names_the_four_fields_and_none_of_the_dropped():
+    from app.services import ai_prompt_registry
+
+    text = ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback()
+    for name in ("problem", "desired_outcome", "use_cases", "current_workaround"):
+        assert name in text
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in text, dropped
+    lowered = text.lower()
+    assert "business problem" in lowered
+    assert "empty" in lowered
+    assert "use cases" in lowered or "use_cases" in lowered
+    assert "never suggest" in lowered or "never invent" in lowered or "do not suggest" in lowered
+    assert "suggest" in lowered

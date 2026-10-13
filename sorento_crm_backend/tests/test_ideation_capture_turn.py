@@ -145,17 +145,18 @@ class Env:
 
     # ---- scripting ------------------------------------------------------ #
     def extraction(self, text: str, *, fields: dict | None = None, title: str = "",
-                   language: str | None = None) -> None:
+                   language: str | None = None, use_cases: list[str] | None = None) -> None:
         ex = IdeateExtraction(fields=fields or {}, title=title)
         # set after construction so a missing dataclass field fails in the service under
         # test, not in this fixture
         ex.language = language
+        ex.use_cases = list(use_cases or [])
         self.extractions[text] = ex
 
     def idea_message(self, text: str = MSG, *, extra_fields: dict | None = None,
-                     language: str | None = None) -> str:
+                     language: str | None = None, use_cases: list[str] | None = None) -> str:
         fields = {"problem": PROBLEM, **(extra_fields or {})}
-        self.extraction(text, fields=fields, title=TITLE, language=language)
+        self.extraction(text, fields=fields, title=TITLE, language=language, use_cases=use_cases)
         return text
 
     def created(self, *, idea_id: str | None = None) -> str:
@@ -189,11 +190,12 @@ class Env:
 
     def pointer(self, similar: list[dict], *, message: str = MSG, age: timedelta = timedelta(0),
                 is_test: bool = False, language: str | None = None,
-                intake_ref: str | None = None) -> dict:
+                intake_ref: str | None = None, fields: dict | None = None,
+                use_cases: list[str] | None = None) -> dict:
         held = {
             "status": "similar_offered",
             "message_text": message,
-            "fields": {"problem": PROBLEM},
+            "fields": fields if fields is not None else {"problem": PROBLEM},
             "title": TITLE,
             "similar": [
                 {k: s_[k] for k in ("idea_id", "idea_number", "title")} for s_ in similar
@@ -204,6 +206,8 @@ class Env:
         }
         if language is not None:
             held["language"] = language
+        if use_cases is not None:
+            held["use_cases"] = use_cases
         return {"ideation": held}
 
     # ---- act ------------------------------------------------------------ #
@@ -385,7 +389,8 @@ def test_c_no_similar_creates_one_shot(env):
     for old in ("capture_now", "fields", "message_text", "crm_user_id", "submitter_contact_id"):
         assert old not in p
     # optional fields are sent only when extracted
-    for opt in ("proposed_solution", "impact", "department"):
+    for opt in ("desired_outcome", "current_workaround", "use_cases",
+                "proposed_solution", "impact", "department"):
         assert opt not in p
 
     sp = env.similar_calls[0]
@@ -407,19 +412,82 @@ def test_c_no_similar_creates_one_shot(env):
     assert out["link"] != SS_PUBLIC_LINK
 
 
-def test_c_extracted_optional_fields_are_sent_flat(env):
+OUTCOME = "Customers can check their delivery status themselves"
+WORKAROUND = "Staff WhatsApp the logistics team and wait for a reply"
+USE_CASES = ["A dealer checks whether his PO has shipped", "A project customer checks the site delivery date"]
+
+
+def test_c_extracted_new_fields_are_sent_flat(env):
+    """AC-10: desired_outcome / current_workaround as strings, use_cases as a list."""
+    env.ready()
+    env.idea_message(
+        extra_fields={"desired_outcome": OUTCOME, "current_workaround": WORKAROUND},
+        use_cases=USE_CASES,
+    )
+    env.created()
+    env.turn(MSG)
+    p = env.create_calls[0]
+    assert p["problem"] == PROBLEM
+    assert p["desired_outcome"] == OUTCOME
+    assert p["current_workaround"] == WORKAROUND
+    assert p["use_cases"] == USE_CASES
+    assert isinstance(p["use_cases"], list)
+
+
+def test_c_empty_new_fields_are_left_out_of_the_payload(env):
+    """AC-10: each only when non-empty (blank strings and an empty list are not sent)."""
+    env.ready()
+    env.idea_message(extra_fields={"desired_outcome": "   ", "current_workaround": ""}, use_cases=[])
+    env.created()
+    env.turn(MSG)
+    p = env.create_calls[0]
+    assert p["problem"] == PROBLEM
+    for key in ("desired_outcome", "current_workaround", "use_cases"):
+        assert key not in p
+
+
+def test_c_only_use_cases_sent_when_only_use_cases_given(env):
+    env.ready()
+    env.idea_message(use_cases=USE_CASES[:1])
+    env.created()
+    env.turn(MSG)
+    p = env.create_calls[0]
+    assert p["use_cases"] == USE_CASES[:1]
+    assert "desired_outcome" not in p and "current_workaround" not in p
+
+
+def test_c_dropped_fields_are_never_sent_even_when_extraction_holds_them(env):
+    """AC-11."""
     env.ready()
     env.idea_message(extra_fields={
         "proposed_solution": "Show promo price in red",
         "impact": "Fewer repeat questions",
         "department": "Sales",
+        "desired_outcome": OUTCOME,
     })
     env.created()
     env.turn(MSG)
     p = env.create_calls[0]
-    assert p["proposed_solution"] == "Show promo price in red"
-    assert p["impact"] == "Fewer repeat questions"
-    assert p["department"] == "Sales"
+    for dropped in ("proposed_solution", "impact", "department"):
+        assert dropped not in p
+    assert p["desired_outcome"] == OUTCOME
+
+
+def test_c_all_new_fields_complete_against_an_ss_that_ignores_unknown_keys(env):
+    """AC-12: today's ss ignores unknown keys; the idea is created, reply is complete and
+    the raw transcript still carries the user's whole message."""
+    env.ready()
+    env.idea_message(
+        extra_fields={"desired_outcome": OUTCOME, "current_workaround": WORKAROUND},
+        use_cases=USE_CASES,
+    )
+    idea_id = env.created()
+    out = env.turn(MSG)
+    assert out["status"] == "complete"
+    assert out["link"] == f"{CRM}/ideas/{idea_id}"
+    assert len(env.create_calls) == 1
+    assert env.create_calls[0]["raw_transcript"] == MSG
+    assert env.create_calls[0]["use_cases"] == USE_CASES
 
 
 def test_c_fresh_creates_get_distinct_intake_refs(env):
@@ -431,39 +499,39 @@ def test_c_fresh_creates_get_distinct_intake_refs(env):
     assert env.create_calls[0]["intake_ref"] != env.create_calls[1]["intake_ref"]
 
 
+def _bullets(reply: str) -> list[str]:
+    return [ln[2:] for ln in reply.splitlines() if ln.startswith("- ")]
+
+
 def test_c_missing_list_is_computed_from_what_was_sent(env):
     env.ready()
-    env.idea_message(extra_fields={"proposed_solution": "Show promo price in red"})
+    env.idea_message(extra_fields={"desired_outcome": OUTCOME})
     env.created()
     reply = env.turn(MSG)["reply_text"]
-    assert "Proposed solution" not in reply
-    assert "Impact" in reply
-    assert "Department" in reply
-    assert "Photos or files" in reply
+    assert _bullets(reply) == ["Use cases", "Current workaround", "Photos or files"]
 
 
 def test_c_all_fields_sent_still_lists_photos(env):
     env.ready()
-    env.idea_message(extra_fields={
-        "proposed_solution": "Show promo price in red",
-        "impact": "Fewer repeat questions",
-        "department": "Sales",
-    })
+    env.idea_message(
+        extra_fields={"desired_outcome": OUTCOME, "current_workaround": WORKAROUND},
+        use_cases=USE_CASES,
+    )
     env.created()
     reply = env.turn(MSG)["reply_text"]
-    assert "Proposed solution" not in reply
-    assert "Impact" not in reply
-    assert "Department" not in reply
-    assert "Photos or files" in reply
+    assert _bullets(reply) == ["Photos or files"]
+    for gone in ("Desired outcome", "Use cases", "Current workaround"):
+        assert gone not in reply
 
 
-def test_c_only_problem_sent_lists_all_three_plus_photos(env):
+def test_c_only_problem_sent_lists_all_three_plus_photos_one_per_line(env):
     env.ready()
     env.idea_message()
     env.created()
     reply = env.turn(MSG)["reply_text"]
-    for name in ("Proposed solution", "Impact", "Department", "Photos or files"):
-        assert name in reply
+    assert _bullets(reply) == ["Desired outcome", "Use cases", "Current workaround", "Photos or files"]
+    for old in ("Proposed solution", "Impact", "Department"):
+        assert old not in reply
 
 
 # --------------------------------------------------------------------------- #
@@ -494,6 +562,20 @@ def test_d_similar_found_offers_numbered_list_and_holds(env):
     assert held["title"] == TITLE
     uuid.UUID(held["intake_ref"])
     assert env.persisted()["ideation"]["status"] == "similar_offered"
+
+
+def test_d_hold_stores_new_fields_and_use_cases_on_the_pointer(env):
+    """AC-13."""
+    env.ready()
+    env.idea_message(extra_fields={"desired_outcome": OUTCOME, "current_workaround": WORKAROUND},
+                     use_cases=USE_CASES)
+    env.sim(2)
+    out = env.turn(MSG)
+    held = out["session_vars"]["ideation"]
+    assert held["use_cases"] == USE_CASES
+    assert held["fields"]["desired_outcome"] == OUTCOME
+    assert held["fields"]["current_workaround"] == WORKAROUND
+    assert env.persisted()["ideation"]["use_cases"] == USE_CASES
 
 
 def test_d_is_test_turn_is_not_persisted(env):
@@ -578,6 +660,37 @@ def test_f_new_creates_from_held_message(env, reply):
     assert out["status"] == "complete"
     assert f"{CRM}/ideas/{idea_id}" in out["reply_text"]
     assert "ideation" not in out["session_vars"]
+
+
+def test_f_new_recreates_the_held_new_fields(env):
+    """AC-13: NEW builds the same payload fields from the pointer."""
+    env.ready()
+    held_msg = "customers keep asking where their delivery is"
+    similar = [{"idea_id": _uid(), "idea_number": "IDEA-0151", "title": "Held similar"}]
+    sv = env.pointer(
+        similar, message=held_msg,
+        fields={"problem": PROBLEM, "desired_outcome": OUTCOME, "current_workaround": WORKAROUND},
+        use_cases=USE_CASES,
+    )
+    env.created()
+    out = env.turn("NEW", session_vars_in=sv)
+    assert out["status"] == "complete"
+    p = env.create_calls[0]
+    assert p["desired_outcome"] == OUTCOME
+    assert p["current_workaround"] == WORKAROUND
+    assert p["use_cases"] == USE_CASES
+    assert p["raw_transcript"] == held_msg
+    facts = _only_render(env, "complete")
+    assert facts["missing"] == ["Photos or files"]
+
+
+def test_f_new_with_a_pointer_without_use_cases_sends_none(env):
+    env.ready()
+    held_msg = "customers keep asking where their delivery is"
+    similar = [{"idea_id": _uid(), "idea_number": "IDEA-0151", "title": "Held similar"}]
+    env.created()
+    env.turn("NEW", session_vars_in=env.pointer(similar, message=held_msg))
+    assert "use_cases" not in env.create_calls[0]
 
 
 def test_c4a_similar_text_is_stripped_raw_message_not_extracted_problem(env):
@@ -812,7 +925,7 @@ def test_n_ask_idea_renders_once(env):
 
 def test_n_complete_facts_exact(env):
     env.ready()
-    env.idea_message(extra_fields={"impact": "Fewer repeat questions"})
+    env.idea_message(extra_fields={"current_workaround": WORKAROUND})
     idea_id = env.created()
     out = env.turn(MSG)
     facts = _only_render(env, "complete")
@@ -820,7 +933,7 @@ def test_n_complete_facts_exact(env):
     assert facts["idea_number"] == "IDEA-0184"
     assert facts["title"] == TITLE
     assert facts["link"] == f"{CRM}/ideas/{idea_id}"
-    assert facts["missing"] == ["Proposed solution", "Department", "Photos or files"]
+    assert facts["missing"] == ["Desired outcome", "Use cases", "Photos or files"]
     assert out["link"] == facts["link"]
 
 
@@ -830,7 +943,17 @@ def test_n_complete_missing_order_when_nothing_captured(env):
     env.created()
     env.turn(MSG)
     facts = _only_render(env, "complete")
-    assert facts["missing"] == ["Proposed solution", "Impact", "Department", "Photos or files"]
+    assert facts["missing"] == ["Desired outcome", "Use cases", "Current workaround", "Photos or files"]
+
+
+def test_n_complete_missing_skips_only_what_was_sent(env):
+    """AC-14: use cases sent, the others missing, order kept."""
+    env.ready()
+    env.idea_message(use_cases=USE_CASES[:1])
+    env.created()
+    env.turn(MSG)
+    facts = _only_render(env, "complete")
+    assert facts["missing"] == ["Desired outcome", "Current workaround", "Photos or files"]
 
 
 def test_n_similar_offered_facts_exact(env):
@@ -982,8 +1105,7 @@ def test_o_real_ms_complete_reply_keeps_exact_facts(env):
     assert "IDEA-0184" in reply
     assert TITLE in reply
     assert f"{CRM}/ideas/{idea_id}" in reply
-    for name in ("Proposed solution", "Impact", "Department", "Photos or files"):
-        assert name in reply
+    assert _bullets(reply) == ["Desired outcome", "Use cases", "Current workaround", "Photos or files"]
 
 
 # --------------------------------------------------------------------------- #
