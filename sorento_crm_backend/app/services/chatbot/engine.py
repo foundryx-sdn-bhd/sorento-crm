@@ -5320,6 +5320,15 @@ def _run_stages_body(  # noqa: PLR0915
         # Every seam below that skips the resolver, the bridge, the fetch and the ask
         # for a refused sales report skips them for a refused domain too.
         grant_refused = sales_report_grant_refused or bool(domain_refusal_text)
+        if grant_refused:
+            # A refused ask names a subject nothing looked up. Kept on the focus, it rode
+            # into the next fetch turn as an unsettled carry (`with_carried_entities`),
+            # was resolved there, and a low stock refusal printed a stock miss and an
+            # incoming block for it (PARSER-PER-AUDIENCE crew audit). The refused turn
+            # leaves the subject the conversation had before it.
+            for attr in turn_state.KIND_FIELD_MAP.values():
+                setattr(state_out.focus, attr, copy.deepcopy(getattr(state_in.focus, attr)))
+            state_out.focus.extra = copy.deepcopy(state_in.focus.extra)
 
         top_selling_updates: dict[str, Any] = {}
         customer_scope_refused = False
