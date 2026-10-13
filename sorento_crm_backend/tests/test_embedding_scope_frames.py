@@ -213,6 +213,15 @@ def _search_ids(db, world, source_type=None) -> set[str]:
     return {chunk.source_id for chunk, _doc, _sim in rows}
 
 
+def _require_test_database(db) -> None:
+    """Skip unless ``db`` is a *_ci test database. For tests that run a GLOBAL function
+    (the orphan purge, the frame backfill), which touch every row in the database, not
+    only the rows the test seeded."""
+    name = db.execute(text("SELECT current_database()")).scalar()
+    if not str(name).endswith("_ci"):
+        pytest.skip(f"refused: {name} is not a *_ci test database; this test runs a global sweep")
+
+
 class _NamedDb:
     """Stands in for a session on a database called ``name`` (current_database() only)."""
 
@@ -476,3 +485,38 @@ def test_shared_certificate_embeds_no_company_owned_codes(db, world):
     assert f"ZZSFB{s}" not in src["body_text"]
     chunks = embedding_worker._chunks_for_source("certificate", src)
     assert not any(f"ZZSFB{s}" in c or f"ZZSFA{s}" in c for c in chunks)
+
+
+def _purge_script(db, monkeypatch):
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "purge_orphan_embeddings.py"
+    spec = importlib.util.spec_from_file_location("purge_orphan_embeddings_script", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "SessionLocal", lambda: _SessionProxy(db))
+    return module
+
+
+def test_purge_script_apply_needs_the_dry_run_total(db, world, monkeypatch, capsys):
+    """Prod safety: `--apply` deletes only when `--expect` equals the count a dry run just
+    reported, so an operator cannot apply without having read one. A mismatch deletes
+    nothing and exits 2."""
+    _require_test_database(db)
+    orphan = str(uuid.uuid4())
+    _seed_chunk(db, "certificate", orphan, None, world["vec"])
+    script = _purge_script(db, monkeypatch)
+
+    assert script.main([]) == 0  # dry run
+    total = int(capsys.readouterr().out.strip().splitlines()[-1].split()[2])
+    assert total >= 1
+
+    assert script.main(["--apply"]) == 2  # no --expect
+    assert script.main(["--apply", "--expect", str(total + 1)]) == 2  # stale count
+    assert _doc(db, "certificate", orphan) is not None
+
+    assert script.main(["--apply", "--expect", str(total), "--batch-size", "1"]) == 0
+    db.expire_all()
+    assert _doc(db, "certificate", orphan) is None
+    assert f"deleted: {total} document(s)" in capsys.readouterr().out
