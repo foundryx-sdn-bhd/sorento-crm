@@ -22,7 +22,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from sqlalchemy.orm import Session
@@ -183,6 +183,36 @@ def _held_pointer(ideation_state: dict[str, Any], is_test: bool) -> dict[str, An
     return ideation_state
 
 
+def _draft_pointer(ideation_state: dict[str, Any], is_test: bool) -> dict[str, Any] | None:
+    """The held draft (v2 `update_held`) an ask-back reply may merge into: shaped right, same
+    `is_test`, under 24h. Same read rules as `_held_pointer`."""
+    if not isinstance(ideation_state, dict) or ideation_state.get("status") != "draft_held":
+        return None
+    if bool(ideation_state.get("is_test")) != bool(is_test):
+        return None
+    if not isinstance(ideation_state.get("fields"), dict) or not ideation_state.get("message_text"):
+        return None
+    updated = _parse_iso(ideation_state.get("updated_at"))
+    if updated is None or datetime.now(timezone.utc) - updated >= _HOLD_MAX_AGE:
+        return None
+    return ideation_state
+
+
+def _captured_pointer(ideation_state: Any, is_test: bool) -> dict[str, Any] | None:
+    """The `captured` pointer (the idea this contact just saved or picked): shaped right, same
+    `is_test`, under 24h."""
+    if not isinstance(ideation_state, dict) or ideation_state.get("status") != "captured":
+        return None
+    if bool(ideation_state.get("is_test")) != bool(is_test):
+        return None
+    if not _valid_uuid(ideation_state.get("idea_id")):
+        return None
+    updated = _parse_iso(ideation_state.get("updated_at"))
+    if updated is None or datetime.now(timezone.utc) - updated >= _HOLD_MAX_AGE:
+        return None
+    return ideation_state
+
+
 def _access_user(db: Session, respond_io_id: str) -> User | None:
     """The active, untrashed CRM user linked to this contact who holds the Ideas permission."""
     user = (
@@ -213,10 +243,17 @@ def handle_capture_turn(
     session_vars_in: dict[str, Any] | None = None,
     is_test: bool = False,
     ask_reply: bool = False,
+    choice_in: int | Literal["new"] | None = None,
+    update_held: bool = False,
 ) -> dict[str, Any]:
     """Handle one ideate turn. Returns `{status, reply_text, link?, session_vars, offered_media}`;
     `session_vars` is the full updated blob. A test turn never persists it. `language` is the one
-    the reply was written in. `ask_reply` marks an answer to the ask-back."""
+    the reply was written in. `ask_reply` marks an answer to the ask-back.
+
+    Parser-v2 kwargs (PLAN-pv2-ideas.md A), both off by default and then every path is v1:
+    `choice_in` is a parser-resolved pick of the held similar-list (1..N or "new") that replaces
+    the digit/NEW text check; `update_held` keeps a draft_held pointer across the ask-back (the
+    reply merges into it) and leaves a `captured` pointer after a save or a pick."""
     contact = _get_contact_row(db, respond_io_id)
     session_vars = contact.session_vars
     if is_test:
@@ -232,6 +269,7 @@ def handle_capture_turn(
         # A live turn trusts only what this service persisted, in the contact's own row.
         ideation_state = session_vars.get("ideation") or {}
     held = _held_pointer(ideation_state, is_test)
+    draft = _draft_pointer(ideation_state, is_test) if (update_held and ask_reply) else None
     text_in = (message_text or "").strip()
 
     def finish(
@@ -269,7 +307,14 @@ def handle_capture_turn(
 
     # A bare number or NEW answers the held list; neither needs the extractor.
     choice: str | int | None = None
-    if held is not None:
+    if held is not None and choice_in is not None:
+        # Resolved by the parser: exact int in range or exactly "new"; anything else is no choice.
+        if isinstance(choice_in, int) and not isinstance(choice_in, bool):
+            if 1 <= choice_in <= len(held["similar"]):
+                choice = choice_in
+        elif choice_in == "new":
+            choice = "new"
+    elif held is not None:
         token = text_in.strip(_EDGE)
         if token.isdigit() and 1 <= int(token) <= len(held["similar"]):
             choice = int(token)
@@ -294,6 +339,18 @@ def handle_capture_turn(
     if user is None:
         return finish("no_access", "no_access", {}, language)
 
+    def captured(idea_id: Any, idea_number: Any, idea_title: Any) -> dict[str, Any] | None:
+        if not update_held:
+            return None
+        return {
+            "status": "captured",
+            "idea_id": _valid_uuid(idea_id),
+            "idea_number": idea_number,
+            "title": idea_title,
+            "updated_at": _now_iso(),
+            "is_test": bool(is_test),
+        }
+
     if isinstance(choice, int):
         idea = held["similar"][choice - 1]
         facts = {
@@ -301,7 +358,10 @@ def handle_capture_turn(
             "title": idea.get("title"),
             "link": _idea_link(idea.get("idea_id")),
         }
-        return finish("similar_picked", "similar_picked", facts, language)
+        return finish(
+            "similar_picked", "similar_picked", facts, language,
+            pointer=captured(idea.get("idea_id"), idea.get("idea_number"), idea.get("title")),
+        )
 
     if choice == "new":
         # Create from the HELD message: its fields, title and intake_ref ride on the pointer.
@@ -320,17 +380,33 @@ def handle_capture_turn(
         title = normalise_title(extraction.title)
         # An intent-only message ("I have an idea") carries no idea whatever the extractor
         # wrote into problem, so problem is not counted when has_idea is False.
-        checked = (
-            {k: v for k, v in fields.items() if k != "problem"}
-            if extraction.has_idea is False
-            else fields
-        )
-        if _missing_required(checked):
+        # Stripping problem from `fields` itself (not a copy) is safe only while problem is a
+        # required field: the turn then always stops at the ask below and never sends `fields`.
+        if extraction.has_idea is False:
+            fields = {k: v for k, v in fields.items() if k != "problem"}
+        if draft is not None:
+            # The reply to the ask-back completes the HELD draft: one idea, never two.
+            fields = {**draft["fields"], **fields}
+            title = title or str(draft.get("title") or "")
+            source_text = f"{draft['message_text']}\n{text_in}"
+        if _missing_required(fields):
             if ask_reply:
                 # The user answered the ask-back and still gave no idea: end the ask with a
                 # statement, never a second identical question.
                 return finish("ask_idea_gave_up", "ask_idea_gave_up", {}, language)
-            return finish("ask_idea", "ask_idea", {}, language)
+            hold: dict[str, Any] | None = None
+            if update_held:
+                hold = {
+                    "status": "draft_held",
+                    "message_text": text_in,
+                    "fields": fields,
+                    "title": title,
+                    "updated_at": _now_iso(),
+                    "is_test": bool(is_test),
+                }
+                if extraction.language in FALLBACK_LANGUAGES:
+                    hold["language"] = extraction.language
+            return finish("ask_idea", "ask_idea", {}, language, pointer=hold)
         # Minted once the create is decided; a list offer keeps it so NEW (even retried after
         # an ss failure) lands on the same idea.
         intake_ref = str(uuid.uuid4())
@@ -341,7 +417,7 @@ def handle_capture_turn(
                 config.api_key,
                 {
                     "product_id": config.product_id,
-                    "text": text_in,
+                    "text": source_text,
                     "submitter_crm_user_id": user.id,
                     "submitter_phone": contact.phone_number,
                     "is_test": bool(is_test),
@@ -369,7 +445,7 @@ def handle_capture_turn(
             }
             pointer: dict[str, Any] = {
                 "status": "similar_offered",
-                "message_text": text_in,
+                "message_text": source_text,
                 "fields": fields,
                 "title": title,
                 "similar": shown,
@@ -415,4 +491,7 @@ def handle_capture_turn(
         "link": link,
         "missing": _missing_list(payload),
     }
-    return finish("complete", "complete", facts, language, link=link)
+    return finish(
+        "complete", "complete", facts, language, link=link,
+        pointer=captured(result.get("idea_id"), result.get("idea_number"), facts["title"]),
+    )
