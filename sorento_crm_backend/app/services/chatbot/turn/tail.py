@@ -85,6 +85,9 @@ def session_payload(state: State, answer: Any, ctx: Any) -> dict[str, Any]:
         "access_levels": getattr(ctx, "access_levels", []) or [],
         "contains_flyer": bool(getattr(ctx, "contains_flyer", False)),
         "reply_language": getattr(ctx, "reply_language", None),
+        # PV2 (CONTRACT-PV2-13oct.md section 3): a v2 turn's ConversationState. Absent on
+        # a v1 turn, so v1's written key set is byte-identical to before.
+        **({"pv2": ctx.pv2} if getattr(ctx, "pv2", None) is not None else {}),
     }
 
 

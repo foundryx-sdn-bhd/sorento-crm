@@ -20,7 +20,9 @@ from app.services.chatbot.turn.pending import OFFER_KINDS, Pending, from_wire
 from app.services.chatbot.turn.state import KIND_FIELD_MAP
 
 # `reply_language` is the sixth (CHAT-LANGUAGE); the name stays for the callers.
-FIVE_KEYS = ("focus", "open_question", "ideation", "access_levels", "contains_flyer", "reply_language")
+# `pv2` is the seventh (CONTRACT-PV2-13oct.md section 3): the parser v2 ConversationState,
+# written only by a v2 turn (`pv2/turn.py`); a v1 turn reads it as None and never writes it.
+FIVE_KEYS = ("focus", "open_question", "ideation", "access_levels", "contains_flyer", "reply_language", "pv2")
 
 #: The pre-rearch marker kinds (`contracts.PENDING_KINDS`), by the name the turn package
 #: gives the SAME question (`turn/pending.PENDING_KINDS`). n8n's outer loop still writes
