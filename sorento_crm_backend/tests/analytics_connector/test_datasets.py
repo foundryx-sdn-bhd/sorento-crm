@@ -28,6 +28,11 @@ from tests.analytics_connector._helpers import (
     tool_call_rows,
 )
 
+# `serial_ddl`: these tests run CREATE OR REPLACE VIEW on the SHARED analytics_connector schema
+# (ensure_views / ensure_cost_views) or read those views, and two xdist workers doing it at once
+# deadlock. The module leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+pytestmark = pytest.mark.serial_ddl
+
 T0 = datetime(2026, 9, 1, 2, 0, 0)  # naive UTC = 10:00 in Malaysia
 
 
@@ -478,3 +483,18 @@ def test_every_chat_call_is_audited(chat):
     assert "grant_id" in row.new_values and "ms" in row.new_values
     assert row.auth_method == "connector"
     assert row.source == "connector"
+
+
+@pytest.mark.parametrize("dataset", ["turn_costs", "llm_calls"])
+def test_cost_datasets_expose_cache_unknown_and_it_is_selectable(chat, dataset):
+    from app.services.analytics_connector.views import ensure_cost_views
+
+    db, c, _seed_, _u = chat
+    ensure_cost_views(db)
+    body = c.get(f"{BASE}/datasets/{dataset}").json()
+    cols = {col["key"]: col for col in body["columns"]}
+    assert "cache_unknown" in cols and cols["cache_unknown"]["type"] == "bool"
+    resp = c.query(dataset=dataset, columns=["id", "cache_unknown"],
+                   filters=[{"column": "cache_unknown", "op": "eq", "value": False}], limit=5)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["columns"] == ["id", "cache_unknown"]

@@ -1634,7 +1634,11 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.frontend == 'true' && github.event_name != 'pull_request' && needs.changes.outputs.lean != 'true'
     runs-on: ubuntu-latest
-    # A shard measured about 8.5 min over 29 Sep-5 Oct.
+    # A shard measured about 8.5 min over 29 Sep-5 Oct, then grew to 17.7-18.9
+    # min by 13 Oct on ONE vitest worker (shard 2 hit this cap in releases
+    # 38406697551 and 38415596343 with its suite already green). vitest.config.ts
+    # now runs one worker per core under CI; see PLAN-ci-vitest-hang-13oct.md.
+    # Not a hang guard: vitest itself exits teardownTimeout (10s) after closing.
     timeout-minutes: 20
     # The FULL vitest suite (~950 files / ~10.5k tests) on a 2-vCPU runner was
     # the single longest gate (19.5 min). Split into 4 shards that run in

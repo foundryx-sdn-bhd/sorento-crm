@@ -17,13 +17,14 @@ def backfill_cached_tokens(conn: Any) -> None:
     """Fill `cached_tokens` on chatbot parser usage rows written before the column existed.
 
     The value is the turn's `understood` stage fact (the trace has carried the parser's cache
-    hit since LLM-TEST-COST), or 0 when the trace has none. Other features' NULLs stay NULL:
-    no other writer ever reported a cache hit, and the views read NULL as 0.
+    hit since LLM-TEST-COST). A trace with no such fact stays NULL: cache use was never recorded,
+    and the cost views report that call as `cache_unknown`, not as 0 cached (CU-2). Other
+    features' NULLs stay NULL for the same reason.
     """
     conn.execute(
         text(
             "UPDATE ai_assistant_usage_logs u "
-            f"   SET cached_tokens = COALESCE({_understood_fact('cached_tokens')}, 0) "
+            f"   SET cached_tokens = {_understood_fact('cached_tokens')} "
             "  FROM chatbot.turns t "
             " WHERE u.cached_tokens IS NULL AND u.feature = 'chatbot_parser' "
             "   AND t.id::text = u.chatbot_turn_id"

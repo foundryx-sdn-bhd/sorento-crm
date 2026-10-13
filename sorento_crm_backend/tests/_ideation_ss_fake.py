@@ -61,6 +61,14 @@ class FakeSS:
         self.session_status = 200
         self.call_raises: Optional[Exception] = None
         self._reject = 0
+        #: IDEA-CRM-SIDE portal: the JSON body of every POST /portal/ideas/session/embed
+        self.portal_session_calls: list[dict[str, Any]] = []
+        #: the Authorization header of each portal session exchange (the embed token presented)
+        self.portal_session_auth: list[str] = []
+        #: every portal token handed out, in order
+        self.portal_tokens: list[str] = []
+        self.portal_session_status = 200
+        self._portal_reject = 0
 
     # -- scripting ------------------------------------------------------------
     def route(self, method: str, path: str, *, status: int = 200, json_body: Any = None,
@@ -72,6 +80,10 @@ class FakeSS:
     def reject_next(self, n: int) -> None:
         """The next ``n`` non-session calls answer 401 (an expired / revoked embed token)."""
         self._reject = n
+
+    def reject_next_portal(self, n: int) -> None:
+        """The next ``n`` non-session /portal/ calls answer 401 (an expired portal token)."""
+        self._portal_reject = n
 
     # -- boundary -------------------------------------------------------------
     def install(self, monkeypatch) -> "FakeSS":
@@ -109,6 +121,25 @@ class FakeSS:
                 200, json={"token": token, "expires_at": expires.isoformat()}, request=request
             )
 
+        if path == "/portal/ideas/session/embed" and request.method == "POST":
+            self.portal_session_calls.append(json.loads(body or b"{}"))
+            self.portal_session_auth.append(request.headers.get("authorization", ""))
+            if self.portal_session_status != 200:
+                return httpx.Response(
+                    self.portal_session_status, json={"error": {"message": "nope"}}, request=request
+                )
+            token = f"ZZTPORTALTOKEN{len(self.portal_tokens) + 1}xq"
+            self.portal_tokens.append(token)
+            return httpx.Response(
+                200,
+                json={
+                    "token": token,
+                    "principal": {"kind": "staff", "name": "Alice Tan", "role": "staff",
+                                  "productId": "p-1", "canManage": False},
+                },
+                request=request,
+            )
+
         parsed_json = None
         if body and "application/json" in request.headers.get("content-type", ""):
             parsed_json = json.loads(body)
@@ -129,6 +160,12 @@ class FakeSS:
             self._reject -= 1
             return httpx.Response(
                 401, json={"error": {"code": "invalid_token", "message": "Invalid embed token."}}, request=request
+            )
+
+        if path.startswith("/portal/") and self._portal_reject > 0:
+            self._portal_reject -= 1
+            return httpx.Response(
+                401, json={"error": {"code": "invalid_token", "message": "Invalid portal token."}}, request=request
             )
 
         spec = self.routes.get((request.method, path))

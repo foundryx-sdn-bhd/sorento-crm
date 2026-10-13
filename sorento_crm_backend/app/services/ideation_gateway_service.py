@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import httpx
 from fastapi import Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -39,6 +40,9 @@ UNREACHABLE = "The Ideas workspace isn't reachable right now."
 UNAVAILABLE = "The Ideas workspace isn't available on this deployment."
 _REFRESH_MARGIN_SECONDS = 30
 _DEFAULT_TOKEN_TTL_SECONDS = 300
+_PORTAL_TOKEN_TTL_SECONDS = 2 * 60 * 60
+_PORTAL_REFRESH_MARGIN_SECONDS = 60
+_PORTAL_SESSION_PATH = "/portal/ideas/session/embed"
 
 # Keyed by (user id, connection id, ss base URL): a token is only valid for the connection it was
 # minted on, so a changed workspace config can never reuse an old one (AC-A-12). The entry also
@@ -46,17 +50,24 @@ _DEFAULT_TOKEN_TTL_SECONDS = 300
 # changed link or a changed manage grant never reuses an old token, and flipping back re-mints.
 _Claims = tuple[str, bool]
 _cache: dict[tuple[str, str, str], tuple[str, float, _Claims]] = {}
+# The portal token (IDEA-CRM-SIDE) is exchanged from the embed token and cached alongside it under
+# the same key and claims.
+_portal_cache: dict[tuple[str, str, str], tuple[str, float, _Claims]] = {}
 _cache_lock = threading.Lock()
 
 
 def clear_token_cache() -> None:
     with _cache_lock:
         _cache.clear()
+        _portal_cache.clear()
 
 
-def _drop(key: tuple[str, str, str]) -> None:
+def _drop(key: tuple[str, str, str], *, portal: bool = False) -> None:
+    """Forget the entry; a portal token is derived from the embed token, so both go together."""
     with _cache_lock:
         _cache.pop(key, None)
+        if portal:
+            _portal_cache.pop(key, None)
 
 
 def ss_path(*segments: str) -> str:
@@ -73,7 +84,7 @@ def require_uuid(value: object, field: str = "id") -> str:
         raise AppException(422, f"{field} must be an id.", code="VALIDATION_ERROR")
 
 
-def _expiry_epoch(expires_at: Any) -> float:
+def _expiry_epoch(expires_at: Any, default_ttl: int = _DEFAULT_TOKEN_TTL_SECONDS) -> float:
     """The token's expiry as epoch seconds; a missing or unreadable value counts as the default TTL."""
     if isinstance(expires_at, str):
         try:
@@ -83,7 +94,7 @@ def _expiry_epoch(expires_at: Any) -> float:
             return parsed.timestamp()
         except ValueError:
             pass
-    return time.time() + _DEFAULT_TOKEN_TTL_SECONDS
+    return time.time() + default_ttl
 
 
 def _cache_key(user: dict[str, Any], config: Any) -> tuple[str, str, str]:
@@ -92,6 +103,13 @@ def _cache_key(user: dict[str, Any], config: Any) -> tuple[str, str, str]:
 
 def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = False) -> str:
     """The user's embed token, from the cache while more than 30 s of it is left."""
+    return get_embed_token_with_claims(db, user, force_refresh=force_refresh)[0]
+
+
+def get_embed_token_with_claims(
+    db: Session, user: dict[str, Any], *, force_refresh: bool = False
+) -> tuple[str, _Claims]:
+    """The embed token plus the claims it was minted with (a cache hit returns its stored claims)."""
     config = _resolve_embed_config(db)
     if not config.is_ready:
         raise IdeationEmbedNotConfigured("ideation embed not configured for this deployment")
@@ -105,7 +123,7 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
         with _cache_lock:
             hit = _cache.get(key)
         if hit and hit[2] == claims and hit[1] - _REFRESH_MARGIN_SECONDS > time.time():
-            return hit[0]
+            return hit[0], hit[2]
 
     assertion = mint_embed_assertion(
         user,
@@ -122,6 +140,36 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
         raise IdeationEmbedUpstreamError("embed session response missing token")
     with _cache_lock:
         _cache[key] = (token, _expiry_epoch(data.get("expires_at")), claims)
+    return token, claims
+
+
+def get_portal_token(db: Session, user: dict[str, Any], *, force_refresh: bool = False) -> str:
+    """The user's ss portal token, exchanged from their embed token and cached until 60 s before
+    it expires (2 h unless ss says otherwise)."""
+    config = _resolve_embed_config(db)
+    if not config.is_ready:
+        raise IdeationEmbedNotConfigured("ideation embed not configured for this deployment")
+    assert config.base_url
+
+    key = _cache_key(user, config)
+    claims: _Claims = (user_phone(db, user) or "", user_ideas_manage(db, user))
+    if not force_refresh:
+        with _cache_lock:
+            hit = _portal_cache.get(key)
+        if hit and hit[2] == claims and hit[1] - _PORTAL_REFRESH_MARGIN_SECONDS > time.time():
+            return hit[0]
+
+    # The portal token carries exactly the claims of the embed token it is exchanged from.
+    embed_token, claims = get_embed_token_with_claims(db, user, force_refresh=force_refresh)
+    data = post_embed_session(
+        config.base_url, {"token": embed_token}, path=_PORTAL_SESSION_PATH
+    )
+    token = data.get("token")
+    if not token:
+        raise IdeationEmbedUpstreamError("portal session response missing token")
+    expiry = _expiry_epoch(data.get("expires_at"), _PORTAL_TOKEN_TTL_SECONDS)
+    with _cache_lock:
+        _portal_cache[key] = (token, expiry, claims)
     return token
 
 
@@ -159,30 +207,17 @@ def _send(base_url: str, method: str, path: str, token: str, **kwargs: Any) -> h
         )
 
 
-def call_ss(
+def _call(
     db: Session,
     user: dict[str, Any],
     method: str,
     path: str,
+    kwargs: dict[str, Any],
     *,
-    params: Optional[dict[str, Any]] = None,
-    json: Any = None,
-    files: Any = None,
+    portal: bool,
 ) -> httpx.Response:
-    """Forward one call to the ss embed API as `user`; returns ss's 2xx response.
-
-    An ss 401 drops the cached token, re-mints once and retries once (a second 401 is a 502). An
-    ss 4xx otherwise passes through with ss's status and message, an unreachable or failing ss is a
-    502, and a deployment without the connection configured is a 404.
-    """
-    kwargs: dict[str, Any] = {}
-    if params:
-        kwargs["params"] = params
-    if json is not None:
-        kwargs["json"] = json
-    if files is not None:
-        kwargs["files"] = files
-
+    """The shared send loop of `call_ss` and `call_portal`."""
+    get_token = get_portal_token if portal else get_embed_token
     try:
         config = _resolve_embed_config(db)
         if not config.is_ready:
@@ -190,11 +225,11 @@ def call_ss(
         assert config.base_url
         resp: httpx.Response | None = None
         for attempt in (0, 1):
-            token = get_embed_token(db, user, force_refresh=attempt == 1)
+            token = get_token(db, user, force_refresh=attempt == 1)
             resp = _send(config.base_url, method, path, token, **kwargs)
             if resp.status_code != 401:
                 break
-            _drop(_cache_key(user, config))
+            _drop(_cache_key(user, config), portal=portal)
         assert resp is not None
     except IdeationEmbedNotConfigured:
         raise AppException(404, UNAVAILABLE, code="IDEATION_NOT_CONFIGURED")
@@ -216,6 +251,51 @@ def call_ss(
     return resp
 
 
+def _kwargs(params: Optional[dict[str, Any]], json: Any, files: Any) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if params:
+        kwargs["params"] = params
+    if json is not None:
+        kwargs["json"] = json
+    if files is not None:
+        kwargs["files"] = files
+    return kwargs
+
+
+def call_ss(
+    db: Session,
+    user: dict[str, Any],
+    method: str,
+    path: str,
+    *,
+    params: Optional[dict[str, Any]] = None,
+    json: Any = None,
+    files: Any = None,
+) -> httpx.Response:
+    """Forward one call to the ss embed API as `user`; returns ss's 2xx response.
+
+    An ss 401 drops the cached token, re-mints once and retries once (a second 401 is a 502). An
+    ss 4xx otherwise passes through with ss's status and message, an unreachable or failing ss is a
+    502, and a deployment without the connection configured is a 404.
+    """
+    return _call(db, user, method, path, _kwargs(params, json, files), portal=False)
+
+
+def call_portal(
+    db: Session,
+    user: dict[str, Any],
+    method: str,
+    path: str,
+    *,
+    params: Optional[Any] = None,
+    json: Any = None,
+) -> httpx.Response:
+    """Forward one call to the ss portal API (`/portal/ideas/*`) as `user`, with the portal token
+    exchanged from their embed token. A portal 401 drops BOTH cached tokens, re-exchanges once and
+    retries once; every other outcome maps exactly as `call_ss`."""
+    return _call(db, user, method, path, _kwargs(params, json, None), portal=True)
+
+
 def relay(resp: httpx.Response) -> Response:
     """ss's success answer as the CRM's: status and body unchanged. Only the content type and an
     attachment's disposition cross over, so nothing else ss sends reaches the browser."""
@@ -231,6 +311,31 @@ def relay(resp: httpx.Response) -> Response:
         media_type=resp.headers.get("content-type", "application/json"),
         headers=headers,
     )
+
+
+STAFF_NAME = "Sorento staff"
+
+
+def relay_masked(resp: httpx.Response, keys: tuple[str, ...]) -> Response:
+    """A JSON answer with any email-shaped value under `keys` replaced by "Sorento staff", at any
+    depth (an activity row nests its comment and replies): ss stores the assertion's `name`, and
+    until it stores the display name an address must not reach the browser."""
+    try:
+        data = resp.json()
+    except ValueError:
+        raise _unreachable()
+
+    def mask(node: Any) -> Any:
+        if isinstance(node, list):
+            return [mask(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        return {
+            k: (STAFF_NAME if k in keys and isinstance(v, str) and "@" in v else mask(v))
+            for k, v in node.items()
+        }
+
+    return JSONResponse(mask(data), status_code=resp.status_code)
 
 
 def user_for_requester(db: Session, user_id: str) -> dict[str, Any]:
