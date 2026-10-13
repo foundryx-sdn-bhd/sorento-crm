@@ -94,3 +94,42 @@ def test_a_grouped_and_an_ungrouped_ledger_never_show_two_options_with_one_label
     assert len(res.options) == 2, labels
     san = next(o for o in res.options if "SANITARYWARE" in o.label)
     assert set(san.payload.get("keys") or []) == {"FSS1", "FSS2", "FSS3"}
+
+
+# ------------------------------------------------------------------ 3 grant covers every part of the turn
+
+PO_DOMAINS = ("purchase_order", "spo_allocation")
+PRODUCT = {"kind": "product", "key": None, "phrase": "SRTWC286", "op": "set", "refers_to_held": False,
+           "quantity": None, "doc_number": None}
+
+
+def _two_part(po_domain, po_first, granted):
+    asks = [_ask(domain=po_domain, entities=[PRODUCT]), _ask(domain="inventory", entities=[PRODUCT])]
+    if not po_first:
+        asks.reverse()
+    ctx = turn.TurnV2Context(
+        text=TEXT, now=NOW, raw_state=dump_state(mk_state()), profile=MemoryProfile(audience="staff"),
+        parse=lambda m, u: out(*asks), resolver=FakeResolver(SRT), load_exchanges=lambda s: [],
+        granted_reveals=frozenset(granted),
+    )
+    return turn._run(ctx)
+
+
+@pytest.mark.parametrize("po_first", [True, False], ids=["po_first", "po_last"])
+@pytest.mark.parametrize("po_domain", PO_DOMAINS)
+def test_a_po_part_anywhere_in_the_turn_is_refused_without_the_grant(po_domain, po_first):
+    r = _two_part(po_domain, po_first, [])
+    if r.verdict is None:
+        assert r.direct_reply and r.direct_reply.strip()
+        return
+    leaked = {r.verdict.get("domain_hint")} | {a.get("domain") for a in (r.verdict.get("asks") or [])}
+    assert not (leaked & set(PO_DOMAINS)), leaked
+
+
+@pytest.mark.parametrize("po_first", [True, False], ids=["po_first", "po_last"])
+@pytest.mark.parametrize("po_domain", PO_DOMAINS)
+def test_both_parts_reach_v1_with_the_grant(po_domain, po_first):
+    r = _two_part(po_domain, po_first, ["purchase_orders.placed"])
+    assert r.verdict is not None
+    domains = {a.get("domain") for a in (r.verdict.get("asks") or [])}
+    assert domains == {po_domain, "inventory"}, domains
