@@ -1364,3 +1364,126 @@ def test_resolve_model_never_hands_one_vendors_model_to_another():
 
 def test_resolve_model_without_a_config_row_uses_the_provider_default():
     assert resolve_model(None, "anthropic", None) == default_model_for("anthropic")
+
+
+# ---- PARSER-GEMINI-LITE: multi-type fields, reasoning effort, answering model ----
+
+
+def test_gemini_schema_turns_a_multi_type_field_into_any_of():
+    """`{"type": ["string","array"], "items": ...}` used to collapse to a STRING that
+    still carried `items`, and Google rejects that with a 400 - every Gemini parser call
+    failed on `profile_statements[].value`. Each concrete type becomes its own branch and
+    only the array branch keeps `items`."""
+    translated = _gemini_schema(
+        {"type": ["string", "array"], "items": {"type": "string"}, "description": "d"}
+    )
+    assert translated == {
+        "description": "d",
+        "anyOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}},
+        ],
+    }
+
+
+def test_gemini_schema_carries_null_onto_every_any_of_branch():
+    translated = _gemini_schema({"type": ["number", "string", "null"]})
+    assert translated == {
+        "anyOf": [
+            {"type": "number", "nullable": True},
+            {"type": "string", "nullable": True},
+        ]
+    }
+
+
+def test_gemini_schema_keeps_a_single_type_with_null_as_a_nullable_type():
+    """The common OpenAI-strict nullable is unchanged: no needless `anyOf`."""
+    assert _gemini_schema(
+        {"type": ["array", "null"], "maxItems": 3, "items": {"type": "string"}}
+    ) == {"type": "array", "nullable": True, "maxItems": 3, "items": {"type": "string"}}
+
+
+def test_openai_sends_reasoning_effort_only_when_asked(monkeypatch):
+    stub = _StubOpenAIClient()
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    provider = OpenAIProvider("k", default_model="gpt-5.4-mini")
+
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert "reasoning_effort" not in stub.last_kwargs
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert stub.last_kwargs["reasoning_effort"] == "low"
+
+
+def test_openai_reports_the_answering_model_and_reasoning_tokens(monkeypatch):
+    stub = _StubOpenAIClient()
+    usage = _StubUsage(100, 40)
+    usage.completion_tokens_details = types.SimpleNamespace(reasoning_tokens=32)
+    stub.chat.completions._next_usage = usage
+    original_create = stub.chat.completions.create
+
+    def create(**kwargs):
+        completion = original_create(**kwargs)
+        completion.model = "gpt-5.4-mini-2026-03-17"
+        return completion
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    result = OpenAIProvider("k", default_model="gpt-5.4-mini").chat(
+        [{"role": "user", "content": "hi"}]
+    )
+    assert result.reasoning_tokens == 32
+    assert result.model == "gpt-5.4-mini-2026-03-17"
+
+
+def test_gemini_maps_reasoning_effort_onto_the_thinking_budget(monkeypatch):
+    t = _install(monkeypatch, _GeminiTransport(_gemini_text_response()))
+    provider = GeminiProvider("k")
+
+    # Unset: the provider default this file already pins, unchanged.
+    provider.chat([{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite", max_tokens=100)
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1}
+    assert t.body["generationConfig"]["maxOutputTokens"] == 101
+
+    provider.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gemini-3.5-flash-lite",
+        max_tokens=100,
+        reasoning_effort="low",
+    )
+    budget = t.body["generationConfig"]["thinkingConfig"]["thinkingBudget"]
+    assert budget > 1
+    assert t.body["generationConfig"]["maxOutputTokens"] == 100 + budget
+
+    # "none" / "minimal" is the smallest budget the model takes (3.x refuses zero).
+    provider.chat(
+        [{"role": "user", "content": "hi"}],
+        model="gemini-3.5-flash-lite",
+        reasoning_effort="minimal",
+    )
+    assert t.body["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 1}
+
+    # A model with no thinking (2.0) still gets no thinkingConfig, whatever is asked.
+    provider.chat(
+        [{"role": "user", "content": "hi"}], model="gemini-2.0-flash", reasoning_effort="high"
+    )
+    assert "thinkingConfig" not in t.body["generationConfig"]
+
+
+def test_gemini_reports_the_answering_model_and_reasoning_tokens(monkeypatch):
+    payload = _gemini_text_response()
+    payload["usageMetadata"]["thoughtsTokenCount"] = 9
+    payload["modelVersion"] = "gemini-3.5-flash-lite-001"
+    _install(monkeypatch, _GeminiTransport(payload))
+    result = GeminiProvider("k").chat(
+        [{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite"
+    )
+    assert result.reasoning_tokens == 9
+    assert result.model == "gemini-3.5-flash-lite-001"
+
+
+def test_anthropic_accepts_reasoning_effort_and_ignores_it(monkeypatch):
+    stub = _StubAnthropicClient()
+    monkeypatch.setattr(AnthropicProvider, "_client", lambda self, **_k: stub)
+    AnthropicProvider("k").chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert "reasoning_effort" not in stub.last_kwargs
