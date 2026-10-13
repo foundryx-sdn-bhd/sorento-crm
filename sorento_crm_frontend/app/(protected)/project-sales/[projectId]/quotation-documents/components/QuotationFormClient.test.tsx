@@ -415,7 +415,7 @@ describe('QuotationFormClient create', () => {
       project({
         customer_id: 'cust-1',
         customer_name: 'Gamuda Builders Sdn Bhd',
-        customer_phone: '03-7777 1234',
+        customer_phone: '012-345 6789',
         customer_attn: 'Lim Wei Ming',
       }),
     );
@@ -424,7 +424,7 @@ describe('QuotationFormClient create', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Name')).toHaveValue('Gamuda Builders Sdn Bhd'),
     );
-    expect(screen.getByLabelText('Phone')).toHaveValue('03-7777 1234');
+    expect(screen.getByLabelText('Phone')).toHaveValue('012-345 6789');
     expect(screen.getByLabelText('Attn')).toHaveValue('Lim Wei Ming');
   });
 

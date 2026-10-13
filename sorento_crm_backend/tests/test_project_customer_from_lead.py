@@ -35,7 +35,7 @@ def test_a_project_names_its_leads_buyer_with_phone_and_main_contact(api):
         client,
         new_customer={
             "customer_name": f"zzt Gamuda Builders {uuid.uuid4().hex[:8]}",
-            "phone_number": "03-7777 1234",
+            "phone_number": "012-345 6789",
         },
     ).json()
     assert lead["customer_id"], lead
@@ -55,7 +55,7 @@ def test_a_project_names_its_leads_buyer_with_phone_and_main_contact(api):
 
     assert body["customer_id"] == lead["customer_id"]
     assert body["customer_name"].startswith("zzt Gamuda Builders")
-    assert body["customer_phone"] == "03-7777 1234"
+    assert body["customer_phone"] == "012-345 6789"
     assert body["customer_attn"] == "Lim Wei Ming"
 
 
@@ -91,7 +91,7 @@ def test_phone_and_contact_need_the_customers_view_grant(api):
         client,
         new_customer={
             "customer_name": f"zzt Gated Buyer {uuid.uuid4().hex[:8]}",
-            "phone_number": "03-1111 2222",
+            "phone_number": "+60 11-111 1111",
         },
     ).json()
     db.add(
