@@ -172,3 +172,134 @@ def test_a_line_transferred_to_cancel_so_reads_cancel(api, emails):
         (code, "10", world.own_wh.warehouse_code, "ORDER"),
         (code, "6", line_b.stock_location or "", "CANCEL"),
     ]), _lines(emails[0])
+
+
+# --------------------------------------------------------------------------- template
+
+
+def _migration(name):
+    import importlib.util
+
+    path = f"alembic/versions/{name}.py"
+    spec = importlib.util.spec_from_file_location(f"zzt_{name}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _template(db):
+    """Seed `oihr_0006`'s document (inserted on a blank schema), then convert it with
+    `oihr_0007`: the path a real database takes."""
+    from app.models.email_template import EmailTemplate
+
+    from .test_order_inquiry_handover_automation import _run_upgrade
+
+    _run_upgrade(_migration("oihr_0006_no_remark_column"), db)
+    _run_upgrade(_migration("oihr_0007_excel_remark"), db)
+    return (
+        db.query(EmailTemplate)
+        .filter(EmailTemplate.code == "order_inquiry_handover_default")
+        .one()
+    )
+
+
+def _rows(html):
+    """Every row's header or data cell texts, tags stripped, in document order."""
+    import re
+
+    if "<!--block:custom_text-->" in html:
+        from tests._email_body import authored_html
+
+        html = authored_html(html)
+    rows = []
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row_html, re.S)
+        if cells:
+            rows.append([re.sub(r"<[^>]+>", "", c).strip() for c in cells])
+    return rows
+
+
+def _context(lines):
+    return {
+        "handover": {
+            "subject_scope": "SO425879", "verbs": ["ORDER"], "headline": "ORDER, USE BRW",
+            "orders": [{"so_number": "SO425879", "customer": "KHOO SOON LEE", "project": "RESIDENSI A"}],
+            "lines": lines, "line_count": len(lines),
+            "link": "https://crm.test/project-sales/order-inquiries?query=SO425879",
+        },
+        "actor": {"name": "Aisyah", "email": "cs@example.com"},
+        "today": "13/10/2026",
+    }
+
+
+def _line(**over):
+    base = {
+        "so_date": "10/10/2026", "so_number": "SO425879", "item_code": "SRTWC8826-SC",
+        "qty": "4", "delivery_date": "15/11/2026", "customer": "KHOO SOON LEE",
+        "project": "RESIDENSI A", "location": "BRW-BB", "remark": "ORDER", "was": None,
+    }
+    base.update(over)
+    return base
+
+
+def test_the_email_reads_in_the_owners_excel_columns_with_remark():
+    from app.services.email_template_service import EmailTemplateService
+
+    from ._pg_fixture import blank_session
+
+    with blank_session() as db:
+        template = _template(db)
+        rendered = EmailTemplateService(db).render(template, _context([
+            _line(),
+            _line(item_code="SRTWCY8826", qty="2", remark="USE BRW"),
+        ]))
+    rows = _rows(rendered["body_html"])
+    assert rows[0] == [
+        "SO DATE", "S/O NO", "ITEM CODE", "QTY", "DELIVERY DATE", "PROJECT/CUSTOMER",
+        "STOCK LOCATION", "REMARK",
+    ], rows[0]
+    assert rows[1] == [
+        "10/10/2026", "SO425879", "SRTWC8826-SC", "4", "15/11/2026",
+        "KHOO SOON LEE / RESIDENSI A", "BRW-BB", "ORDER",
+    ], rows[1]
+    assert rows[2][-1] == "USE BRW"
+
+
+def test_a_cut_line_shows_qty_change_to_beside_its_remark():
+    from app.services.email_template_service import EmailTemplateService
+
+    from ._pg_fixture import blank_session
+
+    with blank_session() as db:
+        template = _template(db)
+        rendered = EmailTemplateService(db).render(template, _context([
+            _line(qty="1", was={"qty": "2"}, remark="CANCEL 1"),
+        ]))
+    rows = _rows(rendered["body_html"])
+    assert rows[0][3:5] == ["QTY", "QTY CHANGE TO"], rows[0]
+    assert rows[1][3:5] == ["2", "1"] and rows[1][-1] == "CANCEL 1", rows[1]
+
+
+def test_the_template_migration_downgrades_to_the_previous_document():
+    from app.models.email_template import EmailTemplate
+
+    from ._pg_fixture import blank_session
+    from .test_order_inquiry_handover_automation import _run_downgrade, _run_upgrade
+
+    with blank_session() as db:
+        previous = _migration("oihr_0006_no_remark_column")
+        latest = _migration("oihr_0007_excel_remark")
+        _run_upgrade(previous, db)
+        _run_upgrade(latest, db)
+        row = db.query(EmailTemplate).filter(
+            EmailTemplate.code == "order_inquiry_handover_default"
+        ).one()
+        db.refresh(row)
+        assert row.body_text == latest._BODY_TEXT
+        _run_downgrade(latest, db)
+        db.refresh(row)
+        assert row.body_text == previous._BODY_TEXT
+        _run_upgrade(latest, db)
+        _run_upgrade(latest, db)  # idempotent
+        db.refresh(row)
+        assert row.body_text == latest._BODY_TEXT
