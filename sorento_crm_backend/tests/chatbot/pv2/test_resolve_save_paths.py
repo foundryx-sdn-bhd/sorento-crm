@@ -188,3 +188,62 @@ def test_migration_imports_no_application_code():
     from tests._migration_imports import app_imports  # type: ignore[attr-defined]
 
     assert app_imports(MIGRATION) == []
+
+
+def test_spec_registry_create_refuses_a_word_another_key_holds(db, editor):
+    import asyncio
+
+    from app.api.v1.master_data.spec_registry import SpecKeyCreate, create_spec_key
+
+    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
+    with pytest.raises(AppException) as err:
+        asyncio.run(create_spec_key(
+            SpecKeyCreate(spec_key="outlet", label="Outlet", data_type="enum", allowed_values=["bottom"],
+                          user_synonyms={"bottom": ["floor waste"]}),
+            _user(), db,
+        ))
+    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
+
+
+def test_spec_registry_create_refuses_one_word_under_two_of_its_own_values(db, editor):
+    import asyncio
+
+    from app.api.v1.master_data.spec_registry import SpecKeyCreate, create_spec_key
+
+    with pytest.raises(AppException) as err:
+        asyncio.run(create_spec_key(
+            SpecKeyCreate(spec_key="outlet", label="Outlet", data_type="enum", allowed_values=["bottom", "back"],
+                          user_synonyms={"bottom": ["rear exit"], "back": ["Rear  exit"]}),
+            _user(), db,
+        ))
+    assert err.value.status_code == 409 and '"rear exit"' in _message(err.value)
+
+
+def test_spec_registry_add_value_refuses_a_word_another_key_holds(db, editor):
+    from app.api.v1.master_data.spec_registry import SpecValueAdd, add_spec_value
+
+    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
+    S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["matte"]})
+    with pytest.raises(AppException) as err:
+        add_spec_value("finish", SpecValueAdd(value="floor_waste"), _user(), db)  # its word is "floor waste"
+    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
+
+
+def test_spec_registry_reactivating_a_row_checks_every_word_it_brings_back(db, editor):
+    from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
+
+    S.registry(db, "trap_type", "Trap", "enum", allowed=["s_trap"], synonyms={"s_trap": ["floor waste"]})
+    S.registry(db, "finish", "Finish", "enum", allowed=["matte"], synonyms={"matte": ["floor waste"]}, active=False)
+    with pytest.raises(AppException) as err:
+        update_spec_key("finish", SpecKeyUpdate(is_active=True), _user(), db)
+    assert err.value.status_code == 409 and '"floor waste"' in _message(err.value)
+
+
+def test_attachment_type_create_stores_words(db):
+    from app.schemas.resources import AttachmentTypeCreate
+
+    saved = AttachmentTypeService(db).create_type(
+        AttachmentTypeCreate(type_name="Brochure", allowed_extensions="pdf", search_synonyms=["leaflet", "Leaflet"])
+    )
+    assert saved.search_synonyms == ["leaflet"]
+    assert db.execute(text("SELECT search_synonyms FROM attachment_types WHERE id = :i"), {"i": saved.id}).scalar() == ["leaflet"]

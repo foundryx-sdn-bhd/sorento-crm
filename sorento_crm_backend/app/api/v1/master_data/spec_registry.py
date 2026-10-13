@@ -931,7 +931,7 @@ def update_spec_key(
         row = db.query(ProductSpecRegistry).filter_by(spec_key=spec_key).first()
         if row is None:
             raise handle_not_found("Spec key", spec_key)
-        aliases_before = merged_synonyms(row)
+        aliases_before = pv2_aliases.spec_row_aliases(row)
 
         fields = payload.model_dump(exclude_unset=True)
         # A save that changes how this key is read re-reads its products before it
@@ -1232,7 +1232,7 @@ def add_spec_value(
         )
         if row is None:
             raise handle_not_found("Spec key", spec_key)
-        aliases_before = merged_synonyms(row)
+        aliases_before = pv2_aliases.spec_row_aliases(row)
 
         proposed = payload.value.strip()
         if not proposed:

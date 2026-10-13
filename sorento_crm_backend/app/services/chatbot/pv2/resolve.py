@@ -25,6 +25,7 @@ because today's formatters already print them.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, Collection, Iterable, Literal, Mapping, Optional, Protocol, Union
 
@@ -33,6 +34,8 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.services.chatbot.pv2.aliases import norm
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Contract types. PV2-CORE declares the parser output in `schema.py`, PV2-CARRY the state
@@ -126,6 +129,9 @@ class Resolver(Protocol):
     def resolve_attachment_type(self, key: str | None, *, held: Held) -> Resolution: ...
     def resolve_report_spec(self, spec: Any, *, held: Held, profile: Any) -> Any: ...
 
+
+#: The value keys a boolean attribute takes (the registry keys its words under "true").
+_BOOLEAN_KEYS = {"true": True, "false": False}
 
 #: Kinds whose identity is an index key, never a phrase.
 INDEX_KINDS: frozenset[str] = frozenset({"brand", "product_type", "attachment_type"})
@@ -232,14 +238,16 @@ class DbResolver:
                 .filter(Brand.brand_code.in_(keys), Brand.is_active.is_(True))
                 .all()
             ):
-                out.setdefault(code, name or code)
+                if name:
+                    out.setdefault(code, name)
         elif kind == "attachment_type":
             from app.models.resources import AttachmentType
 
             for code, name in (
                 db.query(AttachmentType.code, AttachmentType.type_name).filter(AttachmentType.code.in_(keys)).all()
             ):
-                out.setdefault(code, name or code)
+                if name:
+                    out.setdefault(code, name)
         elif kind == "product_type":
             from app.models.base import company_scope
             from app.models.product import ProductCategory
@@ -276,6 +284,9 @@ class DbResolver:
             if carried is not None:
                 return carried
         pinned = sorted(self.pinned.get(kind, set()))
+        if kind in {"brand", "product_type"}:
+            visible = self._visible_keys(kind, held)
+            pinned = [k for k in pinned if k in visible] or ([] if kind == "brand" else pinned)
         labels = self._live_labels(kind, pinned)
         options = [
             Option(key=k, label=labels[k], payload={"kind": kind, "key": k, "label": labels[k]})
@@ -284,6 +295,51 @@ class DbResolver:
         ]
         options.sort(key=lambda o: (o.label.casefold(), o.key))
         return options[:INDEX_CANDIDATE_CAP]
+
+    def _visible_keys(self, kind: str, held: Held) -> set[str]:
+        """Brand codes / class labels + category codes of the chat-searchable products the
+        contact can see (the listener applies company and brand scope to `Product`),
+        narrowed to the held products, brands and classes where there are any."""
+        from app.models.product import Brand, Product, ProductCategory, chat_searchable_products
+
+        cat = ProductCategory.__table__
+        # A top-level `Product` query, so the scope listener applies company and brand
+        # scope (it does not reach into a subquery).
+        visible = self.db.query(Product.brand_id, Product.category_id).filter(chat_searchable_products())
+        ids = self._held_product_ids(held)
+        if ids:
+            visible = visible.filter(Product.id.in_(ids))
+        pairs = visible.distinct().all()
+        if not pairs:
+            return set()
+        brand_codes = dict(
+            self.db.query(Brand.id, Brand.brand_code)
+            .filter(Brand.id.in_(sorted({str(b) for b, _ in pairs if b})))
+            .all()
+        )
+        categories = {
+            str(cid): (class_label, code)
+            for cid, class_label, code in self.db.execute(
+                cat.select()
+                .with_only_columns(cat.c.id, cat.c.class_label, cat.c.category_code)
+                .where(cat.c.id.in_(sorted({str(c) for _, c in pairs if c})))
+            ).all()
+        }
+        held_brands = {r.key for r in (held.refs or {}).get("brand") or []}
+        classes = self._held_classes(held) if kind != "product_type" else set()
+        out: set[str] = set()
+        for brand_id, category_id in pairs:
+            brand_code = brand_codes.get(str(brand_id)) if brand_id else None
+            class_label, category_code = categories.get(str(category_id), (None, None))
+            if kind != "brand" and held_brands and brand_code not in held_brands:
+                continue
+            if classes and (class_label or "").casefold() not in classes:
+                continue
+            if kind == "brand" and brand_code:
+                out.add(brand_code)
+            if kind == "product_type":
+                out.update(k for k in (class_label, category_code) if k)
+        return out
 
     # ------------------------------------------------------------------ attachment type
     def resolve_attachment_type(self, key: str | None, *, held: Held) -> Resolution:
@@ -378,7 +434,9 @@ class DbResolver:
     def _customer_query(self):
         from app.models.order import Customer
 
-        q = self.db.query(Customer.id, Customer.customer_code, Customer.customer_name)
+        q = self.db.query(Customer.id, Customer.customer_code, Customer.customer_name).filter(
+            Customer.is_active.isnot(False), Customer.customer_name.isnot(None)
+        )
         if self.customer_scope.get("enforced"):
             ids = [str(i) for i in (self.customer_scope.get("ids") or [])]
             q = q.filter(Customer.id.in_(ids))
@@ -507,7 +565,12 @@ class DbResolver:
                 phrase=spec.phrase,
             )
         if row.data_type == "boolean":
-            value = str(spec.value_key).lower() != "false" if spec.value_key is not None else True
+            if spec.value_key is None:
+                value = True
+            elif spec.value_key in _BOOLEAN_KEYS:
+                value = _BOOLEAN_KEYS[spec.value_key]
+            else:
+                return SpecResolution(status="none", phrase=spec.phrase or spec.value_key, unrecognised=True)
             return SpecResolution(
                 status="exact",
                 specs=[ResolvedSpec(attribute=row.spec_key, comparator="eq", value=value)],
@@ -536,9 +599,9 @@ class DbResolver:
             return float(number)
         from app.services.product_spec_search import _UNIT_TO_MM
 
-        u = norm(unit)
-        if target == "mm" and u in _UNIT_TO_MM:
-            return float(number) * _UNIT_TO_MM[u]
+        u, t = norm(unit), norm(target)
+        if u in _UNIT_TO_MM and t in _UNIT_TO_MM:
+            return float(number) * _UNIT_TO_MM[u] / _UNIT_TO_MM[t]
         return None
 
     # ---- numbers with no attribute: matched against the held class's real data
@@ -580,44 +643,66 @@ class DbResolver:
         gate = gate if isinstance(gate, list) else [gate]
         return bool({str(g).casefold() for g in gate} & classes)
 
-    _CLASS_SQL = "lower(COALESCE(ps.values->'class'->>'value', c.class_label))"
+    def _spec_rows(self, attribute: str, classes: set[str]):
+        """(value expression, ORM query) over the chat-searchable products the contact can see.
+
+        ORM on purpose: the `do_orm_execute` listener scopes `Product` to the contact's
+        companies and brands, so neither a range nor a closest row is built from records
+        the contact could not be shown. The category is read as a Core table, as
+        `chat_searchable_products()` does, so a product filed under another company's
+        category keeps its class.
+        """
+        from sqlalchemy import Numeric, cast
+
+        from app.models.product import Product, ProductCategory, chat_searchable_products
+        from app.models.product_spec import ProductSpecifications
+
+        raw = ProductSpecifications.values[attribute]["value"]
+        value = cast(raw.astext, Numeric)
+        cat = ProductCategory.__table__
+        q = (
+            self.db.query(Product)
+            .join(ProductSpecifications, ProductSpecifications.product_id == Product.id)
+            .outerjoin(cat, cat.c.id == Product.category_id)
+            .filter(func.jsonb_typeof(raw) == "number", chat_searchable_products())
+        )
+        if classes:
+            klass = func.lower(func.coalesce(ProductSpecifications.values["class"]["value"].astext, cat.c.class_label))
+            q = q.filter(klass.in_(sorted(classes)))
+        return value, q
 
     def _range(self, attribute: str, classes: set[str]) -> tuple[float, float] | None:
-        sql = (
-            "SELECT min((ps.values->:a->>'value')::numeric), max((ps.values->:a->>'value')::numeric) "
-            "FROM product_specifications ps JOIN products p ON p.id = ps.product_id "
-            "LEFT JOIN product_categories c ON c.id = p.category_id "
-            "WHERE jsonb_typeof(ps.values->:a->'value') = 'number' AND p.is_searchable IS NOT FALSE"
-        )
-        params: dict[str, Any] = {"a": attribute}
-        if classes:
-            sql += f" AND {self._CLASS_SQL} = ANY(:classes)"
-            params["classes"] = sorted(classes)
-        lo, hi = self.db.execute(text(sql), params).one()
+        from app.models.product import Product
+
+        value, q = self._spec_rows(attribute, classes)
+        # Two top-level `Product` queries, not an aggregate or a subquery: the scope
+        # listener applies its company and brand criteria only to an entity the outer
+        # statement selects (an aggregate over a subquery read another company's rows).
+        lo = q.with_entities(Product.id, value).order_by(value.asc()).limit(1).first()
         if lo is None:
             return None
+        hi = q.with_entities(Product.id, value).order_by(value.desc()).limit(1).first()
+        lo, hi = lo[1], hi[1]
         return float(lo), float(hi)
 
-    def _closest(self, rows: list[Any], number: float, classes: set[str]) -> list[Option]:
+    def _closest(self, rows: list[tuple[Any, float]], classes: set[str]) -> list[Option]:
+        """Up to CLOSEST_CAP real products nearest the number, per attribute in its own unit."""
+        from app.models.product import Product
+
         found: list[tuple[float, Option]] = []
-        for row in rows:
-            sql = (
-                "SELECT p.product_code, (ps.values->:a->>'value')::numeric AS v "
-                "FROM product_specifications ps JOIN products p ON p.id = ps.product_id "
-                "LEFT JOIN product_categories c ON c.id = p.category_id "
-                "WHERE jsonb_typeof(ps.values->:a->'value') = 'number' AND p.is_searchable IS NOT FALSE"
-            )
-            params: dict[str, Any] = {"a": row.spec_key, "n": number}
-            if classes:
-                sql += f" AND {self._CLASS_SQL} = ANY(:classes)"
-                params["classes"] = sorted(classes)
-            sql += " ORDER BY abs((ps.values->:a->>'value')::numeric - :n), p.product_code LIMIT 3"
-            for code, value in self.db.execute(text(sql), params).all():
+        for row, number in rows:
+            value, q = self._spec_rows(row.spec_key, classes)
+            for code, stored in (
+                q.with_entities(Product.product_code, value)
+                .order_by(func.abs(value - number), Product.product_code)
+                .limit(3)
+                .all()
+            ):
                 unit = f" {row.unit}" if row.unit else ""
-                label = f"{code} ({row.label} {_fmt_number(float(value))}{unit})"
+                label = f"{code} ({row.label} {_fmt_number(float(stored))}{unit})"
+                distance = abs(float(stored) - number) / max(abs(number), 1.0)
                 found.append(
-                    (abs(float(value) - number),
-                     Option(key=code, label=label, payload={"kind": "product", "key": code, "label": code}))
+                    (distance, Option(key=code, label=label, payload={"kind": "product", "key": code, "label": code}))
                 )
         found.sort(key=lambda t: (t[0], t[1].key))
         out: list[Option] = []
@@ -633,12 +718,12 @@ class DbResolver:
             if row.data_type == "numeric" and key in pinned and self._applies(row, classes)
         ]
         holding: list[tuple[Any, float, float | None]] = []
-        candidates: list[Any] = []
+        candidates: list[tuple[Any, float]] = []
         for row in rows:
             number = self._to_unit(spec.number, spec.unit, row.unit)
             if number is None:
                 continue
-            candidates.append(row)
+            candidates.append((row, number))
             span = self._range(row.spec_key, classes)
             if span is None:
                 continue
@@ -665,9 +750,7 @@ class DbResolver:
                 for row, number, number_to in holding
             ]
             return SpecResolution(status="ambiguous", options=options, phrase=spec.phrase)
-        base = self._to_unit(spec.number, spec.unit, "mm") if spec.unit else float(spec.number)
-        closest = self._closest(candidates, base if base is not None else float(spec.number), classes)
-        return SpecResolution(status="none", phrase=spec.phrase, closest=closest)
+        return SpecResolution(status="none", phrase=spec.phrase, closest=self._closest(candidates, classes))
 
     def _place_value(self, spec: Spec, registry: dict[str, Any], classes: set[str]) -> SpecResolution:
         from app.services.product_spec_registry import display_spec_value, merged_allowed_values
@@ -725,25 +808,40 @@ def log_unrecognised(
     """
     touched = 0
     seen: set[tuple[str, str]] = set()
+    rows = []
     for phrase, kind in items:
         n = norm(phrase)
         if not n or not kind or (n, kind) in seen:
             continue
         seen.add((n, kind))
-        db.execute(
-            text(
-                "INSERT INTO chatbot_unrecognised_phrases "
-                "(id, phrase, kind, domain, contact_id, turn_id, seen_count, first_seen_at, last_seen_at) "
-                "VALUES (:id, :phrase, :kind, :domain, :contact_id, :turn_id, 1, now(), now()) "
-                "ON CONFLICT (phrase, kind) DO UPDATE SET "
-                "seen_count = chatbot_unrecognised_phrases.seen_count + 1, "
-                "last_seen_at = now(), "
-                "domain = COALESCE(EXCLUDED.domain, chatbot_unrecognised_phrases.domain), "
-                "contact_id = COALESCE(EXCLUDED.contact_id, chatbot_unrecognised_phrases.contact_id), "
-                "turn_id = COALESCE(EXCLUDED.turn_id, chatbot_unrecognised_phrases.turn_id)"
-            ),
-            {"id": str(uuid.uuid4()), "phrase": n, "kind": kind, "domain": domain,
-             "contact_id": contact_id, "turn_id": turn_id},
-        )
-        touched += 1
+        rows.append((n, kind))
+    if not rows:
+        return 0
+    # Best effort: a log write that fails must never abort the turn's transaction.
+    try:
+        with db.begin_nested():
+            for n, kind in rows:
+                _upsert_phrase(db, n, kind, domain, contact_id, turn_id)
+                touched += 1
+    except Exception:  # noqa: BLE001 - the log is never worth a failed turn
+        logger.warning("pv2 unknown-words log write failed", exc_info=True)
+        return 0
     return touched
+
+
+def _upsert_phrase(db: Session, n: str, kind: str, domain, contact_id, turn_id) -> None:
+    db.execute(
+        text(
+            "INSERT INTO chatbot_unrecognised_phrases "
+            "(id, phrase, kind, domain, contact_id, turn_id, seen_count, first_seen_at, last_seen_at) "
+            "VALUES (:id, :phrase, :kind, :domain, :contact_id, :turn_id, 1, now(), now()) "
+            "ON CONFLICT (phrase, kind) DO UPDATE SET "
+            "seen_count = chatbot_unrecognised_phrases.seen_count + 1, "
+            "last_seen_at = now(), "
+            "domain = COALESCE(EXCLUDED.domain, chatbot_unrecognised_phrases.domain), "
+            "contact_id = COALESCE(EXCLUDED.contact_id, chatbot_unrecognised_phrases.contact_id), "
+            "turn_id = COALESCE(EXCLUDED.turn_id, chatbot_unrecognised_phrases.turn_id)"
+        ),
+        {"id": str(uuid.uuid4()), "phrase": n, "kind": kind, "domain": domain,
+         "contact_id": contact_id, "turn_id": turn_id},
+    )

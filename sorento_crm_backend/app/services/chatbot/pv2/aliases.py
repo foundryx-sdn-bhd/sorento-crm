@@ -267,21 +267,37 @@ def spec_key_for(spec_key: str, value: str) -> str:
     return spec_key if value == _SELF else f"{spec_key}.{value}"
 
 
+def spec_row_aliases(row) -> dict:
+    """What a spec registry row prints as aliases now: nothing while it is inactive."""
+    from app.services.product_spec_registry import merged_synonyms
+
+    return merged_synonyms(row) if row.is_active else {}
+
+
 def refuse_spec_row_conflicts(db: Session, row, before: Mapping[str, Iterable[object]]) -> None:
     """A spec registry save: refuse the words it adds under any key that clash elsewhere.
 
-    `before` is `merged_synonyms(row)` as it was before the save ({} for a new row). An
-    inactive row prints no aliases, so it creates no clash.
+    `before` is what the row printed before the save: `merged_synonyms(row)` for an active
+    row, {} for a new or inactive one (`spec_row_aliases`). An inactive row prints no
+    aliases, so it creates no clash; re-activating one adds all its words.
     """
     from app.services.product_spec_registry import merged_synonyms
 
     if not row.is_active:
         return
+    after = merged_synonyms(row)
     clashes: list[Clash] = []
-    for value, words in merged_synonyms(row).items():
+    for value, words in after.items():
         clashes.extend(
             check_conflicts(db, "spec", spec_key_for(row.spec_key, value), words, previous=before.get(value, []))
         )
+    # One row's own values: a new row is not in the session yet, so the live map cannot
+    # see a word it lists under two of its values.
+    own = {spec_key_for(row.spec_key, v): w for v, w in after.items()}
+    was = {spec_key_for(row.spec_key, v): w for v, w in before.items()}
+    for clash in find_clashes("spec", own, precedence(db, "spec")):
+        if clash not in find_clashes("spec", was, precedence(db, "spec")) and clash not in clashes:
+            clashes.append(clash)
     if clashes:
         from app.services.error_handler import AppException
 
