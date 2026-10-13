@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OI Reject: CS Next v2</title>
+<title>OI Reject: CS Next v3</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb;
-          --red-bg:#fee2e2; --red-ink:#991b1b; --red:#dc2626; --green:#047857; --blue:#2563eb; --done:#ecfdf5; }
+          --red-bg:#fee2e2; --red-ink:#991b1b; --amber-bg:#fef3c7; --amber-ink:#92400e;
+          --green:#047857; --blue:#2563eb; --done:#ecfdf5; --hl:#eff6ff; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
           --bg:#0f1115; --card:#171a21; --ink:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a;
-          --red-bg:#3b1414; --red-ink:#fca5a5; --red:#f87171; --green:#34d399; --blue:#60a5fa; --done:#0f2a20; } }
+          --red-bg:#3b1414; --red-ink:#fca5a5; --amber-bg:#3a2a0a; --amber-ink:#fcd34d;
+          --green:#34d399; --blue:#60a5fa; --done:#0f2a20; --hl:#16233b; } }
   body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   main { max-width:1040px; margin:0 auto; padding:24px 16px 48px; }
   h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:16px; margin:28px 0 8px; }
@@ -18,87 +20,81 @@
   .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; }
   .chip { display:inline-block; border-radius:999px; padding:1px 8px; font-size:12px; font-weight:600; white-space:nowrap; }
   .red { background:var(--red-bg); color:var(--red-ink); }
-  table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .amber { background:var(--amber-bg); color:var(--amber-ink); }
+  .grey { background:var(--line); color:var(--muted); }
+  .tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); margin:8px 0 4px; font-size:13px; }
+  .tabs span { padding:6px 0; color:var(--muted); } .tabs .on { color:var(--ink); border-bottom:2px solid var(--blue); font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--muted); font-weight:600; }
-  .scroll { overflow-x:auto; } .scroll table { min-width:760px; }
-  .reason { color:var(--red); }
-  .icons { color:var(--muted); letter-spacing:6px; margin-left:6px; }
-  .pop { display:inline-block; margin-top:6px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; background:var(--card); box-shadow:0 4px 12px rgba(0,0,0,.08); }
-  ol li, ul li { margin:6px 0; }
+  tr.hl td { background:var(--hl); }
+  .scroll { overflow-x:auto; } .scroll table { min-width:720px; }
+  a.oi { color:var(--blue); text-decoration:underline; }
+  .info { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; border:1px solid var(--muted); color:var(--muted); font-size:11px; font-weight:700; margin-left:4px; vertical-align:middle; }
+  .tip { display:inline-block; margin-top:8px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; background:var(--card); box-shadow:0 4px 12px rgba(0,0,0,.08); }
+  .btn { display:inline-block; background:#2563EB; color:#fff; font-weight:700; padding:8px 20px; border-radius:8px; text-decoration:none; }
+  ul li, ol li { margin:6px 0; }
   .decided { background:var(--done); border-radius:8px; padding:2px 8px; font-weight:600; color:var(--green); white-space:nowrap; }
-  .mail { max-width:560px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
-  .mail .head { background:var(--blue); color:#fff; text-align:center; padding:14px; font-weight:700; }
-  .mail .body { padding:16px 20px; }
-  .mail table { table-layout:auto; font-size:12px; margin:8px 0; }
-  .mail th, .mail td { border:1px solid var(--line); padding:4px 8px; }
-  .btn { display:inline-block; background:#2563EB; color:#fff; font-weight:700; padding:10px 24px; border-radius:8px; text-decoration:none; margin-top:8px; }
-  .foot { color:var(--muted); font-size:11px; text-align:center; border-top:1px solid var(--line); padding:10px; }
+  .new { background:var(--hl); border-radius:8px; padding:2px 8px; font-weight:600; color:var(--blue); white-space:nowrap; }
 </style>
 </head>
 <body>
 <main>
-  <h1>After purchasing rejects: what CS sees and does next (v2)</h1>
-  <p class="muted">PR #1622. v2 applies the owner's five notes from 13 Oct (section 4). Everything below is built on the branch; screenshots in <code>documentation/plans/scm/evidence/oi-reject-notify/</code>.</p>
+  <h1>After purchasing rejects: what CS sees and does next (v3)</h1>
+  <p class="muted">PR #1622. v3 applies the owner's hand-test notes of 13 Oct: a rejection is an <b>order inquiry status</b>. It shows on the OI column as a red "Rejected" badge with an info icon, on the Sales Order's Lines tab and on the planning board. Verdict and Decided stay normal planning values. The email and bell open the <b>Sales Order</b> page.</p>
 
-  <h2>1. The board row: one line, nothing taller (note 1)</h2>
+  <h2>1. Email and bell land on the Sales Order, Lines tab (point 2)</h2>
   <div class="card">
-    <div class="bar">
-      <strong>Planning 1 sales order: SO416732</strong>
-      <span class="muted">0 to confirm · 0 rejected · <b>1 rejected by purchasing</b></span>
-    </div>
-    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip</span> &nbsp; <span class="chip" style="border:1px solid var(--line)">Status: Rejected by purchasing</span> <span class="muted">filter set by the email / bell link</span></p>
+    <p style="margin:0 0 8px">Email: the same single button, <a class="btn" href="#">Open sales order</a>, now linking to <code>/scm/sales-orders/&lt;SO id&gt;?tab=lines&amp;line=&lt;first rejected line&gt;</code>. The bell notice opens the same place.</p>
+    <div class="bar"><strong>SO421432</strong><span class="muted">ABC Builders Sdn Bhd</span></div>
+    <div class="tabs"><span>General</span><span class="on">Lines</span><span>Delivery</span><span>History</span></div>
     <div class="scroll">
       <table>
-        <colgroup><col style="width:60px"><col style="width:130px"><col style="width:90px"><col style="width:90px"><col style="width:230px"><col style="width:220px"></colgroup>
-        <tr><th>Line</th><th>Item</th><th>Outstanding</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
-        <tr><td>3</td><td>B2155-NL-BLUE</td><td>10</td><td>Buy 10</td>
-            <td class="reason" title="Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish">Supplier discontinued this finish (Joey, 13/10/2026, 2:05 pm)</td>
-            <td><span class="chip red">Rejected by purchasing</span><span class="icons">↺ ✓ ✕ ✎</span></td></tr>
+        <tr><th>No.</th><th>Item code</th><th>Qty</th><th>Delivery date</th><th>Order inquiry</th></tr>
+        <tr><td>1</td><td>B2155-NL-WHITE</td><td>12</td><td>25/10/2026</td><td><a class="oi" href="#">OI-2609-0022</a> <span class="chip amber">To buy</span></td></tr>
+        <tr class="hl"><td>2</td><td>B2155-NL-BLUE</td><td>10</td><td>25/10/2026</td><td><a class="oi" href="#">OI-2609-0022</a> <span class="chip red">Rejected</span><span class="info" title="Rejected by Joey on 13/10/2026, 4:32 pm: DISCON">i</span></td></tr>
+        <tr><td>3</td><td>B2155-NL-GREY</td><td>6</td><td>25/10/2026</td><td><span class="muted">-</span></td></tr>
       </table>
     </div>
-    <p class="muted" style="margin:8px 0 0">The reason, who and when read in red in the Decided cell, truncated, with the whole sentence on hover. Tapping the pill (375px) opens it:</p>
-    <span class="pop">Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish</span>
-    <p class="muted" style="margin:8px 0 0">✓ keeps the Buy (re-raise to purchasing), ✕ withdraws the line, ✎ opens the panel to choose another source or Cancel SO.</p>
+    <span class="tip">ⓘ Rejected by Joey on 13/10/2026, 4:32 pm: DISCON</span>
+    <p class="muted" style="margin:8px 0 0">The link highlights the first rejected line (the page's existing <code>?line=</code>), and every rejected line carries the badge. "Rejected" replaces the "To buy" word only while the refusal is open. Once CS re-plans the line, it goes back to the normal state ("To buy", "On PO/SPO" ...). The info icon is a tooltip on desktop and opens on tap at 375px.</p>
   </div>
 
-  <h2>2. The email: one call to action (note 5)</h2>
-  <div class="mail">
-    <div class="head">Sorento</div>
-    <div class="body">
-      <div style="color:#b91c1c;font-weight:700">Rejected: OI-2610-0007</div>
-      <table><tr><th>OI NO</th><th>S/O NO</th><th>CUSTOMER</th><th>PROJECT</th></tr>
-             <tr><td>OI-2610-0007</td><td>SO416732</td><td>ABC Builders Sdn Bhd</td><td>Residensi Yotu</td></tr></table>
-      <table><tr><th>ITEM CODE</th><th>QTY</th><th>DELIVERY DATE</th></tr>
-             <tr><td>B2155-NL-BLUE</td><td>10</td><td>25/10/2026</td></tr></table>
-      <div>Reason: Supplier discontinued this finish</div>
-      <div>Rejected by Joey (joey@...) on 13/10/2026 14:05.</div>
-      <a class="btn" href="#">Open sales order</a>
-      <div class="muted" style="font-size:12px;margin-top:6px">Opens the SO's planning board on the rejected lines. No action list, no second link.</div>
-    </div>
-    <div class="foot">You received this email because you have an account on Sorento. It is a service message about your work in the system.</div>
-  </div>
-  <p class="muted">The bell notice opens the same place: <code>OI-2610-0007: 1 line rejected by purchasing</code>.</p>
-
-  <h2>3. What CS does next</h2>
+  <h2>2. Planning board: the rejection lives on the OI column (points 1 and 3)</h2>
   <div class="card">
-    <ol>
-      <li><b>Re-decide on the board</b>: another source (own location, borrow, site pool), Confirm. Purchasing is not notified (they have nothing to buy).</li>
-      <li><b>Buy again</b>: keep Buy, type why in REASON, Save, Confirm. Purchasing gets the usual new order inquiry; its "Why this instruction" reads <code>CS: &lt;your reason&gt;</code> (note 2).</li>
-      <li><b>Cancel the line</b>: ✕ or Cancel SO with its reason, Confirm.</li>
-      <li><b>Change the item in AutoCount</b> when the customer takes a substitute, re-sync; the board shows "Change proposed"; Confirm sends the new item to purchasing as a normal order inquiry.</li>
-    </ol>
+    <div class="bar">
+      <strong>Planning 1 sales order: SO421432</strong>
+      <span class="muted">0 to confirm · 0 rejected · <b>1 rejected by purchasing</b></span>
+    </div>
+    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip (stays)</span> &nbsp; <span class="chip" style="border:1px solid var(--line)">Status: Rejected by purchasing</span> <span class="muted">filter (stays)</span></p>
+    <div class="scroll">
+      <table>
+        <tr><th>Line</th><th>Product</th><th>Outstanding</th><th>OI</th><th>Suggested</th><th>Decided</th><th>Verdict</th></tr>
+        <tr><td>2</td><td>B2155-NL-BLUE</td><td>10</td>
+            <td><a class="oi" href="#">OI-2609-0022</a> <span class="chip red">Rejected</span><span class="info" title="Rejected by Joey on 13/10/2026, 4:32 pm: DISCON">i</span></td>
+            <td>Buy 10</td><td class="muted">Not decided</td><td><span class="chip grey">Suggested</span></td></tr>
+      </table>
+    </div>
+    <p class="muted" style="margin:8px 0 0">Verdict and Decided are plain planning values again: no red text and no "Rejected by purchasing" verdict. CS changes the item code in AutoCount, re-syncs, presses Plan, and decides the line as usual (usually Buy again). The badge clears once the line is decided again.</p>
   </div>
 
-  <h2>4. Owner decisions (13 Oct)</h2>
+  <h2>3. What stays from v2</h2>
   <div class="card">
     <ul>
-      <li><span class="decided">Built</span> One row: badge with reason and who/when on the same line, truncated, tooltip.</li>
-      <li><span class="decided">Built</span> Q1 yes: CS's reason on a re-Buy reaches purchasing's new order inquiry row.</li>
-      <li><span class="decided">Decided</span> Q2 no reminders.</li>
-      <li><span class="decided">Decided</span> Q3 no extra notice to purchasing: a re-Buy already raises the normal order inquiry; re-deciding from stock, borrowing or cancelling needs nothing from them.</li>
-      <li><span class="decided">Built</span> Q4 email: one "Open sales order" button to the SO planning board, no action list.</li>
+      <li><span class="decided">Built</span> Email: one "Open sales order" button, no action list (only its target changes, to the SO page).</li>
+      <li><span class="decided">Built</span> CS's own reason on a re-Buy reaches purchasing's new OI row as "CS: ..."; a pre-filled engine sentence never does.</li>
+      <li><span class="decided">Decided</span> No reminders; no extra notice to purchasing.</li>
+      <li><span class="decided">Built</span> Footer reads Sorento.</li>
+      <li><span class="new">v3</span> The board's "Rejected by purchasing" verdict pill and red Decided text are removed; the badge moves to the OI column on both screens.</li>
     </ul>
+  </div>
+
+  <h2>4. Questions (recommendation first)</h2>
+  <div class="card">
+    <ol>
+      <li>Several lines of one SO rejected together: the link highlights the <b>first</b> one, and all of them show the badge. <b>Recommended: yes</b>, because the page's existing <code>?line=</code> highlights one row and the badges make the rest obvious.</li>
+      <li>The badge clears once CS decides the line again, the same rule the board already uses. <b>Recommended: yes</b>, because "Rejected" beside a line somebody has already re-planned reads as an open problem.</li>
+    </ol>
   </div>
 </main>
 </body>
