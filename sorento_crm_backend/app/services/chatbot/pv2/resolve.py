@@ -644,23 +644,25 @@ class DbResolver:
         counts families, never accounts, so a family is not cut in half."""
         from app.services.ledger_family import group_names, ledger_family_key
 
-        families: dict[str, list] = {}
+        buckets: dict[str, list] = {}
         for row in rows:
-            families.setdefault(ledger_family_key(row[2]) or str(row[2]), []).append(row)
+            buckets.setdefault(ledger_family_key(row[2]) or str(row[2]), []).append(row)
+        # One entry per DISPLAYED label: buckets that show the same label (a grouped and an
+        # ungrouped ledger of one name) merge, so one tap resolves every account under it.
+        families: dict[str, list] = {}
+        for members in buckets.values():
+            names = [str(n) for _c, _k, n in members]
+            label = (group_names(names) or [names[0]])[0].strip()
+            families.setdefault(label, []).extend(members)
         # Exact rows resolve directly. From the containing-name search only an exact family
         # NAME does; a partial name always asks (candidates never resolve on their own).
         if len(families) == 1:
-            members = next(iter(families.values()))
-            names = [str(n) for _c, _k, n in members]
-            shown = (group_names(names) or [names[0]])[0]
+            shown, members = next(iter(families.items()))
             if not candidates_only or norm(shown) == norm(phrase or ""):
                 return Resolution(status="exact", refs=[self._customer_ref(c, k, n, phrase) for c, k, n in members])
         options = []
-        for members in list(families.values())[:CUSTOMER_CANDIDATE_CAP]:
-            refs = [self._customer_ref(c, k, n, phrase) for c, k, n in members]
-            names = [str(n) for _c, _k, n in members]
-            label = (group_names(names) or [names[0]])[0].strip()
-            keys = [r.key for r in refs]
+        for label, members in list(families.items())[:CUSTOMER_CANDIDATE_CAP]:
+            keys = [self._customer_ref(c, k, n, phrase).key for c, k, n in members]
             payload: dict[str, Any] = {"kind": "customer", "key": keys[0], "label": label}
             if len(keys) > 1:
                 payload["keys"] = keys
