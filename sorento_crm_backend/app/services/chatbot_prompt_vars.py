@@ -717,11 +717,20 @@ def with_account_block(text: str) -> str:
 # Publishing after the wording layer exists (R1: republishing never overwrites it).
 # --------------------------------------------------------------------------- #
 
-_TOKEN_RE = _re.compile(r"\{\{\s*(" + "|".join(VARIABLE_NAMES) + r")\s*\}\}")
+# Variables an ADD-ON block brings, not the wording layer: the code constant itself carries
+# them (SUB_ASKS_ADDENDUM, FIND_ADDENDUM in `chatbot_parser_prompt`), so a version seeded or
+# republished from that constant holds them while its lists are still literal. Counting them
+# would read every such version as the wording layer and stand every code publish down.
+ADDON_VARIABLES: frozenset[str] = frozenset({"sub_ask_measures", "find_filters"})
+
+_TOKEN_RE = _re.compile(
+    r"\{\{\s*(" + "|".join(n for n in VARIABLE_NAMES if n not in ADDON_VARIABLES) + r")\s*\}\}"
+)
 
 
 def is_wording_layer(template: str | None) -> bool:
-    """A template that carries at least one registry variable."""
+    """A template that carries at least one registry variable other than an add-on's
+    (`ADDON_VARIABLES`)."""
     return bool(_TOKEN_RE.search(template or ""))
 
 

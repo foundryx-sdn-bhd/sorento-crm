@@ -57,6 +57,31 @@ describe('DecisionTrailDialog', () => {
   });
 
   /**
+   * PR 1622 (owner, mock v3 note 4): purchasing's refusal stays in the line's history after
+   * the badge clears, so CS can trace it back: which inquiry, why, who, when.
+   */
+  it('names a purchasing refusal with its inquiry, reason and who', () => {
+    render(
+      <DecisionTrailDialog
+        open
+        onOpenChange={() => {}}
+        itemCode="CB6622-PP"
+        entries={[
+          {
+            kind: 'rejected',
+            actor_name: 'Joey',
+            at: '2026-10-13T08:32:00Z',
+            detail: 'OI-2610-0007: DISCON',
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Rejected by purchasing.*OI-2610-0007: DISCON/)).toBeInTheDocument();
+    expect(screen.getByText(/Joey on/)).toBeInTheDocument();
+  });
+
+  /**
    * N3 (review round 3): a `sheet` or `planning_change` entry names no actor at all -
    * "Unknown" claimed somebody was simply left unnamed, which is a different (and
    * false) fact. The rule is generic on `actor_name` being null, not on the entry's

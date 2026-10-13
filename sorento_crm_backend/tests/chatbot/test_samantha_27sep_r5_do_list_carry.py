@@ -154,6 +154,7 @@ _DO_REVEALS = (
     "delivery_orders.delivery_date",
     "delivery_orders.warehouse",
     "delivery_orders.products",
+    "delivery_orders.branch",
 )
 
 

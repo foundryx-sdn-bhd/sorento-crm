@@ -2319,7 +2319,7 @@ describe('FulfilmentBoardListView: Columns and Status filter', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^Filters/ }));
     await userEvent.click(await screen.findByText('Status'));
-    await userEvent.click(await screen.findByRole('option', { name: /Rejected/ }));
+    await userEvent.click(await screen.findByRole('option', { name: /^Rejected$/ }));
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByText('SO397451')).not.toBeInTheDocument());
@@ -2581,5 +2581,53 @@ describe('FulfilmentBoardListView: the change lightbox never toggles its row', (
     const again = await screen.findByTestId('board-change-dialog');
     fireEvent.click(within(again).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+  });
+});
+
+describe('FulfilmentBoardListView: a line purchasing refused (PR 1622)', () => {
+  it('shows the refusal as a Rejected badge on the OI column, Decided stays a planning value', async () => {
+    const refused = contribution({
+      key: 'so-1:line-10',
+      so_number: 'SO416732',
+      line_no: 10,
+      order_inquiry: {
+        inquiry_no: 'OI-2610-0007',
+        state: 'raised',
+        ack_state: 'rejected',
+        rejected_reason: 'Supplier discontinued this finish',
+        rejected_by_name: 'Joey',
+        rejected_at: '2026-10-13T06:05:00',
+      } as BoardContribution['order_inquiry'],
+    });
+    renderView({ contributions: [refused] });
+    const badge = await screen.findByTestId('oi-rejected-so-1:line-10');
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026, 2:05\s?pm: Supplier discontinued this finish$/i,
+    );
+    expect(screen.getByText('OI-2610-0007')).toBeInTheDocument();
+    // The verdict and Decided cells carry no refusal of their own any more.
+    expect(screen.queryByTestId('decided-purchasing-rejected-so-1:line-10')).toBeNull();
+    expect(screen.queryByText('Rejected by purchasing')).toBeNull();
+    expect(screen.queryByText(/Supplier discontinued this finish \(Joey/)).toBeNull();
+  });
+
+  it('shows no badge once the refusal is answered', async () => {
+    const answered = contribution({
+      key: 'so-1:line-11',
+      so_number: 'SO416732',
+      line_no: 11,
+      order_inquiry: {
+        inquiry_no: 'OI-2610-0007',
+        state: 'raised',
+        ack_state: null,
+        rejected_reason: null,
+        rejected_by_name: null,
+        rejected_at: null,
+      } as BoardContribution['order_inquiry'],
+    });
+    renderView({ contributions: [answered] });
+    expect(await screen.findByText('OI-2610-0007')).toBeInTheDocument();
+    expect(screen.queryByTestId('oi-rejected-so-1:line-11')).toBeNull();
   });
 });

@@ -790,7 +790,7 @@ def test_n5_the_customer_picker_answer_asks_the_basis_before_any_fetch(session_f
         "top 4 for hanlim by amount",
         resolve_services=_ambiguous_hanlim_resolve_services(lambda **_: {"items": [], "has_result": False}),
     )
-    assert ts_calls(captured) == [] and "Which customer do you mean?" in reply, reply
+    assert ts_calls(captured) == [] and "Which one do you mean?" in reply, reply
     reply, captured = ts_turn(
         session_factory, monkeypatch,
         _parser_output(

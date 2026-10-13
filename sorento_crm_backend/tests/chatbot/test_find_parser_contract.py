@@ -175,3 +175,9 @@ def test_p3_an_unknown_version_is_none() -> None:
         _seed(db, 1, WITH_MARKERS)
         assert publish(db, from_version=99) is None
         assert [r.version for r in _versions(db)] == [1]
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

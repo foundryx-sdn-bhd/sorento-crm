@@ -1053,3 +1053,7 @@ def test_h_a_three_turn_console_conversation_reads_oldest_first_on_a_created_at_
         "User: 2", "Assistant: (the Previous response)",
     ], block
     assert "Current user message: 3" in block and "User: 3" not in block, block
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

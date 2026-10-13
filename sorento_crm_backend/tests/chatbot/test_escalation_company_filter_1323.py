@@ -335,3 +335,7 @@ def test_the_round_1_migration_publishes_the_narrowed_rule() -> None:
         assert '"mocha brand"' in newest.template
         module.publish(bind)
         assert db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").count() == len(rows)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

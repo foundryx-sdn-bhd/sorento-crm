@@ -23,9 +23,12 @@ import type { BoardChangeAnnotation } from '../../_shared/lib/boardChangeAnnotat
 import type {
   BoardAxisRow,
   BoardCell,
+  BoardContribution,
   BoardDateBucket,
   BoardDraft,
 } from '../../_shared/types/fulfilmentPlanning.types';
+import { OrderInquiryRejectedMark } from '../../_shared/components/OrderInquiryRejectedBadge';
+import { purchasingRefusalTitle } from '../../_shared/lib/orderInquiryAck';
 
 /**
  * Pending changes grouped by the LINE they happened to, in the order the lines first appear
@@ -361,18 +364,17 @@ function BoardCellButton({
     .flatMap((entry) => entry.lent_to ?? [])
     .map((row) => `${row.qty} lent to ${row.so_number ?? 'another order'}`)
     .join(' · ');
-  // What purchasing REFUSED, on the line it came back to (AC-H6). The row leaves netting
-  // and the decision is uncovered, so without this the cell simply goes back to undecided
-  // and CS is left to work out why - which is what the reason exists to stop.
-  const rejected = cell.contributions
-    .map((entry) => entry.order_inquiry)
-    .filter((inquiry) => inquiry?.ack_state === 'rejected')
-    .map(
-      (inquiry) =>
-        `Rejected by ${inquiry?.rejected_by_name ?? 'purchasing'}: ` +
-        `${(inquiry?.rejected_reason ?? '').trim() || 'no reason given'}`,
-    )
-    .join(' · ');
+  // What purchasing REFUSED, on the line it came back to (AC-H6). PR 1622 (owner, mock v3):
+  // the refusal is the ORDER INQUIRY's status, so the cell names the inquiry with the same
+  // Rejected pill and info icon as the List view, one per refused inquiry, and the decision
+  // half of the cell says nothing about it.
+  const refusals = new Map<string, NonNullable<BoardContribution['order_inquiry']>>();
+  for (const entry of cell.contributions) {
+    const inquiry = entry.order_inquiry;
+    if (inquiry?.ack_state !== 'rejected') continue;
+    const key = inquiry.inquiry_no ?? entry.key;
+    if (!refusals.has(key)) refusals.set(key, inquiry);
+  }
   const label = `${cell.item_code}, ${cell.total_qty} across ${orders} sales order${
     orders === 1 ? '' : 's'
   }`;
@@ -436,19 +438,27 @@ function BoardCellButton({
         </span>
       ) : null}
 
-      {/* Purchasing refused an instruction for one of these lines (AC-RB1). A BADGE, with
-          the refusal in its title: the cell is 150px wide and the reason is a sentence, so
-          printed in full it was a truncated fragment of somebody's words. The word tells
-          CS to look; the hover tells them who and why. */}
-      {rejected ? (
-        <span
-          data-testid="cell-rejected"
-          className="inline-flex w-fit rounded bg-destructive/10 px-1 text-[10px] font-medium text-destructive"
-          title={rejected}
-        >
-          Rejected
-        </span>
-      ) : null}
+      {/* Purchasing refused an instruction for one of these lines (AC-RB1, PR 1622 mock v3):
+          the inquiry number with the Rejected pill and info icon, the sentence (who, when,
+          why) in the title. Tapping the cell opens the drill-down, whose Order inquiry column
+          carries the same badge with its popover for a screen with no hover. */}
+      {Array.from(refusals.entries()).map(([key, inquiry]) => {
+        const sentence = purchasingRefusalTitle(inquiry);
+        return (
+          <span
+            key={key}
+            data-testid="cell-rejected"
+            className="flex min-w-0 items-center gap-1 text-[11px]"
+            title={sentence}
+            aria-label={`${inquiry.inquiry_no ?? 'Order inquiry'}: ${sentence}`}
+          >
+            {inquiry.inquiry_no ? (
+              <span className="min-w-0 truncate tabular-nums">{inquiry.inquiry_no}</span>
+            ) : null}
+            <OrderInquiryRejectedMark />
+          </span>
+        );
+      })}
 
       {/* What another sales order borrowed OFF the lines in this cell (AC-L6). A borrow was
           visible on the taking side and invisible on the giving side, so the agent whose

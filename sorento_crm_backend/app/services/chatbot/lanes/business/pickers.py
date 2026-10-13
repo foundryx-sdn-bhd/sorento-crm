@@ -1,18 +1,20 @@
-"""Ports of `annotate-incoming-picker.js` (35) and `annotate-customer-picker.js` (122).
+"""Port of `annotate-incoming-picker.js` (35), and the customer picker's has/no-DO stamp.
 
-Both annotate the picker text the gate ALREADY rendered: same lines, same order, same
-numbering, a suffix per numbered line and at most one trailing sentence. Display only -
-`compatible_entities`, the roster the next-turn pick resolves against, is untouched by
-either, and that is what makes them safe to run after the gate has decided.
+`annotate_incoming` annotates the picker text the gate ALREADY rendered: same lines, same
+order, same numbering, a suffix per numbered line and at most one trailing sentence.
+Display only - `compatible_entities`, the roster the next-turn pick resolves against, is
+untouched, and that is what makes it safe to run after the gate has decided. `out = gate`:
+the annotator MUTATES the gate item and returns it, so the `offer` exit carries the gate's
+own keys plus `escalate_message` / `is_clarification`.
 
-`out = gate` in both bodies: the annotator MUTATES the gate item and returns it, so the
-`offer` exit carries the gate's own keys plus `escalate_message` / `is_clarification`.
-Reproduced, because `not-found-error-message` downstream spreads that item.
+The customer picker no longer rewrites text (PICKER-ONE, owner 13 Oct 2026): every
+customer roster renders through `turn/compose.py::compose_question`, and its lines are
+stamped by `customer_stamp` over `customer_bases_with_do`'s answer, whichever path built
+the roster. The port of `annotate-customer-picker.js` is gone with that.
 
 The probe seam is a parameter, not a call: `probe` is whatever `sub-get-results` returned
-(`{answers|items: [...]}`), or `None` when it did not run. `annotate_customer` tells the
-two apart on purpose - a probe that FAILED must render the bare picker, never a confident
-"- no DO" on evidence that was never gathered.
+(`{answers|items: [...]}`), or `None` when it did not run. A probe that FAILED must read as
+not measured, never as a confident "no DO" on evidence that was never gathered.
 """
 from __future__ import annotations
 
@@ -42,9 +44,8 @@ _NON_ALNUM_UPPER = re.compile(r"[^A-Z0-9]+")
 # route itself enforces.
 PAGE_SATURATION = 1000
 
-# The probe's injected default window, mirrored here so the miss claim stays honest: on a
-# defaulted probe the suffix says "no recent delivery", because "recent" bounds the claim
-# to the window that was actually measured.
+# The customer probe's injected default window (`resolve_gate.default_probe_start`), kept
+# on the measured item as `customer_probe_window_days` so the trace says what was measured.
 CUSTOMER_PROBE_WINDOW_DAYS = 90
 
 
@@ -53,12 +54,12 @@ def _norm(value: Any) -> str:
     return jsc.nullish_str(value).strip().lower()
 
 
-def _probe_rows(probe: Any) -> list[Any] | None:
+def probe_rows(probe: Any) -> list[Any] | None:
     """`answers`, else `items`, else None. Neither being an array is the FAILURE signal.
 
     `sub-get-results` emits one of the two on every successful read, so "neither" can only
-    mean the probe did not run or errored out - which `annotate_customer` renders as the
-    bare picker rather than as an empty result set.
+    mean the probe did not run or errored out - which every caller reads as NOT MEASURED
+    rather than as an empty result set.
     """
     if isinstance(jsc.get(probe, "answers"), list):
         return probe["answers"]
@@ -86,7 +87,7 @@ def annotate_incoming(gate: dict[str, Any] | None, *, probe: Any) -> dict[str, A
 
     # Codes WITH incoming from the probe's answers (`crm_incoming_stock_list` returns a row
     # per product that HAS incoming; title / "Product Code" field = the code). Absent = none.
-    answers = _probe_rows(probe)
+    answers = probe_rows(probe)
     if answers is None:
         answers = []
     if any(jsc.truthy(a) and jsc.get(jsc.get(a, "flags"), "dealer_view") is True for a in answers):
@@ -207,15 +208,15 @@ def _bases_with_do(rows: list[Any]) -> set[str]:
 
 
 def customer_bases_with_do(probe: Any) -> set[str] | None:
-    """The same answer `annotate_customer` stamps its lines from, for a caller that
-    builds its OWN roster (the re-architected narrower, owner hand pass 2 item 2).
+    """The customer families the probe found a delivered DO for - what `customer_stamp`
+    stamps every customer picker line from.
 
-    `None` means NOT MEASURED - the probe failed, or its page saturated - which is the
-    annotator's own unprobed arm and must read as "no stamp", never as "no DO". One
-    rule, two callers, so the line a customer reads and the roster the session stores
-    cannot disagree about which families have a delivery order.
+    `None` means NOT MEASURED - the probe failed, or its page saturated - and must read as
+    "no stamp", never as "no DO". One rule for every customer roster, so the line a
+    customer reads and the roster the session stores cannot disagree about which families
+    have a delivery order.
     """
-    rows = _probe_rows(probe)
+    rows = probe_rows(probe)
     if rows is None or len(rows) >= PAGE_SATURATION:
         return None
     return _bases_with_do(rows)
@@ -237,7 +238,7 @@ def product_codes_in(probe: Any) -> set[str] | None:
     `None` means the probe did not run or its page saturated, which every caller reads as
     "no stamp", never as "no promo".
     """
-    rows = _probe_rows(probe)
+    rows = probe_rows(probe)
     if rows is None or len(rows) >= PAGE_SATURATION:
         return None
     codes: set[str] = set()
@@ -258,75 +259,16 @@ def customer_base(value: Any) -> str:
     return _customer_base(value)
 
 
-def annotate_customer(
-    gate: dict[str, Any] | None, *, probe: Any, parser: dict[str, Any] | None
-) -> dict[str, Any]:
-    """`annotate-customer-picker` - which candidates have a delivery ORDER."""
-    out = gate if isinstance(gate, dict) else {}
-    probe = probe if jsc.truthy(probe) else {}
-    parser = parser if isinstance(parser, dict) else {}
+def customer_stamp(name: Any, bases_with_do: set[str] | None) -> str | None:
+    """The ONE stamp a customer picker line carries (PICKER-ONE, owner 13 Oct 2026).
 
-    # WHICH WINDOW WAS PROBED: the probe always sends a delivery-date window - the parser's
-    # own bounds when the customer named one, else the injected 90-day default. This mirror
-    # of "defaulted iff the parser supplied NEITHER bound" is what keeps the suffix wording
-    # honest; change the probe's default without revisiting this and the claim loses its bound.
-    probe_windowed = (
-        jsc.get(parser, "date_filter_start") is None and jsc.get(parser, "date_filter_end") is None
-    )
-
-    out["is_clarification"] = False  # parity with the not-found require_specific branch
-    out["customer_probe_window_days"] = CUSTOMER_PROBE_WINDOW_DAYS if probe_windowed else None
-
-    # THE BARE PICKER: `not-found-error-message` renders a require_specific turn as
-    # `escalate_message = gate.gate_clarification` verbatim, so this string IS today's live
-    # output for this turn. Every arm that cannot honestly annotate returns exactly it.
-    clarification = jsc.get(out, "gate_clarification")
-    bare = jsc.js_string(clarification) if jsc.truthy(clarification) else ""
-
-    # D2 - PROBE FAILED vs PROBE FOUND NOTHING. The probe carries
-    # `onError: continueRegularOutput`, so a transient failure arrives as an ordinary item.
-    # Without this arm the failure is indistinguishable from an empty answer set and every
-    # line renders a confident "- no delivery" on evidence that was never gathered.
-    rows = _probe_rows(probe)
-    if rows is None:
-        out["escalate_message"] = bare
-        out["customer_probe_hits"] = None  # null = not measured
-        out["customer_probe_skip_reason"] = "probe_unavailable"
-        return out
-
-    # F - PAGE SATURATION. A saturated page withholds the annotation and renders the bare
-    # picker; it can NEVER invent one.
-    if len(rows) >= PAGE_SATURATION:
-        out["escalate_message"] = bare
-        out["customer_probe_hits"] = None
-        out["customer_probe_skip_reason"] = "page_saturated"
-        return out
-
-    # ONLY rows that carry a delivery-order date count. `crm_order_management_orders_list`
-    # returns every matching ORDER, delivered or not, so the old membership test ("this
-    # customer appears in the probe") stamped "has delivery" on a customer whose orders
-    # had not shipped.
-    with_do = _bases_with_do(rows)
-
-    # NO reordering, no renumbering - the numbers are the pick affordance. Suffixes only,
-    # and a plain hyphen, never an em-dash. The wording is the owner's: "has DO" / "no DO",
-    # one stamp whether or not the probe was windowed (the window is a fact about the
-    # MEASUREMENT and is still reported on `customer_probe_window_days`; hedging it into
-    # the line is what made the old "no recent delivery" unreadable at WhatsApp width).
-    suffix_hit = " - has DO"
-    suffix_miss = " - no DO"
-    annotated = _annotate_lines(
-        bare,
-        lambda label: suffix_hit if _customer_base(label) in with_do else suffix_miss,
-    )
-    message = annotated
-    if len(with_do) == 0:
-        message += (
-            "\n\nNone of these have a recent DO."
-            if probe_windowed
-            else "\n\nNone of these have a matching DO."
-        )
-    out["escalate_message"] = message
-    out["customer_probe_hits"] = len(with_do)
-    out["customer_probe_skip_reason"] = None
-    return out
+    "has DO" / "no DO" by the line's family base against `customer_bases_with_do`'s
+    answer. `None` bases is NOT MEASURED (the probe failed, its page saturated, or R20's
+    outstanding ask never probed) and reads as no stamp, never as "no DO". The wording is
+    the owner's (console pass 3, 6 Sep 2026): a plain hyphen before it, never an em-dash,
+    and no window hedge ("recent") in the line. Every customer roster is stamped here,
+    whichever path built it, so one customer reads the same in every picker.
+    """
+    if bases_with_do is None:
+        return None
+    return "has DO" if _customer_base(name) in bases_with_do else "no DO"

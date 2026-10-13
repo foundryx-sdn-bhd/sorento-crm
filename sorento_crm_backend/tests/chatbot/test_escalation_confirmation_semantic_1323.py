@@ -444,3 +444,7 @@ def test_the_migration_publishes_the_next_version_unlabelled_and_is_idempotent()
         module.publish(bind)
         again = db.query(AIPromptVersion).filter(AIPromptVersion.name == "chatbot_semantic_parser").count()
         assert again == len(rows)
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

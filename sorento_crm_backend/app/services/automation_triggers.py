@@ -638,6 +638,38 @@ register(
 )
 
 
+def _trigger_order_inquiry_rejected(
+    db: Session,
+    config: dict[str, Any],
+    timezone: str,
+) -> Iterable[TriggerMatch]:
+    """Event-driven; pull-mode evaluation yields nothing.
+
+    Matches are produced via `ProjectOrderInquiryService._uncover_and_notify_rejection`
+    (`PLAN-oi-reject-notify-13oct.md`), one per order inquiry a reject touched, queued
+    mid-transaction and drained post-commit by `_fire_pending_reject`.
+    """
+    return []
+
+
+register(
+    TriggerSpec(
+        type="order_inquiry_rejected",
+        label="Order inquiry rejected",
+        description=(
+            "Fires when purchasing rejects order inquiry rows (event-driven), one email "
+            "per order inquiry listing every line rejected in that action."
+        ),
+        config_schema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    _trigger_order_inquiry_rejected,
+)
+
+
 def _trigger_sponsorship_form_approved(
     db: Session,
     config: dict[str, Any],

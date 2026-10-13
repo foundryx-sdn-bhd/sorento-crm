@@ -6,7 +6,11 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { BoardDecisionPill } from './BoardDecisionPill';
+import {
+  BoardDecisionPill,
+  matchesStatusFilter,
+  PURCHASING_REJECTED_FILTER,
+} from './BoardDecisionPill';
 import type {
   BoardContribution,
   BoardLineDecision,
@@ -376,5 +380,44 @@ describe('BoardDecisionPill: a saved line the engine has re-suggested (S4, AC-4.
       />,
     );
     expect(screen.getByTestId(`decision-pill-${KEY}`)).toHaveTextContent('Rejected');
+  });
+});
+
+/**
+ * PR 1622 (mock v3): "Rejected by purchasing" is the order inquiry's status, not a verdict,
+ * but it filters from the same Status control the verdicts do.
+ */
+describe('matchesStatusFilter: Rejected by purchasing (PR 1622)', () => {
+  const refused = contributionOf({
+    order_inquiry: {
+      inquiry_no: 'OI-2610-0007',
+      state: 'raised',
+      ack_state: 'rejected',
+      rejected_reason: 'DISCON',
+      rejected_by_name: 'Joey',
+    } as BoardContribution['order_inquiry'],
+  });
+  const answered = contributionOf({
+    order_inquiry: {
+      inquiry_no: 'OI-2610-0007',
+      state: 'raised',
+      ack_state: null,
+    } as BoardContribution['order_inquiry'],
+  });
+
+  it('keeps an open refusal and drops everything else', () => {
+    expect(matchesStatusFilter(refused, null, [PURCHASING_REJECTED_FILTER])).toBe(true);
+    expect(matchesStatusFilter(answered, null, [PURCHASING_REJECTED_FILTER])).toBe(false);
+  });
+
+  it('still matches the line by its own verdict beside it', () => {
+    expect(matchesStatusFilter(refused, null, ['suggested'])).toBe(true);
+    expect(matchesStatusFilter(answered, null, [PURCHASING_REJECTED_FILTER, 'suggested'])).toBe(
+      true,
+    );
+  });
+
+  it('lets every line through with no filter', () => {
+    expect(matchesStatusFilter(answered, null, [])).toBe(true);
   });
 });
