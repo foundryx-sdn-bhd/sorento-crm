@@ -355,9 +355,16 @@ _UNSUPPORTED_PARAM_RE = re.compile(r"[Uu]nsupported parameter: '([a-z_]+)'|'([a-
 _UNSUPPORTED_CODES = frozenset({"unsupported_parameter", "unsupported_value"})
 
 
+# Parameters whose refused VALUE says nothing about the parameter: `minimal` refused on a
+# model that takes `low` must not drop every later effort on it for the life of the process.
+_VALUE_REFUSALS_ARE_PER_CALL = frozenset({"reasoning_effort"})
+
+
 def _is_unsupported(exc: Exception, param: str) -> bool:
     """True when the 400 says the model does not take `param` at all."""
     message = str(exc)
+    if param in _VALUE_REFUSALS_ARE_PER_CALL:
+        return _unsupported_param(message) == param
     return (
         getattr(exc, "code", None) in _UNSUPPORTED_CODES
         or _unsupported_param(message) == param

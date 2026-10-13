@@ -66,6 +66,9 @@ class ParserError(RuntimeError):
     ) -> None:
         super().__init__(*args)
         self.usage = usage or {}
+        # The provider call's wall clock, set by `parse` even when the call never returned
+        # (no usage then, so no usage row), for the failed `understood` record.
+        self.latency_ms: int | None = None
         # PR #1247 round 6, ruling 3: every attempt was refused with a 429, so the
         # dealer is told `llm_call.RATE_LIMITED_REPLY`, not the generic parser error.
         self.rate_limited = rate_limited
@@ -1010,9 +1013,13 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             **effort,
         )
     except llm_call.RateLimited as exc:
-        raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc
+        failure = ParserError(f"parser provider call failed: {exc}", rate_limited=True)
+        failure.latency_ms = int((time.perf_counter() - started) * 1000)
+        raise failure from exc
     except Exception as exc:  # noqa: BLE001 - provider/transport failure is a failed stage
-        raise ParserError(f"parser provider call failed: {exc}") from exc
+        failure = ParserError(f"parser provider call failed: {exc}")
+        failure.latency_ms = int((time.perf_counter() - started) * 1000)
+        raise failure from exc
 
     usage = {
         "provider": config.provider,
@@ -1049,5 +1056,6 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
         # The provider answered, so it billed. The turn fails either way; the spend is
         # still real and still has to reach `ai_assistant_usage_logs`.
         exc.usage = usage
+        exc.latency_ms = usage["latency_ms"]
         raise
     return ParsedOutput(parsed, usage)

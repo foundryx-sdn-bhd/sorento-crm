@@ -4496,7 +4496,7 @@ def _run_stages_body(  # noqa: PLR0915
                 "provider": parser_config.provider,
                 "model": parser_config.model,
                 "reasoning_effort": parser_config.reasoning_effort,
-                "latency_ms": (getattr(exc, "usage", {}) or {}).get("latency_ms"),
+                "latency_ms": getattr(exc, "latency_ms", None),
                 # A replay miss fails here: the console check must not read it as a live
                 # spend (LLM-TEST-COST).
                 "llm_cassette": llm_cassette.mode_label(),
