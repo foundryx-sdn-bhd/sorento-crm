@@ -432,3 +432,5 @@ def test_p20_the_unrecorded_count_sentence_is_in_the_catalog(line):
     for lang in ("ms", "zh"):
         done = Localizer(lang, defaults(lang)).reply(line)
         assert "recorded" not in done and number in done, (lang, done)
+        if "Size" in line:
+            assert "Size" not in done, (lang, done)

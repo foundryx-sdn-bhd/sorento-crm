@@ -269,6 +269,11 @@ LABELS: dict[str, dict[str, str]] = {
     # Owner ruling 13 Oct 2026 (size-miss wording, option b; the MCP presenter's sentences).
     "No {size}.": {"ms": "Tiada {size}.", "zh": "没有 {size}。"},
     "Sizes on file: {sizes}.": {"ms": "Saiz yang ada: {sizes}.", "zh": "现有尺寸：{sizes}。"},
+    # The spec-miss unrecorded count (MCP presenter `_spec_miss_intro`; crew live check #3).
+    "{count} have no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
+    "{count} has no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
+    "{count} have no Size recorded.": {"ms": "{count} tiada rekod saiz.", "zh": "{count} 个没有记录尺寸。"},
+    "{count} has no Size recorded.": {"ms": "{count} tiada rekod saiz.", "zh": "{count} 个没有记录尺寸。"},
     "Showing {from} to {to} of {total}. Reply to see more.": {
         "ms": "Menunjukkan {from} hingga {to} daripada {total}. Balas untuk lihat lagi.",
         "zh": "显示第 {from} 至 {to} 项，共 {total} 项。回复即可查看更多。",
@@ -561,6 +566,10 @@ INLINE = frozenset(
         "Nothing on {names} either.",
         "No {size}.",
         "Sizes on file: {sizes}.",
+        "{count} have no {label} recorded.",
+        "{count} has no {label} recorded.",
+        "{count} have no Size recorded.",
+        "{count} has no Size recorded.",
         "Not checked: {names}.",
         "I could not find {names}.",
         "I have attached the file(s) below.",
@@ -670,7 +679,7 @@ _NUMERIC_TOKENS = frozenset({"available"})
 #: A measure ("250 mm", "130.5mm") and a list of them: the size-miss sentences (owner ruling
 #: 13 Oct) name only measures, so "No {size}." never takes "No exact match." (review, b6da364a).
 _MEASURE = r"\d[\d.,]*(?: ?[A-Za-z]{1,4})?"
-_MEASURE_TOKENS = {"size": _MEASURE, "sizes": f"{_MEASURE}(?:, {_MEASURE})*"}
+_MEASURE_TOKENS = {"size": _MEASURE, "sizes": f"{_MEASURE}(?:, {_MEASURE})*", "count": r"\d[\d,]*"}
 
 
 def _token_pattern(name: str) -> str:
