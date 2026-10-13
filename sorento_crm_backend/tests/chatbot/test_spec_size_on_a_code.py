@@ -31,10 +31,12 @@ from tests.chatbot.test_spec_on_category_entity import (  # noqa: F401
 from tests.chatbot import test_outstanding_lane as harness
 
 
-def _seed_wcs(session_factory, more_200: int = 0) -> dict[str, Any]:
+def _seed_wcs(session_factory, more_200: int = 0, wc_category: bool = True) -> dict[str, Any]:
     """One WC family (`family_code`) with S-trap 150 / 200 variants, two P-trap variants (180) and
     one with no trap on file, plus a WC of another family holding 250. One stock row each.
-    `more_200`: that many more 200 variants in the family, and one 200 in the other family."""
+    `more_200`: that many more 200 variants in the family, and one 200 in the other family.
+    `wc_category=False`: no Category row names WCs; the class is known only to the registry's class
+    vocabulary (the dev shape behind crew round 5)."""
     from app.models.product import Product
     from app.models.product_spec import ProductSpecifications
     from app.services.company_scope import DEFAULT_COMPANY_ID
@@ -44,7 +46,8 @@ def _seed_wcs(session_factory, more_200: int = 0) -> dict[str, Any]:
     from tests.chatbot.test_promo_subject_filter import _class
 
     _seed_contact(session_factory, variables={})
-    _class(session_factory, "Water Closet", ("wc",))
+    if wc_category:
+        _class(session_factory, "Water Closet", ("wc",))
     db = session_factory()
     _seed_registry(db)
     wh = warehouse(db, company_id=DEFAULT_COMPANY_ID)
@@ -83,13 +86,13 @@ def _code(raw: str) -> dict[str, Any]:
     }
 
 
-def _ask(session_factory, monkeypatch, entities, text) -> tuple[str, list]:
+def _ask(session_factory, monkeypatch, entities, text, real_resolver=True) -> tuple[str, list]:
     call, captured = _route_backed_stock(monkeypatch, session_factory)
     monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
     qf = _parser_output(domain_hint="inventory", intent_hint="check_stock", entities=entities)
     result, _ = _run_turn(
         session_factory, monkeypatch, qf=qf, text_body=text,
-        msg_id=f"zzt-soc2-{uuid.uuid4().hex[:6]}", real_resolver=True,
+        msg_id=f"zzt-soc2-{uuid.uuid4().hex[:6]}", real_resolver=real_resolver,
     )
     return (result.reply or {}).get("text") or "", captured
 
@@ -216,3 +219,43 @@ def test_2b_page_two_of_a_family_and_a_size_keeps_the_family(session_factory, mo
     family_200 = {c for c in w["codes"] if c.startswith(f"{f}-SH") and ("-200" in c)}
     assert first_listed | second_listed == family_200 and not first_listed & second_listed, (first, second)
     assert f"{w['other']}-SH-200" not in second_listed, second
+
+
+def test_1b_a_class_and_a_size_ask_the_tool_when_the_resolver_places_nothing(session_factory, monkeypatch, _clear_overrides):
+    """Crew round 5 on b962ddf7 (v101, dev): "250mm wc got stock?" made no tool call and replied
+    "That would search every stock we have - I need at least one filter". The broad-stock guard
+    fires when the resolver placed nothing (no product, no described set, nothing unplaced): here
+    the resolver does not answer at all. The class and the size ARE the filters (owner): the route
+    answers them, so the guard must read them as narrowing."""
+    from app.services.chatbot.lanes.business import resolve_gate
+
+    w = _seed_wcs(session_factory)
+
+    def _no_answer(*_a, **_k):
+        raise RuntimeError("resolver did not answer")
+
+    monkeypatch.setattr(resolve_gate, "run", _no_answer)
+    reply, captured = _ask(
+        session_factory, monkeypatch, [_spec_entity("250mm", "size", 250), _category("wc", "wc")], "250mm wc got stock?",
+    )
+    assert "at least one filter" not in reply, reply
+    calls = [a for n, a in captured if n == STOCK_TOOL]
+    assert calls, (captured, reply)
+    sent = calls[-1].get("spec_constraints") or []
+    assert {"key": "size", "op": "eq", "value": 250} in sent and any(c.get("key") == "class" for c in sent), calls
+    assert _listed(reply, w["codes"]) == {f"{w['other']}-SH-250"}, reply
+
+
+def test_1c_the_parsers_english_class_name_is_honoured_when_its_word_names_no_class(session_factory, monkeypatch, _clear_overrides):
+    """Crew round 5: no Category row carries WCs, so the class vocabulary reads "wc" as nothing
+    and the size was dropped with it (every WC listed). The parser named the kind in English
+    (`canonical_code`, the published "A SIZE AND A CLASS WORD" rule); code honours that name."""
+    w = _seed_wcs(session_factory, wc_category=False)
+    reply, captured = _ask(
+        session_factory, monkeypatch, [_spec_entity("250mm", "size", 250), _category("wc", "Water Closet")], "250mm wc got stock?",
+    )
+    calls = [a for n, a in captured if n == STOCK_TOOL]
+    assert calls, (captured, reply)
+    sent = calls[-1].get("spec_constraints") or []
+    assert {"key": "class", "op": "eq", "value": "Water Closet"} in sent and {"key": "size", "op": "eq", "value": 250} in sent, calls
+    assert _listed(reply, w["codes"]) == {f"{w['other']}-SH-250"}, reply

@@ -217,3 +217,15 @@ def test_p10_the_size_and_class_rule_teaches_no_language():
         assert word not in SIZE_AND_CLASS_RULE, word
     assert "canonical_code" in SIZE_AND_CLASS_RULE and '"size"' in SIZE_AND_CLASS_RULE
     assert unicodedata.normalize("NFKC", SIZE_AND_CLASS_RULE) == SIZE_AND_CLASS_RULE
+
+
+def test_p11_the_size_rule_holds_on_every_ask_about_the_products_promotions_included():
+    """Crew round 5 on b962ddf7 (v101): "any 600mm basin promo" lost the 600mm intermittently and
+    answered every basin promotion. The rule must say, as a business rule, that the size entity
+    stays whatever is asked about those products, a promotion included, and that it is never
+    dropped."""
+    from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
+
+    rule = SIZE_AND_CLASS_RULE.lower()
+    assert "promotion" in rule, SIZE_AND_CLASS_RULE
+    assert "never dropped" in rule or "never drop" in rule, SIZE_AND_CLASS_RULE
