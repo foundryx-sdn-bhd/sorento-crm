@@ -575,7 +575,16 @@ PRICING_NOTE = (
 )
 
 
-def _unpriced_models(db: Any) -> list[dict]:
+def _unpriced_models(db: Any) -> Optional[list[dict]]:
+    """The models with unpriced calls, or None when the lookup fails (a timeout on a large log
+    must not make the whole describe fail)."""
+    try:
+        return _unpriced_lookup(db)
+    except QueryError:
+        return None
+
+
+def _unpriced_lookup(db: Any) -> list[dict]:
     res = run_query(db, QuerySpec(
         dataset="llm_calls", group_by=["model"], measures=[Measure(fn="count")],
         filters=[Filter(column="priced", op="eq", value=False)],
