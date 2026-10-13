@@ -1,0 +1,246 @@
+# Console cases for PARSER-GEMINI-LITE (PR #1624): the parser on another model, graded as
+# conversations. The lane changes the parser's model path (Gemini schema, reasoning
+# effort), so these cover every answer type whose parser field changed on Gemini:
+# stock quantity (`demand_qty`), product attribute asks (`spec_value`, `find`), the sales
+# ranking and report (period / measure / product narrowing), the escalation offer, and
+# profile statements (`profile_statements[].value`, the string-or-array field whose
+# schema failed every Gemini call).
+#
+# Owner rule, 13 Oct 2026: for each answer type, (1) a follow-up that narrows the last
+# answer, (2) a short reply to every question the bot asks ("sorento", "yes", "2026"),
+# (3) one topic switch and back. Each turn says which with `covers:` (the runner ignores
+# it; `tests/chatbot/test_parser_gemini_lite_console_cases.py` grades the shape).
+#
+# HOW TO RUN (by hand, never in CI; every case is `live_only`). Once per parser model,
+# against a crew test copy on the prod-copy catalogue, paced:
+#
+#   venv/bin/python scripts/chatbot_console_check.py \
+#       tests/chatbot/console_cases/2026-10-13-parser-gemini-lite.yaml --live \
+#       --base-url http://127.0.0.1:<be port> --sleep-seconds 8
+#
+# First with the label as it is (gpt-5.4-mini), then with
+#   UPDATE ai_prompt_labels SET provider='gemini', model='gemini-3.5-flash-lite'
+#   WHERE name='chatbot_semantic_parser' AND label='production';
+# A case red on BOTH runs is an expectation to fix (or `expected_red_until`), not a verdict
+# on the model; the comparison is the pair.
+#
+# Expectations marked VERIFIED are copied from a committed case that passed on the prod
+# copy (file named beside it). Those marked NEW were written for this file and have not
+# been run yet: this sandbox has no prod-copy catalogue and no live parser. No real
+# conversation is quoted; product codes are catalogue codes already used by the cases
+# named. The crew's photo-loop transcript stays in the crew-only eval set.
+
+contact: "900000008"
+
+cases:
+  # ------------------------------------------------------------- stock quantity
+  - name: stock - picker, quantity, switch to a class ask and back, then a miss and "yes"
+    answer_type: stock_quantity
+    live_only: true
+    cold: true
+    contact: "487555417"
+    turns:
+      - text: "8066 stock ?"
+        covers: [opening]
+        expect:  # VERIFIED 2026-10-07-rogue-convo-r2.yaml row 1-3
+          reply_contains: ["8066 matches", "Which one?"]
+          no_uuid: true
+      - text: "2"
+        covers: [short_reply]
+        expect:  # VERIFIED same
+          reply_contains: ["How many units of SRT"]
+          no_uuid: true
+      - text: "5"
+        covers: [short_reply]
+        expect:  # VERIFIED same
+          reply_contains: [" x 5:"]
+          reply_not_contains: ["Couldn't find"]
+          no_uuid: true
+      - text: "which basin got stock"
+        covers: [switch]
+        expect:  # VERIFIED 2026-09-11-attribute-first-asks.yaml (other contact); NEW here
+          reply_contains: ["wash basins have stock"]
+          no_uuid: true
+      - text: "back to the 8066, need 10"
+        covers: [back, narrow]
+        expect:  # NEW. `demand_qty` is number-or-string: the anyOf branch this lane opened
+          reply_contains: ["8066", " x 10:"]
+          reply_not_contains: ["wash basins have stock", "Couldn't find"]
+          parser:
+            demand_qty: {one_of: [10, "10"]}
+          no_uuid: true
+      - text: "stock ZZNOPE999?"
+        covers: [switch]
+        expect:  # NEW; the Malay twin is VERIFIED in 2026-10-02-chat-language.yaml
+          reply_contains: ["Would you like me to escalate"]
+          no_uuid: true
+      - text: "yes"
+        covers: [short_reply]
+        expect:  # VERIFIED shape 2026-09-28-escalation-confirmation.yaml (#1323)
+          parser:
+            escalation:
+              is_escalation_confirmation: true
+
+  - name: stock - a class ask narrowed by brand and mounting, then paged
+    answer_type: stock_quantity
+    live_only: true
+    cold: true
+    contact: "900000052"
+    turns:
+      - text: "which basin got stock"
+        covers: [opening]
+        expect:  # VERIFIED 2026-09-11-attribute-first-asks.yaml (AC-1310)
+          reply_contains: ["wash basins have stock"]
+          no_uuid: true
+      - text: "sorento"
+        covers: [short_reply, narrow]
+        expect:  # NEW; the one-sentence form is VERIFIED in the same file (owner turn 5)
+          reply_contains: ["*Brand:* Sorento", "wash basins have stock"]
+          reply_not_contains: ["products have stock"]
+          no_uuid: true
+      - text: "wall hung only"
+        covers: [narrow]
+        expect:  # NEW; the one-sentence form is VERIFIED in the same file (owner turn 9)
+          reply_contains: ["*Brand:* Sorento", "*Mounting:* Wall hung"]
+          no_uuid: true
+      - text: "10"
+        covers: [short_reply]
+        expect:  # VERIFIED same file (owner turn 10)
+          reply_contains: ["*Mounting:* Wall hung", "Here are the first 10."]
+          no_uuid: true
+
+  # ------------------------------------------------------------- product attribute ask
+  - name: product attribute - taps with drawings, brand by a one-word reply, switch and back
+    answer_type: product_attribute
+    live_only: true
+    cold: true
+    contact: "900000072"
+    turns:
+      - text: "which tap has technical drawing"
+        covers: [opening]
+        expect:  # VERIFIED 2026-10-07-chatbot-trio.yaml (#1514)
+          reply_contains: ["Here's what you want: taps with technical specifications ("]
+          no_uuid: true
+      - text: "sorento"
+        covers: [short_reply, narrow]
+        expect:  # VERIFIED same
+          reply_contains:
+            - "Here's what you want: Sorento taps with technical specifications ("
+            - "*Attachment Type:* Technical Specifications"
+          no_uuid: true
+      - text: "which basin got stock"
+        covers: [switch]
+        expect:  # NEW for this contact
+          reply_contains: ["wash basins have stock"]
+          no_uuid: true
+      - text: "sorento taps with technical drawing again"
+        covers: [back]
+        expect:  # NEW
+          reply_contains: ["Sorento taps with technical specifications ("]
+          reply_not_contains: ["wash basins have stock"]
+          no_uuid: true
+
+  # ------------------------------------------------------------- sales ranking
+  - name: sales ranking - measure by one word, a bare year, the other measure, switch and back
+    answer_type: sales_ranking
+    live_only: true
+    cold: true
+    turns:
+      - text: "top 100 hot selling item"
+        covers: [opening]
+        expect:  # VERIFIED 2026-09-27-top-selling-round5.yaml (transcript 1)
+          reply_contains: ["By quantity or by amount?"]
+      - text: "qty"
+        covers: [short_reply]
+        expect:  # VERIFIED same
+          reply_contains: ["*Top 100 selling items*"]
+      - text: "2026"
+        covers: [short_reply, narrow]
+        expect:  # NEW; the "2025?" form is VERIFIED in the same file (worst selling)
+          reply_contains: ["*Top 100 selling items*", "Delivery date: 01/01/2026 to 31/12/2026"]
+          reply_not_contains: ["Which one do you mean?"]
+      - text: "by amount"
+        covers: [narrow]
+        expect:  # NEW
+          reply_contains: ["*Top 100 selling items*", "Delivery date: 01/01/2026 to 31/12/2026"]
+          reply_not_contains: ["By quantity or by amount?"]
+      - text: "sales report for SRTWT7445"
+        covers: [switch]
+        expect:  # VERIFIED 2026-09-19-sales-report.yaml (S18), date line left out (year-relative)
+          branch_kind: business_query
+          reply_contains: ["*Product:* SRTWT7445", "*Total:* Qty"]
+          no_uuid: true
+      - text: "back to the top 100 selling items in 2026 by quantity"
+        covers: [back]
+        expect:  # NEW
+          reply_contains: ["*Top 100 selling items*", "Delivery date: 01/01/2026 to 31/12/2026"]
+          reply_not_contains: ["*Product:* SRTWT7445"]
+
+  # ------------------------------------------------------------- sales report
+  - name: sales report - drill by number, narrow period then product, switch to stock and back
+    answer_type: sales_report
+    live_only: true
+    cold: true
+    turns:
+      - text: "give me the dealer sales report for hanlim"
+        covers: [opening]
+        expect:  # VERIFIED 2026-09-19-sales-report.yaml (dealer channel named)
+          branch_kind: business_query
+          reply_contains: ["*Customer:*", "*Total:* Qty", "*Drill down:*"]
+          pending_kind: sales_report_detail
+          no_uuid: true
+      - text: "1"
+        covers: [short_reply]
+        expect:  # VERIFIED same
+          branch_kind: business_query
+          reply_contains: ["*Total:* Qty", "*Drill down:*"]
+          no_uuid: true
+      - text: "june 2026 only"
+        covers: [narrow]
+        expect:  # VERIFIED same
+          branch_kind: business_query
+          reply_contains: ["*Delivery date:* 01/06/2026 to 30/06/2026", "*Total:* Qty"]
+          no_uuid: true
+      - text: "only SRTWT7445"
+        covers: [narrow]
+        expect:  # VERIFIED same
+          branch_kind: business_query
+          reply_contains: ["*Product:* SRTWT7445", "*Delivery date:* 01/06/2026 to 30/06/2026"]
+          no_uuid: true
+      - text: "8066 stock ?"
+        covers: [switch]
+        expect:  # VERIFIED for 487555417 (rogue-convo-r2); NEW for this contact
+          reply_contains: ["8066"]
+          reply_not_contains: ["*Drill down:*"]
+          no_uuid: true
+      - text: "back to the hanlim dealer sales for june 2026"
+        covers: [back]
+        expect:  # NEW
+          branch_kind: business_query
+          reply_contains: ["*Customer:*", "*Delivery date:* 01/06/2026 to 30/06/2026"]
+          no_uuid: true
+
+  # ------------------------------------------------------------- profile statements
+  # Graded on the parser emission: the array branch of `profile_statements[].value` is the
+  # field whose Gemini schema failed every call before this lane. `key` only: the value's
+  # wording is the model's own.
+  - name: profile - a list statement, a switch, and a single statement on return
+    answer_type: profile_statement
+    live_only: true
+    cold: true
+    turns:
+      - text: "I usually buy sorento and mocha"
+        covers: [statement]
+        expect:  # NEW
+          parser:
+            profile_statements: [{key: usual_brands}]
+      - text: "8066 stock ?"
+        covers: [switch]
+        expect:  # NEW for this contact
+          reply_contains: ["8066"]
+          no_uuid: true
+      - text: "by the way I'm the purchaser here"
+        covers: [statement, back]
+        expect:  # NEW
+          parser:
+            profile_statements: [{key: role}]

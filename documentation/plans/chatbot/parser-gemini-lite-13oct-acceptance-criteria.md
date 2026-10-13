@@ -16,3 +16,10 @@
   provider, model and latency_ms.
 - AC-5: A contact whose respond.io id is on two `respond_contacts` rows still gets its
   `ai_assistant_usage_logs` row.
+- AC-6 (owner conversation rule, 13 Oct): the lane's console cases
+  (`tests/chatbot/console_cases/2026-10-13-parser-gemini-lite.yaml`) give every answer
+  type the parser change touches a follow-up that narrows the last answer, a short reply
+  to each question the bot asks ("sorento", "yes", "2026" among them), and a topic switch
+  and back in one conversation. The shape is graded by
+  `tests/chatbot/test_parser_gemini_lite_console_cases.py`; the cases themselves run by
+  hand, once per parser model, on a crew test copy.
