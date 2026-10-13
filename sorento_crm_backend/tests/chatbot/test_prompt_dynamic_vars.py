@@ -51,6 +51,10 @@ def test_parser_key_declares_every_registry_variable():
         "status_field_values",
         "entity_kinds", "entity_kinds_detail", "specs", "brands", "teams", "agents",
         "access_levels",
+        # MULTI-ASK-PLAN2: the sub-ask measure glossary (`maskp_0002_measure_words`).
+        "sub_ask_measures",
+        # CHAT-FIND (#1601): the generic find rule and filter lines.
+        "find_filters",
     }
 
 
