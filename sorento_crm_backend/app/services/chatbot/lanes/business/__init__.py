@@ -605,6 +605,10 @@ def _nothing_live_of_kind(
     return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
+#: V1-DOC-SCOPE: the tools that list customer documents (DOs, and SOs on the report).
+_DOC_TOOLS: frozenset[str] = fetch_mod.ORDER_TOOLS | {"crm_outstanding_report"}
+
+
 def _scope_refusal(customer_scope: dict[str, Any]) -> str:
     """The contact's scope refusal line; a contact with no links (no scope read at all) gets
     the same line over no names ("I can only check on your own account")."""
@@ -1576,6 +1580,12 @@ def run_fetch(
             own = {str(i) for i in customer_scope["ids"]}
             customer_ids = [u for u in customer_ids if str(u) in own] or list(customer_scope["ids"])
     if parse_output.get("so_list") is True and parse_output.get("domain_hint") == "order" and customer_ids and db is not None:
+        if parse_output.get("doc_staff") is not True and not customer_scope.get("ids"):
+            # V1-DOC-SCOPE: a non-staff contact with no links owns no sales order; a customer
+            # it named is another customer.
+            if trace is not None:
+                trace.add("so_list", {"refused": "no_links"})
+            return _fixed_reply(_scope_refusal(customer_scope))
         access_ctx = ctx.get("access") if isinstance(ctx.get("access"), dict) else {}
         granted_raw = access_ctx.get("attributes")
         granted = set(granted_raw) if isinstance(granted_raw, (list, tuple, set, frozenset)) else set()
@@ -2239,10 +2249,11 @@ def run_fetch(
             semantic_input["so_bucket_refused"] = True
 
     # V1-DOC-SCOPE (owner rule: unlinked != customer): a non-staff contact with no customer
-    # links owns no delivery order, so an orders read would only ever list other customers'.
-    # Refused before any fetch; the orders route itself scopes only an enforced contact.
+    # links owns no delivery order, so an orders read (or the outstanding report, whose rows
+    # carry DO / SO numbers and customer names) would only ever list other customers'.
+    # Refused before any fetch; the routes themselves scope only an enforced contact.
     if (
-        tool_name in fetch_mod.ORDER_TOOLS
+        tool_name in _DOC_TOOLS
         and parse_output.get("doc_staff") is not True
         and not customer_scope.get("ids")
     ):

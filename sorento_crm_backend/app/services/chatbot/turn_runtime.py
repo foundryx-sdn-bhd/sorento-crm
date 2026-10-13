@@ -2416,7 +2416,13 @@ _CUSTOMER_OWNED_DO_KINDS = frozenset({"customer_order"})
 def _all_matches(resolved: Any) -> list[dict[str, Any]]:
     if not isinstance(resolved, dict):
         return []
-    out = [m for r in jsc.array(resolved.get("resolutions")) if isinstance(r, dict) for m in jsc.array(r.get("matches"))]
+    out = [
+        m
+        for r in jsc.array(resolved.get("resolutions"))
+        if isinstance(r, dict)
+        for key in ("matches", "alternatives")
+        for m in jsc.array(r.get(key))
+    ]
     out += jsc.array(resolved.get("intersection"))
     for v in (resolved.get("by_entity_type") or {}).values():
         out += v if isinstance(v, list) else []
@@ -2463,8 +2469,11 @@ def _without_foreign_sales_orders(
     def _kept(matches: Any) -> list[Any]:
         return [m for m in jsc.array(matches) if not _foreign(m)]
 
+    # V1-DOC-SCOPE: `alternatives` too, or a "did you mean" offer names the dropped numbers.
     resolutions = [
-        {**r, "matches": _kept(r.get("matches"))} if isinstance(r, dict) else r
+        {**r, "matches": _kept(r.get("matches")), "alternatives": _kept(r.get("alternatives"))}
+        if isinstance(r, dict)
+        else r
         for r in jsc.array(resolved.get("resolutions"))
     ]
     intersection = _kept(resolved.get("intersection"))
@@ -3775,11 +3784,14 @@ def make_tool_runner(
         for lane_key in ("po_numbers", "pr_numbers"):
             if placed_refs[lane_key]:
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
-        if is_staff_profile(profile):
-            lane_out = {**lane_out, "ref_staff": True}
-        if is_staff_profile(profile) or ctx.get("doc_staff"):
-            # V1-DOC-SCOPE: may see any customer's DO / SO (`engine`'s `ctx["doc_staff"]`).
-            lane_out = {**lane_out, "doc_staff": True}
+        # Both ALWAYS written, never only when true: `lane_out` starts as the parser's own
+        # verdict, so a key the model emitted must not survive as a grant (V1-DOC-SCOPE).
+        # `doc_staff`: may see any customer's DO / SO (`engine`'s `ctx["doc_staff"]`).
+        lane_out = {
+            **lane_out,
+            "ref_staff": is_staff_profile(profile),
+            "doc_staff": bool(is_staff_profile(profile) or ctx.get("doc_staff")),
+        }
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to

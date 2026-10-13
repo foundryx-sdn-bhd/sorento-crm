@@ -2076,7 +2076,10 @@ def _reference_kinds(
     (`per_match_scope=False`, the casual clarifier) loses the customer-owned kinds (sales order,
     PO ref) for any contact held to links."""
     kinds = visible_reference_kinds((ctx.get("access") or {}).get("attributes"), is_staff_profile(profile))
-    if not per_match_scope and _reference_scope(customer_scope, profile) is not None:
+    if (
+        not per_match_scope
+        and _reference_scope(customer_scope, profile, doc_staff=bool(ctx.get("doc_staff"))) is not None
+    ):
         kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
     return kinds
 
@@ -5133,11 +5136,18 @@ def _run_stages_body(  # noqa: PLR0915
         # V1-DOC-SCOPE: who may see ANY customer's documents (DO, SO). Staff is the operator-set
         # tier OR an active office access type; everyone else is held to its links, and a
         # contact with none sees no customer document (owner rule: unlinked != customer).
+        # `customer_scope` is read lazily (order-shaped turns only); a reference number can be
+        # typed on any turn, so the links its matches are held to are read here regardless.
+        doc_scope = (
+            customer_scope
+            if customer_scope is not None
+            else business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
+        )
         ctx["doc_staff"] = bool(
             is_staff_profile(state_out.profile)
-            or (customer_scope or {}).get("staff")
+            or (doc_scope or {}).get("staff")
             or (
-                customer_scope is None
+                doc_scope is None
                 and business_services.contact_is_office_staff(db, contact_respond_id, space_id_for_turn)
             )
         )
@@ -5395,7 +5405,7 @@ def _run_stages_body(  # noqa: PLR0915
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
                     scope_linked=_reference_scope(
-                        customer_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
+                        doc_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
                     ),
                 )
             )
@@ -5933,8 +5943,17 @@ def _run_stages_body(  # noqa: PLR0915
         if branch_kind == "low_signal" and completes_here:
             try:
                 resolved_for_prompt = casual.resolve_for_prompt(
-                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, customer_scope, state_out.profile, per_match_scope=False)}
+                    db, ctx={**ctx, "reference_kinds": _reference_kinds(ctx, doc_scope, state_out.profile, per_match_scope=False)}
                 )
+                # V1-DOC-SCOPE: the clarifier prompt names every match, so another customer's
+                # document numbers are dropped from it the way the business lane drops them.
+                clarifier_scope = _reference_scope(
+                    doc_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
+                )
+                if clarifier_scope is not None and isinstance(resolved_for_prompt, dict):
+                    resolved_for_prompt = turn_runtime._without_foreign_sales_orders(
+                        db, {"resolved": resolved_for_prompt}, clarifier_scope
+                    )["resolved"]
                 clarifier_prompt = casual.construct_user_prompt(ctx, resolved_for_prompt)
                 clarifier_config = casual.resolve_clarifier_config(
                     db,

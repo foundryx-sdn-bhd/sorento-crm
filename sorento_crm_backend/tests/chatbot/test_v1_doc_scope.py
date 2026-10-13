@@ -48,14 +48,15 @@ FOREIGN_DO_LIST = {
 }
 
 
-def _seed_do(session_factory, number: str, customer_id: str | None, debtor_name: str | None = None) -> None:
+def _seed_do(session_factory, number: str, customer_id: str | None, debtor_name: str | None = None) -> str:
     from app.models.order import Order
     from app.services.company_scope import DEFAULT_COMPANY_ID
 
+    order_id = str(uuid.uuid4())
     db = session_factory()
     db.add(
         Order(
-            id=str(uuid.uuid4()),
+            id=order_id,
             order_number=number,
             customer_id=customer_id,
             debtor_name=debtor_name,
@@ -63,6 +64,7 @@ def _seed_do(session_factory, number: str, customer_id: str | None, debtor_name:
         )
     )
     db.commit()
+    return order_id
 
 
 def _turn(session_factory, monkeypatch, qf: dict[str, Any], body: str, *, attributes=(OUTSTANDING_KEY,)):
@@ -265,3 +267,166 @@ class TestDoListWithNoNumber:
 
         (args,) = _calls(captured, ORDERS)
         assert not args.get("customer_ids"), args
+
+
+# --------------------------------------------------------------------------- #
+# Security review round 1: the other arms that list customer documents
+# --------------------------------------------------------------------------- #
+
+REPORT = "crm_outstanding_report"
+PRODUCT_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+PRODUCT_CODE = "SRTWT7445"
+
+
+def _outstanding_turn(session_factory, monkeypatch):
+    """"SRTWT7445 sales order outstanding": the outstanding report, whose rows carry DO / SO numbers
+    and customer names (`outstanding_report_service`)."""
+    result, captured = _run_turn(
+        session_factory,
+        monkeypatch,
+        qf=_parser_output(
+            domain_hint="order",
+            intent_hint="check_order",
+            order_status="so_outstanding",
+            entities=[
+                {"raw": PRODUCT_CODE, "hint": "product", "canonical_code": None, "current_message": True, "confident": True}
+            ],
+        ),
+        text_body=f"outstanding for {PRODUCT_CODE}",
+        msg_id=f"ZZT-docscope-out-{uuid.uuid4().hex[:10]}",
+        attributes=[OUTSTANDING_KEY],
+        matches={PRODUCT_CODE: {"uuid": PRODUCT_UUID, "entity_type": "product", "canonical_code": PRODUCT_CODE}},
+        mcp_response=FOREIGN_DO_LIST,
+    )
+    return ((result.reply or {}).get("text") or ""), captured
+
+
+class TestOutstandingReport:
+    def test_unlinked_non_staff_gets_no_report(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+
+        reply, captured = _outstanding_turn(session_factory, monkeypatch)
+
+        assert _calls(captured, REPORT) == [], captured
+        assert reply.strip() == NO_LINK_REFUSAL, reply
+
+    def test_staff_unchanged_gets_the_report(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+
+        _reply, captured = _outstanding_turn(session_factory, monkeypatch)
+
+        assert _calls(captured, REPORT), captured
+
+
+def _so_list_fetch(session_factory, *, doc_staff: bool) -> tuple[str, list[str]]:
+    """The lane's SO list arm ("all sales orders for ZZT FOREIGN"), called the way the runner
+    calls it; the customer is one the contact named, not one of its links."""
+    import json
+
+    from app.services.chatbot.lanes import business
+    from app.services.chatbot.lanes.business.services import FetchServices
+
+    foreign = _other_customer(session_factory, FOREIGN)
+    calls: list[str] = []
+
+    def mcp_call(name, args):
+        calls.append(name)
+        return {"has_result": False}
+
+    output = {
+        "message_type": "business_query",
+        "domain_hint": "order",
+        "so_list": True,
+        **({"doc_staff": True} if doc_staff else {}),
+    }
+    payload = {
+        "_exit_kind": "continue",
+        "gate": {"compatible_entities": [{"uuid": foreign, "entity_type": "customer", "code": "", "display_name": FOREIGN}]},
+        "ctx": {
+            "parse": {"output": output},
+            "contact": {"id": "900000008"},
+            "access": {"allowed": True, "attributes": [OUTSTANDING_KEY]},
+        },
+    }
+    fragment = business.run_fetch(
+        payload, services=FetchServices(mcp_call=mcp_call), dry_run=False, db=session_factory()
+    )
+    return json.dumps(fragment, default=str), calls
+
+
+class TestSoList:
+    def test_unlinked_non_staff_gets_the_refusal_not_the_list(self, session_factory) -> None:
+        said, calls = _so_list_fetch(session_factory, doc_staff=False)
+        assert NO_LINK_REFUSAL in said, said
+        assert FOREIGN not in said, said
+        assert calls == [], calls
+
+    def test_staff_unchanged_reaches_the_list(self, session_factory) -> None:
+        """Staff pass the guard: the list asks its period, as before."""
+        said, _calls_made = _so_list_fetch(session_factory, doc_staff=True)
+        assert "Which period" in said and NO_LINK_REFUSAL not in said, said
+
+
+class TestDidYouMeanAlternatives:
+    def test_a_foreign_do_alternative_is_dropped(self, session_factory) -> None:
+        """A mistyped DO number's trigram alternatives are offered as "did you mean"; another
+        customer's DO must not be one of them."""
+        from app.services.chatbot import turn_runtime
+
+        _seed_contact(session_factory, variables={})
+        foreign = _other_customer(session_factory, FOREIGN)
+        order_id = _seed_do(session_factory, DO_NO, foreign, debtor_name=FOREIGN)
+        db = session_factory()
+        alt = {"uuid": order_id, "entity_type": "customer_order", "canonical_code": DO_NO}
+        payload = {
+            "resolved": {
+                "tokens": ["202610-099"],
+                "resolutions": [{"token": "202610-099", "matches": [], "alternatives": [alt]}],
+                "intersection": [],
+                "by_entity_type": {},
+            }
+        }
+
+        out = turn_runtime._without_foreign_sales_orders(db, payload, [])
+
+        (resolution,) = out["resolved"]["resolutions"]
+        assert resolution["alternatives"] == [], resolution
+
+
+class TestCasualClarifierPrompt:
+    def test_unlinked_non_staff_prompt_has_no_do_match(self, session_factory, monkeypatch, _stub_casual_llm) -> None:
+        _seed_contact(session_factory, variables={})
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_do(session_factory, DO_NO, foreign, debtor_name=FOREIGN)
+        qf = _parser_output(
+            message_type="casual",
+            domain_hint=None,
+            intent_hint=None,
+            user_goal=f"status of {DO_NO}",
+            entities=[{"raw": DO_NO, "hint": "order", "canonical_code": None, "current_message": True, "confident": True}],
+        )
+        _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body=f"status of {DO_NO}",
+            msg_id=f"ZZT-docscope-casual-{uuid.uuid4().hex[:10]}",
+            attributes=[OUTSTANDING_KEY], real_resolver=True,
+            extra_completed_lanes=["low_signal"],
+        )
+        assert _stub_casual_llm, "the low_signal clarifier was never called"
+        prompt = str(_stub_casual_llm[-1]["user_prompt"])
+        assert "customer_order" not in prompt, prompt
+
+
+class TestParserCannotGrantStaff:
+    def test_a_doc_staff_key_in_the_verdict_grants_nothing(self, session_factory, monkeypatch) -> None:
+        """The runner writes `doc_staff` itself, every turn: a parser verdict carrying
+        `"doc_staff": true` (a provider that does not hold the schema) is overwritten."""
+        _seed_contact(session_factory, variables={})
+
+        reply, captured = _turn(
+            session_factory, monkeypatch, {**_list_ask(), "doc_staff": True, "ref_staff": True},
+            "deliveries this month",
+        )
+
+        assert _calls(captured, ORDERS) == [], captured
+        assert reply.strip() == NO_LINK_REFUSAL, reply
