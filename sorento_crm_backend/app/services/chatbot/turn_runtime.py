@@ -3384,6 +3384,19 @@ def _drop_focus_entities(focus: Focus, dropped: list[dict[str, Any]]) -> None:
         setattr(focus, attr, kept)
 
 
+def _route_filters_the_ask(parse_output: Any, db: Any) -> bool:
+    """Will the lane send this ask's class and size as `spec_constraints` (`fetch.spec_constraints_for`,
+    the size gate `carries_size`)? Then the route narrows it, and the broad-stock guard's "no
+    filter" is wrong (crew round 5 on b962ddf7: "250mm wc got stock?" refused while the class and
+    the size ARE the filters)."""
+    from app.services.chatbot.lanes.business import fetch as fetch_mod
+
+    if db is None or not isinstance(parse_output, dict):
+        return False
+    constraints = fetch_mod.spec_constraints_for(parse_output, db)
+    return bool(constraints) and fetch_mod.carries_size(constraints)
+
+
 def make_tool_runner(
     db: Session,
     *,
@@ -3797,6 +3810,7 @@ def make_tool_runner(
             and block is None
             and not would_be_unfiltered
             and not any(isinstance(e, dict) and e.get("uuid") for e in entities)
+            and not _route_filters_the_ask(lane_out, db)
         ):
             probe_gate = gate_mod.run_gate(
                 {},

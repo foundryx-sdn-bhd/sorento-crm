@@ -260,7 +260,11 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
         raw = jsc.nullish_str(e.get("raw")).strip()
         if not raw:
             continue
-        subject = _subject_constraint(db, raw)
+        # The customer's words first; when they name no class, the parser's English name for
+        # the kind (`canonical_code`, the published "A SIZE AND A CLASS WORD" rule): crew round
+        # 5, "wc" names nothing where no Category row carries the class, "Water Closet" does.
+        canonical = jsc.nullish_str(e.get("canonical_code")).strip()
+        subject = _subject_constraint(db, raw) or (_subject_constraint(db, canonical) if canonical else None)
         if subject is None:
             return None
         if subject not in subjects:
