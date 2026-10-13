@@ -536,10 +536,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                   />
                   {isEditMode && (
                     // DO-BRANCH-NAME: AutoCount's branch name, shown read-only so Edit keeps the View layout.
-                    <div className="space-y-2">
-                      <Label htmlFor="order-branch-name">Branch</Label>
-                      <Input id="order-branch-name" value={order?.branch_name ?? ''} placeholder="-" disabled readOnly />
-                      {fromAutoCount('branch_name') && <p className="text-sm text-muted-foreground">From AutoCount</p>}
+                    <div className="flex flex-col gap-2.5">
+                      <Label htmlFor="order-branch-name" className="font-medium text-foreground">Branch</Label>
+                      <Input id="order-branch-name" value={order?.branch_name ?? ''} placeholder="-" disabled />
+                      {fromAutoCount('branch_name') && <p className="text-xs text-muted-foreground -mt-0.5">From AutoCount</p>}
                     </div>
                   )}
 
@@ -705,10 +705,10 @@ export default function OrderForm({ orderId, onSuccess }: OrderFormProps) {
                     />
                     {isEditMode && (
                       // DO-BRANCH-NAME: AutoCount's branch name, shown read-only so Edit keeps the View layout.
-                      <div className="space-y-2">
-                        <Label htmlFor="order-branch-name">Branch</Label>
-                        <Input id="order-branch-name" value={order?.branch_name ?? ''} placeholder="-" disabled readOnly />
-                        {fromAutoCount('branch_name') && <p className="text-sm text-muted-foreground">From AutoCount</p>}
+                      <div className="flex flex-col gap-2.5">
+                        <Label htmlFor="order-branch-name-tracking" className="font-medium text-foreground">Branch</Label>
+                        <Input id="order-branch-name-tracking" value={order?.branch_name ?? ''} placeholder="-" disabled />
+                        {fromAutoCount('branch_name') && <p className="text-xs text-muted-foreground -mt-0.5">From AutoCount</p>}
                       </div>
                     )}
                     <FormField
