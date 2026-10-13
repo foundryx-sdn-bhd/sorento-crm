@@ -1,6 +1,7 @@
 # PLAN: Fulfilment Planning board, borrow from the line's own location
 
-Status: Plan (behaviour card pending owner answer). Track: standard (Size M, worker leads).
+Status: Built, in review; awaiting owner hand test. Track: small fix (no migration, no auth/RBAC
+change, backend diff under 300 lines; Size M by the board's sizing).
 Lane: BORROW-OWN-LOC, PR (draft, link in PR).
 
 ## Owner ask (13 Oct 2026, verbatim)
@@ -42,9 +43,44 @@ data question: `sorento_crm_backend/scripts/diagnose_own_location_borrow.py SO42
 (read-only, rolls back) prints every BRW-BB holder and the exact reason it was or was not
 offered. The cloud sandbox has no dev DB, so crew runs it.
 
-## Proposed rule (behaviour card, pending owner answer)
+## Why BRW-BB never showed (crew ran the diagnostic on the 12 Oct prod clone)
 
-At the line's OWN location, every other open order line holding stock there is offered under
-Borrow, whatever its rank or agent, named the way the switch already decides (ON: SO + line;
-OFF: the location only, D2). Free units stay under Reserve only. Same-SO lines, lines in the
-current selection, and decided lines (switch OFF) stay out. Confirm is unchanged.
+SO424764 is not in the dev DB, so crew ran the script on `sorento_prod_20261012`. Switch OFF;
+26 other open BRW-BB lines, no confirmed holds there.
+
+1. On the board, `demand_facts` (`:4517`) never sets the fact's `core` line, so
+   `_group_borrow_donors` finds no entry for the asker and returns no donors at all (`:4436`).
+   The manual group-borrow list is therefore empty for every board line. Reproduced locally.
+   Latent defect, out of scope here (the owner's rule makes it moot for this ask); follow-up.
+2. Step 2 offers only lines the assignment gave BRW-BB on-hand to AND dated after
+   `as_of + lead + 14`; the on-hand is assigned to the earliest-dated lines, inside the window.
+3. Plain free stock at the own location was barred by design.
+
+## Rule (owner, 13 Oct 2026, card answers Q1 (a), Q2 "still offer", Q3 "holder does not matter")
+
+The line's own location ALWAYS appears in the Borrow dropdown: any holders, any rank or agent,
+decided or not, switch on or off, even with nothing there. The typed quantity is not capped:
+Confirm passes. The reason box stays mandatory. No holder naming.
+
+No double counting: the own row offers `free_qty` 0 (its free units are Reserve's), so
+`qty_borrow_available` and the bulk borrow fill never count them again. At Confirm a Reserve at
+the own location draws the borrow ledger first, so an own-location Borrow is held only from what
+is free after this line's own Reserve; the rest is confirmed as decided and recorded short with
+the existing OI-CLOSED-LINE sentence. It reads as Borrow, never Own, on the board.
+
+## Build
+
+- `_borrow_candidates`: append the plain own-location row, last, never `recommended`.
+- `_check_borrow`: drop the own-location refusal; own location skips the Reserve-pool refusal
+  and goes through the free check + `record_short`.
+- `_check_line` reserve loop: a Reserve at `fact.own_code` draws `borrow_left`.
+- No FE code change: an unrunged borrow already reads `borrow_other` (`supplyVocabulary.ts:321`).
+
+## Acceptance (tests)
+
+`tests/scm/test_borrow_own_location.py`: own row offered on the board in both switch states,
+last, not recommended, 0 free, `qty_borrow_available` unchanged; offered with no stock anywhere;
+Reserve 8 + Borrow 2 on 8 free confirms, holds 8, notice "Borrow 2 at X confirmed as decided;
+only 0 free at X"; Borrow 5 of 10 free holds 5; Borrow 10 with no stock passes short; reason
+still required; a plain borrow at the site pool still refused. Vitest pin in
+`boardAmend.test.ts` ("Own 98 BRW-BB · Borrow 2 BRW-BB").
