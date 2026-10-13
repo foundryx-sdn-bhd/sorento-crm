@@ -129,6 +129,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         report_answer=ctx.report_answer,
         idea_answer=ctx.idea_answer,
         base_focus=ctx.base_focus,
+        message=ctx.text,
     )
     result.trace.update(
         {
@@ -161,12 +162,16 @@ def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[st
     granted = ctx.granted_reveals or frozenset()
     lookups = [a for a in actions if isinstance(a, Lookup)]
     last = lookups[-1] if lookups else None
-    if last is not None and last.domain in PO_DOMAIN_SUBJECT and PO_GRANT not in granted:
-        from app.services.chatbot import copy as copy_mod
-        from app.services.chatbot.lanes import canned as canned_lanes
+    if PO_GRANT not in granted:
+        # Any part of the turn in a PO domain refuses the whole turn (closed side).
+        domains = [a.domain for a in lookups] + [getattr(a, "domain", None) for a in getattr(out, "asks", None) or []]
+        hit = next((d for d in domains if d in PO_DOMAIN_SUBJECT), None)
+        if hit is not None:
+            from app.services.chatbot import copy as copy_mod
+            from app.services.chatbot.lanes import canned as canned_lanes
 
-        text = canned_lanes.field_grant_denied_text(copy_mod.fallback_copy(), PO_DOMAIN_SUBJECT[last.domain])
-        return text, "clarify"
+            text = canned_lanes.field_grant_denied_text(copy_mod.fallback_copy(), PO_DOMAIN_SUBJECT[hit])
+            return text, "clarify"
     if SALES_REPORT_GRANT in granted:
         return None
     for ask in getattr(out, "asks", None) or []:
