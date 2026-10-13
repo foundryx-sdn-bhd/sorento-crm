@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatUsd } from './formatUsd';
 
-const DASH = '—';
+const DASH = '-';
 
 describe('formatUsd (UC-3, UC-4, UC-5)', () => {
   it('rounds to 4 decimals with a dollar sign', () => {

@@ -35,7 +35,7 @@ prices, the cost on `/system-management/ai-assistant/usage`, and Malaysia time o
    every usage endpoint call it. No second formula:
    `(uncached x input + cached x cached_input + completion x output) / 1,000,000`;
    OpenAI/Gemini uncached = prompt - cached; Anthropic uncached = prompt.
-6. Unpriced model -> cost NULL, shown as "—" with tooltip "No price for <model>", never 0. Priced
+6. Unpriced model -> cost NULL, shown as "-" with tooltip "No price for <model>", never 0. Priced
    model with cached tokens but no cached price -> NULL, tooltip "No cached-input price for <model>".
 7. Cost is computed at read time from the CURRENT price row: editing a price re-prices all history
    (same as the analytics views today).
@@ -53,8 +53,8 @@ prices, the cost on `/system-management/ai-assistant/usage`, and Malaysia time o
 | 07:47:50 -> 3:47 pm, 13 Oct | chatbot_parser | gpt-5.4-mini | 35,805 / 35,072 / 366 | (733x0.75 + 35,072x0.075 + 366x4.5)/1e6 = **$0.00482715** |
 | 07:47:19 -> 3:47 pm, 13 Oct | chatbot_parser | gpt-5.4-mini | 35,726 / 0 / 363 | (35,726x0.75 + 363x4.5)/1e6 = **$0.028428** (cache miss, 5.9x) |
 | 07:47:23 -> 3:47 pm, 13 Oct | spec_search | gpt-5.4-mini | 5,064 / 0 / 38 | (5,064x0.75 + 38x4.5)/1e6 = **$0.003969** |
-| 02:50:46 -> 10:50 am, 7 Oct | ai_extract | gemini-3.5-flash | 3,005 / 0 / 690 | unpriced -> "—", "No price for gemini-3.5-flash" |
-| 03:17:15 -> 11:17 am, 17 Sep | ai_extract | gpt-4o-transcribe | 0 / 0 / 0 | unpriced -> "—" (billed per audio minute) |
+| 02:50:46 -> 10:50 am, 7 Oct | ai_extract | gemini-3.5-flash | 3,005 / 0 / 690 | unpriced -> "-", "No price for gemini-3.5-flash" |
+| 03:17:15 -> 11:17 am, 17 Sep | ai_extract | gpt-4o-transcribe | 0 / 0 / 0 | unpriced -> "-" (billed per audio minute) |
 
 Unpriced list on dev today (all time): gpt-4o-mini 190, gemini-2.5-flash 151, gemini-3.5-flash 38,
 gpt-4o-transcribe 34, gemini/gemini-2.5-flash 19, gpt-4o 17, gpt-4.1-mini 8, gpt-transcribe 7,
@@ -63,14 +63,14 @@ gemini-2.5-pro 1, gpt-4o-mini-transcribe 1.
 ## Edge cases
 
 - Window mixes priced and unpriced calls (dev last 7 days: 9 gpt-5.4-mini + 6 gemini-3.5-flash) -> Q1.
-- Rows with NULL model (none on dev) -> cost "—", "No price for unknown model"; not in unpriced list.
+- Rows with NULL model (none on dev) -> cost "-", "No price for unknown model"; not in unpriced list.
 - Transcribe models report 0 tokens; pricing them per token would show $0. Listed as unpriced anyway (Q5).
-- Deleting a price makes that model's history unpriced again ("—"), not $0.
+- Deleting a price makes that model's history unpriced again ("-"), not $0.
 
 ## Questions
 
 Q1. Total cost when the range holds unpriced calls. (a) sum of the priced calls, with a line
-"N calls not priced" under it; (b) show "—" for the whole total. **Rec (a)**: the known spend stays
+"N calls not priced" under it; (b) show "-" for the whole total. **Rec (a)**: the known spend stays
 visible and the gap is named, never hidden as 0.
 
 Q2. Decimals. (a) 4 decimals everywhere ($0.0048, totals $1.2345); (b) rows 4, totals 2.
@@ -86,4 +86,4 @@ variant in `lib/helpers.ts`). **Rec (a)**: same format as the rest of the CRM, a
 
 Q5. Unpriced list scope. (a) all time, with call count and last seen, transcribe models included;
 (b) only models seen in the last 30 days. **Rec (a)**: 10 models on dev, short enough; old models
-still have history that reads "—".
+still have history that reads "-".

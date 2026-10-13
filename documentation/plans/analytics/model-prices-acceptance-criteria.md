@@ -6,7 +6,7 @@ Card: `CARD-model-prices-13oct.md` (approved 13 Oct, all recommendations: Q1a Q2
 
 - MP-1 Menu System Management > AI Assistant shows "Model prices" right after "Usage", path
   `/system-management/ai-assistant/model-prices`, gate `system.ai_assistant_settings.view`.
-- MP-2 Priced list shows every `llm_model_prices` row: model, input, cached input ("—" when NULL),
+- MP-2 Priced list shows every `llm_model_prices` row: model, input, cached input ("-" when NULL),
   output (USD per 1M tokens), note, updated (Malaysia time).
 - MP-3 Add price (modal): model (exact string), input, cached input (optional), output, note. Save
   creates the row; list refreshes; toast. Duplicate model -> 409 "A price for <model> already exists."
@@ -29,11 +29,11 @@ Card: `CARD-model-prices-13oct.md` (approved 13 Oct, all recommendations: Q1a Q2
   output) / 1e6`; uncached = prompt - cached (OpenAI, Gemini), = prompt (Anthropic).
 - UC-2 Unpriced model -> cost NULL, `priced=false`. Cached tokens > 0 with NULL cached price -> NULL,
   `cached_price_missing=true`. Never 0.
-- UC-3 Recent queries has a "Cost (USD)" column: 4 decimals ("$0.0048"); NULL shows "—" with tooltip
+- UC-3 Recent queries has a "Cost (USD)" column: 4 decimals ("$0.0048"); NULL shows "-" with tooltip
   "No price for <model>" (or "No cached-input price for <model>").
 - UC-4 Summary row gains a "Cost (USD)" card = sum of priced calls in range (4 dp), with
   "N calls not priced" under it when N > 0.
-- UC-5 Top users and Top contacts gain a "Cost (USD)" column (sum of priced calls, 4 dp; "—" when
+- UC-5 Top users and Top contacts gain a "Cost (USD)" column (sum of priced calls, 4 dp; "-" when
   every call is unpriced; tooltip "N calls not priced" when some are).
 - UC-6 Tokens-per-day chart tooltip shows cost per day (4 dp).
 - UC-7 Editing a price changes the cost shown for past calls of that model (read-time pricing).
@@ -51,7 +51,7 @@ Card: `CARD-model-prices-13oct.md` (approved 13 Oct, all recommendations: Q1a Q2
 | 35,805 / 35,072 / 366 | gpt-5.4-mini (0.75 / 0.075 / 4.50) | $0.0048 (0.00482715) |
 | 35,726 / 0 / 363 | gpt-5.4-mini | $0.0284 (0.028428) |
 | 5,064 / 0 / 38 | gpt-5.4-mini | $0.0040 (0.003969) |
-| 3,005 / 0 / 690 | gemini-3.5-flash (no price) | — "No price for gemini-3.5-flash" |
+| 3,005 / 0 / 690 | gemini-3.5-flash (no price) | - "No price for gemini-3.5-flash" |
 
 ## Cost truthfulness: unknown cache use (crew scope add, 13 Oct)
 
@@ -67,7 +67,7 @@ COALESCE(fact, 0)`; turns before #1476 (deploy run 37206117313, finished 2026-10
   chatbot usage writer writes NULL when the usage dict carries no `cached_tokens` key.
 - CU-3 Every other usage writer (spec_search, spec_extract, ai_assistant, ai_extract,
   ai_document_extract, ticket_reply_draft, resolver) records the provider's `cached_tokens` from now on.
-- CU-4 Recent queries: a cache-unknown call shows "—" with tooltip "Cache use not recorded before
+- CU-4 Recent queries: a cache-unknown call shows "-" with tooltip "Cache use not recorded before
   4 Oct" for `chatbot_parser`, "Cache use not recorded" for any other feature. Never a number.
 - CU-5 Totals (summary card, top users, top contacts, per day) carry `unknown_cache_calls` and show
   "N calls with unknown cache use" when N > 0; those calls are excluded from the cost sum, like
@@ -78,3 +78,6 @@ COALESCE(fact, 0)`; turns before #1476 (deploy run 37206117313, finished 2026-10
 - CU-7 Data fix for existing rows, run by crew on dev and by the owner on prod (not alembic):
   `UPDATE ai_assistant_usage_logs SET cached_tokens = NULL WHERE feature = 'chatbot_parser' AND
   cached_tokens = 0 AND created_at < '2026-10-04 14:12:49';`
+
+Note (13 Oct): the empty-cost glyph is ASCII `-`, per `documentation/reference/ADR-PRODUCT-STANDARDS.md`
+section 1e and the pre-push dash guard; the brief's long dash means the same empty value.

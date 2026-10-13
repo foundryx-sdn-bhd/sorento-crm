@@ -2,7 +2,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 
-const DASH = '—';
+const DASH = '-';
 
 const summary = vi.fn();
 const topUsers = vi.fn();
@@ -64,12 +64,20 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-/** The summary card is the "Cost (USD)" label that is not a table header. */
+/** The summary card is the "Cost (USD)" label that is not a table header; its value is the
+ * cell whose own text is exactly "-" or starts with "$". */
 function summaryCard(): HTMLElement {
   const label = screen.getAllByText('Cost (USD)').find((el) => el.closest('table') === null);
   expect(label, 'a Cost (USD) summary card').toBeDefined();
+  const isValue = (el: Element) => {
+    const t = (el.textContent ?? '').trim();
+    return el.children.length === 0 && (t === '-' || /^\$\d/.test(t));
+  };
   let node: HTMLElement = label as HTMLElement;
-  while (node.parentElement && !node.textContent?.match(/\$|—/)) node = node.parentElement;
+  while (node.parentElement) {
+    if (Array.from(node.querySelectorAll('*')).some(isValue)) return node;
+    node = node.parentElement;
+  }
   return node;
 }
 

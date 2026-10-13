@@ -32,7 +32,7 @@ UAC: `model-prices-acceptance-criteria.md`. Card: `CARD-model-prices-13oct.md`.
    `config/menu.config.test.ts:186`.
 6. Usage page (`ai-assistant/usage/page.tsx`): Cost column, Cost summary card, cost columns in Top
    users / Top contacts, chart tooltip cost; Time via `formatDateTimeInMalaysia`
-   (`lib/helpers.ts:451`). Cost formatting = one helper (4 dp, NULL -> "—").
+   (`lib/helpers.ts:451`). Cost formatting = one helper (4 dp, NULL -> "-").
    Types in `ai-assistant/services/aiUsageService.ts`.
 
 ## Tests (tester, red first)
