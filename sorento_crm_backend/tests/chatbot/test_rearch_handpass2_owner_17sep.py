@@ -309,7 +309,8 @@ class TestFinding2CustomerRosterCarriesHasDoStamps:
     stamps like product rosters carry incoming."
 
     LANDED by coder 12 (`c09f12183`, tester 14 session): the chosen seam is NOT
-    `annotate_customer`'s gate-mutation path this class originally traced (that path
+    `annotate_customer`'s gate-mutation path this class originally traced (deleted by
+    PICKER-ONE, 13 Oct 2026; that path
     stays display-only, kept display-only on purpose per `pickers.py`'s own module
     docstring) - it is a NEW, separate probe (`resolve_gate.probe_customer`,
     `pickers.customer_bases_with_do`) feeding `turn_runtime.candidates_by_kind`'s new
@@ -422,15 +423,15 @@ class TestFinding2CustomerRosterCarriesHasDoStamps:
             "HANLIM TRADING SDN BHD [A/C II]": "has DO",
         }, stamped
 
-    def test_annotate_customer_stays_display_only_the_real_stamp_path_is_the_new_probe(
+    def test_the_stamp_arrives_only_through_customer_bases_with_do(
         self,
     ) -> None:
         """Guards against re-chasing the WRONG seam a second time: the old 2-arg
         `candidates_by_kind(gate, compatible)` call (no `customer_bases_with_do`)
-        must produce NO stamp on a customer row even when `annotate_customer` ran
-        over the same gate - the two paths are genuinely independent, not one
-        silently reading the other's output."""
-        from app.services.chatbot.lanes.business import pickers
+        must produce NO stamp on a customer row even when the gate's customer arm
+        measured the same gate (`resolve_gate.measure_customer_picker`, PICKER-ONE) -
+        the stamp is the explicit argument, never read off the gate item itself."""
+        from app.services.chatbot.lanes.business import resolve_gate
         from app.services.chatbot.turn_runtime import candidates_by_kind
 
         gate = {
@@ -456,15 +457,15 @@ class TestFinding2CustomerRosterCarriesHasDoStamps:
                 }
             ]
         }
-        annotated = pickers.annotate_customer(dict(gate), probe=probe, parser={})
-        assert annotated["customer_probe_hits"] == 1, annotated["escalate_message"]
+        annotated = resolve_gate.measure_customer_picker(dict(gate), probe=probe, parser={})
+        assert annotated["customer_probe_hits"] == 1, annotated
 
         # The OLD 2-arg call - customer_bases_with_do defaults to None, so the new
         # elif branch (turn_runtime.py's candidates_by_kind) never fires.
         grouped = candidates_by_kind(annotated, gate["compatible_entities"])
         customers = grouped.get("customer", [])
         assert all(c.get("stamp") is None for c in customers), (
-            f"annotate_customer's own gate mutation must NOT leak a stamp through the "
+            f"the gate's own measurement must NOT leak a stamp through the "
             f"2-arg call: {customers!r}"
         )
 

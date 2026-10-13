@@ -353,3 +353,9 @@ class TestN2DowngradeOnlyDropsWhatThisMigrationPublished:
         }
         assert 901 in left, "the downgrade deleted an earlier migration's unlabelled SLIM row"
         assert 902 not in left, "the downgrade must still drop the version this migration published"
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

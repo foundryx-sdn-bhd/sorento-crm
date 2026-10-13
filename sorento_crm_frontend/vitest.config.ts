@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import os from 'os';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 
@@ -43,6 +44,17 @@ export default defineConfig({
       while it is being written.
     */
     retry: process.env.CI ? 2 : 0,
+    /*
+      CI only: one worker per core. Vitest's default is cores - 1, which on the
+      2-vCPU runner is ONE worker, so a shard ran its ~377 files strictly one
+      after another (~1.4s each, mostly jsdom setup) and took 18.9 of its 20
+      minutes; releases 38406697551 and 38415596343 lost shard 2 to the job
+      timeout 0.2s after its summary printed (it read as a hang, it was not).
+      Two workers on two cores measured 34% faster (shard 2/16 pinned to two
+      CPUs: 227s -> 150s, same 925 tests green). Local runs keep the default
+      so a dev machine keeps a core free.
+    */
+    maxWorkers: process.env.CI ? os.availableParallelism() : undefined,
     exclude: ['node_modules/**', 'e2e/**', '.next/**'],
   },
 });

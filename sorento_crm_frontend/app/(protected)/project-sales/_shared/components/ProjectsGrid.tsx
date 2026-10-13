@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardFooter, CardHeader, CardTable } from '@/components/ui/card';
 import { DataGrid } from '@/components/ui/data-grid';
 import { OutcomePill } from './OutcomePill';
+import { PillOverflow, PillOverflowList } from '@/components/common/PillOverflow';
 import { DataGridColumnHeader } from '@/components/ui/data-grid-column-header';
 import {
   DataGridListToolbar,
@@ -177,14 +178,19 @@ export function ProjectsGrid({
         id: 'brands',
         accessorFn: (row) => row.brands.join(', '),
         header: ({ column }) => <DataGridColumnHeader title="Brands" column={column} />,
-        size: 150,
+        size: 180,
         enableSorting: false,
         meta: { headerTitle: 'Brands' },
+        // One line of pills, folding what does not fit into "+N" (owner, 13 Oct), the same
+        // shared row the sales-team Agents column uses.
         cell: ({ row }) =>
           row.original.brands.length ? (
-            <span className="block truncate" title={row.original.brands.join(', ')}>
-              {row.original.brands.join(', ')}
-            </span>
+            <PillOverflow
+              ariaLabel={`Brands on ${row.original.project_code}`}
+              items={row.original.brands.map((brand) => ({ key: brand, label: brand }))}
+              renderPopover={(items) => <PillOverflowList items={items} />}
+              testId={`project-brands-${row.original.id}`}
+            />
           ) : (
             <Muted>None</Muted>
           ),

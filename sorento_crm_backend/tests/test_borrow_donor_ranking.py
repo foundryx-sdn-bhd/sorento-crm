@@ -281,6 +281,8 @@ def test_donors_are_ranked_by_what_meeting_this_line_leaves_them():
             big.warehouse_code,
             tight.warehouse_code,
             pinched.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
 
 
@@ -290,7 +292,7 @@ def test_only_the_first_donor_is_recommended():
 
         candidates = _candidates(db, product, own)
 
-        assert [c["recommended"] for c in candidates] == [True, False, False]
+        assert [c["recommended"] for c in candidates] == [True, False, False, False]
 
 
 def test_the_board_ranks_against_the_buy_it_is_offering_a_borrow_for():
@@ -315,6 +317,8 @@ def test_the_board_ranks_against_the_buy_it_is_offering_a_borrow_for():
             big.warehouse_code,
             tight.warehouse_code,
             pinched.warehouse_code,
+            # BORROW-OWN-LOC: the line's own location, always offered, always last.
+            own.warehouse_code,
         ]
         assert candidates[0]["recommended"] is True
         assert candidates[0]["need_qty"] == "10"

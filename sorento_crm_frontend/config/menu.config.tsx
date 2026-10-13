@@ -133,7 +133,7 @@ export const MENU_SIDEBAR: MenuConfig = [
     moduleKey: 'projects',
     children: [
       {
-        title: 'Pipeline',
+        title: 'Projects',
         path: '/project-sales/pipeline',
         permission: 'projects.projects.view',
       },
@@ -1994,7 +1994,7 @@ export const MENU_SIDEBAR_COMPACT: MenuConfig = [
         // is the same list a separate "Projects" entry used to show. Two menu entries
         // onto one screen is a choice the user has to make and cannot get right.
         // /project-sales/projects still resolves, it redirects here.
-        title: 'Pipeline',
+        title: 'Projects',
         path: '/project-sales/pipeline',
         permission: 'projects.projects.view',
       },

@@ -147,7 +147,7 @@ export function LeadsClient() {
         actions={
           <Button type="button" onClick={() => setWizardOpen(true)}>
             <Plus className="size-4" aria-hidden />
-            Record a lead
+            Create lead
           </Button>
         }
       />

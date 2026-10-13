@@ -2006,11 +2006,9 @@ def test_a_dealer_hot_selling_line_reserving_the_pool_still_opens_no_hole_when_i
     assert not [row for row in rows if row.verb == IV_BORROW_SHORTFALL]
 
 
-def test_a_dealer_hot_selling_line_may_not_borrow_its_own_location_as_free_stock(api):
-    """Ladder v2 (section E rule 7): naming the line's OWN location as a plain free-stock
-    Borrow source is refused - own-location stock is never Reserve-eligible any more
-    either, so the only way to reach it is a GROUP BORROW naming the donor SO line, never
-    a bare `other_location` ask."""
+def test_a_dealer_hot_selling_line_may_borrow_its_own_location_as_free_stock(api):
+    """BORROW-OWN-LOC (owner, 13 Oct 2026) reverses ladder v2's refusal: the line's OWN
+    location is a plain Borrow source. Confirm holds what is free there and passes."""
     client, world = api
     db = world.db
     _classification(db, world.product, world.pool_wh, abc_class_retail="A")
@@ -2038,15 +2036,12 @@ def test_a_dealer_hot_selling_line_may_not_borrow_its_own_location_as_free_stock
                     ],
                     buy_qty="10",
                 )
+                | {"amend_reason": "Borrow what our own bin has, buy the rest."}
             ]
         },
     )
-    assert response.status_code == 422, response.text
-    body = response.json()
-    assert any(
-        "own location" in (row.get("reason") or "")
-        for row in body["failing_lines"]
-    )
+    assert response.status_code == 200, response.text
+    assert not response.json().get("stock_short_notices"), response.text
 
 
 # ---------------------------------------------- a placed shortfall is not raised again
