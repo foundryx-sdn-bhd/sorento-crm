@@ -31,6 +31,8 @@ WC_NONE = "ZZTWC8999"
 OTHER = "ZZTWT5608"
 #: The parse of a fit ask: `value` is the word of THIS message naming the other side.
 FITS = {"filters": [{"key": "fits", "value": "seat cover", "unit": None}]}
+#: A fit ask whose message also asks for a file ("<WC> seat cover photo").
+FITS_PHOTO = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "photo"}]}
 #: The same filter with no other-side word in the message (a carried fit ask, or a leak).
 FITS_UNSAID = {"filters": [{"key": "fits", "value": None, "unit": None}]}
 
@@ -159,6 +161,7 @@ def test_q4_a_file_ask_runs_the_attachment_path_on_the_cover_codes(session_facto
         session_factory, monkeypatch, domain="product_attachment", intent="check_product_attachment",
         typed=[COVER_ONE], asked=[WC_ONE],
         text_typed=f"{COVER_ONE} photo", text_asked=f"{WC_ONE} seat cover photo",
+        find=FITS_PHOTO,
     )
     assert "crm_find" not in _names(a_calls), a_calls
     assert a_calls == c_calls, (a_calls, c_calls)
@@ -780,6 +783,109 @@ def test_z4_row7_a_carried_relation_never_reaches_a_message_with_its_own_ask(ses
         session_factory, monkeypatch, text=f"{WC_ONE} technical drawing", msg_id="ZZT-seat-z4-2",
         domain_hint="product_attachment", intent_hint="check_product_attachment",
         entities=[_product(WC_ONE), drawing], domain_in_message=True, find=FITS_UNSAID,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+# --------------------------------------------------------------------------- crew v94 check 2 (13 Oct)
+
+INSTALL = {"raw": "seat cover", "hint": "attachment_type", "canonical_code": "installation guide",
+           "current_message": True, "confident": True}
+
+
+def test_f1_no_file_word_drops_the_attachment_type_and_the_file_domain(session_factory) -> None:
+    """v94 reads "seat cover" as a file ask (Installation Guide, "Which kind of file?"). The parser's
+    own `file_word` says THIS message asked for no file, so the turn is a bare code."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict(WC_ONE, domain_hint="product_attachment", intent_hint="check_product_attachment")
+    verdict["entities"].append(dict(INSTALL))
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
+    assert _codes(out) == [COVER_ONE] and lines == []
+    assert [e for e in out["entities"] if e.get("hint") == "attachment_type"] == []
+    assert out["domain_hint"] is None and out["intent_hint"] is None
+
+
+def test_f2_a_file_word_keeps_the_file_ask(session_factory) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    photo = {"raw": "photo", "hint": "attachment_type", "canonical_code": "photo", "current_message": True}
+    verdict = _verdict(WC_ONE, find=FITS_PHOTO, domain_hint="product_attachment", intent_hint="check_product_attachment")
+    verdict["entities"].append(photo)
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
+    assert out["domain_hint"] == "product_attachment" and photo in out["entities"]
+
+
+def test_f3_no_file_word_leaves_a_non_file_domain_alone(session_factory) -> None:
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    out, _lines = find_lane.as_linked_products(_scoped(session_factory), _verdict(WC_ONE, intent_hint="check_stock"))
+    assert out["domain_hint"] == "inventory" and out["intent_hint"] == "check_stock"
+
+
+def test_f4_cold_seat_cover_misread_as_a_file_ask_answers_as_the_bare_cover(session_factory, monkeypatch) -> None:
+    """Crew row 4 end to end: the misread parse (Installation Guide, file domain) answers exactly as
+    the bare cover code does on a fresh contact."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_f4")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=COVER_ONE, msg_id="ZZT-seat-f4-control",
+        domain_hint=None, intent_hint=None, entities=[_product(COVER_ONE)], domain_in_message=False,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_f4")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} seat cover", msg_id="ZZT-seat-f4-asked",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), dict(INSTALL)], find=FITS, domain_in_message=True,
+    )
+    assert "Installation Guide" not in a_reply and "kind of file" not in a_reply, a_reply
+    assert a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def test_f5_narrowing_on_a_partial_code_is_the_plain_turn(session_factory, monkeypatch) -> None:
+    """Row 12: "only the 333A one" (parsed "333A", not an exact product) after a seat-cover answer
+    with a leaked `fits`: a carried relation that replaces nothing leaves a plain turn."""
+    from app.services.chatbot.lanes.business import find as find_lane
+
+    _seed(session_factory)
+    verdict = _verdict("333A", find=FITS_UNSAID, domain_in_message=False)
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO, carried_relation="covers")
+    assert out.get("find") is None and lines == []
+
+
+def test_f6_photo_answering_the_file_question_stays_on_the_cover(session_factory, monkeypatch) -> None:
+    """Row 13: after "<WC> seat cover files" answered for the cover, the reply "photo" parses with
+    the WC echoed from history (current_message false). The echo is the relation's anchor, so it
+    resolves to the cover, exactly as when the cover code itself is echoed."""
+    photo = {"raw": "photo", "hint": "attachment_type", "canonical_code": "photo", "current_message": True,
+             "confident": True}
+    files = {"filters": [{"key": "fits", "value": "seat cover", "unit": None, "file_word": "files"}]}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} seat cover files", msg_id="ZZT-seat-f6-1",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE)], find=files,
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_f6")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text="photo", msg_id="ZZT-seat-f6-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[{**_product(COVER_ONE), "current_message": False}, photo], domain_in_message=True,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_f6")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text="photo", msg_id="ZZT-seat-f6-2",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[{**_product(WC_ONE), "current_message": False}, photo], domain_in_message=True,
     )
     assert c_calls and a_calls == c_calls, (a_calls, c_calls)
     assert a_reply == c_reply, (a_reply, c_reply)
