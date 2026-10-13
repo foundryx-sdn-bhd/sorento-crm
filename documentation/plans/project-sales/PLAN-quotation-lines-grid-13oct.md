@@ -1,69 +1,103 @@
 # PLAN: Quotation lines grid (13 Oct)
 
-Status: DRAFT, waiting for the owner's answers to the mock v1 card (Q1 to Q5). Track: M, becomes
-L-steps if Q2 (a) is chosen (one additive column + its migration).
+Status: BUILDING (size L: one additive migration; security-reviewer joins because the line write
+accepts attachment ids). Owner answers 14 Oct recorded in the UAC.
 
-Lane: QUOTATION-UX. Source: owner notes 13 Oct night on Project Sales > Project > New quotation >
-Lines (screenshots 607 to 612 in the crew brief). Mock: `documentation/mockups/QUOTATION-UX/index.html`.
-Acceptance criteria: `quotation-lines-grid-13oct-acceptance-criteria.md`.
+Lane: QUOTATION-UX, branch `crew/quotation-ux`. Source: owner notes 13 Oct on Project Sales >
+Project > New quotation > Lines (screenshots 607 to 612 in the crew brief). Mock v2:
+`documentation/mockups/QUOTATION-UX/index.html`. Acceptance criteria:
+`quotation-lines-grid-13oct-acceptance-criteria.md`. Lane test DB: `sorento_qux_ci`
+(`sorento_crm_backend/.env.ci-tests`, gitignored).
 
 ## Facts the plan rests on
 
-- The editor is `app/(protected)/project-sales/[projectId]/components/QuotationVersionEditor.tsx`
-  over `_shared/components/InlineLineTable.tsx`. Save sends the staged array; order is array
-  position, `sort_order` is not sent (`QuotationVersionEditor.tsx:136-143`), so a drag only has to
-  permute the staged array.
-- InlineLineTable has no reorder at all; its header comment (`:304-314`) lists why it was not
-  DataGrid. PO, SO and series editors also use it and are NOT touched by this lane.
-- `components/ui/data-grid-table-dnd-rows.tsx` (`DataGridTableDndRows`, `:98`) has row drag and
-  column resize but no column drag, no `<tfoot>`, no group/full-width rows and no expanded rows;
-  `data-grid-table-dnd.tsx` has column drag + footer + expanded rows but no row drag. `rowsDraggable`
-  in `data-grid.tsx:183,311` is read by nothing. Editable DataGrid precedent with row drag:
-  `master-data-management/product-specifications/components/SpecRulesGrid.tsx:549-640`.
-- "Off-catalog" = `product_id` empty (FE `:1055-1058`, `:119-123`; BE
-  `project_quotation_service.py:522-529`, `:649-657`).
-- "Counts per" = `unit_type`; changes no total (`:659-661`) and no print.
-- Drawings = attachments of type "Technical Specifications" with an image mime (dev: 1,180 products).
-- Stock = `GET /project-sales/fulfilment-planning/stock-detail?product_id&group=` (route
-  `api/v1/projects/fulfilment_planning.py:919-970`), FE `useStockDetail`
-  (`_shared/hooks/useFulfilmentPlanning.ts:405-427`), table `CellStockTable` via
-  `_shared/components/OrderInquiryStockGrid.tsx:31`.
+- Editor: `app/(protected)/project-sales/[projectId]/components/QuotationVersionEditor.tsx` over
+  `_shared/components/InlineLineTable.tsx` (`:808-870`). Save sends the staged array; order is array
+  position, `sort_order` is not sent (`:136-143`), so a drag only permutes the staged array.
+  InlineLineTable has no reorder. PO, SO and series editors also use it and are NOT touched.
+- `components/ui/data-grid-table-dnd-rows.tsx` (`DataGridTableDndRows` `:98`, handle `:41`, aria
+  "Drag to reorder") has row drag + column resize but no column drag, `<tfoot>`, full-width or
+  expanded rows. `data-grid-table-dnd.tsx` has column drag + footer + expanded rows, no row drag.
+  Editable DataGrid with row drag precedent: `master-data-management/product-specifications/
+  components/SpecRulesGrid.tsx:549-640`. Read-only row-drag precedent:
+  `[projectId]/components/SalesOrderLinesTable.tsx:415-464, 541-552`.
+- Line photo: `product_image_service.py` (one decision, `is_primary`, `_photograph` filter
+  `:105-114`); per line: `project_quotation_image_service.line_images` (`:54-119`); frozen at issue
+  by `freeze_version_images` (`:135-164`, called at `project_quotation_document_service.py:572`).
+  `image_attachment_id` is ALREADY client-writable (`LINE_FIELDS` `project_quotation_service.py:63-85`,
+  schema `schemas/projects.py:1224`) with no check that it belongs to the product: fixed here.
+- Attachment kinds by `attachment_types.type_name`: "Product Photos" (2,308 products in dev),
+  "Technical Specifications" (1,180 products; 56 with several). Precedent for matching on the name:
+  `services/dealer_kit/product_images.py:167-168`.
+- "Off-catalog" = `product_id` empty (FE `:1055-1058`, `:119-123`; BE `:522-529`, `:649-657`,
+  `:900`). "Counts per" = `unit_type`, changes no total (`:659-661`) and prints nowhere.
+- PDF `project_quotation_pdf_service.py:346-400` (image column from stamped id, TECHNICAL SPEC =
+  text at `:396`); Excel `project_quotation_excel_service.py:223, 367, 421-434`. Issue-only routes
+  (`api/v1/projects/quotation_documents.py:607, 664`).
+- Stock: `GET /project-sales/fulfilment-planning/stock-detail?product_id&group=` (`api/v1/projects/
+  fulfilment_planning.py:919-970`, service `project_fulfilment_board_service.py:909-1293`), FE
+  `useStockDetail` (`_shared/hooks/useFulfilmentPlanning.ts:405-427`), table `CellStockTable`
+  (`fulfilment-planning/components/CellStockTable.tsx:238`), OI wrapper
+  `_shared/components/OrderInquiryStockGrid.tsx:31` (location -> group via `groupOfWarehouseCode`).
+
+## API contract
+
+Line write (bulk item and single line), new or changed fields:
+- `image_attachment_id: str | null` (existing) and `drawing_attachment_id: str | null` (new).
+  Validated only when the value differs from the stored one: must be an attachment linked to the
+  line's product through `product_attachments`, image mime, not deleted, same company; drawing must
+  also be of type "Technical Specifications". Set on a line with no product, or invalid: 422,
+  codes `quotation_line_image_invalid` / `quotation_line_drawing_invalid`.
+- Description-required 422 message: "A custom item needs a description." (code unchanged).
+
+Line response, new fields (declared on the response model):
+- `drawing_attachment_id`.
+- `product_image.candidates[]` and `technical_drawing.candidates[]`: `{attachment_id, filename, url,
+  preview_url}` (signed thumbnail + original). `product_image.candidate_count` counts "Product
+  Photos" images only.
+- `technical_drawing`: `{state, url, preview_url, attachment_id, filename, candidate_count,
+  candidates}`, state `chosen` (picked or stamped) | `default` (first by `attachments.created_at`,
+  then id) | `no_drawings` | `off_catalog`.
 
 ## Slices (one branch, one PR)
 
-1. **Shared grid capability** (FE): extend `DataGridTableDndRows` with `<tfoot>` from
-   `columnDef.footer`, full-width rows (a row-level `renderFullWidth`) used by section bars, and
-   expanded rows (`meta.expandedContent`), plus column drag (reuse the horizontal SortableContext of
-   `data-grid-table-dnd.tsx`). Existing callers (`SalesOrderLinesTable`) must render unchanged.
-2. **Quotation grid** (FE): new `QuotationLinesGrid` replacing the `InlineLineTable` use at
-   `QuotationVersionEditor.tsx:808-870`; same staging contract (`:675-696`), same validation, same
-   search filter, same footer rule. Columns per mock section 1; Description `Textarea`; Brand
-   `SearchableSelect` over `useBrandSelectQuery`; UOM + stock chip under Qty; list price under rate;
-   rate-only tick under total; row menu (Line details, Move up/down, Insert, Remove).
-3. **Wording** (FE + BE message): Custom item, Pick a product, "A custom item needs a description"
-   (BE 422 message at `project_quotation_service.py:653`), recompute summary text (`:969-976`),
-   Priced per in Line details.
-4. **Drawing** (BE + FE): line payload gains `technical_drawings` (attachment id, filename, signed
-   thumb + preview url) per line, built like `project_quotation_image_service.line_images`. If Q2 (a):
-   additive column `drawing_attachment_id` on `projects.quotation_lines`, stamped at issue like
-   `image_attachment_id` (fill only, never overwrite); PDF and Excel render the drawing in TECHNICAL
-   SPEC via `product_image_service.render`; legacy `technical_spec` text printed under description.
-5. **Photo rule** (BE, if Q1 (a)): `product_image_service` treats a product with exactly one
-   "Product Photos" image and no chosen one as chosen-by-default, in every query of that module
-   (`_photograph` filter stays the one place).
-6. **Stock chip** (FE): `QuotationStockChip` reads `useStockDetail(productId, null, null, group)`
-   for the group and `pools`, popover = `OrderInquiryStockGrid`/`CellStockTable` with a new prop to
-   hide order-only columns and document chevrons. "Stock at" dropdown on the Lines tab, value in
-   localStorage (try/catch), default the first fulfilment-planning group.
+1. **Migration** `qlg_0001_drawing_attachment`: `projects.quotation_lines.drawing_attachment_id
+   UUID NULL REFERENCES attachments(id) ON DELETE SET NULL`. Model, `LINE_FIELDS`, schemas, revise
+   copy (`project_quotation_service.py:340-355`). Crew SQL: `crew/state/migrations/QUOTATION-UX.sql`.
+2. **Photo rule** (`product_image_service`): no `is_primary` + exactly one "Product Photos" image =
+   `chosen` with that image, in every reader. Candidates and `candidate_count` = "Product Photos"
+   images only.
+3. **Line images + drawings** (`project_quotation_image_service`): candidates for both, drawing
+   resolution, freeze fills `drawing_attachment_id` too (fill only). Validation of picked ids in the
+   line write.
+4. **Print**: PDF and Excel TECHNICAL SPEC = the stamped drawing image; legacy `technical_spec` text
+   under the description; description line breaks kept (PDF `white-space: pre-line` or `<br>`).
+5. **Shared grid** (FE): `DataGridTableDndRows` gains `<tfoot>` from `columnDef.footer`, full-width
+   rows (section bars), expanded rows (`meta.expandedContent`) and column drag. Existing callers
+   render unchanged.
+6. **Quotation grid** (FE): `QuotationLinesGrid` replaces the InlineLineTable use; same staging
+   contract (`:675-696`), validation, search filter and footer rule. Columns per mock section 1;
+   Description `Textarea`; Brand `SearchableSelect` over `useBrandSelectQuery`; UOM + stock chip
+   under Qty; list price under rate; rate-only tick under total; row menu (Line details, Move up/down,
+   Insert line below, Insert section above, Remove). Line details row: Complete set, Priced per,
+   Notes. Picker popover for photo and drawing writes `image_attachment_id` /
+   `drawing_attachment_id` into the draft; a product change clears both. Column prefs key
+   `projects.projects.view::quotation-lines`.
+7. **Stock chip** (FE): `QuotationStockChip` = `useStockDetail(productId, null, null, group)` and
+   `(..., 'pools')`; popover = `CellStockTable` (as `OrderInquiryStockGrid` renders it) with order-only
+   columns and document chevrons hidden by a new prop; incoming SPOs listed. "Stock at" dropdown on
+   the Lines tab from the fulfilment-planning warehouses (`groupOfWarehouseCode`), value in
+   localStorage under `quotation-lines.stock-group` (try/catch), default first group.
+8. **Wording**: Custom item / Pick a product / "A custom item needs a description" / recompute note
+   (`QuotationVersionEditor.tsx:969-976`), Priced per labels.
 
-## Tests (tester writes first, from the UAC)
+## Tests (tester writes them first, red, from the UAC)
 
-- vitest: grid renders DataGrid with drag handles; drag reorders the staged array; section bar moves
-  with its line; footer total excludes rate-only; Custom item wording; no "Counts per" column;
-  Priced per in details; brand select; description keeps newlines; stock chip tone by qty vs
-  available; popover numbers equal the stock-detail payload.
-- pytest: line payload carries drawings; first drawing by upload order; drawing stamped at issue and
-  not overwritten (Q2 a); single-photo default (Q1 a) across `product_image_service` readers; 422
-  message wording; PDF/Excel print the drawing and the multi-line description.
-- browser: 1280 (sidebar open) no horizontal scroll, headers not truncated; 375 page does not
-  scroll sideways.
+Backend (pytest, `SORENTO_ENV_FILE=.env.ci-tests`, `-n 2` max): extend
+`tests/test_product_image_service.py`, `test_project_quotation_images.py`,
+`test_project_quotation_bulk_lines.py`, `test_project_quotation_pdf.py`,
+`test_project_quotation_excel.py`, `test_project_quotation_document.py` (issue freeze), plus the
+migration (column exists, nullable, FK SET NULL).
+Frontend (vitest): `QuotationVersionEditor.test.tsx` and new `QuotationLinesGrid.test.tsx`,
+`QuotationStockChip.test.tsx`, `data-grid-table-dnd-rows` footer/full-width/expanded test.
+Browser: 1280 sidebar open (no horizontal scroll, no truncated header), 375 (no page scroll).
