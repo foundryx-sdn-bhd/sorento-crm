@@ -418,6 +418,45 @@ describe('BorrowAddDialog', () => {
     ]);
   });
 
+  // BORROW-OWN-LOC review B2: the line's own location row (plain, 0 free) shares the bin
+  // with a later-order line. An over-ask rides on the plain row, which Confirm records short,
+  // never on the donor line's row, which Confirm would refuse.
+  it('puts an over-ask on the bin plain location row, not on a donor line', () => {
+    const line: BorrowCandidate = {
+      ...OTHER_PROJECT,
+      source: 'other_location',
+      rung: 'order_borrow',
+      donor_project_ref: null,
+      donor_project_id: null,
+      donor_core_line_id: 'core-a',
+      donor_so_number: null,
+      free_qty: '5',
+      need_qty: null,
+    };
+    const own: BorrowCandidate = {
+      ...line,
+      rung: null,
+      donor_core_line_id: null,
+      free_qty: '0',
+      recommended: false,
+    };
+    renderDialog([line, own]);
+
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add the borrow' }));
+
+    const [parts] = onAddMany.mock.calls[0];
+    expect(
+      (parts as { candidate: BorrowCandidate; qty: string }[]).map((p) => [
+        p.candidate.donor_core_line_id ?? 'own',
+        p.qty,
+      ]),
+    ).toEqual([
+      ['core-a', '5'],
+      ['own', '3'],
+    ]);
+  });
+
   // Defect A: the donor project's hold at the bin is the SAME stock as the bin's later-order
   // lines, so a merged bin offers the lines' 4 + 4, never 4 + 4 + 8.
   it('never adds a project hold to the lines it holds when it merges a bin', () => {
