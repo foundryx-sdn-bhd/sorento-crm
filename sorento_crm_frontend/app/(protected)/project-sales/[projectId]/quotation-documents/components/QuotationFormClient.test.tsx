@@ -410,6 +410,47 @@ beforeEach(() => {
 });
 
 describe('QuotationFormClient create', () => {
+  it('defaults Name, Phone and Attn from the project customer (owner, 13 Oct)', async () => {
+    getProject.mockResolvedValue(
+      project({
+        customer_id: 'cust-1',
+        customer_name: 'Gamuda Builders Sdn Bhd',
+        customer_phone: '012-345 6789',
+        customer_attn: 'Lim Wei Ming',
+      }),
+    );
+    renderForm();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Gamuda Builders Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Phone')).toHaveValue('012-345 6789');
+    expect(screen.getByLabelText('Attn')).toHaveValue('Lim Wei Ming');
+  });
+
+  it('falls back to the developer when the project has no customer', async () => {
+    renderForm();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Nadi Cergas Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Attn')).toHaveValue('');
+  });
+
+  it('opens Edit scope from a pen beside the name and shows no series out here (owner, 13 Oct)', async () => {
+    renderForm();
+    const card = await openLines();
+
+    const pen = within(card).getByRole('button', { name: 'Edit scope' });
+    expect(pen).not.toHaveTextContent('Edit scope');
+    expect(pen.querySelector('svg')).not.toBeNull();
+    expect(within(card).queryByText('No series')).toBeNull();
+
+    fireEvent.click(pen);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('textbox', { name: /^Scope/ })).toBeInTheDocument();
+    expect(within(dialog).getByText('Series')).toBeInTheDocument();
+  });
+
   it('AC-QF011/012: opens with the letterhead and one empty scope ready for products', async () => {
     renderForm();
 
@@ -580,7 +621,11 @@ describe('QuotationFormClient create', () => {
     await openLines();
 
     const added = await addScope('Guard House');
-    fireEvent.click(within(added).getByRole('button', { name: 'Remove scope' }));
+    // Owner, 13 Oct: a red destructive button with the trash icon, not an outline one.
+    const remove = within(added).getByRole('button', { name: 'Remove scope' });
+    expect(remove.className).toMatch(/bg-destructive/);
+    expect(remove.querySelector('svg')).not.toBeNull();
+    fireEvent.click(remove);
 
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Guard House' })).toBeNull());
     expect(screen.getByRole('region', { name: 'Scope 1' })).toBeInTheDocument();

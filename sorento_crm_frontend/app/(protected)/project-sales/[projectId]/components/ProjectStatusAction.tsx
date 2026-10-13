@@ -15,6 +15,8 @@ export type StatusMove = {
   label: string;
   /** The rung it lands on, e.g. "PO Received". */
   toLabel: string;
+  /** The rung's stable key, e.g. "specified", for behaviour that must survive a relabel. */
+  toKey: string;
   /** Terminal rungs (Lost, Dormant) are exits, never the happy path. */
   toIsTerminal: boolean;
   /** Lands on a LATER rung than the one we are on. A correction is not the happy path. */
@@ -102,6 +104,7 @@ export function availableStatusMoves(
       toStatusId: target.id,
       label: transition.label,
       toLabel: target.label,
+      toKey: target.key,
       toIsTerminal: Boolean(target.is_terminal),
       isForward: target.sort_order > current.sort_order,
     }));
