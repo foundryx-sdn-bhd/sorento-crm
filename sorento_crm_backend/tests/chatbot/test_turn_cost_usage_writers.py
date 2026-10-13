@@ -92,3 +92,19 @@ def test_a_contact_with_a_duplicate_respond_io_id_still_gets_its_usage_row(featu
         row = db.execute(text("SELECT contact_id, cached_tokens FROM ai_assistant_usage_logs WHERE chatbot_turn_id = :t"),
                          {"t": turn_id}).one()
         assert tuple(row) == (older, 64)
+
+
+@pytest.mark.parametrize("extra,expected", [({}, None), ({"cached_tokens": 0}, 0), ({"cached_tokens": 35072}, 35072)])
+def test_cu2_usage_writer_records_null_when_the_provider_gave_no_cached_tokens(extra, expected):
+    from app.services.chatbot.usage import record_parser_usage
+
+    with pg_session() as db:
+        turn_id = str(uuid.uuid4())
+        record_parser_usage(
+            db, usage={"provider": "openai", "model": "gpt-5.4-mini", "prompt_tokens": 100, "completion_tokens": 5,
+                       "total_tokens": 105, **extra},
+            response_time_ms=12, contact_respond_id="rio-none", answered=True, chatbot_turn_id=turn_id,
+        )
+        got = db.execute(text("SELECT cached_tokens FROM ai_assistant_usage_logs WHERE chatbot_turn_id = :t"),
+                         {"t": turn_id}).scalar_one()
+        assert got == expected
