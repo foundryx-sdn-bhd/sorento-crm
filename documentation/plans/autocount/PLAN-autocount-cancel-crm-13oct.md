@@ -108,6 +108,33 @@ R7. Every cancel line ends matched, waiting or unmatched with a reason; each bat
 - Review round 1: `cancelled_by_cancel_doc` (SO / PO lines) records which lines this rule cancelled, so
   only those reopen and the SO / PO push keeps them cancelled without retiring OI rows twice.
 
+## 2026 Sorento XS match counts (crew, 13 Oct, `scripts/autocount_cancel_match_report.py` at 117d2aed)
+
+SORENTO AutoCount extract of 13 Oct, counts only. 5,423 XS lines dated 2026 in scope (64 more on
+cancelled XS docs excluded).
+
+| Outcome | Lines | Share |
+| --- | ---: | ---: |
+| matched: line key | 0 | 0% |
+| matched: item (one candidate after location) | 3,348 | 61.7% |
+| matched: tie-break (Q2 a) | 533 | 9.8% |
+| matched: fallback (Q3, history row) | 1,540 | 28.4% |
+| unmatched: no fit | 2 | 0.04% |
+| unmatched: dangling line key / item not on order / waiting | 0 | 0% |
+
+Per month (item / tie-break / fallback / no fit): Jan 342/51/164/0, Feb 314/40/219/0, Mar 370/27/139/0,
+Apr 318/96/435/1, May 302/74/93/0, Jun 322/44/82/0, Jul 525/92/132/0, Aug 427/54/159/1,
+Sep 334/33/76/0, Oct (to 13th) 94/22/41/0.
+
+Caveats:
+1. No DO quantity was subtracted. The AutoCount SQL login has no SELECT on DO / DODTL, and the dev
+   DB's DO lines (Sep 2026 only) all carry `from_dtl_key` 0, so none link to an SO line. Unexplained
+   transfer was therefore TransferedQty minus line-key cancels only, so the tie-break and fallback
+   figures are optimistic: with real DO qty some tie-break lines would move to fallback and some
+   fallback lines to no fit. In the CRM the same is true until DO lines link to SO lines.
+2. No 2026 XS line carries `FromDocDtlKey` (0 of 5,423), while 46,828 XS lines from earlier years do.
+   Line-key matching will not help 2026 at all; 2026 rests on item, tie-break and fallback.
+
 ## Deferred (named triggers, not built)
 
 - SPO received display net of `qty_cancelled`: no SPO screen shows a cancelled SPO line wrongly yet
