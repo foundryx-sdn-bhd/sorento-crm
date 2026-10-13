@@ -37,7 +37,7 @@ LABELS: dict[str, dict[str, str]] = {
     "Quantity On Hand": {"ms": "Kuantiti Ada", "zh": "现有数量"},
     "Outstanding": {"ms": "Tertunggak", "zh": "未交货"},
     # The card block lines of a zero-stock reply (`*Incoming:* none`, `*Stock:* 0`, `*PO:* <no>`).
-    "Incoming": {"ms": "Masuk", "zh": "到货"},
+    "Incoming": {"ms": "Barang masuk", "zh": "到货"},
     "Stock": {"ms": "Stok", "zh": "库存"},
     "PO": {"ms": "PO", "zh": "PO"},
     "SPO": {"ms": "SPO", "zh": "SPO"},
@@ -922,7 +922,10 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or head in DIRECT_ONLY or _BREAKDOWN_VALUE.match(value):
+            # A card block label (`*Incoming:* none`) translates even where the same word is
+            # DIRECT_ONLY as running text (the per-ask runner fills it by key).
+            direct = head in DIRECT_ONLY and head not in NONE_LABELS
+            if not found or head not in self.table or direct or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
             if value == "none" and head in NONE_LABELS and "none" in self.table:
                 value = self.table["none"]
