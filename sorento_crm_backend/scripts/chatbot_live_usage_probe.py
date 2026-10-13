@@ -3,10 +3,11 @@ log and `analytics_connector.turn_costs` (CHAT-TURN-COST hand-test, crew audit 1
 
 Why not the chat console: a console turn is a test turn (`is_test`), and a test turn writes
 nothing outside `chatbot.turns` by design (D14, `chatbot/usage.py`), so it can never produce a
-usage row. This script builds LIVE envelopes for fresh ZZT contacts and calls `engine.run_turn`
-in process, the way the queue worker does. Nothing is sent to WhatsApp: `run_turn` only RETURNS
-its reply actions, and sending them is the injector's job, which is not called here. The parser
-and clarifier call the copy's configured model for real, so the tokens are real.
+usage row. This script builds LIVE envelopes for fresh ZZT contacts and runs each through the
+queue worker's own job, `app.tasks.chat_turns.run_turn_job`, in process (that task module is
+the chatbot doorway a script may use; `tests/chatbot/test_import_boundary.py`). Nothing is sent
+to WhatsApp: the turn only RETURNS its reply actions, and sending them is the injector's job,
+which is not called here. The parser and clarifier call the copy's configured model for real, so the tokens are real.
 
 Local / test copies only: it writes ZZT-marked contacts and live turns into the copy's database.
 
@@ -45,10 +46,9 @@ MESSAGES = (
 )
 
 
-def _envelope(contact_rid: str, message_id: str, body: str):
-    from app.services.chatbot.contracts import Envelope
-
-    return Envelope(
+def _envelope(contact_rid: str, message_id: str, body: str) -> dict:
+    """The envelope as JSON, the shape `run_turn_job` takes off the queue."""
+    return dict(
         contact={"id": contact_rid, "firstName": "ZZT probe", "custom_fields": []},
         message={
             "event_type": "message.received",
@@ -80,7 +80,7 @@ def run_probe(session_factory: Callable[[], Any], turns: int = 6) -> list[dict]:
     """Run ``turns`` live turns over two fresh contacts; one result dict per turn."""
     from app.models.ai_assistant import AIAssistantUsageLog
     from app.models.chatbot_turn import ChatbotTurn
-    from app.services.chatbot import engine
+    from app.tasks.chat_turns import run_turn_job
 
     db = session_factory()
     try:
@@ -91,16 +91,16 @@ def run_probe(session_factory: Callable[[], Any], turns: int = 6) -> list[dict]:
     for i in range(turns):
         _cid, rid = contacts[i % 2]
         body = MESSAGES[i % len(MESSAGES)]
-        result = engine.run_turn(_envelope(rid, f"zzt-ctc-probe-msg-{uuid.uuid4().hex}", body),
-                                 session_factory=session_factory)
+        turn_id = run_turn_job(_envelope(rid, f"zzt-ctc-probe-msg-{uuid.uuid4().hex}", body),
+                               session_factory=session_factory)["turn_id"]
         db = session_factory()
         try:
-            row = db.get(ChatbotTurn, result.turn_id)
+            row = db.get(ChatbotTurn, turn_id)
             calls = (db.query(AIAssistantUsageLog)
-                     .filter(AIAssistantUsageLog.chatbot_turn_id == str(result.turn_id)).all())
+                     .filter(AIAssistantUsageLog.chatbot_turn_id == str(turn_id)).all())
             stages = [r.get("stage") for r in (row.trace or []) if isinstance(r, dict)]
             out.append({
-                "turn_id": str(result.turn_id), "text": body, "status": row.status, "stage": row.stage,
+                "turn_id": str(turn_id), "text": body, "status": row.status, "stage": row.stage,
                 "reached_parser": "understood" in stages, "is_test": row.is_test,
                 "calls": [(c.feature, c.model, c.prompt_tokens, c.cached_tokens, c.completion_tokens) for c in calls],
             })
