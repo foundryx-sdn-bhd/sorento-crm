@@ -20,7 +20,7 @@ Additive only: new tables, and NOT NULL columns with a server default of 0, so n
 changes meaning. Downgrade drops everything this adds.
 
 Revision ID: ac_cancel_0001_docs
-Revises: mig_idx_chunks_document_id
+Revises: ctc_0001_turn_costs
 Create Date: 2026-10-13
 """
 import sqlalchemy as sa
@@ -28,7 +28,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "ac_cancel_0001_docs"
-down_revision = "mig_idx_chunks_document_id"
+down_revision = "ctc_0001_turn_costs"
 branch_labels = None
 depends_on = None
 
