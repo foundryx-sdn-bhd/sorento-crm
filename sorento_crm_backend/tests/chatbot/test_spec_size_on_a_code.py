@@ -259,3 +259,16 @@ def test_1c_the_parsers_english_class_name_is_honoured_when_its_word_names_no_cl
     sent = calls[-1].get("spec_constraints") or []
     assert {"key": "class", "op": "eq", "value": "Water Closet"} in sent and {"key": "size", "op": "eq", "value": 250} in sent, calls
     assert _listed(reply, w["codes"]) == {f"{w['other']}-SH-250"}, reply
+
+
+def test_1d_a_size_alone_is_answered_by_the_size_filter(session_factory, monkeypatch, _clear_overrides):
+    """Reviewer note on 01d7e1fd: pins today's behaviour so a change to it is deliberate. "250mm got
+    stock?" names no class; the route filters by the size alone (any mm axis, paged), never an
+    unfiltered read and never the broad-stock refusal. Asking which product instead would be a new
+    owner ruling."""
+    w = _seed_wcs(session_factory)
+    reply, captured = _ask(session_factory, monkeypatch, [_spec_entity("250mm", "size", 250)], "250mm got stock?")
+    calls = [a for n, a in captured if n == STOCK_TOOL]
+    assert calls and calls[-1].get("spec_constraints") == [{"key": "size", "op": "eq", "value": 250}], calls
+    assert "at least one filter" not in reply, reply
+    assert _listed(reply, w["codes"]) == {f"{w['other']}-SH-250"}, reply
