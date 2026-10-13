@@ -7,7 +7,7 @@ Acceptance criteria: `project-sales-polish-13oct-acceptance-criteria.md`.
 
 ## Decisions (owner answers to the behaviour card, 13 Oct)
 
-- Q1 (a): the Register project form requires a lead, and the Lead picker offers Create lead when
+- Q1 (a): the Register project form requires a lead (a form rule only: the API still accepts a project without one), and the Lead picker offers Create lead when
   nothing matches. The server stays nullable for Qualify, integrations and older projects.
 - Q2 (a): clicking Spec In moves the stage and then opens New quotation. A Back to registered edge
   is added.
