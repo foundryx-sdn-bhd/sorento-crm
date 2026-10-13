@@ -62,6 +62,8 @@ class Held(BaseModel):
     period: Period | None = None
     report: ReportSpec | None = None
     idea_draft_id: str | None = None
+    status: str | None = None
+    portal_form: str | None = None
 
     def is_empty(self) -> bool:
         return not (

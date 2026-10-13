@@ -169,9 +169,9 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
             "canonical_code": None, "confident": False, "hint_confident": False,
         })
     verdict["entities"] = entities
-    if action.ask is not None:
-        verdict["status"] = action.ask.status
-        verdict["portal_form"] = action.ask.portal_form
+    ask = action.ask
+    verdict["status"] = held.status or (ask.status if ask is not None else None)
+    verdict["portal_form"] = held.portal_form or (ask.portal_form if ask is not None else None)
     date_from, date_to = period_dates(held.period, today)
     verdict["date_filter_start"] = date_from.isoformat() if date_from else None
     verdict["date_filter_end"] = date_to.isoformat() if date_to else None

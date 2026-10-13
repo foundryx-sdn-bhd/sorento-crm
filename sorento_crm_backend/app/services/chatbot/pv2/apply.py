@@ -391,6 +391,9 @@ def _apply_fields(
         held.domain = ask.domain
     if ask.portal_form:
         held.domain = "portal_link"  # the field names a portal form
+        held.portal_form = ask.portal_form
+    if ask.status is not None:
+        held.status = ask.status
 
     for name in ask.cleared:
         if name in CLEARABLE:
@@ -578,7 +581,12 @@ def _apply_entities(
             if words:
                 qs.misses.append(Miss(kind=ent.kind, phrase=words))
             continue
-        if status == "ambiguous" and len(options) == 1 and policy.decide("entity", held.domain) == "default":
+        if (
+            status == "ambiguous"
+            and len(options) == 1
+            and not getattr(res, "did_you_mean", False)
+            and policy.decide("entity", held.domain) == "default"
+        ):
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
@@ -618,9 +626,10 @@ def _apply_entities(
             refs = [r.model_copy(update={"quantity": ent.quantity}) for r in refs]
         # Several entities of one kind in one ask are one list: the first "set" replaces
         # what was held, the later ones join it.
-        op = "add" if ent.op == "set" and ent.kind in set_kinds else ent.op
-        set_kinds.add(ent.kind)
-        held.refs = set_refs(held.refs, ent.kind, refs, op)
+        kind = refs[0].kind  # filed under the kind FOUND
+        op = "add" if ent.op == "set" and kind in set_kinds else ent.op
+        set_kinds.add(kind)
+        held.refs = set_refs(held.refs, kind, refs, op)
     return held
 
 
