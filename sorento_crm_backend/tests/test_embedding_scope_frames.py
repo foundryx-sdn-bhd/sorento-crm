@@ -213,6 +213,35 @@ def _search_ids(db, world, source_type=None) -> set[str]:
     return {chunk.source_id for chunk, _doc, _sim in rows}
 
 
+class _NamedDb:
+    """Stands in for a session on a database called ``name`` (current_database() only)."""
+
+    def __init__(self, name: str):
+        self._name = name
+
+    def execute(self, _stmt):
+        name = self._name
+
+        class _Result:
+            def scalar(self):
+                return name
+
+        return _Result()
+
+
+def test_global_sweep_tests_refuse_a_non_test_database():
+    """The purge and backfill tests run GLOBAL functions: the purge deletes every orphan in
+    the database, the backfill stamps every company-less frame. On the shared dev database
+    (a prod copy, not named *_ci) the purge test deleted about 102k real orphan documents in
+    one transaction before crew stopped it. Those tests must refuse anything but a *_ci test
+    database (CI: sorento_ci, sorento_changed_ci, sorento_scm_ci)."""
+    for name in ("sorento", "sorento_dev", "postgres", "sorento_ci_backup"):
+        with pytest.raises(pytest.skip.Exception, match="not a \\*_ci test database"):
+            _require_test_database(_NamedDb(name))
+    for name in ("sorento_ci", "sorento_changed_ci", "sorento_scm_ci"):
+        _require_test_database(_NamedDb(name))  # no refusal
+
+
 def _doc(db, source_type: str, source_id: str):
     return (
         db.query(EmbeddingDocument)
@@ -303,6 +332,7 @@ def test_worker_leaves_a_multi_company_contacts_frame_company_less(db, world):
 def test_backfill_stamps_existing_frame_embeddings(db, world):
     """The migration's backfill: existing NULL-company frame rows get the contact's
     company; a multi-company contact's frame and a frame with no row stay NULL."""
+    _require_test_database(db)
     frame_b = _seed_frame(db, _seed_contact(db, world["b"]))
     frame_multi = _seed_frame(db, _seed_contact(db, world["a"], world["b"]))
     gone = str(uuid.uuid4())
@@ -369,6 +399,7 @@ def test_existence_check_on_a_malformed_id_does_not_poison_the_session(db, world
 
 
 def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
+    _require_test_database(db)
     pid = _seed_product(db, world["a"], f"ZZSFQ{world['suffix']}")
     live_frame = _seed_frame(db, _seed_contact(db, world["a"]))
     orphan_cert, orphan_frame = str(uuid.uuid4()), str(uuid.uuid4())
