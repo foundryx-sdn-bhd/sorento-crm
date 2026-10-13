@@ -12554,6 +12554,9 @@ def register_order_inquiry_post_commit_dispatch() -> None:
             # (see `_mark_handover_transaction_committed`'s own guard), so there is
             # nothing to prune here.
             return
+        # Which saved lines a Confirm told (`record_saved_lines`) lives only as long as the
+        # write it belongs to, so a later apply never forgets its own lines on its account.
+        session.info.pop(_SAVED_TOLD_KEY, None)
         if session.info.get("confirm_preview"):
             # A simulated confirm commits per order on its own session: those commits are
             # savepoint releases that a root rollback discards, so nothing may be sent.

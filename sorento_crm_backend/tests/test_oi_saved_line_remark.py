@@ -188,3 +188,21 @@ def test_a_first_borrow_reads_its_decision_not_its_donor_hole_row():
         assert (told["line"]["remark"], told["line"]["qty"], told["line"]["location"]) == (
             "ORDER BACK", "10", "BRW-IB",
         ), told["line"]
+
+
+def test_which_saved_lines_were_told_does_not_outlive_its_commit():
+    """Review S1: the told set belongs to one write. A later write on the same session (a
+    planning-change apply whose confirm returned before telling anything) must not forget
+    its own DELAY / CANCEL BALANCE lines on an earlier Confirm's account."""
+    from app.services.project_order_inquiry_service import (
+        _SAVED_TOLD_KEY,
+        register_order_inquiry_post_commit_dispatch,
+    )
+
+    from ._pg_fixture import blank_session
+
+    register_order_inquiry_post_commit_dispatch()
+    with blank_session() as db:
+        db.info[_SAVED_TOLD_KEY] = {"pso": {"line"}}
+        db.commit()
+        assert _SAVED_TOLD_KEY not in db.info
