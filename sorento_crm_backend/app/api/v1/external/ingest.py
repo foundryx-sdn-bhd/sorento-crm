@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path, Query, status
@@ -57,6 +58,7 @@ from app.services.autocount_doc_ingest_service import (
     AUTOCOUNT_BRANCH_ENTITIES,
     AUTOCOUNT_DOC_ENTITIES,
     BOOK_PATTERN,
+    DELIVERY_ORDERS_ENTITY,
     GOODS_RECEIVE_NOTES_ENTITY,
     AutocountDocIngestService,
     AutocountDocReadService,
@@ -743,6 +745,74 @@ def _book(payload: dict) -> str:
     return book
 
 
+def _backfill(payload: dict, entity: str) -> bool:
+    """DO-HISTORY C3: the optional envelope flag a history replay sets (shared service only,
+    never its hourly poll). Delivery orders only; anywhere else, or not a boolean, is a 422
+    rather than a flag silently ignored."""
+    if "backfill" not in payload:
+        return False
+    value = payload.get("backfill")
+    if not isinstance(value, bool):
+        raise AppException(status_code=422, message="'backfill' must be true or false",
+                           code="INVALID_BODY")
+    if value and entity != DELIVERY_ORDERS_ENTITY:
+        raise AppException(status_code=422,
+                           message=f"'backfill' is accepted on {DELIVERY_ORDERS_ENTITY} only",
+                           code="INVALID_BODY")
+    return value
+
+
+# The audit entity type of `orders` (its table name), as the Order Tracking import names it.
+_ORDER_AUDIT_ENTITY = "orders"
+
+
+@contextmanager
+def _quiet_backfill(db: Session, on: bool):
+    """For a backfill batch only: no per-DO audit row and no embedding event for the DO or
+    its lines (about 270,000 DOs and 900,000 lines from 2023-09-01, plan section 5). Both
+    suppressions end with the block, so a later request on the same session is untouched."""
+    if not on:
+        yield
+        return
+    from app.services.embedding_change_listener import suppress_embedding_events
+
+    skip = db.info.setdefault("skip_audit_entity_types", set())
+    added = _ORDER_AUDIT_ENTITY not in skip
+    skip.add(_ORDER_AUDIT_ENTITY)
+    try:
+        with suppress_embedding_events("order", "order_line"):
+            yield
+    finally:
+        if added:
+            skip.discard(_ORDER_AUDIT_ENTITY)
+
+
+def _log_backfill_batch(db: Session, current_user: dict, book: Optional[str], records: list,
+                        result) -> None:
+    """The one audit row a backfill batch leaves instead of one per DO. Best-effort: the batch
+    has already committed, so a failure here costs a warning, never the batch."""
+    from app.services.audit_service import log_import_audit
+
+    try:
+        log_import_audit(
+            db,
+            entity_type=_ORDER_AUDIT_ENTITY,
+            label=f"AutoCount DO backfill ({book})",
+            row_count=len(records),
+            user_id=current_user.get("id"),
+            details={
+                "backfill": True, "book": book, "records": len(records),
+                "created": result.created, "updated": result.updated,
+                "unchanged": result.unchanged, "failed": result.failed,
+                "retryable": result.retryable,
+            },
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - best-effort audit after the batch committed
+        db.rollback()
+        logger.warning("ingest.backfill_audit_failed book=%s", book, exc_info=True)
+
+
 def _cancel_vanished(entity: str, payload: dict, dry_run: bool, db: Session, current_user: dict):
     """Contract 2.7 deletions: the sweep's vanished DocKeys for a DocDate range, cancelled in
     place and never deleted (plan 1.10)."""
@@ -866,6 +936,7 @@ def ingest_masters(
         )
 
     book = _book(payload) if entity in AUTOCOUNT_DOC_ENTITIES | AUTOCOUNT_BRANCH_ENTITIES else None
+    backfill = _backfill(payload, entity)
 
     company_id = resolve_company_anchor(db, payload, current_user)
 
@@ -909,11 +980,14 @@ def ingest_masters(
     # Unknown payload keys are dropped by every canonical schema (owner decision, 1 Oct
     # 2026); their NAMES, never their values, are logged once for the whole request so a
     # field the ESB believes it sends is not lost silently.
-    with collect_unknown_fields() as unknown_fields:
+    with _quiet_backfill(db, backfill), collect_unknown_fields() as unknown_fields:
         try:
             result = service.ingest(entity, records, dry_run=dry_run)
         except UnsupportedIngestEntity as exc:
             raise AppException(status_code=404, message=str(exc), code="UNKNOWN_ENTITY")
+        if not dry_run and backfill:
+            # Inside the quiet block: the commit flushes what the ingest left pending.
+            db.commit()
     if unknown_fields:
         logger.info(
             "ingest.unknown_fields entity=%s integration=%s fields=%s",
@@ -948,6 +1022,8 @@ def ingest_masters(
             ) = _run_document_hooks(db, entity, service, actor=current_user.get("id"))
         elif entity == GOODS_RECEIVE_NOTES_ENTITY:
             _run_grn_receipt_hook(db, service)
+        if backfill:
+            _log_backfill_batch(db, current_user, book, records, result)
 
     logger.info(
         "ingest.batch entity=%s integration=%s company=%s dry_run=%s "
