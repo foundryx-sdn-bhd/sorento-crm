@@ -687,3 +687,29 @@ def test_the_local_client_signs_calls_the_connector_accepts(monkeypatch):
             method, url, raw, headers = build_request("chat_describe_dataset", {"key": "llm_calls"}, None, user.id)
             assert url == f"{BASE}/datasets/llm_calls"
             assert client.request(method, url, headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize("feature", ["chatbot_parser", "chatbot_clarifier"])
+def test_a_contact_with_a_duplicate_respond_io_id_still_gets_its_usage_row(feature):
+    """`respond_io_id` is not unique. A bare `.scalar()` raised MultipleResultsFound on such a
+    contact and the telemetry `except` dropped the whole row, so its turns cost nothing in
+    turn_costs (crew audit 13 Oct; same fix as PARSER-GEMINI-LITE #1624). The oldest row stands."""
+    from app.services.chatbot.usage import record_turn_llm_usage
+
+    with pg_session() as db:
+        rid = f"rio-dup-{uuid.uuid4().hex[:10]}"
+        older, newer = unique_code("rcold"), unique_code("rcnew")
+        for cid, at in ((older, T0), (newer, T0 + timedelta(days=1))):
+            db.execute(text("INSERT INTO respond_contacts (id, phone_number, name, respond_io_id, created_at) "
+                            "VALUES (:i, :p, 'ZZT dup', :r, :t)"),
+                       {"i": cid, "p": f"+6010000{uuid.uuid4().int % 10000:04d}", "r": rid, "t": at})
+        turn_id = str(uuid.uuid4())
+        record_turn_llm_usage(
+            db, feature=feature,
+            usage={"provider": "openai", "model": "gpt-5.4-mini", "prompt_tokens": 100, "completion_tokens": 5,
+                   "total_tokens": 105, "cached_tokens": 64},
+            response_time_ms=12, contact_respond_id=rid, answered=True, chatbot_turn_id=turn_id,
+        )
+        row = db.execute(text("SELECT contact_id, cached_tokens FROM ai_assistant_usage_logs WHERE chatbot_turn_id = :t"),
+                         {"t": turn_id}).one()
+        assert tuple(row) == (older, 64)
