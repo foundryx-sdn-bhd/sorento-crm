@@ -185,7 +185,8 @@ class TestSoByNumberWithReveal:
         _seed_so(session_factory, "SO421777", customer_id=foreign, debtor_name=FOREIGN, lines=[(1, 1)])
 
         reply, _captured = _turn(session_factory, monkeypatch, _number_ask(SO_NO, "order_number"), f"status of {SO_NO}")
-        assert reply.strip() == _card(SO_NO, "Open", "partly delivered", name=OWN), reply
+        # The real resolver placed the number, so the card head names the kind (REF-PROBES).
+        assert reply.strip() == _card(f"Sales order {SO_NO}", "Open", "partly delivered", name=OWN), reply
 
         reply, _captured = _turn(session_factory, monkeypatch, _number_ask("SO421777", "order_number"), "status of SO421777")
         assert FOREIGN not in reply and reply.strip().startswith(REFUSAL_PREFIX), reply

@@ -605,6 +605,16 @@ def _nothing_live_of_kind(
     return {**_fixed_reply(text), "kind_none": True} if text else None
 
 
+def _scope_refusal(customer_scope: dict[str, Any]) -> str:
+    """The contact's scope refusal line; a contact with no links (no scope read at all) gets
+    the same line over no names ("I can only check on your own account")."""
+    from app.services import contact_customer_scope as scope_mod
+
+    return str(customer_scope.get("refusal") or "") or scope_mod.refusal_line(
+        scope_mod.ContactCustomerScope(linked=(), staff=False)
+    )
+
+
 def _fixed_reply(
     text: str, *, top_selling_asked: str | None = None, required_ask: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1458,7 +1468,9 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            linked = list(customer_scope.get("linked") or []) if customer_scope.get("enforced") else None
+            # V1-DOC-SCOPE: the PO-ref rule below. Only staff are unscoped; an unlinked
+            # non-staff contact is held to its (empty) links, so every SO is refused.
+            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup(db, so_numbers, linked=linked)
             if trace is not None:
                 trace.add(
@@ -1473,7 +1485,7 @@ def run_fetch(
             fragment = _fixed_reply(
                 so_status.reply_text(
                     looked,
-                    refusal=str(customer_scope.get("refusal") or ""),
+                    refusal=_scope_refusal(customer_scope),
                     kind_word="Sales order" if parse_output.get("so_placed") is True else None,
                 )
             )
@@ -2224,6 +2236,18 @@ def run_fetch(
         if _OUTSTANDING_SO_GRANT not in granted:
             semantic_input["order_status"] = "outstanding"
             semantic_input["so_bucket_refused"] = True
+
+    # V1-DOC-SCOPE (owner rule: unlinked != customer): a non-staff contact with no customer
+    # links owns no delivery order, so an orders read would only ever list other customers'.
+    # Refused before any fetch; the orders route itself scopes only an enforced contact.
+    if (
+        tool_name in fetch_mod.ORDER_TOOLS
+        and parse_output.get("ref_staff") is not True
+        and not customer_scope.get("ids")
+    ):
+        if trace is not None:
+            trace.add("customer_scope", {"refused": "no_links", "tool": tool_name})
+        return _fixed_reply(_scope_refusal(customer_scope))
 
     # DO-ASK-SIMPLIFY security S1 (PR #1433): a transporter named on a DO list ask would
     # filter the rows by it, telling the contact who carried each one. Without the

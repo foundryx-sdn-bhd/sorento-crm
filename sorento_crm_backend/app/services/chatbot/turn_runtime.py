@@ -2410,6 +2410,7 @@ class ResolveOutcome:
 
 
 _CUSTOMER_OWNED_REF_KINDS = frozenset({"sales_order", "customer_po_ref"})
+_CUSTOMER_OWNED_DO_KINDS = frozenset({"customer_order"})
 
 
 def _all_matches(resolved: Any) -> list[dict[str, Any]]:
@@ -2428,21 +2429,29 @@ def _without_foreign_sales_orders(
     """REF-PROBES S3: a reference number that also names ANOTHER customer's sales order (or
     PO ref) must not become a picker option or an answer: those matches are dropped from the
     resolutions and the gate's compatible entities, as a silent miss. "Another customer's"
-    is `so_status`'s own scope rule (a link, or a linked debtor code in the same company)."""
-    from app.models.order import SalesOrder
+    is `so_status`'s own scope rule (a link, or a linked debtor code in the same company).
+    V1-DOC-SCOPE: a delivery order (`customer_order`, an `orders` row) is held to the same
+    rule, so an unlinked non-staff contact (`linked == []`) is offered no DO at all."""
+    from app.models.order import Order, SalesOrder
     from app.services.chatbot import so_status
 
-    ref_uuids = {
-        str(m.get("uuid"))
-        for m in _all_matches(payload.get("resolved"))
-        if jsc.nullish_str(m.get("entity_type")).strip().lower() in _CUSTOMER_OWNED_REF_KINDS and m.get("uuid")
-    }
+    def _uuids(kinds: frozenset[str]) -> set[str]:
+        return {
+            str(m.get("uuid"))
+            for m in _all_matches(payload.get("resolved"))
+            if jsc.nullish_str(m.get("entity_type")).strip().lower() in kinds and m.get("uuid")
+        }
+
     dropped: set[str] = set()
-    if ref_uuids:
-        sos = db.query(SalesOrder).filter(SalesOrder.id.in_(ref_uuids)).all()
-        in_scope = so_status._scope_check(db, sos, linked)
-        owned = {str(so.id) for so in sos if in_scope(so)}
-        dropped = ref_uuids - owned
+    for model, uuids in (
+        (SalesOrder, _uuids(_CUSTOMER_OWNED_REF_KINDS)),
+        (Order, _uuids(_CUSTOMER_OWNED_DO_KINDS)),
+    ):
+        if not uuids:
+            continue
+        rows = db.query(model).filter(model.id.in_(uuids)).all()
+        in_scope = so_status._scope_check(db, rows, linked)
+        dropped |= uuids - {str(row.id) for row in rows if in_scope(row)}
 
     def _foreign(match: Any) -> bool:
         return str(jsc.get(match, "uuid")) in dropped
