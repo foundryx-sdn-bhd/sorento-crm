@@ -181,11 +181,13 @@ class _SessionProxy:
 
     def __init__(self, session):
         self._s = session
+        self.commits = 0
 
     def __getattr__(self, name):
         return getattr(self._s, name)
 
     def commit(self):
+        self.commits += 1
         self._s.flush()
 
     def rollback(self):
@@ -407,7 +409,7 @@ def test_existence_check_on_a_malformed_id_does_not_poison_the_session(db, world
     assert db.query(Company).filter(Company.id == world["a"]).count() == 1
 
 
-def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
+def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world, monkeypatch, capsys):
     _require_test_database(db)
     pid = _seed_product(db, world["a"], f"ZZSFQ{world['suffix']}")
     live_frame = _seed_frame(db, _seed_contact(db, world["a"]))
@@ -424,14 +426,18 @@ def test_purge_orphans_counts_on_dry_run_and_deletes_on_apply(db, world):
     def mine(counts_ids):
         return counts_ids & {pid, live_frame, orphan_cert, orphan_frame, debtor, seed}
 
-    dry = embedding_worker.purge_orphan_embeddings(db, apply=False)
+    dry = embedding_worker.purge_orphan_embeddings(db)
     assert mine(set(dry["source_ids"])) == {orphan_cert, orphan_frame}
     assert dry["counts"].get("certificate", 0) >= 1
     assert dry["counts"].get("conversation_frame", 0) >= 1
-    assert _doc(db, "certificate", orphan_cert) is not None  # dry run deletes nothing
+    assert _doc(db, "certificate", orphan_cert) is not None  # counting deletes nothing
+    # The library only counts: no one-transaction global delete (crew incident, 13 Oct).
+    with pytest.raises(TypeError):
+        embedding_worker.purge_orphan_embeddings(db, apply=True)
 
-    applied = embedding_worker.purge_orphan_embeddings(db, apply=True)
-    assert mine(set(applied["source_ids"])) == {orphan_cert, orphan_frame}
+    total = sum(dry["counts"].values())
+    script = _purge_script(db, monkeypatch)
+    assert script.main(["--apply", "--expect", str(total)]) == 0
     db.expire_all()
     assert _doc(db, "certificate", orphan_cert) is None
     assert _doc(db, "conversation_frame", orphan_frame) is None
@@ -507,16 +513,48 @@ def test_purge_script_apply_needs_the_dry_run_total(db, world, monkeypatch, caps
     orphan = str(uuid.uuid4())
     _seed_chunk(db, "certificate", orphan, None, world["vec"])
     script = _purge_script(db, monkeypatch)
+    dbname = db.execute(text("SELECT current_database()")).scalar()
 
     assert script.main([]) == 0  # dry run
-    total = int(capsys.readouterr().out.strip().splitlines()[-1].split()[2])
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[0] == f"database: {dbname}"  # the operator sees which database first
+    total = int(out[-1].split()[2])
     assert total >= 1
 
     assert script.main(["--apply"]) == 2  # no --expect
+    assert script.main(["--expect", str(total)]) == 2  # --expect without --apply
     assert script.main(["--apply", "--expect", str(total + 1)]) == 2  # stale count
+    refusal = capsys.readouterr()
+    # The refusal must not hand out the number to copy: only a dry run shows it.
+    assert "refused" in refusal.err and str(total) not in refusal.err
     assert _doc(db, "certificate", orphan) is not None
 
+    proxy = script.SessionLocal()
     assert script.main(["--apply", "--expect", str(total), "--batch-size", "1"]) == 0
+    # One commit per batch: --batch-size 1 means at least one commit per document.
+    assert proxy.commits >= total
     db.expire_all()
     assert _doc(db, "certificate", orphan) is None
     assert f"deleted: {total} document(s)" in capsys.readouterr().out
+
+
+def test_every_global_sweep_test_calls_the_test_database_guard():
+    """Meta-check (review of 7931e4dd): a test that runs a global sweep must call
+    _require_test_database before it, or a forgotten guard reopens the 13 Oct incident."""
+    import inspect
+    import sys
+
+    module = sys.modules[__name__]
+    sweeps = ("purge_orphan_embeddings(", "backfill_frame_embedding_companies(", "_purge_script(")
+    checked = 0
+    for name, fn in vars(module).items():
+        if not (name.startswith("test_") and callable(fn)):
+            continue
+        body = inspect.getsource(fn)
+        first_sweep = min((body.find(s) for s in sweeps if s in body), default=-1)
+        if first_sweep < 0 or name == "test_every_global_sweep_test_calls_the_test_database_guard":
+            continue
+        checked += 1
+        guard = body.find("_require_test_database(db)")
+        assert 0 <= guard < first_sweep, f"{name} runs a global sweep without the *_ci guard first"
+    assert checked >= 3
