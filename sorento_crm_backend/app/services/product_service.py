@@ -2427,7 +2427,7 @@ class ProductCategoryService:
         data = category_data.model_dump()
         synonyms = data.pop("search_synonyms", None)
         category = ProductCategory(**data)
-        self._check_index_words(category, synonyms, before=None)
+        synonyms = self._check_index_words(category, synonyms, before=None)
         if synonyms is not None:
             category.search_synonyms = synonyms
         self.db.add(category)

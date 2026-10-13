@@ -296,3 +296,20 @@ def test_open_clashes_agree_with_the_index_on_mixed_data(db):
     ours = sorted((c.kind, c.alias, tuple(sorted(c.keys))) for c in A.open_clashes(db))
     theirs = sorted((k, a, tuple(sorted(keys))) for k, a, keys in index.alias_clashes(db))
     assert ours == theirs and ours
+
+
+def test_spec_registry_save_reads_words_as_the_index_does(db, editor):
+    from app.api.v1.master_data.spec_registry import SpecKeyUpdate, update_spec_key
+
+    S.registry(db, "dim_length", "Length", "numeric", unit="mm", synonyms={"_self": ["wc length"]})
+    S.registry(db, "dim_width", "Width", "numeric", unit="mm", synonyms={"_self": ["lebar"]})
+    with pytest.raises(AppException) as err:
+        update_spec_key("dim_width", SpecKeyUpdate(user_synonyms={"_self": ["wc, length"]}), _user(), db)
+    assert '"wc length"' in _message(err.value)
+
+
+def test_category_create_stores_the_cleaned_words(db):
+    saved = ProductCategoryService(db).create_category(
+        ProductCategoryCreate(category_code="KSINK2", category_name="Kitchen Sink", search_synonyms=[" sinki ", "Sinki"])
+    )
+    assert saved.search_synonyms == ["sinki"]

@@ -94,3 +94,10 @@ def test_a_product_filter_rides_on_product_ids_for_chat_and_sales(db):
     for ds in (rm.CHAT, rm.SALES):
         values, line = _filter_values(ds, ds.dimensions["product"], keys)
         assert line is None and values == {"product_ids": keys}
+
+
+def test_a_family_product_filter_never_takes_a_variant_hidden_from_chat(db):
+    shown = S.product(db, "SRTWC9-A")
+    S.product(db, "SRTWC9-B", cat=S.category(db, class_label="Misc", searchable=False))
+    out = resolver(db).resolve_report_spec(spec(("product", "in", ["SRTWC9"])), held=EMPTY)
+    assert [r["key"] for r in out.refs["product"]] == [shown.id]

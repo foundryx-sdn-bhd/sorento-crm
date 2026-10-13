@@ -143,10 +143,13 @@ def test_brands_active_deduped(db):
     assert section == ["MOCHA = Mocha", "SORENTO = Sorento"]
 
 
-def test_attachment_types_key_and_aka(db):
+def test_attachment_types_key_and_name_only_aliases_stay_in_data(db):
+    # Aliases stay in attachment_types.search_synonyms, not the prompt: printed, the
+    # pv2_0002 seed alone grew the index past its 8,000 char cap (crew eval prep, 13 Oct).
     body, _ = pv2_index.render_index(db)
     lines = pv2_index.section_lines(body, "## ATTACHMENT TYPES (key = name | aka)")
-    assert "technical_specifications = Technical Specifications | aka TD, CAD, drawing, 图纸" in lines
+    assert "technical_specifications = Technical Specifications" in lines
+    assert not any("| aka" in line for line in lines)
     # no code on file: not listed (the resolver looks keys up by code)
     assert not any("Installation Guide" in line for line in lines)
     keys = pv2_index.parse_index_keys(body)
@@ -202,28 +205,36 @@ def test_index_under_cap_with_seed_registry(db):
     assert len(body) <= pv2_index.INDEX_CAP_CHARS
 
 
-def test_alias_clash_omitted_and_reported(db):
+def test_attachment_type_aliases_never_clash_in_the_index(db):
     _att_type(db, "Product Drawing", "product_drawing", ["drawing"])
     db.flush()
+    assert [c for c in pv2_index.alias_clashes(db) if c[0] == "attachment_type"] == []
+
+
+def test_alias_clash_omitted_and_reported(db):
+    cid = db.execute(text("select company_id from product_categories limit 1")).scalar()
+    _category(db, cid, "SRT-BS", "Basin", ["sinki"])
+    db.flush()
     body, _ = pv2_index.render_index(db)
-    lines = pv2_index.section_lines(body, "## ATTACHMENT TYPES (key = name | aka)")
-    assert not any("drawing" in line.split("|", 1)[-1] for line in lines if "| aka" in line)
+    lines = pv2_index.section_lines(body, "## PRODUCT CLASSES")
+    assert not any("sinki" in line.split("| aka", 1)[-1] for line in lines if "| aka" in line)
     clashes = pv2_index.alias_clashes(db)
-    assert ("attachment_type", "drawing", ("product_drawing", "technical_specifications")) in clashes
+    assert ("product_class", "sinki", ("basin", "kitchen_sink")) in clashes
 
 
 def test_alias_precedence_prints_only_under_winner(db):
-    _att_type(db, "Product Drawing", "product_drawing", ["drawing"])
+    cid = db.execute(text("select company_id from product_categories limit 1")).scalar()
+    _category(db, cid, "SRT-BS", "Basin", ["sinki"])
     db.execute(text(
         "insert into chatbot_alias_precedence (id, kind, alias_norm, winner_key) "
-        "values (:id, 'attachment_type', 'drawing', 'technical_specifications')"
+        "values (:id, 'product_class', 'sinki', 'kitchen_sink')"
     ), {"id": str(uuid.uuid4())})
     db.flush()
     body, _ = pv2_index.render_index(db)
-    lines = pv2_index.section_lines(body, "## ATTACHMENT TYPES (key = name | aka)")
-    td = next(line for line in lines if line.startswith("technical_specifications"))
-    pd = next(line for line in lines if line.startswith("product_drawing"))
-    assert "drawing" in td.split("| aka", 1)[1] and "| aka" not in pd
+    lines = pv2_index.section_lines(body, "## PRODUCT CLASSES")
+    ks = next(line for line in lines if line.startswith("kitchen_sink"))
+    bs = next(line for line in lines if line.startswith("basin"))
+    assert "sinki" in ks.split("| aka", 1)[1] and "sinki" not in bs
     assert pv2_index.alias_clashes(db) == []
 
 
@@ -265,9 +276,10 @@ def test_publish_v2_refuses_variables_oversize_and_clashes(db):
         pv2_index.publish_v2(db, "today is {{current_date}}")
     with pytest.raises(pv2_index.PublishRefused):
         pv2_index.publish_v2(db, "x" * (pv2_index.HEAD_CAP_CHARS + 1))
-    _att_type(db, "Product Drawing", "product_drawing", ["drawing"])
+    cid = db.execute(text("select company_id from product_categories limit 1")).scalar()
+    _category(db, cid, "SRT-BS", "Basin", ["sinki"])
     db.flush()
-    with pytest.raises(pv2_index.PublishRefused, match="drawing"):
+    with pytest.raises(pv2_index.PublishRefused, match="sinki"):
         pv2_index.publish_v2(db, "HEAD")
 
 

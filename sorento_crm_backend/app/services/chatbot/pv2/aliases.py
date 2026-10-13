@@ -257,10 +257,16 @@ def refuse_conflicts(
         raise AppException(status_code=409, message=message_for(clashes), code="ALIAS_CLASH")
 
 
+#: The kinds whose aliases `pv2/index.py` prints. Attachment type aliases stay in data only
+#: (the seed would push the index past its cap), so they can never block a publish; a staff
+#: save still refuses a word two types share, which keeps that data clean.
+INDEX_PRINTED_KINDS: tuple[str, ...] = ("product_class", "spec_attribute")
+
+
 def open_clashes(db: Session) -> list[Clash]:
-    """Every unsettled clash across all kinds. `publish_v2` refuses while this is non-empty."""
+    """Every unsettled clash the index would refuse to publish (`index.alias_clashes`)."""
     out: list[Clash] = []
-    for kind in KINDS:
+    for kind in INDEX_PRINTED_KINDS:
         out.extend(find_clashes(kind, live_aliases(db, kind), precedence(db, kind)))
     return out
 

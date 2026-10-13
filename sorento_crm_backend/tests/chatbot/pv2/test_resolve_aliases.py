@@ -118,11 +118,19 @@ def test_refuse_conflicts_raises_409_naming_the_clash(db):
 
 # --- open_clashes / index_aliases ---------------------------------------------
 def test_open_clashes_lists_unsettled_and_not_settled(db):
+    S.category(db, class_label="Basin", synonyms=["sinki"])
+    S.category(db, class_label="Kitchen Sink", synonyms=["sinki"])
+    mine = [c for c in A.open_clashes(db) if c.kind == "product_class"]
+    assert [(c.alias, set(c.keys)) for c in mine] == [("sinki", {"basin", "kitchen_sink"})]
+    precedence(db, "product_class", "sinki", "kitchen_sink")
+    assert [c for c in A.open_clashes(db) if c.kind == "product_class"] == []
+
+
+def test_attachment_type_aliases_stay_in_data_and_never_block_a_publish(db):
     two_types(db, tech=("cad", "td"), photos=("cad",))
-    mine = [c for c in A.open_clashes(db) if c.kind == "attachment_type"]
-    assert [(c.alias, set(c.keys)) for c in mine] == [("cad", {"technical_specifications", "product_photos"})]
-    precedence(db, "attachment_type", "cad", "technical_specifications")
     assert [c for c in A.open_clashes(db) if c.kind == "attachment_type"] == []
+    # A staff save still refuses the shared word, so the data stays clean.
+    assert A.check_conflicts(db, "attachment_type", "product_photos", ["td"])
 
 
 def test_index_aliases_prints_shared_word_only_under_winner_and_drops_unsettled(db):

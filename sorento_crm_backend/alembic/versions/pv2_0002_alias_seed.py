@@ -5,6 +5,12 @@ must not import live application code (tests/_migration_imports.py). Seeds only 
 re-running changes nothing. Needs PV2-CORE's `pv2_0001_schema` (attachment_types.search_synonyms,
 chatbot_alias_precedence).
 
+Fills `attachment_types.code` where it is NULL (crew accepted, 13 Oct): only on a row found by one
+of the listed type names, only while no other row holds that code, so re-running is a no-op and a
+code staff already set is never overwritten. Aliases go to `attachment_types.search_synonyms` as
+DATA: the index renders attachment types as `key = name` only (aliases printed there pushed it
+past its 8,000 char cap).
+
 The downgrade removes nothing: a seeded code, alias or precedence row may since have been
 relied on or edited by staff, and the upgrade never overwrote anything to put back.
 

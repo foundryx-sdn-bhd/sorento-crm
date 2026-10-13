@@ -133,14 +133,16 @@ def _brands(db: Session) -> list[tuple[str, str, list[str]]]:
 
 
 def _attachment_types(db: Session) -> list[tuple[str, str, list[str]]]:
-    rows = db.execute(
-        text("select code, type_name, search_synonyms from attachment_types order by type_name")
-    ).all()
+    """`key = name` rows only. The aliases (`attachment_types.search_synonyms`, seeded by
+    `pv2_0002_alias_seed`) stay in DATA and are not rendered: printed, the seed alone grew the
+    index 583 chars past the 8,000 cap (crew eval prep, 13 Oct). Staff saves still refuse a word
+    two types share (`aliases.check_conflicts`), so the data stays clean for when they are used."""
+    rows = db.execute(text("select code, type_name from attachment_types order by type_name")).all()
     out: dict[str, tuple[str, str, list[str]]] = {}
-    for code, name, syn in rows:
+    for code, name in rows:
         key = attachment_type_key(code, name)
         if key and key not in out:
-            out[key] = (key, _clean(name), _alias_list(syn))
+            out[key] = (key, _clean(name), [])
     return [out[k] for k in sorted(out)]
 
 
