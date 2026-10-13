@@ -185,8 +185,18 @@ def build_result(
     report_answer: ReportAnswer | None = None,
     idea_answer: IdeaAnswer | None = None,
     base_focus: Focus | None = None,
+    message: str | None = None,
 ) -> TurnV2Result:
-    """One turn's actions as the engine's next step (see the module docstring)."""
+    """One turn's actions as the engine's next step (see the module docstring). `message`
+    is the customer's own text: every verdict carries it as `user_goal`, as v1's casual
+    lane does, so a v1 template that prints it never prints null."""
+    result = _build_result(state, actions, out, today, pending_in, report_answer, idea_answer, base_focus)
+    if message and result.verdict is not None and not result.verdict.get("user_goal"):
+        result.verdict["user_goal"] = message
+    return result
+
+
+def _build_result(state, actions, out, today, pending_in, report_answer, idea_answer, base_focus) -> TurnV2Result:
     language = clarify_copy.lang(out.language)
     lookups = [a for a in actions if isinstance(a, Lookup)]
     domains = [a.domain for a in lookups]
