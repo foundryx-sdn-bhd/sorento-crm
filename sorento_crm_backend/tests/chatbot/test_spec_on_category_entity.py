@@ -426,3 +426,70 @@ def test_r_lat_a_size_the_route_filters_skips_the_resolvers_model_phrase_read():
 
     assert body("inventory", "check_stock", [_category("floor grating"), dict(size)])["understand_phrase"] is False
     assert body("inventory", "check_stock", [_category("floor grating")])["understand_phrase"] is True
+
+
+# --------------------------------------------------------------------------- a measure in the words, no pair
+# SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser left the size INSIDE the
+# category's words and emitted no spec pair (or emitted it as a bare "250mm" product). Grounding
+# kept "250mm floor grating" whole (it names no type, so nothing narrowed) or swapped "600mm
+# basin" to its canonical "basin" and the size was lost. A number with the registry's mm unit
+# in the entity's own words is read like the pair the parser puts there.
+
+
+@pytest.mark.parametrize(
+    "raw,canonical,left,size",
+    [("250mm floor grating", None, "floor grating", 250), ("600mm basin", "basin", "basin", 600), ("600 mm basin", None, "basin", 600)],
+)
+def test_r_hm_a_measure_in_the_category_words_is_the_size(vdb, raw, canonical, left, size):
+    """RED: no specification entity came out; the size was dropped or left in the words."""
+    verdict = _ground(vdb, _category(raw, canonical), message=f"{raw} got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", size)], verdict["entities"]
+    assert [c["raw"] for c in verdict["entities"] if c.get("hint") == "category"] == [left], verdict["entities"]
+
+
+def test_r_hm_a_bare_measure_product_beside_a_type_is_the_size(vdb):
+    """RED: "250mm" went to the resolver as a product code."""
+    verdict = _ground(vdb, _product("250mm"), _category("floor grating"), message="250mm floor grating got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("size", 250)], verdict["entities"]
+    assert not [e for e in verdict["entities"] if e.get("hint") == "product"], verdict["entities"]
+
+
+@pytest.mark.parametrize("ents", [
+    lambda: [_product("SR250MM")],
+    lambda: [_category("basin", "basin")],
+    lambda: [_category("5 l bucket")],
+])
+def test_r_hm_guard_no_mm_measure_no_size(vdb, ents):
+    """Guard: a code with digits, a subject with no number, a number in another unit."""
+    verdict = _ground(vdb, *ents(), message="got stock?")
+    assert not [s for s in _specs(verdict["entities"]) if s.get("spec_key") == "size"], verdict["entities"]
+
+
+@pytest.mark.parametrize("ents", [
+    lambda: [_category("1.2mm kitchen sink"), _spec_entity("1.2mm thick", "thickness", 1.2)],
+    lambda: [_product("1.2mm"), _category("kitchen sink"), _spec_entity("1.2mm thick", "thickness", 1.2)],
+])
+def test_r_hm_b1_a_number_the_parser_already_keyed_is_not_also_a_size(vdb, ents):
+    """Reviewer B1: the parser repeated the measure in the subject's words AND emitted it as a
+    thickness. A second, size reading of the same number turned a thickness ask into a size ask
+    (no counted set, no 1.2 mm sinks). The parser's key stands."""
+    verdict = _ground(vdb, *ents(), message="1.2mm thick kitchen sink got stock?")
+    keys = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("size", 1.2) not in keys, verdict["entities"]
+    assert ("thickness", 1.2) in keys, verdict["entities"]
+
+
+def test_r_hm_s1_an_axis_said_in_the_message_names_the_key(vdb):
+    """Reviewer S1: "600mm length basin got stock?" with the parser's category "600mm basin" and
+    no pair: the customer named the axis, so it is Length, never any axis."""
+    verdict = _ground(vdb, _category("600mm basin", "basin"), message="600mm length basin got stock?")
+    assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("dim_length", 600)], verdict["entities"]
+
+
+def test_r_hm_b1_a_carried_keyed_number_is_not_also_a_size(vdb):
+    """Reviewer B1 kill test: the axis is named only by a thickness carried from an earlier
+    turn, not by this message, so the message's axis read (S1) cannot hide a size reading."""
+    carried = {**_spec_entity("thickness 1.2mm", "thickness", 1.2), "current_message": False}
+    verdict = _ground(vdb, _category("1.2mm kitchen sink"), carried, message="1.2mm kitchen sink got stock?")
+    keys = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("size", 1.2) not in keys and ("thickness", 1.2) in keys, verdict["entities"]

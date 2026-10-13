@@ -374,3 +374,31 @@ def test_p15_a_size_inside_the_category_words_leaves_the_type_named(session_fact
     assert {"key": "product_type", "op": "eq", "value": "floor_grating"} in calls[-1]["spec_constraints"], calls
     assert "Couldn't find" not in reply, reply
     assert "150" in reply and "130" in reply, reply
+
+
+@pytest.mark.parametrize("shape", ["category_words", "product_and_type"])
+def test_p16_a_size_with_no_pair_still_reaches_the_tool(session_factory, monkeypatch, _clear_overrides, shape):
+    """SPEC-PROMO-HELP (crew, "250mm floor grating got stock?"): the parser put the size in the
+    category's words with no spec pair, or as a bare "250mm" product beside "floor grating".
+    RED: every grating was listed and the size dropped. The type is asked with the size, and a
+    size no grating holds is answered from the sizes on file."""
+    from tests.chatbot.test_spec_on_category_entity import _product
+
+    codes = _seed_gratings(session_factory, (("A", {"dim_length": 150}), ("B", {"dim_width": 130})))
+    call, captured = _route_backed_stock(monkeypatch, session_factory)
+    monkeypatch.setattr(harness, "_capturing_mcp", lambda response=None: (call, captured))
+    entities = (
+        [_category("250mm floor grating", None)]
+        if shape == "category_words"
+        else [_product("250mm"), _category("floor grating", None)]
+    )
+    qf = _parser_output(domain_hint="inventory", intent_hint="check_stock", entities=entities)
+    reply = _say(session_factory, monkeypatch, qf, "250mm floor grating got stock?")
+    calls = _stock_calls(captured)
+    assert calls, (captured, reply)
+    sent = calls[-1].get("spec_constraints") or []
+    assert {"key": "product_type", "op": "eq", "value": "floor_grating"} in sent, calls
+    assert {"key": "size", "op": "eq", "value": 250} in sent, calls
+    assert not [c for c in codes if c in reply], reply
+    assert "Couldn't find" not in reply, reply
+    assert "150" in reply and "130" in reply, reply

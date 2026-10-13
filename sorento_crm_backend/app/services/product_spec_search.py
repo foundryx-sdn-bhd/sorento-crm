@@ -1268,6 +1268,24 @@ def search_specs(
         candidate_query = candidate_query.filter(
             ProductSpecifications.product_id.in_(list(product_ids))
         )
+    if (
+        exact
+        and implied_classes
+        and _NO_CLASS not in implied_classes
+        and not any(entry.get("key") == "class" for entry in specs)
+    ):
+        # SPEC-PROMO-HELP (crew latency, routed 3037 ms on dev): in exact mode the loop
+        # below keeps a product only when its stored class is one the words named
+        # ("class" in `matched`), and with no stated `class` spec the class check is the
+        # only way in. The same test in SQL, so the rest of the catalog is never loaded
+        # (3000 seeded products: 1.5 s of ORM hydration for the ranker to drop them).
+        # `->>` is the text `str()` reads below for a string or a number. One difference
+        # (reviewer S2): the variant collapse below reads parent codes off the LOADED rows,
+        # so variants whose parent holds another class (or none) are no longer folded into
+        # that parent's family, as `product_ids` and `chat_searchable_products` already do.
+        candidate_query = candidate_query.filter(
+            func.lower(ProductSpecifications.values["class"]["value"].astext).in_(sorted(implied_classes))
+        )
     rows = candidate_query.all()
 
     wanted_terms: set[str] = set()
