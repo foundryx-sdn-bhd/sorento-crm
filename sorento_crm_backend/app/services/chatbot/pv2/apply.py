@@ -111,6 +111,8 @@ def apply_turn(
     policy: ClarifyPolicy = DEFAULT_POLICY,
     can_offer_handover: bool = True,
     now: datetime | None = None,
+    domain_teams: dict[str, str] | None = None,
+    offer_mode: Literal["offer", "refer", "none"] = "offer",
 ) -> tuple[ConversationState, list[Action]]:
     """Apply one parser output to the state; one Action per ask (section 3).
 
@@ -119,6 +121,9 @@ def apply_turn(
     their second miss re-asks instead of offering a hand-over."""
     st = state.model_copy(deep=True)
     st.turn_no = state.turn_no + 1
+    # What a not-found document says after its sentence: the offer, v1's refer line, or nothing.
+    mode = offer_mode if offer_mode != "offer" else ("offer" if can_offer_handover else "none")
+    doc_offer = _DocOffer(mode, domain_teams)
     language = out.language
     today = local_date(now) if now is not None else None
     actions: list[Action] = []
@@ -148,7 +153,7 @@ def apply_turn(
         try:
             action, answered = _one_ask(
                 st, i, ask, pending_in, out, resolver, policy, language, today, printed_topics,
-                can_offer_handover,
+                doc_offer,
             )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
@@ -186,7 +191,7 @@ def _one_ask(
     language: str,
     today: date | None,
     printed_topics: list[Held],
-    can_offer: bool = True,
+    can_offer: Any = None,
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
     if ask.act == "unclear":
@@ -288,13 +293,21 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
     )
 
 
+class _DocOffer:
+    """How a not-found document ends its sentence (see `apply_turn`)."""
+
+    def __init__(self, mode: str = "offer", teams: dict[str, str] | None = None) -> None:
+        self.mode = mode
+        self.teams = teams
+
+
 class _Qs(list):
     """The questions an ask raised, plus the list items that found nothing."""
 
-    def __init__(self, can_offer: bool = True) -> None:
+    def __init__(self, can_offer: Any = None) -> None:
         super().__init__()
         self.misses: list[Miss] = []
-        self.can_offer = can_offer
+        self.can_offer = can_offer or _DocOffer()
 
 
 #: A reference found under a different kind than the parser named answers in the domain of
@@ -315,7 +328,7 @@ def _answer(
     policy: ClarifyPolicy,
     language: str,
     today: date | None,
-    can_offer: bool = True,
+    can_offer: Any = None,
 ) -> tuple[Action, bool]:
     if pending is None:
         raise _Miss("other")
@@ -327,7 +340,7 @@ def _answer(
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
     if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover"):
         # A bare number (the reply's free value or a row pick) names the printed position.
-        n = int(free) if isinstance(free, str) and free.isdigit() else ask.row_pick
+        n = int(free) if isinstance(free, str) and free.isdecimal() else ask.row_pick
         if isinstance(n, int) and n >= 1:
             picked = next((o for o in pending.options if o.key == str(n)), None)
             if picked is None and 1 <= n <= len(pending.options) and not any(o.key.isdigit() for o in pending.options):
@@ -453,7 +466,9 @@ REPORT_FILTER_DIMENSION = {"brand": "brand", "product_class": "category"}
 def _report_entity_filters(held: Held, ask: Ask, resolver: Any, *, refine: bool) -> tuple[Ask, bool]:
     """On a refine of a held report, brand / product_class entities become that dimension's
     report filter instead of held refs. Returns the ask without them and whether any applied."""
-    if not refine or held.report is None:
+    from app.services.chatbot.pv2.answer import REPORT_DOMAINS
+
+    if not refine or held.report is None or held.domain not in REPORT_DOMAINS:
         return ask, False
     keep: list[Entity] = []
     changed = False
@@ -659,7 +674,7 @@ def _apply_entities(
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
-                qs.append(_doc_not_found(st, i, ent, held, language, bool(getattr(qs, "can_offer", True))))
+                qs.append(_doc_not_found(st, i, ent, held, language, qs.can_offer))
                 continue
             qs.append(
                 _clarify(
@@ -704,25 +719,33 @@ DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_
 
 
 def _doc_not_found(
-    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: bool
+    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any
 ) -> ClarifyAct:
     """v1's not-found sentence for a document number (`Couldn't find: "<n>" (<kind>).`),
     with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
     words = ent.doc_number or ent.phrase
     asked = f'Couldn\'t find: "{words}" ({ent.kind.replace("_", " ")}).'
     options: list[Option] = []
-    if offer:
-        from app.services.chatbot.turn.policy import default_policy
+    if offer.mode == "refer":
+        from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-        row = default_policy().domain(held.domain or "")
-        team = (row.escalation_team_code if row is not None else None) or "customer_service"
+        asked += f" {REFER_TO_SALESMAN}"
+    elif offer.mode == "offer":
+        if offer.teams is not None:
+            team = offer.teams.get(held.domain or "")
+        else:
+            from app.services.chatbot.turn.policy import default_policy
+
+            row = default_policy().domain(held.domain or "")
+            team = row.escalation_team_code if row is not None else None
+        team = team or "customer_service"
         asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
         options = [
             Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
             for o in clarify_copy.handover_options(language)
         ]
     pending = PendingQuestion(
-        kind="offer_doc_handover" if offer else "clarify_entity",
+        kind="offer_doc_handover" if options else "clarify_entity",
         asked=asked, options=options, asked_turn=st.turn_no, misses=0,
     )
     return ClarifyAct(ask_index=i, about="entity", phrase=words, pending=pending, not_found=True)
