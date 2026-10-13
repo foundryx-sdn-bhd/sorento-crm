@@ -783,11 +783,117 @@ class DbResolver:
         return SpecResolution(status="none", phrase=spec.phrase or spec.value_key, unrecognised=True)
 
     # ------------------------------------------------------------------ reports
-    def resolve_report_spec(self, spec: Any, *, held: Held, profile: Any) -> Any:
-        """PV2-REPORTS owns report resolution (`pv2/reports.py`); this only forwards."""
-        from app.services.chatbot.pv2 import reports  # type: ignore[attr-defined]
+    def resolve_report_spec(self, spec: Any, *, held: Held, profile: Any = None) -> Any:
+        """The refs per `in` filter dimension that `reports.plan_report` takes (`key` = the live
+        id the report route filters on, `label` = display name), or what to ask.
 
-        return reports.resolve_report_spec(self.db, spec, held=held, profile=profile)
+        Same rules as entities: brand and category keys are index keys (pinned + live, never
+        from a phrase); customer, product and location keys are phrases matched exactly, a
+        customer name not exact offers real-name candidates. A dimension this resolver does
+        not hold (sales agents, chat subjects) stays unresolved for the report lane to say.
+        Filters the engine cannot run (`not_in`, numbers) are the report lane's to say."""
+        from app.services.chatbot.pv2.reports import ReportResolution
+
+        refs: dict[str, list[dict[str, Any]]] = {}
+        options: list[dict[str, Any]] = []
+        unresolved: list[str] = []
+        phrase = None
+        for f in getattr(spec, "filters", None) or []:
+            if f.op != "in" or f.dimension == "channel":
+                continue
+            got: list[dict[str, Any]] = []
+            for key in dict.fromkeys(str(k) for k in f.keys or []):
+                status, found, picks = self._report_filter(f.dimension, key, held)
+                if status == "exact":
+                    got.extend(found)
+                elif status == "ambiguous" and not options:
+                    options = [{**o, "payload": {**o["payload"], "dimension": f.dimension}} for o in picks]
+                    phrase = key
+                else:
+                    unresolved.append(f.dimension)
+            if got:
+                refs[f.dimension] = list({r["key"]: r for r in got}.values())
+        unresolved = list(dict.fromkeys(unresolved))
+        status = "ambiguous" if options else ("none" if unresolved else "exact")
+        return ReportResolution(status=status, refs=refs, options=options, unresolved=unresolved, phrase=phrase)
+
+    def _report_filter(self, dimension: str, key: str, held: Held) -> tuple[str, list[dict], list[dict]]:
+        """(status, refs, options) for one filter key; refs/options as plain dicts."""
+        from app.models.order import Customer
+        from app.models.product import Brand, ProductCategory
+
+        def ref(k: str, label: str) -> dict[str, Any]:
+            return {"kind": dimension, "key": k, "label": label}
+
+        if dimension == "brand":
+            if key not in self.pinned.get("brand", set()):
+                return "none", [], []
+            rows = (
+                self.db.query(Brand.id, Brand.brand_name)
+                .filter(Brand.brand_code == key, Brand.is_active.is_(True))
+                .all()
+            )
+            return ("exact", [ref(str(i), n) for i, n in rows], []) if rows else ("none", [], [])
+        if dimension == "category":
+            if key not in self.pinned.get("product_type", set()):
+                return "none", [], []
+            rows = (
+                self.db.query(ProductCategory.id, ProductCategory.class_label, ProductCategory.category_name)
+                .filter(
+                    ProductCategory.is_active.is_(True),
+                    or_(ProductCategory.class_label == key, ProductCategory.category_code == key),
+                )
+                .all()
+            )
+            return ("exact", [ref(str(i), c or n) for i, c, n in rows], []) if rows else ("none", [], [])
+        if dimension == "customer":
+            res = self._customer(key)
+            if res.status == "exact":
+                ids = self._customer_ids([r.key for r in res.refs])
+                return "exact", [ref(ids.get(r.key, r.key), r.label) for r in res.refs], []
+            if res.status == "ambiguous":
+                ids = self._customer_ids([o.key for o in res.options])
+                picks = [
+                    {"key": ids.get(o.key, o.key), "label": o.label,
+                     "payload": {"kind": "customer", "key": ids.get(o.key, o.key), "label": o.label}}
+                    for o in res.options
+                ]
+                return "ambiguous", [], picks
+            return "none", [], []
+        if dimension == "product":
+            res = self._product(key)
+            if res.status == "exact":
+                return "exact", [ref(r.key, r.label) for r in res.refs], []
+            return "none", [], []
+        if dimension == "location":
+            res = self._warehouse(key)
+            if res.status == "exact":
+                return "exact", [ref(r.key, r.label) for r in res.refs], []
+            if res.status == "ambiguous":
+                return "ambiguous", [], [o.model_dump() for o in res.options]
+            return "none", [], []
+        return "none", [], []
+
+    def _customer_ids(self, keys: list[str]) -> dict[str, str]:
+        """customer ref key (code, or id when the row has no code) -> customer id."""
+        from app.models.order import Customer
+
+        if not keys:
+            return {}
+        out = {}
+        for cid, code in self._customer_query().with_entities(Customer.id, Customer.customer_code).filter(
+            or_(Customer.customer_code.in_(keys), Customer.id.in_([k for k in keys if _looks_uuid(k)]))
+        ).all():
+            out[str(code or cid)] = str(cid)
+        return out
+
+
+def _looks_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except ValueError:
+        return False
 
 
 # --------------------------------------------------------------------------- #
