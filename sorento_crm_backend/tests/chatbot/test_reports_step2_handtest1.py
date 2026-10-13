@@ -329,3 +329,262 @@ def test_h30_guard_a_topic_reset_does_not_narrow() -> None:
     from app.services.chatbot.turn_runtime import _narrows_held_sales_report
 
     assert _narrows_held_sales_report(_only_code(topic_reset=True)) is False
+
+
+# ================================================================================ owner hand test: filters on a held ranking
+
+
+def _answer_turn(**kw: Any) -> dict[str, Any]:
+    """The parser's reading of a short answer to one of the ranking's questions."""
+    base: dict[str, Any] = dict(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+        ranking_refine=True, domain_in_message=False, group_by=None, top_n=None, basis=None, measure=None,
+        entities=[], date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def _held_ranking(console) -> dict[str, Any]:
+    """The owner's turns 1 to 4: "top 5 salesman for sorento", "2026", "qty", "delivered" -> a top-5 list."""
+    console.say(
+        _rank(_e("Sorento", "brand"), group_by="sales_agent", top_n=5, basis=None, measure=None,
+              date_filter_start=None, date_filter_end=None),
+        "top 5 salesman for sorento",
+    )
+    console.say(_answer_turn(date_filter_start="2026-01-01", date_filter_end="2026-12-31"), "2026")
+    console.say(_answer_turn(measure="qty"), "qty")
+    text, calls = console.say(_answer_turn(basis="delivered"), "delivered")
+    (args,) = calls
+    assert args["group_by"] == "sales_agent" and args["top_n"] == 5, (text, args)
+    return args
+
+
+def _analysis_filter(**kw: Any) -> dict[str, Any]:
+    """Crew's turn 5 emission: the parser reads "dealer sales only" as a company analysis with a channel."""
+    base: dict[str, Any] = dict(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_analysis",
+        domain_in_message=True, topic_reset=False, sales_channel="dealer", basis="delivered", sales_basis="delivered",
+        entity_op="reuse", ranking_refine=None, group_by=None, top_n=None, entities=[],
+        date_filter_start=None, date_filter_end=None,
+    )
+    base.update(kw)
+    return _live(_parser_output(**base))
+
+
+def _ranking_calls(log):
+    return [a for n, a in log if n == "crm_report"]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("in_message, refine", [(False, None), (True, False), (False, True), (True, None)])
+def test_h31_dealer_only_re_runs_the_held_ranking_with_the_channel(console, monkeypatch, in_message, refine) -> None:
+    from tests.chatbot.test_reports_step2_lane import _wire
+
+    before = _held_ranking(console)
+    qf = _analysis_filter(domain_in_message=in_message, ranking_refine=refine)
+    text, log = lane._say_all(console, monkeypatch, qf, "i want to see dealer sales only")
+    (after,) = _ranking_calls(log)
+    assert "crm_sales_analysis" not in _names(log), log
+    assert after["channel"] == "dealer" and after["group_by"] == "sales_agent" and after["top_n"] == 5, after
+    for key in ("brand_ids", "date_from", "date_to", "measure"):
+        assert after.get(key) == before.get(key), (key, after, before)
+    held = _wire(console)["report"]
+    assert held and not held.get("kind") and held["args"]["group_by"] == "sales_agent", held  # still held for turn 6
+
+
+def test_h32_a_brand_swap_re_runs_the_held_ranking_for_the_other_brand(console, monkeypatch) -> None:
+    import uuid as _uuid
+
+    from app.models.product import Brand
+    from app.services.company_scope import DEFAULT_COMPANY_ID
+
+    before = _held_ranking(console)
+    db = console.session_factory()
+    try:
+        other = Brand(id=str(_uuid.uuid4()), brand_code="ZZTMOCHI", brand_name="Mochi", company_id=DEFAULT_COMPANY_ID)
+        db.add(other)
+        db.commit()
+        other_id = other.id
+    finally:
+        db.close()
+    try:
+        qf = _live(_parser_output(
+            message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+            group_by="sales_agent", top_n=5, ranking_refine=True, basis="delivered", rank_by="quantity", measure="qty",
+            entities=[_e("Mochi", "brand")], entity_op="replace_combine", domain_in_message=False,
+            broaden_axis="brand", broaden_to="all", date_filter_start=None, date_filter_end=None,
+        ))
+        text, log = lane._say_all(console, monkeypatch, qf, "mochi only")
+        (after,) = _ranking_calls(log)
+        assert after["brand_ids"] == [other_id] and after["group_by"] == "sales_agent", after
+        assert after["date_from"] == before["date_from"] and after["measure"] == before["measure"], after
+    finally:
+        db = console.session_factory()
+        try:
+            db.query(Brand).filter(Brand.id == other_id).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_h33_project_only_re_runs_the_held_ranking_with_that_channel(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _live(_parser_output(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+        sales_channel="project", basis="delivered", ranking_refine=True, domain_in_message=False, entities=[],
+        group_by=None, top_n=None, date_filter_start=None, date_filter_end=None,
+    ))
+    _text, log = lane._say_all(console, monkeypatch, qf, "project sales only")
+    (after,) = _ranking_calls(log)
+    assert after["channel"] == "project" and after["group_by"] == "sales_agent", after
+
+
+def test_h34_a_basis_change_re_runs_the_held_ranking_on_that_basis(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _live(_parser_output(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+        basis="ordered", group_by="sales_agent", top_n=5, ranking_refine=True, domain_in_message=True, entities=[],
+        date_filter_start=None, date_filter_end=None,
+    ))
+    _text, log = lane._say_all(console, monkeypatch, qf, "ordered not delivered")
+    (after,) = _ranking_calls(log)
+    assert after["measure"].startswith("ordered_") and after["group_by"] == "sales_agent", after
+
+
+def test_h34b_an_analysis_that_changes_no_filter_the_ranking_carries_is_not_a_refine(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _analysis_filter(sales_channel=None)  # basis delivered is the held basis: nothing changed
+    _text, log = lane._say_all(console, monkeypatch, qf, "show me sales")
+    assert not _ranking_calls(log), log
+
+
+def test_h36a_guard_a_new_analysis_axis_is_not_a_refine_of_the_held_ranking(console, monkeypatch) -> None:
+    _held_ranking(console)
+    _text, log = lane._say_all(console, monkeypatch, _analysis_filter(group_by="month"), "sales by month for dealers")
+    assert not _ranking_calls(log) and "crm_sales_analysis" in _names(log), log  # it runs as its own analysis
+
+
+def test_h36b_guard_a_new_period_is_not_a_refine_of_the_held_ranking(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _analysis_filter(date_filter_start="2025-01-01", date_filter_end="2025-12-31")
+    _text, log = lane._say_all(console, monkeypatch, qf, "dealer sales in 2025")
+    assert not _ranking_calls(log), log
+
+
+def test_h36c_guard_a_named_company_is_not_a_refine_of_the_held_ranking(console, monkeypatch) -> None:
+    _held_ranking(console)
+    _text, log = lane._say_all(console, monkeypatch, _analysis_filter(sales_company="Mochi"), "dealer sales for Mochi")
+    assert not _ranking_calls(log), log
+
+
+def test_h36d_guard_a_new_product_subject_is_not_a_refine_of_the_held_ranking(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _analysis_filter(entities=[lane._hit(EXACT, "product")])
+    _text, log = lane._say_all(console, monkeypatch, qf, "dealer sales of the model")
+    assert not [a for a in _ranking_calls(log) if a.get("group_by") == "sales_agent"], log
+
+
+# ================================================================================ the company question is an open question
+
+
+COMPANIES = ["Zorvex", "Mochi"]
+
+
+def _analysis_route(console, monkeypatch):
+    """Every `crm_sales_analysis` call goes to the real presenter: a company question until a company is named."""
+    import json
+
+    from sorento_crm_mcp.presenters import present_response
+
+    seen: list[dict[str, Any]] = []
+    real_factory = lane._REAL_FETCH_SERVICES
+
+    def _factory(*, mcp_call):
+        def _route(name: str, args: dict[str, Any]) -> Any:
+            if name != "crm_sales_analysis":
+                return mcp_call(name, args)
+            seen.append(dict(args))
+            if args.get("company"):
+                body = {"status": "ready", "rows": [], "columns": [], "totals": [], "company": args["company"]}
+            else:
+                body = {"status": "clarify", "message": "Zorvex or Mochi?", "companies": COMPANIES}
+            return present_response(name, json.dumps(body))
+
+        return real_factory(mcp_call=_route)
+
+    monkeypatch.setattr(lane, "FetchServices", _factory)
+    return seen
+
+
+def _company_answer(**kw: Any) -> dict[str, Any]:
+    """The parser's emission for the reply to the company question: it picks an option."""
+    base: dict[str, Any] = dict(
+        domain_hint="order", intent_hint="check_order", order_status=None, domain_in_message=False,
+        entities=[], sales_company=None,
+    )
+    base.update(kw)
+    qf = _live(_parser_output(**base))
+    qf["open_question_answer"] = {"mode": "pick", "picked": [1], "items": [], "qty_for_all": None}
+    return qf
+
+
+def _wire_ask(console) -> dict[str, Any]:
+    from tests.chatbot.test_reports_step2_lane import _wire
+
+    return _wire(console).get("required_ask") or {}
+
+
+def test_h35_the_company_question_is_stored_and_the_next_reply_answers_it(console, monkeypatch) -> None:
+    seen = _analysis_route(console, monkeypatch)
+    text, _calls = console.say(_analysis_filter(), "dealer sales")
+    assert "Zorvex or Mochi?" in text and not seen[0].get("company"), (text, seen)
+    assert _wire_ask(console).get("ask") == "sales_analysis_company", _wire_ask(console)
+    qf = _company_answer()
+    qf["reference_positions"] = [2]
+    qf["open_question_answer"] = {"mode": "pick", "picked": [2], "items": [], "qty_for_all": None}
+    text, _calls = console.say(qf, "mochi")
+    assert "how can I help" not in text.lower(), text
+    assert len(seen) == 2 and seen[1].get("company") == "Mochi" and seen[1].get("channel") == "dealer", seen
+    assert not _wire_ask(console), _wire_ask(console)
+
+
+def test_h35b_the_company_named_in_the_parsers_own_field_answers_it_too(console, monkeypatch) -> None:
+    seen = _analysis_route(console, monkeypatch)
+    console.say(_analysis_filter(), "dealer sales")
+    qf = _company_answer(sales_company="mochi")
+    qf["open_question_answer"] = {"mode": "fill", "picked": [], "items": [], "qty_for_all": None}
+    console.say(qf, "mochi")
+    assert seen[-1].get("company") == "Mochi", seen
+
+
+# ================================================================================ turn 4: the basis answer with a status key
+
+
+def test_h36_the_basis_answer_with_a_delivered_status_key_runs_the_ranking(console) -> None:
+    text, calls = console.say(
+        _rank(_e("Sorento", "brand"), group_by="sales_agent", top_n=5, basis=None, measure="qty", **SEP),
+        "top 5 salesman for sorento",
+    )
+    assert calls == [] and "Delivered" in text, (text, calls)
+    qf = _live(_parser_output(
+        message_type="business_query", domain_hint="order", intent_hint="check_order", order_status="sales_ranking",
+        status="delivered", basis=None, group_by=None, top_n=None, ranking_refine=True, domain_in_message=False,
+        entities=[], date_filter_start=None, date_filter_end=None,
+    ))
+    text, calls = console.say(qf, "delivered")
+    (args,) = calls
+    assert args["measure"] == "delivered_qty" and args["group_by"] == "sales_agent", args
+
+
+def test_h37_guard_a_status_beside_top_selling_is_left_to_the_outstanding_path() -> None:
+    from app.services.chatbot.lanes.business import report_ask
+
+    held = {"order_status": "top_selling", "status": "outstanding", "basis": None}
+    assert report_ask.as_ranking_basis_status(held) == held
+    ranking = {"order_status": "sales_ranking", "status": "delivered", "basis": None}
+    out = report_ask.as_ranking_basis_status(ranking)
+    assert out["status"] is None and out["basis"] == "delivered", out
+    assert report_ask.as_ranking_basis_status({"order_status": "sales_ranking", "status": "open", "basis": None})["status"] == "open"
