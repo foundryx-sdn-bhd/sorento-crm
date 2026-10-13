@@ -18,8 +18,9 @@ export interface CancelSource {
 const MATCH_LABEL: Record<string, string> = {
   line_key: 'line key',
   item: 'item',
-  tie_break: 'tie-break',
-  fallback: 'auto-assigned',
+  // AutoCount names no line, but every transfer on the item's lines was cancelled, so each
+  // line's share is its own transferred qty (owner rule, 13 Oct: exact links only).
+  group_whole: 'every line of the item',
 };
 
 /** "XS-016501: 36 (line key)", one document per line; undefined when nothing cancelled. */

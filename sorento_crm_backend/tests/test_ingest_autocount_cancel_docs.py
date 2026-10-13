@@ -4,10 +4,11 @@ Plan: documentation/plans/autocount/PLAN-autocount-cancel-crm-13oct.md (rules R1
 
 Owner rulings 13 Oct: cancelled qty is DERIVED on every sync (sum of the cancel-doc lines
 matched to a line, live docs only); a line is cancelled only when fully cancelled; AutoCount is
-truth, so a cancel line matches by its FromDocDtlKey, else by doc no + item (+ location), then
-the unexplained-transfer tie-break (Q2 a), then a deterministic lowest-Seq fallback written to the
-line's history (Q3: no person reviews anything). A dangling key or a qty that fits nowhere stays
-unmatched. The result never depends on the order documents arrive in.
+truth, so a cancel line matches by its FromDocDtlKey. Without one it is decided with its group
+(order + item + location) by exact arithmetic only (owner rule 13 Oct): the group's one line,
+or, when nothing was delivered and the cancels are every transfer, each line's own transfer.
+Anything else is undetermined and names no line: no tie-break, no lowest-Seq fallback, no
+guess. A dangling key stays unmatched. The result never depends on the order documents arrive in.
 
 Reuses the DO / GRN suite's `env` (superadmin principal, products ZZAC-P1 / ZZAC-P2, warehouse
 ZZAC-WH1, the default company). Every record here is fake.
@@ -245,7 +246,7 @@ def test_no_key_one_line_of_the_item_matches(env):
     assert stored.sales_order_line_id == lines[5001]
 
 
-def test_no_key_location_narrows(env):
+def test_no_key_the_group_is_order_item_and_location(env):
     _wh2(env)
     lines = _so(env, lines=((5001, "p1", 10, 4, "wh1"), (5002, "p1", 10, 4, "wh2")))
     _push_xs(env, [_xs(details=[_detail(951001, location="ZZAC-WH2", from_dtl=0)])])
@@ -254,89 +255,91 @@ def test_no_key_location_narrows(env):
     assert stored.sales_order_line_id == lines[5002]
 
 
-def test_no_key_nothing_explains_the_cancel_stays_unmatched(env):
-    """Two same-item lines and neither has transferred anything: the cancel fits nowhere."""
+def test_no_key_nothing_explains_the_cancel_is_undetermined(env):
+    """Two same-item lines and neither has transferred anything: C is not every transfer, so the
+    cancel is kept at order + item level and names no line."""
     lines = _so(env, lines=((5001, "p1", 12, 0, "wh1"), (5002, "p1", 12, 0, "wh1")))
     _push_xs(env, [_xs(details=[_detail(951001, qty=12, from_dtl=0)])])
     stored = _cancel_lines(env, 950001)[951001]
-    assert stored.match_status == "unmatched"
-    assert stored.match_reason == "no_fit"
+    assert (stored.match_status, stored.match_reason) == ("unmatched", "undetermined")
+    assert stored.sales_order_line_id is None
     assert sorted(stored.candidate_line_ids) == sorted(lines.values())
     assert all(_so_line(env, i).qty_cancelled == Decimal("0") for i in lines.values())
 
 
-def test_tie_break_picks_the_one_line_whose_transfer_is_unexplained(env):
-    """Q2 a: line 5001 transferred 12 and a DO explains all 12; line 5002 transferred 12 with no
-    DO. Only 5002 can hold a cancel of 12."""
+def _do_line(env, so_line_id, qty, number="ZZDO-C001"):
     from app.models.order import Order, OrderLine
 
-    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 12, "wh1")))
-    order = Order(order_number="ZZDO-C001", company_id=env.company, order_status_id=env.new_status)
+    order = Order(order_number=number, company_id=env.company, order_status_id=env.new_status)
     env.db.add(order)
     env.db.flush()
-    env.db.add(OrderLine(order_id=order.id, product_id=env.p1, quantity=12, line_sequence=1, warehouse_id=env.wh1,
-                         sales_order_line_id=lines[5001], company_id=env.company))
+    env.db.add(OrderLine(order_id=order.id, product_id=env.p1, quantity=qty, line_sequence=1,
+                         warehouse_id=env.wh1, sales_order_line_id=so_line_id,
+                         company_id=env.company))
     env.db.commit()
+
+
+def test_a_do_on_the_group_leaves_the_old_tie_break_case_undetermined(env):
+    """Owner rule 13 Oct: no tie-break. D > 0 and C > 0 over two lines: undetermined."""
+    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 12, "wh1")))
+    _do_line(env, lines[5001], 12)
     _push_xs(env, [_xs(details=[_detail(951001, qty=12, from_dtl=0)])])
     stored = _cancel_lines(env, 950001)[951001]
-    assert (stored.match_status, stored.match_reason) == ("matched", "tie_break")
-    assert stored.sales_order_line_id == lines[5002]
-    assert _so_line(env, lines[5002]).line_status == "cancelled"
+    assert (stored.match_status, stored.match_reason) == ("unmatched", "undetermined")
+    assert stored.sales_order_line_id is None
+    assert all(_so_line(env, i).qty_cancelled == Decimal("0") for i in lines.values())
+    assert all(_so_line(env, i).line_status == "closed" for i in lines.values())
 
 
-def test_fallback_takes_the_lowest_seq_line_and_writes_history(env):
-    """Both lines could explain it: no tie-break, so the earliest line (lowest Seq) takes it."""
+def test_two_lines_that_could_each_hold_the_cancel_get_neither_and_no_history(env):
+    """Owner rule 13 Oct: no lowest-Seq fallback and no auto-match history."""
     from app.models.audit import AuditLog
 
     lines = _so(env, lines=((5002, "p1", 12, 12, "wh1"), (5001, "p1", 12, 12, "wh1")))
     _push_xs(env, [_xs(doc_no="ZZXS-0042", details=[_detail(951001, qty=12, from_dtl=0)])])
     stored = _cancel_lines(env, 950001)[951001]
-    assert (stored.match_status, stored.match_reason) == ("matched", "fallback")
-    assert stored.sales_order_line_id == lines[5001]
-    history = env.db.execute(
-        select(AuditLog).where(AuditLog.entity_id == lines[5001],
-                               AuditLog.event == "CANCEL_AUTO_MATCHED")
-    ).scalars().all()
-    assert [h.description for h in history] == ["auto-matched: ambiguous cancel ZZXS-0042"]
-    # a re-push that changes nothing writes no second history row
-    _push_xs(env, [_xs(doc_no="ZZXS-0042", details=[_detail(951001, qty=12, from_dtl=0)],
-                       modified="2026-10-02T10:00:00.000")])
-    env.db.expire_all()
-    assert len(env.db.execute(select(AuditLog).where(
-        AuditLog.entity_id == lines[5001],
-        AuditLog.event == "CANCEL_AUTO_MATCHED")).scalars().all()) == 1
+    assert (stored.match_status, stored.match_reason) == ("unmatched", "undetermined")
+    assert stored.sales_order_line_id is None
+    assert env.db.execute(select(AuditLog).where(
+        AuditLog.entity_id.in_(list(lines.values())),
+        AuditLog.event == "CANCEL_AUTO_MATCHED")).first() is None
 
 
-def test_fallback_never_exceeds_what_a_line_explains(env):
-    """Two cancels of 8 against lines that each explain 10: the second goes to the next line."""
-    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 10, "wh1")))
+def test_nothing_delivered_and_the_cancel_is_every_transfer_is_exact_per_line(env):
+    """D = 0 and C = sum(T): every line's transfer is its cancel. The cancel lines name the
+    group (no single line) and each line's qty_cancelled is its own transfer."""
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
     _push_xs(env, [_xs(details=[_detail(951001, qty=8, from_dtl=0),
-                                _detail(951002, qty=8, from_dtl=0)])])
-    stored = _cancel_lines(env, 950001)
-    assert stored[951001].sales_order_line_id == lines[5001]
-    assert stored[951002].sales_order_line_id == lines[5002]
-    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("8")
-    assert _so_line(env, lines[5002]).qty_cancelled == Decimal("8")
-
-
-def test_oversubscribed_tie_break_falls_back(env):
-    """Two cancels of 6 both single out line 5002 (unexplained 10): together they exceed it, so
-    neither tie-break stands; the fallback places one on 5002 and the other fits nowhere."""
-    from app.models.order import Order, OrderLine
-
-    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 10, "wh1")))
-    order = Order(order_number="ZZDO-C002", company_id=env.company, order_status_id=env.new_status)
-    env.db.add(order)
-    env.db.flush()
-    env.db.add(OrderLine(order_id=order.id, product_id=env.p1, quantity=10, line_sequence=1, warehouse_id=env.wh1,
-                         sales_order_line_id=lines[5001], company_id=env.company))
-    env.db.commit()
-    _push_xs(env, [_xs(details=[_detail(951001, qty=6, from_dtl=0),
                                 _detail(951002, qty=6, from_dtl=0)])])
     stored = _cancel_lines(env, 950001)
-    assert [(stored[k].match_status, stored[k].match_reason) for k in (951001, 951002)] == [
-        ("matched", "fallback"), ("unmatched", "no_fit")]
-    assert stored[951001].sales_order_line_id == lines[5002]
+    for dtl in (951001, 951002):
+        assert (stored[dtl].match_status, stored[dtl].match_reason) == ("matched", "group_whole")
+        assert stored[dtl].sales_order_line_id is None
+        assert sorted(stored[dtl].candidate_line_ids) == sorted(lines.values())
+    first, second = _so_line(env, lines[5001]), _so_line(env, lines[5002])
+    assert (first.qty_cancelled, first.line_status) == (Decimal("10"), "cancelled")
+    assert (second.qty_cancelled, second.line_status) == (Decimal("4"), "open")
+    # each line's tooltip names the group's cancel documents
+    from app.services.autocount_cancel_ingest_service import cancel_sources
+
+    sources = cancel_sources(env.db, AutocountCancelLine.sales_order_line_id,
+                             list(lines.values()))
+    assert sources[lines[5001]] == sources[lines[5002]] == [
+        {"doc_no": "ZZXS-0001", "qty": 8.0, "match_reason": "group_whole"},
+        {"doc_no": "ZZXS-0001", "qty": 6.0, "match_reason": "group_whole"}]
+
+
+def test_a_whole_group_cancel_that_lowers_reopens_and_clears(env):
+    lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=14, from_dtl=0)])])
+    assert _so_line(env, lines[5001]).line_status == "cancelled"
+    _push_xs(env, [_xs(details=[_detail(951001, qty=5, from_dtl=0)],
+                       modified="2026-10-02T10:00:00.000")])
+    stored = _cancel_lines(env, 950001)[951001]
+    assert stored.match_reason == "undetermined"
+    assert {k: _so_line(env, v).qty_cancelled for k, v in lines.items()} == {
+        5001: Decimal("0"), 5002: Decimal("0")}
+    assert _so_line(env, lines[5001]).line_status == "closed"
 
 
 def _match_picture(env, keys):
@@ -348,8 +351,8 @@ def _match_picture(env, keys):
 
 
 def test_match_does_not_depend_on_arrival_order(env):
-    """Q2 a: the same two cancel docs, pushed in either order (and one per batch), end in the
-    same matches."""
+    """The same two cancel docs, pushed in either order (and one per batch), end in the same
+    answer: the first alone is undetermined, both together are every transfer (exact)."""
     lines = _so(env, lines=((5001, "p1", 10, 10, "wh1"), (5002, "p1", 10, 4, "wh1")))
     first = _xs(details=[_detail(951001, qty=4, from_dtl=0)])
     second = _xs(doc_key=950002, doc_no="ZZXS-0002",
@@ -364,6 +367,7 @@ def test_match_does_not_depend_on_arrival_order(env):
     _push_xs(env, [first])
     assert _match_picture(env, (950001, 950002)) == one_way
     assert {k: _so_line(env, v).qty_cancelled for k, v in lines.items()} == totals
+    assert totals == {5001: Decimal("10"), 5002: Decimal("4")}
 
 
 def test_sync_log_counts_every_decision(env, caplog):
@@ -375,7 +379,7 @@ def test_sync_log_counts_every_decision(env, caplog):
                                     _detail(951002, qty=12, from_dtl=5999)])])
     line = next(r.getMessage() for r in caplog.records
                 if r.getMessage().startswith("ingest.cancel_match"))
-    assert "matched:fallback=1" in line
+    assert "unmatched:undetermined=1" in line
     assert "unmatched:dangling_line_key=1" in line
 
 
@@ -546,14 +550,14 @@ def test_a_line_cancelled_for_another_reason_is_never_reopened(env):
 
 
 def test_a_voided_keyed_cancel_does_not_explain_a_transfer(env):
-    """Review M13: a voided line-key cancel takes nothing from a candidate's unexplained
-    transfer, so the key-less cancel still sees both lines and falls back to the first."""
-    lines = _so(env, lines=((5001, "p1", 5, 5, "wh1"), (5002, "p1", 5, 5, "wh1")))
+    """Review M13: a voided line-key cancel takes nothing from a line's transfer, so the
+    key-less 5 is not every transfer (10) and stays undetermined; a live one would make it so."""
+    _so(env, lines=((5001, "p1", 5, 5, "wh1"), (5002, "p1", 5, 5, "wh1")))
     _push_xs(env, [_xs(details=[_detail(951001, qty=5, from_dtl=5001)], cancelled="T")])
     _push_xs(env, [_xs(doc_key=950002, doc_no="ZZXS-0002",
                        details=[_detail(952001, qty=5, from_dtl=0)])])
     stored = _cancel_lines(env, 950002)[952001]
-    assert (stored.match_reason, stored.sales_order_line_id) == ("fallback", lines[5001])
+    assert (stored.match_reason, stored.sales_order_line_id) == ("undetermined", None)
 
 
 def test_a_huge_qty_fails_its_record_not_the_batch(env):
@@ -620,19 +624,44 @@ def test_a_do_push_re_decides_the_cancels_naming_its_orders(env, monkeypatch):
     assert seen == []
 
 
-def test_a_do_that_arrives_later_turns_a_fallback_into_a_tie_break(env):
-    """Review SF3: the cancel first falls back to line 5001 (both lines explain 12); a DO then
-    explains 5001's transfer, and the re-decision moves the cancel to 5002 by the tie-break."""
+def test_a_do_that_lands_on_the_group_turns_an_exact_cancel_undetermined(env):
+    """The cancel is first every transfer (exact); a DO naming the SO and item then lands, so
+    D > 0 and the re-decision takes the cancel off both lines."""
     from tests.test_ingest_autocount_do_grn import do_records
 
-    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 12, "wh1")))
+    lines = _so(env, lines=((5001, "p1", 12, 12, "wh1"), (5002, "p1", 12, 0, "wh1")))
     _push_xs(env, [_xs(details=[_detail(951001, qty=12, from_dtl=0)])])
-    assert _cancel_lines(env, 950001)[951001].sales_order_line_id == lines[5001]
+    assert _cancel_lines(env, 950001)[951001].match_reason == "group_whole"
+    assert _so_line(env, lines[5001]).qty_cancelled == Decimal("12")
     rec = copy.deepcopy(do_records()[0])
-    rec["Details"] = [dict(rec["Details"][0], ItemCode="ZZAC-P1", Qty=12.0, Location="ZZAC-WH1",
-                           FromDocType="SO", FromDocNo="ZZSO-C001", FromDocDtlKey=5001)]
+    rec["Details"] = [dict(rec["Details"][0], ItemCode="ZZAC-P1", Qty=3.0, Location="ZZAC-WH1",
+                           FromDocType="SO", FromDocNo="ZZSO-C001", FromDocDtlKey=0)]
     assert _records(env.push_do([rec]))["db1:DO:900001"]["outcome"] == "created"
     stored = _cancel_lines(env, 950001)[951001]
-    assert (stored.match_reason, stored.sales_order_line_id) == ("tie_break", lines[5002])
+    assert (stored.match_reason, stored.sales_order_line_id) == ("undetermined", None)
     assert _so_line(env, lines[5001]).qty_cancelled == Decimal("0")
-    assert _so_line(env, lines[5002]).qty_cancelled == Decimal("12")
+    assert _so_line(env, lines[5001]).line_status == "closed"
+
+
+# ======================================================================= Cancel PO groups
+def test_xp_without_a_key_over_two_po_lines_is_exact_when_it_is_every_receipt(env):
+    po = PurchaseOrder(po_number="ZZPO-C002", company_id=env.company)
+    env.db.add(po)
+    env.db.flush()
+    ids = []
+    for dtl, received in ((7101, 5), (7102, 3)):
+        pol = PurchaseOrderLine(purchase_order_id=po.id, product_id=env.p1, qty_ordered=10,
+                                qty_received=received, warehouse_id=env.wh1,
+                                source_ref=f"SRT_DB:7001:{dtl}", company_id=env.company)
+        env.db.add(pol)
+        env.db.flush()
+        ids.append(str(pol.id))
+    env.db.commit()
+    env.post(XP_INGEST, [_xp(details=[_detail(961001, qty=8, from_no="ZZPO-C002", from_dtl=0,
+                                              from_type="PO")])])
+    stored = _cancel_lines(env, 960001)[961001]
+    assert (stored.match_status, stored.match_reason) == ("matched", "group_whole")
+    assert stored.purchase_order_line_id is None
+    env.db.expire_all()
+    assert [env.db.get(PurchaseOrderLine, i).qty_cancelled for i in ids] == [Decimal("5"),
+                                                                            Decimal("3")]
