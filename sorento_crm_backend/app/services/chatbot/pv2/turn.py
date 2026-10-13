@@ -296,7 +296,7 @@ def mirror_v1_pending(state: ConversationState, v1_pending: Any) -> Conversation
 # --------------------------------------------------------------------------- #
 
 
-def memory_profile(profile: Any, memory_intake: dict[str, Any] | None) -> MemoryProfile:
+def memory_profile(profile: Any, memory_intake: dict[str, Any] | None, *, staff: bool | None = None) -> MemoryProfile:
     """The CONTACT / EARLIER SESSIONS lines from the v1 profile (`turn/state.Profile`) and
     the memory intake (profile facts, closed-session summaries)."""
     from app.services.chatbot.turn.state import is_staff_profile
@@ -310,7 +310,7 @@ def memory_profile(profile: Any, memory_intake: dict[str, Any] | None) -> Memory
     brands = facts.get("usual_brands") or []
     summaries = [s for s in (intake.get("summaries") or []) if isinstance(s, str)]
     return MemoryProfile(
-        audience="staff" if is_staff_profile(profile) else getattr(profile, "tier", None),
+        audience="staff" if (is_staff_profile(profile) if staff is None else staff) else getattr(profile, "tier", None),
         role=facts.get("role") if isinstance(facts.get("role"), str) else None,
         company=None,
         language=getattr(profile, "language", None),
@@ -343,6 +343,28 @@ def resolver_reference_kinds(attributes: list[str] | None, is_staff: bool, held_
     return kinds
 
 
+def is_staff_contact(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> bool:
+    """Staff by tier "office" OR by an active office access type (v1's two signals)."""
+    from app.services.chatbot.turn.state import is_staff_profile
+
+    if is_staff_profile(profile):
+        return True
+    try:
+        from app.services import contact_customer_scope as scope_mod
+        from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+        if not contact_respond_id or not str(contact_respond_id).strip():
+            return False
+        internal = resolve_contact_with_null_workspace_fallback(
+            db,
+            contact_id=str(contact_respond_id).strip(),
+            space_id=(str(space_id).strip() or None) if space_id is not None else None,
+        )
+        return bool(internal) and bool(scope_mod.is_office_staff(db, internal))
+    except Exception:  # noqa: BLE001 - unknown: not staff (the closed side)
+        return False
+
+
 def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile: Any) -> dict[str, Any]:
     """Reference kinds, packing-list regions and customer scope for this contact, as v1 computes them."""
     from app.services.chatbot.head.access import _granted_field_reveal_keys
@@ -351,7 +373,7 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
     from app.services.eta_policy import UNRESOLVED, resolve_request_contact, rules_for_contact
 
     contact = str(contact_respond_id)
-    staff = is_staff_profile(profile)
+    staff = is_staff_contact(db, contact, space_id, profile)
     try:
         attrs = _granted_field_reveal_keys(db, contact_id=contact, space_id=space_id)
     except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
@@ -376,6 +398,7 @@ def scope_for_resolver(db: Any, contact_respond_id: Any, space_id: Any, profile:
         "regions": regions,
         "customer_scope": scope,
         "granted_reveals": frozenset(attrs),
+        "staff": staff,
     }
 
 
@@ -405,6 +428,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     with _session(factory) as sdb:
         scope = scope_for_resolver(sdb, contact, space_id, profile)
     granted = scope.pop("granted_reveals")
+    staff = scope.pop("staff")
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -422,12 +446,12 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             text=hctx.text,
             now=hctx.now,
             raw_state=raw_state,
-            profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
+            profile=memory_profile(profile, getattr(hctx, "memory_intake", None), staff=staff),
             parse=None,
             parse_parts=parse_parts,
             resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **scope)),
             load_exchanges=exchanges,
-            can_offer_handover=offers_escalation(profile),
+            can_offer_handover=offers_escalation(profile) and not staff,
             granted_reveals=granted,
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),

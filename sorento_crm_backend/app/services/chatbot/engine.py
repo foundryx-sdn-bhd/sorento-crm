@@ -1125,6 +1125,14 @@ def _inner_message(envelope: Envelope) -> dict[str, Any]:
     return jsc.get(jsc.get(_tf_message(envelope), "message"), "message") or {}
 
 
+def _pv2_text(envelope: Envelope, text: str) -> str:
+    """The line the customer typed, for PV2: a quoted reply's `reply to:` line is not theirs."""
+    typed = jsc.get(_inner_message(envelope), "text")
+    if jsc.truthy(typed):
+        return jsc.js_string(typed).strip()
+    return (text or "").split("\n")[0].strip()
+
+
 def _message_id(envelope: Envelope) -> str | None:
     value = jsc.get(jsc.get(_tf_message(envelope), "message"), "messageId")
     return str(value) if value not in (None, "") else None
@@ -4713,7 +4721,7 @@ def _run_stages_body(  # noqa: PLR0915
                     turn_id=turn_id,
                     contact_respond_id=contact_respond_id,
                     contact_pk=memory_intake.get("contact_pk"),
-                    text=(latest_user_message or "").strip(),
+                    text=_pv2_text(envelope, latest_user_message or ""),
                     session_block=session_block,
                     state_in=state_in,
                     profile=profile,
