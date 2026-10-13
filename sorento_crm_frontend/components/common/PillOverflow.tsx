@@ -53,9 +53,9 @@ const GAP_PX = 4;
  * pill markup for that reason.
  *
  * A QUANTITY IS NEVER CUT (S3b fix). Pill 0 always renders at its own natural width - never
- * capped below its content to leave room for "+N" beside it. When the two do not both fit on
- * one line, "+N" wraps to a second line instead (`flex-wrap` on the visible row); pill 0's
- * text is never the thing that gives.
+ * capped below its content to leave room for "+N" beside it. Later pills fold to keep "+N" on
+ * the same line; only when pill 0 alone leaves no room does "+N" wrap to a second line
+ * (`flex-wrap` on the visible row). Pill 0's text is never the thing that gives.
  *
  * ONE POPOVER FOR THE WHOLE ROW. Every pill, "+N" included, is a plain, unlabelled trigger for
  * the SAME popover (`renderPopover` renders every item, not only the folded ones) - the
@@ -108,10 +108,8 @@ export function PillOverflow({
     for (let i = 0; i < pillWidths.length; i += 1) {
       const withThis = used + (count > 0 ? GAP_PX : 0) + pillWidths[i];
       // The first pill always shows, WHOLE (AC-3b.4, S3b fix: a quantity is never
-      // truncated) - even at a width narrower than the pill itself. There is nothing here
-      // reserving room for a "+N" beside it: `flex-wrap` on the visible row (below) lets
-      // "+N" drop to its own line instead, so pill 0's own text is never capped below its
-      // content to make room for it.
+      // truncated) - even at a width narrower than the pill itself. Room for "+N" is made
+      // below by folding LATER pills, never by capping pill 0's own text.
       if (count === 0 || withThis <= width) {
         used = withThis;
         count += 1;
