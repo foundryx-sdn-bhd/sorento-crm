@@ -1,6 +1,6 @@
 # PLAN: notify the OI raiser when purchasing rejects rows (OI-REJECT-NOTIFY)
 
-Status: Review, owner hand-test round 2 built (track: standard, additive seed migration; cloud lane, backend only)
+Status: Review, owner hand-test rounds 2 and 3 built (track: standard, additive seed + data migrations; cloud lane, backend and frontend)
 
 UAC: `oi-reject-notify-13oct-acceptance-criteria.md` (alongside).
 
@@ -117,3 +117,18 @@ the SO and can directly see which lines are rejected to take next action".
   screen used to reach only the header); `oirj_0002_theme_sorento` names it Sorento where
   System Settings still carries the template's "Metronic" and no admin picked one.
 - What CS does next: behaviour card `alignment-oi-reject-cs-next-13oct.html` (crew ask).
+
+## Owner notes on the CS-next mock, round 3 (13 Oct)
+
+- Email: ONE call to action, "Open sales order", to the SO planning board on the refused lines
+  (the order inquiry only when there is no SO). No action list; no OI link.
+- Board row stays one line: the Verdict cell is the "Rejected by purchasing" pill (popover with
+  who/when/why), and the Decided cell reads "Rejected by purchasing: <reason> (<name>, <when>)",
+  truncated, full sentence as tooltip. The pill keeps the one-press Save and Reject a
+  suggested line has (review B1).
+- Q1 = yes: the reason CS writes on a Buy rides to the new order inquiry row as "CS: <reason>"
+  in its note, which the worklist shows as "Why this instruction". Panel Saves send it; the
+  bulk/strip approval path sends no reason (unchanged).
+- Q2 = no reminders. Q3 = no extra notification: a re-Buy produces the normal order inquiry.
+- Known, not changed here: a refused row stays RAISED when CS later covers the line from stock
+  or borrow (the single-line path always did); netting already ignores refused rows.

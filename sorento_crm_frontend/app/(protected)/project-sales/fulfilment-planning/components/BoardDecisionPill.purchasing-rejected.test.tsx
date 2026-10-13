@@ -77,24 +77,22 @@ describe('Rejected by purchasing', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('keeps the reason and who/when on the SAME line as the pill, truncated, full text as tooltip', () => {
+  it('carries the full sentence as its tooltip too', () => {
     render(
       <BoardDecisionPill
         contribution={contributionOf({ order_inquiry: refused })}
         decision={null}
       />,
     );
-    const line = screen.getByTestId(`decision-purchasing-rejected-line-${KEY}`);
-    expect(line).toHaveClass('truncate');
-    expect(line.textContent).toMatch(
-      /^Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
-    );
     const trigger = screen.getByTestId(`decision-purchasing-rejected-${KEY}`);
     expect(trigger.getAttribute('title')).toMatch(
       /^Rejected by Joey on 13\/10\/2026/,
     );
-    expect(trigger).toContainElement(
-      screen.getByTestId(`decision-pill-${KEY}`),
+  });
+
+  it('one-line Decided text reads "<reason> (<name>, <when>)"', () => {
+    expect(purchasingRefusalLine(refused!)).toMatch(
+      /^Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
     );
   });
 

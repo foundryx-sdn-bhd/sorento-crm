@@ -27,6 +27,8 @@ import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
 import { BoardDecidedMarker, decidedRevisions } from './BoardDecidedMarker';
 import {
   BoardDecisionPill,
+  purchasingRefusalLine,
+  purchasingRefusalTitle,
   VERDICT_FILTER_OPTIONS,
   VERDICT_SORT_RANK,
   verdictOf,
@@ -843,6 +845,21 @@ export function FulfilmentBoardListView({
                   <span className="block min-w-0 truncate" title={text}>
                     {text}
                   </span>
+                </span>
+              );
+            }
+            // PR 1622 (owner, 13 Oct): a line purchasing refused says so, why, who and when
+            // on this same row - truncated, the whole sentence as the tooltip - rather than
+            // "Not decided" beside a pill nobody can read at this width.
+            if (contribution.order_inquiry?.ack_state === 'rejected') {
+              const line = `Rejected by purchasing: ${purchasingRefusalLine(contribution.order_inquiry)}`;
+              return (
+                <span
+                  data-testid={`decided-purchasing-rejected-${contribution.key}`}
+                  className="block min-w-0 truncate text-destructive"
+                  title={purchasingRefusalTitle(contribution.order_inquiry)}
+                >
+                  {line}
                 </span>
               );
             }

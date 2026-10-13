@@ -2583,3 +2583,29 @@ describe('FulfilmentBoardListView: the change lightbox never toggles its row', (
     expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
   });
 });
+
+describe('FulfilmentBoardListView: a line purchasing refused (PR 1622)', () => {
+  it('reads the refusal, reason, who and when in the Decided cell on the same row', async () => {
+    const refused = contribution({
+      key: 'so-1:line-10',
+      so_number: 'SO416732',
+      line_no: 10,
+      order_inquiry: {
+        inquiry_no: 'OI-2610-0007',
+        state: 'raised',
+        ack_state: 'rejected',
+        rejected_reason: 'Supplier discontinued this finish',
+        rejected_by_name: 'Joey',
+        rejected_at: '2026-10-13T06:05:00',
+      } as BoardContribution['order_inquiry'],
+    });
+    renderView({ contributions: [refused] });
+    const cell = await screen.findByTestId('decided-purchasing-rejected-so-1:line-10');
+    expect(cell.textContent).toMatch(
+      /^Rejected by purchasing: Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
+    );
+    expect(cell).toHaveClass('truncate');
+    expect(cell.getAttribute('title')).toMatch(/^Rejected by Joey on 13\/10\/2026/);
+    expect(screen.queryByText('Not decided')).not.toBeInTheDocument();
+  });
+});

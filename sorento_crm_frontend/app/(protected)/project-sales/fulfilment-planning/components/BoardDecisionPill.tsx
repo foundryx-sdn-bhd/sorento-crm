@@ -184,7 +184,7 @@ export function purchasingRefusalTitle(
   return `Rejected${who}${when}: ${oi.rejected_reason || 'no reason given'}`;
 }
 
-/** The pill's one-line companion (owner, 13 Oct: "within 1 row"): "<reason> (<name>, <when>)". */
+/** The Decided cell's one-line text for a refused line (owner, 13 Oct: "within 1 row"). */
 export function purchasingRefusalLine(
   oi: Pick<
     NonNullable<BoardContribution['order_inquiry']>,
@@ -212,7 +212,8 @@ export const VERDICT_SORT_RANK: Record<VerdictKey, number> = {
   confirmed: 5,
   cancelled: 6,
   rejected: 7,
-  purchasing_rejected: 8,
+  // Beside Suggested (review N2): it is a line that needs deciding, not a settled one.
+  purchasing_rejected: 1,
 };
 
 export function BoardDecisionPill({
@@ -300,18 +301,12 @@ export function BoardDecisionPill({
               aria-label={purchasingRefusalTitle(contribution.order_inquiry)}
               title={purchasingRefusalTitle(contribution.order_inquiry)}
               data-testid={`decision-purchasing-rejected-${contribution.key}`}
-              // ONE line, never a taller row (owner, 13 Oct): the pill keeps its size and the
-              // reason with who/when truncates beside it; the full sentence is the tooltip and,
-              // at 375px where there is no hover, the popover.
-              className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm text-left outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              // The reason with who/when reads on the same row in the Decided cell
+              // (`FulfilmentBoardListView`); here the full sentence is the tooltip and, at
+              // 375px where there is no hover, the popover.
+              className="block min-w-0 overflow-hidden rounded-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span className="shrink-0">{pill}</span>
-              <span
-                data-testid={`decision-purchasing-rejected-line-${contribution.key}`}
-                className="min-w-0 truncate text-xs text-muted-foreground"
-              >
-                {purchasingRefusalLine(contribution.order_inquiry)}
-              </span>
+              {pill}
             </button>
           </PopoverTrigger>
           <PopoverPortal>

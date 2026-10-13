@@ -660,16 +660,19 @@ export function FulfilmentBoardPanel({
    * the linked lines read that way, and the first of them expanded and scrolled to. A plain
    * reading aid: the filter it sets clears like any other, and a reload simply applies it again.
    */
-  const linkedLinesApplied = React.useRef(false);
+  // The `lines` value last applied, not a once-only flag (review S1): the panel stays mounted
+  // when a second link changes the URL, and that link must apply too. Recorded only once a
+  // board carrying one of the lines has arrived, so a board still loading is not "applied".
+  const linkedLinesApplied = React.useRef<string | null>(null);
+  const linesParam = searchParams.get('lines') ?? '';
   React.useEffect(() => {
-    if (linkedLinesApplied.current || !board.data) return;
-    const wanted = new Set((searchParams.get('lines') ?? '').split(',').filter(Boolean));
-    if (wanted.size === 0) return;
-    linkedLinesApplied.current = true;
+    if (!linesParam || linkedLinesApplied.current === linesParam || !board.data) return;
+    const wanted = new Set(linesParam.split(',').filter(Boolean));
     const matches = allContributions.filter(
       (c) => c.project_line_id && wanted.has(c.project_line_id),
     );
     if (matches.length === 0) return;
+    linkedLinesApplied.current = linesParam;
     setView('list');
     setKindFilter(null);
     setScope('all');
@@ -677,7 +680,7 @@ export function FulfilmentBoardPanel({
       setStatusFilter(['purchasing_rejected']);
     }
     setFocusKey(matches[0].key);
-  }, [board.data, allContributions, searchParams]);
+  }, [board.data, allContributions, linesParam]);
 
   /**
    * #1312 (AC-U2, fix round 1 should-fix 3): ONE lookup call for the WHOLE

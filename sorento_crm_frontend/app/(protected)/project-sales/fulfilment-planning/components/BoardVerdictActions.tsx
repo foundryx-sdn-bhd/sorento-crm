@@ -91,7 +91,10 @@ export function BoardVerdictActions({
   // pre-marked by the open change batch and not yet written (`change_proposed`, which
   // `verdictOf` reads off `isPreMarkOnly`) - so it can be taken or refused in one press
   // (AC-B1/AC-B2).
-  const proposed = verdict === 'suggested' || verdict === 'change_proposed';
+  // A line purchasing refused is undecided again, so the same one-press choices apply
+  // (PR 1622 review B1): taking the suggestion again re-raises the Buy, the X withdraws it.
+  const proposed =
+    verdict === 'suggested' || verdict === 'change_proposed' || verdict === 'purchasing_rejected';
   // Something HAS been written for this line - here, or by another planner, or against a
   // suggestion the engine has since changed - so the one thing left is to unwrite it
   // (AC-B3). A confirmed line has no session draft to shed - Reject on it is a fresh

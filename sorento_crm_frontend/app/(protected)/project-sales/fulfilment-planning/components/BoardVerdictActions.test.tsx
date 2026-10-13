@@ -556,3 +556,23 @@ describe('AC-B10: Change decision expands the row and does not toggle it closed'
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('A line purchasing refused (PR 1622 review B1)', () => {
+  it('keeps the one-press Save and Reject a suggested line has', () => {
+    renderActions({
+      contribution: contribution({
+        order_inquiry: {
+          inquiry_no: 'OI-2610-0007',
+          state: 'raised',
+          ack_state: 'rejected',
+          rejected_reason: 'Supplier discontinued this finish',
+          rejected_by_name: 'Joey',
+          rejected_at: '2026-10-13T06:05:00',
+        } as BoardContribution['order_inquiry'],
+      }),
+    });
+    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? '');
+    expect(names.some((n) => /^Save .* as suggested$/.test(n))).toBe(true);
+    expect(names.some((n) => /^Reject /.test(n))).toBe(true);
+  });
+});
