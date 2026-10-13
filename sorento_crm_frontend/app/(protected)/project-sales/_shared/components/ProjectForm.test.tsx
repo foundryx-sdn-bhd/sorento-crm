@@ -402,6 +402,12 @@ async function fillWho() {
   );
 }
 
+/** A new project needs its lead (owner, 13 Oct): search and pick the open one. */
+async function pickLead() {
+  fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Menara' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Menara Lead' }));
+}
+
 /** Details starts folded in create mode (AC-PF033); open it by hand for its fields. */
 function openDetails() {
   const header = screen.getByRole('button', { name: /^Details/ });
@@ -545,6 +551,7 @@ describe('ProjectForm: Check button (AC-PF030, AC-PF031)', () => {
 
   it('Check runs the check exactly once', async () => {
     renderForm({ mode: 'create' });
+    await pickLead();
     fireEvent.change(screen.getByLabelText(/project title/i), {
       target: { value: 'Setia Alam Phase 3B' },
     });
@@ -570,6 +577,7 @@ describe('ProjectForm: Check button (AC-PF030, AC-PF031)', () => {
   it('submit re-runs the check as a guard even when Check was never pressed (AC-PF031)', async () => {
     renderForm({ mode: 'create' });
     await fillWho();
+    await pickLead();
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
     await waitFor(() => expect(registerProject).toHaveBeenCalledTimes(1));
     expect(previewClashes).toHaveBeenCalledTimes(1);
@@ -579,6 +587,7 @@ describe('ProjectForm: Check button (AC-PF030, AC-PF031)', () => {
     previewClashes.mockResolvedValue({ candidates: [BLOCKING], would_block: true });
     renderForm({ mode: 'create' });
     await fillWho();
+    await pickLead();
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
     await waitFor(() => expect(previewClashes).toHaveBeenCalledTimes(1));
     expect(registerProject).not.toHaveBeenCalled();
@@ -669,6 +678,7 @@ describe('ProjectForm: Brands (AC-PF021)', () => {
   it('sends brand_ids on create', async () => {
     renderForm({ mode: 'create' });
     await fillWho();
+    await pickLead();
     const select = screen.getByLabelText('Brands') as HTMLSelectElement;
     await userEvent.selectOptions(select, ['b1']);
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
@@ -705,6 +715,7 @@ describe('ProjectForm: Salesperson (AC-PF040-043)', () => {
   it('lets a manage holder pick another salesperson on create, sent as owner_user_id', async () => {
     renderForm({ mode: 'create' });
     await fillWho();
+    await pickLead();
     await waitFor(() => expect(screen.getByLabelText('Salesperson')).not.toBeDisabled());
     fireEvent.change(screen.getByLabelText('Salesperson'), { target: { value: 'u-2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
@@ -739,9 +750,22 @@ vi.mock('../../leads/components/LeadWizardDialog', () => ({
 }));
 
 describe('ProjectForm: Lead link (AC-PF050-058)', () => {
+  it('will not register a project without a lead (owner, 13 Oct)', async () => {
+    renderForm({ mode: 'create' });
+    await fillWho();
+    expect(screen.getByRole('button', { name: 'Register project' })).toBeDisabled();
+    await pickLead();
+    expect(screen.getByRole('button', { name: 'Register project' })).toBeEnabled();
+  });
+
+  it('lets an existing project without a lead save', async () => {
+    renderForm({ mode: 'edit', project: baseProject({ lead_id: null, lead_code: null }) });
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  });
+
   it('lists a lead by its title with the code apart, never a dot-joined label', async () => {
     renderForm({ mode: 'create' });
-    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
+    fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Menara' } });
     expect(await screen.findByRole('button', { name: 'Menara Lead' })).toBeInTheDocument();
     expect(screen.queryByText(/ · /)).toBeNull();
   });
@@ -750,7 +774,7 @@ describe('ProjectForm: Lead link (AC-PF050-058)', () => {
     listLeads.mockResolvedValue({ data: [], pagination: { total: 0, page: 1, limit: 20 } });
     renderForm({ mode: 'create' });
     await fillWho();
-    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Tower Q' } });
+    fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Tower Q' } });
     fireEvent.click(await screen.findByRole('button', { name: /Create lead .Tower Q./ }));
 
     const wizard = await screen.findByRole('dialog', { name: 'Create lead' });
@@ -767,7 +791,7 @@ describe('ProjectForm: Lead link (AC-PF050-058)', () => {
 
   it('searches open leads with the typed text, capped at 20', async () => {
     renderForm({ mode: 'create' });
-    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
+    fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Menara' } });
     await waitFor(() =>
       expect(listLeads).toHaveBeenCalledWith({ query: 'Menara', outcome: ['open'], limit: 20 }),
     );
@@ -785,7 +809,7 @@ describe('ProjectForm: Lead link (AC-PF050-058)', () => {
   it('sends lead_id on create when a lead is picked', async () => {
     renderForm({ mode: 'create' });
     await fillWho();
-    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
+    fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Menara' } });
     fireEvent.click(await screen.findByRole('button', { name: 'Menara Lead' }));
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
     await waitFor(() =>
@@ -826,6 +850,7 @@ describe('ProjectForm: create submit (AC-PF024)', () => {
   it('registers with the filled fields and navigates to the new project', async () => {
     renderForm({ mode: 'create' });
     await fillWho();
+    await pickLead();
     fireEvent.change(screen.getByLabelText('Registered company / SPV'), {
       target: { value: 'Setia SPV' },
     });

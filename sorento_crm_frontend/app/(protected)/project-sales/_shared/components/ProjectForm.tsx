@@ -195,7 +195,10 @@ export function ProjectForm(props: ProjectFormProps) {
   const wouldBlock =
     identityChanged && hasChecked && candidates.some((candidate) => candidate.blocks);
   const pending = register.isPending || update.isPending;
-  const canSubmit = title.trim().length > 0 && !wouldBlock && !pending;
+  // A new project comes from a lead (owner, 13 Oct): the picker offers to create one when
+  // none matches. Edit leaves it optional, so a project registered before the rule saves.
+  const leadMissing = mode === 'create' && !leadId;
+  const canSubmit = title.trim().length > 0 && !leadMissing && !wouldBlock && !pending;
 
   async function handleCheck() {
     const trimmed = title.trim();
@@ -558,7 +561,9 @@ export function ProjectForm(props: ProjectFormProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="project-lead">Lead</Label>
+              <Label htmlFor="project-lead">
+                Lead{mode === 'create' && <span className="text-destructive"> *</span>}
+              </Label>
               <SearchableSelect
                 id="project-lead"
                 value={leadId}
