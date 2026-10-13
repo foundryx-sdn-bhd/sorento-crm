@@ -428,7 +428,7 @@ class TestHitScopeBlock:
         self, session_factory, monkeypatch, date_filter_start, date_filter_end
     ) -> None:
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTORD")
+        code = unique_code("ZZTORD1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
 
         qf = _parser_output(
@@ -492,7 +492,7 @@ class TestScopeBlockAfterPick:
         self, session_factory, monkeypatch
     ) -> None:
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTPIK")
+        code = unique_code("ZZTPIK1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         db = session_factory()
         cust1 = seed_customer(db, company_id=DEFAULT_COMPANY_ID, name="ZZT CHIN CHUN HARDWARE SDN BHD")
@@ -589,7 +589,7 @@ class TestScopeBlockAfterPick:
 class TestFetchedEmptyIsAMiss:
     def test_dated_order_fetch_with_zero_rows_is_the_rich_miss(self, session_factory, monkeypatch) -> None:
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTMISS")
+        code = unique_code("ZZTMISS1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         qf = _parser_output(
             domain_hint="order",
@@ -616,7 +616,11 @@ class TestFetchedEmptyIsAMiss:
 
     def test_attachment_fetch_with_zero_rows_is_the_rich_miss(self, session_factory, monkeypatch) -> None:
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTATTM")
+        # A digit in the stem: `references._code_matched` counts a token as a CODE only when
+        # it carries one, and eight random hex chars are all letters about once in 2,600
+        # runs, which sent this code down the described-set branch (release run
+        # 38256456682: "I don't know 'photo' as a document type").
+        code = unique_code("ZZTATTM1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         _seed_attachment_type(session_factory, "Product Photos")
         qf = _parser_output(
@@ -664,7 +668,7 @@ class TestFetchedEmptyIsAMiss:
 class TestIncomingMissLadderProduct:
     def test_incoming_miss_falls_back_to_stock_for_that_product_only(self, session_factory, monkeypatch) -> None:
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTINC")
+        code = unique_code("ZZTINC1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         qf = _parser_output(
             domain_hint="incoming",
@@ -980,7 +984,7 @@ class TestCustomerOptionCarriesFamily:
         from tests._mc_lookup_seed import seed_mocha
 
         _seed_contact_and_get(session_factory)
-        code = unique_code("ZZTFAMC")
+        code = unique_code("ZZTFAMC1")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         db = session_factory()
         mocha = seed_mocha(db)

@@ -1504,6 +1504,15 @@ class ResolveReferenceRequest(BaseModel):
             "`require` is present."
         ),
     )
+    keep_typed_codes: bool = Field(
+        default=False,
+        description=(
+            "CHAT-FIND: leave every typed code as typed - skip `narrow_code_tokens`, which "
+            "reads the words on a code's line as a variant descriptor. Sent on a find turn, "
+            "where those words name the relation's target ('seat cover for SRTWC8088' asks "
+            "for SRTWC8088's seat cover, never SRTWC8088-SC)."
+        ),
+    )
     understand_phrase: bool = Field(
         default=False,
         description=(
@@ -2416,6 +2425,8 @@ def _resolve_input(
     # Local return-wrapper so every exit path gets `limit` applied
     # consistently. Skip the wrap for raw empty-shape payloads (they have no
     # rows; the cap is a no-op there anyway).
+    family_raw_by_token: dict[str, str] = {}
+
     def _ret(result: dict[str, Any]) -> dict[str, Any]:
         return _apply_limit(result, limit)
 
@@ -2455,6 +2466,11 @@ def _resolve_input(
         # so callers can pass conversational phrasing verbatim. Alignment with
         # positional `allowed_entity_types` is preserved (in-place clean).
         filtered = [_strip_entity_stopwords(t) for t in filtered]
+        # CODE-VARIANTS: the pre-fold text by (stripped) token, so the fallback re-run
+        # below, which cannot align raw_tokens by position, still knows each typed code.
+        if raw_tokens and tokens and len(raw_tokens) == len(tokens):
+            _typed = [r for t, r in zip(tokens, raw_tokens) if t]
+            family_raw_by_token = {t: r for t, r in zip(filtered, _typed) if r}
         prepared_tokens: list[str] = filtered
         input_for_or: list[str] | str = filtered
     synthesized_from_query = False
@@ -2630,10 +2646,10 @@ def _resolve_input(
     # stay reachable for callers that ask for them (whitelist `attachment`, or the
     # resource_attachment domain).
     caller_types = {(t or "").strip().lower() for t in (allowed_entity_types or [])}
-    fb_allowed = (
-        None
-        if "attachment" in caller_types
-        else sorted(_RESOLVER_ENTITY_TYPES - {"attachment"})
+    # Never `None`: that reaches every probe, including the reference kinds (PO, PR, SO,
+    # PO ref) which the all-types fallback must not see (REF-PROBES).
+    fb_allowed = sorted(
+        _RESOLVER_ENTITY_TYPES if "attachment" in caller_types else _RESOLVER_ENTITY_TYPES - {"attachment"}
     )
     # No `entity_pins` here: a pinned token either resolved in the primary
     # pass above or the whole request already raised, so `unresolved` never
@@ -2646,6 +2662,7 @@ def _resolve_input(
         allowed_entity_types=fb_allowed,
         cross_type_expand=True,
         regions=regions,
+        family_raw_by_token=family_raw_by_token,
     ).as_dict()
     fb = _apply_promotion_access_levels_filter(db, fb_raw, access_levels)
     fb = _strip_name_kinds_for_locked(fb, hint_locked_tokens, domain_hint)
@@ -3147,17 +3164,19 @@ def _typed_text_after_narrowing(
     return [typed_by_token.get(tok, "") for tok in narrowed]
 
 
-@router.post("/resolve")
-def resolve_reference_post(
-    payload: ResolveReferenceRequest,
-    current_user: dict = Depends(get_external_api_user),
-    db: Session = Depends(get_db),
-):
-    """POST variant for external callers that send JSON body (e.g. n8n HTTP node)."""
-    # A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner
-    # hand test of rounds 4 to 6 on PR #833, items 2 to 4): the code token becomes the
-    # variant codes the words pick, and the description token those words came from is
-    # dropped, so the ask resolves as that code's variants and never as a category set.
+def _narrowed_payload(db: Session, payload: "ResolveReferenceRequest") -> "ResolveReferenceRequest":
+    """The typed codes narrowed to the variants the message picks, two ways: by the words on
+    the code's line (`narrow_code_tokens`, PR #833) and by grounded spec values
+    (`narrow_code_tokens_by_specs`, PR #1513). Neither runs on a find turn
+    (`keep_typed_codes`, CHAT-FIND): there the words and specs name what fits the code, and
+    the exact code the customer typed is the subject.
+
+    A code, then words that pick among its variants ("Srtwc7604 p trap price"; owner hand
+    test of rounds 4 to 6 on PR #833, items 2 to 4): the code token becomes the variant codes
+    the words pick, and the description token those words came from is dropped, so the ask
+    resolves as that code's variants and never as a category set."""
+    if payload.keep_typed_codes:
+        return payload
     from app.services.product_code_family import narrow_code_tokens
 
     narrowed = narrow_code_tokens(
@@ -3199,6 +3218,17 @@ def resolve_reference_post(
                     "entity_pins": pins,
                 }
             )
+    return payload
+
+
+@router.post("/resolve")
+def resolve_reference_post(
+    payload: ResolveReferenceRequest,
+    current_user: dict = Depends(get_external_api_user),
+    db: Session = Depends(get_db),
+):
+    """POST variant for external callers that send JSON body (e.g. n8n HTTP node)."""
+    payload = _narrowed_payload(db, payload)
     # A contact's packing list regions (unresolved = West) bound the shipments it can be
     # shown; no contact_id = no filter.
     regions = None

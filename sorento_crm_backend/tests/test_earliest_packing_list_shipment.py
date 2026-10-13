@@ -64,6 +64,7 @@ def _shipment(
     number: str,
     attachment_id: str | None = None,
     shipment_status: str = "in_transit",
+    delay: date | None = None,
 ) -> str:
     sid = str(uuid.uuid4())
     db.add(
@@ -74,7 +75,8 @@ def _shipment(
             estimated_arrival_date=eta,
             attachment_id=attachment_id,
             shipment_status=shipment_status,
-            eta_delay_date=date(2099, 1, 1),  # R5: never read - poison value
+            # R5 as amended by crew, 13 Oct 2026: the revised date is read when there is one.
+            eta_delay_date=delay,
         )
     )
     db.flush()
@@ -171,16 +173,20 @@ def test_ac_sa305_no_other_shipment_means_no_incoming(db):
     assert p not in earliest_packing_list_shipment(db, [p])
 
 
-def test_ac_sa306_eta_delay_date_never_read(db):
+def test_ac_sa306_the_revised_date_answers_when_there_is_one(db):
+    """R5 amended (crew ruling, 13 Oct 2026, owner truthful rule): the revised ETA
+    (`eta_delay_date`, `eta_policy._told`'s rule) is the date the shipment is now promised for,
+    so it is the date read, compared and returned; the ETA itself only without one."""
     p = _product(db, "SA306")
-    a = _attachment(db)
-    s = _shipment(db, eta=date(2026, 10, 12), number="S-ETA", attachment_id=a)
-    _line(db, s, p)
+    a1, a2 = _attachment(db), _attachment(db)
+    delayed = _shipment(db, eta=date(2026, 10, 12), number="S-DELAYED", attachment_id=a1, delay=date(2026, 12, 1))
+    _line(db, delayed, p)
+    plain = _shipment(db, eta=date(2026, 11, 1), number="S-PLAIN", attachment_id=a2)
+    _line(db, plain, p)
     db.commit()
 
-    _, eta, _ = earliest_packing_list_shipment(db, [p])[p]
-    # eta_delay_date was seeded as 2099-01-01 (poison value); estimated_arrival_date wins.
-    assert eta == date(2026, 10, 12)
+    shipment_id, eta, _ = earliest_packing_list_shipment(db, [p])[p]
+    assert (shipment_id, eta) == (plain, date(2026, 11, 1))
 
 
 def test_ac_sa307_no_location_dimension_read_at_all(db):
@@ -228,3 +234,85 @@ def test_ac_sa309_undated_shipment_ignored_dated_one_still_qualifies(db):
     shipment_id, eta, _ = earliest_packing_list_shipment(db, [p])[p]
     assert shipment_id == s_dated
     assert eta == date(2026, 12, 25)
+
+
+# CHAT-FIND round 3 (crew live check, 13 Oct 2026): a dealer read "No stock, ETA 13/09/2026" a
+# month after that date. A shipment whose ETA is already past is not one the dealer can be
+# told is coming (R10: no "to be confirmed" answer), so `not_before` drops it; the dealer
+# availability read passes today (Malaysia time). Callers that pass nothing are unchanged.
+
+
+def test_not_before_drops_a_past_eta_and_keeps_the_next_one(db):
+    p = _product(db, "PASTETA")
+    a1, a2 = _attachment(db), _attachment(db)
+    _line(db, _shipment(db, eta=date(2026, 9, 13), number="S-PAST", attachment_id=a1), p)
+    s_next = _shipment(db, eta=date(2026, 11, 2), number="S-NEXT", attachment_id=a2)
+    _line(db, s_next, p)
+    db.commit()
+
+    assert earliest_packing_list_shipment(db, [p])[p][1] == date(2026, 9, 13)
+    shipment_id, eta, _ = earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))[p]
+    assert (shipment_id, eta) == (s_next, date(2026, 11, 2))
+
+
+def test_not_before_with_only_a_past_eta_is_no_incoming(db):
+    p = _product(db, "PASTONLY")
+    _line(db, _shipment(db, eta=date(2026, 9, 13), number="S-PAST-ONLY", attachment_id=_attachment(db)), p)
+    db.commit()
+    assert p not in earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))
+
+
+def test_not_before_keeps_an_eta_of_today(db):
+    p = _product(db, "TODAYETA")
+    _line(db, _shipment(db, eta=date(2026, 10, 13), number="S-TODAY", attachment_id=_attachment(db)), p)
+    db.commit()
+    assert p in earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))
+
+
+def test_the_dealer_availability_read_passes_today(monkeypatch):
+    """The stock tool and the find tool share `_apply_stock_visibility`: it asks for shipments
+    not before today, Malaysia time."""
+    import app.services.incoming_stock_service as incoming
+
+    seen = {}
+
+    def _fake(db, product_ids, regions=None, not_before=None):
+        seen["not_before"] = not_before
+        return {}
+
+    monkeypatch.setattr(incoming, "earliest_packing_list_shipment", _fake)
+    monkeypatch.setattr(incoming, "today_myt", lambda: date(2026, 10, 13))
+    from app.services.inventory_service import StockService
+
+    assert StockService._shipments_from_today(None, ["x"], None) == {}
+    assert seen["not_before"] == date(2026, 10, 13)
+
+
+# Crew answer (b) then (a), 13 Oct 2026: the revised date first, then the today floor on it.
+
+
+def test_a_delayed_shipment_still_coming_is_told_with_its_revised_date(db):
+    p = _product(db, "DELAYFUT")
+    s = _shipment(db, eta=date(2026, 9, 13), number="S-DELAY-FUT", attachment_id=_attachment(db), delay=date(2026, 11, 5))
+    _line(db, s, p)
+    db.commit()
+    shipment_id, eta, _ = earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))[p]
+    assert (shipment_id, eta) == (s, date(2026, 11, 5))
+
+
+def test_a_past_revised_date_is_not_dated_and_the_next_shipment_answers(db):
+    p = _product(db, "DELAYPAST")
+    a1, a2 = _attachment(db), _attachment(db)
+    _line(db, _shipment(db, eta=date(2026, 9, 1), number="S-BOTH-PAST", attachment_id=a1, delay=date(2026, 10, 1)), p)
+    s_next = _shipment(db, eta=date(2026, 12, 1), number="S-NEXT-2", attachment_id=a2)
+    _line(db, s_next, p)
+    db.commit()
+    shipment_id, eta, _ = earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))[p]
+    assert (shipment_id, eta) == (s_next, date(2026, 12, 1))
+
+
+def test_a_past_revised_date_alone_is_no_incoming(db):
+    p = _product(db, "DELAYPASTONLY")
+    _line(db, _shipment(db, eta=date(2026, 9, 1), number="S-PAST-2", attachment_id=_attachment(db), delay=date(2026, 10, 1)), p)
+    db.commit()
+    assert p not in earliest_packing_list_shipment(db, [p], not_before=date(2026, 10, 13))

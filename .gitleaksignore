@@ -2,3 +2,14 @@
 # 136495ef presenters.py:2113 is the keyword-argument call into _outstanding_group
 # (name_key=name_key, total_key=total_key, outstanding_key=outstanding_key): parameter names, no secret.
 136495ef9b993cfdb03191d312f344f7e853ae5e:sorento_crm_mcp/sorento_crm_mcp/presenters.py:generic-api-key:2113
+# 6a8cf09c test_runtime_settings.py:21 was the made-up test fixture "ZztSecret0123456789A" (never a
+# real or dev key, never copied from any env or DB); replaced by test-secret-not-real-0000 in e5aee456.
+# Confirmation: https://github.com/jayson-odoo/sorento-crm/pull/1561#issuecomment-6093881308
+6a8cf09c7e40eb12406d2db93b08a03635a6ab47:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:21
+# RESPOND-MULTI-KEY: made-up base64 Respond.io signing keys in tests (KEY_ONE/KEY_TWO, RESPOND_KEY_ONE/TWO,
+# an unknown-key probe): fixtures shaped like a real key on purpose, never a real secret.
+a9b1b46c2f515c54ec958e12fa0067b5877a8929:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:639
+a9b1b46c2f515c54ec958e12fa0067b5877a8929:sorento_crm_backend/tests/test_runtime_settings.py:generic-api-key:640
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:197
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:198
+9bf3312b9dae5a5666bafcc6d7f81285b0dd58ae:sorento_crm_backend/tests/test_respond_webhook_ingest.py:generic-api-key:227

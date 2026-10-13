@@ -288,6 +288,28 @@ class StockDebtSupplyEvent(BaseModel):
     outstanding_qty: Optional[float] = None
 
 
+class StockDebtReserveSource(BaseModel):
+    """One location and kind of project-reserve supply in a month (`HQ reserve PO`)."""
+
+    label: str
+    qty: float
+
+
+class StockDebtProjection(BaseModel):
+    """STOCK-DEBT-PROJECTION (owner, 12 Oct 2026, option D): how one month's projected
+    balance is made up. `projected = month_balance + carried_in + reserve_supply`, where
+    `month_balance` is the project lines' own figure (pool supply counts only through a
+    link, as Covered by shows) and `reserve_supply` a project reserve's unlinked incoming
+    documents; `carried_out` is the reserve surplus the next month starts with."""
+
+    carried_in: float
+    month_balance: float
+    reserve_supply: float
+    reserve_sources: List[StockDebtReserveSource] = []
+    projected: float
+    carried_out: float
+
+
 class StockDebtCell(BaseModel):
     """The two tables behind one cell. `sum(supply.free_qty) - sum(demand.short_qty)` is the
     balance the cell that opened them prints (R37)."""
@@ -299,6 +321,8 @@ class StockDebtCell(BaseModel):
     #: (Outstanding for an SPO, the on-hand figure otherwise), never recomputed by the FE.
     demand_total_qty: float
     supply_total_qty: float
+    #: Set only when the drill was opened with `projected=true` on a month column.
+    projection: Optional[StockDebtProjection] = None
 
 
 class StockDebtExportIn(BaseModel):
@@ -322,3 +346,5 @@ class StockDebtExportIn(BaseModel):
     book: Book = "all"
     split: ExportSplit = "none"
     show_aux: bool = False
+    #: STOCK-DEBT-PROJECTION: the board's "Projected balance" switch.
+    projected: bool = False

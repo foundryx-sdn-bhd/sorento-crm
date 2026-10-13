@@ -158,23 +158,12 @@ describe('decisionStripTotals', () => {
     });
   });
 
-  it('carries a card per kind in ladder v7.1 own walk order (AC-V7)', () => {
-    // THE ORDER THE ENGINE WALKS, left = first consideration, right = last option (the
-    // captain, 30 Aug 2026): the group's floor, the group's water, a later order's on hand,
-    // the document a later order waits on, the retired cross-group borrow, the site pool,
-    // then Buy. The pool used to sit SECOND, which read as reaching for shared stock before
-    // anybody's own order; and before that the list led with Buy, which put the answer in
-    // front of the questions.
-    //
-    // Fixed, and always seven: what makes two boards comparable is that each kind is in the
-    // same place whether it is 300 or absent. A card that came and went would move every
-    // card beside it. (`DecisionStrip` drops `borrow_other` at 0 and 0 - that is the view's
-    // call, not this arithmetic's, and every kind is totalled here.)
+  it('carries the four cards in the Decide menu order (owner, 12 Oct 2026)', () => {
+    // Fixed, and always four: what makes two boards comparable is that each kind is in the
+    // same place whether it is 300 or absent. The kinds the planner no longer suggests are
+    // folded in (`STRIP_ORDER`), never given a card of their own.
     expect(decisionStripTotals([], {}).map((entry) => entry.kind)).toEqual([
       'own',
-      'incoming',
-      'borrow_order',
-      'borrow_incoming',
       'borrow_other',
       'shared',
       'buy',

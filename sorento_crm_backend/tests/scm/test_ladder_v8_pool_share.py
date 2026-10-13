@@ -76,6 +76,7 @@ def test_the_v8_walk_balances(case):
     assert sum(quantities, Decimal("0")) == case.open_qty, case.ac
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 @pytest.mark.parametrize("case", V8_WALK_CASES, ids=lambda c: c.ac)
 def test_the_v8_options_table_reads_as_the_uac_writes_it(case):
     """AC-2.1 / AC-2.4 / AC-2.8: five rows in the v8 walk order, the site pool first, each

@@ -18,6 +18,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 import json
 from datetime import date, timedelta
 from decimal import Decimal
@@ -60,6 +62,7 @@ from .test_project_supply_service_ladder import (
 # --------------------------------------------------------------------------- AC-1.1
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_po_only_book_offers_no_supply_borrow_and_falls_through_to_buy():
     """AC-1.1: a unit whose only whole-covering document is a purchase-order line receives
     NO supply-borrow offer at all, and the walk falls through - no on-hand anywhere, no
@@ -147,6 +150,7 @@ def test_a_po_only_book_with_a_pool_take_lands_on_pool_not_supply_borrow():
 # --------------------------------------------------------------------------- AC-1.2
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_an_spo_covered_book_is_unchanged_by_the_po_edit():
     """AC-1.2: a unit covered by a single SPO behaves exactly as before this change - same
     offer, same sentence, same fulfil date. Pinned against the same numbers

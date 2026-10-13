@@ -319,7 +319,10 @@ class TestPrompt:
             ACCOUNT_LEDGER_ADDENDUM,
             CANONICAL_CODE_ADDENDUM,
             LOW_STOCK_FILTERS_ADDENDUM,
+            CHAT_REPORT_ADDENDUM,
             PO_REFS_ADDENDUM,
+            REF_KINDS_ADDENDUM,
+            FIND_ADDENDUM,
             MEMORY_ADDENDUM,
             REPORT_ASK_ADDENDUM,
             PO_SPO_WAREHOUSE_ADDENDUM,
@@ -335,7 +338,8 @@ class TestPrompt:
         # #1513) sit between LOW_STOCK_FILTERS_ADDENDUM and MEMORY_ADDENDUM; MEMORY stays the tail.
         # CANONICAL_CODE_ADDENDUM (#1511) follows REPORT_ASK_ADDENDUM.
         # PROMO-SUBJECT-FILTER: PROMOTION_KIND_ADDENDUM follows CANONICAL_CODE_ADDENDUM.
-        from app.services.chatbot_parser_prompt import TRAP_SPECS_FALLBACK_BLOCK
+        # DEV-FAILURES RC-B: PORTAL_FORM_ADDENDUM sits between TRAP_SPECS_FALLBACK_BLOCK and MEMORY.
+        from app.services.chatbot_parser_prompt import PORTAL_FORM_ADDENDUM, TRAP_SPECS_FALLBACK_BLOCK
 
         assert tail == (
             PO_SPO_WAREHOUSE_ADDENDUM
@@ -343,9 +347,13 @@ class TestPrompt:
             + LOW_STOCK_FILTERS_ADDENDUM
             + REPORT_ASK_ADDENDUM
             + PO_REFS_ADDENDUM
+            + CHAT_REPORT_ADDENDUM
+            + REF_KINDS_ADDENDUM
+            + FIND_ADDENDUM
             + CANONICAL_CODE_ADDENDUM
             + PROMOTION_KIND_ADDENDUM
             + TRAP_SPECS_FALLBACK_BLOCK
+            + PORTAL_FORM_ADDENDUM
             + MEMORY_ADDENDUM
         )
         assert "CURRENT DATE: {{current_date}}" in MEMORY_ADDENDUM.rsplit("CURRENT DATE\n", 1)[1]

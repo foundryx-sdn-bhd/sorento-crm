@@ -76,6 +76,9 @@ MONTHS_OF_YEAR: Tuple[Tuple[str, str], ...] = tuple(
 )
 
 
+AGGS = frozenset({"sum", "count_distinct"})
+
+
 @dataclass(frozen=True)
 class Column:
     """One catalog column: what it is called, what it holds, and how to select it."""
@@ -100,8 +103,16 @@ class Column:
     #: The period_months idea for years: every year of the period is a value, so a year
     #: with no sales is a blank row rather than a missing one.
     period_years: bool = False
+    #: How a measure aggregates: "sum" (default) or "count_distinct" (distinct values of
+    #: `expr`; a total is its own query over the whole set, never a sum of cells).
+    agg: str = "sum"
+    #: A ratio measure: (numerator key, denominator key) of two other measures. Computed
+    #: AFTER aggregation from their sums, in every cell and total; `expr` is not read.
+    ratio_of: Optional[Tuple[str, str]] = None
 
     def __post_init__(self) -> None:
+        if self.agg not in AGGS:
+            raise ValueError(f"Report column '{self.key}' has agg '{self.agg}'; expected one of {sorted(AGGS)}")
         if self.type not in COLUMN_TYPES:
             raise ValueError(
                 f"Report column '{self.key}' has type '{self.type}'; "
@@ -189,10 +200,15 @@ class PeriodParam:
     label: str
     #: The period the screen opens on. A CALLABLE (e.g. ``current_year_period``) when it
     #: means "now", so the answer is the user's year rather than the process's boot year.
-    default: Union[Dict[str, Any], Callable[[], Dict[str, Any]]]
+    default: Union[Dict[str, Any], Callable[..., Dict[str, Any]]]
+    #: The callable takes the session (or None, when there is none: registration) because the
+    #: period opens on something in the data (chat analytics: the earliest fact).
+    default_reads_db: bool = False
 
-    def resolved_default(self) -> Dict[str, Any]:
-        return dict(self.default() if callable(self.default) else self.default)
+    def resolved_default(self, db: Any = None) -> Dict[str, Any]:
+        if not callable(self.default):
+            return dict(self.default)
+        return dict(self.default(db) if self.default_reads_db else self.default())
 
 
 @dataclass(frozen=True)
@@ -213,10 +229,10 @@ class SelectParam:
 Param = Any  # DateBasisParam | PeriodParam | SelectParam
 
 
-def default_value(param: Param) -> Any:
+def default_value(param: Param, db: Any = None) -> Any:
     """What a param means when the caller names no value for it."""
     if isinstance(param, PeriodParam):
-        return param.resolved_default()
+        return param.resolved_default(db)
     if isinstance(param, SelectParam):
         return list(param.default)
     return param.default

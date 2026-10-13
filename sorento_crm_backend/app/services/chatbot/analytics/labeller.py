@@ -534,11 +534,9 @@ def run(
 # --------------------------------------------------------------------------- production
 
 
-def production_chat(db: Session) -> tuple[ChatFn, str]:
-    """The configured provider and model (System Settings, the parser's default), as a
-    `chat` callable, plus the model name recorded on every row."""
+def configured_model(db: Session) -> tuple[str, str, str]:
+    """`(provider, api key, model)` from System Settings (the parser's default)."""
     from app.services.ai_assistant_service import AIAssistantConfigService
-    from app.services.chatbot import llm_call
     from app.services.llm_provider import resolve_api_key
 
     config = AIAssistantConfigService(db).get()
@@ -547,24 +545,41 @@ def production_chat(db: Session) -> tuple[ChatFn, str]:
     api_key = resolve_api_key(config, config.provider)
     if not api_key:
         raise RuntimeError(f"no API key configured for provider {config.provider!r}")
+    return str(config.provider), api_key, str(config.model)
 
-    def chat(messages: list[dict], schema: dict) -> str:
-        # Through the one wrapper, so a rate limit is waited out like a turn's; the budget
-        # is wider because a batch of 40 is a longer answer and nobody is waiting on it.
+
+def production_call(db: Session, *, schema_name: str, cache_key: str) -> tuple[Callable[[list[dict], dict], Any], str]:
+    """A `chat(messages, schema)` returning the provider's whole result (content and usage),
+    through the chatbot's one model seam (`llm_call`: rate limits waited out, a time budget),
+    plus the model name recorded on every row."""
+    from app.services.chatbot import llm_call
+
+    provider, api_key, model = configured_model(db)
+
+    def chat(messages: list[dict], schema: dict) -> Any:
+        # The budget is wider than a turn's: a batch of 40 is a longer answer and nobody is
+        # waiting on it.
         return llm_call.chat(
-            config.provider,
+            provider,
             api_key,
-            config.model,
+            model,
             messages,
             deadline_seconds=LABEL_CALL_DEADLINE_SECONDS,
             timeout=LABEL_ATTEMPT_TIMEOUT_SECONDS,
             temperature=0.0,
             json_schema=schema,
-            json_schema_name="chat_topic_labels",
-            prompt_cache_key="chat-topic-labeller",
-        ).content
+            json_schema_name=schema_name,
+            prompt_cache_key=cache_key,
+        )
 
-    return chat, str(config.model)
+    return chat, model
+
+
+def production_chat(db: Session) -> tuple[ChatFn, str]:
+    """The configured provider and model as the labeller's `chat` callable (content only),
+    plus the model name recorded on every row."""
+    call, model = production_call(db, schema_name="chat_topic_labels", cache_key="chat-topic-labeller")
+    return (lambda messages, schema: call(messages, schema).content), model
 
 
 def production_resolve(session_factory: Callable[[], Session]) -> ResolveFn:

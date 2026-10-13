@@ -28,7 +28,12 @@ vi.mock('@/lib/listing-column-preferences/useListingColumnPreferences', () => ({
   useListingColumnPreferences: () => ({ resetToDefaults: vi.fn(), isLoading: false }),
 }));
 
+import { toast } from '@/lib/toast';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
+
+vi.mock('@/lib/toast', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), warning: vi.fn(), error: vi.fn() }),
+}));
 import { suggestedDecisionFor } from '../../_shared/lib/boardAmend';
 
 function contribution(overrides: Partial<BoardContribution> = {}): BoardContribution {
@@ -1083,8 +1088,9 @@ describe('FulfilmentBoardListView: the Decide claim order survives a rows change
     fireEvent.click(screen.getByRole('button', { name: /^Save \d line/ }));
 
     // The grid still shows SO397451 (line 20) on top, so it claims the pool FIRST and covers in
-    // full; SO397450 (line 10) is left with only 50 free and is skipped for it, never the other
-    // way around.
+    // full; SO397450 (line 10) is left with only 50 free and is the SHORT one, never the other
+    // way around. OI-CLOSED-LINE (owner, 12 Oct 2026): a short line is saved as decided with a
+    // warning rather than skipped, so the order shows in the toast that names it.
     await waitFor(() => expect(onDecideBatch).toHaveBeenCalledTimes(1));
     expect(onDecide).toHaveBeenCalledWith(
       'so-2:line-20',
@@ -1094,9 +1100,10 @@ describe('FulfilmentBoardListView: the Decide claim order survives a rows change
         ]),
       }),
     );
-    expect(onDecide).not.toHaveBeenCalledWith(
-      'so-1:line-10',
-      expect.anything(),
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        expect.stringContaining('1 short: B2155-NL-BLUE line 10 (only 50 free at BRW)'),
+      ),
     );
   });
 });
@@ -2509,4 +2516,70 @@ describe('FulfilmentBoardListView: Columns and Status filter', () => {
     expect(screen.getByRole('button', { name: 'Saved (1)' })).toHaveAttribute('aria-pressed', 'false');
   });
 
+});
+
+/**
+ * Owner finding, 12 Oct 2026: opening the amber "What changed" lightbox beside Outstanding
+ * qty and then closing it left the row EXPANDED. The icon stops its own click, but the
+ * dialog is portalled from inside the cell, so a click on its body or its overlay still
+ * bubbled through React to the row and toggled it.
+ */
+describe('FulfilmentBoardListView: the change lightbox never toggles its row', () => {
+  const LINE_ID = 'line-oct12';
+
+  function qtyAnnotation(): BoardChangeAnnotation {
+    return {
+      rowId: 'row-oct12',
+      soNumber: 'SO422492',
+      lineNo: 3,
+      itemCode: 'SRTFVP08',
+      kind: 'qty_changed',
+      closed: false,
+      was: { qty: '50', date: '2026-09-01', decision: 'Buy 50' },
+      now: { qty: '40', date: '2026-09-01', decision: 'Buy 40' },
+      suggestionLines: ['Keep 40'],
+      lateDays: null,
+      shortfallQty: null,
+      productChangedFrom: null,
+      movedTransfer: null,
+      projectLineId: LINE_ID,
+    } as BoardChangeAnnotation;
+  }
+
+  it('opening the lightbox, clicking inside it, then closing it by overlay or Close leaves the row collapsed', async () => {
+    renderView({
+      contributions: [
+        contribution({
+          key: 'so-oct12:line-3',
+          so_number: 'SO422492',
+          line_no: 3,
+          item_code: 'SRTFVP08',
+          project_line_id: LINE_ID,
+        }),
+      ],
+      annotations: new Map([[LINE_ID, [qtyAnnotation()]]]),
+    });
+
+    const row = (await screen.findByText('SO422492')).closest('tr') as HTMLElement;
+    const icon = within(row).getByTestId('board-change-icon-row-oct12');
+    expect(icon).toHaveAttribute('data-column', 'outstanding');
+
+    // Open and click the body: the row stays as it was.
+    fireEvent.click(icon);
+    const dialog = await screen.findByTestId('board-change-dialog');
+    fireEvent.click(within(dialog).getByText('Only the fields that moved, then the suggestion.'));
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+
+    // Close on the overlay, the content's sibling in the same portal (`components/ui/dialog.tsx`).
+    const overlay = screen.getByTestId('board-change-dialog').previousElementSibling as HTMLElement;
+    expect(overlay).not.toBeNull();
+    fireEvent.click(overlay);
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+
+    // Open again, close on Close.
+    fireEvent.click(icon);
+    const again = await screen.findByTestId('board-change-dialog');
+    fireEvent.click(within(again).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('button', { name: 'Save decision' })).not.toBeInTheDocument();
+  });
 });

@@ -8,8 +8,9 @@
  * pool." So the cases that asserted the prefix rule are inverted here rather than deleted - they
  * are the regression.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import {
+  borrowKinds,
   COLOURS,
   LABELS,
   SHORT_LABELS,
@@ -89,6 +90,7 @@ function has(rows: ReturnType<typeof suggestionBreakdown>, label: string) {
 
 describe('rowOf reads the rung, never the warehouse code', () => {
   it('names every rung the engine can produce', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     // The rung strings are `front_planning_engine.py`'s own constants. A rung this table does
     // not name is a rung the board would colour as nothing at all.
     expect(rowOf({ kind: 'reserve', rung: 'pool', qty: '1' })).toBe('shared');
@@ -113,6 +115,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
   });
 
   it('names ladder v7.1 own two borrow rungs, and keeps them apart', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     // Step 2 borrows ON HAND held by a later order, step 3 the DOCUMENT it is waiting on.
     // Neither was in the switch, so both resolved to null and every step-2 borrow vanished
     // from the strip, the bar, the card and the popover behind 'Cannot be sourced'.
@@ -165,6 +168,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
   });
 
   it('tells the pool free draw from the pool BORROW, which owes a debt back (R34)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     // Step 4a takes the free pile and nobody is owed it; step 4b takes a LATER POOL ORDER's
     // on hand and raises an ORDER_BACK against it. Both carry `rung: 'pool'`, so the donor
     // is what distinguishes them - without it the borrow read as the free 'Use BRW' and the
@@ -184,6 +188,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
   });
 
   it('reads a FREE step-3 document as a borrow all the same (S4)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     // A document nobody was waiting on names no donor, and the unrunged fallback would
     // read that as 'borrow_other' - "Borrow", which is a location this
     // line never borrows from. The RUNG decides, as it does everywhere else here.
@@ -299,6 +304,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
     });
 
     it('reads a borrow that names a donor order as a borrow from another order', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
       // The donor SO is named: with none, the same rung is a location borrow
       // (BORROW-LOCATION-ONLY D3).
       expect(
@@ -323,6 +329,7 @@ describe('rowOf reads the rung, never the warehouse code', () => {
      * order-back; nothing about it is this line's own stock.
      */
     it('never reads an unrunged borrow as the line own location, however close the donor is', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
       expect(
         rowOf(
           {
@@ -521,6 +528,7 @@ describe('suggestionBreakdown', () => {
   });
 
   it('tells the two borrows apart by rung, not by where they happen to be (AC-A3)', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     const rows = suggestionBreakdown(
       cell([
         line({
@@ -916,6 +924,7 @@ describe('what the bar is drawn from', () => {
   });
 
   it('names a drafted borrow that cites a donor order as a borrow from another order', () => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
     const supply = contributionSupply(buyProposal, {
       verdict: 'amended',
       reserve: [],
@@ -1534,6 +1543,7 @@ describe('rowOf: a borrow that names no donor is a location borrow (BORROW-LOCAT
   it.each(['order_borrow', 'group_borrow', 'pool'])(
     'still reads a %s borrow that names a donor SO as borrow_order (ON pinned)',
     (rung) => {
+    borrowKinds.shownApart = true; // pins the separate borrow words (four-options flag)
       expect(
         rowOf({
           kind: 'borrow',
@@ -1556,4 +1566,8 @@ describe('the Decided cell reads a location borrow as plain Borrow (owner, 9 Oct
       ),
     ).toBe('Borrow 6 (BRW-BB)');
   });
+});
+
+afterEach(() => {
+  borrowKinds.shownApart = false;
 });

@@ -108,6 +108,34 @@ CATALOG: tuple[ToolSpec, ...] = (
         related_tools=("crm_master_product_attachments_list", "crm_inventory_stock_balance_list"),
         escalation_team="sales",
     ),
+    # CHAT-FIND (architecture option D, "reads generic"): ONE find tool whose filters are
+    # registry rows in the backend (`app/services/product_find.py`); a new question type is a
+    # new filter key there, never a new tool here.
+    ToolSpec(
+        "crm_find",
+        (
+            "Find products by filters from the find registry. `filters` = JSON list of "
+            "{key, product_ids?, value?, unit?}: a filter takes the products the message names "
+            "(`product_ids`, canonical UUIDs), a typed `value` (a code, a number with a `unit` "
+            "from the filter's list, or one of its listed words), or both, as its registry row "
+            "says. Keys: `fits` = the products linked as fitting each named product (its seat "
+            "covers when it is a WC, the WCs it fits when it is a seat cover; links on record "
+            "only, nothing inferred); takes product_ids, no value. Each group carries a `head` "
+            "line, `rows` (product_code, product_name, is_discontinued, stock) and `more` (rows "
+            "not printed). Stock follows the contact's stock visibility: on hand for staff, a "
+            "1-unit availability verdict for a dealer (never a number). 422 codes: "
+            "`unknown_filter`, `filters_required`, `product_ids_required`, `value_required`, "
+            "`bad_value`, `too_many`.\n\n"
+            "COMPANY SCOPE: pass `contact_id` + `space_id` (both or neither) to answer as that "
+            "contact; omit both for all-company results."
+        ),
+        "/api/v1/master-data/products/find",
+        (),
+        ("filters", "contact_id", "space_id"),
+        domain="products",
+        related_tools=("crm_master_products_list", "crm_inventory_stock_balance_list"),
+        escalation_team="sales",
+    ),
     ToolSpec(
         "crm_master_brands_list",
         (
@@ -847,7 +875,24 @@ CATALOG: tuple[ToolSpec, ...] = (
             "A customer-linked dealer sees only its own customers' sales and may group or "
             "filter by product, brand, category and month ONLY; anything else is 403 "
             "`report_dimension_not_allowed` - say 'That breakdown is not available for your "
-            "account.' Ten asks per contact per 10 minutes (`status: busy`)."
+            "account.' Ten asks per contact per 10 minutes (`status: busy`).\n\n"
+            "CHAT DATASET: `dataset=chat` (default `sales`) ranks or totals what customers ASK "
+            "THE BOT, not sales: 'top 5 questions this week', 'which products do dealers ask "
+            "about most in September', 'failure rate by week', 'how many dealers asked about "
+            "stock'. `basis` asks (every ask) | turns (each message once; use it for failed and "
+            "failure_rate). `measure` asks | failed | failure_rate | contacts (distinct "
+            "contacts). `group_by` topic | subject | product | customer | outcome | "
+            "failure_reason | week | month | day | language | asker (dealer / salesperson / staff / "
+            "unclassified) | salesperson (the asking salesperson by name) | category | brand; a "
+            "week, month or day trend lists every bucket and needs no `top_n`. Filters: `subjects` "
+            "(domain codes such as inventory), `product_ids`, `customer_ids`, `askers` (any of "
+            "dealer, salesperson, staff, unclassified; default is dealer, salesperson and "
+            "unclassified), `category_ids`, `brand_ids` (through the products the question "
+            "named). A customer ranking prints each customer's agent. Chat bases and sales params do not mix "
+            "(422 `unknown_param`). Needs the Chat analytics reveal (403 "
+            "`chat_analytics_not_enabled`, say it is not enabled for the account). A dealer sees "
+            "its own customers' asks and may group by topic, subject, product and month only. "
+            "The reply carries the topic coverage line; data starts 5 Sep 2026."
         ),
         "/api/v1/order-management/report-ask",
         (),
@@ -855,12 +900,15 @@ CATALOG: tuple[ToolSpec, ...] = (
             "date_from", "date_to", "basis", "measure", "group_by", "top_n", "sort",
             "product_code", "product_ids", "brand_ids", "category_ids", "sales_agent_ids",
             "customer_ids", "warehouse_codes", "channel", "contact_id", "space_id",
-            "customer_agent_ids",
+            "customer_agent_ids", "dataset", "subjects", "askers",
         ),
         domain="orders",
         related_tools=("crm_sales_report", "crm_top_selling_report"),
         escalation_team="sales",
-        restricted_fields=(("sales_orders.sales_report", "Sales report"),),
+        restricted_fields=(
+            ("sales_orders.sales_report", "Sales report"),
+            ("chatbot.analytics", "Chat analytics"),
+        ),
     ),
     ToolSpec(
         "crm_top_selling_report",
@@ -1363,6 +1411,20 @@ CATALOG: tuple[ToolSpec, ...] = (
         body_params=("reason",),
         module="procurement",
         external=True,
+        domain="procurement",
+    ),
+    # --- procurement: one purchase request by its number (REF-PROBES) ---
+    ToolSpec(
+        "crm_purchase_request_by_number",
+        (
+            "Get ONE PURCHASE REQUEST by its request number (e.g. 'PR2610-0012'): customer, "
+            "status, approval status, dates and every line (item code x quantity). Read-only. "
+            "A number no request carries is a 404."
+        ),
+        "/api/v1/procurement/purchase-requests/by-number/{number}",
+        ("number",),
+        (),
+        module="procurement",
         domain="procurement",
     ),
     # --- procurement: purchase orders placed (A5, chatbot-growth-r1) ---

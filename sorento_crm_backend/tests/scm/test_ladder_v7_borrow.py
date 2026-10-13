@@ -19,6 +19,8 @@ Postgres via `blank_session`, every chain seeded here (CI's database has no data
 """
 from __future__ import annotations
 
+import pytest
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -32,7 +34,7 @@ from app.models.project_so import (
     SOSupplyDecision,
 )
 from app.schemas.project_supply import ConfirmLine, ConfirmSupplyBody
-from app.services.project_supply_service import ProjectSupplyService, SupplyLinesRefused
+from app.services.project_supply_service import ProjectSupplyService
 from app.services.scm import priority
 
 from .._pg_fixture import blank_session
@@ -473,10 +475,13 @@ def test_a_date_aware_use_proposal_confirms_verbatim_although_available_is_negat
     assert holds == [(own_id, "own", Decimal("27"))], holds
 
 
-def test_a_reserve_beyond_the_date_aware_pile_is_still_refused():
+def test_a_reserve_beyond_the_date_aware_pile_holds_only_the_pile_and_records_the_short():
     """The other half of the same seeding: the pile is the WALK's number, not the whole
     floor. JAY's 32 is due after JEREMY's 27 and the 12 behind it, so 16 is free by his
-    date - and a hand-composed Reserve for the whole 32 is refused with the 16 named."""
+    date - and a hand-composed Reserve for the whole 32 holds the 16 and records 16 short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
@@ -493,32 +498,36 @@ def test_a_reserve_beyond_the_date_aware_pile_is_still_refused():
         )
         service = ProjectSupplyService(db)
         jay_components = _components(service.proposal_for(jay))
-        refusal = None
-        try:
-            service.confirm(
-                jay,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=jay_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "32"}],
-                        )
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        except SupplyLinesRefused as exc:
-            refusal = exc
+        result = service.confirm(
+            jay,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=jay_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "32"}],
+                    )
+                ]
+            ),
+            actor_user_id=eling,
+        )
+        held = [
+            Decimal(str(a.qty))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id == jay_line.id)
+            .all()
+        ]
         db.rollback()
         own_code = own.warehouse_code
 
     assert [(c["kind"], c["qty"]) for c in jay_components] == [("buy", "32")], (
         "16 is not the whole unit, so the board proposes a Buy"
     )
-    assert refusal is not None, "32 was asked for off a pile that is 16 by his date"
-    assert refusal.detail["failing_lines"][0]["reason"] == (
-        f"{own_code} now has 16 free for this line, and 32 was asked for."
-    ), refusal.detail["failing_lines"]
+    [notice] = result["stock_short_notices"]
+    assert notice["reason"] == (
+        f"Reserve 32 at {own_code} confirmed as decided; only 16 free at {own_code} "
+        "when confirmed, 16 short"
+    ), notice
+    assert held == [Decimal("16")], "32 was asked for off a pile that is 16 by his date"
 
 
 def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
@@ -528,7 +537,11 @@ def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
     100 on the floor, 60 of it owed to an earlier order that has decided nothing - so it
     holds no stock a Reserve competes with, and only the DATED walk knows it is spoken for.
     The board gives line 10 its 30 and line 20 the 10 that is left; line 20 is hand-composed
-    for 30 anyway, and is told what remains rather than what is on the floor."""
+    for 30 anyway, holds the 10 that remains (not what is on the floor) and is the only line
+    recorded short.
+
+    Owner rule 12 Oct 2026 (OI-CLOSED-LINE): a stock shortfall is a warning, never a refusal.
+    """
     with blank_session() as db:
         company_id, eling, project, product = _world(db)
         _group, sites = _group_sites(db)
@@ -563,38 +576,44 @@ def test_two_lines_of_one_confirm_share_one_pile_and_the_second_is_capped():
             row["line_no"]: [(c["kind"], c["qty"]) for c in row["components"]]
             for row in proposal["lines"]
         }
-        refusal = None
-        try:
-            service.confirm(
-                order,
-                ConfirmSupplyBody(
-                    lines=[
-                        ConfirmLine(
-                            project_line_id=first_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
-                        ),
-                        ConfirmLine(
-                            project_line_id=second_line.id,
-                            reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
-                        ),
-                    ]
-                ),
-                actor_user_id=eling,
-            )
-        except SupplyLinesRefused as exc:
-            refusal = exc
+        result = service.confirm(
+            order,
+            ConfirmSupplyBody(
+                lines=[
+                    ConfirmLine(
+                        project_line_id=first_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
+                    ),
+                    ConfirmLine(
+                        project_line_id=second_line.id,
+                        reserve=[{"warehouse_id": str(own.id), "qty": "30"}],
+                    ),
+                ]
+            ),
+            actor_user_id=eling,
+        )
+        held = {
+            a.so_line_id: Decimal(str(a.qty))
+            for a in db.query(SOLineAllocation)
+            .filter(SOLineAllocation.so_line_id.in_([first_line.id, second_line.id]))
+            .all()
+        }
+        first_id, second_id = first_line.id, second_line.id
         db.rollback()
         own_code = own.warehouse_code
 
     assert stated[10] == [("reserve", "30")], "30 is free by the first line's date"
     assert stated[20] == [("buy", "30")], "10 is left by the second's, which is not whole"
-    assert refusal is not None, "the second line asked for a pile the first had emptied"
-    assert [row["line_no"] for row in refusal.detail["failing_lines"]] == [20], (
-        f"only the second line is refused: {refusal.detail['failing_lines']}"
+    assert [row["line_no"] for row in result["stock_short_notices"]] == [20], (
+        f"only the second line is short: {result['stock_short_notices']}"
     )
-    assert refusal.detail["failing_lines"][0]["reason"] == (
-        f"{own_code} now has 10 free for this line, and 30 was asked for."
-    ), refusal.detail["failing_lines"]
+    assert result["stock_short_notices"][0]["reason"] == (
+        f"Reserve 30 at {own_code} confirmed as decided; only 10 free at {own_code} "
+        "when confirmed, 20 short"
+    ), result["stock_short_notices"]
+    assert held == {first_id: Decimal("30"), second_id: Decimal("10")}, (
+        "the second line asked for a pile the first had emptied and holds what was left"
+    )
 
 
 # --------------------------------------------------------------------------- AC-S3-2
@@ -632,6 +651,7 @@ def _borrow_world(db, *, donor_days=WINDOW_DAY + 20, donor_qty="30", ask="30"):
     }
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_decided_later_order_lends_its_on_hand_and_the_component_names_the_donor():
     """AC-S3-2: kind `borrow`, rung `order_borrow`, the donor named, the order-back sized."""
     with blank_session() as db:
@@ -654,6 +674,7 @@ def test_a_decided_later_order_lends_its_on_hand_and_the_component_names_the_don
     assert donor_so is not None
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
     """AC-S3-2 / R4: same agent first, THEN the latest required date.
 
@@ -702,6 +723,7 @@ def test_the_same_agent_donates_before_a_later_dated_donor_of_another_agent():
 # --------------------------------------------------------------------------- AC-S3-3
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_between_two_other_agents_the_later_required_date_donates_first():
     """AC-S3-3: on equal agent standing, the order that can wait longest gives it up."""
     with blank_session() as db:
@@ -828,6 +850,7 @@ def test_the_step_two_refusal_names_the_window_date():
 # --------------------------------------------------------------------------- AC-S3-5
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_borrowing_from_a_decided_donor_supersedes_its_decision_and_raises_its_order_back():
     """AC-S3-5 (R9, R25). The donor's own decision is superseded in the SAME transaction,
     with the borrower named in the reason, and the donor gets an ORDER_BACK at its own
@@ -1019,6 +1042,7 @@ def test_the_engines_own_step_two_proposal_passes_the_confirm_gate_unchanged():
     assert sources == ["other_location"], sources
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_multi_line_donor_keeps_every_other_lines_hold_when_one_line_is_borrowed():
     """R25 as fixed 30 Aug (review finding: `_supersede_borrowed_donors`).
 
@@ -1212,6 +1236,7 @@ def test_the_pool_is_the_last_stock_step_and_its_free_pile_raises_nothing():
     assert raised == 0, "a FREE pool draw is owed to nobody (AC-L13's surviving half)"
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_a_later_pool_order_lends_its_on_hand_and_is_owed_it_back():
     """AC-S3-7, second half (R34): when the pool's free pile cannot cover the unit, a LATER
     pool order holding stock there lends it - and that half is a `borrow` which raises an
@@ -1451,6 +1476,7 @@ def test_a_frozen_snapshot_carrying_the_retired_rung_still_renders():
 # --------------------------------------------------------------------------- AC-S3-14
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_every_walked_unit_carries_five_options_in_step_order_with_one_chosen():
     """AC-S3-14 (R36), the whole contract in one read: five entries, always, in step order;
     at most one `chosen`; `fulfil_date` and `days_late` null together; `days_late` never
@@ -1532,6 +1558,7 @@ def test_the_board_payload_declares_the_options_so_the_response_model_keeps_them
 # --------------------------------------------------- the review's trail + option fixes
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_the_pool_step_of_the_trail_states_the_borrow_half_and_names_the_donor():
     """Review finding: the pool step read only the FREE pile, so a step-4b borrow printed
     `answer=yes, took=60` beside `offered=0` and "No shared pool holds this product." over
@@ -1581,6 +1608,7 @@ def test_the_pool_step_of_the_trail_states_the_borrow_half_and_names_the_donor()
     assert donor_so is not None
 
 
+@pytest.mark.usefixtures("ladder_steps_on")
 def test_another_groups_incoming_is_offered_as_water_and_dates_the_option_by_its_arrival():
     """Review finding: step 1's other-group half dropped `(arrival, kind)`, so another
     group's INCOMING SPO composed as an immediate Reserve and the option table dated the

@@ -32,26 +32,34 @@ BASES = ["delivered", "ordered", "outstanding"]
 
 
 def _definition(basis):
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     return _field(CATALOGUE[basis], "definition")
 
 
 def _definitions():
     """Every basis the catalogue HAS (the missing ones are asserted by the three-bases test)."""
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     return {basis: _field(CATALOGUE[basis], "definition") for basis in BASES if basis in CATALOGUE}
 
 
 def test_catalogue_has_the_three_bases():
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     assert set(CATALOGUE) == set(BASES), set(CATALOGUE)
 
 
 def test_the_basis_labels():
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     assert {b: _field(CATALOGUE[b], "label") for b in BASES} == {
         "delivered": "delivered sales", "ordered": "ordered sales", "outstanding": "outstanding orders"}
@@ -67,7 +75,9 @@ def test_no_basis_reads_the_delivery_order_dataset():
 
 @pytest.mark.parametrize("basis", BASES)
 def test_every_dimension_word_maps_to_a_dimension_column(basis):
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     definition = _definition(basis)
     dimensions = _keys(_field(CATALOGUE[basis], "dimensions"))
@@ -80,7 +90,9 @@ def test_every_dimension_word_maps_to_a_dimension_column(basis):
 @pytest.mark.parametrize("basis", BASES)
 def test_every_filter_word_maps_to_a_select_param(basis):
     from app.services.reports import registry as reg
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     definition = _definition(basis)
     filters = _keys(_field(CATALOGUE[basis], "filters"))
@@ -93,7 +105,9 @@ def test_every_filter_word_maps_to_a_select_param(basis):
 @pytest.mark.parametrize("basis", BASES)
 def test_both_bases_speak_the_same_words(basis):
     """One spec, two bases: the words a caller may use are the same for both."""
-    from app.services.reports.ask import CATALOGUE
+    from app.services.reports.ask import CATALOGUE as _DATASETS
+
+    CATALOGUE = _DATASETS["sales"]
 
     words = {"customer", "product", "brand", "category", "sales_agent", "location", "channel", "month"}
     dims = _field(CATALOGUE[basis], "dimensions")

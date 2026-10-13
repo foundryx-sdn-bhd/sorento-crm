@@ -91,6 +91,15 @@ def list_stock_debt(
             "and ignores `group`."
         ),
     ),
+    projected: bool = Query(
+        False,
+        description=(
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
+        ),
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
@@ -112,6 +121,7 @@ def list_stock_debt(
             book=book,
             page=page,
             limit=limit,
+            projected=projected,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -152,6 +162,15 @@ def stock_debt_cell(
         "all",
         description="The BOARD's own book, echoed so the drill foots with the cell that opened it.",
     ),
+    projected: bool = Query(
+        False,
+        description=(
+            "STOCK-DEBT-PROJECTION: month cells show the running projected balance - the "
+            "project lines' own month figure (pool supply only through a link) plus a "
+            "project reserve's unlinked incoming supply, carried to the earliest shortfall. "
+            "Display only; nothing is assigned."
+        ),
+    ),
     _user: dict = Depends(require_permission_with_api_key(VIEW)),
     db: Session = Depends(get_db),
 ):
@@ -159,7 +178,8 @@ def stock_debt_cell(
     try:
         validate_uuid_path(product_id, resource="Product")
         return StockDebtService(db).cell(
-            product_id, month, group, date_from=date_from, date_to=date_to, book=book
+            product_id, month, group, date_from=date_from, date_to=date_to, book=book,
+            projected=projected,
         )
     except Exception as exc:
         raise exc if hasattr(exc, "status_code") else handle_internal_error(str(exc))
@@ -219,6 +239,7 @@ def export_stock_debt(
             book=payload.book,
             page=1,
             limit=1,
+            projected=payload.projected,
         )
         if guard["pagination"]["total"] > MAX_LOW_STOCK_ROWS:
             raise AppException(status_code=422, message="Narrow the filters first")

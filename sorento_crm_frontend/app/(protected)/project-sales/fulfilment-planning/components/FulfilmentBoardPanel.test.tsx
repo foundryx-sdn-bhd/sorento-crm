@@ -4028,23 +4028,17 @@ describe('FulfilmentBoardPanel: the strip and the views agree', () => {
     renderPanel(['SO403340']);
     await screen.findByTestId('fulfilment-board-matrix');
 
-    // Nothing here is borrowed, so that card reads 0 / 0 and cannot be pressed - it keeps
-    // its place, because it stands for a step of the ladder's walk and a card that came
-    // and went would move every card beside it.
-    expect(screen.getByTestId('decision-strip-borrow_order')).toBeDisabled();
+    // Nothing here is borrowed, so the Borrow card reads 0 / 0 and cannot be pressed - it
+    // keeps its place among the four (owner, 12 Oct 2026), because a card that came and went
+    // would move every card beside it.
+    expect(screen.getByTestId('decision-strip-borrow_other')).toBeDisabled();
     expect(screen.getByTestId('decision-strip-buy')).not.toBeDisabled();
-    // The same is true of the two steps split out on 30 August 2026: the group's water and
-    // the document borrow. `borrow_incoming` reads 0 on every board until S4 lands its
-    // candidates, and it is rendered anyway - a step nobody can see is a step nobody knows
-    // was asked.
-    expect(screen.getByTestId('decision-strip-incoming')).toBeInTheDocument();
-    expect(screen.getByTestId('decision-strip-borrow_incoming')).toBeDisabled();
-    // `borrow_other` is the exception (re-ruled 30 August 2026): it is not a step, it is
-    // the retired `cross_group_borrow` a decision frozen under an older ladder carries, so
-    // at 0 / 0 it is not shown at all.
-    expect(
-      screen.queryByTestId('decision-strip-borrow_other'),
-    ).not.toBeInTheDocument();
+    // The kinds the planner no longer suggests have no card at all.
+    for (const gone of ['incoming', 'borrow_order', 'borrow_incoming']) {
+      expect(
+        screen.queryByTestId(`decision-strip-${gone}`),
+      ).not.toBeInTheDocument();
+    }
   });
 });
 

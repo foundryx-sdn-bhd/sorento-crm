@@ -866,22 +866,29 @@ describe('uncoverChangedLines', () => {
   });
 
   /**
-   * T8/AC-15, R3 ruling (`PLAN-board-draft-on-confirmed-line.md`, review round 3, restated
-   * for #1240): only the BATCH's own `applied_at` gates whether a line stays covered and
-   * blocked from a second Confirm - pinned by `FulfilmentBoardPanel.change.test.tsx`'s "does
-   * not block Confirm ... even if a row says it was". A ROW's own `applied_state` of
-   * `'applied'` is not the same signal - `superseded` is the only state S4 retires from the
-   * overlay - so a batch not yet applied but already carrying an `applied` row (an order this
-   * upload named twice, one line already actioned) must still overlay and pre-mark that row
-   * exactly like a pending one.
+   * T8/AC-15 REVERSED (BOARD-FROZEN-DISPLAY, 12 Oct 2026, SO422492 on prod). The R3 ruling
+   * (`PLAN-board-draft-on-confirmed-line.md`, review round 3) let an `applied` row keep
+   * overlaying and pre-marking its line exactly like a pending one, on the reasoning that
+   * only the batch's own `applied_at` says whether a line is done. But a batch stays open
+   * while ANY of its rows is pending (S5b, #1245), so after a partial Confirm every row the
+   * press DID apply went on painting its batch's old `proposal_json` over the line's frozen
+   * decision: SO422492's C-FH14 lines, confirmed BUY in rev 3 and rev 4 (and sent to
+   * purchasing as ORDER), read "Own N (BRW-NTC)" as both Suggested and Decided. An applied
+   * row no longer uncovers or pre-marks - the line shows its frozen decision - while its
+   * change icon still says what the book did.
+   * A second, PENDING row on the same line (an order the upload named twice) still
+   * overlays: only the applied one is retired. The Confirm block still reads only the
+   * batch's `applied_at` (`FulfilmentBoardPanel.change.test.tsx`).
    */
-  it('T8/AC-15 (R3 ruling): an applied row still overlays and pre-marks like a pending one', () => {
+  it('T8/AC-15 (reversed): an applied row shows the frozen decision, never the batch proposal', () => {
     const live = contribution({
       key: 'k1',
       project_line_id: 'pl-1',
       required_date: '2026-12-01',
       covered: true,
       decision: { revision_no: 2, components: [] },
+      sources: [{ kind: 'buy', qty: '5' }],
+      qty_proposed_buy: '5',
     } as unknown as Partial<BoardContribution>);
     const appliedBatch = batchOf([
       row({
@@ -891,8 +898,9 @@ describe('uncoverChangedLines', () => {
         proposal: {
           ...contribution({ key: 'built-earlier', project_line_id: 'pl-1' }),
           required_date: '2026-12-01',
-          sources: [{ kind: 'buy', qty: '5' }],
-          qty_proposed_buy: '5',
+          sources: [{ kind: 'reserve', qty: '5' }],
+          qty_proposed_reserve: '5',
+          qty_proposed_buy: '0',
         } as BoardContribution,
       }),
     ]);
@@ -902,16 +910,83 @@ describe('uncoverChangedLines', () => {
     };
 
     const out = uncoverChangedLines(board, appliedBatch);
-    expect(out.contributions[0].covered).toBe(false);
-    expect(out.contributions[0].decision).toBeNull();
+    expect(out.contributions[0].covered).toBe(true);
+    expect(out.contributions[0].decision).toEqual({ revision_no: 2, components: [] });
     expect(out.contributions[0].sources).toEqual([{ kind: 'buy', qty: '5' }]);
     expect(out.contributions[0].qty_proposed_buy).toBe('5');
+    expect(out.cells[0].contributions[0].covered).toBe(true);
 
-    // Pre-marked off the ALREADY-UNCOVERED contributions, same as AC-14 above.
-    expect(preMarkedKeys(appliedBatch, out.contributions)).toEqual(['k1']);
-    const byLine = annotationsByLine(appliedBatch);
-    expect(byLine.get('pl-1')?.map((entry) => entry.rowId)).toEqual([
-      'pcr-applied',
+    // Nothing to pre-mark - even off contributions some other path already uncovered.
+    expect(
+      preMarkedKeys(appliedBatch, [{ ...live, covered: false }]),
+    ).toEqual([]);
+    // The change icon still says what the book did (a deep link to an applied batch).
+    expect(
+      annotationsByLine(appliedBatch).get('pl-1')?.map((entry) => entry.rowId),
+    ).toEqual(['pcr-applied']);
+  });
+
+  it('SO422492: a partly-applied batch overlays only its genuinely pending rows', () => {
+    // C-FH14 (rows applied by the rev 3 / rev 4 Confirm, frozen BUY) beside a line the
+    // book moved that nobody has decided yet (its row still pending).
+    const cfh14 = contribution({
+      key: 'k-cfh14',
+      project_line_id: 'pl-16',
+      line_no: 16,
+      item_code: 'C-FH14',
+      fulfilment_location: 'BRW-NTC',
+      covered: true,
+      decision: { revision_no: 4, components: [] },
+      sources: [{ kind: 'buy', qty: '22' }],
+      qty_proposed_buy: '22',
+    } as unknown as Partial<BoardContribution>);
+    const moved = contribution({
+      key: 'k-moved',
+      project_line_id: 'pl-20',
+      line_no: 20,
+      covered: true,
+      decision: { revision_no: 4, components: [] },
+    } as unknown as Partial<BoardContribution>);
+    const batch = batchOf([
+      row({
+        id: 'pcr-cfh14',
+        applied_state: 'applied',
+        project_line_id: 'pl-16',
+        line_no: 16,
+        item_code: 'C-FH14',
+        proposal: {
+          ...contribution({ key: 'built-earlier', project_line_id: 'pl-16' }),
+          sources: [{ kind: 'reserve', qty: '22' }],
+          qty_proposed_reserve: '22',
+          qty_proposed_buy: '0',
+        } as BoardContribution,
+      }),
+      row({
+        id: 'pcr-moved',
+        applied_state: 'pending',
+        project_line_id: 'pl-20',
+        line_no: 20,
+        proposal: {
+          ...contribution({ key: 'built-earlier', project_line_id: 'pl-20' }),
+          sources: [{ kind: 'buy', qty: '3' }],
+          qty_proposed_buy: '3',
+        } as BoardContribution,
+      }),
     ]);
+    const board = {
+      cells: [cell({ contributions: [cfh14, moved] })],
+      contributions: [cfh14, moved],
+    };
+
+    const out = uncoverChangedLines(board, batch);
+    const byKey = new Map(out.contributions.map((c) => [c.key, c]));
+    expect(byKey.get('k-cfh14')?.covered).toBe(true);
+    expect(byKey.get('k-cfh14')?.sources).toEqual([{ kind: 'buy', qty: '22' }]);
+    expect(byKey.get('k-moved')?.covered).toBe(false);
+    expect(byKey.get('k-moved')?.sources).toEqual([{ kind: 'buy', qty: '3' }]);
+    expect(preMarkedKeys(batch, out.contributions)).toEqual(['k-moved']);
+    const byLine = annotationsByLine(batch);
+    expect(byLine.get('pl-16')?.map((entry) => entry.rowId)).toEqual(['pcr-cfh14']);
+    expect(byLine.get('pl-20')?.map((entry) => entry.rowId)).toEqual(['pcr-moved']);
   });
 });

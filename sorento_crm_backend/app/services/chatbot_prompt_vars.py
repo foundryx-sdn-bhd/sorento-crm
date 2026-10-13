@@ -273,6 +273,18 @@ def _render_specs(db: Session) -> str:
     return "\n".join(_one_line(line) for line in specification_lines(db))
 
 
+def _render_find_filters(db: Session) -> str:
+    from app.services.product_find import parser_vocabulary
+
+    return parser_vocabulary(db)
+
+
+def _find_filter_count() -> int:
+    from app.services.product_find import FILTERS
+
+    return len(FILTERS)
+
+
 def _count(query: str) -> Callable[[Session], int]:
     return lambda db: int(db.execute(sql(query)).scalar() or 0)
 
@@ -337,6 +349,13 @@ VARIABLES: dict[str, RegistryVariable] = {
             "specs", "Specifications", "Product Specifications", "/master-data-management/product-specifications",
             ("product_spec_registry",), _render_specs,
             _count("SELECT count(*) FROM product_spec_registry WHERE is_active"),
+        ),
+        RegistryVariable(
+            # CHAT-FIND: the generic find rule plus one line per registered filter. The
+            # registry is code (`app/services/product_find.py`), so there is no admin page and
+            # no table; a filter registered there reaches the parser with no new version.
+            "find_filters", "Find filters", "Find filter registry (code list)", "",
+            (), _render_find_filters, lambda db: _find_filter_count(),
         ),
         RegistryVariable(
             "brands", "Brands", "Brands", "/master-data-management/brands", ("brands",),

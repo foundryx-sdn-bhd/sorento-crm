@@ -210,7 +210,13 @@ def test_a_path_a_shell_would_parse_is_never_selected(tmp_path):
     assert all(" " not in t for t in result.tests)
 
 
-def test_cli_above_the_budget_writes_no_list_and_full_true(tmp_path):
+def test_cli_above_the_budget_writes_the_named_test_files_and_full_true(tmp_path):
+    """CI-COST: above the budget the list is the test files named on stdin, not empty.
+
+    On a PR those are its changed test files (what the workflow fell back to
+    anyway); on a lean release they are the batch's changed test files plus the
+    core tier, so the release still runs ONE job and never the full shards
+    (release 38099410256 selected 2076 files, 32731 CPU-s, and ran all of them)."""
     files = dict(BASE)
     files[".test_durations"] = '{"tests/test_direct.py::t": 3.0}'
     root = _tree(tmp_path, files)
@@ -218,16 +224,38 @@ def test_cli_above_the_budget_writes_no_list_and_full_true(tmp_path):
     out.write_text("")
     proc = subprocess.run(
         [sys.executable, str(BACKEND / "scripts" / "ci_select_tests.py"), "--root", str(root), "--budget", "2"],
-        input=f"{P}app/services/foo.py\n",
+        input=f"{P}app/services/foo.py\n{P}tests/test_unrelated.py\n{P}tests/test_direct.py\n{P}tests/test_bad name.py\n",
         env={"GITHUB_OUTPUT": str(out), "PATH": "/usr/bin:/bin"},
         capture_output=True,
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
-    assert dict(line.split("=", 1) for line in out.read_text().splitlines()) == {"tests": "", "full": "true"}
-    # 7 files: test_direct at 3 s, six unknown at the median (3 s) = 21 CPU-s.
-    assert "7 test files, estimated 21 CPU-s (budget 2): above the budget" in proc.stdout
+    assert dict(line.split("=", 1) for line in out.read_text().splitlines()) == {
+        "tests": f"{P}tests/test_direct.py {P}tests/test_unrelated.py",
+        "full": "true",
+    }
+    # 8 files: test_direct at 3 s, seven unknown at the median (3 s) = 24 CPU-s.
+    assert "8 test files, estimated 24 CPU-s (budget 2): above the budget" in proc.stdout
     assert f"{P}tests/test_direct.py" in proc.stdout
+
+
+def test_cli_above_the_budget_with_scm_shards_running_leaves_tests_scm_out(tmp_path):
+    files = dict(BASE)
+    files[".test_durations"] = '{"tests/test_direct.py::t": 3.0}'
+    root = _tree(tmp_path, files)
+    out = tmp_path / "gh_output"
+    out.write_text("")
+    proc = subprocess.run(
+        [sys.executable, str(BACKEND / "scripts" / "ci_select_tests.py"), "--root", str(root),
+         "--budget", "2", "--scm", "true"],
+        input=f"{P}app/services/foo.py\n{P}tests/scm/test_scm_direct.py\n{P}tests/test_direct.py\n",
+        env={"GITHUB_OUTPUT": str(out), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    outputs = dict(line.split("=", 1) for line in out.read_text().splitlines())
+    assert outputs == {"tests": f"{P}tests/test_direct.py", "full": "true"}
 
 
 def test_cli_writes_the_outputs_and_logs_the_list(tmp_path):

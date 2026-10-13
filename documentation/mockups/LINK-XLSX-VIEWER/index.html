@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Short-link Excel viewer (mockup v2)</title>
+<style>
+/* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme) */
+:root{--background:#fff;--foreground:#09090b;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--destructive:#dc2626;--radius:8px;--page:#f7f7f8;--grid:#e4e4e7;--hdr:#f4f4f5;--mark:#fcd34d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--foreground);font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+h1{font-size:22px;margin:0 0 4px}
+.doc{max-width:1700px;margin:0 auto;padding:16px}
+.intro{color:var(--muted-fg);font-size:13px;margin:0 0 12px;max-width:900px}
+section{margin:0 0 34px}
+section>h2{font-size:15px;margin:0 0 4px}
+section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:860px}
+.row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.nb{display:inline-block;min-width:18px;height:18px;border-radius:9px;background:var(--foreground);color:#fff;font-size:11px;line-height:18px;text-align:center;margin-right:6px}
+.desk{width:1280px;flex:none;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.desk .screen{height:720px}
+.phone{width:375px;flex:none;background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.phone .screen{height:740px}
+.cap{font-size:11px;color:var(--muted-fg);text-align:center;padding:6px;border-top:1px solid var(--border);background:#fff}
+/* Viewer page */
+.screen{display:flex;flex-direction:column;background:#fff;position:relative}
+.bar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--background)}
+.bar .fn{font-weight:600;font-size:15px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phone .bar{padding:8px 12px}
+.phone .bar .fn{font-size:14px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:13px;font-weight:500;white-space:nowrap;color:var(--foreground)}
+.btn.pri{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn.icon{width:32px;padding:0;justify-content:center}
+.tools{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border)}
+.phone .tools{padding:8px 12px}
+.search{height:32px;border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:13px;color:var(--muted-fg);display:flex;align-items:center;gap:6px;width:260px;background:#fff}
+.search.on{color:var(--foreground)}
+.phone .search{flex:1;width:auto}
+.count{font-size:12px;color:var(--muted-fg);white-space:nowrap}
+.zoom{margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-fg)}
+.grid{flex:1;overflow:auto;position:relative;background:#fff;touch-action:pan-x pan-y pinch-zoom}
+table.x{border-collapse:separate;border-spacing:0;font-size:13px;table-layout:fixed}
+.phone table.x{font-size:13px}
+table.x td,table.x th{border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);padding:4px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:24px}
+table.x thead th{position:sticky;top:0;z-index:2;background:var(--hdr);color:var(--muted-fg);font-weight:500;font-size:11px;text-align:center;height:22px}
+table.x th.rn{position:sticky;left:0;z-index:1;background:var(--hdr);color:var(--muted-fg);font-weight:500;font-size:11px;text-align:center;width:36px}
+table.x thead th.rn{z-index:3}
+table.x td.num{text-align:right;font-variant-numeric:tabular-nums}
+table.x td.b{font-weight:600}
+table.x tr.fz td,table.x tr.fz th.rn{position:sticky;top:22px;z-index:1;background:#fafafa}
+table.x tr.fz th.rn{z-index:3;background:var(--hdr)}
+table.x tr.fz td{border-bottom:2px solid #a1a1aa}
+table.x td.wrap{white-space:normal}
+table.x td mark{background:var(--mark);border-radius:2px;padding:0 1px}
+table.x tr.hit td{background:#fffbeb}
+table.x td.neg{color:var(--destructive)}
+.tabs{display:flex;gap:2px;border-top:1px solid var(--border);padding:0 8px;background:var(--hdr);overflow-x:auto;flex:none}
+.tabs span{font-size:13px;padding:7px 14px;color:var(--muted-fg);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs span.on{color:var(--foreground);font-weight:500;background:#fff;border-bottom-color:var(--primary)}
+.foot{font-size:12px;color:var(--muted-fg);padding:6px 16px;border-top:1px solid var(--border);background:#fff}
+.center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px}
+.center p{margin:0;max-width:300px;font-weight:500}
+.spin{width:24px;height:24px;border:3px solid var(--muted);border-top-color:var(--muted-fg);border-radius:50%}
+.map{border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid var(--border);border-radius:8px;max-width:1280px}
+.map td,.map th{border-bottom:1px solid var(--border);padding:6px 10px;text-align:left;vertical-align:top}
+.map th{font-weight:500;color:var(--muted-fg);font-size:12px}
+.map code{font-size:11.5px;background:var(--muted);padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>Short-link Excel viewer <span style="font-weight:400;color:var(--muted-fg)">(mockup v2)</span></h1>
+<p class="intro">Page <code>/f/&lt;code&gt;</code> for a "sheet" link. Today: filename + View/Download buttons and the small AttachmentPreviewModal table (200 rows x 40 cols, text only, cells cut at 240px). Proposed: the sheet IS the page, full screen, rendered from the file's own column widths, number formats, bold, merges and frozen panes. Data: same structure as the real supplier packing list the owner screenshotted (one sheet PL, A1:M24, header block rows 1-4, bold header row 7, 16 lines, bold SUM TOTAL row, <code>#,##0.00</code> formats); every code, figure and the container number are INVENTED (public repo, owner Q5).</p>
+
+<section>
+<h2><span class="nb">1</span>Opened on phone (375) and desktop (1280)</h2>
+<p class="why">Opens straight into the sheet (no extra "View" tap). Excel-style column letters stay pinned on top and row numbers on the left. The file declares no freeze pane, so here the viewer pins the table's header row (row 7, the first all-bold row) under the letters (owner Q2: the file's freeze pane when set, else the first all-bold row, else letters + row numbers only). Numbers keep the file's format (<code>#,##0.00</code>), formulas show the value Excel last saved (TOTAL row), never recalculated. Swipe scrolls both ways; pinch zooms the grid only.</p>
+<div class="row">
+  <div class="phone"><div class="screen" id="p1"></div><div class="cap">375 x 740, iPhone. Scrolled down to the TOTAL row: letters + header row stay pinned.</div></div>
+  <div class="desk"><div class="screen" id="d1"></div><div class="cap">1280 x 720. All 13 columns fit; rows 21-24 one scroll down; DESCRIPTION shows at the file's own width (27.9 chars), nothing cut.</div></div>
+</div>
+</section>
+
+<section>
+<h2><span class="nb">2</span>Search, and a workbook with more than one sheet</h2>
+<p class="why">Search marks every matching cell and jumps to the first; up/down arrows step through matches. Rows stay in place (no filtering), so the sheet still reads as the file. Sheet tabs sit at the bottom like Excel and scroll sideways when there are many.</p>
+<div class="row">
+  <div class="phone"><div class="screen" id="p2"></div><div class="cap">Search "basin": 6 cells, 2 of 6 selected. Second sheet tab "Summary" (illustrative; this file has one sheet).</div></div>
+</div>
+</section>
+
+<section>
+<h2><span class="nb">3</span>Loading, too big, unreadable, expired</h2>
+<p class="why">Same wording as today for expired and error (<code>app/(public)/f/[code]/page.tsx:91,101</code>). New: a file over the size or cell cap is not parsed on the phone; Download stays.</p>
+<div class="row">
+  <div class="phone"><div class="screen"><div class="bar"><div class="fn">CTNU1234567.xlsx</div><span class="btn icon" title="Download">&#8681;</span></div><div class="center"><div class="spin"></div></div></div><div class="cap">Loading</div></div>
+  <div class="phone"><div class="screen"><div class="bar"><div class="fn">Stock 2026 full year.xlsx</div><span class="btn icon" title="Download">&#8681;</span></div><div class="center"><p>This file is too big to show here.</p><span class="btn pri">&#8681; Download</span></div></div><div class="cap">Over 10 MB (Q3)</div></div>
+  <div class="phone"><div class="screen"><div class="bar"><div class="fn">report.xls</div><span class="btn icon" title="Download">&#8681;</span></div><div class="center"><p>This file cannot be shown here.</p><span class="btn pri">&#8681; Download</span></div></div><div class="cap">Unreadable / password file</div></div>
+  <div class="phone"><div class="screen"><div class="center"><p>This link has expired. Ask us on WhatsApp for a new one.</p></div></div><div class="cap">Expired (unchanged)</div></div>
+</div>
+</section>
+
+<section>
+<h2>Element map</h2>
+<table class="map">
+<tr><th>Element</th><th>Reuses / built from</th></tr>
+<tr><td>Top bar: filename + Download</td><td><code>components/ui/button.tsx</code> (outline/icon variant), lucide <code>Download</code>; download logic as today <code>app/(public)/f/[code]/page.tsx:128-147</code>. Same fetch: <code>fileLinkService.ts:71</code> <code>fetchFileLinkContent</code> (same-origin bytes, rate limit + expiry unchanged, <code>sorento_crm_backend/app/api/v1/public/file_links.py:133</code>)</td></tr>
+<tr><td>Search box</td><td><code>components/common/ListSearchInput.tsx</code> (already used by the old preview, <code>AttachmentPreviewModal.tsx:709</code>); highlight via <code>splitHighlightSegments</code> + same mark style (<code>AttachmentPreviewModal.tsx:565</code>)</td></tr>
+<tr><td>Grid (letters, row numbers, pinned rows/cols, widths, merges, formats)</td><td>New <code>components/common/SheetViewer</code>: plain table + CSS <code>position: sticky</code>, rows virtualised with <code>@tanstack/react-virtual</code> (in package.json). Workbook read with <code>exceljs@4.4.0</code> (in package.json, MIT): column widths, merges, <code>views[].xSplit/ySplit</code>, bold/italic/fill/alignment/wrap, formula cached <code>result</code> only. Number formats via SheetJS SSF (<code>xlsx</code>, in package.json). .xls/.csv via SheetJS as today (no styles)</td></tr>
+<tr><td>Sheet tabs</td><td><code>components/ui/tabs.tsx</code> line variant (Apple Alignment line tabs), placed at the bottom</td></tr>
+<tr><td>Zoom</td><td>Browser pinch on the grid (<code>touch-action: pinch-zoom</code>); desktop: Ctrl/Cmd +/- of the page. No custom zoom control </td></tr>
+<tr><td>Loading / too big / error / expired</td><td>Existing <code>Centered</code> states in <code>page.tsx:39-105</code>, <code>Loader2</code></td></tr>
+<tr><td>Old popup</td><td><code>AttachmentPreviewModal</code> no longer used by this page; the CRM's own attachment previews keep it unchanged (owner Q4: swap is a follow-up)</td></tr>
+</table>
+</section>
+</div>
+
+<script>
+// Invented figures in the real file's structure (owner Q5).
+const W=[15.9,27.4,27.9,16.7,10.3,10.9,14.7,14.7,9.7,13.6,9.7,11.6,9.0];
+const N=(v,d=2)=>v===''||v==null?'':Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const items=[
+['WC-1001-A','TWO PIECE WC S TRAP (250MM)','70*45*52',38,42,1140,1260,0.1638,4.914,30,30],
+['WC-1002-A','TWO PIECE WC P TRAP (180MM)','70*45*52',38,42,912,1008,0.1638,3.9312,24,24],
+['WC-2010-B','ONE PIECE WC S TRAP (250MM)','71*39*64',52,56,2080,2240,0.1772,7.088,40,40],
+['WC-2011-B','ONE PIECE WC S TRAP (200MM)','71*39*64',52,56,624,672,0.1772,2.1264,12,12],
+['WC-2020-C','ONE PIECE WC S TRAP (250MM)','73*40*61',47,50,2820,3000,0.1781,10.686,60,60],
+['WC-2020-C','ONE PIECE WC S TRAP (250MM)','73*40*61',47,50,3760,4000,0.1781,14.248,80,80],
+['WC-2021-C','ONE PIECE WC S TRAP (150MM)','73*40*61',47,50,376,400,0.1781,1.4248,8,8],
+['WC-2022-C','ONE PIECE WC S TRAP (200MM)','73*40*61',47,50,470,500,0.1781,1.781,10,10],
+['WC-2023-C','ONE PIECE WC S TRAP (300MM)','73*40*61',47,50,705,750,0.1781,2.6715,15,15],
+['UR-300','WALL URINAL','68*33*25',18,21,720,840,0.0561,2.244,40,40],
+['WB-410','WASH BASIN','45*40*17',36,38,1728,1824,0.0306,1.4688,48,48],
+['WB-410','WASH BASIN','45*40*17',36,38,216,228,0.0306,0.1836,6,6],
+['WB-420','WASH BASIN','60*44*15',28,31,560,620,0.0396,0.792,20,20],
+['WB-420','WASH BASIN','60*44*15',28,31,112,124,0.0396,0.1584,4,4],
+['WB-430','WASH BASIN','50*41*22',7,8,490,560,0.0451,3.157,70,70],
+['WB-430','WASH BASIN','50*41*22',7,8,42,48,0.0451,0.2706,6,6]];
+function rows(){
+  const r=[];
+  r.push([{v:'LOADING : '},{v:'09-02-26',n:1}]);
+  r.push([{v:'ETD : '},{v:'09-08-26',n:1}]);
+  r.push([{v:'ETA : '},{v:'09-15-26',n:1}]);
+  r.push([{v:'CONTAINER :'},{v:'CTNU1234567'}]);
+  r.push([]);r.push([]);
+  r.push(['LOGO','MODEL','DESCRIPTION','SIZE','NW (KG)','GW (KG)','TOTAL NW (KG)','TOTAL GW (KG)','CBM','TOTAL CBM','QTY','CTN QTY'].map(v=>({v,b:1})));
+  for(const it of items){r.push([{v:'BRAND'},{v:it[0]},{v:it[1]},{v:it[2]},...[3,4,5,6,7,8].map(i=>({v:N(it[i]),n:1})),{v:it[9],n:1},{v:it[10],n:1}]);}
+  r.push([{v:''},{v:'TOTAL',b:1},{},{},{},{},{v:N(16755),n:1,b:1},{v:N(18074),n:1,b:1},{},{v:N(57.1453),n:1,b:1},{v:473,n:1,b:1},{v:473,n:1,b:1}]);
+  return r;
+}
+const L='ABCDEFGHIJKLM'.split('');
+function grid(opts={}){
+  const px=opts.phone?7:7.5, q=(opts.q||'').toLowerCase();
+  let h='<table class="x"><colgroup><col style="width:36px">'+W.map(w=>`<col style="width:${Math.round(w*px+10)}px">`).join('')+'</colgroup><thead><tr><th class="rn"></th>'+L.map(l=>`<th>${l}</th>`).join('')+'</tr></thead><tbody>';
+  const R=rows(); let hit=0;
+  R.forEach((row,i)=>{
+    if(opts.skip&&i>=7&&i<opts.skip)return;
+    const fz=i===6?' class="fz"':'';
+    h+=`<tr${fz}><th class="rn">${i+1}</th>`;
+    for(let c=0;c<13;c++){const cell=row[c]||{};let v=cell.v==null?'':String(cell.v);const cls=[cell.n?'num':'',cell.b?'b':''].join(' ').trim();
+      if(q&&v.toLowerCase().includes(q)){hit++;const k=v.toLowerCase().indexOf(q);v=v.slice(0,k)+'<mark'+(hit===2?' style="background:#f59e0b"':'')+'>'+v.slice(k,k+q.length)+'</mark>'+v.slice(k+q.length);}
+      h+=`<td class="${cls}" title="${cell.v??''}">${v}</td>`;}
+    h+='</tr>';
+  });
+  return h+'</tbody></table>';
+}
+function screen(id,o){
+  const ph=!!o.phone;
+  document.getElementById(id).innerHTML=
+   `<div class="bar"><div class="fn">CTNU1234567.xlsx</div>${ph?'<span class="btn icon" title="Download">&#8681;</span>':'<span class="btn">&#8681; Download</span>'}</div>`+
+   `<div class="tools"><span class="search${o.q?' on':''}">&#9906; ${o.q||'Search in sheet'}</span>${o.q?'<span class="count">2 of 6</span><span class="btn icon">&#8963;</span><span class="btn icon">&#8964;</span>':''}</div>`+
+   `<div class="grid">${grid(o)}</div>`+
+   `<div class="tabs"><span class="on">PL</span>${o.tabs?'<span>Summary</span><span>Photos</span>':''}</div>`;
+}
+screen('p1',{phone:1,skip:14});
+screen('d1',{});
+screen('p2',{phone:1,q:'basin',tabs:1,skip:14});
+</script>
+</body>
+</html>

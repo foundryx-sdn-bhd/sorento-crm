@@ -77,11 +77,21 @@ def is_site_pool(segment: Optional[str]) -> bool:
     return (segment or _DEFAULT_SEGMENT) != PROJECT_SEGMENT
 
 
+def is_project_reserve(segment: Optional[str], *, is_pool: bool) -> bool:
+    """A PROJECT RESERVE: a pool (some location's `pool_warehouse_id`) that is ALSO
+    `segment = project` - HQ (`PLAN-hq-project-reserve-12oct.md`). Its stock is project
+    stock in general: no dealer share, outside the dealer pools' net, never a dealer line's
+    cover, and not the named project bin G12's lock protects. A project BIN (`BRW-BB`) is
+    `segment = project` too but nobody's pool, so it stays a bin."""
+    return bool(is_pool) and (segment or _DEFAULT_SEGMENT) == PROJECT_SEGMENT
+
+
 __all__ = [
     "ACTIVE_SITE_POOL_SQL",
     "PROJECT_SEGMENT",
     "SITE_POOL_SQL",
     "active_site_pool_sql",
+    "is_project_reserve",
     "is_site_pool",
     "site_pool_sql",
 ]

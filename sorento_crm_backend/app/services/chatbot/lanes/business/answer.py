@@ -1211,6 +1211,8 @@ _CROSSDOMAIN_RUNG_GRANT: dict[str, str] = {"purchase_order": "purchase_orders.pl
 DOMAIN_GRANT_REQUIRED: dict[str, str] = {
     "purchase_cost": "purchase_orders.cost",
     "sales": "sales_orders.sales_report",
+    # CA-3: what customers ask the bot, read under the Chat analytics reveal (Q4 a: nobody holds it).
+    "chat_analytics": "chatbot.analytics",
 }
 #: What the refusal CALLS the domain it just refused, for the one registered
 #: `access_denied` template (`canned.field_grant_denied_text`). A plain-language FEATURE
@@ -4180,6 +4182,16 @@ def not_found_error_message(
                         [t for t in not_found_raw if _nf_norm_raw(t) not in attach_set],
                     )
                 else:
+                    # The resolver folds dashes off the typed code, so a resolved product
+                    # is named by its STORED code ("SRT207-DIY"), not the typed "SRT207DIY".
+                    stored_by_key = {
+                        _type_norm(jsc.get(c, "code")): jsc.get(c, "code")
+                        for c in jsc.array(jsc.get(g, "compatible_entities"))
+                        if jsc.get(c, "entity_type") == "product"
+                        and jsc.truthy(jsc.get(c, "uuid"))
+                        and jsc.truthy(jsc.get(c, "code"))
+                    }
+                    product_raws = [stored_by_key.get(_type_norm(x), x) for x in product_raws]
                     prod_text = (
                         f"product {' and '.join(jsc.js_string(x) for x in product_raws)}"
                         if product_raws
