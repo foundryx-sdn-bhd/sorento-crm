@@ -76,9 +76,11 @@ def test_a_grouped_and_an_ungrouped_ledger_never_show_two_options_with_one_label
     group = CustomerGroup(id=str(uuid.uuid4()), name="FULLSHUN SANITARYWARE SDN BHD", company_id=DEFAULT_COMPANY_ID)
     db.add(group)
     db.flush()
-    _customer(db, "FSS1", "FULLSHUN SANITARYWARE SDN BHD [A/C I]", group.id)
-    _customer(db, "FSS2", "FULLSHUN SANITARYWARE SDN BHD - [CERAMIC]", group.id)
-    _customer(db, "FSS3", "FULLSHUN SANITARYWARE SDN BHD - [IBORN]")
+    san_rows = [
+        _customer(db, "FSS1", "FULLSHUN SANITARYWARE SDN BHD [A/C I]", group.id),
+        _customer(db, "FSS2", "FULLSHUN SANITARYWARE SDN BHD - [CERAMIC]", group.id),
+        _customer(db, "FSS3", "FULLSHUN SANITARYWARE SDN BHD - [IBORN]"),
+    ]
     _customer(db, "FSB1", "FULLSHUN BATH CONCEPT SDN BHD (PROJECT)")
     ent = Entity.model_construct(kind="customer", key=None, phrase="Fullshun", op="set", refers_to_held=False,
                                  doc_number=None, quantity=None)
@@ -93,7 +95,8 @@ def test_a_grouped_and_an_ungrouped_ledger_never_show_two_options_with_one_label
     assert len(labels) == len(set(labels)), labels
     assert len(res.options) == 2, labels
     san = next(o for o in res.options if "SANITARYWARE" in o.label)
-    assert set(san.payload.get("keys") or []) == {"FSS1", "FSS2", "FSS3"}
+    # PV2-FIX r3: customer refs keyed by id (codes are not unique)
+    assert set(san.payload.get("keys") or []) == {str(r.id) for r in san_rows}
 
 
 # ------------------------------------------------------------------ 3 grant covers every part of the turn
