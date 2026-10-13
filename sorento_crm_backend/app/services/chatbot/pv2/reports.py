@@ -607,6 +607,38 @@ def _rows(envelope: Mapping[str, Any]) -> list[ReportOption]:
     return out
 
 
+_SALES_REPORT_ARGS = frozenset(
+    {"basis", "measure", "sort", "date_from", "date_to", "customer_ids", "product_code", "channel"}
+)
+
+
+def _delivered_sales_report_args(plan: Any, fetch: Any, contact_id: Any, space_id: Any) -> Optional[dict[str, Any]]:
+    """`crm_sales_report` args exactly as v1's `entity_ids_transformer` builds them, for a
+    delivered amount total (no ranking, no breakdown) over what that tool takes: customer,
+    product code, channel and the date window. Anything else stays on `crm_report_ask`."""
+    from app.services.chatbot import jsc
+
+    a = plan.route_args
+    if a.get("basis") != "delivered" or a.get("measure") != "amount" or a.get("dataset") not in (None, "sales"):
+        return None
+    if not set(a) <= _SALES_REPORT_ARGS:
+        return None
+    semantic: dict[str, Any] = {"date_filter_start": a.get("date_from"), "date_filter_end": a.get("date_to")}
+    if a.get("channel"):
+        semantic["sales_channel"] = a["channel"]
+    entities = [{"entity_type": "customer", "uuid": str(c)} for c in a.get("customer_ids") or []]
+    args = fetch.entity_ids_transformer(
+        {"tool": "crm_sales_report", "entities": entities, "semantic_input": semantic},
+        space_id=fetch.space_id_or_default(space_id),
+    )
+    if a.get("product_code"):
+        args["product_code"] = a["product_code"]
+    if a.get("channel"):
+        args["channel"] = jsc.js_string(a["channel"])
+    args["contact_id"] = jsc.nullish_str(contact_id).strip()
+    return args
+
+
 def answer_report(
     spec: Any,
     *,
@@ -639,6 +671,17 @@ def answer_report(
         return ReportReply(text="\n".join([*plan.notes, plan.reply or ""]), plan=plan, pending=pending)
     if plan.status != "run":
         return ReportReply(text="\n".join([*plan.notes, plan.reply or ""]) if plan.reply else "", plan=plan)
+
+    sales_args = _delivered_sales_report_args(plan, fetch, contact_id, space_id)
+    if sales_args is not None:
+        # A delivered sales total is v1's delivery-order report (`crm_sales_report`, by DO date),
+        # not the sales-order lines `crm_report_ask` reads: same tool, args and renderer as v1.
+        envelope = fetch.call_tool("crm_sales_report", sales_args, mcp=_McpSeam(mcp_call))
+        if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
+            return ReportReply(text=fetch._REPORT_ASK_ERROR_TEXT, plan=plan, error=True)
+        out = fetch._sales_report_output(envelope, {"tool": "crm_sales_report"})
+        text = "\n".join([plan.header, *plan.notes, out["response"]])
+        return ReportReply(text=text, plan=plan)
 
     args = {
         "view": "render",

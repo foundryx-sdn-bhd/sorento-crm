@@ -248,9 +248,8 @@ def _build_result(state, actions, out, today, pending_in, report_answer, idea_an
         verdict = bridge.to_v1_verdict(state, last, today=today)
         if len(lookups) > 1:
             verdict["asks"] = [
-                {"domain": a.domain, "intent": bridge.INTENT_BY_DOMAIN.get(a.domain or "")}
-                for a in lookups
-                if a.domain
+                {"domain": d, "intent": bridge.INTENT_BY_DOMAIN.get(d or "")}
+                for d in dict.fromkeys(a.domain for a in lookups if a.domain)
             ]
         return TurnV2Result(verdict, bridge.focus_from_v2(last.held, base_focus), None, state, actions, "lookup", language, trace)
 
