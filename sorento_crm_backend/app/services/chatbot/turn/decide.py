@@ -406,6 +406,22 @@ def _keeps_subject(
     return True
 
 
+#: The verdict key `turn_runtime.without_restated_rows` sets: the kinds whose settled rows
+#: the parser echoed back as the carried subject (`current_message: false`), echoes the
+#: verdict no longer holds. CARRY-ATTACH (prod, 13 Oct 2026): "Drawing", answering "which
+#: attachment type for Srt8313?", came back as the echoed Srt8313 beside the document word
+#: with `domain_in_message: true`; with the echo dropped the turn named only the document
+#: word, read as a NEW ASK, and the eviction below dropped SRT8313 from the focus.
+RESTATED_KINDS_KEY = "restated_kinds"
+
+
+def restated_kinds(verdict: dict[str, Any]) -> set[str]:
+    """The kinds this verdict's parser restated as the carried subject (`RESTATED_KINDS_KEY`).
+    A NEW ASK keeps them: the parser said the subject is still that row."""
+    value = verdict.get(RESTATED_KINDS_KEY)
+    return {str(k) for k in value if k} if isinstance(value, list) else set()
+
+
 def domain_in_message(verdict: dict[str, Any]) -> bool | None:
     """Does THIS message carry a domain or status word of its own?
 
