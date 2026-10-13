@@ -107,3 +107,18 @@ def test_a_live_turn_of_a_duplicated_contact_still_writes_its_row(session_factor
     result = engine_mod.run_turn(_envelope_for(f"ZZT-ctc-dup-{uuid.uuid4().hex[:6]}"), session_factory=session_factory)
     assert len(_parser_rows(session_factory, [result.turn_id])) == 1
 
+
+
+def test_the_live_usage_probe_reports_a_row_for_every_parsed_turn(session_factory, seeded, stub_access, fake_provider):
+    """`scripts/chatbot_live_usage_probe.py` is the hand-test's way to make fresh live turns on a
+    copy (console turns are test turns and write no usage by design)."""
+    from scripts.chatbot_live_usage_probe import run_probe
+
+    stub_access()
+    results = run_probe(session_factory, turns=4)
+    assert len(results) == 4
+    assert all(not r["is_test"] for r in results)
+    parsed = [r for r in results if r["reached_parser"]]
+    assert len(parsed) == 4, results
+    for r in parsed:
+        assert ("chatbot_parser", "gpt-5.4-mini", 38040, 37022, 435) in r["calls"], r
