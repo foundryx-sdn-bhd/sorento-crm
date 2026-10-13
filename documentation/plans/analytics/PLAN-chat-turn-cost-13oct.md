@@ -1,6 +1,6 @@
 # PLAN: per-turn token + cost dataset in the Claude analytics connector (CHAT-TURN-COST)
 
-Status: Review. Track: standard (additive migration: two columns, one index, one price table, two views).
+Status: Ready (reviewer READY, security review clean), awaiting CI and the owner hand-test; phone (Q1) open. Track: standard (additive migration: two columns, one index, one price table, two views).
 
 Owner request 13 Oct: make per-chatbot-turn token consumption and cost queryable through the
 analytics connector (`chat_list_datasets` / `chat_describe_dataset` / `chat_query`), so the owner can
