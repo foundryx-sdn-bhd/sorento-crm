@@ -1505,6 +1505,8 @@ export interface BoardLineOrderInquiry {
    */
   rejected_reason?: string | null;
   rejected_by_name?: string | null;
+  /** When purchasing refused it: naive UTC ISO, like every stamp on the wire. */
+  rejected_at?: string | null;
   /**
    * AC-RL-07 (`PLAN-oi-replan-received-links.md`): what backs the instruction - the
    * winning row's own documents, the SAME reader (`links_for_rows`) the OI worklist

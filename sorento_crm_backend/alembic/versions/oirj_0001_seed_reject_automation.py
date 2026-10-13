@@ -74,7 +74,8 @@ _BODY_HTML = """\
 </table>
 <p>Reason: {{ reject.reason | default("", true) }}</p>
 <p>Rejected{% if actor %} by {{ actor.name }} ({{ actor.email }}){% endif %} on {{ reject.rejected_at }}.</p>
-<p><a href="{{ reject.link }}">Open in Order Inquiries</a></p>
+{% if reject.board_link %}<p><a href="{{ reject.board_link }}">Open the sales order on the planning board</a></p>
+{% endif %}<p><a href="{{ reject.link }}">Open in Order Inquiries</a></p>
 """.replace("__TABLE_STYLE__", _TABLE_STYLE).replace("__TH_STYLE__", _TH_STYLE).replace(
     "__TD_STYLE__", _TD_STYLE
 )
@@ -91,7 +92,8 @@ ITEM CODE | QTY | DELIVERY DATE
 {% endfor %}
 Reason: {{ reject.reason | default("", true) }}
 Rejected{% if actor %} by {{ actor.name }}{% endif %} on {{ reject.rejected_at }}.
-Open: {{ reject.link }}
+{% if reject.board_link %}Planning board: {{ reject.board_link }}
+{% endif %}Order inquiry: {{ reject.link }}
 """
 
 

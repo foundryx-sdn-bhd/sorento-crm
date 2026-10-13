@@ -186,7 +186,11 @@ def test_single_reject_dispatches_one_email_and_one_in_app(api, monkeypatch):
     assert inquiry.inquiry_no in notice["title"]
     assert "1 line rejected" in notice["title"]
     assert "No stock at supplier" in (notice["body"] or "")
-    assert notice["data"]["link"] == f"/project-sales/order-inquiries/{inquiry.id}"
+    # Owner hand test: the bell opens the SO's planning board on the refused line.
+    assert notice["data"]["link"] == (
+        f"/project-sales/fulfilment-planning?orders={fixture['core_so'].so_number}"
+        f"&lines={row.so_line_id}"
+    )
     assert notice["source_entity_type"] == "order_inquiry"
     assert notice["source_entity_id"] == str(inquiry.id)
     assert " · " not in notice["title"] and " · " not in (notice["body"] or "")
@@ -502,6 +506,7 @@ _CTX = {
         "reason": "Supplier discontinued this finish",
         "rejected_at": "13/10/2026 14:05",
         "link": "https://crm.example/project-sales/order-inquiries/abc",
+        "board_link": "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&lines=l1,l2",
         "line_count": 2,
         "lines": [
             {"item_code": "WC-1234-WH", "qty": "10", "delivery_date": "25/10/2026"},
@@ -530,6 +535,9 @@ def test_template_renders_every_fact():
             "Joey",
             "13/10/2026 14:05",
             "https://crm.example/project-sales/order-inquiries/abc",
+            "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&amp;lines=l1,l2"
+            if body is out["body_html"]
+            else "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&lines=l1,l2",
         ):
             assert needle in body, (needle, body)
         assert "None" not in body

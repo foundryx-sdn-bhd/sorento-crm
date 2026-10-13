@@ -4653,6 +4653,11 @@ class ProjectOrderInquiryService:
                 OrderInquiryRow.verb.in_((IV_ORDER, IV_CANCEL_BALANCE)),
                 OrderInquiryRow.supply_decision_id.isnot(None),
                 OrderInquiryRow.supply_decision_id != decision.id,
+                # The same rule as the branch above, for the reject on a MULTI-line order:
+                # `uncover_lines` re-confirms the rest of the order through this branch,
+                # and retiring the refused row here left the board (which skips cancelled
+                # rows) with nothing to say why the line came back (PR 1622 hand test).
+                OrderInquiryRow.ack_state != ACK_REJECTED,
             )
         stale = query.all()
         # SO422492 BUG A: a line AutoCount changed that CS has not decided yet leaves the
@@ -7027,6 +7032,9 @@ class ProjectOrderInquiryService:
         `raiser` is `None` when the raiser IS the rejecter, or is not an active user:
         nobody to tell. The automation still runs so an admin-added recipient hears.
         """
+        from urllib.parse import urlencode
+
+        from app.config import settings
         from app.models.user import User
         from app.services.automation_triggers import build_order_inquiry_link
 
@@ -7070,9 +7078,24 @@ class ProjectOrderInquiryService:
                 }
                 for row in inquiry_rows
             ]
+            # Where CS acts on it: the SO's planning board with the refused lines named,
+            # read by the board's own `lines` param. No SO number (a draft never
+            # published) leaves only the inquiry to open.
+            board_path = None
+            if facts.get("so_number"):
+                line_ids = sorted(
+                    {str(row.so_line_id) for row in inquiry_rows if row.so_line_id}
+                )
+                board_path = (
+                    "/project-sales/fulfilment-planning?"
+                    + urlencode({"orders": facts["so_number"]}, safe="")
+                    + (f"&lines={','.join(line_ids)}" if line_ids else "")
+                )
+            frontend = (settings.frontend_base_url or "").rstrip("/")
             notices.append(
                 {
                     "inquiry_id": inquiry_id,
+                    "board_path": board_path,
                     "action_id": action_id,
                     "raiser_user_id": raiser_id if raiser else None,
                     "context": {
@@ -7088,6 +7111,9 @@ class ProjectOrderInquiryService:
                             "lines": lines,
                             "line_count": len(lines),
                             "link": build_order_inquiry_link(inquiry_id),
+                            "board_link": (
+                                f"{frontend}{board_path}" if board_path else None
+                            ),
                         },
                         "actor": actor,
                         "raiser": raiser,
@@ -12320,7 +12346,8 @@ def register_order_inquiry_post_commit_dispatch() -> None:
                         data={
                             # The app-relative path, so the bell routes in-app
                             # (`NotificationItem.tsx` `toInternalPath`).
-                            "link": f"/project-sales/order-inquiries/{item['inquiry_id']}",
+                            "link": item.get("board_path")
+                            or f"/project-sales/order-inquiries/{item['inquiry_id']}",
                         },
                         source_entity_type="order_inquiry",
                         source_entity_id=item["inquiry_id"],

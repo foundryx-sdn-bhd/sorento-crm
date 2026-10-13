@@ -113,7 +113,11 @@ import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
 import { FulfilmentBoardListView } from './FulfilmentBoardListView';
 import { FulfilmentBoardMatrix } from './FulfilmentBoardMatrix';
 import { DecisionStrip } from './DecisionStrip';
-import { cellCarriesKind, contributionCarriesKind } from '../../_shared/lib/decisionStrip';
+import {
+  cellCarriesKind,
+  contributionCarriesKind,
+  rejectedLineCount,
+} from '../../_shared/lib/decisionStrip';
 import type { SupplyKind } from '../../_shared/lib/supplyVocabulary';
 
 /**
@@ -644,6 +648,36 @@ export function FulfilmentBoardPanel({
     () => board.data?.contributions ?? [],
     [board.data],
   );
+  const purchasingRejected = React.useMemo(
+    () => rejectedLineCount(allContributions),
+    [allContributions],
+  );
+
+  /**
+   * `?lines=<project line id,...>`: the lines a link was about (PR 1622: the rejection email
+   * and bell open the SO's board on the lines purchasing refused). Read ONCE, on the first
+   * board that carries one of them: the list view, narrowed to "Rejected by purchasing" when
+   * the linked lines read that way, and the first of them expanded and scrolled to. A plain
+   * reading aid: the filter it sets clears like any other, and a reload simply applies it again.
+   */
+  const linkedLinesApplied = React.useRef(false);
+  React.useEffect(() => {
+    if (linkedLinesApplied.current || !board.data) return;
+    const wanted = new Set((searchParams.get('lines') ?? '').split(',').filter(Boolean));
+    if (wanted.size === 0) return;
+    linkedLinesApplied.current = true;
+    const matches = allContributions.filter(
+      (c) => c.project_line_id && wanted.has(c.project_line_id),
+    );
+    if (matches.length === 0) return;
+    setView('list');
+    setKindFilter(null);
+    setScope('all');
+    if (matches.some((c) => c.order_inquiry?.ack_state === 'rejected')) {
+      setStatusFilter(['purchasing_rejected']);
+    }
+    setFocusKey(matches[0].key);
+  }, [board.data, allContributions, searchParams]);
 
   /**
    * #1312 (AC-U2, fix round 1 should-fix 3): ONE lookup call for the WHOLE
@@ -2264,6 +2298,10 @@ export function FulfilmentBoardPanel({
               className="text-sm text-muted-foreground tabular-nums"
             >
               {`${confirmSummary.toConfirm} to confirm · ${confirmSummary.rejected} rejected`}
+              {/* PR 1622 owner hand test: a line purchasing refused is back with CS, and the
+                  header said "0 rejected" over it. Counted apart from CS's own rejections
+                  (which Confirm acts on), and only while one is open. */}
+              {purchasingRejected > 0 ? ` · ${purchasingRejected} rejected by purchasing` : ''}
               {/* C4 (code review round 3 batch 2): a saved line the engine has re-suggested
                   is dropped from Confirm with no trace beyond the pill itself - stated here
                   too, and only while it applies, the same rule the two figures beside it

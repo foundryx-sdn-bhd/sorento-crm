@@ -2319,7 +2319,7 @@ describe('FulfilmentBoardListView: Columns and Status filter', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^Filters/ }));
     await userEvent.click(await screen.findByText('Status'));
-    await userEvent.click(await screen.findByRole('option', { name: /Rejected/ }));
+    await userEvent.click(await screen.findByRole('option', { name: /^Rejected$/ }));
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByText('SO397451')).not.toBeInTheDocument());

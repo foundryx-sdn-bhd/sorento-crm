@@ -2061,6 +2061,7 @@ class FulfilmentBoardService:
                     "ack_state": ack_state,
                     "rejected_reason": None,
                     "rejected_by_name": None,
+                    "rejected_at": None,
                     "_row_id": str(row_id),
                     "redirected": bool(redirected_to_pool),
                 }
@@ -2092,6 +2093,7 @@ class FulfilmentBoardService:
                 "ack_state": None if answered_refusal else ack_state,
                 "rejected_reason": None,
                 "rejected_by_name": None,
+                "rejected_at": None,
                 # AC-RL-07: this ROW's own id (to address `links_for_rows`) and whether
                 # IT was redirected - popped/resolved below, never sent as `_row_id`.
                 "_row_id": str(row_id),
@@ -2124,6 +2126,7 @@ class FulfilmentBoardService:
             entry["ack_state"] = ACK_REJECTED
             entry["rejected_reason"] = reason
             entry["rejected_by_name"] = name
+            entry["rejected_at"] = rejected_at
         # A LINE WITH A LIVE INSTRUCTION IS ABOUT THAT INSTRUCTION. It replaces whatever
         # last-wins left standing, so the number the cell prints is the row that decides the
         # line and not a cancelled or refused one that happened to be written after it. A
