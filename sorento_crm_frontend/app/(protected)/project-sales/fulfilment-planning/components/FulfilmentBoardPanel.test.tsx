@@ -5458,6 +5458,52 @@ describe('Purchasing refusals on the board (PR 1622)', () => {
     expect(screen.queryByTestId('fulfilment-board-matrix')).not.toBeInTheDocument();
   });
 
+  function mountedPanel(soNumbers: string[]) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    const tree = (orders: string[]) => (
+      <QueryClientProvider client={client}>
+        <FulfilmentBoardPanel soNumbers={orders} onBack={vi.fn()} batchId={null} />
+      </QueryClientProvider>
+    );
+    const utils = render(tree(soNumbers));
+    return { rerenderWith: (orders: string[]) => utils.rerender(tree(orders)) };
+  }
+
+  const twoRefused = () =>
+    withContribution(
+      boardOf([demand(), demand({ line_no: 2, item_code: 'WESERP10C' })]),
+      () => true,
+      (entry) => ({ ...refused(entry), project_line_id: `pl-${entry.line_no}` }),
+    );
+
+  it('a second link while the board stays open applies again (review S2)', async () => {
+    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-1');
+    getPlanningBoard.mockResolvedValue(twoRefused());
+    const { rerenderWith } = mountedPanel(['SO403340']);
+    await screen.findByText('Status: Rejected by purchasing');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filter: Status: Rejected by purchasing' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Status: Rejected by purchasing')).not.toBeInTheDocument(),
+    );
+    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-2');
+    rerenderWith(['SO403340']);
+    expect(await screen.findByText('Status: Rejected by purchasing')).toBeInTheDocument();
+  });
+
+  it('a first board without the linked line does not use the link up (review S2)', async () => {
+    currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-1');
+    getPlanningBoard
+      .mockResolvedValueOnce(boardOf([demand()]))
+      .mockResolvedValue(withContribution(boardOf([demand()]), () => true, refused));
+    const { rerenderWith } = mountedPanel(['SO403340']);
+    await screen.findByTestId('fulfilment-board-matrix');
+    expect(screen.queryByText('Status: Rejected by purchasing')).not.toBeInTheDocument();
+    rerenderWith(['SO403340', 'SO398322']);
+    expect(await screen.findByText('Status: Rejected by purchasing')).toBeInTheDocument();
+  });
+
   it('?lines= naming no line on this board changes nothing', async () => {
     currentSearchParams = new URLSearchParams('view=grid&scope=all&lines=pl-other');
     getPlanningBoard.mockResolvedValue(

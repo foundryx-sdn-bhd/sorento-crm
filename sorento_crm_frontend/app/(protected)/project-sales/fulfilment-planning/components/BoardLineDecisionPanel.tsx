@@ -153,6 +153,10 @@ export function BoardLineDecisionPanel({
   const [reason, setReason] = React.useState(
     () => seedReason(decision) || seedReason(contribution.decision) || '',
   );
+  // What the box was SEEDED with (PR 1622 review B1). The seed can be the engine's own borrow
+  // sentence, so only text the planner actually changed - or this line's own earlier Buy
+  // reason - is a reason CS gave for the Buy, the one purchasing reads on its new row.
+  const reasonSeed = React.useRef(reason);
   // The draft's own answer, false included: an untick is a decision, and reading past it to
   // the frozen `true` on a covered line put the tick straight back on screen.
   const [suspected, setSuspected] = React.useState(() =>
@@ -531,7 +535,9 @@ export function BoardLineDecisionPanel({
     const next = draftFor(contribution, decision);
     const stock = lineBalance({ ...next, buy_qty: '0' });
     setDraft(next);
-    setReason(seedReason(decision) || seedReason(contribution.decision) || '');
+    const reseeded = seedReason(decision) || seedReason(contribution.decision) || '';
+    reasonSeed.current = reseeded;
+    setReason(reseeded);
     setSuspected(
       decision
         ? Boolean(decision.suspected_system_issue)
@@ -583,6 +589,15 @@ export function BoardLineDecisionPanel({
     try {
       let ok: boolean | void;
       const approvingNow = approving && !covered;
+      // PR 1622 (owner Q1): the planner's own words on a line kept as Buy are that Buy's
+      // reason, and the server carries them to purchasing's new order inquiry row.
+      const typed = reason.trim();
+      const ownBuyReason =
+        toMinor(draft.buy_qty) > 0 &&
+        typed !== '' &&
+        (typed !== reasonSeed.current.trim() || typed === (decision?.buy_reason ?? '').trim())
+          ? typed
+          : '';
       if (approvingNow) {
         ok = await onDecide({
           ...suggestionWithReasons(contribution, {
@@ -590,7 +605,7 @@ export function BoardLineDecisionPanel({
             // fan-out Save's amending branch below uses. AC-28: `reason` travels on the
             // approving branch too, not only the amending `else` below.
             reason,
-            buy_reason: foldedDraft.buy_reason,
+            buy_reason: foldedDraft.buy_reason || ownBuyReason,
             borrow: foldedDraft.borrow,
             // S2 (fix round 2, reviewer): the Order back switch and Document cited box are on
             // screen for this exact line - a wholly-bought approving save used to take them

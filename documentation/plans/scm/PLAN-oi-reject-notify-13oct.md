@@ -127,8 +127,11 @@ the SO and can directly see which lines are rejected to take next action".
   truncated, full sentence as tooltip. The pill keeps the one-press Save and Reject a
   suggested line has (review B1).
 - Q1 = yes: the reason CS writes on a Buy rides to the new order inquiry row as "CS: <reason>"
-  in its note, which the worklist shows as "Why this instruction". Panel Saves send it; the
-  bulk/strip approval path sends no reason (unchanged).
+  in its note, which the worklist shows as "Why this instruction". Applies to every Buy a planner
+  gives a reason for, not only a re-Buy after a refusal (the simpler rule). Only text the
+  planner typed counts: the panel's Reason box can be seeded with an engine sentence, which never
+  travels (review B1). The tick and Save all suggested send no reason (unchanged). A "Was" inside
+  a CS reason never reads as a date stamp (`_carries_date_stamp`).
 - Q2 = no reminders. Q3 = no extra notification: a re-Buy produces the normal order inquiry.
 - Known, not changed here: a refused row stays RAISED when CS later covers the line from stock
   or borrow (the single-line path always did); netting already ignores refused rows.

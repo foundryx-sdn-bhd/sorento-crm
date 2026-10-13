@@ -746,3 +746,21 @@ def test_buy_without_a_cs_reason_adds_no_cs_note(api, monkeypatch):
     _register()
     row = _raise_one_row(api, qty="10")["row"]
     assert "CS:" not in (row.note or "")
+
+
+@pytest.mark.parametrize(
+    "note,expected",
+    [
+        (None, False),
+        ("CS: Was told by the customer to wait", False),
+        ("CS: Washbasin finish changed", False),
+        ("Was 25/08/2026", True),
+        ("Replaces 10 used; CS: Customer ok; Was 25/08/2026", True),
+    ],
+)
+def test_cs_note_never_reads_as_a_date_stamp(note, expected):
+    """Review S1: a CS reason containing "Was" must not suppress the date stamp a move
+    earns on the freshly raised Buy row."""
+    from app.services.planning_change_service import _carries_date_stamp
+
+    assert _carries_date_stamp(note) is expected

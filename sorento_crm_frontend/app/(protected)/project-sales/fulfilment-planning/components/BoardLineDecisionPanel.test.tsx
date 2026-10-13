@@ -3082,3 +3082,57 @@ describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-
     expect(screen.getByTestId('reserve-location-ZZT-POOL')).toBeInTheDocument();
   });
 });
+
+/**
+ * PR 1622 (owner Q1, review B1): the planner's own words on a line kept as Buy travel as the
+ * Buy's reason to purchasing's new order inquiry row - never a sentence the Reason box was
+ * merely SEEDED with (which can be the engine's own borrow sentence).
+ */
+describe('BoardLineDecisionPanel: the Buy reason purchasing reads (PR 1622)', () => {
+  const buying: Partial<BoardContribution> = {
+    sources: [{ kind: 'buy', qty: '24', reason: 'remaining uncovered need' }] as BoardContribution['sources'],
+    qty_proposed_reserve: '0',
+    qty_proposed_buy: '24',
+  };
+
+  it('carries what the planner typed on a line kept as Buy', () => {
+    const { onDecide } = renderPanel(buying);
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Customer accepted the chrome finish' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(onDecide).toHaveBeenCalledWith(
+      expect.objectContaining({ verdict: 'approved', buy_reason: 'Customer accepted the chrome finish' }),
+    );
+  });
+
+  it('never carries a sentence the box was only seeded with', () => {
+    const { onDecide } = renderPanel(buying, {
+      verdict: 'approved',
+      reason: 'ENGINE: free stock at DC1 outside the group',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    const saved = onDecide.mock.calls.at(-1)?.[0] ?? {};
+    expect(saved.buy_reason).toBeFalsy();
+  });
+
+  it('keeps the line\'s own earlier Buy reason on an untouched re-save', () => {
+    const { onDecide } = renderPanel(buying, {
+      verdict: 'approved',
+      reason: 'Customer accepted the chrome finish',
+      buy_reason: 'Customer accepted the chrome finish',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(onDecide).toHaveBeenCalledWith(
+      expect.objectContaining({ buy_reason: 'Customer accepted the chrome finish' }),
+    );
+  });
+
+  it('carries nothing when the line buys nothing', () => {
+    const { onDecide } = renderPanel();
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Took it from stock' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    const saved = onDecide.mock.calls.at(-1)?.[0] ?? {};
+    expect(saved.buy_reason).toBeFalsy();
+  });
+});
