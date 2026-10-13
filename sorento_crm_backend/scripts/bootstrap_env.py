@@ -176,6 +176,19 @@ def create_analytics_connector() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_revoked_at TIMESTAMP"))
         views.ensure_views(conn)
+        # CHAT-TURN-COST (`ctc_0001_turn_costs`): the price table and the column come from
+        # `create_all`; the seeds and the two cost views exist only in the migration body.
+        # `create_all` adds neither column to a table that already exists (an older database).
+        from app.services.analytics_connector import prices
+
+        conn.execute(text("ALTER TABLE ai_assistant_usage_logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER"))
+        conn.execute(text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ai_assistant_usage_logs_chatbot_turn_id "
+            "ON ai_assistant_usage_logs (chatbot_turn_id)"
+        ))
+        prices.seed_prices(conn)
+        views.ensure_cost_views(conn)
     log.info("analytics_connector views created")
 
 

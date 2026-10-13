@@ -777,3 +777,21 @@ def test_a_product_both_named_and_asked_is_two_items(session_factory):
         ("product", str(pid), "asked"),
         ("product", str(pid), "named"),
     ]
+
+
+def test_the_fact_keeps_the_parser_prompt_version(session_factory):
+    """CHAT-TURN-COST: the analytics connector's `turn_costs` reads the prompt version off the
+    fact row, so it never has to open the (large) trace per turn."""
+    from tests.chatbot._chat_facts_helpers import stage
+
+    cid = _cid("pv")
+    seed_contact(session_factory, cid, customer=True)
+    with_version = seed_turn(
+        session_factory, cid,
+        records=[stage("understood", facts={"prompt_version": 52, "domain": "inventory"}), *answered_trace()],
+    )
+    without = seed_turn(session_factory, cid, records=answered_trace())
+    assert _record(session_factory, with_version) is True
+    assert _record(session_factory, without) is True
+    assert fact_rows(session_factory, turn_id=with_version)[0].prompt_version == 52
+    assert fact_rows(session_factory, turn_id=without)[0].prompt_version is None

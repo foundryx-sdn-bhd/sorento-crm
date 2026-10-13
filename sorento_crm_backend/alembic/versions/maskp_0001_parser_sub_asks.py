@@ -20,7 +20,7 @@ crew's live parser checks; rolling back is the reverse move.
 Idempotent: a version already carrying this exact template publishes nothing.
 
 Revision ID: maskp_0001_parser_sub_asks
-Revises: scope_seeds_debtor_company
+Revises: ctc_0001_turn_costs
 """
 import logging
 from pathlib import Path
@@ -30,7 +30,7 @@ from alembic import op
 from sqlalchemy.orm import Session
 
 revision = "maskp_0001_parser_sub_asks"
-down_revision = "scope_seeds_debtor_company"
+down_revision = "ctc_0001_turn_costs"
 branch_labels = None
 depends_on = None
 
