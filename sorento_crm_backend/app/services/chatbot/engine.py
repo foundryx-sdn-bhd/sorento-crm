@@ -5304,8 +5304,16 @@ def _run_stages_body(  # noqa: PLR0915
         gated_need = grant_for_domain(gated_domain)
         plan_domains = {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
         domain_refusal_text: str | None = None
+        # SO-PO-REF: a customer's own PO reference (the parser's `po_refs`, read as one for
+        # every audience but staff) is a sales order question, answered or refused under
+        # the SO grant by `lanes.business.run_fetch`'s `po_refs` arm, never under the
+        # supplier PO grant this gate checks.
+        customer_po_ref_ask = bool(
+            [w for w in jsc.array(verdict.get("po_refs")) if isinstance(w, str) and w.strip()]
+        ) and turn_state.reads_customer_po_refs(state_out.profile)
         if (
             not sales_report_grant_refused
+            and not customer_po_ref_ask
             and gated_need
             and gated_need != _SALES_REPORT_GRANT
             and gated_need not in set(access.get("attributes") or [])
