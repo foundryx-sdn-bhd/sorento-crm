@@ -71,6 +71,11 @@ directly; this sandbox has no dev data, so the live values come from the hand te
   reaches every version carrying the token on deploy (dev v88); prod v52 has no token and gets it
   through a NEW version from the publisher. Recommendation: keep the variable; no label moves.
 
+## Answers
+
+Crew 13 Oct: Q2 (b), Q3 (a), Q4 yes, Q5 yes. Owner 13 Oct: Q1 (a), wording
+`No seat cover is on record for <code>.` approved as is.
+
 ## Built (after crew answers and the lane review)
 
 - No code named and none carried ("which seat cover fits my WC?"): the #1601 ask line,

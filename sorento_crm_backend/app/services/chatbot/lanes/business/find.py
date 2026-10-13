@@ -31,8 +31,8 @@ from typing import Any
 from app.services import product_find
 from app.services.chatbot import jsc
 
-#: Q1 (a), the owner's wording to confirm: the reply when no named code has a link. One
-#: constant (with its ms / zh in `product_find`'s labels), so a new wording is a one-line edit.
+#: Q1 (a), wording approved by the owner (13 Oct): the reply when no named code has a link.
+#: One constant, with its ms / zh in `product_find`'s labels.
 NO_SEAT_COVER_LINE = product_find.FITS_NONE_LINE
 #: The same line for a code the data calls a seat cover.
 NO_WC_LINE = product_find.FITS_NO_WC_LINE

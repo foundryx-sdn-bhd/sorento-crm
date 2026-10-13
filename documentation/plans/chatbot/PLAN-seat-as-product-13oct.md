@@ -2,7 +2,7 @@
 
 Status: Review (lane SEAT-AS-PRODUCT, PR #1613). Track: standard (chatbot turn pipeline; no
 migration, no FE change, no auth/RBAC change). Card: `CARD-seat-as-product-13oct.md` (crew
-answered Q2 b, Q3 a, Q4 yes, Q5 yes; Q1 built as (a), one constant, owner to confirm wording).
+answered Q2 b, Q3 a, Q4 yes, Q5 yes; Q1 (a), wording `No seat cover is on record for <code>.` approved by the owner 13 Oct).
 
 ## Owner rule (13 Oct)
 
