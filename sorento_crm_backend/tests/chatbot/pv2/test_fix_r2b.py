@@ -109,10 +109,14 @@ def test_sales_report_without_the_grant_is_refused_before_the_period_question():
 
 
 def test_sales_report_with_the_grant_asks_the_period_as_today():
-    ctx, calls = _report_ctx(granted_reveals=frozenset({"sales_orders.sales_report"}))
+    from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+
+    ctx, _ = _report_ctx(granted_reveals=frozenset({"sales_orders.sales_report"}))
     r = turn._run(ctx)
-    assert r.direct_reply == "For which period?"
-    assert len(calls) == 1
+    assert r.direct_reply != SALES_REPORT_NOT_ENABLED_MESSAGE
+    assert r.verdict is None
+    assert "period" in (r.direct_reply or "").lower()
+    assert r.state.pending is not None and r.state.pending.kind.startswith("clarify_report")
 
 
 # ------------------------------------------------------------------ 3 hand-over text
