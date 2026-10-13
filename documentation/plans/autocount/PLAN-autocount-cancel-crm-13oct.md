@@ -1,6 +1,6 @@
 # PLAN: AutoCount Cancel SO / Cancel PO in the CRM (AC-CANCEL-CRM)
 
-Status: Review (fix round 1 in, reviewers verifying; PR #1623). Track: full (migration, RBAC slugs).
+Status: On hold (owner rule 13 Oct: exact links only; owner deciding how to get line keys; PR #1623 must not merge as it stands). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
 
 ## Goal
@@ -60,9 +60,28 @@ or incoming.
   SPO sources are handled like any PO.
 - R6 correction (crew): a line CS cancelled on the board (#1524, `cancelled_at`) is never reopened.
 
-Facts from crew's SORENTO schema read (13 Oct): XS 15,201 rows, XP 77 (all-time). FromDocDtlKey unset on
-~23% of XS and ~10% of XP lines (all-time); 1,134 XS and 93 XP keys point at SO/PO lines that no longer
-exist. Owner's 2026-only figure: 854 of 5,365 XS lines ambiguous. `Cancelled` T = DocStatus V.
+Facts from crew's SORENTO schema read (13 Oct): XS 15,201 rows, XP 77 (all-time). 1,134 XS and 93 XP keys
+point at SO/PO lines that no longer exist. Owner's 2026-only figure: 854 of 5,365 XS lines ambiguous.
+`Cancelled` T = DocStatus V.
+
+XSDTL `FromDocDtlKey` by year (crew, FXView read-only, 13 Oct 21:20; this replaces an earlier "~23% / ~25%
+empty, all-time" figure, which was wrong): 2023 7,898 of 7,898 keyed; 2024 5,420 of 6,544; 2025 0 of 7,553;
+2026 0 of 5,510. Every line was keyed until Oct 2024, Nov 2024 208 of 658, and from Dec 2024 the key is
+ALWAYS NULL (`FromDocNo` is still filled). AutoCount API DO lines carry `FromDocDtlKey` 0 always. FXView is
+denied SELECT on DO / DODTL (and GRN) on Sorento and Mocha (error 229); readable: Consignment (+ DTL /
+Return), Creditor, Debtor, Item*, Location, PO / PODTL, SO / SODTL, XP / XPDTL, XS / XSDTL. Mocha needs
+pymssql `tds_version='7.0'`.
+
+## Owner rule (13 Oct, supersedes Q2 a and Q3 below)
+
+Cancel attribution must be 100% correct: exact links only. No lowest-Seq fallback, no tie-break that rests
+on DO lines the CRM cannot link, no flag-for-CS. ON HOLD: the owner is deciding how to get line keys (XS
+lines have none since Dec 2024, DO lines have none in the API). Until then the matcher change below is not
+built; head a8e9543c still runs the Q2 a tie-break and the Q3 fallback and must not merge as it stands.
+Once decided, the change is one place (`autocount_cancel_matching.resolve_group` and its caller): keep the
+line-key match and the single-candidate item match, drop the fallback (and the tie-break unless DO lines
+carry exact SO line keys); anything else stays unmatched, counted in the sync log, never counted as
+cancelled.
 
 ## Rules
 
