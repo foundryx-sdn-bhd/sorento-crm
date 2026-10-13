@@ -115,7 +115,7 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
-    refusal = _grant_refusal(ctx, actions, out)
+    refusal = _grant_refusal(ctx, actions, out, state_in.held.report)
     if refusal is not None:
         language = clarify_copy.lang(out.language)
         trace = {"acts": [a.act for a in out.asks], "actions": [a.type for a in actions], "grant_refused": True}
@@ -167,7 +167,7 @@ def _is_sales_dataset(spec: Any) -> bool:
     return ds is None or ds.key == "sales"
 
 
-def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[str, str] | None:
+def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any, held_report: Any = None) -> tuple[str, str] | None:
     """(reply, route) when this turn asks for a domain the contact holds no grant for, else
     None. Refused before any lookup or report question, so nothing of the data is read."""
     granted = ctx.granted_reveals or frozenset()
@@ -185,9 +185,16 @@ def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[st
             return text, "clarify"
     if SALES_REPORT_GRANT in granted:
         return None
+    from app.services.chatbot.pv2 import reports
+
+    merged = held_report
     for ask in getattr(out, "asks", None) or []:
         report = getattr(ask, "report", None)
-        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and _is_sales_dataset(report):
+        if report is None:
+            continue
+        # Judge the spec the turn will run (held + this refine), never a partial refine.
+        merged = reports.edit_report(merged, report, cleared=getattr(ask, "cleared", None) or ())
+        if ask.domain in answer_mod.REPORT_DOMAINS and merged is not None and _is_sales_dataset(merged):
             from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
             return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
