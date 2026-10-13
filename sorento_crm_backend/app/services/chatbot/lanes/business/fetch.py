@@ -285,14 +285,15 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
         return None
     # A brand the parser named, this turn or carried ("only sorento" after a size list, crew
     # rule 13 Oct): the product's own brand narrows the list, by the brand's name on file. A
-    # name no brand carries keeps the ask on the resolver path, as an unmapped subject does.
+    # name no brand carries narrows nothing (reviewer N2: dropping every constraint with it
+    # lost the size and listed other sizes); the class and the size still filter.
     brands: list[dict[str, Any]] = []
     for e in entities:
         if jsc.nullish_str(e.get("hint")).strip().lower() != "brand":
             continue
         name = _brand_on_file(db, jsc.nullish_str(e.get("canonical_code")).strip() or jsc.nullish_str(e.get("raw")).strip())
         if name is None:
-            return None
+            continue
         brand = {"key": "brand", "op": "eq", "value": name}
         if brand not in brands:
             brands.append(brand)
