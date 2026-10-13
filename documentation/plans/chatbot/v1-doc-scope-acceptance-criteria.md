@@ -7,5 +7,6 @@
 - AC-3: An unlinked non-staff contact asking for a DO list with no number gets no other
   customer's DOs.
 - AC-4: A linked dealer gets their own DOs / SOs, never another customer's.
-- AC-5: Staff (office access) behaviour unchanged: any customer's documents as today.
+- AC-5: Staff behaviour unchanged: any customer's documents as today. Staff = tier office OR an
+  active office access type; either alone is enough.
 - AC-6: No new reply text.
