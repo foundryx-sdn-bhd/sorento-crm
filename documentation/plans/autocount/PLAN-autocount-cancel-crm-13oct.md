@@ -1,6 +1,6 @@
 # PLAN: AutoCount Cancel SO / Cancel PO in the CRM (AC-CANCEL-CRM)
 
-Status: On hold (owner rule 13 Oct: exact links only; owner deciding how to get line keys; PR #1623 must not merge as it stands). Track: full (migration, RBAC slugs).
+Status: In progress (exact-attribution rework built; waiting on the crew bucket counts and the owner's answer on how undetermined groups display). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
 
 ## Goal
@@ -72,16 +72,13 @@ denied SELECT on DO / DODTL (and GRN) on Sorento and Mocha (error 229); readable
 Return), Creditor, Debtor, Item*, Location, PO / PODTL, SO / SODTL, XP / XPDTL, XS / XSDTL. Mocha needs
 pymssql `tds_version='7.0'`.
 
-## Owner rule (13 Oct, supersedes Q2 a and Q3 below)
+## Owner rule (13 Oct, supersedes Q2 a and Q3)
 
-Cancel attribution must be 100% correct: exact links only. No lowest-Seq fallback, no tie-break that rests
-on DO lines the CRM cannot link, no flag-for-CS. ON HOLD: the owner is deciding how to get line keys (XS
-lines have none since Dec 2024, DO lines have none in the API). Until then the matcher change below is not
-built; head a8e9543c still runs the Q2 a tie-break and the Q3 fallback and must not merge as it stands.
-Once decided, the change is one place (`autocount_cancel_matching.resolve_group` and its caller): keep the
-line-key match and the single-candidate item match, drop the fallback (and the tie-break unless DO lines
-carry exact SO line keys); anything else stays unmatched, counted in the sync log, never counted as
-cancelled.
+Cancel attribution must be 100% correct: exact links only. No lowest-Seq fallback, no tie-break, no guess,
+no flag-for-CS. No DO / DODTL SQL ever: DO data comes only through hapi `/deliveryorderbydocdate`, whose
+lines carry `FromDocDtlKey` 0, so a repeated item's DO line never links to an SO line. Attribution is exact
+arithmetic per (SO, item, location) group, built as R2 step 4 below. Status rule (b): "Partly cancelled"
+only while the line is open; a done line reads Completed and the Qty cancelled column carries the cancel.
 
 ## Rules
 
@@ -94,19 +91,22 @@ R2. Matching, per cancel line, from stored state only (never arrival order):
     2. Key set, line missing, its document known: unmatched (`dangling_line_key`); no item fallback.
     3. Named document (SO / PO / SPO, the number's table decides) not in the CRM: waiting (`order_not_found`),
        retried every batch and whenever that order is pushed.
-    4. No key: candidates = lines of that document with the same item, narrowed by Location when that leaves
-       any. One candidate: matched (`item`). None: unmatched (`item_not_on_order`).
-    5. Several (Q2 a), per group (document + item): a candidate's unexplained transfer = TransferedQty - DO
-       (or GRN) qty linked to it - cancel qty matched to it by line key. A candidate qualifies for a cancel
-       line when its unexplained transfer >= the cancel qty. Exactly one qualifier = tentative; if the
-       tentative picks on one candidate exceed its unexplained transfer, none of those picks stand.
-       Standing picks: matched (`tie_break`).
-    6. Fallback (Q3) for what is left, in a fixed order (cancel DocDate, DocNo, DtlKey): the earliest candidate
-       line (lowest Seq; a PO line by DtlKey) whose remaining unexplained transfer can take the whole qty;
-       matched (`fallback`), history row "auto-matched: ambiguous cancel <XS no>". None can: unmatched
-       (`no_fit`).
-R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), capped at ordered (SPO:
-    allocated), recomputed for every touched line at the end of every batch, deletion sweep and order push.
+    4. No key: decided with its group, one document + item + location (strict, blank equals blank), by
+       `autocount_cancel_matching.resolve_group`. T_i = a group line's TransferedQty (SO `qty_delivered`,
+       PO `qty_received`, SPO `stated_received`) less the live line-key cancels on it; D = the group's DO
+       qty (DO lines linked to a group line, or naming the SO, item and location as sent; GRN qty on the
+       group's lines for a PO / SPO); C = the group's key-less cancel qty.
+       - No line: unmatched (`item_not_on_order`).
+       - One line: matched to it (`item`).
+       - C = 0: matched, nothing cancelled (`group_none`).
+       - D = 0 and C = sum(T_i): matched (`group_whole`); the cancel lines name the group (no line id,
+         `candidate_line_ids` = its lines), and each line's cancelled qty is its own TransferedQty.
+       - Anything else: unmatched (`undetermined`), kept at document + item level, named on no line,
+         never counted as cancelled, counted in the sync log.
+R3. `qty_cancelled` = sum of matched lines of live docs (not void, not vanished), or the line's own
+    TransferedQty when a live `group_whole` cancel holds its group; capped at ordered (SPO: allocated),
+    recomputed for every touched line (a group's lines included) at the end of every batch, deletion sweep
+    and order push.
 R4. Delivered shown = TransferedQty - cancelled. Planned = coalesce(required, ordered) - cancelled.
     Outstanding / incoming unchanged (TransferedQty already counts the cancel).
 R5. Fully cancelled (cancelled >= ordered): SO / PO line `cancelled`; SO OI rows retired by the #1530 path
@@ -127,7 +127,7 @@ R7. Every cancel line ends matched, waiting or unmatched with a reason; each bat
 - Review round 1: `cancelled_by_cancel_doc` (SO / PO lines) records which lines this rule cancelled, so
   only those reopen and the SO / PO push keeps them cancelled without retiring OI rows twice.
 
-## 2026 Sorento XS match counts (crew, 13 Oct, `scripts/autocount_cancel_match_report.py` at 117d2aed)
+## 2026 Sorento XS match counts under the old rules (crew, 13 Oct, report script at 117d2aed, since removed)
 
 SORENTO AutoCount extract of 13 Oct, counts only. 5,423 XS lines dated 2026 in scope (64 more on
 cancelled XS docs excluded).
@@ -152,7 +152,11 @@ Caveats:
    figures are optimistic: with real DO qty some tie-break lines would move to fallback and some
    fallback lines to no fit. In the CRM the same is true until DO lines link to SO lines.
 2. No 2026 XS line carries `FromDocDtlKey` (0 of 5,423), while 46,828 XS lines from earlier years do.
-   Line-key matching will not help 2026 at all; 2026 rests on item, tie-break and fallback.
+   Line-key matching will not help 2026 at all.
+
+Under the exact rule, the 2,075 lines that were tie-break, fallback or no fit (38.3%) sit in groups of 2+
+lines: each goes to `group_whole` or `undetermined`. The split comes from
+`scripts/autocount_cancel_bucket_report.py` (crew runs its read-only SQL; counts only, no rows).
 
 ## Deferred (named triggers, not built)
 
@@ -171,8 +175,12 @@ Caveats:
 
 `tests/test_ingest_autocount_cancel_docs.py`: ingest / unchanged / dry run / book required / bad record;
 partial, full, sum + cap, line removed, void and unvoid, deletion sweep, board cancel kept; key match,
-dangling, item, location, item not on order, waiting then linked, other company never matched; tie-break,
-oversubscribed, fallback lowest Seq + history row, no fit, order independence (both push orders);
+dangling, item, group by location, item not on order, waiting then linked, other company never matched;
+`tests/test_autocount_cancel_matching.py` (pure): one line, no line, C = 0, D = 0 and C = sum(T) per line,
+D > 0 undetermined, C != sum(T) undetermined, the old tie-break and fallback cases undetermined, no line
+ever named in a 2+ line group, order independence over permutations; DB: whole group per line + tooltip,
+whole group lowered reopens, a DO landing turns whole into undetermined, XP over two PO lines, no
+auto-match history, order independence (both push orders);
 XP to PO line (cancelled), XP to SPO line; contract 2.8 + slugs; SO push keeps a fully cancelled line
 cancelled and relinks waiting lines; OI retire on full cancel; planning change on partial; readers
 (plan_qty_of, demand.plan_qty, board delivered).
