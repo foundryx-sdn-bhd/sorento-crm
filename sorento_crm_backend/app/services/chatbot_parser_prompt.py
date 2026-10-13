@@ -1082,8 +1082,9 @@ The kind of product is a "category" entity in whatever language it was said: raw
 customer's own words, and canonical_code is that kind in English, as the Product types and
 classes above name it.
 The size entity is never dropped, whatever is asked about those products: stock, price, details
-or a promotion. "any 600mm basin promo" has the 600 mm specification entity beside the basin
-category entity, exactly as "600mm basin got stock?" does.
+or a promotion. A size or other specification stated with a promotion ask filters the products
+the promotions must contain, so it stays its own specification entity beside the category entity,
+as on a stock ask.
 """
 
 # S1b (D16, AC-151 to AC-155): the same parser, 40.0% fewer characters (28,124 against the
