@@ -4163,16 +4163,28 @@ class ProjectOrderInquiryService:
         """
         saved_ids = {str(line.id) for line, _now, _before in saved}
         queue = self.db.info.get(_HANDOVER_PENDING_KEY)
+        taken_back: Dict[str, Decimal] = {}
         if queue:
-            queue[:] = [
-                item
-                for item in queue
-                if not (item.get("pso_id") == pso_id and item.get("so_line_id") in saved_ids)
-            ]
+            kept = []
+            for item in queue:
+                line_id = item.get("so_line_id")
+                if item.get("pso_id") == pso_id and line_id in saved_ids:
+                    if IV_CANCEL_BALANCE in (item.get("verb_keys") or ()):
+                        entry = item.get("line") or {}
+                        was_qty = _dec(((entry.get("was") or {}).get("qty")))
+                        drop = was_qty - _dec(entry.get("qty")) if was_qty else _ZERO
+                        if drop > _ZERO:
+                            taken_back[line_id] = taken_back.get(line_id, _ZERO) + drop
+                    continue
+                kept.append(item)
+            queue[:] = kept
         for line, now, before in saved:
             if before is not None and _saved_decision_key(before) == _saved_decision_key(now):
                 continue
-            self._queue_saved_line(pso_id, line, now, before, actor_user_id=actor_user_id)
+            self._queue_saved_line(
+                pso_id, line, now, before, actor_user_id=actor_user_id,
+                taken_back=taken_back.get(str(line.id), _ZERO),
+            )
 
     def record_cancelled_lines(
         self,
@@ -4234,6 +4246,7 @@ class ProjectOrderInquiryService:
         actor_user_id: Optional[str] = None,
         remark: Optional[str] = None,
         keys: Optional[List[str]] = None,
+        taken_back: Decimal = _ZERO,
     ) -> None:
         explicit = remark is not None
         if not explicit:
@@ -4252,10 +4265,31 @@ class ProjectOrderInquiryService:
                     # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
                     remark = f"CANCEL {_qty_str(qty_before - qty_now)}"
                     keys = [IV_CANCEL_BALANCE]
+            if not explicit and "qty" not in was and taken_back > _ZERO:
+                # The rows of this line told purchasing to cancel something they hold (a
+                # raised order withdrawn, settled down, or a CANCEL BALANCE exception): the
+                # line says so, on a line whose own quantity stands. Read off what the rows
+                # actually did, never off the Buy's size: a Buy whose goods already arrived
+                # and now cover the line from stock is not an order to take back.
+                dropped = f"CANCEL ORDER {_qty_str(taken_back)}"
+                remark = f"{remark}, {dropped}" if remark else dropped
+                keys.append(IV_CANCEL_BALANCE)
             date_before, date_now = before.get("required_date"), now.get("required_date")
             if date_before and date_now and date_before != date_now:
                 was["delivery_date"] = date.fromisoformat(date_before)
-                keys.append(IV_DELAY if date_now > date_before else IV_ADVANCE)
+                date_word = IV_DELAY if date_now > date_before else IV_ADVANCE
+                keys.append(date_word)
+                if not explicit:
+                    same_parts = _saved_decision_key(
+                        {**before, "required_date": None}
+                    ) == _saved_decision_key({**now, "required_date": None})
+                    # Only the date moved: today's DELAY / ADVANCE. Anything else moved
+                    # too: the decision, then the date word.
+                    remark = (
+                        REMARK_SPELLING[date_word]
+                        if same_parts
+                        else f"{remark}, {REMARK_SPELLING[date_word]}"
+                    )
             if before.get("item_code") and before.get("item_code") != now.get("item_code"):
                 was["item_code"] = before.get("item_code")
                 keys.append("CHANGE_ITEM_CODE")

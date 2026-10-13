@@ -384,4 +384,6 @@ def test_qty_rise_met_from_stock_alone_names_qty_change_in_the_headline(api, mon
     entries = _line_entries(calls, fixture["row"].item_code)
     assert len(entries) == 1 and entries[0]["was"] == {"qty": "1"}, entries
     headline = _handover_calls(calls)[-1]["context"]["handover"]["headline"]
-    assert headline == "QTY CHANGE", headline
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the headline names the decision the line now
+    # carries (met from own stock), never empty.
+    assert headline == "USE OWN LOCATION", headline

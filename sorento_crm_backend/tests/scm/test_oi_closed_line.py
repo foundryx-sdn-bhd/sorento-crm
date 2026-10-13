@@ -93,7 +93,9 @@ def _assert_applied_and_order_row_cancelled(world, batch, line, calls):
     assert len(handover) == 1, [c["trigger_type"] for c in calls]
     lines = handover[0]["context"]["handover"]["lines"]
     assert [entry["item_code"] for entry in lines] == [order_row.item_code]
-    assert lines[0]["qty"] == "0"  # kind cancelled, the line the email prints as CANCEL
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): one line saying the decision, and that the
+    # Buy purchasing holds is to be taken back.
+    assert "CANCEL ORDER" in lines[0]["remark"], lines[0]
 
 
 # ------------------------------------------------------------------- AC-1 / AC-2
@@ -596,7 +598,9 @@ def test_a_short_reserve_is_listed_in_the_purchasing_email(api, monkeypatch):
     assert "STOCK SHORT" in context["verbs"], context["verbs"]
     short_lines = [e for e in context["lines"] if "short" in (e.get("remark") or "").lower()]
     assert len(short_lines) == 1, context["lines"]
-    assert short_lines[0]["qty"] == "5", short_lines[0]
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the shortfall rides on the line's own one line.
+    assert short_lines[0]["qty"] == "10", short_lines[0]
+    assert short_lines[0]["remark"].endswith(", 5 SHORT"), short_lines[0]
     world.db.expire_all()
     assert (
         world.db.query(OrderInquiryRow).filter(OrderInquiryRow.so_line_id == line.id).count()

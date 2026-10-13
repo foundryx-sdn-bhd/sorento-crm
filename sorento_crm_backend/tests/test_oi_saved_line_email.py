@@ -305,3 +305,25 @@ def test_the_template_migration_downgrades_to_the_previous_document():
         _run_upgrade(latest, db)  # idempotent
         db.refresh(row)
         assert row.body_text == latest._BODY_TEXT
+
+
+def test_a_buy_replaced_by_stock_says_to_take_the_order_back(api, emails):
+    """Line A Buy 10, re-Confirmed as Use BRW 10: purchasing has an order to cancel."""
+    _client, world = api
+    _stock(world.db, world.product, world.pool_wh, on_hand=50)
+    world.db.commit()
+    order, line_a, _line_b = _order(api)
+    _post(api, order, [_line_payload(line_a.id, buy_qty="10")])
+    emails.clear()
+    pool = world.pool_wh.warehouse_code
+
+    _post(api, order, [
+        _line_payload(line_a.id, reserve=[{"warehouse_id": world.pool_wh.id, "qty": "10"}],
+                      amend_reason="BRW has it."),
+    ])
+
+    assert len(emails) == 1, emails
+    assert _lines(emails[0]) == [
+        (world.product.product_code, "10", world.own_wh.warehouse_code,
+         f"USE {pool}, CANCEL ORDER 10"),
+    ]
