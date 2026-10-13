@@ -1,8 +1,10 @@
 # PLAN: idea capture collects the canny-style fields (IDEA-CAPTURE, 13 Oct)
 
-Status: Build (Q2, Q4, Q5 answered by crew 13 Oct; Q1, Q3 with the owner).
+Status: Review (all five card questions answered 13 Oct; built red-first; reviewer running).
 
-Decisions (13 Oct): Q2 one per line. Q4 use cases only as named, max 5, never suggested.
+Decisions (13 Oct): Q1 (owner) a solution-only message gets the underlying need as Business
+problem and the user's own words as Desired outcome. Q3 (owner) field names stay English in
+Malay and Chinese replies. Q2 one per line. Q4 use cases only as named, max 5, never suggested.
 Q5 always send. Contract fact from IDEA-CORE: ss origin/main 04b48d5c `OneShotIdeaIn`
 (schemas.py:706) has pydantic default `extra='ignore'`, so an older ss drops unknown keys.
 Names agreed with IDEA-CORE #124: `problem`, `desired_outcome` (str), `use_cases` (list[str]),

@@ -40,7 +40,7 @@ conversation text.
 - AC-20 `ideation_capture_complete` (en, ms, zh) lists each missing field on its own line as
   `- <name>`, after the "Open it to add what I didn't catch:" line. Nothing is comma-joined and
   nothing uses " · ".
-- AC-21 The field names stay English in every language (subject to owner Q3).
+- AC-21 The field names stay English in every language (owner Q3, 13 Oct).
 - AC-22 The no-link variant is unchanged.
 
 ## Migration
@@ -57,4 +57,6 @@ conversation text.
 - AC-40 A golden set of at least 8 varied fake ideate messages (en, ms, zh, mixed, intent-only,
   solution-only, all four fields, workaround-only) runs through the live extractor. The result is
   recorded in the PR: no invented field, and use cases only where named.
-- AC-41 Message routing for a solution-only message: PENDING owner Q1.
+- AC-41 A solution-only message ("we should build an app to scan orders") gets the underlying
+  need as `problem` and the user's own words as `desired_outcome` (owner Q1, 13 Oct). Live
+  golden: problem "We need a way to scan orders.", desired_outcome "An app to scan orders."
