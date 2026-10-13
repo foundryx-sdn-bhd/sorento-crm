@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import httpx
 from fastapi import Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -102,6 +103,13 @@ def _cache_key(user: dict[str, Any], config: Any) -> tuple[str, str, str]:
 
 def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = False) -> str:
     """The user's embed token, from the cache while more than 30 s of it is left."""
+    return get_embed_token_with_claims(db, user, force_refresh=force_refresh)[0]
+
+
+def get_embed_token_with_claims(
+    db: Session, user: dict[str, Any], *, force_refresh: bool = False
+) -> tuple[str, _Claims]:
+    """The embed token plus the claims it was minted with (a cache hit returns its stored claims)."""
     config = _resolve_embed_config(db)
     if not config.is_ready:
         raise IdeationEmbedNotConfigured("ideation embed not configured for this deployment")
@@ -115,7 +123,7 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
         with _cache_lock:
             hit = _cache.get(key)
         if hit and hit[2] == claims and hit[1] - _REFRESH_MARGIN_SECONDS > time.time():
-            return hit[0]
+            return hit[0], hit[2]
 
     assertion = mint_embed_assertion(
         user,
@@ -132,7 +140,7 @@ def get_embed_token(db: Session, user: dict[str, Any], *, force_refresh: bool = 
         raise IdeationEmbedUpstreamError("embed session response missing token")
     with _cache_lock:
         _cache[key] = (token, _expiry_epoch(data.get("expires_at")), claims)
-    return token
+    return token, claims
 
 
 def get_portal_token(db: Session, user: dict[str, Any], *, force_refresh: bool = False) -> str:
@@ -151,7 +159,8 @@ def get_portal_token(db: Session, user: dict[str, Any], *, force_refresh: bool =
         if hit and hit[2] == claims and hit[1] - _PORTAL_REFRESH_MARGIN_SECONDS > time.time():
             return hit[0]
 
-    embed_token = get_embed_token(db, user, force_refresh=force_refresh)
+    # The portal token carries exactly the claims of the embed token it is exchanged from.
+    embed_token, claims = get_embed_token_with_claims(db, user, force_refresh=force_refresh)
     data = post_embed_session(
         config.base_url, {"token": embed_token}, path=_PORTAL_SESSION_PATH
     )
@@ -302,6 +311,30 @@ def relay(resp: httpx.Response) -> Response:
         media_type=resp.headers.get("content-type", "application/json"),
         headers=headers,
     )
+
+
+STAFF_NAME = "Sorento staff"
+
+
+def relay_masked(resp: httpx.Response, keys: tuple[str, ...]) -> Response:
+    """A JSON answer (an object or a list of objects) with any email-shaped value under `keys`
+    replaced by "Sorento staff": ss stores the assertion's `name`, and until it stores the display
+    name an address must not reach the browser."""
+    try:
+        data = resp.json()
+    except ValueError:
+        raise _unreachable()
+
+    def mask(row: Any) -> Any:
+        if not isinstance(row, dict):
+            return row
+        return {
+            k: (STAFF_NAME if k in keys and isinstance(v, str) and "@" in v else v)
+            for k, v in row.items()
+        }
+
+    data = [mask(r) for r in data] if isinstance(data, list) else mask(data)
+    return JSONResponse(data, status_code=resp.status_code)
 
 
 def user_for_requester(db: Session, user_id: str) -> dict[str, Any]:

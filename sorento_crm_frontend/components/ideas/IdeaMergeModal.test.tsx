@@ -301,3 +301,20 @@ describe('AC-D-04 a row with no tick', () => {
     expect(svc.mergeIdeas.mock.calls[0][0].fields).toEqual({ useCases: ['idea-2'] });
   });
 });
+
+describe('chips are labelled from the passed ideas', () => {
+  it('shows the idea numbers, never an id, when the list does not hold the passed ideas', async () => {
+    svc.listIdeas.mockResolvedValue([]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <IdeaMergeModal ideas={[ONE, { ...TWO, mergedIntoId: 'idea-1' }] as never} open onOpenChange={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(svc.listIdeas).toHaveBeenCalled());
+    expect(dialog.textContent).not.toMatch(/idea-1\b|idea-2\b/);
+    expect(within(dialog).getAllByText(/IDEA-0002/).length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(/Quote templates/).length).toBeGreaterThan(0);
+  });
+});

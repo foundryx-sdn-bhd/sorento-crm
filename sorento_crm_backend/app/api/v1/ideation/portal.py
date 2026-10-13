@@ -23,7 +23,7 @@ from app.api.v1.ideation.ideas import (
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.services.error_handler import AppException
-from app.services.ideation_gateway_service import call_portal, relay, ss_path
+from app.services.ideation_gateway_service import call_portal, relay, relay_masked, ss_path
 
 NOTE_MAX_CHARS = 500
 _LIST_PARAMS = ("q", "column", "sort", "mine", "includeClosed", "page", "pageSize")
@@ -73,17 +73,18 @@ def get_idea(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
 
 @router.get("/ideas/{idea_id}/voters")
 def voters(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
-    return _forward(db, user, "GET", _idea_path(idea_id, "voters"))
+    return relay_masked(call_portal(db, user, "GET", _idea_path(idea_id, "voters")), ("name",))
 
 
 @router.get("/ideas/{idea_id}/activity")
 def activity(idea_id: UUID, request: Request, user: dict = _read, db: Session = Depends(get_db)):
-    return _forward(db, user, "GET", _idea_path(idea_id, "activity"), params=_query(request, ("order",)))
+    resp = call_portal(db, user, "GET", _idea_path(idea_id, "activity"), params=_query(request, ("order",)))
+    return relay_masked(resp, ("actorName",))
 
 
 @router.get("/ideas/{idea_id}/comments")
 def list_comments(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
-    return _forward(db, user, "GET", _idea_path(idea_id, "comments"))
+    return relay_masked(call_portal(db, user, "GET", _idea_path(idea_id, "comments")), ("authorName",))
 
 
 # ---- vote, comment, like (view, staff session) ------------------------------------------------

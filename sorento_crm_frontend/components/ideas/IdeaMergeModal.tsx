@@ -100,12 +100,12 @@ export function IdeaMergeModal({
   const options = useMemo(
     () =>
       Array.from(known.values())
-        .filter((i) => !i.mergedIntoId)
+        .filter((i) => !i.mergedIntoId || ideas.some((p) => p.id === i.id))
         .map((i) => ({
           value: i.id,
           label: [i.ideaNumber, i.title ?? i.problem].filter(Boolean).join(' - '),
         })),
-    [known],
+    [known, ideas],
   );
 
   const columns = selectedIds.map((id) => known.get(id)).filter((i): i is Idea => !!i);
@@ -176,26 +176,24 @@ export function IdeaMergeModal({
               />
             </div>
             <div className="max-w-full overflow-x-auto">
-              <RadioGroup
-                value={effectiveSurvivor}
-                onValueChange={setSurvivorId}
-                className="w-max gap-0"
-              >
-                <div className="flex border-b border-border">
-                  <div className="w-32 shrink-0 p-2" />
-                  {columns.map((idea) => (
-                    <div key={idea.id} className={`${COLUMN_CLASS} flex items-center gap-2 p-2`}>
-                      <RadioGroupItem
-                        value={idea.id}
-                        id={`merge-keep-${idea.id}`}
-                        aria-label={`Keep ${ideaName(idea)}`}
-                      />
-                      <span className="truncate text-sm font-medium" title={ideaName(idea)}>
-                        {ideaName(idea)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div className="w-max">
+                <RadioGroup value={effectiveSurvivor} onValueChange={setSurvivorId} className="gap-0">
+                  <div className="flex border-b border-border">
+                    <div className="w-32 shrink-0 p-2" />
+                    {columns.map((idea) => (
+                      <div key={idea.id} className={`${COLUMN_CLASS} flex items-center gap-2 p-2`}>
+                        <RadioGroupItem
+                          value={idea.id}
+                          id={`merge-keep-${idea.id}`}
+                          aria-label={`Keep ${ideaName(idea)}`}
+                        />
+                        <span className="truncate text-sm font-medium" title={ideaName(idea)}>
+                          {ideaName(idea)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </RadioGroup>
                 {FIELD_ROWS.map((row) => (
                   <div key={row.key} className="flex border-b border-border last:border-b-0">
                     <div className="w-32 shrink-0 p-2 text-sm font-medium">{row.label}</div>
@@ -215,7 +213,7 @@ export function IdeaMergeModal({
                     ))}
                   </div>
                 ))}
-              </RadioGroup>
+              </div>
             </div>
             {attempted && emptyRows.length > 0 ? (
               <div className="flex flex-col gap-1 text-sm text-destructive" role="alert">

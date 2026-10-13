@@ -15,20 +15,18 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Body, Depends, File, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permission, require_permission_with_api_key
 from app.services.error_handler import AppException
 from app.services.user_service import UserPermissionService
-from app.services.ideation_gateway_service import UNREACHABLE, call_ss, relay, require_uuid, ss_path
+from app.services.ideation_gateway_service import UNREACHABLE, call_ss, relay, relay_masked, require_uuid, ss_path
 
 VIEW = "ideation.board.view"
 MANAGE = "ideation.ideas.manage"
 #: ss's own upload ceiling (ss `routers/embed.py`); read at most one byte past it.
 ATTACHMENT_CAP_BYTES = 25 * 1024 * 1024
-_STAFF_NAME = "Sorento staff"
 #: The idea fields a create or an edit may carry to ss. The last three are legacy (retired from the
 #: CRM UI, still forwardable for old clients and the chatbot).
 IDEA_FIELDS = (
@@ -84,15 +82,8 @@ def _merge_fields(value: Any) -> dict[str, list[str]]:
 
 
 def _masked_comment(resp: httpx.Response) -> Response:
-    """A comment answer with an email-shaped author name masked (AC-E-05 ship gate: ss stores the
-    assertion's `name`, and until it stores the display name an address must not be echoed)."""
-    try:
-        data = resp.json()
-    except ValueError:
-        raise AppException(502, UNREACHABLE, code="IDEATION_UNREACHABLE")
-    if isinstance(data, dict) and isinstance(data.get("authorName"), str) and "@" in data["authorName"]:
-        data = {**data, "authorName": _STAFF_NAME}
-    return JSONResponse(data, status_code=resp.status_code)
+    """A comment answer with an email-shaped author name masked (AC-E-05 ship gate)."""
+    return relay_masked(resp, ("authorName",))
 
 
 # ---- reads (the literal paths come before `/ideas/{id}`) --------------------------------------
@@ -136,7 +127,7 @@ def attachment_content(
 
 @router.get("/ideas/{idea_id}/comments")
 def list_comments(idea_id: UUID, user: dict = _read, db: Session = Depends(get_db)):
-    return _forward(db, user, "GET", ss_path("embed", "ideas", str(idea_id), "comments"))
+    return _masked_comment(call_ss(db, user, "GET", ss_path("embed", "ideas", str(idea_id), "comments")))
 
 
 # ---- capture, vote, attach, comment (view, staff session) -------------------------------------

@@ -409,6 +409,19 @@ describe('IDEA-CRM-SIDE AC-C Similar ideas tab', () => {
     expect(within(dialog).queryByRole('radio', { name: 'Keep IDEA-0044' })).toBeNull();
   });
 
+  it('AC-C-04: no Merge button on a merged child or on an idea that already holds merged ideas', async () => {
+    held.add(MANAGE);
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
+    for (const over of [{ mergedIntoId: 'idea-9', mergedInto: { id: 'idea-9', ideaNumber: 'IDEA-0009', title: 'P' } }, { mergedCount: 2 }]) {
+      const view = renderDetail(makeIdea(over));
+      await loaded();
+      fireEvent.click(screen.getByRole('tab', { name: /Similar ideas/ }));
+      await screen.findByText('IDEA-0043');
+      expect(within(screen.getByRole('tabpanel')).queryByRole('button', { name: /^Merge/ })).toBeNull();
+      view.unmount();
+    }
+  });
+
   it('AC-C-04: a viewer without manage sees no Merge button', async () => {
     svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
     await openSimilar();
@@ -496,7 +509,7 @@ describe('AC-D-04 the "..." menu', () => {
 
   it('lists Promote to BR, Merge into another idea, Archive and Delete', async () => {
     await openMenu();
-    for (const label of ['Promote to BR', 'Merge into another idea', 'Archive', 'Delete']) {
+    for (const label of ['Promote to BR', 'Merge ideas', 'Archive', 'Delete']) {
       expect(await screen.findByRole('menuitem', { name: new RegExp(label) })).toBeInTheDocument();
     }
   });

@@ -289,7 +289,7 @@ export function IdeaDetail({ id }: { id: string }) {
     if (!isMergedChild && idea.mergedCount === 0) {
       gear.push({
         key: 'idea.merge',
-        label: 'Merge into another idea',
+        label: 'Merge ideas',
         icon: Merge,
         disabled: busy,
         run: () => setMergeIdeas([idea]),
@@ -650,7 +650,7 @@ export function IdeaDetail({ id }: { id: string }) {
         <TabsContent value="similar">
           <IdeaSimilarTab
             ideaId={idea.id}
-            canManage={canManage}
+            canManage={canManage && !isMergedChild && idea.mergedCount === 0}
             onMerge={(similar) => setMergeIdeas([idea, similar])}
           />
         </TabsContent>

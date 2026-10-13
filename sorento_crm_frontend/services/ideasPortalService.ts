@@ -77,6 +77,7 @@ export async function getRoadmap(params: { mine?: boolean } = {}): Promise<Porta
   return read(await apiFetch(`${BASE}/roadmap${qs}`), 'Failed to load the roadmap');
 }
 
+// Hand-built on purpose: the portal list is not a DataGrid (no `dir`/`limit`; ss takes `sort=top|new` and `pageSize`).
 export async function listFeedback(params: PortalFeedbackParams): Promise<PortalFeedbackPage> {
   const search = new URLSearchParams();
   if (params.q?.trim()) search.set('q', params.q.trim());

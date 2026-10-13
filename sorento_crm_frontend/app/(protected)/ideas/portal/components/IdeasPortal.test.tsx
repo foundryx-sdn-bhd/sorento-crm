@@ -216,3 +216,33 @@ describe('AC-E-05 changelog', () => {
     expect(within(document.body).queryByText('Nothing shipped yet')).toBeNull();
   });
 });
+
+describe('fix round 1 nits', () => {
+  it('the tab follows ?tab= when the URL changes under the page', async () => {
+    const view = renderPortal();
+    expect(await screen.findByRole('tab', { name: 'Roadmap' })).toHaveAttribute('aria-selected', 'true');
+    nav.search = 'tab=changelog';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <IdeasPortal />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Changelog' })).toHaveAttribute('aria-selected', 'true'));
+  });
+
+  it('one tab click writes the URL once', async () => {
+    renderPortal();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Feedback' }));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalled());
+    expect(nav.replace).toHaveBeenCalledTimes(1);
+  });
+
+  it('a changelog item without a title links with its idea number', async () => {
+    svc.getChangelog.mockResolvedValue({
+      items: [{ ...card({ title: null }), deliveredAt: '2026-10-05T12:00:00Z', note: null }],
+    });
+    renderPortal('tab=changelog');
+    expect(await screen.findByRole('link', { name: 'IDEA-0042' })).toHaveAttribute('href', '/ideas/portal/idea-1');
+  });
+});

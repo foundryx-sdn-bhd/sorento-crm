@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -212,9 +212,9 @@ function ChangelogTab({ enabled }: { enabled: boolean }) {
             <Link
               href={`/ideas/portal/${item.id}`}
               className="min-w-0 flex-1 truncate text-sm font-medium text-primary hover:underline"
-              title={item.title ?? undefined}
+              title={item.title ?? item.ideaNumber ?? undefined}
             >
-              {item.title}
+              {item.title ?? item.ideaNumber}
             </Link>
             {item.deliveredAt ? (
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -234,9 +234,15 @@ export function IdeasPortal() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<PortalTab>(() => parseTab(searchParams.get('tab')));
+  const urlTab = parseTab(searchParams.get('tab'));
+  const [tab, setTab] = useState<PortalTab>(urlTab);
 
+  // Back/forward or a link changes `?tab=` without going through `choose`.
+  useEffect(() => setTab(urlTab), [urlTab]);
+
+  // Radix reports a mouse press and the click that follows it; only the first one is a change.
   const choose = (next: PortalTab) => {
+    if (next === tab) return;
     setTab(next);
     router.replace(`${pathname}?tab=${next}`, { scroll: false });
   };

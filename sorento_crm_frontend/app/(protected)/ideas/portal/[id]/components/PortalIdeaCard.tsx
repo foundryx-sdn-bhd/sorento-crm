@@ -193,7 +193,7 @@ function Comments({ id }: { id: string }) {
             className="h-7 gap-1 px-1.5"
             aria-label={row.likedByMe ? 'Unlike' : 'Like'}
             aria-pressed={row.likedByMe}
-            disabled={like.isPending}
+            disabled={like.isPending && like.variables?.commentId === row.id}
             onClick={() => like.mutate({ id, commentId: row.id })}
           >
             <Heart className={cn('size-3.5', row.likedByMe && 'fill-current')} />

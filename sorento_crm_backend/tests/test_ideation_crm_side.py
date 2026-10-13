@@ -188,8 +188,11 @@ def test_a04_without_fields_the_body_is_survivor_and_ids_only(env):
         {"title": None},
         ["title"],
         "title",
+        {"title": [IDEA], "productId": [IDEA]},
+        {"title": [IDEA], "problem": []},
     ],
-    ids=["unknown-key", "empty-list", "non-list", "non-uuid", "int-id", "null", "list-fields", "str-fields"],
+    ids=["unknown-key", "empty-list", "non-list", "non-uuid", "int-id", "null", "list-fields", "str-fields",
+         "valid-plus-unknown-key", "valid-plus-empty-list"],
 )
 def test_a04_invalid_fields_are_422_and_ss_is_not_called(env, fields):
     resp = _merge(env, fields)
@@ -618,3 +621,72 @@ def test_a10_service_raises_404_when_not_configured(env, monkeypatch):
     with pytest.raises(AppException) as exc:
         gw.call_portal(env.db, env.user, "GET", "/portal/ideas/roadmap")
     assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 1: staff-email masking on every read that returns a person's name   #
+# --------------------------------------------------------------------------- #
+_EMAIL = "alex.staff@example.test"
+
+
+def test_fr_portal_voters_mask_an_email_name(env):
+    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/voters", json_body=[
+        {"name": _EMAIL, "role": "Sales", "isMe": False}, {"name": "Jane Lim", "role": None, "isMe": True}])
+    resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/voters")
+    assert "@" not in resp.text
+    assert [v["name"] for v in resp.json()] == ["Sorento staff", "Jane Lim"]
+    assert resp.json()[0]["role"] == "Sales"
+
+
+def test_fr_portal_comments_mask_every_row(env):
+    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/comments", json_body=[
+        {"id": COMMENT, "authorName": _EMAIL, "body": "a"},
+        {"id": IDEA_B, "authorName": "bob@example.test", "body": "b"},
+        {"id": IDEA_C, "authorName": "Plain Name", "body": "c"}])
+    resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/comments")
+    assert "@" not in resp.text
+    assert [c["authorName"] for c in resp.json()] == ["Sorento staff", "Sorento staff", "Plain Name"]
+    assert [c["body"] for c in resp.json()] == ["a", "b", "c"]
+
+
+def test_fr_portal_activity_masks_the_actor(env):
+    env.fake.route("GET", f"{SS_PORTAL}/{IDEA}/activity", json_body=[
+        {"id": "a1", "kind": "status", "label": "Moved", "at": "2026-10-01T00:00:00Z", "actorName": _EMAIL}])
+    resp = env.req("GET", f"{PORTAL}/ideas/{IDEA}/activity")
+    assert "@" not in resp.text
+    assert resp.json()[0]["actorName"] == "Sorento staff"
+    assert resp.json()[0]["label"] == "Moved"
+
+
+def test_fr_embed_comments_list_masks_every_row(env):
+    env.fake.route("GET", f"/embed/ideas/{IDEA}/comments", json_body=[
+        {"id": COMMENT, "authorName": _EMAIL, "body": "a"}, {"id": IDEA_B, "authorName": "Plain Name"}])
+    resp = env.req("GET", f"/ideas/{IDEA}/comments")
+    assert resp.status_code == 200
+    assert "@" not in resp.text
+    assert [c["authorName"] for c in resp.json()] == ["Sorento staff", "Plain Name"]
+
+
+# --------------------------------------------------------------------------- #
+# Fix round 1: the portal token is stored with the claims it was minted with    #
+# --------------------------------------------------------------------------- #
+def test_fr_revoking_manage_between_portal_calls_re_exchanges_with_ideas_manage_false(env):
+    from jose import jwt as jose_jwt
+
+    from app.config import settings
+    from tests.test_ideation_gateway import SIGNING_SECRET
+
+    env.fake.route("GET", f"{SS_PORTAL}/roadmap", json_body={"columns": []})
+    assert env.req("GET", f"{PORTAL}/roadmap").status_code == 200
+    assert len(env.fake.portal_session_calls) == 1
+    env.allow.discard(MANAGE)
+    assert env.req("GET", f"{PORTAL}/roadmap").status_code == 200
+    assert len(env.fake.portal_session_calls) == 2
+    last = jose_jwt.decode(
+        env.fake.session_calls[-1]["assertion"], SIGNING_SECRET,
+        algorithms=[settings.jwt_algorithm], audience="ideation-embed",
+    )
+    assert last["ideas_manage"] is False
+    # and the new portal token is cached under the new claims: no third exchange
+    env.req("GET", f"{PORTAL}/roadmap")
+    assert len(env.fake.portal_session_calls) == 2
