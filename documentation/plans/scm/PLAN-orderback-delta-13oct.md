@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Review (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
+Status: Hand test (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -117,3 +117,13 @@ reactions on unsaved lines and amendment emails keep their own row lines.
 - S3 fixed: a stock shortfall is part of the "unchanged" key.
 - S5/S6 fixed: the separate STOCK SHORT writer is removed; the header lookup excludes
   amendment headers.
+
+## Final review and browser pass (14 Oct)
+
+- Reviewer READY @ a5cc8725 (S1 fixed: the told set is cleared when the root write ends);
+  security-reviewer SECURE @ 78a41d34.
+- Cloud browser pass on a sandbox mirror of SO304546 + one SO323450 line, evidence in
+  `evidence/orderback-delta/script-pass/` (`r2-*`): every Confirm's email matched the owner's
+  mapping; the hand-test script is `laneboard/scripts/1631.md`.
+- Open for the owner (not changed here): a Reject of a Borrow line tells purchasing CANCEL ALL at
+  the donor row's location (subject `OI: <donor> @ SO`), not at the SO line's own location.
