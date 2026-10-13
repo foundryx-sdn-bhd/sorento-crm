@@ -107,3 +107,7 @@ class TestSeedIsIdempotent:
         for short_name, (key, fallback_text, _tokens) in CHATBOT_REPLY_COPY.items():
             version = db.query(AIPromptVersion).filter_by(name=key, version=1).one()
             assert version.template == fallback_text, f"{key}: seeded v1 text drifted from the fallback"
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

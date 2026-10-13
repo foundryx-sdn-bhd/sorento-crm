@@ -1564,6 +1564,57 @@ describe('SalesOrderDetail - what has already been planned about a line', () => 
     );
   });
 
+  /**
+   * PR 1622 (owner, mock v3): an open purchasing refusal is the inquiry's status on the line,
+   * a "Rejected" badge whose info text names who, when and why. It replaces the state word
+   * only while the refusal is open; the backend drops `ack_state` once CS decides again.
+   */
+  it('PR 1622: shows the open refusal as a Rejected badge with who, when and why', () => {
+    useSalesOrder.mockReturnValue({
+      data: planned({
+        order_inquiry: {
+          inquiry_no: 'OI-000123',
+          state: 'raised',
+          inquiry_id: 'oi-header-1',
+          row_id: 'oi-row-9',
+          ack_state: 'rejected',
+          rejected_reason: 'DISCON',
+          rejected_by_name: 'Joey',
+          rejected_at: '2026-10-13T08:32:00',
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    openTab('Lines');
+
+    const row = screen.getByText('SKU-PLANNED').closest('tr') as HTMLElement;
+    expect(within(row).getByText('OI-000123').closest('a')).not.toBeNull();
+    const badge = within(row).getByTestId('so-line-oi-rejected-l-planned');
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026, 4:32\s?pm: DISCON$/i,
+    );
+    expect(within(row).queryByText('To buy')).toBeNull();
+  });
+
+  it('PR 1622: shows the plain state word again once the refusal is answered', () => {
+    useSalesOrder.mockReturnValue({
+      data: planned({
+        order_inquiry: { inquiry_no: 'OI-000123', state: 'placed', ack_state: null },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    renderDetail();
+    openTab('Lines');
+
+    const row = screen.getByText('SKU-PLANNED').closest('tr') as HTMLElement;
+    expect(within(row).getByText('On PO/SPO')).toBeInTheDocument();
+    expect(within(row).queryByTestId('so-line-oi-rejected-l-planned')).toBeNull();
+  });
+
   it('AC-B6-2: stays plain text - no link - while inquiry_id/row_id are not yet on the line', () => {
     useSalesOrder.mockReturnValue({ data: planned(), isLoading: false, isError: false });
     renderDetail();

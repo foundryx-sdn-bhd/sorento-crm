@@ -429,3 +429,7 @@ def test_the_constant_is_reproducible_from_the_live_file() -> None:
         "everything AFTER the requested-attributes block, and before the growth r1 addendum, "
         "must still be a pure mechanical derivation of the live file"
     )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

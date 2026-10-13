@@ -7,6 +7,7 @@ human codes/names. PO is read-only at M1 (create/confirm/receive land in M4).
 """
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -33,6 +34,12 @@ class SalesOrderLineInquiry(BaseModel):
     # `/project-sales/order-inquiries/<inquiry_id>?row=<row_id>`.
     inquiry_id: Optional[str] = None
     row_id: Optional[str] = None
+    #: PR 1622 (mock v3): set only while purchasing's refusal of this line is open (CS has
+    #: not decided the line again); the Lines tab shows "Rejected" + who/when/why.
+    ack_state: Optional[str] = None
+    rejected_reason: Optional[str] = None
+    rejected_by_name: Optional[str] = None
+    rejected_at: Optional[datetime] = None
 
 
 class SalesOrderLineSupplyComponent(BaseModel):

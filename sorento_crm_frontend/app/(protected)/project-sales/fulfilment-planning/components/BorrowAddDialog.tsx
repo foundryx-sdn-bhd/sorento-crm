@@ -193,13 +193,24 @@ export function BorrowAddDialog({
             // last part, exactly as an over-ask on a single row does.
             const wanted = toMinor(qty.trim());
             const drawn = drawAcross(members, wanted, stockKey, (c) => toMinor(c.free_qty));
-            const parts = drawn.length ? drawn : [{ item: members[0], minor: 0 }];
+            const parts = drawn.length ? [...drawn] : [{ item: members[0], minor: 0 }];
             const over = wanted - parts.reduce((sum, part) => sum + part.minor, 0);
-            parts[parts.length - 1] = {
-              ...parts[parts.length - 1],
-              minor: parts[parts.length - 1].minor + Math.max(over, 0),
-            };
-            const rows = parts.map((part) => ({ candidate: part.item, qty: fromMinor(part.minor) }));
+            // BORROW-OWN-LOC (review B2): the over-ask rides on the bin's plain location row
+            // when it has one. Confirm records a plain location borrow short; a donor line's
+            // row is refused for an over-ask instead.
+            const plain = members.find(
+              (c) => c.source === 'other_location' && !c.donor_core_line_id,
+            );
+            const at = plain ? parts.findIndex((part) => part.item === plain) : -1;
+            if (over > 0 && plain && at < 0) {
+              parts.push({ item: plain, minor: over });
+            } else {
+              const index = at >= 0 ? at : parts.length - 1;
+              parts[index] = { ...parts[index], minor: parts[index].minor + Math.max(over, 0) };
+            }
+            const rows = parts
+              .filter((part) => part.minor > 0)
+              .map((part) => ({ candidate: part.item, qty: fromMinor(part.minor) }));
             if (onAddMany) onAddMany(rows, reason);
             else rows.forEach((row) => onAdd(row.candidate, row.qty, reason));
             onDone();

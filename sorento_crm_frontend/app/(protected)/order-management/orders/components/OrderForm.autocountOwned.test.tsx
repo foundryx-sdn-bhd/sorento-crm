@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 
+import userEvent from '@testing-library/user-event';
+
 import OrderForm from './OrderForm';
 
 /**
@@ -100,5 +102,31 @@ describe('OrderForm on an AutoCount-owned DO', () => {
     const debtor = await waitFor(() => screen.getByDisplayValue('AutoCount Debtor'));
     expect(debtor).not.toBeDisabled();
     expect(screen.queryByText('From AutoCount')).not.toBeInTheDocument();
+  });
+});
+
+describe('OrderForm: Branch (DO-BRANCH-NAME)', () => {
+  it('shows the AutoCount branch name read-only, in both places the View shows it', async () => {
+    mockOrder({ autocount_owned_fields: AUTOCOUNT_FIELDS, branch_name: 'KLCC SITE OFFICE' });
+    await renderForm();
+    const basic = await waitFor(() => screen.getByLabelText('Branch'));
+    expect(basic).toHaveValue('KLCC SITE OFFICE');
+    expect(basic).toBeDisabled();
+    await userEvent.click(screen.getByRole('tab', { name: /Delivery & Tracking/ }));
+    const tracking = await waitFor(() => screen.getByLabelText('Branch'));
+    expect(tracking).toHaveAttribute('id', 'order-branch-name-tracking');
+    expect(tracking).toHaveValue('KLCC SITE OFFICE');
+    expect(tracking).toBeDisabled();
+  });
+
+  it('leaves the branch out of the update it sends', async () => {
+    mockOrder({ autocount_owned_fields: AUTOCOUNT_FIELDS, branch_name: 'KLCC SITE OFFICE' });
+    updateMutation.mutateAsync.mockResolvedValue({});
+    await renderForm();
+    fireEvent.click(screen.getByRole('button', { name: /Update Delivery Order/ }));
+    await waitFor(() => expect(updateMutation.mutateAsync).toHaveBeenCalled());
+    const sent = JSON.stringify(updateMutation.mutateAsync.mock.calls[0]);
+    expect(sent).not.toContain('branch_name');
+    expect(sent).not.toContain('KLCC SITE OFFICE');
   });
 });
