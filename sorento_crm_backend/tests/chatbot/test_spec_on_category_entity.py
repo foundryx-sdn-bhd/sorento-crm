@@ -484,3 +484,12 @@ def test_r_hm_s1_an_axis_said_in_the_message_names_the_key(vdb):
     no pair: the customer named the axis, so it is Length, never any axis."""
     verdict = _ground(vdb, _category("600mm basin", "basin"), message="600mm length basin got stock?")
     assert [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])] == [("dim_length", 600)], verdict["entities"]
+
+
+def test_r_hm_b1_a_carried_keyed_number_is_not_also_a_size(vdb):
+    """Reviewer B1 kill test: the axis is named only by a thickness carried from an earlier
+    turn, not by this message, so the message's axis read (S1) cannot hide a size reading."""
+    carried = {**_spec_entity("thickness 1.2mm", "thickness", 1.2), "current_message": False}
+    verdict = _ground(vdb, _category("1.2mm kitchen sink"), carried, message="1.2mm kitchen sink got stock?")
+    keys = [(s["spec_key"], s["spec_value"]) for s in _specs(verdict["entities"])]
+    assert ("size", 1.2) not in keys and ("thickness", 1.2) in keys, verdict["entities"]
