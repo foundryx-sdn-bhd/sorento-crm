@@ -38,6 +38,7 @@ from app.services.product_spec_rules import (
     MAX_RULES_PER_TRY,
     MAX_TRY_TEXT,
 )
+from app.services.chatbot.pv2 import aliases as pv2_aliases
 from app.services.product_spec_registry import (
     SEARCH_POLICY_SEED,
     active_registry,
@@ -883,6 +884,8 @@ async def create_spec_key(
             match_decay=decay,
             source="user",
         )
+        # PV2 (CONTRACT-PV2-13oct s.4): a word already naming another attribute is refused.
+        pv2_aliases.refuse_spec_row_conflicts(db, row, [])
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -928,6 +931,7 @@ def update_spec_key(
         row = db.query(ProductSpecRegistry).filter_by(spec_key=spec_key).first()
         if row is None:
             raise handle_not_found("Spec key", spec_key)
+        aliases_before = pv2_aliases.spec_row_aliases(row)
 
         fields = payload.model_dump(exclude_unset=True)
         # A save that changes how this key is read re-reads its products before it
@@ -1136,6 +1140,7 @@ def update_spec_key(
         # unreachable must not block saving a rule (that is fixed where it is broken).
         if set(fields) & _VOCABULARY_FIELDS:
             _validate_reachable(row.data_type, merged_allowed_values(row), merged_synonyms(row))
+        pv2_aliases.refuse_spec_row_conflicts(db, row, aliases_before)
 
         reading_after = _reading(row)
         db.commit()

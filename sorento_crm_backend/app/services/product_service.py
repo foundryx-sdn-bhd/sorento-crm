@@ -2424,7 +2424,12 @@ class ProductCategoryService:
         if resolve_master_by_code(self.db, ProductCategory, category_data.category_code):
             raise handle_conflict("Category code already exists.")
         
-        category = ProductCategory(**category_data.model_dump())
+        data = category_data.model_dump()
+        synonyms = data.pop("search_synonyms", None)
+        category = ProductCategory(**data)
+        synonyms = self._check_index_words(category, synonyms, before=None)
+        if synonyms is not None:
+            category.search_synonyms = synonyms
         self.db.add(category)
         self.db.commit()
         self.db.refresh(category)
@@ -2435,12 +2440,48 @@ class ProductCategoryService:
         category = self.get_category(category_id)
         
         update_data = category_data.model_dump(exclude_unset=True)
+        synonyms = update_data.pop("search_synonyms", None)
+        before = self._index_entry(category)
         for key, value in update_data.items():
             setattr(category, key, value)
+        synonyms = self._check_index_words(category, synonyms, before=before)
+        if synonyms is not None:
+            category.search_synonyms = synonyms
         
         self.db.commit()
         self.db.refresh(category)
         return category
+
+    @staticmethod
+    def _index_entry(category):
+        """(class key, words) this category contributes to the PV2 index, or None: only an
+        active, searchable, classified category's words are printed (as aka of its class)."""
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        if not category.class_label or category.is_active is False or category.is_searchable is False:
+            return None
+        return pv2_aliases.class_key(category.class_label), list(category.search_synonyms or [])
+
+    def _check_index_words(self, category, synonyms, *, before):
+        """PV2 aliases (CONTRACT-PV2-13oct s.4): refuse a save that puts a word another class
+        holds into the index - by sending it, or by listing the category again (re-activated,
+        made searchable, re-classed), which brings back every word it stores. Returns the
+        cleaned words to store (None = leave as stored). A save that changes neither the
+        words nor whether/where the category is listed runs no check at all."""
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        words = pv2_aliases.clean_words(synonyms) if synonyms is not None else None
+        after = self._index_entry(category)
+        if after is None:
+            return words
+        key, stored = after
+        if words is None and before is not None and before[0] == key:
+            return words
+        previous = before[1] if before is not None and before[0] == key else []
+        pv2_aliases.refuse_conflicts(
+            self.db, "product_class", key, words if words is not None else stored, previous=previous
+        )
+        return words
 
     def delete_category(self, category_id: str):
         """Delete a category. Raises if any products use this category."""
