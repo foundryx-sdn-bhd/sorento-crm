@@ -57,9 +57,15 @@ def record_parser_usage(
 
         # `contact_id` on this table is the INTERNAL respond_contacts.id, not the
         # respond.io id the envelope carries (the FK is to respond_contacts.id).
+        # `respond_io_id` is not unique (`chatbot_allowed_service.is_allowed` reads every
+        # row that carries one), and a bare `.scalar()` raised `MultipleResultsFound` on
+        # such a contact, which the `except` below swallowed with the whole row
+        # (PARSER-GEMINI-LITE). The oldest row stands for the contact.
         internal_id = (
             db.query(RespondContact.id)
             .filter(RespondContact.respond_io_id == contact_respond_id)
+            .order_by(RespondContact.created_at, RespondContact.id)
+            .limit(1)
             .scalar()
         )
         db.add(
