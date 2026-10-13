@@ -294,3 +294,39 @@ def test_a_usage_row_is_written_when_two_contacts_share_the_respond_id(session_f
     )
     assert len(rows) == 1
     assert rows[0].contact_id is not None
+
+
+def test_a_provider_failure_carries_its_latency(monkeypatch):
+    """The Gemini 400 this lane fixes failed at the provider, before any usage existed;
+    the failed `understood` record still says how long it took."""
+
+    def boom(*_a, **_k):
+        raise RuntimeError("Gemini call failed (400): bad schema")
+
+    monkeypatch.setattr(llm_call, "chat", boom)
+    with pytest.raises(parser_mod.ParserError) as caught:
+        parser_mod.parse(_config(), "block")
+    assert isinstance(caught.value.latency_ms, int)
+    assert caught.value.usage == {}  # no spend: no usage row
+
+
+def test_a_failed_understood_record_carries_latency(
+    session_factory, stub_parser, stub_access, monkeypatch
+):
+    _seed_contact(session_factory, str(CONTACT_ID))
+    stub_access()
+    stub_parser(_parser_output())  # stubs `resolve_config`; `parse` is replaced below
+
+    def fail(config, user_block):
+        exc = parser_mod.ParserError("parser provider call failed: 400")
+        exc.latency_ms = 1234
+        raise exc
+
+    monkeypatch.setattr(parser_mod, "parse", fail)
+    envelope = _envelope()
+    envelope.message["message"]["messageId"] = "ZZT-gemini-lite-2"
+    result = engine_mod.run_turn(envelope, session_factory=session_factory)
+    row = session_factory().query(ChatbotTurn).filter(ChatbotTurn.id == result.turn_id).first()
+    understood = next(r for r in row.trace if r.get("stage") == "understood")
+    assert understood.get("status") == "failed"
+    assert (understood.get("facts") or {}).get("latency_ms") == 1234

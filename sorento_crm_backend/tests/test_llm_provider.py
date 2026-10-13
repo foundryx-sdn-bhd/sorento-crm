@@ -1487,3 +1487,35 @@ def test_anthropic_accepts_reasoning_effort_and_ignores_it(monkeypatch):
     monkeypatch.setattr(AnthropicProvider, "_client", lambda self, **_k: stub)
     AnthropicProvider("k").chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
     assert "reasoning_effort" not in stub.last_kwargs
+
+
+def test_a_refused_effort_value_is_not_remembered_against_the_model(monkeypatch):
+    """`minimal` on a model that takes other efforts is a 400 `unsupported_value`. That is
+    a fact about the VALUE, so the next call (another effort, or the same after the label
+    is fixed) still sends one; only `Unsupported parameter` means the model takes none."""
+    import app.services.llm_provider as llm
+
+    class _Refusal(Exception):
+        code = "unsupported_value"
+        param = "reasoning_effort"
+
+    stub = _StubOpenAIClient()
+    original_create = stub.chat.completions.create
+    refused = {"left": 1}
+
+    def create(**kwargs):
+        if kwargs.get("reasoning_effort") == "minimal" and refused["left"]:
+            refused["left"] -= 1
+            raise _Refusal("Unsupported value: 'reasoning_effort' does not support 'minimal' with this model.")
+        return original_create(**kwargs)
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    monkeypatch.setattr(llm, "_OPENAI_REJECTED_PARAMS", {})
+    provider = OpenAIProvider("k", default_model="gpt-effort-test")
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="minimal")
+    assert "reasoning_effort" not in stub.last_kwargs  # this call went without it
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert stub.last_kwargs["reasoning_effort"] == "low"

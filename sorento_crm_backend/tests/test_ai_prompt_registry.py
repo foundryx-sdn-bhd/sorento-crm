@@ -585,7 +585,7 @@ def test_an_agents_reasoning_effort_is_read_off_its_label(seeded: Session):
         .filter(AIPromptLabel.name == "chatbot_semantic_parser", AIPromptLabel.label == "production")
         .one()
     )
-    row.reasoning_effort = "low"
+    row.reasoning_effort = " Low "
     seeded.flush()
     assert ai_prompt_registry.agent_reasoning_effort(seeded, "chatbot_semantic_parser") == "low"
     # Another label of the same key is a different row.
