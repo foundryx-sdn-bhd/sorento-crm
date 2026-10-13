@@ -153,6 +153,9 @@ def test_cu1_unpriced_model_with_null_cached_tokens_is_unpriced_not_cache_unknow
         assert row.cache_unknown is False and row.cpm is False
 
 
+# `serial_ddl`: re-creates the SHARED analytics_connector views; in the xdist pool it deadlocks
+# against another worker doing the same (CI PR gate run 38426480075).
+@pytest.mark.serial_ddl
 def test_uc1_connector_view_cost_equals_recent_queries_cost():
     from app.services.analytics_connector.views import ensure_cost_views, ensure_views
 

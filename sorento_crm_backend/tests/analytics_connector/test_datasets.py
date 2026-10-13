@@ -28,6 +28,11 @@ from tests.analytics_connector._helpers import (
     tool_call_rows,
 )
 
+# `serial_ddl`: these tests run CREATE OR REPLACE VIEW on the SHARED analytics_connector schema
+# (ensure_views / ensure_cost_views) or read those views, and two xdist workers doing it at once
+# deadlock. The module leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+pytestmark = pytest.mark.serial_ddl
+
 T0 = datetime(2026, 9, 1, 2, 0, 0)  # naive UTC = 10:00 in Malaysia
 
 

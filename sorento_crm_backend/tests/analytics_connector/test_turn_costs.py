@@ -20,6 +20,11 @@ from sqlalchemy import text
 from tests._pg_fixture import pg_session, unique_code
 from tests.analytics_connector._helpers import BASE, CHAT_VIEW, USE, client_for, make_user, signed
 
+# `serial_ddl`: these tests run CREATE OR REPLACE VIEW on the SHARED analytics_connector schema
+# (ensure_views / ensure_cost_views) or read those views, and two xdist workers doing it at once
+# deadlock. The module leaves the pool and runs in the `-p no:xdist` serial_ddl step.
+pytestmark = pytest.mark.serial_ddl
+
 T0 = datetime(2026, 9, 2, 2, 0, 0, tzinfo=timezone.utc)  # 10:00 Malaysia
 
 
