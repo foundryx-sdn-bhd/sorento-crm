@@ -574,7 +574,9 @@ def _apply_entities(
             and (status == "none" or (status == "ambiguous" and getattr(res, "did_you_mean", False)))
             and isinstance(qs, _Qs)
         ):
-            qs.misses.append(Miss(kind=ent.kind, phrase=ent.phrase))
+            words = ent.phrase or ent.doc_number
+            if words:
+                qs.misses.append(Miss(kind=ent.kind, phrase=words))
             continue
         if status == "ambiguous" and len(options) == 1 and policy.decide("entity", held.domain) == "default":
             held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})

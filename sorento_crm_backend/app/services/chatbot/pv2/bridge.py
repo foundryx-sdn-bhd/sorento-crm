@@ -161,7 +161,7 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
     # against the message's own words and would demote a carried "p_trap" on "stock?".
     named_specs = bool(action.ask is not None and action.ask.specs)
     entities.extend(_spec_entity(s, current=named_specs) for s in held.specs)
-    for miss in action.misses:
+    for miss in (m for m in action.misses if m.phrase):
         # The typed token, unresolved, exactly as v1's parser sends it: v1's own reply
         # says it is not found.
         entities.append({
