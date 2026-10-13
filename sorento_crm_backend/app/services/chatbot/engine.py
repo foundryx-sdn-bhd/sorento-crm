@@ -64,7 +64,7 @@ from app.services.chatbot.lanes import fallback as fallback_mod
 from app.services.chatbot.lanes.escalation import run as run_escalation_lane, routing_line as escalation_routing_line
 from app.services.chatbot.lanes.business import resolve_gate, services as business_services
 from app.services.chatbot.analytics import facts as chat_facts
-from app.services.chatbot.usage import record_parser_usage
+from app.services.chatbot.usage import CLARIFIER_FEATURE, record_parser_usage, record_turn_llm_usage
 # Stages C to G (PLAN-chatbot-turn-rearch.md "Turn order"). `turn/` is the pure core -
 # APPLY, the narrower, the plan, the router, the composer, the tail - and `turn_runtime`
 # is everything that has to touch a database or a tool on its behalf.
@@ -8186,6 +8186,9 @@ def _run_casual_lane(
     answer_shape: str | None = None
     ack_replaced = False
     reply_language: str | None = None
+    # CHAT-TURN-COST: what the clarifier call billed, recorded once a session is open again.
+    clarifier_calls: list[dict[str, Any]] = []
+    clarifier_ms = 0
     if failed is not None:
         # SETUP failure (the resolver, the registry, the AI config, the API key). The
         # customer gets a FIXED sentence, never `str(exc)`: these messages carry provider
@@ -8194,7 +8197,12 @@ def _run_casual_lane(
         text = casual.CLARIFIER_UNAVAILABLE_REPLY
     else:
         try:
-            raw = casual.call_clarifier(clarifier_config, user_message)
+            clarifier_started = time.perf_counter()
+            try:
+                with llm_call.capture_usage() as clarifier_calls:
+                    raw = casual.call_clarifier(clarifier_config, user_message)
+            finally:
+                clarifier_ms = int((time.perf_counter() - clarifier_started) * 1000)
             said = fallback_mod.read_clarifier(casual.central_exchange({"text": raw}))
             if said is None:
                 raise casual.ClarifierAnswerEmpty("the clarifier returned nothing to say")
@@ -8220,6 +8228,26 @@ def _run_casual_lane(
             # apology. n8n's `sub-error-logger` interpolation is retired here.
             failed = f"{type(exc).__name__}: {exc}"
             text = GENERIC_ERROR_REPLY
+    if clarifier_calls and not dry_run:
+        # LIVE turns only, like the parser's row (`_record_parser_usage`, D14). Telemetry never
+        # fails the customer's turn: opening the session can raise too, so the whole write is
+        # guarded here, not only inside `record_turn_llm_usage`.
+        try:
+            with _session(session_factory) as db:
+                for call in clarifier_calls:
+                    record_turn_llm_usage(
+                        db,
+                        feature=CLARIFIER_FEATURE,
+                        usage=call,
+                        response_time_ms=clarifier_ms // len(clarifier_calls),
+                        contact_respond_id=contact_respond_id,
+                        # The call answered (capture only sees answered calls); whether the
+                        # turn did is the turn row's own record (usage.py).
+                        answered=True,
+                        chatbot_turn_id=turn_id,
+                    )
+        except Exception:  # noqa: BLE001 - telemetry must never fail a customer's turn
+            logger.warning("chatbot turn %s: clarifier usage log failed", turn_id, exc_info=True)
     if failed is not None and fallback is not None and fallback.kind == "history" and fallback.copy is not None:
         # The history list needs no model: behind the canned ack it still answers.
         reply_language = _fallback_language(ctx, fallback, remembered_before, None)
