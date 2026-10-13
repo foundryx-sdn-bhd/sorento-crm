@@ -6556,7 +6556,7 @@ class ProjectSupplyService:
         if item.source == ALLOC_SOURCE_OTHER_LOCATION and donor_core_line_id:
             self._check_group_borrow(
                 item, fact, warehouse, donor_core_line_id, refuse, stale, invalid,
-                carried_holds,
+                carried_holds, borrow_left,
             )
             return
 
@@ -6879,6 +6879,7 @@ class ProjectSupplyService:
         stale: List[Dict[str, Any]],
         invalid: List[Dict[str, Any]],
         carried_holds: Dict[str, Dict[str, Any]],
+        borrow_left: Optional["_BorrowLedger"] = None,
     ) -> None:
         """The group borrow a person picked in Amend (section 1c), re-read live (AC-C03).
 
@@ -6992,6 +6993,14 @@ class ProjectSupplyService:
                 else f"{held} is no longer held by an open order, so it cannot be borrowed.",
             )
             return
+        if borrow_left is not None:
+            # BORROW-OWN-LOC (review N1): a later order's committed units are not holds, so
+            # they still read as free at the bin. Taken off the bin's free ledger here, or a
+            # plain location borrow at the same bin in this confirmation would be judged
+            # against the same units again. Before the carried exemption, for the same
+            # re-confirm reason as the Reserve draw. The ledger floors at 0.
+            borrow_left.free(fact.product_id, str(warehouse.id), self._free_at)
+            borrow_left.take_free(fact.product_id, str(warehouse.id), qty)
         carried = self._carried_component_qty(
             carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
         )

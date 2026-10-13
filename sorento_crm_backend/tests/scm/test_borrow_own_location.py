@@ -232,3 +232,31 @@ def test_a_plain_borrow_at_the_lines_site_pool_is_still_refused():
         assert "inside this line's Reserve pool" in str(raised.value.detail), (
             raised.value.detail
         )
+
+
+def test_a_later_order_borrow_and_an_own_borrow_at_one_bin_never_hold_more_than_on_hand():
+    """Review N1: the dialog sends a later order's row plus the plain own row for an
+    over-ask at the own bin. The later order's units come off the bin's free stock too, so
+    the pair holds what is on hand and records the rest short."""
+    with blank_session() as db:
+        company_id, eling, project, product = _world(db)
+        _group, sites = _group_sites(db)
+        own, _pool = sites["BRW"]
+        _stock(db, product, own, on_hand=30)
+        _d_order, _d_line, _d_cso, donor_core = _seed_line(
+            db, company_id, project, product, own, qty_ordered="30", line_no=2,
+        )
+        order, line, _cso, _cline = _seed_line(
+            db, company_id, project, product, own, qty_ordered="35", line_no=1,
+        )
+        world = {"eling": eling, "product": product, "own": own, "order": order, "line": line}
+        body = _confirm(
+            db, world,
+            borrow=[
+                {**_own_borrow(world, "30"), "donor_core_line_id": str(donor_core.id)},
+                _own_borrow(world, "5"),
+            ],
+        )
+        assert _held_at(db, world, own) == Decimal("30"), "never more than on hand"
+        notices = body["stock_short_notices"]
+        assert len(notices) == 1 and "5 short" in notices[0]["reason"], notices
