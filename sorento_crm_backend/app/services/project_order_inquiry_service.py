@@ -1734,7 +1734,8 @@ class ProjectOrderInquiryService:
                 if entry.get("cs_note"):
                     # PR 1622 (owner, 13 Oct): CS's own words on this Buy reach purchasing
                     # here, the row's "Why this instruction" on the worklist.
-                    cs_note = f"CS: {entry['cs_note']}"
+                    # `;` joins a note's fragments, so it never appears inside one (review N1).
+                    cs_note = "CS: " + str(entry["cs_note"]).replace(";", ",")
                     raised_row.note = (
                         f"{raised_row.note}; {cs_note}" if raised_row.note else cs_note
                     )

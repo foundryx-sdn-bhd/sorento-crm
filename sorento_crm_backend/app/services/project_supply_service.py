@@ -7191,12 +7191,10 @@ class ProjectSupplyService:
                         getattr(self, "_landed_buy_notices", None) or {}
                     ).get(str(line.id), {}).get("landed"),
                     # PR 1622 (owner, 13 Oct): what CS wrote when deciding this Buy, so a
-                    # line bought again after purchasing refused it says what changed.
-                    "cs_note": (
-                        (getattr(entry, "amend_reason", None) or entry.buy_reason or "")
-                        .strip()
-                        or None
-                    ),
+                    # line bought again after purchasing refused it says what changed. Only
+                    # the planner's own note: never amend_reason/buy_reason, which can carry
+                    # a seeded engine sentence (review B1).
+                    "cs_note": (getattr(entry, "cs_note", None) or "").strip() or None,
                 }
             )
         for entry in carried:

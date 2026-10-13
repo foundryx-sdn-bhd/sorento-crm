@@ -721,8 +721,8 @@ def test_cs_reason_on_rebuy_reaches_the_new_order_inquiry_row(api, monkeypatch):
             _line_payload(
                 fixture["line"].id,
                 buy_qty="10",
-                amend_reason="Customer accepted the chrome finish, buy from the new supplier",
             )
+            | {"cs_note": "Customer accepted the chrome finish, buy from the new supplier"}
         ],
     )
     assert resp.status_code == 200, resp.text
@@ -764,3 +764,41 @@ def test_cs_note_never_reads_as_a_date_stamp(note, expected):
     from app.services.planning_change_service import _carries_date_stamp
 
     assert _carries_date_stamp(note) is expected
+
+
+def test_amend_or_buy_reason_alone_never_becomes_a_cs_note(api, monkeypatch):
+    """Review B1: amend_reason / buy_reason can hold a sentence the board's Reason box was
+    only seeded with (the engine's own borrow sentence); only `cs_note` reaches purchasing."""
+    from app.models.project_so import ACK_REJECTED, INQUIRY_CANCELLED, OrderInquiryRow
+
+    from .test_order_inquiry_handshake import _confirm, _line_payload
+
+    client, world = api
+    _register()
+    fixture = _raise_one_row(api, qty="10")
+    _capture(monkeypatch)
+    assert _reject_one(world, fixture["row"]).status_code == 200
+    resp = _confirm(
+        client,
+        fixture["order"].id,
+        [
+            _line_payload(
+                fixture["line"].id,
+                buy_qty="10",
+                amend_reason="ENGINE: free stock at DC1 outside the group",
+                buy_reason="ENGINE: free stock at DC1 outside the group",
+            )
+        ],
+    )
+    assert resp.status_code == 200, resp.text
+    world.db.commit()
+    [live] = (
+        world.db.query(OrderInquiryRow)
+        .filter(
+            OrderInquiryRow.so_line_id == fixture["line"].id,
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+            OrderInquiryRow.ack_state != ACK_REJECTED,
+        )
+        .all()
+    )
+    assert "CS:" not in (live.note or "")

@@ -589,15 +589,17 @@ export function BoardLineDecisionPanel({
     try {
       let ok: boolean | void;
       const approvingNow = approving && !covered;
-      // PR 1622 (owner Q1): the planner's own words on a line kept as Buy are that Buy's
-      // reason, and the server carries them to purchasing's new order inquiry row.
+      // PR 1622 (owner Q1, review B1 x2): the planner's OWN words on a line that buys, sent as
+      // their own field (`cs_note`) and carried to purchasing's new order inquiry row. Never
+      // what the box was merely seeded with (it can be the engine's borrow sentence), so
+      // neither `amend_reason` nor `buy_reason` - both may hold that seed - is what travels.
       const typed = reason.trim();
-      const ownBuyReason =
+      const csNote =
         toMinor(draft.buy_qty) > 0 &&
         typed !== '' &&
-        (typed !== reasonSeed.current.trim() || typed === (decision?.buy_reason ?? '').trim())
+        (typed !== reasonSeed.current.trim() || typed === (decision?.cs_note ?? '').trim())
           ? typed
-          : '';
+          : undefined;
       if (approvingNow) {
         ok = await onDecide({
           ...suggestionWithReasons(contribution, {
@@ -605,7 +607,7 @@ export function BoardLineDecisionPanel({
             // fan-out Save's amending branch below uses. AC-28: `reason` travels on the
             // approving branch too, not only the amending `else` below.
             reason,
-            buy_reason: foldedDraft.buy_reason || ownBuyReason,
+            buy_reason: foldedDraft.buy_reason,
             borrow: foldedDraft.borrow,
             // S2 (fix round 2, reviewer): the Order back switch and Document cited box are on
             // screen for this exact line - a wholly-bought approving save used to take them
@@ -614,11 +616,13 @@ export function BoardLineDecisionPanel({
             order_back: draft.order_back,
             cited_document: draft.cited_document,
           }),
+          cs_note: csNote,
           suspected_system_issue: suspected,
         });
       } else {
         ok = await onDecide({
           ...decisionFromAmendDraft(foldedDraft, reason),
+          cs_note: csNote,
           // THE BOOLEAN, never `|| undefined`: `false` is the planner's answer that the numbers
           // are fine, and dropping the key let the frozen `true` behind it read as current.
           suspected_system_issue: suspected,
