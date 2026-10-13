@@ -55,6 +55,21 @@ class TurnV2Result:
     route: Route = "lookup"
     language: str = "en"
     trace: dict[str, Any] = field(default_factory=dict)
+    #: The parser v2 provider usage (the hook records it as the turn's parser spend).
+    usage: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def branch_kind(self) -> str | None:
+        """The `contracts.BRANCH_KINDS` value the hook closes a direct reply with."""
+        return _BRANCH_BY_ROUTE.get(self.route)
+
+
+#: A direct reply's route as the branch kind its turn row records.
+_BRANCH_BY_ROUTE = {
+    "clarify": "clarify_menu",
+    "report": "business_query",
+    "idea": "ideate",
+}
 
 
 #: (spec, refs, today, row, incoming) -> object with text / pending / rows / plan
