@@ -1730,6 +1730,13 @@ class ProjectOrderInquiryService:
                         f"Planning keeps this Buy: {entry['landed_note']} stay linked "
                         "to this line; adjust the linkage if the Buy replaces them"
                     )
+                if entry.get("cs_note"):
+                    # PR 1622 (owner, 13 Oct): CS's own words on this Buy reach purchasing
+                    # here, the row's "Why this instruction" on the worklist.
+                    cs_note = f"CS: {entry['cs_note']}"
+                    raised_row.note = (
+                        f"{raised_row.note}; {cs_note}" if raised_row.note else cs_note
+                    )
                 if redirected_this_call:
                     # AC-OH-40..42: the fresh row states, in one place, what old supply it
                     # replaces - the released rows' own qty (summed, AC-OH-42) and the

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BoardDecisionPill,
+  purchasingRefusalLine,
   purchasingRefusalTitle,
   verdictOf,
 } from './BoardDecisionPill';
@@ -74,6 +75,37 @@ describe('Rejected by purchasing', () => {
         /Rejected by Joey on 13\/10\/2026, 2:05\s?pm: Supplier discontinued this finish/i,
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('keeps the reason and who/when on the SAME line as the pill, truncated, full text as tooltip', () => {
+    render(
+      <BoardDecisionPill
+        contribution={contributionOf({ order_inquiry: refused })}
+        decision={null}
+      />,
+    );
+    const line = screen.getByTestId(`decision-purchasing-rejected-line-${KEY}`);
+    expect(line).toHaveClass('truncate');
+    expect(line.textContent).toMatch(
+      /^Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
+    );
+    const trigger = screen.getByTestId(`decision-purchasing-rejected-${KEY}`);
+    expect(trigger.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026/,
+    );
+    expect(trigger).toContainElement(
+      screen.getByTestId(`decision-pill-${KEY}`),
+    );
+  });
+
+  it('one-line text without a name or time is just the reason', () => {
+    expect(
+      purchasingRefusalLine({
+        rejected_by_name: null,
+        rejected_at: null,
+        rejected_reason: 'Out',
+      }),
+    ).toBe('Out');
   });
 
   it('gives way to CS once they decide the line again in this session', () => {

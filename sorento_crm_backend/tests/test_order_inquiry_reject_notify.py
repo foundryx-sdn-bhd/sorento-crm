@@ -534,7 +534,6 @@ def test_template_renders_every_fact():
             "Supplier discontinued this finish",
             "Joey",
             "13/10/2026 14:05",
-            "https://crm.example/project-sales/order-inquiries/abc",
             "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&amp;lines=l1,l2"
             if body is out["body_html"]
             else "https://crm.example/project-sales/fulfilment-planning?orders=SO-422517&lines=l1,l2",
@@ -543,6 +542,25 @@ def test_template_renders_every_fact():
         assert "None" not in body
         assert " · " not in body
     assert "border:1px solid #d0d0d5" in out["body_html"]
+
+
+def test_email_has_one_cta_open_sales_order_to_the_board():
+    """Owner note on the mock: "just have a CTA to open the sales order"."""
+    out = _render(_CTX)
+    html = out["body_html"]
+    assert html.count(">Open sales order</a>") == 1
+    assert "fulfilment-planning?orders=SO-422517&amp;lines=l1,l2" in html
+    assert "Open in Order Inquiries" not in html
+    assert "project-sales/order-inquiries/abc" not in html
+    assert "Open sales order: https://crm.example/project-sales/fulfilment-planning" in out["body_text"]
+
+
+def test_email_cta_falls_back_to_the_order_inquiry_without_an_so():
+    ctx = json.loads(json.dumps(_CTX))
+    ctx["reject"]["board_link"] = None
+    html = _render(ctx)["body_html"]
+    assert ">Open order inquiry</a>" in html
+    assert "project-sales/order-inquiries/abc" in html
 
 
 def test_template_blank_so_and_customer_print_empty():
@@ -677,3 +695,54 @@ def test_email_and_bell_link_open_the_so_board_on_the_rejected_lines(api, monkey
     assert rej["link"] == build_order_inquiry_link(str(first.order_inquiry_id))
     [notice] = captured["in_app"]
     assert notice["data"]["link"] == path
+
+
+# --------------------------------------------------------------------------- #
+# Owner Q1: CS's reason on a re-Buy reaches purchasing's new order inquiry row #
+# --------------------------------------------------------------------------- #
+
+
+def test_cs_reason_on_rebuy_reaches_the_new_order_inquiry_row(api, monkeypatch):
+    from app.models.project_so import ACK_REJECTED, INQUIRY_CANCELLED, OrderInquiryRow
+
+    from .test_order_inquiry_handshake import _confirm, _line_payload
+
+    client, world = api
+    _register()
+    fixture = _raise_one_row(api, qty="10")
+    _capture(monkeypatch)
+    row = fixture["row"]
+    assert _reject_one(world, row, reason="Supplier discontinued this finish").status_code == 200
+
+    resp = _confirm(
+        client,
+        fixture["order"].id,
+        [
+            _line_payload(
+                fixture["line"].id,
+                buy_qty="10",
+                amend_reason="Customer accepted the chrome finish, buy from the new supplier",
+            )
+        ],
+    )
+    assert resp.status_code == 200, resp.text
+    world.db.commit()
+
+    live = (
+        world.db.query(OrderInquiryRow)
+        .filter(
+            OrderInquiryRow.so_line_id == fixture["line"].id,
+            OrderInquiryRow.state != INQUIRY_CANCELLED,
+            OrderInquiryRow.ack_state != ACK_REJECTED,
+        )
+        .all()
+    )
+    assert len(live) == 1, "a fresh row goes to purchasing"
+    assert "CS: Customer accepted the chrome finish, buy from the new supplier" in (live[0].note or "")
+
+
+def test_buy_without_a_cs_reason_adds_no_cs_note(api, monkeypatch):
+    client, world = api
+    _register()
+    row = _raise_one_row(api, qty="10")["row"]
+    assert "CS:" not in (row.note or "")

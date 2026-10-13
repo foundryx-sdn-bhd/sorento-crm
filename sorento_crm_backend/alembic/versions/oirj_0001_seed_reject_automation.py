@@ -38,7 +38,8 @@ _SUBJECT = (
 )
 
 # Inline, like the handover mail's own body (`oihr_0003_location_column`) - a mail client
-# carries no stylesheet.
+# carries no stylesheet. ONE call to action (owner, 13 Oct): "Open sales order", to the SO's
+# planning board on the refused lines; the order inquiry only when there is no SO to open.
 _TH_STYLE = "border:1px solid #d0d0d5;padding:4px 8px;background:#f2f2f5;text-align:left;"
 _TD_STYLE = "border:1px solid #d0d0d5;padding:4px 8px;"
 _TABLE_STYLE = "border-collapse:collapse;font-family:Arial, sans-serif;font-size:13px;"
@@ -74,8 +75,7 @@ _BODY_HTML = """\
 </table>
 <p>Reason: {{ reject.reason | default("", true) }}</p>
 <p>Rejected{% if actor %} by {{ actor.name }} ({{ actor.email }}){% endif %} on {{ reject.rejected_at }}.</p>
-{% if reject.board_link %}<p><a href="{{ reject.board_link }}">Open the sales order on the planning board</a></p>
-{% endif %}<p><a href="{{ reject.link }}">Open in Order Inquiries</a></p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;"><tr><td align="center" bgcolor="#2563EB" style="border-radius:8px;background-color:#2563EB;"><a href="{{ reject.board_link or reject.link }}" target="_blank" style="display:inline-block;padding:12px 28px;font-family:Arial, sans-serif;font-size:15px;font-weight:700;line-height:20px;color:#FFFFFF;text-decoration:none;border-radius:8px;">{% if reject.board_link %}Open sales order{% else %}Open order inquiry{% endif %}</a></td></tr></table>
 """.replace("__TABLE_STYLE__", _TABLE_STYLE).replace("__TH_STYLE__", _TH_STYLE).replace(
     "__TD_STYLE__", _TD_STYLE
 )
@@ -92,8 +92,7 @@ ITEM CODE | QTY | DELIVERY DATE
 {% endfor %}
 Reason: {{ reject.reason | default("", true) }}
 Rejected{% if actor %} by {{ actor.name }}{% endif %} on {{ reject.rejected_at }}.
-{% if reject.board_link %}Planning board: {{ reject.board_link }}
-{% endif %}Order inquiry: {{ reject.link }}
+{% if reject.board_link %}Open sales order: {{ reject.board_link }}{% else %}Open order inquiry: {{ reject.link }}{% endif %}
 """
 
 

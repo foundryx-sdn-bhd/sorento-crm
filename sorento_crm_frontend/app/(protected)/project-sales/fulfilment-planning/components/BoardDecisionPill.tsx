@@ -184,6 +184,19 @@ export function purchasingRefusalTitle(
   return `Rejected${who}${when}: ${oi.rejected_reason || 'no reason given'}`;
 }
 
+/** The pill's one-line companion (owner, 13 Oct: "within 1 row"): "<reason> (<name>, <when>)". */
+export function purchasingRefusalLine(
+  oi: Pick<
+    NonNullable<BoardContribution['order_inquiry']>,
+    'rejected_by_name' | 'rejected_at' | 'rejected_reason'
+  >,
+): string {
+  const stamp = oi.rejected_at ? formatDateTimeInMalaysia(oi.rejected_at) : '';
+  const meta = [oi.rejected_by_name, stamp].filter(Boolean).join(', ');
+  const reason = oi.rejected_reason || 'No reason given';
+  return meta ? `${reason} (${meta})` : reason;
+}
+
 /**
  * The Verdict column's own sort order (AC-7, the UAC's own words: "Suggested, Saved,
  * Confirmed, Rejected"). `unplannable` and `cancelled` are not a verdict a planner takes on
@@ -285,10 +298,20 @@ export function BoardDecisionPill({
             <button
               type="button"
               aria-label={purchasingRefusalTitle(contribution.order_inquiry)}
+              title={purchasingRefusalTitle(contribution.order_inquiry)}
               data-testid={`decision-purchasing-rejected-${contribution.key}`}
-              className="block min-w-0 overflow-hidden rounded-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              // ONE line, never a taller row (owner, 13 Oct): the pill keeps its size and the
+              // reason with who/when truncates beside it; the full sentence is the tooltip and,
+              // at 375px where there is no hover, the popover.
+              className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm text-left outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {pill}
+              <span className="shrink-0">{pill}</span>
+              <span
+                data-testid={`decision-purchasing-rejected-line-${contribution.key}`}
+                className="min-w-0 truncate text-xs text-muted-foreground"
+              >
+                {purchasingRefusalLine(contribution.order_inquiry)}
+              </span>
             </button>
           </PopoverTrigger>
           <PopoverPortal>

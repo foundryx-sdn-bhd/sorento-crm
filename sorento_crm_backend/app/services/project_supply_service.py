@@ -7190,6 +7190,13 @@ class ProjectSupplyService:
                     "landed_note": (
                         getattr(self, "_landed_buy_notices", None) or {}
                     ).get(str(line.id), {}).get("landed"),
+                    # PR 1622 (owner, 13 Oct): what CS wrote when deciding this Buy, so a
+                    # line bought again after purchasing refused it says what changed.
+                    "cs_note": (
+                        (getattr(entry, "amend_reason", None) or entry.buy_reason or "")
+                        .strip()
+                        or None
+                    ),
                 }
             )
         for entry in carried:
