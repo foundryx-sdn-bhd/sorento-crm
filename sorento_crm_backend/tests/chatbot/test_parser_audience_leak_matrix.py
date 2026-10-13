@@ -238,6 +238,39 @@ class TestSalesMatrix:
         assert captured == [], captured
 
 
+    @pytest.mark.parametrize("grants", AUDIENCES)
+    def test_sales_ranking_ask(self, session_factory, monkeypatch, grants) -> None:
+        """Main #1447 refuses a `sales_ranking` verdict without the sales report grant before
+        anything resolves. Ungranted: the customer is unknown, so a gate that misses answers
+        "Couldn't find" (the resolver ran) instead of the denial. Granted: no entity, the ranking
+        names group_by, measure and basis so the turn reaches `crm_report_ask`."""
+        ranked = dict(
+            group_by="sales_agent", top_n=3, rank_direction="top", rank_by=None,
+            basis="delivered", measure="amount", ranking_refine=False,
+            date_filter_start="2026-09-01", date_filter_end="2026-09-30",
+        )
+        customer = {
+            "raw": "ZZT NOSUCH CUSTOMER", "hint": "customer", "canonical_code": None,
+            "current_message": True, "confident": True,
+        }
+        granted = S in grants
+        qf = _qf(order_status="sales_ranking", entities=[] if granted else [customer], **ranked)
+        services, resolver_calls = _counting_services([])
+        _seed_contact(session_factory, variables={})
+        result, captured = _run_turn(
+            session_factory, monkeypatch, qf=qf, text_body="top 3 salesman for ZZT NOSUCH CUSTOMER",
+            msg_id=f"ZZT-pa-{uuid.uuid4().hex[:12]}", attributes=list(grants),
+            resolve_services=services, mcp_response={"has_result": False, "items": []},
+        )
+        reply = (result.reply or {}).get("text") or ""
+        if granted:
+            assert "crm_report_ask" in _names(captured), (captured, reply)
+            return
+        assert reply.strip() == SALES_REPORT_DENIAL, reply
+        assert captured == [], captured
+        assert resolver_calls == [], resolver_calls
+
+
 # --------------------------------------------------------------------------- #
 # Low stock (L): intent low_stock_report
 # --------------------------------------------------------------------------- #
