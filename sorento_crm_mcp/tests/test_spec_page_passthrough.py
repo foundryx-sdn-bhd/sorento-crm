@@ -68,3 +68,26 @@ def test_an_unpaged_promotion_list_keeps_its_fields():
     body = {"data": [{"selling_price": 99, "product": {"product_code": "B1", "list_price": 150}, "promotion": {"id": "p1"}}]}
     out = json.loads(present_response("crm_marketing_promotion_products_list", json.dumps(body)))
     assert any(f.get("label") == "List Price" for f in out["items"][0]["fields"]), out
+
+
+def test_a_paged_promotion_line_names_its_group_and_a_name_beyond_the_code():
+    """Crew data on 045a0fea: one product in two groups of one promotion printed as two identical
+    lines, and a product whose name is its code printed no name. The line names its group, and
+    the description stands in when the name only repeats the code."""
+    promo = {"id": "p6", "description": "Office promo", "start_date": "2026-09-08", "end_date": "2026-12-08"}
+    body = {
+        "data": [
+            {"selling_price": 650, "promotion_group_name": "LESS 40% + 5%", "promotion": promo,
+             "product": {"product_code": "B1", "product_name": "B1", "description": "Art basin black"}},
+            {"selling_price": 650, "promotion_group_name": ">=5 UNITS, EXTRA 10%", "promotion": promo,
+             "product": {"product_code": "B1", "product_name": "B1", "description": "Art basin black"}},
+        ],
+        "pagination": {"total": 2, "page": 1, "limit": 5},
+        "spec_page": {"page": 1, "limit": 5, "total": 2},
+    }
+    out = json.loads(present_response("crm_marketing_promotion_products_list", json.dumps(body)))
+    titles = [i["title"] for i in out["groups"][0]["items"]]
+    assert titles == [
+        "B1 Art basin black: MYR 650.00 (LESS 40% + 5%)",
+        "B1 Art basin black: MYR 650.00 (>=5 UNITS, EXTRA 10%)",
+    ], titles

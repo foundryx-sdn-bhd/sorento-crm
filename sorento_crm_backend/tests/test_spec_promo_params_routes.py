@@ -1199,3 +1199,21 @@ def test_spec_filtered_promotion_pages_neither_repeat_nor_drop_a_line(api, db, m
     assert order == sorted(order, key=order.index) and len({*order}) == 2, seen
     switches = sum(1 for a, b in zip(order, order[1:]) if a != b)
     assert switches == 1, f"a promotion's lines are split across the list: {seen}"
+
+
+def test_a_promotion_line_names_its_group(api, db, monkeypatch):
+    """Crew data on 045a0fea: SRTWB1514-BW printed twice under one promotion because it sits in
+    two groups ("LESS 40% + 5%", ">=5 UNITS, EXTRA 10%") at one price. Each line names its group."""
+    monkeypatch.setattr(
+        UserPermissionService, "get_user_permission_slugs", lambda self, uid: {"marketing.promotion_products.view"}
+    )
+    prod = _p(db, "PGN", {"class": _enum("Basin")})
+    _promo(db, prod, start=TODAY - timedelta(days=1), end=TODAY + timedelta(days=1))
+    db.commit()
+    resp = api.get(
+        "/api/v1/marketing/promotion-products/",
+        params={"serving_policy": "true", "limit": 10, **_constraints({"key": "class", "op": "eq", "value": "Basin"})},
+    )
+    assert resp.status_code == 200, resp.text
+    rows = [r for r in resp.json()["data"] if r["product"]["product_code"] == prod.product_code]
+    assert rows and rows[0].get("promotion_group_name") == "G", rows
