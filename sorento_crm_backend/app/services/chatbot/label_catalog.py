@@ -27,6 +27,8 @@ LANGUAGES = ("en", "ms", "zh")
 # The presenter's own truncation sentence (`summary_intro`), which carries an em dash; escaped
 # here so this source stays dash-free.
 _NOT_EVERY_BREAKDOWN = "Not every breakdown is shown \u2014 add a customer, a product or a date range."
+# `output_structurer`'s denied-field note (one per line), escaped the same way.
+_CANT_SHARE = "I can't share the {label} \u2014 please check with the office."
 
 LABELS: dict[str, dict[str, str]] = {
     "Company": {"ms": "Syarikat", "zh": "公司"},
@@ -474,6 +476,41 @@ LABELS: dict[str, dict[str, str]] = {
     "I still need the attachment type.": {"ms": "Saya masih perlukan jenis lampiran.", "zh": "我仍需要附件类型。"},
     "I still need which products to include.": {"ms": "Saya masih perlu tahu produk mana yang disertakan.", "zh": "我仍需要知道要包括哪些产品。"},
     "I still need more detail.": {"ms": "Saya masih perlukan butiran lanjut.", "zh": "我仍需要更多详情。"},
+    # CHAT-PRODUCT-LABELS (4 Oct): product info replies (presenter `_products`,
+    # `_promotion_products`, `_product_attachments` and their intros) and the text
+    # `output_structurer` adds to them. Spec registry labels and product data stay as printed.
+    "Description": {"ms": "Keterangan", "zh": "描述"},
+    "List Price": {"ms": "Harga Senarai", "zh": "标价"},
+    "Dimensions": {"ms": "Dimensi", "zh": "尺寸"},
+    "Not defined": {"ms": "Tidak ditetapkan", "zh": "未设定"},
+    "Promotion": {"ms": "Promosi", "zh": "促销"},
+    "Selling Price": {"ms": "Harga Jualan", "zh": "售价"},
+    "Attachment Type": {"ms": "Jenis Lampiran", "zh": "附件类型"},
+    "File Name": {"ms": "Nama Fail", "zh": "文件名"},
+    "Certificate Number": {"ms": "No. Sijil", "zh": "证书编号"},
+    "Valid Until": {"ms": "Sah Sehingga", "zh": "有效期至"},
+    "Validity": {"ms": "Kesahan", "zh": "有效状态"},
+    "File Link": {"ms": "Pautan Fail", "zh": "文件链接"},
+    "Specs": {"ms": "Spesifikasi", "zh": "规格"},
+    "not recorded yet": {"ms": "belum direkodkan", "zh": "尚未记录"},
+    _CANT_SHARE: {
+        "ms": "Saya tidak boleh berkongsi {label}. Sila semak dengan pejabat.",
+        "zh": "我无法提供 {label}，请向办公室查询。",
+    },
+    "Here are the matching products.": {"ms": "Berikut ialah produk yang sepadan.", "zh": "以下是匹配的产品。"},
+    "Here are the matching promotion products.": {"ms": "Berikut ialah produk promosi yang sepadan.", "zh": "以下是匹配的促销产品。"},
+    "Here are the product files I found.": {"ms": "Berikut ialah fail produk yang saya temui.", "zh": "以下是我找到的产品文件。"},
+    # The presenter's `_VALIDITY_LABELS` words and `FILE_LINK_UNAVAILABLE`: values of one label
+    # each (`LABEL_VALUES`), so an order status that reads "Expired" stays as printed.
+    "Valid": {"ms": "Sah", "zh": "有效"},
+    "Expiring soon": {"ms": "Akan tamat tempoh", "zh": "即将到期"},
+    "Expired": {"ms": "Tamat tempoh", "zh": "已过期"},
+    "Not yet valid": {"ms": "Belum sah", "zh": "尚未生效"},
+    "Unknown": {"ms": "Tidak diketahui", "zh": "未知"},
+    "(file link unavailable right now)": {
+        "ms": "(pautan fail tidak tersedia buat masa ini)",
+        "zh": "（文件链接暂时无法获取）",
+    },
 }
 
 # CHAT-FIND: the generic find tool's presenter lines live with their filter in the registry
@@ -771,7 +808,17 @@ DIRECT_ONLY = (
 
 #: Report value words `Localizer.lines` translates after a catalogued label. An explicit set, never
 #: "any catalog key", so data that happens to read like a label (a status named "Status") is safe.
-VALUE_WORDS = frozenset({"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)"})
+VALUE_WORDS = frozenset(
+    {"all", "Amount", "Quantity", "Ordered", "Delivered (transferred to DO)", "Not defined", "not recorded yet"}
+)
+#: Value words that translate only after ONE English label (the product attachment presenter's).
+LABEL_VALUES: dict[str, frozenset[str]] = {
+    "Validity": frozenset({"Valid", "Expiring soon", "Expired", "Not yet valid", "Unknown"}),
+    "File Link": frozenset({"(file link unavailable right now)"}),
+}
+#: Those words are never a sentence, a flag or a label of their own: a status card that prints
+#: "Unknown" or "Expired" alone on a line keeps it as printed (#1448 owner Q3).
+_VALUE_ONLY = frozenset().union(*LABEL_VALUES.values())
 RANGE = "{from} to {to}"
 #: A `{token}` matches at most this many characters of one line, and a line longer than
 #: `_INLINE_LINE_MAX` gets `lines()` only (the inline pass is skipped for it).
@@ -860,6 +907,8 @@ class Localizer:
         return _TOKEN.sub(lambda t: values.get(t.group(1), t.group(0)), self.table.get(key, key))
 
     def _text(self, s: str, *, inline: bool) -> str:
+        if s in _VALUE_ONLY:
+            return s
         if s in self.table and s not in DIRECT_ONLY:
             return self.table[s]
         best = None
@@ -882,7 +931,8 @@ class Localizer:
            (or `"- <sentence>"`);
         3. a label line (`"<label>: <value>"`, bold `"*<label>:* <value>"`, optionally led by
            `"<n>. "` or `"- "`) whose label is catalogued: the label translates, and the value only when
-           it is exactly a `VALUE_WORDS` entry or a `dd/mm/yyyy to dd/mm/yyyy` range;
+           it is exactly a `VALUE_WORDS` entry, one of that label's `LABEL_VALUES`, or a
+           `dd/mm/yyyy to dd/mm/yyyy` range;
         4. anything else, unchanged (rank lines, months, codes, `Unassigned`).
         The join is byte-exact."""
         if not self.table or not text:
@@ -932,7 +982,7 @@ class Localizer:
         if done != line:
             return done
         flag = _FLAG.fullmatch(line)
-        if flag and flag.group(2) in self.table and flag.group(2) not in DIRECT_ONLY and not tokens(flag.group(2)):
+        if flag and flag.group(2) in self.table and flag.group(2) not in DIRECT_ONLY and flag.group(2) not in _VALUE_ONLY and not tokens(flag.group(2)):
             return flag.group(1) + self.table[flag.group(2)] + flag.group(3)
         number = _NUMBERED.match(line)
         prefix, rest = (number.group(0), line[number.end() :]) if number else ("", line)
@@ -944,13 +994,13 @@ class Localizer:
             if not rest.startswith(left):
                 continue
             head, found, value = rest[len(left) :].partition(sep)
-            if not found or head not in self.table or head in DIRECT_ONLY or _BREAKDOWN_VALUE.match(value):
+            if not found or head not in self.table or head in DIRECT_ONLY or head in _VALUE_ONLY or _BREAKDOWN_VALUE.match(value):
                 continue  # a breakdown row (`5 (O/S: 2)`) whose name collides with a label is data
-            return prefix + left + self.table[head] + sep + self._value(value)
+            return prefix + left + self.table[head] + sep + self._value(value, head)
         return line
 
-    def _value(self, value: str) -> str:
-        if value in VALUE_WORDS and value in self.table:
+    def _value(self, value: str, label: str) -> str:
+        if (value in VALUE_WORDS or value in LABEL_VALUES.get(label, ())) and value in self.table:
             return self.table[value]
         m = _DATE_RANGE.fullmatch(value)
         if m and RANGE in self.table:
