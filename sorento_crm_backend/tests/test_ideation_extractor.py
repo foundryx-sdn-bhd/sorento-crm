@@ -911,3 +911,34 @@ def test_r3e_golden_docstring_names_the_migration_that_publishes_the_prompt():
     doc = (_golden_module().__doc__ or "")
     assert "idea_capture_fields_0001" in doc
     assert "--from-db" in doc
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 4: a stated "what we do now" sentence goes to        #
+# current_workaround and is not kept in problem (zh crew check).              #
+# --------------------------------------------------------------------------- #
+def _workaround_passages() -> dict[str, str]:
+    fields = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"].lower()
+    return {
+        "schema.fields.description": fields[fields.index("current_workaround"):],
+        "fallback.current_workaround": _bullet(_fallback_text(), "current_workaround"),
+    }
+
+
+@pytest.fixture(params=["schema.fields.description", "fallback.current_workaround"])
+def workaround_passage(request) -> str:
+    return _workaround_passages()[request.param]
+
+
+def test_r4_what_they_do_now_goes_to_workaround_and_not_into_problem(workaround_passage):
+    t = workaround_passage
+    assert re.search(
+        r"\b(?:not|never|leaves? out|left out|kept out)\b[^.]{0,120}?problem"
+        r"|problem[^.]{0,120}?\b(?:not|never|leaves? out|left out|kept out)\b",
+        t,
+    ), t
+    assert "现在只能" in t, t
+    # Crew live check (13 Oct): a list of phrasings alone left the coping sentence inside
+    # problem 3/5 on gpt-5.4-mini. What fixed it is a WORKED split: a zh message where the
+    # coping sentence is shown landing in current_workaround, problem keeping the rest.
+    assert re.search(r"current_workaround\W{0,6}(?:=|is)\s*\W?现在只能", t), t
