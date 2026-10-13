@@ -420,3 +420,15 @@ def test_p19_the_size_miss_template_reads_only_a_measure(line):
     for lang in ("ms", "zh"):
         done = Localizer(lang, defaults(lang)).reply(line)
         assert done.startswith("No "), (lang, done)
+
+
+@pytest.mark.parametrize("line", ["138 have no Size recorded.", "1 has no Length recorded."])
+def test_p20_the_unrecorded_count_sentence_is_in_the_catalog(line):
+    """Crew live check #3 (e3afe145): "ada floor grating 250mm?" answered "Tiada 250 mm. Saiz yang
+    ada: ... 138 have no Size recorded." with the last sentence still in English."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+
+    number = line.split()[0]
+    for lang in ("ms", "zh"):
+        done = Localizer(lang, defaults(lang)).reply(line)
+        assert "recorded" not in done and number in done, (lang, done)
