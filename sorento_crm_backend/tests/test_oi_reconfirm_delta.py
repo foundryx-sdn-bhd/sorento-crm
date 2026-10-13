@@ -531,3 +531,25 @@ def test_a_date_move_restates_the_same_row_with_its_was_date(api):
     (told,) = _told_about(row)
     assert told["line"]["remark"] == "DELAY", told["line"]
     assert told["line"]["was"] == {"delivery_date": "16/11/2026"}
+
+
+def test_an_unchanged_hole_takes_the_new_wording_without_a_word_to_purchasing(api):
+    """Review nit: the hole's wording changed. The kept row's note follows the entry's
+    wording; nothing is told, nothing is cancelled. The old wording STARTS WITH the new
+    one, so a prefix test would wrongly read them as the same."""
+    _client, world = api
+    order, (_l144, _l336, line_diy) = _three_lines(api)
+    inquiry_id = _order_row(world, line_diy).order_inquiry_id
+    _raise(world, order, inquiry_id, 2,
+           [_hole(line_diy, "CB2519SS-DIY", 5, "BRW-AA", D_DIY, ref="PSO-004 line 400 via")])
+    (diy,) = _holes(world, inquiry_id)
+    _TOLD.clear()
+
+    _raise(world, order, inquiry_id, 3,
+           [_hole(line_diy, "CB2519SS-DIY", 5, "BRW-AA", D_DIY, ref="PSO-004")])
+
+    world.db.expire_all()
+    (row,) = _holes(world, inquiry_id, live=False)
+    assert row.id == diy.id
+    assert row.note == "Order-back: BRW-AA lent 5 to PSO-004 line 400", row.note
+    assert _TOLD == [], _remarks(_TOLD)

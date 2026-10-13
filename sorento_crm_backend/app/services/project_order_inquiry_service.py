@@ -4517,7 +4517,7 @@ class ProjectOrderInquiryService:
             # Nothing for purchasing to act on. The note follows the entry's own wording
             # (a provisional ref becomes the AutoCount number) without a word to them.
             note = entry.get("note")
-            if note and not (row.note or "").startswith(note):
+            if note and (row.note or "").split("; ")[0] != note:
                 row.note = note
             return
         row.qty = qty
