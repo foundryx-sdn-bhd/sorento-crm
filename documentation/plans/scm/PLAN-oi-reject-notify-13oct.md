@@ -1,6 +1,6 @@
 # PLAN: notify the OI raiser when purchasing rejects rows (OI-REJECT-NOTIFY)
 
-Status: Review (track: standard, additive seed migration; cloud lane, backend only)
+Status: Ready, reviewer READY at d30ed42e (track: standard, additive seed migration; cloud lane, backend only)
 
 UAC: `oi-reject-notify-13oct-acceptance-criteria.md` (alongside).
 
