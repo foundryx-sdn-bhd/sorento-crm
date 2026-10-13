@@ -397,6 +397,32 @@ def test_1362_item3_my_line_finds_a_fulfilled_line_in_the_stock_drawer():
         assert detail["so_qty"] == "30", detail["so_qty"]
 
 
+def test_the_stock_drawer_leaves_an_autocount_cancel_out_of_fulfilled():
+    """AC-CANCEL-CRM (review M15): TransferedQty 100 of which 40 is AutoCount Cancel SO. The
+    drawer's "My line" says 60 went out, not 100."""
+    with blank_session() as db:
+        group, product = own_arrival_group(db)
+        own = own_arrival_warehouse(db, group)
+        _board_stock(db, product, own, on_hand=100)
+        order, (done, _open) = order_with_lines(
+            db, product=product, warehouse=own,
+            lines=[
+                {"qty": "100", "required_date": date(2026, 6, 8), "source_ref": "LD",
+                 "delivered": "100"},
+                {"qty": "30", "required_date": FIRST_REQUIRED, "source_ref": "LO"},
+            ],
+        )
+        done.qty_cancelled = 40
+        db.flush()
+
+        detail = _service(db).stock_detail(
+            str(product.id), str(own.id), line_ids=[str(done.id)]
+        )
+
+        mine = [row for row in detail["sales_orders"] if row["is_this_line"]]
+        assert mine[0]["fulfilled_qty"] == "60", mine[0]
+
+
 # ============================================================================
 # #1362 fix round 4 (owner evidence, 29 Sep 2026). SO382618: PO 202607-S0077's B2154-NL
 # line bought 200 for SO line 1648 (from_so_line_ref = line 1648's source_ref 43495333,
