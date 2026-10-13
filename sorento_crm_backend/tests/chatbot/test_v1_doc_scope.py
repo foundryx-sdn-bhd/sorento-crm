@@ -377,7 +377,7 @@ class TestDidYouMeanAlternatives:
         _seed_contact(session_factory, variables={})
         foreign = _other_customer(session_factory, FOREIGN)
         order_id = _seed_do(session_factory, DO_NO, foreign, debtor_name=FOREIGN)
-        db = session_factory()
+        db = TestPerMatchDropOnDeliveryOrders._db(session_factory)
         alt = {"uuid": order_id, "entity_type": "customer_order", "canonical_code": DO_NO}
         payload = {
             "resolved": {
@@ -392,6 +392,59 @@ class TestDidYouMeanAlternatives:
 
         (resolution,) = out["resolved"]["resolutions"]
         assert resolution["alternatives"] == [], resolution
+
+
+class TestPerMatchDropOnDeliveryOrders:
+    """Fix 1 on its own (the turn tests above are also held by the orders refusal): a DO match
+    is kept only inside the links, by `so_status`'s scope rule."""
+
+    @staticmethod
+    def _db(session_factory):
+        """A session scoped to the contact's company, as the engine's turn session is."""
+        from app.models.base import set_company_scope
+        from app.services.company_scope import DEFAULT_COMPANY_ID
+
+        db = session_factory()
+        set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+        return db
+
+    @staticmethod
+    def _payload(order_id: str) -> dict[str, Any]:
+        match = {"uuid": order_id, "entity_type": "customer_order", "canonical_code": DO_NO}
+        return {
+            "resolved": {
+                "tokens": [DO_NO],
+                "resolutions": [{"token": DO_NO, "matches": [match]}],
+                "intersection": [],
+                "by_entity_type": {"customer_order": [match]},
+            },
+            "gate": {"compatible_entities": [match]},
+        }
+
+    def test_no_links_drops_any_do_match(self, session_factory) -> None:
+        from app.services.chatbot import turn_runtime
+
+        _seed_contact(session_factory, variables={})
+        order_id = _seed_do(session_factory, DO_NO, _other_customer(session_factory, FOREIGN), debtor_name=FOREIGN)
+
+        out = turn_runtime._without_foreign_sales_orders(self._db(session_factory), self._payload(order_id), [])
+
+        assert out["resolved"]["resolutions"][0]["matches"] == [], out
+        assert out["resolved"]["by_entity_type"]["customer_order"] == [], out
+        assert out["gate"]["compatible_entities"] == [], out
+        assert DO_NO in out["resolved"]["unresolved_tokens"], out
+
+    def test_own_do_match_is_kept(self, session_factory) -> None:
+        from app.services.chatbot import turn_runtime
+
+        _seed_contact(session_factory, variables={})
+        own = _link_customers(session_factory, OWN)[0]
+        order_id = _seed_do(session_factory, DO_NO, own, debtor_name=OWN)
+        payload = self._payload(order_id)
+
+        out = turn_runtime._without_foreign_sales_orders(self._db(session_factory), payload, [[own, OWN, ""]])
+
+        assert out == payload, out
 
 
 class TestCasualClarifierPrompt:
