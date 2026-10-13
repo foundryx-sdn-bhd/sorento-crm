@@ -144,6 +144,7 @@ vi.mock('@/components/common/SearchableSelect', () => {
     fetchOptions,
     selectedOption,
     clearable,
+    createOption,
   }: {
     id?: string;
     value: string;
@@ -152,6 +153,7 @@ vi.mock('@/components/common/SearchableSelect', () => {
     fetchOptions?: (query: string, pageIndex: number) => Promise<Option[]>;
     selectedOption?: Option;
     clearable?: boolean;
+    createOption?: { label: (q: string) => React.ReactNode; onCreate: (q: string) => void };
   }) {
     const [query, setQuery] = React.useState('');
     const [results, setResults] = React.useState<Option[]>([]);
@@ -185,6 +187,11 @@ vi.mock('@/components/common/SearchableSelect', () => {
               {option.label}
             </button>
           ))}
+          {createOption && query ? (
+            <button type="button" onClick={() => createOption.onCreate(query)}>
+              {createOption.label(query)}
+            </button>
+          ) : null}
         </div>
         {clearable && value && (
           <button
@@ -709,7 +716,55 @@ describe('ProjectForm: Salesperson (AC-PF040-043)', () => {
   });
 });
 
+vi.mock('../../leads/components/LeadWizardDialog', () => ({
+  LeadWizardDialog: ({
+    initialTitle,
+    onDone,
+  }: {
+    initialTitle?: string;
+    onDone: (lead?: { id: string; lead_code: string; title: string }) => void;
+  }) => (
+    <div role="dialog" aria-label="Create lead">
+      <span>wizard title: {initialTitle}</span>
+      <button
+        type="button"
+        onClick={() =>
+          onDone({ id: 'lead-new', lead_code: 'LEAD-000077', title: initialTitle ?? '' })
+        }
+      >
+        Finish wizard
+      </button>
+    </div>
+  ),
+}));
+
 describe('ProjectForm: Lead link (AC-PF050-058)', () => {
+  it('lists a lead by its title with the code apart, never a dot-joined label', async () => {
+    renderForm({ mode: 'create' });
+    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
+    expect(await screen.findByRole('button', { name: 'Menara Lead' })).toBeInTheDocument();
+    expect(screen.queryByText(/ · /)).toBeNull();
+  });
+
+  it('offers to create the lead from inside the dropdown and links the one created', async () => {
+    listLeads.mockResolvedValue({ data: [], pagination: { total: 0, page: 1, limit: 20 } });
+    renderForm({ mode: 'create' });
+    await fillWho();
+    fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Tower Q' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Create lead .Tower Q./ }));
+
+    const wizard = await screen.findByRole('dialog', { name: 'Create lead' });
+    expect(within(wizard).getByText('wizard title: Tower Q')).toBeInTheDocument();
+    fireEvent.click(within(wizard).getByRole('button', { name: 'Finish wizard' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
+    await waitFor(() =>
+      expect(registerProject).toHaveBeenCalledWith(
+        expect.objectContaining({ lead_id: 'lead-new' }),
+      ),
+    );
+  });
+
   it('searches open leads with the typed text, capped at 20', async () => {
     renderForm({ mode: 'create' });
     fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
@@ -731,7 +786,7 @@ describe('ProjectForm: Lead link (AC-PF050-058)', () => {
     renderForm({ mode: 'create' });
     await fillWho();
     fireEvent.change(screen.getByLabelText('Lead'), { target: { value: 'Menara' } });
-    fireEvent.click(await screen.findByText(/LEAD-000001/));
+    fireEvent.click(await screen.findByRole('button', { name: 'Menara Lead' }));
     fireEvent.click(screen.getByRole('button', { name: 'Register project' }));
     await waitFor(() =>
       expect(registerProject).toHaveBeenCalledWith(

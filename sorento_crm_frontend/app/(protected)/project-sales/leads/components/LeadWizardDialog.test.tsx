@@ -360,4 +360,18 @@ describe('LeadWizardDialog', () => {
       expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1' })),
     );
   });
+
+  it('does not let its submit bubble to a form it is opened from', async () => {
+    const outerSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <form onSubmit={outerSubmit}>
+          <LeadWizardDialog onDone={vi.fn()} initialTitle="Tower" />
+        </form>
+      </QueryClientProvider>,
+    );
+    next();
+    expect(outerSubmit).not.toHaveBeenCalled();
+  });
 });

@@ -44,8 +44,9 @@ import type {
   ProjectUpdateBody,
 } from '../types/project.types';
 import { ClashWarningPanel } from '../../pipeline/components/ClashWarningPanel';
+import { LeadWizardDialog } from '../../leads/components/LeadWizardDialog';
 
-type LeadOption = { value: string; label: string };
+type LeadOption = { value: string; label: string; description?: string };
 
 type ProjectFormProps = { mode: 'create' } | { mode: 'edit'; project: Project };
 
@@ -108,6 +109,9 @@ export function ProjectForm(props: ProjectFormProps) {
   const [leadOption, setLeadOption] = React.useState<LeadOption | null>(
     project?.lead_id ? { value: project.lead_id, label: project.lead_code ?? 'Linked lead' } : null,
   );
+
+  // The text typed into the Lead picker when nothing matched; non-null opens the lead wizard.
+  const [creatingLeadTitle, setCreatingLeadTitle] = React.useState<string | null>(null);
 
   const [joinTarget, setJoinTarget] = React.useState<{
     candidate: ClashCandidate;
@@ -565,6 +569,10 @@ export function ProjectForm(props: ProjectFormProps) {
                 clearable
                 placeholder="Search leads by title or code"
                 emptyMessage="No open leads match"
+                createOption={{
+                  label: (query) => <span>Create lead &ldquo;{query}&rdquo;</span>,
+                  onCreate: setCreatingLeadTitle,
+                }}
               />
             </div>
           </div>
@@ -584,6 +592,22 @@ export function ProjectForm(props: ProjectFormProps) {
           </Button>
         </div>
       </form>
+
+      {creatingLeadTitle !== null && (
+        <LeadWizardDialog
+          initialTitle={creatingLeadTitle}
+          onDone={(created) => {
+            setCreatingLeadTitle(null);
+            if (!created) return;
+            setLeadId(created.id);
+            setLeadOption({
+              value: created.id,
+              label: created.title,
+              description: created.lead_code,
+            });
+          }}
+        />
+      )}
 
       {joinTarget && (
         <TakeoverRequestDialog

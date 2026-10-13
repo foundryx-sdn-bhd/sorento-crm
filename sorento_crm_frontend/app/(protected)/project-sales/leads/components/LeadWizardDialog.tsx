@@ -148,6 +148,9 @@ export function LeadWizardDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
+            // React bubbles a portalled submit up the COMPONENT tree, so opened from the
+            // project form this would otherwise also submit (register) the project.
+            event.stopPropagation();
             if (step === 'confirm') {
               void submit();
               return;
