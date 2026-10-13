@@ -196,8 +196,10 @@ SELECT u.id::text AS id,
   LEFT JOIN llm_model_prices p ON p.model = u.model
 """
 
-# One row per live turn. The calls are summed in a grouped join (a hash join over the whole log
-# for an aggregate, dropped entirely when no cost column is asked for). Category, outcome, topic,
+# One row per live turn. The calls are summed per turn in a LATERAL over the
+# `chatbot_turn_id` index: measured on 100k synthetic turns, a newest-first page took 71 ms this
+# way against 2.9 s as a grouped hash join, and a group-by over every turn 1.2 s against 1.4 s
+# (plan, "Performance"). Category, outcome, topic,
 # episode and prompt version come from the turn's CA-1 fact row (`chatbot.chat_ask_facts`, one per
 # closed live turn, `ask_seq` 1), never from the trace: a trace is tens of KB per turn and reading
 # it per row would not fit the connector's 10 s statement timeout. A turn with no fact yet (still
@@ -241,7 +243,7 @@ SELECT t.id::text AS id,
   LEFT JOIN chatbot.chat_ask_facts f ON f.turn_id = t.id AND f.ask_seq = 1
   LEFT JOIN customers cu ON cu.id = f.customer_id
   LEFT JOIN chatbot.chat_topics tp ON tp.code = f.topic_code
-  LEFT JOIN (
+  LEFT JOIN LATERAL (
         SELECT lc.chatbot_turn_id,
                count(*) AS llm_calls,
                string_agg(DISTINCT lc.model, ', ' ORDER BY lc.model) AS model,
@@ -253,9 +255,9 @@ SELECT t.id::text AS id,
                sum(lc.cost_usd) AS cost_usd,
                bool_and(lc.priced) AS priced
           FROM {SCHEMA}.llm_calls lc
-         WHERE lc.chatbot_turn_id IS NOT NULL
+         WHERE lc.chatbot_turn_id = t.id::text
          GROUP BY lc.chatbot_turn_id
-  ) calls ON calls.chatbot_turn_id = t.id::text
+  ) calls ON true
  WHERE NOT t.is_test
 """
 

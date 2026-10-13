@@ -1,6 +1,6 @@
 # PLAN: per-turn token + cost dataset in the Claude analytics connector (CHAT-TURN-COST)
 
-Status: Build. Track: standard (additive migration: one column, one index, one price table, two views).
+Status: Review. Track: standard (additive migration: two columns, one index, one price table, two views).
 
 Owner request 13 Oct: make per-chatbot-turn token consumption and cost queryable through the
 analytics connector (`chat_list_datasets` / `chat_describe_dataset` / `chat_query`), so the owner can
@@ -19,29 +19,39 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 | The connector's datasets are a whitelist catalog over read-only views in schema `analytics_connector`, recreated by `ensure_views` from a migration and from `bootstrap_env`. | `analytics_connector/datasets.py:62-170`, `views.py:166-180` |
 | `ai_assistant_usage_logs.chatbot_turn_id` has no index. | `\d ai_assistant_usage_logs` |
 
-## Build
+## Decisions (crew relay, 13 Oct)
 
-1. Migration (additive): `ai_assistant_usage_logs.cached_tokens INT NULL`, index on
-   `chatbot_turn_id` (CONCURRENTLY), table `llm_model_prices (model PK, input_usd_per_1m,
-   cached_input_usd_per_1m, output_usd_per_1m, note, updated_at)` seeded with the models the
-   parser can be configured to; one-time backfill of `cached_tokens` for existing
-   `chatbot_parser` rows from their turn's `understood` facts; `ensure_views` re-run.
-2. `record_parser_usage` writes `cached_tokens`.
-3. Two views + catalog entries:
-   - `turn_costs`: one row per live (non-test) turn.
-   - `llm_calls`: one row per LLM call (every feature in the usage log), with cost.
-4. `cost_usd = ((prompt - cached) * input + cached * cached_input + completion * output) / 1e6`,
-   prices joined from `llm_model_prices` by exact model name. A model with no price row gives
-   `cost_usd = NULL` and `priced = false`, never a silent 0.
-5. `chat_describe_dataset` documents every column (the catalog `Col.description`).
+- Q1 phone: pending the owner. Built without it; `contact_phone` is one column on `turn_costs`.
+- Q2 (a): the casual lane's clarifier call is logged as `feature = chatbot_clarifier` with the turn id.
+- Q3 (a): `llm_model_prices` table, seeded ONLY with the three prices the repo already cites with a
+  source and date (`scripts/chatbot_eval/budget.py`): gpt-5.4-mini, gpt-4.1-mini, claude-sonnet-5-5.
+  Every other model is unpriced (`cost_usd` NULL, `priced` false) until the owner adds its row.
+- Q4 (a): no embedding column; `llm_calls` (count) instead.
+
+## Build (as shipped)
+
+1. Migration `ctc_0001_turn_costs` (additive): `ai_assistant_usage_logs.cached_tokens`,
+   `chatbot.chat_ask_facts.prompt_version`, both backfilled once from the turn's `understood` trace
+   facts; table `llm_model_prices` (uuid id, unique `model`) + seeds; the two views; index on
+   `ai_assistant_usage_logs.chatbot_turn_id` built CONCURRENTLY.
+2. Writers: `chatbot/usage.record_turn_llm_usage` (parser + clarifier rows, with `cached_tokens`);
+   `llm_call.capture_usage()` collects the usage of a call whose caller only returns content (the
+   clarifier); the CA-1 fact writer stores `prompt_version`.
+3. Views: `analytics_connector.llm_calls` (one row per usage-log row, priced) and
+   `analytics_connector.turn_costs` (one row per live turn). Category, outcome, topic, episode and
+   prompt version come from the CA-1 fact row (`chatbot.chat_ask_facts`), never from the trace.
+4. `cost_usd = (uncached * input + cached * cached_input + completion * output) / 1e6`, where
+   uncached is `prompt - cached` for OpenAI/Gemini and `prompt` for Anthropic (Anthropic reports
+   cache reads outside `prompt_tokens`, `llm_provider.py`). Missing cached price = input price.
+5. Catalog entries document every column (`chat_describe_dataset`); new column type `number`.
 
 ### `turn_costs` columns
 
-`id` (turn), `created_at` (MYT), `contact_id`, `contact_respond_id`, `contact_name`, `customer_name`,
-`episode_id` (the conversation frame holding the turn), `inbound_text` (OTP-masked), `reply_text`
-(OTP-masked), `status`, `stage`, `branch_kind` (lane), `message_type`, `domain_hint`, `intent_hint`,
-`prompt_version`, `model`, `llm_calls`, `prompt_tokens`, `cached_tokens`, `completion_tokens`,
-`total_tokens`, `llm_ms`, `latency_ms`, `cost_usd`, `priced`.
+`id`, `created_at` (MYT), `contact_id`, `contact_respond_id`, `contact_name`, `customer_name`,
+`episode_id`, `inbound_text` and `reply_text` (OTP-masked), `status`, `stage`, `branch_kind` (lane),
+`domain`, `intent`, `topic_code`, `topic_label`, `outcome`, `prompt_version`, `model`, `llm_calls`,
+`prompt_tokens`, `cached_tokens`, `completion_tokens`, `total_tokens`, `llm_ms`, `latency_ms`,
+`cost_usd`, `priced`.
 
 ### `llm_calls` columns
 
@@ -49,20 +59,29 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 `model`, `prompt_tokens`, `cached_tokens`, `completion_tokens`, `total_tokens`, `response_time_ms`,
 `was_answered`, `cost_usd`, `priced`.
 
+## Performance (sandbox Postgres 16, 100k synthetic live turns, 500 contacts)
+
+| Query | Time |
+| --- | --- |
+| `count(*)` over `turn_costs` | 0.1 s |
+| group by domain, intent, prompt_version with sum(cost), sum(tokens) | 1.2 s |
+| newest-first page of 201 rows | 0.07 s |
+| one contact's newest 201 | 0.12 s |
+| `llm_calls` group by feature, model | 0.06 s |
+| backfill `cached_tokens` / `prompt_version` (migration, once) | 2.7 s / 3.0 s |
+
+A first version read the parser facts from `chatbot.turns.trace` per row: 3.4 s on 50k turns with
+small traces, so it was replaced by the fact-row join. The connector's statement timeout is 10 s.
+
 ## Example rows (synthetic: this lane runs in a cloud sandbox with no access to dev data)
 
-| id | contact_name | domain_hint / intent_hint | prompt_version | model | prompt / cached / completion | latency_ms | cost_usd |
+| id | contact_name | domain / intent | prompt_version | model | prompt / cached / completion | latency_ms | cost_usd |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 3f1c...a2 | Ah Seng (Bengkel Maju) | stock / availability | 52 | gpt-4.1-mini | 38 214 / 36 864 / 312 | 4 120 | 0.00473 |
 | 8b07...19 | Ah Seng (Bengkel Maju) | order / status | 52 | gpt-4.1-mini | 38 390 / 0 / 288 | 5 870 | 0.01582 |
 | c55e...0d | Mei Ling | casual / greeting | 52 | gpt-4.1-mini | 37 902 / 36 864 / 95 | 2 310 | 0.00425 |
 
 The crew hand-test runs two real analyses against the test copy.
-
-## Questions (crew-ask on the PR)
-
-Q1 phone, Q2 clarifier tokens, Q3 price source + seed list, Q4 embedding column. Answers recorded
-here when they arrive.
 
 ## Trigger for later machinery (not built)
 
