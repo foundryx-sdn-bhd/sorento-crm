@@ -434,6 +434,15 @@ class SalesOrderService:
         # cell), so this is the detail screen's own seam onto the same "where it went"
         # fact the board's dialog reads. Same gate: the list has no column for it.
         planning_changes = self._line_planning_changes(so) if line_planning else {}
+        # AC-CANCEL-CRM (owner hand test): which AutoCount Cancel SO documents make up each
+        # line's `qty_cancelled`, and how each was matched. One read for the order.
+        from app.models.autocount_cancel import AutocountCancelLine
+        from app.services.autocount_cancel_ingest_service import cancel_sources
+
+        cancels = cancel_sources(
+            self.db, AutocountCancelLine.sales_order_line_id,
+            [ln.id for ln in so.lines if getattr(ln, "qty_cancelled", None)],
+        )
         total_qty = 0.0
         committed = 0.0
         lines = []
@@ -488,6 +497,7 @@ class SalesOrderService:
                 "qty_ordered": qo,
                 "qty_delivered": max(qd - qc, 0.0),
                 "qty_cancelled": qc,
+                "cancels": cancels.get(str(ln.id), []),
                 # What is still to go out on THIS line, stated rather than left to be
                 # recomputed. The grid, its footer and the header total all read this one
                 # figure, so a closed line cannot read Completed beside a full outstanding

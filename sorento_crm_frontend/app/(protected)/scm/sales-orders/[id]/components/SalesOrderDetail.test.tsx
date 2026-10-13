@@ -2494,13 +2494,13 @@ describe('SalesOrderDetail - AutoCount Cancel SO on the lines', () => {
     expect(within(row2!).getByText('Partly cancelled')).toBeInTheDocument();
   });
 
-  it('shows a dash, not 0, on a line nothing cancelled', () => {
+  it('reads 0 with no tooltip on a line nothing cancelled, like the other quantities', () => {
     useSalesOrder.mockReturnValue({ data: so(), isLoading: false, isError: false });
     renderDetail();
     openTab('Lines');
 
     const cell = screen.getAllByTestId(/^qty-cancelled-/)[0];
-    expect(cell).toHaveTextContent('-');
+    expect(cell).toHaveTextContent(/^0$/);
     expect(cell).not.toHaveAttribute('title');
   });
 });

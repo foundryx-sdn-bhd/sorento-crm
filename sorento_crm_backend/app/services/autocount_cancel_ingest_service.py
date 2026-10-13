@@ -1058,6 +1058,29 @@ def relink_for_orders(db: Session, *, company_id: str, numbers: set[str]) -> Der
         return recompute_cancelled(db, touched)
 
 
+def cancel_sources(db: Session, column, line_ids: Iterable[str]) -> dict[str, list[dict]]:
+    """Owner hand test (13 Oct): per SO / PO line, the cancel documents that make up its
+    `qty_cancelled` (live docs only, the same set `recompute_cancelled` sums), oldest first,
+    each with its qty and how it was matched. One read for all the lines asked about."""
+    ids = [str(i) for i in line_ids if i]
+    if not ids:
+        return {}
+    rows = (
+        db.query(column, AutocountCancelDoc.doc_no, AutocountCancelLine.qty,
+                 AutocountCancelLine.match_reason)
+        .join(AutocountCancelDoc, AutocountCancelDoc.id == AutocountCancelLine.cancel_doc_id)
+        .filter(column.in_(ids), AutocountCancelLine.match_status == MATCH_MATCHED, _live_doc())
+        .order_by(AutocountCancelDoc.doc_date, AutocountCancelDoc.doc_no,
+                  AutocountCancelLine.dtl_key)
+        .all()
+    )
+    out: dict[str, list[dict]] = {}
+    for line_id, doc_no, qty, reason in rows:
+        out.setdefault(str(line_id), []).append(
+            {"doc_no": doc_no, "qty": float(qty or 0), "match_reason": reason})
+    return out
+
+
 def run_cancel_hooks(db: Session, service: Any, *, actor: Optional[str]) -> None:
     """After the batch's own commit, each reaction best effort with its own commit (a failure
     costs that reaction only, logged, never the ingest):
@@ -1144,6 +1167,7 @@ __all__ = [
     "AutocountCancelIngestService",
     "CancelLineMatcher",
     "Derived",
+    "cancel_sources",
     "recompute_cancelled",
     "relink_for_orders",
     "run_cancel_hooks",

@@ -1,0 +1,45 @@
+/**
+ * AutoCount Cancel SO / Cancel PO on an order line (AC-CANCEL-CRM, owner hand test 13 Oct).
+ *
+ * AutoCount adds a cancel to the line's TransferedQty, so the CRM derives `qty_cancelled` and
+ * lists the cancel documents behind it (`cancels`). One place for how that reads on the SO and
+ * PO Lines tabs: the tooltip naming each document and how it was matched, and the
+ * "Partly cancelled" status a line gets when some, not all, of it was cancelled.
+ */
+import type { StatusBadgeVariant } from '@/lib/status-badge';
+
+export interface CancelSource {
+  doc_no: string;
+  qty: number;
+  match_reason?: string | null;
+}
+
+/** How a cancel line was matched to this order line, in the owner's words. */
+const MATCH_LABEL: Record<string, string> = {
+  line_key: 'line key',
+  item: 'item',
+  tie_break: 'tie-break',
+  fallback: 'auto-assigned',
+};
+
+/** "XS-016501: 36 (line key)", one document per line; undefined when nothing cancelled. */
+export function cancelSourcesTitle(cancels: CancelSource[] | null | undefined): string | undefined {
+  if (!cancels || cancels.length === 0) return undefined;
+  return cancels
+    .map((c) => {
+      const how = MATCH_LABEL[c.match_reason ?? ''] ?? c.match_reason ?? '';
+      return how ? `${c.doc_no}: ${Number(c.qty)} (${how})` : `${c.doc_no}: ${Number(c.qty)}`;
+    })
+    .join('\n');
+}
+
+export const PARTLY_CANCELLED = { label: 'Partly cancelled', variant: 'warning' as StatusBadgeVariant };
+
+/** Some of the line was cancelled in AutoCount, but not all of it (a whole cancel reads
+ *  `cancelled` through the line's own status). */
+export function isPartlyCancelled(line: {
+  qty_cancelled?: number | null;
+  line_status?: string | null;
+}): boolean {
+  return Number(line.qty_cancelled ?? 0) > 0 && (line.line_status ?? 'open') !== 'cancelled';
+}
