@@ -74,8 +74,18 @@ export const MENU_SIDEBAR: MenuConfig = [
   {
     title: 'Ideas',
     icon: Lightbulb,
-    path: '/ideas',
-    permission: 'ideation.board.view',
+    children: [
+      {
+        title: 'All ideas',
+        path: '/ideas',
+        permission: 'ideation.board.view',
+      },
+      {
+        title: 'Roadmap',
+        path: '/ideas/portal',
+        permission: 'ideation.board.view',
+      },
+    ],
   },
 
   { heading: 'SALES' },

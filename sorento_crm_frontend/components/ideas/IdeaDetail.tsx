@@ -14,6 +14,7 @@ import {
   Mic,
   Paperclip,
   Pencil,
+  Sparkles,
   Rocket,
   Split,
   Trash2,
@@ -44,20 +45,23 @@ import {
   useIdeasQuery,
 } from '@/hooks/useIdeas';
 import { formatDateTime } from '@/lib/helpers';
+import { normalizeUseCases } from '@/lib/ideaUseCases';
 import { fetchAttachment } from '@/services/ideasService';
 import { toast } from '@/lib/toast';
 import type { Idea, IdeaAttachment } from '@/types/ideas';
 import { IdeaComments } from './IdeaComments';
 import { IdeaMergeModal } from './IdeaMergeModal';
 import { IdeaMergedList } from './IdeaMergedList';
+import { IdeaSimilarTab } from './IdeaSimilarTab';
 import { IdeaStatusBadge } from './IdeaStatusBadge';
 import { VoteBox } from './VoteBox';
 import { useCanManageIdeas } from './ideasAccess';
 
-type IdeaTab = 'details' | 'attachments';
+type IdeaTab = 'details' | 'similar' | 'attachments';
 
 const IDEA_TABS: { value: IdeaTab; label: string; icon: typeof Lightbulb }[] = [
   { value: 'details', label: 'Details', icon: Lightbulb },
+  { value: 'similar', label: 'Similar ideas', icon: Sparkles },
   { value: 'attachments', label: 'Attachments', icon: FileText },
 ];
 
@@ -106,6 +110,20 @@ function Field({
   );
 }
 
+function UseCases({ lines }: { lines: string[] }) {
+  return lines.length > 0 ? (
+    <ul className="flex flex-col gap-0.5">
+      {lines.map((line, index) => (
+        <li key={index} className="break-words">
+          {line}
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <span className="text-muted-foreground">Not set</span>
+  );
+}
+
 function Text({ value }: { value: string | null }) {
   return value ? (
     <p className="whitespace-pre-wrap break-words">{value}</p>
@@ -151,11 +169,12 @@ export function IdeaDetail({ id }: { id: string }) {
 
   const [tab, setTab] = useState<IdeaTab>('details');
   const [isEditing, setIsEditing] = useState(false);
-  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeIdeas, setMergeIdeas] = useState<Idea[] | null>(null);
+  const [title, setTitle] = useState('');
   const [problem, setProblem] = useState('');
-  const [proposedSolution, setProposedSolution] = useState('');
-  const [impact, setImpact] = useState('');
-  const [department, setDepartment] = useState('');
+  const [desiredOutcome, setDesiredOutcome] = useState('');
+  const [useCasesText, setUseCasesText] = useState('');
+  const [currentWorkaround, setCurrentWorkaround] = useState('');
   const [rawText, setRawText] = useState('');
 
   const subject = idea?.title ?? idea?.problem ?? '';
@@ -228,10 +247,11 @@ export function IdeaDetail({ id }: { id: string }) {
   const busy = archiving.isPending || deletion.isPending;
 
   const beginEdit = (current: Idea) => {
+    setTitle(current.title ?? '');
     setProblem(current.problem);
-    setProposedSolution(current.proposedSolution ?? '');
-    setImpact(current.impact ?? '');
-    setDepartment(current.department ?? '');
+    setDesiredOutcome(current.desiredOutcome ?? '');
+    setUseCasesText(normalizeUseCases(current.useCases).join('\n'));
+    setCurrentWorkaround(current.currentWorkaround ?? '');
     setRawText(current.rawText);
     setTab('details');
     setIsEditing(true);
@@ -242,10 +262,11 @@ export function IdeaDetail({ id }: { id: string }) {
     try {
       await update.mutateAsync({
         id: idea.id,
+        title: title.trim() || null,
         problem: problem.trim(),
-        proposedSolution: proposedSolution.trim() || null,
-        impact: impact.trim() || null,
-        department: department.trim() || null,
+        desiredOutcome: desiredOutcome.trim() || null,
+        useCases: normalizeUseCases(useCasesText),
+        currentWorkaround: currentWorkaround.trim() || null,
         rawText,
       });
       setIsEditing(false);
@@ -268,10 +289,10 @@ export function IdeaDetail({ id }: { id: string }) {
     if (!isMergedChild && idea.mergedCount === 0) {
       gear.push({
         key: 'idea.merge',
-        label: 'Merge into another idea',
+        label: 'Merge ideas',
         icon: Merge,
         disabled: busy,
-        run: () => setMergeOpen(true),
+        run: () => setMergeIdeas([idea]),
       });
     }
     if (!idea.statusIsArchived && !isMergedChild) {
@@ -533,8 +554,19 @@ export function IdeaDetail({ id }: { id: string }) {
           <Card>
             <div className="flex flex-col gap-5 p-5">
               <section aria-label="Details" className="flex flex-col gap-4">
+                <Field label="Title" htmlFor={isEditing ? 'idea-edit-title' : undefined}>
+                  {isEditing ? (
+                    <Input
+                      id="idea-edit-title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                    />
+                  ) : (
+                    <Text value={idea.title} />
+                  )}
+                </Field>
                 <Field
-                  label="Problem statement"
+                  label="Business problem"
                   htmlFor={isEditing ? 'idea-edit-problem' : undefined}
                 >
                   {isEditing ? (
@@ -549,49 +581,48 @@ export function IdeaDetail({ id }: { id: string }) {
                   )}
                 </Field>
                 <Field
-                  label="Proposed solution"
-                  htmlFor={isEditing ? 'idea-edit-solution' : undefined}
+                  label="Desired outcome"
+                  htmlFor={isEditing ? 'idea-edit-outcome' : undefined}
                 >
                   {isEditing ? (
                     <Textarea
-                      id="idea-edit-solution"
-                      value={proposedSolution}
-                      onChange={(e) => setProposedSolution(e.target.value)}
+                      id="idea-edit-outcome"
+                      value={desiredOutcome}
+                      onChange={(e) => setDesiredOutcome(e.target.value)}
                       rows={2}
                     />
                   ) : (
-                    <Text value={idea.proposedSolution} />
+                    <Text value={idea.desiredOutcome} />
                   )}
                 </Field>
                 <Field
-                  label="Impact"
-                  htmlFor={isEditing ? 'idea-edit-impact' : undefined}
+                  label="Use cases"
+                  htmlFor={isEditing ? 'idea-edit-use-cases' : undefined}
                 >
                   {isEditing ? (
                     <Textarea
-                      id="idea-edit-impact"
-                      value={impact}
-                      onChange={(e) => setImpact(e.target.value)}
-                      rows={2}
+                      id="idea-edit-use-cases"
+                      value={useCasesText}
+                      onChange={(e) => setUseCasesText(e.target.value)}
+                      rows={3}
                     />
                   ) : (
-                    <Text value={idea.impact} />
+                    <UseCases lines={normalizeUseCases(idea.useCases)} />
                   )}
                 </Field>
                 <Field
-                  label="Department"
-                  htmlFor={isEditing ? 'idea-edit-department' : undefined}
+                  label="Current workaround"
+                  htmlFor={isEditing ? 'idea-edit-workaround' : undefined}
                 >
                   {isEditing ? (
-                    <Input
-                      id="idea-edit-department"
-                      value={department}
-                      maxLength={120}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      className="h-8"
+                    <Textarea
+                      id="idea-edit-workaround"
+                      value={currentWorkaround}
+                      onChange={(e) => setCurrentWorkaround(e.target.value)}
+                      rows={2}
                     />
                   ) : (
-                    <Text value={idea.department} />
+                    <Text value={idea.currentWorkaround} />
                   )}
                 </Field>
                 <Field
@@ -614,6 +645,14 @@ export function IdeaDetail({ id }: { id: string }) {
               <IdeaComments ideaId={idea.id} frozen={isMergedChild} />
             </div>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="similar">
+          <IdeaSimilarTab
+            ideaId={idea.id}
+            canManage={canManage && !isMergedChild && idea.mergedCount === 0}
+            onMerge={(similar) => setMergeIdeas([idea, similar])}
+          />
         </TabsContent>
 
         <TabsContent value="attachments">
@@ -692,11 +731,13 @@ export function IdeaDetail({ id }: { id: string }) {
           </Card>
         </TabsContent>
       </Tabs>
-      <IdeaMergeModal
-        idea={idea}
-        open={mergeOpen}
-        onOpenChange={setMergeOpen}
-      />
+      {mergeIdeas ? (
+        <IdeaMergeModal
+          ideas={mergeIdeas}
+          open
+          onOpenChange={(open) => !open && setMergeIdeas(null)}
+        />
+      ) : null}
     </div>
   );
 }

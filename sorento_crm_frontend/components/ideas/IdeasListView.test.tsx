@@ -209,24 +209,76 @@ describe('AC-C-03 vote box', () => {
 });
 
 describe('AC-C-05 Capture idea', () => {
-  it('the header CTA opens a modal with the five fields and no Product picker', async () => {
+  it('the header CTA opens a modal led by Business problem, with no Product picker', async () => {
     renderList();
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
-    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department', 'Attachments']) {
+    for (const label of ['Business problem', 'Original message', 'Attachments']) {
       expect(within(dialog).getByLabelText(label)).toBeInTheDocument();
     }
     expect(within(dialog).queryByLabelText(/Product/)).toBeNull();
   });
 
-  it('saving without a problem statement shows "Problem statement is required" and calls nothing', async () => {
+  it('IDEA-CRM-SIDE: the retired fields are gone from the capture modal', async () => {
+    renderList();
+    await screen.findByText('Faster quotes');
+    fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
+    const dialog = await screen.findByRole('dialog');
+    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department']) {
+      expect(within(dialog).queryByLabelText(label)).toBeNull();
+    }
+  });
+
+  it('AC-B-01: the capture modal shows the seven fields in order', async () => {
+    renderList();
+    await screen.findByText('Faster quotes');
+    fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
+    const dialog = await screen.findByRole('dialog');
+    const labels = ['Title', 'Business problem', 'Desired outcome', 'Use cases', 'Current workaround', 'Original message', 'Attachments'];
+    const fields = labels.map((l) => within(dialog).getByLabelText(l));
+    for (let i = 1; i < fields.length; i++) {
+      // eslint-disable-next-line no-bitwise
+      expect(fields[i - 1].compareDocumentPosition(fields[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it('AC-B-01: every typed field reaches the service; Use cases one per line become a list with blanks dropped', async () => {
+    svc.createIdea.mockResolvedValue(idea({ id: 'idea-9' }));
+    renderList();
+    await screen.findByText('Faster quotes');
+    fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
+    const dialog = await screen.findByRole('dialog');
+    const type = (label: string, value: string) =>
+      fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
+    type('Title', 'Brand new');
+    type('Business problem', 'Brand new problem');
+    type('Desired outcome', 'Same hour quotes');
+    type('Use cases', 'a\n\n b ');
+    type('Current workaround', 'Spreadsheet');
+    type('Original message', 'raw words');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Capture' }));
+    await waitFor(() => expect(svc.createIdea).toHaveBeenCalled());
+    expect(svc.createIdea.mock.calls[0][0]).toMatchObject({
+      title: 'Brand new',
+      problem: 'Brand new problem',
+      desiredOutcome: 'Same hour quotes',
+      useCases: ['a', 'b'],
+      currentWorkaround: 'Spreadsheet',
+      rawText: 'raw words',
+    });
+    for (const key of ['proposedSolution', 'impact', 'department']) {
+      expect(svc.createIdea.mock.calls[0][0]).not.toHaveProperty(key);
+    }
+  });
+
+  it('saving without a business problem shows "Business problem is required" and calls nothing', async () => {
     renderList();
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Capture' }));
-    expect(await within(dialog).findByText('Problem statement is required')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Business problem is required')).toBeInTheDocument();
     expect(svc.createIdea).not.toHaveBeenCalled();
   });
 
@@ -236,7 +288,7 @@ describe('AC-C-05 Capture idea', () => {
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText('Problem statement'), { target: { value: 'Brand new problem' } });
+    fireEvent.change(within(dialog).getByLabelText('Business problem'), { target: { value: 'Brand new problem' } });
     const file = new File(['x'], 'shot.png', { type: 'image/png' });
     fireEvent.change(within(dialog).getByLabelText('Attachments'), { target: { files: [file] } });
     const before = svc.listIdeas.mock.calls.length;
@@ -621,7 +673,7 @@ describe('AC-K-05 bulk strip and Actions menu (manage holder)', () => {
     expect(screen.queryByRole('menuitem', { name: /^Merge/ })).toBeNull();
   });
 
-  it('Merge opens a dialog limited to the selected ideas and posts { survivorId, ideaIds }', async () => {
+  it('Merge opens the merge modal limited to the selected ideas and posts { survivorId, ideaIds }', async () => {
     svc.listIdeas.mockResolvedValue([...twoManageable(), idea({ id: 'c', title: 'Charlie idea', ideaNumber: 'IDEA-3' })]);
     svc.mergeIdeas.mockResolvedValue(idea());
     renderList();
@@ -630,11 +682,11 @@ describe('AC-K-05 bulk strip and Actions menu (manage holder)', () => {
     await openActions();
     fireEvent.click(await menuItem(/^Merge/));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('combobox'));
-    expect(await screen.findByRole('option', { name: /Alpha idea/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Bravo idea/ })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /Charlie idea/ })).toBeNull();
-    fireEvent.click(screen.getByRole('option', { name: /Bravo idea/ }));
+    // IDEA-CRM-SIDE AC-D-01: the same grid modal, one column per selected idea.
+    expect(within(dialog).getByRole('radio', { name: 'Keep IDEA-1' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Keep IDEA-2' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio', { name: 'Keep IDEA-3' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Keep IDEA-2' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Merge' }));
     await waitFor(() => expect(svc.mergeIdeas).toHaveBeenCalled());
     const input = svc.mergeIdeas.mock.calls[0][0];
