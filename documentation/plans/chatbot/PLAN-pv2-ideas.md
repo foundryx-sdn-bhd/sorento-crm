@@ -68,7 +68,7 @@ def run_idea_turn(db, *, ask, language, respond_io_id, message_text, session_var
      `idea_multi_offered`. Copy en/ms/zh lives in ideas.py tonight.
    - else capture `message_text` with `update_held=True`.
 3. Result mapping: `similar_offered` -> pending `idea_similar`, options `"1".."N"` (label = idea title, payload
-   `{"choice": n}`) + `"new"` (label localized "New idea", payload `{"choice": "new"}`), `asked` = reply text;
+   `{"choice": n}`) + `"new"` (label localized "New idea", payload `{"choice": "new"}`), `asked` = the reply's lead line (the numbered lines carry CRM links with ids);
    `ask_idea` -> pending `idea_missing_field` (no options); `complete` / `similar_picked` -> `idea_draft_id` from
    the `captured` pointer; anything else -> no pending. `asked_turn = turn_no`, `misses = 0`, `v1_kind = None`.
    Option keys and labels never carry ids/UUIDs. Language: the capture result's; `mixed` -> `en`.

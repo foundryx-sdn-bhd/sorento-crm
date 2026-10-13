@@ -172,6 +172,8 @@ def run(ask, *, pending=None, language="en", message_text=MSG, session_vars=None
 
 def assert_no_leaks(res) -> None:
     assert " · " not in res.reply_text
+    # an id may appear in the reply only inside a CRM link (today's similar-list formatter)
+    assert not UUID_RE.search(re.sub(r"https?://\S+", "", res.reply_text))
     p = res.pending
     if p:
         assert not UUID_RE.search(p["asked"])
@@ -209,7 +211,8 @@ def test_fresh_similar_offered_maps_to_idea_similar_pending(cap):
     assert [o["label"] for o in p["options"][:2]] == TITLES
     assert "new" in p["options"][2]["label"].lower()
     assert [o["payload"] for o in p["options"]] == [{"choice": 1}, {"choice": 2}, {"choice": "new"}]
-    assert p["asked"] == res.reply_text
+    # the lead line only: the numbered lines carry the ideas' CRM links (ids inside URLs)
+    assert p["asked"] == res.reply_text.splitlines()[0]
     assert p["asked_turn"] == 7
     assert p["misses"] == 0
     assert p["v1_kind"] is None
