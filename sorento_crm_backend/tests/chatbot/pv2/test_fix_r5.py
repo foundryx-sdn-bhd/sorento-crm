@@ -78,3 +78,16 @@ def test_an_all_miss_list_keeps_the_offer_after_the_full_list():
 def test_the_prompt_routes_a_products_po_question_to_purchase_order():
     prompt = (Path(turn.__file__).parent / "prompt_v2.txt").read_text(encoding="utf-8").lower()
     assert "got po" in prompt
+
+
+def _prompt():
+    return (Path(turn.__file__).parent / "prompt_v2.txt").read_text(encoding="utf-8").lower()
+
+
+def test_the_prompt_says_delivery_words_decide_a_documents_kind():
+    assert "done deliver" in _prompt()
+
+
+def test_the_prompt_keeps_filler_and_question_words_out_of_a_document_phrase():
+    p = _prompt()
+    assert "bila sampai" in p and "boss" in p
