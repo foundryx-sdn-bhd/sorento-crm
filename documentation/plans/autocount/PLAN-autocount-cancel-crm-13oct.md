@@ -1,6 +1,6 @@
 # PLAN: AutoCount Cancel SO / Cancel PO in the CRM (AC-CANCEL-CRM)
 
-Status: Build (owner answered Q1-Q5 on 13 Oct). Track: full (migration).
+Status: Review (fix round 1 in, reviewers verifying; PR #1623). Track: full (migration, RBAC slugs).
 Lane: AC-CANCEL-CRM. Sibling: AC-CANCEL-PULL (the shared service that reads the cancel docs; payload agreed via crew).
 
 ## Goal
@@ -96,6 +96,26 @@ R6. Cancel lowers: a line this lane cancelled returns to the status its quantiti
     lines and cancelled orders stay cancelled. OI rows already retired stay retired.
 R7. Every cancel line ends matched, waiting or unmatched with a reason; each batch logs the counts per
     reason (`ingest.cancel_match ...`). No screen, nothing spins.
+
+## Decisions after the card (13 Oct)
+
+- Crew: AC-CANCEL-PULL mirrors the DO / GRN ingest shape for XS / XP and for Consignment /
+  ConsignmentReturn. `consignments` / `consignment_returns` are accepted and stored only (same tables,
+  `kind`, lines never matched: `unmatched:stored_only`, no quantity moves).
+- Permissions: `tests/test_external_permission_coverage.py` requires a distinct slug per entity per door,
+  so each entity has `scm.<entity>.{view,edit,delete}`, seeded by `ac_cancel_0001_docs` to admin /
+  superadmin and to every role holding `scm.sales_orders.edit` (`scm.purchase_orders.edit` for Cancel PO).
+- Review round 1: `cancelled_by_cancel_doc` (SO / PO lines) records which lines this rule cancelled, so
+  only those reopen and the SO / PO push keeps them cancelled without retiring OI rows twice.
+
+## Deferred (named triggers, not built)
+
+- SPO received display net of `qty_cancelled`: no SPO screen shows a cancelled SPO line wrongly yet
+  measured; build when one does (incoming is already right through TransferedQty).
+- The AutoCount pull's DO / GRN apply path does not run the cancel relink (the push route does); the
+  next cancel or order sync re-decides. Build when the pull becomes the DO / GRN writer.
+- A visible "Cancelled" column on the SO / PO lines tab: the API returns `qty_cancelled`; the screen
+  change needs a mock first.
 
 ## Test list (red first)
 
