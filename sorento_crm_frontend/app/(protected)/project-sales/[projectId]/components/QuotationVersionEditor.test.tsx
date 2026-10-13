@@ -1874,9 +1874,74 @@ describe('QuotationVersionEditor fix round 2 (QUOTATION-UX)', () => {
       await renderEditing();
       expect(footerText()).not.toBe('');
       const nesting = errors.mock.calls
-        .map((call) => call.map(String).join(' '))
-        .filter((text) => /cannot contain a nested|validateDOMNesting/.test(text));
+        .map((call: unknown[]) => call.map(String).join(' '))
+        .filter((text: string) => /cannot contain a nested|validateDOMNesting/.test(text));
       expect(nesting).toEqual([]);
     });
+  });
+});
+
+describe('QuotationVersionEditor fix round 2 part B (QUOTATION-UX)', () => {
+  beforeEach(() => {
+    getQuotationLineImages.mockResolvedValue({
+      product_image: NO_PHOTO(),
+      technical_drawing: DRAWING(),
+    });
+  });
+
+  it('renders the photo and drawing pickers outside the grid so a click cannot land on the row below (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([
+      ext({ product_id: 'p1', product_image: PHOTO(), technical_drawing: DRAWING() }),
+    ]);
+    await renderEditing();
+    fireEvent.click(screen.getByRole('button', { name: 'Change photo on SRT-WC-01' }));
+    const usePhoto = await screen.findByRole('button', { name: 'Use wc side.jpg' });
+    expect(usePhoto.closest('[data-slot="data-grid-table"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change drawing on SRT-WC-01' }));
+    const useDrawing = await screen.findByRole('button', { name: 'Use wc drawing 2.png' });
+    expect(useDrawing.closest('[data-slot="data-grid-table"]')).toBeNull();
+  });
+
+  it('renders the stock popover outside the grid (defect 3)', async () => {
+    listQuotationLines.mockResolvedValue([ext({ product_id: 'p1' })]);
+    withStock();
+    await renderEditing();
+    const chip = await screen.findByRole('button', { name: 'Stock on SRT-WC-01' });
+    fireEvent.pointerDown(chip, { button: 0, ctrlKey: false });
+    fireEvent.click(chip);
+    const spo = await screen.findByText(/SPO-1001/);
+    expect(spo.closest('[data-slot="data-grid-table"]')).toBeNull();
+  });
+
+  it('seeds the staged scope from the fresh rows when a refetch of cached rows is in flight (defect 5)', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    listQuotationLines.mockResolvedValue([line({ complete_set: null })]);
+    const first = render(
+      <QueryClientProvider client={client}>
+        <Harness projectOverrides={{}} editing={false} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(itemNumbers().length).toBeGreaterThan(0));
+    first.unmount();
+
+    listQuotationLines.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve([line({ complete_set: 'c/w seat' })]), 150),
+        ),
+    );
+    await client.invalidateQueries();
+    render(
+      <QueryClientProvider client={client}>
+        <Harness projectOverrides={{}} editing />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(session?.scopes[QUOTATION.id]?.lines ?? null).not.toBeNull());
+    // Give the delayed refetch time to land; the seed must not have frozen the stale rows.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(stagedBody()[0]).toMatchObject({ complete_set: 'c/w seat' });
   });
 });
