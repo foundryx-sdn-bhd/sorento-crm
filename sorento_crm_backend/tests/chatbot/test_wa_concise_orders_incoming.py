@@ -131,7 +131,7 @@ def test_block_form_flag_prints_once_after_the_last_fact_line():
 
 _HEADER_BROAD = "Customer: all customers\nProduct: all products\nDates: all dates"
 _HEADER_NAMED = (
-    f"Customer: all customers\nProduct: all products\nOrder: {ORDER_NO}\nDates: all dates"
+    f"Customer: all customers\nProduct: all products\nDelivery order: {ORDER_NO}\nDates: all dates"
 )
 _NAMED_ORDER_GATE = {
     "compatible_entities": [

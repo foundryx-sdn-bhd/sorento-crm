@@ -207,7 +207,7 @@ def test_n1_named_order_prefix_of_a_printed_number_keeps_the_scope_header():
     )
 
     assert out.text == (
-        "Customer: all customers\nProduct: all products\nOrder: SMC202609-005\nDates: all dates"
+        "Customer: all customers\nProduct: all products\nDelivery order: SMC202609-005\nDates: all dates"
         f"\n\n{body}"
     ), out.text
 
