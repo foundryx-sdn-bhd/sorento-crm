@@ -342,3 +342,55 @@ def test_a_failed_understood_record_carries_latency(
     understood = next(r for r in row.trace if r.get("stage") == "understood")
     assert understood.get("status") == "failed"
     assert (understood.get("facts") or {}).get("latency_ms") == 1234
+
+
+# --------------------------------------------------------------------------- #
+# 6. A busy Gemini is waited out like a busy OpenAI
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("status, rate_limited, transient", [(429, True, False), (503, False, True), (500, False, True)])
+def test_a_gemini_http_failure_is_classified_like_an_openai_one(monkeypatch, status, rate_limited, transient):
+    """`llm_call` retries a 429 and a 5xx by reading the error's `status_code`, which the
+    OpenAI SDK sets and Gemini's plain RuntimeError did not: a busy minute on the parser
+    failed the dealer's turn at once instead of waiting it out."""
+
+    class _Busy:
+        status_code = status
+        text = "busy"
+
+        def json(self):
+            return {"error": {"message": "busy"}}
+
+    monkeypatch.setattr("httpx.request", lambda *a, **k: _Busy())
+    with pytest.raises(RuntimeError) as caught:
+        llm_provider.GeminiProvider("k").chat([{"role": "user", "content": "hi"}], model="gemini-3.5-flash-lite")
+    assert llm_call.is_rate_limited(caught.value) is rate_limited
+    assert llm_call.is_transient(caught.value) is transient
+    # The operator-facing words are unchanged (the media lane shows them).
+    assert str(caught.value).startswith(f"Gemini call failed ({status}): busy")
+
+
+def test_a_gemini_429_on_the_parser_is_retried_then_answered(monkeypatch):
+    calls = {"n": 0}
+    ok = {
+        "candidates": [{"content": {"parts": [{"text": json.dumps({k: None for k in parser_mod.DECLARED_KEYS})}]}, "finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
+    }
+
+    class _Resp:
+        def __init__(self, status, payload):
+            self.status_code, self._payload, self.text = status, payload, json.dumps(payload)
+
+        def json(self):
+            return self._payload
+
+    def transport(*_a, **_k):
+        calls["n"] += 1
+        return _Resp(429, {"error": {"message": "quota"}}) if calls["n"] == 1 else _Resp(200, ok)
+
+    monkeypatch.setattr("httpx.request", transport)
+    monkeypatch.setattr(llm_call, "_sleep", lambda _s: None)
+    out = parser_mod.parse(_config(provider="gemini", model="gemini-3.5-flash-lite"), "block")
+    assert calls["n"] == 2
+    assert set(out) >= parser_mod.DECLARED_KEYS - parser_mod.TOLERATED_ABSENT
