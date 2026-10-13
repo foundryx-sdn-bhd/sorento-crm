@@ -109,6 +109,7 @@ class Resolution(BaseModel):
     options: list[Option] = Field(default_factory=list)
     phrase: Optional[str] = None
     unrecognised: bool = False      # true -> chatbot_unrecognised_phrases
+    did_you_mean: bool = False      # options are v1's did-you-mean alternatives, no real match
 
 
 class SpecResolution(BaseModel):
@@ -161,6 +162,9 @@ def _fmt_number(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
 
 
+_V1_TO_PV2_KIND = {"customer_order": "delivery_order"}
+
+
 class DbResolver:
     """The live `Resolver`. Pure except for reads; it never writes (see `log_unrecognised`)."""
 
@@ -170,8 +174,13 @@ class DbResolver:
         *,
         pinned: Mapping[str, Collection[str]],
         customer_scope: Mapping[str, Any] | None = None,
+        reference_kinds: Collection[str] | None = None,
+        regions: Any = None,
     ) -> None:
         self.db = db
+        self.regions = regions
+        # The reference kinds this asker may see (`visible_reference_kinds`); closed default.
+        self.reference_kinds = list(reference_kinds) if reference_kinds else ["customer_order"]
         self.pinned = {kind: {str(k) for k in keys} for kind, keys in (pinned or {}).items()}
         self.customer_scope = customer_scope or {}
 
@@ -207,8 +216,79 @@ class DbResolver:
             return self._customer(ent.phrase)
         if ent.kind == "warehouse":
             return self._warehouse(ent.phrase)
+        v1_types = self._document_types(ent.kind)
+        if v1_types is not None:
+            number = getattr(ent, "doc_number", None) or ent.phrase
+            return self._document(ent.kind, v1_types, number, ent.phrase)
         # A kind this resolver does not hold: say so, never guess.
         return Resolution(status="none", phrase=ent.phrase, unrecognised=bool(ent.phrase))
+
+    # ------------------------------------------------------------------ documents, forms
+    def _document_types(self, kind: str) -> list[str] | None:
+        """The v1 entity types a parser kind is looked up as; never a reference kind the
+        asker may not see."""
+        from app.services.chatbot.contracts import REFERENCE_NARROW
+
+        if kind == "inbound_shipment":
+            return ["inbound_shipment"]
+        if kind == "form":
+            return ["form"]
+        if kind not in REFERENCE_NARROW:
+            return None
+        narrow = REFERENCE_NARROW[kind]
+        return [k for k in self.reference_kinds if narrow is None or k in narrow]
+
+    def _document(self, kind: str, v1_types: list[str], number: str | None, phrase: str | None) -> Resolution:
+        if not number or not _strip_ws(number):
+            return Resolution(status="none", phrase=phrase)
+        found = self._document_found(kind, self._v1_matches(number, v1_types))
+        if not found and kind != "form":
+            # v1 re-runs an unresolved token across every type it may see, products last.
+            wide = list(dict.fromkeys([*self.reference_kinds, "inbound_shipment"]))
+            found = self._document_found(None, self._v1_matches(number, wide))
+            if not found:
+                return self._product(number or phrase)
+        if not found:
+            return Resolution(status="none", phrase=phrase)
+        if len(found) == 1:
+            (k, code), label = next(iter(found.items()))
+            return Resolution(status="exact", refs=[ResolvedRef(kind=k, key=code, label=label, phrase=phrase)])
+        options = [
+            Option(key=c, label=lb, payload={"kind": k, "key": c, "label": lb})
+            for (k, c), lb in list(found.items())[:CUSTOMER_CANDIDATE_CAP]
+        ]
+        return Resolution(status="ambiguous", options=options, phrase=phrase)
+
+    @staticmethod
+    def _document_found(kind: str | None, matches: list[Any]) -> dict[tuple[str, str], str]:
+        """{(pv2 kind, code): label}. `kind` None = the kind each match was found as."""
+        out: dict[tuple[str, str], str] = {}
+        for m in matches:
+            if m.entity_type == "form":
+                label = (m.display or {}).get("form_name") or m.canonical_code
+            else:
+                label = m.canonical_code
+            k = kind or _V1_TO_PV2_KIND.get(m.entity_type, m.entity_type)
+            out.setdefault((k, m.canonical_code), str(label))
+        return out
+
+    def _v1_matches(self, text_: str, v1_types: list[str]) -> list[Any]:
+        """v1's own search, no new matching: the matches (not alternatives) of one token."""
+        from app.services.entity_resolver import resolve_references
+
+        result = resolve_references(
+            self.db,
+            [text_],
+            allowed_entity_types=v1_types,
+            raw_tokens=[text_],
+            enable_embedding_fallback=False,
+            alternatives_active_only=True,
+            regions=self.regions,
+            # Documents are matched exactly: a prefix would list other customers' numbers.
+            enable_prefix_fallback="form" in v1_types,
+        )
+        res = result.resolutions[0] if result.resolutions else None
+        return list(res.matches) if res else []
 
     @staticmethod
     def _from_held(kind: str, held: Held) -> Resolution:
@@ -476,6 +556,36 @@ class DbResolver:
         if variants:
             label = f"{family} ({len(variants)} variant{'s' if len(variants) != 1 else ''})"
             return Resolution(status="exact", refs=[ResolvedRef(kind="product", key=family, label=label, phrase=phrase)])
+
+        # Not an exact code: v1's own product search (prefix / substring / family), then its
+        # did-you-mean. Candidates are options to pick, never auto-joined.
+        from app.services.entity_resolver import resolve_references
+
+        result = resolve_references(
+            self.db,
+            [phrase],
+            allowed_entity_types=["product"],
+            raw_tokens=[phrase],
+            enable_embedding_fallback=False,
+            alternatives_active_only=True,
+            regions=self.regions,
+        )
+        res = result.resolutions[0] if result.resolutions else None
+        if res is not None:
+            found = list(dict.fromkeys(m.canonical_code for m in res.matches if m.entity_type == "product"))
+            if len(found) == 1:
+                code = found[0]
+                return Resolution(status="exact", refs=[ResolvedRef(kind="product", key=code, label=code, phrase=phrase)])
+            dym = False
+            if not found:
+                found = list(dict.fromkeys(m.canonical_code for m in res.alternatives if m.entity_type == "product"))
+                dym = True
+            if found:
+                options = [
+                    Option(key=c, label=c, payload={"kind": "product", "key": c, "label": c})
+                    for c in found[:CUSTOMER_CANDIDATE_CAP]
+                ]
+                return Resolution(status="ambiguous", options=options, phrase=phrase, did_you_mean=dym)
         return Resolution(status="none", phrase=phrase)
 
     # ------------------------------------------------------------------ customers

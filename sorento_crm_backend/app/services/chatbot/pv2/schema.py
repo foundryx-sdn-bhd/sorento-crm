@@ -31,12 +31,19 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Quantity(_Strict):
+    number: float
+    unit: str | None
+
+
 class Entity(_Strict):
     kind: str
     key: str | None
     phrase: str | None
     op: Op
     refers_to_held: bool
+    quantity: Quantity | None = None
+    doc_number: str | None = None
 
 
 class Spec(_Strict):
@@ -116,6 +123,8 @@ class Ask(_Strict):
     report: ReportSpec | None
     low_stock: LowStock | None
     ideation: IdeationSignal | None
+    status: Literal["outstanding", "delivered"] | None = None
+    portal_form: Literal["complaint", "stock_inquiry", "purchase_request", "sponsorship_form"] | None = None
 
 
 class Escalation(_Strict):

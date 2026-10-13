@@ -37,14 +37,18 @@ ASK = {
  "cleared": [] or any of "attachment_type", "period", "report", "specs",
  "report": REPORT or null,
  "low_stock": LOW_STOCK or null,
- "ideation": IDEATION or null
+ "ideation": IDEATION or null,
+ "status": "outstanding" | "delivered" | null,
+ "portal_form": "complaint" | "stock_inquiry" | "purchase_request" | "sponsorship_form" | null
 }
+- status: "outstanding" for outstanding / pending / not yet delivered ("belum hantar", "未送"); "delivered" for delivered / done deliver; else null.
+- portal_form: asking for a complaint, stock inquiry, purchase request or sponsorship form (typos included) is domain portal_link with portal_form that form, never forms.
 
 =====================================================================
 TURN ACT (exactly one per ask)
 =====================================================================
 Decide in this order; the first that fits wins.
-1. answers_bot_question: there is a PENDING QUESTION and the message answers it: a number, an option's label or meaning in any language ("the second", "yang kedua", "第二个", "length", "yes", "ok", "boleh", "好"), or a value the question asked for. Fill `answer`.
+1. answers_bot_question: there is a PENDING QUESTION and the message answers it: a number, an option's label or meaning in any language ("the second", "yang kedua", "第二个", "length", "yes", "ok", "boleh", "好"), or a value the question asked for. Fill `answer`. Not when the PENDING QUESTION has no options and is not kind v1_open_question/idea_*: a message naming its own subject then is new_topic.
 2. switch_back: the person goes back to an earlier TOPIC ("back to SRTWC286 stock", "balik yang tadi", "回到刚才那个"). Set switch_back_to to that T-key. Only a T-key printed in TOPICS.
 3. refines_held: the message changes or narrows what is HELD without starting a new subject: a new domain for the same product ("stock?", "price?", "ada promo?"), narrowing ("only SORENTO", "the P one", "600mm only", "this month"), widening ("all brands", "remove the brand"), a different measure or grouping for the held report ("by qty", "by salesman instead"), picking a listed row ("the 2nd one" with LAST ANSWER ROWS).
 4. new_topic: a fresh question with its own subject ("stock for SRTWC6003" while something else is held, "top 10 customers last month", a new idea).
@@ -58,10 +62,15 @@ A bare domain word ("stock", "promo", "ETA", "TD") while something is held: refi
 =====================================================================
 ENTITY
 =====================================================================
-{"kind": ENTITY KINDS key, "key": index key or null, "phrase": the person's words or null, "op": "set|add|remove|clear", "refers_to_held": true|false}
+{"kind": ENTITY KINDS key, "key": index key or null, "phrase": the person's words or null, "op": "set|add|remove|clear", "refers_to_held": true|false, "quantity": {"number": n, "unit": "unit/pc/set/..." as said} or null, "doc_number": the bare document number or null}
 - Index kinds (brand, product_class, product_type): put the INDEX key in `key` ("SORENTO", "water_closet", "close_coupled") and the person's words in `phrase`. If no index key fits, key null and the words in phrase.
-- Every other kind (product, customer, order, warehouse, sales_order, delivery_order, purchase_order, inbound_shipment, promotion, form, ...): key null, `phrase` = the code or name EXACTLY as written ("SRTWC286", "srtwc 286", "Hanlim Trading", "DO 7445"). Never correct, complete or translate a code or a name; code does the lookup.
+- Every other kind (product, customer, order, warehouse, sales_order, delivery_order, purchase_order, inbound_shipment, promotion, form, ...): key null, `phrase` = the code or name EXACTLY as written ("SRTWC286", "srtwc 286", "Hanlim Trading"). Never correct, complete or translate a code or a name; code does the lookup.
+- Quantity goes ON the entity of the code it counts, never as an entity of its own.
+- A count of items the person wants ("5unit", "2pc", "10 SETS", "x 2", "5 bijik", "2 个") is that product entity's `quantity`, never a spec. A lone number answering how many, or after a quantity reply, is a refines_held entity with refers_to_held true carrying that quantity.
+- Documents: kind = the document type the words name (delivery_order for "Delivery"/"DO", sales_order, purchase_order, inbound_shipment); `doc_number` = the number WITHOUT the kind word ("Delivery 202609-2012" -> delivery_order, doc_number "202609-2012"; "PS202609-0469" keeps its letters). A number with no kind word -> kind "order". Never guess a kind from a number's shape.
+- Forms: `phrase` = all the words that name the form, brand words included ("Mocha Application form").
 - A product code is letters+digits like SRTWC286, CB88SS, SRTUB206-SH. A 4-letter + 7-digit token (TIIU6323920) is a container = inbound_shipment.
+- A customer `phrase` is the name only, without words saying what they are ("Dealer Fullshun" -> "Fullshun"). Words that describe a named product code (its printed name, "SRTWB1515 COUNTER TOP & WALL HUNG BASIN") are not specs or classes: only the code is the entity.
 - A customer is the company or person who BUYS from us. "Hanlim have take SRTWC8605" = customer Hanlim + product SRTWC8605.
 - op: "set" replaces that kind in HELD (the usual case for a new value); "add" adds to it ("and SRTWC6003 too", "also MOCHA"); "remove" takes one out ("without MOCHA"); "clear" drops the whole kind ("any brand", "all customers").
 - refers_to_held: true when the words point at something already held or listed ("this", "that one", "it", "the P one", "这个", "yang ni"); then also set the kind, and key/phrase if the words name it ("the P one": kind product, phrase "P one", refers_to_held true, plus a SPEC for the trap type if the index has it).
@@ -79,7 +88,7 @@ SPEC (a property of products: size, colour, material, trap, mounting ...)
 - A product class or type is NOT a spec: "toilet", "basin", "kitchen sink", "close coupled" are entities of kind product_class / product_type.
 
 =====================================================================
-DOMAINS (choose by the MEANING of the request)
+DOMAINS (choose by the MEANING of the request: what the question asks, "还有货吗" = stock -> inventory, not a header word such as "Order" on the first line)
 =====================================================================
 - master_products: product information: description, size, dimension, material, colour, finish, list / normal / RRP price, "price" of a product, discontinued. Finding products by class + spec ("600mm toilet", "black basin tap").
 - product_attachment: a product's files: technical drawing / TD / CAD / spec sheet, photos / pictures / gambar / 图片, 3D, videos, installation guide / manual, certificates (SIRIM, SPAN, IKRAM, CIDB cert DOCUMENT). Set attachment_type to the index key the words mean.

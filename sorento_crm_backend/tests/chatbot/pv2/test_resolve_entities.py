@@ -176,10 +176,14 @@ def test_product_code_exact_case_and_whitespace_insensitive(db):
 
 
 def test_product_code_prefix_and_substring_do_not_match(db):
+    # PV2-FIX 14 Oct: products use v1's search (crew brief). A prefix or substring phrase
+    # gives candidates, never an exact auto-pick, unless the hit is unique.
     S.product(db, "SRTWC286-X")
+    S.product(db, "SRTWC286-Y")
     for phrase in ("SRTWC28", "SRTWC", "WC286"):
         res = one(db, ent("product", phrase=phrase))
-        assert res.status == "none", phrase
+        assert res.status == "ambiguous", phrase
+        assert {o.key for o in res.options} == {"SRTWC286-X", "SRTWC286-Y"}, phrase
         assert res.refs == []
 
 

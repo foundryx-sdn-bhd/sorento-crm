@@ -54,10 +54,12 @@ def test_top_level_keys_and_ask_keys_match_contract():
     props = schema.PV2_JSON_SCHEMA["properties"]
     assert list(props) == ["asks", "clarify", "language", "escalation"]
     ask = props["asks"]["items"]["properties"]
-    assert list(ask) == [
+    # PV2-FIX round 2: Ask gains `status` and `portal_form` (crew-approved contract change).
+    assert list(ask)[:13] == [
         "act", "domain", "switch_back_to", "entities", "specs", "attachment_type", "period",
         "row_pick", "answer", "cleared", "report", "low_stock", "ideation",
     ]
+    assert set(ask) - set(list(ask)[:13]) == {"status", "portal_form"}
 
 
 def test_turn_act_is_the_one_enum():

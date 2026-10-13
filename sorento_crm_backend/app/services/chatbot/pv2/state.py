@@ -11,7 +11,7 @@ from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.services.chatbot.pv2.schema import Ask, Comparator, Period, ReportSpec
+from app.services.chatbot.pv2.schema import Ask, Comparator, Period, Quantity, ReportSpec
 
 #: Contract section 3: topics newest first, cap 5; last answer rows cap 20.
 TOPICS_CAP = 5
@@ -43,6 +43,7 @@ class ResolvedRef(BaseModel):
     key: str
     label: str
     phrase: str | None = None
+    quantity: Quantity | None = None
 
 
 class ResolvedSpec(BaseModel):
@@ -61,6 +62,8 @@ class Held(BaseModel):
     period: Period | None = None
     report: ReportSpec | None = None
     idea_draft_id: str | None = None
+    status: str | None = None
+    portal_form: str | None = None
 
     def is_empty(self) -> bool:
         return not (
@@ -99,6 +102,14 @@ class ConversationState(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
+class Miss(BaseModel):
+    """An item of a list that found nothing (or only a did-you-mean) while its siblings
+    resolved: v1 says it is not found beside the answer for the rest."""
+
+    kind: str
+    phrase: str | None = None
+
+
 class Lookup(BaseModel):
     """Answer this ask from data. `held` is the held subject AFTER this ask applied
     (resolved codes only). `picked` / `free_value` carry an answer to a pending
@@ -113,6 +124,7 @@ class Lookup(BaseModel):
     pending_kind: str | None = None
     free_value: str | None = None
     row: Option | None = None
+    misses: list[Miss] = Field(default_factory=list)
 
 
 class ClarifyAct(BaseModel):
@@ -245,6 +257,7 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
             key=str(payload.get("key")),
             label=str(payload.get("label") or payload.get("key")),
             phrase=payload.get("phrase"),
+            quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
         )
         out.refs = set_refs(out.refs, kind, [ref], payload.get("op") or "set")
     return out

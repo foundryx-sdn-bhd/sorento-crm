@@ -88,6 +88,11 @@ def _report(report: Any) -> str:
     return "; ".join(parts)
 
 
+def _ref_text(r) -> str:
+    q = r.quantity
+    return r.label if q is None else f"{r.label} x{q.number:g}" + (f" {q.unit}" if q.unit else "")
+
+
 def held_lines(held: Held) -> list[str]:
     """`HELD:` and its indented field lines (only fields that are set)."""
     if held.is_empty():
@@ -96,7 +101,7 @@ def held_lines(held: Held) -> list[str]:
     for kind in sorted(held.refs):
         refs = held.refs[kind]
         if refs:
-            lines.append(f"  {kind}: {', '.join(r.label for r in refs)}")
+            lines.append(f"  {kind}: {', '.join(_ref_text(r) for r in refs)}")
     if held.attachment_type:
         lines.append(f"  attachment_type: {held.attachment_type}")
     if held.specs:

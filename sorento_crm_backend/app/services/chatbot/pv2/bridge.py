@@ -102,7 +102,7 @@ def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
         "current_message": current,
         "confident": True,
         "hint_confident": True,
-        "quantity": None,
+        "quantity": ref.quantity.number if ref.quantity is not None else None,
         "spec_key": None,
         "spec_value": None,
         "account": None,
@@ -161,7 +161,17 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
     # against the message's own words and would demote a carried "p_trap" on "stock?".
     named_specs = bool(action.ask is not None and action.ask.specs)
     entities.extend(_spec_entity(s, current=named_specs) for s in held.specs)
+    for miss in (m for m in action.misses if m.phrase):
+        # The typed token, unresolved, exactly as v1's parser sends it: v1's own reply
+        # says it is not found.
+        entities.append({
+            **_v1_entity(ResolvedRef(kind=miss.kind, key=str(miss.phrase), label=str(miss.phrase))),
+            "canonical_code": None, "confident": False, "hint_confident": False,
+        })
     verdict["entities"] = entities
+    ask = action.ask
+    verdict["status"] = held.status or (ask.status if ask is not None else None)
+    verdict["portal_form"] = held.portal_form or (ask.portal_form if ask is not None else None)
     date_from, date_to = period_dates(held.period, today)
     verdict["date_filter_start"] = date_from.isoformat() if date_from else None
     verdict["date_filter_end"] = date_to.isoformat() if date_to else None
