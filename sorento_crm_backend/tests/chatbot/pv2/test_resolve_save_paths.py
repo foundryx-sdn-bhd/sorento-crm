@@ -156,8 +156,9 @@ def test_alias_seed_fills_codes_adds_aliases_and_is_idempotent(db):
     assert rows["Installation Guide"] == "manual_x"
     photos = _stored(db, "product_photos")
     assert photos[0] == "Gambar" and "gambar" not in photos  # an existing word is kept, never doubled
-    assert set(photos) == {"Gambar", "photo", "picture", "图片", "照片"}
+    assert set(photos) == {"Gambar"} | (set(alias_seed.TYPE_ALIASES["product_photos"]) - {"gambar"})
     assert {"TD", "CAD", "drawing", "图纸", "lukisan"} <= set(_stored(db, "technical_specifications"))
+    assert {"gambar", "图片", "照片"} <= {A.norm(w) for w in photos}
     assert first["precedence"] == len(alias_seed.PRECEDENCE)
 
     assert alias_seed.apply(db) == {"codes": 0, "aliases": 0, "precedence": 0}
@@ -247,3 +248,12 @@ def test_attachment_type_create_stores_words(db):
     )
     assert saved.search_synonyms == ["leaflet"]
     assert db.execute(text("SELECT search_synonyms FROM attachment_types WHERE id = :i"), {"i": saved.id}).scalar() == ["leaflet"]
+
+
+def test_seed_lists_no_word_under_two_attachment_types():
+    owners: dict[str, set[str]] = {}
+    for code, words in alias_seed.TYPE_ALIASES.items():
+        for w in words:
+            owners.setdefault(A.norm(w), set()).add(code)
+    assert {w: c for w, c in owners.items() if len(c) > 1} == {}
+    assert set(alias_seed.TYPE_ALIASES) == set(alias_seed.TYPE_CODES)
