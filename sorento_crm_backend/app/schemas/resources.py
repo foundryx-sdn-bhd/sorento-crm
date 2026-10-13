@@ -1,5 +1,5 @@
 """Resource management schemas."""
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, List, Literal
 from datetime import datetime
 import uuid
@@ -79,7 +79,10 @@ class AttachmentTypeBase(BaseModel):
 
 
 class AttachmentTypeCreate(AttachmentTypeBase):
-    pass
+    # PV2 aliases (CONTRACT-PV2-13oct s.4): words the chatbot index prints as "aka" for
+    # this type. None = leave as stored. A word already meaning another type is refused
+    # (409) unless an alias precedence row settles it.
+    search_synonyms: Optional[list[str]] = None
 
 
 class AttachmentTypeUpdate(BaseModel):
@@ -94,10 +97,13 @@ class AttachmentTypeUpdate(BaseModel):
     triggers_n8n_webhook: Optional[bool] = None
     is_shared: Optional[bool] = None
     default_directory_id: Optional[str] = None
+    search_synonyms: Optional[list[str]] = None
 
 
 class AttachmentTypeResponse(AttachmentTypeBase):
     model_config = ConfigDict(from_attributes=True)
+
+    search_synonyms: list[str] = Field(default_factory=list)
 
     id: str
     created_at: datetime

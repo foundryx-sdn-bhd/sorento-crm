@@ -24,7 +24,10 @@ class ProductCategoryBase(BaseModel):
 
 
 class ProductCategoryCreate(ProductCategoryBase):
-    pass
+    # PV2 aliases (CONTRACT-PV2-13oct s.4): words the chatbot index prints as "aka" for
+    # this category's class. None = leave as stored. A word already meaning another
+    # class is refused (409) unless an alias precedence row settles it.
+    search_synonyms: Optional[list[str]] = None
 
 
 class ProductCategoryUpdate(BaseModel):
@@ -36,10 +39,12 @@ class ProductCategoryUpdate(BaseModel):
     display_order: Optional[int] = None
     chatbot_max_qty: Optional[int] = Field(None, ge=0)
     chatbot_eta_offset_days: Optional[int] = Field(None, ge=0)
+    search_synonyms: Optional[list[str]] = None
 
 
 class ProductCategoryResponse(ProductCategoryBase):
     id: str
+    search_synonyms: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime] = None
 

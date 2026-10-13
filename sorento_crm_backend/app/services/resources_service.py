@@ -515,12 +515,28 @@ class AttachmentTypeService:
         if existing:
             raise handle_conflict("Attachment type name already exists.")
         
-        attachment_type = AttachmentType(**type_data.model_dump())
+        data = type_data.model_dump()
+        synonyms = data.pop("search_synonyms", None)
+        attachment_type = AttachmentType(**data)
         self.db.add(attachment_type)
+        if synonyms is not None:
+            self._set_search_synonyms(attachment_type, synonyms)
         self.db.commit()
         self.db.refresh(attachment_type)
         return attachment_type
-    
+
+    def _set_search_synonyms(self, attachment_type, synonyms) -> list:
+        """PV2 aliases (CONTRACT-PV2-13oct s.4): a word already meaning another type is refused."""
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        words = pv2_aliases.clean_words(synonyms)
+        pv2_aliases.refuse_conflicts(
+            self.db, "attachment_type", attachment_type.code, words,
+            previous=attachment_type.search_synonyms or [],
+        )
+        attachment_type.search_synonyms = words
+        return words
+
     def update_type(self, type_id: str, type_data: AttachmentTypeUpdate):
         """Update an attachment type."""
         attachment_type = self.get_type(type_id)
@@ -535,8 +551,11 @@ class AttachmentTypeService:
             if existing:
                 raise handle_conflict("Attachment type name already exists.")
         
+        synonyms = update_data.pop("search_synonyms", None)
         for key, value in update_data.items():
             setattr(attachment_type, key, value)
+        if synonyms is not None:
+            self._set_search_synonyms(attachment_type, synonyms)
         
         self.db.commit()
         self.db.refresh(attachment_type)
