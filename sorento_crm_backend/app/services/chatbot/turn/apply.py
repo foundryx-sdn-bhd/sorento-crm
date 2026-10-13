@@ -41,6 +41,7 @@ from app.services.chatbot.turn.decide import (
     decide,
     domain_in_message,
     names_its_own_domain,
+    restated_kinds,
 )
 from app.services.chatbot.turn.narrow import decide as narrow_decide
 from app.services.chatbot.turn.pending import (
@@ -1118,8 +1119,13 @@ def _focus_rules(
             # This replaces `SHARED_AXIS_BY_DOMAIN`, a per-domain table of which kinds
             # "say the same thing", which could not tell those two apart at all - both
             # name a product on the order domain's own shared axis.
+            #
+            # CARRY-ATTACH: a kind the parser RESTATED (its echo of the settled row,
+            # dropped by `turn_runtime.without_restated_rows`) is named too: the parser
+            # said the subject is still that row, so it is neither dropped nor replaced.
+            kept_kinds = set(by_kind) | restated_kinds(verdict)
             for kind, attr in KIND_FIELD_MAP.items():
-                if kind in by_kind:
+                if kind in kept_kinds:
                     continue
                 if getattr(focus, attr, None):
                     setattr(focus, attr, [])

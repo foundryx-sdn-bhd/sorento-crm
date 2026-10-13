@@ -40,7 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
-from app.services.chatbot.turn.decide import picked_positions
+from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
     Pending,
@@ -4507,7 +4507,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     restated = [e for e in entities if _restates_a_settled_row(e, focus)]
     if not restated:
         return verdict
-    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+    # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,
+    # so a turn the parser also reads as naming its own domain (`domain_in_message: true`,
+    # a NEW ASK) keeps the settled rows instead of evicting the subject it was asked about
+    # ("Drawing" answering "which attachment type for Srt8313?").
+    kinds = sorted({str(e.get("hint") or "").strip().lower() for e in restated})
+    return {
+        **verdict,
+        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)],
+        RESTATED_KINDS_KEY: kinds,
+    }
 
 
 def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
