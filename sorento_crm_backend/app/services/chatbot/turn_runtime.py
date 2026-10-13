@@ -4432,6 +4432,16 @@ def _tier_gate(
     }
 
 
+#: CARRY-ATTACH T2 (prod, 13 Oct 2026; owner ruling pending): "Srt8313" after "Srt8308 drawing"
+#: asked "Please provide the attachment type for product Srt8313" although the fetch had found
+#: SRT8313's file under the carried Technical Specifications. False (today, ruling option b):
+#: a SETTLED carried document type (one with a uuid) is not handed to the resolver, so the
+#: gate asks again. True (option a): it is handed over with its uuid, the gate counts it and
+#: the turn answers under the same type. Once CLARIFY-POLICY (#1570) lands, this is the
+#: `attachment_type` row's mode (ask / default) rather than a constant.
+CARRY_SETTLED_DOCUMENT_TYPE = False
+
+
 def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> dict[str, Any]:
     """The carried document types a product-attachment FETCH turn still needs resolving.
 
@@ -4443,7 +4453,8 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
     every file of every type, and the "has no Certification" line had no types to name.
 
-    Only the document types, only those with no uuid, only when this turn named none of its
+    Only the document types, only those with no uuid (every carried
+    one when `CARRY_SETTLED_DOCUMENT_TYPE` is on), only when this turn named none of its
     own, and only when the one domain in play is `product_attachment` - any other domain's
     gate would read a document type as an incompatible entity.
     """
@@ -4457,20 +4468,21 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
     carried: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("uuid"):
+        if not isinstance(row, dict) or (row.get("uuid") and not CARRY_SETTLED_DOCUMENT_TYPE):
             continue
         code = row.get("canonical_code") or row.get("raw")
         if not jsc.truthy(code):
             continue
-        carried.append(
-            {
-                "raw": row.get("raw") or code,
-                "hint": "attachment_type",
-                "canonical_code": code,
-                "current_message": False,
-                "confident": True,
-            }
-        )
+        entity: dict[str, Any] = {
+            "raw": row.get("raw") or code,
+            "hint": "attachment_type",
+            "canonical_code": code,
+            "current_message": False,
+            "confident": True,
+        }
+        if row.get("uuid"):
+            entity["uuid"] = row["uuid"]
+        carried.append(entity)
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*own, *carried]}

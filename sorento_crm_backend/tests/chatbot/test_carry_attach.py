@@ -164,3 +164,88 @@ def test_answering_the_attachment_type_ask_keeps_the_asked_product(chat, world):
     assert "escalate" not in third.lower(), third
     assert "no technical specifications" not in third.lower(), third
 
+
+
+# --------------------------------------------------------------------------- #
+# T2: the owner's ruling is pending; both positions of the one switch          #
+# --------------------------------------------------------------------------- #
+
+
+def test_t2_asks_for_the_type_while_the_switch_is_off(chat, world):
+    """Option (b), today's behaviour and the switch's default."""
+    from app.services.chatbot import turn_runtime
+
+    assert turn_runtime.CARRY_SETTLED_DOCUMENT_TYPE is False
+    chat.say("Srt8308 drawing", _t1())
+    second = chat.say("Srt8313", _t2())
+    assert second.startswith("Please provide the attachment type for product Srt8313"), second
+
+
+def test_t2_answers_under_the_carried_type_when_the_switch_is_on(chat, world, monkeypatch):
+    """Option (a): the settled carried type answers the next product."""
+    from app.services.chatbot import turn_runtime
+
+    monkeypatch.setattr(turn_runtime, "CARRY_SETTLED_DOCUMENT_TYPE", True)
+    chat.say("Srt8308 drawing", _t1())
+    second = chat.say("Srt8313", _t2())
+    last = chat.attachment_calls()[-1]
+    assert last.get("product_ids") == [world["products"]["SRT8313"].id], chat.calls
+    assert last.get("attachment_type_ids") == [world["drawing"].id], last
+    assert "SRT8313-td.pdf" in second and "attachment type for" not in second, second
+
+
+# --------------------------------------------------------------------------- #
+# The seams, pure                                                              #
+# --------------------------------------------------------------------------- #
+
+
+def _focus_with_settled_product():
+    from app.services.chatbot.turn.state import Focus
+
+    return Focus(
+        domains=["product_attachment"],
+        products=[{"raw": "SRT8313", "canonical_code": "SRT8313", "uuid": "p-8313"}],
+        extra={"attachment_type": [{"raw": "Technical Specifications", "canonical_code": "Technical Specifications", "uuid": "t-1"}]},
+    )
+
+
+def test_a_dropped_echo_records_the_kind_it_restated():
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.turn.decide import restated_kinds
+
+    out = turn_runtime.without_restated_rows(_t3(), _focus_with_settled_product())
+    assert [e["raw"] for e in out["entities"]] == ["Drawing"], out["entities"]
+    assert restated_kinds(out) == {"product"}
+
+
+def test_no_echo_records_no_restated_kind():
+    from app.services.chatbot import turn_runtime
+    from app.services.chatbot.turn.decide import restated_kinds
+
+    verdict = _verdict("drawing", [_entity("Drawing", "attachment_type", "technical drawing")], domain_in_message=True)
+    out = turn_runtime.without_restated_rows(verdict, _focus_with_settled_product())
+    assert restated_kinds(out) == set()
+
+
+def test_a_new_ask_keeps_the_restated_kind_and_drops_the_rest():
+    """The NEW ASK eviction keeps the kind the parser restated, and still drops a carried
+    kind the message neither named nor restated."""
+    from app.services.chatbot.turn import apply
+    from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, decide
+    from app.services.chatbot.turn.plan import Trace
+
+    focus = _focus_with_settled_product()
+    focus.customers = [{"raw": "HANLIM", "canonical_code": "HANLIM", "uuid": "c-1"}]
+    verdict = {
+        **_verdict("drawing", [_entity("Drawing", "attachment_type", "technical drawing")], domain_in_message=True),
+        RESTATED_KINDS_KEY: ["product"],
+    }
+    decision = decide(verdict, focus, None)
+    assert decision.starts_fresh, decision
+    trace = Trace()
+    out = apply._focus_rules(
+        focus, verdict, verdict["entities"], decision, domain_locked=False, domain_override=None, trace=trace
+    )
+    assert [r["uuid"] for r in out.products] == ["p-8313"], out.products
+    assert out.customers == [], out.customers
+    assert "new_ask_drops_product" not in trace.rules_fired and "new_ask_drops_customer" in trace.rules_fired, trace.rules_fired
