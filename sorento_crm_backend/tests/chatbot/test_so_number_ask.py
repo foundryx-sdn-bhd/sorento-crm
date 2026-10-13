@@ -325,15 +325,17 @@ class TestSoRevealKeyAndStaff:
         assert reply.strip() == SO_NOT_ENABLED, reply
         assert _calls(captured, ORDERS) == [], captured
 
-    def test_unscoped_contact_sees_any_so_of_its_company(self, session_factory, monkeypatch) -> None:
-        """AC-SO-14: no links, so no customer scope is enforced."""
+    def test_unlinked_non_staff_contact_sees_no_so(self, session_factory, monkeypatch) -> None:
+        """AC-SO-14, corrected by V1-DOC-SCOPE (owner rule: unlinked != customer): a contact
+        with no links and no staff tier owns no SO, so any SO is another customer's. Staff
+        still see any SO (`test_v1_doc_scope.py::TestSoByNumberWithReveal`)."""
         from tests.chatbot.test_customer_scope_lane import _other_customer
 
         _seed_contact(session_factory, variables={})
         cust = _other_customer(session_factory, "ZZT ANY SDN BHD")
         _seed_so(session_factory, "SO421624", customer_id=cust, debtor_name="ZZT ANY SDN BHD", lines=[(10, 10)])
         reply, _ = _so_turn(session_factory, monkeypatch, "SO421624")
-        assert reply.strip() == _card("SO421624", "Open", "fully delivered", name="ZZT ANY SDN BHD"), reply
+        assert reply.strip() == f"{REFUSAL_PREFIX} I can only check on your own account.", reply
 
 
 class TestReviewRound1:
