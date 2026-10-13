@@ -214,7 +214,8 @@ def _po_link(db, company_id: str, row: OrderInquiryRow, *, po_number: str,
     db.add(po)
     db.flush()
     line = PurchaseOrderLine(id=_uid(), company_id=company_id, purchase_order_id=po.id,
-                              product_id=product.id, qty_ordered=Decimal("10"))
+                              product_id=product.id, qty_ordered=Decimal("10"),
+                              source_ref=f"{po_number}:1")
     db.add(line)
     db.flush()
     db.add(OrderInquiryLink(id=_uid(), company_id=company_id, row_id=row.id,
@@ -267,7 +268,8 @@ def _reserve_link(db, company_id: str, row: OrderInquiryRow, *, qty="10") -> Ord
 def _open_derived_spo(db, company_id: str, *, spo_number: str, po_number: str,
                         product: Product, landed: bool = False) -> SPOAllocation:
     """An SPOAllocation that answers to `spo_number`/`linked=spo` for a PO-linked row's
-    OWN PO purely by derivation (S5, R-E) - `from_po_number == po_number AND
+    OWN PO line purely by derivation (S5, R-E) - `from_po_number == po_number AND
+    from_po_line_ref` naming the line `_po_link` seeds (OI-SPO-EXACT) `AND
     product_id == product.id`, open per `spo_supply.open_incoming_clauses` - never
     itself linked to any row. `landed=True` books it on a shipment that has arrived, so
     the coordinator's addendum case (a landed shipment is not incoming) can be built
@@ -284,6 +286,7 @@ def _open_derived_spo(db, company_id: str, *, spo_number: str, po_number: str,
     allocation = SPOAllocation(
         id=_uid(), company_id=company_id, spo_number=spo_number, allocated_quantity=5,
         quantity_received=0, product_id=product.id, from_po_number=po_number,
+        from_po_line_ref=f"{po_number}:1",
         line_status="open", receipt_status="pending", inbound_shipment_id=shipment_id,
     )
     db.add(allocation)
