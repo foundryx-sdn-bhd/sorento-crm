@@ -4388,10 +4388,50 @@ class ProjectOrderInquiryService:
         # showed Saved (2) and sent 3. Matched by (line, item, donor location), the
         # pile the hole is in. A refused row is not offered for a match (AC-H6): a
         # restatement of it is a new instruction, raised fresh beside the refusal.
+        #
+        # A hole purchasing has already put (part of) on a document - partly linked or
+        # placed, the cascade's own draft included - and this revision restates EXACTLY
+        # (same line, item, location, quantity, date) is a carried decision: it is left
+        # as it stands, links and all, and only re-filed (owner, 13 Oct 2026, SO323450
+        # hand test: "a carried line is never touched or re-sent, whatever its SPO link
+        # state"). Cut to its linked part, it used to raise the remainder as a fresh
+        # ORDER BACK the email sent again. Any other linked hole keeps the path below.
+        unchanged_linked: set = set()
+        restated: set = set()
+        for index, entry in enumerate(shortfalls):
+            line = entry.get("line")
+            entry_key = (
+                str(line.id) if line is not None else None,
+                entry.get("item_code") or None,
+                entry.get("stock_location") or None,
+            )
+            required_date = entry.get("required_date")
+            row = next(
+                (
+                    r
+                    for r in rows
+                    if r.state in (INQUIRY_PARTLY_LINKED, INQUIRY_PLACED)
+                    and r.id not in unchanged_linked
+                    and _is_borrow_order_back(r)
+                    and not _is_refused(r)
+                    and not r.redirected_to_pool
+                    and key_before[r.id][:3] == entry_key
+                    and _dec(r.qty) == _dec(entry.get("qty"))
+                    and (required_date is None or r.delivery_date == required_date)
+                ),
+                None,
+            )
+            if row is not None:
+                unchanged_linked.add(row.id)
+                restated.add(index)
+                row.supply_decision_id = decision.id
+
         open_holes: Dict[Tuple[Any, Any, Any], List[OrderInquiryRow]] = {}
         still_raised: List[OrderInquiryRow] = []
         for row in rows:
             key = (row.item_code or None, row.stock_location or None)
+            if row.id in unchanged_linked:
+                continue
             if row.state == INQUIRY_RAISED:
                 still_raised.append(row)
                 if _is_borrow_order_back(row) and not _is_refused(row):
@@ -4415,7 +4455,9 @@ class ProjectOrderInquiryService:
         kept: set = set()
         re_raised: set = set()
         created = 0
-        for entry in shortfalls:
+        for index, entry in enumerate(shortfalls):
+            if index in restated:
+                continue
             key = (entry.get("item_code") or None, entry.get("stock_location") or None)
             raw_qty = _dec(entry.get("qty"))
             already_placed = placed.get(key, _ZERO)

@@ -553,3 +553,65 @@ def test_an_unchanged_hole_takes_the_new_wording_without_a_word_to_purchasing(ap
     assert row.id == diy.id
     assert row.note == "Order-back: BRW-AA lent 5 to PSO-004 line 400", row.note
     assert _TOLD == [], _remarks(_TOLD)
+
+
+# --------------------------------------------------------------------------- linked holes
+
+
+def _auto_link(world, row, qty):
+    """The raise-time cascade's own draft: `auto=True`, part of the hole on an SPO-like
+    document, so the row reads partly linked (owner hand test, SO323450 / OI-2610-0002)."""
+    from .test_planning_change_apply_on_board import _link, _po_line, _supplier
+
+    _po, po_line = _po_line(world, _supplier(world), qty="10", expected_date=date(2026, 11, 20))
+    link = _link(world, row, po_line, qty=qty, document="SPO-2024/10-0082")
+    link.auto = True
+    world.db.flush()
+    return link
+
+
+def _three_holes(world, line_a, line_b, line_c, *, c_qty=2, with_b=True):
+    holes = [_hole(line_a, "SRTWC8826-SC", 2, "DC1-BB", D_144)]
+    if with_b:
+        holes.append(_hole(line_b, "SRTWCY8826", 2, "DC1-BB", D_336))
+    holes.append(_hole(line_c, "SRTWCX8826-S", c_qty, "DC1-BB", D_DIY))
+    return holes
+
+
+def test_owner_case_so323450_a_partly_linked_hole_is_not_resent(api):
+    """Owner hand test FAIL on db116c78: Confirm #1 opened A 2 and C 2; the cascade linked 1
+    of C to an SPO; Confirm #2 only added B. The email had B AND a new 'C 1'. Now: only B,
+    C stays the same partly linked row with its link, and a third Confirm sends nothing."""
+    from app.models.project_so import INQUIRY_PARTLY_LINKED, OrderInquiryLink
+
+    _client, world = api
+    order, (line_a, line_b, line_c) = _three_lines(api)
+    inquiry_id = _order_row(world, line_a).order_inquiry_id
+    _raise(world, order, inquiry_id, 1, _three_holes(world, line_a, line_b, line_c, with_b=False))
+    row_c = next(r for r in _holes(world, inquiry_id) if r.item_code == "SRTWCX8826-S")
+    link = _auto_link(world, row_c, 1)
+    assert row_c.state == INQUIRY_PARTLY_LINKED, "premise"
+    _TOLD.clear()
+
+    created, rev2 = _raise(world, order, inquiry_id, 2, _three_holes(world, line_a, line_b, line_c))
+
+    world.db.expire_all()
+    assert [i["item_code"] for i in _TOLD] == ["SRTWCY8826"], _remarks(_TOLD)
+    assert created == 1
+    rows = _holes(world, inquiry_id, live=False)
+    c_rows = [r for r in rows if r.item_code == "SRTWCX8826-S"]
+    assert [str(r.id) for r in c_rows] == [str(row_c.id)], [(r.state, r.qty, r.note) for r in c_rows]
+    kept = c_rows[0]
+    assert kept.state == INQUIRY_PARTLY_LINKED and kept.qty == Decimal("2"), (kept.state, kept.qty)
+    assert "Remainder superseded" not in (kept.note or ""), kept.note
+    assert str(kept.supply_decision_id) == str(rev2.id)
+    assert world.db.get(OrderInquiryLink, link.id) is not None, "the draft link stands"
+
+    # The next Confirm, nothing changed: nothing is sent, even with B now linked too.
+    row_b = next(r for r in rows if r.item_code == "SRTWCY8826")
+    _auto_link(world, row_b, 1)
+    _TOLD.clear()
+    created, _rev3 = _raise(world, order, inquiry_id, 3, _three_holes(world, line_a, line_b, line_c))
+    assert _TOLD == [], _remarks(_TOLD)
+    assert created == 0
+    assert len(_holes(world, inquiry_id, live=False)) == 3
