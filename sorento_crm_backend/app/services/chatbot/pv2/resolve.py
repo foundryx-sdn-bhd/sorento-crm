@@ -246,8 +246,9 @@ class DbResolver:
             return Resolution(status="none", phrase=phrase)
         unnamed = kind in ("order", "order_number")
         found = self._document_found(None if unnamed else kind, self._v1_matches(number, v1_types))
-        if not found and unnamed:
-            # An unnamed number that is no document may be a product (products are not documents).
+        if not found and kind != "form":
+            # A number that is no document of its kind may be a product code (products are
+            # not documents, so this is never another document kind).
             return self._product(number)
         if not found:
             return Resolution(status="none", phrase=phrase)
