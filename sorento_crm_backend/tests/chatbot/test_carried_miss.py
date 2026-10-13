@@ -90,7 +90,7 @@ def test_portal_link_with_a_carried_unresolved_order_sends_the_link(portal_conso
     """U1. Control first: the same turn over a clean focus is the link. Then the prod
     focus (the order number carried on `focus.extra.order`): the reply is the SAME link,
     no "Couldn't find", no escalation offer."""
-    c = portal_console("+60100001613")
+    c = portal_console("+60100000614")
     c.state = _state({})
     expected = c.say("I want to make complaint report", _portal_turn())
     assert LINK in expected, expected
