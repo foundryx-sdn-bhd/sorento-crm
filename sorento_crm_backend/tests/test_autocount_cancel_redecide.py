@@ -93,3 +93,53 @@ def test_only_the_company_asked_for_is_touched(env):
     assert env.db.get(AutocountCancelLine,
                       _cancel_lines(env, 950001)[951001].id).match_reason == "tie_break"
     assert _so_line(env, lines[5002]).qty_cancelled == Decimal("12")
+
+
+def _stale_no_fit(env, ordered, transferred):
+    """The old matcher left a single-line cancel unmatched (`no_fit`); the exact rule puts it
+    on the line."""
+    lines = _so(env, lines=((5001, "p1", ordered, transferred, "wh1"),))
+    _push_xs(env, [_xs(details=[_detail(951001, qty=transferred, from_dtl=0)])])
+    stored = _cancel_lines(env, 950001)[951001]
+    stored.match_status, stored.match_reason, stored.sales_order_line_id = (
+        "unmatched", "no_fit", None)
+    env.db.commit()
+    row = _so_line(env, lines[5001])
+    row.qty_cancelled, row.cancelled_by_cancel_doc = 0, False
+    row.line_status = "closed" if transferred >= ordered else "open"
+    env.db.commit()
+    return lines
+
+
+def _record_hooks(monkeypatch):
+    import scripts.autocount_cancel_redecide as script
+
+    calls = []
+    monkeypatch.setattr(script, "run_cancel_hooks",
+                        lambda db, service, actor: calls.append(service.derived))
+    return calls
+
+
+def test_apply_hands_a_newly_cancelled_line_to_the_oi_retire_hook_once(env, monkeypatch):
+    """--apply runs the ingest's own post-commit hooks: a line the exact answer fully cancels
+    goes to the #1530 OI retire with its cancel doc number. The dry run never calls them."""
+    calls = _record_hooks(monkeypatch)
+    lines = _stale_no_fit(env, 12, 12)
+    preview = _run(env)
+    assert (preview["newly_cancelled"], calls) == (1, [])
+    summary = _run(env, dry_run=False)
+    assert summary["newly_cancelled"] == 1
+    assert [d.newly_cancelled for d in calls] == [[(lines[5001], "ZZXS-0001")]]
+    assert _so_line(env, lines[5001]).line_status == "cancelled"
+    calls.clear()
+    assert _run(env, dry_run=False)["newly_cancelled"] == 0
+    assert all(not d.newly_cancelled for d in calls)
+
+
+def test_apply_hands_a_partial_cancel_to_the_planning_change_hook(env, monkeypatch):
+    """A partial cancel the exact answer adds moves the open line's planned qty (Q4 a)."""
+    calls = _record_hooks(monkeypatch)
+    lines = _stale_no_fit(env, 10, 4)
+    summary = _run(env, dry_run=False)
+    assert summary["plan_moves"] == 1
+    assert [d.plan_moves for d in calls] == [[(lines[5001], Decimal("10"), Decimal("6"))]]
