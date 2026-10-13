@@ -182,8 +182,9 @@ today (#4, #7, #8, #26, #27; `do_ask.py:14-17`).
   name, never its account code. The staff CS routing list (`engine.py` CS roster arm) is a separate lane.
 - A row set to a mode not in `allowed_modes` is refused (DB CHECK and the service); a missing or
   unreadable table falls back to the seed constant, never to "no ask".
-- Clear cases, no question: an explicit reference ("delivery for this"), a REFINE of the held
-  question, a restated subject, an answer to a held question.
+- Clear cases, no question: an explicit reference ("delivery for this"), a restated subject, an
+  answer to a held question. A REFINE that combines a newly named subject with a carried one of
+  another kind is NOT clear and asks (owner 13 Oct 2026), also under an open offer.
 - R2 does not fire when the new message restates the carried subject, when the parser reads the
   turn as an answer to a held question, or when the carried kind and the new kind are the same
   (a new customer replaces the old one, today's rule).

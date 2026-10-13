@@ -6369,8 +6369,8 @@ def _run_stages_body(  # noqa: PLR0915
                         # block reads it), so the miss header's Dates line never says "all
                         # dates" above a fetch a carried window narrowed (live check 13 Oct).
                         parser=(
-                            turn_runtime._spec_window(answer_parse_output or {}, fetch_plan.fetch[0])
-                            if len(fetch_plan.fetch) == 1
+                            turn_runtime._spec_window(answer_parse_output, fetch_plan.fetch[0])
+                            if len(fetch_plan.fetch) == 1 and isinstance(answer_parse_output, dict)
                             else answer_parse_output
                         ),
                         ctx=ctx,

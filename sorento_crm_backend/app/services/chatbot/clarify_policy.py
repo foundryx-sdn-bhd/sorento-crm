@@ -520,15 +520,21 @@ _ORDER_LABEL = "Orders"
 COMBINES_ACROSS_KINDS = "refines_standing_subject"
 
 
-def _ask_label(domain: str, default: str, verdict: dict[str, Any]) -> str:
+def _reads_delivery(attributes: Any, documents: Any, status: Any) -> bool:
+    attrs = {str(a).lower() for a in (attributes or []) if isinstance(a, str)}
+    docs = {str(d).upper() for d in (documents or []) if isinstance(d, str)}
+    return "delivery" in attrs or "DO" in docs or str(status or "").lower() == "delivered"
+
+
+def _ask_label(domain: str, default: str, verdict: dict[str, Any], focus: Any = None) -> str:
     label = _ASK_LABELS.get(domain, default)
     if domain != "order":
         return label
-    attrs = {str(a).lower() for a in (verdict.get("requested_attributes") or []) if isinstance(a, str)}
-    documents = {str(d).upper() for d in (verdict.get("document") or []) if isinstance(d, str)}
-    if "delivery" in attrs or "DO" in documents or str(verdict.get("order_status") or "").lower() == "delivered":
-        return label
-    return _ORDER_LABEL
+    if any(verdict.get(k) for k in ("requested_attributes", "document", "order_status")):
+        return label if _reads_delivery(verdict.get("requested_attributes"), verdict.get("document"), verdict.get("order_status")) else _ORDER_LABEL
+    # The message says nothing of its own ("how about <code>"): the held ask's resolved
+    # document / status decide (reviewer S1), never the message text.
+    return label if _reads_delivery((), getattr(focus, "document", None), getattr(focus, "status", None)) else _ORDER_LABEL
 
 
 @dataclass(frozen=True)
@@ -633,10 +639,12 @@ def carry_conflict(
     if answers_task or getattr(decision, "kind", None) == ANSWER:
         return None  # it answers the held question (an open task included)
     if getattr(decision, "kind", None) == REFINE and getattr(decision, "why", None) != COMBINES_ACROSS_KINDS:
-        # It narrows an open question, or a pronoun points at the held subject: clear. A
-        # REFINE that only COMBINES a newly named subject with a carried one of another kind
-        # ("orders for X", then "how about <code>") is the unclear case (owner 13 Oct 2026,
-        # "always ask when we are unclear") and goes through the check below.
+        # A pronoun points at the held subject (`domain_in_message_anaphora`), or a verdict that
+        # predates `domain_in_message` narrows an open question: clear. A REFINE that COMBINES a
+        # newly named subject with a carried one of another kind ("orders for X", then "how about
+        # <code>"; also under an open offer, which a current parser reads the same way) is the
+        # unclear case (owner 13 Oct 2026, "always ask when we are unclear"; the owner-recorded
+        # replays it changes are signed in `replay_turns/DIVERGENCES.md`) and goes through the check.
         return None
     anaphora = verdict.get("anaphora") if isinstance(verdict.get("anaphora"), dict) else {}
     if anaphora.get("backward_reference") is True:
@@ -683,7 +691,7 @@ def carry_conflict(
 
             subject = family_words(list(dict.fromkeys(_row_label(r) for r in carried))) or subject
         parts = {
-            "label": _ask_label(domain_row.name, domain_row.label, verdict),
+            "label": _ask_label(domain_row.name, domain_row.label, verdict, focus),
             "subject": subject,
             "plural": plural,
             "date_words": "" if others else _date_words(verdict),

@@ -2214,7 +2214,7 @@ def _subject_default_domain(verdict: dict[str, Any], lane: str | None, policy: P
     # Live check 13 Oct: the parser types a bare code `unknown`, which lands on the casual
     # lane (the LLM clarifier, which cannot place a code); a resolved PRODUCT there is the same
     # bare-subject turn as `entities_only`. A bare customer name stays casual (main's B1(b)).
-    products_only = lane == "casual"
+    products_only = lane == "casual" and verdict.get("message_type") == "unknown"  # reviewer B1
     if products_only:
         row = "entities_only"
     if row is None or policy.clarify_mode(row) != "default":
