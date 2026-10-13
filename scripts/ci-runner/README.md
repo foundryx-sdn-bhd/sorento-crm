@@ -18,8 +18,9 @@ Image builds and the deploy always stay on GitHub-hosted (prod is amd64).
   the runner does not start without it): everything the runner user opens,
   its rootless Docker's network included, reaches the internet only. The Mac
   (lima's `192.168.5.2` is the Mac's localhost: dev Postgres, lane servers),
-  the LAN and the tailnet are dropped. The VM's own root processes are not
-  limited; no job runs as root.
+  the LAN and the tailnet are dropped, and on the VM itself only loopback
+  and DNS are open. The VM's own root processes are not limited; no job runs
+  as root.
 - A job's Postgres/Redis service containers publish 5432/6379 on the VM's
   localhost. `job-started.sh` empties the runner's Docker at the start of
   every job.
