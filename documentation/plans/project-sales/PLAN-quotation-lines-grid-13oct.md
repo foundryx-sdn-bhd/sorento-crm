@@ -1,7 +1,7 @@
 # PLAN: Quotation lines grid (13 Oct)
 
-Status: BUILDING (size L: one additive migration; security-reviewer joins because the line write
-accepts attachment ids). Owner answers 14 Oct recorded in the UAC.
+Status: BUILDING, fix round 1 after review (size L: one additive migration; security-reviewer joins
+because the line write accepts attachment ids). Owner answers 14 Oct recorded in the UAC. PR #1643.
 
 Lane: QUOTATION-UX, branch `crew/quotation-ux`. Source: owner notes 13 Oct on Project Sales >
 Project > New quotation > Lines (screenshots 607 to 612 in the crew brief). Mock v2:
