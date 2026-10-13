@@ -69,7 +69,10 @@ def test_the_lane_migrations_run_in_alembic_order_on_a_database_without_the_new_
         conn.execute(text("DROP TABLE chatbot_domain_words"))
         conn.execute(text("ALTER TABLE access_agents DROP COLUMN IF EXISTS in_parser_prompt"))
         # Neither wording-layer version exists yet, and production is the owner's text.
-        tokened = "SELECT id FROM ai_prompt_versions WHERE name = :n AND template ~ '[{][{](?!current_date)'"
+        # A wording-layer version, as `pv.is_wording_layer` reads one: the add-on variables
+        # (`pv.ADDON_VARIABLES`) ride on the code constant, production included.
+        skip = "|".join(["current_date", *sorted(pv.ADDON_VARIABLES)])
+        tokened = f"SELECT id FROM ai_prompt_versions WHERE name = :n AND template ~ '[{{][{{](?!({skip})[}}])'"
         conn.execute(text(f"DELETE FROM ai_prompt_labels WHERE version_id IN ({tokened})"), {"n": KEY})
         conn.execute(text(f"DELETE FROM ai_prompt_versions WHERE id IN ({tokened})"), {"n": KEY})
         vid = conn.execute(
