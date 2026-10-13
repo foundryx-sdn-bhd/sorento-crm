@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
 from app.services.chatbot.pv2 import answer as answer_mod
@@ -72,6 +72,9 @@ class TurnV2Context:
     trace: dict[str, Any] = field(default_factory=dict)
     # The contact's granted field-reveal keys; the closed default grants nothing.
     granted_reveals: frozenset[str] = frozenset()
+    # Live policy: domain -> escalation team code; and how a miss may end (offer / refer / none).
+    domain_teams: dict[str, str] | None = None
+    offer_mode: Literal["offer", "refer", "none"] = "offer"
 
 
 def local_today(now: datetime) -> date:
@@ -112,6 +115,8 @@ def _run(ctx: TurnV2Context, *, v1_pending: Any = None) -> answer_mod.TurnV2Resu
         resolver=ctx.resolver,
         policy=ctx.policy,
         can_offer_handover=ctx.can_offer_handover,
+        domain_teams=ctx.domain_teams,
+        offer_mode=ctx.offer_mode,
         now=ctx.now,
     )
     state_out.last_turn_at = ctx.now
@@ -413,6 +418,11 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     with _session(factory) as db:
         config = pv2_call.resolve_v2_config(db, override_version_id=getattr(hctx, "override_version_id", None))
         space_id = default_space_id(db)
+        from app.services.chatbot.turn.policy import load_policy
+
+        domain_teams = {
+            d.name: d.escalation_team_code for d in load_policy(db).domains if d.escalation_team_code
+        }
 
     contact = str(hctx.contact_respond_id)
     envelope = getattr(hctx, "envelope", None)
@@ -453,6 +463,8 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile) and not staff,
             granted_reveals=granted,
+            domain_teams=domain_teams,
+            offer_mode="none" if staff else ("offer" if offers_escalation(profile) else "refer"),
             report_answer=answer_mod.default_report_answer(
                 mcp_call=_mcp_call(None),
                 contact_id=contact,

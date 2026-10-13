@@ -1130,10 +1130,16 @@ def _pv2_text(envelope: Envelope, text: str) -> str:
     typed = jsc.get(_inner_message(envelope), "text")
     if jsc.truthy(typed):
         return jsc.js_string(typed).strip()
-    body = (text or "").rstrip("\n")
-    if jsc.truthy(jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo")) and "\n" in body:
-        # The builder appends the `reply to: ...` line last; drop that line only.
-        body = body.rsplit("\n", 1)[0]
+    body = text or ""
+    quoted = jsc.get(jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo"), "message")
+    if jsc.truthy(quoted):
+        # Rebuild the exact line `build_latest_user_message` appended; strip it only when the
+        # text ends with it (a media turn's caption and code lines stay whole).
+        quoted_text = jsc.get(quoted, "text")
+        qbody = quoted_text if jsc.truthy(quoted_text) else jsc.get(quoted, "title")
+        suffix = "\nreply to: " + (jsc.js_string(qbody) if jsc.truthy(qbody) else "") + "\n"
+        if body.endswith(suffix):
+            body = body[: -len(suffix)]
     return body.strip()
 
 
