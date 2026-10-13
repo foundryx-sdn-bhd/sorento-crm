@@ -324,7 +324,11 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
               <Fact label="Reference" value={project.admin_ref} />
             </Section>
 
-            <SourceCard project={project} />
+            <Section title="Customer">
+            <Fact label="Name" value={project.customer_name} />
+            <Fact label="Phone" value={project.customer_phone} />
+            <Fact label="Attn" value={project.customer_attn} />
+          </Section>
 
             <Section title="Value and timing">
               <Fact
@@ -360,7 +364,9 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
               <Fact label="Main contractor" value={project.main_contractor_name} />
             </Section>
 
-            <ProjectAccessPanel project={project} />
+            <SourceCard project={project} />
+
+          <ProjectAccessPanel project={project} />
           </div>
           <div className="mt-4">
             <CriticalPanel project={project} />

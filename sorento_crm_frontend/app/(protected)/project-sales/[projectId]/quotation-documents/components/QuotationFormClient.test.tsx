@@ -410,6 +410,32 @@ beforeEach(() => {
 });
 
 describe('QuotationFormClient create', () => {
+  it('defaults Name, Phone and Attn from the project customer (owner, 13 Oct)', async () => {
+    getProject.mockResolvedValue(
+      project({
+        customer_id: 'cust-1',
+        customer_name: 'Gamuda Builders Sdn Bhd',
+        customer_phone: '03-7777 1234',
+        customer_attn: 'Lim Wei Ming',
+      }),
+    );
+    renderForm();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Gamuda Builders Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Phone')).toHaveValue('03-7777 1234');
+    expect(screen.getByLabelText('Attn')).toHaveValue('Lim Wei Ming');
+  });
+
+  it('falls back to the developer when the project has no customer', async () => {
+    renderForm();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Name')).toHaveValue('Nadi Cergas Sdn Bhd'),
+    );
+    expect(screen.getByLabelText('Attn')).toHaveValue('');
+  });
+
   it('AC-QF011/012: opens with the letterhead and one empty scope ready for products', async () => {
     renderForm();
 

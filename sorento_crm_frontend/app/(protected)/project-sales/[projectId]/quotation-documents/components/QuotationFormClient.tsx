@@ -219,14 +219,17 @@ export function QuotationFormClient({
   React.useEffect(() => {
     if (header !== null) return;
     if (!isEdit && project.data) {
+      // Name, Phone and Attn come from the project's customer master data (owner, 13 Oct);
+      // with no customer known yet the letter still goes to the developer.
       setHeader({
         your_ref: '',
         doc_date: todayIso(),
-        attn_name: '',
+        attn_name: project.data.customer_attn ?? '',
         subject_title: project.data.title ?? '',
-        recipient_name_snapshot: project.data.developer_name ?? '',
+        recipient_name_snapshot:
+          project.data.customer_name ?? project.data.developer_name ?? '',
         recipient_address_snapshot: '',
-        recipient_phone_snapshot: '',
+        recipient_phone_snapshot: project.data.customer_phone ?? '',
       });
       setScopes([newScope()]);
     }

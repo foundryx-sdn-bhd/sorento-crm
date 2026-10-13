@@ -577,4 +577,21 @@ describe('owner hand-test, 13 Oct', () => {
     expect(changeStatus).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
   });
+
+  it('shows the customer on the Overview, read through the lead', () => {
+    projectFixture = project({
+      lead_id: 'lead-1',
+      lead_code: 'LEAD-000042',
+      customer_id: 'cust-1',
+      customer_name: 'Gamuda Builders Sdn Bhd',
+      customer_phone: '03-7777 1234',
+      customer_attn: 'Lim Wei Ming',
+    });
+    renderDetail();
+
+    const card = screen.getByText('Customer').closest('[data-slot="card"]') as HTMLElement;
+    expect(within(card).getByText('Gamuda Builders Sdn Bhd')).toBeInTheDocument();
+    expect(within(card).getByText('03-7777 1234')).toBeInTheDocument();
+    expect(within(card).getByText('Lim Wei Ming')).toBeInTheDocument();
+  });
 });
