@@ -72,6 +72,11 @@ _COPY: dict[str, dict[str, str]] = {
         "zh": "这个产品没有这类文件。",
         "ms": "Saya tidak jumpa fail jenis itu untuk produk ini.",
     },
+    "filter_unavailable": {
+        "en": "Filtering this report by {labels} is not available yet.",
+        "zh": "报表暂时还不能按{labels}筛选。",
+        "ms": "Penapisan laporan ini mengikut {labels} belum tersedia.",
+    },
     "reask": {
         "en": "Sorry, I didn't catch your choice.",
         "zh": "抱歉，我没看明白您的选择。",

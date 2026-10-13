@@ -385,9 +385,13 @@ def _plan_report(
     resolve = getattr(resolver, "resolve_report_spec", None)
     try:
         res = resolve(held.report, held=held, profile=None) if resolve is not None else None
-    except (AttributeError, NotImplementedError):
-        # No report resolver on this build yet (RESOLVE forwards to REPORTS): the filters
-        # stay unresolved and are asked below, never answered empty.
+    except NotImplementedError:
+        res = None
+    except AttributeError as exc:
+        # RESOLVE forwards to `reports.resolve_report_spec`, not on this build yet: the
+        # filters stay unresolved and are said below. Any other AttributeError is a bug.
+        if "resolve_report_spec" not in str(exc):
+            raise
         res = None
     if res is not None:
         options = [_option(o) for o in (getattr(res, "options", None) or [])]
@@ -403,11 +407,21 @@ def _plan_report(
         return
     plan = reports.plan_report(held.report, refs=report_refs(held), today=today)
     if plan.status == "unresolved":
-        # A filter whose names did not settle to live rows: asked, never run unfiltered
-        # and never an empty reply.
-        names = [f for f in held.report.filters if f.dimension in plan.unresolved]
-        phrase = ", ".join(k for f in names for k in f.keys) or None
-        qs.append(_clarify(st, i, "entity", phrase, language, options=[], not_found=bool(phrase), kind="report_filter"))
+        # A filter no resolver settled to live rows on this build: said truthfully by its
+        # dimension's label (never a key), never run unfiltered, never an empty reply, and
+        # dropped from the held spec so the line is said once (REPORTS' own `_say` rule).
+        from app.services.chatbot.pv2 import report_measures as rm
+
+        labels = ", ".join(dict.fromkeys(rm.dimension_label(d) for d in plan.unresolved))
+        held.report = held.report.model_copy(
+            update={"filters": [f for f in held.report.filters if f.dimension not in plan.unresolved]}, deep=True
+        )
+        qs.append(
+            _clarify(
+                st, i, "other", None, language, options=[],
+                asked=clarify_copy.text("filter_unavailable", language, labels=labels),
+            )
+        )
         return
     if plan.status == "ask":
         held.report = plan.spec
@@ -686,7 +700,13 @@ def _repeat_is_a_miss(
     if not isinstance(action, ClarifyAct) or pending_in is None or action.reask:
         return action
     q = action.pending
-    if q.kind != pending_in.kind or [o.key for o in q.options] != [o.key for o in pending_in.options]:
+    if (
+        q.kind != "clarify_which_held"
+        or pending_in.kind != q.kind
+        or not q.options
+        or q.asked != pending_in.asked
+        or [o.key for o in q.options] != [o.key for o in pending_in.options]
+    ):
         return action
     return _miss(st, action.ask_index, pending_in, _Miss(action.about), language, can_offer_handover)
 

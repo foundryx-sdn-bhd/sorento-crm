@@ -82,15 +82,31 @@ def test_b1_report_refs_map_warehouse_and_product_type_to_report_dimensions():
     assert got["category"] == [{"kind": "product_type", "key": "toilet", "label": "Toilet"}]
 
 
-@pytest.mark.parametrize("exc", [AttributeError, NotImplementedError])
-def test_b2_a_report_resolver_that_raises_does_not_crash_and_the_filter_is_asked(exc):
+@pytest.mark.parametrize(
+    "exc",
+    [
+        AttributeError("module 'app.services.chatbot.pv2.reports' has no attribute 'resolve_report_spec'"),
+        NotImplementedError("no report resolver on this build"),
+    ],
+)
+def test_b2_a_report_resolver_that_raises_does_not_crash_and_the_filter_is_said(exc):
     class Raises(FakeResolver):
         def resolve_report_spec(self, *a, **k):
-            raise exc("no report resolver on this build")
+            raise exc
 
     (state, actions), _ = _filtered_turn(Raises())
     assert isinstance(actions[0], ClarifyAct)
-    assert actions[0].pending.asked.strip()
+    assert "not available yet" in actions[0].pending.asked
+    assert state.held.report is not None and not state.held.report.filters
+
+
+def test_b2_an_unrelated_attribute_error_inside_the_resolver_is_not_swallowed():
+    class Broken(FakeResolver):
+        def resolve_report_spec(self, *a, **k):
+            raise AttributeError("'NoneType' object has no attribute 'id'")
+
+    with pytest.raises(AttributeError):
+        _filtered_turn(Broken())
 
 
 # -- B3: drill refusal and drill refs -------------------------------------------------------- #
@@ -363,3 +379,27 @@ def test_s11_repeated_which_held_counts_a_miss_then_offers_handover():
     assert [x.label for x in s2.pending.options] == ["SRTWC286", "SRTWC8066"]
     s3, a3 = apply_turn(s2, o, resolver=r)
     assert isinstance(a3[0], OfferHandover)
+
+
+# -- Re-check blockers (round 2) ------------------------------------------------------------- #
+
+
+def test_r2_two_different_not_found_codes_are_two_questions_not_a_miss():
+    first = out(ask(act="new_topic", domain="inventory", entities=[entity("product", phrase="SRT1")]))
+    second = out(ask(act="new_topic", domain="inventory", entities=[entity("product", phrase="SRT2")]))
+    s1, a1 = apply_turn(mk_state(), first, resolver=FakeResolver(), now=NOW)
+    s2, a2 = apply_turn(s1, second, resolver=FakeResolver(), now=NOW)
+    assert isinstance(a2[0], ClarifyAct) and not a2[0].reask
+    assert "SRT2" in a2[0].pending.asked and "SRT1" not in a2[0].pending.asked
+    s3, a3 = apply_turn(s2, out(ask(act="new_topic", domain="inventory", entities=[entity("product", phrase="SRT3")])),
+                        resolver=FakeResolver(), now=NOW)
+    assert not isinstance(a3[0], OfferHandover)
+
+
+def test_r2_unresolved_report_filter_is_said_by_label_never_by_key():
+    o = out(ask(act="new_topic", domain="sales", report=_report(filters=[
+        Filter(dimension="category", op="in", keys=["wc_one_piece"], values=[])])))
+    state, actions = apply_turn(mk_state(), o, resolver=FakeResolver(), now=NOW)
+    asked = actions[0].pending.asked
+    assert "wc_one_piece" not in asked and "not available yet" in asked
+    assert not state.held.report.filters
