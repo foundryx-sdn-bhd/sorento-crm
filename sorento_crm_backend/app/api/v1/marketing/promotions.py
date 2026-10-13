@@ -185,12 +185,12 @@ async def get_promotions(
     free-text `query`, or `entities`). Without any, returns an empty page so
     callers cannot accidentally enumerate the whole catalog.
     """
-    # Parsed OUTSIDE the try below: its `except Exception` would turn the 422 into a 500.
+    # The contact's hidden spec keys never filter: they drop a constraint on that key here and,
+    # in the service, keep a size off that axis (as on the product and stock routes).
     from app.services.product_spec_filter import parse_spec_constraints, request_hidden_keys
 
-    parsed_spec_constraints = parse_spec_constraints(
-        db, spec_constraints, request_hidden_keys(db, contact_id, space_id)
-    )
+    hidden_spec_keys = request_hidden_keys(db, contact_id, space_id)
+    parsed_spec_constraints = parse_spec_constraints(db, spec_constraints, hidden_spec_keys)
     try:
         from app.services.contact_access_type_service import ContactAccessTypeService
         from app.services.entity_filter_helpers import normalize_list_query_param
@@ -253,6 +253,7 @@ async def get_promotions(
             promotion_types=promotion_types,
             brand_ids=brand_ids,
             spec_constraints=parsed_spec_constraints,
+            hidden_spec_keys=hidden_spec_keys,
         )
         # Data-miss path (§3.3): when the service attached `alternatives` /
         # `relaxed_axis` (empty result only), bypass the strict `ListResponse`

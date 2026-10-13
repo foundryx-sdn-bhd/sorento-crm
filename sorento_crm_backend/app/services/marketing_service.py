@@ -621,6 +621,7 @@ class PromotionService:
         promotion_types: Optional[list[str]] = None,
         brand_ids: Optional[list[str]] = None,
         spec_constraints: Optional[list[dict]] = None,
+        hidden_spec_keys: frozenset[str] = frozenset(),
     ):
         """List promotions with active-first fallback semantics.
 
@@ -717,7 +718,7 @@ class PromotionService:
             from app.models.product_spec import ProductSpecifications
             from app.services.product_spec_filter import _one, resolve_size
 
-            sized, _extra = resolve_size(self.db, spec_constraints)
+            sized, _extra = resolve_size(self.db, spec_constraints, hidden_spec_keys)
             spec_clause = (
                 text("false")
                 if sized is None
