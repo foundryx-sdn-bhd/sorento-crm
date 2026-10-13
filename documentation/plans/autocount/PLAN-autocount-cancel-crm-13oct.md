@@ -129,6 +129,11 @@ R7. Every cancel line ends matched, waiting or unmatched with a reason; each bat
 - Permissions: `tests/test_external_permission_coverage.py` requires a distinct slug per entity per door,
   so each entity has `scm.<entity>.{view,edit,delete}`, seeded by `ac_cancel_0001_docs` to admin /
   superadmin and to every role holding `scm.sales_orders.edit` (`scm.purchase_orders.edit` for Cancel PO).
+- Crew audit (13 Oct): a database where the old matcher ran keeps its guesses (re-pushing the same
+  document is `unchanged`). `scripts/autocount_cancel_redecide.py --company <CODE> [--apply]`
+  re-decides every stored Cancel SO / PO line with the ingest's own code (dry run by default,
+  idempotent, runs the ingest hooks on apply). Production never ran the old matcher, so there it
+  moves nothing; crew runs it on the copy. A version stamp was not added: one copy, one run.
 - Review round 1: `cancelled_by_cancel_doc` (SO / PO lines) records which lines this rule cancelled, so
   only those reopen and the SO / PO push keeps them cancelled without retiring OI rows twice.
 
