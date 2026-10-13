@@ -50,7 +50,8 @@ WITH m AS (
   SELECT o.id,
          (SELECT array_agg(b.branch_name) FROM branches b
            WHERE b.company_id = o.company_id AND b.source_book = o.source_book
-             AND b.branch_code = o.branch_code AND b.acc_no = o.debtor_code) AS exact,
+             AND b.branch_code = o.branch_code AND b.acc_no = o.debtor_code
+             AND o.debtor_code <> '') AS exact,
          (SELECT array_agg(b.branch_name) FROM branches b
            WHERE b.company_id = o.company_id AND b.source_book = o.source_book
              AND b.branch_code = o.branch_code) AS by_code
@@ -99,7 +100,24 @@ UPDATE orders o
   title, explicit `size`.
 - Order detail (`OrderDetail.tsx`): a read-only `Branch` field next to the customer; empty shows
   the page's usual empty value.
-- Not editable: AutoCount owns it, the form keeps no input for it.
+- Edit form: a disabled `Branch` input (with "From AutoCount" when the DO is AutoCount-owned) in
+  the same two places the View shows it (Basic Information and Delivery & Tracking tabs), so View
+  and Edit keep one layout. Never sent in the update body; `OrderCreate` / `OrderUpdate` carry no
+  `branch_name`.
+
+## Acceptance criteria
+
+- AC-BR1: `GET /order-management/orders` and `/orders/by-product` rows carry `branch_name` (null
+  when the DO has none); create/update bodies do not accept it.
+- AC-BR2: the chatbot DO list and by-product DO list print `*Branch:* <name>` on its own line right
+  after `*Customer:*` when the DO has a branch name; no line when it is null or blank; never built
+  from `branch_code`; no ` · ` joins.
+- AC-BR3: `delivery_orders.branch` ("DO branch") is a per-contact switch on Contacts > Access >
+  Field reveals, ON for a contact with no row, hidden by a `granted=false` row.
+- AC-BR4: the label is translated (ms `Cawangan`, zh `分店`); the value never is.
+- AC-BR5: DO list has a `Branch` column after Debtor Name (visible by default, truncate + title,
+  `-` when empty); DO detail shows `Branch` on both tabs; edit shows it disabled on both tabs.
+- AC-BR6: the backfill SQL fills existing AutoCount DOs by the ingest's own rule and is idempotent.
 
 ## Tests (red first)
 
@@ -108,4 +126,5 @@ UPDATE orders o
   `delivery_orders.branch`; catalogue declares the key.
 - Chatbot: `test_do_field_reveals.py` covers the new key (granted shows, revoked hides);
   `test_do_reveals_default_on.py` includes it; pin test passes.
-- FE vitest: list has a Branch column; detail shows the branch value.
+- FE vitest: list has a Branch column; detail shows the branch value on both tabs; edit form shows
+  it disabled on both tabs and never sends it.

@@ -5,6 +5,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import OrderDetail from './OrderDetail';
 
@@ -56,6 +57,14 @@ describe('Delivery order detail: Branch', () => {
   it('shows the branch name', () => {
     mockOrder({ branch_name: 'KLCC SITE OFFICE' });
     render(<OrderDetail orderId="o-1" listSearch="" />);
+    expect(branchValue()).toBe('KLCC SITE OFFICE');
+  });
+
+  it('shows the branch name on the Delivery & tracking tab too', async () => {
+    mockOrder({ branch_name: 'KLCC SITE OFFICE' });
+    render(<OrderDetail orderId="o-1" listSearch="" />);
+    await userEvent.click(screen.getByRole('tab', { name: /Delivery & tracking/ }));
+    expect(screen.getByRole('tab', { name: /Delivery & tracking/ })).toHaveAttribute('aria-selected', 'true');
     expect(branchValue()).toBe('KLCC SITE OFFICE');
   });
 

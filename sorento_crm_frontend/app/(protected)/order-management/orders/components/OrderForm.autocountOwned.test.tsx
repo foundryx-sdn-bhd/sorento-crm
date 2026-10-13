@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 
+import userEvent from '@testing-library/user-event';
+
 import OrderForm from './OrderForm';
 
 /**
@@ -107,9 +109,14 @@ describe('OrderForm: Branch (DO-BRANCH-NAME)', () => {
   it('shows the AutoCount branch name read-only, in both places the View shows it', async () => {
     mockOrder({ autocount_owned_fields: AUTOCOUNT_FIELDS, branch_name: 'KLCC SITE OFFICE' });
     await renderForm();
-    const branch = await waitFor(() => screen.getAllByDisplayValue('KLCC SITE OFFICE'));
-    expect(branch.length).toBeGreaterThan(0);
-    branch.forEach((input) => expect(input).toBeDisabled());
+    const basic = await waitFor(() => screen.getByLabelText('Branch'));
+    expect(basic).toHaveValue('KLCC SITE OFFICE');
+    expect(basic).toBeDisabled();
+    await userEvent.click(screen.getByRole('tab', { name: /Delivery & Tracking/ }));
+    const tracking = await waitFor(() => screen.getByLabelText('Branch'));
+    expect(tracking).toHaveAttribute('id', 'order-branch-name-tracking');
+    expect(tracking).toHaveValue('KLCC SITE OFFICE');
+    expect(tracking).toBeDisabled();
   });
 
   it('leaves the branch out of the update it sends', async () => {

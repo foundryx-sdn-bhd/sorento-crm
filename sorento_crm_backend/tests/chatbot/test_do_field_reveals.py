@@ -255,10 +255,11 @@ def test_branch_is_hidden_from_a_contact_with_the_switch_off() -> None:
     assert "*Customer:* HANLIM TRADING SDN BHD [A/C I]" in said, said
 
 
-def test_the_catalogue_declares_the_branch_switch_on_the_do_list() -> None:
+def test_the_catalogue_declares_the_branch_switch_on_both_do_lists() -> None:
     catalog = _mcp()[0]
-    spec = next(t for t in catalog if t.name == "crm_order_management_orders_list")
-    assert ("delivery_orders.branch", "DO branch") in tuple(spec.restricted_fields)
+    for name in ("crm_order_management_orders_list", "crm_order_management_orders_by_product_list"):
+        spec = next(t for t in catalog if t.name == name)
+        assert ("delivery_orders.branch", "DO branch") in tuple(spec.restricted_fields), name
     assert ("delivery_orders.branch", "DO branch") in FIELD_REVEAL_KEYS
 
 
