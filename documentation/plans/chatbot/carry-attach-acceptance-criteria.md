@@ -37,3 +37,24 @@ type the conversation already gave, or offer an escalation for a file that exist
 | 9 | code A photo | code B | code B photo(s) | installation guide | code B installation guide, or the truthful "none on file" line |
 | 10 | code A drawing | attachments for code B | asks which type (a new ask names no type) | Drawing | code B drawing |
 | 11 | code A photo | code B | code B photo(s) | drawing for code C | code C drawing (the message names its own product) |
+
+### Crew rule rows (13 Oct): narrow, short replies, topic switch and back
+
+This lane touches two answer types: the product attachment answer (the files) and the bot's
+attachment-type question. Period, channel and measure do not apply to an attachment answer, so
+the narrowing rows use brand and document type.
+
+| # | Turns, in order | Expected |
+|---|-----------------|----------|
+| 12 | which tap has technical drawing / sorento | turn 2 narrows the same set to Sorento taps, still technical drawings (`attachment_type_ids` unchanged) |
+| 13 | Srt8308 drawing / Srt8313 / photo | turn 3 narrows the document type: SRT8313 photo(s), not SRT8308 |
+| 14 | attachments for Srt8313 (bot asks the type) / drawing | short reply to the ask: SRT8313 drawing |
+| 15 | attachments for Srt8313 (bot asks, numbered if shown) / 2 | the second offered type for SRT8313, never a product pick |
+| 16 | which tap has technical drawing (bot shows a brand breakdown) / sorento | short brand reply: the Sorento taps' drawings |
+| 17 | code with no 3D file + "3D" (truthful miss, escalation offer) / yes | escalates once about that code and type, no second ask |
+| 18 | photo for Srt8313 (bot asks something with a year, if it does) / 2026 | read as the answer to that question, never as a product code |
+| 19 | Srt8313 drawing / stock for Srt8313 / photo | topic switch to stock and back: turn 2 is the stock answer for SRT8313, turn 3 is SRT8313 photo(s), with no ask for the product |
+| 20 | Srt8308 drawing / any promotion for sorento? / Srt8313 | switch to promotions and back: turn 3 is a new attachment ask with no document type, so the bot asks the type for SRT8313. It must not answer a promotion and must not reuse the drawing type the promotion turn dropped |
+
+Row 18 only applies if the bot asks a question whose short answer is a year. Attachment turns do
+not ask one today, so crew can skip it when no such question appears.
