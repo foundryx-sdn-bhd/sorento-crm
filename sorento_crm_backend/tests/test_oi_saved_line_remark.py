@@ -41,15 +41,20 @@ def test_an_order_back_buy_names_its_cited_document():
 
 
 def test_use_brw_reads_use_and_the_pool_code():
-    assert saved_line_remark(_snap(_reserve("10", "BRW-BB", rung="pool"))) == (
-        "USE BRW-BB", "BRW-BB",
+    """The shared site pool's own warehouse code is the plain site code (BRW); the line's
+    own location carries the group suffix (BRW-BB). Owner, 13 Oct: "USE BRW"."""
+    assert saved_line_remark(_snap(_reserve("10", "BRW", rung="pool"), own="BRW-BB")) == (
+        "USE BRW", "BRW",
     )
 
 
-def test_use_own_location_reads_reserve_and_the_location():
-    assert saved_line_remark(_snap(_reserve("10", "BRW-IB"))) == ("RESERVE BRW-IB", "BRW-IB")
+def test_use_own_location_reads_use_and_the_location():
+    """Owner, 13 Oct: own location stock reads USE <own location code>; no RESERVE word."""
+    assert saved_line_remark(_snap(_reserve("10", "BRW-BB"), own="BRW-BB")) == (
+        "USE BRW-BB", "BRW-BB",
+    )
     assert saved_line_remark(_snap(_reserve("10", "BRW-IC", rung="group_take"))) == (
-        "RESERVE BRW-IC", "BRW-IC",
+        "USE BRW-IC", "BRW-IC",
     )
 
 
@@ -75,9 +80,9 @@ def test_use_incoming_reads_the_spo_numbers():
 
 def test_several_parts_name_each_with_its_quantity():
     snapshot = _snap(_reserve("6", "BRW-IB"), _buy("4"))
-    assert saved_line_remark(snapshot) == ("RESERVE BRW-IB 6 & ORDER 4", "BRW-IB")
+    assert saved_line_remark(snapshot) == ("USE BRW-IB 6 & ORDER 4", "BRW-IB")
 
 
 def test_a_zero_quantity_part_is_not_named():
-    snapshot = _snap(_reserve("10", "BRW-BB", rung="pool"), _buy("0"))
-    assert saved_line_remark(snapshot) == ("USE BRW-BB", "BRW-BB")
+    snapshot = _snap(_reserve("10", "BRW", rung="pool"), _buy("0"))
+    assert saved_line_remark(snapshot) == ("USE BRW", "BRW")

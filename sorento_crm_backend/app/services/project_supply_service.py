@@ -5455,10 +5455,17 @@ class ProjectSupplyService:
                 "lines_carried": decided,
             }
 
+        previous = self.active_decision(str(order.id))
         carried = self._carried_lines(
-            self.active_decision(str(order.id)), named=seen, by_id=by_id, facts=facts,
+            previous, named=seen, by_id=by_id, facts=facts,
             uncover=set(uncover_line_ids),
         )
+        # What each SAVED line was decided as before this Confirm, read before the revision
+        # below supersedes it: the purchasing email names only what this Confirm changed.
+        before_by_line = {
+            str(snap.get("project_line_id")): snap
+            for snap in ((previous.line_snapshots or []) if previous is not None else [])
+        }
         body = self._write_decision(
             order,
             checked,
@@ -5483,9 +5490,36 @@ class ProjectSupplyService:
         body["lines_fulfilled_skipped"] = len(fulfilled)
         body["landed_buy_notices"] = list(self._landed_buy_notices.values()) or None
         body["stock_short_notices"] = self._stock_short_notices(checked) or None
-        if self._stock_short:
-            self._hand_stock_short_to_purchasing(order, checked, actor_user_id=actor_user_id)
+        self._tell_saved_lines(order, checked, before_by_line, actor_user_id=actor_user_id)
         return body
+
+    def _tell_saved_lines(
+        self,
+        order: ProjectSalesOrder,
+        checked: Sequence[Tuple[ProjectSalesOrderLine, Any, "_LineFacts"]],
+        before_by_line: Mapping[str, Mapping[str, Any]],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """ONE purchasing email line per line this Confirm SAVED whose decision is new or
+        changed (ORDERBACK-DELTA extension, owner 13 Oct 2026 22:40); its STOCK SHORT, if
+        any, rides on that line. Carried lines are not in `checked` and never appear."""
+        from app.services.project_order_inquiry_service import ProjectOrderInquiryService
+
+        decision = self.active_decision(str(order.id))
+        now_by_line = {
+            str(snap.get("project_line_id")): snap
+            for snap in ((decision.line_snapshots or []) if decision is not None else [])
+        }
+        saved = [
+            (line, now_by_line[str(line.id)], before_by_line.get(str(line.id)))
+            for line, _entry, _fact in checked
+            if str(line.id) in now_by_line
+        ]
+        if saved:
+            ProjectOrderInquiryService(self.db).record_saved_lines(
+                pso_id=str(order.id), saved=saved, actor_user_id=actor_user_id
+            )
 
     def _record_short(
         self,

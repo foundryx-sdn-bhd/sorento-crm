@@ -313,6 +313,9 @@ _HANDOVER_VERB_ORDER = (
     "CHANGE_ITEM_CODE",
     "STOCK_SHORT",
     "QTY_CHANGE",
+    "USE_OWN",
+    "USE",
+    "INCOMING",
 )
 _HANDOVER_VERB_LABEL = {
     IV_ORDER: "ORDER",
@@ -335,6 +338,11 @@ _HANDOVER_VERB_LABEL = {
     # quantity or date moved but that asks purchasing for nothing (landed stock meets a
     # rise; a date set where none was) reads QTY CHANGE.
     "QTY_CHANGE": "QTY CHANGE",
+    # ORDERBACK-DELTA extension (owner, 13 Oct 22:40): a saved line's own decision, in the
+    # board's words (`saved_line_remark`).
+    "USE_OWN": "USE OWN LOCATION",
+    "USE": "USE BRW",
+    "INCOMING": "INCOMING",
 }
 
 
@@ -417,23 +425,38 @@ def saved_line_remark(snapshot: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
     prefix) spelled as the owner's Excel "ORDER INQUIRY" sheet spells them:
 
     * Buy: ``ORDER`` (an Order back Buy: ``ORDER BACK`` and the document CS cited);
-    * Use BRW (a reserve on the ``pool`` rung): ``USE <pool code>``;
-    * Use own location (any other reserve): ``RESERVE <location>``;
+    * Use BRW (a reserve on the ``pool`` rung): ``USE <pool code>``, i.e. ``USE BRW``;
+    * Use own location (any other reserve): ``USE <location>``, e.g. ``USE BRW-BB``;
     * Borrow (any borrow but a document one): ``ORDER BACK <borrowed-from location>``;
     * Borrow incoming (``supply_borrow``): the document number;
     * Use incoming (``timely_spo``): the SPO number(s).
 
     One part reads as its words alone; several read each with its quantity, joined by
-    `` & `` in the snapshot's order (``RESERVE BRW-IB 6 & ORDER 4``). STOCK LOCATION is the
+    `` & `` in the snapshot's order (``USE BRW-BB 6 & ORDER 4``). STOCK LOCATION is the
     first part's location (the line's own for a Buy or an incoming SPO).
     """
+    parts = _saved_line_parts(snapshot)
+    own = snapshot.get("location") or None
+    if not parts:
+        return "", own
+    if len(parts) == 1:
+        return parts[0][0], parts[0][1]
+    remark = " & ".join(f"{words} {_qty_str(qty)}" for words, _location, qty, _key in parts)
+    return remark, parts[0][1]
+
+
+def _saved_line_parts(
+    snapshot: Mapping[str, Any],
+) -> List[Tuple[str, Optional[str], Decimal, str]]:
+    """`(words, location, qty, headline key)` per non-zero part of a saved line's snapshot,
+    in its own order: what `saved_line_remark` joins and what the headline names."""
     own = snapshot.get("location") or None
     spo_numbers = ", ".join(
         ref.get("spo_number")
         for ref in snapshot.get("timely_spo_refs") or []
         if ref.get("spo_number")
     )
-    parts: List[Tuple[str, Optional[str], Decimal]] = []
+    parts: List[Tuple[str, Optional[str], Decimal, str]] = []
     for component in snapshot.get("components") or []:
         qty = _dec(component.get("qty"))
         if qty <= _ZERO:
@@ -445,27 +468,44 @@ def saved_line_remark(snapshot: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
             if snapshot.get("order_back"):
                 cited = (snapshot.get("cited_document") or "").strip()
                 words = f"ORDER BACK {cited}" if cited else "ORDER BACK"
+                parts.append((words, own, qty, IV_ORDER_BACK))
             else:
-                words = "ORDER"
-            parts.append((words, own, qty))
+                parts.append(("ORDER", own, qty, IV_ORDER))
         elif kind == "reserve":
-            verb = "USE" if rung == "pool" else "RESERVE"
-            parts.append((f"{verb} {location}" if location else verb, location or own, qty))
+            # Use BRW (the shared site pool) and Use own location both read USE and the
+            # location the stock is taken from: the pool's own code is the plain site code
+            # (BRW), the line's own location carries its group suffix (BRW-BB). Owner,
+            # 13 Oct: "USE BRW", "USE BRW-BB", no RESERVE word.
+            key = "USE" if rung == "pool" else "USE_OWN"
+            parts.append(
+                (f"USE {location}" if location else "USE", location or own, qty, key)
+            )
         elif kind == "borrow":
             document = (component.get("supply_document") or "").strip()
             if rung == "supply_borrow" or document:
-                parts.append((document or "BORROW INCOMING", own, qty))
+                parts.append((document or "BORROW INCOMING", own, qty, "INCOMING"))
             else:
                 words = f"ORDER BACK {location}" if location else "ORDER BACK"
-                parts.append((words, location or own, qty))
+                parts.append((words, location or own, qty, IV_ORDER_BACK))
         elif kind == "timely_spo":
-            parts.append((spo_numbers or "INCOMING", own, qty))
-    if not parts:
-        return "", own
-    if len(parts) == 1:
-        return parts[0][0], parts[0][1]
-    remark = " & ".join(f"{words} {_qty_str(qty)}" for words, _location, qty in parts)
-    return remark, parts[0][1]
+            parts.append((spo_numbers or "INCOMING", own, qty, "INCOMING"))
+    return parts
+
+
+def _saved_decision_key(snapshot: Mapping[str, Any]) -> Tuple[Any, ...]:
+    """What makes two snapshots of one line the SAME decision for purchasing: the line's
+    quantity, date and product, and each part's kind, quantity, location and document."""
+    return (
+        _dec(snapshot.get("open_qty")),
+        snapshot.get("required_date"),
+        snapshot.get("item_code"),
+        bool(snapshot.get("order_back")),
+        (snapshot.get("cited_document") or None),
+        tuple(
+            (words, location, qty)
+            for words, location, qty, _key in _saved_line_parts(snapshot)
+        ),
+    )
 
 
 def handover_remark(
@@ -4057,6 +4097,9 @@ class ProjectOrderInquiryService:
                 #: Which row this line tells (a STOCK SHORT line has none and names
                 #: its line and location instead).
                 "row_id": str(row.id),
+                #: The project line this row is on, so a Confirm can replace a SAVED line's
+                #: row lines with its one decision line (`record_saved_line`).
+                "so_line_id": str(row.so_line_id) if row.so_line_id else None,
                 "order_inquiry_id": str(row.order_inquiry_id),
                 "pso_id": pso_id,
                 "so_number": so_number,
@@ -4089,6 +4132,117 @@ class ProjectOrderInquiryService:
                 #: the innermost savepoint (AC-H27/AC-H28, review round 2 ruling) - is
                 #: what `_fire_pending_handover` waits to see CONCLUDE BY COMMIT before
                 #: firing, however many savepoints this line's own write nests inside.
+                "tx": tx_chain[-1] if tx_chain else None,
+            }
+        )
+
+    def record_saved_lines(
+        self,
+        *,
+        pso_id: str,
+        saved: Sequence[Tuple[ProjectSalesOrderLine, Mapping[str, Any], Optional[Mapping[str, Any]]]],
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """The purchasing email of one Confirm: ONE line per SAVED line whose decision is new
+        or changed, saying what was decided (ORDERBACK-DELTA extension, owner 13 Oct 2026
+        22:40). `saved` is `(line, snapshot now, snapshot before or None)` per line the
+        Confirm named; carried lines are never passed.
+
+        Whatever the rows of a saved line queued this commit (ORDER, ORDER BACK, settled,
+        cancelled, STOCK SHORT) is replaced by that one line: purchasing reads the decision,
+        not the bookkeeping behind it. A line re-approved with nothing changed queues
+        nothing (Q3), so a Confirm that changed nothing sends no email at all.
+        """
+        saved_ids = {str(line.id) for line, _now, _before in saved}
+        queue = self.db.info.get(_HANDOVER_PENDING_KEY)
+        if queue:
+            queue[:] = [
+                item
+                for item in queue
+                if not (item.get("pso_id") == pso_id and item.get("so_line_id") in saved_ids)
+            ]
+        for line, now, before in saved:
+            if before is not None and _saved_decision_key(before) == _saved_decision_key(now):
+                continue
+            self._queue_saved_line(pso_id, line, now, before, actor_user_id=actor_user_id)
+
+    def _queue_saved_line(
+        self,
+        pso_id: str,
+        line: ProjectSalesOrderLine,
+        now: Mapping[str, Any],
+        before: Optional[Mapping[str, Any]],
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        remark, location = saved_line_remark(now)
+        keys = [key for _w, _l, _q, key in _saved_line_parts(now)]
+        was: Dict[str, Any] = {}
+        qty_now = _dec(now.get("open_qty"))
+        if before is not None:
+            qty_before = _dec(before.get("open_qty"))
+            if qty_before != qty_now:
+                was["qty"] = qty_before
+                if qty_now < qty_before:
+                    # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
+                    remark = f"CANCEL {_qty_str(qty_before - qty_now)}"
+                    keys = [IV_CANCEL_BALANCE]
+            date_before, date_now = before.get("required_date"), now.get("required_date")
+            if date_before and date_now and date_before != date_now:
+                was["delivery_date"] = date.fromisoformat(date_before)
+                keys.append(IV_DELAY if date_now > date_before else IV_ADVANCE)
+            if before.get("item_code") and before.get("item_code") != now.get("item_code"):
+                was["item_code"] = before.get("item_code")
+                keys.append("CHANGE_ITEM_CODE")
+        short = sum(
+            (_dec(entry.get("short")) for entry in now.get("stock_short") or []), _ZERO
+        )
+        if short > _ZERO:
+            # A Reserve or Borrow confirmed short of free stock (owner rule 12 Oct) says so
+            # on its own line rather than as a second STOCK SHORT line.
+            remark = f"{remark}, {_qty_str(short)} SHORT" if remark else f"{_qty_str(short)} SHORT"
+            keys.append("STOCK_SHORT")
+        facts = self._handover_order_facts(pso_id)
+        inquiry_id = (
+            self.db.query(OrderInquiry.id)
+            .filter(OrderInquiry.project_sales_order_id == pso_id)
+            .order_by(OrderInquiry.inquiry_no)
+            .limit(1)
+            .scalar()
+        )
+        required = now.get("required_date")
+        line_entry = {
+            "so_date": _handover_fmt_date(facts.get("so_date")),
+            "so_number": facts.get("so_number"),
+            "customer": facts.get("customer"),
+            "project": facts.get("project"),
+            "item_code": now.get("item_code"),
+            "qty": _qty_str(qty_now),
+            "delivery_date": _handover_fmt_date(
+                date.fromisoformat(required) if required else line.delivery_date
+            ),
+            "location": location or "",
+            "remark": remark,
+            "was": _format_handover_was(was or None),
+        }
+        tx_chain = _transaction_chain(self.db)
+        self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
+            {
+                "row_id": f"saved:{line.id}",
+                "so_line_id": str(line.id),
+                "order_inquiry_id": str(inquiry_id) if inquiry_id else None,
+                "pso_id": pso_id,
+                "so_number": facts.get("so_number"),
+                "customer": facts.get("customer"),
+                "project": facts.get("project"),
+                "stock_location": location,
+                "line_no": line.line_no,
+                "core_line_id": line.core_sales_order_line_id,
+                "item_code": now.get("item_code"),
+                "verb_keys": keys or ["QTY_CHANGE"],
+                "line": line_entry,
+                "actor": self._handover_actor(actor_user_id),
+                "tx_chain": tx_chain,
                 "tx": tx_chain[-1] if tx_chain else None,
             }
         )
@@ -4131,6 +4285,7 @@ class ProjectOrderInquiryService:
         self.db.info.setdefault(_HANDOVER_PENDING_KEY, []).append(
             {
                 "row_id": f"stock-short:{line.id}:{location or ''}",
+                "so_line_id": str(line.id),
                 "order_inquiry_id": str(inquiry_id) if inquiry_id else None,
                 "pso_id": pso_id,
                 "so_number": facts.get("so_number"),
