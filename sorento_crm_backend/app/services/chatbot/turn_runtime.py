@@ -40,7 +40,7 @@ from app.services.chatbot.contracts import (
     named_count,
 )
 from app.services.chatbot.turn.apply import names_its_own_ask
-from app.services.chatbot.turn.decide import picked_positions
+from app.services.chatbot.turn.decide import RESTATED_KINDS_KEY, picked_positions
 from app.services.chatbot.turn.pending import (
     OFFER_KINDS,
     Pending,
@@ -4446,9 +4446,18 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     reached the resolver, the fetch dropped both as `missing_or_bad_uuid` and answered with
     every file of every type, and the "has no Certification" line had no types to name.
 
-    Only the document types, only those with no uuid, only when this turn named none of its
-    own, and only when the one domain in play is `product_attachment` - any other domain's
-    gate would read a document type as an incompatible entity.
+    CARRY-ATTACH (prod, 13 Oct 2026; owner ruling: "the parser should be able to
+    understand"): a SETTLED type too, with its uuid. "Srt8313" after "Srt8308 drawing" is the
+    same question about a new product in the parser's own reading (the domain carried,
+    `domain_in_message: false`, so `decide` refines and the type stays on the focus), and the
+    fetch already ran under it; left out here, the gate's required-type check asked "Please
+    provide the attachment type for product Srt8313" over the file it had found. A message
+    that starts a new ask ("attachments for Srt8313") has already dropped the carried type in
+    `apply._focus_rules`, so nothing is handed over and the gate still asks.
+
+    Only the document types, only when this turn named none of its own, and only when the
+    one domain in play is `product_attachment` - any other domain's gate would read a
+    document type as an incompatible entity.
     """
     own = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     if any(str(e.get("hint") or "").strip().lower() == "attachment_type" for e in own):
@@ -4460,20 +4469,21 @@ def _with_carried_document_types(parse_output: dict[str, Any], focus: Focus) -> 
     rows = (getattr(focus, "extra", {}) or {}).get("attachment_type") or []
     carried: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("uuid"):
+        if not isinstance(row, dict):
             continue
         code = row.get("canonical_code") or row.get("raw")
         if not jsc.truthy(code):
             continue
-        carried.append(
-            {
-                "raw": row.get("raw") or code,
-                "hint": "attachment_type",
-                "canonical_code": code,
-                "current_message": False,
-                "confident": True,
-            }
-        )
+        entity: dict[str, Any] = {
+            "raw": row.get("raw") or code,
+            "hint": "attachment_type",
+            "canonical_code": code,
+            "current_message": False,
+            "confident": True,
+        }
+        if row.get("uuid"):
+            entity["uuid"] = row["uuid"]
+        carried.append(entity)
     if not carried:
         return parse_output
     return {**parse_output, "entities": [*own, *carried]}
@@ -4503,6 +4513,9 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
     echo is what keeps the product on a new ask that starts fresh."""
+    # CARRY-ATTACH (reviewer S1): the key is the engine's own, never the parser's; one the
+    # emission carried is dropped before any exit, so it cannot keep a kind a NEW ASK drops.
+    verdict = {k: v for k, v in verdict.items() if k != RESTATED_KINDS_KEY}
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
@@ -4510,7 +4523,16 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     restated = [e for e in entities if _restates_a_settled_row(e, focus)]
     if not restated:
         return verdict
-    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+    # CARRY-ATTACH (prod, 13 Oct 2026): the kinds the echoes restated ride on the verdict,
+    # so a turn the parser also reads as naming its own domain (`domain_in_message: true`,
+    # a NEW ASK) keeps the settled rows instead of evicting the subject it was asked about
+    # ("Drawing" answering "which attachment type for Srt8313?").
+    kinds = sorted({str(e.get("hint") or "").strip().lower() for e in restated})
+    return {
+        **verdict,
+        "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)],
+        RESTATED_KINDS_KEY: kinds,
+    }
 
 
 def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:

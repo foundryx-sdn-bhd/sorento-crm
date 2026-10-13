@@ -1079,6 +1079,8 @@ class TestParser:
         ).removesuffix(
             prompt_mod.CANONICAL_CODE_ADDENDUM
         ).removesuffix(
+            prompt_mod.FIND_ADDENDUM
+        ).removesuffix(
             prompt_mod.REF_KINDS_ADDENDUM
         ).removesuffix(
             prompt_mod.CHAT_REPORT_ADDENDUM
