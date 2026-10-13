@@ -1,0 +1,121 @@
+"""The ONE engine seam for parser v2 (CONTRACT-PV2-13oct.md section 6). Owner PV2-CORE.
+
+`engine._run_stages_body` builds a `TurnV2Context` at the parse step when
+`flag.parser_mode` says "v2" and calls `run_v2`. That delegates to PV2-CARRY's
+`pv2.turn.run_turn_v2(ctx) -> TurnV2Result(verdict, focus, direct_reply | None, state)`:
+
+- `verdict` (the 59-key v1 verdict, resolved codes) + `focus`: the engine continues its
+  normal stages exactly as if the parser had returned that verdict;
+- `direct_reply` (clarify, small talk, report, idea): the engine closes the turn with that
+  text through the same close/trace path, no lane runs.
+
+`state` (the ConversationState) is written to `respond_contacts.session_vars["pv2"]` by
+`persist_state` after the turn (a dry run hands it back in `session_patch` instead), so
+the v1 tail's wholesale five-key write cannot erase it.
+
+Optional attributes the hook reads off a TurnV2Result: `usage` (provider usage dict),
+`trace` (dict for the `pv2_turn` trace event: index_sha, version, version_id, acts, ...),
+`branch_kind` (a `contracts.BRANCH_KINDS` value for a direct reply; default `low_signal`),
+`quick_replies` (str | None).
+"""
+from __future__ import annotations
+
+import importlib
+import json
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+STATE_KEY = "pv2"
+
+
+class V2Unavailable(RuntimeError):
+    """PV2-CARRY's `pv2.turn` is not on this build: the turn runs v1."""
+
+
+@dataclass
+class TurnV2Context:
+    session_factory: Callable[[], Any]
+    envelope: Any
+    turn_id: str
+    contact_respond_id: str
+    contact_pk: str | None
+    text: str
+    # The contact's stored session vars as this turn read them (the pv2 state is under
+    # `session_block["pv2"]`; on a dry run the harness's injected copy).
+    session_block: dict[str, Any]
+    # v1 `turn.state.State` as loaded (focus, pending, profile) and the v1 profile.
+    state_in: Any
+    profile: Any
+    # `turn_runtime.recent_exchanges` rows, and the memory intake dict (profile facts,
+    # summaries, earlier messages).
+    recent: list[Any]
+    memory_intake: dict[str, Any]
+    now: datetime
+    dry_run: bool
+    turn_trace: Any
+    # The Prompts screen's "run a turn" version pin, dry runs only (same rule as v1).
+    override_version_id: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+def _turn_module():
+    try:
+        return importlib.import_module("app.services.chatbot.pv2.turn")
+    except ModuleNotFoundError as exc:
+        if exc.name == "app.services.chatbot.pv2.turn":
+            raise V2Unavailable("pv2.turn (PV2-CARRY) is not on this build") from exc
+        raise
+
+
+def available() -> bool:
+    try:
+        _turn_module()
+    except V2Unavailable:
+        return False
+    return True
+
+
+def run_v2(ctx: TurnV2Context) -> Any:
+    """CARRY's `run_turn_v2`. Raises `V2Unavailable` when CARRY is absent and lets
+    `call.ParserV2Error` through (the engine turns it into a failed `understood`)."""
+    return _turn_module().run_turn_v2(ctx)
+
+
+def state_dump(state: Any) -> dict[str, Any] | None:
+    if state is None:
+        return None
+    if hasattr(state, "model_dump"):
+        return state.model_dump(mode="json")
+    return dict(state)
+
+
+def persist_state(db: Any, *, respond_io_id: str, state: Any) -> None:
+    """Write `session_vars["pv2"]` alone, leaving every other key as stored. Called after
+    the v1 tail's own write, so the v1 five keys and the pv2 state never race inside one
+    turn."""
+    from sqlalchemy import text
+
+    dumped = state_dump(state)
+    if dumped is None:
+        return
+    db.execute(
+        text(
+            "UPDATE respond_contacts SET session_vars = jsonb_set("
+            "COALESCE(session_vars, '{}'::jsonb), '{pv2}', CAST(:s AS jsonb), true) "
+            "WHERE respond_io_id = :cid"
+        ),
+        {"s": json.dumps(dumped, default=str), "cid": respond_io_id},
+    )
+    db.commit()
+
+
+def trace_facts(result: Any, *, mode: str = "v2") -> dict[str, Any]:
+    facts = {"parser_mode": mode}
+    extra = getattr(result, "trace", None)
+    if isinstance(extra, dict):
+        facts.update(extra)
+    return facts
