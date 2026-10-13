@@ -751,7 +751,11 @@ class StockService:
         # The virtual `size` key resolves to one mm key from the data, or the answer is a
         # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
         # With has_active_promotion the answer is about promoted products only (see products).
-        spec_base = spec_base_for(promoted_clause(self.db, access_levels) if has_active_promotion else None, product_ids)
+        spec_base = spec_base_for(
+            promoted_clause(self.db, access_levels) if has_active_promotion else None,
+            product_ids,
+            by_code=policy is not None and policy.mode == "availability",
+        )
         sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
         stamp_size_subject(self.db, spec_extra, product_ids)
         if spec_constraints and sized_constraints is None:
@@ -974,7 +978,9 @@ class StockService:
             matching = select(Product.id).where(spec_promo_clause)
             if policy is not None and policy.mode == "availability":
                 # D27: a code is one product to the dealer, so a size read on the code keeps
-                # its same-code rows in the other company, spec row or not (reviewer S1).
+                # its same-code rows in the other company, spec row or not (reviewer S1). The
+                # same holds for `has_active_promotion`: a code promoted on one company's row
+                # is promoted to the dealer.
                 matching = select(Product.id).where(
                     func.lower(Product.product_code).in_(
                         select(func.lower(Product.product_code)).where(spec_promo_clause)

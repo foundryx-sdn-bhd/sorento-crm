@@ -270,14 +270,20 @@ def spec_miss_detail(db: Session, constraints: list[dict], base=None) -> dict:
     }
 
 
-def spec_base_for(base, product_ids) -> Any:
+def spec_base_for(base, product_ids, by_code: bool = False) -> Any:
     """The set a spec-filtered call answers about: `base` (the promoted products, or None)
     narrowed to the products the caller named (owner hand test round 2, 13 Oct: "250mm
-    srtwc286" reads the size and the sizes on file among that family's variants only)."""
+    srtwc286" reads the size and the sizes on file among that family's variants only).
+    `by_code` (the dealer mode, D27: a code is one product) widens each named id to every row
+    of its code, so a size its sister company row holds is no miss (reviewer N1)."""
     ids = [str(pid) for pid in product_ids or [] if pid]
     if not ids:
         return base
     named = Product.id.in_(ids)
+    if by_code:
+        named = func.lower(Product.product_code).in_(
+            select(func.lower(Product.product_code)).where(Product.id.in_(ids))
+        )
     return named if base is None else and_(base, named)
 
 
