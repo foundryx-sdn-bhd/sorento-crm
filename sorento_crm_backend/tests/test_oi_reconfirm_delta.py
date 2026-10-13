@@ -431,3 +431,43 @@ def test_a_carried_line_whose_row_drifted_is_still_restated(api):
     assert [(t["line"]["remark"], t["line"]["was"]) for t in told] == [
         ("CANCEL 10", {"qty": "25"})
     ], _remarks(_TOLD)
+
+
+# --------------------------------------------------------------------------- nothing to act on
+
+
+def test_a_confirm_with_nothing_for_purchasing_to_do_sends_no_email(api, monkeypatch):
+    """Owner, 13 Oct (Q3 = a): purchasing hears only when they have an action to take.
+    Re-approving line A unchanged (a saved line) while line B rides along carried leaves
+    them nothing to do, so the Confirm queues no line and dispatches no handover email."""
+    from app.services.project_order_inquiry_service import (
+        register_order_inquiry_post_commit_dispatch,
+    )
+
+    register_order_inquiry_post_commit_dispatch()
+    calls: list = []
+
+    def _fake_dispatch(self, trigger_type, *, context, source_kind, source_id):
+        calls.append(trigger_type)
+        return {"trigger_type": trigger_type, "fired": 0, "results": []}
+
+    monkeypatch.setattr(
+        "app.services.automation_service.AutomationService.dispatch_event", _fake_dispatch
+    )
+    client, world = api
+    order, line_a, line_b = _two_lines(api)
+    assert "order_inquiry_handover" in calls, "control: the first Confirm is told"
+    row_a, row_b = _order_row(world, line_a), _order_row(world, line_b)
+    calls.clear()
+    _TOLD.clear()
+
+    response = _confirm(client, order.id, [_line_payload(line_a.id, buy_qty="25")])
+    assert response.status_code == 200, response.text
+    world.db.commit()
+    world.db.expire_all()
+
+    assert _TOLD == [], _remarks(_TOLD)
+    assert "order_inquiry_handover" not in calls, calls
+    for row in (row_a, row_b):
+        kept = world.db.get(OrderInquiryRow, row.id)
+        assert kept.state == INQUIRY_RAISED, kept.note
