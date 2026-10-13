@@ -39,6 +39,11 @@ class ChatResult:
     # The part of `prompt_tokens` the provider served from its prompt cache (billed at a
     # discount). 0 when the provider reports none (LLM-TEST-COST).
     cached_tokens: int = 0
+    # The part of `completion_tokens` spent thinking, and the model id the provider says
+    # answered (a dated snapshot of the alias asked for). 0 / "" when it reports none
+    # (PARSER-GEMINI-LITE: the parser's `understood` facts carry both).
+    reasoning_tokens: int = 0
+    model: str = ""
 
 
 @dataclass
@@ -194,6 +199,7 @@ class LLMProvider(Protocol):
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ChatResult: ...
 
     def embed(self, text: str) -> list[float]: ...
@@ -403,6 +409,7 @@ class OpenAIProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -437,6 +444,12 @@ class OpenAIProvider:
         # covers only what decides the answer.
         if prompt_cache_key:
             kwargs["prompt_cache_key"] = prompt_cache_key
+        # Sent only when asked for (PARSER-GEMINI-LITE): unset leaves the model's own
+        # default, which on the gpt-5 reasoning family is `medium`. A model that takes no
+        # reasoning effort (gpt-4o) refuses it with a 400 that `_create_chat_completion`
+        # adapts to and remembers, like any other parameter a model does not speak.
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         def live() -> Any:
             # A caller-set timeout turns the SDK's own retries off: the caller owns the retry
@@ -481,6 +494,8 @@ class OpenAIProvider:
         total_tokens = int(getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
         details = getattr(usage, "prompt_tokens_details", None)
         cached_tokens = int(getattr(details, "cached_tokens", 0) or 0)
+        completion_details = getattr(usage, "completion_tokens_details", None)
+        reasoning_tokens = int(getattr(completion_details, "reasoning_tokens", 0) or 0)
 
         return ChatResult(
             content=content,
@@ -490,6 +505,8 @@ class OpenAIProvider:
             tool_calls=normalized_calls,
             raw=completion,
             cached_tokens=cached_tokens,
+            reasoning_tokens=reasoning_tokens,
+            model=str(getattr(completion, "model", "") or ""),
         )
 
     def embed(self, text: str) -> list[float]:
@@ -749,6 +766,7 @@ class AnthropicProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -806,6 +824,7 @@ class AnthropicProvider:
                 tool_calls=[],
                 raw=resp,
                 cached_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+                model=str(getattr(resp, "model", "") or ""),
             )
         # Anthropic has no native JSON-mode flag; emulate by appending an
         # explicit instruction to the system prompt. The extract service
@@ -860,6 +879,7 @@ class AnthropicProvider:
             tool_calls=normalized_calls,
             raw=resp,
             cached_tokens=int(getattr(usage, "cache_read_input_tokens", 0) or 0),
+            model=str(getattr(resp, "model", "") or ""),
         )
 
     def embed(self, text: str) -> list[float]:
@@ -939,7 +959,14 @@ GEMINI_EMBEDDING_NATIVE_DIMS = 3072
 GEMINI_PRO_THINKING_BUDGET = 1024
 
 
-def _gemini_thinking_budget(model: Optional[str]) -> Optional[int]:
+# A caller's `reasoning_effort` (OpenAI's word, set per prompt label) as a Gemini
+# thinking budget. `none` / `minimal` is the smallest budget the model takes, which is
+# what `_gemini_thinking_budget` already returns for a flash model; the rest are
+# Google's own documented scale for 2.5 Flash (dynamic tops out at 24576).
+GEMINI_EFFORT_BUDGETS: dict[str, int] = {"low": 1024, "medium": 8192, "high": 24576}
+
+
+def _gemini_thinking_budget(model: Optional[str], effort: Optional[str] = None) -> Optional[int]:
     """How many tokens this model may spend thinking before it answers.
 
     `None` means the model has no thinking to budget and `thinkingConfig` must
@@ -964,6 +991,9 @@ def _gemini_thinking_budget(model: Optional[str]) -> Optional[int]:
     A model id with no readable version is treated as pre-2.5, because omitting
     the field costs at worst a shorter answer while sending it to a model that
     does not take it costs the whole call.
+
+    `effort` (`low` / `medium` / `high`) replaces the default with a larger budget on a
+    model that thinks; anything else, unset included, keeps the default above.
     """
     name = (model or "").lower()
     version = re.search(r"gemini-(\d+)(?:\.(\d+))?", name)
@@ -972,6 +1002,9 @@ def _gemini_thinking_budget(model: Optional[str]) -> Optional[int]:
     major, minor = int(version.group(1)), int(version.group(2) or 0)
     if (major, minor) < (2, 5):
         return None
+    asked = GEMINI_EFFORT_BUDGETS.get((effort or "").strip().lower())
+    if asked is not None:
+        return asked
     if "flash" in name:
         return 0 if major < 3 else 1
     return GEMINI_PRO_THINKING_BUDGET
@@ -1001,12 +1034,31 @@ _GEMINI_SCHEMA_KEYS = {
 }
 
 
+# Which keys belong to which type, for splitting a multi-type field into `anyOf`
+# branches. A key not listed here (`description`, `title`) describes the field as a
+# whole and stays on the outer node.
+_GEMINI_TYPE_KEYS = {
+    "array": {"items", "minItems", "maxItems"},
+    "object": {"properties", "required", "propertyOrdering"},
+    "string": {"enum", "format"},
+    "number": {"minimum", "maximum", "format"},
+    "integer": {"minimum", "maximum", "format"},
+}
+_GEMINI_BRANCH_KEYS = set().union(*_GEMINI_TYPE_KEYS.values())
+
+
 def _gemini_schema(schema: Any) -> Any:
     """Translate a JSON Schema into Gemini's OpenAPI subset."""
     if isinstance(schema, list):
         return [_gemini_schema(item) for item in schema]
     if not isinstance(schema, dict):
         return schema
+
+    kinds = schema.get("type")
+    if isinstance(kinds, list):
+        concrete = [kind for kind in kinds if kind != "null"]
+        if len(concrete) > 1:
+            return _gemini_any_of(schema, concrete, nullable=len(concrete) != len(kinds))
 
     out: dict[str, Any] = {}
     for key, value in schema.items():
@@ -1039,6 +1091,33 @@ def _gemini_schema(schema: Any) -> Any:
             out[key] = _gemini_schema(value)
             continue
         out[key] = value
+    return out
+
+
+def _gemini_any_of(schema: dict, kinds: list[str], *, nullable: bool) -> dict[str, Any]:
+    """A field of several types (`["string", "array"]`) as one `anyOf` branch per type.
+
+    Gemini's `type` is a single enum, so the old reading kept the first type and every
+    other key with it: `profile_statements[].value` became a STRING carrying `items`,
+    which Google refuses with a 400, and every parser call on Gemini failed on it. Each
+    branch keeps only the keys its own type reads; a null member puts `nullable` on every
+    branch, since an `anyOf` node takes no `type` of its own to hang it on.
+    """
+    out: dict[str, Any] = {
+        key: value
+        for key, value in schema.items()
+        if key in _GEMINI_SCHEMA_KEYS and key not in _GEMINI_BRANCH_KEYS and key not in ("type", "nullable", "anyOf")
+    }
+    branches = []
+    for kind in kinds:
+        own = _GEMINI_TYPE_KEYS.get(kind, set())
+        branch = _gemini_schema(
+            {"type": kind, **{key: value for key, value in schema.items() if key in own}}
+        )
+        if nullable:
+            branch["nullable"] = True
+        branches.append(branch)
+    out["anyOf"] = branches
     return out
 
 
@@ -1312,6 +1391,7 @@ class GeminiProvider:
         json_schema_name: Optional[str] = None,
         timeout: Optional[float] = None,
         prompt_cache_key: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> ChatResult:
         from app.services import llm_cassette
 
@@ -1353,7 +1433,7 @@ class GeminiProvider:
         # a pool the model gets to think out of. A model with no thinking to
         # budget (2.0 and older) gets no `thinkingConfig` and the caller's
         # `max_tokens` unchanged, because the field itself is a 400 there.
-        thinking_budget = _gemini_thinking_budget(model_name)
+        thinking_budget = _gemini_thinking_budget(model_name, reasoning_effort)
         if thinking_budget is not None:
             generation["thinkingConfig"] = {"thinkingBudget": thinking_budget}
         if max_tokens is not None:
@@ -1448,6 +1528,8 @@ class GeminiProvider:
             tool_calls=normalized_calls,
             raw=body,
             cached_tokens=int(usage.get("cachedContentTokenCount") or 0),
+            reasoning_tokens=int(usage.get("thoughtsTokenCount") or 0),
+            model=str(body.get("modelVersion") or ""),
         )
 
     def embed(self, text: str) -> list[float]:

@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.ai_prompt_registry import agent_model, render
+from app.services.ai_prompt_registry import agent_model, agent_reasoning_effort, render
 from app.services.chatbot.contracts import ParserOutputError  # noqa: F401 - re-export
 from app.services.chatbot.turn import context as context_mod
 from app.services.chatbot.turn import question as question_mod
@@ -79,6 +80,8 @@ class ParserConfig:
     provider: str
     model: str
     api_key: str
+    # The label's `reasoning_effort`; None sends nothing and leaves the provider default.
+    reasoning_effort: str | None = None
 
 
 def _build_json_schema() -> dict[str, Any]:
@@ -734,6 +737,7 @@ def resolve_config(
         provider=provider,
         model=model,
         api_key=api_key,
+        reasoning_effort=agent_reasoning_effort(db, PROMPT_KEY),
     )
 
 
@@ -986,6 +990,9 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
         {"role": "system", "content": config.system_prompt},
         {"role": "user", "content": user_block},
     ]
+    # Only when the label sets one, so an unset label sends exactly what it always did.
+    effort = {"reasoning_effort": config.reasoning_effort} if config.reasoning_effort else {}
+    started = time.perf_counter()
     try:
         # A rate limit is waited out inside the call (PR #1247 round 6, ruling 3).
         result = llm_call.chat(
@@ -1000,6 +1007,7 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
             # One cache bucket per published prompt version: every parse on it shares
             # the same static prefix (OpenAI only; the others ignore it).
             prompt_cache_key=f"{PROMPT_KEY}:v{config.prompt_version or 'fallback'}",
+            **effort,
         )
     except llm_call.RateLimited as exc:
         raise ParserError(f"parser provider call failed: {exc}", rate_limited=True) from exc
@@ -1009,12 +1017,20 @@ def parse(config: ParserConfig, user_block: str) -> ParsedOutput:
     usage = {
         "provider": config.provider,
         "model": config.model,
+        # The id the provider says answered (a dated snapshot of the alias asked for),
+        # the effort asked for, and the call's wall clock, retries and backoff included
+        # (PARSER-GEMINI-LITE: what a model comparison reads off the trace).
+        "model_answered": str(getattr(result, "model", "") or ""),
+        "reasoning_effort": config.reasoning_effort,
+        "latency_ms": int((time.perf_counter() - started) * 1000),
         "prompt_tokens": int(getattr(result, "prompt_tokens", 0) or 0),
         "completion_tokens": int(getattr(result, "completion_tokens", 0) or 0),
         "total_tokens": int(getattr(result, "total_tokens", 0) or 0),
         # The prompt-cache hit (LLM-TEST-COST): how much of `prompt_tokens` was billed
         # at the cached rate.
         "cached_tokens": int(getattr(result, "cached_tokens", 0) or 0),
+        # The part of `completion_tokens` spent thinking.
+        "reasoning_tokens": int(getattr(result, "reasoning_tokens", 0) or 0),
     }
     try:
         content = (result.content or "").strip()

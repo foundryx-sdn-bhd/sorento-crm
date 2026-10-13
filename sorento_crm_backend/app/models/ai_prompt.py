@@ -73,6 +73,10 @@ class AIPromptLabel(Base):
     # tunes for the hardest of them or for none of them.
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # How hard that model thinks (`none` / `minimal` / `low` / `medium` / `high`), sent
+    # as OpenAI's `reasoning_effort` or mapped onto a Gemini thinking budget. NULL = the
+    # provider's own default, unchanged (PARSER-GEMINI-LITE).
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
