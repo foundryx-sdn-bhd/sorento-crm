@@ -64,8 +64,9 @@ def test_tracking_upload_clears_the_marker(db):
 def test_tracking_upload_leaves_other_rows_marker_alone(db):
     """AC-DH15: only the DO the sheet names loses its marker."""
     named = _autocount_order(db, "ZZDO-OG-1")
-    other = _autocount_order(db, "ZZDO-OG-9")
-    other.doc_key = 990109
+    other = Order(order_number="ZZDO-OG-9", doc_key=990109, source_book="db1",
+                  order_date=date(2026, 9, 27), debtor_name="AutoCount Name")
+    db.add(other)
     stamp = datetime(2026, 10, 13, tzinfo=timezone.utc)
     other.tracking_assumed_at = stamp
     db.commit()

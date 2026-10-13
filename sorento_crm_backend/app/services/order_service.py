@@ -3176,6 +3176,8 @@ class OrderService:
                 for key, value in mapped.items():
                     if key != "order_number":
                         setattr(order, key, value)
+                # DO-HISTORY: a real tracking row replaces a backfill's assumed delivery.
+                order.tracking_assumed_at = None
 
                 if order.order_date and delivery_date:
                     start_date_value = order.order_date.date() if isinstance(order.order_date, datetime) else order.order_date

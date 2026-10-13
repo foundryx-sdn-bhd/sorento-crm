@@ -57,6 +57,8 @@ ORDER_TRACKING_OWNED_ORDER_COLUMNS = frozenset({
 SYSTEM_ORDER_COLUMNS = frozenset({
     "id", "company_id", "created_by", "updated_by", "created_at", "updated_at", "deleted_at",
     "synced_to_excel", "last_synced_to_excel", "last_synced_at",
+    # DO-HISTORY: written only by the history backfill script, cleared by a tracking row
+    "tracking_assumed_at",
 })
 
 AUTOCOUNT_OWNED = "AUTOCOUNT_OWNED"
