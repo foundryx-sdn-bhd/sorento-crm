@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 
+import uuid
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import desc, func
+from sqlalchemy import case, desc, func, literal_column
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,6 +20,7 @@ from app.models.ai_assistant import (
     AIAssistantSpan,
     AIAssistantTrace,
     AIAssistantUsageLog,
+    LLMModelPrice,
 )
 from app.models.user import User
 from app.schemas.ai_prompt import (
@@ -41,6 +43,7 @@ from app.api.v1.external.chat import (
     run_prompt_dry_run_turn,
 )
 from app.services.ai_prompt_registry import PROMPT_KEYS
+from app.services.analytics_connector.prices import cost_sql
 from app.services.ai_prompt_service import AIPromptRegistryError, AIPromptService
 from app.schemas.ai_assistant import (
     AIAssistantConfigResponse,
@@ -49,6 +52,9 @@ from app.schemas.ai_assistant import (
     AIAssistantMessageCreate,
     AIAssistantMessageResponse,
     GreetingResponse,
+    ModelPriceBody,
+    ModelPriceCreate,
+    ModelPriceResponse,
     QueryDetailResponse,
     RecentQueryItem,
     TestConnectionRequest,
@@ -58,6 +64,7 @@ from app.schemas.ai_assistant import (
     TestModelResponse,
     TopContactItem,
     TopUserItem,
+    UnpricedModelItem,
     TraceResponse,
     TraceSpanItem,
     UsageByDayItem,
@@ -89,6 +96,19 @@ def _feature_filters(feature: Optional[str]) -> list:
     if not feature:
         return []
     return [AIAssistantUsageLog.feature == feature]
+
+
+_COST = cost_sql(AIAssistantUsageLog.__tablename__, LLMModelPrice.__tablename__)
+_COST_COL = literal_column(_COST.cost_usd)
+_PRICED_COL = literal_column(_COST.priced)
+
+
+def _cost_aggregates() -> tuple[Any, Any]:
+    """(sum of priced call cost, count of calls with no cost) for a grouped usage query."""
+    return (
+        func.coalesce(func.sum(_COST_COL), 0).label("cost"),
+        func.coalesce(func.sum(case((_PRICED_COL, 0), else_=1)), 0).label("unpriced"),
+    )
 
 
 def _resolve_window(from_: Optional[str], to: Optional[str]) -> tuple[datetime, datetime]:
@@ -605,7 +625,10 @@ def usage_summary(
             func.coalesce(func.sum(AIAssistantUsageLog.prompt_tokens), 0).label("prompt"),
             func.coalesce(func.sum(AIAssistantUsageLog.completion_tokens), 0).label("completion"),
             func.coalesce(func.sum(AIAssistantUsageLog.total_tokens), 0).label("total"),
+            *_cost_aggregates(),
         )
+        .select_from(AIAssistantUsageLog)
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
         .filter(
             AIAssistantUsageLog.created_at >= f,
             AIAssistantUsageLog.created_at <= t,
@@ -618,6 +641,8 @@ def usage_summary(
         prompt_tokens=int(row.prompt or 0),
         completion_tokens=int(row.completion or 0),
         total_tokens=int(row.total or 0),
+        cost_usd=float(row.cost or 0),
+        unpriced_calls=int(row.unpriced or 0),
     )
 
 
@@ -630,13 +655,19 @@ def usage_by_day(
     db: Session = Depends(get_db),
 ):
     f, t = _resolve_window(from_, to)
-    bucket = func.date_trunc("day", AIAssistantUsageLog.created_at).label("day")
+    # created_at is naive UTC; a day is a Malaysia day (TZ-2).
+    bucket = func.date_trunc(
+        "day", func.timezone("Asia/Kuala_Lumpur", func.timezone("UTC", AIAssistantUsageLog.created_at))
+    ).label("day")
     rows = (
         db.query(
             bucket,
             func.count(AIAssistantUsageLog.id).label("messages"),
             func.coalesce(func.sum(AIAssistantUsageLog.total_tokens), 0).label("tokens"),
+            *_cost_aggregates(),
         )
+        .select_from(AIAssistantUsageLog)
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
         .filter(
             AIAssistantUsageLog.created_at >= f,
             AIAssistantUsageLog.created_at <= t,
@@ -653,7 +684,15 @@ def usage_by_day(
             date_str = date_value.date().isoformat()
         else:
             date_str = str(date_value)[:10]
-        out.append(UsageByDayItem(date=date_str, messages=int(r.messages or 0), tokens=int(r.tokens or 0)))
+        out.append(
+            UsageByDayItem(
+                date=date_str,
+                messages=int(r.messages or 0),
+                tokens=int(r.tokens or 0),
+                cost_usd=float(r.cost or 0),
+                unpriced_calls=int(r.unpriced or 0),
+            )
+        )
     return out
 
 
@@ -673,8 +712,10 @@ def usage_top_users(
             User.name,
             func.count(AIAssistantUsageLog.id).label("messages"),
             func.coalesce(func.sum(AIAssistantUsageLog.total_tokens), 0).label("tokens"),
+            *_cost_aggregates(),
         )
         .outerjoin(User, User.id == AIAssistantUsageLog.user_id)
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
         .filter(
             AIAssistantUsageLog.created_at >= f,
             AIAssistantUsageLog.created_at <= t,
@@ -692,6 +733,8 @@ def usage_top_users(
             name=r.name,
             messages=int(r.messages or 0),
             tokens=int(r.tokens or 0),
+            cost_usd=float(r.cost or 0),
+            unpriced_calls=int(r.unpriced or 0),
         )
         for r in rows
     ]
@@ -722,8 +765,10 @@ def usage_top_contacts(
             RespondContact.phone_number,
             func.count(AIAssistantUsageLog.id).label("messages"),
             func.coalesce(func.sum(AIAssistantUsageLog.total_tokens), 0).label("tokens"),
+            *_cost_aggregates(),
         )
         .outerjoin(RespondContact, RespondContact.id == AIAssistantUsageLog.contact_id)
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
         .filter(
             AIAssistantUsageLog.created_at >= f,
             AIAssistantUsageLog.created_at <= t,
@@ -742,6 +787,8 @@ def usage_top_contacts(
             phone_number=r.phone_number,
             messages=int(r.messages or 0),
             tokens=int(r.tokens or 0),
+            cost_usd=float(r.cost or 0),
+            unpriced_calls=int(r.unpriced or 0),
         )
         for r in rows
     ]
@@ -765,8 +812,12 @@ def usage_recent_queries(
             RespondContact.phone_number,
             AIAssistantMessage.created_at,
             AIAssistantMessage.conversation_id,
+            _COST_COL.label("cost_usd"),
+            _PRICED_COL.label("priced"),
+            literal_column(_COST.cached_price_missing).label("cached_price_missing"),
         )
         .outerjoin(User, User.id == AIAssistantUsageLog.user_id)
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
         .outerjoin(RespondContact, RespondContact.id == AIAssistantUsageLog.contact_id)
         .outerjoin(AIAssistantMessage, AIAssistantMessage.id == AIAssistantUsageLog.message_id)
         .filter(
@@ -779,7 +830,7 @@ def usage_recent_queries(
         .all()
     )
     out: list[RecentQueryItem] = []
-    for log, user_name, contact_name, contact_phone, asst_created, conv_id in rows:
+    for log, user_name, contact_name, contact_phone, asst_created, conv_id, cost, priced, cached_missing in rows:
         # Find the user message that prompted this assistant turn:
         # most recent user message in the same conversation BEFORE the assistant message.
         preview = ""
@@ -812,6 +863,10 @@ def usage_recent_queries(
                 response_time_ms=int(log.response_time_ms or 0),
                 tokens=int(log.total_tokens or 0),
                 created_at=log.created_at,
+                model=log.model,
+                cost_usd=float(cost) if cost is not None else None,
+                priced=bool(priced),
+                cached_price_missing=bool(cached_missing),
             )
         )
     return out
@@ -979,3 +1034,104 @@ def list_wishlist_clusters(
         )
         for it in items
     ]
+
+
+# --- Model prices -----------------------------------------------------------
+
+
+def _price_out(row: LLMModelPrice) -> ModelPriceResponse:
+    return ModelPriceResponse(
+        id=str(row.id),
+        model=row.model,
+        input_usd_per_1m=float(row.input_usd_per_1m),
+        cached_input_usd_per_1m=float(row.cached_input_usd_per_1m) if row.cached_input_usd_per_1m is not None else None,
+        output_usd_per_1m=float(row.output_usd_per_1m),
+        note=row.note,
+        updated_at=row.updated_at,
+    )
+
+
+def _find_price(db: Session, price_id: str) -> LLMModelPrice:
+    try:
+        uuid.UUID(str(price_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Model price not found")
+    row = db.query(LLMModelPrice).filter(LLMModelPrice.id == price_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Model price not found")
+    return row
+
+
+@router.get("/ai-assistant/model-prices", response_model=list[ModelPriceResponse])
+def list_model_prices(
+    _user: dict = Depends(require_permission("system.ai_assistant_settings.view")),
+    db: Session = Depends(get_db),
+):
+    return [_price_out(r) for r in db.query(LLMModelPrice).order_by(LLMModelPrice.model.asc()).all()]
+
+
+@router.get("/ai-assistant/model-prices/unpriced", response_model=list[UnpricedModelItem])
+def list_unpriced_models(
+    _user: dict = Depends(require_permission("system.ai_assistant_settings.view")),
+    db: Session = Depends(get_db),
+):
+    calls = func.count(AIAssistantUsageLog.id)
+    rows = (
+        db.query(AIAssistantUsageLog.model, calls.label("calls"), func.max(AIAssistantUsageLog.created_at).label("last_seen"))
+        .outerjoin(LLMModelPrice, LLMModelPrice.model == AIAssistantUsageLog.model)
+        .filter(AIAssistantUsageLog.model.isnot(None), LLMModelPrice.id.is_(None))
+        .group_by(AIAssistantUsageLog.model)
+        .order_by(calls.desc(), AIAssistantUsageLog.model.asc())
+        .all()
+    )
+    return [UnpricedModelItem(model=r.model, calls=int(r.calls), last_seen_at=r.last_seen) for r in rows]
+
+
+@router.post("/ai-assistant/model-prices", response_model=ModelPriceResponse, status_code=status.HTTP_201_CREATED)
+def create_model_price(
+    body: ModelPriceCreate,
+    _user: dict = Depends(require_permission("system.ai_assistant_settings.edit")),
+    db: Session = Depends(get_db),
+):
+    model = body.model.strip()
+    if db.query(LLMModelPrice).filter(LLMModelPrice.model == model).first() is not None:
+        raise HTTPException(status_code=409, detail=f"A price for {model} already exists.")
+    row = LLMModelPrice(
+        model=model,
+        input_usd_per_1m=body.input_usd_per_1m,
+        cached_input_usd_per_1m=body.cached_input_usd_per_1m,
+        output_usd_per_1m=body.output_usd_per_1m,
+        note=body.note,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _price_out(row)
+
+
+@router.put("/ai-assistant/model-prices/{price_id}", response_model=ModelPriceResponse)
+def update_model_price(
+    price_id: str,
+    body: ModelPriceBody,
+    _user: dict = Depends(require_permission("system.ai_assistant_settings.edit")),
+    db: Session = Depends(get_db),
+):
+    row = _find_price(db, price_id)
+    row.input_usd_per_1m = body.input_usd_per_1m
+    row.cached_input_usd_per_1m = body.cached_input_usd_per_1m
+    row.output_usd_per_1m = body.output_usd_per_1m
+    row.note = body.note
+    db.commit()
+    db.refresh(row)
+    return _price_out(row)
+
+
+@router.delete("/ai-assistant/model-prices/{price_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_model_price(
+    price_id: str,
+    _user: dict = Depends(require_permission("system.ai_assistant_settings.edit")),
+    db: Session = Depends(get_db),
+):
+    db.delete(_find_price(db, price_id))
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
