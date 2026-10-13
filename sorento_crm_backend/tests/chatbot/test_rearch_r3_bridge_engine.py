@@ -45,21 +45,15 @@ from typing import Any
 
 import pytest
 
-from app.services.chatbot import copy as copy_mod
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business import answer as answer_mod
 from app.services.chatbot.lanes.business import fetch as fetch_mod
 from app.services.chatbot.lanes.business.services import ResolveGateServices
 from app.services.chatbot.lanes.business.tier_gate import recompose
-from app.services.chatbot.tail import outcome as outcome_mod
 from app.services.chatbot.tail import reply_ladder
 from app.services.chatbot.turn import compose as turn_compose
 from tests.chatbot.test_engine import _parser_output
 from tests.chatbot.test_outstanding_lane import (
-    HANLIM_CODE_1,
-    HANLIM_CODE_2,
-    HANLIM_UUID_1,
-    HANLIM_UUID_2,
     PRODUCT_CODE,
     PRODUCT_UUID,
     _ambiguous_hanlim_resolve_services,
