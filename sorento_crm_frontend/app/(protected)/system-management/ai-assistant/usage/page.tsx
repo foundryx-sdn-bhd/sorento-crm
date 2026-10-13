@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ComponentProps } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { CalendarIcon, ChevronDown, ChevronRight, GitBranch, Loader2 } from 'lucide-react';
@@ -23,6 +23,8 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { Container } from '@/components/common/container';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SectionSkeleton } from '@/components/common/SectionSkeleton';
+import { formatDateTimeInMalaysia } from '@/lib/helpers';
+import { formatUsd } from '../lib/formatUsd';
 import {
   useQueryDetail,
   useRecentQueries,
@@ -31,6 +33,7 @@ import {
   useUsageByDay,
   useUsageSummary,
 } from '../hooks/useAIUsage';
+import type { RecentQueryItem } from '../services/aiUsageService';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 const FEATURE_ALL = 'all';
@@ -64,12 +67,19 @@ function formatNumber(n: number | null | undefined): string {
   return n.toLocaleString();
 }
 
-function formatDateTime(d: string): string {
-  try {
-    return format(new Date(d), 'MMM d, HH:mm:ss');
-  } catch {
-    return d;
-  }
+/** A total over `calls` calls of which `unpriced` had no price: a dash when none could be priced. */
+function totalCost(cost: number, unpriced: number, calls: number): string {
+  return formatUsd(unpriced >= calls && calls > 0 ? null : cost);
+}
+
+function costTitle(q: RecentQueryItem): string | undefined {
+  if (q.cost_usd != null) return undefined;
+  const model = q.model ?? 'this model';
+  return q.cached_price_missing ? `No cached-input price for ${model}` : `No price for ${model}`;
+}
+
+function notPricedLabel(n: number): string {
+  return `${n} ${n === 1 ? 'call' : 'calls'} not priced`;
 }
 
 export default function AIUsagePage() {
@@ -98,6 +108,8 @@ export default function AIUsagePage() {
       date: d.date,
       messages: d.messages,
       tokens: d.tokens,
+      cost_usd: d.cost_usd,
+      unpriced_calls: d.unpriced_calls,
     }));
   }, [byDayQuery.data]);
 
@@ -194,7 +206,7 @@ export default function AIUsagePage() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
           <SummaryCard
             label="Messages"
             value={formatNumber(summary?.total_messages)}
@@ -213,6 +225,16 @@ export default function AIUsagePage() {
           <SummaryCard
             label="Completion tokens"
             value={formatNumber(summary?.completion_tokens)}
+            loading={summaryQuery.isLoading}
+          />
+          <SummaryCard
+            label="Cost (USD)"
+            value={
+              summary
+                ? totalCost(summary.cost_usd, summary.unpriced_calls, summary.total_messages)
+                : formatUsd(null)
+            }
+            note={summary && summary.unpriced_calls > 0 ? notPricedLabel(summary.unpriced_calls) : undefined}
             loading={summaryQuery.isLoading}
           />
         </div>
@@ -237,7 +259,29 @@ export default function AIUsagePage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip
+                    content={(props) => {
+                      const day = props.payload?.[0]?.payload as
+                        | { cost_usd: number; unpriced_calls: number; messages: number }
+                        | undefined;
+                      return (
+                        <div>
+                          <ChartTooltipContent {...(props as ComponentProps<typeof ChartTooltipContent>)} />
+                          {day ? (
+                            <div className="mt-1 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+                              Cost {totalCost(day.cost_usd, day.unpriced_calls, day.messages)}
+                              {day.unpriced_calls > 0 ? (
+                                <span className="text-muted-foreground">
+                                  {' '}
+                                  ({notPricedLabel(day.unpriced_calls)})
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    }}
+                  />
                   <Line
                     type="monotone"
                     dataKey="tokens"
@@ -278,6 +322,7 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">Name</th>
                         <th className="py-2 text-right font-medium">Messages</th>
                         <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -287,6 +332,12 @@ export default function AIUsagePage() {
                           <td className="py-2">{u.name || u.user_id}</td>
                           <td className="py-2 text-right tabular-nums">{formatNumber(u.messages)}</td>
                           <td className="py-2 text-right tabular-nums">{formatNumber(u.tokens)}</td>
+                          <td
+                            className="py-2 text-right tabular-nums"
+                            title={u.unpriced_calls > 0 ? notPricedLabel(u.unpriced_calls) : undefined}
+                          >
+                            {totalCost(u.cost_usd, u.unpriced_calls, u.messages)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -321,6 +372,7 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">Name</th>
                         <th className="py-2 text-right font-medium">Calls</th>
                         <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -331,6 +383,12 @@ export default function AIUsagePage() {
                           <td className="py-2">{c.name || <span className="text-muted-foreground italic">unknown</span>}</td>
                           <td className="py-2 text-right tabular-nums">{formatNumber(c.messages)}</td>
                           <td className="py-2 text-right tabular-nums">{formatNumber(c.tokens)}</td>
+                          <td
+                            className="py-2 text-right tabular-nums"
+                            title={c.unpriced_calls > 0 ? notPricedLabel(c.unpriced_calls) : undefined}
+                          >
+                            {totalCost(c.cost_usd, c.unpriced_calls, c.messages)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -367,6 +425,7 @@ export default function AIUsagePage() {
                         <th className="py-2 text-left font-medium">Query</th>
                         <th className="py-2 text-right font-medium">ms</th>
                         <th className="py-2 text-right font-medium">Tokens</th>
+                        <th className="py-2 text-right font-medium">Cost (USD)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -401,7 +460,7 @@ export default function AIUsagePage() {
                                 ) : null}
                               </td>
                               <td className="py-2 align-top text-xs whitespace-nowrap text-muted-foreground">
-                                {formatDateTime(q.created_at)}
+                                {formatDateTimeInMalaysia(q.created_at)}
                               </td>
                               <td className="py-2 align-top text-xs">{featureLabel}</td>
                               <td className="py-2 align-top" title={principal}>
@@ -419,11 +478,17 @@ export default function AIUsagePage() {
                               <td className="py-2 text-right align-top tabular-nums">
                                 {formatNumber(q.tokens)}
                               </td>
+                              <td
+                                className="py-2 text-right align-top tabular-nums"
+                                title={costTitle(q)}
+                              >
+                                {formatUsd(q.cost_usd)}
+                              </td>
                             </tr>
                             {isExpanded ? (
                               <tr className="border-b bg-muted/20">
                                 <td></td>
-                                <td colSpan={6} className="space-y-2 py-3 pe-3">
+                                <td colSpan={7} className="space-y-2 py-3 pe-3">
                                   {queryDetail.isLoading ? (
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <Loader2 className="size-3 animate-spin" /> Loading detail...
@@ -506,10 +571,12 @@ export default function AIUsagePage() {
 function SummaryCard({
   label,
   value,
+  note,
   loading,
 }: {
   label: string;
   value: string;
+  note?: string;
   loading: boolean;
 }) {
   return (
@@ -519,6 +586,7 @@ function SummaryCard({
         <CardTitle className="text-2xl">
           {loading ? <Loader2 className="size-4 animate-spin" /> : value}
         </CardTitle>
+        {note && !loading ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       </CardHeader>
     </Card>
   );
