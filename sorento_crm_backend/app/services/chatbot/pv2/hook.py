@@ -44,8 +44,9 @@ class TurnV2Context:
     contact_respond_id: str
     contact_pk: str | None
     text: str
-    # The contact's stored session vars as this turn read them (the pv2 state is under
-    # `session_block["pv2"]`; on a dry run the harness's injected copy).
+    # The contact's stored session vars as this turn read them: the engine's
+    # `{"respond_io_id": ..., "session_vars": {...}}` block, so the pv2 state is at
+    # `session_block["session_vars"]["pv2"]` (on a dry run, the harness's injected copy).
     session_block: dict[str, Any]
     # v1 `turn.state.State` as loaded (focus, pending, profile) and the v1 profile.
     state_in: Any
@@ -93,22 +94,34 @@ def state_dump(state: Any) -> dict[str, Any] | None:
     return dict(state)
 
 
-def persist_state(db: Any, *, respond_io_id: str, state: Any) -> None:
-    """Write `session_vars["pv2"]` alone, leaving every other key as stored. Called after
-    the v1 tail's own write, so the v1 five keys and the pv2 state never race inside one
-    turn."""
+def persist_state(
+    db: Any, *, respond_io_id: str, state: Any, contact_pk: str | None = None
+) -> None:
+    """Write `session_vars["pv2"]` alone, leaving every other key as stored, on ONE contact
+    row: the turn's resolved `contact_pk` when it has one (`respond_io_id` is not unique),
+    else the row the v1 writer locks (`overwrite_for_contact`'s own lookup). Called after
+    the v1 tail's own write, so the two never race inside one turn."""
     from sqlalchemy import text
 
     dumped = state_dump(state)
     if dumped is None:
         return
+    row_id = contact_pk
+    if not row_id:
+        row = db.execute(
+            text("SELECT id FROM respond_contacts WHERE respond_io_id = :cid FOR UPDATE"),
+            {"cid": respond_io_id},
+        ).first()
+        if row is None:
+            return
+        row_id = row[0]
     db.execute(
         text(
             "UPDATE respond_contacts SET session_vars = jsonb_set("
             "COALESCE(session_vars, '{}'::jsonb), '{pv2}', CAST(:s AS jsonb), true) "
-            "WHERE respond_io_id = :cid"
+            "WHERE id = :id"
         ),
-        {"s": json.dumps(dumped, default=str), "cid": respond_io_id},
+        {"s": json.dumps(dumped, default=str), "id": row_id},
     )
     db.commit()
 

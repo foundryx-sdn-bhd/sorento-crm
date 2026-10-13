@@ -207,3 +207,100 @@ def test_harness_mock_wins_over_v2(session_factory, seeded, stub_access, fake_tu
         session_factory=session_factory,
     )
     assert calls == []
+
+
+# --------------------------------------------------------------------------- review round 1
+
+
+def _usage_rows(session_factory) -> int:
+    return session_factory().execute(text("select count(*) from ai_assistant_usage_logs")).scalar()
+
+
+def test_v2_parse_error_logs_the_billed_usage(session_factory, seeded, stub_parser, stub_access, fake_turn):
+    before = _usage_rows(session_factory)
+    fake_turn(error=pv2_call.ParserV2Error("non-JSON", usage={"total_tokens": 9, "prompt_tokens": 8,
+                                                              "completion_tokens": 1, "model": "m", "provider": "openai"}))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    assert _usage_rows(session_factory) == before + 1
+
+
+def test_unexpected_v2_error_is_failed_understood_not_a_crash(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    fake_turn(error=RuntimeError("resolver blew up"))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    assert result.status == "failed" and result.stage == "understood"
+
+
+def test_failed_bridge_turn_does_not_move_pv2_state(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    fake_turn(FakeResult(verdict={"message_type": "business_query"}))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    assert "pv2" not in (_session_vars(session_factory) or {})
+
+
+def test_v2_understood_records_the_v2_prompt_version(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    fake_turn(FakeResult(verdict=_parser_output(asks=None, topic_reset=None)))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    result = engine_mod.run_turn(_envelope(), session_factory=session_factory)
+    row = _turn_row(session_factory, result.turn_id)
+    understood = [r for r in row.trace if r.get("stage") == "understood"][0]
+    assert understood["facts"]["prompt_version"] == 3
+
+
+def test_dry_run_bridged_turn_patch_keeps_v1_keys_and_pv2(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    fake_turn(FakeResult(verdict=_parser_output(asks=None, topic_reset=None)))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    result = engine_mod.run_turn(_envelope(is_test=True), session_factory=session_factory)
+    assert "focus" in result.session_patch and "open_question" in result.session_patch
+    assert result.session_patch["pv2"]["held"] == {"domain": "inventory"}
+
+
+def test_dry_run_direct_reply_patch_keeps_the_v1_keys_it_started_with(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    calls = fake_turn(FakeResult(direct_reply="Which one?", branch_kind="clarify_menu"))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    carried = {"focus": None, "open_question": None, "ideation": None, "access_levels": [],
+               "contains_flyer": False, "reply_language": "zh", "pv2": {"v": 1, "turn_no": 4}}
+    result = engine_mod.run_turn(
+        _envelope(is_test=True, previous_conversation_state=carried), session_factory=session_factory
+    )
+    assert result.session_patch["reply_language"] == "zh"
+    assert result.session_patch["pv2"]["turn_no"] == 1
+    # the harness's pv2 state reached run_turn_v2 (console multi-turn carry)
+    assert calls[0].session_block["session_vars"]["pv2"] == {"v": 1, "turn_no": 4}
+
+
+def test_v1_tail_write_keeps_stored_pv2(session_factory, seeded):
+    from app.services.chatbot.turn import tail
+
+    db = session_factory()
+    db.execute(
+        text("update respond_contacts set session_vars = cast(:s as jsonb) where respond_io_id = :c"),
+        {"s": '{"focus": null, "pv2": {"v": 1, "turn_no": 2}}', "c": str(CONTACT_ID)},
+    )
+    db.commit()
+    tail.write_merged(db, respond_io_id=str(CONTACT_ID), payload={"focus": None, "open_question": None},
+                      base=None, turn_id=None)
+    assert _session_vars(session_factory)["pv2"] == {"v": 1, "turn_no": 2}

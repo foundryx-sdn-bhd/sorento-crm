@@ -51,18 +51,26 @@ def parser_mode(db: Session, contact: Any, envelope: Any) -> ParserMode:
     return "v2" if _system_mode(db) == "v2" else "v1"
 
 
-def contact_settings(db: Session, respond_io_id: str | None) -> Any:
-    """The contact's own parser mode as an object `parser_mode` reads, or None."""
+def contact_settings(
+    db: Session, respond_io_id: str | None, *, contact_pk: str | None = None
+) -> Any:
+    """The contact's own parser mode as an object `parser_mode` reads, or None. Read off
+    the turn's resolved contact row when there is one (`respond_io_id` is not unique)."""
     from types import SimpleNamespace
 
-    if not respond_io_id:
+    if not respond_io_id and not contact_pk:
         return None
+    if contact_pk:
+        sql, params = "select chatbot_parser_mode from respond_contacts where id = :c", {"c": contact_pk}
+    else:
+        sql = (
+            "select chatbot_parser_mode from respond_contacts where respond_io_id = :c "
+            "order by id limit 1"
+        )
+        params = {"c": respond_io_id}
     try:
         with db.begin_nested():
-            row = db.execute(
-                text("select chatbot_parser_mode from respond_contacts where respond_io_id = :c"),
-                {"c": respond_io_id},
-            ).first()
+            row = db.execute(text(sql), params).first()
     except Exception:  # noqa: BLE001 - a copy without the column is a v1 copy
         return None
     return SimpleNamespace(chatbot_parser_mode=row[0]) if row else None

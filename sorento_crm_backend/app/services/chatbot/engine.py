@@ -28,7 +28,7 @@ import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, replace as dataclasses_replace
-import dataclasses
+from dataclasses import replace as _pv2_replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator, Mapping
 
@@ -1397,10 +1397,13 @@ def _inject_harness_session(
         value = _harness_value(envelope, "previous_conversation_state")
         value = value if isinstance(value, dict) else {}
         session_vars.pop("variables", None)
-        for key in session_state.FIVE_KEYS:
+        # PV2: the parser v2 state rides the same harness value as the five keys, so a
+        # console turn carries it to the next one (a dry run never writes it).
+        harness_keys = tuple(dict.fromkeys((*session_state.FIVE_KEYS, pv2_hook.STATE_KEY)))
+        for key in harness_keys:
             session_vars.pop(key, None)
-        if value == {} or any(key in value for key in session_state.FIVE_KEYS):
-            for key in session_state.FIVE_KEYS:
+        if value == {} or any(key in value for key in harness_keys):
+            for key in harness_keys:
                 session_vars[key] = value.get(key)
         else:
             session_vars["variables"] = value
@@ -4201,15 +4204,26 @@ def _pv2_keep_state(
     media_box = kwargs.get("media_box") or {}
     if "pv2_state" not in media_box or media_box["pv2_state"] is None:
         return
+    # A failed or refused turn moves nothing, exactly like the v1 five keys: a retry must
+    # start from the state the user last saw answered.
+    if result.status not in ("done", "delegated"):
+        return
     state = media_box["pv2_state"]
     if kwargs.get("dry_run"):
-        patch = dict(result.session_patch or {})
+        # A direct reply has no v1 patch of its own: start from the five keys the turn
+        # began with, so the next console turn keeps its v1 focus and open question.
+        patch = dict(result.session_patch or media_box.get("pv2_v1_before") or {})
         patch[pv2_hook.STATE_KEY] = pv2_hook.state_dump(state)
         result.session_patch = patch
         return
     try:
         with _session(session_factory) as db:
-            pv2_hook.persist_state(db, respond_io_id=kwargs["contact_respond_id"], state=state)
+            pv2_hook.persist_state(
+                db,
+                respond_io_id=kwargs["contact_respond_id"],
+                contact_pk=media_box.get("pv2_contact_pk"),
+                state=state,
+            )
     except Exception:  # noqa: BLE001 - the reply is already decided; log, do not fail it
         logger.exception("pv2: could not write session_vars.pv2 for turn %s", kwargs.get("turn_id"))
 
@@ -4617,7 +4631,13 @@ def _run_stages_body(  # noqa: PLR0915
         # v1; v2 for a console turn, a v2 test contact or a v2 dev copy. A build without
         # PV2-CARRY's `pv2.turn` runs v1 and says so on the trace.
         pv2_on = (
-            pv2_flag.parser_mode(db, pv2_flag.contact_settings(db, contact_respond_id), envelope)
+            pv2_flag.parser_mode(
+                db,
+                pv2_flag.contact_settings(
+                    db, contact_respond_id, contact_pk=memory_intake.get("contact_pk")
+                ),
+                envelope,
+            )
             == "v2"
         )
 
@@ -4704,9 +4724,26 @@ def _run_stages_body(  # noqa: PLR0915
             )
         except pv2_call.ParserV2Error as exc:
             pv2_error = exc
+        except Exception as exc:  # noqa: BLE001 - a resolver/DB fault is a failed parse too
+            logger.exception("pv2: run_turn_v2 failed for turn %s", turn_id)
+            pv2_error = pv2_call.ParserV2Error(
+                f"parser v2 turn failed: {exc}", usage=getattr(exc, "usage", None) or {}
+            )
         if pv2_result is not None:
             media_box["pv2_state"] = getattr(pv2_result, "state", None)
-            turn_trace.add("pv2_turn", pv2_hook.trace_facts(pv2_result))
+            media_box["pv2_contact_pk"] = memory_intake.get("contact_pk")
+            media_box["pv2_v1_before"] = {
+                key: remembered_before.get(key) for key in session_state.FIVE_KEYS
+            }
+            pv2_facts = pv2_hook.trace_facts(pv2_result)
+            turn_trace.add("pv2_turn", pv2_facts)
+            # The `understood` record and the eval read the prompt that actually ran.
+            parser_config = _pv2_replace(
+                parser_config,
+                prompt_version=pv2_facts.get("version"),
+                model=(getattr(pv2_result, "usage", {}) or {}).get("model") or parser_config.model,
+            )
+            user_block = pv2_facts.get("user_message") or "(parser v2: see the pv2_turn event)"
             if getattr(pv2_result, "direct_reply", None) is not None:
                 return _pv2_direct_reply(
                     pv2_result,
@@ -4719,7 +4756,7 @@ def _run_stages_body(  # noqa: PLR0915
                     started=parse_started,
                 )
             if getattr(pv2_result, "focus", None) is not None:
-                state_in = dataclasses.replace(state_in, focus=pv2_result.focus)
+                state_in = _pv2_replace(state_in, focus=pv2_result.focus)
     try:
         if parser_bypassed:
             parser_raw = _harness_value(envelope, "mock_reformulator_output")

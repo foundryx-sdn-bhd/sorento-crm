@@ -189,6 +189,7 @@ def _classes(db: Session) -> tuple[list[tuple[str, str, list[str]]], dict[str, l
             type_keys.append(t)
 
     by_class: dict[str, list[str]] = defaultdict(list)
+    type_keys = [t for t in type_keys if "," not in t and "|" not in t]
     for t in sorted(type_keys):
         placed = {c: n for c, n in counts.get(t, {}).items() if c in labels}
         if placed:
@@ -220,7 +221,12 @@ def _spec_attributes(db: Session) -> tuple[list[tuple[str, str, list[str]]], dic
         if data_type == "boolean":
             parts.append("yes/no")
         elif data_type != "numeric":
-            values = [str(v) for v in dict.fromkeys(merged_allowed_values(row))]
+            # A value holding the row grammar's own separators cannot round-trip through
+            # `parse_index_keys`; it is left out rather than split into two wrong keys.
+            values = [
+                str(v) for v in dict.fromkeys(merged_allowed_values(row))
+                if "," not in str(v) and "|" not in str(v)
+            ]
             if values:
                 parts.append("values: " + ", ".join(_clean(v) for v in values))
         if parts:
@@ -489,7 +495,7 @@ def publish_v2(
         raise PublishRefused(f"the v2 head is {len(head_text)} chars, cap {HEAD_CAP_CHARS}")
     if any(line.rstrip() in SECTIONS for line in head_text.splitlines()):
         raise PublishRefused("the v2 head may not contain an index section header")
-    if label == "production":
+    if label is not None and label.strip().casefold() == "production":
         raise PublishRefused("no production label for parser v2 (contract section 8)")
     lines, clashes = _build(db)
     if clashes:

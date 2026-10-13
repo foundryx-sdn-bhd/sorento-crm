@@ -979,6 +979,7 @@ def _chatbot_semantic_parser_v2_fallback() -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError:
+        logger.error("parser v2 head %s unreadable; the v2 prompt would be the index alone", path)
         return ""
 
 

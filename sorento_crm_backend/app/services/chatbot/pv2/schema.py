@@ -250,12 +250,25 @@ def validate(raw: dict, keys: IndexKeys) -> tuple[ParserV2Output, list[DroppedKe
         ask.attachment_type = keep(
             ask.attachment_type, keys.attachment_types, f"{at}.attachment_type", "attachment_type"
         )
+        kept_entities = []
         for j, ent in enumerate(ask.entities):
-            if ent.key is not None and ent.kind in keys.entity_keys:
-                ent.key = keep(
-                    ent.key, keys.entity_keys[ent.kind], f"{at}.entities[{j}].key", ent.kind,
-                    ent.phrase,
-                )
+            where = f"{at}.entities[{j}]"
+            if keys.entity_kinds and ent.kind not in keys.entity_kinds:
+                # A kind the index does not list: nothing downstream can look it up.
+                dropped.append(DroppedKey(f"{where}.kind", "entity_kind", ent.kind, ent.phrase))
+                continue
+            if ent.key is not None:
+                if ent.kind in keys.entity_keys:
+                    ent.key = keep(
+                        ent.key, keys.entity_keys[ent.kind], f"{where}.key", ent.kind, ent.phrase
+                    )
+                else:
+                    # Non-index kinds are looked up by their phrase only (contract s.1):
+                    # a model-made "key" for a product or customer is never trusted.
+                    dropped.append(DroppedKey(f"{where}.key", ent.kind, ent.key, ent.phrase))
+                    ent.key = None
+            kept_entities.append(ent)
+        ask.entities = kept_entities
         for j, spec in enumerate(ask.specs):
             spec.attribute = keep(
                 spec.attribute, keys.spec_attributes, f"{at}.specs[{j}].attribute",
