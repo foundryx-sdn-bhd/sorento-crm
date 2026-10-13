@@ -229,14 +229,16 @@ def _one_ask(
         row = st.last_rows[ask.row_pick - 1]
     qs = []
     base = st.held
-    drilled = False
+    drilled: frozenset[str] = frozenset()
     if row is not None and base.report is not None and _is_report_row(row):
         base, drilled = _drill(st, base, row, ask, language, i, qs)
-    held = _apply_fields(st, base, ask, resolver, policy, language, i, qs, refine=True, today=today)
+    held = _apply_fields(
+        st, base, ask, resolver, policy, language, i, qs, refine=True, today=today, settled=drilled
+    )
     if row is not None and not drilled:
         held = apply_payload(held, row.payload)
     if drilled and ask.report is None and not qs:
-        _plan_report(st, held, resolver, language, i, qs, today)
+        _plan_report(st, held, resolver, language, i, qs, today, settled=drilled)
     action = _commit(st, i, held, ask, qs)
     if isinstance(action, Lookup):
         action.row = row
@@ -251,17 +253,18 @@ def _is_report_row(row: Option) -> bool:
 
 def _drill(
     st: ConversationState, held: Held, row: Option, ask: Ask, language: str, i: int, qs: list[ClarifyAct]
-) -> tuple[Held, bool]:
+) -> tuple[Held, frozenset[str]]:
     """Section 5: "the 2nd one" on a report drills into that row (`reports.drill_row`): the
     held spec narrows to the row, its filter refs ride on `held.refs`. A row the report
-    cannot narrow by says v1's own line instead (`DrillRefused`), held unchanged."""
+    cannot narrow by says v1's own line instead (`DrillRefused`), held unchanged. Returns the
+    dimensions the drill settled (their refs are the row's own live keys), empty when none."""
     from app.services.chatbot.pv2 import reports
 
     try:
         spec, extra = reports.drill_row(held.report, row, incoming=ask.report)
     except reports.DrillRefused as exc:
         qs.append(_clarify(st, i, "other", None, language, options=[], asked=exc.line))
-        return held, False
+        return held, frozenset()
     out = held.model_copy(deep=True)
     out.report = spec
     for dim, refs in (extra or {}).items():
@@ -269,7 +272,7 @@ def _drill(
             ResolvedRef(kind=str(_get(r, "kind") or dim), key=str(_get(r, "key")), label=str(_get(r, "label")))
             for r in refs
         ]
-    return out, True
+    return out, frozenset(extra or {})
 
 
 def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[ClarifyAct]) -> Action:
@@ -360,6 +363,7 @@ def _apply_fields(
     *,
     refine: bool,
     today: date | None = None,
+    settled: frozenset[str] = frozenset(),
 ) -> Held:
     """`base` with this ask's fields applied. An item that needs the user appends its
     question to `qs` and is left out; every other item still applies (section 3: held =
@@ -397,7 +401,7 @@ def _apply_fields(
 
         held.report = reports.edit_report(held.report if refine else None, ask.report, cleared=ask.cleared)
         if held.report is not None:
-            _plan_report(st, held, resolver, language, i, qs, today)
+            _plan_report(st, held, resolver, language, i, qs, today, settled=settled)
     return held
 
 
@@ -409,17 +413,28 @@ def _plan_report(
     i: int,
     qs: list[ClarifyAct],
     today: date | None,
+    *,
+    settled: frozenset[str] = frozenset(),
 ) -> None:
     """Section 4/5 REPORTS: the held spec's filters through `resolve_report_spec` (when
     the resolver has one), then `reports.plan_report`. Ambiguous filter names, and the ONE
     combined policy question for missing fields (owner ruling 4 Oct: a ranking never
     defaults the metric or the basis), become this ask's question with the lane's own copy
-    and options. Settled filter refs ride on `held.refs` under their dimension."""
+    and options. Settled filter refs ride on `held.refs` under their dimension.
+
+    `settled` are dimensions a drill already narrowed to the row's own live keys: their
+    filter carries the row's display label, so resolving it again by name would ask
+    "which X?" about two customers who share a name. They are left out of the resolver."""
     from app.services.chatbot.pv2 import reports
 
     resolve = getattr(resolver, "resolve_report_spec", None)
+    to_resolve = held.report
+    if settled:
+        to_resolve = held.report.model_copy(
+            update={"filters": [f for f in held.report.filters if f.dimension not in settled]}, deep=True
+        )
     try:
-        res = resolve(held.report, held=held, profile=None) if resolve is not None else None
+        res = resolve(to_resolve, held=held, profile=None) if resolve is not None else None
     except NotImplementedError:
         res = None
     except AttributeError as exc:
@@ -434,6 +449,8 @@ def _plan_report(
             qs.append(_clarify(st, i, "entity", getattr(res, "phrase", None), language, options=options))
             return
         for dim, refs in (getattr(res, "refs", None) or {}).items():
+            if dim in settled:
+                continue
             held.refs[dim] = [
                 ResolvedRef(kind=dim, key=str(_get(r, "key")), label=str(_get(r, "label") or _get(r, "key")))
                 for r in refs

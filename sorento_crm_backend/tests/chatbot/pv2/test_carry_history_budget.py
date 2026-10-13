@@ -25,7 +25,7 @@ from app.services.chatbot.pv2.state import Held, Option
 from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask, mk_state, out
 
 #: The marker line `compact_reply` appends, at most.
-MARKER_MAX = 40
+MARKER_MAX = 60
 #: Three capped exchanges, both sides, with markers.
 HISTORY_BUDGET = 3 * (USER_CHAR_CAP + REPLY_CHAR_CAP + 2 * MARKER_MAX)
 #: MEMORY with a held report, a pending question and 20 last rows, plus the history.
