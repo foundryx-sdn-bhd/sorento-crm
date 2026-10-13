@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Callable, Literal, Mapping, Optional, Sequence
 
+from pydantic import BaseModel, ConfigDict
+
 from app.services.chatbot.pv2 import report_measures as rm
 from app.services.chatbot.pv2 import report_policy as rp
 
@@ -65,6 +67,7 @@ class ReportReply:
     frame: Optional[dict[str, Any]] = None  # the args that ran (+ `shown`), v1 Focus compatible
     rows: list[ReportOption] = field(default_factory=list)  # LAST ANSWER ROWS candidates
     pending: Optional[dict[str, Any]] = None  # ask: {kind, asked, options} for a PendingQuestion
+    error: bool = False  # the call failed (not a refusal): the caller traces it as a fetch error
 
 
 _CHANNEL_NAMES = {"dealer": "Dealer", "project": "Project team"}
@@ -86,6 +89,7 @@ _PERIOD_WORDS = {
 _COMPARE_WORDS = {"last_year": "last year", "prev_period": "the previous period", "custom": "another period"}
 _PLURALS = {"category": "categories"}
 _DEALER_FILTERS = frozenset({"sales_agent", "customer_agent", "location", "channel"})
+_CHAT_ERROR_TEXT = "Could not run the chat report right now."
 _NO_DATASET = "That report is not available yet. I can report on sales and on chat questions."
 
 
@@ -185,14 +189,17 @@ def edit_report(held: Any, incoming: Any, *, cleared: Sequence[str] = ()) -> Any
     """The held spec with this turn's report fields applied (contract section 5): a non-null
     scalar replaces, non-empty measures / group_by replace ("by qty", "by salesman instead"),
     a filter replaces the held filter on its own dimension and adds otherwise ("only Johor").
-    `cleared` holding "report" drops the held spec first. Never mutates `held`."""
+    `cleared` holding "report" drops the held spec first; "period" clears the held period.
+    Never mutates `held`."""
     if "report" in cleared:
         held = None
     if held is None:
         return incoming
     if incoming is None:
-        return held
+        return held.model_copy(update={"period": None}, deep=True) if "period" in cleared else held
     update: dict[str, Any] = {k: getattr(incoming, k) for k in _SCALARS if getattr(incoming, k) is not None}
+    if "period" in cleared and incoming.period is None:
+        update["period"] = None
     if incoming.measures:
         update["measures"] = list(incoming.measures)
     if incoming.group_by:
@@ -203,10 +210,22 @@ def edit_report(held: Any, incoming: Any, *, cleared: Sequence[str] = ()) -> Any
     return held.model_copy(update=update, deep=True)
 
 
+class DrillRefused(ValueError):
+    """A picked row the report cannot narrow by; `line` is v1's own wording for it
+    (`lanes/business/report_ask.py` NOT_A_SOURCE_LINES / NO_KEYS_LINE / TOO_MANY_LINE)."""
+
+    def __init__(self, line: str) -> None:
+        super().__init__(line)
+        self.line = line
+
+
 def drill_row(spec: Any, row: Any, *, incoming: Any = None) -> tuple[Any, dict[str, list[dict[str, Any]]]]:
     """"The 2nd one" (`row_pick` -> a LAST ANSWER ROWS option): the held spec narrowed to that
     row (a filter on its dimension, replacing any held one), grouped by the axis this turn names,
-    else a total for the row. Returns the spec and the refs the filter rides on (live keys)."""
+    else a total for the row. Returns the spec and the refs the filter rides on (live keys).
+    Raises ValueError for an option that is not a report row, and `DrillRefused` (say its
+    `line`) for a row with nothing to narrow by, as the v1 drill down says it."""
+    from app.services.chatbot.lanes.business import report_ask
     from app.services.chatbot.pv2.schema import Filter
 
     payload = _get(row, "payload") or {}
@@ -215,6 +234,13 @@ def drill_row(spec: Any, row: Any, *, incoming: Any = None) -> tuple[Any, dict[s
         raise ValueError("not a report row")
     dim, label = str(picked["dimension"]), str(picked.get("label") or "")
     keys = [str(k) for k in picked.get("keys") or []]
+    plural = report_ask.AXIS_NOUNS.get(dim, (dim, dim + "s"))[1]
+    if dim in report_ask.NOT_A_SOURCE_LINES:
+        raise DrillRefused(report_ask.NOT_A_SOURCE_LINES[dim])
+    if not keys:
+        raise DrillRefused(report_ask.NO_KEYS_LINE.format(name=label, plural=plural))
+    if len(keys) > report_ask.DRILL_MAX_KEYS:
+        raise DrillRefused(report_ask.TOO_MANY_LINE.format(max=report_ask.DRILL_MAX_KEYS, plural=plural))
     filters = [f for f in spec.filters if f.dimension != dim]
     filters.append(Filter(dimension=dim, op="in", keys=[label], values=[]))
     group_by = list(incoming.group_by) if incoming is not None and incoming.group_by else []
@@ -238,14 +264,67 @@ def _catalogue_line(ds: rm.Dataset) -> str:
     return report_ask.CATALOGUE_LINE
 
 
-def _say(spec: Any, line: str) -> ReportPlan:
-    return ReportPlan(status="say", spec=spec, reply=line)
+def _say(spec: Any, line: str, notes: Sequence[str] = ()) -> ReportPlan:
+    return ReportPlan(status="say", spec=spec, reply=line, notes=list(notes))
+
+
+def _fits(ds: rm.Dataset, spec: Any) -> bool:
+    measures = [m for m in spec.measures if "/" not in m]
+    dims = [*spec.group_by, *(f.dimension for f in spec.filters)]
+    return all(m in ds.measures for m in measures) and all(d in ds.dimensions for d in dims)
+
+
+def _dataset_for(spec: Any) -> Optional[rm.Dataset]:
+    """The spec's dataset key; none named: the policy default when the spec's measure and
+    dimension KEYS fit it, else the one dataset they do fit (a chat-only key such as `topic`
+    or `asks`). Keys only, never words."""
+    if spec.dataset:
+        return rm.dataset(spec.dataset)
+    default = rm.dataset(rp.default_for("dataset"))
+    if default is not None and _fits(default, spec):
+        return default
+    fitting = [ds for ds in rm.DATASETS.values() if _fits(ds, spec)]
+    return fitting[0] if len(fitting) == 1 else default
+
+
+def _axis(ds: rm.Dataset, spec: Any) -> tuple[list[str], Optional[str]]:
+    """The breakdown keys (a grain the dataset lists as an axis stands in for a missing
+    group_by) and the "not available" line for a grain that cannot run."""
+    groups = list(spec.group_by)
+    if spec.grain is None:
+        return groups, None
+    axis = rm.GRAIN_AXES.get(ds.key, {}).get(spec.grain)
+    if axis is None:
+        return groups, f"Breakdown by {spec.grain} is not available yet."
+    if not groups:
+        return [axis], None
+    if groups[0] != axis and axis not in groups:
+        groups.append(axis)  # said as a second breakdown below
+    return groups, None
+
+
+def dealer_refusal(spec: Any) -> Optional[str]:
+    """The line a customer-scoped (dealer) contact gets for a staff breakdown, from the spec's
+    KEYS alone, or None. Call it BEFORE resolving any filter, so a dealer can never probe
+    sales agent or location names (v1 `report_ask._dealer_outside`, 1b fix round F1);
+    `plan_report(dealer=True)` applies the same check."""
+    from app.services.chatbot.lanes.business import report_ask
+
+    ds = _dataset_for(spec)
+    if ds is None:
+        return None
+    groups, _ = _axis(ds, spec)
+    if groups and groups[0] in ds.dimensions and groups[0] not in ds.dealer_keys:
+        return report_ask.DEALER_REFUSAL
+    if ds.key == "sales" and any(f.dimension in _DEALER_FILTERS for f in spec.filters):
+        return report_ask.DEALER_REFUSAL
+    return None
 
 
 def _question(ds: rm.Dataset, missing: list[str]) -> tuple[str, str, list[ReportOption]]:
     """ONE question for every missing field (the policy table's lines, in its order), with
     picks when the missing fields are enumerable (measure and/or basis)."""
-    lines = [rp.QUESTION_LINES[name] for name in rp.FIELD_ORDER if name in missing]
+    lines = [rp.question_line(name, ds.key) for name in rp.FIELD_ORDER if name in missing]
     about = "report_measure" if ("measure" in missing or "basis" in missing) else "report_period"
     measures = [m for m in ds.measures if m in _OPTION_MEASURES] if "measure" in missing else [None]
     bases = list(ds.bases) if "basis" in missing else [None]
@@ -267,6 +346,31 @@ def _question(ds: rm.Dataset, missing: list[str]) -> tuple[str, str, list[Report
     return "\n".join(lines), about, options
 
 
+def _is_uuid(value: str) -> bool:
+    from app.services.chatbot.lanes.business.fetch import is_uuid
+
+    return bool(is_uuid(value))
+
+
+def _filter_values(ds: rm.Dataset, dim: rm.Dimension, keys: list[str]) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """The route params a filter's resolved keys ride on, `(None, None)` when the keys are not
+    the kind the param takes (the resolver must settle them), or `(None, line)` to say."""
+    from app.services.reports.ask import NO_AGENT_KEY
+
+    param = dim.filter_param or ""
+    if dim.key == "location" or param in ("subjects", "askers"):
+        return {param: keys}, None  # codes, as the route takes them
+    if dim.key == "product" and ds.key == "sales" and not all(_is_uuid(k) for k in keys):
+        codes = [k for k in keys if not _is_uuid(k)]
+        if len(keys) == 1 and len(codes[0]) >= 3:
+            return {"product_code": codes[0]}, None  # the sales report's prefix rule (v1 S4)
+        return None, "Filtering by several product codes at once is not available yet."
+    allowed = {NO_AGENT_KEY} if param in ("sales_agent_ids", "customer_agent_ids") else set()
+    if not all(_is_uuid(k) or k in allowed for k in keys):
+        return None, None
+    return {param: keys}, None
+
+
 def plan_report(
     spec: Any, *, refs: Mapping[str, Sequence[Any]], today: date, dealer: bool = False
 ) -> ReportPlan:
@@ -275,47 +379,65 @@ def plan_report(
     that would change the rows, a dealer's staff breakdown, an unknown dataset), or the filter
     dimensions the resolver has not settled yet (unresolved). Modifiers the engine cannot run
     (compare, ratio, grain, threshold, a second breakdown) run the rest and are named in a note.
-    `refs` maps a filter dimension to its resolved refs (`key` live id or code, `label` name)."""
+    `refs` maps a filter dimension to its resolved refs (`key` live id or code, `label` name).
+
+    `plan.spec` is the spec to HOLD next turn: every part this plan said is not available is
+    taken out of it, so the line is said once, never on every follow-up."""
     from app.services.chatbot.lanes.business import report_ask
+    from app.services.chatbot.pv2.schema import Period
     from app.services.sales_report_service import TOP_SELLING_N_CEILING
 
-    ds = rm.dataset(spec.dataset or rp.default_for("dataset"))
+    ds = _dataset_for(spec)
     if ds is None:
-        return _say(spec, _NO_DATASET)
-    spec = spec.model_copy(update={"dataset": ds.key}, deep=True)
+        return _say(spec.model_copy(update={"dataset": None}, deep=True), _NO_DATASET)
     notes: list[str] = []
+    held: dict[str, Any] = {"dataset": ds.key}
 
     # The axis: group_by, else a grain the dataset lists as an axis.
-    groups = list(spec.group_by)
+    groups, grain_line = _axis(ds, spec)
     if spec.grain is not None:
-        axis = rm.GRAIN_AXES.get(ds.key, {}).get(spec.grain)
-        if axis is not None and not groups:
-            groups = [axis]
-        elif axis is None or groups[0] != axis:
-            notes.append(f"Breakdown by {spec.grain} is not available yet.")
+        held["grain"] = None
+        if grain_line:
+            notes.append(grain_line)
     group = groups[0] if groups else None
     dim = ds.dimensions.get(group) if group else None
     if group is not None and (dim is None or dim.group_by is None):
-        return _say(spec, f"Breakdown by {rm.dimension_label(group)} is not available yet.\n{_catalogue_line(ds)}")
+        held["group_by"] = []
+        line = f"Breakdown by {rm.dimension_label(group)} is not available yet.\n{_catalogue_line(ds)}"
+        return _say(spec.model_copy(update=held, deep=True), line)
+    held["group_by"] = [group] if group else []
     for extra in groups[1:]:
         notes.append(f"A second breakdown (by {rm.dimension_label(extra)}) is not available yet.")
     if spec.top_n_per_group is not None:
         notes.append("Top per group is not available yet.")
+        held["top_n_per_group"] = None
+
+    refusal = dealer_refusal(spec.model_copy(update={"dataset": ds.key, "grain": None, "group_by": held["group_by"]}))
+    if dealer and refusal:
+        kept = [f for f in spec.filters if not (ds.key == "sales" and f.dimension in _DEALER_FILTERS)]
+        if group is not None and group not in ds.dealer_keys:
+            held["group_by"] = []
+        return _say(spec.model_copy(update={**held, "filters": kept}, deep=True), refusal)
 
     # Filters: only `in` runs; anything else, or a dimension the dataset has no filter for,
-    # would change the rows, so it is said and nothing runs.
+    # would change the rows, so it is said, nothing runs, and the filter is not held.
     filter_args: dict[str, Any] = {}
     filter_parts: list[str] = []
     unresolved: list[str] = []
     for f in spec.filters:
         fdim = ds.dimensions.get(f.dimension)
         label = rm.dimension_label(f.dimension)
+        line = None
         if fdim is None or fdim.filter_param is None:
-            return _say(spec, f"Filtering by {label} is not available yet.")
-        if f.op == "not_in":
-            return _say(spec, f"Excluding {_PLURALS.get(f.dimension, label + 's')} is not available yet.")
-        if f.op != "in":
-            return _say(spec, f"Filtering {label} by a number is not available yet.")
+            line = f"Filtering by {label} is not available yet."
+        elif f.op == "not_in":
+            line = f"Excluding {_PLURALS.get(f.dimension, label + 's')} is not available yet."
+        elif f.op != "in":
+            line = f"Filtering {label} by a number is not available yet."
+        if line is not None:
+            held["filters"] = [g for g in spec.filters if g is not f]
+            return _say(spec.model_copy(update=held, deep=True), line, notes)
+        assert fdim is not None
         if f.dimension == "channel":
             named = [k for k in dict.fromkeys(f.keys) if k in _CHANNEL_NAMES]
             if not named:
@@ -325,18 +447,17 @@ def plan_report(
                 filter_parts.append(f"{label} {_CHANNEL_NAMES[named[0]]}")
             continue
         got = [r for r in refs.get(f.dimension) or () if _get(r, "key")]
-        if not got:
+        keys = list(dict.fromkeys(str(_get(r, "key")) for r in got))
+        values, line = _filter_values(ds, fdim, keys) if keys else (None, None)
+        if line is not None:
+            held["filters"] = [g for g in spec.filters if g is not f]
+            return _say(spec.model_copy(update=held, deep=True), line, notes)
+        if values is None:
             unresolved.append(f.dimension)
             continue
-        filter_args[fdim.filter_param] = list(dict.fromkeys(str(_get(r, "key")) for r in got))
+        filter_args.update(values)
         names = list(dict.fromkeys(str(_get(r, "label") or "") for r in got if _get(r, "label")))
         filter_parts.append(f"{label} {', '.join(names)}" if names else label)
-
-    if dealer and (
-        (group is not None and group not in ds.dealer_keys)
-        or (ds.key == "sales" and any(f.dimension in _DEALER_FILTERS for f in spec.filters))
-    ):
-        return _say(spec, report_ask.DEALER_REFUSAL)
 
     # Measures: one runs; a ratio is said; a second is said unless the reply prints it anyway.
     measures: list[str] = []
@@ -348,49 +469,66 @@ def plan_report(
             if m not in measures:
                 measures.append(m)
         else:
-            return _say(spec, f"{rm.measure_label(m).capitalize()} is not available for this report yet.")
+            held["measures"] = [x for x in spec.measures if x != m and "/" not in x]
+            line = f"{rm.measure_label(m).capitalize()} is not available for this report yet."
+            return _say(spec.model_copy(update=held, deep=True), line, notes)
     for extra in measures[1:]:
         if not ds.both_measures_shown:
             notes.append(f"A second measure ({ds.measures[extra].label}) is not available yet.")
+    held["measures"] = measures if ds.both_measures_shown else measures[:1]
     if spec.threshold is not None:
         notes.append("Thresholds are not available yet.")
+        held["threshold"] = None
     if spec.compare_to is not None:
         notes.append(f"Comparison with {_COMPARE_WORDS[spec.compare_to]} is not available yet.")
+        held["compare_to"] = None
+        held["compare_period"] = None
+    spec = spec.model_copy(update=held, deep=True)
 
+    if group is None and not spec.filters and not dealer and ds.key == "sales":
+        # Not a valid ask: no axis and nothing to total (v1 `report_ask.settle`, :623-630).
+        return _say(spec, report_ask.CATALOGUE_LINE, notes)
+
+    # The policy table decides every field that is still missing: asked, or its default.
     ranking = dim is not None and not dim.trend
     missing: list[str] = []
-    measure = measures[0] if measures else None
+    measure = measures[0] if measures else ds.default_measure
     if measure is None:
-        if ds.default_measure:
-            measure = ds.default_measure
-        elif ranking:
-            missing.append("measure")
+        if ranking:
+            measure = rp.default_for("measure")
+            if measure is None:
+                missing.append("measure")
         else:
             measure = "amount"  # a total or a trend prints every measure; the route's default
     basis: Optional[str] = None
     if ds.bases:
-        basis = spec.basis if spec.basis in ds.bases else None
+        basis = spec.basis if spec.basis in ds.bases else rp.default_for("basis")
         if basis is None:
             missing.append("basis")
     elif measure is not None:
         basis = ds.measures[measure].basis
-    span = period_dates(spec.period, today)
+    period = spec.period
+    span = period_dates(period, today)
+    if span is None and rp.default_for("period"):
+        period = Period(preset=rp.default_for("period"), n=None, date_from=None, date_to=None)
+        span = period_dates(period, today)
     if span is None:
         missing.append("period")
     top_n: Optional[int] = None
     if ranking:
-        if isinstance(spec.top_n, int) and spec.top_n >= 1:
-            top_n = spec.top_n
-            if top_n > TOP_SELLING_N_CEILING:
-                from app.services.chatbot.lanes.business import top_selling_ceiling_note
+        top_n = spec.top_n if isinstance(spec.top_n, int) and spec.top_n >= 1 else rp.default_for("top_n")
+        if top_n is not None and top_n > TOP_SELLING_N_CEILING:
+            # v1 says the ceiling and asks again (`report_ask.top_n_from`), never a silent clamp.
+            from app.services.chatbot.lanes.business import top_selling_ceiling_note
 
-                notes.append(top_selling_ceiling_note({"top_n": top_n}) or "")
-                top_n = TOP_SELLING_N_CEILING
-        else:
+            notes.append(top_selling_ceiling_note({"top_n": top_n}) or "")
+            top_n = None
+        if top_n is None:
             missing.append("top_n")
     elif dim is not None and ds.key == "sales":
         top_n = report_ask.MONTH_TOP_N  # a month trend lists every month (`report_ask.py:70`)
 
+    notes = [n for n in notes if n]
     if unresolved:
         return ReportPlan(status="unresolved", spec=spec, notes=notes, unresolved=unresolved)
     if missing:
@@ -403,25 +541,46 @@ def plan_report(
     args: dict[str, Any] = {"basis": basis, "measure": measure, "sort": sort}
     if ds.route_dataset:
         args["dataset"] = ds.route_dataset
-    if group is not None:
-        args["group_by"] = dim.group_by if dim else group
+    if dim is not None:
+        args["group_by"] = dim.group_by
     if top_n is not None:
         args["top_n"] = top_n
     args.update(filter_args)
     args["date_from"], args["date_to"] = span[0].isoformat(), span[1].isoformat()
 
     shows_both = ds.both_measures_shown and not ranking and not measures
-    parts = ["sales" if shows_both else ds.measures[measure].label]
+    parts: list[str] = []
+    if not (shows_both and ds.bases and basis):
+        parts.append("sales" if shows_both else ds.measures[measure].label)
     if ds.bases and basis:
         parts.append(ds.bases[basis])
     parts.extend(filter_parts)
     if dim is not None:
         parts.append(f"by {dim.label.lower()}")
-    parts.append(period_label(spec.period, today))
+    parts.append(period_label(period, today))
     if ranking and top_n is not None:
         parts.append(f"{'bottom' if sort == 'asc' else 'top'} {top_n}")
     header = "*Read as:* " + ", ".join(p for p in parts if p)
-    return ReportPlan(status="run", spec=spec, route_args=args, header=header, notes=[n for n in notes if n])
+    return ReportPlan(status="run", spec=spec, route_args=args, header=header, notes=notes)
+
+
+# --------------------------------------------------------------------------- #
+# Resolution handed in by the resolver (contract section 4, `resolve_report_spec`)
+# --------------------------------------------------------------------------- #
+
+
+class ReportResolution(BaseModel):
+    """What `Resolver.resolve_report_spec` returns: the refs per filter dimension (the
+    `refs` `plan_report` takes), or the candidates to ask about. Labels are display names;
+    keys stay internal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["exact", "ambiguous", "none"]
+    refs: dict[str, list[dict[str, Any]]] = {}
+    options: list[dict[str, Any]] = []
+    unresolved: list[str] = []
+    phrase: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -457,8 +616,11 @@ def answer_report(
     """Plan, then (status run) ONE `crm_report_ask` call through the lane's read-only egress
     (`fetch.call_tool`) and the route's presenter text, under the `*Read as:*` header and the
     notes. Every gate (grant, audience, company, location policy) is the route's, from
-    `contact_id`, exactly as the v1 lanes pass it. An `unresolved` plan returns empty text: the
-    caller clarifies those dimensions through the resolver."""
+    `contact_id` / `space_id`, passed exactly as `fetch.entity_ids_transformer` passes them.
+    An `unresolved` plan returns empty text: the caller clarifies those dimensions through the
+    resolver. An exception from `mcp_call` propagates: the caller (`turn.run_turn_v2`) catches
+    it as v1's `run_fetch` does. A failed call sets `error` (a route refusal is an answer)."""
+    from app.services.chatbot import jsc
     from app.services.chatbot.lanes.business import _McpSeam
     from app.services.chatbot.lanes.business import fetch
     from app.services.chatbot.lanes.business import report_ask
@@ -470,14 +632,23 @@ def answer_report(
             "asked": plan.reply,
             "options": [{"key": o.key, "label": o.label, "payload": o.payload} for o in plan.options],
         }
-        return ReportReply(text=plan.reply or "", plan=plan, pending=pending)
+        return ReportReply(text="\n".join([*plan.notes, plan.reply or ""]), plan=plan, pending=pending)
     if plan.status != "run":
-        return ReportReply(text=plan.reply or "", plan=plan)
+        return ReportReply(text="\n".join([*plan.notes, plan.reply or ""]) if plan.reply else "", plan=plan)
 
-    args = {"view": "render", **plan.route_args, "contact_id": contact_id, "space_id": space_id}
+    args = {
+        "view": "render",
+        **plan.route_args,
+        "contact_id": jsc.nullish_str(contact_id).strip(),
+        "space_id": fetch.space_id_or_default(space_id),
+    }
     envelope = fetch.call_tool(report_ask.TOOL, args, mcp=_McpSeam(mcp_call))
     if isinstance(envelope, dict) and isinstance(envelope.get("error"), str):
-        return ReportReply(text=report_ask.error_line(envelope) or fetch._REPORT_ASK_ERROR_TEXT, plan=plan)
+        refusal = report_ask.error_line(envelope)
+        if refusal:
+            return ReportReply(text=refusal, plan=plan)
+        failed = _CHAT_ERROR_TEXT if plan.route_args.get("dataset") == "chat" else fetch._REPORT_ASK_ERROR_TEXT
+        return ReportReply(text=failed, plan=plan, error=True)
     out = fetch._report_ask_output(envelope, {"semantic_input": {"report_ask_args": plan.route_args}})
     text = "\n".join([plan.header, *plan.notes, out["response"]])
     rows = _rows(envelope) if isinstance(envelope, Mapping) else []

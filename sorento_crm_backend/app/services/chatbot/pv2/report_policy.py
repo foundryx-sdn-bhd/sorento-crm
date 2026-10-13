@@ -57,3 +57,12 @@ def default_for(name: str) -> Optional[Any]:
     """The value a field takes when missing, or None when the table says ask."""
     r = POLICY[name]
     return r.default if r.mode == "default" else None
+
+
+def question_line(name: str, dataset: str) -> str:
+    """The question line for a missing field; the chat report keeps its own period wording."""
+    if dataset == "chat" and name == "period":
+        from app.services.chatbot.lanes.business import chat_report
+
+        return chat_report.PERIOD_QUESTION
+    return QUESTION_LINES[name]
