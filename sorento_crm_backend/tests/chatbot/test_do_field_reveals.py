@@ -50,6 +50,7 @@ _ROW = {
     "transporter": "SORENTO",
     "driver_name": "DRIVER B",
     "lorry_plate": "PLATE-1",
+    "branch_name": "KLCC SITE OFFICE",
     "warehouse": "BRW",
     "lines": [{"product_code": "SRT320-CR", "quantity": 200}],
 }
@@ -75,6 +76,7 @@ def test_a_contact_with_no_grant_reads_no_logistics_field() -> None:
 ALL_DO_FIELDS = {
     "delivery_orders.order_number": ("Order Number", "202609-0916"),
     "delivery_orders.customer": ("Customer", "HANLIM TRADING SDN BHD [A/C I]"),
+    "delivery_orders.branch": ("Branch", "KLCC SITE OFFICE"),
     "delivery_orders.order_date": ("Order Date", "2026-09-07"),
     "delivery_orders.delivery_date": ("Actual Delivery Date", "2026-09-07"),
     "delivery_orders.status": ("Status", "Picked Up / In Transit"),
@@ -222,3 +224,39 @@ def test_an_asterisk_in_a_value_does_not_leave_a_stray_bold_marker() -> None:
     assert "∗REPLACE (1)" in said, said
     stars = [line for line in said.split("\n") if line.count("*") % 2]
     assert not stars, f"a line with an unpaired '*': {stars!r}"
+
+
+# --- DO-BRANCH-NAME (owner, 13 Oct 2026): the synced branch name is a switched DO field ---- #
+
+
+def _reply_for(row: dict, granted: list[str]) -> str:
+    envelope = json.loads(_mcp()[1]("crm_order_management_orders_list", json.dumps({"data": [row]})))
+    return fetch.output_structurer(envelope, {"semantic_input": {}, "access": {"attributes": granted}})["response"]
+
+
+def test_branch_prints_on_its_own_line_right_after_customer() -> None:
+    said = _reply_for(_ROW, list(ALL_DO_FIELDS))
+    lines = said.splitlines()
+    customer = next(i for i, ln in enumerate(lines) if ln.startswith("*Customer:*"))
+    assert lines[customer + 1] == "*Branch:* KLCC SITE OFFICE", said
+    assert " · " not in said, said
+
+
+def test_no_branch_line_when_the_do_has_no_branch_name() -> None:
+    for empty in (None, "", "   "):
+        said = _reply_for({**_ROW, "branch_name": empty, "branch_code": "KL01"}, list(ALL_DO_FIELDS))
+        assert "*Branch:*" not in said, (empty, said)
+        assert "KL01" not in said, said
+
+
+def test_branch_is_hidden_from_a_contact_with_the_switch_off() -> None:
+    said = _reply_for(_ROW, [k for k in ALL_DO_FIELDS if k != "delivery_orders.branch"])
+    assert "*Branch:*" not in said and "KLCC SITE OFFICE" not in said, said
+    assert "*Customer:* HANLIM TRADING SDN BHD [A/C I]" in said, said
+
+
+def test_the_catalogue_declares_the_branch_switch_on_the_do_list() -> None:
+    catalog = _mcp()[0]
+    spec = next(t for t in catalog if t.name == "crm_order_management_orders_list")
+    assert ("delivery_orders.branch", "DO branch") in tuple(spec.restricted_fields)
+    assert ("delivery_orders.branch", "DO branch") in FIELD_REVEAL_KEYS
