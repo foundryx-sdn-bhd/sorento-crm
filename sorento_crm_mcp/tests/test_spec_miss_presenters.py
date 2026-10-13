@@ -50,9 +50,10 @@ def test_d2_no_unrecorded_sentence_when_nothing_is_unrecorded(tool, unrecorded):
 
 
 @pytest.mark.parametrize("tool", TOOLS)
-def test_d4_a_size_miss_echoes_the_size_and_merges_every_axis(tool):
-    """Owner ruling 13 Oct (option b): "No 250 mm. Sizes on file: 130 mm, 150 mm." One sorted list
-    over every axis, the asked size echoed; the unrecorded count still follows."""
+def test_d4_a_size_miss_echoes_the_size_and_names_every_axis(tool):
+    """Owner ruling 13 Oct (size-miss wording) as refined by the owner's hand test pass (13 Oct,
+    axis option b): the asked size echoed, then each axis's values when they come from more than
+    one axis; the unrecorded count still follows."""
     out = text(
         tool,
         {
@@ -64,7 +65,7 @@ def test_d4_a_size_miss_echoes_the_size_and_merges_every_axis(tool):
             "spec_unrecorded": {"size": 28},
         },
     )
-    assert "no 250 mm. sizes on file: 130 mm, 150 mm." in out, out  # `text()` lowercases
+    assert "no 250 mm. length: 130 mm, 150 mm. width: 130 mm." in out, out  # `text()` lowercases
     assert "values on file" not in out and "no exact match" not in out, out
     assert "28 have no size recorded." in out, out
 

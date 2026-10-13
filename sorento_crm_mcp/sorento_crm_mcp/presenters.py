@@ -241,7 +241,18 @@ def _spec_miss_intro(data: dict) -> str | None:
         subject = asked.get("subject") if _filled(asked.get("subject")) else None
         size = _spec_value(asked.get("value"), unit)
         lines = [f"No {size} for {subject}." if subject else f"No {size}."]
-        if sizes:
+        # Owner hand test PASS (13 Oct), option (b): values from more than one axis are named per
+        # axis ("Trap outlet length: 180 mm. Height: 365 mm."), axes in the order of their
+        # smallest value; one axis keeps "Sizes on file: ...".
+        axes = []
+        for a in alternatives:
+            values = sorted({float(v) for v in a["values"] if isinstance(v, (int, float)) and not isinstance(v, bool)})
+            if values and (a.get("unit") or unit) == unit:
+                axes.append((values, str(a.get("label") or labels.get(a.get("key")) or a.get("key"))))
+        if len(axes) > 1:
+            for values, label in sorted(axes, key=lambda axis: (axis[0][0], axis[1])):
+                lines.append(f"{label}: {', '.join(_spec_value(v, unit) for v in values)}.")
+        elif sizes:
             lines.append(f"Sizes on file: {', '.join(_spec_value(v, unit) for v in sizes)}.")
     else:
         lines = ["No exact match."]
