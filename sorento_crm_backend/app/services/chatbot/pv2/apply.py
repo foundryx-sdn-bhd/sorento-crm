@@ -109,8 +109,13 @@ def apply_turn(
     *,
     resolver: ResolverLike,
     policy: ClarifyPolicy = DEFAULT_POLICY,
+    can_offer_handover: bool = True,
 ) -> tuple[ConversationState, list[Action]]:
-    """Apply one parser output to the state; one Action per ask (section 3)."""
+    """Apply one parser output to the state; one Action per ask (section 3).
+
+    `can_offer_handover` is False for staff and for a contact whose escalation is barred
+    (`turn/state.offers_escalation`, owner rulings #1262 slice 11 and ESCALATION-CONTROL):
+    their second miss re-asks instead of offering a hand-over."""
     st = state.model_copy(deep=True)
     st.turn_no = state.turn_no + 1
     language = out.language
@@ -135,7 +140,7 @@ def apply_turn(
             action, answered = _one_ask(st, i, ask, pending_in, out, resolver, policy, language)
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
-            action = _miss(st, i, pending_in, miss, language)
+            action = _miss(st, i, pending_in, miss, language, can_offer_handover)
         except _Ask as needs:
             st.held, st.topics = held_before, topics_before
             action = needs.act
@@ -499,6 +504,7 @@ def _miss(
     pending: PendingQuestion | None,
     miss: _Miss,
     language: str,
+    can_offer_handover: bool = True,
 ) -> Action:
     """One MISS: re-ask the pending question with its real options; the second miss on
     the same question offers a hand-over instead."""
@@ -513,7 +519,7 @@ def _miss(
         )
         return ClarifyAct(ask_index=i, about=miss.about, pending=question, reask=True)
     misses = pending.misses + 1
-    if misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
+    if can_offer_handover and misses >= MISSES_BEFORE_HANDOVER and pending.kind != "offer_handover":
         offer = PendingQuestion(
             kind="offer_handover",
             asked=clarify_copy.text("offer_handover", language),
