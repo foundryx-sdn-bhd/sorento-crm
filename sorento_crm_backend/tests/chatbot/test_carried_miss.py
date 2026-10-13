@@ -190,6 +190,26 @@ def test_a_carried_token_beside_a_typed_unresolved_one_is_still_a_miss():
     assert resolve_gate.if3_miss(_ctx(unresolved=[ORDER_TOKEN, "SO999"], domain="portal_link", allowed=[]), parser=parser) is True
 
 
+def test_an_unresolved_token_no_entity_names_is_still_a_miss():
+    """Only a token proven carried is excused: one the parser's entities do not name at
+    all (nothing to say it was carried) keeps the miss."""
+    parser = {"domain_hint": "portal_link", "entities": [_entity(ORDER_TOKEN, "order", current=False)]}
+
+    assert resolve_gate.if3_miss(_ctx(unresolved=["SO777"], domain="portal_link", allowed=[]), parser=parser) is True
+
+
+def test_a_carried_token_is_a_miss_when_any_of_its_kinds_is_used():
+    """The same carried word under two hints, one the domain looks up: it is the ask's
+    subject under that hint, so its miss stands."""
+    parser = {
+        "domain_hint": "incoming",
+        "entities": [_entity("SRTZZ999", "promotion", current=False), _entity("SRTZZ999", "product", current=False)],
+    }
+    ctx = _ctx(unresolved=["SRTZZ999"], domain="incoming", allowed=["product", "inbound_shipment", "category", "brand"])
+
+    assert resolve_gate.if3_miss(ctx, parser=parser) is True
+
+
 def test_a_failed_gate_is_still_a_miss_whatever_was_carried():
     parser = {"domain_hint": "inventory", "entities": [_entity(ORDER_TOKEN, "order", current=False)]}
     ctx = _ctx(unresolved=[ORDER_TOKEN], domain="inventory", allowed=["product"], gate_passed=False)
