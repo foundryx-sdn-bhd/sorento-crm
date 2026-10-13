@@ -1,6 +1,6 @@
 # PLAN: answering the bot's attachment-type question keeps the product it asked about (CARRY-ATTACH)
 
-Status: in progress (T3 fixed, tests green; T2 switch built, off, awaiting owner ruling); track: small fix (backend only, under 300 changed lines, no migration, no auth/RBAC change, no new ingest surface)
+Status: in progress (T3 and T2 fixed, tests green, in review); track: small fix (backend only, under 300 changed lines, no migration, no auth/RBAC change, no new ingest surface)
 
 UAC: `carry-attach-acceptance-criteria.md` (alongside), golden set included.
 
@@ -43,24 +43,29 @@ now records the kinds of the echoes it drops (`restated_kinds`, `turn/decide.RES
 and the NEW_ASK eviction keeps those kinds, neither dropping nor replacing them. Every other
 carried kind is still dropped. Parser fields only; no word rule.
 
-## T2 (owner ruling pending)
+## T2 (owner ruling, 13 Oct 2026)
 
-`turn_runtime.CARRY_SETTLED_DOCUMENT_TYPE`:
+Owner: "why is it same as before? we shouldn't need any ruling for this right? the parser should
+be able to understand". No special wording, no clarify-policy row: the parser decides.
 
-- False (option b, today, the default): a settled carried attachment_type is not handed to the
-  resolver, the gate asks for the type.
-- True (option a): `_with_carried_document_types` hands it over with its uuid, the gate counts
-  it, and the turn answers SRT8313 under Technical Specifications.
+The parser already says it. "Srt8313" after "Srt8308 drawing" keeps the domain with no domain word
+of its own (`domain_in_message: false`, the prompt's BARE ENTITY CONTINUATION rule: the same
+question about a new value). `decide` reads that as REFINE, so the carried Technical
+Specifications stays on the focus and the fetch already ran under it. Only the gate's
+required-type check (`lanes/business/gate.py`, `have_types`) overrode it, because
+`_with_carried_document_types` handed the resolver only uuid-less carried types.
 
-Option (a) as the owner phrased it also wants the reply to say "(technical drawing, same as
-before)". That copy is not built: it needs the owner's wording ruling, and it belongs in the
-attachment reply's header, one line.
+Fix: `_with_carried_document_types` also hands over a SETTLED carried type, with its uuid. A
+message that starts a new ask ("attachments for Srt8313", `domain_in_message: true`) has already
+dropped the carried type in `apply._focus_rules` (`with_carried_entities` reads the post-apply
+focus), so nothing is handed over and the bot still asks which type. No prompt change was needed:
+the fields v52 already emits carry the reading. The `continuation` key is not read (#1570
+redefines it as false whenever a code is typed); the tests pass with it true or false.
 
-CLARIFY-POLICY (#1570) seeds `attachment_type` as an ask-only row and carries only
-product/customer subjects. Once it lands the constant becomes that row's mode (ask / default)
-with `default` allowed, and the default note is the "same as before" line. No textual overlap:
-#1570 edits `_answer_pending` and `_apply`, this lane edits the NEW_ASK eviction inside
-`_focus_rules` and `_with_carried_document_types`.
+CLARIFY-POLICY (#1570): merges cleanly with this branch, and on the merged tree (seed policy, so
+`carry_combine` = ask) all of `test_carry_attach.py` passes, with T2's `continuation` true and
+false. #1570 keeps `attachment_type` an ask-only row for the case with no carried type; it does
+not re-introduce the ask here.
 
 ## Not changed, noted for the owner
 
