@@ -254,3 +254,61 @@ def test_quantity_split_across_two_po_lines_each_follows_its_own_allocation(ctx)
         str(second_allocation.id): Decimal("10"),
         str(second.id): Decimal("20"),
     }, by_target
+
+
+# --------------------------------------------------------------------------- repair
+
+
+def _fallback_link(db, ctx, row, allocation, *, qty, auto=True):
+    """A link exactly as the old fallback wrote it (or, `auto=False`, a person's click)."""
+    from app.models.project_so import OrderInquiryLink
+
+    link = OrderInquiryLink(
+        company_id=ctx.company_a,
+        row_id=row.id,
+        spo_allocation_id=allocation.id,
+        document=allocation.spo_number,
+        qty=Decimal(qty),
+        auto=auto,
+    )
+    db.add(link)
+    db.flush()
+    return link
+
+
+def test_repair_moves_the_fallback_link_and_leaves_manual_links(ctx, capsys):
+    """The repair script: a dry run writes nothing and names the change; `--apply` moves the
+    case-1 row from the sibling's SPO to its own PO line; a MANUAL link with the same shape
+    is untouched; a second run finds nothing."""
+    from scripts import repair_oi_spo_exact as repair
+
+    db = ctx.db
+    row, own, sibling_allocation, _core, _so, _po, product = _case_one(db, ctx)
+    _fallback_link(db, ctx, row, sibling_allocation, qty="32")
+
+    manual_row, manual_own, manual_sibling, *_rest = _case_one(db, ctx)
+    _fallback_link(db, ctx, manual_row, manual_sibling, qty="32", auto=False)
+    db.commit()
+
+    def targets(of_row):
+        return sorted(
+            (str(link.spo_allocation_id or link.po_line_id), Decimal(str(link.qty)))
+            for link in _links_of(db, of_row.id)
+        )
+
+    assert repair.main([], db=db) == 0
+    db.expire_all()
+    assert targets(row) == [(str(sibling_allocation.id), Decimal("32"))], "dry run wrote"
+    out = capsys.readouterr().out
+    assert product.product_code in out and "1 row(s) would be re-linked" in out, out
+
+    assert repair.main(["--apply"], db=db) == 0
+    db.expire_all()
+    assert targets(row) == [(str(own.id), Decimal("32"))]
+    assert targets(manual_row) == [(str(manual_sibling.id), Decimal("32"))], (
+        "a person's link was moved"
+    )
+
+    capsys.readouterr()
+    assert repair.main(["--apply"], db=db) == 0
+    assert "0 row(s) re-linked" in capsys.readouterr().out
