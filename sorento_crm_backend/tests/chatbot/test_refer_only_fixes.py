@@ -27,8 +27,8 @@ from app.services.chatbot.turn.pending import ask as pending_ask
 from app.services.chatbot.turn.state import Profile
 from app.services.chatbot.turn.task import REFER_TO_SALESMAN
 
-from tests.chatbot._turn_helpers import do_window, entity, verdict
-from tests.chatbot.test_engine import _envelope, stub_access, stub_parser  # noqa: F401
+from tests.chatbot._turn_helpers import do_window, entity, make_office_access_type, verdict
+from tests.chatbot.test_engine import CONTACT_ID, _envelope, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_escalation_agent_carry import _seed_contact, _seed_product, _stub_incoming_probe_empty
 from tests.chatbot.test_escalation_control import _make_dealer
 
@@ -65,6 +65,9 @@ def _assert_no_staff_list(text: str) -> None:
 
 def _order_miss(session_factory, monkeypatch, stub_parser, stub_access, *, barred: bool):
     _seed_contact(session_factory, phone="+60100000710" if barred else "+60100000711")
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff (an office
+    # access type leaves the escalation flag and tier under test alone).
+    make_office_access_type(session_factory, CONTACT_ID)
     if barred:
         _make_dealer(session_factory)
     _seed_product(session_factory, code="SRTWC8605-FT")

@@ -59,7 +59,8 @@ def _picked(domain: str, order_status: str | None, entities: list[dict[str, Any]
             "gate": {"compatible_entities": entities},
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(domain_hint=domain, order_status=order_status, entities=[], **qf)},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(domain_hint=domain, order_status=order_status, entities=[], **qf), "doc_staff": True}},
                 "contact": {"id": 437264483},
                 "access": {"attributes": list(attributes)},
             },

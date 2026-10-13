@@ -159,7 +159,7 @@ from app.services.chatbot.lanes.business.services import (
     ResolveGateServices,
 )
 from app.services.company_scope import DEFAULT_COMPANY_ID
-from tests.chatbot._turn_helpers import make_office_tier
+from tests.chatbot._turn_helpers import make_office_access_type, make_office_tier
 from tests._mc_lookup_seed import customer as mc_customer
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
@@ -411,6 +411,8 @@ def _seed_contact(session_factory, *, variables: dict[str, Any]) -> None:
         {"cid": str(CONTACT_ID), "company_id": DEFAULT_COMPANY_ID},
     )
     db.commit()
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 def _run_turn(
@@ -974,7 +976,8 @@ class TestToolPick:
             "gate": {"compatible_entities": entities},
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status=order_status, entities=[])},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(order_status=order_status, entities=[]), "doc_staff": True}},
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": attributes or ["sales_orders.outstanding"]},
             },
@@ -1119,7 +1122,8 @@ class TestFieldRevealGateBeforeFetch:
             },
             "tier_gate": None,
             "ctx": {
-                "parse": {"output": _qf(order_status=order_status, entities=[])},
+                # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+                "parse": {"output": {**_qf(order_status=order_status, entities=[]), "doc_staff": True}},
                 "contact": {"id": CONTACT_ID},
                 "access": {"attributes": attributes},
             },
