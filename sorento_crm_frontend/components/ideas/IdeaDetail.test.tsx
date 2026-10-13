@@ -64,6 +64,12 @@ const svc = vi.hoisted(() => ({
   createIdea: vi.fn(),
   getBoard: vi.fn(),
   reorderIdeas: vi.fn(),
+  getSimilarIdeas: vi.fn(),
+  // The real helper's contract (AC-B-03), so a component that imports it still works under this mock.
+  normalizeUseCases: (v: unknown) =>
+    (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\r?\n/) : [])
+      .map((x: unknown) => String(x).trim())
+      .filter(Boolean),
   IDEA_STATUS_FILTER_OPTIONS: [{ value: 'archived', label: 'Archived' }],
 }));
 vi.mock('@/services/ideasService', () => svc);
@@ -139,6 +145,7 @@ beforeEach(() => {
   held.add(VIEW);
   svc.getMergedChildren.mockResolvedValue([]);
   svc.listComments.mockResolvedValue([]);
+  svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: [] });
   pending.getCurrentPendingAction.mockResolvedValue({ pending: null, last_outcome: null });
   pending.cancelPendingAction.mockResolvedValue({ id: 'pa-1', status: 'cancelled' });
 });
@@ -205,7 +212,7 @@ describe('AC-D-02 header states for a manage holder', () => {
     renderDetail(makeIdea());
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    const problem = await screen.findByLabelText('Problem statement');
+    const problem = await screen.findByLabelText('Business problem');
     expect(problem).toHaveValue('Quotes take too long to write');
     fireEvent.change(problem, { target: { value: 'Quotes take far too long' } });
     svc.updateIdea.mockResolvedValue(makeIdea());
@@ -216,6 +223,210 @@ describe('AC-D-02 header states for a manage holder', () => {
         expect.objectContaining({ problem: 'Quotes take far too long' }),
       ),
     );
+  });
+});
+
+describe('IDEA-CRM-SIDE field labels', () => {
+  it('shows Business problem and hides Proposed solution, Impact and Department in view and edit', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    expect(screen.getByText('Business problem')).toBeInTheDocument();
+    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department']) {
+      expect(screen.queryByText(label)).toBeNull();
+    }
+    expect(screen.queryByText('Templates')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('Business problem');
+    for (const label of ['Proposed solution', 'Impact', 'Department']) {
+      expect(screen.queryByLabelText(label)).toBeNull();
+    }
+  });
+
+  it('Save leaves the hidden legacy fields untouched (never sends them)', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(await screen.findByLabelText('Business problem'), { target: { value: 'Edited' } });
+    svc.updateIdea.mockResolvedValue(makeIdea({ isMine: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(svc.updateIdea).toHaveBeenCalled());
+    const body = svc.updateIdea.mock.calls[0][1];
+    for (const key of ['proposedSolution', 'impact', 'department']) {
+      expect(body).not.toHaveProperty(key);
+    }
+  });
+});
+
+const FIELD_LABELS = ['Title', 'Business problem', 'Desired outcome', 'Use cases', 'Current workaround', 'Original message'];
+
+function richIdea(over: Record<string, unknown> = {}) {
+  return makeIdea({
+    desiredOutcome: 'Same hour quotes',
+    useCases: ['Dealer asks', 'Rush order'],
+    currentWorkaround: 'Spreadsheet',
+    isMine: true,
+    ...over,
+  });
+}
+
+describe('IDEA-CRM-SIDE AC-B-02 fields in view and edit', () => {
+  it('view shows the six fields with their values, in order', async () => {
+    renderDetail(richIdea());
+    await loaded();
+    const labels = FIELD_LABELS.map((l) => screen.getByText(l, { selector: ':not(h1, h2, h3, option)' }));
+    for (let i = 1; i < labels.length; i++) {
+      expect(labels[i - 1].compareDocumentPosition(labels[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    for (const value of ['Quotes take too long to write', 'Same hour quotes', 'Spreadsheet', 'original words']) {
+      expect(screen.getByText(value)).toBeInTheDocument();
+    }
+  });
+
+  it('use cases are shown one line each', async () => {
+    renderDetail(richIdea());
+    await loaded();
+    expect(screen.getByText('Dealer asks')).toBeInTheDocument();
+    expect(screen.getByText('Rush order')).toBeInTheDocument();
+  });
+
+  it('AC-B-03: a useCases string (ss #123 shape) is shown as one line per use case', async () => {
+    renderDetail(richIdea({ useCases: 'Dealer asks\n\n Rush order ' }));
+    await loaded();
+    expect(screen.getByText('Dealer asks')).toBeInTheDocument();
+    expect(screen.getByText('Rush order')).toBeInTheDocument();
+  });
+
+  it('edit swaps the same six fields to inputs in place, prefilled', async () => {
+    renderDetail(richIdea());
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('Business problem');
+    const inputs = FIELD_LABELS.map((l) => screen.getByLabelText(l));
+    for (let i = 1; i < inputs.length; i++) {
+      expect(inputs[i - 1].compareDocumentPosition(inputs[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByLabelText('Title')).toHaveValue('Faster quotes');
+    expect(screen.getByLabelText('Desired outcome')).toHaveValue('Same hour quotes');
+    expect(screen.getByLabelText('Use cases')).toHaveValue('Dealer asks\nRush order');
+    expect(screen.getByLabelText('Current workaround')).toHaveValue('Spreadsheet');
+    expect(screen.getByLabelText('Original message')).toHaveValue('original words');
+  });
+
+  it('Save sends exactly title, problem, desiredOutcome, useCases (list), currentWorkaround, rawText', async () => {
+    renderDetail(richIdea());
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(await screen.findByLabelText('Use cases'), { target: { value: 'x\n\n y ' } });
+    fireEvent.change(screen.getByLabelText('Desired outcome'), { target: { value: 'Faster' } });
+    svc.updateIdea.mockResolvedValue(richIdea());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(svc.updateIdea).toHaveBeenCalled());
+    const [id, body] = svc.updateIdea.mock.calls[0];
+    expect(id).toBe('idea-1');
+    expect(Object.keys(body).sort()).toEqual(
+      ['currentWorkaround', 'desiredOutcome', 'problem', 'rawText', 'title', 'useCases'],
+    );
+    expect(body.useCases).toEqual(['x', 'y']);
+    expect(body.desiredOutcome).toBe('Faster');
+    expect(body.title).toBe('Faster quotes');
+  });
+});
+
+describe('IDEA-CRM-SIDE AC-C Similar ideas tab', () => {
+  const similar = [
+    makeIdea({ id: 'idea-2', ideaNumber: 'IDEA-0043', title: 'Quote templates', statusLabel: 'Triaged', upvotes: 7 }),
+    makeIdea({ id: 'idea-3', ideaNumber: 'IDEA-0044', title: 'Quote macros', statusLabel: 'Planned', upvotes: 2 }),
+  ];
+
+  async function openSimilar() {
+    renderDetail(makeIdea());
+    await loaded();
+    fireEvent.click(screen.getByRole('tab', { name: /Similar ideas/ }));
+  }
+
+  it('AC-C-01: the tab exists beside Details and Attachments', async () => {
+    renderDetail(makeIdea());
+    await loaded();
+    for (const name of ['Details', 'Similar ideas', 'Attachments']) {
+      expect(screen.getByRole('tab', { name: new RegExp(name) })).toBeInTheDocument();
+    }
+  });
+
+  it('AC-C-01: lists number, linked title, status and upvotes in the order ss returns', async () => {
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
+    await openSimilar();
+    expect(await screen.findByText('IDEA-0043')).toBeInTheDocument();
+    expect(svc.getSimilarIdeas).toHaveBeenCalledWith('idea-1');
+    const link = screen.getByRole('link', { name: 'Quote templates' });
+    expect(link).toHaveAttribute('href', '/ideas/idea-2');
+    expect(screen.getByRole('link', { name: 'Quote macros' })).toHaveAttribute('href', '/ideas/idea-3');
+    expect(screen.getByText('Triaged')).toBeInTheDocument();
+    expect(screen.getByText('Planned')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    const a = screen.getByText('IDEA-0043');
+    const b = screen.getByText('IDEA-0044');
+    expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('AC-C-02: none found shows the heading "No similar ideas" and no button', async () => {
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: [] });
+    await openSimilar();
+    expect(await screen.findByRole('heading', { name: 'No similar ideas' })).toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel')).queryByRole('button')).toBeNull();
+  });
+
+  it('AC-C-03: available=false shows the unavailable text and Retry refetches', async () => {
+    svc.getSimilarIdeas.mockResolvedValueOnce({ available: false, ideas: [] });
+    await openSimilar();
+    expect(await screen.findByText('Similar ideas are unavailable right now')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No similar ideas' })).toBeNull();
+    svc.getSimilarIdeas.mockResolvedValueOnce({ available: true, ideas: similar });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('IDEA-0043')).toBeInTheDocument();
+    expect(svc.getSimilarIdeas).toHaveBeenCalledTimes(2);
+  });
+
+  it('AC-C-03: a request error also shows the unavailable text with Retry', async () => {
+    svc.getSimilarIdeas.mockRejectedValueOnce(new Error('boom'));
+    await openSimilar();
+    expect(await screen.findByText('Similar ideas are unavailable right now')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('AC-C-04: a manager sees Merge on each row, and it opens the merge modal with both ideas', async () => {
+    held.add(MANAGE);
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
+    svc.listIdeas.mockResolvedValue([makeIdea(), ...similar]);
+    await openSimilar();
+    await screen.findByText('IDEA-0043');
+    const panel = screen.getByRole('tabpanel');
+    const merges = within(panel).getAllByRole('button', { name: /^Merge/ });
+    expect(merges).toHaveLength(2);
+    fireEvent.click(merges[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('radio', { name: 'Keep IDEA-0042' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Keep IDEA-0043' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio', { name: 'Keep IDEA-0044' })).toBeNull();
+  });
+
+  it('AC-C-04: no Merge button on a merged child or on an idea that already holds merged ideas', async () => {
+    held.add(MANAGE);
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
+    for (const over of [{ mergedIntoId: 'idea-9', mergedInto: { id: 'idea-9', ideaNumber: 'IDEA-0009', title: 'P' } }, { mergedCount: 2 }]) {
+      const view = renderDetail(makeIdea(over));
+      await loaded();
+      fireEvent.click(screen.getByRole('tab', { name: /Similar ideas/ }));
+      await screen.findByText('IDEA-0043');
+      expect(within(screen.getByRole('tabpanel')).queryByRole('button', { name: /^Merge/ })).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('AC-C-04: a viewer without manage sees no Merge button', async () => {
+    svc.getSimilarIdeas.mockResolvedValue({ available: true, ideas: similar });
+    await openSimilar();
+    await screen.findByText('IDEA-0043');
+    expect(within(screen.getByRole('tabpanel')).queryByRole('button', { name: /^Merge/ })).toBeNull();
   });
 });
 
@@ -244,7 +455,7 @@ describe('Q3 own-idea edit without manage', () => {
     renderDetail(makeIdea({ isMine: true }));
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    const problem = await screen.findByLabelText('Problem statement');
+    const problem = await screen.findByLabelText('Business problem');
     fireEvent.change(problem, { target: { value: 'Quotes take far too long' } });
     svc.updateIdea.mockResolvedValue(makeIdea({ isMine: true }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -298,7 +509,7 @@ describe('AC-D-04 the "..." menu', () => {
 
   it('lists Promote to BR, Merge into another idea, Archive and Delete', async () => {
     await openMenu();
-    for (const label of ['Promote to BR', 'Merge into another idea', 'Archive', 'Delete']) {
+    for (const label of ['Promote to BR', 'Merge ideas', 'Archive', 'Delete']) {
       expect(await screen.findByRole('menuitem', { name: new RegExp(label) })).toBeInTheDocument();
     }
   });

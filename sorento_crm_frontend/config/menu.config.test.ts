@@ -275,11 +275,34 @@ describe('menu.config - Stock transfers entry', () => {
 // New gates
 // ---------------------------------------------------------------------------
 
-describe('menu.config - Ideas', () => {
-  it('has permission ideation.board.view', () => {
+describe('menu.config - Ideas (AC-E-01, IDEA-CRM-SIDE)', () => {
+  it('is a group, not a leaf', () => {
     const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
     expect(ideas).toBeDefined();
-    expect(ideas!.permission).toBe('ideation.board.view');
+    expect(ideas!.path).toBeUndefined();
+    expect(ideas!.children?.length).toBeGreaterThan(0);
+  });
+
+  it('has "All ideas" at /ideas and "Roadmap" at /ideas/portal, in that order', () => {
+    const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
+    const kids = (ideas?.children ?? []).map((c) => [c.title, c.path]);
+    expect(kids).toEqual([
+      ['All ideas', '/ideas'],
+      ['Roadmap', '/ideas/portal'],
+    ]);
+  });
+
+  it('gates both children with ideation.board.view', () => {
+    const ideas = findGroup(MENU_SIDEBAR, 'Ideas');
+    for (const child of ideas?.children ?? []) {
+      expect(child.permission).toBe('ideation.board.view');
+    }
+    expect(ideas?.children).toHaveLength(2);
+  });
+
+  it('keeps /ideas reachable from the sidebar', () => {
+    expect(collectPaths(MENU_SIDEBAR).has('/ideas')).toBe(true);
+    expect(collectPaths(MENU_SIDEBAR).has('/ideas/portal')).toBe(true);
   });
 });
 
