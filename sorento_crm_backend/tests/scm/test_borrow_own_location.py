@@ -84,6 +84,9 @@ def test_the_board_offers_the_lines_own_location_under_borrow(enabled):
         ), "the own location is offered last, behind the ranked donors"
         # The dialog's location figures, like every other donor row.
         assert row["location"]["warehouse_id"] == str(own.id)
+        # The 8 free there are Reserve's: never counted again as borrowable.
+        assert Decimal(row["free_qty"]) == 0
+        assert contribution["qty_borrow_available"] == "25"
 
 
 def test_the_own_location_is_offered_even_with_nothing_there_and_nowhere_else():

@@ -10479,20 +10479,21 @@ class ProjectSupplyService:
         # choice too, whatever holds the stock there and whatever the switch says, even with
         # nothing there ("planning can be done after delivery"). A plain location row, LAST
         # and never `recommended`, so the ranked donors keep the head and, in the dialog's
-        # merged bin, a typed quantity beyond the bin's free rides on this row. Confirm
-        # holds what is free after this line's own Reserve and records the rest short.
+        # merged bin, a typed quantity beyond the bin's free rides on this row. Its
+        # `free_qty` is 0: the free units there are Reserve's, and counting them again here
+        # would double them in `qty_borrow_available`. Confirm holds what is free after this
+        # line's own Reserve and records the rest short.
         if fact.warehouse is not None:
             own_id = str(fact.warehouse.id)
-            own_free = free_here.get(own_id, _ZERO)
             candidates.append(
                 {
                     "source": ALLOC_SOURCE_OTHER_LOCATION,
                     "warehouse_code": fact.own_code,
                     "warehouse_id": own_id,
-                    "free_qty": qty_text(own_free),
+                    "free_qty": qty_text(_ZERO),
                     **self._donor_pile(fact.product_id, own_id, _ZERO, need),
                     "donor_impact": {
-                        "free_before": qty_text(own_free),
+                        "free_before": qty_text(_ZERO),
                         "free_after_full_borrow": qty_text(_ZERO),
                         "committed_qty": qty_text(_ZERO),
                     },
