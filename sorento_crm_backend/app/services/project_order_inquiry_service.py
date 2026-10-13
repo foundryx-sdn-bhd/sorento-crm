@@ -408,6 +408,66 @@ _NEW_ITEM_CODE = "NEW ITEM CODE"
 _HANDOVER_REMARK_SPELLING = {**REMARK_SPELLING, IV_PRE_ORDERED: "PRE-ORDERED"}
 
 
+def saved_line_remark(snapshot: Mapping[str, Any]) -> Tuple[str, Optional[str]]:
+    """What ONE saved line's purchasing email line says it decided: `(REMARK, STOCK
+    LOCATION)`, read off its frozen snapshot (`ProjectSupplyService._snapshot`).
+
+    ORDERBACK-DELTA extension (owner, 13 Oct 2026 22:40): every saved line appears once, in
+    the board's own words (`supplyVocabulary.ts`, decided by the rung, never by a code
+    prefix) spelled as the owner's Excel "ORDER INQUIRY" sheet spells them:
+
+    * Buy: ``ORDER`` (an Order back Buy: ``ORDER BACK`` and the document CS cited);
+    * Use BRW (a reserve on the ``pool`` rung): ``USE <pool code>``;
+    * Use own location (any other reserve): ``RESERVE <location>``;
+    * Borrow (any borrow but a document one): ``ORDER BACK <borrowed-from location>``;
+    * Borrow incoming (``supply_borrow``): the document number;
+    * Use incoming (``timely_spo``): the SPO number(s).
+
+    One part reads as its words alone; several read each with its quantity, joined by
+    `` & `` in the snapshot's order (``RESERVE BRW-IB 6 & ORDER 4``). STOCK LOCATION is the
+    first part's location (the line's own for a Buy or an incoming SPO).
+    """
+    own = snapshot.get("location") or None
+    spo_numbers = ", ".join(
+        ref.get("spo_number")
+        for ref in snapshot.get("timely_spo_refs") or []
+        if ref.get("spo_number")
+    )
+    parts: List[Tuple[str, Optional[str], Decimal]] = []
+    for component in snapshot.get("components") or []:
+        qty = _dec(component.get("qty"))
+        if qty <= _ZERO:
+            continue
+        kind = component.get("kind")
+        rung = component.get("rung")
+        location = component.get("source_location") or None
+        if kind == "buy":
+            if snapshot.get("order_back"):
+                cited = (snapshot.get("cited_document") or "").strip()
+                words = f"ORDER BACK {cited}" if cited else "ORDER BACK"
+            else:
+                words = "ORDER"
+            parts.append((words, own, qty))
+        elif kind == "reserve":
+            verb = "USE" if rung == "pool" else "RESERVE"
+            parts.append((f"{verb} {location}" if location else verb, location or own, qty))
+        elif kind == "borrow":
+            document = (component.get("supply_document") or "").strip()
+            if rung == "supply_borrow" or document:
+                parts.append((document or "BORROW INCOMING", own, qty))
+            else:
+                words = f"ORDER BACK {location}" if location else "ORDER BACK"
+                parts.append((words, location or own, qty))
+        elif kind == "timely_spo":
+            parts.append((spo_numbers or "INCOMING", own, qty))
+    if not parts:
+        return "", own
+    if len(parts) == 1:
+        return parts[0][0], parts[0][1]
+    remark = " & ".join(f"{words} {_qty_str(qty)}" for words, _location, qty in parts)
+    return remark, parts[0][1]
+
+
 def handover_remark(
     kind: str, row: Any, was: Optional[Dict[str, Any]], qty: Optional[Decimal] = None
 ) -> str:
