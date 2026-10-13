@@ -21,6 +21,8 @@ from datetime import date, datetime
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo
 
+import logging
+
 from app.services.chatbot.pv2 import answer as answer_mod
 from app.services.chatbot.pv2 import clarify_copy
 from app.services.chatbot.pv2.apply import DEFAULT_POLICY, ClarifyPolicy, ResolverLike, apply_turn
@@ -52,6 +54,8 @@ ExchangesFn = Callable[[datetime | None], list[tuple[str, str]]]
 #: (exchanges, memory block, text) -> `call.V2Result` (output, usage, dropped): CORE's
 #: `call.parse_v2`, which builds the messages itself. When set it is used instead of `parse`.
 ParsePartsFn = Callable[[list[tuple[str, str]], str, str], Any]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -420,9 +424,13 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
         space_id = default_space_id(db)
         from app.services.chatbot.turn.policy import load_policy
 
-        domain_teams = {
-            d.name: d.escalation_team_code for d in load_policy(db).domains if d.escalation_team_code
-        }
+        try:
+            domain_teams: dict[str, str] | None = {
+                d.name: d.escalation_team_code for d in load_policy(db).domains if d.escalation_team_code
+            }
+        except Exception:  # noqa: BLE001 - a policy read failure never fails the turn
+            logger.warning("pv2: policy teams unavailable, falling back to the seed", exc_info=True)
+            domain_teams = None
 
     contact = str(hctx.contact_respond_id)
     envelope = getattr(hctx, "envelope", None)
