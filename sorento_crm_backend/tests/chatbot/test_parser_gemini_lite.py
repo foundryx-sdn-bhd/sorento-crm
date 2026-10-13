@@ -259,3 +259,38 @@ def test_understood_facts_carry_model_provider_latency_and_token_split(
     assert facts.get("cached_tokens") == 4096, facts
     assert facts.get("completion_tokens") == 120, facts
     assert facts.get("reasoning_tokens") == 7, facts
+
+
+# --------------------------------------------------------------------------- #
+# 5. The usage row survives a respond.io id held by two contact rows
+# --------------------------------------------------------------------------- #
+
+
+def test_a_usage_row_is_written_when_two_contacts_share_the_respond_id(session_factory):
+    """`respond_contacts.respond_io_id` is not unique, and `chatbot_allowed_service.
+    is_allowed` reads every row that carries one. `Query.scalar()` raised
+    `MultipleResultsFound` on such a contact and the telemetry `except` swallowed it, so
+    that contact's parser spend never reached `ai_assistant_usage_logs`."""
+    from app.models.ai_assistant import AIAssistantUsageLog
+    from app.services.chatbot.usage import record_parser_usage
+
+    respond_id = "ZZT-gemini-lite-dup"
+    _seed_contact(session_factory, respond_id)
+    _seed_contact(session_factory, respond_id)
+    db = session_factory()
+    record_parser_usage(
+        db,
+        usage={"provider": "openai", "model": "gpt-5.4-mini", "total_tokens": 10},
+        response_time_ms=5,
+        contact_respond_id=respond_id,
+        answered=True,
+        chatbot_turn_id="ZZT-turn-dup",
+    )
+    rows = (
+        session_factory()
+        .query(AIAssistantUsageLog)
+        .filter(AIAssistantUsageLog.chatbot_turn_id == "ZZT-turn-dup")
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].contact_id is not None
