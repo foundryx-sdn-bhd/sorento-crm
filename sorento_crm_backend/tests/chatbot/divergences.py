@@ -570,10 +570,15 @@ DIVERGENCES: list[Divergence] = [
                 ("escalate_message",),
                 # PICKER-ONE (owner, 13 Oct 2026): the customer arm records its probe as
                 # data (`customer_bases_with_do`) and no longer writes the rewritten
-                # picker text or its `is_clarification` flag; the bridge prints the
-                # roster through `compose_question`.
+                # picker text or its `is_clarification` flag, and the gate's customer arm
+                # writes no "Which customer do you mean? Please choose:" text at all; the
+                # bridge prints the roster through `compose_question`.
                 ("is_clarification",),
                 ("customer_bases_with_do",),
+                ("gate_clarification",),
+                ("gate", "gate_clarification"),
+                ("ctx_resolved", "gate_clarification"),
+                ("ctx_resolved", "ctx", "gate", "gate_clarification"),
                 ("gate_debug", "allowed_lookup"),
                 ("gate", "gate_debug", "allowed_lookup"),
                 ("ctx_resolved", "gate_debug", "allowed_lookup"),
@@ -617,6 +622,10 @@ DIVERGENCES: list[Divergence] = [
             # PICKER-ONE, as the sibling entry above.
             ("is_clarification",),
             ("customer_bases_with_do",),
+            ("gate_clarification",),
+            ("gate", "gate_clarification"),
+            ("ctx_resolved", "gate_clarification"),
+            ("ctx_resolved", "ctx", "gate", "gate_clarification"),
             ("customer_probe_hits",),
             ("customer_probe_skip_reason",),
             ("gate_debug", "allowed_lookup"),

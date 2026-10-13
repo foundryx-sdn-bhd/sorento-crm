@@ -36,9 +36,12 @@ do you mean? Please choose: 1. X (MCH, SRT) - has DO". Rule: reuse, never parall
 5. **Header + stamp format**: the one existing format, `compose_question`'s "Which one do you
    mean?" + `N. <label> - <stamp>`. No new wording; the gate's trailing "None of these have a
    recent DO." goes with `annotate_customer`.
-6. **Deleted as dead**: `pickers.annotate_customer` (text rewriting) and its node replay
-   fixture/runner; `answer_bridge._stamps_by_position` parsing only where it served the customer
-   picker (it still serves the product miss rosters, which keep their own stamps in text).
+6. **Deleted as dead**: the gate's own "Which customer do you mean? Please choose:" text
+   (`gate.py` customer arm writes no `gate_clarification` now; its "Couldn't find" line rides as
+   `dropped_filter_line`), `pickers.annotate_customer` (text rewriting) and its node replay runner.
+   `answer_bridge._stamps_by_position` stays: no customer roster reaches it (the customer arm
+   always exits `offer`, never the miss arm); it serves the product miss rosters, whose
+   has/no-incoming stamps are written into text by `annotate_incoming` / `dym-annotate`.
 
 ## R20 (outstanding asks unstamped): kept
 
