@@ -296,6 +296,7 @@ def _write(db: Session, row: ChatbotTurn) -> int:
             reply_ms=_reply_ms(row),
             is_media=_is_media(row.envelope),
             phantom_dropped=flat["phantom_dropped"],
+            prompt_version=flat["prompt_version"],
         )
         .on_conflict_do_nothing(index_elements=[_FACTS.c.turn_id, _FACTS.c.ask_seq])
         .returning(_FACTS.c.id)
