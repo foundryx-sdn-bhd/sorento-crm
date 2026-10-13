@@ -602,7 +602,7 @@ def _apply_entities(
         if status != "exact" or not refs:
             qs.append(
                 _clarify(
-                    st, i, "entity", ent.phrase, language,
+                    st, i, "entity", ent.phrase or ent.doc_number, language,
                     options=options, kind=ent.kind, not_found=not options,
                 )
             )
