@@ -827,3 +827,51 @@ def test_report_resolution_validates():
 def test_report_resolution_rejects_extra_key():
     with pytest.raises(Exception):
         r.ReportResolution.model_validate({"status": "exact", "refs": {}, "surprise": 1})
+
+
+# --------------------------------------------------------------------------- review round 2
+
+
+def _ranking(**kw):
+    base = dict(dataset="sales", measures=["amount"], basis="delivered", group_by=["customer"],
+                period=LAST_MONTH, top_n=10)
+    base.update(kw)
+    return spec(**base)
+
+
+def test_unresolved_holds_declined_parts_until_the_turn_that_runs():
+    """N1: an unresolved filter keeps the compare part held, so the note is said exactly once,
+    on the turn the report runs, never dropped while the clarify is open."""
+    first = r.plan_report(_ranking(filters=[CUST_ABC], compare_to="last_year"), refs={}, today=TODAY)
+    assert first.status == "unresolved"
+    assert first.spec.compare_to == "last_year"
+    ran = r.plan_report(first.spec, refs=CUST_REFS, today=TODAY)
+    assert ran.status == "run"
+    assert ran.notes.count("Comparison with last year is not available yet.") == 1
+    again = r.plan_report(ran.spec, refs=CUST_REFS, today=TODAY)
+    assert "Comparison with last year is not available yet." not in again.notes
+
+
+def test_unsupported_group_still_names_the_grain_it_drops():
+    plan = r.plan_report(_ranking(group_by=["region"], grain="quarter"), refs={}, today=TODAY)
+    assert plan.status == "say"
+    assert "Breakdown by quarter is not available yet." in plan.notes
+    assert plan.spec.grain is None and plan.spec.group_by == []
+
+
+def test_dealer_refusal_still_names_the_parts_it_drops():
+    plan = r.plan_report(
+        _ranking(group_by=["sales_agent", "brand"], top_n_per_group=3), refs={}, today=TODAY, dealer=True
+    )
+    assert plan.status == "say" and plan.reply == report_ask.DEALER_REFUSAL
+    assert "A second breakdown (by brand) is not available yet." in plan.notes
+    assert "Top per group is not available yet." in plan.notes
+
+
+def test_product_uuid_and_code_mixed_is_unresolved_not_several_codes():
+    plan = r.plan_report(
+        _ranking(filters=[flt("product", ["X", "SRT5674"])]),
+        refs={"product": [{"key": P_UUID, "label": "SRT1"}, {"key": "SRT5674", "label": "SRT5674"}]},
+        today=TODAY,
+    )
+    assert plan.status == "unresolved" and plan.unresolved == ["product"]

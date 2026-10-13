@@ -360,8 +360,8 @@ def _filter_values(ds: rm.Dataset, dim: rm.Dimension, keys: list[str]) -> tuple[
     param = dim.filter_param or ""
     if dim.key == "location" or param in ("subjects", "askers"):
         return {param: keys}, None  # codes, as the route takes them
-    if dim.key == "product" and ds.key == "sales" and not all(_is_uuid(k) for k in keys):
-        codes = [k for k in keys if not _is_uuid(k)]
+    if dim.key == "product" and ds.key == "sales" and not any(_is_uuid(k) for k in keys):
+        codes = keys
         if len(keys) == 1 and len(codes[0]) >= 3:
             return {"product_code": codes[0]}, None  # the sales report's prefix rule (v1 S4)
         return None, "Filtering by several product codes at once is not available yet."
@@ -382,7 +382,9 @@ def plan_report(
     `refs` maps a filter dimension to its resolved refs (`key` live id or code, `label` name).
 
     `plan.spec` is the spec to HOLD next turn: every part this plan said is not available is
-    taken out of it, so the line is said once, never on every follow-up."""
+    taken out of it, so the line is said once, never on every follow-up. An `unresolved` plan
+    holds the spec as it came (only the dataset filled), so those lines are said on the turn
+    that runs; its `notes` are informational for the caller, not yet said."""
     from app.services.chatbot.lanes.business import report_ask
     from app.services.chatbot.pv2.schema import Period
     from app.services.sales_report_service import TOP_SELLING_N_CEILING
@@ -392,6 +394,8 @@ def plan_report(
         return _say(spec.model_copy(update={"dataset": None}, deep=True), _NO_DATASET)
     notes: list[str] = []
     held: dict[str, Any] = {"dataset": ds.key}
+    # An unresolved plan holds the spec UNSTRIPPED: its notes are said when it runs.
+    original = spec.model_copy(update={"dataset": ds.key}, deep=True)
 
     # The axis: group_by, else a grain the dataset lists as an axis.
     groups, grain_line = _axis(ds, spec)
@@ -404,7 +408,7 @@ def plan_report(
     if group is not None and (dim is None or dim.group_by is None):
         held["group_by"] = []
         line = f"Breakdown by {rm.dimension_label(group)} is not available yet.\n{_catalogue_line(ds)}"
-        return _say(spec.model_copy(update=held, deep=True), line)
+        return _say(spec.model_copy(update=held, deep=True), line, notes)
     held["group_by"] = [group] if group else []
     for extra in groups[1:]:
         notes.append(f"A second breakdown (by {rm.dimension_label(extra)}) is not available yet.")
@@ -417,7 +421,7 @@ def plan_report(
         kept = [f for f in spec.filters if not (ds.key == "sales" and f.dimension in _DEALER_FILTERS)]
         if group is not None and group not in ds.dealer_keys:
             held["group_by"] = []
-        return _say(spec.model_copy(update={**held, "filters": kept}, deep=True), refusal)
+        return _say(spec.model_copy(update={**held, "filters": kept}, deep=True), refusal, notes)
 
     # Filters: only `in` runs; anything else, or a dimension the dataset has no filter for,
     # would change the rows, so it is said, nothing runs, and the filter is not held.
@@ -530,7 +534,7 @@ def plan_report(
 
     notes = [n for n in notes if n]
     if unresolved:
-        return ReportPlan(status="unresolved", spec=spec, notes=notes, unresolved=unresolved)
+        return ReportPlan(status="unresolved", spec=original, notes=notes, unresolved=unresolved)
     if missing:
         missing = [name for name in rp.FIELD_ORDER if name in missing]
         text, about, options = _question(ds, missing)
