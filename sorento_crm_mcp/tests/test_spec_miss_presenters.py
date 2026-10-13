@@ -47,3 +47,23 @@ def test_d2_no_unrecorded_sentence_when_nothing_is_unrecorded(tool, unrecorded):
     out = text(tool, body)
     assert "100 mm" in out
     assert "recorded" not in out
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_d4_a_size_miss_echoes_the_size_and_merges_every_axis(tool):
+    """Owner ruling 13 Oct (option b): "No 250 mm. Sizes on file: 130 mm, 150 mm." One sorted list
+    over every axis, the asked size echoed; the unrecorded count still follows."""
+    out = text(
+        tool,
+        {
+            "spec_size_asked": {"value": 250, "unit": "mm"},
+            "spec_alternatives": [
+                {"key": "dim_length", "label": "Length", "unit": "mm", "values": [150, 130]},
+                {"key": "dim_width", "label": "Width", "unit": "mm", "values": [130]},
+            ],
+            "spec_unrecorded": {"size": 28},
+        },
+    )
+    assert "No 250 mm. Sizes on file: 130 mm, 150 mm." in out, out
+    assert "values on file" not in out and "No exact match" not in out, out
+    assert "28 have no Size recorded." in out, out

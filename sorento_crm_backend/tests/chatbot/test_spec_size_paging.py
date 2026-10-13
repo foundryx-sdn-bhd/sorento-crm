@@ -398,3 +398,14 @@ def test_p17_a_class_said_in_chinese_with_its_english_canonical_is_filtered(sess
     assert {"key": "size", "op": "eq", "value": 600} in calls[-1]["spec_constraints"], calls
     assert any(c.get("key") == "class" for c in calls[-1]["spec_constraints"]), calls
     assert len(_shown(reply, codes)) == 5, reply
+
+
+def test_p18_the_size_miss_sentences_are_in_the_catalog():
+    """Owner ruling 13 Oct: the size-miss reply in the contact's language."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+
+    text = "No 250 mm. Sizes on file: 130 mm, 150 mm."
+    for lang in ("ms", "zh"):
+        done = Localizer(lang, defaults(lang)).reply(text)
+        assert "No 250 mm." not in done and "Sizes on file:" not in done, (lang, done)
+        assert "250 mm" in done and "130 mm, 150 mm" in done, (lang, done)

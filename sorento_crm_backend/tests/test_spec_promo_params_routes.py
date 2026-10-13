@@ -1242,3 +1242,13 @@ def test_a_dealers_spec_entry_matches_the_dealers_direct_entry_for_that_code(db)
     direct_entry = next(e for e in direct["stock_availability"] if e.get("product_id") == hit.id)
     assert spec_entry == direct_entry, (spec_entry, direct_entry)
     assert spec_entry.get("needs_quantity") is True, spec_entry
+
+
+def test_a_size_no_axis_holds_states_the_size_asked(api, db):
+    """Owner ruling 13 Oct (size-miss wording, option b): "No 250 mm. Sizes on file: 130 mm,
+    150 mm." The route stamps the size asked so the reply can echo it."""
+    rows = [_g(db, "AL", dim_length=150), _g(db, "AW", dim_width=130)]
+    db.commit()
+    resp = _list(api, db, rows, **_constraints(GRATING, {"key": "size", "op": "eq", "value": 250}))
+    assert resp.status_code == 200, resp.text
+    assert resp.json().get("spec_size_asked") == {"value": 250, "unit": "mm"}, resp.json()
