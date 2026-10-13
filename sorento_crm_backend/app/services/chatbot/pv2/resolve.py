@@ -175,8 +175,10 @@ class DbResolver:
         pinned: Mapping[str, Collection[str]],
         customer_scope: Mapping[str, Any] | None = None,
         reference_kinds: Collection[str] | None = None,
+        regions: Any = None,
     ) -> None:
         self.db = db
+        self.regions = regions
         # The reference kinds this asker may see (`visible_reference_kinds`); closed default.
         self.reference_kinds = list(reference_kinds) if reference_kinds else ["customer_order"]
         self.pinned = {kind: {str(k) for k in keys} for kind, keys in (pinned or {}).items()}
@@ -281,6 +283,9 @@ class DbResolver:
             raw_tokens=[text_],
             enable_embedding_fallback=False,
             alternatives_active_only=True,
+            regions=self.regions,
+            # Documents are matched exactly: a prefix would list other customers' numbers.
+            enable_prefix_fallback="form" in v1_types,
         )
         res = result.resolutions[0] if result.resolutions else None
         return list(res.matches) if res else []
@@ -563,6 +568,7 @@ class DbResolver:
             raw_tokens=[phrase],
             enable_embedding_fallback=False,
             alternatives_active_only=True,
+            regions=self.regions,
         )
         res = result.resolutions[0] if result.resolutions else None
         if res is not None:

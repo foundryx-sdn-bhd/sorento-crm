@@ -257,6 +257,17 @@ def _pinned(keys: Any) -> dict[str, Any]:
     return pinned
 
 
+def resolver_reference_kinds(attributes: list[str] | None, is_staff: bool, held_to_links: bool) -> list[str]:
+    """v1's `_reference_kinds(per_match_scope=False)`: PV2 has no per-match customer drop, so a
+    contact held to customer links loses the customer-owned kinds."""
+    from app.services.chatbot.contracts import visible_reference_kinds
+
+    kinds = visible_reference_kinds(attributes, is_staff)
+    if held_to_links:
+        kinds = [k for k in kinds if k not in ("sales_order", "customer_po_ref")]
+    return kinds
+
+
 def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     from app.services.chatbot.head.access import default_space_id
     from app.services.chatbot.lanes.business.services import _mcp_call
@@ -280,16 +291,28 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
     raw_state = session_vars.get("pv2")
     profile = hctx.profile
 
-    def _reference_kinds(rdb: Any) -> list[str]:
-        from app.services.chatbot.contracts import visible_reference_kinds
+    def _scope_for_resolver(rdb: Any) -> dict[str, Any]:
+        """Reference kinds and packing-list regions for this contact, as v1 computes them."""
         from app.services.chatbot.head.access import _granted_field_reveal_keys
+        from app.services.chatbot.lanes.business import services as business_services
         from app.services.chatbot.turn.state import is_staff_profile
+        from app.services.eta_policy import UNRESOLVED, resolve_request_contact, rules_for_contact
 
+        staff = is_staff_profile(profile)
         try:
             attrs = _granted_field_reveal_keys(rdb, contact_id=contact, space_id=space_id)
         except Exception:  # noqa: BLE001 - unknown grants fall to the closed default
             attrs = []
-        return visible_reference_kinds(attrs, is_staff_profile(profile))
+        try:
+            scope = business_services.customer_scope(rdb, contact, space_id)
+        except Exception:  # noqa: BLE001 - unknown scope is treated as held to links
+            scope = {"enforced": True}
+        held = (not staff) or bool((scope or {}).get("enforced"))
+        try:
+            regions = rules_for_contact(rdb, resolve_request_contact(rdb, contact, space_id)).regions
+        except Exception:  # noqa: BLE001 - v1's closed value for an unknown contact
+            regions = UNRESOLVED.regions
+        return {"reference_kinds": resolver_reference_kinds(attrs, staff, held), "regions": regions}
 
     def exchanges(since: datetime | None) -> list[tuple[str, str]]:
         with _session(factory) as edb:
@@ -310,7 +333,7 @@ def _run_from_hook(hctx: Any) -> answer_mod.TurnV2Result:
             profile=memory_profile(profile, getattr(hctx, "memory_intake", None)),
             parse=None,
             parse_parts=parse_parts,
-            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), reference_kinds=_reference_kinds(db))),
+            resolver=_LazyResolver(lambda: DbResolver(db, pinned=_pinned(config.keys), **_scope_for_resolver(db))),
             load_exchanges=exchanges,
             can_offer_handover=offers_escalation(profile),
             report_answer=answer_mod.default_report_answer(
