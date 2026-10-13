@@ -62,7 +62,8 @@ def run_idea_turn(db, *, ask, language, respond_io_id, message_text, session_var
    - `ask.ideation.adds_to_held_idea` and `session_vars["ideation"]` is a `captured` pointer (same is_test, < 24 h):
      no ss call, reply = `render_reply("similar_picked", {idea_number, link})` (the idea's "open it to add this"
      line; there is no ss update API), status `held_idea_open`, `idea_draft_id` = that idea.
-   - `ask.ideation.idea_count >= 2`: no ss call; pending `idea_multi` (crew-ask on PR: options `one` = "Save as one
+   - `ask.ideation.idea_count >= 2`: no ss call; pending `idea_multi` (crew answer 13 Oct: option (a); a
+     multi-idea extractor that saves both is a follow-up, out of scope tonight; options `one` = "Save as one
      idea", `separate` = "Send them one at a time"); reply = asked line + `1. <label>` lines; status
      `idea_multi_offered`. Copy en/ms/zh lives in ideas.py tonight.
    - else capture `message_text` with `update_held=True`.
