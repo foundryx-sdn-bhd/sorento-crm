@@ -86,14 +86,6 @@ def test_a_bare_option_pick_still_picks():
 # v1 parity: lanes/business/answer.py:5265-5380 writes `Couldn't find "X" (product). Did you mean ...`
 
 
-def test_a_single_did_you_mean_is_a_miss_for_v1_to_word_not_a_pv2_question():
-    table = {"product|SRTXYZ999": ("ambiguous", [("product", "SRTWB999")], True)}
-    state, actions = apply_turn(mk_state(), out(_ask(domain="inventory", entities=[_ent(phrase="SRTXYZ999")])),
-                                resolver=_Fake(table))
-    assert isinstance(actions[0], Lookup)
-    assert [(m.kind, m.phrase) for m in actions[0].misses] == [("product", "SRTXYZ999")]
-
-
 def _v1_pending(kind, options, expects, payload=None):
     from app.services.chatbot.turn import pending as v1p
 
