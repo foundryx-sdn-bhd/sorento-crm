@@ -32,8 +32,8 @@ from app.services.chatbot.turn.policy import default_policy
 from app.services.chatbot.turn.state import Focus, focus_to_wire
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
-from tests.chatbot._turn_helpers import do_window
-from tests.chatbot.test_engine import _parser_output
+from tests.chatbot._turn_helpers import do_window, make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_outstanding_lane import (
     _capturing_mcp,
@@ -644,6 +644,8 @@ class TestMultiDomainPickFetchesEveryNamedDomain:
             return {"items": [], "has_result": False}
 
         _seed_business_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
         result1, _c1 = _run_turn_fake_resolver(
             session_factory, monkeypatch,
             qf=_parser_output(
