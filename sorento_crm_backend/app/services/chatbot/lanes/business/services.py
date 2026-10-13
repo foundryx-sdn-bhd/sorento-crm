@@ -598,21 +598,30 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
     `enforced` is the top selling rule (linked and no active office access type); a
     linked staff contact keeps `linked` for a "my" ask only. Read through the ONE core
     function `contact_customer_scope` (as a module attribute: the tests spy on it)."""
+    return customer_scope_and_staff(db, contact_respond_id, space_id)[0]
+
+
+def customer_scope_and_staff(
+    db: Session, contact_respond_id: Any, space_id: str | None
+) -> tuple[dict[str, Any] | None, bool]:
+    """`customer_scope`, plus whether the contact holds an ACTIVE office access type, from
+    the same one read: the staff bit is wanted for an unlinked contact too, whose scope is
+    None (V1-DOC-SCOPE)."""
     from app.services import contact_customer_scope as scope_mod
     from app.services.field_access import resolve_contact_with_null_workspace_fallback
 
     if not contact_respond_id or not str(contact_respond_id).strip():
-        return None
+        return None, False
     contact_id = resolve_contact_with_null_workspace_fallback(
         db,
         contact_id=str(contact_respond_id).strip(),
         space_id=(str(space_id).strip() or None) if space_id is not None else None,
     )
     if not contact_id:
-        return None
+        return None, False
     scope = scope_mod.contact_customer_scope(db, contact_id)
     if not scope.linked:
-        return None
+        return None, scope.staff
     return {
         "ids": scope.customer_ids,
         "names": {cid: name for cid, name, _code in scope.linked},
@@ -621,25 +630,7 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
         "enforced": scope.enforced,
         "levels": dict(scope.levels),
         "refusal": scope_mod.refusal_line(scope),
-    }
-
-
-def contact_is_office_staff(db: Session, contact_respond_id: Any, space_id: str | None) -> bool:
-    """V1-DOC-SCOPE: the asking contact holds an ACTIVE office access type
-    (`contact_customer_scope.is_office_staff`), resolved the way `customer_scope` resolves
-    it. Read for a contact with no links, whose `customer_scope` is None and so carries no
-    `staff` flag."""
-    from app.services import contact_customer_scope as scope_mod
-    from app.services.field_access import resolve_contact_with_null_workspace_fallback
-
-    if not contact_respond_id or not str(contact_respond_id).strip():
-        return False
-    contact_id = resolve_contact_with_null_workspace_fallback(
-        db,
-        contact_id=str(contact_respond_id).strip(),
-        space_id=(str(space_id).strip() or None) if space_id is not None else None,
-    )
-    return bool(contact_id) and scope_mod.is_office_staff(db, str(contact_id))
+    }, scope.staff
 
 
 def top_selling_dealer_customer_ids(

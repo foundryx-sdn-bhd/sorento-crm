@@ -362,8 +362,15 @@ class TestUpstreamBlock:
         links (here: no such order row at all) is dropped from the resolver's matches before
         any fetch (`turn_runtime._without_foreign_sales_orders`), so no orders call carries
         it, and the reply is the ordinary miss text, never the refusal."""
+        from app.models.order import Order
+
         _seed_contact(session_factory, variables={})
         (own_id,) = _link_customers(session_factory, OWN_A)
+        # A real order behind the uuid, another customer's, so the drop is the scope rule
+        # at work and not a missing row.
+        db = session_factory()
+        db.add(Order(id=ORDER_UUID, order_number="DO-ZZT-1", customer_id=_other_customer(session_factory, "ZZT SOMEONE ELSE DO"), company_id=DEFAULT_COMPANY_ID))
+        db.commit()
         reply, captured = _turn(
             session_factory, monkeypatch,
             _parser_output(
@@ -373,9 +380,10 @@ class TestUpstreamBlock:
             "status of DO-ZZT-1", attributes=(),
             matches={"DO-ZZT-1": {"uuid": ORDER_UUID, "entity_type": "customer_order", "canonical_code": "DO-ZZT-1"}},
         )
-        for args in _calls(captured, ORDERS):
-            assert ORDER_UUID not in (args.get("order_ids") or []), args
-            assert args["customer_ids"] == [own_id], args
+        (args,) = _calls(captured, ORDERS)
+        assert "order_ids" not in args, args
+        assert args["customer_ids"] == [own_id], args
+        assert reply.startswith('Couldn\'t find: "DO-ZZT-1"'), reply
         assert reply.strip()
         assert "under your account" not in reply, reply
 

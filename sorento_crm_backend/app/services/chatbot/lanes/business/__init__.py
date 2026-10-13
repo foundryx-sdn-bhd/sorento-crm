@@ -1472,10 +1472,14 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            # V1-DOC-SCOPE: only staff (`doc_staff`: the tier or an office access type) are
-            # unscoped; an unlinked non-staff contact is held to its (empty) links, so every
-            # SO is refused.
-            linked = None if parse_output.get("doc_staff") is True else list(customer_scope.get("linked") or [])
+            # V1-DOC-SCOPE: an enforced contact is held to its links first (as the resolver's
+            # `engine._reference_scope` holds it, whatever its tier); otherwise only staff
+            # (`doc_staff`: the tier or an office access type) are unscoped, and an unlinked
+            # non-staff contact is held to its (empty) links, so every SO is refused.
+            if customer_scope.get("enforced"):
+                linked = list(customer_scope.get("linked") or [])
+            else:
+                linked = None if parse_output.get("doc_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup(db, so_numbers, linked=linked)
             if trace is not None:
                 trace.add(

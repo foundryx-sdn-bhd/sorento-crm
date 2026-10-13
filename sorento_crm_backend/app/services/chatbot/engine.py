@@ -5124,33 +5124,23 @@ def _run_stages_body(  # noqa: PLR0915
             ctx["top_selling_no_offer"] = True
         # PLAN-chatbot-customer-scope-29sep.md D3: the contact's customer scope, read once
         # per turn; the gate below and (through `make_tool_runner`) the lane read it.
-        # Lazily: only a turn on a domain a customer scope matters to (the order domain
-        # owns every customer-scoped tool; purchase_order is screened for customer words)
-        # or one saying "my" pays for the lookup.
+        # V1-DOC-SCOPE: read on EVERY turn (a reference number can be typed on any turn, and
+        # who may see ANY customer's documents is decided here), but still only APPLIED as
+        # `customer_scope` on a domain a customer scope matters to (the order domain owns
+        # every customer-scoped tool; purchase_order is screened for customer words) or on
+        # one saying "my". Staff is the operator-set tier OR an active office access type;
+        # everyone else is held to its links, and a contact with none sees no customer
+        # document (owner rule: unlinked != customer).
+        doc_scope, office_access = business_services.customer_scope_and_staff(
+            db, contact_respond_id, space_id_for_turn
+        )
         customer_scope = (
-            business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
+            doc_scope
             if verdict.get("self_reference") is True
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
-        # V1-DOC-SCOPE: who may see ANY customer's documents (DO, SO). Staff is the operator-set
-        # tier OR an active office access type; everyone else is held to its links, and a
-        # contact with none sees no customer document (owner rule: unlinked != customer).
-        # `customer_scope` is read lazily (order-shaped turns only); a reference number can be
-        # typed on any turn, so the links its matches are held to are read here regardless.
-        doc_scope = (
-            customer_scope
-            if customer_scope is not None
-            else business_services.customer_scope(db, contact_respond_id, space_id_for_turn)
-        )
-        ctx["doc_staff"] = bool(
-            is_staff_profile(state_out.profile)
-            or (doc_scope or {}).get("staff")
-            or (
-                doc_scope is None
-                and business_services.contact_is_office_staff(db, contact_respond_id, space_id_for_turn)
-            )
-        )
+        ctx["doc_staff"] = bool(is_staff_profile(state_out.profile) or office_access)
         # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
         # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
         # every other use (the lane applies `chat_report.scope_for` to its own fetch).

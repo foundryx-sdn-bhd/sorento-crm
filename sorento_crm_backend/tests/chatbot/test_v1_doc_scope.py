@@ -204,6 +204,20 @@ class TestSoByNumberWithReveal:
         reply, _captured = _turn(session_factory, monkeypatch, _number_ask("SO421777", "order_number"), "status of SO421777")
         assert FOREIGN not in reply and reply.strip().startswith(REFUSAL_PREFIX), reply
 
+    def test_linked_contact_with_office_tier_stays_held_to_its_links(self, session_factory, monkeypatch) -> None:
+        """Reviewer B1: the tier does not lift an enforced scope (linked, no office access
+        type), exactly as the resolver's `_reference_scope` reads it and as main did."""
+        _seed_contact(session_factory, variables={})
+        _make_staff(session_factory)
+        _link_customers(session_factory, OWN)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_so(session_factory, "SO421777", customer_id=foreign, debtor_name=FOREIGN, lines=[(1, 1)])
+
+        reply, _captured = _turn(session_factory, monkeypatch, _number_ask("SO421777", "order_number"), "status of SO421777")
+
+        assert FOREIGN not in reply and "delivered" not in reply, reply
+        assert reply.strip() == f"{REFUSAL_PREFIX} I can only check on {OWN}.", reply
+
     def test_staff_unchanged_sees_any_so(self, session_factory, monkeypatch) -> None:
         """AC-SO-14 as the owner meant it: staff carry no customer scope."""
         _seed_contact(session_factory, variables={})
