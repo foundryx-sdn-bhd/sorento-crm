@@ -1,6 +1,6 @@
 # PLAN - DO branch name in the chatbot DO list and the DO UI (DO-BRANCH-NAME)
 
-Status: Build (owner answer 13 Oct: default ON via the DEFAULT_ON_KEYS prefix rule, no migration). Track: small fix
+Status: Review (owner answer 13 Oct: default ON via the DEFAULT_ON_KEYS prefix rule, no schema migration; data backfill below). Track: small fix
 (no migration, no RBAC permission change, no new ingest surface; one new chatbot field reveal key).
 
 ## Owner ask (13 Oct 2026)
@@ -22,6 +22,59 @@ the DO UI also so I can cross check".
   `branch_code` nor `branch_name`, so `GET /api/v1/order-management/orders` (`response_model=
   ListResponse[OrderResponse]`, `app/api/v1/order_management/orders.py:304`) silently drops it. That
   is why neither the chatbot nor the DO UI can see it.
+
+## How `branch_name` gets filled (and why existing rows can be empty)
+
+- The ONLY source is the `branches` table (`app/models/autocount_branch.py`), written only by the
+  SS `branchbypage` push to `POST /external/ingest/branches`. There is no CRM-side branch pull.
+- A DO push resolves the name at write time (`_branch_name`, exact `AccNo` match first, else the
+  one row for the code); a branch push re-stamps every DO of that code, but only when the branch
+  row is CREATED or CHANGED (`autocount_doc_ingest_service.py:1621-1632`). An unchanged branch
+  push returns before `_refresh_branch_names`.
+- So a DO keeps a NULL name when (a) `branches` holds no row for its code (the branch push has not
+  run for that book), (b) the code is ambiguous (several rows, none on the DO's debtor), or (c) the
+  DO was written before its branch row and the branch has not changed since.
+- Crew audit 13 Oct (dev copy): 6486 AutoCount DOs, 705 with `branch_code`, 0 with `branch_name`.
+
+### Backfill (dev copy and prod, same SQL, idempotent)
+
+Pre-check: `SELECT source_book, count(*) FROM branches GROUP BY 1;` If it returns no rows, the SQL
+below fills nothing: ask SS to run the `branchbypage` push for each book first (a first push
+CREATEs every row, which re-stamps the DOs by itself), then run the SQL for whatever is left.
+
+```sql
+-- DO-BRANCH-NAME backfill: orders.branch_name from branches, the same rule as
+-- AutocountDocIngestService._branch_name (exact AccNo match first, else the one row for the code).
+-- Fills only rows it can resolve; idempotent (re-running changes nothing).
+WITH m AS (
+  SELECT o.id,
+         (SELECT array_agg(b.branch_name) FROM branches b
+           WHERE b.company_id = o.company_id AND b.source_book = o.source_book
+             AND b.branch_code = o.branch_code AND b.acc_no = o.debtor_code) AS exact,
+         (SELECT array_agg(b.branch_name) FROM branches b
+           WHERE b.company_id = o.company_id AND b.source_book = o.source_book
+             AND b.branch_code = o.branch_code) AS by_code
+    FROM orders o
+   WHERE o.doc_key IS NOT NULL AND o.branch_code IS NOT NULL
+), r AS (
+  SELECT id,
+         CASE WHEN cardinality(exact) = 1 THEN exact[1]
+              WHEN cardinality(by_code) = 1 THEN by_code[1] END AS name
+    FROM m
+)
+UPDATE orders o
+   SET branch_name = r.name
+  FROM r
+ WHERE o.id = r.id AND r.name IS NOT NULL AND o.branch_name IS DISTINCT FROM r.name;
+```
+
+### Owner prod steps
+
+1. After deploy, on prod: `SELECT source_book, count(*) FROM branches GROUP BY 1;`
+2. If empty for a book: ask SS to run the `branchbypage` push for that book.
+3. Run the backfill SQL above once (safe to rerun).
+4. Check: `SELECT count(*) FILTER (WHERE branch_name IS NOT NULL), count(*) FILTER (WHERE branch_code IS NOT NULL) FROM orders WHERE doc_key IS NOT NULL;`
+   A gap left over is ambiguous codes or codes SS has no branch row for: the bot prints no Branch line for those, by design.
 
 ## Behaviour
 
