@@ -2163,6 +2163,29 @@ class FulfilmentBoardService:
             ]
         return out
 
+    def open_refusals(self, core_line_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+        """The board's own order-inquiry entry for each line purchasing has refused and CS
+        has not decided again, keyed by core line id - for the Sales Order page's Lines tab
+        (PR 1622 mock v3), so both screens read a refusal by the SAME rules
+        (`_order_inquiries`, answered once an active revision is confirmed after it)."""
+        ids = [str(x) for x in core_line_ids if x]
+        if not ids:
+            return {}
+        self._addressing = self._mirror_addressing(ids)
+        frozen, _proposals, _names = self._frozen_decisions()
+        entries = self._order_inquiries(
+            ids,
+            decided_at={
+                core_id: (decision or {}).get("confirmed_at")
+                for core_id, decision in frozen.items()
+            },
+        )
+        return {
+            core_id: entry
+            for core_id, entry in entries.items()
+            if entry.get("ack_state") == ACK_REJECTED
+        }
+
     def _frozen_decisions(
         self,
     ) -> Tuple[

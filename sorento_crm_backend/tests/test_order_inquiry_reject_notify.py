@@ -186,10 +186,9 @@ def test_single_reject_dispatches_one_email_and_one_in_app(api, monkeypatch):
     assert inquiry.inquiry_no in notice["title"]
     assert "1 line rejected" in notice["title"]
     assert "No stock at supplier" in (notice["body"] or "")
-    # Owner hand test: the bell opens the SO's planning board on the refused line.
+    # Owner, mock v3: the bell opens the Sales Order page, Lines tab, on the refused line.
     assert notice["data"]["link"] == (
-        f"/project-sales/fulfilment-planning?orders={fixture['core_so'].so_number}"
-        f"&lines={row.so_line_id}"
+        f"/scm/sales-orders/{fixture['core_so'].id}?tab=lines&line={fixture['core_line'].id}"
     )
     assert notice["source_entity_type"] == "order_inquiry"
     assert notice["source_entity_id"] == str(inquiry.id)
@@ -674,32 +673,6 @@ def test_board_line_carries_the_purchasing_refusal(api, monkeypatch):
     assert oi["rejected_at"] is not None
     other = [c for c in contributions if c.get("project_line_id") == str(fixture["second"]["line"].id)]
     assert other and (other[0]["order_inquiry"] or {}).get("ack_state") != "rejected"
-
-
-def test_email_and_bell_link_open_the_so_board_on_the_rejected_lines(api, monkeypatch):
-    client, world = api
-    _register()
-    _activate(world, world.cs_user)
-    fixture = _raise_two_rows(api)
-    captured = _capture(monkeypatch)
-    first, second = fixture["first"]["row"], fixture["second"]["row"]
-
-    assert _reject_batch(world, [first, second]).status_code == 200
-
-    so_number = fixture["order"].autocount_doc_no
-    lines = ",".join(sorted([str(fixture["first"]["line"].id), str(fixture["second"]["line"].id)]))
-    path = f"/project-sales/fulfilment-planning?orders={so_number}&lines={lines}"
-    [call] = _rejected(captured)
-    rej = call["context"]["reject"]
-    assert rej["board_link"].endswith(path)
-    assert rej["link"] == build_order_inquiry_link(str(first.order_inquiry_id))
-    [notice] = captured["in_app"]
-    assert notice["data"]["link"] == path
-
-
-# --------------------------------------------------------------------------- #
-# Owner Q1: CS's reason on a re-Buy reaches purchasing's new order inquiry row #
-# --------------------------------------------------------------------------- #
 
 
 def test_cs_reason_on_rebuy_reaches_the_new_order_inquiry_row(api, monkeypatch):

@@ -670,7 +670,7 @@ class SalesOrderService:
             .order_by(OrderInquiryRow.created_at.asc(), OrderInquiryRow.id.asc())
             .all()
         )
-        return {
+        out = {
             str(core_id): {
                 "inquiry_no": inquiry_no,
                 "state": state,
@@ -679,6 +679,25 @@ class SalesOrderService:
             }
             for core_id, inquiry_no, state, inquiry_id, row_id in rows
         }
+        # PR 1622 (owner, mock v3): a refusal purchasing made and CS has not answered is the
+        # inquiry's status on this line - read by the planning board's own rules, so the two
+        # screens never disagree about whether it is still open.
+        from app.services.project_fulfilment_board_service import FulfilmentBoardService
+
+        for core_id, entry in FulfilmentBoardService(self.db).open_refusals(
+            list(out.keys())
+        ).items():
+            out[core_id] = {
+                "inquiry_no": entry.get("inquiry_no"),
+                "state": entry.get("state"),
+                "inquiry_id": entry.get("inquiry_id"),
+                "row_id": entry.get("row_id"),
+                "ack_state": entry.get("ack_state"),
+                "rejected_reason": entry.get("rejected_reason"),
+                "rejected_by_name": entry.get("rejected_by_name"),
+                "rejected_at": entry.get("rejected_at"),
+            }
+        return out
 
     def _line_planning_changes(self, so: SalesOrder) -> dict[str, dict]:
         """The latest planning-change row for each of this order's lines, WITHIN the

@@ -7055,8 +7055,6 @@ class ProjectOrderInquiryService:
         `raiser` is `None` when the raiser IS the rejecter, or is not an active user:
         nobody to tell. The automation still runs so an admin-added recipient hears.
         """
-        from urllib.parse import urlencode
-
         from app.config import settings
         from app.models.user import User
         from app.services.automation_triggers import build_order_inquiry_link
@@ -7101,18 +7099,36 @@ class ProjectOrderInquiryService:
                 }
                 for row in inquiry_rows
             ]
-            # Where CS acts on it: the SO's planning board with the refused lines named,
-            # read by the board's own `lines` param. No SO number (a draft never
-            # published) leaves only the inquiry to open.
+            # Where CS acts on it (owner, mock v3): the SALES ORDER page, Lines tab, on the
+            # first refused line (`?line=` highlights one row; every refused line carries
+            # the Rejected badge). The context key stays `board_link` so the seeded
+            # template is unchanged. No core SO (a draft never published) leaves only the
+            # inquiry to open.
             board_path = None
-            if facts.get("so_number"):
-                line_ids = sorted(
-                    {str(row.so_line_id) for row in inquiry_rows if row.so_line_id}
+            pso = (
+                self.db.query(ProjectSalesOrder)
+                .filter(ProjectSalesOrder.id == inquiry.project_sales_order_id)
+                .first()
+                if inquiry.project_sales_order_id
+                else None
+            )
+            if pso is not None and pso.so_id:
+                mirror_lines = (
+                    self.db.query(ProjectSalesOrderLine)
+                    .filter(
+                        ProjectSalesOrderLine.id.in_(
+                            [str(row.so_line_id) for row in inquiry_rows if row.so_line_id]
+                        )
+                    )
+                    .all()
                 )
-                board_path = (
-                    "/project-sales/fulfilment-planning?"
-                    + urlencode({"orders": facts["so_number"]}, safe="")
-                    + (f"&lines={','.join(line_ids)}" if line_ids else "")
+                first = min(
+                    (ml for ml in mirror_lines if ml.core_sales_order_line_id),
+                    key=lambda ml: (ml.line_no or 0),
+                    default=None,
+                )
+                board_path = f"/scm/sales-orders/{pso.so_id}?tab=lines" + (
+                    f"&line={first.core_sales_order_line_id}" if first is not None else ""
                 )
             frontend = (settings.frontend_base_url or "").rstrip("/")
             notices.append(
