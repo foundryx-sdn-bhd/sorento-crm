@@ -8,6 +8,7 @@ export interface UsageSummary {
   total_tokens: number;
   cost_usd: number;
   unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface UsageByDayItem {
@@ -16,6 +17,7 @@ export interface UsageByDayItem {
   tokens: number;
   cost_usd: number;
   unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface TopUserItem {
@@ -25,6 +27,7 @@ export interface TopUserItem {
   tokens: number;
   cost_usd: number;
   unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export interface TopContactItem {
@@ -35,6 +38,7 @@ export interface TopContactItem {
   tokens: number;
   cost_usd: number;
   unpriced_calls: number;
+  unknown_cache_calls: number;
 }
 
 export type AIUsageFeature =
@@ -58,6 +62,7 @@ export interface RecentQueryItem {
   cost_usd?: number | null;
   priced?: boolean;
   cached_price_missing?: boolean;
+  cache_unknown?: boolean;
 }
 
 export interface QueryDetailToolUsed {

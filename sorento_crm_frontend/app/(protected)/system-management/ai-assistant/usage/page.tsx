@@ -68,18 +68,31 @@ function formatNumber(n: number | null | undefined): string {
 }
 
 /** A total over `calls` calls of which `unpriced` had no price: a dash when none could be priced. */
-function totalCost(cost: number, unpriced: number, calls: number): string {
-  return formatUsd(unpriced >= calls && calls > 0 ? null : cost);
+function totalCost(cost: number, unpriced: number, calls: number, unknown = 0): string {
+  return formatUsd(unpriced + unknown >= calls && calls > 0 ? null : cost);
 }
 
 function costTitle(q: RecentQueryItem): string | undefined {
   if (q.cost_usd != null) return undefined;
+  if (q.cache_unknown) {
+    return q.feature === 'chatbot_parser' ? 'Cache use not recorded before 4 Oct' : 'Cache use not recorded';
+  }
   const model = q.model ?? 'this model';
   return q.cached_price_missing ? `No cached-input price for ${model}` : `No price for ${model}`;
 }
 
 function notPricedLabel(n: number): string {
   return `${n} ${n === 1 ? 'call' : 'calls'} not priced`;
+}
+
+function unknownCacheLabel(n: number): string {
+  return `${n} ${n === 1 ? 'call' : 'calls'} with unknown cache use`;
+}
+
+/** Why some calls are left out of a total, or undefined when none are. */
+function excludedLabel(unpriced = 0, unknown = 0): string | undefined {
+  const parts = [unpriced > 0 ? notPricedLabel(unpriced) : '', unknown > 0 ? unknownCacheLabel(unknown) : ''];
+  return parts.filter(Boolean).join(', ') || undefined;
 }
 
 export default function AIUsagePage() {
@@ -110,6 +123,7 @@ export default function AIUsagePage() {
       tokens: d.tokens,
       cost_usd: d.cost_usd,
       unpriced_calls: d.unpriced_calls,
+      unknown_cache_calls: d.unknown_cache_calls,
     }));
   }, [byDayQuery.data]);
 
@@ -231,10 +245,20 @@ export default function AIUsagePage() {
             label="Cost (USD)"
             value={
               summary
-                ? totalCost(summary.cost_usd, summary.unpriced_calls, summary.total_messages)
+                ? totalCost(
+                    summary.cost_usd,
+                    summary.unpriced_calls,
+                    summary.total_messages,
+                    summary.unknown_cache_calls,
+                  )
                 : formatUsd(null)
             }
-            note={summary && summary.unpriced_calls > 0 ? notPricedLabel(summary.unpriced_calls) : undefined}
+            notes={[
+              summary && summary.unpriced_calls > 0 ? notPricedLabel(summary.unpriced_calls) : '',
+              summary && summary.unknown_cache_calls > 0
+                ? unknownCacheLabel(summary.unknown_cache_calls)
+                : '',
+            ]}
             loading={summaryQuery.isLoading}
           />
         </div>
@@ -262,18 +286,29 @@ export default function AIUsagePage() {
                   <ChartTooltip
                     content={(props) => {
                       const day = props.payload?.[0]?.payload as
-                        | { cost_usd: number; unpriced_calls: number; messages: number }
+                        | {
+                            cost_usd: number;
+                            unpriced_calls: number;
+                            unknown_cache_calls?: number;
+                            messages: number;
+                          }
                         | undefined;
                       return (
                         <div>
                           <ChartTooltipContent {...(props as ComponentProps<typeof ChartTooltipContent>)} />
                           {day ? (
                             <div className="mt-1 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-                              Cost {totalCost(day.cost_usd, day.unpriced_calls, day.messages)}
-                              {day.unpriced_calls > 0 ? (
+                              Cost{' '}
+                              {totalCost(
+                                day.cost_usd,
+                                day.unpriced_calls,
+                                day.messages,
+                                day.unknown_cache_calls,
+                              )}
+                              {excludedLabel(day.unpriced_calls, day.unknown_cache_calls) ? (
                                 <span className="text-muted-foreground">
                                   {' '}
-                                  ({notPricedLabel(day.unpriced_calls)})
+                                  ({excludedLabel(day.unpriced_calls, day.unknown_cache_calls)})
                                 </span>
                               ) : null}
                             </div>
@@ -334,9 +369,9 @@ export default function AIUsagePage() {
                           <td className="py-2 text-right tabular-nums">{formatNumber(u.tokens)}</td>
                           <td
                             className="py-2 text-right tabular-nums"
-                            title={u.unpriced_calls > 0 ? notPricedLabel(u.unpriced_calls) : undefined}
+                            title={excludedLabel(u.unpriced_calls, u.unknown_cache_calls)}
                           >
-                            {totalCost(u.cost_usd, u.unpriced_calls, u.messages)}
+                            {totalCost(u.cost_usd, u.unpriced_calls, u.messages, u.unknown_cache_calls)}
                           </td>
                         </tr>
                       ))}
@@ -385,9 +420,9 @@ export default function AIUsagePage() {
                           <td className="py-2 text-right tabular-nums">{formatNumber(c.tokens)}</td>
                           <td
                             className="py-2 text-right tabular-nums"
-                            title={c.unpriced_calls > 0 ? notPricedLabel(c.unpriced_calls) : undefined}
+                            title={excludedLabel(c.unpriced_calls, c.unknown_cache_calls)}
                           >
-                            {totalCost(c.cost_usd, c.unpriced_calls, c.messages)}
+                            {totalCost(c.cost_usd, c.unpriced_calls, c.messages, c.unknown_cache_calls)}
                           </td>
                         </tr>
                       ))}
@@ -571,12 +606,12 @@ export default function AIUsagePage() {
 function SummaryCard({
   label,
   value,
-  note,
+  notes = [],
   loading,
 }: {
   label: string;
   value: string;
-  note?: string;
+  notes?: string[];
   loading: boolean;
 }) {
   return (
@@ -586,7 +621,15 @@ function SummaryCard({
         <CardTitle className="text-2xl">
           {loading ? <Loader2 className="size-4 animate-spin" /> : value}
         </CardTitle>
-        {note && !loading ? <p className="text-xs text-muted-foreground">{note}</p> : null}
+        {loading
+          ? null
+          : notes
+              .filter(Boolean)
+              .map((note) => (
+                <p key={note} className="text-xs text-muted-foreground">
+                  {note}
+                </p>
+              ))}
       </CardHeader>
     </Card>
   );
