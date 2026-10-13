@@ -77,8 +77,8 @@ def similar_pending(n: int = 2) -> dict[str, Any]:
 
 def multi_pending(original: str = MSG) -> dict[str, Any]:
     return make_pending("idea_multi", [
-        {"key": "one", "label": "Save as one idea", "payload": {"choice": "one", "message_text": original}},
-        {"key": "separate", "label": "Send them one at a time", "payload": {"choice": "separate"}},
+        {"key": "1", "label": "Save as one idea", "payload": {"choice": "one", "message_text": original}},
+        {"key": "2", "label": "Send them one at a time", "payload": {"choice": "separate"}},
     ])
 
 
@@ -384,11 +384,14 @@ def test_two_ideas_offers_multi_without_calling_capture(cap):
     assert res.status == "idea_multi_offered"
     p = res.pending
     assert p["kind"] == "idea_multi"
-    assert [o["key"] for o in p["options"]] == ["one", "separate"]
+    # keys are the numbers the reply prints, as for idea_similar
+    assert [o["key"] for o in p["options"]] == ["1", "2"]
     assert p["options"][0]["payload"]["choice"] == "one"
     assert p["options"][0]["payload"]["message_text"] == MSG
     assert p["options"][1]["payload"]["choice"] == "separate"
-    assert p["asked"]
+    # the asked line only; the options are listed separately
+    assert p["asked"] == res.reply_text.splitlines()[0]
+    assert "\n" not in p["asked"]
     assert p["asked_turn"] == 5 and p["misses"] == 0 and p["v1_kind"] is None
     lines = [ln.strip() for ln in res.reply_text.splitlines()]
     assert any(ln.startswith("1.") for ln in lines)
@@ -421,7 +424,7 @@ def test_multi_mixed_language_is_en(cap):
 
 def test_multi_answer_one_captures_original_message(cap):
     cap.complete()
-    res = run(make_ask(act="answers_bot_question", option_key="one", idea_count=None),
+    res = run(make_ask(act="answers_bot_question", option_key="1", idea_count=None),
               pending=multi_pending("ORIGINAL two ideas message"), message_text="yes one please")
     assert cap.kw["message_text"] == "ORIGINAL two ideas message"
     assert cap.kw["update_held"] is True
@@ -430,7 +433,7 @@ def test_multi_answer_one_captures_original_message(cap):
 
 
 def test_multi_answer_separate_asks_for_the_first_idea_without_capture(cap):
-    res = run(make_ask(act="answers_bot_question", option_key="separate", idea_count=None),
+    res = run(make_ask(act="answers_bot_question", option_key="2", idea_count=None),
               pending=multi_pending(), turn_no=11)
     assert cap.calls == []
     assert res.status == "ask_idea"
@@ -544,7 +547,7 @@ def test_leak_guard_over_every_pending(cap):
     produced.append(run(make_ask()))
     for lang in ("en", "ms", "zh"):
         produced.append(run(make_ask(idea_count=2), language=lang))
-    produced.append(run(make_ask(act="answers_bot_question", option_key="separate", idea_count=None),
+    produced.append(run(make_ask(act="answers_bot_question", option_key="2", idea_count=None),
                         pending=multi_pending()))
     pendings = [r for r in produced if r.pending]
     assert len(pendings) == len(produced)

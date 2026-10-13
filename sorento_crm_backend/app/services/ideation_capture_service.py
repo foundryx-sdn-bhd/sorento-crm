@@ -380,6 +380,8 @@ def handle_capture_turn(
         title = normalise_title(extraction.title)
         # An intent-only message ("I have an idea") carries no idea whatever the extractor
         # wrote into problem, so problem is not counted when has_idea is False.
+        # Stripping problem from `fields` itself (not a copy) is safe only while problem is a
+        # required field: the turn then always stops at the ask below and never sends `fields`.
         if extraction.has_idea is False:
             fields = {k: v for k, v in fields.items() if k != "problem"}
         if draft is not None:

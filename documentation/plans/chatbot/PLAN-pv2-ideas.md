@@ -54,8 +54,8 @@ def run_idea_turn(db, *, ask, language, respond_io_id, message_text, session_var
 
 1. `act == "answers_bot_question"` and `pending.kind` in IDEA_PENDING_KINDS:
    - `idea_similar`: matched option payload `{"choice": n | "new"}` -> capture with `choice_in=<choice>, update_held=True`.
-   - `idea_multi`: option `one` (payload `{"choice": "one", "message_text": <original>}`) -> capture the ORIGINAL
-     message with `update_held=True`; option `separate` -> no ss call, reply = `render_reply("ask_idea")`, status
+   - `idea_multi`: option key `"1"` (payload `{"choice": "one", "message_text": <original>}`) -> capture the ORIGINAL
+     message with `update_held=True`; option key `"2"` (payload `{"choice": "separate"}`) -> no ss call, reply = `render_reply("ask_idea")`, status
      `ask_idea`, pending `idea_missing_field`.
    - `idea_missing_field`: capture `message_text` with `ask_reply=True, update_held=True` (option_key not needed).
 2. Otherwise:
@@ -63,8 +63,8 @@ def run_idea_turn(db, *, ask, language, respond_io_id, message_text, session_var
      no ss call, reply = `render_reply("similar_picked", {idea_number, link})` (the idea's "open it to add this"
      line; there is no ss update API), status `held_idea_open`, `idea_draft_id` = that idea.
    - `ask.ideation.idea_count >= 2`: no ss call; pending `idea_multi` (crew answer 13 Oct: option (a); a
-     multi-idea extractor that saves both is a follow-up, out of scope tonight; options `one` = "Save as one
-     idea", `separate` = "Send them one at a time"); reply = asked line + `1. <label>` lines; status
+     multi-idea extractor that saves both is a follow-up, out of scope tonight; option keys `"1"` = "Save as one
+     idea", `"2"` = "Send them one at a time", the numbers the reply prints); reply = asked line + `1. <label>` lines, `asked` = the asked line only; status
      `idea_multi_offered`. Copy en/ms/zh lives in ideas.py tonight.
    - else capture `message_text` with `update_held=True`.
 3. Result mapping: `similar_offered` -> pending `idea_similar`, options `"1".."N"` (label = idea title, payload

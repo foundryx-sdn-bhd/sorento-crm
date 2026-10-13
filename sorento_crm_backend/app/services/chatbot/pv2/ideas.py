@@ -85,7 +85,7 @@ def _matched_option(pending: Any, option_key: Any) -> Any | None:
     return None
 
 
-def _map_result(res: dict[str, Any], language_in: str, turn_no: int, db: Any) -> IdeaTurnResult:
+def _map_result(res: dict[str, Any], language_in: str, turn_no: int) -> IdeaTurnResult:
     """Capture result -> turn result: the pending it leaves and the idea it now holds."""
     status = res.get("status")
     reply = res.get("reply_text") or ""
@@ -134,7 +134,10 @@ def run_idea_turn(
     is_test: bool = False,
     submitter_name: str | None = None,
 ) -> IdeaTurnResult | None:
-    """One ideation turn. `None` = not an idea turn (an answer whose key is no pending option)."""
+    """One ideation turn. `None` = not an idea turn (an answer whose key is no pending option).
+
+    `session_vars` is the contact row's own `session_vars` on a live turn (never a caller copy);
+    a test turn passes the caller's blob, which the capture service also receives."""
     lang = _lang(language)
 
     def capture(text: str, *, ask_reply: bool = False, choice_in: Any = None) -> IdeaTurnResult:
@@ -149,7 +152,7 @@ def run_idea_turn(
             choice_in=choice_in,
             update_held=True,
         )
-        return _map_result(res, lang, turn_no, db)
+        return _map_result(res, lang, turn_no)
 
     def missing_field_question() -> IdeaTurnResult:
         reply = render_reply("ask_idea", {}, user_message=message_text, language=lang, db=db)
@@ -183,7 +186,11 @@ def run_idea_turn(
 
     ideation = _get(ask, "ideation")
     if _get(ideation, "adds_to_held_idea"):
-        held = _captured_pointer((session_vars or {}).get("ideation"), is_test)
+        # `session_vars` must be the contact row's own blob on a live turn (the capture service
+        # trusts only the row); a test turn may carry it nested under `variables`, as there.
+        sv = session_vars or {}
+        state = sv.get("ideation") or ((sv.get("variables") or {}).get("ideation") if is_test else None)
+        held = _captured_pointer(state, is_test)
         if held is not None:
             # There is no ss update API: point at the idea, the user adds to it there.
             reply = render_reply(
@@ -208,15 +215,16 @@ def run_idea_turn(
         asked = _MULTI_ASKED[lang].format(n=count)
         reply = f"{asked}\n1. {one}\n2. {separate}"
         options = [
-            {"key": "one", "label": one, "payload": {"choice": "one", "message_text": message_text}},
-            {"key": "separate", "label": separate, "payload": {"choice": "separate"}},
+            # Keys are the numbers the reply prints, as for idea_similar.
+            {"key": "1", "label": one, "payload": {"choice": "one", "message_text": message_text}},
+            {"key": "2", "label": separate, "payload": {"choice": "separate"}},
         ]
         return IdeaTurnResult(
             status="idea_multi_offered",
             reply_text=reply,
             language=lang,
             session_vars=session_vars,
-            pending=_pending("idea_multi", reply, options, turn_no),
+            pending=_pending("idea_multi", asked, options, turn_no),
             idea_draft_id=None,
         )
 
