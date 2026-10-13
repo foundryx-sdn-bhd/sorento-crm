@@ -1,6 +1,6 @@
 # PLAN: notify the OI raiser when purchasing rejects rows (OI-REJECT-NOTIFY)
 
-Status: Ready, reviewer READY at d30ed42e (track: standard, additive seed migration; cloud lane, backend only)
+Status: Review, owner hand-test round 2 built (track: standard, additive seed migration; cloud lane, backend only)
 
 UAC: `oi-reject-notify-13oct-acceptance-criteria.md` (alongside).
 
@@ -96,3 +96,24 @@ Reuse, no parallel path:
 10. Seed migration idempotent; downgrade removes both rows; automation enabled with
     `include_raiser`.
 11. Template renders the lines, reason and footer; no ` · `; blank not `None`.
+
+## Owner hand-test round 2 (13 Oct)
+
+Owner: "if rejected, we need to indicate something here for CS to relate, and it should open
+the SO and can directly see which lines are rejected to take next action".
+
+- Root cause of "Verdict Suggested, OI -, 0 rejected": on a MULTI-line order the reject's own
+  re-confirm (`uncover_lines` -> `confirm` -> `_retire_uncovered_rows`, else branch) cancelled
+  the refused row; the board skips cancelled rows. The else branch now carries the same
+  `ack_state != ACK_REJECTED` guard as the other branch.
+- Board: the line's `order_inquiry` carries `rejected_at`; the Verdict pill reads "Rejected by
+  purchasing" (same red as CS's own Rejected) with "Rejected by <name> on <MYT time>:
+  <reason>" in a popover; the header adds " · N rejected by purchasing" while any is open.
+- Link: the email's first link and the bell open
+  `/project-sales/fulfilment-planning?orders=<SO>&lines=<project line ids>`; the board reads
+  `lines`, switches to List, filters Status to "Rejected by purchasing" and opens the first
+  line. "Open in Order Inquiries" stays as the second email link.
+- Footer: the default footer sentence names the theme's company (a name set on the Email Theme
+  screen used to reach only the header); `oirj_0002_theme_sorento` names it Sorento where
+  System Settings still carries the template's "Metronic" and no admin picked one.
+- What CS does next: behaviour card `alignment-oi-reject-cs-next-13oct.html` (crew ask).

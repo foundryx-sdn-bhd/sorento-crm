@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OI Reject: CS Next</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb;
+          --red-bg:#fee2e2; --red-ink:#991b1b; --green:#047857; --amber:#92400e; --blue:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+          --bg:#0f1115; --card:#171a21; --ink:#e5e7eb; --muted:#9ca3af; --line:#2a2f3a;
+          --red-bg:#3b1414; --red-ink:#fca5a5; --green:#34d399; --amber:#fbbf24; --blue:#60a5fa; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  main { max-width:1040px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:16px; margin:28px 0 8px; }
+  .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:12px 0; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; }
+  .chip { display:inline-block; border-radius:999px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .red { background:var(--red-bg); color:var(--red-ink); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; }
+  .scroll { overflow-x:auto; }
+  .pop { display:inline-block; margin-top:6px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; background:var(--card); box-shadow:0 4px 12px rgba(0,0,0,.08); }
+  ol li { margin:6px 0; } .rec { color:var(--green); font-weight:600; }
+  .tag { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:6px; padding:0 6px; margin-left:6px; }
+  img { max-width:100%; border:1px solid var(--line); border-radius:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>After purchasing rejects: what CS sees and does next</h1>
+  <p class="muted">PR #1622, owner hand test 13 Oct 2026. The top half shows what is built on the branch now (screenshots in <code>evidence/oi-reject-notify/</code>). The bottom half is the decision the owner is asked to make.</p>
+
+  <h2>1. Where the email and bell land (built)</h2>
+  <div class="card">
+    <div class="bar">
+      <strong>Planning 1 sales order: SO416732</strong>
+      <span class="muted">0 to confirm · 0 rejected · <b>1 rejected by purchasing</b></span>
+    </div>
+    <p style="margin:8px 0"><span class="chip red">1 rejected</span> <span class="muted">decision strip chip, already on the board</span></p>
+    <p class="muted" style="margin:4px 0 8px">Filter applied by the link: <span class="tag">Status: Rejected by purchasing</span>, the refused line expanded and scrolled to.</p>
+    <div class="scroll">
+      <table>
+        <tr><th>Line</th><th>Item</th><th>Outstanding</th><th>Suggested</th><th>Decided</th><th>OI</th><th>Verdict</th></tr>
+        <tr><td>3</td><td>B2155-NL-BLUE</td><td>10</td><td>Buy 10</td><td>Not decided</td><td>OI-2610-0007</td>
+            <td><span class="chip red">Rejected by purchasing</span><br>
+                <span class="pop">Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish</span></td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="muted">Before this round the line read Verdict "Suggested", OI "-": the reject's own re-confirm was cancelling the refused row on a multi-line order, so the board had nothing to show. That is fixed in this PR.</p>
+
+  <h2>2. What CS can do next, with what exists today</h2>
+  <div class="card">
+    <ol>
+      <li><b>Re-decide on the board</b>: open the line, choose another source (own location, borrow, site pool) and Confirm. The refusal clears once the line is decided again. <span class="tag">board, today</span></li>
+      <li><b>Ask purchasing again</b>: keep Buy and Confirm. A fresh order inquiry row goes to purchasing. CS's Reason is kept on the board's decision (Decision trail) but does <b>not</b> reach purchasing's order inquiry row today. <span class="tag">board, today</span></li>
+      <li><b>Cancel the line</b>: Decide, Cancel SO, with the mandatory reason, Confirm. The line is retired. <span class="tag">board, today</span></li>
+      <li><b>Change the item in AutoCount</b> (e.g. the customer accepts another finish): edit the SO line in AutoCount, re-sync the SO book. The board shows the line as "Change proposed"; CS confirms it and the new item goes to purchasing. <span class="tag">AutoCount, then board</span></li>
+      <li><b>Cancel the line in AutoCount</b>: re-sync; the board shows it Cancelled; Confirm retires it. <span class="tag">AutoCount, then board</span></li>
+    </ol>
+    <p class="rec">Recommended default: CS calls the customer, then (4) when the customer takes a substitute item, otherwise (1) or (3) on the board. (2) only when purchasing's reason is temporary (factory closed, back-order).</p>
+  </div>
+
+  <h2>3. Questions for the owner (recommendations in bold)</h2>
+  <div class="card">
+    <ol>
+      <li>When CS buys a refused line again, should CS's Reason travel to purchasing's new order inquiry row (shown beside it on the Order Inquiries page)? <b>Yes: otherwise purchasing sees the same request it just refused with no word on what changed. Small follow-up lane; no new button.</b></li>
+      <li>Should an unanswered refusal remind the raiser after a few days? <b>Not now: the bell, the email and the header count are new; measure first.</b></li>
+      <li>Should purchasing be told when CS answers the refusal (re-decides, cancels or changes the item)? <b>Yes, as a small follow-up lane: one bell to the rejecter, no email.</b></li>
+      <li>Should the email list these next actions? <b>No: the email links straight to the line; the how-to belongs in the Outline guide.</b></li>
+    </ol>
+  </div>
+</main>
+</body>
+</html>
