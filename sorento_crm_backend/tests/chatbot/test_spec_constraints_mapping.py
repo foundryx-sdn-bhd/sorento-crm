@@ -84,15 +84,19 @@ def test_c1b_subject_comes_first_whatever_the_entity_order(vdb):
     assert out == CONSTRAINTS
 
 
-def test_c2_typed_product_code_maps_nothing(vdb):
-    """RED: same missing function."""
+def test_c2_a_typed_product_code_keeps_its_size(vdb):
+    """Owner hand test round 2 (13 Oct, superseding "a typed code maps nothing"): "250mm srtwc286"
+    keeps only the variants holding the size, so the size maps beside the code (the call keeps
+    the code's ids, `spec_keeps_ids`)."""
     from app.services.chatbot.lanes.business.fetch import spec_constraints_for
 
     code = {
         "raw": "SRT62-GM", "hint": "product", "canonical_code": "SRT62-GM",
         "current_message": True, "confident": True, "hint_confident": True,
     }
-    assert spec_constraints_for(_ask(code, _spec("size", 250, "250mm")), vdb) is None
+    assert spec_constraints_for(_ask(code, _spec("size", 250, "250mm")), vdb) == [
+        {"key": "size", "op": "eq", "value": 250}
+    ]
 
 
 def test_c3_a_specification_without_a_value_is_not_mapped(vdb):
