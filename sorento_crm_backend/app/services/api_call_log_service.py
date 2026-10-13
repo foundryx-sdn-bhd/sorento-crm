@@ -45,6 +45,16 @@ _SECRET_KEYS = frozenset(
 )
 
 
+# Suffixes catch prefixed names such as `anthropic_api_key` / `gemini_api_key` (the AI
+# assistant settings PUT) that the exact set misses. `_token` does not match `max_tokens`.
+_SECRET_SUFFIXES = ("_api_key", "_password", "_secret", "_token")
+
+
+def _is_secret_key(key: Any) -> bool:
+    k = str(key).strip().lower()
+    return k in _SECRET_KEYS or k.endswith(_SECRET_SUFFIXES)
+
+
 def redact_mapping(value: Any) -> Any:
     """Deep-copy `value`, replacing any secret-keyed entry with `REDACTED`.
 
@@ -53,7 +63,7 @@ def redact_mapping(value: Any) -> Any:
     """
     if isinstance(value, Mapping):
         return {
-            k: REDACTED if str(k).strip().lower() in _SECRET_KEYS else redact_mapping(v)
+            k: REDACTED if _is_secret_key(k) else redact_mapping(v)
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple)):

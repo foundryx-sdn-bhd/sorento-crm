@@ -3082,3 +3082,71 @@ describe('BoardLineDecisionPanel: the delivered part is never capped (OI-CLOSED-
     expect(screen.getByTestId('reserve-location-ZZT-POOL')).toBeInTheDocument();
   });
 });
+
+/**
+ * PR 1622 (owner Q1, review B1): the planner's own words on a line kept as Buy travel as the
+ * Buy's reason to purchasing's new order inquiry row - never a sentence the Reason box was
+ * merely SEEDED with (which can be the engine's own borrow sentence).
+ */
+describe('BoardLineDecisionPanel: the note purchasing reads (PR 1622)', () => {
+  const buying: Partial<BoardContribution> = {
+    sources: [{ kind: 'buy', qty: '24', reason: 'remaining uncovered need' }] as BoardContribution['sources'],
+    qty_proposed_reserve: '0',
+    qty_proposed_buy: '24',
+  };
+  const lastSaved = (onDecide: ReturnType<typeof vi.fn>) => onDecide.mock.calls.at(-1)?.[0] ?? {};
+
+  it('carries what the planner typed on a line kept as Buy, as cs_note only', () => {
+    const { onDecide } = renderPanel(buying);
+    fireEvent.change(screen.getByLabelText(/^Reason/), {
+      target: { value: 'Customer accepted the chrome finish' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(lastSaved(onDecide)).toMatchObject({
+      verdict: 'approved',
+      cs_note: 'Customer accepted the chrome finish',
+    });
+    expect(lastSaved(onDecide).buy_reason).toBeFalsy();
+  });
+
+  it('never carries a sentence the box was only seeded with, on approve', () => {
+    const { onDecide } = renderPanel(buying, {
+      verdict: 'approved',
+      reason: 'ENGINE: free stock at DC1 outside the group',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(lastSaved(onDecide).cs_note).toBeFalsy();
+  });
+
+  it('never carries a seeded sentence on an AMEND either (review B1, amend path)', () => {
+    // The reserve-only suggestion, amended into a whole-line Buy, with the box still holding
+    // the sentence it was seeded with.
+    const { onDecide } = renderPanel({}, {
+      verdict: 'approved',
+      reason: 'ENGINE: free stock at DC1 outside the group',
+    });
+    fireEvent.click(screen.getByLabelText('Buy the whole line'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    const saved = lastSaved(onDecide);
+    expect(saved.verdict).toBe('amended');
+    expect(saved.buy_qty).toBe('24');
+    expect(saved.cs_note).toBeFalsy();
+  });
+
+  it('keeps the line\'s own earlier note on an untouched re-save', () => {
+    const { onDecide } = renderPanel(buying, {
+      verdict: 'approved',
+      reason: 'Customer accepted the chrome finish',
+      cs_note: 'Customer accepted the chrome finish',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(lastSaved(onDecide).cs_note).toBe('Customer accepted the chrome finish');
+  });
+
+  it('carries nothing when the line buys nothing', () => {
+    const { onDecide } = renderPanel();
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Took it from stock' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }));
+    expect(lastSaved(onDecide).cs_note).toBeFalsy();
+  });
+});

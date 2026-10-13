@@ -6086,6 +6086,17 @@ class ProjectSupplyService:
             # own Reserve, never excluded) still refuses it exactly as it always has
             # (`test_a_hold_the_same_order_carries_forward_is_netted_by_the_confirm_as_
             # the_board_nets_it`). `carried` is read above the location gate.
+            if warehouse == fact.own_code and fact.warehouse is not None:
+                # BORROW-OWN-LOC: a Borrow at the own location is judged against the free
+                # stock THIS Reserve leaves there, or one confirmation would hold the same
+                # units once as Reserve and again as Borrow. Drawn BEFORE the carried
+                # exemption below: on a re-confirm the line's own hold is un-netted, so an
+                # unchanged Reserve still has to come off what the Borrow can take.
+                own_id = str(fact.warehouse.id)
+                borrow_left.free(fact.product_id, own_id, self._free_at)
+                borrow_left.take_free(
+                    fact.product_id, own_id, max(qty - reserve_credit[index], _ZERO)
+                )
             ask = qty - carried if qty > carried else _ZERO
             if ask <= _ZERO:
                 continue
@@ -6545,24 +6556,18 @@ class ProjectSupplyService:
         if item.source == ALLOC_SOURCE_OTHER_LOCATION and donor_core_line_id:
             self._check_group_borrow(
                 item, fact, warehouse, donor_core_line_id, refuse, stale, invalid,
-                carried_holds,
+                carried_holds, borrow_left,
             )
             return
 
         if item.source == ALLOC_SOURCE_OTHER_LOCATION:
-            if fact.warehouse and str(item.warehouse_id) == str(fact.warehouse.id):
-                # Ladder v3: this line's own location is never a BORROW source - free
-                # stock there has no donor to ask, its demand IS this line, and rung 2
-                # reaches it as a Reserve already. The only thing left to borrow here is
-                # ANOTHER SO's committed quantity, which names that line by id.
-                refuse(
-                    invalid,
-                    f"{warehouse.warehouse_code} is this line's own location. Free stock "
-                    "there cannot be borrowed - name the sales-order line it should come "
-                    "from, on the order's own sheet.",
-                )
-                return
-            if str(item.warehouse_id) in self._reserve_location_ids(fact):
+            # BORROW-OWN-LOC (owner, 13 Oct 2026): the line's own location IS a Borrow
+            # source now. It confirms like any other location borrow below: what is free
+            # there (after this line's own Reserve) is held, the rest is recorded short.
+            own = fact.warehouse is not None and str(item.warehouse_id) == str(
+                fact.warehouse.id
+            )
+            if not own and str(item.warehouse_id) in self._reserve_location_ids(fact):
                 refuse(
                     invalid,
                     f"{warehouse.warehouse_code} is inside this line's Reserve pool. "
@@ -6571,9 +6576,16 @@ class ProjectSupplyService:
                 return
             # What this order's own active revision already holds here, resubmitted:
             # not a new ask - same "zero baseline" reasoning as the Reserve check above
-            # (PLAN-so-book-diff-replanning.md section 10, defect A).
-            carried = self._carried_component_qty(
-                carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
+            # (PLAN-so-book-diff-replanning.md section 10, defect A). Not at the own
+            # location (review B1): the snapshot states what was DECIDED, which may have
+            # been recorded short, and the line's own hold there is already un-netted, so
+            # the borrow is judged afresh against what this line's Reserve leaves.
+            carried = (
+                _ZERO
+                if own
+                else self._carried_component_qty(
+                    carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
+                )
             )
             ask = qty - carried if qty > carried else _ZERO
             if ask <= _ZERO:
@@ -6867,6 +6879,7 @@ class ProjectSupplyService:
         stale: List[Dict[str, Any]],
         invalid: List[Dict[str, Any]],
         carried_holds: Dict[str, Dict[str, Any]],
+        borrow_left: Optional["_BorrowLedger"] = None,
     ) -> None:
         """The group borrow a person picked in Amend (section 1c), re-read live (AC-C03).
 
@@ -6980,6 +6993,14 @@ class ProjectSupplyService:
                 else f"{held} is no longer held by an open order, so it cannot be borrowed.",
             )
             return
+        if borrow_left is not None:
+            # BORROW-OWN-LOC (review N1): a later order's committed units are not holds, so
+            # they still read as free at the bin. Taken off the bin's free ledger here, or a
+            # plain location borrow at the same bin in this confirmation would be judged
+            # against the same units again. Before the carried exemption, for the same
+            # re-confirm reason as the Reserve draw. The ledger floors at 0.
+            borrow_left.free(fact.product_id, str(warehouse.id), self._free_at)
+            borrow_left.take_free(fact.product_id, str(warehouse.id), qty)
         carried = self._carried_component_qty(
             carried_holds, str(fact.line.id), BORROW, str(warehouse.id)
         )
@@ -7190,6 +7211,11 @@ class ProjectSupplyService:
                     "landed_note": (
                         getattr(self, "_landed_buy_notices", None) or {}
                     ).get(str(line.id), {}).get("landed"),
+                    # PR 1622 (owner, 13 Oct): what CS wrote when deciding this Buy, so a
+                    # line bought again after purchasing refused it says what changed. Only
+                    # the planner's own note: never amend_reason/buy_reason, which can carry
+                    # a seeded engine sentence (review B1).
+                    "cs_note": (getattr(entry, "cs_note", None) or "").strip() or None,
                 }
             )
         for entry in carried:
@@ -7834,9 +7860,9 @@ class ProjectSupplyService:
         about the hole at the POOL's location. A Reserve at the line's OWN location is never
         one: that location's demand IS this line, already inside its `SO qty`, and taking the
         reserve out again would count the same quantity twice. **A Borrow from the line's
-        own location is never one either, for the same reason** - a dealer hot-selling
-        product may only Reserve from the pool, so its own location is a legitimate Borrow
-        source, and its demand is still inside that location's SO qty.
+        own location is never one either, for the same reason** - its own location is a
+        legitimate Borrow source (BORROW-OWN-LOC), and its demand is still inside that
+        location's SO qty.
 
         The donor's availability is the AutoCount triple LESS what other confirmed
         decisions already hold there from elsewhere. A borrow, or a pool take, writes a
@@ -10333,7 +10359,8 @@ class ProjectSupplyService:
         Two shapes, and they are answered differently: free stock at a location outside
         the Reserve pool has no donor to ask, so it carries no claim; stock another
         project is holding names that project and its impact, so CS is deciding with the
-        donor's position in front of them (AC-B09).
+        donor's position in front of them (AC-B09). The line's OWN location is appended
+        last as a plain location row at 0 free (BORROW-OWN-LOC, owner 13 Oct 2026).
 
         **Every donor states AutoCount's own triple beside the engine's figures** (PLAN
         13.11). Free stock alone nets reserved and confirmed holds only, and on this book
@@ -10358,9 +10385,8 @@ class ProjectSupplyService:
         """
         if not fact.product_id:
             return []
-        # Everything Reserve cannot reach. For a hot-selling product that INCLUDES the
-        # line's own dealer location: Reserve may not touch it, and CS borrowing it with a
-        # reason is the sanctioned way to use it (PLAN 3.3).
+        # Everything Reserve cannot reach, for the free-stock rows. The own location is
+        # inside it and comes back at the end as its own plain row (BORROW-OWN-LOC).
         inside = self._reserve_location_ids(fact)
         group_siblings = self._group_sibling_warehouses(fact)
         inside_group = inside | {str(w.id) for w in group_siblings.values()}
@@ -10474,6 +10500,34 @@ class ProjectSupplyService:
                 for c in candidates
                 if not (c.get("rung") == RUNG_GROUP_BORROW and not c.get("lower_ranked"))
             ]
+        # BORROW-OWN-LOC (owner, 13 Oct 2026): the line's OWN location is always a Borrow
+        # choice too, whatever holds the stock there and whatever the switch says, even with
+        # nothing there ("planning can be done after delivery"). A plain location row, LAST
+        # and never `recommended`, so the ranked donors keep the head and, in the dialog's
+        # merged bin, a typed quantity beyond the bin's free rides on this row. Its
+        # `free_qty` is 0: the free units there are Reserve's, and counting them again here
+        # would double them in `qty_borrow_available`. Confirm holds what is free after this
+        # line's own Reserve and records the rest short.
+        if fact.warehouse is not None:
+            own_id = str(fact.warehouse.id)
+            candidates.append(
+                {
+                    "source": ALLOC_SOURCE_OTHER_LOCATION,
+                    "warehouse_code": fact.own_code,
+                    "warehouse_id": own_id,
+                    "free_qty": qty_text(_ZERO),
+                    **self._donor_pile(fact.product_id, own_id, _ZERO, need),
+                    "donor_impact": {
+                        "free_before": qty_text(_ZERO),
+                        "free_after_full_borrow": qty_text(_ZERO),
+                        "committed_qty": qty_text(_ZERO),
+                    },
+                    "rung": None,
+                    # Never the head over a ranked donor; the head only when it is alone,
+                    # because `BorrowCandidate` says exactly one row carries it.
+                    "recommended": not candidates,
+                }
+            )
         # S4 (`PLAN-local-supplier-oi-routing.md`, AC-2.20): the per-order sheet's own
         # `BorrowCandidate.location`, the board's `_donors_for` wrapper is not on this call
         # path at all - `SupplyLineCard`'s Borrow modal reads THIS list directly. Built by

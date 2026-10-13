@@ -181,7 +181,11 @@ cannot drift:
 
 ## Env quick reference
 
-Backend (`sorento_crm_backend/.env`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `API_HOST`, `API_PORT`, `CORS_ORIGINS`, `REDIS_URL`, `AWS_*`, `CLOUDFRONT_*`, `STORAGE_DEFAULT_PROVIDER`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_CDN_DOMAIN`, `N8N_WEBHOOK_URL`, `EXTERNAL_API_KEY`, `EXTERNAL_API_KEY_ACT_AS_USER_ID`, `USE_REMOTE_TIME`, `RESPOND_*`, `RESPOND_WEBHOOK_SECRET` (Respond.io's direct message webhook, `documentation/reference/RESPOND-WEBHOOK-SETUP.md`), `DEALER_KIT_PRINT_BASE_URL`.
+Backend (`sorento_crm_backend/.env`): `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `FIELD_ENCRYPTION_KEY`, `JWT_ALGORITHM`, `API_HOST`, `API_PORT`, `CORS_ORIGINS`, `REDIS_URL`, `AWS_*`, `CLOUDFRONT_*`, `STORAGE_DEFAULT_PROVIDER`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_CDN_DOMAIN`, `N8N_WEBHOOK_URL`, `EXTERNAL_API_KEY`, `EXTERNAL_API_KEY_ACT_AS_USER_ID`, `USE_REMOTE_TIME`, `RESPOND_*`, `RESPOND_WEBHOOK_SECRET` (Respond.io's direct message webhook, `documentation/reference/RESPOND-WEBHOOK-SETUP.md`), `DEALER_KIT_PRINT_BASE_URL`.
+
+`FIELD_ENCRYPTION_KEY` (comma-separated Fernet keys, current first) encrypts stored secrets
+(`app/utils/field_encryption.py`); the JWT_SECRET-derived key is only a decrypt fallback until
+`scripts/reencrypt_field_secrets.py --apply` has run. Every backend-image service needs the same key (prod: backend_blue, backend_green, worker, worker_fast); the MCP services do not.
 
 `DEALER_KIT_PRINT_BASE_URL` is where the PDF worker reaches the FRONTEND to render a catalogue (inside compose this is the service name, not the public hostname). It defaults to `http://localhost:3000`, so an unset value in a container renders nothing and the export fails on a render timeout.
 

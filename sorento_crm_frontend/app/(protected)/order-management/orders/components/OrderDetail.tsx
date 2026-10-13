@@ -146,6 +146,10 @@ export default function OrderDetail({ orderId, listSearch }: OrderDetailProps) {
                   <p className="font-medium">{order.debtor_name || '-'}</p>
                 </div>
                 <div>
+                  <p className="text-sm text-muted-foreground">Branch</p>
+                  <p className="font-medium">{order.branch_name || '-'}</p>
+                </div>
+                <div>
                   <p className="text-sm text-muted-foreground">Agent</p>
                   <p className="font-medium">{order.agent || '-'}</p>
                 </div>
@@ -261,6 +265,10 @@ export default function OrderDetail({ orderId, listSearch }: OrderDetailProps) {
                 <div>
                   <p className="text-sm text-muted-foreground">Debtor Name</p>
                   <p className="font-medium">{order.debtor_name || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Branch</p>
+                  <p className="font-medium">{order.branch_name || '-'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Agent</p>

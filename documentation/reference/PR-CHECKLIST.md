@@ -82,6 +82,17 @@ Before merging, verify compliance with [ADR-PRODUCT-STANDARDS.md](./ADR-PRODUCT-
       (never a bare contextvar set inside a sync dependency: it is lost at flush); audit screens show
       `actor_label`, never an id
 
+## Never stuck (`NEVER-STUCK-UI.md`, owner ruling 1 Oct 2026)
+- [ ] Every query consumer renders loading / no access / error + Retry / empty / data; no
+      `isLoading || !data` skeleton, no `!data` "not found", no `.catch(() => [])` in a hook
+- [ ] Tabs, menu leaves and buttons are gated by the slug the backend route requires, imported
+      from the service's `*_PERMS`; cross-module reads gate on the other module's slug
+- [ ] A 403 renders `AccessDenied` in place (inline for tabs and panels): no toast, no retry,
+      never a raw `Permission required:` string; every new `page.tsx` sits under `RequireAccess`
+- [ ] Every `refetchInterval` stops on terminal status, on error and at a ceiling; a new
+      background job has a failed state reachable without the worker and a "timed out" UI
+- [ ] Redirects use `replace`; none fire while permissions load; none inside a `queryFn`
+
 ## Test cost
 - [ ] New backend tests do not add whole-suite-running slow tests without cause; check the `--durations=30` block in the backend CI logs for the PR ("Backend test suite (Postgres)" and "Backend test suite - SCM (Postgres)") and justify any new entry over ~2s
 - [ ] A test that only asserts against production-copy data goes in `tests/ci_excluded.txt` with a reason, not into the gated set
