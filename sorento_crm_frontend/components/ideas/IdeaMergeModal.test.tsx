@@ -185,6 +185,8 @@ describe('AC-D-01 grid', () => {
     renderModal();
     const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).not.toMatch(/idea-1\b|idea-2\b/);
+    expect(within(dialog).queryByRole('button', { name: /Remove idea-/ })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /Remove IDEA-0002/ })).toBeInTheDocument();
   });
 });
 
@@ -314,6 +316,8 @@ describe('chips are labelled from the passed ideas', () => {
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(svc.listIdeas).toHaveBeenCalled());
     expect(dialog.textContent).not.toMatch(/idea-1\b|idea-2\b/);
+    expect(within(dialog).queryByRole('button', { name: /Remove idea-/ })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /Remove IDEA-0002/ })).toBeInTheDocument();
     expect(within(dialog).getAllByText(/IDEA-0002/).length).toBeGreaterThan(0);
     expect(within(dialog).getAllByText(/Quote templates/).length).toBeGreaterThan(0);
   });

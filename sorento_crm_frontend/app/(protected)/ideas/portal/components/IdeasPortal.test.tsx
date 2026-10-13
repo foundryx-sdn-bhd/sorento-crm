@@ -233,7 +233,10 @@ describe('fix round 1 nits', () => {
 
   it('one tab click writes the URL once', async () => {
     renderPortal();
-    fireEvent.click(await screen.findByRole('tab', { name: 'Feedback' }));
+    const tab = await screen.findByRole('tab', { name: 'Feedback' });
+    // Radix selects on mousedown (onValueChange) and the trigger also handles click: both fire here.
+    fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+    fireEvent.click(tab);
     await waitFor(() => expect(nav.replace).toHaveBeenCalled());
     expect(nav.replace).toHaveBeenCalledTimes(1);
   });
