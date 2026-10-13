@@ -497,3 +497,38 @@ class TestParserCannotGrantStaff:
 
         assert _calls(captured, ORDERS) == [], captured
         assert reply.strip() == NO_LINK_REFUSAL, reply
+
+
+class TestSecurityReviewRound2:
+    def test_the_engine_strips_parser_emitted_staff_keys(self) -> None:
+        """S-A: `engine` drops `required_fields.ENGINE_KEYS` off the parser's verdict before any
+        lane reads it, so a parser-emitted `doc_staff` / `ref_staff` reaches no `run_fetch`
+        (the tier-ask probe passes the parse output straight through)."""
+        from app.services.chatbot import required_fields
+
+        assert {"doc_staff", "ref_staff"} <= required_fields.ENGINE_KEYS
+
+    def test_linked_contact_with_office_tier_gets_no_foreign_po_ref(self, session_factory, monkeypatch) -> None:
+        """S-B: the PO-ref arm holds an enforced contact to its links whatever its tier, like
+        the SO number arm; another customer's PO ref is a silent miss."""
+        from tests.chatbot.test_po_ref_ask import _seed_po_so
+
+        _seed_contact(session_factory, variables={})
+        _make_staff(session_factory)
+        _link_customers(session_factory, OWN)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_po_so(session_factory, "SOZZT200001", customer_id=foreign, po_ref="4500999", po_ref_key="4500999", debtor_name=FOREIGN)
+
+        result, _captured = _run_turn(
+            session_factory,
+            monkeypatch,
+            qf=_number_ask("4500999", "customer_po_ref"),
+            text_body="status of 4500999",
+            msg_id=f"ZZT-docscope-poref-{uuid.uuid4().hex[:10]}",
+            attributes=[OUTSTANDING_KEY],
+            real_resolver=True,
+            mcp_response=FOREIGN_DO_LIST,
+        )
+        reply = (result.reply or {}).get("text") or ""
+
+        assert FOREIGN not in reply and "SOZZT200001" not in reply, reply

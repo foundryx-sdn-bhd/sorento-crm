@@ -1523,7 +1523,12 @@ def run_fetch(
             from app.services.chatbot import so_status
 
             # REF-PROBES: staff carry no customer links and no enforced scope (`ref_staff`).
-            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
+            # V1-DOC-SCOPE: an enforced contact is held to its links whatever its tier, as in
+            # the SO number arm above.
+            if customer_scope.get("enforced"):
+                linked = list(customer_scope.get("linked") or [])
+            else:
+                linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup_po_refs(db, po_refs, linked=linked)
             if trace is not None:
                 trace.add(
