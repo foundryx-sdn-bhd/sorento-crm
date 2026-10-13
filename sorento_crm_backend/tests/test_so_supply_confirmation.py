@@ -1212,8 +1212,9 @@ def test_re_confirming_the_same_borrow_does_not_stack_a_second_shortfall_row(api
         .filter(OrderInquiryRow.verb == IV_BORROW_SHORTFALL)
         .all()
     )
-    assert [row.state for row in rows].count("raised") == 1
-    assert len(rows) == 2, "the first is cancelled and kept, never edited in place"
+    # ORDERBACK-DELTA (owner, 13 Oct 2026): the unchanged hole is the same row, kept,
+    # not cancelled and raised again beside itself.
+    assert [row.state for row in rows] == ["raised"], [(r.state, r.note) for r in rows]
 
 
 # --------------------------------------------------------------------------- discontinued
