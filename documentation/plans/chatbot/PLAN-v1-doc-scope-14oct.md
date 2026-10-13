@@ -15,7 +15,10 @@ unlinked != customer) can name a delivery-order number, or a sales-order number 
    `so_status._scope_check` rule). Unlinked non-staff: no customer document matches.
 2. Business lane SO-by-number with the reveal: `linked = None if ref_staff else links`, the
    rule the PO-ref branch already uses.
-3. DO list asks with no number: scoped to links for non-staff (empty links: nothing).
+3. DO list asks with no number: scoped to links for non-staff (empty links: nothing). Security
+   review added the other arms that list customer documents: the outstanding report and the SO
+   list are refused the same way; "did you mean" alternatives and the casual clarifier prompt
+   go through the per-match drop; the customer PO-ref arm holds an enforced contact to its links.
 
 Staff unchanged. Blocked cases reuse the existing refusal line ("Sorry, that isn't under your
 account. I can only check on your own account.").
@@ -29,8 +32,10 @@ bit to the resolver drop and the tool runner, which writes `doc_staff` for the l
 `ref_staff` (tier only) still gates our own PO / PR reveals. Both keys are engine-only
 (`required_fields.ENGINE_KEYS`), so a parser-emitted copy is dropped.
 
-About 30 existing tests seeded an unlinked, tierless contact playing an office
-role; they now mark it staff explicitly, assertions unchanged.
+Existing tests in 33 files seeded an unlinked, tierless contact playing an office role; they
+now mark it staff explicitly (an office access type, so the tier-driven escalation offer is
+unchanged; about 90 marks, per test or in the file's own seeder), assertions unchanged. The
+shared `test_outstanding_lane._seed_contact` stays non-staff: about 90 tests rely on that.
 
 ## Open before merge
 
