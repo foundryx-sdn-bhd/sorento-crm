@@ -1,12 +1,32 @@
 # PLAN: Project Sales owner hand-test polish (13 Oct)
 
-Status: Plan (small-to-medium polish lane, no migration expected; track: small fix track unless a
-migration or permission change turns up)
+Status: Review (medium lane: one data-only migration, no auth or permission change; PR #1618)
 
-Lane: PROJECT-SALES-POLISH. Source: owner hand-test of Project Sales on main, 13 Oct 2026, 21 points.
+Lane: PROJECT-SALES-POLISH. Source: the owner's hand-test of Project Sales on main, 13 Oct 2026, 21 points.
+Acceptance criteria: `project-sales-polish-13oct-acceptance-criteria.md`.
 
-## Scope
+## Decisions (owner answers to the behaviour card, 13 Oct)
 
-Copy, stepper, create-on-no-match combobox, Spec In -> quotation, quotation header defaults, overview
-layout, reassign, brands overflow. Details and acceptance criteria in
-`project-sales-polish-13oct-acceptance-criteria.md` (written after the behaviour card is answered).
+- Q1 (a): the Register project form requires a lead, and the Lead picker offers Create lead when
+  nothing matches. The server stays nullable for Qualify, integrations and older projects.
+- Q2 (a): clicking Spec In moves the stage and then opens New quotation. A Back to registered edge
+  is added.
+- Q3 (a): the customer is the linked lead's buyer, shown as Customer on the Overview. A new
+  quotation's Name, Phone and Attn default from that customer's master data.
+- Q4 (owner's version): the Edit scope popup stays (name and series) and opens from a pen icon
+  beside the scope name. Series is not shown in the scope header.
+- Q5 (a): a shared numbered stepper, `components/common/WizardSteps.tsx`.
+
+## Reused components
+
+SearchableSelect `createOption` (create-on-no-match), PillOverflow (brands), DetailActionsMenu with
+getUserLookup (Reassign), PageHeader and BackToList (naming), the Button `destructive` variant
+(Remove scope), and QuotationDialog (Edit scope).
+
+## Backend
+
+- `alembic/versions/spec_in_0001_stage_label.py`: a data-only migration. The specified rung is
+  labelled Spec In, the edge into it is labelled Spec In, and a Back to registered edge is added on
+  the default graph. The seed in `project_seed_service.py` matches.
+- `project_service.serialize_projects`: adds `customer_id`, `customer_name`, `customer_phone` and
+  `customer_attn`, all read through the lead.
