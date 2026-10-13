@@ -715,3 +715,7 @@ def test_downgrade_restores_the_402_entity_type_list(db):
             ),
             {"i": _uid(), "f": "x.jpg", "p": "x.jpg"},
         )
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

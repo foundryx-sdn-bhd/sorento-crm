@@ -202,3 +202,7 @@ def test_describe_lists_every_source_with_count_and_usage():
         assert rows["domains"]["count"] == len(_names(db))
         assert rows["domains"]["href"] == "/system-management/chatbot-domains"
         assert rows["domains"]["last_changed"] is not None
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

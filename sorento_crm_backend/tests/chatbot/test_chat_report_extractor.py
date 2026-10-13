@@ -310,3 +310,7 @@ def test_the_prompt_teaches_that_the_agent_of_the_asking_customer_is_a_customer_
     assert at != -1, "the prompt never mentions a customer's sales agent"
     near = text[max(0, at - 300): at + 300]
     assert "customer" in near and ("row" in near or "shown" in near or "shows" in near), near
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows
