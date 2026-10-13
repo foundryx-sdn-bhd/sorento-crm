@@ -794,3 +794,120 @@ def test_b1_fallback_prompt_has_no_leftover_department_example():
     from app.services import ai_prompt_registry
 
     assert "manufactur" not in ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback().lower()
+
+
+# --------------------------------------------------------------------------- #
+# IDEA-CAPTURE fix round 3 (crew live check, gpt-5.4-mini): truthfulness and  #
+# language rules live in the fallback prompt AND the schema.                  #
+# --------------------------------------------------------------------------- #
+def _fallback_text() -> str:
+    from app.services import ai_prompt_registry
+
+    return ai_prompt_registry.PROMPT_KEYS["ideate_extractor"].fallback().lower()
+
+
+def _bullet(text: str, name: str) -> str:
+    """The fallback's '- <name>:' bullet, up to the next bullet or blank line."""
+    m = re.search(rf"^- {re.escape(name)}\b.*?(?=^\s*-\s|\n\n|\Z)", text, re.S | re.M)
+    assert m, f"no '- {name}' bullet in the fallback"
+    return m.group(0)
+
+
+def _field_texts() -> dict[str, str]:
+    return _schema_texts()
+
+
+@pytest.fixture(params=["fields.description", "key.description"])
+def field_schema_text(request) -> str:
+    return _field_texts()[request.param]
+
+
+# a) use cases: a named situation, never a noun lifted from the problem
+def _assert_use_case_rule(t: str) -> None:
+    assert "situation" in t or "scenario" in t, t
+    assert any(w in t for w in ("noun", "phrase", "lifted", "copied", "word from")), t
+    assert "problem" in t, t
+
+
+def test_r3a_schema_use_cases_are_named_situations_never_lifted_from_the_problem():
+    _assert_use_case_rule(IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["use_cases"]["description"].lower())
+
+
+def test_r3a_fallback_use_cases_are_named_situations_never_lifted_from_the_problem():
+    _assert_use_case_rule(_bullet(_fallback_text(), "use_cases"))
+
+
+# b) desired outcome: only when a want or solution was stated; a complaint gives none
+def _assert_outcome_rule(t: str) -> None:
+    assert re.search(r"desired_outcome.{0,400}?(complaint|problem alone|only a problem|alone|only describes)", t, re.S), t
+    assert re.search(r"desired_outcome.{0,400}?\b(infer|guess|invent|assume)", t, re.S), t
+    assert "empty" in t or "leave it out" in t or "no desired_outcome" in t, t
+
+
+def test_r3b_schema_desired_outcome_needs_a_stated_want_and_is_never_inferred(field_schema_text):
+    _assert_outcome_rule(field_schema_text)
+
+
+def test_r3b_fallback_desired_outcome_needs_a_stated_want_and_is_never_inferred():
+    _assert_outcome_rule(_bullet(_fallback_text(), "desired_outcome"))
+
+
+# c) current workaround: what they do today, in en / ms / zh phrasings
+def test_r3c_schema_workaround_is_what_they_do_today_or_now(field_schema_text):
+    assert re.search(r"current_workaround.{0,300}?\b(now|right now)\b", field_schema_text, re.S), field_schema_text
+    assert "today" in field_schema_text
+
+
+def test_r3c_fallback_workaround_carries_multilingual_phrasings():
+    b = _bullet(_fallback_text(), "current_workaround")
+    for phrase in ("right now we", "sekarang kita", "现在只能"):
+        assert phrase in b, (phrase, b)
+
+
+# d) values and title are written in the language of the message
+def test_r3d_schema_title_is_in_the_message_language_never_translated():
+    t = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["title"]["description"].lower()
+    assert "language" in t and "translat" in t, t
+
+
+def test_r3d_schema_fields_values_are_in_the_message_language_never_translated():
+    t = IDEATE_EXTRACTION_JSON_SCHEMA["properties"]["fields"]["description"].lower()
+    assert "language" in t and "translat" in t, t
+
+
+def test_r3d_fallback_title_is_in_the_message_language():
+    b = _bullet(_fallback_text(), "title")
+    assert "language" in b, b
+
+
+# e) the golden script
+def _golden_module():
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "ideation_capture_golden.py"
+    spec = importlib.util.spec_from_file_location("_ideation_capture_golden_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_r3e_golden_set_has_twelve_cases_with_zh_workaround_and_ms_solution_only():
+    mod = _golden_module()
+    cases = mod.GOLDEN
+    assert len(cases) >= 12
+    assert len({text for _label, text in cases}) == len(cases)
+    cjk = re.compile(r"[一-鿿]")
+    assert any(cjk.search(text) and ("现在" in text or "目前" in text) for _l, text in cases), "zh workaround case"
+    assert any(
+        ("solution" in label.lower())
+        and ("ms" in label.lower().split() or "malay" in label.lower())
+        and not cjk.search(text)
+        for label, text in cases
+    ), "Malay solution-only case (label names ms and solution)"
+
+
+def test_r3e_golden_docstring_names_the_migration_that_publishes_the_prompt():
+    doc = (_golden_module().__doc__ or "")
+    assert "idea_capture_fields_0001" in doc
+    assert "--from-db" in doc
