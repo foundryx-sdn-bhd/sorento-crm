@@ -54,26 +54,30 @@ export function IdeaSimilarTab({
       <section aria-label="Similar ideas" className="p-5">
         <ul className="flex flex-col divide-y rounded-lg border">
           {data.ideas.map((similar) => (
-            <li key={similar.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{similar.ideaNumber}</span>
-              <Link
-                href={`/ideas/${similar.id}`}
-                className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
-                title={similar.title ?? similar.problem}
-              >
-                {similar.title ?? similar.problem}
-              </Link>
-              <IdeaStatusBadge label={similar.statusLabel} color={similar.statusColor} />
-              <span className="flex shrink-0 items-center gap-0.5 text-xs tabular-nums text-muted-foreground">
-                <ChevronUp className="size-4" aria-hidden />
-                {similar.upvotes}
-              </span>
-              {canManage ? (
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onMerge(similar)}>
-                  <Merge className="size-4" />
-                  Merge
-                </Button>
-              ) : null}
+            <li key={similar.id} className="flex min-w-0 flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{similar.ideaNumber}</span>
+                <Link
+                  href={`/ideas/${similar.id}`}
+                  className="line-clamp-2 min-w-0 flex-1 break-words text-sm text-primary hover:underline sm:line-clamp-1"
+                  title={similar.title ?? similar.problem}
+                >
+                  {similar.title ?? similar.problem}
+                </Link>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
+                <IdeaStatusBadge label={similar.statusLabel} color={similar.statusColor} />
+                <span className="flex shrink-0 items-center gap-0.5 text-xs tabular-nums text-muted-foreground">
+                  <ChevronUp className="size-4" aria-hidden />
+                  {similar.upvotes}
+                </span>
+                {canManage ? (
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onMerge(similar)}>
+                    <Merge className="size-4" />
+                    Merge
+                  </Button>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

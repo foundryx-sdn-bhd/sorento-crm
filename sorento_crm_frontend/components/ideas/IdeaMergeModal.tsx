@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LoaderCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,7 +28,9 @@ const FIELD_ROWS: Array<{ key: IdeaMergeFieldKey; label: string }> = [
   { key: 'rawText', label: 'Original message' },
 ];
 
-const COLUMN_CLASS = 'min-w-48 w-48 shrink-0';
+// Idea columns grow to fill a wide dialog and keep a floor so a narrow one scrolls sideways.
+const COLUMN_CLASS = 'min-w-48 basis-48 flex-1';
+const LABEL_CLASS = 'sticky left-0 z-10 w-32 shrink-0 bg-background';
 
 function ideaName(idea: Idea) {
   return idea.ideaNumber ?? idea.title ?? 'Idea';
@@ -75,11 +77,22 @@ export function IdeaMergeModal({
   const { data: list } = useIdeasQuery({});
   const { merge } = useIdeaMutations();
   const initialKey = ideas.map((i) => i.id).join(',');
-  const [selectedIds, setSelectedIds] = useState<string[]>(() => ideas.map((i) => i.id));
+  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
+    ideas.map((i) => i.id),
+  );
   const [survivorId, setSurvivorId] = useState(() => ideas[0]?.id ?? '');
   // Explicit tick sets per row; a row not listed follows the survivor.
-  const [overrides, setOverrides] = useState<Partial<Record<IdeaMergeFieldKey, string[]>>>({});
+  const [overrides, setOverrides] = useState<
+    Partial<Record<IdeaMergeFieldKey, string[]>>
+  >({});
   const [attempted, setAttempted] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [moreRight, setMoreRight] = useState(false);
+
+  const measure = useCallback(() => {
+    const el = scroller.current;
+    if (el) setMoreRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -103,23 +116,40 @@ export function IdeaMergeModal({
         .filter((i) => !i.mergedIntoId || ideas.some((p) => p.id === i.id))
         .map((i) => ({
           value: i.id,
-          label: [i.ideaNumber, i.title ?? i.problem].filter(Boolean).join(' - '),
+          label: [i.ideaNumber, i.title ?? i.problem]
+            .filter(Boolean)
+            .join(' - '),
         })),
     [known, ideas],
   );
 
-  const columns = selectedIds.map((id) => known.get(id)).filter((i): i is Idea => !!i);
-  const effectiveSurvivor = columns.some((c) => c.id === survivorId) ? survivorId : (columns[0]?.id ?? '');
+  const columns = selectedIds
+    .map((id) => known.get(id))
+    .filter((i): i is Idea => !!i);
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure, selectedIds.length]);
 
-  const ticksFor = (key: IdeaMergeFieldKey) => overrides[key] ?? [effectiveSurvivor];
-  const emptyRows = FIELD_ROWS.filter((row) => !columns.some((c) => ticksFor(row.key).includes(c.id)));
+  const effectiveSurvivor = columns.some((c) => c.id === survivorId)
+    ? survivorId
+    : (columns[0]?.id ?? '');
+
+  const ticksFor = (key: IdeaMergeFieldKey) =>
+    overrides[key] ?? [effectiveSurvivor];
+  const emptyRows = FIELD_ROWS.filter(
+    (row) => !columns.some((c) => ticksFor(row.key).includes(c.id)),
+  );
 
   const onSelect = (ids: string[]) => {
     setSelectedIds(ids);
     setOverrides((current) => {
       const next: typeof current = {};
       for (const [key, picked] of Object.entries(current)) {
-        next[key as IdeaMergeFieldKey] = (picked ?? []).filter((id) => ids.includes(id));
+        next[key as IdeaMergeFieldKey] = (picked ?? []).filter((id) =>
+          ids.includes(id),
+        );
       }
       return next;
     });
@@ -129,7 +159,9 @@ export function IdeaMergeModal({
     const current = ticksFor(key);
     setOverrides((prev) => ({
       ...prev,
-      [key]: current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+      [key]: current.includes(id)
+        ? current.filter((x) => x !== id)
+        : [...current, id],
     }));
   };
 
@@ -140,11 +172,17 @@ export function IdeaMergeModal({
     if (emptyRows.length > 0) return;
     const fields: NonNullable<IdeaMergeInput['fields']> = {};
     for (const row of FIELD_ROWS) {
-      const picked = columns.map((c) => c.id).filter((id) => ticksFor(row.key).includes(id));
-      const survivorOnly = picked.length === 1 && picked[0] === effectiveSurvivor;
+      const picked = columns
+        .map((c) => c.id)
+        .filter((id) => ticksFor(row.key).includes(id));
+      const survivorOnly =
+        picked.length === 1 && picked[0] === effectiveSurvivor;
       if (!survivorOnly) fields[row.key] = picked;
     }
-    const input: IdeaMergeInput = { survivorId: effectiveSurvivor, ideaIds: columns.map((c) => c.id) };
+    const input: IdeaMergeInput = {
+      survivorId: effectiveSurvivor,
+      ideaIds: columns.map((c) => c.id),
+    };
     if (Object.keys(fields).length > 0) input.fields = fields;
     try {
       await merge.mutateAsync(input);
@@ -175,48 +213,84 @@ export function IdeaMergeModal({
                 wrapOptions
               />
             </div>
-            <div className="max-w-full overflow-x-auto">
-              <div className="w-max">
-                <RadioGroup value={effectiveSurvivor} onValueChange={setSurvivorId} className="gap-0">
-                  <div className="flex border-b border-border">
-                    <div className="w-32 shrink-0 p-2" />
-                    {columns.map((idea) => (
-                      <div key={idea.id} className={`${COLUMN_CLASS} flex items-center gap-2 p-2`}>
-                        <RadioGroupItem
-                          value={idea.id}
-                          id={`merge-keep-${idea.id}`}
-                          aria-label={`Keep ${ideaName(idea)}`}
-                        />
-                        <span className="truncate text-sm font-medium" title={ideaName(idea)}>
-                          {ideaName(idea)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </RadioGroup>
-                {FIELD_ROWS.map((row) => (
-                  <div key={row.key} className="flex border-b border-border last:border-b-0">
-                    <div className="w-32 shrink-0 p-2 text-sm font-medium">{row.label}</div>
-                    {columns.map((idea) => (
-                      <div key={idea.id} className={`${COLUMN_CLASS} flex items-start gap-2 p-2 text-sm`}>
-                        <Checkbox
-                          size="sm"
-                          className="mt-0.5"
-                          aria-label={`${row.label} from ${ideaName(idea)}`}
-                          checked={ticksFor(row.key).includes(idea.id)}
-                          onCheckedChange={() => toggle(row.key, idea.id)}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <CellValue idea={idea} field={row.key} />
+            <div className="relative">
+              <div
+                ref={scroller}
+                onScroll={measure}
+                className="max-w-full overflow-x-auto pb-2"
+              >
+                <div
+                  className="w-full"
+                  style={{ minWidth: `${8 + columns.length * 12}rem` }}
+                >
+                  <RadioGroup
+                    value={effectiveSurvivor}
+                    onValueChange={setSurvivorId}
+                    className="gap-0"
+                  >
+                    <div className="flex border-b border-border">
+                      <div className={`${LABEL_CLASS} p-2`} />
+                      {columns.map((idea) => (
+                        <div
+                          key={idea.id}
+                          className={`${COLUMN_CLASS} flex items-center gap-2 p-2`}
+                        >
+                          <RadioGroupItem
+                            value={idea.id}
+                            id={`merge-keep-${idea.id}`}
+                            aria-label={`Keep ${ideaName(idea)}`}
+                          />
+                          <span
+                            className="truncate text-sm font-medium"
+                            title={ideaName(idea)}
+                          >
+                            {ideaName(idea)}
+                          </span>
                         </div>
+                      ))}
+                    </div>
+                  </RadioGroup>
+                  {FIELD_ROWS.map((row) => (
+                    <div
+                      key={row.key}
+                      className="flex border-b border-border last:border-b-0"
+                    >
+                      <div className={`${LABEL_CLASS} p-2 text-sm font-medium`}>
+                        {row.label}
                       </div>
-                    ))}
-                  </div>
-                ))}
+                      {columns.map((idea) => (
+                        <div
+                          key={idea.id}
+                          className={`${COLUMN_CLASS} flex items-start gap-2 p-2 text-sm`}
+                        >
+                          <Checkbox
+                            size="sm"
+                            className="mt-0.5"
+                            aria-label={`${row.label} from ${ideaName(idea)}`}
+                            checked={ticksFor(row.key).includes(idea.id)}
+                            onCheckedChange={() => toggle(row.key, idea.id)}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <CellValue idea={idea} field={row.key} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
+              {moreRight ? (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent"
+                />
+              ) : null}
             </div>
             {attempted && emptyRows.length > 0 ? (
-              <div className="flex flex-col gap-1 text-sm text-destructive" role="alert">
+              <div
+                className="flex flex-col gap-1 text-sm text-destructive"
+                role="alert"
+              >
                 {emptyRows.map((row) => (
                   <p key={row.key}>Pick at least one value for {row.label}</p>
                 ))}
@@ -224,11 +298,21 @@ export function IdeaMergeModal({
             ) : null}
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={columns.length < 2 || merge.isPending}>
-              {merge.isPending ? <LoaderCircleIcon className="size-4 animate-spin" /> : null}
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={columns.length < 2 || merge.isPending}
+            >
+              {merge.isPending ? (
+                <LoaderCircleIcon className="size-4 animate-spin" />
+              ) : null}
               Merge
             </Button>
           </DialogFooter>

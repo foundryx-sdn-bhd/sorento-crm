@@ -82,7 +82,7 @@ export function IdeaCaptureModal({
           <DialogTitle>Capture idea</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <DialogBody className="flex max-h-[70dvh] flex-col gap-4 overflow-y-auto">
+          <DialogBody className="flex max-h-[55dvh] flex-col gap-4 overflow-y-auto">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="idea-title">Title</Label>
               <Input id="idea-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
