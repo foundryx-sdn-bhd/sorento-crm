@@ -48,7 +48,14 @@ blanket exclusion is ever relaxed.
 
 ## Release steps (owner)
 
-1. `python scripts/purge_orphan_embeddings.py` (dry run: counts), then `--apply`.
+1. On prod, owner only: `python scripts/purge_orphan_embeddings.py` (dry run: counts per type and
+   a total), read it, then `python scripts/purge_orphan_embeddings.py --apply --expect <total>`.
+   `--apply` refuses unless `--expect` equals the total found at that moment, and deletes in
+   committed batches of 1,000. The dev copy held 102,633 orphans on 13 Oct (order 36,517,
+   order_line 40,290, certificate 49, ...): embeddings of rows that no longer exist, mostly orders
+   and order lines replaced by imports (no delete listener on those models). They are stale, not
+   live, so sweeping them is intended; the count is why it is an owner step and not part of the
+   migration.
 2. Confirm `ENABLE_SCHEDULER` is on, so the queued certificate rebuilds drain.
 
 ## Follow-ups (outside this lane, pre-existing)

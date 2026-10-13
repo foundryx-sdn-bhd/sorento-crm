@@ -793,6 +793,7 @@ def purge_orphan_embeddings(db: Session, *, apply: bool = False) -> dict[str, An
     """
     counts: dict[str, int] = {}
     source_ids: list[str] = []
+    doc_ids: list[str] = []
     with company_scope(db, None):
         for source_type, model in _SOURCE_MODEL.items():
             orphans = db.query(EmbeddingDocument.id, EmbeddingDocument.source_id).filter(
@@ -805,9 +806,10 @@ def purge_orphan_embeddings(db: Session, *, apply: bool = False) -> dict[str, An
                 continue
             counts[source_type] = len(rows)
             source_ids.extend(r.source_id for r in rows)
+            doc_ids.extend(str(r.id) for r in rows)
             if apply:
                 _delete_documents(db, orphans.with_entities(EmbeddingDocument.id))
-    return {"applied": apply, "counts": counts, "source_ids": source_ids}
+    return {"applied": apply, "counts": counts, "source_ids": source_ids, "doc_ids": doc_ids}
 
 
 def backfill_frame_embedding_companies(db: Session) -> int:
