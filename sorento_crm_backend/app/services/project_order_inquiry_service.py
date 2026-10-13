@@ -718,6 +718,16 @@ def _is_borrow_order_back(row: Any) -> bool:
     )
 
 
+def _is_refused(row: Any) -> bool:
+    """Purchasing refused this row (AC-H6): a restatement of it is a new instruction, never
+    the same row carried on."""
+    return (
+        row.ack_state == ACK_REJECTED
+        or row.rejected_by is not None
+        or row.rejected_at is not None
+    )
+
+
 def _also_cited(note: Optional[str]) -> List[str]:
     """The EXTRA documents a form remark named, read back off the row's note.
 
@@ -4419,14 +4429,21 @@ class ProjectOrderInquiryService:
         key_before = {row.id: _hole_key(row) for row in rows}
         linked = self._linked_qty_by_row([row.id for row in rows])
         placed: Dict[Tuple[Optional[str], Optional[str]], Decimal] = {}
-        cancelled_this_pass: List[OrderInquiryRow] = []
+        # ORDERBACK-DELTA (owner, 13 Oct 2026: "saved = sent"): a still-raised hole this
+        # pass restates is KEPT, not cancelled and raised again, so a Confirm tells
+        # purchasing only the holes it opened, moved or closed. Every one of them was
+        # cancelled and re-raised before, and each re-raise was emailed: SO424764 rev 3
+        # showed Saved (2) and sent 3. Matched by (line, item, donor location), the
+        # pile the hole is in. A refused row is not offered for a match (AC-H6): a
+        # restatement of it is a new instruction, raised fresh beside the refusal.
+        open_holes: Dict[Tuple[Any, Any, Any], List[OrderInquiryRow]] = {}
+        still_raised: List[OrderInquiryRow] = []
         for row in rows:
             key = (row.item_code or None, row.stock_location or None)
             if row.state == INQUIRY_RAISED:
-                row.state = INQUIRY_CANCELLED
-                _record_cancel(self.db, row, "borrow_retired", actor_user_id=None, decision=decision)
-                row.note = f"Superseded by revision {decision.revision_no}"
-                cancelled_this_pass.append(row)
+                still_raised.append(row)
+                if _is_borrow_order_back(row) and not _is_refused(row):
+                    open_holes.setdefault(key_before[row.id][:3], []).append(row)
             elif row.state == INQUIRY_PARTLY_LINKED:
                 covered = linked.get(row.id, _ZERO)
                 placed[key] = placed.get(key, _ZERO) + covered
@@ -4443,10 +4460,7 @@ class ProjectOrderInquiryService:
             elif row.state in (INQUIRY_ACTIONED, INQUIRY_PLACED):
                 placed[key] = placed.get(key, _ZERO) + _dec(row.qty)
 
-        # Review round 2 Blocking 4 (AC-LT-18): an ORDER_BACK row is linkable and can
-        # carry a suggestion, so a hole this pass cancels must not go on holding it.
-        self._drop_suggested_links(cancelled_this_pass)
-
+        kept: set = set()
         re_raised: set = set()
         created = 0
         for entry in shortfalls:
@@ -4460,6 +4474,13 @@ class ProjectOrderInquiryService:
             if qty <= _ZERO:
                 continue
             line = entry.get("line")
+            hole_key = (str(line.id) if line is not None else None,) + key
+            match = open_holes.get(hole_key)
+            if match:
+                row = match.pop(0)
+                kept.add(row.id)
+                self._restate_borrow_hole(row, entry, qty, decision, actor_user_id=actor_user_id)
+                continue
             shortfall_row = OrderInquiryRow(
                 company_id=order.company_id,
                 order_inquiry_id=inquiry.id,
@@ -4482,19 +4503,85 @@ class ProjectOrderInquiryService:
                 acknowledged_at=None,
             )
             self.db.add(shortfall_row)
+            # The session does not autoflush: without this the email queue keys the
+            # line on `row_id` "None".
+            self.db.flush()
             self._record_handover(shortfall_row, kind="raised", actor_user_id=actor_user_id)
             # Every row this method raises is a borrow hole, whatever its note says.
             re_raised.add(_hole_key(shortfall_row)[:3] + (True,))
             created += 1
+
+        cancelled_this_pass: List[OrderInquiryRow] = []
+        for row in still_raised:
+            if row.id in kept:
+                continue
+            row.state = INQUIRY_CANCELLED
+            _record_cancel(self.db, row, "borrow_retired", actor_user_id=None, decision=decision)
+            row.note = f"Superseded by revision {decision.revision_no}"
+            cancelled_this_pass.append(row)
+        # Review round 2 Blocking 4 (AC-LT-18): an ORDER_BACK row is linkable and can
+        # carry a suggestion, so a hole this pass cancels must not go on holding it.
+        self._drop_suggested_links(cancelled_this_pass)
         # SO422492 E: a cancelled raise purchasing was told about is told again, as a
-        # cancel - unless this pass re-raised the same hole, whose own line restates it. A
-        # line CS switched from ORDER BACK to ORDER lost its order back here in silence.
+        # cancel - unless this pass re-raised the same hole (a refused one restated),
+        # whose own line restates it. A line CS switched from ORDER BACK to ORDER lost
+        # its order back here in silence.
         for row in cancelled_this_pass:
             if key_before[row.id] not in re_raised:
                 self._record_handover(
                     row, kind="cancelled", was={"qty": row.qty}, actor_user_id=actor_user_id
                 )
         return created
+
+    def _restate_borrow_hole(
+        self,
+        row: OrderInquiryRow,
+        entry: Dict[str, Any],
+        qty: Decimal,
+        decision: Any,
+        *,
+        actor_user_id: Optional[str] = None,
+    ) -> None:
+        """A still-raised borrow hole this Confirm restates (ORDERBACK-DELTA).
+
+        Unchanged: only re-filed under the new revision (`horizon_committed_select_sql`
+        joins the ACTIVE decision), nothing told. Moved in quantity or date: the SAME row
+        takes the new figures, keeps the old ones in `previous_qty` /
+        `previous_delivery_date` for the Was / Now table, and the email prints one line
+        old -> new (owner, 13 Oct, Q1) - `_settle_row_in_place`'s own shape for a Buy row.
+        A row purchasing had acknowledged goes back to them as CHANGED (R2).
+        """
+        row.supply_decision_id = decision.id
+        required_date = entry.get("required_date")
+        previous_qty = _dec(row.qty)
+        previous_date = row.delivery_date
+        qty_moved = qty != previous_qty
+        date_moved = required_date is not None and required_date != previous_date
+        if not (qty_moved or date_moved):
+            return
+        row.qty = qty
+        if date_moved:
+            row.delivery_date = required_date
+        row.previous_qty = previous_qty
+        row.previous_delivery_date = previous_date
+        was_note = (
+            f"Was {_qty_str(previous_qty)} on {previous_date.isoformat()}"
+            if previous_date
+            else f"Was {_qty_str(previous_qty)}, no previous delivery date"
+        )
+        # The entry's note restates the quantity ("Order-back: X lent 8 to ..."), and
+        # `_is_borrow_order_back` reads its prefix.
+        base_note = entry.get("note") or row.note
+        row.note = f"{base_note}; {was_note}" if base_note else was_note
+        if row.ack_state in (ACK_ACKNOWLEDGED, ACK_CHANGED):
+            row.changed_at = datetime.utcnow()
+            row.ack_state = ACK_CHANGED
+        handover_was: Dict[str, Any] = {}
+        if qty_moved:
+            handover_was["qty"] = previous_qty
+        if date_moved:
+            handover_was["delivery_date"] = previous_date
+        self._record_handover(row, kind="settled", was=handover_was, actor_user_id=actor_user_id)
 
     def retire_rows_for_cancelled_lines(
         self,
