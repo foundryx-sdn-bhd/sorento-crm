@@ -2004,6 +2004,17 @@ def _asks_outstanding(verdict: dict[str, Any]) -> bool:
     return jsc.nullish_str(verdict.get("order_status")).strip() in OUTSTANDING_ORDER_STATUS
 
 
+def _roster_is_outstanding(verdict: dict[str, Any], focus: Any) -> bool:
+    """R20 for a roster the ask point stamps: this turn's own ask is outstanding, or the
+    status the conversation carries is (a carried subject asked about again names no
+    status of its own)."""
+    from app.services.chatbot.lanes.business.resolve_gate import OUTSTANDING_ORDER_STATUS
+
+    if _asks_outstanding(verdict):
+        return True
+    return jsc.nullish_str(getattr(focus, "status", None)).strip() in OUTSTANDING_ORDER_STATUS
+
+
 def _top_selling_dealer_scope(
     db: Session,
     parse_output: dict[str, Any],
@@ -5356,7 +5367,7 @@ def _run_stages_body(  # noqa: PLR0915
                             for e in (verdict.get("entities") or [])
                             if isinstance(e, dict)
                         )
-                        and not _asks_outstanding(verdict)
+                        and not _roster_is_outstanding(verdict, state_out.focus)
                     ),
                     # Rows 1 and 7: the promotion and purchase-order product rosters carry
                     # has promo / no promo and has PO / no PO, read the same way
@@ -7018,8 +7029,17 @@ def _run_stages_body(  # noqa: PLR0915
                     state_out,
                     focus=dataclasses_replace(state_out.focus, customers=focus_customers_named),
                 )
+            ask = plan.ask
+            if ask.kind == "customer_pick" and not _roster_is_outstanding(verdict, state_out.focus):
+                # PICKER-ONE (owner, 13 Oct 2026): a customer roster the narrower raised
+                # off the focus or off typed words carries the same has DO / no DO stamp
+                # every other customer picker does, through the one helper. R20 stands:
+                # an outstanding ask's roster is stamped with nothing.
+                ask = turn_runtime.stamp_customer_ask(
+                    db, ask, ctx=ctx, payload=resolver_payload, space_id=space_id_for_turn
+                )
             answer = turn_compose.compose_question(
-                plan.ask, subject_state, _ask_localizer(plan.ask, db, item, dry_run=dry_run)
+                ask, subject_state, _ask_localizer(ask, db, item, dry_run=dry_run)
             )
 
         # -- the REFUSAL: a denied stock check is an answer, not silence ------- #
