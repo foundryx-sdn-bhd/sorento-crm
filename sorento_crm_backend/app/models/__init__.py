@@ -92,6 +92,7 @@ from app.models.ai_assistant import (
     AIAssistantUsageLog,
     AIAssistantWishlistCluster,
     AIAssistantUnansweredQuery,
+    LLMModelPrice,
 )
 from app.models.ai_prompt import AIPromptVersion, AIPromptLabel
 from app.models.chat_history import ChatHistory
@@ -340,6 +341,7 @@ __all__ = [
     "AIAssistantMessage",
     "AIAssistantGovernanceEvent",
     "AIAssistantUsageLog",
+    "LLMModelPrice",
     "AIAssistantWishlistCluster",
     "AIAssistantUnansweredQuery",
     "AIPromptVersion",
