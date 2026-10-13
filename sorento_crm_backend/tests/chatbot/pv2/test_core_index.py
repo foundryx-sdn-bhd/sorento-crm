@@ -147,9 +147,10 @@ def test_attachment_types_key_and_aka(db):
     body, _ = pv2_index.render_index(db)
     lines = pv2_index.section_lines(body, "## ATTACHMENT TYPES (key = name | aka)")
     assert "technical_specifications = Technical Specifications | aka TD, CAD, drawing, 图纸" in lines
-    assert "installation_guide = Installation Guide | aka manual" in lines
+    # no code on file: not listed (the resolver looks keys up by code)
+    assert not any("Installation Guide" in line for line in lines)
     keys = pv2_index.parse_index_keys(body)
-    assert {"technical_specifications", "product_photos", "installation_guide"} <= keys.attachment_types
+    assert keys.attachment_types == {"technical_specifications", "product_photos"}
 
 
 def test_product_type_listed_only_under_primary_class(db):

@@ -67,10 +67,11 @@ def norm_alias(value: str) -> str:
     return " ".join(str(value).casefold().split())
 
 
-def attachment_type_key(code: str | None, type_name: str) -> str:
-    """An attachment type's index key: its `code`, else the slug of its name. PV2-RESOLVE
-    maps a key back to the live row with this same function."""
-    return (code or "").strip() or slug(type_name)
+def attachment_type_key(code: str | None, type_name: str) -> str | None:
+    """An attachment type's index key: its `code`. A type with no code is not listed (no
+    key the resolver could look up; `pv2_0002_alias_seed` fills the codes that matter).
+    PV2-RESOLVE looks a key up as `attachment_types.code`."""
+    return (code or "").strip() or None
 
 
 def product_class_key(class_label: str) -> str:
