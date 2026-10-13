@@ -7,14 +7,14 @@ Order Tracking, together with the delivered status; `actual_delivery_date` stays
 Additive and nullable, no default, nothing backfilled.
 
 Revision ID: do_hist_0001_tracking_assumed
-Revises: oirj_0002_theme_sorento
+Revises: spec_in_0001_stage_label
 """
 from __future__ import annotations
 
 from alembic import op
 
 revision = "do_hist_0001_tracking_assumed"
-down_revision = "oirj_0002_theme_sorento"
+down_revision = "spec_in_0001_stage_label"
 branch_labels = None
 depends_on = None
 
