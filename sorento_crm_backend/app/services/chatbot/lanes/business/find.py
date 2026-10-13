@@ -100,8 +100,9 @@ def as_linked_products(
       direction, even when the parse dropped `find` (a bare cover code after "seat cover for
       <WC>" is that cover, never its WCs);
     * a code of that answer is never re-anchored ("only the 333A one" narrows it);
-    * a relation nothing in THIS message names (`value` null) applies only on such a
-      continuation, never to a message with its own domain word.
+    * a relation nothing in THIS message names (`value` null) never reaches a message with
+      its own domain word. With no fit answer carried, `fits` is a fit ask whatever its value
+      (reviewer round 4: "stock seat cover for X" with a null value is owner case 2).
     """
     items = filter_items(verdict)
     entities = list(jsc.array(verdict.get("entities")))
@@ -114,14 +115,15 @@ def as_linked_products(
     from app.services.product_alternative_service import normalize_code
 
     anchors = _anchors(entities)
-    if anchors:
-        if not said and (verdict.get("domain_in_message") is True or not carried_relation):
-            return verdict, []
-        if carried_relation:
-            answered = {normalize_code(c) for c in carried_codes}
-            anchors = [i for i in anchors if normalize_code(entity_code(entities[i])) not in answered]
-            if not anchors:
-                return verdict, []
+    if anchors and carried_relation:
+        # A relation rejected here leaves a plain turn: `find` is cleared, so nothing
+        # downstream (the resolver's typed-code flag, the type-word miss filter) reads it.
+        if not said and verdict.get("domain_in_message") is True:
+            return {**verdict, "find": None}, []
+        answered = {normalize_code(c) for c in carried_codes}
+        anchors = [i for i in anchors if normalize_code(entity_code(entities[i])) not in answered]
+        if not anchors:
+            return {**verdict, "find": None}, []
     if not anchors:
         if not carried_codes:
             return verdict, [ASK_PRODUCT_LINE]
@@ -161,7 +163,9 @@ def as_linked_products(
                         linked.append(other.product_code)
                         side = side or listed
         if linked:
-            replaced[i] = (side, linked)
+            # Code order, the same on every database: `covers_for` orders by the column's
+            # collation, and en_US puts SRTSCBD333A-UF before SRTSCBD333-UF where C does not.
+            replaced[i] = (side, sorted(linked, key=normalize_code))
         elif products:
             unlinked.append(products[0])
         else:

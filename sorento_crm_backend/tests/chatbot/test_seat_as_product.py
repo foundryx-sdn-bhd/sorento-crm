@@ -499,8 +499,8 @@ def test_x1_a_carried_relation_never_reaches_a_message_with_its_own_ask(session_
 
     _seed(session_factory)
     verdict = _verdict(WC_ONE, find=FITS_UNSAID, domain_in_message=True)
-    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict)
-    assert out is verdict and lines == []
+    out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO, carried_relation="covers")
+    assert out == {**verdict, "find": None} and lines == []
 
 
 def test_x2_pointing_at_an_answered_cover_is_a_narrowing_not_a_fit_ask(session_factory) -> None:
@@ -511,7 +511,7 @@ def test_x2_pointing_at_an_answered_cover_is_a_narrowing_not_a_fit_ask(session_f
     _seed(session_factory)
     verdict = _verdict(COVERS_TWO[1], find=FITS_UNSAID, domain_in_message=False)
     out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO, carried_relation="covers")
-    assert out is verdict and lines == []
+    assert out == {**verdict, "find": None} and lines == []
 
 
 def test_x3_a_bare_new_code_after_a_fit_ask_carries_the_fit_ask(session_factory) -> None:
@@ -616,16 +616,19 @@ def test_y4_an_answered_cover_is_never_re_anchored_even_with_a_said_value(sessio
     _seed(session_factory)
     verdict = _verdict(COVERS_TWO[1], domain_in_message=False)
     out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO, carried_relation="covers")
-    assert out is verdict
+    assert out == {**verdict, "find": None}
 
 
-def test_y5_an_unsaid_relation_with_no_fit_ask_before_does_nothing(session_factory) -> None:
+def test_y5_a_first_fit_ask_holds_whatever_its_value(session_factory) -> None:
+    """Reviewer round 4 blocker 1: with no fit answer carried, `fits` is a fit ask even when the
+    parser left `value` null ("stock seat cover for X" is owner case 2)."""
     from app.services.chatbot.lanes.business import find as find_lane
 
     _seed(session_factory)
-    verdict = _verdict(WC_ONE, find=FITS_UNSAID, domain_in_message=False)
-    out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, [OTHER])
-    assert out is verdict
+    for flag in (True, False, None):
+        verdict = _verdict(WC_TWO, find=FITS_UNSAID, domain_in_message=flag)
+        out, _lines = find_lane.as_linked_products(_scoped(session_factory), verdict, [OTHER])
+        assert _codes(out) == COVERS_TWO, flag
 
 
 def test_y6_the_relation_rides_the_focus_and_its_wire(session_factory, monkeypatch) -> None:
@@ -692,3 +695,91 @@ def test_y9_a_bare_cover_code_after_a_seat_cover_answer_is_that_cover(session_fa
     verdict = _verdict(COVER_ONE, find=None, domain_in_message=False)
     out, lines = find_lane.as_linked_products(_scoped(session_factory), verdict, COVERS_TWO, carried_relation="covers")
     assert _codes(out) == [COVER_ONE] and lines == []
+
+
+def test_case2_unsaid_value_on_a_fresh_contact_still_answers_the_covers(session_factory, monkeypatch) -> None:
+    (c_reply, c_calls), (a_reply, a_calls) = _parity(
+        session_factory, monkeypatch, domain="inventory", intent="check_stock",
+        typed=COVERS_TWO, asked=[WC_TWO],
+        text_typed=f"check stock {' '.join(COVERS_TWO)}", text_asked=f"check stock seat cover for {WC_TWO}",
+        find=FITS_UNSAID,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
+
+
+def _relation(session_factory):
+    from tests.chatbot.test_outstanding_lane import _session_of
+
+    return (_session_of(session_factory).get("focus") or {}).get("relation")
+
+
+def test_z1_a_fit_ask_with_a_topic_reset_still_records_its_relation(session_factory, monkeypatch) -> None:
+    """Reviewer round 4 blocker 2: APPLY rebuilds the focus on a reset, so the relation is written
+    onto the turn's OWN focus, after APPLY."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-z1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+        topic_reset=True,
+    )
+    assert _relation(session_factory) == "covers"
+
+
+def test_z2_a_new_ask_of_its_own_ends_the_relation(session_factory, monkeypatch) -> None:
+    """Reviewer round 4 should-fix 3: a turn with its own domain word that links nothing changes
+    the subject; a bare code typed after it is no seat-cover ask."""
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-z2-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+    )
+    _turn(
+        session_factory, monkeypatch, text="any promotion now?", msg_id="ZZT-seat-z2-2",
+        domain_hint="promotion", intent_hint="check_promotion", entities=[], domain_in_message=True,
+    )
+    assert _relation(session_factory) is None
+
+
+def test_z3_a_follow_up_naming_nothing_keeps_the_relation(session_factory, monkeypatch) -> None:
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_TWO}", msg_id="ZZT-seat-z3-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_TWO)], find=FITS,
+    )
+    _turn(
+        session_factory, monkeypatch, text="how many?", msg_id="ZZT-seat-z3-2",
+        domain_hint="inventory", intent_hint="check_stock", entities=[], domain_in_message=False,
+    )
+    assert _relation(session_factory) == "covers"
+
+
+def test_z4_row7_a_carried_relation_never_reaches_a_message_with_its_own_ask(session_factory, monkeypatch) -> None:
+    """Crew row 7 end to end: after a seat-cover answer, "<WC> technical drawing" with a leaked,
+    unsaid `fits` is that WC's own drawing, exactly as with no `find` at all."""
+    drawing = {"raw": "technical drawing", "hint": "attachment_type", "canonical_code": "technical drawing",
+               "current_message": True, "confident": True}
+    _seed(session_factory)
+    _seed_contact(session_factory, variables={})
+    _turn(
+        session_factory, monkeypatch, text=f"stock seat cover for {WC_ONE}", msg_id="ZZT-seat-z4-1",
+        domain_hint="inventory", intent_hint="check_stock", entities=[_product(WC_ONE)], find=FITS,
+    )
+    conn = session_factory().get_bind()
+    conn.exec_driver_sql("SAVEPOINT zzt_seat_z4")
+    c_reply, c_calls = _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} technical drawing", msg_id="ZZT-seat-z4-control",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True,
+    )
+    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT zzt_seat_z4")
+    a_reply, a_calls = _turn(
+        session_factory, monkeypatch, text=f"{WC_ONE} technical drawing", msg_id="ZZT-seat-z4-2",
+        domain_hint="product_attachment", intent_hint="check_product_attachment",
+        entities=[_product(WC_ONE), drawing], domain_in_message=True, find=FITS_UNSAID,
+    )
+    assert c_calls and a_calls == c_calls, (a_calls, c_calls)
+    assert a_reply == c_reply, (a_reply, c_reply)
