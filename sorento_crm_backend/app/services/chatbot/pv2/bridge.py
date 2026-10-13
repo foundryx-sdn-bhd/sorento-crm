@@ -19,7 +19,6 @@ from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
 from app.services.chatbot.pv2.state import ConversationState, Held, Lookup, ResolvedRef
 from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
 from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
-from app.services.chatbot.turn.state import EXTRA_KIND_ALIASES
 from app.services.chatbot.turn.state import EXTRA_KIND_ALIASES, KIND_FIELD_MAP, Focus
 
 #: Domains whose replies tonight's gate covers (section 5); any other domain still runs
@@ -253,11 +252,13 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
         if answer["mode"] in ("yes", "no"):
             verdict["is_affirmative"] = answer["mode"] == "yes"
         if _v1_kind(state, action) in ESCALATION_OFFER_KINDS:
-            # v1 `decide` accepts an escalation offer only on these flags; any pick but "no" accepts.
-            accepted = answer["mode"] != "no"
+            # An offer is accepted only by an explicit "yes" or a real option pick, and
+            # declined by "no"; any other reply sets neither flag.
+            accepted = answer["mode"] in ("yes", "pick")
             if accepted:
                 verdict["is_affirmative"] = True
-            verdict["escalation"] = {**verdict["escalation"], "is_escalation_confirmation": accepted}
+            if accepted or answer["mode"] == "no":
+                verdict["escalation"] = {**verdict["escalation"], "is_escalation_confirmation": accepted}
     return verdict
 
 

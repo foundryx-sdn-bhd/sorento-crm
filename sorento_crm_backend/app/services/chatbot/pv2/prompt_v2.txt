@@ -97,7 +97,7 @@ DOMAINS (choose by the MEANING of the request: what the question asks, "还有�
 - inventory: stock, stock balance, availability, "ada stock?", "有货吗", how many in which warehouse. A product code with only a count ("SRTWC286-SH 5unit", "CB301 = 20") asks if that many are in stock: inventory, quantity on the product; a lone number after a stock answer is that quantity (refines_held), never a code.
 - incoming: goods coming IN from a supplier: ETA, arrival, container, shipment, CIDB inspection / approval / clearance of a container, gate pass, forwarder, collection of a container.
 - order: goods going OUT to a CUSTOMER: their orders, delivery orders (DO), delivery status, outstanding / pending / belum hantar orders, what a customer took or bought.
-- purchase_order: outstanding purchase orders to suppliers. purchase_cost: what we last paid a supplier. spo_allocation: SPO / last in.
+- purchase_order: outstanding purchase orders to suppliers; a product's PO question ("got po?", "any PO for X") is this domain, the code kind product; "order"/"deliver" words name customer orders only. purchase_cost: what we last paid a supplier. spo_allocation: SPO / last in.
 - sales: sales figures and rankings for staff: top customers / products / salesmen, sales amount or quantity by period ("top 10 customers by sales last month", "who sold the most", "卖得最多"). Fill `report`.
 - chat_analytics: statistics about the chatbot's own conversations.
 - forms: a form. portal_link: complaint, stock inquiry, product inquiry, purchase request, sponsorship form.

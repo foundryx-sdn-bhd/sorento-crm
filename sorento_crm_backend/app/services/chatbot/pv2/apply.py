@@ -656,6 +656,20 @@ def _apply_entities(
         e.kind for e, r in zip(to_resolve, results)
         if getattr(r, "status", "none") == "exact" and getattr(r, "refs", None)
     }
+    all_miss: dict[str, list[str]] = {}
+    said: set[str] = set()
+    for kind, n in listed.items():
+        group = [(e, r) for e, r in zip(to_resolve, results) if e.kind == kind]
+        if (
+            n >= 2
+            and kind in DOCUMENT_KINDS
+            and all(
+                getattr(r, "status", "none") == "none" and not getattr(r, "options", None)
+                and (e.doc_number or e.phrase)
+                for e, r in group
+            )
+        ):
+            all_miss[kind] = [str(e.doc_number or e.phrase) for e, _ in group]
     for ent, res in zip(to_resolve, results):
         status = getattr(res, "status", "none")
         refs = list(getattr(res, "refs", None) or [])
@@ -685,6 +699,13 @@ def _apply_entities(
             continue
         if status != "exact" or not refs:
             if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
+                if ent.kind in all_miss:
+                    # Every item of the list missed: ONE sentence names them all, as v1 does.
+                    if ent.kind not in said:
+                        said.add(ent.kind)
+                        qs.append(_doc_not_found(
+                            st, i, ent, held, language, qs.can_offer, words_list=all_miss[ent.kind]))
+                    continue
                 qs.append(_doc_not_found(st, i, ent, held, language, qs.can_offer))
                 continue
             qs.append(
@@ -730,12 +751,14 @@ DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_
 
 
 def _doc_not_found(
-    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any
+    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: Any,
+    *, words_list: list[str] | None = None,
 ) -> ClarifyAct:
     """v1's not-found sentence for a document number (`Couldn't find: "<n>" (<kind>).`),
     with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
     words = ent.doc_number or ent.phrase
-    asked = f'Couldn\'t find: "{words}" ({ent.kind.replace("_", " ")}).'
+    label = ent.kind.replace("_", " ")
+    asked = "Couldn't find: " + ", ".join(f'"{w}" ({label})' for w in (words_list or [words])) + "."
     options: list[Option] = []
     if offer.mode == "refer":
         from app.services.chatbot.turn.task import REFER_TO_SALESMAN
