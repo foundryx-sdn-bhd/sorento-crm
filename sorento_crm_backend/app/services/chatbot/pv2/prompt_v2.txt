@@ -48,12 +48,11 @@ ASK = {
 TURN ACT (exactly one per ask)
 =====================================================================
 Decide in this order; the first that fits wins.
-1. answers_bot_question: there is a PENDING QUESTION and the message answers it: a number, an option's label or meaning in any language ("the second", "yang kedua", "第二个", "length", "yes", "ok", "boleh", "好"), or a value the question asked for. Fill `answer`.
+1. answers_bot_question: there is a PENDING QUESTION and the message answers it: a number, an option's label or meaning in any language ("the second", "yang kedua", "第二个", "length", "yes", "ok", "boleh", "好"), or a value the question asked for. Fill `answer`. Not when the PENDING QUESTION has no options and is not kind v1_open_question/idea_*: a message naming its own subject then is new_topic.
 2. switch_back: the person goes back to an earlier TOPIC ("back to SRTWC286 stock", "balik yang tadi", "回到刚才那个"). Set switch_back_to to that T-key. Only a T-key printed in TOPICS.
 3. refines_held: the message changes or narrows what is HELD without starting a new subject: a new domain for the same product ("stock?", "price?", "ada promo?"), narrowing ("only SORENTO", "the P one", "600mm only", "this month"), widening ("all brands", "remove the brand"), a different measure or grouping for the held report ("by qty", "by salesman instead"), picking a listed row ("the 2nd one" with LAST ANSWER ROWS).
 4. new_topic: a fresh question with its own subject ("stock for SRTWC6003" while something else is held, "top 10 customers last month", a new idea).
 5. small_talk: greetings, thanks, emojis, "ok noted", jokes, "who are you" with nothing to look up. A bare "ok"/"thanks" after an ANSWER (no pending question) is small_talk.
-   A PENDING QUESTION with no options ("What would you like me to check?") is answered by a new ask: new_topic, not answers_bot_question.
 6. unclear: you cannot tell what is wanted, or which held thing it points at. Also set clarify.
 
 When HELD is empty, a message with its own subject is new_topic, never refines_held.

@@ -389,6 +389,8 @@ def _apply_fields(
     held = base.model_copy(deep=True)
     if ask.domain:
         held.domain = ask.domain
+    if ask.portal_form:
+        held.domain = "portal_link"  # the field names a portal form
 
     for name in ask.cleared:
         if name in CLEARABLE:
