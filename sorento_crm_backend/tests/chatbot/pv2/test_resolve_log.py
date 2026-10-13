@@ -53,7 +53,19 @@ def test_a_failed_log_write_never_breaks_the_callers_transaction(db):
 
     from app.services.chatbot.pv2.resolve import log_unrecognised
 
+    # Make the write itself fail. Dropping the scratch table does not: the blank schema's
+    # search_path ends in `public` (tests/_pg_fixture.py, for extension functions), so the
+    # insert fell through to a `public` copy of the table wherever one exists (a database
+    # built by `scripts.bootstrap_env`, as CI's is) and the "failed" write succeeded. A
+    # trigger on the scratch table fails it in place; the whole transaction rolls back.
     with db.begin_nested():
-        db.execute(_text("DROP TABLE chatbot_unrecognised_phrases"))
+        db.execute(_text(
+            "CREATE FUNCTION zz_fail_log_write() RETURNS trigger LANGUAGE plpgsql AS "
+            "$$ BEGIN RAISE EXCEPTION 'log write fails'; END $$"
+        ))
+        db.execute(_text(
+            "CREATE TRIGGER zz_fail_log_write BEFORE INSERT OR UPDATE ON chatbot_unrecognised_phrases "
+            "FOR EACH ROW EXECUTE FUNCTION zz_fail_log_write()"
+        ))
     assert log_unrecognised(db, [("gambar", "attachment_type")]) == 0
     assert db.execute(_text("SELECT 1")).scalar() == 1

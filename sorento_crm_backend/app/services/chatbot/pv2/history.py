@@ -184,6 +184,8 @@ def compact_reply(text: str, cap: int = REPLY_CHAR_CAP) -> str:
     one marker naming how many lines were left out. Cut at a line, never inside one,
     unless the first line alone is longer than `cap`."""
     text = text or ""
+    if not text.strip():
+        return ""
     if len(text) <= cap:
         return text
     lines = text.split("\n")
@@ -194,11 +196,15 @@ def compact_reply(text: str, cap: int = REPLY_CHAR_CAP) -> str:
             break
         kept.append(line)
         used += len(line) + 1
-    if not kept:
+    cut_line = not kept
+    if cut_line:
         kept = [lines[0][:cap]]
     rest = sum(1 for line in lines[len(kept):] if line.strip())
     while kept and not kept[-1].strip():
         kept.pop()
+    if cut_line:
+        # The one line was itself cut: say so, even when no further line follows.
+        return "\n".join(kept) + f"\n[... rest of this line and {rest} more lines not shown]"
     return "\n".join(kept) + f"\n[... {rest} more lines not shown]"
 
 
