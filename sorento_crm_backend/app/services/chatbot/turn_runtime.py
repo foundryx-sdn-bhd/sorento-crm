@@ -4499,38 +4499,54 @@ def without_restated_rows(verdict: dict[str, Any], focus: Focus) -> dict[str, An
     Only on a turn that TYPES nothing but a document word (reviewer should-fix): a new
     ask that names another axis ("outstanding DO for hanlim" after a stock answer) still
     carries the echoed product through `apply._focus_rules` exactly as today, where the
-    echo is what keeps the product on a new ask that starts fresh."""
+    echo is what keeps the product on a new ask that starts fresh.
+
+    QTY-CARRIED (owner, 13 Oct 2026): an echo the parser put a QUANTITY on is not a bare
+    restatement. "HAVE 10??" after "SRTWT5880-CR picture" comes back as the carried
+    product with quantity 10 (`current_message: false`); dropping it dropped the 10, and
+    the stock tool asked "How many units of SRTWT5880-CR?". Such an echo is kept, with the
+    settled row's uuid on it, so the axis keeps the settled product and the fetch sends
+    the quantity this message stated. Parser output only: nothing reads the message."""
     entities = [e for e in verdict.get("entities") or [] if isinstance(e, dict)]
     typed = [e for e in entities if e.get("current_message") is not False]
     if any(str(e.get("hint") or "").strip().lower() != "attachment_type" for e in typed):
         return verdict
-    restated = [e for e in entities if _restates_a_settled_row(e, focus)]
+    kept: list[Any] = []
+    restated = False
+    for e in verdict.get("entities") or []:
+        row = _settled_row_restated(e, focus) if isinstance(e, dict) else None
+        if row is None:
+            kept.append(e)
+            continue
+        restated = True
+        if _int(e.get("quantity")) is not None:
+            kept.append({**e, "uuid": row["uuid"]})
     if not restated:
         return verdict
-    return {**verdict, "entities": [e for e in verdict.get("entities") or [] if not (isinstance(e, dict) and e in restated)]}
+    return {**verdict, "entities": kept}
 
 
-def _restates_a_settled_row(entity: dict[str, Any], focus: Focus) -> bool:
-    """Is this parser entity an ECHO of a row the focus already holds settled: carried
-    (`current_message: false`), of a kind the focus has a field for, with a focus row of
-    that kind carrying a uuid and the same code? (`without_restated_rows`)"""
+def _settled_row_restated(entity: dict[str, Any], focus: Focus) -> dict[str, Any] | None:
+    """The focus row this parser entity ECHOES, else None: carried (`current_message:
+    false`), of a kind the focus has a field for, matching a focus row of that kind that
+    carries a uuid and the same code (`without_restated_rows`)."""
     from app.services.chatbot.turn.state import token_key
 
     if entity.get("current_message") is not False:
-        return False
+        return None
     kind = str(entity.get("hint") or "").strip().lower()
     attr = KIND_FIELD_MAP.get(kind)
     if not attr:
-        return False
+        return None
     code = token_key(entity.get("canonical_code") or entity.get("raw"))
     if not code:
-        return False
+        return None
     for row in getattr(focus, attr, None) or []:
         if not isinstance(row, dict) or not row.get("uuid"):
             continue
         if code in {token_key(row.get("canonical_code")), token_key(row.get("raw"))}:
-            return True
-    return False
+            return row
+    return None
 
 
 def with_carried_entities(
