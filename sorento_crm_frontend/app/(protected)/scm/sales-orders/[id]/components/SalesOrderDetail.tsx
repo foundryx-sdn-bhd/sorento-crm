@@ -52,6 +52,7 @@ import { DEMAND_CLASS_OPTIONS } from '@/app/(protected)/master-data-management/s
 // The SAME pill the order-inquiry worklist reads, not a second one worded differently:
 // "Placed" has to mean the same thing on both screens or the two disagree in a glance.
 import { OrderInquiryStatePill } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryVerbPill';
+import { OrderInquiryRejectedBadge } from '@/app/(protected)/project-sales/_shared/components/OrderInquiryRejectedBadge';
 import {
   formatMyrExact,
   multiplyMoney,
@@ -1161,7 +1162,16 @@ export function SalesOrderDetail({ id }: { id: string }) {
                   {reference}
                 </span>
               )}
-              <OrderInquiryStatePill state={inquiry.state} />
+              {/* PR 1622 (owner, mock v3): an open purchasing refusal IS this inquiry's
+                  status on the line, with who/when/why behind the info icon. */}
+              {inquiry.ack_state === 'rejected' ? (
+                <OrderInquiryRejectedBadge
+                  refusal={inquiry}
+                  testId={`so-line-oi-rejected-${row.original.id}`}
+                />
+              ) : (
+                <OrderInquiryStatePill state={inquiry.state} />
+              )}
             </div>
           );
         },

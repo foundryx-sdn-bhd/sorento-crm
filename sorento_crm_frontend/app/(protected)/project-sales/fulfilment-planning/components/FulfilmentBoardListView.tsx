@@ -24,11 +24,11 @@ import { DecisionTrailButton } from '../../_shared/components/DecisionTrailButto
 import { SoLineAttachmentsButton } from '../../_shared/components/SoLineAttachmentsButton';
 import type { SoLineAttachmentsByLine } from '../../_shared/services/soLineAttachmentService';
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
+import { OrderInquiryRejectedBadge } from '../../_shared/components/OrderInquiryRejectedBadge';
 import { BoardDecidedMarker, decidedRevisions } from './BoardDecidedMarker';
 import {
   BoardDecisionPill,
-  purchasingRefusalLine,
-  purchasingRefusalTitle,
+  matchesStatusFilter,
   VERDICT_FILTER_OPTIONS,
   VERDICT_SORT_RANK,
   verdictOf,
@@ -250,8 +250,7 @@ export function FulfilmentBoardListView({
           (!scope ||
             scope.value === 'all' ||
             scope.isSaved(contribution) === (scope.value === 'saved')) &&
-          (statusFilter.length === 0 ||
-            statusFilter.includes(verdictOf(contribution, draft[contribution.key] ?? null))),
+          matchesStatusFilter(contribution, draft[contribution.key] ?? null, statusFilter),
       ),
     [contributions, externalSearch, statusFilter, draft, scope],
   );
@@ -667,25 +666,34 @@ export function FulfilmentBoardListView({
             inquiry.inquiry_id && inquiry.row_id
               ? `/project-sales/order-inquiries/${inquiry.inquiry_id}?row=${inquiry.row_id}`
               : null;
-          if (!href) {
-            return (
-              <span className="block truncate tabular-nums" title={inquiry.inquiry_no}>
-                {inquiry.inquiry_no}
-              </span>
-            );
-          }
-          return (
+          const number = href ? (
             <Link
               href={href}
               onClick={(event) => event.stopPropagation()}
-              className="block truncate tabular-nums text-primary hover:underline"
+              className="block min-w-0 truncate tabular-nums text-primary hover:underline"
               title={inquiry.inquiry_no}
             >
               {inquiry.inquiry_no}
             </Link>
+          ) : (
+            <span className="block min-w-0 truncate tabular-nums" title={inquiry.inquiry_no}>
+              {inquiry.inquiry_no}
+            </span>
+          );
+          // PR 1622 (owner, mock v3): an open purchasing refusal is the INQUIRY's status,
+          // so it reads here - never in the Verdict or Decided columns.
+          if (inquiry.ack_state !== 'rejected') return number;
+          return (
+            <span className="flex min-w-0 items-center gap-1.5">
+              {number}
+              <OrderInquiryRejectedBadge
+                refusal={inquiry}
+                testId={`oi-rejected-${row.original.key}`}
+              />
+            </span>
           );
         },
-        size: 120,
+        size: 190,
         minSize: 100,
         enableSorting: true,
       },
@@ -845,22 +853,6 @@ export function FulfilmentBoardListView({
                   <span className="block min-w-0 truncate" title={text}>
                     {text}
                   </span>
-                </span>
-              );
-            }
-            // PR 1622 (owner, 13 Oct): a line purchasing refused says so, why, who and when
-            // on this same row - truncated, the whole sentence as the tooltip - rather than
-            // "Not decided" beside a pill nobody can read at this width.
-            if (contribution.order_inquiry?.ack_state === 'rejected') {
-              // The reason first: the pill beside it already says who refused the line.
-              const line = purchasingRefusalLine(contribution.order_inquiry);
-              return (
-                <span
-                  data-testid={`decided-purchasing-rejected-${contribution.key}`}
-                  className="block min-w-0 truncate text-destructive"
-                  title={purchasingRefusalTitle(contribution.order_inquiry)}
-                >
-                  {line}
                 </span>
               );
             }

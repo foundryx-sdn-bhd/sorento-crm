@@ -106,7 +106,12 @@ import type {
 import { BoardCellBreakdownDialog } from './BoardCellBreakdownDialog';
 import { SearchableMultiSelect } from '@/components/common/SearchableMultiSelect';
 import { BoardScopeToggle, type BoardScope } from './BoardScopeToggle';
-import { isPreMarkOnly, VERDICT_FILTER_OPTIONS, verdictOf } from './BoardDecisionPill';
+import {
+  isPreMarkOnly,
+  matchesStatusFilter,
+  PURCHASING_REJECTED_FILTER,
+  VERDICT_FILTER_OPTIONS,
+} from './BoardDecisionPill';
 import { BoardTransfersPanel } from './BoardTransfersPanel';
 import { PlanningHistorySheet } from './PlanningHistorySheet';
 import { PlanningRefusalTable, hasReasonCode } from './PlanningRefusalTable';
@@ -677,7 +682,7 @@ export function FulfilmentBoardPanel({
     setKindFilter(null);
     setScope('all');
     if (matches.some((c) => c.order_inquiry?.ack_state === 'rejected')) {
-      setStatusFilter(['purchasing_rejected']);
+      setStatusFilter([PURCHASING_REJECTED_FILTER]);
     }
     setFocusKey(matches[0].key);
   }, [board.data, allContributions, linesParam]);
@@ -2097,8 +2102,7 @@ export function FulfilmentBoardPanel({
           (linesByRow.get(row.key) ?? []).some((line) => {
             return (
               (scope === 'all' || isSavedLine(line) === (scope === 'saved')) &&
-              (statusFilter.length === 0 ||
-                statusFilter.includes(verdictOf(line, draft[line.key] ?? null)))
+              matchesStatusFilter(line, draft[line.key] ?? null, statusFilter)
             );
           }),
       ),

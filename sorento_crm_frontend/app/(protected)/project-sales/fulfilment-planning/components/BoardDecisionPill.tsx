@@ -42,9 +42,6 @@ const VERDICT_PILL: Record<string, string> = {
   suggested: 'bg-muted text-muted-foreground',
   saved: 'bg-emerald-100 text-emerald-800',
   rejected: 'bg-red-100 text-red-800',
-  // PR 1622 owner hand test: purchasing refused this line's order inquiry and nobody has
-  // decided it again. The same red as CS's own Rejected: the line needs a decision.
-  purchasing_rejected: 'bg-red-100 text-red-800',
   // Outlined rather than filled: it is in the DATABASE, not a verdict given on this board,
   // and a solid green beside a solid green approval said the two were the same thing.
   confirmed: 'border border-emerald-400 text-emerald-700',
@@ -66,7 +63,6 @@ const VERDICT_LABEL: Record<string, string> = {
   suggested: 'Suggested',
   saved: 'Saved',
   rejected: 'Rejected',
-  purchasing_rejected: 'Rejected by purchasing',
   // NO REVISION NUMBER (R6). "Confirmed rev 3" told a planner the record had been written
   // three times, which is not a question anybody asks of this column.
   confirmed: 'Confirmed',
@@ -79,13 +75,38 @@ const VERDICT_LABEL: Record<string, string> = {
  * The states the list's Status filter offers, in the order an owner reads them: the four the
  * planner works with first, then the rest so nothing becomes unfilterable.
  */
+/** The Status filter value for lines whose order inquiry purchasing refused (PR 1622). */
+export const PURCHASING_REJECTED_FILTER = 'purchasing_rejected';
+
+/**
+ * Whether a line passes the Status filter: its verdict is one of the chosen ones, or the
+ * filter asks for "Rejected by purchasing" and the line's order inquiry carries an open
+ * refusal. One rule for the List and the Grid, so the two views never filter differently.
+ */
+export function matchesStatusFilter(
+  contribution: BoardContribution,
+  decision: BoardDecision | null,
+  filter: readonly string[],
+): boolean {
+  if (filter.length === 0) return true;
+  if (
+    filter.includes(PURCHASING_REJECTED_FILTER) &&
+    contribution.order_inquiry?.ack_state === 'rejected'
+  ) {
+    return true;
+  }
+  return filter.includes(verdictOf(contribution, decision));
+}
+
 export const VERDICT_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'saved', label: VERDICT_LABEL.saved },
   { value: 'suggested', label: VERDICT_LABEL.suggested },
   { value: 'confirmed', label: VERDICT_LABEL.confirmed },
   { value: 'change_proposed', label: VERDICT_LABEL.change_proposed },
   { value: 'rejected', label: VERDICT_LABEL.rejected },
-  { value: 'purchasing_rejected', label: VERDICT_LABEL.purchasing_rejected },
+  // PR 1622 (mock v3): not a verdict - the order inquiry's own status - but filterable from
+  // the same control (`matchesStatusFilter`), and what the rejection email/bell link sets.
+  { value: PURCHASING_REJECTED_FILTER, label: 'Rejected by purchasing' },
   { value: 'stale', label: VERDICT_LABEL.stale },
   { value: 'cancelled', label: VERDICT_LABEL.cancelled },
   { value: 'unplannable', label: 'Needs a location' },
@@ -114,7 +135,6 @@ export type VerdictKey =
   | 'cancelled'
   | 'confirmed'
   | 'rejected'
-  | 'purchasing_rejected'
   | 'stale'
   | 'change_proposed'
   | 'saved'
@@ -129,7 +149,7 @@ export type VerdictKey =
 export function verdictOf(
   contribution: Pick<
     BoardContribution,
-    'cancelled' | 'cancelled_at' | 'unplannable' | 'covered' | 'draft' | 'decision' | 'order_inquiry'
+    'cancelled' | 'cancelled_at' | 'unplannable' | 'covered' | 'draft' | 'decision'
   >,
   decision: BoardDecision | null,
 ): VerdictKey {
@@ -165,36 +185,7 @@ export function verdictOf(
     return 'change_proposed';
   }
   if (draftSource) return 'saved';
-  // Purchasing refused it and CS has not decided it again (the server clears `ack_state` once
-  // they have): the line is back with CS, which "Suggested" did not say.
-  if (contribution.order_inquiry?.ack_state === 'rejected') return 'purchasing_rejected';
   return 'suggested';
-}
-
-/** "Rejected by Joey on 13/10/2026, 2:05 pm: Supplier discontinued this finish" (Malaysia time). */
-export function purchasingRefusalTitle(
-  oi: Pick<
-    NonNullable<BoardContribution['order_inquiry']>,
-    'rejected_by_name' | 'rejected_at' | 'rejected_reason'
-  >,
-): string {
-  const who = oi.rejected_by_name ? ` by ${oi.rejected_by_name}` : '';
-  const stamp = oi.rejected_at ? formatDateTimeInMalaysia(oi.rejected_at) : '';
-  const when = stamp ? ` on ${stamp}` : '';
-  return `Rejected${who}${when}: ${oi.rejected_reason || 'no reason given'}`;
-}
-
-/** The Decided cell's one-line text for a refused line (owner, 13 Oct: "within 1 row"). */
-export function purchasingRefusalLine(
-  oi: Pick<
-    NonNullable<BoardContribution['order_inquiry']>,
-    'rejected_by_name' | 'rejected_at' | 'rejected_reason'
-  >,
-): string {
-  const stamp = oi.rejected_at ? formatDateTimeInMalaysia(oi.rejected_at) : '';
-  const meta = [oi.rejected_by_name, stamp].filter(Boolean).join(', ');
-  const reason = oi.rejected_reason || 'No reason given';
-  return meta ? `${reason} (${meta})` : reason;
 }
 
 /**
@@ -212,8 +203,6 @@ export const VERDICT_SORT_RANK: Record<VerdictKey, number> = {
   confirmed: 5,
   cancelled: 6,
   rejected: 7,
-  // Beside Suggested (review N2): it is a line that needs deciding, not a settled one.
-  purchasing_rejected: 1,
 };
 
 export function BoardDecisionPill({
@@ -268,11 +257,7 @@ export function BoardDecisionPill({
       // column dragged to its minimum - the PILL is what gives way, never the buttons. Left
       // to wrap, "Change proposed" made the whole row two text lines tall.
       className={`${STATUS_PILL_BASE} normal-case truncate ${VERDICT_PILL[verdict]}`}
-      title={
-        verdict === 'purchasing_rejected' && contribution.order_inquiry
-          ? purchasingRefusalTitle(contribution.order_inquiry)
-          : (decision?.reason ?? contribution.decision?.amend_reason ?? '')
-      }
+      title={decision?.reason ?? contribution.decision?.amend_reason ?? ''}
     >
       {VERDICT_LABEL[verdict]}
     </span>
@@ -291,35 +276,7 @@ export function BoardDecisionPill({
           Verdict/Decision cell) opens the full trail, confirmed AND saved facts together,
           instead. `verdict !== 'confirmed'` is the gate that keeps this a DIFFERENT question
           (a draft saved on a line nobody has confirmed yet) from that one. */}
-      {verdict === 'purchasing_rejected' && contribution.order_inquiry ? (
-        // Who refused it, when and why - in a popover for the same reason the Saved one is:
-        // a `title` is not reachable at 375px.
-        <Popover>
-          <PopoverTrigger asChild onClick={(event) => event.stopPropagation()}>
-            <button
-              type="button"
-              aria-label={purchasingRefusalTitle(contribution.order_inquiry)}
-              title={purchasingRefusalTitle(contribution.order_inquiry)}
-              data-testid={`decision-purchasing-rejected-${contribution.key}`}
-              // The reason with who/when reads on the same row in the Decided cell
-              // (`FulfilmentBoardListView`); here the full sentence is the tooltip and, at
-              // 375px where there is no hover, the popover.
-              className="block min-w-0 overflow-hidden rounded-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {pill}
-            </button>
-          </PopoverTrigger>
-          <PopoverPortal>
-            <PopoverContent
-              align="start"
-              className="w-auto max-w-[92vw] px-3 py-2 text-xs"
-              onOpenAutoFocus={(event) => event.preventDefault()}
-            >
-              {purchasingRefusalTitle(contribution.order_inquiry)}
-            </PopoverContent>
-          </PopoverPortal>
-        </Popover>
-      ) : verdict !== 'confirmed' && savedBy ? (
+      {verdict !== 'confirmed' && savedBy ? (
         <Popover>
           <PopoverTrigger
             asChild

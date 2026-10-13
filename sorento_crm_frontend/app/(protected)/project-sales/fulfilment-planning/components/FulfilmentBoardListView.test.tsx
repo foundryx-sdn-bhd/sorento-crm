@@ -2585,7 +2585,7 @@ describe('FulfilmentBoardListView: the change lightbox never toggles its row', (
 });
 
 describe('FulfilmentBoardListView: a line purchasing refused (PR 1622)', () => {
-  it('reads the refusal, reason, who and when in the Decided cell on the same row', async () => {
+  it('shows the refusal as a Rejected badge on the OI column, Decided stays a planning value', async () => {
     const refused = contribution({
       key: 'so-1:line-10',
       so_number: 'SO416732',
@@ -2600,12 +2600,34 @@ describe('FulfilmentBoardListView: a line purchasing refused (PR 1622)', () => {
       } as BoardContribution['order_inquiry'],
     });
     renderView({ contributions: [refused] });
-    const cell = await screen.findByTestId('decided-purchasing-rejected-so-1:line-10');
-    expect(cell.textContent).toMatch(
-      /^Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
+    const badge = await screen.findByTestId('oi-rejected-so-1:line-10');
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(
+      /^Rejected by Joey on 13\/10\/2026, 2:05\s?pm: Supplier discontinued this finish$/i,
     );
-    expect(cell).toHaveClass('truncate');
-    expect(cell.getAttribute('title')).toMatch(/^Rejected by Joey on 13\/10\/2026/);
-    expect(screen.queryByText('Not decided')).not.toBeInTheDocument();
+    expect(screen.getByText('OI-2610-0007')).toBeInTheDocument();
+    // The verdict and Decided cells carry no refusal of their own any more.
+    expect(screen.queryByTestId('decided-purchasing-rejected-so-1:line-10')).toBeNull();
+    expect(screen.queryByText('Rejected by purchasing')).toBeNull();
+    expect(screen.queryByText(/Supplier discontinued this finish \(Joey/)).toBeNull();
+  });
+
+  it('shows no badge once the refusal is answered', async () => {
+    const answered = contribution({
+      key: 'so-1:line-11',
+      so_number: 'SO416732',
+      line_no: 11,
+      order_inquiry: {
+        inquiry_no: 'OI-2610-0007',
+        state: 'raised',
+        ack_state: null,
+        rejected_reason: null,
+        rejected_by_name: null,
+        rejected_at: null,
+      } as BoardContribution['order_inquiry'],
+    });
+    renderView({ contributions: [answered] });
+    expect(await screen.findByText('OI-2610-0007')).toBeInTheDocument();
+    expect(screen.queryByTestId('oi-rejected-so-1:line-11')).toBeNull();
   });
 });
