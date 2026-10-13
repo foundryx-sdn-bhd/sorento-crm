@@ -896,3 +896,72 @@ def test_a_revision_carries_every_printed_line_column():
         assert copy.item_label == "A"
         assert copy.is_rate_only is True
         assert Decimal(nxt.total_amount or 0) == Decimal("0")
+
+
+# ------------------------------------------------------------------ fix round 3
+
+
+def test_changing_the_product_without_resending_the_picks_clears_them(api):
+    client, db, env, a, b, version_id = _two_products(api)
+    photo = _photo(db, env, a, "a.jpg")
+    drawing = _drawing(db, env, a, "a-d.jpg")
+    b_drawing = _drawing(db, env, b, "b-d.jpg")
+    db.commit()
+    saved = _bulk(
+        client,
+        version_id,
+        [_line_body(a, image_attachment_id=photo.id, drawing_attachment_id=drawing.id)],
+    )
+    assert saved.status_code == 200, saved.text
+    line_id = saved.json()["data"][0]["id"]
+
+    moved = _bulk(
+        client, version_id, [{"id": line_id, "product_id": b.id, "unit_price": "1"}]
+    )
+    assert moved.status_code == 200, moved.text
+    row = moved.json()["data"][0]
+    assert row["image_attachment_id"] is None
+    assert row["drawing_attachment_id"] is None
+
+    # And the issue stamps B's drawing, never A's.
+    from app.models.projects import ProjectQuotationLine
+    from app.services import project_quotation_image_service as quotation_images
+
+    line = db.get(ProjectQuotationLine, line_id)
+    quotation_images.freeze_version_images(db, line.version_id)
+    db.refresh(line)
+    assert line.drawing_attachment_id == b_drawing.id
+
+
+def test_the_single_line_put_clears_the_picks_when_the_product_changes(api):
+    client, db, env, a, b, version_id = _two_products(api)
+    photo = _photo(db, env, a, "a.jpg")
+    drawing = _drawing(db, env, a, "a-d.jpg")
+    db.commit()
+    url = f"{BASE}/quotation-versions/{version_id}/lines"
+    created = client.post(
+        url, json=_line_body(a, image_attachment_id=photo.id, drawing_attachment_id=drawing.id)
+    )
+    assert created.status_code == 201, created.text
+
+    moved = client.put(f"{url}/{created.json()['id']}", json={"product_id": b.id})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["image_attachment_id"] is None
+    assert moved.json()["drawing_attachment_id"] is None
+
+
+def test_a_urn_form_attachment_id_is_a_pick_refusal_not_a_500(api):
+    client, db, env, a, _b, version_id = _two_products(api)
+    db.commit()
+    url = f"{BASE}/quotation-versions/{version_id}/lines"
+    for field, code in (
+        ("image_attachment_id", "quotation_line_image_invalid"),
+        ("drawing_attachment_id", "quotation_line_drawing_invalid"),
+    ):
+        bad = {field: f"urn:uuid:{_uid()}"}
+        for response in (
+            _bulk(client, version_id, [_line_body(a, **bad)]),
+            client.post(url, json=_line_body(a, **bad)),
+        ):
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == code
