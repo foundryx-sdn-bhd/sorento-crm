@@ -625,7 +625,7 @@ class DbResolver:
 
     @staticmethod
     def _customer_ref(cid: Any, code: str | None, name: str | None, phrase: str | None) -> ResolvedRef:
-        return ResolvedRef(kind="customer", key=str(code or cid), label=str(name or "").strip(), phrase=phrase)
+        return ResolvedRef(kind="customer", key=str(cid), label=str(name or "").strip(), phrase=phrase)
 
     def _customer(self, phrase: str | None) -> Resolution:
         if not phrase or not norm(phrase):

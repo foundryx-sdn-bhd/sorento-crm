@@ -1125,6 +1125,24 @@ def _inner_message(envelope: Envelope) -> dict[str, Any]:
     return jsc.get(jsc.get(_tf_message(envelope), "message"), "message") or {}
 
 
+def _pv2_text(envelope: Envelope, text: str) -> str:
+    """The line the customer typed, for PV2: a quoted reply's `reply to:` line is not theirs."""
+    typed = jsc.get(_inner_message(envelope), "text")
+    if jsc.truthy(typed):
+        return jsc.js_string(typed).strip()
+    body = text or ""
+    quoted = jsc.get(jsc.get(jsc.get(_tf_message(envelope), "message"), "replyTo"), "message")
+    if jsc.truthy(quoted):
+        # Rebuild the exact line `build_latest_user_message` appended; strip it only when the
+        # text ends with it (a media turn's caption and code lines stay whole).
+        quoted_text = jsc.get(quoted, "text")
+        qbody = quoted_text if jsc.truthy(quoted_text) else jsc.get(quoted, "title")
+        suffix = "\nreply to: " + (jsc.js_string(qbody) if jsc.truthy(qbody) else "") + "\n"
+        if body.endswith(suffix):
+            body = body[: -len(suffix)]
+    return body.strip()
+
+
 def _message_id(envelope: Envelope) -> str | None:
     value = jsc.get(jsc.get(_tf_message(envelope), "message"), "messageId")
     return str(value) if value not in (None, "") else None
@@ -4713,7 +4731,7 @@ def _run_stages_body(  # noqa: PLR0915
                     turn_id=turn_id,
                     contact_respond_id=contact_respond_id,
                     contact_pk=memory_intake.get("contact_pk"),
-                    text=(latest_user_message or "").strip(),
+                    text=_pv2_text(envelope, latest_user_message or ""),
                     session_block=session_block,
                     state_in=state_in,
                     profile=profile,
