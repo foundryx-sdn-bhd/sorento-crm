@@ -1,6 +1,6 @@
 # UAC: DO history backfill (DO-HISTORY), v2
 
-Plan: `PLAN-do-history-backfill-13oct.md` (v2, owner direction 13 Oct). Status: v3. C1 and C3 are being built; C2 is waiting on the cutover ask. The backfill
+Plan: `PLAN-do-history-backfill-13oct.md` (v2, owner direction 13 Oct). Status: v4. Slice 1, C1, C2 and C3 are built; line keys for ambiguous lines are on hold for the owner. The backfill
 itself runs in the shared service. These are the CRM-side criteria.
 
 ## Slice 1 (built)
@@ -22,15 +22,18 @@ itself runs in the shared service. These are the CRM-side criteria.
   candidate with no warehouse: unlinked.
 - **AC-DH25** The waiting fill applies the same narrowing.
 
-## C2 assumed delivery
+## C2 assumed delivery (owner answer 13 Oct)
 
-- **AC-DH30** With `do_assume_delivered_before` unset, nothing changes (status `new`, no date, no marker).
-- **AC-DH31** With it set, a newly created DO with a DocDate before it is `delivered`, with
-  `actual_delivery_date` = DocDate 00:00 and the marker set. A DO on or after the date is `new`.
-- **AC-DH32** An adopted Excel row with no tracking and a DocDate before the date gets the same
-  three writes. An adopted row with any tracking keeps it.
+- **AC-DH30** With `do_assume_delivered_before` unset (the default), nothing changes: status
+  `new`, no date, no marker.
+- **AC-DH31** With it set to 2026-07-01, a newly created DO with DocDate before it is `delivered`
+  with the marker set and `actual_delivery_date` EMPTY. A DO dated on or after the cutover is `new`.
+- **AC-DH32** An adopted Excel row with no tracking, dated before the cutover, gets the same
+  writes. An adopted row with a date, or with a status other than `new`, keeps its tracking.
 - **AC-DH33** An update of an existing DO never assumes.
 - **AC-DH34** A dry run writes nothing.
+- **AC-DH35** Delivered = delivered status AND (a date OR the marker). Outstanding is its
+  null-safe negation. A delivered status alone, or the marker under `new`, is outstanding.
 
 ## C3 quiet backfill
 

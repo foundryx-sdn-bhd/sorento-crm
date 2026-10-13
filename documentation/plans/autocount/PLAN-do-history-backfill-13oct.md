@@ -1,8 +1,8 @@
 # PLAN: DO history backfill from 2023-09-01, exact SO-line links, assumed delivery (DO-HISTORY)
 
-Status: **plan v3; C1 (location narrowing) and C3 (backfill flag) built on top of slice 1
-(marker column). C2 (assume delivered) is held on the cutover ask (section 8). The line-key source
-for ambiguous lines is pending with crew.** Track: full
+Status: **plan v4. Slice 1, C1, C2 and C3 are built. Line-key work is on HOLD (crew 13 Oct
+21:20): FXView cannot read DO/DODTL, the API sends no key, and the owner is deciding how to get
+line keys.** Track: full
 (migration column, ingest behaviour change). Slice 1 (the `tracking_assumed_at` column) is built
 and pushed at `cb05abdf`; nothing else is built. PR #1633, branch
 `claude/do-history-backfill-7e7enk`. UAC: `do-history-backfill-13oct-acceptance-criteria.md`.
@@ -29,8 +29,8 @@ OWNER DIRECTION, 13 Oct (overrides crew's Q1 and Q5 answers):
 
 Crew answer to v2, 13 Oct:
 
-- **Cutover = 2023-09-01** (the backfill start): `do_assume_delivered_before = 2023-09-01`;
-  "everything from 2023-09-01 is tracked from real backfilled DOs".
+- (Superseded by the owner's answer, section 4.) Crew first said cutover = 2023-09-01 for
+  `do_assume_delivered_before` as well.
 - **"Exact" = one provable SO line.** The key link wins when present. Otherwise, when `FromDocNo`
   names the SO and that SO has exactly ONE line of the DO's product (after location narrowing, when
   the location is exact on both), the link is exact by construction and **stays**: that is how all
@@ -98,6 +98,28 @@ Q3 (the SO side) is with the owner.
   stores that as NULL (`:190-193`). So **every link in the CRM today is a fallback link**, and
   owner rule 3 does not accept any of them.
 
+### 1.3b Line-key sources (crew, FXView read-only, 13 Oct 21:20)
+
+- FXView is DENIED SELECT on DO, DODTL and GRN, on both Sorento and Mocha (SQL error 229). It can
+  read Consignment (+DTL, Return), Creditor, Debtor, Item*, Location, PO/PODTL, SO/SODTL, XP/XPDTL
+  and XS/XSDTL.
+- XSDTL (Cancel SO lines) `FromDocDtlKey` by year:
+
+  | Year | Keyed / lines |
+  | --- | --- |
+  | 2023 | 7,898 / 7,898 |
+  | 2024 | 5,420 / 6,544 |
+  | 2025 | 0 / 7,553 |
+  | 2026 | 0 / 5,510 |
+
+  Every line is keyed until Oct 2024; Nov 2024 is 208 of 658; from Dec 2024 the key is always
+  NULL, while `FromDocNo` is still filled. (So "about 25% empty" is not a fair summary: it is all,
+  then nothing, with a one-month switch.)
+- API DO lines: `FromDocDtlKey` is 0 always.
+- Mocha's SQL connection needs pymssql `tds_version='7.0'`.
+- Owner rule stands: exact links only. How to get line keys for ambiguous lines is an owner
+  decision, pending. Nothing in this lane depends on it.
+
 ### 1.4 What the SS does (crew read of SS main 812dac2b)
 
 - The DO doc feed reads AutoCount by DocDate (`doc_feed/snapshot.py:143-165` ->
@@ -116,7 +138,7 @@ Q3 (the SO side) is with the owner.
 | S2 | SS | Make sure db1 (Sorento) and db2 (Mocha) each have a DO feed config row. A missing row fails loudly for that book. | none |
 | S3 | SS | Run the existing DocDate backfill for DO from 2023-09-01 to today (rules below the table). | S1, S2, K, C1-C3 deployed |
 | C1 | CRM (this lane) | Provable links only: key, else a unique product match narrowed by location (section 3). | none |
-| C2 | CRM | Assumed delivery when a pre-cutover DO is created or adopted (section 4). | the ask |
+| C2 | CRM (built) | Assumed delivery when a DO dated before 2026-07-01 is created or adopted (section 4). | owner answered |
 | C3 | CRM | Quiet backfill: no per-DO embedding events or audit rows on backfill pushes (section 5). | contract 2.9 agreed with the SS lane |
 
 S3 run rules:
@@ -149,29 +171,39 @@ The resolver for a DO line with `FromDocType` absent or `SO` (`_do_so_line`,
 The prod-clone dry run counts how many of today's 13,259 ambiguous lines rule 3 resolves. The
 rest wait for crew's key source (K).
 
-## 4. C2: assumed delivery, inside the ingest
+## 4. C2: assumed delivery, inside the ingest (owner answer 13 Oct)
 
-The ingest marks DOs as it lands them. A separate script is not needed, and the ingest is the
-only CRM code a DocDate push passes through.
+Owner: backfill from 2023-09-01; an untracked DO dated before **2026-07-01** gets status
+**DELIVERED** with the `tracking_assumed_at` marker, and **`actual_delivery_date` stays empty**
+("they don't have delivered date, but status is delivered"). This overrides crew's earlier Q2
+answer (DocDate as the delivery date).
 
-- **Setting.** A new CRM setting `do_assume_delivered_before` (a date). It ships unset, which means off.
-- **On create** of a DO with a DocDate before that date, write three columns and nothing else:
-  - status `delivered`;
-  - `actual_delivery_date` = DocDate at 00:00 (the column is a DateTime; the tracking upload stores
-    a date-only row the same way, `order_service.py:3163-3166`);
-  - `tracking_assumed_at` = now.
-  No `delivery_days`, no `kpi_warning`, no transporter.
-- **On adoption** of an Excel row with a DocDate before that date and **no tracking** (no
-  `actual_delivery_date`, status NULL or `new`): the same three writes. An adopted row that has
+- **Setting.** `do_assume_delivered_before` (`app/config.py`, env `DO_ASSUME_DELIVERED_BEFORE`).
+  It ships unset (off). For the backfill it is set to `2026-07-01`. It is read on every call,
+  so it can be switched without a restart.
+- **On create** of a DO with DocDate before the setting: status `delivered`, `tracking_assumed_at`
+  = now. No delivery date, no `delivery_days`, no `kpi_warning`, no transporter.
+- **On adoption** of an Order Tracking row with DocDate before the setting and **no tracking**
+  (no `actual_delivery_date`, status NULL or `new`): the same two writes. An adopted row with
   any tracking keeps it.
-- **On update** of an existing DO: never. Only the first landing assumes.
-- **Later tracking.** An Overall Tracking row for the DO replaces the assumption and clears the
-  marker (slice 1, built in the tracking upsert in `order_service.py`).
-- **Revert.** One SQL statement on the marker: status back to `new`, date and marker set to NULL,
-  only on rows where the marker is set. The card shows it; running it is the owner's call.
-- **Ownership.** All three columns sit outside the AutoCount-owned set (`tracking_assumed_at` is
-  system-owned; the other two are Order Tracking's), so this path writes them outside
-  `assert_autocount_writes`. A test pins that no other ingest path writes them.
+- **On update** of an existing DO: never.
+- **No `delivered` status configured**: nothing is assumed, and the ingest logs a warning.
+- **The delivered rule accepts the marker.** `_delivered_clause` = delivered/completed status AND
+  (a date OR the marker). `_outstanding_clause` is its null-safe negation
+  (`be/app/services/order_service.py:82-112`). That one rule feeds the DO list bucket, the
+  order summary, the outstanding report DO side and the chatbot order tools. A delivered
+  status alone, or the marker under another status, is still outstanding.
+- **Readers that stay date-based:**
+  - "has a delivery date" filters, and "delivered between" lists, read `actual_delivery_date`
+    literally, so assumed DOs show no date there.
+  - Complaint fulfilment still needs a date (`complaint_fulfilment_service.py:86-89`). Backfilled
+    DOs carry no Remarks CS, so no complaint links to them.
+- **Later tracking.** An Overall Tracking row replaces the assumption and clears the marker
+  (slice 1).
+- **Revert** (held for the owner):
+  `UPDATE orders SET order_status_id = <new>, tracking_assumed_at = NULL WHERE tracking_assumed_at IS NOT NULL`.
+- **Ownership.** The status and the marker are written outside `assert_autocount_writes`, on
+  these two paths only.
 
 ## 5. C3: a quiet backfill
 
@@ -216,31 +248,19 @@ Without the flag nothing changes.
 5. On prod: set the date and run S3 for real, off-hours MYT, Sorento then Mocha. Re-run the
    queries, then unset the date so no later push assumes anything.
 
-## 8. The one ask
+## 8. Asks
 
-A cutover of 2023-09-01 for `do_assume_delivered_before` assumes **nothing**, because no
-backfilled DO is dated before its own start. Every DO from 2023-09-01 to July 2026 would therefore
-land as `new` with no delivery date. At the 1.1 rates that is about 270,000 DOs, and they would show
-as **outstanding** in the DO list, on the DO side of the outstanding report, and in the chatbot
-(`order_service.py:62-94`, `outstanding_report_service.py:444-504`). Order Tracking for these DOs
-does not exist (the owner's "I don't have the order tracking for them prior to July").
+None open in this lane. Pending outside it: the owner's decision on a line-key source for
+ambiguous DO lines (1.3b), and Q3 (pre-July open SO lines).
 
-- (a) Keep the owner's "fully delivered" ask: `do_assume_delivered_before` = the first tracked
-  month (2026-07-01, or 2026-08-01 for the feed start). The backfill still starts 2023-09-01, and
-  every untracked DO before the date reads delivered with the "assumed" marker.
-- (b) Cutover 2023-09-01 as stated: no DO is assumed delivered, and the owner accepts about
-  270,000 outstanding DOs, or CS uploads tracking for them.
-
-Recommend (a) with 2026-07-01, because it is the owner's "fully delivered" requirement from the
-original ask. C2 is not built until this is answered.
-
-## 9. Build slices (after K and the ask)
+## 9. Build slices
 
 1. **Built**: the `tracking_assumed_at` column (migration `do_hist_0001_tracking_assumed`), system-owned,
    cleared by a tracking row.
 2. **Built**: C1 location narrowing for several unique-product candidates; tests (key, unique match,
    ambiguous unlinked, location-narrowed link, location still ambiguous).
-3. C2: assumed delivery in the ingest, behind the setting; tests.
+3. **Built**: C2 assumed delivery in the ingest behind the setting, plus the marker-aware
+   delivered rule; tests in `tests/test_do_history_assume_delivered.py`.
 4. **Built**: C3, the optional `backfill` envelope flag. Its tests are in `tests/test_do_history_backfill_flag.py`, and
    section 13.2 of `PLAN-autocount-cross-repo-contract.md` is updated for the SS lane. The flag is additive and
    optional, so the contract version string stays as is (avoids a clash with #1623's 2.8).
