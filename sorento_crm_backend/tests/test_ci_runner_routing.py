@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import textwrap
@@ -216,7 +217,46 @@ def test_every_job_is_routed_on_purpose():
     assert set(_jobs()) == set(TEST_JOBS) | set(FAST_JOBS) | set(GITHUB_ONLY_JOBS)
 
 
-def test_the_gitleaks_cli_matches_the_runner_architecture():
+# --- what a job on the Mac can hold -------------------------------------------
+# The Mac runner keeps state between jobs, so a job routed there gets the
+# least the job needs: read-only contents plus the writes it states (the two
+# label-removing jobs), and no secret but the job token and, in the picker
+# step only, RUNNERS_READ_TOKEN. Deploy, registry, SSH and SMTP secrets never.
+
+WRITES_ALLOWED = {"lean-gate": {"pull-requests"}, "refuse-ci-full": {"pull-requests"}}
+
+
+@pytest.mark.parametrize("job", TEST_JOBS + FAST_JOBS)
+def test_mac_routable_jobs_hold_a_least_privilege_token(job):
+    perms = _jobs()[job].get("permissions")
+    assert isinstance(perms, dict), f"{job}: no permissions block (the repo default is write-all)"
+    writes = {scope for scope, level in perms.items() if level == "write"}
+    assert writes == WRITES_ALLOWED.get(job, set()), (job, perms)
+
+
+@pytest.mark.parametrize("job", TEST_JOBS + FAST_JOBS)
+def test_mac_routable_jobs_reach_no_secret_but_the_job_token(job):
+    body = _jobs()[job]
+    for step in body.get("steps", []):
+        text = json.dumps(step)
+        secrets = set(re.findall(r"secrets\.([A-Za-z_]+)", text))
+        allowed = {"GITHUB_TOKEN"} | ({"RUNNERS_READ_TOKEN"} if step.get("name") == PICK_STEP else set())
+        assert secrets <= allowed, (job, step.get("name"), secrets - allowed)
+    rest = json.dumps({k: v for k, v in body.items() if k != "steps"})
+    assert set(re.findall(r"secrets\.([A-Za-z_]+)", rest)) <= {"GITHUB_TOKEN"}, job
+
+
+@pytest.mark.parametrize("machine,expected", [("aarch64", "linux_arm64"), ("arm64", "linux_arm64"), ("x86_64", "linux_x64")])
+def test_the_gitleaks_cli_matches_the_runner_architecture(tmp_path, machine, expected):
     script = (ROOT / "scripts" / "ci_gitleaks.sh").read_text(encoding="utf-8")
-    assert "uname -m" in script
-    assert "linux_arm64" in script and "linux_x64" in script
+    block = re.search(r'^case "\$\(uname -m\)" in\n.*?^esac$', script, re.S | re.M)
+    assert block, "ci_gitleaks.sh no longer picks the CLI by uname -m"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "uname").write_text(f"#!/bin/sh\necho {machine}\n")
+    (bindir / "uname").chmod(0o755)
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", block.group(0) + '\necho "$arch"'],
+        env={"PATH": f"{bindir}:/usr/bin:/bin"}, capture_output=True, text=True,
+    )
+    assert result.stdout.strip() == expected, result.stdout + result.stderr
