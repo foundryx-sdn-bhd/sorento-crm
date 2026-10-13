@@ -515,10 +515,52 @@ class AttachmentTypeService:
         if existing:
             raise handle_conflict("Attachment type name already exists.")
         
-        attachment_type = AttachmentType(**type_data.model_dump())
+        data = type_data.model_dump()
+        synonyms = data.pop("search_synonyms", None)
+        attachment_type = AttachmentType(**data)
         self.db.add(attachment_type)
+        if synonyms is not None:
+            self.db.flush()
+            self._set_search_synonyms(attachment_type, synonyms)
         self.db.commit()
         self.db.refresh(attachment_type)
+        return self._with_search_synonyms(attachment_type)
+
+    # PV2 aliases (CONTRACT-PV2-13oct s.4). `attachment_types.search_synonyms` arrives with
+    # PV2-CORE's migration; until its model column is mapped the column is read and written
+    # in SQL, so this save path works on either side of that change.
+    def _stored_search_synonyms(self, attachment_type) -> list:
+        from sqlalchemy import text
+
+        row = self.db.execute(
+            text("SELECT COALESCE(search_synonyms, '[]'::jsonb) FROM attachment_types WHERE id = :id"),
+            {"id": attachment_type.id},
+        ).first()
+        return list(row[0]) if row else []
+
+    def _set_search_synonyms(self, attachment_type, synonyms) -> None:
+        import json
+
+        from sqlalchemy import text
+
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        words = pv2_aliases.clean_words(synonyms)
+        pv2_aliases.refuse_conflicts(
+            self.db, "attachment_type", attachment_type.code, words,
+            previous=self._stored_search_synonyms(attachment_type),
+        )
+        if "search_synonyms" in AttachmentType.__table__.columns:
+            attachment_type.search_synonyms = words
+        else:
+            self.db.execute(
+                text("UPDATE attachment_types SET search_synonyms = CAST(:w AS jsonb) WHERE id = :id"),
+                {"w": json.dumps(words, ensure_ascii=False), "id": attachment_type.id},
+            )
+
+    def _with_search_synonyms(self, attachment_type):
+        if "search_synonyms" not in AttachmentType.__table__.columns:
+            attachment_type.__dict__["search_synonyms"] = self._stored_search_synonyms(attachment_type)
         return attachment_type
     
     def update_type(self, type_id: str, type_data: AttachmentTypeUpdate):
@@ -535,12 +577,15 @@ class AttachmentTypeService:
             if existing:
                 raise handle_conflict("Attachment type name already exists.")
         
+        synonyms = update_data.pop("search_synonyms", None)
         for key, value in update_data.items():
             setattr(attachment_type, key, value)
+        if synonyms is not None:
+            self._set_search_synonyms(attachment_type, synonyms)
         
         self.db.commit()
         self.db.refresh(attachment_type)
-        return attachment_type
+        return self._with_search_synonyms(attachment_type)
     
     def delete_type(self, type_id: str):
         """Delete an attachment type."""

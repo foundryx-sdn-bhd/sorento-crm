@@ -245,3 +245,44 @@ def open_clashes(db: Session) -> list[Clash]:
 def index_aliases(db: Session, kind: str) -> dict[str, list[str]]:
     """{key: aliases} for the index: each shared word printed only under its winning key."""
     return winners(live_aliases(db, kind), precedence(db, kind))
+
+
+# --------------------------------------------------------------------------- #
+# Save-path helpers (category, attachment type, spec registry)
+# --------------------------------------------------------------------------- #
+def clean_words(words: Iterable[object] | None) -> list[str]:
+    """Stripped, non-empty, one per normalised spelling; the first spelling kept."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for word in words or []:
+        text_ = " ".join(str(word or "").split())
+        n = norm(text_)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(text_)
+    return out
+
+
+def spec_key_for(spec_key: str, value: str) -> str:
+    return spec_key if value == _SELF else f"{spec_key}.{value}"
+
+
+def refuse_spec_row_conflicts(db: Session, row, before: Mapping[str, Iterable[object]]) -> None:
+    """A spec registry save: refuse the words it adds under any key that clash elsewhere.
+
+    `before` is `merged_synonyms(row)` as it was before the save ({} for a new row). An
+    inactive row prints no aliases, so it creates no clash.
+    """
+    from app.services.product_spec_registry import merged_synonyms
+
+    if not row.is_active:
+        return
+    clashes: list[Clash] = []
+    for value, words in merged_synonyms(row).items():
+        clashes.extend(
+            check_conflicts(db, "spec", spec_key_for(row.spec_key, value), words, previous=before.get(value, []))
+        )
+    if clashes:
+        from app.services.error_handler import AppException
+
+        raise AppException(status_code=409, message=message_for(clashes), code="ALIAS_CLASH")

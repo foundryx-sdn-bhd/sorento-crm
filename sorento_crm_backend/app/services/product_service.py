@@ -2424,7 +2424,11 @@ class ProductCategoryService:
         if resolve_master_by_code(self.db, ProductCategory, category_data.category_code):
             raise handle_conflict("Category code already exists.")
         
-        category = ProductCategory(**category_data.model_dump())
+        data = category_data.model_dump()
+        synonyms = data.pop("search_synonyms", None)
+        category = ProductCategory(**data)
+        if synonyms is not None:
+            self._set_search_synonyms(category, synonyms, previous=())
         self.db.add(category)
         self.db.commit()
         self.db.refresh(category)
@@ -2435,12 +2439,26 @@ class ProductCategoryService:
         category = self.get_category(category_id)
         
         update_data = category_data.model_dump(exclude_unset=True)
+        synonyms = update_data.pop("search_synonyms", None)
         for key, value in update_data.items():
             setattr(category, key, value)
+        if synonyms is not None:
+            self._set_search_synonyms(category, synonyms, previous=category.search_synonyms or [])
         
         self.db.commit()
         self.db.refresh(category)
         return category
+
+    def _set_search_synonyms(self, category, synonyms, *, previous) -> None:
+        """PV2 aliases (CONTRACT-PV2-13oct s.4): a word already meaning another class is refused."""
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        words = pv2_aliases.clean_words(synonyms)
+        pv2_aliases.refuse_conflicts(
+            self.db, "product_category", category.class_label or category.category_code, words,
+            previous=previous,
+        )
+        category.search_synonyms = words
 
     def delete_category(self, category_id: str):
         """Delete a category. Raises if any products use this category."""
