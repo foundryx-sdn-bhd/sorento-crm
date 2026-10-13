@@ -18,3 +18,12 @@ Plan: `PLAN-orderback-delta-13oct.md`.
 - AC-8 (control): a carried line whose raised row no longer matches (purchasing actioned part
   of it elsewhere) is still restated and the email shows the move.
 - AC-9: a Confirm email does not repeat an earlier amendment's still-raised rows.
+- AC-10 (SO323450): a carried borrow hole partly linked to an SPO is not cut, re-raised or
+  emailed when the next Confirm saves only another line.
+- AC-11: a first Confirm sends one line per saved line: Buy reads ORDER, Use BRW reads USE BRW,
+  Use own location reads USE <own code>, Borrow reads ORDER BACK; STOCK LOCATION is the line's.
+- AC-12: one saved line is one email line however many rows it raised (USE BRW 6 & ORDER 4).
+- AC-13: a saved line re-approved unchanged sends nothing; a carried line never appears.
+- AC-14: a line transferred to Cancel SO reads CANCEL.
+- AC-15: the email reads in the Excel columns SO DATE, S/O NO, ITEM CODE, QTY, DELIVERY DATE,
+  PROJECT/CUSTOMER, STOCK LOCATION, REMARK (QTY CHANGE TO when a line was cut).

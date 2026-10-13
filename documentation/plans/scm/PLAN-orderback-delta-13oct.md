@@ -1,6 +1,6 @@
 # PLAN: a Confirm sends only what it decided (ORDERBACK-DELTA)
 
-Status: Review (small fix track: backend only, no migration, no auth/RBAC change). PR #1631.
+Status: Build (standard track since the 13 Oct 22:40 extension: template migration `oihr_0007_excel_remark`; backend only, no auth/RBAC change). PR #1631.
 
 UAC: `orderback-delta-13oct-acceptance-criteria.md` (alongside).
 
@@ -71,3 +71,37 @@ change on an order with a previously settled row.
   before the oldest one (`test_two_holes_on_one_key_each_keep_their_own_row`, kill-tested).
 - Nits: unchanged hole's note follows the entry silently; date-only restate test added; stale
   docstrings and test prose updated.
+
+## Owner hand test SO323450 (13 Oct): carried linked hole
+
+A borrow hole the raise-time cascade had partly linked to an SPO was cut and its remainder
+re-raised and emailed on the next Confirm that saved only another line. A partly linked or
+placed borrow hole restated exactly (line, item, location, qty, date) is now only re-filed
+(`_raise_borrow_shortfalls` pre-pass). Owner direction: keep it simple, no SPO matching.
+
+## Extension (owner, 13 Oct 22:40): one truthful line per SAVED line
+
+The purchasing email of a Confirm has exactly one line per saved line whose decision is new or
+changed (`_saved_decision_key`), in the owner's Excel ORDER INQUIRY columns (SO DATE | S/O NO |
+ITEM CODE | QTY | DELIVERY DATE | PROJECT/CUSTOMER | STOCK LOCATION | REMARK), template
+`oihr_0007_excel_remark`. STOCK LOCATION is always the SO line's own location. REMARK, in the
+board's own vocabulary (`supplyVocabulary.ts`), owner answers 13 Oct:
+
+| Board word | REMARK |
+|---|---|
+| Buy | ORDER (local origin: LOCAL BUY; Order back Buy: ORDER BACK [cited doc]) |
+| Use own location | USE <own location code> |
+| Use BRW | USE BRW (the pool's own code) |
+| Borrow (any) | ORDER BACK |
+| Borrow incoming / Use incoming | the document / SPO number(s) |
+| Several parts | each with its qty, joined by " & " |
+| Line qty cut | CANCEL n (QTY / QTY CHANGE TO columns) |
+| Cancel SO | CANCEL |
+| Short of free stock | ", n SHORT" on the same line (no separate STOCK SHORT line) |
+
+Code: `saved_line_remark` / `_saved_line_parts` / `_saved_decision_key` and
+`record_saved_lines` / `record_cancelled_lines` in `project_order_inquiry_service.py`;
+`ProjectSupplyService._tell_saved_lines` (called at the end of `confirm`) and `cancel_lines`.
+A saved line's row lines (ORDER, ORDER BACK, settled, cancelled, STOCK SHORT) queued in the
+same commit are replaced by its one line. Donor holes on other lines, planning-change
+reactions on unsaved lines and amendment emails keep their own row lines.
