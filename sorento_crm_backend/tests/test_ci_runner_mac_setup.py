@@ -125,9 +125,19 @@ def test_guard_drops_the_runner_users_connections_to_private_ranges(cidr):
     rules = [line.strip() for line in output.splitlines() if line.strip()]
     drop = 'meta skuid "runner" ip daddr @private4 counter drop'
     assert drop in rules
-    # Replies and loopback (the runner's own service containers) pass first.
-    assert rules.index("ct state established,related accept") < rules.index(drop)
-    assert rules.index('meta skuid "runner" oif "lo" accept') < rules.index(drop)
+    # Replies, 127.0.0.0/8 (the job's own service containers) and DNS on the
+    # VM's own address pass first; nothing else on the VM itself (its sshd,
+    # any other VM service) is reachable. Review, 14 Oct: an `oif "lo"`
+    # accept also let the runner reach the VM's own sshd at 192.168.5.1:22.
+    for allow in (
+        "ct state established,related accept",
+        'meta skuid "runner" ip daddr 127.0.0.0/8 accept',
+        'meta skuid "runner" fib daddr type local th dport 53 accept',
+    ):
+        assert rules.index(allow) < rules.index(drop), allow
+    assert not any('oif "lo"' in r for r in rules), rules
+    local_drop = 'meta skuid "runner" fib daddr type local counter drop'
+    assert local_drop in rules and rules.index(local_drop) < rules.index(drop)
     assert 'meta skuid "runner" ip6 daddr != ::1 counter drop' in rules
 
 
