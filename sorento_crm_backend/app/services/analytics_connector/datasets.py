@@ -202,16 +202,14 @@ CATALOG: dict[str, Dataset] = {
     ),
     "llm_calls": Dataset(
         "llm_calls",
-        "One row per LLM call the CRM made (chatbot parser and clarifier, the staff AI assistant, document"
-        " extraction, ...), with tokens, latency and USD cost. chatbot_turn_id links a chatbot call to turn_costs.",
+        "One row per LLM call the chatbot made (the parser on every turn, the clarifier on small talk), with"
+        " tokens, latency and USD cost. chatbot_turn_id links a call to turn_costs.",
         "created_at",
         (
             Col("id", "text", "Usage log row id"),
             Col("created_at", "datetime", "When the call was logged (Malaysia time)"),
-            Col("feature", "text", "What made the call: chatbot_parser, chatbot_clarifier, ai_assistant,"
-                " ai_extract, ...", groupable=True),
-            Col("chatbot_turn_id", "text", "Chatbot turn the call belongs to (turn_costs.id); empty for other"
-                " features", groupable=True),
+            Col("feature", "text", "What made the call: chatbot_parser or chatbot_clarifier", groupable=True),
+            Col("chatbot_turn_id", "text", "Chatbot turn the call belongs to (turn_costs.id)", groupable=True),
             *_CONTACT_COLS,
             Col("provider", "text", "openai, anthropic or gemini", groupable=True),
             Col("model", "text", "Model name", groupable=True),

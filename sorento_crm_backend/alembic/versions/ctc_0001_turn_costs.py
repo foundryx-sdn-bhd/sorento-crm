@@ -43,6 +43,9 @@ def _index_valid(bind):
 
 def upgrade() -> None:
     bind = op.get_bind()
+    # The ALTERs take ACCESS EXCLUSIVE on two tables the live chatbot writes every turn: fail the
+    # release rather than queue those writes behind a long reader (repo precedent qr_0001).
+    bind.execute(sa.text("SET LOCAL lock_timeout = '10s'"))
     bind.execute(sa.text("ALTER TABLE ai_assistant_usage_logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER"))
     bind.execute(
         sa.text(
@@ -58,11 +61,15 @@ def upgrade() -> None:
     )
     bind.execute(sa.text("ALTER TABLE chatbot.chat_ask_facts ADD COLUMN IF NOT EXISTS prompt_version INTEGER"))
     prices.seed_prices(bind)
-    backfill.backfill_cached_tokens(bind)
-    backfill.backfill_prompt_version(bind)
     views.ensure_cost_views(bind)
     if bind.execute(sa.text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": views.RO_ROLE}).scalar():
         views.grant_read_role(bind, views.RO_ROLE)
+
+    # The backfills read every turn trace once (seconds on prod volume), so they run AFTER the
+    # ALTERs commit: each UPDATE in its own transaction, holding row locks only.
+    with op.get_context().autocommit_block():
+        backfill.backfill_cached_tokens(bind)
+        backfill.backfill_prompt_version(bind)
 
     # Same shape as mig_idx_chunks_document_id: CONCURRENTLY outside the transaction, a bounded
     # lock wait, and an INVALID leftover of a failed build dropped and rebuilt.

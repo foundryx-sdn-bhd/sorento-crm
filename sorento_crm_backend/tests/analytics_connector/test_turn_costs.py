@@ -261,6 +261,58 @@ def test_missing_cached_price_falls_back_to_input_price():
         assert _row(db, "llm_calls", "chatbot_turn_id", s["no_calls"])["cost_usd"] == Decimal("0.001000")
 
 
+def test_llm_calls_holds_chatbot_calls_only():
+    """Security review: the CRM gates staff-side AI spend behind `system.ai_assistant_settings.view`;
+    the connector's chat gate must not widen that, so `llm_calls` carries chatbot rows only."""
+    with pg_session() as db:
+        _ensure(db)
+        s = _seed(db)
+        staff = _usage(db, turn_id=None, contact_id=None, feature="ai_assistant", model=s["m_priced"],
+                       prompt=5, cached=0, completion=5, ms=5)
+        extract = _usage(db, turn_id=None, contact_id=s["contact_id"], feature="ai_extract", model=s["m_priced"],
+                         prompt=5, cached=0, completion=5, ms=5)
+        db.flush()
+        n = db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls WHERE id IN (:a, :b)"),
+                       {"a": staff, "b": extract}).scalar()
+        assert n == 0
+        assert db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls WHERE chatbot_turn_id = :t"),
+                          {"t": s["priced"]}).scalar() == 2
+
+
+def test_read_only_role_reads_the_cost_views_and_no_base_table():
+    from app.services.analytics_connector.views import grant_read_role
+
+    role = f"zzt_ro_{uuid.uuid4().hex[:8]}"
+    with pg_session() as db:
+        _ensure(db)
+        db.execute(text(f'CREATE ROLE "{role}" NOLOGIN'))
+        db.execute(text(f'GRANT "{role}" TO CURRENT_USER'))
+        grant_read_role(db, role)
+        db.execute(text("SAVEPOINT ro"))
+        db.execute(text(f'SET LOCAL ROLE "{role}"'))
+        db.execute(text("SELECT count(*) FROM analytics_connector.turn_costs")).scalar()
+        db.execute(text("SELECT count(*) FROM analytics_connector.llm_calls")).scalar()
+        for stmt in (
+            "SELECT 1 FROM public.llm_model_prices LIMIT 1",
+            "SELECT 1 FROM public.ai_assistant_usage_logs LIMIT 1",
+            "SELECT 1 FROM chatbot.chat_ask_facts LIMIT 1",
+            "SELECT 1 FROM chatbot.chat_topics LIMIT 1",
+            "UPDATE analytics_connector.llm_calls SET model = 'x'",
+        ):
+            db.execute(text("SAVEPOINT probe"))
+            with pytest.raises(Exception) as err:
+                db.execute(text(stmt))
+            msg = str(err.value).lower()
+            assert "permission denied" in msg or "cannot update view" in msg, stmt
+            db.execute(text("ROLLBACK TO SAVEPOINT probe"))
+        db.execute(text("ROLLBACK TO SAVEPOINT ro"))
+        for view in ("turn_costs", "llm_calls"):
+            for priv in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                held = db.execute(text("SELECT has_table_privilege(:r, :v, :p)"),
+                                  {"r": role, "v": f"analytics_connector.{view}", "p": priv}).scalar()
+                assert held is False, (view, priv)
+
+
 def test_cost_views_expose_no_secret_columns():
     with pg_session() as db:
         _ensure(db)
@@ -441,8 +493,13 @@ def test_cost_filters_compare_numbers(caller):
                           {"column": "cost_usd", "op": "gt", "value": 0.001}])
     assert resp.status_code == 200, resp.text
     assert [r[0] for r in resp.json()["rows"]] == [s["priced"]]
-    bad = query(dataset="turn_costs", filters=[{"column": "cost_usd", "op": "gt", "value": "lots"}])
-    assert bad.status_code == 422
+
+
+@pytest.mark.parametrize("value", ["lots", "nan", "inf", "-Infinity", "1e400", True, False, [1], {"a": 1}])
+def test_cost_filters_reject_what_is_not_a_finite_number(caller, value):
+    _s, _g, query = caller
+    bad = query(dataset="turn_costs", filters=[{"column": "cost_usd", "op": "gt", "value": value}])
+    assert bad.status_code == 422, value
 
 
 def test_list_datasets_includes_the_cost_datasets(caller):

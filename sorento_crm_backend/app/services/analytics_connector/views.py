@@ -163,7 +163,9 @@ SELECT cf.id::text AS id,
 VIEWS = (MESSAGES_V, CONTACTS_V, BOT_TURNS_V, EPISODES_V)
 
 # CHAT-TURN-COST (plan documentation/plans/analytics/PLAN-chat-turn-cost-13oct.md). One row per
-# `ai_assistant_usage_logs` row, priced from `llm_model_prices`. No `user_id`, no conversation id.
+# CHATBOT `ai_assistant_usage_logs` row, priced from `llm_model_prices`. No `user_id`, no
+# conversation id. Chatbot features only: the CRM shows staff-side AI spend (assistant, extraction,
+# drafts) only to `system.ai_assistant_settings.view`, which the connector's chat gate is not.
 # Anthropic reports cache reads OUTSIDE `prompt_tokens` (`llm_provider.py`), OpenAI and Gemini
 # inside it, so the uncached part is computed per provider. A model with no price row is NULL
 # (unpriced), never 0. A missing cached price bills cached tokens at the input price.
@@ -194,6 +196,7 @@ SELECT u.id::text AS id,
   FROM ai_assistant_usage_logs u
   LEFT JOIN respond_contacts rc ON rc.id = u.contact_id
   LEFT JOIN llm_model_prices p ON p.model = u.model
+ WHERE u.feature LIKE 'chatbot%'
 """
 
 # One row per live turn. The calls are summed per turn in a LATERAL over the

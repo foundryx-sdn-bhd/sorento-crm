@@ -21,7 +21,8 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 
 ## Decisions (crew relay, 13 Oct)
 
-- Q1 phone: pending the owner. Built without it; `contact_phone` is one column on `turn_costs`.
+- Q1 phone: pending the owner. Card Q3 (9 Oct) excludes phone numbers from every dataset and a test
+  enforces it; this lane keeps that. Only an explicit owner ruling reverses Q3.
 - Q2 (a): the casual lane's clarifier call is logged as `feature = chatbot_clarifier` with the turn id.
 - Q3 (a): `llm_model_prices` table, seeded ONLY with the three prices the repo already cites with a
   source and date (`scripts/chatbot_eval/budget.py`): gpt-5.4-mini, gpt-4.1-mini, claude-sonnet-5-5.
@@ -37,7 +38,8 @@ analyse cost per turn / conversation / contact / category and latency in claude.
 2. Writers: `chatbot/usage.record_turn_llm_usage` (parser + clarifier rows, with `cached_tokens`);
    `llm_call.capture_usage()` collects the usage of a call whose caller only returns content (the
    clarifier); the CA-1 fact writer stores `prompt_version`.
-3. Views: `analytics_connector.llm_calls` (one row per usage-log row, priced) and
+3. Views: `analytics_connector.llm_calls` (one row per CHATBOT usage-log row, priced; staff-side AI
+   spend stays out because the CRM gates it behind `system.ai_assistant_settings.view`, security review) and
    `analytics_connector.turn_costs` (one row per live turn). Category, outcome, topic, episode and
    prompt version come from the CA-1 fact row (`chatbot.chat_ask_facts`), never from the trace.
 4. `cost_usd = (uncached * input + cached * cached_input + completion * output) / 1e6`, where
