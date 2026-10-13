@@ -459,8 +459,8 @@ async def qualify_lead(
 ):
     """Convert to a project. 409 when somebody already holds the development.
 
-    Requires ``.create`` and not just ``.edit``: this is a registration, and it is the
-    same grant that registering directly needs.
+    Requires ``.edit``: this is a registration, and it is the same grant that registering
+    directly (``POST /projects``) needs. The per-lead edit check below still applies.
     """
     try:
         validate_uuid_path(lead_id, resource="Lead")
