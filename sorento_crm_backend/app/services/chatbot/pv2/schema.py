@@ -31,12 +31,19 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Quantity(_Strict):
+    number: float
+    unit: str | None
+
+
 class Entity(_Strict):
     kind: str
     key: str | None
     phrase: str | None
     op: Op
     refers_to_held: bool
+    quantity: Quantity | None = None
+    doc_number: str | None = None
 
 
 class Spec(_Strict):

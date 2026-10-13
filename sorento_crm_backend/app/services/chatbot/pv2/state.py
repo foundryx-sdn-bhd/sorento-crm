@@ -11,7 +11,7 @@ from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.services.chatbot.pv2.schema import Ask, Comparator, Period, ReportSpec
+from app.services.chatbot.pv2.schema import Ask, Comparator, Period, Quantity, ReportSpec
 
 #: Contract section 3: topics newest first, cap 5; last answer rows cap 20.
 TOPICS_CAP = 5
@@ -43,6 +43,7 @@ class ResolvedRef(BaseModel):
     key: str
     label: str
     phrase: str | None = None
+    quantity: Quantity | None = None
 
 
 class ResolvedSpec(BaseModel):
@@ -245,6 +246,7 @@ def apply_payload(held: Held, payload: dict[str, Any]) -> Held:
             key=str(payload.get("key")),
             label=str(payload.get("label") or payload.get("key")),
             phrase=payload.get("phrase"),
+            quantity=Quantity(**payload["quantity"]) if payload.get("quantity") else None,
         )
         out.refs = set_refs(out.refs, kind, [ref], payload.get("op") or "set")
     return out

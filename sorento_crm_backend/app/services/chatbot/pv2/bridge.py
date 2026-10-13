@@ -102,7 +102,7 @@ def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
         "current_message": current,
         "confident": True,
         "hint_confident": True,
-        "quantity": None,
+        "quantity": ref.quantity.number if ref.quantity is not None else None,
         "spec_key": None,
         "spec_value": None,
         "account": None,

@@ -516,6 +516,7 @@ def _apply_entities(
                 raise _Miss("which_held", nothing_held=True)
             held.refs = set_refs(held.refs, ent.kind, carried_refs, "set")
             if ent.key is None and ent.phrase is None:
+                _set_quantity(held, ent)
                 continue
             has_held = True
         if ent.refers_to_held and not has_held:
@@ -524,7 +525,8 @@ def _apply_entities(
             held.refs = set_refs(held.refs, ent.kind, [], "clear")
             continue
         if ent.refers_to_held and ent.key is None and ent.phrase is None:
-            continue  # "this one": the held subject stays as it is
+            _set_quantity(held, ent)  # "this one": the held subject stays; a restated count replaces
+            continue
         if ent.op == "remove" and not has_held:
             raise _Miss("which_held", nothing_held=True)
         to_resolve.append(ent)
@@ -532,14 +534,17 @@ def _apply_entities(
         return held
 
     results = resolver.resolve_entities(to_resolve, held=held)
+    set_kinds: set[str] = set()
     for ent, res in zip(to_resolve, results):
         status = getattr(res, "status", "none")
         refs = list(getattr(res, "refs", None) or [])
         options = list(getattr(res, "options", None) or [])
         if status == "ambiguous" and len(options) == 1 and policy.decide("entity", held.domain) == "default":
-            held = apply_payload(held, {**options[0].payload, "op": ent.op})
+            held = apply_payload(held, {**options[0].payload, "op": ent.op, **_qty_payload(ent)})
             continue
         if status == "ambiguous" or (status == "exact" and not refs and options):
+            if ent.quantity is not None:
+                options = [o.model_copy(update={"payload": {**o.payload, **_qty_payload(ent)}}) for o in options]
             qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
             continue
         if status != "exact" or not refs:
@@ -568,8 +573,25 @@ def _apply_entities(
             options = _which_held_options([*carried, *refs])
             qs.append(_clarify(st, i, "which_held", None, language, options=options, kind=ent.kind))
             continue
-        held.refs = set_refs(held.refs, ent.kind, refs, ent.op)
+        if ent.quantity is not None:
+            refs = [r.model_copy(update={"quantity": ent.quantity}) for r in refs]
+        # Several entities of one kind in one ask are one list: the first "set" replaces
+        # what was held, the later ones join it.
+        op = "add" if ent.op == "set" and ent.kind in set_kinds else ent.op
+        set_kinds.add(ent.kind)
+        held.refs = set_refs(held.refs, ent.kind, refs, op)
     return held
+
+
+def _qty_payload(ent: Entity) -> dict[str, Any]:
+    return {"quantity": ent.quantity.model_dump()} if ent.quantity is not None else {}
+
+
+def _set_quantity(held: Held, ent: Entity) -> None:
+    """A count with no product named ("14 ada stock") restates the held refs' quantity."""
+    if ent.quantity is None:
+        return
+    held.refs[ent.kind] = [r.model_copy(update={"quantity": ent.quantity}) for r in held.refs.get(ent.kind, [])]
 
 
 def _apply_specs(
