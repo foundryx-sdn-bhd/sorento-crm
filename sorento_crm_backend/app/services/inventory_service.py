@@ -971,7 +971,16 @@ class StockService:
         # above are untouched.
         spec_promo_clause = product_filter_clause(self.db, spec_constraints, has_active_promotion, access_levels)
         if spec_promo_clause is not None:
-            q = q.filter(Stock.product_id.in_(select(Product.id).where(spec_promo_clause)))
+            matching = select(Product.id).where(spec_promo_clause)
+            if policy is not None and policy.mode == "availability":
+                # D27: a code is one product to the dealer, so a size read on the code keeps
+                # its same-code rows in the other company, spec row or not (reviewer S1).
+                matching = select(Product.id).where(
+                    func.lower(Product.product_code).in_(
+                        select(func.lower(Product.product_code)).where(spec_promo_clause)
+                    )
+                )
+            q = q.filter(Stock.product_id.in_(matching))
 
         if entity_buckets is not None and entity_buckets.product_codes:
             lowered = [c.lower() for c in entity_buckets.product_codes]
