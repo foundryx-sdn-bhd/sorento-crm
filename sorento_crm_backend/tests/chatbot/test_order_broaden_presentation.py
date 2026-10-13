@@ -148,7 +148,14 @@ class DeliveryThenEtaConsole(EngineConsole):
 
 @pytest.fixture
 def console(session_factory, monkeypatch, stub_access):
-    return DeliveryThenEtaConsole(session_factory, monkeypatch, stub_access, phone="+60100000951")
+    from tests.chatbot._turn_helpers import make_office_tier
+    from tests.chatbot.test_engine import CONTACT_ID
+
+    out = DeliveryThenEtaConsole(session_factory, monkeypatch, stub_access, phone="+60100000951")
+    # V1-DOC-SCOPE: this contact has no customer links, so it reads the orders book only as
+    # staff (an unlinked non-staff contact owns no delivery order).
+    make_office_tier(session_factory, CONTACT_ID)
+    return out
 
 
 def _delivery_last_week() -> dict[str, Any]:

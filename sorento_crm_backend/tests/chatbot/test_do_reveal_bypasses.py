@@ -50,6 +50,8 @@ def _run(*, entities, granted=None, dealer=False, start="2026-10-01", end="2026-
                     "domain_hint": "order",
                     "date_filter_start": start,
                     "date_filter_end": end,
+                    # V1-DOC-SCOPE: a non-dealer here is an office contact (staff).
+                    **({} if dealer else {"doc_staff": True}),
                 }
             },
             "contact": {"id": "900000008"},

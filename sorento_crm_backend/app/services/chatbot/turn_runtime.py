@@ -3777,6 +3777,9 @@ def make_tool_runner(
                 lane_out = {**lane_out, lane_key: placed_refs[lane_key]}
         if is_staff_profile(profile):
             lane_out = {**lane_out, "ref_staff": True}
+        if is_staff_profile(profile) or ctx.get("doc_staff"):
+            # V1-DOC-SCOPE: may see any customer's DO / SO (`engine`'s `ctx["doc_staff"]`).
+            lane_out = {**lane_out, "doc_staff": True}
         if po_words:
             # SO-PO-REF: the PO number the parser also emitted as an entity is answered by
             # the `po_refs` arm, so it is no miss for compose to name a second time (nor to

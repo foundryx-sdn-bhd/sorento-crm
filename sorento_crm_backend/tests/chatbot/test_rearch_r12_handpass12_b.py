@@ -59,8 +59,8 @@ from app.models.procurement import InboundShipment
 from app.services.chatbot.lanes.business.fetch import ORDER_TOOLS as ORDER_TOOLS_LOCAL
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
-from tests.chatbot._turn_helpers import do_window
-from tests.chatbot.test_engine import _parser_output
+from tests.chatbot._turn_helpers import do_window, make_office_tier
+from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_rearch_r5_production_decides import (
     _mcp_double,
@@ -357,6 +357,8 @@ class TestGroupCRerunOnMissForTypedRecordKey:
         exactly ONE orders tool call on a miss, no rerun. Expected green today; it
         is the guard."""
         _seed_contact_and_get(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         customer_id = _seed_customer(session_factory, name="ZZT C3 CUSTOMER")
         code = unique_code("C3PROD")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
@@ -431,6 +433,8 @@ class TestGroupCRerunOnMissForTypedRecordKey:
         """Customer AND product typed in the SAME message, miss: one tool call,
         normal miss (both are filters, green guard)."""
         _seed_contact_and_get(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         _seed_customer(session_factory, name="ZZT C4 CUSTOMER")
         code = unique_code("C4PROD")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
@@ -502,6 +506,8 @@ class TestGroupCRerunOnMissForTypedRecordKey:
         order id (the carried customer filter dropped); the reply says the order is
         not under the carried customer."""
         _seed_contact_and_get(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         carried_customer_id = _seed_customer(session_factory, name="ZZT C5 CARRIED CO")
         other_customer_id = _seed_customer(session_factory, name="ZZT C5 OTHER CO")
         code = unique_code("C5PROD")

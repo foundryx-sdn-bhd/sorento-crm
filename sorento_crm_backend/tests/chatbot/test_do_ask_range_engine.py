@@ -109,6 +109,12 @@ def office(session_factory, monkeypatch, stub_access):
 
     monkeypatch.setattr(do_ask, "today_myt", lambda: date(2026, 10, 2))
     _seed(session_factory, dealer=False, salesperson=False, shipments=False)
+    # V1-DOC-SCOPE: an office contact is staff, said explicitly (an unlinked contact that is
+    # not staff owns no delivery order).
+    from tests.chatbot._turn_helpers import make_office_tier
+    from tests.chatbot.test_rearch_s3_roster_from_resolver import CONTACT_ID
+
+    make_office_tier(session_factory, CONTACT_ID)
     db = session_factory()
     set_company_scope(db, frozenset({SORENTO}))
     customer_id = str(uuid.uuid4())

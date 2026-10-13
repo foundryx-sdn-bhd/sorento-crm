@@ -1468,9 +1468,10 @@ def run_fetch(
         if db is not None:
             from app.services.chatbot import so_status
 
-            # V1-DOC-SCOPE: the PO-ref rule below. Only staff are unscoped; an unlinked
-            # non-staff contact is held to its (empty) links, so every SO is refused.
-            linked = None if parse_output.get("ref_staff") is True else list(customer_scope.get("linked") or [])
+            # V1-DOC-SCOPE: only staff (`doc_staff`: the tier or an office access type) are
+            # unscoped; an unlinked non-staff contact is held to its (empty) links, so every
+            # SO is refused.
+            linked = None if parse_output.get("doc_staff") is True else list(customer_scope.get("linked") or [])
             looked = so_status.lookup(db, so_numbers, linked=linked)
             if trace is not None:
                 trace.add(
@@ -2242,7 +2243,7 @@ def run_fetch(
     # Refused before any fetch; the orders route itself scopes only an enforced contact.
     if (
         tool_name in fetch_mod.ORDER_TOOLS
-        and parse_output.get("ref_staff") is not True
+        and parse_output.get("doc_staff") is not True
         and not customer_scope.get("ids")
     ):
         if trace is not None:

@@ -180,8 +180,11 @@ def _run_fetch(db, world, parse_extra):
         "ctx": {
             "contact": {"id": world.scoped.id},
             "access": {"attributes": ["sales_orders.outstanding"]},
+            # The seeded contact holds an office access type (`_brand_scope_seed.contact`):
+            # the engine stamps that as `doc_staff` (V1-DOC-SCOPE); this direct call stamps it here.
             "parse": {"output": {"domain_hint": "order", "intent_hint": "check_order",
-                                  "message_type": "business_query", "entities": [], **parse_extra}},
+                                  "message_type": "business_query", "entities": [],
+                                  "doc_staff": True, **parse_extra}},
         },
     }
 

@@ -624,6 +624,24 @@ def customer_scope(db: Session, contact_respond_id: Any, space_id: str | None) -
     }
 
 
+def contact_is_office_staff(db: Session, contact_respond_id: Any, space_id: str | None) -> bool:
+    """V1-DOC-SCOPE: the asking contact holds an ACTIVE office access type
+    (`contact_customer_scope.is_office_staff`), resolved the way `customer_scope` resolves
+    it. Read for a contact with no links, whose `customer_scope` is None and so carries no
+    `staff` flag."""
+    from app.services import contact_customer_scope as scope_mod
+    from app.services.field_access import resolve_contact_with_null_workspace_fallback
+
+    if not contact_respond_id or not str(contact_respond_id).strip():
+        return False
+    contact_id = resolve_contact_with_null_workspace_fallback(
+        db,
+        contact_id=str(contact_respond_id).strip(),
+        space_id=(str(space_id).strip() or None) if space_id is not None else None,
+    )
+    return bool(contact_id) and scope_mod.is_office_staff(db, str(contact_id))
+
+
 def top_selling_dealer_customer_ids(
     own: list[tuple[str, str]], words: list[str]
 ) -> list[str] | None:

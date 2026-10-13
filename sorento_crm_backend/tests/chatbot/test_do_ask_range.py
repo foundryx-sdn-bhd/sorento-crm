@@ -53,6 +53,9 @@ def _run(*, start=None, end=None, dealer=True, entities=None, requested=None, or
         "date_filter_end": end,
         "requested_attributes": requested or [],
         "order_status": order_status,
+        # V1-DOC-SCOPE: the non-dealer here is an office contact (staff); an unlinked
+        # contact that is not staff owns no delivery order and is refused before the range.
+        **({} if dealer else {"doc_staff": True}),
     }
     payload = {
         "_exit_kind": "continue",

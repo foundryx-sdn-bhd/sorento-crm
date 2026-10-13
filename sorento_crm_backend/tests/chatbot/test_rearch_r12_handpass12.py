@@ -108,7 +108,7 @@ from app.services.chatbot.lanes.business.fetch import ORDER_TOOLS as ORDER_TOOLS
 from app.services.chatbot.lanes.business.services import AnswerServices
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests._pg_fixture import unique_code
-from tests.chatbot._turn_helpers import do_window
+from tests.chatbot._turn_helpers import do_window, make_office_tier
 from tests.chatbot.test_engine import CONTACT_ID, _parser_output
 from tests.chatbot.test_engine_company_scope import _seed_product
 from tests.chatbot.test_rearch_r5_production_decides import _mcp_double, _seed_contact_and_get
@@ -533,6 +533,8 @@ class TestGroupARememberedOrderFacetsNotUsedOutsideOrderDomain:
         used to pin is what kept the outstanding bucket on every later DO ask. Turn 2
         still must not use it; turn 3 now runs the plain order list, no status filter."""
         _seed_contact_and_get(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         code = unique_code("A3PROD")
         _seed_product(session_factory, company_id=DEFAULT_COMPANY_ID, code=code)
         product_entity = {
@@ -744,6 +746,8 @@ class TestGroupBDidYouMeanPickByTypedLabelsReachesTheTool:
         ("PS202609-0320, PS202609-0310"), which the parser resolved to
         reference_positions [1, 6]."""
         self._seed_pending(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         verdict = _parser_output(
             message_type="casual",
             intent_hint=None,
@@ -798,6 +802,8 @@ class TestGroupBDidYouMeanPickByTypedLabelsReachesTheTool:
         PS202609-0325 (option 2) the same way the typed-label pick above settles its
         own two options."""
         self._seed_pending(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         verdict = _parser_output(
             message_type="casual",
             intent_hint=None,
@@ -840,6 +846,8 @@ class TestGroupB2OneNumberedListPerMessage:
     ) -> None:
         fixture = TestGroupBDidYouMeanPickByTypedLabelsReachesTheTool()
         fixture._seed_pending(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         verdict = _parser_output(
             message_type="casual",
             intent_hint=None,
@@ -1206,6 +1214,8 @@ class TestGroupB2AMissThatAlsoEarnsACsMemberOfferPrintsOneNumberedList:
         6-option-only roster does (`TestGroupB2OneNumberedListPerMessage`) - the
         member half riding at 7..11 must not disturb it."""
         self._seed_combined_pending(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         verdict = _parser_output(
             message_type="casual",
             intent_hint=None,
@@ -1416,6 +1426,8 @@ class TestGroupFCustomerPickHeaderNamesEveryLedgerNotACode:
         real ledger names seeded below, so a fix that just echoes `option.name` cannot
         satisfy this test - it must resolve the real ledgers."""
         _seed_contact_and_get(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         ids = [str(uuid.uuid4()) for _ in range(3)]
         names = [
             "ZZT BATH GROUP - A/C I",

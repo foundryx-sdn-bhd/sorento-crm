@@ -358,9 +358,10 @@ class TestUpstreamBlock:
         assert "SOMEONE ELSE" not in reply
 
     def test_foreign_do_number_is_a_miss_inside_the_scope(self, session_factory, monkeypatch) -> None:
-        """AC-CS-15: a DO number that resolves to an order uuid goes to the orders list
-        with that `order_ids` AND the links as `customer_ids`; the route (not the lane)
-        answers "no rows", so the reply is the ordinary miss text, never the refusal."""
+        """AC-CS-15, tightened by V1-DOC-SCOPE: a DO number whose order is not under the
+        links (here: no such order row at all) is dropped from the resolver's matches before
+        any fetch (`turn_runtime._without_foreign_sales_orders`), so no orders call carries
+        it, and the reply is the ordinary miss text, never the refusal."""
         _seed_contact(session_factory, variables={})
         (own_id,) = _link_customers(session_factory, OWN_A)
         reply, captured = _turn(
@@ -372,9 +373,9 @@ class TestUpstreamBlock:
             "status of DO-ZZT-1", attributes=(),
             matches={"DO-ZZT-1": {"uuid": ORDER_UUID, "entity_type": "customer_order", "canonical_code": "DO-ZZT-1"}},
         )
-        (args,) = _calls(captured, ORDERS)
-        assert args["order_ids"] == [ORDER_UUID], args
-        assert args["customer_ids"] == [own_id], args
+        for args in _calls(captured, ORDERS):
+            assert ORDER_UUID not in (args.get("order_ids") or []), args
+            assert args["customer_ids"] == [own_id], args
         assert reply.strip()
         assert "under your account" not in reply, reply
 

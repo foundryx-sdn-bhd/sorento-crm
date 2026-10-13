@@ -2055,14 +2055,18 @@ def _top_selling_dealer_scope(
     return {**parse_output, "entities": [e for e in entities if not _is_customer(e)]}
 
 
-def _reference_scope(customer_scope: dict[str, Any] | None, profile: Any) -> list[Any] | None:
+def _reference_scope(
+    customer_scope: dict[str, Any] | None, profile: Any, *, doc_staff: bool = False
+) -> list[Any] | None:
     """REF-PROBES: the customer links a reference-number match must belong to, or None when
     no scope applies. Enforced dealers and any non-staff contact are held to their links (an
-    unlinked dealer has none, so another customer's sales order is never offered)."""
+    unlinked dealer has none, so another customer's sales order is never offered).
+    `doc_staff` is the turn's V1-DOC-SCOPE staff read (`ctx["doc_staff"]`): the tier, or
+    an active office access type."""
     scope = customer_scope or {}
     if scope.get("enforced"):
         return list(scope.get("linked") or [])
-    return None if is_staff_profile(profile) else list(scope.get("linked") or [])
+    return None if (doc_staff or is_staff_profile(profile)) else list(scope.get("linked") or [])
 
 
 def _reference_kinds(
@@ -5126,6 +5130,17 @@ def _run_stages_body(  # noqa: PLR0915
             or {*ORDER_OR_SALES_DOMAINS, "purchase_order", "chat_analytics"} & {*(plan.domains or ()), *(spec.domain for spec in plan.fetch)}
             else None
         )
+        # V1-DOC-SCOPE: who may see ANY customer's documents (DO, SO). Staff is the operator-set
+        # tier OR an active office access type; everyone else is held to its links, and a
+        # contact with none sees no customer document (owner rule: unlinked != customer).
+        ctx["doc_staff"] = bool(
+            is_staff_profile(state_out.profile)
+            or (customer_scope or {}).get("staff")
+            or (
+                customer_scope is None
+                and business_services.contact_is_office_staff(db, contact_respond_id, space_id_for_turn)
+            )
+        )
         # A turn whose only fetch is a GRANTED chat report is scoped by the asker rule (dealer only),
         # not by customer links, at the gate below; the turn's own `customer_scope` stays strict for
         # every other use (the lane applies `chat_report.scope_for` to its own fetch).
@@ -5379,7 +5394,9 @@ def _run_stages_body(  # noqa: PLR0915
                     ),
                     roster_caps=roster_caps,
                     enforced_scope=bool((gate_scope or {}).get("enforced")),
-                    scope_linked=_reference_scope(customer_scope, state_out.profile),
+                    scope_linked=_reference_scope(
+                        customer_scope, state_out.profile, doc_staff=bool(ctx.get("doc_staff"))
+                    ),
                 )
             )
             resolved_kinds = resolve_outcome.resolved_kinds

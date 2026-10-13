@@ -28,7 +28,7 @@ from typing import Any
 from app.models.order import Customer
 from app.services.chatbot import engine as engine_mod
 from app.services.chatbot.lanes.business.services import FetchServices
-from tests.chatbot._turn_helpers import do_window
+from tests.chatbot._turn_helpers import do_window, make_office_access_type
 from tests.chatbot.conftest import set_chatbot_switches
 from tests.chatbot.test_engine import _parser_output, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_engine_company_scope import (
@@ -130,6 +130,9 @@ def _two_company_chain(session_factory) -> dict[str, str]:
         session_factory, contact_id=CONTACT_ID, phone="+60000000911",
         workspace_id=workspace_id, company_ids=[a, b],
     )
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff (by an office
+    # access type, so the escalation offer under test is unchanged).
+    make_office_access_type(session_factory, CONTACT_ID)
     return {
         "a": a, "b": b, "product_a": product_a, "product_b": product_b,
         "customer_a": customer_a, "customer_b": customer_b,
@@ -306,6 +309,9 @@ class TestSingleCompanyHitIsUnchanged:
             session_factory, contact_id=CONTACT_ID, phone="+60000000912",
             workspace_id=workspace_id, company_ids=[a],
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff (by an office
+        # access type, so the escalation offer under test is unchanged).
+        make_office_access_type(session_factory, CONTACT_ID)
         envelope = _orders_envelope([_order_row(MOCHA, "ZZTM2609-0881")], [])
         calls = _wire(session_factory, system_settings_row, monkeypatch, envelope=envelope)
         stub_parser(_order_verdict())

@@ -159,6 +159,7 @@ from app.services.chatbot.lanes.business.services import (
     ResolveGateServices,
 )
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import make_office_tier
 from tests._mc_lookup_seed import customer as mc_customer
 from tests.chatbot._turn_helpers import do_window
 from tests.chatbot.conftest import set_chatbot_switches, validating_resolve_entity
@@ -1005,6 +1006,8 @@ class TestToolPick:
 
         call, captured = _capturing_mcp()
         payload = self._payload(order_status="so_outstanding", entities=[])
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "no MCP tool was ever called"
         name, _args = captured[0]
@@ -1049,6 +1052,8 @@ class TestWarehouseOnAPlainOrderAsk:
                 "access": {"attributes": []},
             },
         }
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "no MCP tool was ever called"
         name, args = captured[0]
@@ -1560,6 +1565,8 @@ class TestScopeQuestionGuardsAgainstAStrayPositionWithAnEntity:
         original "delivery to hanlim" regression needs; the word-matching half of that
         regression is retired with D16 and re-verified live by the console case."""
         _seed_open_outstanding_scope(session_factory)
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -2811,6 +2818,8 @@ class TestCustomerOnlyOutstandingAskReachesTheReport:
                 "access": {"attributes": ["sales_orders.outstanding"]},
             },
         }
+        # V1-DOC-SCOPE: an unlinked contact reads the orders book only as staff.
+        payload["ctx"]["parse"]["output"]["doc_staff"] = True
         run_fetch(payload, services=FetchServices(mcp_call=call))
         assert captured, "the plain order ask must still be answered"
         name, _args = captured[0]
@@ -4364,6 +4373,8 @@ class TestAllOnTheCustomerPickerKeepsTheQuestion:
                 "pending": None,
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         _result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4696,6 +4707,8 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
         _seed_open_outstanding_detail(
             session_factory, rows=[{"idx": 1, "label": "Sales order list", "value": "so"}],
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,
@@ -4756,6 +4769,8 @@ class TestABusinessQueryUnderAnOpenOfferIsANewAsk:
                 "location_token": None,
             },
         )
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_tier(session_factory, CONTACT_ID)
         result, captured = _run_turn(
             session_factory,
             monkeypatch,

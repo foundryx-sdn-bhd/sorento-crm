@@ -1,9 +1,9 @@
 """V1-DOC-SCOPE (security, 14 Oct 2026): a non-staff contact gets no other customer's documents.
 
-Owner rule: unlinked != customer. A contact with no customer link and no staff tier
-(`chatbot_profile.tier != "office"`) owns no documents, so every customer-owned document
-(delivery order, sales order) is another customer's. A linked dealer sees only its links';
-staff are unchanged.
+Owner rule: unlinked != customer. A contact with no customer link that is not staff owns no
+documents, so every customer-owned document (delivery order, sales order) is another
+customer's. Staff = `chatbot_profile.tier == "office"` OR an active office access type
+(`engine`'s `ctx["doc_staff"]`). A linked dealer sees only its links'; staff are unchanged.
 
 Paths under test, each found answering for ANY customer on production (2ba0cf0ee):
 
@@ -26,7 +26,8 @@ import pytest
 
 from tests.chatbot.test_customer_scope_lane import ORDERS, _calls, _link_customers, _other_customer
 from tests.chatbot.test_engine import _parser_output
-from tests.chatbot.test_outstanding_lane import _run_turn, _seed_contact
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_outstanding_lane import CONTACT_ID, _run_turn, _seed_contact
 from tests.chatbot.test_po_ref_ask import _make_staff
 from tests.chatbot.test_so_number_ask import OUTSTANDING_KEY, REFUSAL_PREFIX, _card, _seed_so
 
@@ -158,6 +159,16 @@ class TestDoByNumber:
 
         assert _calls(captured, ORDERS), "staff still get any customer's DO through the orders list"
 
+    def test_office_access_type_staff_unchanged_gets_any_do(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+        foreign = _other_customer(session_factory, FOREIGN)
+        _seed_do(session_factory, DO_NO, foreign, debtor_name=FOREIGN)
+
+        _reply, captured = _turn(session_factory, monkeypatch, _number_ask(DO_NO, "order"), f"status of {DO_NO}")
+
+        assert _calls(captured, ORDERS), "office access type staff still get any customer's DO"
+
 
 # --------------------------------------------------------------------------- #
 # 2. A sales order by number, with the SO reveal
@@ -202,6 +213,16 @@ class TestSoByNumberWithReveal:
 
         assert SO_NO in reply and "ZZT ANY SDN BHD" in reply and "fully delivered" in reply, reply
 
+    def test_office_access_type_staff_unchanged_sees_any_so(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
+        cust = _other_customer(session_factory, "ZZT ANY SDN BHD")
+        _seed_so(session_factory, SO_NO, customer_id=cust, debtor_name="ZZT ANY SDN BHD", lines=[(10, 10)])
+
+        reply, _ = _turn(session_factory, monkeypatch, _number_ask(SO_NO, "order_number"), f"status of {SO_NO}")
+
+        assert SO_NO in reply and "ZZT ANY SDN BHD" in reply and "fully delivered" in reply, reply
+
 
 # --------------------------------------------------------------------------- #
 # 3. A DO list with no number
@@ -230,6 +251,15 @@ class TestDoListWithNoNumber:
     def test_staff_unchanged_lists_unscoped(self, session_factory, monkeypatch) -> None:
         _seed_contact(session_factory, variables={})
         _make_staff(session_factory)
+
+        _reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
+
+        (args,) = _calls(captured, ORDERS)
+        assert not args.get("customer_ids"), args
+
+    def test_office_access_type_staff_unchanged_lists_unscoped(self, session_factory, monkeypatch) -> None:
+        _seed_contact(session_factory, variables={})
+        make_office_access_type(session_factory, CONTACT_ID)
 
         _reply, captured = _turn(session_factory, monkeypatch, _list_ask(), "deliveries this month")
 
