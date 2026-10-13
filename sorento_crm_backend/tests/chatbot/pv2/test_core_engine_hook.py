@@ -304,3 +304,34 @@ def test_v1_tail_write_keeps_stored_pv2(session_factory, seeded):
     tail.write_merged(db, respond_io_id=str(CONTACT_ID), payload={"focus": None, "open_question": None},
                       base=None, turn_id=None)
     assert _session_vars(session_factory)["pv2"] == {"v": 1, "turn_no": 2}
+
+
+def test_dry_run_idea_turn_keeps_the_capture_pointer_in_session_patch(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    # A test turn never persists the capture pointer; the console's next idea turn reads it
+    # from the patch (hand-test C on the console: similar list -> "yang kedua").
+    pointer = {"status": "similar_offered", "similar": [{"idea_number": 7}], "is_test": True}
+    trace = {"index_sha": "abc12345", "ideation_session_vars": {"ideation": pointer, "focus": None}}
+    fake_turn(FakeResult(direct_reply="Similar ideas:\n1. Dark mode", branch_kind="ideate", trace=trace))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    result = engine_mod.run_turn(_envelope(is_test=True), session_factory=session_factory)
+    assert result.session_patch["ideation"] == pointer
+    assert result.session_patch["pv2"]["held"] == {"domain": "inventory"}
+
+
+def test_dry_run_non_idea_turn_leaves_the_ideation_key_as_it_started(
+    session_factory, seeded, stub_parser, stub_access, fake_turn
+):
+    fake_turn(FakeResult(direct_reply="Which one?", branch_kind="clarify_menu"))
+    stub_parser()
+    stub_access()
+    _set_contact_mode(session_factory, "v2")
+    carried = {"focus": None, "open_question": None, "ideation": {"status": "captured"}, "access_levels": [],
+               "contains_flyer": False, "reply_language": None}
+    result = engine_mod.run_turn(
+        _envelope(is_test=True, previous_conversation_state=carried), session_factory=session_factory
+    )
+    assert result.session_patch["ideation"] == {"status": "captured"}

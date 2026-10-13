@@ -1,0 +1,232 @@
+"""PV2 -> v1 bridge (CONTRACT-PV2-13oct.md section 5, Lookup): the 59-key v1 verdict built
+from the HELD subject with RESOLVED codes, exactly as if the user had typed the codes, and
+the v1 `Focus` it runs against. The engine's existing stages (turn_apply -> turn_route ->
+run_fetch -> compose -> tail) then answer with today's formatters, so a PV2 reply matches
+today's by construction.
+
+Pure: no DB, no text inspection. Every key the v1 schema declares is present; a key PV2
+does not set carries its "said nothing" value, derived from the v1 schema itself so the
+two cannot drift.
+"""
+from __future__ import annotations
+
+import dataclasses
+from datetime import date
+from typing import Any
+
+from app.services.chatbot.head.parser import PARSE_OUTPUT_JSON_SCHEMA
+from app.services.chatbot.pv2.state import ConversationState, Held, Lookup, ResolvedRef
+from app.services.chatbot.turn.policy_rows import DEFAULT_DOMAIN_ROWS
+from app.services.chatbot.turn.pending import ESCALATION_OFFER_KINDS
+from app.services.chatbot.turn.state import EXTRA_KIND_ALIASES, KIND_FIELD_MAP, Focus
+
+#: Domains whose replies tonight's gate covers (section 5); any other domain still runs
+#: through the same bridge and is marked `pv2_ungated_domain` in the trace.
+GATED_DOMAINS: frozenset[str] = frozenset({"inventory", "product_attachment", "sales"})
+
+#: A domain's v1 intent: the first intent of its `chatbot_domains` seed row (data).
+INTENT_BY_DOMAIN: dict[str, str] = {
+    row["name"]: row["intents"][0] for row in DEFAULT_DOMAIN_ROWS if row.get("intents")
+}
+
+#: PV2 entity kind -> the v1 entity hint the v1 resolver reads.
+V1_HINT: dict[str, str] = {
+    "product": "product",
+    "customer": "customer",
+    "warehouse": "warehouse",
+    "brand": "brand",
+    "product_type": "product_type",
+    "order": "order",
+    "attachment": "attachment",
+    "inbound_shipment": "inbound_shipment",
+}
+
+
+# --------------------------------------------------------------------------- #
+# The blank v1 verdict
+# --------------------------------------------------------------------------- #
+
+
+def _blank(schema: dict[str, Any]) -> Any:
+    kinds = schema.get("type")
+    kinds = kinds if isinstance(kinds, list) else [kinds]
+    if "null" in kinds:
+        return None
+    if "array" in kinds:
+        return []
+    if "boolean" in kinds:
+        return False
+    if "object" in kinds:
+        return {k: _blank(v) for k, v in (schema.get("properties") or {}).items()}
+    if "string" in kinds:
+        return ""
+    return None
+
+
+def blank_verdict() -> dict[str, Any]:
+    """Every declared v1 key at its "said nothing" value (nullable -> None, list -> [],
+    bool -> False, object -> its members blank)."""
+    props = PARSE_OUTPUT_JSON_SCHEMA["properties"]
+    verdict = {key: _blank(props[key]) for key in PARSE_OUTPUT_JSON_SCHEMA["required"]}
+    verdict["message_type"] = "business_query"
+    verdict["match_mode"] = "and"
+    verdict["entity_op"] = "replace_combine"
+    return verdict
+
+
+# --------------------------------------------------------------------------- #
+# Periods
+# --------------------------------------------------------------------------- #
+
+
+def period_dates(period: Any, today: date) -> tuple[date | None, date | None]:
+    """A PV2 Period as (date_from, date_to): the ONE reading `reports.period_dates` gives
+    (explicit dates win over the preset), so a report and a lookup never read a period
+    two ways. (None, None) when it names no period."""
+    from app.services.chatbot.pv2 import reports
+
+    span = reports.period_dates(period, today) if period is not None else None
+    return span if span is not None else (None, None)
+
+
+# --------------------------------------------------------------------------- #
+# Verdict + focus
+# --------------------------------------------------------------------------- #
+
+
+def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
+    return {
+        "raw": ref.key,
+        "hint": V1_HINT.get(ref.kind, ref.kind),
+        "canonical_code": ref.key,
+        "current_message": current,
+        "confident": True,
+        "hint_confident": True,
+        "quantity": None,
+        "spec_key": None,
+        "spec_value": None,
+        "account": None,
+    }
+
+
+def _spec_entity(spec: Any, *, current: bool) -> dict[str, Any]:
+    value = spec.value
+    raw = f"{value}{(' ' + spec.unit) if spec.unit else ''}"
+    return {
+        "raw": raw,
+        "hint": "specification",
+        "canonical_code": None,
+        "current_message": current,
+        "confident": True,
+        "hint_confident": True,
+        "quantity": None,
+        "spec_key": spec.attribute,
+        "spec_value": value,
+        "account": None,
+    }
+
+
+def _open_question_answer(action: Lookup) -> dict[str, Any] | None:
+    """A v1 open question answered through PV2 (section 5: `v1_open_question` picks pass
+    through as `open_question_answer`). Option keys are the v1 positions ("1", "2") or
+    "yes" / "no" / "all" (`turn.v1_pending_options`)."""
+    if action.pending_kind != "v1_open_question" or action.picked is None:
+        return None
+    key = action.picked.key
+    answer = {"mode": None, "picked": [], "items": [], "qty_for_all": None}
+    if key in ("yes", "no", "all"):
+        answer["mode"] = key
+    elif key.isdigit():
+        answer["mode"] = "pick"
+        answer["picked"] = [int(key)]
+    return answer
+
+
+def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> dict[str, Any]:
+    """The 59-key v1 verdict for one Lookup: the held subject's resolved codes named as
+    this message's entities, its domain and intent, its period as dates."""
+    held = action.held
+    verdict = blank_verdict()
+    domain = action.domain or held.domain
+    verdict["domain_hint"] = domain
+    verdict["intent_hint"] = INTENT_BY_DOMAIN.get(domain or "")
+    entities: list[dict[str, Any]] = []
+    for kind in sorted(held.refs):
+        entities.extend(_v1_entity(r) for r in held.refs[kind])
+    if held.attachment_type:
+        entities.append(
+            _v1_entity(ResolvedRef(kind="attachment_type", key=held.attachment_type, label=held.attachment_type))
+        )
+    # A spec this ask did not name is CARRIED: grounding reads a current-message descriptor
+    # against the message's own words and would demote a carried "p_trap" on "stock?".
+    named_specs = bool(action.ask is not None and action.ask.specs)
+    entities.extend(_spec_entity(s, current=named_specs) for s in held.specs)
+    verdict["entities"] = entities
+    date_from, date_to = period_dates(held.period, today)
+    verdict["date_filter_start"] = date_from.isoformat() if date_from else None
+    verdict["date_filter_end"] = date_to.isoformat() if date_to else None
+    low_stock = action.ask.low_stock if action.ask is not None else None
+    if low_stock is not None:
+        # The low stock report is its own ask group (contract s.1), answered by the v1
+        # `low_stock_ask` lane: its intent and filter object, categories from the held
+        # product types, brands from the held brands.
+        verdict["intent_hint"] = "low_stock_report"
+        verdict["low_stock"] = {
+            "group_by": low_stock.group_by,
+            "categories": [r.label for r in held.refs.get("product_type", [])],
+            "all_categories": low_stock.all_categories,
+            "brands": [r.key for r in held.refs.get("brand", [])],
+            "suppliers": [],
+        }
+    answer = _open_question_answer(action)
+    if answer is not None:
+        verdict["message_type"] = "clarification"
+        verdict["open_question_answer"] = answer
+        verdict["entity_op"] = "reuse"
+        if answer["mode"] in ("yes", "no"):
+            verdict["is_affirmative"] = answer["mode"] == "yes"
+            v1_kind = _v1_kind(state, action)
+            if v1_kind in ESCALATION_OFFER_KINDS:
+                # v1 `decide` accepts an escalation offer only on this flag.
+                verdict["escalation"] = {
+                    **verdict["escalation"],
+                    "is_escalation_confirmation": answer["mode"] == "yes",
+                }
+    return verdict
+
+
+def _v1_kind(state: ConversationState, action: Lookup) -> str | None:
+    picked = action.picked
+    return (picked.payload.get("v1_kind") if picked is not None else None) or None
+
+
+def _focus_row(ref: ResolvedRef) -> dict[str, Any]:
+    row = _v1_entity(ref, current=False)
+    row["name"] = ref.label
+    return row
+
+
+def focus_from_v2(held: Held, base: Focus | None = None) -> Focus:
+    """The v1 Focus the engine's stages run against: the held subject (every row CARRIED,
+    as `focus_from_wire` marks them) laid over the v1 focus the turn loaded, so v1-only
+    axes (tier, tasks, required_ask, a ranking frame) survive the turn."""
+    focus = dataclasses.replace(base) if base is not None else Focus()
+    focus.products, focus.customers, focus.warehouse, focus.brands = [], [], [], []
+    focus.extra = {}
+    for kind, refs in held.refs.items():
+        if kind == "brand":
+            focus.brands = [r.key for r in refs]
+            continue
+        field_name = KIND_FIELD_MAP.get(kind)
+        rows = [_focus_row(r) for r in refs]
+        if field_name:
+            setattr(focus, field_name, rows)
+        else:
+            focus.extra[EXTRA_KIND_ALIASES.get(kind, kind)] = rows
+    if held.domain:
+        focus.domains = [held.domain]
+    return focus
+
+
+def is_gated(domain: str | None) -> bool:
+    return domain in GATED_DOMAINS

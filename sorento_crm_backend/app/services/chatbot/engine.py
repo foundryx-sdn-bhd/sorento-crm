@@ -4214,6 +4214,11 @@ def _pv2_keep_state(
         # began with, so the next console turn keeps its v1 focus and open question.
         patch = dict(result.session_patch or media_box.get("pv2_v1_before") or {})
         patch[pv2_hook.STATE_KEY] = pv2_hook.state_dump(state)
+        ideation = media_box.get("pv2_ideation")
+        if isinstance(ideation, dict):
+            # A test turn never persists the capture pointer (ideation_capture_service), so
+            # the console's next idea turn reads it from this patch or not at all.
+            patch["ideation"] = ideation.get("ideation")
         result.session_patch = patch
         return
     try:
@@ -4731,6 +4736,9 @@ def _run_stages_body(  # noqa: PLR0915
             )
         if pv2_result is not None:
             media_box["pv2_state"] = getattr(pv2_result, "state", None)
+            # An idea turn's capture pointer (`IdeaTurnResult.session_vars`): a live turn's
+            # capture service wrote it already; a dry run hands it back in the patch below.
+            media_box["pv2_ideation"] = (getattr(pv2_result, "trace", None) or {}).get("ideation_session_vars")
             media_box["pv2_contact_pk"] = memory_intake.get("contact_pk")
             media_box["pv2_v1_before"] = {
                 key: remembered_before.get(key) for key in session_state.FIVE_KEYS
