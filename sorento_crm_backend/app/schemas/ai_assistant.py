@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AIAssistantConfigUpdate(BaseModel):
@@ -294,18 +294,30 @@ class WishlistClusterItem(BaseModel):
     created_at: datetime
 
 
+_MAX_PRICE = 999999.999999
+
+
 class ModelPriceBody(BaseModel):
     """Update body. A price row's model never changes, so a `model` sent here is ignored."""
 
     model: Optional[str] = None
-    input_usd_per_1m: float = Field(ge=0)
-    cached_input_usd_per_1m: Optional[float] = Field(default=None, ge=0)
-    output_usd_per_1m: float = Field(ge=0)
+    # NUMERIC(12, 6) holds up to 999999.999999; a larger value would be a 500, not a 422.
+    input_usd_per_1m: float = Field(ge=0, le=_MAX_PRICE)
+    cached_input_usd_per_1m: Optional[float] = Field(default=None, ge=0, le=_MAX_PRICE)
+    output_usd_per_1m: float = Field(ge=0, le=_MAX_PRICE)
     note: Optional[str] = None
 
 
 class ModelPriceCreate(ModelPriceBody):
     model: str = Field(min_length=1, max_length=128)
+
+    @field_validator("model")
+    @classmethod
+    def _strip_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("model must not be blank")
+        return value
 
 
 class ModelPriceResponse(BaseModel):

@@ -9,6 +9,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import case, desc, func, literal_column
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -1104,9 +1105,10 @@ def create_model_price(
     _user: dict = Depends(require_permission("system.ai_assistant_settings.edit")),
     db: Session = Depends(get_db),
 ):
-    model = body.model.strip()
+    model = body.model
+    duplicate = HTTPException(status_code=409, detail=f"A price for {model} already exists.")
     if db.query(LLMModelPrice).filter(LLMModelPrice.model == model).first() is not None:
-        raise HTTPException(status_code=409, detail=f"A price for {model} already exists.")
+        raise duplicate
     row = LLMModelPrice(
         model=model,
         input_usd_per_1m=body.input_usd_per_1m,
@@ -1115,7 +1117,12 @@ def create_model_price(
         note=body.note,
     )
     db.add(row)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # A concurrent create of the same model won the unique index.
+        db.rollback()
+        raise duplicate
     db.refresh(row)
     return _price_out(row)
 
