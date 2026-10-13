@@ -453,10 +453,15 @@ def _saved_line_parts(
     """`(words, location, qty, headline key)` per non-zero part of a saved line's snapshot,
     in its own order: what `saved_line_remark` joins and what the headline names."""
     own = snapshot.get("location") or None
+    # A ref is `{"spo_number": ...}` as `_snapshot` writes it, or the bare number some
+    # frozen snapshots carry.
     spo_numbers = ", ".join(
-        ref.get("spo_number")
-        for ref in snapshot.get("timely_spo_refs") or []
-        if ref.get("spo_number")
+        number
+        for number in (
+            ref.get("spo_number") if isinstance(ref, Mapping) else ref
+            for ref in snapshot.get("timely_spo_refs") or []
+        )
+        if number
     )
     parts: List[Tuple[str, Optional[str], Decimal, str]] = []
     for component in snapshot.get("components") or []:
@@ -4197,16 +4202,26 @@ class ProjectOrderInquiryService:
                 .filter(Product.id == (core.product_id or mirror.product_id))
                 .scalar()
             )
+            # The whole line goes: QTY <what was owed>, QTY CHANGE TO 0, REMARK CANCEL -
+            # the qty-change form the owner kept, at its end.
+            owed = open_qty if open_qty > _ZERO else _dec(mirror.qty)
+            location = mirror.stock_location or (
+                self.db.query(Warehouse.warehouse_code)
+                .filter(Warehouse.id == core.warehouse_id)
+                .scalar()
+                if getattr(core, "warehouse_id", None)
+                else None
+            )
             snapshot = {
                 "item_code": item_code,
-                "open_qty": str(open_qty if open_qty > _ZERO else _dec(mirror.qty)),
-                "location": mirror.stock_location,
+                "open_qty": "0",
+                "location": location,
                 "required_date": mirror.delivery_date.isoformat() if mirror.delivery_date else None,
                 "components": [],
             }
             self._queue_saved_line(
-                pso_id, mirror, snapshot, None, actor_user_id=actor_user_id,
-                remark="CANCEL", keys=[IV_CANCEL_BALANCE],
+                pso_id, mirror, snapshot, {**snapshot, "open_qty": str(owed)},
+                actor_user_id=actor_user_id, remark="CANCEL", keys=[IV_CANCEL_BALANCE],
             )
 
     def _queue_saved_line(
@@ -4220,7 +4235,8 @@ class ProjectOrderInquiryService:
         remark: Optional[str] = None,
         keys: Optional[List[str]] = None,
     ) -> None:
-        if remark is None:
+        explicit = remark is not None
+        if not explicit:
             remark, location = saved_line_remark(now)
             keys = [key for _w, _l, _q, key in _saved_line_parts(now)]
         else:
@@ -4232,7 +4248,7 @@ class ProjectOrderInquiryService:
             qty_before = _dec(before.get("open_qty"))
             if qty_before != qty_now:
                 was["qty"] = qty_before
-                if qty_now < qty_before:
+                if qty_now < qty_before and not explicit:
                     # Today's form for a cut (owner: "QTY 2 / QTY CHANGE TO 1 / CANCEL 1").
                     remark = f"CANCEL {_qty_str(qty_before - qty_now)}"
                     keys = [IV_CANCEL_BALANCE]

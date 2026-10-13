@@ -94,3 +94,11 @@ def test_a_local_buy_reads_local_buy():
     """Owner, 13 Oct (Q3): purchasing does not place a local Buy (R9), and the line still
     appears so the email matches Saved (N)."""
     assert saved_line_remark(_snap(_buy(), buy_origin="local")) == ("LOCAL BUY", "BRW-IB")
+
+
+def test_a_bare_spo_number_ref_is_read_too():
+    snapshot = _snap(
+        {"kind": "timely_spo", "qty": "4", "source_location": "BRW-IB", "rung": "group_take"},
+        timely_spo_refs=["SPO-2026/10-0032"],
+    )
+    assert saved_line_remark(snapshot) == ("SPO-2026/10-0032", "BRW-IB")

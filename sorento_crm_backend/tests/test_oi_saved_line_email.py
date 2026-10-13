@@ -170,8 +170,10 @@ def test_a_line_transferred_to_cancel_so_reads_cancel(api, emails):
     code = world.product.product_code
     assert sorted(_lines(emails[0])) == sorted([
         (code, "10", world.own_wh.warehouse_code, "ORDER"),
-        (code, "6", line_b.stock_location or "", "CANCEL"),
+        (code, "0", world.own_wh.warehouse_code, "CANCEL"),
     ]), _lines(emails[0])
+    cancel = next(l for l in emails[0]["lines"] if l["remark"] == "CANCEL")
+    assert cancel["was"] == {"qty": "6"}, "QTY 6 / QTY CHANGE TO 0 / CANCEL"
 
 
 # --------------------------------------------------------------------------- template
