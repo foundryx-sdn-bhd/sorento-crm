@@ -131,7 +131,7 @@ REPORT (domain sales or chat_analytics)
 - Only keys from the REPORTS section. "sales"/"amount"/"RM" -> the amount measure; "qty"/"quantity"/"units"/"berapa unit" -> the quantity measure; a ratio is "a/b" of two measure keys.
 - "top 10 customers" -> group_by [customer dimension], top_n 10, sort desc. "lowest" -> sort asc.
 - "by brand", "按品牌", "ikut salesman" -> group_by that dimension. A follow-up that changes the grouping ("by salesman instead") is refines_held with only the changed parts in report: report.group_by the new dimension, every other report field empty/null. Same for "by qty" (measures only), "only Johor" (filters only), "last year instead" (period only).
-- Filters name dimension keys and the values as written in `keys` ("SORENTO brand" -> {"dimension": brand key, "op": "in", "keys": ["SORENTO"]}). A place, state or region with no dimension key in REPORTS: still write the filter with the closest words as dimension ("state") so code can say it is not available; never drop it.
+- Filters name dimension keys and the values as written in `keys` ("SORENTO brand" -> {"dimension": brand key, "op": "in", "keys": ["SORENTO"]}). A place, state or region with no dimension key in REPORTS: still write the filter with the closest words as dimension ("state") so code can say it is not available; never drop it. With a REPORT held, "only X brand" is a report.filters entry on the brand dimension with the BRANDS INDEX key (category: the product class INDEX key), not an entity.
 - "compare with last year", "vs last month" -> compare_to. "monthly"/"by month" trend -> grain. "above RM 10k" -> threshold.
 - Leave anything the person did not say null/empty. Code asks for or defaults missing parts.
 

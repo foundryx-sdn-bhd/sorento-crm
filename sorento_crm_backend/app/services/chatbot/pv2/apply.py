@@ -25,7 +25,7 @@ from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
 from app.services.chatbot.pv2 import clarify_copy
-from app.services.chatbot.pv2.schema import Ask, Entity, ParserV2Output, Spec
+from app.services.chatbot.pv2.schema import Ask, Entity, Filter, ParserV2Output, Spec
 from app.services.chatbot.pv2.state import (
     MISSES_BEFORE_HANDOVER,
     LAST_ROWS_CAP,
@@ -147,7 +147,8 @@ def apply_turn(
         held_before, topics_before = st.held.model_copy(deep=True), list(st.topics)
         try:
             action, answered = _one_ask(
-                st, i, ask, pending_in, out, resolver, policy, language, today, printed_topics
+                st, i, ask, pending_in, out, resolver, policy, language, today, printed_topics,
+                can_offer_handover,
             )
         except _Miss as miss:
             st.held, st.topics = held_before, topics_before
@@ -185,6 +186,7 @@ def _one_ask(
     language: str,
     today: date | None,
     printed_topics: list[Held],
+    can_offer: bool = True,
 ) -> tuple[Action, bool]:
     """(action, answered_pending). Mutates `st` (held/topics) only on success."""
     if ask.act == "unclear":
@@ -197,7 +199,7 @@ def _one_ask(
         return SmallTalk(ask_index=i), False
 
     if ask.act == "answers_bot_question":
-        return _answer(st, i, ask, pending, resolver, policy, language, today)
+        return _answer(st, i, ask, pending, resolver, policy, language, today, can_offer)
 
     if ask.act == "switch_back":
         printed = topic_index(ask.switch_back_to, printed_topics)
@@ -208,14 +210,14 @@ def _one_ask(
         rest = [t for j, t in enumerate(st.topics) if j != idx]
         st.topics = push_topic(rest, st.held)
         st.held = back.model_copy(deep=True)
-        qs = _Qs()
+        qs = _Qs(can_offer)
         held = _apply_fields(st, st.held, ask, resolver, policy, language, i, qs, refine=True, today=today)
         return _commit(st, i, held, ask, qs), False
 
     if ask.act == "new_topic":
         if i > 0 or not st.held.is_empty():
             st.topics = push_topic(st.topics, st.held)
-        qs = _Qs()
+        qs = _Qs(can_offer)
         held = _apply_fields(st, Held(), ask, resolver, policy, language, i, qs, refine=False, today=today)
         return _commit(st, i, held, ask, qs), False
 
@@ -229,7 +231,7 @@ def _one_ask(
         if not (1 <= ask.row_pick <= len(st.last_rows)):
             raise _Miss("other")
         row = st.last_rows[ask.row_pick - 1]
-    qs = _Qs()
+    qs = _Qs(can_offer)
     base = st.held
     drilled = False
     if row is not None and base.report is not None and _is_report_row(row):
@@ -289,9 +291,10 @@ def _commit(st: ConversationState, i: int, held: Held, ask: Ask, qs: list[Clarif
 class _Qs(list):
     """The questions an ask raised, plus the list items that found nothing."""
 
-    def __init__(self) -> None:
+    def __init__(self, can_offer: bool = True) -> None:
         super().__init__()
         self.misses: list[Miss] = []
+        self.can_offer = can_offer
 
 
 #: A reference found under a different kind than the parser named answers in the domain of
@@ -312,6 +315,7 @@ def _answer(
     policy: ClarifyPolicy,
     language: str,
     today: date | None,
+    can_offer: bool = True,
 ) -> tuple[Action, bool]:
     if pending is None:
         raise _Miss("other")
@@ -321,6 +325,13 @@ def _answer(
     if picked is None and key is not None and pending.kind == "clarify_entity":
         # A candidate question is keyed by position; its code (the payload key) still picks.
         picked = next((o for o in pending.options if o.payload.get("key") == key), None)
+    if picked is None and pending.kind not in FREE_VALUE_PENDING and pending.kind not in ("offer_handover", "offer_doc_handover"):
+        # A bare number (the reply's free value or a row pick) names the printed position.
+        n = int(free) if isinstance(free, str) and free.isdigit() else ask.row_pick
+        if isinstance(n, int) and n >= 1:
+            picked = next((o for o in pending.options if o.key == str(n)), None)
+            if picked is None and 1 <= n <= len(pending.options) and not any(o.key.isdigit() for o in pending.options):
+                picked = pending.options[n - 1]
     if picked is None:
         if free is not None and pending.kind in FREE_VALUE_PENDING:
             return (
@@ -339,7 +350,7 @@ def _answer(
     payload_kind = picked.payload.get("kind")
     if pending.kind == "offer_handover" or payload_kind == "handover":
         if picked.payload.get("value") is True:
-            return HandOver(ask_index=i, team_key=None), True
+            return HandOver(ask_index=i, team_key=picked.payload.get("team_key")), True
         return SmallTalk(ask_index=i), True
 
     if pending.kind in PASS_THROUGH_PENDING or payload_kind == "choice":
@@ -357,7 +368,7 @@ def _answer(
         )
 
     held = apply_payload(st.held, picked.payload)
-    qs = _Qs()
+    qs = _Qs(can_offer)
     if "report" in picked.payload and held.report is not None:
         _plan_report(st, held, resolver, language, i, qs, today)
     held = _apply_fields(st, held, ask, resolver, policy, language, i, qs, refine=True, today=today)
@@ -402,6 +413,7 @@ def _apply_fields(
         if name in CLEARABLE:
             setattr(held, name, [] if name == "specs" else None)
 
+    ask, filtered = _report_entity_filters(held, ask, resolver, refine=refine)
     held = _apply_entities(st, held, base, ask, resolver, policy, language, i, qs, refine=refine)
     held = _apply_specs(st, held, ask.specs, resolver, policy, language, i, qs)
 
@@ -422,6 +434,8 @@ def _apply_fields(
             )
     if ask.period is not None:
         held.period = ask.period
+    if filtered and ask.report is None and held.report is not None:
+        _plan_report(st, held, resolver, language, i, qs, today)
     if ask.report is not None or (held.report is not None and ({"report", "period"} & set(ask.cleared))):
         from app.services.chatbot.pv2 import reports
 
@@ -429,6 +443,50 @@ def _apply_fields(
         if held.report is not None:
             _plan_report(st, held, resolver, language, i, qs, today)
     return held
+
+
+#: A brand / product class the ask names while a report is held narrows the report: the
+#: entity kind -> the report filter dimension it filters.
+REPORT_FILTER_DIMENSION = {"brand": "brand", "product_class": "category"}
+
+
+def _report_entity_filters(held: Held, ask: Ask, resolver: Any, *, refine: bool) -> tuple[Ask, bool]:
+    """On a refine of a held report, brand / product_class entities become that dimension's
+    report filter instead of held refs. Returns the ask without them and whether any applied."""
+    if not refine or held.report is None:
+        return ask, False
+    keep: list[Entity] = []
+    changed = False
+    filters = list(held.report.filters)
+    for ent in ask.entities:
+        dim = REPORT_FILTER_DIMENSION.get(ent.kind)
+        if dim is None or ent.refers_to_held:
+            keep.append(ent)
+            continue
+        current = next((f for f in filters if f.dimension == dim), None)
+        if ent.op == "clear":
+            filters = [f for f in filters if f.dimension != dim]
+            changed = True
+            continue
+        res = resolver.resolve_entities([ent], held=held)[0]
+        refs = list(getattr(res, "refs", None) or [])
+        if getattr(res, "status", "none") != "exact" or not refs:
+            keep.append(ent)
+            continue
+        keys = [str(_get(r, "key")) for r in refs]
+        have = list(current.keys) if current is not None else []
+        if ent.op == "add":
+            keys = have + [k for k in keys if k not in have]
+        elif ent.op == "remove":
+            keys = [k for k in have if k not in keys]
+        filters = [f for f in filters if f.dimension != dim]
+        if keys:
+            filters.append(Filter(dimension=dim, op="in", keys=keys, values=[]))
+        changed = True
+    if not changed:
+        return ask, False
+    held.report = held.report.model_copy(update={"filters": filters})
+    return ask.model_copy(update={"entities": keep}), True
 
 
 def _plan_report(
@@ -600,6 +658,9 @@ def _apply_entities(
             qs.append(_clarify(st, i, "entity", ent.phrase, language, options=options, kind=ent.kind))
             continue
         if status != "exact" or not refs:
+            if not options and ent.kind in DOCUMENT_KINDS and (ent.doc_number or ent.phrase):
+                qs.append(_doc_not_found(st, i, ent, held, language, bool(getattr(qs, "can_offer", True))))
+                continue
             qs.append(
                 _clarify(
                     st, i, "entity", ent.phrase or ent.doc_number, language,
@@ -636,6 +697,35 @@ def _apply_entities(
         set_kinds.add(kind)
         held.refs = set_refs(held.refs, kind, refs, op)
     return held
+
+
+#: Entity kinds that name a document: a miss on one says v1's own sentence.
+DOCUMENT_KINDS = frozenset({"order", "delivery_order", "sales_order", "purchase_order", "inbound_shipment"})
+
+
+def _doc_not_found(
+    st: ConversationState, i: int, ent: Entity, held: Held, language: str, offer: bool
+) -> ClarifyAct:
+    """v1's not-found sentence for a document number (`Couldn't find: "<n>" (<kind>).`),
+    with its escalation offer for a non-staff contact (`_esc_offer`, the domain's team)."""
+    words = ent.doc_number or ent.phrase
+    asked = f'Couldn\'t find: "{words}" ({ent.kind.replace("_", " ")}).'
+    options: list[Option] = []
+    if offer:
+        from app.services.chatbot.turn.policy import default_policy
+
+        row = default_policy().domain(held.domain or "")
+        team = (row.escalation_team_code if row is not None else None) or "customer_service"
+        asked += f" Would you like me to escalate to {team.replace('_', ' ').strip()} team?"
+        options = [
+            Option(key=o.key, label=o.label, payload={**o.payload, "team_key": team})
+            for o in clarify_copy.handover_options(language)
+        ]
+    pending = PendingQuestion(
+        kind="offer_doc_handover" if offer else "clarify_entity",
+        asked=asked, options=options, asked_turn=st.turn_no, misses=0,
+    )
+    return ClarifyAct(ask_index=i, about="entity", phrase=words, pending=pending, not_found=True)
 
 
 def _fold_quantity_only(ents: list[Entity]) -> list[Entity]:

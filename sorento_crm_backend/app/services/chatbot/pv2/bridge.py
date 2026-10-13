@@ -11,6 +11,7 @@ two cannot drift.
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from datetime import date
 from typing import Any
 
@@ -94,7 +95,30 @@ def period_dates(period: Any, today: date) -> tuple[date | None, date | None]:
 # --------------------------------------------------------------------------- #
 
 
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except ValueError:
+        return False
+    return True
+
+
 def _v1_entity(ref: ResolvedRef, *, current: bool = True) -> dict[str, Any]:
+    if ref.kind == "customer" and _is_uuid(ref.key):
+        # v1's carried-pick shape: the label as the typed words, the customer id beside it.
+        return {
+            "raw": ref.label,
+            "hint": "customer",
+            "canonical_code": None,
+            "uuid": ref.key,
+            "current_message": False,
+            "confident": True,
+            "hint_confident": True,
+            "quantity": None,
+            "spec_key": None,
+            "spec_value": None,
+            "account": None,
+        }
     return {
         "raw": ref.key,
         "hint": V1_HINT.get(ref.kind, ref.kind),
@@ -198,6 +222,14 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
         verdict["message_type"] = "clarification"
         verdict["open_question_answer"] = answer
         verdict["entity_op"] = "reuse"
+        # A quantity held across the pick rides as the answer's own qty_for_all; v1 refuses
+        # to stamp it when a carried entity states one.
+        held_qty = {r.quantity.number for r in held.refs.get("product", []) if r.quantity is not None}
+        if len(held_qty) == 1:
+            answer["qty_for_all"] = held_qty.pop()
+            for e in verdict["entities"]:
+                if e["hint"] == "product":
+                    e["quantity"] = None
         if answer["mode"] in ("yes", "no"):
             verdict["is_affirmative"] = answer["mode"] == "yes"
             v1_kind = _v1_kind(state, action)

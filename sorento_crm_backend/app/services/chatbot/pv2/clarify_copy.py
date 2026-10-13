@@ -169,7 +169,7 @@ def render(pending: PendingQuestion, language: str | None, *, reask: bool = Fals
     if reask:
         lines.append(text("reask", language))
     lines.append(pending.asked)
-    if pending.options:
+    if pending.options and pending.kind != "offer_doc_handover":
         lines.append("")
         lines.extend(f"{i}. {safe_label(o.label, language)}" for i, o in enumerate(pending.options, start=1))
         lines.append("")
