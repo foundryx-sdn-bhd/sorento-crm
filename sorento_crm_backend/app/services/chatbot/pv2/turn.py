@@ -171,11 +171,11 @@ def _grant_refusal(ctx: TurnV2Context, actions: list[Any], out: Any) -> tuple[st
         return None
     for ask in getattr(out, "asks", None) or []:
         report = getattr(ask, "report", None)
-        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and getattr(report, "dataset", None) in (None, "sales"):
+        if report is not None and ask.domain in answer_mod.REPORT_DOMAINS and getattr(report, "dataset", None) == "sales":
             from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
             return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
-    if last is not None and answer_mod._is_report(last) and getattr(last.held.report, "dataset", None) in (None, "sales"):
+    if last is not None and answer_mod._is_report(last) and getattr(last.held.report, "dataset", None) == "sales":
         from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
 
         return SALES_REPORT_NOT_ENABLED_MESSAGE, "report"
