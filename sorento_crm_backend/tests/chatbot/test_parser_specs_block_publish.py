@@ -229,3 +229,17 @@ def test_p11_the_size_rule_holds_on_every_ask_about_the_products_promotions_incl
     rule = SIZE_AND_CLASS_RULE.lower()
     assert "promotion" in rule, SIZE_AND_CLASS_RULE
     assert "never dropped" in rule or "never drop" in rule, SIZE_AND_CLASS_RULE
+
+
+def test_p12_the_size_rule_quotes_no_customer_message():
+    """Crew round 6 (owner rule "generalise, not one scenario"): the rule states the business rule
+    and quotes no test message ("any 600mm basin promo"); a quoted string is only a field name or
+    value the parser writes."""
+    import re
+
+    from app.services.chatbot_parser_prompt import SIZE_AND_CLASS_RULE
+
+    allowed = {"specification", "size", "category"}
+    quoted = re.findall(r'"([^"]*)"', SIZE_AND_CLASS_RULE)
+    assert set(quoted) <= allowed, quoted
+    assert "promotion" in SIZE_AND_CLASS_RULE.lower()
