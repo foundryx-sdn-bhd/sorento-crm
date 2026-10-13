@@ -1,6 +1,6 @@
 # PLAN: Project Sales owner hand-test polish (13 Oct)
 
-Status: Review (medium lane: one data-only migration, no auth or permission change; PR #1618)
+Status: Merge-ready, owner hand-test PASS 13 Oct (medium lane: one data-only migration plus the lead create/qualify permission change; PR #1618)
 
 Lane: PROJECT-SALES-POLISH. Source: the owner's hand-test of Project Sales on main, 13 Oct 2026, 21 points.
 Acceptance criteria: `project-sales-polish-13oct-acceptance-criteria.md`.
