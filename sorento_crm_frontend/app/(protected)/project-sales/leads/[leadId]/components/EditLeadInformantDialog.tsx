@@ -103,9 +103,6 @@ export function EditLeadInformantDialog({
                 placeholder="Not known yet"
                 emptyMessage="No match"
               />
-              <p className="text-xs text-muted-foreground">
-                The debtor who will issue the purchase order.
-              </p>
             </div>
           </DialogBody>
 
