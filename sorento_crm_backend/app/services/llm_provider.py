@@ -983,6 +983,11 @@ GEMINI_3_THINKING_LEVELS: dict[str, str] = {
     "high": "high",
 }
 
+# Gemini 3 Pro takes only `low` and `high` (Flash takes every level above). A level a
+# model refuses is a 400, which is never retried, so Pro is clamped: at or under `low`
+# is `low`, anything above is `high`.
+GEMINI_3_PRO_LEVELS: dict[str, str] = {"minimal": "low", "low": "low", "medium": "high", "high": "high"}
+
 # Extra `maxOutputTokens` on every 3.x call, on top of the caller's answer budget and any
 # thinking budget. Crew gate, 13 Oct 2026: flash-lite truncated a parser answer at the
 # 2048 cap that the same answer fits under on gpt-5.4-mini, because 3.x thinking is
@@ -1007,6 +1012,8 @@ def _gemini_thinking(model: Optional[str], effort: Optional[str]) -> tuple[Optio
         return {"thinkingBudget": budget}, budget
     key = (effort or "").strip().lower()
     level = GEMINI_3_THINKING_LEVELS.get(key)
+    if level is not None and "flash" not in (model or "").lower():
+        level = GEMINI_3_PRO_LEVELS[level]
     if level is not None:
         return {"thinkingLevel": level}, GEMINI_3_ANSWER_HEADROOM + GEMINI_EFFORT_BUDGETS.get(key, 0)
     return {"thinkingBudget": budget}, budget + GEMINI_3_ANSWER_HEADROOM
