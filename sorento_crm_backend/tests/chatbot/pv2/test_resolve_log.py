@@ -46,3 +46,14 @@ def test_same_phrase_different_kind_is_a_separate_row(db):
 def test_empty_list_writes_nothing(db):
     assert log_unrecognised(db, []) == 0
     assert rows(db) == []
+
+
+def test_a_failed_log_write_never_breaks_the_callers_transaction(db):
+    from sqlalchemy import text as _text
+
+    from app.services.chatbot.pv2.resolve import log_unrecognised
+
+    with db.begin_nested():
+        db.execute(_text("DROP TABLE chatbot_unrecognised_phrases"))
+    assert log_unrecognised(db, [("gambar", "attachment_type")]) == 0
+    assert db.execute(_text("SELECT 1")).scalar() == 1

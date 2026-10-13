@@ -78,3 +78,19 @@ def test_filters_the_engine_cannot_run_are_left_to_the_report_lane(db):
 def test_a_dimension_this_resolver_does_not_hold_stays_unresolved(db):
     out = resolver(db).resolve_report_spec(spec(("sales_agent", "in", ["ali"])), held=EMPTY)
     assert out.status == "none" and out.unresolved == ["sales_agent"]
+
+
+def test_a_product_filter_rides_on_product_ids_for_chat_and_sales(db):
+    from app.services.chatbot.pv2 import report_measures as rm
+    from app.services.chatbot.pv2.reports import _filter_values
+
+    one = S.product(db, "SRTWC286-A")
+    two = S.product(db, "SRTWC286-B")
+    out = resolver(db).resolve_report_spec(spec(("product", "in", ["SRTWC286"])), held=EMPTY)
+    assert out.status == "exact"
+    assert sorted(r["key"] for r in out.refs["product"]) == sorted([one.id, two.id])
+    assert [r["label"] for r in out.refs["product"]] == ["SRTWC286-A", "SRTWC286-B"]
+    keys = [r["key"] for r in out.refs["product"]]
+    for ds in (rm.CHAT, rm.SALES):
+        values, line = _filter_values(ds, ds.dimensions["product"], keys)
+        assert line is None and values == {"product_ids": keys}

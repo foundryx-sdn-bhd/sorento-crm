@@ -279,8 +279,17 @@ class DbResolver:
             live = set()
             if row is not None and row.is_active:
                 live |= {str(v) for v in merged_allowed_values(row)}
+            from app.models.product import Product
+
             stored = ProductSpecifications.values["product_type"]["value"].astext
-            live |= {v for (v,) in db.query(stored).filter(stored.in_(keys)).distinct().all() if v}
+            # Top-level `Product` column: the scope listener only sees a selected entity.
+            live |= {
+                v for (_pid, v) in db.query(Product.id, stored)
+                .join(ProductSpecifications, ProductSpecifications.product_id == Product.id)
+                .filter(stored.in_(keys))
+                .all()
+                if v
+            }
             for key in keys:
                 if key in live:
                     out.setdefault(key, display_spec_value(key, labels))
@@ -659,7 +668,11 @@ class DbResolver:
             spec_class = ProductSpecifications.values["class"]["value"].astext
             stored = ProductSpecifications.values["product_type"]["value"].astext
             classes |= {
-                c for (c,) in self.db.query(spec_class).filter(stored.in_(types)).distinct().all() if c
+                c for (_pid, c) in self.db.query(Product.id, spec_class)
+                .join(ProductSpecifications, ProductSpecifications.product_id == Product.id)
+                .filter(stored.in_(types))
+                .all()
+                if c
             }
         ids = self._held_product_ids(held)
         if ids:
@@ -909,9 +922,12 @@ class DbResolver:
                 return "ambiguous", [], picks
             return "none", [], []
         if dimension == "product":
+            # The report routes filter on product ids (`product_ids`, chat and sales alike);
+            # a family key filters on every variant the contact can see.
             res = self._product(key)
             if res.status == "exact":
-                return "exact", [ref(r.key, r.label) for r in res.refs], []
+                ids = self._product_ids([r.key for r in res.refs])
+                return ("exact", [ref(i, code) for i, code in ids], []) if ids else ("none", [], [])
             return "none", [], []
         if dimension == "location":
             res = self._warehouse(key)
@@ -921,6 +937,26 @@ class DbResolver:
                 return "ambiguous", [], [o.model_dump() for o in res.options]
             return "none", [], []
         return "none", [], []
+
+    def _product_ids(self, keys: list[str]) -> list[tuple[str, str]]:
+        """(id, code) of the visible chat-searchable products a product ref key names: its exact
+        code, or every member of a family. Top-level `Product`, so company/brand scoped."""
+        from app.models.product import Product, chat_searchable_products
+
+        norm_keys = [_strip_ws(k) for k in keys]
+        rows = (
+            self.db.query(Product.id, Product.product_code)
+            .filter(
+                or_(
+                    func.lower(func.regexp_replace(Product.product_code, r"\s", "", "g")).in_(norm_keys),
+                    Product.family_code.in_([k.upper() for k in keys]),
+                ),
+                chat_searchable_products(),
+            )
+            .order_by(Product.product_code, Product.id)
+            .all()
+        )
+        return [(str(i), code) for i, code in rows]
 
     def _customer_ids(self, keys: list[str]) -> dict[str, str]:
         """customer ref key (code, or id when the row has no code) -> customer id."""

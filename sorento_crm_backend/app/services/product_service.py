@@ -2427,8 +2427,9 @@ class ProductCategoryService:
         data = category_data.model_dump()
         synonyms = data.pop("search_synonyms", None)
         category = ProductCategory(**data)
+        self._check_index_words(category, synonyms, before=None)
         if synonyms is not None:
-            self._set_search_synonyms(category, synonyms, previous=())
+            category.search_synonyms = synonyms
         self.db.add(category)
         self.db.commit()
         self.db.refresh(category)
@@ -2440,28 +2441,47 @@ class ProductCategoryService:
         
         update_data = category_data.model_dump(exclude_unset=True)
         synonyms = update_data.pop("search_synonyms", None)
+        before = self._index_entry(category)
         for key, value in update_data.items():
             setattr(category, key, value)
+        synonyms = self._check_index_words(category, synonyms, before=before)
         if synonyms is not None:
-            self._set_search_synonyms(category, synonyms, previous=category.search_synonyms or [])
+            category.search_synonyms = synonyms
         
         self.db.commit()
         self.db.refresh(category)
         return category
 
-    def _set_search_synonyms(self, category, synonyms, *, previous) -> None:
-        """PV2 aliases (CONTRACT-PV2-13oct s.4): a word already meaning another class is refused."""
+    @staticmethod
+    def _index_entry(category):
+        """(class key, words) this category contributes to the PV2 index, or None: only an
+        active, searchable, classified category's words are printed (as aka of its class)."""
         from app.services.chatbot.pv2 import aliases as pv2_aliases
 
-        words = pv2_aliases.clean_words(synonyms)
-        # Only an active, searchable, classified category's words reach the index (as aka of
-        # its class), so only those can clash.
-        listed = category.class_label and category.is_active is not False and category.is_searchable is not False
+        if not category.class_label or category.is_active is False or category.is_searchable is False:
+            return None
+        return pv2_aliases.class_key(category.class_label), list(category.search_synonyms or [])
+
+    def _check_index_words(self, category, synonyms, *, before):
+        """PV2 aliases (CONTRACT-PV2-13oct s.4): refuse a save that puts a word another class
+        holds into the index - by sending it, or by listing the category again (re-activated,
+        made searchable, re-classed), which brings back every word it stores. Returns the
+        cleaned words to store (None = leave as stored). A save that changes neither the
+        words nor whether/where the category is listed runs no check at all."""
+        from app.services.chatbot.pv2 import aliases as pv2_aliases
+
+        words = pv2_aliases.clean_words(synonyms) if synonyms is not None else None
+        after = self._index_entry(category)
+        if after is None:
+            return words
+        key, stored = after
+        if words is None and before is not None and before[0] == key:
+            return words
+        previous = before[1] if before is not None and before[0] == key else []
         pv2_aliases.refuse_conflicts(
-            self.db, "product_class", pv2_aliases.class_key(category.class_label) if listed else None, words,
-            previous=previous,
+            self.db, "product_class", key, words if words is not None else stored, previous=previous
         )
-        category.search_synonyms = words
+        return words
 
     def delete_category(self, category_id: str):
         """Delete a category. Raises if any products use this category."""

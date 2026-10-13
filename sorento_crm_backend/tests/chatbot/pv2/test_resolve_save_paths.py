@@ -255,3 +255,44 @@ def test_seed_lists_no_word_under_two_attachment_types():
             owners.setdefault(A.norm(w), set()).add(code)
     assert {w: c for w, c in owners.items() if len(c) > 1} == {}
     assert set(alias_seed.TYPE_ALIASES) == set(alias_seed.TYPE_CODES)
+
+
+# --------------------------------------------------------------------------- review round 2
+def test_category_reactivation_checks_every_word_it_brings_back(db):
+    S.category(db, class_label="Vanity", synonyms=["sinki"])
+    basin = S.category(db, class_label="Basin", synonyms=["sinki"])
+    basin.is_active = False
+    db.flush()
+    with pytest.raises(AppException) as err:
+        ProductCategoryService(db).update_category(basin.id, ProductCategoryUpdate(is_active=True))
+    assert err.value.status_code == 409 and '"sinki"' in _message(err.value)
+
+
+def test_category_edit_that_leaves_the_index_alone_runs_no_check(db):
+    # Both already hold "sinki" (an open clash publish_v2 names); an unrelated edit still saves.
+    S.category(db, class_label="Vanity", synonyms=["sinki"])
+    basin = S.category(db, class_label="Basin", synonyms=["sinki"])
+    saved = ProductCategoryService(db).update_category(basin.id, ProductCategoryUpdate(display_order=3))
+    assert saved.display_order == 3
+
+
+def test_a_save_reads_words_exactly_as_the_index_does(db):
+    from app.services.chatbot.pv2 import index
+
+    S.category(db, class_label="Vanity", synonyms=["wc toilet"])
+    basin = S.category(db, class_label="Basin")
+    with pytest.raises(AppException) as err:
+        ProductCategoryService(db).update_category(basin.id, ProductCategoryUpdate(search_synonyms=["wc, toilet"]))
+    assert '"wc toilet"' in _message(err.value)
+
+
+def test_open_clashes_agree_with_the_index_on_mixed_data(db):
+    from app.services.chatbot.pv2 import index
+
+    S.category(db, class_label="Vanity", synonyms=["wc toilet", "sinki"])
+    S.category(db, class_label="Basin", synonyms=["wc, toilet", "Sinki"])
+    S.attachment_type(db, " product_photos ", "Product Photos", synonyms=["pic|x"])
+    S.attachment_type(db, "technical_specifications", "Technical Specifications", synonyms=["pic/x", 7])
+    ours = sorted((c.kind, c.alias, tuple(sorted(c.keys))) for c in A.open_clashes(db))
+    theirs = sorted((k, a, tuple(sorted(keys))) for k, a, keys in index.alias_clashes(db))
+    assert ours == theirs and ours

@@ -20,7 +20,6 @@ is refused, naming the clash (`refuse_conflicts`); `publish_v2` refuses while an
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
@@ -33,12 +32,21 @@ KINDS: tuple[str, ...] = ("attachment_type", "product_class", "spec_attribute")
 _SELF = "_self"
 # Registry keys the index does not list as attributes (`pv2/index.py` `_SPEC_SKIP`).
 _SPEC_SKIP = frozenset({"class", "brand", "product_type"})
-_SLUG_RE = re.compile(r"[^0-9a-z]+")
 
 
 def class_key(class_label: str | None) -> str:
-    """A product class's index key; the same rule as `pv2/index.py` `product_class_key`."""
-    return _SLUG_RE.sub("_", str(class_label or "").strip().lower()).strip("_")
+    """A product class's index key: `pv2/index.py` `product_class_key`, so the two never differ."""
+    from app.services.chatbot.pv2.index import product_class_key
+
+    return product_class_key(str(class_label or ""))
+
+
+def index_words(words: Iterable[object] | None) -> list[str]:
+    """The words exactly as the index reads them (`pv2/index.py` `_alias_list`: commas, pipes and
+    newlines folded, non-strings skipped), so a save and `publish_v2` judge the same words."""
+    from app.services.chatbot.pv2.index import _alias_list
+
+    return _alias_list(list(words or []))
 
 
 def norm(word: object) -> str:
@@ -79,7 +87,7 @@ def _add(out: dict[str, list[str]], key: str | None, words: Iterable[object]) ->
     if not key:
         return
     bucket = out.setdefault(key, [])
-    for word in words or []:
+    for word in index_words(words):
         n = norm(word)
         if n and n not in bucket:
             bucket.append(n)
@@ -94,7 +102,7 @@ def _attachment_type_aliases(db: Session) -> dict[str, list[str]]:
         )
     ).all()
     for code, _name, words in rows:
-        _add(out, code, words or [])
+        _add(out, (code or "").strip() or None, words or [])
     return out
 
 
@@ -211,9 +219,9 @@ def check_conflicts(
     """
     if not key:
         return []
-    before = {norm(w) for w in previous}
+    before = {norm(w) for w in index_words(previous)}
     new = []
-    for word in aliases or []:
+    for word in index_words(aliases):
         n = norm(word)
         if n and n not in before and n not in new:
             new.append(n)
@@ -266,16 +274,8 @@ def index_aliases(db: Session, kind: str) -> dict[str, list[str]]:
 # Save-path helpers (category, attachment type, spec registry)
 # --------------------------------------------------------------------------- #
 def clean_words(words: Iterable[object] | None) -> list[str]:
-    """Stripped, non-empty, one per normalised spelling; the first spelling kept."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for word in words or []:
-        text_ = " ".join(str(word or "").split())
-        n = norm(text_)
-        if n and n not in seen:
-            seen.add(n)
-            out.append(text_)
-    return out
+    """The words as stored: the index's own reading of them (`index_words`), one per spelling."""
+    return index_words(words)
 
 
 def spec_row_aliases(row) -> list:
