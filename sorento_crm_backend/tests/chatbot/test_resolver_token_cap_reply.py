@@ -18,6 +18,8 @@ from app.services.chatbot.turn.plan import FetchSpec
 from app.services.chatbot.turn.policy import Policy
 from app.services.chatbot.turn.state import Focus, Profile, State
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot._turn_helpers import TIER_ORDER_FIXTURE, _domain_row
 
 CODES = [f"ZZTCAP{i:02d}" for i in range(1, 61)]
@@ -232,6 +234,8 @@ class TestRealResolverCeiling:
             seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
         db.commit()
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
 
         result, captured = _run_turn(
             session_factory,
@@ -261,6 +265,8 @@ class TestRealResolverCeiling:
             seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
         db.commit()
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
 
         result, captured = _run_turn(
             session_factory,

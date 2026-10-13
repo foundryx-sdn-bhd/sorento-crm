@@ -27,6 +27,8 @@ from typing import Any
 from sqlalchemy import text
 
 from app.services.chatbot.lanes.business.services import ResolveGateServices
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests._mc_lookup_seed import customer as seed_customer
 from app.services.company_scope import DEFAULT_COMPANY_ID
 from tests.chatbot.conftest import validating_resolve_entity
@@ -137,6 +139,8 @@ def test_account_1_lists_only_the_level_one_ledgers(session_factory, monkeypatch
 def test_a_single_survivor_is_answered_without_a_picker(session_factory, monkeypatch) -> None:
     """"Soon Heng Trading account 1" leaves one ledger: the report runs on it."""
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     rows = _seed_book(session_factory)
     reply, captured = _turn_with(
         session_factory, monkeypatch, rows, {"soon heng trading": TRADING}, _acct("Soon Heng Trading", 1),

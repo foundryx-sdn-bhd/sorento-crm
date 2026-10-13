@@ -24,6 +24,8 @@ import pytest
 
 from app.services.product_code_family import narrow_code_tokens
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_outstanding_lane import REPORT_HIT, _qf, _run_turn, _seed_contact
 
 #: The owner's message, codes ZZT-prefixed, lines in the order typed.
@@ -281,6 +283,8 @@ def test_the_owners_fifteen_line_stock_check_reaches_the_tool_with_fourteen_code
     assert len(UNIQUE) == 14
     _seed(session_factory, *UNIQUE)
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     entities = [_entity(code, code, qty) for code, qty in OWNER_LINES]
 
     result, captured = _run_turn(

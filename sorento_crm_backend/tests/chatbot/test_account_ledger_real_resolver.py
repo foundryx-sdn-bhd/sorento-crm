@@ -28,6 +28,8 @@ from typing import Any
 from sqlalchemy import text
 
 from app.services.company_scope import DEFAULT_COMPANY_ID
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests._mc_lookup_seed import customer as seed_customer
 from tests.chatbot.test_account_ledger_staff import _acct, _picker_lines
 from tests.chatbot.test_customer_scope_lane import REPORT, _ask, _calls, _turn
@@ -107,6 +109,8 @@ def test_real_resolver_exact_name_with_the_level_is_answered_directly(session_fa
     word and is level one, but the typed word IS "SOON HENG TRADING": no picker, the report
     runs on SOON HENG TRADING [A/C I] alone."""
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
     ids = _seed_book(session_factory)
     reply, captured = _real(
         session_factory, monkeypatch, _acct("Soon Heng Trading", 1), "soon heng trading account 1 outstanding"

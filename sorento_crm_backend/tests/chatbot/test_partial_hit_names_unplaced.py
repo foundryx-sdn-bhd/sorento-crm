@@ -32,6 +32,8 @@ import pytest
 
 from app.services.company_scope import DEFAULT_COMPANY_ID
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_outstanding_lane import (
     REPORT_HIT,
     _qf,
@@ -78,6 +80,8 @@ class TestTwoUnplacedTokensAreBothNamed:
     def test_couldnt_find_line_names_every_unplaced_token(self, session_factory, monkeypatch) -> None:
         _seed_products(session_factory, [PLACED_CODE])
         _seed_contact(session_factory, variables={})
+        # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+        make_office_access_type(session_factory, CONTACT_ID)
 
         result, captured = _run_turn(
             session_factory,

@@ -30,6 +30,8 @@ import pytest
 from app.services.chatbot import turn_runtime
 from app.services.chatbot.engine import _exact_codes_only
 
+from tests.chatbot._turn_helpers import make_office_access_type
+from tests.chatbot.test_engine import CONTACT_ID
 from tests.chatbot.test_engine import seeded, stub_access, stub_parser  # noqa: F401
 from tests.chatbot.test_entities_only_arm import _focus_products
 from tests.chatbot.test_outstanding_lane import REPORT_HIT, _qf, _run_turn, _seed_contact, _parser_output
@@ -327,6 +329,8 @@ def _seed(session_factory, *codes: str) -> None:
         seed_product(db, company_id=DEFAULT_COMPANY_ID, code=code)
     db.commit()
     _seed_contact(session_factory, variables={})
+    # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
+    make_office_access_type(session_factory, CONTACT_ID)
 
 
 def _uuids_passed(captured) -> int:

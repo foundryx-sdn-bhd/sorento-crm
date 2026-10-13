@@ -201,14 +201,15 @@ def test_t5_customer_filter_is_never_silently_dropped():
         "gate": {"compatible_entities": []},
         "tier_gate": None,
         "ctx": {
+            # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
             "parse": {
-                "output": _parser_output(
+                "output": {**_parser_output(
                     domain_hint="order",
                     intent_hint="check_order",
                     order_status="do_outstanding",
                     entities=[],
                     outstanding_carried_customer_ids=[LABEL],
-                )
+                ), "doc_staff": True}
             },
             "contact": {"id": CONTACT_ID},
             "access": {"attributes": ["sales_orders.outstanding"]},
@@ -234,8 +235,9 @@ def test_t5_customer_filter_is_never_silently_dropped():
         },
         "tier_gate": None,
         "ctx": {
+            # V1-DOC-SCOPE: an unlinked contact reads any customer's orders only as staff.
             "parse": {
-                "output": _parser_output(
+                "output": {**_parser_output(
                     domain_hint="order",
                     intent_hint="check_order",
                     order_status="do_outstanding",
@@ -246,7 +248,7 @@ def test_t5_customer_filter_is_never_silently_dropped():
                         },
                     ],
                     outstanding_carried_customer_ids=[LABEL],
-                )
+                ), "doc_staff": True}
             },
             "contact": {"id": CONTACT_ID},
             "access": {"attributes": ["sales_orders.outstanding"]},
