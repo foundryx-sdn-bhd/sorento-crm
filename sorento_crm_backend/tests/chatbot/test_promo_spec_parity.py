@@ -116,3 +116,59 @@ def test_a_size_in_a_promotion_ask_gets_the_promotion_list_answer_for_the_resolv
     assert "ZZT BASIN 600 PROMO" in by_size and "ZZT BASIN 500 PROMO" not in by_size, by_size
     assert "MYR" not in by_size, by_size
     assert _body(by_size) == _body(by_code), (by_size, by_code)
+
+
+# ---------------------------------------------------------------- conversation goldens (crew rule, 13 Oct)
+
+
+def _two_brand_world(session_factory) -> dict[str, Any]:
+    """`_world` plus a second brand's 600 mm basin on a promotion of its own."""
+    w = _world(session_factory)
+    db = session_factory()
+    other = _brand(db, f"Zztgamma{uuid.uuid4().hex[:4].upper()}")
+    g600 = _prod(db, other, "Wash Basin", f"ZZTWG600{uuid.uuid4().hex[:3].upper()}")
+    spec = db.query(ProductSpecifications).filter(ProductSpecifications.product_id == g600.id).one()
+    spec.values = {**spec.values, "dim_length": {"value": 600, "unit": "mm"}}
+    std = db.query(PromotionType).filter(PromotionType.type_code == "standard").first()
+    _promo(db, "ZZT GAMMA BASIN 600 PROMO", std, g600, levels=["sorento_office", "sorento_dealer", "end_user"])
+    w["other_brand"] = other.brand_name
+    db.commit()
+    db.close()
+    return w
+
+
+SIZE = {"raw": "600mm", "hint": "specification", "canonical_code": None, "current_message": True,
+        "confident": True, "spec_key": "size", "spec_value": 600}
+BASIN = {"raw": "basin", "hint": "category", "canonical_code": None, "current_message": True, "confident": True}
+
+
+def _carried(e: dict[str, Any]) -> dict[str, Any]:
+    return {**e, "current_message": False}
+
+
+def test_g10_a_brand_narrows_a_size_promotion_answer(session_factory, monkeypatch):
+    """"any 600mm basin promo" lists both brands' 600 mm promotions; "only <the other brand>" keeps
+    that brand's promotion only, the size kept."""
+    w = _two_brand_world(session_factory)
+    both, _ = _answer(session_factory, monkeypatch, _ask([SIZE, BASIN]), "any 600mm basin promo", "g10a")
+    assert "ZZT BASIN 600 PROMO" in both and "ZZT GAMMA BASIN 600 PROMO" in both, both
+    brand = {"raw": w["other_brand"].lower(), "hint": "brand", "canonical_code": w["other_brand"],
+             "current_message": True, "confident": True}
+    narrowed, _ = _answer(
+        session_factory, monkeypatch, _ask([_carried(SIZE), _carried(BASIN), brand]), f"only {w['other_brand'].lower()}", "g10b",
+    )
+    assert "ZZT GAMMA BASIN 600 PROMO" in narrowed and "ZZT BASIN 600 PROMO" not in narrowed, narrowed
+    assert "ZZT BASIN 500 PROMO" not in narrowed, narrowed
+
+
+def test_g11_a_topic_switch_and_back_to_the_size_promotions(session_factory, monkeypatch):
+    """"any 600mm basin promo", then a stock question, then back: "and their promos again?" (the
+    basin and the 600 mm carried) is the same 600 mm promotion answer, never the 500 mm one."""
+    _world(session_factory)
+    first, _ = _answer(session_factory, monkeypatch, _ask([SIZE, BASIN]), "any 600mm basin promo", "g11a")
+    _go(session_factory, monkeypatch, _parser_output(domain_hint="inventory", intent_hint="check_stock",
+        entities=[{"raw": "zzt-none", "hint": "product", "canonical_code": "ZZT-NONE", "current_message": True, "confident": True}]),
+        "zzt-none got stock?", "zzt-psp-g11-switch")
+    back, _ = _answer(session_factory, monkeypatch, _ask([_carried(SIZE), _carried(BASIN)]), "and their promos again?", "g11b")
+    assert "ZZT BASIN 600 PROMO" in back and "ZZT BASIN 500 PROMO" not in back, (first, back)
+    assert _body(back) == _body(first), (first, back)

@@ -187,3 +187,71 @@ def test_g6_a_topic_switch_and_a_fresh_ask_is_the_first_page_again(session_facto
     assert _listed(again, w["codes"], w["codes"]) == _listed(first, w["codes"], w["codes"]), (first, again)
     calls = chat.stock_calls()
     assert calls and {"key": "size", "op": "eq", "value": 600} in (calls[-1].get("spec_constraints") or []), calls
+
+
+# ---------------------------------------------------------------- the dealer's quantity ask
+
+
+def _make_dealer(session_factory) -> None:
+    """The chatbot's contact on stock visibility `availability`, its categories capped at 50."""
+    from sqlalchemy import text
+
+    from app.models.access import StockVisibilityPolicy
+    from app.models.product import Product, ProductCategory
+    from tests.chatbot.test_engine import CONTACT_ID
+
+    db = session_factory()
+    contact_id = db.execute(
+        text("SELECT id FROM respond_contacts WHERE respond_io_id = :cid ORDER BY id LIMIT 1"), {"cid": str(CONTACT_ID)}
+    ).scalar()
+    db.add(StockVisibilityPolicy(id=str(uuid.uuid4()), contact_id=contact_id, mode="availability", warehouse_ids=None))
+    category_ids = {pid for (pid,) in db.query(Product.category_id).filter(Product.product_code.like("ZZT-CG%")).all() if pid}
+    for row in db.query(ProductCategory).filter(ProductCategory.id.in_(category_ids)).all():
+        row.chatbot_max_qty = 50
+    db.commit()
+    db.close()
+
+
+def test_g7_a_dealer_answers_the_quantity_ask_for_the_size_list_only(session_factory, monkeypatch, _clear_overrides):
+    """The bot asks a dealer "How many units for each?" on a size list; the short reply "5" (the
+    parser's `demand_qty`) answers for the 600 mm basins only, never the 500 mm one."""
+    w = _seed(session_factory)
+    _make_dealer(session_factory)
+    chat = _Chat(session_factory, monkeypatch)
+    ask = chat.say("600mm basin got stock?", entities=SIZE_ASK)
+    assert "How many units" in ask, ask
+    answer = chat.say("5", entities=[], demand_qty=5)
+    shown = _listed(answer, w["codes"], w["codes"])
+    assert shown and shown <= SIX_600 and "A-L5" not in shown, (ask, answer)
+    assert "x 5" in answer, answer
+
+
+# ---------------------------------------------------------------- a typed code plus a size
+
+
+def test_g8_a_size_narrows_a_family_answer(session_factory, monkeypatch, _clear_overrides):
+    """"<family> got stock?" lists every variant; "200mm only" (the code carried) keeps the 200s."""
+    from tests.chatbot.test_spec_size_on_a_code import _code, _seed_wcs
+
+    w = _seed_wcs(session_factory)
+    f = w["family"]
+    chat = _Chat(session_factory, monkeypatch)
+    every = chat.say(f"{f.lower()} got stock?", entities=[_code(f)])
+    assert f"{f}-SH-150" in every, every
+    reply = chat.say("200mm only", entities=[_carried(_code(f)), _spec_entity("200mm", "size", 200)])
+    listed = {c for c in w["codes"] if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", reply)}
+    assert listed == {f"{f}-SH-200", f"{f}-SH-NEW-200"}, reply
+
+
+def test_g9_a_family_size_miss_then_a_size_on_file(session_factory, monkeypatch, _clear_overrides):
+    """"250mm <family> got stock?" says the sizes on file; the short reply "200 then" lists the 200s."""
+    from tests.chatbot.test_spec_size_on_a_code import _code, _seed_wcs
+
+    w = _seed_wcs(session_factory)
+    f = w["family"]
+    chat = _Chat(session_factory, monkeypatch)
+    miss = chat.say(f"250mm {f.lower()} got stock?", entities=[_spec_entity("250mm", "size", 250), _code(f)])
+    assert f"No 250 mm for {f}." in miss, miss
+    reply = chat.say("200 then", entities=[_carried(_code(f)), _spec_entity("200", "size", 200)])
+    listed = {c for c in w["codes"] if re.search(rf"(?<![\w-]){re.escape(c)}(?![\w-])", reply)}
+    assert listed == {f"{f}-SH-200", f"{f}-SH-NEW-200"}, reply
