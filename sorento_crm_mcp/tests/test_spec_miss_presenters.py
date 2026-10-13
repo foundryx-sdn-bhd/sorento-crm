@@ -88,3 +88,32 @@ def test_d6_a_size_miss_over_a_family_names_it(tool):
         "spec_alternatives": [{"key": "trap_length", "label": "Trap outlet length", "unit": "mm", "values": [200, 150]}],
     })
     assert "no 250 mm for zztwc286. sizes on file: 150 mm, 200 mm." in out, out
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_d7_values_from_several_axes_are_named_per_axis(tool):
+    """Owner hand test PASS (13 Oct), size-miss option (b): when the values on file come from more
+    than one axis, each is named ("No 250 mm for SRTWC286. Trap outlet length: 180 mm. Height:
+    365 mm. Length: 680 mm, 735 mm."), axes in the order of their smallest value."""
+    out = present_response(tool, json.dumps({"data": [], **PAGING,
+        "spec_size_asked": {"value": 250, "unit": "mm", "subject": "ZZTWC286"},
+        "spec_alternatives": [
+            {"key": "dim_length", "label": "Length", "unit": "mm", "values": [735, 680]},
+            {"key": "dim_height", "label": "Height", "unit": "mm", "values": [365]},
+            {"key": "trap_length", "label": "Trap outlet length", "unit": "mm", "values": [180]},
+        ],
+    }))
+    expected = "No 250 mm for ZZTWC286. Trap outlet length: 180 mm. Height: 365 mm. Length: 680 mm, 735 mm."
+    assert expected in json.loads(out).get("intro", "") or expected in out, out
+    assert "Sizes on file" not in out, out
+
+
+@pytest.mark.parametrize("tool", TOOLS)
+def test_d8_values_from_one_axis_keep_sizes_on_file(tool):
+    """Owner: a single axis stays "Sizes on file: ..."."""
+    out = text(tool, {
+        "spec_size_asked": {"value": 250, "unit": "mm"},
+        "spec_alternatives": [{"key": "trap_length", "label": "Trap outlet length", "unit": "mm", "values": [200, 150]}],
+    })
+    assert "no 250 mm. sizes on file: 150 mm, 200 mm." in out, out
+    assert "trap outlet length:" not in out, out

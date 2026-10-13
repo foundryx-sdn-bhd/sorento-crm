@@ -357,3 +357,37 @@ def test_p20_the_unrecorded_count_sentence_is_in_the_catalog(line):
         assert "recorded" not in done and number in done, (lang, done)
         if "Size" in line:
             assert "Size" not in done, (lang, done)
+
+
+AXIS_TRANSLATIONS = {
+    "Diameter": ("Diameter", "直径"),
+    "Length": ("Panjang", "长度"),
+    "Width": ("Lebar", "宽度"),
+    "Height": ("Tinggi", "高度"),
+    "Depth": ("Kedalaman", "深度"),
+    "Thickness": ("Ketebalan", "厚度"),
+    "Hose length": ("Panjang hos", "软管长度"),
+    "Trap outlet length": ("Panjang saluran keluar perangkap", "存水弯出口长度"),
+}
+
+
+@pytest.mark.parametrize("label", sorted(AXIS_TRANSLATIONS))
+def test_p21_each_mm_axis_named_in_a_size_miss_is_in_the_catalog(label):
+    """Owner hand test PASS (13 Oct), option (b): a size miss names each axis's values ("Height: 365
+    mm."); every millimetre axis of the registry seed reads in the customer's language."""
+    from app.services.chatbot.label_catalog import Localizer, defaults
+    from app.services.product_spec_registry import SPEC_REGISTRY_SEED
+
+    assert label in {str(r.get("label")) for r in SPEC_REGISTRY_SEED if str(r.get("unit") or "").lower() == "mm"}
+    ms, zh = AXIS_TRANSLATIONS[label]
+    line = f"No 250 mm for ZZTWC286. {label}: 180 mm, 365 mm."
+    assert Localizer("ms", defaults("ms")).reply(line) == f"Tiada 250 mm untuk ZZTWC286. {ms}: 180 mm, 365 mm."
+    assert Localizer("zh", defaults("zh")).reply(line) == f"ZZTWC286 没有 250 mm。{zh}：180 mm, 365 mm。"
+
+
+def test_p22_every_mm_axis_of_the_seed_is_covered():
+    """A millimetre axis added to the seed without its catalogue sentence would print in English."""
+    from app.services.product_spec_registry import SPEC_REGISTRY_SEED
+
+    labels = {str(r.get("label")) for r in SPEC_REGISTRY_SEED if str(r.get("unit") or "").lower() == "mm"}
+    assert labels <= set(AXIS_TRANSLATIONS), labels - set(AXIS_TRANSLATIONS)
