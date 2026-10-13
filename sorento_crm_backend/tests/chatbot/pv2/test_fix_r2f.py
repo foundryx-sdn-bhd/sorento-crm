@@ -98,3 +98,35 @@ def test_a_sales_report_with_a_null_dataset_is_refused_without_the_grant():
     assert r.direct_reply == SALES_REPORT_NOT_ENABLED_MESSAGE
     assert calls == []
 
+
+
+def test_a_chat_report_refine_is_not_refused_as_a_sales_report():
+    from app.services.chatbot.lanes.business import SALES_REPORT_NOT_ENABLED_MESSAGE
+    from app.services.chatbot.pv2 import turn
+    from app.services.chatbot.pv2.history import MemoryProfile
+    from app.services.chatbot.pv2.schema import Ask, ReportSpec
+    from app.services.chatbot.pv2.state import dump_state
+    from tests.chatbot.pv2.carry_fakes import NOW, FakeResolver, ask as _base_ask, held as mk_held, mk_state, out
+
+    def spec(**kw):
+        base = dict(dataset=None, measures=[], group_by=[], top_n_per_group=None, filters=[], period=None,
+                    compare_to=None, compare_period=None, grain=None, threshold=None, sort=None,
+                    top_n=None, basis=None)
+        base.update(kw)
+        return ReportSpec.model_validate(base)
+
+    held = mk_held("chat_analytics")
+    held.report = spec(dataset="chat", measures=["failed"], group_by=["topic"],
+                       period={"preset": "this_week", "n": None, "date_from": None, "date_to": None}, top_n=5)
+    base = _base_ask().model_dump()
+    base.update(act="refines_held", domain="chat_analytics",
+                report=spec(period={"preset": "last_month", "n": None, "date_from": None, "date_to": None}
+                            ).model_dump(mode="json"))
+    parsed = out(Ask.model_validate(base))
+    ctx = turn.TurnV2Context(
+        text="last month instead", now=NOW, raw_state=dump_state(mk_state(held)),
+        profile=MemoryProfile(audience="staff"), parse=lambda m, u: parsed, resolver=FakeResolver({}),
+        load_exchanges=lambda s: [], report_answer=lambda *a, **k: None, granted_reveals=frozenset(),
+    )
+    r = turn._run(ctx)
+    assert r.direct_reply != SALES_REPORT_NOT_ENABLED_MESSAGE
