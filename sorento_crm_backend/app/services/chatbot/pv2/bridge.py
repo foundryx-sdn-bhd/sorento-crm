@@ -157,6 +157,11 @@ def to_v1_verdict(state: ConversationState, action: Lookup, *, today: date) -> d
         entities.append(
             _v1_entity(ResolvedRef(kind="attachment_type", key=held.attachment_type, label=held.attachment_type))
         )
+        if domain == "resource_attachment":
+            # The entity v1's own parser sends for a catalogue / brochure request.
+            entities.append(
+                _v1_entity(ResolvedRef(kind="attachment", key=held.attachment_type, label=held.attachment_type))
+            )
     # A spec this ask did not name is CARRIED: grounding reads a current-message descriptor
     # against the message's own words and would demote a carried "p_trap" on "stock?".
     named_specs = bool(action.ask is not None and action.ask.specs)

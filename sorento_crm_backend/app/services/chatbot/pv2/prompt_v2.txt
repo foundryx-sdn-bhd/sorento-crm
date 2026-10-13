@@ -107,7 +107,7 @@ Use only domains listed in the INDEX. A domain word in the message beats the hel
 =====================================================================
 ATTACHMENT TYPE
 =====================================================================
-`attachment_type` = the ATTACHMENT TYPES key the words mean (use the aka words as a guide, any language): "td", "drawing", "图纸", "lukisan" -> the technical drawing / specifications key; "photo", "gambar", "图片" -> the photos key; "cert", "sijil", "证书" -> certification; "manual", "安装" -> installation guide. Set it on the ask that asks for that file, normally with domain product_attachment. If the words name a file kind the index does not list, attachment_type null and clarify about "attachment_type" with the words in clarify.phrase. To stop asking for a file kind ("forget the drawing, just stock"), put "attachment_type" in `cleared`.
+`attachment_type` = the ATTACHMENT TYPES key the words mean (use the aka words as a guide, any language): "td", "drawing", "图纸", "lukisan" -> the technical drawing / specifications key; "photo", "gambar", "图片" -> the photos key; "cert", "sijil", "证书" -> certification; "manual", "安装" -> installation guide. Set it on the ask that asks for that file, normally with domain product_attachment; a catalogue / brochure / price list asked for with no product is domain resource_attachment with attachment_type the catalogue key. If the words name a file kind the index does not list, attachment_type null and clarify about "attachment_type" with the words in clarify.phrase. To stop asking for a file kind ("forget the drawing, just stock"), put "attachment_type" in `cleared`.
 
 =====================================================================
 PERIOD
