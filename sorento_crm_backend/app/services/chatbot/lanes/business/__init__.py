@@ -1786,11 +1786,17 @@ def run_fetch(
         spec_constraints = None
     if spec_constraints:
         semantic_input["spec_constraints"] = spec_constraints
+        # Owner hand test round 2 (13 Oct): a typed code ("250mm srtwc286") is the set the size
+        # narrows, so the call keeps the code's resolved ids beside the constraints.
+        from app.services.chatbot.lanes.business.resolve_gate import _names_a_typed_code
+
+        semantic_input["spec_keeps_ids"] = _names_a_typed_code(parse_output)
         if trace is not None:
             trace.add("spec_constraints", {"constraints": spec_constraints})
     else:
         # A copy the open pick carried in (`narrow`) is no instruction of its own.
         semantic_input.pop("spec_constraints", None)
+        semantic_input.pop("spec_keeps_ids", None)
     candidates = fetch_mod.select_tool(domain)
 
     has_product = (

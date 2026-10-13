@@ -236,7 +236,11 @@ def _spec_miss_intro(data: dict) -> str | None:
             {float(v) for a in alternatives if (a.get("unit") or unit) == unit for v in a["values"]
              if isinstance(v, (int, float)) and not isinstance(v, bool)}
         )
-        lines = [f"No {_spec_value(asked.get('value'), unit)}."]
+        # A typed family code (owner hand test round 2, 13 Oct): "No 250 mm for SRTWC286."; the
+        # route names the family only when every named variant shares it.
+        subject = asked.get("subject") if _filled(asked.get("subject")) else None
+        size = _spec_value(asked.get("value"), unit)
+        lines = [f"No {size} for {subject}." if subject else f"No {size}."]
         if sizes:
             lines.append(f"Sizes on file: {', '.join(_spec_value(v, unit) for v in sizes)}.")
     else:

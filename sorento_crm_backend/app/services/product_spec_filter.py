@@ -270,6 +270,33 @@ def spec_miss_detail(db: Session, constraints: list[dict], base=None) -> dict:
     }
 
 
+def spec_base_for(base, product_ids) -> Any:
+    """The set a spec-filtered call answers about: `base` (the promoted products, or None)
+    narrowed to the products the caller named (owner hand test round 2, 13 Oct: "250mm
+    srtwc286" reads the size and the sizes on file among that family's variants only)."""
+    ids = [str(pid) for pid in product_ids or [] if pid]
+    if not ids:
+        return base
+    named = Product.id.in_(ids)
+    return named if base is None else and_(base, named)
+
+
+def stamp_size_subject(db: Session, extra: dict, product_ids) -> None:
+    """On a size miss over named products, the family they all share (`products.family_code`),
+    so the reply can say "No 250 mm for SRTWC286." (owner's approved wording, 13 Oct). Left out
+    when no products were named, they span families, or the family is not on file."""
+    asked = extra.get("spec_size_asked")
+    ids = [str(pid) for pid in product_ids or [] if pid]
+    if not isinstance(asked, dict) or not ids:
+        return
+    families = {
+        (str(code).strip() or None) if code is not None else None
+        for (code,) in db.execute(select(Product.family_code).where(Product.id.in_(ids))).all()
+    }
+    if len(families) == 1 and (family := families.pop()):
+        asked["subject"] = family
+
+
 def stamp_spec_page(payload: dict, constraints: list[dict] | None) -> None:
     """`spec_page` on a spec-filtered answer: the page it returned and how many matched, so the
     chatbot can show a few matches first and offer the rest (owner ruling, 12 Oct 2026). Only

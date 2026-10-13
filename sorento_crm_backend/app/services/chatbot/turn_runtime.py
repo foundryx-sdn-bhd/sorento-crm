@@ -5362,6 +5362,9 @@ def envelope_of(
         # SPEC-PROMO-PARAMS: a spec-filtered zero whose reply states what the data holds
         # (`spec_miss_stated`, the values on file or the axis to pick) answered too.
         "tool_has_result": bool(fetched.get("has_result")) or fetched.get("spec_miss_stated") is True,
+        # SPEC-PROMO-PARAMS (owner hand test round 2): the rows are a spec-filtered set, so a
+        # resolved code the filter left out is no stock miss (`crossdomain_zeroset`).
+        "spec_filtered": fetched.get("spec_filtered") is True or fetched.get("spec_miss_stated") is True,
         # The lane's own failure, when the fetch did not complete: neither a hit nor a
         # miss, so the composer offers nothing on it (the error text is the answer).
         "error": fragment.get("error") if isinstance(fragment.get("error"), str) else None,

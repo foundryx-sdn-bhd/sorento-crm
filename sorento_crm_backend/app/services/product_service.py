@@ -185,7 +185,15 @@ from app.schemas.common import PaginationResponse
 from app.models.user import SystemSetting
 from app.services.embedding_events import publish_embedding_event
 from app.services.identifier_resolver import is_uuid, resolve_identifier
-from app.services.product_spec_filter import product_filter_clause, promoted_clause, resolve_size, spec_miss_detail, stamp_spec_page
+from app.services.product_spec_filter import (
+    product_filter_clause,
+    promoted_clause,
+    resolve_size,
+    spec_base_for,
+    spec_miss_detail,
+    stamp_size_subject,
+    stamp_spec_page,
+)
 
 
 # Lifted out of `bulk_import_products` (PLAN-autocount-pull-review.md, P11) so the
@@ -552,8 +560,9 @@ class ProductService:
         # clarify / a miss with no rows (SPEC-PROMO-PARAMS card section 9, slice 1).
         # With has_active_promotion the answer is about promoted products, so the size and the
         # miss detail are read among those only.
-        spec_base = promoted_clause(self.db, access_levels) if has_active_promotion else None
+        spec_base = spec_base_for(promoted_clause(self.db, access_levels) if has_active_promotion else None, product_ids)
         sized_constraints, spec_extra = resolve_size(self.db, spec_constraints, hidden_spec_keys, spec_base)
+        stamp_size_subject(self.db, spec_extra, product_ids)
         if spec_constraints and sized_constraints is None:
             payload = {
                 "data": [],

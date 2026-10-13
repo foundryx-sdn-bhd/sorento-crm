@@ -241,15 +241,16 @@ def spec_constraints_for(parse_output: Any, db: Any) -> list[dict[str, Any]] | N
     against the message) first, then every grounded specification entity that has a
     value, in entity order, each `{key, op: "eq", value}`.
 
-    None when the turn names a product code (`resolve_gate._names_a_typed_code`, the code
-    path keeps its resolved ids), when a subject word maps to nothing or the subject words
-    map to two different things (that ask stays on the resolver path rather than being
-    answered for half of what was said), and when nothing maps at all. A specification
-    with no value is left out: the unknown-value clarify answers it."""
+    A turn that names a product code gets them too (owner hand test round 2, 13 Oct: "250mm
+    srtwc286" keeps only the variants holding the size); its call keeps the code's resolved
+    ids beside them (`entity_ids_transformer`, `spec_keeps_ids`). None when a subject word
+    maps to nothing or the subject words map to two different things (that ask stays on the
+    resolver path rather than being answered for half of what was said), and when nothing
+    maps at all. A specification with no value is left out: the unknown-value clarify
+    answers it."""
     from app.services.chatbot.head.grounding import specification_entities
-    from app.services.chatbot.lanes.business.resolve_gate import _names_a_typed_code
 
-    if db is None or not isinstance(parse_output, dict) or _names_a_typed_code(parse_output):
+    if db is None or not isinstance(parse_output, dict):
         return None
     entities = [e for e in parse_output.get("entities") or [] if isinstance(e, dict)]
     subjects: list[dict[str, Any]] = []
@@ -1309,12 +1310,14 @@ def entity_ids_transformer(
 
     # SPEC-PROMO-PARAMS (card section 9, slices 2 and 3): a described ask's subject and
     # specs travel as `spec_constraints` and the route does the filtering, so the call
-    # carries no resolver `product_ids` (MCP stays the executor). On the promotion products
+    # carries no resolver `product_ids` (MCP stays the executor). A typed code is the set the
+    # constraints narrow, so its ids stay (`spec_keeps_ids`). On the promotion products
     # tool a promotion the resolver matched by NAME off the same words is not the subject
     # either; only one the customer named (`promo_filter`) stays, as on the promotions list.
     spec_constraints = jsc.get(semantic_input, "spec_constraints")
     if tool_name in SPEC_CONSTRAINT_TOOLS and isinstance(spec_constraints, list) and spec_constraints:
-        out.pop("product_ids", None)
+        if not jsc.get(semantic_input, "spec_keeps_ids"):
+            out.pop("product_ids", None)
         out["spec_constraints"] = [dict(c) for c in spec_constraints if isinstance(c, dict)]
         if tool_name == _PROMOTIONS_TOOL:
             # A promotion the resolver matched by NAME off the same words is not the subject;

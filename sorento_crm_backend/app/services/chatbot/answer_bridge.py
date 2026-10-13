@@ -254,6 +254,8 @@ def apply_crossdomain_hit(
         availability = envelope.get("stock_availability")
         if isinstance(availability, list) and availability:
             item["stock_availability"] = availability
+        if envelope.get("spec_filtered") is True:
+            item["spec_filtered"] = True
         result = _run_crossdomain_ladder(
             parser=parser,
             resolved=_hit_ladder_resolved(resolved, focus_products),
@@ -1894,6 +1896,10 @@ def answer_for(
             ),
         )
         if primary_tool_ran
+        # SPEC-PROMO-PARAMS (owner hand test round 2): a stated size miss ("No 250 mm for
+        # SRTWC286. Sizes on file: ...") already says what the data holds; the codes the size
+        # filtered out are no stock miss.
+        and not (isinstance(envelope, Mapping) and envelope.get("spec_filtered") is True)
         # The shape `answer.run_crossdomain` itself returns for an inactive ladder, so
         # `_apply_crossdomain_render` below folds nothing, exactly as on any other turn
         # the ladder had no claim to make.

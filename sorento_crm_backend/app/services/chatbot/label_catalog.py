@@ -269,6 +269,8 @@ LABELS: dict[str, dict[str, str]] = {
     # Owner ruling 13 Oct 2026 (size-miss wording, option b; the MCP presenter's sentences).
     "No {size}.": {"ms": "Tiada {size}.", "zh": "没有 {size}。"},
     "Sizes on file: {sizes}.": {"ms": "Saiz yang ada: {sizes}.", "zh": "现有尺寸：{sizes}。"},
+    # Owner hand test round 2 (13 Oct): the size miss over a typed family code.
+    "No {size} for {subject}.": {"ms": "Tiada {size} untuk {subject}.", "zh": "{subject} 没有 {size}。"},
     # The spec-miss unrecorded count (MCP presenter `_spec_miss_intro`; crew live check #3).
     "{count} have no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
     "{count} has no {label} recorded.": {"ms": "{count} tiada rekod {label}.", "zh": "{count} 个没有记录{label}。"},
@@ -565,6 +567,7 @@ INLINE = frozenset(
         "*{label}*: this is not enabled for your account.",
         "Nothing on {names} either.",
         "No {size}.",
+        "No {size} for {subject}.",
         "Sizes on file: {sizes}.",
         "{count} have no {label} recorded.",
         "{count} has no {label} recorded.",
@@ -679,7 +682,13 @@ _NUMERIC_TOKENS = frozenset({"available"})
 #: A measure ("250 mm", "130.5mm") and a list of them: the size-miss sentences (owner ruling
 #: 13 Oct) name only measures, so "No {size}." never takes "No exact match." (review, b6da364a).
 _MEASURE = r"\d[\d.,]*(?: ?[A-Za-z]{1,4})?"
-_MEASURE_TOKENS = {"size": _MEASURE, "sizes": f"{_MEASURE}(?:, {_MEASURE})*", "count": r"\d[\d,]*"}
+_MEASURE_TOKENS = {
+    "size": _MEASURE,
+    "sizes": f"{_MEASURE}(?:, {_MEASURE})*",
+    "count": r"\d[\d,]*",
+    # A product family code ("SRTWC286"), one word: "No {size} for {subject}." never takes prose.
+    "subject": r"[A-Za-z0-9][\w\-/]*",
+}
 
 
 def _token_pattern(name: str) -> str:
