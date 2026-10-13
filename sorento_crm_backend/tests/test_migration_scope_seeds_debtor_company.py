@@ -6,6 +6,13 @@
    go. A company with a customer master row for the code gets no seed (the backfill rule).
 2. Certificate and product_spec embedding rows embedded before migration 304 get their
    source row's ``company_id``; a shared (NULL-company) certificate stays NULL.
+
+MIGRATION-INDEX: the cascade's ``embedding_chunks.document_id`` index is built before the
+deletes, and the data steps run under a lock / statement timeout that does not outlive them.
+``upgrade()`` builds the index CONCURRENTLY in an autocommit block, which would commit the
+scratch schema's transaction, so the tests run ``_upgrade(build_index=True)``: the same steps,
+index built in the transaction. The CONCURRENTLY path is exercised by a real ``alembic upgrade``
+(PR evidence).
 """
 from __future__ import annotations
 
@@ -14,11 +21,12 @@ import uuid
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
 
-from tests._pg_fixture import blank_session, unique_code
+from tests._pg_fixture import blank_schema_engine, blank_session, unique_code
 
 MIGRATION = (
     Path(__file__).resolve().parents[1] / "alembic" / "versions" / "scope_seeds_debtor_company.py"
@@ -26,13 +34,35 @@ MIGRATION = (
 VEC = "[" + ",".join(["0.01"] * 1536) + "]"
 
 
-def _run_upgrade(db):
-    spec = importlib.util.spec_from_file_location("m_scope_seeds", MIGRATION)
+INDEX_REVISION = MIGRATION.with_name("mig_idx_chunks_document_id.py")
+DOC_INDEX = "ix_embedding_chunks_document_id"
+
+
+def _load(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _run_upgrade(db):
+    module = _load(MIGRATION, "m_scope_seeds")
     ctx = MigrationContext.configure(db.connection())
     with Operations.context(ctx):
-        module.upgrade()
+        module._upgrade(build_index=True)
+
+
+def _index_state(db):
+    """(valid, definition) of the document_id index in the scratch schema, or None."""
+    row = db.execute(
+        text(
+            "SELECT i.indisvalid, pg_get_indexdef(i.indexrelid) FROM pg_index i "
+            "JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE i.indrelid = 'embedding_chunks'::regclass AND c.relname = :n"
+        ),
+        {"n": DOC_INDEX},
+    ).first()
+    return tuple(row) if row else None
 
 
 @pytest.fixture
@@ -234,3 +264,79 @@ def test_a_code_too_long_for_source_id_is_not_copied(db, world):
     assert db.execute(
         text("SELECT count(*) FROM embedding_documents WHERE source_id LIKE :p"), {"p": f"debtor:%{long_code[:12]}%"}
     ).scalar() == 0
+
+
+def test_the_document_id_index_is_built(db, world):
+    db.execute(text(f"DROP INDEX IF EXISTS {DOC_INDEX}"))
+    assert _index_state(db) is None
+    _run_upgrade(db)
+    valid, definition = _index_state(db)
+    assert valid is True
+    assert "embedding_chunks" in definition and "(document_id)" in definition
+
+
+def test_the_timeouts_do_not_outlive_the_data_steps(db, world):
+    db.execute(text("SET LOCAL lock_timeout = '7min'"))
+    db.execute(text("SET LOCAL statement_timeout = '0'"))
+    _run_upgrade(db)
+    assert db.execute(text("SELECT current_setting('lock_timeout')")).scalar() == "7min"
+    assert db.execute(text("SELECT current_setting('statement_timeout')")).scalar() == "0"
+
+
+def test_a_held_lock_fails_the_upgrade_fast_instead_of_hanging(db):
+    """Another session holds embedding_queue (which this session has not touched, or the lock
+    would wait on us): the upgrade gives up after lock_timeout (5 s) rather than waiting past
+    the release's health window."""
+    import time
+
+    schema = db.execute(text("SELECT current_schema()")).scalar()
+    with blank_schema_engine().connect() as other:
+        other.begin()
+        other.execute(text("SET LOCAL lock_timeout = '10s'"))
+        other.execute(text(f'LOCK TABLE "{schema}".embedding_queue IN ACCESS EXCLUSIVE MODE'))
+        started = time.monotonic()
+        with pytest.raises(sa.exc.OperationalError) as raised:
+            _run_upgrade(db)
+        assert raised.value.orig.pgcode == "55P03"  # lock_not_available
+        assert time.monotonic() - started < 30
+        other.rollback()
+
+
+def _run_index_revision(db):
+    module = _load(INDEX_REVISION, "m_idx_chunks_document_id")
+    ctx = MigrationContext.configure(db.connection())
+    with Operations.context(ctx):
+        module._ensure_index(db.connection(), concurrently=False)
+
+
+def test_the_index_revision_builds_it_where_scope_seeds_already_ran(db):
+    db.execute(text(f"DROP INDEX IF EXISTS {DOC_INDEX}"))
+    _run_index_revision(db)
+    assert _index_state(db)[0] is True
+    _run_index_revision(db)  # already there: a no-op
+    assert _index_state(db)[0] is True
+
+
+def test_the_index_revision_replaces_an_invalid_leftover(db):
+    """A failed CREATE INDEX CONCURRENTLY leaves an INVALID index IF NOT EXISTS would keep."""
+    db.execute(text(f"DROP INDEX IF EXISTS {DOC_INDEX}"))
+    db.execute(text(f"CREATE INDEX {DOC_INDEX} ON embedding_chunks (document_id)"))
+    db.execute(
+        text(
+            "UPDATE pg_index SET indisvalid = false WHERE indrelid = 'embedding_chunks'::regclass "
+            "AND indexrelid = (SELECT oid FROM pg_class WHERE relname = :n AND relnamespace = "
+            "(SELECT relnamespace FROM pg_class WHERE oid = 'embedding_chunks'::regclass))"
+        ),
+        {"n": DOC_INDEX},
+    )
+    assert _index_state(db)[0] is False
+    _run_index_revision(db)
+    assert _index_state(db)[0] is True
+
+
+def test_the_model_declares_the_index():
+    from app.models.embeddings import EmbeddingChunk
+
+    assert any(
+        [c.name for c in ix.columns] == ["document_id"] for ix in EmbeddingChunk.__table__.indexes
+    )

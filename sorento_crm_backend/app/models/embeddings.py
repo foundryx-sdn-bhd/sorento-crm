@@ -94,6 +94,9 @@ class EmbeddingChunk(Base):
         UUID(as_uuid=False),
         ForeignKey("embedding_documents.id", ondelete="CASCADE"),
         nullable=False,
+        # The cascade looks chunks up by document; unindexed, each deleted document is a
+        # sequential scan of this table (mig_idx_chunks_document_id).
+        index=True,
     )
     source_type = Column(String(64), nullable=False)
     source_id = Column(String(128), nullable=False)
