@@ -589,3 +589,83 @@ def test_theme_migration_names_sorento_only_over_the_template_name(
         assert theme.company_name == expected_company
         assert f"account on {expected_company}." in theme.footer_note
         assert "Metronic" not in theme.footer_note or expected_company == "Metronic"
+
+
+# --------------------------------------------------------------------------- #
+# Owner hand test: CS must SEE the refusal on the SO's planning board          #
+# --------------------------------------------------------------------------- #
+
+BOARD = "/api/v1/project-sales/fulfilment-planning/board"
+
+
+def _board_contributions(client, so_number: str) -> list[dict]:
+    resp = client.get(BOARD, params={"orders": so_number})
+    assert resp.status_code == 200, resp.text
+    board = resp.json()
+    return [c for cell in board.get("cells", []) for c in cell.get("contributions", [])]
+
+
+def test_rejected_row_survives_the_reconfirm_on_a_two_line_order(api, monkeypatch):
+    """The reject's own re-confirm (the order minus the refused line) used to retire the
+    refused row as CANCELLED, so the board, which skips cancelled rows, showed nothing."""
+    from app.models.project_so import ACK_REJECTED, INQUIRY_CANCELLED
+
+    client, world = api
+    _register()
+    fixture = _raise_two_rows(api)
+    _capture(monkeypatch)
+    row = fixture["first"]["row"]
+
+    assert _reject_one(world, row, reason="Supplier discontinued this finish").status_code == 200
+
+    world.db.refresh(row)
+    assert row.ack_state == ACK_REJECTED
+    assert row.state != INQUIRY_CANCELLED, "the refused row must stay for the board to show"
+
+
+def test_board_line_carries_the_purchasing_refusal(api, monkeypatch):
+    client, world = api
+    _register()
+    fixture = _raise_two_rows(api)
+    _capture(monkeypatch)
+    first = fixture["first"]
+    _activate(world, world.buyer)
+    world.db.query(User).filter(User.id == world.buyer).one().name = "Joey Buyer"
+    world.db.commit()
+
+    assert _reject_one(world, first["row"], reason="Supplier discontinued this finish").status_code == 200
+    world.db.refresh(first["row"])
+
+    so_number = fixture["order"].autocount_doc_no
+    contributions = _board_contributions(client, so_number)
+    mine = [c for c in contributions if c.get("project_line_id") == str(first["line"].id)]
+    assert mine, "the refused line is on the board"
+    oi = mine[0]["order_inquiry"]
+    assert oi is not None, "the board line names its order inquiry"
+    assert oi["ack_state"] == "rejected"
+    assert oi["rejected_reason"] == "Supplier discontinued this finish"
+    assert oi["rejected_by_name"] == "Joey Buyer"
+    assert oi["rejected_at"] is not None
+    other = [c for c in contributions if c.get("project_line_id") == str(fixture["second"]["line"].id)]
+    assert other and (other[0]["order_inquiry"] or {}).get("ack_state") != "rejected"
+
+
+def test_email_and_bell_link_open_the_so_board_on_the_rejected_lines(api, monkeypatch):
+    client, world = api
+    _register()
+    _activate(world, world.cs_user)
+    fixture = _raise_two_rows(api)
+    captured = _capture(monkeypatch)
+    first, second = fixture["first"]["row"], fixture["second"]["row"]
+
+    assert _reject_batch(world, [first, second]).status_code == 200
+
+    so_number = fixture["order"].autocount_doc_no
+    lines = ",".join(sorted([str(fixture["first"]["line"].id), str(fixture["second"]["line"].id)]))
+    path = f"/project-sales/fulfilment-planning?orders={so_number}&lines={lines}"
+    [call] = _rejected(captured)
+    rej = call["context"]["reject"]
+    assert rej["board_link"].endswith(path)
+    assert rej["link"] == build_order_inquiry_link(str(first.order_inquiry_id))
+    [notice] = captured["in_app"]
+    assert notice["data"]["link"] == path
