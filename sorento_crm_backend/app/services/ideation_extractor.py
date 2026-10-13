@@ -89,16 +89,25 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
             "type": "array",
             "description": (
                 "Field updates the user supplied this turn, as {key,value} pairs; "
-                "value is the user's answer as plain text. problem = the Business "
+                "value is the user's answer as plain text, written in the same language "
+                "as the user's message (English stays English), never translated. problem = the Business "
                 "problem: what is wrong or missing today. Any cost or benefit the "
                 "user names stays in problem. problem never holds a solution or a "
-                "wish. A solution or wish the user states goes to desired_outcome "
+                "wish, and is the complaint only: it leaves out what they do today and the "
+                "example situations (no 'it is needed for...' sentence, no 'and we "
+                "have to...' clause, no copy of the workaround sentence), and adds no cause or consequence they did not "
+                "state. "
+                "A solution or wish the user states goes to desired_outcome "
                 "(what they want to be true afterwards or built), in their own "
-                "words. current_workaround = how they cope today, only when the "
-                "user said so. A team name is not a field. Decide the key by "
-                "MEANING, never by which field was just asked (next_field is only "
-                "a hint). A field the user did not state stays out. Empty when the "
-                "turn adds nothing."
+                "words. desired_outcome needs a stated want or solution: a "
+                "complaint alone gives none, so leave it out and never infer, guess "
+                "or invent the fix. current_workaround = what they do today or "
+                "right now to cope, only when the user said so (e.g. 'right now we call "
+                "the warehouse', 'sekarang kita print', '现在只能打电话'); it goes only "
+                "here, not also in problem. A team name is not "
+                "a field. Decide the key by MEANING, never by which field was just "
+                "asked (next_field is only a hint). A field the user did not state "
+                "stays out. Empty when the turn adds nothing."
             ),
             "items": {
                 "type": "object",
@@ -113,8 +122,10 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
                             "problem, and problem never holds a solution or a wish. "
                             "desired_outcome = what the user wants to be true "
                             "afterwards or built: a solution or wish they state goes "
-                            "here, in their own words. current_workaround = how they "
-                            "cope today. A team name is not a field."
+                            "here, in their own words; a complaint alone gives no "
+                            "desired_outcome, leave it out and never infer or guess "
+                            "the fix. current_workaround = what they do today or "
+                            "right now to cope. A team name is not a field."
                         ),
                     },
                     "value": {"type": "string"},
@@ -125,9 +136,14 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
         "use_cases": {
             "type": "array",
             "description": (
-                "Each concrete situation the user named, one string each, at most 5. "
-                "Never suggest a use case the user did not name. A situation listed here is "
-                "never repeated in problem or desired_outcome. Empty when none."
+                "Each concrete situation or scenario the user named as an example, one "
+                "string each, at most 5. Empty (the usual case) unless the message "
+                "itself introduces examples ('e.g.', 'for example', 'such as', "
+                "'contoh', '比如', or several 'when X, when Y' cases). Never a noun or "
+                "phrase lifted from the problem, never the problem sentence or a "
+                "clause of it (a single 'when X arrives' or 'bila X sampai' trigger "
+                "inside the complaint is the problem, not an example), never suggested; when in doubt, empty. A situation listed "
+                "here is never repeated in problem or desired_outcome."
             ),
             "items": {"type": "string"},
         },
@@ -151,7 +167,8 @@ IDEATE_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": (
                 "A short label for the idea, at most 8 words, generated from the "
-                "problem statement. Empty string when the draft has no problem "
+                "problem statement, in the same language as the user's message (English "
+                "stays English), never translated. Empty string when the draft has no problem "
                 "statement yet."
             ),
         },

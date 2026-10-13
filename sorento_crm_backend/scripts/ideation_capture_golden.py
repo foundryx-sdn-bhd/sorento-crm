@@ -9,6 +9,10 @@ can check: no invented field, use cases only where named, the right language.
     venv/bin/python scripts/ideation_capture_golden.py --messages my_messages.txt   # one per line
     venv/bin/python scripts/ideation_capture_golden.py --from-db   # crew: the DB's production line
 
+Migration `idea_capture_fields_0001` publishes the new `ideate_extractor` fallback to the
+registry (a stock production text moves to the next version; an owner-edited one is left). Crew
+applies it (`alembic upgrade head`) before `--from-db`, otherwise `--from-db` runs the OLD text.
+
 `--prompt-file` is the production-label `ideate_extractor` text (an owner-edited install runs
 the new schema under the OLD prompt; that combination is the one that must hold). Without it the
 shipped fallback is used. No database is touched: the config and the prompt are supplied here.
@@ -52,6 +56,11 @@ GOLDEN: list[tuple[str, str]] = [
     ("mixed ms en workaround",
      "Bila container sampai, kita check packing list manual dengan pen. Selalu miss item. "
      "Sekarang kita print dan tick satu-satu."),
+    ("zh problem + workaround + want",
+     "客户每次问货到了没有，我们都要打电话问仓库，很慢。现在只能一个个打电话。"
+     "希望系统能直接显示到货状态。"),
+    ("ms solution only",
+     "kita patut buat app untuk scan resit pelanggan"),
     ("en impact + department (dropped fields)",
      "Accounts department keeps chasing overdue invoices on paper. It costs us about RM20k a "
      "month in late payments. Maybe auto reminders on WhatsApp."),
