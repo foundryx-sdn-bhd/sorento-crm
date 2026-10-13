@@ -45,7 +45,8 @@ def upgrade() -> None:
     bind.execute(
         sa.text(
             "CREATE TABLE IF NOT EXISTS llm_model_prices ("
-            " model VARCHAR(128) PRIMARY KEY,"
+            " id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
+            " model VARCHAR(128) NOT NULL UNIQUE,"
             " input_usd_per_1m NUMERIC(12, 6) NOT NULL,"
             " cached_input_usd_per_1m NUMERIC(12, 6),"
             " output_usd_per_1m NUMERIC(12, 6) NOT NULL,"

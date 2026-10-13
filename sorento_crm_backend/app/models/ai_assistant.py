@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 from app.database import Base
 
@@ -184,7 +184,11 @@ class LLMModelPrice(Base):
     __tablename__ = "llm_model_prices"
     __company_shared__ = True
 
-    model: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # A server default too: the migration and bootstrap seed it with plain SQL.
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid_str, server_default=text("gen_random_uuid()")
+    )
+    model: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     input_usd_per_1m: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     cached_input_usd_per_1m: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     output_usd_per_1m: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
