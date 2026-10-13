@@ -1519,3 +1519,34 @@ def test_a_refused_effort_value_is_not_remembered_against_the_model(monkeypatch)
 
     provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
     assert stub.last_kwargs["reasoning_effort"] == "low"
+
+
+def test_a_model_that_takes_no_effort_is_remembered_and_not_asked_again(monkeypatch):
+    """gpt-4o answers `Unsupported parameter: 'reasoning_effort'`: a fact about the MODEL,
+    so the 400 is paid once per process, not on every call (the carve-out above is for a
+    refused VALUE only)."""
+    import app.services.llm_provider as llm
+
+    class _NoEffort(Exception):
+        code = "unsupported_parameter"
+        param = "reasoning_effort"
+
+    stub = _StubOpenAIClient()
+    original_create = stub.chat.completions.create
+    refusals: list[dict] = []
+
+    def create(**kwargs):
+        if "reasoning_effort" in kwargs:
+            refusals.append(kwargs)
+            raise _NoEffort("Unsupported parameter: 'reasoning_effort' is not supported with this model.")
+        return original_create(**kwargs)
+
+    stub.chat.completions.create = create
+    monkeypatch.setattr("openai.OpenAI", lambda api_key=None, **_k: stub)
+    monkeypatch.setattr(llm, "_OPENAI_REJECTED_PARAMS", {})
+    provider = OpenAIProvider("k", default_model="gpt-4o")
+
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    provider.chat([{"role": "user", "content": "hi"}], reasoning_effort="low")
+    assert len(refusals) == 1
+    assert "reasoning_effort" not in stub.last_kwargs

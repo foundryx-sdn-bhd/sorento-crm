@@ -218,6 +218,18 @@ def test_a_failed_parse_still_carries_latency(monkeypatch):
     with pytest.raises(parser_mod.ParserError) as caught:
         parser_mod.parse(_config(), "block")
     assert isinstance(caught.value.usage["latency_ms"], int)
+    assert caught.value.latency_ms == caught.value.usage["latency_ms"]
+
+
+def test_a_rate_limited_parse_carries_its_latency(monkeypatch):
+    def busy(*_a, **_k):
+        raise llm_call.RateLimited("Error code: 429 - Rate limit reached")
+
+    monkeypatch.setattr(llm_call, "chat", busy)
+    with pytest.raises(parser_mod.ParserError) as caught:
+        parser_mod.parse(_config(), "block")
+    assert caught.value.rate_limited is True
+    assert isinstance(caught.value.latency_ms, int)
 
 
 # --------------------------------------------------------------------------- #

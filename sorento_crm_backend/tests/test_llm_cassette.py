@@ -574,5 +574,10 @@ class TestReasoningEffortKey:
         )
 
     def test_an_unset_effort_does_not(self):
-        base = llm_cassette.chat_key(self.BASE)
-        assert llm_cassette.chat_key({**self.BASE, "reasoning_effort": None}) == base
+        # Pinned to the digest of the four key fields alone, so a key that took the
+        # effort in even when unset (and so moved every existing recording) fails here.
+        before = llm_cassette._digest(
+            {"kind": "chat", **{f: self.BASE.get(f) for f in llm_cassette._CHAT_KEY_FIELDS}}
+        )
+        assert llm_cassette.chat_key(self.BASE) == before
+        assert llm_cassette.chat_key({**self.BASE, "reasoning_effort": None}) == before
