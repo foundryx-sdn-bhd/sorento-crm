@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Quotation lines (mockup v1)</title>
+<title>Quotation lines (mockup v2)</title>
 <style>
 /* Tokens copied from sorento_crm_frontend/css/config.reui.css (light theme), same set the other lane mockups use */
 :root{--background:#fff;--foreground:#09090b;--card:#fff;--muted:#f4f4f5;--muted-fg:#71717a;--border:#ececee;--input:#e4e4e7;--primary:#3b82f6;--primary-fg:#fff;--primary-soft:#eff6ff;--secondary:#f4f4f5;--destructive:#dc2626;--destructive-soft:#fef2f2;--success:#15803d;--success-soft:#f0fdf4;--warning:#a16207;--warning-soft:#fefce8;--warning-line:#fde68a;--radius:8px;--page:#f7f7f8}
@@ -76,6 +76,18 @@ section>.why{font-size:12.5px;color:var(--muted-fg);margin:0 0 12px;max-width:98
 .thumb{width:40px;height:40px;border:1px solid var(--border);border-radius:4px;background:#fff;object-fit:contain;display:block;cursor:zoom-in}
 .thumbwrap{position:relative;display:inline-block}
 .thumbwrap .more{position:absolute;right:-6px;bottom:-6px;background:var(--foreground);color:#fff;border-radius:999px;font-size:10px;line-height:15px;min-width:15px;text-align:center;padding:0 3px}
+.pick{width:40px;height:40px;border:1px dashed var(--primary);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--primary);font-size:9.5px;line-height:1.15;text-align:center;cursor:pointer;background:var(--primary-soft)}
+.thumbwrap .more{cursor:pointer}
+.picker{position:absolute;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:30;padding:10px;width:332px;font-size:12px}
+.picker .ttl{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;font-weight:600;font-size:12.5px}
+.picker .cands{display:grid;grid-template-columns:repeat(4,72px);gap:8px}
+.picker .cand{border:1px solid var(--border);border-radius:6px;padding:3px;cursor:pointer;position:relative;text-align:center}
+.picker .cand img{width:64px;height:64px;object-fit:contain;display:block;margin:0 auto}
+.picker .cand .fn{font-size:9.5px;color:var(--muted-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.picker .cand.on{border:2px solid var(--primary);padding:2px}
+.picker .cand.on::after{content:"\2713";position:absolute;top:2px;right:4px;color:#fff;background:var(--primary);border-radius:999px;font-size:10px;line-height:14px;width:14px;height:14px}
+.picker .cand .zoom{position:absolute;left:4px;top:4px;background:rgba(255,255,255,.9);border:1px solid var(--border);border-radius:4px;font-size:10px;line-height:14px;padding:0 3px;color:var(--muted-fg)}
+.picker .ft{margin-top:8px;font-size:11px;color:var(--muted-fg)}
 .noimg{width:40px;height:40px;border:1px dashed var(--input);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#a1a1aa;font-size:9.5px;line-height:1.1;text-align:center}
 .badge{display:inline-flex;align-items:center;gap:3px;border-radius:6px;padding:0 6px;font-size:11px;line-height:18px;font-weight:500;border:1px solid var(--border);background:#fff;white-space:nowrap}
 .badge.custom{background:var(--muted);color:var(--foreground)}
@@ -156,14 +168,16 @@ tr.detail td{background:#fcfcfd;padding:12px 16px 14px 72px}
 <body>
 <div class="doc">
 <h1>Quotation lines: a DataGrid you can prepare a quotation in fast</h1>
-<p class="intro">Mockup v1 (13 Oct 2026) for the owner's notes on Project Sales &gt; Project &gt; New quotation &gt; Lines. The case is the owner's own Excel quotation (screenshots 609/610: sections BILL NO 3 PAGE 15/4, OPTION, OPTIONAL ITEMS FOR OKU TOILET, rate-only alternates, grand total). The dev database holds no quotation lines at all (<code>select count(*) from projects.quotation_lines</code> = 0 on the shared dev DB), so the lines are the Excel's structure filled with <b>real dev products</b>: codes, descriptions, brands, list prices, product photos, technical drawings and stock numbers are read from the dev DB / its file storage and the real stock-detail service. SRT5674 and SRT5732 are the Excel's own grab bars. Quoted unit rates for the WC/basin/trap lines are illustrative (no quotation exists to copy them from). Click any thumbnail, stock chip or row menu: they work.</p>
-<div class="nav"><a href="#q">? Card + 5 questions</a><a href="#s1">1 Edit at 1280</a><a href="#s2">2 Lightbox</a><a href="#s3">3 Stock popover</a><a href="#s4">4 Line details (Priced per)</a><a href="#s5">5 Custom item</a><a href="#s6">6 Read view</a><a href="#s7">7 375 px</a><a href="#s8">8 What the old labels did</a><a href="#s9">9 Component mapping</a></div>
+<p class="intro"><b>Mockup v2 (14 Oct 2026)</b>: owner answers applied (Q1 a + choose, Q2 a + choose, Q3 Custom item, Q4 Priced per, Q5 Stock at), new section 2b: choosing the photo or drawing when a product has several. v1 (13 Oct 2026) was for the owner's notes on Project Sales &gt; Project &gt; New quotation &gt; Lines. The case is the owner's own Excel quotation (screenshots 609/610: sections BILL NO 3 PAGE 15/4, OPTION, OPTIONAL ITEMS FOR OKU TOILET, rate-only alternates, grand total). The dev database holds no quotation lines at all (<code>select count(*) from projects.quotation_lines</code> = 0 on the shared dev DB), so the lines are the Excel's structure filled with <b>real dev products</b>: codes, descriptions, brands, list prices, product photos, technical drawings and stock numbers are read from the dev DB / its file storage and the real stock-detail service. SRT5674 and SRT5732 are the Excel's own grab bars. Quoted unit rates for the WC/basin/trap lines are illustrative (no quotation exists to copy them from). Click any thumbnail, stock chip or row menu: they work.</p>
+<div class="nav"><a href="#q">? Card + 5 questions</a><a href="#s1">1 Edit at 1280</a><a href="#s2">2 Lightbox</a><a href="#s2b">2b Choose photo / drawing</a><a href="#s3">3 Stock popover (owner: ok)</a><a href="#s4">4 Line details (Priced per)</a><a href="#s5">5 Custom item</a><a href="#s6">6 Read view</a><a href="#s7">7 375 px</a><a href="#s8">8 What the old labels did</a><a href="#s9">9 Component mapping</a></div>
 
 <!-- ============================================================== Q -->
 <section id="q">
 <h2><span class="nb">?</span>Behaviour card: the rules this mock proposes, and five decisions for the owner</h2>
 <div class="facts">
- <h3>Rules (proposed)</h3>
+ <h3>Owner decisions, 14 Oct</h3>
+ <p><b>Q1 (a)</b> a product with exactly one "Product Photos" image uses it, everywhere; <b>several: the user chooses</b> (section 2b). <b>Q2 (a)</b> drawings on the grid, the PDF and the Excel, frozen at issue in a new <code>drawing_attachment_id</code> column; <b>several: the user chooses</b>, same picker. <b>Q3</b> "Custom item". <b>Q4 (a)</b> "Priced per" in Line details. <b>Q5 (a)</b> "Stock at" dropdown, remembered per browser, reusing the Fulfilment Planning / Order Inquiry stock components. Section 3 (stock popover): owner "ok".</p>
+ <h3>Rules</h3>
  <p>R1 The quotation line table is the app DataGrid: drag rows by the handle, resize and reorder columns, layout remembered per user. A section bar drags with the line it opens. Line numbers stay continuous through sections (today's rule, <code>QuotationVersionEditor.tsx:353-364</code>).</p>
  <p>R2 At 1280 px with the sidebar open, a row never scrolls sideways (grid 910 px). Photo and Drawing are 40 px thumbnails opening the existing viewer.</p>
  <p>R3 Drawing = the product's attachments of type <b>Technical Specifications</b> that are images (dev: 1,180 products have one, 1,124 exactly one, 56 several, max 6). A custom item, or a product without one, shows "no drawing".</p>
@@ -174,7 +188,7 @@ tr.detail td{background:#fcfcfd;padding:12px 16px 14px 72px}
  <p>Unchanged: totals (rate-only excluded), one Save for every scope, below-floor / non-standard checks, revisions, item numbering.</p>
  <h3>Edge cases</h3>
  <p>Product with 2+ drawings (SRTWB1410: 2, SRTWB1421-RW: 6): count on the thumbnail, viewer pages through them. Product with no photo chosen (dev: 1 of 2,308 products with photos has one chosen): today's "No photo chosen" link stays, see Q1. Negative Available (SRT6641 BB -37): red chip, number shown as is, never clamped (stock-detail rule). Search hides rows but keeps numbering and totals (today). Frozen / issued version: read view only (today).</p>
- <h3>Decisions (recommendation first)</h3>
+ <h3>The five questions as asked (answered above)</h3>
  <p><b>Q1 Photo when nobody has chosen one.</b> Photo shows only the chosen photo (<code>product_image_service.py:117-137</code>, "no fallback" by design), and in dev 2,060 of 2,308 products with photos have exactly ONE "Product Photos" image but only 1 product has a chosen one, so almost every line shows "No photo chosen". (a) <b>Recommended:</b> use the photo when the product has exactly one "Product Photos" image; still "No photo chosen" when there are several. Applied in <code>product_image_service.py</code>, the one photo decision the brochure, 3D models and quotation all read, so they never disagree. (b) keep chosen-only; someone picks photos in Products first.</p>
  <p><b>Q2 Which drawing, and does the print change?</b> PDF and Excel print the typed tech-spec TEXT today (<code>project_quotation_pdf_service.py:396</code>, <code>project_quotation_excel_service.py:433-434</code>). (a) <b>Recommended:</b> thumbnail = the product's first drawing by upload order, viewer shows all; PDF and Excel print that drawing in TECHNICAL SPEC like your Excel; the typed tech-spec box leaves the grid (old text kept and printed under the description). Needs one new column on quotation lines so an issued quotation keeps the drawing the customer got, frozen at issue exactly like the photo (<code>project_quotation_image_service.py:1-17</code>). (b) screen only, print unchanged. (c) add a "chosen drawing" on the product like the photo (schema change, bigger lane).</p>
  <p><b>Q3 Name for a line with no product.</b> (a) <b>Recommended:</b> "Custom item". (b) "Not in catalogue". (c) other wording.</p>
@@ -213,9 +227,22 @@ tr.detail td{background:#fcfcfd;padding:12px 16px 14px 72px}
 <h2><span class="nb">2</span>Click a Drawing (or Photo) thumbnail: the app's existing file viewer opens</h2>
 <p class="why">The same viewer the Photo cell already opens today and Resource Management uses (zoom, download, arrows). Arrows step through every drawing of the quotation in line order, so a salesperson can check all the drawings one after another. A product with more than one drawing shows a small count on its thumbnail (SRTWB1410 has 2 in dev; 56 products have more than one, max 6).</p>
 <div class="row"><div class="desk"><div class="lbstatic">
- <div class="bar"><span>SRTWC8356-RL_TD.png &middot; line 1 &middot; drawing 1 of 6</span><span style="display:flex;gap:8px"><span class="btn">Zoom +</span><span class="btn">Download</span><span class="btn">&#10005;</span></span></div>
+ <div class="bar"><span>SRTWC8356-RL_TD.png &middot; line 1 &middot; drawing 1 of 7</span><span style="display:flex;gap:8px"><span class="btn">Zoom +</span><span class="btn">Download</span><span class="btn">&#10005;</span></span></div>
  <div class="stage"><span class="arrow">&#8249;</span><img src="assets/SRTWC8356-RL_td.jpg" alt="SRTWC8356-RL technical drawing"><span class="arrow">&#8250;</span></div>
 </div><div class="cap">AttachmentPreviewModal over the Lines tab (real technical drawing of SRTWC8356-RL from the product's "Technical Specifications" attachments)</div></div></div>
+</section>
+
+<!-- ============================================================== 2b -->
+<section id="s2b">
+<h2><span class="nb">2b</span>Several photos or drawings on file: choose one for the line</h2>
+<p class="why">Owner, 14 Oct: "let the user choose when the product has multiple photos", same picker for drawings. Real case: SRT320-CR (chrome paper holder) carries four photos and four drawings, one per colour (BL, CR, FRG, GY). One photo on file: used automatically (Q1 a). Several and none chosen: the cell says "Choose &middot; 4 photos". Drawings default to the first on file (here SRT320-BL, the wrong colour, which is why the count badge opens the same picker). Click a candidate to use it; the magnifier opens it in the viewer first. The choice is stored on the quotation line (it is what this customer is sent) and frozen when the version is issued; the product's own files and its brochure photo are not changed. Read view and issued versions show no picker. Try it in section 1, line 4.</p>
+<div class="row"><div class="desk"><div style="padding:16px 20px;position:relative;height:330px;background:#fcfcfd">
+ <div style="display:flex;gap:16px;align-items:flex-start">
+  <div><div class="sub" style="margin-bottom:4px">Photo cell, nothing chosen</div><div class="pick">Choose<br>4 photos</div></div>
+  <div><div class="sub" style="margin-bottom:4px">Drawing cell, default + count</div><span class="thumbwrap"><img class="thumb" src="assets/SRT320-CR_td_BL.jpg" alt=""><span class="more">4</span></span></div>
+ </div>
+ <div class="picker" id="pick2b" style="left:20px;top:96px"></div>
+</div><div class="cap">Popover (components/ui/popover.tsx) with the product's candidate images; same component for photos and drawings</div></div></div>
 </section>
 
 <!-- ============================================================== 3 -->
@@ -349,6 +376,7 @@ const L = [
  {code:'SRTWC8356-RL', photo:'SRTWC8356-RL_photo', td:'SRTWC8356-RL_td', desc:'SORENTO ONE PIECE (RIMLESS) TOILET (S-TRAP 250MM)\nC/W TOILET SEAT & COVER\nSIZE L705 X W365 X H780MM', brand:'SORENTO', qty:'1046', uom:'EA', rate:'980.00', list:'1,320.00', total:'1,025,080.00', stock:{v:0,c:'none'}},
  {code:'SRTWB1410', photo:'SRTWB1410_photo', td:'SRTWB1410_td', tdn:2, desc:'SORENTO WASH BASIN ONLY (420x420x125MM)', brand:'SORENTO', qty:'1046', uom:'EA', rate:'245.00', list:'328.00', total:'256,270.00', stock:{v:0,c:'none'}},
  {code:'SRT6641', photo:'SRT6641_photo', td:'SRT6641_td', desc:'SORENTO ANTI-ODOR FLOOR TRAP (150x150MM)', brand:'SORENTO', qty:'2092', uom:'EA', rate:'72.00', list:'100.00', total:'150,624.00', stock:{v:-37,c:'none'}},
+ {code:'SRT320-CR', photos:['BL','CR','FRG','GY'], photoPick:null, tds:['BL','CR','FRG','GY'], tdPick:'BL', desc:'SORENTO S/STEEL PAPER HOLDER (CHROME)', brand:'SORENTO', qty:'1046', uom:'EA', rate:'85.00', list:'108.00', total:'88,910.00', stock:{v:-1820,c:'none'}},
  {band:'OPTION'},
  {code:'SRTWC8152-RL', photo:'SRTWC8152-RL_photo', td:'SRTWC8152-RL_td', desc:'SORENTO ONE PIECE WASHDOWN (RIMLESS) TOILET (S-TRAP 250MM)\nC/W TOILET SEAT & COVER', brand:'SORENTO', qty:'1', uom:'EA', rate:'1,180.00', list:'1,600.00', rateOnly:true, stock:{v:11,c:'ok'}},
  {code:'SRTWC286-SH', photo:'SRTWC286-SH_photo', td:'SRTWC286-SH_td', desc:'SORENTO ONE PIECE TWISTER FLUSH WC (S-TRAP 250MM)', brand:'SORENTO', qty:'1', uom:'EA', rate:'920.00', list:'1,260.00', rateOnly:true, stock:{v:2,c:'ok'}},
@@ -358,11 +386,11 @@ const L = [
  {code:'SRT6753-WH', photo:'SRT6753-WH_photo', td:'SRT6753-WH_td', desc:'SORENTO ABS SHOWER SEAT (395X480X200MM)', brand:'SORENTO', qty:'11', uom:'EA', rate:'250.00', list:'315.00', total:'2,750.00', stock:{v:0,c:'none'}},
  {code:null, desc:'INSTALLATION OF GRAB BARS AND SHOWER SEAT\nTO OKU TOILETS (LABOUR ONLY)', brand:'', qty:'11', uom:'SET', rate:'150.00', total:'1,650.00', stock:null},
 ];
-const GRAND = '1,436,374.00';
+const GRAND = '1,525,284.00';
 const gallery = [];
-L.forEach(l=>{ if(l.td) gallery.push({src:'assets/'+l.td+'.jpg', cap:l.code+' drawing'}); });
+L.forEach(l=>{ if(l.td) gallery.push({src:'assets/'+l.td+'.jpg', cap:l.code+' drawing'}); if(l.tds) gallery.push({src:'assets/'+l.code+'_td_'+l.tdPick+'.jpg', cap:l.code+' drawing ('+l.code.split('-')[0]+'-'+l.tdPick+')'}); });
 const photoGallery = [];
-L.forEach(l=>{ if(l.photo) photoGallery.push({src:'assets/'+l.photo+'.jpg', cap:l.code+' photo'}); });
+L.forEach(l=>{ if(l.photo) photoGallery.push({src:'assets/'+l.photo+'.jpg', cap:l.code+' photo'}); if(l.photos&&l.photoPick) photoGallery.push({src:'assets/'+l.code+'_photo_'+l.photoPick+'.jpg', cap:l.code+' photo'}); });
 let lbList=[], lbIdx=0;
 function openLb(kind, code){ lbList = kind==='td'?gallery:photoGallery; lbIdx = Math.max(0, lbList.findIndex(g=>g.cap.startsWith(code))); showLb(); document.getElementById('lb').classList.add('open'); }
 function showLb(){ const g=lbList[lbIdx]; document.getElementById('lbimg').src=g.src; document.getElementById('lbcap').textContent=g.cap+' · '+(lbIdx+1)+' of '+lbList.length+' in this quotation'; }
@@ -372,7 +400,17 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); if(docu
 
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 function chip(l){ if(!l.stock) return '<span class="chip na" title="No product, no stock">no stock check</span>'; return `<span class="chip ${l.stock.c}" onclick="toggleStock(event,'${l.code}')">&#9679; ${l.stock.v} avail</span>`; }
-function imgCell(l,kind){ const k = kind==='td'?l.td:l.photo; if(!l.code) return '<div class="noimg">none</div>'; if(!k) return `<div class="noimg" title="No technical drawing on file for ${l.code}">no<br>drawing</div>`; return `<span class="thumbwrap"><img class="thumb" src="assets/${k}.jpg" alt="${l.code} ${kind==='td'?'drawing':'photo'}" onclick="openLb('${kind}','${l.code}')">${(kind==='td'&&l.tdn>1)?'<span class="more">'+l.tdn+'</span>':''}</span>`; }
+function imgCell(l,kind){ if(!l.code) return '<div class="noimg">none</div>';
+ const many = kind==='td'?l.tds:l.photos; const pick = kind==='td'?l.tdPick:l.photoPick; const what = kind==='td'?'drawing':'photo';
+ if(many){ if(!pick) return `<div class="pick" onclick="openPicker(event,'${l.code}','${kind}')" title="${many.length} ${what}s on file: choose one for this line">Choose<br>${many.length} ${what==='photo'?'photos':'dwgs'}</div>`;
+  return `<span class="thumbwrap"><img class="thumb" src="assets/${l.code}_${kind==='td'?'td':'photo'}_${pick}.jpg" alt="${l.code} ${what}" onclick="openLb('${kind}','${l.code}')"><span class="more" onclick="openPicker(event,'${l.code}','${kind}')" title="${many.length} ${what}s on file: change">${many.length}</span></span>`; }
+ const k = kind==='td'?l.td:l.photo; if(!k) return `<div class="noimg" title="No technical drawing on file for ${l.code}">no<br>drawing</div>`; return `<span class="thumbwrap"><img class="thumb" src="assets/${k}.jpg" alt="${l.code} ${what}" onclick="openLb('${kind}','${l.code}')">${(kind==='td'&&l.tdn>1)?'<span class="more" title="'+l.tdn+' drawings on file: change">'+l.tdn+'</span>':''}</span>`; }
+function pickerHtml(code, kind, live, force){ const l=L.find(x=>x.code===code); const many = kind==='td'?l.tds:l.photos; const pick = force || (kind==='td'?l.tdPick:l.photoPick); const what = kind==='td'?'drawing':'photo';
+ return `<div class="ttl"><span>${what==='photo'?'Photo':'Drawing'} for line ${lineNo(code)} &middot; ${code}</span><span class="sub">${many.length} on file</span></div><div class="cands">${many.map(v=>`<div class="cand ${v===pick?'on':''}" ${live?`onclick="choose(event,'${code}','${kind}','${v}')"`:''}><span class="zoom" ${live?`onclick="zoomCand(event,'${code}','${kind}','${v}')"`:''}>&#9906;</span><img src="assets/${code}_${kind==='td'?'td':'photo'}_${v}.jpg" alt=""><div class="fn">${code.split('-')[0]}-${v}.jpg</div></div>`).join('')}</div><div class="ft">Saved on this line with the quotation. The product's own files are not changed.</div>`; }
+function lineNo(code){ let i=0,n=0; L.forEach(l=>{ if(!l.band){ i++; if(l.code===code) n=i; } }); return n; }
+function openPicker(e, code, kind){ e.stopPropagation(); const old=document.getElementById('livepick'); if(old) old.remove(); const host=e.target.closest('.bd')||e.target.closest('.main')||document.body; const hr=host.getBoundingClientRect(); const cr=e.target.getBoundingClientRect(); const d=document.createElement('div'); d.className='picker'; d.id='livepick'; d.innerHTML=pickerHtml(code,kind,true); d.onclick=ev=>ev.stopPropagation(); host.appendChild(d); d.style.left=Math.max(8,cr.left-hr.left)+'px'; d.style.top=(cr.bottom-hr.top+6)+'px'; }
+function choose(e, code, kind, v){ e.stopPropagation(); const l=L.find(x=>x.code===code); if(kind==='td') l.tdPick=v; else l.photoPick=v; const p=document.getElementById('livepick'); if(p) p.remove(); rebuild(); }
+function zoomCand(e, code, kind, v){ e.stopPropagation(); lbList=[{src:'assets/'+code+'_'+(kind==='td'?'td':'photo')+'_'+v+'.jpg', cap:code+' '+(kind==='td'?'drawing':'photo')+' candidate '+code.split('-')[0]+'-'+v}]; lbIdx=0; showLb(); document.getElementById('lb').classList.add('open'); }
 function flags(l){ let f=''; if(!l.code) f+='<span class="badge custom">Custom item</span> '; if(l.below) f+='<span class="badge" style="color:var(--destructive);border-color:#fecaca">&#9888; Below floor</span> '; return f? '<div style="display:flex;flex-wrap:wrap;gap:3px">'+f+'</div>':''; }
 function editRow(l,i,opts){ opts=opts||{};
  if(l.band) return `<tr class="band"><td colspan="11"><div class="bl"><span class="handle">&#8942;&#8942;</span><span class="lbl">${esc(l.band)}</span><span class="dots" style="width:24px">&#8943;</span></div></td></tr>`;
@@ -388,9 +426,10 @@ function readRow(l,i){
  if(l.band) return `<tr class="band"><td colspan="9"><div class="bl"><span class="lbl">${esc(l.band)}</span></div></td></tr>`;
  return `<tr><td class="num">${i}</td><td>${imgCell(l,'photo')}</td><td>${imgCell(l,'td')}</td><td><div class="stack"><span style="font-weight:500">${l.code||'&nbsp;'}</span>${flags(l)}</div></td><td style="white-space:pre-wrap;font-size:12px">${esc(l.desc)}</td><td>${l.brand||'-'}</td><td class="r num"><div class="stack" style="align-items:flex-end"><span>${l.qty} ${l.uom}</span>${chip(l)}</div></td><td class="r num">${l.rate}${l.list?'<div class="sub">List '+l.list+'</div>':''}</td><td class="r num">${l.rateOnly?'<span class="badge rate">rate only</span>':l.total}</td></tr>`; }
 function build(id, fn, withFoot, cols){ let i=0, h=''; L.forEach(l=>{ if(!l.band) i++; h+=fn(l, l.band?null:i); }); if(withFoot) h+=`<tr class="foot"><td colspan="${cols-2}" style="text-align:right">Scope total (rate-only lines not counted)</td><td class="r num">${GRAND}</td><td></td></tr>`; document.getElementById(id).innerHTML=h; }
-build('tb1', editRow, true, 11);
+function rebuild(){ build('tb1', editRow, true, 11);
 build('tb7', editRow, false, 11);
-(function(){ let i=0,h=''; L.forEach(l=>{ if(!l.band) i++; h+=readRow(l, l.band?null:i); }); h+=`<tr class="foot"><td colspan="8" style="text-align:right">Scope total (rate-only lines not counted)</td><td class="r num">${GRAND}</td></tr>`; document.getElementById('tb6').innerHTML=h; })();
+(function(){ let i=0,h=''; L.forEach(l=>{ if(!l.band) i++; h+=readRow(l, l.band?null:i); }); h+=`<tr class="foot"><td colspan="8" style="text-align:right">Scope total (rate-only lines not counted)</td><td class="r num">${GRAND}</td></tr>`; document.getElementById('tb6').innerHTML=h; })(); }
+rebuild();
 // section 4: line 3 with details open
 (function(){ const l=L[3]; document.getElementById('tb4').innerHTML = editRow(l,3) + detailRow(); })();
 function detailRow(){ return `<tr class="detail"><td colspan="11"><div class="dgrid">
@@ -408,6 +447,7 @@ const STOCK = {
  'SRTWC286-SH':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',2,0,0,2],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[2,0,0,2], pools:[['BRW',3,20,0,-17]], pt:[3,20,0,-17]},
  'SRT5674':{grp:[['BRW-BB',0,4,0,-4],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,4,0,-4], pools:[], pt:[0,0,0,0]},
  'SRT5732':{grp:[['BRW-BB',78,146,0,-68],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',14,0,0,14]], gt:[92,146,0,-54], pools:[['BRW',46,23,0,23]], pt:[46,23,0,23]},
+ 'SRT320-CR':{grp:[['BRW-BB',188,2008,0,-1820],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[188,2008,0,-1820], pools:[['BRW',205,38,0,167]], pt:[205,38,0,167]},
  'SRT6753-WH':{grp:[['BRW-BB',0,0,0,0],['DC1-BB',0,0,0,0],['MWH-BB',0,0,0,0],['RSW-BB',0,0,0,0],['WH3-BB',0,0,0,0]], gt:[0,0,0,0], pools:[['BRW',31,0,0,31]], pt:[31,0,0,31]},
 };
 function n(v){ return v<0?`<span class="neg">${v}</span>`:v; }
@@ -417,7 +457,8 @@ function toggleStock(e, code){ e.stopPropagation(); const old=document.getElemen
  const pop=document.createElement('div'); pop.className='pop'; pop.id='livepop'; pop.dataset.code=code; pop.style.width='520px';
  pop.innerHTML=`<div class="ph"><b>${code} &middot; stock</b><span class="sub">Read-only &middot; same as Order Inquiry</span></div><table><tr><th>Location</th><th>On hand</th><th>SO qty</th><th>SPO qty</th><th>Available</th></tr><tr class="grp"><td colspan="5">BB group</td></tr>${rows(s.grp)}<tr class="tot"><td>BB group</td><td>${s.gt[0]}</td><td>${s.gt[1]}</td><td>${s.gt[2]}</td><td>${n(s.gt[3])}</td></tr>${s.pools.length?'<tr class="grp"><td colspan="5">Site pools</td></tr>'+rows(s.pools)+`<tr class="tot"><td>Site pools</td><td>${s.pt[0]}</td><td>${s.pt[1]}</td><td>${s.pt[2]}</td><td>${n(s.pt[3])}</td></tr>`:''}</table><div class="inc">${s.inc?'Incoming: '+s.inc:'No incoming SPO'}</div>`;
  host.appendChild(pop); pop.style.left=Math.max(8, cr.left-hr.left-430)+'px'; pop.style.top=(cr.bottom-hr.top+6)+'px'; }
-document.addEventListener('click',()=>{ const p=document.getElementById('livepop'); if(p) p.remove(); });
+document.addEventListener('click',()=>{ const p=document.getElementById('livepop'); if(p) p.remove(); const q=document.getElementById('livepick'); if(q) q.remove(); });
+document.getElementById('pick2b').innerHTML = pickerHtml('SRT320-CR','photo',false,'CR');
 </script>
 </body>
 </html>
