@@ -12,14 +12,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FileDropzone } from '@/components/common/FileDropzone';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useIdeaMutations } from '@/hooks/useIdeas';
 
 /**
  * Capture idea: the CRM modal over ss `IdeaCreateIn`. No product picker (the connection is scoped
- * to the workspace's product); files go up after the idea exists.
+ * to the workspace's product); files go up after the idea exists. Proposed solution, Impact and
+ * Department are retired from capture (IDEA-CORE); `problem` is labelled Business problem.
  */
 export function IdeaCaptureModal({
   open,
@@ -30,9 +30,6 @@ export function IdeaCaptureModal({
 }) {
   const { create } = useIdeaMutations();
   const [problem, setProblem] = useState('');
-  const [proposedSolution, setProposedSolution] = useState('');
-  const [impact, setImpact] = useState('');
-  const [department, setDepartment] = useState('');
   const [rawText, setRawText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [touched, setTouched] = useState(false);
@@ -40,22 +37,19 @@ export function IdeaCaptureModal({
   useEffect(() => {
     if (!open) return;
     setProblem('');
-    setProposedSolution('');
-    setImpact('');
-    setDepartment('');
     setRawText('');
     setFiles([]);
     setTouched(false);
   }, [open]);
 
-  const problemError = touched && problem.trim().length === 0 ? 'Problem statement is required' : null;
+  const problemError = touched && problem.trim().length === 0 ? 'Business problem is required' : null;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (!problem.trim() || create.isPending) return;
     try {
-      await create.mutateAsync({ problem, proposedSolution, impact, department, rawText, files });
+      await create.mutateAsync({ problem, rawText, files });
       onOpenChange(false);
     } catch {
       // The hook toasted the reason; the modal stays open with what was typed.
@@ -71,7 +65,7 @@ export function IdeaCaptureModal({
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogBody className="flex max-h-[70dvh] flex-col gap-4 overflow-y-auto">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-problem">Problem statement</Label>
+              <Label htmlFor="idea-problem">Business problem</Label>
               <Textarea
                 id="idea-problem"
                 value={problem}
@@ -87,28 +81,6 @@ export function IdeaCaptureModal({
                   {problemError}
                 </p>
               ) : null}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-solution">Proposed solution</Label>
-              <Textarea
-                id="idea-solution"
-                value={proposedSolution}
-                onChange={(e) => setProposedSolution(e.target.value)}
-                rows={2}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-impact">Impact</Label>
-              <Textarea id="idea-impact" value={impact} onChange={(e) => setImpact(e.target.value)} rows={2} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="idea-department">Department</Label>
-              <Input
-                id="idea-department"
-                value={department}
-                maxLength={120}
-                onChange={(e) => setDepartment(e.target.value)}
-              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="idea-raw">Original message</Label>

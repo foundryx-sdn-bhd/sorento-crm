@@ -205,7 +205,7 @@ describe('AC-D-02 header states for a manage holder', () => {
     renderDetail(makeIdea());
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    const problem = await screen.findByLabelText('Problem statement');
+    const problem = await screen.findByLabelText('Business problem');
     expect(problem).toHaveValue('Quotes take too long to write');
     fireEvent.change(problem, { target: { value: 'Quotes take far too long' } });
     svc.updateIdea.mockResolvedValue(makeIdea());
@@ -216,6 +216,37 @@ describe('AC-D-02 header states for a manage holder', () => {
         expect.objectContaining({ problem: 'Quotes take far too long' }),
       ),
     );
+  });
+});
+
+describe('IDEA-CRM-SIDE field labels', () => {
+  it('shows Business problem and hides Proposed solution, Impact and Department in view and edit', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    expect(screen.getByText('Business problem')).toBeInTheDocument();
+    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department']) {
+      expect(screen.queryByText(label)).toBeNull();
+    }
+    expect(screen.queryByText('Templates')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('Business problem');
+    for (const label of ['Proposed solution', 'Impact', 'Department']) {
+      expect(screen.queryByLabelText(label)).toBeNull();
+    }
+  });
+
+  it('Save leaves the hidden legacy fields untouched (never sends them)', async () => {
+    renderDetail(makeIdea({ isMine: true }));
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(await screen.findByLabelText('Business problem'), { target: { value: 'Edited' } });
+    svc.updateIdea.mockResolvedValue(makeIdea({ isMine: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(svc.updateIdea).toHaveBeenCalled());
+    const body = svc.updateIdea.mock.calls[0][1];
+    for (const key of ['proposedSolution', 'impact', 'department']) {
+      expect(body).not.toHaveProperty(key);
+    }
   });
 });
 
@@ -244,7 +275,7 @@ describe('Q3 own-idea edit without manage', () => {
     renderDetail(makeIdea({ isMine: true }));
     await loaded();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    const problem = await screen.findByLabelText('Problem statement');
+    const problem = await screen.findByLabelText('Business problem');
     fireEvent.change(problem, { target: { value: 'Quotes take far too long' } });
     svc.updateIdea.mockResolvedValue(makeIdea({ isMine: true }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

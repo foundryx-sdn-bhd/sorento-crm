@@ -23,7 +23,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -153,9 +152,6 @@ export function IdeaDetail({ id }: { id: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [problem, setProblem] = useState('');
-  const [proposedSolution, setProposedSolution] = useState('');
-  const [impact, setImpact] = useState('');
-  const [department, setDepartment] = useState('');
   const [rawText, setRawText] = useState('');
 
   const subject = idea?.title ?? idea?.problem ?? '';
@@ -229,9 +225,6 @@ export function IdeaDetail({ id }: { id: string }) {
 
   const beginEdit = (current: Idea) => {
     setProblem(current.problem);
-    setProposedSolution(current.proposedSolution ?? '');
-    setImpact(current.impact ?? '');
-    setDepartment(current.department ?? '');
     setRawText(current.rawText);
     setTab('details');
     setIsEditing(true);
@@ -243,9 +236,6 @@ export function IdeaDetail({ id }: { id: string }) {
       await update.mutateAsync({
         id: idea.id,
         problem: problem.trim(),
-        proposedSolution: proposedSolution.trim() || null,
-        impact: impact.trim() || null,
-        department: department.trim() || null,
         rawText,
       });
       setIsEditing(false);
@@ -534,7 +524,7 @@ export function IdeaDetail({ id }: { id: string }) {
             <div className="flex flex-col gap-5 p-5">
               <section aria-label="Details" className="flex flex-col gap-4">
                 <Field
-                  label="Problem statement"
+                  label="Business problem"
                   htmlFor={isEditing ? 'idea-edit-problem' : undefined}
                 >
                   {isEditing ? (
@@ -546,52 +536,6 @@ export function IdeaDetail({ id }: { id: string }) {
                     />
                   ) : (
                     <Text value={idea.problem} />
-                  )}
-                </Field>
-                <Field
-                  label="Proposed solution"
-                  htmlFor={isEditing ? 'idea-edit-solution' : undefined}
-                >
-                  {isEditing ? (
-                    <Textarea
-                      id="idea-edit-solution"
-                      value={proposedSolution}
-                      onChange={(e) => setProposedSolution(e.target.value)}
-                      rows={2}
-                    />
-                  ) : (
-                    <Text value={idea.proposedSolution} />
-                  )}
-                </Field>
-                <Field
-                  label="Impact"
-                  htmlFor={isEditing ? 'idea-edit-impact' : undefined}
-                >
-                  {isEditing ? (
-                    <Textarea
-                      id="idea-edit-impact"
-                      value={impact}
-                      onChange={(e) => setImpact(e.target.value)}
-                      rows={2}
-                    />
-                  ) : (
-                    <Text value={idea.impact} />
-                  )}
-                </Field>
-                <Field
-                  label="Department"
-                  htmlFor={isEditing ? 'idea-edit-department' : undefined}
-                >
-                  {isEditing ? (
-                    <Input
-                      id="idea-edit-department"
-                      value={department}
-                      maxLength={120}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      className="h-8"
-                    />
-                  ) : (
-                    <Text value={idea.department} />
                   )}
                 </Field>
                 <Field

@@ -209,24 +209,34 @@ describe('AC-C-03 vote box', () => {
 });
 
 describe('AC-C-05 Capture idea', () => {
-  it('the header CTA opens a modal with the five fields and no Product picker', async () => {
+  it('the header CTA opens a modal led by Business problem, with no Product picker', async () => {
     renderList();
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
-    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department', 'Attachments']) {
+    for (const label of ['Business problem', 'Original message', 'Attachments']) {
       expect(within(dialog).getByLabelText(label)).toBeInTheDocument();
     }
     expect(within(dialog).queryByLabelText(/Product/)).toBeNull();
   });
 
-  it('saving without a problem statement shows "Problem statement is required" and calls nothing', async () => {
+  it('IDEA-CRM-SIDE: the retired fields are gone from the capture modal', async () => {
+    renderList();
+    await screen.findByText('Faster quotes');
+    fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
+    const dialog = await screen.findByRole('dialog');
+    for (const label of ['Problem statement', 'Proposed solution', 'Impact', 'Department']) {
+      expect(within(dialog).queryByLabelText(label)).toBeNull();
+    }
+  });
+
+  it('saving without a business problem shows "Business problem is required" and calls nothing', async () => {
     renderList();
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Capture' }));
-    expect(await within(dialog).findByText('Problem statement is required')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Business problem is required')).toBeInTheDocument();
     expect(svc.createIdea).not.toHaveBeenCalled();
   });
 
@@ -236,7 +246,7 @@ describe('AC-C-05 Capture idea', () => {
     await screen.findByText('Faster quotes');
     fireEvent.click(screen.getByRole('button', { name: /Capture idea/ }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText('Problem statement'), { target: { value: 'Brand new problem' } });
+    fireEvent.change(within(dialog).getByLabelText('Business problem'), { target: { value: 'Brand new problem' } });
     const file = new File(['x'], 'shot.png', { type: 'image/png' });
     fireEvent.change(within(dialog).getByLabelText('Attachments'), { target: { files: [file] } });
     const before = svc.listIdeas.mock.calls.length;
