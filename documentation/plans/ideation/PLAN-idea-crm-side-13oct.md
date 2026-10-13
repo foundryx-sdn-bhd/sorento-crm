@@ -1,6 +1,6 @@
 # PLAN: Ideas features on the Sorento CRM side (IDEA-CRM-SIDE)
 
-Status: Build (full track, size L: gateway + native screens; no migration, no new permission).
+Status: Merge-ready pending owner hand test (full track, size L: gateway + native screens; no migration, no new permission). Reviewer READY, security-reviewer READY, browser pass at 375/1280 against a fake ss.
 Lane IDEA-CRM-SIDE, PR #1628. UAC: `idea-crm-side-13oct-acceptance-criteria.md`.
 
 Owner 13 Oct: the new ideas features (ss IDEA-PORTAL #123, IDEA-CORE #124) must also work inside
