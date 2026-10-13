@@ -2602,7 +2602,7 @@ describe('FulfilmentBoardListView: a line purchasing refused (PR 1622)', () => {
     renderView({ contributions: [refused] });
     const cell = await screen.findByTestId('decided-purchasing-rejected-so-1:line-10');
     expect(cell.textContent).toMatch(
-      /^Rejected by purchasing: Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
+      /^Supplier discontinued this finish \(Joey, 13\/10\/2026, 2:05\s?pm\)$/i,
     );
     expect(cell).toHaveClass('truncate');
     expect(cell.getAttribute('title')).toMatch(/^Rejected by Joey on 13\/10\/2026/);

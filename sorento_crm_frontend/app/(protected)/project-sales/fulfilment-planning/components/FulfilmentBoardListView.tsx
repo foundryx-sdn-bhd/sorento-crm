@@ -852,7 +852,8 @@ export function FulfilmentBoardListView({
             // on this same row - truncated, the whole sentence as the tooltip - rather than
             // "Not decided" beside a pill nobody can read at this width.
             if (contribution.order_inquiry?.ack_state === 'rejected') {
-              const line = `Rejected by purchasing: ${purchasingRefusalLine(contribution.order_inquiry)}`;
+              // The reason first: the pill beside it already says who refused the line.
+              const line = purchasingRefusalLine(contribution.order_inquiry);
               return (
                 <span
                   data-testid={`decided-purchasing-rejected-${contribution.key}`}
