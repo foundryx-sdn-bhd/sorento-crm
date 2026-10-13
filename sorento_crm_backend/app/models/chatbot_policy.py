@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Column, Integer, Text
+from sqlalchemy import Boolean, Column, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.sql import func
 from sqlalchemy import DateTime
@@ -127,3 +127,43 @@ class ChatbotDomainWord(Base):
     updated_at = Column(
         DateTime(timezone=False), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class ChatbotAliasPrecedence(Base):
+    """PV2 (CONTRACT-PV2-13oct.md section 4): which key wins an alias two keys share.
+
+    Data, not code: the parser v2 index prints an alias only under its `winner_key`, and a
+    staff save that creates the same alias under two keys with no row here is refused.
+    `alias_norm` is casefolded with whitespace collapsed.
+    """
+
+    __tablename__ = "chatbot_alias_precedence"
+    __audit_track__ = True
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    kind = Column(Text, nullable=False)
+    alias_norm = Column(Text, nullable=False)
+    winner_key = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=False), nullable=False, server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("kind", "alias_norm", name="uq_chatbot_alias_precedence"),)
+
+
+class ChatbotUnrecognisedPhrase(Base):
+    """PV2 unknown-words log (CONTRACT-PV2-13oct.md section 4/6): a phrase the model could
+    not place on an index key, counted per (phrase, kind). Read by staff to grow aliases;
+    never read by a turn."""
+
+    __tablename__ = "chatbot_unrecognised_phrases"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    phrase = Column(Text, nullable=False)
+    kind = Column(Text, nullable=False)
+    domain = Column(Text, nullable=True)
+    contact_id = Column(Text, nullable=True)
+    turn_id = Column(Text, nullable=True)
+    seen_count = Column(Integer, nullable=False, server_default="1", default=1)
+    first_seen_at = Column(DateTime(timezone=False), nullable=False, server_default=func.now())
+    last_seen_at = Column(DateTime(timezone=False), nullable=False, server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("phrase", "kind", name="uq_chatbot_unrecognised_phrases"),)
