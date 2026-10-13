@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # JWT Authentication
     jwt_secret: str
     jwt_algorithm: str = "HS256"
+
+    # Stored-secret encryption (app/utils/field_encryption.py). Comma-separated Fernet keys,
+    # current first: the first encrypts, every one decrypts. Kept apart from JWT_SECRET so
+    # rotating that loses no stored secret. Unset = JWT_SECRET-derived key (the old scheme).
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    field_encryption_key: str = ""
     
     # API Server
     api_host: str = "0.0.0.0"

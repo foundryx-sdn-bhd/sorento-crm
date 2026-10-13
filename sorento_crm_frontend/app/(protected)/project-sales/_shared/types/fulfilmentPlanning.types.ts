@@ -615,6 +615,8 @@ export interface ConfirmLine {
   buy_qty: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string | null;
+  /** PR 1622: what the planner typed, carried to purchasing's new order inquiry row. */
+  cs_note?: string | null;
   /**
    * Why this composition is not the engine's, in the planner's own words. Frozen with the
    * line: every other component carries the sentence of the RULE that produced it, and those
@@ -1505,6 +1507,8 @@ export interface BoardLineOrderInquiry {
    */
   rejected_reason?: string | null;
   rejected_by_name?: string | null;
+  /** When purchasing refused it: naive UTC ISO, like every stamp on the wire. */
+  rejected_at?: string | null;
   /**
    * AC-RL-07 (`PLAN-oi-replan-received-links.md`): what backs the instruction - the
    * winning row's own documents, the SAME reader (`links_for_rows`) the OI worklist
@@ -2103,6 +2107,8 @@ export interface BoardDecision {
   buy_qty?: string;
   /** Why this line still buys a discontinued product, when the product is discontinued and `buy_qty > 0`. Optional. */
   buy_reason?: string;
+  /** PR 1622: the planner's OWN words on this line (never a seeded engine sentence). */
+  cs_note?: string;
   /** The server's incoming cover, carried through unedited: it is dated supply, not a choice. */
   timely_spo_qty?: string;
   /**

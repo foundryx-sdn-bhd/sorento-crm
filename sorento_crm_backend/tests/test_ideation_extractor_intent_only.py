@@ -254,3 +254,7 @@ def test_second_call_adds_no_extra_version(db, idx):
     versions, _label, current = _state(db)
     assert [v.version for v in versions] == [1, 2]
     assert current.version == 2
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

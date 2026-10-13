@@ -58,6 +58,15 @@ const ALLOWLIST: Record<string, string> = {
   // Permanently exempt (captain's ruling, M5 review run 1).
   'components/reports/ReportPivotTable.tsx':
     'pivot matrix, not a record list - permanently exempt, not a DataGrid candidate',
+
+  // Pending migration (PLANNING-HISTORY #1600 shipped them on the raw table). Both are a
+  // few lines inside another surface: an expanded History timeline event (and the stored
+  // email's body rows) and the Confirm refusal block. Moving them onto PanelDataGrid adds
+  // its card, search and pager inside each one, which is an owner-visible change.
+  'app/(protected)/project-sales/fulfilment-planning/components/PlanningHistorySheet.tsx':
+    'pending migration: an expanded timeline event\'s lines and the stored email body, inside a sheet',
+  'app/(protected)/project-sales/fulfilment-planning/components/PlanningRefusalTable.tsx':
+    'pending migration: the Confirm refusal block\'s lines, one row per refused line with its fix',
 };
 
 /**

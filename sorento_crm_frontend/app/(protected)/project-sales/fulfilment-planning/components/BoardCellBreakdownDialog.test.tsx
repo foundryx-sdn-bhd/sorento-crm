@@ -3040,6 +3040,30 @@ describe('BoardCellBreakdownDialog: what purchasing has already been told', () =
     expect(within(row).getByText('On PO/SPO')).toBeInTheDocument();
   });
 
+  it('PR 1622 (mock v3): an open purchasing refusal reads as the Rejected badge, not the state word', () => {
+    renderDialog([
+      demand({
+        order_inquiry: {
+          inquiry_no: 'OI-000123',
+          state: 'raised',
+          ack_state: 'rejected',
+          rejected_by_name: 'Joey',
+          rejected_reason: 'DISCON',
+          rejected_at: '2026-10-13T08:32:00',
+        },
+      }),
+    ]);
+    openLines();
+
+    const row = contributionTable().querySelectorAll('tbody tr')[0] as HTMLElement;
+    expect(within(row).getByText('OI-000123')).toBeInTheDocument();
+    const badge = row.querySelector('[data-testid^="breakdown-oi-rejected-"]') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent(/^Rejected$/);
+    expect(badge.getAttribute('title')).toMatch(/^Rejected by Joey on 13\/10\/2026, 4:32\s?pm: DISCON$/i);
+    expect(within(row).queryByText('To buy')).toBeNull();
+  });
+
   it('prints a dash for a line nobody has been told anything about', () => {
     renderDialog([demand({ order_inquiry: null })]);
     openLines();

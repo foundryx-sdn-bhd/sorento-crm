@@ -48,6 +48,20 @@ def test_secret_body_keys_are_redacted(key):
     assert redact_mapping({key: "hunter2"})[key] == REDACTED
 
 
+@pytest.mark.parametrize(
+    "key", ["anthropic_api_key", "gemini_api_key", "smtp_password", "webhook_secret", "id_token"]
+)
+def test_prefixed_secret_body_keys_are_redacted(key):
+    """The AI assistant settings PUT carries `anthropic_api_key` / `gemini_api_key`;
+    an exact-name list missed them and stored the keys in api_call_logs (AI-KEY-ENCRYPT)."""
+    assert redact_mapping({key: "hunter2"})[key] == REDACTED
+
+
+def test_token_counts_are_not_mistaken_for_tokens():
+    payload = {"max_tokens": 512, "total_tokens": 9}
+    assert redact_mapping(payload) == payload
+
+
 def test_redaction_preserves_non_secret_values():
     payload = {"contact_id": "abc", "message": "hello"}
     assert redact_mapping(payload) == payload

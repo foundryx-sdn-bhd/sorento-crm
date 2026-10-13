@@ -510,6 +510,44 @@ def pytest_configure(config):
         "the xdist pool. CI deselects it with `-m \"not serial_ddl\"` and runs it "
         "afterwards with `-p no:xdist`. See .github/workflows/deploy.yml.",
     )
+    config.addinivalue_line(
+        "markers",
+        "parser_prompt_rows: this test writes the `chatbot_semantic_parser` rows of "
+        "ai_prompt_versions / ai_prompt_labels inside its rolled-back transaction, so it "
+        "takes the parser_prompt_rows advisory lock and runs alone among such tests.",
+    )
+
+
+# Arbitrary but fixed, like _SWEEP_LOCK_KEY.
+_PARSER_PROMPT_ROWS_LOCK_KEY = 727327002
+
+
+@pytest.fixture(autouse=True)
+def _parser_prompt_rows_lock(request):
+    """One `parser_prompt_rows` test at a time, across xdist workers.
+
+    Those tests move the parser's production label and add or delete its versions in an
+    open transaction. Two workers doing it at once deadlock: one updates the label row and
+    waits on the FK check of a version the other holds, which waits on the label row
+    (DeadlockDetected in test_prompt_dynamic_prod_snapshot and test_prompt_dynamic_drift,
+    PR #1632). The lock is a session-level advisory lock on its own connection, taken
+    before the test body opens its transaction and released after it rolled back.
+    """
+    if request.node.get_closest_marker("parser_prompt_rows") is None:
+        yield
+        return
+    from sqlalchemy import text
+    from app.database import engine
+
+    lock = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        lock.execute(text("SELECT pg_advisory_lock(:key)"), {"key": _PARSER_PROMPT_ROWS_LOCK_KEY})
+        yield
+    finally:
+        try:
+            lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _PARSER_PROMPT_ROWS_LOCK_KEY})
+        finally:
+            lock.close()
 
 
 @pytest.fixture

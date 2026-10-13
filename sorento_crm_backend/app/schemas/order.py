@@ -200,6 +200,8 @@ class OrderSimpleRef(BaseModel):
     order_date: Optional[datetime] = None
     actual_delivery_date: Optional[datetime] = None
     debtor_name: Optional[str] = None
+    # DO-BRANCH-NAME: the by-product DO list prints the branch too (`OrderResponse.branch_name`).
+    branch_name: Optional[str] = None
     matched_products: list[OrderLineProductMatch] = []
 
     @field_validator('company_id', mode='before')
@@ -228,6 +230,10 @@ class OrderResponse(OrderBase):
     # form shows them read-only (DO-OWNERSHIP-GUARD). Stamped on the single-order GET / PUT
     # like `remarks_cs_locked`; empty on list rows and on every row AutoCount does not own.
     autocount_owned_fields: list[str] = []
+    # The AutoCount branch name the DO ingest resolves (`orders.branch_name`). Read-only, so on
+    # the response only, never on create/update: the chatbot DO list and the DO screens show it
+    # (DO-BRANCH-NAME).
+    branch_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

@@ -171,3 +171,9 @@ def test_0002_publishes_a_new_version_label_unmoved_and_idempotent() -> None:
         session.expire_all()
         after = _production_label(session)
         assert after is not None and after.version_id == version_before
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+import pytest  # noqa: E402
+
+pytestmark = pytest.mark.parser_prompt_rows

@@ -278,3 +278,7 @@ def test_the_seed_works_on_a_table_built_from_the_model():
         ChatbotStatusWord.__table__.create(conn)
         mod.apply(conn)
         assert conn.execute(text("SELECT count(*) FROM chatbot_status_words")).scalar() == 8
+
+# Writes the parser's prompt rows: one such test at a time across xdist workers
+# (tests/conftest.py `_parser_prompt_rows_lock`).
+pytestmark = pytest.mark.parser_prompt_rows

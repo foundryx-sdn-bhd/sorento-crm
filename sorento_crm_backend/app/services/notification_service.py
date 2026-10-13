@@ -181,8 +181,11 @@ class NotificationService:
         source_entity_id: Optional[str] = None,
         dedup_key: Optional[str] = None,
         event_type: Optional[str] = None,
+        data: Optional[dict] = None,
     ) -> Optional[Notification]:
-        """Create a notification with in-app delivery only (no email or web_push). Used when sending one email to many recipients."""
+        """Create a notification with in-app delivery only (no email or web_push). Used when sending one email to many recipients.
+
+        `data.link` is what the bell opens on click (`NotificationItem.tsx` `collectLinks`)."""
         entity_id, dedup = _split_entity_and_dedup(source_entity_id, dedup_key)
         if source_entity_type and dedup and event_type:
             existing = (
@@ -202,7 +205,7 @@ class NotificationService:
             type=type,
             title=title,
             body=body,
-            data={},
+            data=data or {},
             source_entity_type=source_entity_type,
             source_entity_id=entity_id,
             dedup_key=dedup,
