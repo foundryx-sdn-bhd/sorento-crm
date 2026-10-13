@@ -249,12 +249,23 @@ SALES_RANKING_ASK = rf.register(rf.AskType(
 # --------------------------------------------------------------------------- #
 
 
-def as_ranking_basis_status(verdict: dict[str, Any]) -> dict[str, Any]:
+def as_ranking_basis_status(verdict: dict[str, Any], held_report: Any = None) -> dict[str, Any]:
     """Engine seam: beside a sales ranking, the parser's v3 `status` key is sometimes the basis it answered
     ("delivered" to the basis question). It is the ranking's basis, not an order status: dropped before it
     is projected onto `order_status` (which would turn the ranking into the DO list). Only a sales ranking;
     a top selling list with an outstanding status is the outstanding path and is left alone."""
-    if jsc.js_string(verdict.get("order_status") or "").strip() != ASK_NAME:
+    order_status = jsc.js_string(verdict.get("order_status") or "").strip()
+    held_ranking = isinstance(held_report, dict) and bool(held_report) and not held_report.get("kind")
+    if (
+        held_ranking
+        and verdict.get("ranking_refine") is True
+        and order_status in BASES
+        and verdict.get("basis") in (None, order_status)
+    ):
+        # The parser put the basis it means ("ordered") into `order_status` over a held ranking: it is the
+        # ranking's basis. An enum check on parser fields; without a held ranking it stays an order ask.
+        return {**verdict, "order_status": ASK_NAME, "basis": order_status, "status": None}
+    if order_status != ASK_NAME:
         return verdict
     status = verdict.get("status")
     if status not in BASES:

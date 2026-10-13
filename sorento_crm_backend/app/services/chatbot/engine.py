@@ -4671,9 +4671,9 @@ def _run_stages_body(  # noqa: PLR0915
     # so grounding never splits one ("ZZT SINK" into the class SINK plus a spec word).
     from app.services.chatbot.lanes.business import report_ask as _report_ask
 
-    verdict = _report_ask.as_ranking_basis_status(verdict)
+    verdict = _report_ask.as_ranking_basis_status(verdict, state_in.focus.report)
     verdict = _report_ask.as_ranking_filter_refine(verdict, state_in.focus.report)
-    verdict = _report_ask.as_ranking_basis_status(verdict)  # again: the refine may have made it a ranking
+    verdict = _report_ask.as_ranking_basis_status(verdict, state_in.focus.report)  # again: the refine may have made it a ranking
     verdict = _report_ask.as_ranking_refine(verdict, state_in.focus.report, state_in.focus.top_selling)
     verdict = _report_ask.as_outstanding_ranking(verdict)
     verdict = _report_ask.as_top_selling(verdict, state_in.focus.report)
