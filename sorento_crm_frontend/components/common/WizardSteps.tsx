@@ -53,7 +53,10 @@ export function WizardSteps({
                 )}
               >
                 {done ? <Check className="size-3.5" aria-hidden /> : index + 1}
-                <span className="sr-only">{step.label}</span>
+                <span className="sr-only">
+                  {step.label}
+                  {done ? ' (done)' : ''}
+                </span>
               </span>
               {index < steps.length - 1 && (
                 <span

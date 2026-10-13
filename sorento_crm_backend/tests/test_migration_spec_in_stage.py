@@ -31,13 +31,21 @@ _MIGRATION = (
 )
 
 
-def _run_upgrade(db) -> None:
+def _load():
     spec = importlib.util.spec_from_file_location("migration_spec_in", _MIGRATION)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _run(db, step: str) -> None:
     context = MigrationContext.configure(db.connection())
     with Operations.context(context):
-        module.upgrade()
+        getattr(_load(), step)()
+
+
+def _run_upgrade(db) -> None:
+    _run(db, "upgrade")
 
 
 def _status(db, key: str, label: str, order: int) -> Status:
@@ -125,3 +133,21 @@ def test_a_fresh_install_seeds_spec_in_and_the_way_back(db):
     assert rows["specified"].label == "Spec In"
     assert _edges(db, rows["registered"], rows["specified"]) == ["Spec In"]
     assert _edges(db, rows["specified"], rows["registered"]) == ["Back to registered"]
+
+
+def test_downgrade_removes_only_its_own_back_edge(db):
+    registered = _status(db, "registered", "Registered", 1)
+    specified = _status(db, "specified", "Specified", 2)
+    identified = _status(db, "identified", "Identified", 0)
+    _edge(db, registered, specified, "Spec in")
+    # An admin's edge that happens to share the label, on a different pair.
+    _edge(db, identified, registered, "Back to registered")
+
+    _run_upgrade(db)
+    _run(db, "downgrade")
+
+    db.expire_all()
+    assert db.get(Status, specified.id).label == "Specified"
+    assert _edges(db, registered, specified) == ["Spec in"]
+    assert _edges(db, specified, registered) == []
+    assert _edges(db, identified, registered) == ["Back to registered"]

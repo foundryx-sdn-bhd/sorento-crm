@@ -148,8 +148,8 @@ export function LeadWizardDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            // React bubbles a portalled submit up the COMPONENT tree, so opened from the
-            // project form this would otherwise also submit (register) the project.
+            // React bubbles a portalled submit up the COMPONENT tree, so a caller that ever
+            // renders this inside its own form must not receive the wizard's submit.
             event.stopPropagation();
             if (step === 'confirm') {
               void submit();
@@ -304,7 +304,7 @@ export function LeadWizardDialog({
                     min={0}
                     value={estimatedValue}
                     onChange={(event) => setEstimatedValue(event.target.value)}
-                                      />
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="lead-notes">Notes</Label>

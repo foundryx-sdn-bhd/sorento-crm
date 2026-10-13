@@ -158,7 +158,8 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
       { projectId: project!.id, toStatusId },
       {
         onSuccess: () => {
-          if (target?.toKey === 'specified') {
+          // Forward only: Quoted -> Spec In ("Re-specify") is a correction, not a new quote.
+          if (target?.toKey === 'specified' && target.isForward) {
             router.push(`/project-sales/${project!.id}/quotation-documents/new`);
           }
         },
@@ -325,10 +326,10 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
             </Section>
 
             <Section title="Customer">
-            <Fact label="Name" value={project.customer_name} />
-            <Fact label="Phone" value={project.customer_phone} />
-            <Fact label="Attn" value={project.customer_attn} />
-          </Section>
+              <Fact label="Name" value={project.customer_name} />
+              <Fact label="Phone" value={project.customer_phone} />
+              <Fact label="Attn" value={project.customer_attn} />
+            </Section>
 
             <Section title="Value and timing">
               <Fact
@@ -366,7 +367,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
             <SourceCard project={project} />
 
-          <ProjectAccessPanel project={project} />
+            <ProjectAccessPanel project={project} />
           </div>
           <div className="mt-4">
             <CriticalPanel project={project} />

@@ -594,4 +594,15 @@ describe('owner hand-test, 13 Oct', () => {
     expect(within(card).getByText('03-7777 1234')).toBeInTheDocument();
     expect(within(card).getByText('Lim Wei Ming')).toBeInTheDocument();
   });
+
+  it('does not open a new quotation for the backward Re-specify move', async () => {
+    changeStatus.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.(),
+    );
+    renderDetail();
+    openOverflow();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Re-specify' }));
+    expect(changeStatus).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
 });

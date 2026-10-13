@@ -758,6 +758,16 @@ describe('ProjectForm: Lead link (AC-PF050-058)', () => {
     expect(screen.getByRole('button', { name: 'Register project' })).toBeEnabled();
   });
 
+  it('offers no Create lead to someone who may not create leads', async () => {
+    hasManagePermission.mockImplementation((slug: string) => slug !== 'projects.projects.create');
+    listLeads.mockResolvedValue({ data: [], pagination: { total: 0, page: 1, limit: 20 } });
+    renderForm({ mode: 'create' });
+    fireEvent.change(screen.getByLabelText(/^Lead/), { target: { value: 'Tower Q' } });
+    await waitFor(() => expect(listLeads).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /Create lead/ })).toBeNull();
+    hasManagePermission.mockImplementation(() => true);
+  });
+
   it('lets an existing project without a lead save', async () => {
     renderForm({ mode: 'edit', project: baseProject({ lead_id: null, lead_code: null }) });
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
