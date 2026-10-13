@@ -1,6 +1,6 @@
 # PLAN: seat cover = product resolution (SEAT-AS-PRODUCT)
 
-Status: Review (lane SEAT-AS-PRODUCT, PR #1613). Track: standard (chatbot turn pipeline; no
+Status: Review (lane SEAT-AS-PRODUCT, PR #1613; round 5 READY, CI green on 1bfca061, waiting on the crew v94 re-run and the owner hand test). Track: standard (chatbot turn pipeline; no
 migration, no FE change, no auth/RBAC change). Card: `CARD-seat-as-product-13oct.md` (crew
 answered Q2 b, Q3 a, Q4 yes, Q5 yes; Q1 (a), wording `No seat cover is on record for <code>.` approved by the owner 13 Oct).
 
@@ -51,3 +51,10 @@ cover codes typed directly for stock, ETA, no domain, photo, mixed and reverse; 
 no fetch; the resolution unit tests; kill tests (no `crm_find` in the lane, no `_find_output`,
 rule text, allow-list). Live: `tests/chatbot/test_find_live_parser.py` golden set, each fit ask
 parsed beside its typed-code control (opt-in, `CHATBOT_LIVE_LLM=1`).
+
+## Round 4 to 5 (crew v94 check, 13 Oct)
+
+Cross-turn rules, `focus.relation` ("covers" / "wcs"), the fits `value` as the other-side word
+typed in THIS message, and the code-order sort of the linked codes (CI's en_US collation):
+see the card's "Across turns" section. Tests x1 to x6, y1 to y9, z1 to z4 in
+`tests/chatbot/test_seat_as_product.py`.
