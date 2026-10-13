@@ -349,7 +349,7 @@ def test_a_failed_understood_record_carries_latency(
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("status, rate_limited, transient", [(429, True, False), (503, False, True), (500, False, True)])
+@pytest.mark.parametrize("status, rate_limited, transient", [(429, True, False), (503, False, True), (500, False, True), (400, False, False)])
 def test_a_gemini_http_failure_is_classified_like_an_openai_one(monkeypatch, status, rate_limited, transient):
     """`llm_call` retries a 429 and a 5xx by reading the error's `status_code`, which the
     OpenAI SDK sets and Gemini's plain RuntimeError did not: a busy minute on the parser
