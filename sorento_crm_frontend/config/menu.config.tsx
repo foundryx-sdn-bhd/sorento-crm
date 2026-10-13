@@ -74,8 +74,18 @@ export const MENU_SIDEBAR: MenuConfig = [
   {
     title: 'Ideas',
     icon: Lightbulb,
-    path: '/ideas',
-    permission: 'ideation.board.view',
+    children: [
+      {
+        title: 'All ideas',
+        path: '/ideas',
+        permission: 'ideation.board.view',
+      },
+      {
+        title: 'Roadmap',
+        path: '/ideas/portal',
+        permission: 'ideation.board.view',
+      },
+    ],
   },
 
   { heading: 'SALES' },
@@ -1064,6 +1074,11 @@ export const MENU_SIDEBAR: MenuConfig = [
           {
             title: 'Usage',
             path: '/system-management/ai-assistant/usage',
+            permission: 'system.ai_assistant_settings.view',
+          },
+          {
+            title: 'Model prices',
+            path: '/system-management/ai-assistant/model-prices',
             permission: 'system.ai_assistant_settings.view',
           },
           {

@@ -6,7 +6,6 @@ import { toast } from '@/lib/toast';
 import { advanceTransition, restoreTransition } from '@/lib/ideaTransitions';
 import { IDEAS_KEY } from '@/hooks/useIdeas';
 import {
-  mergeIdeas,
   moveIdeaToStatus,
   promoteIdeas,
   restoreIdea,
@@ -108,22 +107,5 @@ export function useIdeaBulk(done: () => void) {
     [done, queryClient],
   );
 
-  const merge = useCallback(
-    async (survivorId: string, rows: Idea[]) => {
-      try {
-        await mergeIdeas({ survivorId, ideaIds: rows.map((r) => r.id) });
-        toast.success('Ideas merged');
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : 'Failed to merge the ideas',
-        );
-        throw error;
-      }
-      done();
-      await queryClient.invalidateQueries({ queryKey: IDEAS_KEY });
-    },
-    [done, queryClient],
-  );
-
-  return { advance, restore, unmerge, promote, merge };
+  return { advance, restore, unmerge, promote };
 }
