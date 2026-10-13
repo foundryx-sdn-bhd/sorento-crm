@@ -669,12 +669,12 @@ def assert_line_picks(
             message=f"That {word} is not one of this product's files.",
             code=code,
         )
-        try:
-            uuid.UUID(value)
-            if product_id:
-                uuid.UUID(str(product_id))
-        except ValueError:
-            raise refusal from None
+        # Canonical form only: `uuid.UUID` also accepts `urn:uuid:...`, braces and bare hex,
+        # none of which the database will take as an id.
+        if not _is_canonical_uuid(value) or (
+            product_id and not _is_canonical_uuid(str(product_id))
+        ):
+            raise refusal
         if not product_id or not images.is_product_file(
             db,
             product_id=str(product_id),
@@ -683,6 +683,13 @@ def assert_line_picks(
             company_id=quotation.company_id,
         ):
             raise refusal
+
+
+def _is_canonical_uuid(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def _write_line(
@@ -699,6 +706,18 @@ def _write_line(
     same coercion, snapshotting and guardrails and then recompute the total ONCE. Both
     callers share this body, so the two ways of saving a line cannot drift apart.
     """
+    # A different product's photo or drawing cannot be this one's: a product change that does
+    # not send picks of its own clears the stored ones, in every path that writes a line.
+    if (
+        line is not None
+        and "product_id" in payload
+        and str(payload["product_id"] or "") != str(line.product_id or "")
+    ):
+        payload = {
+            **{field: None for field, *_rest in _PICKS},
+            **payload,
+        }
+
     unit_type = payload.get("unit_type")
     if unit_type and unit_type not in UNIT_TYPES:
         raise AppException(
