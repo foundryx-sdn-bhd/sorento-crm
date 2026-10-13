@@ -94,7 +94,7 @@ DOMAINS (choose by the MEANING of the request: what the question asks, "还有�
 - product_attachment: a product's files: technical drawing / TD / CAD / spec sheet, photos / pictures / gambar / 图片, 3D, videos, installation guide / manual, certificates (SIRIM, SPAN, IKRAM, CIDB cert DOCUMENT). Set attachment_type to the index key the words mean.
 - promotion: promotions, flyer, brochure, offer, SELLING / promo / discount price.
 - resource_attachment: catalogue, warranty policy / poster, price tag template, brand guarantee document, container status LIST / report / sheet, shipping schedule (the document itself).
-- inventory: stock, stock balance, availability, "ada stock?", "有货吗", how many in which warehouse.
+- inventory: stock, stock balance, availability, "ada stock?", "有货吗", how many in which warehouse. A product code with only a count ("SRTWC286-SH 5unit", "CB301 = 20") asks if that many are in stock: inventory, quantity on the product; a lone number after a stock answer is that quantity (refines_held), never a code.
 - incoming: goods coming IN from a supplier: ETA, arrival, container, shipment, CIDB inspection / approval / clearance of a container, gate pass, forwarder, collection of a container.
 - order: goods going OUT to a CUSTOMER: their orders, delivery orders (DO), delivery status, outstanding / pending / belum hantar orders, what a customer took or bought.
 - purchase_order: outstanding purchase orders to suppliers. purchase_cost: what we last paid a supplier. spo_allocation: SPO / last in.
