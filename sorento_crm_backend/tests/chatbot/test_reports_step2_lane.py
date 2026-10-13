@@ -330,13 +330,31 @@ def test_ac17_a_dealer_refine_over_a_held_staff_dimension_is_refused(console) ->
 # ================================================================================ AC-18
 
 
-def test_ac18_a_turn_that_is_not_a_report_ask_clears_the_entry(console) -> None:
+def test_ac18_a_turn_in_another_domain_keeps_the_entry(console) -> None:
+    """Revised 13 Oct (owner rule: topic switch and back): the held report survives a turn in another domain."""
     _t1(console)
-    assert _wire(console).get("report"), "Focus.report not written"
+    held = _wire(console).get("report")
+    assert held, "Focus.report not written"
     console.say(_reply(domain_hint="master_products", intent_hint="check_product"), "what is the weather")
+    assert _wire(console).get("report") == held, _wire(console)
+    _text, calls = console.say(_refine(top_n=5), "top 5")
+    (args,) = calls
+    assert args["top_n"] == 5 and args["brand_ids"] == held["args"]["brand_ids"], args
+
+
+def test_ac18_a_topic_reset_clears_the_entry(console) -> None:
+    _t1(console)
+    assert _wire(console).get("report")
+    console.say(_reply(domain_hint="master_products", intent_hint="check_product", topic_reset=True), "never mind")
     assert not _wire(console).get("report"), _wire(console)
     text, calls = console.say(_refine(top_n=5), "top 5")
     assert calls == [], calls
+
+
+def test_ac18_a_new_report_replaces_the_entry(console) -> None:
+    _t1(console)
+    console.say(_rank(_e("Sorento", "brand"), group_by="customer", top_n=5, ranking_drill="global", **SEP_LAST), "top 5 customers last month")
+    assert _wire(console)["report"]["args"]["group_by"] == "customer", _wire(console)["report"]
 
 
 # ================================================================================ AC-15 review round

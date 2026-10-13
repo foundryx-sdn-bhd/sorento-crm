@@ -588,3 +588,182 @@ def test_h37_guard_a_status_beside_top_selling_is_left_to_the_outstanding_path()
     out = report_ask.as_ranking_basis_status(ranking)
     assert out["status"] is None and out["basis"] == "delivered", out
     assert report_ask.as_ranking_basis_status({"order_status": "sales_ranking", "status": "open", "basis": None})["status"] == "open"
+
+
+# ================================================================================ review round on the owner hand test fixes
+
+
+def test_h31c_a_basis_status_beside_a_channel_analysis_is_the_rankings_basis(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _analysis_filter(status="ordered", basis=None, sales_basis=None)
+    text, log = lane._say_all(console, monkeypatch, qf, "dealer sales ordered")
+    (after,) = _ranking_calls(log)
+    assert after["measure"].startswith("ordered_") and after["channel"] == "dealer", (text, after)
+
+
+def _asked_company(console, monkeypatch):
+    seen = _analysis_route(console, monkeypatch)
+    console.say(_analysis_filter(), "dealer sales")
+    assert _wire_ask(console).get("ask") == "sales_analysis_company"
+    return seen
+
+
+def test_h35c_an_unknown_company_twice_re_asks_then_gives_up(console, monkeypatch) -> None:
+    from app.services.chatbot.lanes.business import analysis_ask
+
+    seen = _asked_company(console, monkeypatch)
+    qf = _company_answer(sales_company="Nobody")
+    qf["open_question_answer"] = {"mode": "fill", "picked": [], "items": [], "qty_for_all": None}
+    text, _calls = console.say(qf, "nobody")
+    assert "Zorvex or Mochi?" in text and _wire_ask(console).get("ask") == "sales_analysis_company", text
+    text, _calls = console.say(qf, "nobody")
+    assert text.startswith("I still can't place"), text
+    assert not _wire_ask(console) and len(seen) == 1, (_wire_ask(console), seen)
+
+
+def test_h35d_a_cancel_answer_ends_the_question(console, monkeypatch) -> None:
+    from app.services.chatbot.lanes.business import analysis_ask
+
+    seen = _asked_company(console, monkeypatch)
+    qf = _company_answer()
+    qf["open_question_answer"] = {"mode": "cancel", "picked": [], "items": [], "qty_for_all": None}
+    text, _calls = console.say(qf, "never mind")
+    assert text.strip() == analysis_ask.ANALYSIS_COMPANY_ASK.cancelled, text
+    assert not _wire_ask(console) and len(seen) == 1, (_wire_ask(console), seen)
+
+
+def test_h35e_an_all_answer_says_one_company_is_needed(console, monkeypatch) -> None:
+    from app.services.chatbot.lanes.business import analysis_ask
+
+    seen = _asked_company(console, monkeypatch)
+    qf = _company_answer()
+    qf["open_question_answer"] = {"mode": "all", "picked": [], "items": [], "qty_for_all": None}
+    text, _calls = console.say(qf, "both")
+    assert analysis_ask.ONE_COMPANY in text and "Zorvex or Mochi?" in text, text
+    assert _wire_ask(console).get("ask") == "sales_analysis_company" and len(seen) == 1, seen
+
+
+def test_h38_guard_a_new_analysis_after_a_stock_turn_stays_an_analysis(console, monkeypatch) -> None:
+    _held_ranking(console)
+    console.say(_live(_parser_output(
+        domain_hint="inventory", intent_hint="check_stock", message_type="business_query", domain_in_message=True,
+        entities=[lane._hit(EXACT, "product")], entity_op="replace_combine",
+    )), "stock of the model")
+    qf = _analysis_filter(group_by="month", date_filter_start="2026-01-01", date_filter_end="2026-12-31")
+    _text, log = lane._say_all(console, monkeypatch, qf, "dealer sales this year by month")
+    assert "crm_sales_analysis" in _names(log) and not _ranking_calls(log), log
+
+
+def test_h39_guard_the_held_channel_restated_is_no_change(console, monkeypatch) -> None:
+    _held_ranking(console)
+    lane._say_all(console, monkeypatch, _analysis_filter(), "dealer sales only")  # refines to dealer
+    _text, log = lane._say_all(console, monkeypatch, _analysis_filter(), "dealer sales only")
+    assert not _ranking_calls(log) and "crm_sales_analysis" in _names(log), log
+
+
+def test_h40_guard_a_fresh_ask_on_the_held_axis_after_a_stock_turn_uses_its_own_period(console) -> None:
+    _held_ranking(console)
+    console.say(_live(_parser_output(
+        domain_hint="inventory", intent_hint="check_stock", message_type="business_query", domain_in_message=True,
+        entities=[lane._hit(EXACT, "product")], entity_op="replace_combine",
+    )), "stock of the model")
+    _text, calls = console.say(
+        _rank(_e("Sorento", "brand"), group_by="sales_agent", top_n=5, basis="delivered", measure="qty",
+              date_filter_start="2025-01-01", date_filter_end="2025-12-31"),
+        "top 5 salesman for sorento in 2025",
+    )
+    (args,) = calls
+    assert args["date_from"] == "2025-01-01" and "carried" not in args, args
+
+
+def test_h41a_a_held_ranking_means_the_order_list_is_not_open() -> None:
+    from app.services.chatbot.order_list import is_open_order_list
+    from app.services.chatbot.turn.state import Focus
+
+    ranking = {"measure": "delivered_amount", "args": {"group_by": "sales_agent"}, "shown": None}
+    assert is_open_order_list(Focus(domains=["order"], status=None, report=ranking)) is False
+
+
+def test_h41b_without_a_held_ranking_an_order_list_is_still_open() -> None:
+    from app.services.chatbot.order_list import is_open_order_list
+    from app.services.chatbot.turn.state import Focus
+
+    assert is_open_order_list(Focus(domains=["order"], status=None)) is True
+    plain = {"kind": "sales_report", "measure": "delivered_sales", "args": {}, "shown": None}
+    assert is_open_order_list(Focus(domains=["order"], status=None, report=plain)) is True
+
+
+def test_h42_guard_a_basis_the_ranking_cannot_do_is_not_a_refine(console, monkeypatch) -> None:
+    _held_ranking(console)
+    qf = _analysis_filter(sales_channel=None, sales_basis="invoiced", basis=None)
+    _text, log = lane._say_all(console, monkeypatch, qf, "invoiced sales")
+    assert not _ranking_calls(log), log
+
+
+def _do_list_turn(console, monkeypatch):
+    import json
+
+    from app.services.ai_assistant_service import MCPRuntimeClient
+    from sorento_crm_mcp.presenters import present_response
+
+    from tests.chatbot._turn_helpers import do_window
+
+    def _fake_call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        return present_response(name, json.dumps({"data": [], "total": 0, "page": 1, "limit": 20}))
+
+    monkeypatch.setattr(MCPRuntimeClient, "call_tool", _fake_call_tool)
+    do_list = _live(_parser_output(
+        domain_hint="order", intent_hint="check_order", message_type="business_query", order_status=None,
+        domain_in_message=True, entities=[_e(lane.CUSTOMER_NAME, "customer")], **do_window(),
+    ))
+    console.say(do_list, "orders for the customer")
+
+
+def test_h43_an_order_list_answer_after_a_ranking_is_noted_on_the_held_report(console, monkeypatch) -> None:
+    from tests.chatbot.test_reports_step2_lane import _wire
+
+    _held_ranking(console)
+    assert not _wire(console)["report"].get("listed_after"), _wire(console)["report"]
+    _do_list_turn(console, monkeypatch)
+    held = _wire(console)["report"]
+    assert held and not held.get("kind") and held.get("listed_after") is True, held
+
+
+def test_h43c_a_new_ranking_replaces_the_note(console, monkeypatch) -> None:
+    from tests.chatbot.test_reports_step2_lane import _wire
+
+    _held_ranking(console)
+    _do_list_turn(console, monkeypatch)
+    console.say(_rank(_e("Sorento", "brand"), group_by="sales_agent", top_n=5, basis="delivered", measure="qty", **SEP),
+                "top 5 salesman for sorento")
+    assert not _wire(console)["report"].get("listed_after"), _wire(console)["report"]
+
+
+def test_h43d_a_brand_word_alone_continues_the_order_list_when_the_list_was_the_latest_answer(console) -> None:
+    from app.services.chatbot.order_list import order_list_verdict
+    from app.services.chatbot.turn.state import Focus, State
+
+    ranking = {"measure": "delivered_amount", "args": {"group_by": "sales_agent"}, "shown": None}
+    verdict = _parser_output(domain_hint="order", intent_hint="check_order", order_status=None, entities=[])
+    from app.services.company_scope import DEFAULT_COMPANY_ID, set_company_scope
+
+    db = console.session_factory()
+    set_company_scope(db, frozenset({DEFAULT_COMPANY_ID}))
+    try:
+        after_list = State(focus=Focus(domains=["order"], status=None, report={**ranking, "listed_after": True}))
+        _v, _s, rule = order_list_verdict(db, verdict, after_list, "sorento")
+        assert rule == "order_list_brand_switched", rule
+        after_ranking = State(focus=Focus(domains=["order"], status=None, report=ranking))
+        _v, _s, rule = order_list_verdict(db, verdict, after_ranking, "sorento")
+        assert rule is None, rule
+    finally:
+        db.close()
+
+
+def test_h43b_a_report_entry_notes_an_order_list_answer_after_it() -> None:
+    from app.services.chatbot.order_list import is_open_order_list
+    from app.services.chatbot.turn.state import Focus
+
+    ranking = {"measure": "delivered_amount", "args": {"group_by": "sales_agent"}, "shown": None}
+    assert is_open_order_list(Focus(domains=["order"], status=None, report={**ranking, "listed_after": True})) is True
+    assert is_open_order_list(Focus(domains=["order"], status=None, report=ranking)) is False

@@ -1184,13 +1184,26 @@ def test_a_dealer_refine_over_a_held_staff_frame_is_refused_locally(console) -> 
     assert calls == []
 
 
-def test_a_frame_does_not_survive_another_ask(console) -> None:
-    """ranking, then an order ask, then a refine: the old ranking is gone, so it is a fresh ask."""
+def test_a_frame_survives_an_order_ask_and_a_refine_finds_it(console) -> None:
+    """Revised 13 Oct (owner rule: topic switch and back): ranking, then an order ask, then a refine: the held
+    ranking is still there, so the refine runs on it."""
     _t1(console)
     console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
     text, calls = console.say(_refine(top_n=5), "5")
-    assert calls == [], (text, calls)
-    assert text.strip() == PERIOD_Q, text
+    (args,) = calls
+    assert args["top_n"] == 5 and args.get("brand_ids"), args
+
+
+def test_a_new_ranking_ask_after_an_order_ask_does_not_inherit_the_old_frame(console) -> None:
+    """The held ranking survives, but a NEW ranking ask (its own axis and period) is a new ask."""
+    _t1(console)
+    console.say(_order_ask(_e(CUSTOMER_NAME, "customer")), f"orders for {CUSTOMER_NAME}")
+    text, calls = console.say(
+        _rank(group_by="customer", top_n=3, ranking_drill="global", **THIS_YEAR), "top 3 customers this year"
+    )
+    (args,) = calls
+    assert args["group_by"] == "customer" and args["date_from"] == "2026-01-01", args
+    assert not args.get("brand_ids") and "carried" not in args, args
 
 
 def test_d3_a_fresh_ranking_that_names_its_own_subject_never_borrows_the_previous_period(console) -> None:

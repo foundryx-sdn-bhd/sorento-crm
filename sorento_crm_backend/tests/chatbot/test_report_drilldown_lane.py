@@ -388,17 +388,19 @@ def test_the_scope_reply_runs_the_drill_with_the_held_period(console) -> None:
     assert args["date_from"] == SEP["date_filter_start"] and args["date_to"] == SEP["date_filter_end"], args
 
 
-def test_the_scope_reply_global_is_the_fresh_ask(console) -> None:
-    _turn1(console)
+def test_the_scope_reply_global_keeps_the_held_filters_and_drops_only_the_agent_link(console) -> None:
+    """Revised 13 Oct (owner rule): "all" ranks the new axis across every row, with the held product, period,
+    measure and basis; only the link to the agents printed above goes. Nothing is asked again."""
+    _text, first = console.say(_rank(_e(PRODUCT_CODE, "product"), top_n=3), f"top 3 salesman for {PRODUCT_CODE}")
+    (held,) = first
     console.say(_drill(ranking_drill="unsure"), "top 10 customers")
     text, calls = console.say(_scope_reply("global", group_by="customer"), "across all customers")
-    assert calls == [] and text.strip() == PERIOD_Q, text
-    _text, calls = console.say(_reply(**SEP), "september")
-    _text, calls = console.say(_reply(measure="amount"), "by amount") if not calls else (_text, calls)
-    _text, calls = console.say(_reply(basis="delivered"), "delivered") if not calls else (_text, calls)
     (args,) = calls
     assert args["group_by"] == "customer" and args["top_n"] == 10, args
-    assert "customer_agent_ids" not in args and "product_code" not in args, args
+    for key in ("product_code", "date_from", "date_to", "measure"):
+        assert args.get(key) == held.get(key), (key, args, held)
+    assert "customer_agent_ids" not in args and "sales_agent_ids" not in args, args
+    assert PERIOD_Q not in text, text
 
 
 def test_an_unread_scope_reply_asks_again_then_gives_up(console) -> None:
